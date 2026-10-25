@@ -1,0 +1,54 @@
+# Rally のドメイン用語（SSOT）
+# 出典: Blueprint v0.4 の bounded_contexts_hint と invariants_seed。骨格として 12 語だけを置き、網羅は後続の Issue で行う。
+# 各項目: id（英小文字スネークケース）・ja（日本語の用語）・definition（1 文）・context（境界づけられたコンテキスト名）
+# context の値は context-map.yaml が起きるまでの仮置き（Gen1 のコアは identity / scheduling / entitlement）。
+
+terms:
+  - id: student
+    ja: 生徒
+    definition: レッスンを予約して受講する利用者。
+    context: identity
+  - id: coach
+    ja: コーチ
+    definition: レッスンを提供し、生徒を指導する利用者。
+    context: identity
+  - id: lesson
+    ja: レッスン
+    definition: コーチが生徒に提供する指導の単位で、ライブとアシンクの 2 形態がある。
+    context: lesson
+  - id: live_lesson
+    ja: ライブレッスン
+    definition: コーチと生徒が予約した時間に同時に参加して行うレッスン。
+    context: lesson
+  - id: async_lesson
+    ja: アシンクレッスン
+    definition: 生徒が送った素材にコーチが後から応える、時間を合わせずに行うレッスン。
+    context: lesson
+  - id: booking
+    ja: 予約
+    definition: 生徒がスロットを確保してレッスンの受講を約束した記録。
+    context: scheduling
+  - id: slot
+    ja: スロット
+    definition: コーチが予約を受け付けるために公開する時間枠。
+    context: scheduling
+  - id: entitlement
+    ja: 受講権
+    definition: 生徒がレッスンを受けられる権利で、予約のたびに消費される。
+    context: entitlement
+  - id: subscription
+    ja: サブスクリプション
+    definition: 定期的に受講権を付与する継続課金の契約。
+    context: entitlement
+  - id: one_shot
+    ja: 単発購入
+    definition: 1 回分の受講権を都度購入する買い方。
+    context: entitlement
+  - id: video_review
+    ja: 動画レビュー
+    definition: 生徒が投稿したプレー動画にコーチが指摘を返すアシンクレッスンの形式。
+    context: lesson
+  - id: cancellation_policy
+    ja: キャンセルポリシー
+    definition: 予約の取り消し時期に応じて受講権を返すか消費するかを決める規則。
+    context: scheduling
