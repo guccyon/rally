@@ -1,0 +1,104 @@
+# Rally 工場の manifest（憲法レベルの設定）
+# この工場が「どこまで自分でやってよいか」「いくら使ってよいか」を機械可読で持つ。
+# 正本の Blueprint: ~/work/自律型ソフトウェア事業部/10_blueprint-rally.yaml（autonomy / budgets / compat_policy）
+# このファイルの変更は常に builder（Tetsuro）の承認が要る（change_type: constitution）。
+#
+# 由来: アカウントスキル pr-merge-criteria（2026-10-21 版）の基準を「環境 × 変更種別」の表に変換した初版。
+#       スキルの基準は人間の手元で動く Claude の運用ルール、この表はヘッドレス工場の権限。P0 では後者を前者より狭くする。
+
+schema_version: "0.1"
+status: draft                          # Tetsuro の署名で approved にする
+engine:
+  repo: guccyon/factory-engine
+  version: null                        # P0 は base を手で置く。版付き配布は P0a 以降
+
+phase: P0
+
+# ---------------------------------------------------------------------
+# autonomy: 環境（操作）× 変更種別
+# 値: auto | shadow（判定して記録するが実行しない）| human_approve | forbidden
+# ---------------------------------------------------------------------
+autonomy:
+  actions: [pr_create, merge, deploy_test, deploy_prod]
+
+  # 変更種別。PR 成果物の change_types に入る。1 つの PR が複数に当たるときは最も厳しい値を使う
+  change_types:
+    docs_only:
+      ja: "文書だけの変更"
+      match: "docs・README・CHANGELOG・エージェント向けルール（CLAUDE.md 等）だけを変え、コード・設定・テストを変えない。後追いの文書も含む"
+      source: "pr-merge-criteria「承認なしでよい（確定）: 文書だけの変更」"
+    design_decision:
+      ja: "設計の相談・アーキテクチャを決める変更"
+      match: "設計・アーキテクチャの判断を含む（ADR、契約・スキーマの方針、文書だけでも設計を決める・変える内容）"
+      source: "pr-merge-criteria「必ず承認が要る」"
+      approval_via: "chat_summary"      # 要点（何を決めたか・なぜか・選ばなかった案）をチャットに数行。PR 画面での確認は求めない
+    large_integration:
+      ja: "大規模な開発をまとめて main に入れる"
+      match: "複数の PR・コミットを積んだ統合ブランチから既定ブランチへのマージ"
+      source: "pr-merge-criteria「必ず承認が要る」（cornix-layout #68）"
+      approval_via: "local_verification" # builder が手元で動作確認してから
+    dependency_update:
+      ja: "依存パッケージの更新"
+      match: "dependabot 等による依存の更新。破壊的変更の確認・最新 main での検証・CI 成功の 3 点が前提（rubric SAFE-002）"
+      source: "自動メモリ merge-policy（2026-10-24）。pr-merge-criteria には未反映"
+    code_change:
+      ja: "通常のコード変更"
+      match: "上記以外のコード・テスト・文書を含む変更（三位一体、rubric PR-001）"
+      source: "pr-merge-criteria「それ以外の PR は…決まりがなければ承認を待つ」"
+    factory_rule:
+      ja: "工場のルール変更"
+      match: ".factory-config/overlay/ と evals/ の変更（ルールの追加・昇格・廃止）"
+      source: "憲章 05 節。ルール変更 PR は工場自身のパイプラインを通る"
+    constitution:
+      ja: "憲法の変更"
+      match: "この manifest.yaml、base/ の差し替え、Blueprint の autonomy・budgets"
+      source: "憲章 08 節「憲法の管理」は builder の署名"
+
+  # Phase P0 の表（開始定義: P0 の権限は pr_create まで）
+  matrix:
+    docs_only:         { pr_create: auto, merge: shadow,        deploy_test: forbidden, deploy_prod: forbidden }
+    design_decision:   { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    large_integration: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    dependency_update: { pr_create: auto, merge: shadow,        deploy_test: forbidden, deploy_prod: forbidden }
+    code_change:       { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    factory_rule:      { pr_create: shadow, merge: forbidden,   deploy_test: forbidden, deploy_prod: forbidden }   # P0 は自己進化を動かさない
+    constitution:      { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+
+  # 次の Phase への解放（Blueprint autonomy.phase_grants と同じ。実績で次へ進む）
+  phase_grants:
+    P0:  { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    P1:  { pr_create: auto, merge: shadow,        deploy_test: auto,      deploy_prod: forbidden }
+    P2:  { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: canary_human_approve }
+    P3+: { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: auto_with_rollback }
+  release_conditions:
+    merge_auto: "P0b 完了（直近 20 PR の結果紐付け・健康レポート 4 週・Golden Set 30 件）かつ shadow 判定と人間判断の一致の実績"
+    first_candidates: [docs_only, dependency_update]   # 人間の手元ではすでに自動マージしている種別から解放する
+
+  # 環境・Phase を問わず常に人間承認（変更種別より優先）
+  always_human_approve:
+    - { id: identity,           ja: "認証・権限の変更" }
+    - { id: payment_logic,      ja: "決済・支払い（billing / entitlement の金額に触れる変更）" }
+    - { id: destructive_schema, ja: "破壊的スキーマ変更（列・テーブルの削除、型の縮小）" }
+    - { id: secrets_iam,        ja: "秘密情報・権限設定（IAM、シークレット、CI の権限、ruleset）" }
+    - { id: store_submit,       ja: "ストア審査への提出" }
+    - { id: infra_cost,         ja: "インフラ月額コストの増分 > 30,000 円" }
+    - { id: external_write,     ja: "実機・本番・外部サービスへの破壊的な書き込み", source: "cornix-layout の実機書き込みのルール（rubric SAFE-001）" }
+
+  rollback:
+    operator_one_click: true
+    target_seconds: 60
+    operations: [image_switchback, flag_kill, ota_halt]
+
+  unanswered_default: hold             # 承認が得られないときは進めない
+  notify_on_auto: true                 # auto で実行したものは結果を知らせる（pr-merge-criteria の手順 2）
+
+# ---------------------------------------------------------------------
+budgets:
+  tokens_per_ticket: 2_000_000
+  tokens_per_month: 300_000_000
+  cloud_jpy_month: 30000
+  model_tiers: { cheap: tier-small, strong: tier-large, judge: tier-judge }
+  concurrency: { llm_max_parallel: 4 }
+
+compat:
+  api: { min_supported_mobile_version: "N-2", deprecation_period_days: 90 }
