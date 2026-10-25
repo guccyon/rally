@@ -35,7 +35,7 @@ autonomy:
     large_integration:
       ja: "大規模な開発をまとめて main に入れる"
       match: "複数の PR・コミットを積んだ統合ブランチから既定ブランチへのマージ"
-      source: "pr-merge-criteria「必ず承認が要る」（cornix-layout #68）"
+      source: "pr-merge-criteria「必ず承認が要る」（判断の記録 2026-10-20）"
       approval_via: "local_verification" # builder が手元で動作確認してから
     dependency_update:
       ja: "依存パッケージの更新"
@@ -82,7 +82,7 @@ autonomy:
     - { id: secrets_iam,        ja: "秘密情報・権限設定（IAM、シークレット、CI の権限、ruleset）" }
     - { id: store_submit,       ja: "ストア審査への提出" }
     - { id: infra_cost,         ja: "インフラ月額コストの増分 > 30,000 円" }
-    - { id: external_write,     ja: "実機・本番・外部サービスへの破壊的な書き込み", source: "cornix-layout の実機書き込みのルール（rubric SAFE-001）" }
+    - { id: external_write,     ja: "実機・本番・外部サービスへの破壊的な書き込み", source: "手元の運用ルール（外部への書き込みは同意を得てから。rubric SAFE-001）" }
 
   rollback:
     operator_one_click: true
