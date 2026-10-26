@@ -1,0 +1,896 @@
+openapi: 3.1.0
+info:
+  title: Rally student-app API
+  version: 0.1.0
+  description: |
+    student-app（生徒アプリ。iOS / Android、ゴルフ以外）が Gen1 の一周シナリオ
+    「体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録」で呼ぶ最小の API。契約ファーストで先に固定し、
+    実装（P1 Walking Skeleton の段 2〜5）はこの契約に合わせる。
+
+    - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（booking → Booking など）
+    - 各操作の `x-context` は `specs/context-map.yaml` の context id
+    - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
+    - 外部連携（Stripe / Twilio Video / S3 直接アップロード）は Gen1 ではモックだが、契約は本物と同じ形で書く
+    - 認証はモックのトークンを `bearerAuth` として置くだけ（方式の詳細は T06 で決める）
+
+    ## 互換ポリシー
+
+    `.factory-config/manifest.yaml` の `compat.api` と一致させる（`specs/contracts/README.md`）。
+
+    - N-2: モバイルアプリは最新から 2 つ前の版まで（N-2）をこの API が支える。
+      支える版のアプリが送るリクエスト・読むレスポンスを壊す変更（必須項目の追加、項目の削除・改名・型変更、
+      enum の値の削除）はしない
+    - 90 日: 廃止する操作・項目は `deprecated: true` を付けてから 90 日は残す
+servers:
+  - url: /
+    description: ホストは環境ごとに決める（P1 はローカルの Docker Compose、本番相当の環境は P2）
+security:
+  - bearerAuth: []
+tags:
+  - name: identity
+    description: アカウント・権限
+  - name: scheduling
+    description: 予約（スロット・予約・キャンセル）
+  - name: entitlement
+    description: 受講権（契約種別と利用権）
+  - name: live-lesson
+    description: 同期レッスン（通話セッション）
+  - name: async-lesson
+    description: 非同期レッスン（動画送付・添削）
+  - name: catalog
+    description: レッスン（完了記録）
+
+paths:
+  /accounts:
+    post:
+      operationId: registerAccount
+      summary: アカウント登録（生徒）
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: [account.registered]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterAccountRequest"
+      responses:
+        "201":
+          description: 登録した生徒と、モックのアクセストークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterAccountResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /slots:
+    get:
+      operationId: searchSlots
+      summary: スロットの検索
+      description: コーチが公開している予約枠のうち、まだ予約されていないものを返す。
+      tags: [scheduling]
+      x-context: scheduling
+      parameters:
+        - name: sport
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/Sport"
+        - name: coach_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: starts_after
+          in: query
+          required: false
+          description: この時刻以降に始まるスロットに絞る（省略時は現在時刻）
+          schema:
+            type: string
+            format: date-time
+        - name: starts_before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: 前のページの `next_cursor`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: スロットの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlotPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /bookings:
+    post:
+      operationId: createBooking
+      summary: 予約の作成（体験予約を含む）
+      description: |
+        スロットを確保する。体験予約は `is_trial: true`。作成直後の状態は `pending` で、確定は `confirmBooking`。
+        月額契約の生徒のビデオ通話は暦月 2 回まで（不変条件 1）。枠を超える予約は 409 `live_lesson_quota_exceeded` で拒否する。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: [booking.created]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingRequest"
+      responses:
+        "201":
+          description: 作成した予約
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /bookings/{booking_id}/confirm:
+    post:
+      operationId: confirmBooking
+      summary: 予約の確定
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: [booking.confirmed]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      responses:
+        "200":
+          description: 確定した予約
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /bookings/{booking_id}/cancel:
+    post:
+      operationId: cancelBooking
+      summary: 予約のキャンセル
+      description: |
+        キャンセル規定（開始 24 時間前以降のキャンセルは回数を消費）の判定を scheduling と entitlement の
+        どちらに置くかは未決の Question のため、回数を消費したかはこのレスポンスに含めない。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: [booking.cancelled]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelBookingRequest"
+      responses:
+        "200":
+          description: キャンセルした予約
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /subscriptions:
+    post:
+      operationId: startSubscription
+      summary: 月額契約の開始
+      description: 決済（Stripe）は Gen1 ではモック。ワンショットは golf-app の契約で扱い、student-app では開始しない。
+      tags: [entitlement]
+      x-context: entitlement
+      x-analytics-events: [subscription.started]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSubscriptionRequest"
+      responses:
+        "201":
+          description: 開始した月額契約と、それによる受講権
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartSubscriptionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /live-lesson-sessions:
+    post:
+      operationId: startLiveLessonSession
+      summary: 通話セッションの開始
+      description: 確定した予約の通話を始める。通話（Twilio Video）は Gen1 ではモックで、接続情報もモックが返す。
+      tags: [live-lesson]
+      x-context: live-lesson
+      x-analytics-events: [call.started]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartLiveLessonSessionRequest"
+      responses:
+        "201":
+          description: 開始した通話セッション
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveLessonSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /live-lesson-sessions/{session_id}/end:
+    post:
+      operationId: endLiveLessonSession
+      summary: 通話セッションの終了
+      description: |
+        接続品質の生の指標はモックがサーバー側で生成し、行動イベント `call.ended` に載せる。
+        通話品質スコアの定義は未決の Question のため、この API はスコアを返さない。
+      tags: [live-lesson]
+      x-context: live-lesson
+      x-analytics-events: [call.ended]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 終了した通話セッション
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveLessonSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /videos:
+    post:
+      operationId: submitVideo
+      summary: 動画の送付
+      description: |
+        添削を受ける動画を送る。動画本体は S3 への直接アップロード（Gen1 ではモック）で、
+        レスポンスの `upload_url` に PUT する。月額契約では送り放題。
+      tags: [async-lesson]
+      x-context: async-lesson
+      x-analytics-events: [video.submitted]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitVideoRequest"
+      responses:
+        "201":
+          description: 受け付けた動画と、アップロード先
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Video"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /videos/{video_id}/review:
+    get:
+      operationId: getVideoReview
+      summary: 添削結果の取得
+      description: "コーチがまだ返却していなければ `status` は `in_progress` で、`comment` は null。"
+      tags: [async-lesson]
+      x-context: async-lesson
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 動画の添削
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoReview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /lessons/completions:
+    post:
+      operationId: recordLessonCompletion
+      summary: レッスンの完了記録
+      description: |
+        同期レッスン（通話セッション）または非同期レッスン（添削が返却された動画）の完了を記録する。
+        レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く。
+        `is_first_lesson` はサーバーが判定する。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: [lesson.completed]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordLessonCompletionRequest"
+      responses:
+        "201":
+          description: 完了を記録したレッスン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lesson"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: モックのトークン（Gen1）。発行・検証の方式は T06 で決める。
+
+  parameters:
+    BookingId:
+      name: booking_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: トークンがない、または無効
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: 受講権がない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: 対象が存在しない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: 現在の状態では実行できない（予約済みのスロット、ビデオ通話の暦月 2 回の枠の超過など）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnprocessableEntity:
+      description: リクエストの内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Sport:
+      type: string
+      description: student-app が扱うスポーツ。ゴルフは golf-app の範囲のため含めない。
+      enum: [tennis, baseball, soccer, basketball]
+
+    Student:
+      type: object
+      description: glossary の student
+      required: [student_id, display_name, sport, created_at]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        sport:
+          $ref: "#/components/schemas/Sport"
+        created_at:
+          type: string
+          format: date-time
+
+    RegisterAccountRequest:
+      type: object
+      required: [email, display_name, sport]
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        sport:
+          $ref: "#/components/schemas/Sport"
+
+    RegisterAccountResponse:
+      type: object
+      required: [student, access_token]
+      properties:
+        student:
+          $ref: "#/components/schemas/Student"
+        access_token:
+          type: string
+          description: "モックのトークン。以後のリクエストで `Authorization: Bearer <access_token>` に使う"
+
+    Slot:
+      type: object
+      description: glossary の slot（コーチが公開する予約枠）
+      required: [slot_id, coach_id, sport, starts_at, ends_at]
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        sport:
+          $ref: "#/components/schemas/Sport"
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    SlotPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Slot"
+        next_cursor:
+          type: [string, "null"]
+          description: 次のページがなければ null
+
+    BookingStatus:
+      type: string
+      enum: [pending, confirmed, cancelled]
+
+    Booking:
+      type: object
+      description: glossary の booking（生徒によるスロットの確保。体験予約を含む）
+      required: [booking_id, slot_id, student_id, coach_id, is_trial, status, starts_at, created_at]
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+        slot_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        is_trial:
+          type: boolean
+          description: 体験予約なら true
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        starts_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: [string, "null"]
+          format: date-time
+        cancelled_at:
+          type: [string, "null"]
+          format: date-time
+
+    CreateBookingRequest:
+      type: object
+      required: [slot_id, is_trial]
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        is_trial:
+          type: boolean
+
+    CancelBookingRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+
+    ContractType:
+      type: string
+      description: 契約種別。Gen1 で実装するのは subscription（月額）のみで、one_shot（ワンショット）は型として持つ。
+      enum: [subscription, one_shot]
+
+    Entitlement:
+      type: object
+      description: |
+        glossary の entitlement（契約種別と利用権の総称）。月額では予約のたびに消費されず、
+        消費されるのはビデオ通話の暦月 2 回の枠だけ。
+      required: [entitlement_id, student_id, contract_type, sport]
+      properties:
+        entitlement_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        contract_type:
+          $ref: "#/components/schemas/ContractType"
+        sport:
+          type: string
+          description: 月額は Sport のいずれか。ワンショットは golf
+        unlimited_video_and_chat:
+          type: boolean
+          description: 動画とチャットが送り放題か（月額は true）
+        live_lesson_quota:
+          oneOf:
+            - $ref: "#/components/schemas/LiveLessonQuota"
+            - type: "null"
+          description: ビデオ通話の暦月の枠（月額のみ）
+        remaining_video_reviews:
+          type: [integer, "null"]
+          minimum: 0
+          description: 残りの動画添削回数（ワンショットのみ。月額は null）
+
+    LiveLessonQuota:
+      type: object
+      description: ビデオ通話の暦月の枠（月額は暦月 2 回まで）
+      required: [month, limit, used, remaining]
+      properties:
+        month:
+          type: string
+          pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$"
+          description: 暦月（YYYY-MM）
+        limit:
+          type: integer
+          const: 2
+        used:
+          type: integer
+          minimum: 0
+          maximum: 2
+        remaining:
+          type: integer
+          minimum: 0
+          maximum: 2
+
+    SubscriptionStatus:
+      type: string
+      enum: [active, cancelled]
+
+    Subscription:
+      type: object
+      description: glossary の subscription（月額。ゴルフ以外）
+      required: [subscription_id, student_id, sport, status, started_at]
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        sport:
+          $ref: "#/components/schemas/Sport"
+        status:
+          $ref: "#/components/schemas/SubscriptionStatus"
+        started_at:
+          type: string
+          format: date-time
+
+    StartSubscriptionRequest:
+      type: object
+      required: [sport, payment_method_token]
+      properties:
+        sport:
+          $ref: "#/components/schemas/Sport"
+        payment_method_token:
+          type: string
+          description: 決済手段のトークン（Stripe 相当。Gen1 はモック）
+
+    StartSubscriptionResponse:
+      type: object
+      required: [subscription, entitlement]
+      properties:
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+        entitlement:
+          $ref: "#/components/schemas/Entitlement"
+
+    LiveLessonSessionStatus:
+      type: string
+      enum: [in_progress, ended]
+
+    LiveLessonSession:
+      type: object
+      description: 同期レッスン（glossary の live_lesson）の通話セッション
+      required: [session_id, booking_id, student_id, coach_id, status, started_at]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/LiveLessonSessionStatus"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+        duration_sec:
+          type: [integer, "null"]
+          minimum: 0
+          description: 終了するまでは null
+        room_token:
+          type: [string, "null"]
+          description: 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null
+
+    StartLiveLessonSessionRequest:
+      type: object
+      required: [booking_id]
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+          description: 確定した予約
+
+    VideoStatus:
+      type: string
+      enum: [awaiting_upload, submitted]
+
+    Video:
+      type: object
+      description: 非同期レッスン（glossary の async_lesson）で生徒が送る動画
+      required: [video_id, student_id, coach_id, sport, status, created_at]
+      properties:
+        video_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        sport:
+          $ref: "#/components/schemas/Sport"
+        status:
+          $ref: "#/components/schemas/VideoStatus"
+        upload_url:
+          type: [string, "null"]
+          format: uri
+          description: 動画本体の PUT 先（S3 の署名付き URL 相当。Gen1 はモック）。アップロード後は null
+        created_at:
+          type: string
+          format: date-time
+
+    SubmitVideoRequest:
+      type: object
+      required: [coach_id, sport, content_type]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        sport:
+          $ref: "#/components/schemas/Sport"
+        content_type:
+          type: string
+          enum: [video/mp4, video/quicktime]
+        note:
+          type: string
+          maxLength: 1000
+          description: コーチへの相談内容
+
+    VideoReviewStatus:
+      type: string
+      enum: [in_progress, returned]
+
+    VideoReview:
+      type: object
+      description: glossary の video_review（生徒が送った動画をコーチが添削して返すこと）
+      required: [video_id, student_id, coach_id, status]
+      properties:
+        review_id:
+          type: [string, "null"]
+          format: uuid
+          description: 返却されるまでは null
+        video_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/VideoReviewStatus"
+        comment:
+          type: [string, "null"]
+          description: コーチの添削コメント。返却されるまでは null
+        returned_at:
+          type: [string, "null"]
+          format: date-time
+
+    LessonType:
+      type: string
+      description: 同期レッスン（live_lesson）または非同期レッスン（async_lesson）
+      enum: [live_lesson, async_lesson]
+
+    Lesson:
+      type: object
+      description: glossary の lesson（コーチが生徒に提供する指導の単位）
+      required: [lesson_id, student_id, coach_id, lesson_type, is_first_lesson, completed_at]
+      properties:
+        lesson_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        session_id:
+          type: [string, "null"]
+          format: uuid
+          description: 同期レッスンの通話セッション（非同期なら null）
+        video_id:
+          type: [string, "null"]
+          format: uuid
+          description: 非同期レッスンの動画（同期なら null）
+        is_first_lesson:
+          type: boolean
+          description: その生徒にとって初回のレッスンか（サーバーが判定）
+        completed_at:
+          type: string
+          format: date-time
+
+    RecordLessonCompletionRequest:
+      description: 同期レッスンは session_id、非同期レッスンは video_id を指定する
+      oneOf:
+        - $ref: "#/components/schemas/LiveLessonCompletion"
+        - $ref: "#/components/schemas/AsyncLessonCompletion"
+      discriminator:
+        propertyName: lesson_type
+        mapping:
+          live_lesson: "#/components/schemas/LiveLessonCompletion"
+          async_lesson: "#/components/schemas/AsyncLessonCompletion"
+
+    LiveLessonCompletion:
+      type: object
+      description: 同期レッスンの完了記録（終了した通話セッションを指定）
+      required: [lesson_type, session_id]
+      properties:
+        lesson_type:
+          type: string
+          const: live_lesson
+        session_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+
+    AsyncLessonCompletion:
+      type: object
+      description: 非同期レッスンの完了記録（添削が返却された動画を指定）
+      required: [lesson_type, video_id]
+      properties:
+        lesson_type:
+          type: string
+          const: async_lesson
+        video_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+
+    ErrorCode:
+      type: string
+      description: |
+        機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
+      enum:
+        - unauthorized
+        - forbidden
+        - not_found
+        - validation_failed
+        - email_already_registered
+        - slot_already_booked
+        - invalid_booking_state
+        - live_lesson_quota_exceeded
+        - subscription_already_active
+        - invalid_session_state
+        - lesson_already_completed
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: 人間向けの説明（表示用ではない）
