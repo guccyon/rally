@@ -1,0 +1,22 @@
+# ローカル開発用の Postgres（P1）。本番相当の環境は P2 の IaC で別に作る。
+# 手元からだけつながるよう 127.0.0.1 に限り、パスワードなし（trust）で動かす。秘密情報は置かない。
+# 使い方は apps/backend/README.md の「データベース」。
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rally
+      POSTGRES_DB: rally
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "rally", "-d", "rally"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres-data:
