@@ -10,10 +10,15 @@ use application::{
         TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemorySlotRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        FixedClock, FixedVideoCallProvider, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
-    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
+    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
+    scheduling::{
+        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
+        SearchSlots,
+    },
 };
 use axum::{
     body::{Body, to_bytes},
@@ -83,6 +88,21 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             clock,
         ),
         GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
+        StartLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        EndLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
         NoTokens,
     );
 

@@ -13,11 +13,15 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemorySlotRepository, RecordingAnalyticsSink,
-        RecordingDomainEventPublisher,
+        FixedClock, FixedVideoCallProvider, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
-    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
+    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
+    scheduling::{
+        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
+        SearchSlots,
+    },
 };
 use axum::{
     Router,
@@ -101,6 +105,21 @@ fn app() -> App {
             clock,
         ),
         GetEntitlement::new(entitlements.clone(), clock),
+        StartLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        EndLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
         FakeTokens,
     );
     App {

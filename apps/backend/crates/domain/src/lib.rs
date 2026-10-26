@@ -6,6 +6,7 @@
 pub mod entitlement;
 mod error;
 pub mod identity;
+pub mod live_lesson;
 pub mod scheduling;
 
 pub use error::DomainError;

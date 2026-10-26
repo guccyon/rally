@@ -9,6 +9,7 @@ use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     entitlement::{ContractType, SubscriptionStatus, YearMonth},
     identity::Sport,
+    live_lesson::SessionStatus,
     scheduling::{BookingStatus, SlotStatus},
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -68,6 +69,14 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Pending => "pending",
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
+    }
+}
+
+/// student-app の `LiveLessonSessionStatus` の値。
+pub(crate) const fn session_status_to_contract(status: SessionStatus) -> &'static str {
+    match status {
+        SessionStatus::InProgress => "in_progress",
+        SessionStatus::Ended => "ended",
     }
 }
 
@@ -164,6 +173,15 @@ mod tests {
             "subscription"
         );
         assert_eq!(contract_type_to_contract(ContractType::OneShot), "one_shot");
+    }
+
+    #[test]
+    fn session_statuses_are_in_progress_and_ended() {
+        assert_eq!(
+            session_status_to_contract(SessionStatus::InProgress),
+            "in_progress"
+        );
+        assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
     }
 
     #[test]

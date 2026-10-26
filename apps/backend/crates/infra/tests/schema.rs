@@ -101,7 +101,7 @@ async fn subscription_entitlement(pool: &PgPool, student_id: &str) -> String {
 async fn migrations_create_core_tables(pool: PgPool) {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_schema || '.' || table_name FROM information_schema.tables
-         WHERE table_schema IN ('identity', 'scheduling', 'entitlement')
+         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson')
          ORDER BY 1",
     )
     .fetch_all(&pool)
@@ -115,6 +115,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "entitlement.subscriptions",
             "identity.accounts",
             "identity.coaches",
+            "live_lesson.sessions",
             "scheduling.bookings",
             "scheduling.slots",
         ]
@@ -500,5 +501,124 @@ async fn scheduling_values_match_the_slots_checks(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (CHECK_VIOLATION, "slots_status_check")
+    );
+}
+
+/// 通話セッションを `started_at` に始めた行を入れ、session_id を返す。
+async fn start_session(
+    pool: &PgPool,
+    booking_id: &str,
+    student_id: &str,
+    coach_id: &str,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO live_lesson.sessions (booking_id, student_id, coach_id, started_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, '2026-11-01T10:00:00Z')
+         RETURNING session_id::text",
+    )
+    .bind(booking_id)
+    .bind(student_id)
+    .bind(coach_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// 予約 1 件分の生徒・コーチ・予約の id（予約は scheduling の行で、live_lesson からは外部キーで参照しない）。
+async fn session_parties(pool: &PgPool) -> (String, String, String) {
+    let slot_id = slot(pool).await;
+    let student_id = student(pool).await;
+    let booking_id = book(pool, &slot_id, &student_id).await.unwrap();
+    let coach_id: String =
+        sqlx::query_scalar("SELECT coach_id::text FROM scheduling.slots WHERE slot_id = $1::uuid")
+            .bind(&slot_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    (booking_id, student_id, coach_id)
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_booking_has_at_most_one_live_lesson_session(pool: PgPool) {
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let (code, constraint) =
+        violation(start_session(&pool, &booking_id, &student_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "sessions_booking_id_key")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn live_lesson_session_parties_have_the_right_roles(pool: PgPool) {
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    // 生徒の欄にコーチ、コーチの欄に生徒は入らない
+    let (code, constraint) =
+        violation(start_session(&pool, &booking_id, &coach_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "sessions_student_fkey")
+    );
+    let (code, _) = violation(start_session(&pool, &booking_id, &student_id, &student_id).await);
+    assert_eq!(code, FOREIGN_KEY_VIOLATION);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn live_lesson_session_records_quality_only_when_ended(pool: PgPool) {
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let session_id = start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let end = |ended_at: &'static str, packet_loss_rate: Option<f64>| {
+        sqlx::query(
+            "UPDATE live_lesson.sessions
+             SET ended_at = $2::timestamptz, packet_loss_rate = $3,
+                 jitter_ms = 20, round_trip_ms = 120, disconnect_count = 0
+             WHERE session_id = $1::uuid",
+        )
+        .bind(&session_id)
+        .bind(ended_at)
+        .bind(packet_loss_rate)
+        .execute(&pool)
+    };
+
+    // 終了は開始の後
+    let (code, constraint) = violation(end("2026-11-01T09:59:59Z", Some(0.5)).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "sessions_ends_after_starts")
+    );
+    // 指標は 4 つ揃える
+    let (code, constraint) = violation(end("2026-11-01T10:45:00Z", None).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "sessions_quality_when_ended")
+    );
+    // 損失率は百分率
+    let (code, _) = violation(end("2026-11-01T10:45:00Z", Some(100.5)).await);
+    assert_eq!(code, CHECK_VIOLATION);
+    end("2026-11-01T10:45:00Z", Some(0.5)).await.unwrap();
+
+    // 終了していないセッションは指標を持たない
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let (code, constraint) = violation(
+        sqlx::query(
+            "INSERT INTO live_lesson.sessions (booking_id, student_id, coach_id, started_at, jitter_ms)
+             VALUES ($1::uuid, $2::uuid, $3::uuid, now(), 20)",
+        )
+        .bind(booking_id)
+        .bind(student_id)
+        .bind(coach_id)
+        .execute(&pool)
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "sessions_quality_when_ended")
     );
 }

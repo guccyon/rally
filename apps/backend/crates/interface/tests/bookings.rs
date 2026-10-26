@@ -14,13 +14,14 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemorySlotRepository, RecordingAnalyticsSink,
-        RecordingDomainEventPublisher,
+        FixedClock, FixedVideoCallProvider, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
+    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots, booking_id_uuid,
-        slot_id_uuid,
+        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
+        SearchSlots, booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -158,6 +159,21 @@ fn app_with_entitlements(
             clock,
         ),
         GetEntitlement::new(entitlements, clock),
+        StartLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        EndLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
         FakeTokens,
     );
     App {

@@ -61,6 +61,16 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             format!("ビデオ通話の枠は暦月 {limit} 回まで（使った回数 {used}）")
         }
         DomainError::LiveLessonQuotaExceeded => "今月のビデオ通話の枠を使い切っている".to_string(),
+        DomainError::NotASessionParticipant => "予約の参加者でない".to_string(),
+        DomainError::BookingNotConfirmed { status } => {
+            format!("確定した予約でない（{}）", booking_status_label(*status))
+        }
+        DomainError::LiveLessonSessionAlreadyStarted => {
+            "この予約の通話セッションはすでにある".to_string()
+        }
+        DomainError::LiveLessonSessionAlreadyEnded => "通話セッションは終了済み".to_string(),
+        DomainError::SessionEndsBeforeItStarts => "通話セッションの終了が開始より前".to_string(),
+        DomainError::InvalidPacketLossRate => "パケット損失率は 0〜100（%）".to_string(),
     }
 }
 
@@ -183,6 +193,32 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LiveLessonQuotaExceeded),
             "今月のビデオ通話の枠を使い切っている"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotASessionParticipant),
+            "予約の参加者でない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::BookingNotConfirmed {
+                status: BookingStatus::Pending
+            }),
+            "確定した予約でない（確定前）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionAlreadyStarted),
+            "この予約の通話セッションはすでにある"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionAlreadyEnded),
+            "通話セッションは終了済み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SessionEndsBeforeItStarts),
+            "通話セッションの終了が開始より前"
+        );
+        assert_eq!(
+            domain_error(&DomainError::InvalidPacketLossRate),
+            "パケット損失率は 0〜100（%）"
         );
     }
 }

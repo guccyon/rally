@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -39,6 +39,7 @@
 | `entitlement` | `subscriptions` | 月額契約（ゴルフ以外） |
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
 | | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0〜2） |
+| `live_lesson` | `sessions` | 通話セッション（T12 の expand で追加）。確定した予約 1 件につき 1 つ（`sessions_booking_id_key`）。終了時に接続品質の生の指標 4 つ（`call.ended` と同じ。損失率は百分率）を揃えて持つ。予約は scheduling の持ち物なので `booking_id` に外部キーは張らない。通話品質スコアは保存しない（ADR 0002 Q1） |
 
 列挙は Postgres の enum 型ではなく `text` と `CHECK` で持つ（値の削除・改名が enum 型だと expand/contract に分けにくい）。
 
