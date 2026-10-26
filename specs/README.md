@@ -9,4 +9,5 @@
 - `context-map.yaml`: 境界づけられたコンテキスト（初期案を配置済み。Gen1 のコアは identity / scheduling / entitlement。glossary の context はこの id を使う）
 - `contracts/`: OpenAPI / AsyncAPI。5 アプリ分の境界を最初から引き、実装するのは Gen1 のクライアントのみ
 - `analytics/`: 行動イベントの定義とセマンティック層
+  - `events.yaml` を配置済み（Gen1 一周シナリオの行動イベント 11 件）。構造は `events:` の配列で、各項目は `name`（`<対象>.<出来事>`）・`ja`・`context`（context-map.yaml の id）・`actor`（student | coach | system）・`required`（必須属性。`occurred_at` と `student_id` / `coach_id` のどちらかを必ず含む）・`kpi`（KPI 名 or null）を持つ
 - `change-scenarios.yaml`: L3 の固定変更シナリオ

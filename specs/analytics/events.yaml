@@ -1,0 +1,76 @@
+# 行動イベントの定義（初版）。Gen1 の一周シナリオ「体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録」を覆う最小セット。
+# 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
+# モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義しない。
+# 各項目: name（<対象>.<出来事>）・ja・context・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
+schema_version: "0.1"
+status: draft
+events:
+  - name: account.registered
+    ja: "アカウント登録"
+    context: identity
+    actor: student
+    required: [student_id, sport, occurred_at]
+    kpi: null
+  - name: slot.published
+    ja: "スロットの公開"
+    context: scheduling
+    actor: coach
+    required: [coach_id, slot_id, starts_at, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  - name: booking.created
+    ja: "体験予約の作成"
+    context: scheduling
+    actor: student
+    required: [student_id, coach_id, booking_id, slot_id, is_trial, occurred_at]
+    kpi: "初回レッスンまでの日数"
+  - name: booking.confirmed
+    ja: "予約の確定"
+    context: scheduling
+    actor: system
+    required: [student_id, coach_id, booking_id, slot_id, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  # 回数を消費するかの判定（キャンセル規定）は scheduling / entitlement のどちらに置くか未決のため、判定結果は属性に持たない
+  - name: booking.cancelled
+    ja: "予約のキャンセル"
+    context: scheduling
+    actor: student
+    required: [student_id, coach_id, booking_id, slot_id, hours_before_start, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  - name: call.started
+    ja: "通話の開始"
+    context: live-lesson
+    actor: system
+    required: [student_id, coach_id, booking_id, session_id, occurred_at]
+    kpi: null
+  # 通話品質スコアの定義は未決の Question。モックが生成する接続品質の生の指標を持たせ、スコアの式はセマンティック層で決める
+  - name: call.ended
+    ja: "通話の終了"
+    context: live-lesson
+    actor: system
+    required: [student_id, coach_id, booking_id, session_id, duration_sec, packet_loss_rate, jitter_ms, round_trip_ms, disconnect_count, occurred_at]
+    kpi: "通話品質スコア"
+  - name: video.submitted
+    ja: "動画の送付"
+    context: async-lesson
+    actor: student
+    required: [student_id, coach_id, video_id, sport, occurred_at]
+    kpi: "添削の返却リードタイム"
+  - name: video_review.returned
+    ja: "添削の返却"
+    context: async-lesson
+    actor: coach
+    required: [student_id, coach_id, video_id, review_id, occurred_at]
+    kpi: "添削の返却リードタイム"
+  # レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く
+  - name: lesson.completed
+    ja: "レッスンの完了記録"
+    context: catalog
+    actor: coach
+    required: [student_id, coach_id, lesson_id, lesson_type, is_first_lesson, occurred_at]
+    kpi: "初回レッスンまでの日数"
+  - name: subscription.started
+    ja: "月額契約の開始"
+    context: entitlement
+    actor: student
+    required: [student_id, subscription_id, sport, occurred_at]
+    kpi: "初回レッスン後の 1 ヶ月継続率"
