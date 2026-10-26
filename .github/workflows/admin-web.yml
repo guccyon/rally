@@ -1,0 +1,59 @@
+# admin-web（apps/admin-web、Next.js）の CI。型検査・lint・単体テストと、API の型が OpenAPI から生成し直しても変わらないことの検査。
+# admin-web に変更がない PR でも必須チェックが保留にならないよう、ジョブは常に走り、変更がなければ検査を飛ばして成功で終える。
+name: admin-web
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin-web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: admin-web か契約に変更があるか
+        id: changed
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- apps/admin-web specs/contracts/api/admin-web .github/workflows/admin-web.yml; then
+            echo "yes=false" >> "$GITHUB_OUTPUT"; echo "admin-web に変更なし。検査を飛ばして成功で終える"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin-web/package-lock.json
+      - name: install
+        if: steps.changed.outputs.yes == 'true'
+        run: npm ci --no-audit --no-fund
+      - name: API の型が OpenAPI と一致している
+        if: steps.changed.outputs.yes == 'true'
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/api/schema.ts || { echo "src/api/schema.ts が OpenAPI から生成し直したものと違う。npm run gen:api を実行してコミットすること"; exit 1; }
+      - name: typecheck
+        if: steps.changed.outputs.yes == 'true'
+        run: npm run typecheck
+      - name: lint
+        if: steps.changed.outputs.yes == 'true'
+        run: npm run lint
+      - name: test
+        if: steps.changed.outputs.yes == 'true'
+        run: npm test
