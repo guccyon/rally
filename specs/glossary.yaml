@@ -49,5 +49,5 @@ terms:
     context: async-lesson
   - id: cancellation_policy
     ja: "キャンセル規定"
-    definition: "開始 24 時間前以降のキャンセルは回数を消費するという規定で、判定を scheduling と entitlement のどちらに置くかは未決の Question である。"
+    definition: "開始 24 時間前以降のキャンセルは回数を消費するという規定で、判定は scheduling、回数の消費の実行は entitlement が行う（docs/adr/0002 Q2）。"
     context: scheduling

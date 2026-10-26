@@ -22,6 +22,20 @@ pub enum DomainEvent {
         coach_id: AccountId,
         booking_id: BookingId,
     },
+    /// `BookingCancelled`（scheduling が発行し、entitlement・notification・analytics が購読する）。
+    /// 回数を消費するかは scheduling が判定して `consumes_quota` に載せ、消費は entitlement が行う
+    /// （docs/adr/0002 Q2）
+    BookingCancelled {
+        /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
+        event_id: Uuid,
+        occurred_at: SystemTime,
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        /// キャンセル規定（domain の `CancellationPolicy`）による判定
+        consumes_quota: bool,
+        cancelled_at: SystemTime,
+    },
 }
 
 impl DomainEvent {
@@ -29,6 +43,7 @@ impl DomainEvent {
     pub const fn name(&self) -> &'static str {
         match self {
             DomainEvent::BookingConfirmed { .. } => "BookingConfirmed",
+            DomainEvent::BookingCancelled { .. } => "BookingCancelled",
         }
     }
 }

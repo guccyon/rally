@@ -26,6 +26,10 @@ pub enum DomainError {
     SlotNotOpen {
         status: crate::scheduling::SlotStatus,
     },
+    /// スロットが予約済み（`Booked`）でないので、公開中に戻せない（`status` は今の状態）
+    SlotNotBooked {
+        status: crate::scheduling::SlotStatus,
+    },
     /// スロットに有効な予約がすでにある（定員 1。二重予約）
     SlotAlreadyBooked,
     /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにある）
@@ -34,6 +38,8 @@ pub enum DomainError {
     BookingNotPending {
         status: crate::scheduling::BookingStatus,
     },
+    /// 予約はすでにキャンセルしてある
+    BookingAlreadyCancelled,
     /// 予約した生徒でない
     BookingOfAnotherStudent,
     /// 予約したスロットと別のスロットを渡した

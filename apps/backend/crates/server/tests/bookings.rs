@@ -1,6 +1,6 @@
 //! `/bookings` を組み立て済みのルーター（`server::router()`）で通す。コーチが枠を公開し、`POST /accounts` で
-//! 登録した生徒が体験予約して確定するまで（一周シナリオの入口）。境界間イベントは infra のモック
-//! （標準出力に書くだけ）。契約の形・拒否の細かい検査は interface の `tests/bookings.rs`。
+//! 登録した生徒が体験予約して確定するまで（一周シナリオの入口）と、確定した予約のキャンセル。境界間イベントは
+//! infra のモック（標準出力に書くだけ）。契約の形・拒否の細かい検査は interface の `tests/bookings.rs`。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -109,4 +109,76 @@ async fn student_books_a_trial_and_confirms_it() {
     let (status, body) = send(&router, request).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"], json!([]));
+}
+
+#[tokio::test]
+async fn student_cancels_a_confirmed_booking_and_the_slot_is_searchable_again() {
+    let router = server::router();
+    let coach = MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(42),
+            role: Role::Coach,
+        })
+        .into_string();
+    let (status, slot) = send(
+        &router,
+        post_json(
+            "/slots",
+            Some(&coach),
+            json!({
+                "sport": "tennis",
+                "starts_at": "2099-01-01T10:00:00Z",
+                "ends_at": "2099-01-01T11:00:00Z",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let student = register(&router, "taro@example.com").await;
+    let (status, booking) = send(
+        &router,
+        post_json(
+            "/bookings",
+            Some(&student),
+            json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{booking}");
+    let booking_id = booking["booking_id"].as_str().unwrap();
+    let (status, _) = send(
+        &router,
+        post_json(
+            &format!("/bookings/{booking_id}/confirm"),
+            Some(&student),
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let cancel = format!("/bookings/{booking_id}/cancel");
+    let (status, _) = send(&router, post_json(&cancel, Some(&coach), json!({}))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "コーチはキャンセルできない");
+    let (status, cancelled) = send(
+        &router,
+        post_json(
+            &cancel,
+            Some(&student),
+            json!({ "reason": "都合が悪くなった" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{cancelled}");
+    assert_eq!(cancelled["status"], "cancelled");
+    assert!(cancelled["cancelled_at"].is_string());
+
+    // キャンセルで空いた枠は検索に戻る
+    let request = Request::get("/slots?sport=tennis")
+        .header(header::AUTHORIZATION, format!("Bearer {student}"))
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = send(&router, request).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"][0]["slot_id"], slot["slot_id"]);
 }

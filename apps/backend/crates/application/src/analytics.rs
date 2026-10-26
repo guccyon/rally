@@ -42,6 +42,17 @@ pub enum AnalyticsEvent {
         slot_id: SlotId,
         occurred_at: SystemTime,
     },
+    /// `booking.cancelled`（KPI「コーチの予約枠充足率」の入力）。回数を消費するかの判定は持たない
+    /// （境界間イベント `BookingCancelled` の `consumes_quota` に載せる）
+    BookingCancelled {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        slot_id: SlotId,
+        /// キャンセルした時刻から開始時刻までの時間（時間単位で切り捨て。開始後のキャンセルは負）
+        hours_before_start: i64,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -52,6 +63,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::SlotPublished { .. } => "slot.published",
             AnalyticsEvent::BookingCreated { .. } => "booking.created",
             AnalyticsEvent::BookingConfirmed { .. } => "booking.confirmed",
+            AnalyticsEvent::BookingCancelled { .. } => "booking.cancelled",
         }
     }
 }

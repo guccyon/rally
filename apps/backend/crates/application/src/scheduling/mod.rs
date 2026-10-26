@@ -2,6 +2,7 @@
 
 pub mod booking_id_uuid;
 mod booking_repository;
+mod cancel_booking;
 mod confirm_booking;
 mod create_booking;
 mod publish_slot;
@@ -15,6 +16,7 @@ mod slot_page;
 mod update_booking_error;
 
 pub use booking_repository::BookingRepository;
+pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError};
 pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError};
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
 pub use publish_slot::{PublishSlot, PublishSlotCommand, PublishSlotError};

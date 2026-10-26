@@ -1,12 +1,15 @@
 use std::time::SystemTime;
 
-use super::{BookingId, BookingStatus, Slot, SlotId, SlotStatus};
+use super::{
+    BookingId, BookingStatus, CancellationDecision, CancellationPolicy, Slot, SlotId, SlotStatus,
+};
 use crate::{DomainError, identity::AccountId};
 
 /// 予約（glossary の booking）。生徒によるスロットの確保で、体験予約（`is_trial`）もこれ。
 ///
 /// 作成した直後は [`BookingStatus::Pending`] で、確定（[`Booking::confirm`]）するとスロットが
-/// [`SlotStatus::Booked`] になる。コーチと開始時刻は予約したスロットのもの。
+/// [`SlotStatus::Booked`] になる。キャンセル（[`Booking::cancel`]）すると [`BookingStatus::Cancelled`] になり、
+/// スロットは公開中に戻る。コーチと開始時刻は予約したスロットのもの。
 /// 予約しても受講権は消費しない（product-context の用語の注意）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Booking {
@@ -19,6 +22,7 @@ pub struct Booking {
     starts_at: SystemTime,
     created_at: SystemTime,
     confirmed_at: Option<SystemTime>,
+    cancelled_at: Option<SystemTime>,
 }
 
 impl Booking {
@@ -61,6 +65,7 @@ impl Booking {
             starts_at: slot.starts_at(),
             created_at: now,
             confirmed_at: None,
+            cancelled_at: None,
         })
     }
 
@@ -90,6 +95,38 @@ impl Booking {
         self.status = BookingStatus::Confirmed;
         self.confirmed_at = Some(now);
         Ok(())
+    }
+
+    /// 予約した生徒 `student_id` が `now` にキャンセルし、キャンセル規定の判定を返す。
+    ///
+    /// 判定は [`CancellationPolicy::decide`] だけが行う（回数の消費の実行は entitlement）。確定済みなら
+    /// 予約したスロット `slot` を公開中（[`SlotStatus::Open`]）に戻す。確定前ならスロットはもともと公開中。
+    /// 別の生徒なら [`DomainError::BookingOfAnotherStudent`]、キャンセル済みなら
+    /// [`DomainError::BookingAlreadyCancelled`]、確定済みなのにスロットが予約済みでなければ
+    /// [`DomainError::SlotNotBooked`]。失敗したときは予約もスロットも変えない。
+    pub fn cancel(
+        &mut self,
+        student_id: AccountId,
+        slot: &mut Slot,
+        now: SystemTime,
+    ) -> Result<CancellationDecision, DomainError> {
+        if student_id != self.student_id {
+            return Err(DomainError::BookingOfAnotherStudent);
+        }
+        if slot.id() != self.slot_id {
+            return Err(DomainError::BookingOfAnotherSlot);
+        }
+        let decision = match self.status {
+            BookingStatus::Cancelled => return Err(DomainError::BookingAlreadyCancelled),
+            BookingStatus::Pending => CancellationPolicy::decide(self, now),
+            BookingStatus::Confirmed => {
+                slot.release()?;
+                CancellationPolicy::decide(self, now)
+            }
+        };
+        self.status = BookingStatus::Cancelled;
+        self.cancelled_at = Some(now);
+        Ok(decision)
     }
 
     pub const fn id(&self) -> BookingId {
@@ -128,6 +165,11 @@ impl Booking {
     /// 確定した時刻。確定するまでは `None`。
     pub const fn confirmed_at(&self) -> Option<SystemTime> {
         self.confirmed_at
+    }
+
+    /// キャンセルした時刻。キャンセルするまでは `None`。
+    pub const fn cancelled_at(&self) -> Option<SystemTime> {
+        self.cancelled_at
     }
 }
 
@@ -178,7 +220,80 @@ mod tests {
 
     fn cancelled(mut booking: Booking) -> Booking {
         booking.status = BookingStatus::Cancelled;
+        booking.cancelled_at = Some(NOW);
         booking
+    }
+
+    #[test]
+    fn cancelling_a_confirmed_booking_reopens_the_slot_and_returns_the_decision() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &slot, &[]).unwrap();
+        booking.confirm(STUDENT, &mut slot, NOW).unwrap();
+
+        // 開始（10 時）の 1 時間前。判定は CancellationPolicy と同じ
+        let decision = booking.cancel(STUDENT, &mut slot, at(9)).unwrap();
+
+        assert_eq!(decision, CancellationPolicy::decide(&booking, at(9)));
+        assert!(decision.consumes_quota);
+        assert_eq!(booking.status(), BookingStatus::Cancelled);
+        assert_eq!(booking.cancelled_at(), Some(at(9)));
+        assert_eq!(slot.status(), SlotStatus::Open, "スロットは公開中に戻る");
+    }
+
+    #[test]
+    fn cancelling_a_pending_booking_keeps_the_slot_open() {
+        let mut slot = slot(100, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, true, &slot, &[]).unwrap();
+
+        // 開始（100 時）の 99 時間前
+        let decision = booking.cancel(STUDENT, &mut slot, at(1)).unwrap();
+
+        assert!(!decision.consumes_quota);
+        assert_eq!(booking.status(), BookingStatus::Cancelled);
+        assert_eq!(booking.cancelled_at(), Some(at(1)));
+        assert_eq!(slot.status(), SlotStatus::Open);
+    }
+
+    #[test]
+    fn cancel_failures_change_nothing() {
+        let open = slot(10, SlotStatus::Open);
+        let pending = reserve(1, STUDENT, false, &open, &[]).unwrap();
+        let mut booked = open.clone();
+        let mut confirmed = pending.clone();
+        confirmed.confirm(STUDENT, &mut booked, NOW).unwrap();
+
+        for (mut booking, student, mut slot, expected) in [
+            (
+                pending.clone(),
+                OTHER_STUDENT,
+                open.clone(),
+                DomainError::BookingOfAnotherStudent,
+            ),
+            (
+                pending.clone(),
+                STUDENT,
+                self::slot(11, SlotStatus::Open),
+                DomainError::BookingOfAnotherSlot,
+            ),
+            (
+                cancelled(pending.clone()),
+                STUDENT,
+                open.clone(),
+                DomainError::BookingAlreadyCancelled,
+            ),
+            (
+                confirmed.clone(),
+                STUDENT,
+                open.clone(),
+                DomainError::SlotNotBooked {
+                    status: SlotStatus::Open,
+                },
+            ),
+        ] {
+            let (before, slot_before) = (booking.clone(), slot.clone());
+            assert_eq!(booking.cancel(student, &mut slot, at(2)), Err(expected));
+            assert_eq!((booking, slot), (before, slot_before));
+        }
     }
 
     #[test]

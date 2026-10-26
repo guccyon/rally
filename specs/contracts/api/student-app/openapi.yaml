@@ -195,8 +195,11 @@ paths:
       operationId: cancelBooking
       summary: 予約のキャンセル
       description: |
-        キャンセル規定（開始 24 時間前以降のキャンセルは回数を消費）の判定を scheduling と entitlement の
-        どちらに置くかは未決の Question のため、回数を消費したかはこのレスポンスに含めない。
+        自分の予約（`pending` / `confirmed`）をキャンセルする。`confirmed` ならスロットを公開中（`open`）に戻す。
+        回数を消費するかはキャンセル規定（glossary の cancellation_policy）に従って scheduling が判定し、境界間イベント
+        `BookingCancelled` の `consumes_quota` で entitlement に渡す（docs/adr/0002 Q2）。このレスポンスには含めない。
+        別の生徒の予約は 404、キャンセル済みの予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
+        本文の `reason` は任意で、Gen1 では保存しない。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.cancelled]
@@ -217,6 +220,8 @@ paths:
                 $ref: "#/components/schemas/Booking"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":

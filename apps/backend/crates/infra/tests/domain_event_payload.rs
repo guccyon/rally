@@ -45,30 +45,13 @@ fn payload_schema<'a>(root: &'a Yaml, channel: &str) -> &'a Yaml {
     resolve(root, &message["payload"])
 }
 
-fn booking_confirmed() -> DomainEvent {
-    DomainEvent::BookingConfirmed {
-        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
-        // 2026-10-26T00:00:00Z
-        occurred_at: SystemTime::UNIX_EPOCH + Duration::from_secs(1_792_972_800),
-        student_id: AccountId::from_u128(1),
-        coach_id: AccountId::from_u128(2),
-        booking_id: BookingId::from_u128(3),
-    }
-}
-
-/// infra は `uuid` クレートに直接依存しないので、sqlx が再公開する `Uuid` で作る（同じ型）。
-fn uuid_from(value: u128) -> sqlx::types::Uuid {
-    sqlx::types::Uuid::from_u128(value)
-}
-
-#[test]
-fn booking_confirmed_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+/// `event` のペイロードの属性が、AsyncAPI のそのチャンネルの `required` とちょうど一致し、
+/// 各属性の型（string / boolean）と `format: date-time` を満たすか。
+fn assert_payload_matches_asyncapi(event: &DomainEvent) -> Value {
     let root = asyncapi();
-    let schema = payload_schema(&root, "BookingConfirmed");
-    let event = booking_confirmed();
-    assert_eq!(event.name(), "BookingConfirmed");
+    let schema = payload_schema(&root, event.name());
 
-    let body = payload(&event).unwrap();
+    let body = payload(event).unwrap();
     let object = body.as_object().unwrap();
 
     let required: BTreeSet<&str> = schema["required"]
@@ -86,18 +69,58 @@ fn booking_confirmed_payload_has_exactly_the_required_attributes_of_the_asyncapi
     let properties = schema["properties"].as_mapping().unwrap();
     for (key, value) in object {
         let property = resolve(&root, &properties[key.as_str()]);
-        assert_eq!(property["type"].as_str(), Some("string"), "{key}");
-        let text = value
-            .as_str()
-            .unwrap_or_else(|| panic!("{key} が string でない: {value}"));
-        if property["format"].as_str() == Some("date-time") {
-            assert!(
-                OffsetDateTime::parse(text, &Rfc3339).is_ok(),
-                "{key} が RFC 3339 でない: {text}"
-            );
+        match property["type"].as_str() {
+            Some("string") => {
+                let text = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{key} が string でない: {value}"));
+                if property["format"].as_str() == Some("date-time") {
+                    assert!(
+                        OffsetDateTime::parse(text, &Rfc3339).is_ok(),
+                        "{key} が RFC 3339 でない: {text}"
+                    );
+                }
+            }
+            Some("boolean") => assert!(value.is_boolean(), "{key} が boolean でない: {value}"),
+            other => panic!("{key}: 検査できない type {other:?}"),
         }
     }
+    body
+}
 
+/// 2026-10-26T00:00:00Z
+fn oct26() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_792_972_800)
+}
+
+fn booking_confirmed() -> DomainEvent {
+    DomainEvent::BookingConfirmed {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        booking_id: BookingId::from_u128(3),
+    }
+}
+
+fn booking_cancelled(consumes_quota: bool) -> DomainEvent {
+    DomainEvent::BookingCancelled {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        booking_id: BookingId::from_u128(3),
+        consumes_quota,
+        cancelled_at: oct26(),
+    }
+}
+
+/// infra は `uuid` クレートに直接依存しないので、sqlx が再公開する `Uuid` で作る（同じ型）。
+fn uuid_from(value: u128) -> sqlx::types::Uuid {
+    sqlx::types::Uuid::from_u128(value)
+}
+
+fn assert_common_attributes(body: &Value) {
     assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
     assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
     assert_eq!(
@@ -115,15 +138,55 @@ fn booking_confirmed_payload_has_exactly_the_required_attributes_of_the_asyncapi
 }
 
 #[test]
-fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
+fn booking_confirmed_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
     let event = booking_confirmed();
-    let line = LoggingDomainEventPublisher::line(&event).unwrap();
-    let json = line
-        .strip_prefix("domain_event BookingConfirmed ")
-        .unwrap_or_else(|| panic!("{line}"));
-    assert!(!json.contains('\n'));
+    assert_eq!(event.name(), "BookingConfirmed");
+    let body = assert_payload_matches_asyncapi(&event);
+    assert_common_attributes(&body);
+}
+
+#[test]
+fn booking_cancelled_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    for consumes_quota in [true, false] {
+        let event = booking_cancelled(consumes_quota);
+        assert_eq!(event.name(), "BookingCancelled");
+        let body = assert_payload_matches_asyncapi(&event);
+        assert_common_attributes(&body);
+        assert_eq!(body["consumes_quota"], consumes_quota);
+        assert_eq!(body["cancelled_at"], "2026-10-26T00:00:00Z");
+    }
+}
+
+#[test]
+fn booking_cancelled_is_subscribed_by_entitlement() {
+    let root = asyncapi();
+    let channel = &root["channels"]["BookingCancelled"];
+    let names = |key: &str| -> Vec<String> {
+        channel[key]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(names("x-publisher"), ["scheduling"]);
     assert_eq!(
-        serde_json::from_str::<Value>(json).unwrap(),
-        payload(&event).unwrap()
+        names("x-subscribers"),
+        ["entitlement", "notification", "analytics"]
     );
+}
+
+#[test]
+fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
+    for event in [booking_confirmed(), booking_cancelled(true)] {
+        let line = LoggingDomainEventPublisher::line(&event).unwrap();
+        let json = line
+            .strip_prefix(&format!("domain_event {} ", event.name()))
+            .unwrap_or_else(|| panic!("{line}"));
+        assert!(!json.contains('\n'));
+        assert_eq!(
+            serde_json::from_str::<Value>(json).unwrap(),
+            payload(&event).unwrap()
+        );
+    }
 }
