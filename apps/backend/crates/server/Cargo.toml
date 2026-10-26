@@ -10,6 +10,7 @@ application.workspace = true
 infra.workspace = true
 interface.workspace = true
 axum.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

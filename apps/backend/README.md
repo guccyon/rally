@@ -10,7 +10,7 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 | `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
 | `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
 | `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
-| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`） | domain・application・infra・interface |
+| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`）。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
@@ -45,7 +45,7 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
 ```
 
-ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先は当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先は当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server::router_with_postgres` で組み立てられる（`main` はまだ使わない）。
 行動イベントの配信先は環境変数 `ANALYTICS_SINK` で選ぶ（既定はインメモリ。下の「行動イベントの配信先」）。
 
 ## identity の不変条件
@@ -215,6 +215,24 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 - テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周）
 - 発火の網羅: `crates/application/tests/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
 - セマンティック層: `crates/application/tests/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
+
+## 一周シナリオの E2E（API レベル）
+
+Walking Skeleton の完了条件（段 7 の T19）。`crates/server/tests/walking_skeleton.rs` が、保存先をすべて Postgres にした組み立て（`server::router_with_postgres`。通話基盤・動画の保存先・アクセストークンはモック、境界間イベントはインメモリのイベントバス、行動イベントはインメモリの `RecordingAnalyticsSink`）を TCP で待ち受けさせ、HTTP だけで次を通す。
+
+1. 生徒の登録 → コーチが枠を公開 → 生徒が検索して体験予約 → 確定
+2. 通話の開始 → 終了 → 完了記録（`is_first_lesson=true`）
+3. 同じ生徒が月額契約 → 動画を送付 → コーチが添削を返す → 完了記録（`is_first_lesson=false`）
+4. 同じ暦月に 3 回目の通話予約の確定が 409 `live_lesson_quota_exceeded`（月額契約の前に確定した体験予約は枠を使わないので、契約後の 2 回を確定してからの 3 回目）
+
+最後に、発火した行動イベントの名前の並びが期待した列（events.yaml の `name`）と一致することを確かめる。コーチの登録は契約に HTTP の操作がない（`POST /accounts` は生徒だけ）ので、同じ DB に `RegisterAccount` で登録してモックのトークンを発行する。
+
+Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` がなければ skip ではなく失敗する（テストごとに新しい DB を作ってマイグレーションを当てる）。CI に Postgres のサービスを足すまでは手元で走らせる。
+
+```sh
+export DATABASE_URL=postgres://rally@127.0.0.1:5432/rally   # docker compose up -d --wait の Postgres
+cargo test -p server --test walking_skeleton -- --include-ignored
+```
 
 ## CI で走らせるコマンド
 
