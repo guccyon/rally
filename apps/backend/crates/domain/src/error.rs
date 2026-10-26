@@ -53,6 +53,8 @@ pub enum DomainError {
     InvalidMonth { month: u8 },
     /// ビデオ通話の暦月の枠で使った回数が上限を超える
     LiveLessonsUsedOverLimit { used: u8, limit: u8 },
+    /// ビデオ通話の暦月の枠が残っていない（月額の 3 回目。不変条件 1）
+    LiveLessonQuotaExceeded,
 }
 
 impl fmt::Display for DomainError {

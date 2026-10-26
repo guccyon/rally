@@ -8,7 +8,7 @@ use std::{
 
 use domain::{
     DomainError,
-    entitlement::Entitlement,
+    entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
@@ -18,7 +18,10 @@ use crate::{
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
-    entitlement::EntitlementRepository,
+    entitlement::{
+        EntitlementRepository, InsertEntitlementError, UpdateEntitlementError, entitlement_id_uuid,
+        subscription_id_uuid,
+    },
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -253,12 +256,13 @@ impl DomainEventPublisher for RecordingDomainEventPublisher {
     }
 }
 
-/// [`EntitlementRepository`] のインメモリ実装。複製は同じ中身を共有する。
+/// [`EntitlementRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
 ///
-/// 受講権を作るユースケース（月額契約の開始）は T11 なので、当面はテストの準備で入れたものだけを返す。
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じ生徒の枠の消費は直列になる。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryEntitlementRepository {
     entitlements: Arc<Mutex<Vec<Entitlement>>>,
+    subscriptions: Arc<Mutex<Vec<Subscription>>>,
 }
 
 impl InMemoryEntitlementRepository {
@@ -266,6 +270,7 @@ impl InMemoryEntitlementRepository {
     pub fn with_entitlements(entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
         Self {
             entitlements: Arc::new(Mutex::new(entitlements.into_iter().collect())),
+            subscriptions: Arc::default(),
         }
     }
 
@@ -273,9 +278,22 @@ impl InMemoryEntitlementRepository {
     pub fn all(&self) -> Vec<Entitlement> {
         self.entitlements.lock().unwrap().clone()
     }
+
+    /// 保存した月額契約（保存した順）。
+    pub fn subscriptions(&self) -> Vec<Subscription> {
+        self.subscriptions.lock().unwrap().clone()
+    }
 }
 
 impl EntitlementRepository for InMemoryEntitlementRepository {
+    fn next_entitlement_id(&self) -> EntitlementId {
+        entitlement_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    fn next_subscription_id(&self) -> SubscriptionId {
+        subscription_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
     async fn find_by_student(
         &self,
         student_id: AccountId,
@@ -287,5 +305,65 @@ impl EntitlementRepository for InMemoryEntitlementRepository {
             .iter()
             .find(|entitlement| entitlement.student_id() == student_id)
             .cloned())
+    }
+
+    async fn insert_monthly(
+        &self,
+        subscription: Subscription,
+        entitlement: Entitlement,
+    ) -> Result<(), InsertEntitlementError> {
+        // 受講権 → 月額契約の順にロックを取る（update_by_student と同じ順）
+        let mut entitlements = self.entitlements.lock().unwrap();
+        let mut subscriptions = self.subscriptions.lock().unwrap();
+        if entitlements
+            .iter()
+            .any(|e| e.student_id() == entitlement.student_id())
+        {
+            return Err(InsertEntitlementError::AlreadyExists);
+        }
+        subscriptions.push(subscription);
+        entitlements.push(entitlement);
+        Ok(())
+    }
+
+    async fn update_by_student<F>(
+        &self,
+        student_id: AccountId,
+        update: F,
+    ) -> Result<Entitlement, UpdateEntitlementError>
+    where
+        F: FnOnce(&mut Entitlement) -> Result<(), DomainError> + Send,
+    {
+        let mut entitlements = self.entitlements.lock().unwrap();
+        let entitlement = entitlements
+            .iter_mut()
+            .find(|e| e.student_id() == student_id)
+            .ok_or(UpdateEntitlementError::NotFound)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let mut next = entitlement.clone();
+        update(&mut next).map_err(UpdateEntitlementError::Rejected)?;
+        *entitlement = next.clone();
+        Ok(next)
+    }
+}
+
+/// 外から進められる [`Clock`]（月をまたぐテスト用）。複製は同じ時刻を共有する。
+#[derive(Debug, Clone)]
+pub struct ManualClock(Arc<Mutex<SystemTime>>);
+
+impl ManualClock {
+    pub fn new(now: SystemTime) -> Self {
+        Self(Arc::new(Mutex::new(now)))
+    }
+
+    /// 現在時刻を `now` にする。
+    pub fn set(&self, now: SystemTime) {
+        *self.0.lock().unwrap() = now;
+    }
+}
+
+impl Clock for ManualClock {
+    fn now(&self) -> SystemTime {
+        *self.0.lock().unwrap()
     }
 }

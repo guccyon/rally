@@ -5,6 +5,7 @@
 use std::{future::Future, time::SystemTime};
 
 use domain::{
+    entitlement::SubscriptionId,
     identity::{AccountId, Sport},
     scheduling::{BookingId, SlotId},
 };
@@ -53,6 +54,13 @@ pub enum AnalyticsEvent {
         hours_before_start: i64,
         occurred_at: SystemTime,
     },
+    /// `subscription.started`（KPI「初回レッスン後の 1 ヶ月継続率」の入力）
+    SubscriptionStarted {
+        student_id: AccountId,
+        subscription_id: SubscriptionId,
+        sport: Sport,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -64,6 +72,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::BookingCreated { .. } => "booking.created",
             AnalyticsEvent::BookingConfirmed { .. } => "booking.confirmed",
             AnalyticsEvent::BookingCancelled { .. } => "booking.cancelled",
+            AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
         }
     }
 }

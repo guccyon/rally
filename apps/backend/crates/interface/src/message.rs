@@ -60,6 +60,7 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LiveLessonsUsedOverLimit { used, limit } => {
             format!("ビデオ通話の枠は暦月 {limit} 回まで（使った回数 {used}）")
         }
+        DomainError::LiveLessonQuotaExceeded => "今月のビデオ通話の枠を使い切っている".to_string(),
     }
 }
 
@@ -178,6 +179,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LiveLessonsUsedOverLimit { used: 3, limit: 2 }),
             "ビデオ通話の枠は暦月 2 回まで（使った回数 3）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonQuotaExceeded),
+            "今月のビデオ通話の枠を使い切っている"
         );
     }
 }

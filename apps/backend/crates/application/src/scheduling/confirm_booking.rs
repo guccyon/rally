@@ -5,7 +5,7 @@ use domain::{
 };
 use uuid::Uuid;
 
-use super::{BookingRepository, UpdateBookingError};
+use super::{BookingRepository, QuotaGate, UpdateBookingError};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -24,7 +24,8 @@ pub struct ConfirmBookingCommand {
 pub enum ConfirmBookingError {
     /// 予約がない
     BookingNotFound,
-    /// 確定がドメインの不変条件を満たさない（別の生徒の予約、確定前でない、スロットが公開中でない）
+    /// 確定がドメインの不変条件を満たさない（別の生徒の予約、確定前でない、スロットが公開中でない、
+    /// ビデオ通話の暦月の枠が残っていない（[`DomainError::LiveLessonQuotaExceeded`]））
     Invalid(DomainError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -33,25 +34,34 @@ pub enum ConfirmBookingError {
 /// 予約の確定のユースケース（student-app の `confirmBooking`）。
 ///
 /// 予約とそのスロットを読み、domain の [`Booking::confirm`] で確定してスロットを `booked` にし、
-/// 両方を保存する。保存したら境界間イベント `BookingConfirmed` を発行し、行動イベント
-/// `booking.confirmed` を 1 回発火する。拒否・保存の失敗ではどちらも出さない。
-pub struct ConfirmBooking<B, A, P, C> {
+/// 両方を保存する。確定の前に entitlement に「ビデオ通話をもう 1 回予約してよいか」を問い合わせ（[`QuotaGate`]）、
+/// 否なら確定を拒否する（不変条件 1。判定の規則は entitlement 側）。保存したら境界間イベント
+/// `BookingConfirmed` を発行し（entitlement はこれを購読して枠を使う）、行動イベント `booking.confirmed` を
+/// 1 回発火する。拒否・保存の失敗ではどちらも出さない。
+///
+/// 問い合わせと枠の消費は別の手順なので、同じ生徒の確定が並行すると両方が問い合わせを通りうる（そのとき
+/// 後の消費は entitlement で拒否され、購読側の失敗として記録される）。Gen1 の生徒アプリからの操作では
+/// 起きにくいので許す。
+pub struct ConfirmBooking<B, G, A, P, C> {
     bookings: B,
+    quota: G,
     analytics: A,
     events: P,
     clock: C,
 }
 
-impl<B, A, P, C> ConfirmBooking<B, A, P, C>
+impl<B, G, A, P, C> ConfirmBooking<B, G, A, P, C>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(bookings: B, analytics: A, events: P, clock: C) -> Self {
+    pub fn new(bookings: B, quota: G, analytics: A, events: P, clock: C) -> Self {
         Self {
             bookings,
+            quota,
             analytics,
             events,
             clock,
@@ -63,10 +73,21 @@ where
         command: ConfirmBookingCommand,
     ) -> Result<Booking, ConfirmBookingError> {
         let now = self.clock.now();
+        let may_book = self
+            .quota
+            .may_book_live_lesson(command.student_id, now)
+            .await
+            .map_err(ConfirmBookingError::Unavailable)?;
         let booking = self
             .bookings
             .update(command.booking_id, |booking, slot| {
-                booking.confirm(command.student_id, slot, now)
+                // 別の生徒の予約・確定前でない予約の拒否を先に返す（枠の超過より優先する）
+                booking.confirm(command.student_id, slot, now)?;
+                if may_book {
+                    Ok(())
+                } else {
+                    Err(DomainError::LiveLessonQuotaExceeded)
+                }
             })
             .await
             .map_err(|error| match error {
@@ -115,21 +136,24 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId},
         identity::Sport,
         scheduling::{BookingStatus, Slot, SlotId, SlotStatus},
     };
 
     use super::*;
     use crate::{
+        entitlement::{EntitlementQuotaGate, calendar_month},
         in_memory::{
-            FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
-            RecordingDomainEventPublisher,
+            FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
+            InMemorySlotRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
         },
         scheduling::{CreateBooking, CreateBookingCommand},
     };
 
     type UseCase = ConfirmBooking<
         InMemoryBookingRepository,
+        EntitlementQuotaGate<InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
         FixedClock,
@@ -147,6 +171,11 @@ mod tests {
 
     /// 公開中のスロットを 1 つ置き、生徒がそれを体験予約した状態から始める。
     async fn use_case() -> (UseCase, Booking) {
+        use_case_with(InMemoryEntitlementRepository::default()).await
+    }
+
+    /// [`use_case`] の受講権の保存先を `entitlements` にする。
+    async fn use_case_with(entitlements: InMemoryEntitlementRepository) -> (UseCase, Booking) {
         let starts_at = CREATED_AT + Duration::from_secs(36_000);
         let slots = InMemorySlotRepository::with_slots([Slot::publish(
             SLOT,
@@ -171,6 +200,7 @@ mod tests {
         .unwrap();
         let use_case = ConfirmBooking::new(
             bookings,
+            EntitlementQuotaGate::new(entitlements),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             FixedClock(now()),
@@ -284,5 +314,54 @@ mod tests {
         );
         assert_eq!(use_case.events().events().len(), 1);
         assert_eq!(use_case.analytics().events().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn confirmation_without_live_lesson_quota_left_is_rejected_and_changes_nothing() {
+        // 確定の時刻（1970-01）の暦月の枠を予約 1・2 で使い切った月額の生徒
+        let used_up = Entitlement::monthly(
+            EntitlementId::from_u128(30),
+            STUDENT,
+            Sport::Tennis,
+            SubscriptionId::from_u128(40),
+            LiveLessonQuota::restore(
+                calendar_month::of(now()),
+                [BookingId::from_u128(1), BookingId::from_u128(2)],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let (use_case, pending) =
+            use_case_with(InMemoryEntitlementRepository::with_entitlements([used_up])).await;
+
+        let result = use_case.execute(command(STUDENT, pending.id())).await;
+        assert!(
+            matches!(
+                result,
+                Err(ConfirmBookingError::Invalid(
+                    DomainError::LiveLessonQuotaExceeded
+                ))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(use_case.bookings().all(), vec![pending.clone()]);
+        assert_eq!(
+            use_case.bookings().slots().all()[0].status(),
+            SlotStatus::Open
+        );
+        assert!(use_case.events().events().is_empty());
+        assert!(use_case.analytics().events().is_empty());
+
+        // 別の生徒の予約は、枠の超過より先に別の生徒の予約として拒否する
+        let result = use_case.execute(command(OTHER_STUDENT, pending.id())).await;
+        assert!(
+            matches!(
+                result,
+                Err(ConfirmBookingError::Invalid(
+                    DomainError::BookingOfAnotherStudent
+                ))
+            ),
+            "{result:?}"
+        );
     }
 }

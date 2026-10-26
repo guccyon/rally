@@ -5,7 +5,7 @@
 use std::time::{Duration, SystemTime};
 
 use application::{
-    entitlement::{GetEntitlement, entitlement_id_uuid},
+    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription, entitlement_id_uuid},
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
@@ -25,6 +25,7 @@ use axum::{
 use domain::{
     entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
     identity::{AccountId, Role, Sport},
+    scheduling::BookingId,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -64,9 +65,9 @@ const ONE_SHOT_STUDENT: &str = "student:2";
 /// 受講権のない生徒
 const NEW_STUDENT: &str = "student:3";
 
-/// 2026-11-01T00:00:00Z
+/// 2026-11-01T00:00:00+09:00（暦月は日本時間で区切る）
 fn nov1() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_491_200)
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_458_800)
 }
 
 fn monthly() -> Entitlement {
@@ -75,7 +76,11 @@ fn monthly() -> Entitlement {
         AccountId::from_u128(1),
         Sport::Tennis,
         SubscriptionId::from_u128(20),
-        LiveLessonQuota::restore(YearMonth::new(2026, 10).unwrap(), 2).unwrap(),
+        LiveLessonQuota::restore(
+            YearMonth::new(2026, 10).unwrap(),
+            [BookingId::from_u128(1), BookingId::from_u128(2)],
+        )
+        .unwrap(),
     )
     .unwrap()
 }
@@ -94,6 +99,7 @@ fn one_shot() -> Entitlement {
 fn router(now: SystemTime) -> Router {
     let clock = FixedClock(now);
     let analytics = RecordingAnalyticsSink::default();
+    let entitlements = InMemoryEntitlementRepository::with_entitlements([monthly(), one_shot()]);
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
     interface::router_with(
@@ -107,20 +113,24 @@ fn router(now: SystemTime) -> Router {
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,
         ),
         CancelBooking::new(
             bookings,
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        StartSubscription::new(
+            entitlements.clone(),
             analytics,
             RecordingDomainEventPublisher::default(),
             clock,
         ),
-        GetEntitlement::new(
-            InMemoryEntitlementRepository::with_entitlements([monthly(), one_shot()]),
-            clock,
-        ),
+        GetEntitlement::new(entitlements, clock),
         FakeTokens,
     )
 }

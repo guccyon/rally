@@ -68,7 +68,7 @@ where
     Ok(Json(entitlement_body(&entitlement)))
 }
 
-fn entitlement_body(entitlement: &Entitlement) -> EntitlementBody {
+pub(crate) fn entitlement_body(entitlement: &Entitlement) -> EntitlementBody {
     EntitlementBody {
         entitlement_id: entitlement_id_uuid::format(entitlement.id()),
         student_id: account_id_uuid::format(entitlement.student_id()),
@@ -80,7 +80,7 @@ fn entitlement_body(entitlement: &Entitlement) -> EntitlementBody {
     }
 }
 
-fn live_lesson_quota_body(quota: LiveLessonQuota) -> LiveLessonQuotaBody {
+fn live_lesson_quota_body(quota: &LiveLessonQuota) -> LiveLessonQuotaBody {
     LiveLessonQuotaBody {
         month: year_month_to_contract(quota.month()),
         limit: quota.limit(),
