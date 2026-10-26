@@ -7,27 +7,33 @@ pub use infra::AnalyticsDestination;
 
 use application::{
     analytics::AnalyticsSink,
-    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
+    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo, VideoRepository},
     clock::{Clock, SystemClock},
     entitlement::{
-        EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, LiveLessonQuotaSubscriber,
-        StartSubscription,
+        EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate, GetEntitlement,
+        LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::RegisterAccount,
+    identity::{AccountRepository, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
         InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
-    lesson::RecordLessonCompletion,
-    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
+    lesson::{LessonCompletionRepository, RecordLessonCompletion},
+    live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
-        SearchSlots,
+        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, PublishSlot,
+        SchedulingBookingLookup, SearchSlots, SlotRepository,
     },
 };
 use axum::Router;
-use infra::{InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage};
+use infra::{
+    InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
+    PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgSlotRepository,
+    PgVideoRepository,
+};
+use sqlx::PgPool;
 
 /// HTTP のルーター（現在時刻は OS の時計）。組み立ては [`router_at`]。
 pub fn router() -> Router {
@@ -52,8 +58,7 @@ pub fn router() -> Router {
 /// docs/adr/0006）、完了記録の保存先も当面インメモリ。境界間イベント `LessonCompleted` は同じイベントバスで発行する
 /// （billing・review の購読はまだない）。
 ///
-/// スロットの Postgres 実装（`infra::PgSlotRepository`）は `scheduling.slots` の外部キーが
-/// `identity.coaches` を指すので、アカウントの保存先を Postgres にするときに一緒に差し替える（予約・受講権も同じ）。
+/// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
     C: Clock + Clone + 'static,
@@ -68,18 +73,85 @@ where
     A: AnalyticsSink + Clone + 'static,
 {
     let slots = InMemorySlotRepository::default();
-    let bookings = InMemoryBookingRepository::new(slots.clone());
-    let entitlements = InMemoryEntitlementRepository::default();
+    compose(
+        Repositories {
+            accounts: InMemoryAccountRepository::default(),
+            bookings: InMemoryBookingRepository::new(slots.clone()),
+            slots,
+            entitlements: InMemoryEntitlementRepository::default(),
+            sessions: InMemoryLiveLessonSessionRepository::default(),
+            videos: InMemoryVideoRepository::default(),
+            completions: InMemoryLessonCompletionRepository::default(),
+        },
+        clock,
+        analytics,
+    )
+}
+
+/// 保存先をすべて infra の Postgres の実装にしたルーター（`pool` はマイグレーション `infra::MIGRATOR` を当てた DB）。
+/// 保存先のほかは [`router_with_analytics`] と同じで、境界間イベントはインメモリのイベントバス、通話基盤・動画の
+/// 保存先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
+pub fn router_with_postgres<C, A>(pool: PgPool, clock: C, analytics: A) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+{
+    compose(
+        Repositories {
+            accounts: PgAccountRepository::new(pool.clone()),
+            slots: PgSlotRepository::new(pool.clone()),
+            bookings: PgBookingRepository::new(pool.clone()),
+            entitlements: PgEntitlementRepository::new(pool.clone()),
+            sessions: PgLiveLessonSessionRepository::new(pool.clone()),
+            videos: PgVideoRepository::new(pool.clone()),
+            completions: PgLessonCompletionRepository::new(pool),
+        },
+        clock,
+        analytics,
+    )
+}
+
+/// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
+struct Repositories<R, S, B, E, L, W, M> {
+    accounts: R,
+    slots: S,
+    bookings: B,
+    entitlements: E,
+    sessions: L,
+    videos: W,
+    completions: M,
+}
+
+/// 保存先のほかの組み立て（インメモリと Postgres で共通）。
+fn compose<R, S, B, E, L, W, M, C, A>(
+    repositories: Repositories<R, S, B, E, L, W, M>,
+    clock: C,
+    analytics: A,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    S: SlotRepository + Clone + 'static,
+    B: BookingRepository + Clone + 'static,
+    E: EntitlementRepository + Clone + 'static,
+    L: LiveLessonSessionRepository + Clone + 'static,
+    W: VideoRepository + Clone + 'static,
+    M: LessonCompletionRepository + 'static,
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+{
+    let Repositories {
+        accounts,
+        slots,
+        bookings,
+        entitlements,
+        sessions,
+        videos,
+        completions,
+    } = repositories;
     let events = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
-    let sessions = InMemoryLiveLessonSessionRepository::default();
     let video = MockVideoCallProvider::new();
-    let videos = InMemoryVideoRepository::default();
     interface::router_with(
-        RegisterAccount::new(
-            InMemoryAccountRepository::default(),
-            analytics.clone(),
-            clock.clone(),
-        ),
+        RegisterAccount::new(accounts, analytics.clone(), clock.clone()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(slots, clock.clone()),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
@@ -124,14 +196,7 @@ where
             analytics.clone(),
             clock.clone(),
         ),
-        RecordLessonCompletion::new(
-            sessions,
-            videos,
-            InMemoryLessonCompletionRepository::default(),
-            analytics,
-            events,
-            clock,
-        ),
+        RecordLessonCompletion::new(sessions, videos, completions, analytics, events, clock),
         MockTokenService,
     )
 }
