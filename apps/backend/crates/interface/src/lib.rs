@@ -5,7 +5,9 @@
 
 mod accounts;
 pub mod auth;
+mod contract;
 mod error;
+mod message;
 
 use std::sync::Arc;
 

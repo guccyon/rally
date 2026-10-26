@@ -7,7 +7,7 @@ use application::{
     clock::Clock,
     identity::{
         AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError,
-        TokenClaims, TokenIssuer,
+        TokenClaims, TokenIssuer, account_id_uuid,
     },
 };
 use axum::{
@@ -19,7 +19,10 @@ use domain::identity::{Account, Role, Sport};
 use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::error::ApiError;
+use crate::{
+    contract::{sport_from_contract, sport_to_contract},
+    error::ApiError,
+};
 
 /// OpenAPI の `RegisterAccountRequest`。値の検証は domain で行う。
 #[derive(Deserialize)]
@@ -74,12 +77,12 @@ where
         })
         .await
         .map_err(|error| match error {
-            RegisterAccountError::Invalid(error) => ApiError::validation_failed(error.to_string()),
+            RegisterAccountError::Invalid(error) => ApiError::from(error),
             RegisterAccountError::EmailAlreadyRegistered => ApiError::conflict(
                 "email_already_registered",
                 "このメールアドレスはすでに登録されている",
             ),
-            RegisterAccountError::Unavailable(reason) => ApiError::internal(reason),
+            RegisterAccountError::Unavailable(error) => ApiError::internal(error),
         })?;
 
     let student = student_body(&account)?;
@@ -101,12 +104,14 @@ where
 
 /// student-app の `Sport`（ゴルフを除く 4 種類）。ゴルフは golf-app の範囲。
 fn student_app_sport(value: &str) -> Result<Sport, ApiError> {
-    match value.parse::<Sport>() {
-        Ok(Sport::Golf) => Err(ApiError::validation_failed(
+    match sport_from_contract(value) {
+        Some(Sport::Golf) => Err(ApiError::validation_failed(
             "student-app はゴルフを扱わない（golf-app の範囲）",
         )),
-        Ok(sport) => Ok(sport),
-        Err(error) => Err(ApiError::validation_failed(error.to_string())),
+        Some(sport) => Ok(sport),
+        None => Err(ApiError::validation_failed(format!(
+            "未知のスポーツ: {value}"
+        ))),
     }
 }
 
@@ -115,9 +120,9 @@ fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
         .as_student()
         .ok_or_else(|| ApiError::internal("生徒として登録したアカウントが生徒でない"))?;
     Ok(StudentBody {
-        student_id: account.id().to_string(),
+        student_id: account_id_uuid::format(account.id()),
         display_name: account.display_name().as_str().to_string(),
-        sport: student.sport().as_str(),
+        sport: sport_to_contract(student.sport()),
         created_at: rfc3339(account.registered_at())?,
     })
 }
@@ -125,5 +130,5 @@ fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
 fn rfc3339(at: SystemTime) -> Result<String, ApiError> {
     OffsetDateTime::from(at)
         .format(&Rfc3339)
-        .map_err(|error| ApiError::internal(error.to_string()))
+        .map_err(ApiError::internal)
 }

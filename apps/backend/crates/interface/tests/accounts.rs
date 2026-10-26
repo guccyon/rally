@@ -7,6 +7,7 @@ use application::{
     analytics::AnalyticsEvent,
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
+        account_id_uuid,
     },
     in_memory::{FixedClock, InMemoryAccountRepository, RecordingAnalyticsSink},
 };
@@ -34,9 +35,9 @@ struct FakeTokens;
 impl TokenIssuer for FakeTokens {
     fn issue(&self, claims: TokenClaims) -> AccessToken {
         AccessToken::new(format!(
-            "fake:{}:{}",
-            claims.role.as_str(),
-            claims.account_id
+            "fake:{:?}:{}",
+            claims.role,
+            account_id_uuid::format(claims.account_id)
         ))
     }
 }
@@ -156,10 +157,7 @@ fn assert_matches(root: &Yaml, schema: &Yaml, value: &Value, at: &str) {
                 );
             }
             match schema["format"].as_str() {
-                Some("uuid") => assert!(
-                    s.parse::<domain::identity::AccountId>().is_ok(),
-                    "{at}: uuid でない {s}"
-                ),
+                Some("uuid") => assert!(account_id_uuid::parse(s).is_ok(), "{at}: uuid でない {s}"),
                 Some("date-time") => assert!(
                     time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
                         .is_ok(),
@@ -196,8 +194,8 @@ async fn registers_a_student_with_the_contract_shape() {
     assert_eq!(
         body["access_token"],
         format!(
-            "fake:{}:{}",
-            Role::Student.as_str(),
+            "fake:{:?}:{}",
+            Role::Student,
             student["student_id"].as_str().unwrap()
         ),
         "トークンは TokenIssuer が生徒の ID と役割で発行する"
@@ -211,7 +209,7 @@ async fn registers_a_student_with_the_contract_shape() {
         occurred_at,
     } = &events[0];
     assert_eq!(events[0].name(), "account.registered");
-    assert_eq!(student_id.to_string(), student["student_id"]);
+    assert_eq!(account_id_uuid::format(*student_id), student["student_id"]);
     assert_eq!(*sport, Sport::Tennis);
     assert_eq!(*occurred_at, SystemTime::UNIX_EPOCH + NOW);
 }

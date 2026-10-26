@@ -2,6 +2,8 @@ use std::future::Future;
 
 use domain::identity::{Account, AccountId};
 
+use crate::Unavailable;
+
 /// アカウントの保存先のポート。実装は infra（Postgres の `identity.accounts`）と、
 /// テスト用の [`crate::in_memory::InMemoryAccountRepository`]。
 pub trait AccountRepository: Send + Sync {
@@ -17,10 +19,10 @@ pub trait AccountRepository: Send + Sync {
     ) -> impl Future<Output = Result<(), InsertAccountError>> + Send;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum InsertAccountError {
     /// 同じメールアドレスのアカウントがすでにある
     EmailAlreadyRegistered,
     /// 保存先の障害
-    Unavailable(String),
+    Unavailable(Unavailable),
 }

@@ -1,5 +1,6 @@
 //! identity のユースケースとポート。
 
+pub mod account_id_uuid;
 mod register_account;
 mod repository;
 mod token;

@@ -5,7 +5,7 @@ use crate::DomainError;
 /// アカウントのメールアドレス。
 ///
 /// 形の検査は最小限（`@` が 1 つで前後が空でなく、空白を含まない）。到達確認はしない。
-/// 一意性は大文字小文字を区別しない（[`Email::normalized`]。DB の `accounts_email_key` と同じ）。
+/// 一意性は大文字小文字を区別しない（[`Email::normalized`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Email(String);
 

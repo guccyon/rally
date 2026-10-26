@@ -7,7 +7,7 @@ use crate::DomainError;
 pub struct DisplayName(String);
 
 impl DisplayName {
-    /// 契約（OpenAPI の `RegisterAccountRequest.display_name` の `maxLength`）と同じ上限。
+    /// 表示名の上限（文字数）。
     pub const MAX_CHARS: usize = 50;
 
     pub fn new(value: impl Into<String>) -> Result<Self, DomainError> {

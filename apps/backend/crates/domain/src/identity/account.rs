@@ -1,89 +1,7 @@
-use std::{collections::BTreeSet, time::SystemTime};
+use std::time::SystemTime;
 
-use super::{AccountId, DisplayName, Email, Sport};
+use super::{AccountId, Coach, DisplayName, Email, Profile, Role, Sport, Student};
 use crate::DomainError;
-
-/// アカウントの役割。値は DB の `identity.accounts.role` と同じ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Role {
-    /// 生徒（glossary の student）
-    Student,
-    /// コーチ（glossary の coach）
-    Coach,
-    /// 本部（運営のスタッフ）
-    Headquarters,
-}
-
-impl Role {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Role::Student => "student",
-            Role::Coach => "coach",
-            Role::Headquarters => "headquarters",
-        }
-    }
-}
-
-/// 生徒の値オブジェクト。レッスンを受けるスポーツを 1 つ持つ（OpenAPI の `Student.sport`）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Student {
-    sport: Sport,
-}
-
-impl Student {
-    pub const fn new(sport: Sport) -> Self {
-        Self { sport }
-    }
-
-    pub const fn sport(&self) -> Sport {
-        self.sport
-    }
-}
-
-/// コーチの値オブジェクト。提供スポーツの集合を持ち、空ではない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Coach {
-    sports: BTreeSet<Sport>,
-}
-
-impl Coach {
-    pub fn new(sports: impl IntoIterator<Item = Sport>) -> Result<Self, DomainError> {
-        let sports: BTreeSet<Sport> = sports.into_iter().collect();
-        if sports.is_empty() {
-            return Err(DomainError::RoleAttributeMismatch {
-                role: Role::Coach,
-                sports: 0,
-            });
-        }
-        Ok(Self { sports })
-    }
-
-    pub fn sports(&self) -> &BTreeSet<Sport> {
-        &self.sports
-    }
-
-    pub fn offers(&self, sport: Sport) -> bool {
-        self.sports.contains(&sport)
-    }
-}
-
-/// 役割ごとの属性。役割と属性の組み合わせを型で固定する。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Profile {
-    Student(Student),
-    Coach(Coach),
-    Headquarters,
-}
-
-impl Profile {
-    pub const fn role(&self) -> Role {
-        match self {
-            Profile::Student(_) => Role::Student,
-            Profile::Coach(_) => Role::Coach,
-            Profile::Headquarters => Role::Headquarters,
-        }
-    }
-}
 
 /// アカウント。生徒・コーチ・本部のどれか。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -242,13 +160,6 @@ mod tests {
                 sports: 0
             })
         );
-        assert_eq!(
-            Coach::new([]),
-            Err(DomainError::RoleAttributeMismatch {
-                role: Role::Coach,
-                sports: 0
-            })
-        );
     }
 
     #[test]
@@ -264,11 +175,5 @@ mod tests {
                 sports: 1
             })
         );
-    }
-
-    #[test]
-    fn role_strings_match_the_db_check() {
-        let roles = [Role::Student, Role::Coach, Role::Headquarters].map(Role::as_str);
-        assert_eq!(roles, ["student", "coach", "headquarters"]);
     }
 }
