@@ -1,0 +1,53 @@
+# ドメイン用語（Blueprint v0.4 の domain_glossary の骨格）
+# 前提は product-context.md、context は context-map.yaml の id を使う。用語の網羅は後続の Issue で行う。
+schema_version: "0.1"
+status: draft
+terms:
+  - id: student
+    ja: "生徒"
+    definition: "コーチからテニス・ゴルフ・野球・サッカー・バスケットボールのオンラインレッスンを受ける利用者。"
+    context: identity
+  - id: coach
+    ja: "コーチ"
+    definition: "予約枠を公開し、同期レッスンの通話や非同期レッスンの動画添削で生徒を指導する利用者。"
+    context: identity
+  - id: lesson
+    ja: "レッスン"
+    definition: "コーチが生徒に提供する指導の単位で、同期レッスンと非同期レッスンの 2 種類がある。"
+    context: catalog
+  - id: live_lesson
+    ja: "同期レッスン"
+    definition: "ビデオ通話によるマンツーマンのレッスンで、月額契約では暦月 2 回までの枠を消費する。"
+    context: live-lesson
+  - id: async_lesson
+    ja: "非同期レッスン"
+    definition: "生徒が動画を送り、コーチが添削して返すレッスン。"
+    context: async-lesson
+  - id: booking
+    ja: "予約"
+    definition: "生徒がコーチのスロットを確保することで、体験予約もこれに含む。"
+    context: scheduling
+  - id: slot
+    ja: "スロット"
+    definition: "コーチが公開する予約枠。"
+    context: scheduling
+  - id: entitlement
+    ja: "受講権"
+    definition: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称で、月額では予約のたびに消費されず、消費されるのはビデオ通話の暦月 2 回の枠だけである。"
+    context: entitlement
+  - id: subscription
+    ja: "月額"
+    definition: "ゴルフ以外のスポーツの契約種別で、動画とチャットは送り放題、ビデオ通話は暦月 2 回までの定額課金。"
+    context: entitlement
+  - id: one_shot
+    ja: "ワンショット"
+    definition: "ゴルフだけの契約種別で、動画添削 1 回ごとの都度課金。"
+    context: entitlement
+  - id: video_review
+    ja: "動画添削"
+    definition: "生徒が送った動画をコーチが添削して返すことで、ゴルフではワンショット決済が確定した動画にしか着手できない。"
+    context: async-lesson
+  - id: cancellation_policy
+    ja: "キャンセル規定"
+    definition: "開始 24 時間前以降のキャンセルは回数を消費するという規定で、判定を scheduling と entitlement のどちらに置くかは未決の Question である。"
+    context: scheduling
