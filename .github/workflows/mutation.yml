@@ -1,0 +1,67 @@
+# L2（テスト実質強度）: PR の差分に対する差分ミューテーションテスト（cargo-mutants --in-diff）。
+# P1 は shadow: スコアを Job Summary とアーティファクトに残すだけで、PR は落とさない（必須チェックにもしない）。
+# 閾値は gates.yaml の L2（domain 層 0.85、ui 層 0.60）。精度が安定したら必須チェックに上げる（工場のアーキテクチャの判断として確認してから）。
+name: mutation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: backend の差分
+        id: diff
+        working-directory: .
+        run: |
+          git diff "origin/${{ github.base_ref }}"...HEAD -- apps/backend > /tmp/pr.diff
+          if [ -s /tmp/pr.diff ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; echo "backend の差分なし"; fi
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.diff.outputs.has == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.diff.outputs.has == 'true'
+        with:
+          workspaces: apps/backend
+      - uses: taiki-e/install-action@v2
+        if: steps.diff.outputs.has == 'true'
+        with:
+          tool: cargo-mutants
+      - name: 差分ミューテーション（DB が要るテストは対象外）
+        if: steps.diff.outputs.has == 'true'
+        run: |
+          # パスを apps/backend からの相対に直す
+          sed -E 's#(a|b)/apps/backend/#\1/#g' /tmp/pr.diff > /tmp/pr.rel.diff
+          cargo mutants --in-diff /tmp/pr.rel.diff --no-shuffle --timeout 120 --jobs 2 || true
+      - name: スコアを Job Summary に
+        if: steps.diff.outputs.has == 'true'
+        run: |
+          caught=$(wc -l < mutants.out/caught.txt 2>/dev/null || echo 0)
+          missed=$(wc -l < mutants.out/missed.txt 2>/dev/null || echo 0)
+          timeout=$(wc -l < mutants.out/timeout.txt 2>/dev/null || echo 0)
+          total=$((caught + missed))
+          score=$([ "$total" -gt 0 ] && awk "BEGIN{printf \"%.2f\", $caught/$total}" || echo "n/a")
+          {
+            echo "## L2 差分ミューテーション（shadow）"
+            echo "- caught: $caught / missed: $missed / timeout: $timeout → スコア **$score**（domain 層の閾値 0.85、P1 は記録のみ）"
+            if [ "$missed" -gt 0 ]; then echo; echo "### 生き残った変異（テストが捕まえられなかった）"; echo '```'; head -30 mutants.out/missed.txt; echo '```'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.diff.outputs.has == 'true'
+        with:
+          name: mutants-out
+          path: apps/backend/mutants.out
+          retention-days: 30
