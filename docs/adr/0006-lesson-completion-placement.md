@@ -1,11 +1,21 @@
 # ADR 0006: レッスンの完了記録の置き場所と、glossary の lesson の context を見直す Question
 
-- 状態: 提案（2026-10-26、T14 / Issue #39）。Question は未決（建設者の回答待ち）
-- 関係: ADR 0002（Gen1 の Question への回答。この ADR の Question はその後継）、ADR 0004（スキーマはコンテキストごと）、`specs/glossary.yaml`（lesson）、`specs/analytics/events.yaml`（lesson.completed）、`specs/contracts/events/asyncapi.yaml`（LessonCompleted）、`specs/contracts/api/student-app/openapi.yaml`（`recordLessonCompletion`）、`.factory-config/evals/golden/0003-analytics-events.yaml`（教訓）
+- 状態: 承認（2026-10-26、建設者が Question に回答。T14b / Issue #55）。提案は 2026-10-26、T14 / Issue #39
+- 関係: ADR 0002（Gen1 の Question への回答。この ADR の Question はその後継）、ADR 0004（スキーマはコンテキストごと）、`specs/glossary.yaml`（lesson / lesson_completion）、`specs/analytics/events.yaml`（lesson.completed）、`specs/contracts/events/asyncapi.yaml`（LessonCompleted）、`specs/contracts/api/student-app/openapi.yaml`（`recordLessonCompletion`）、`.factory-config/evals/golden/0003-analytics-events.yaml`（教訓）
 
 ## Question: glossary の `lesson.context` を catalog のままにするか
 
 glossary は lesson（コーチが生徒に提供する指導の単位）を catalog に置き、events.yaml の `lesson.completed` と student-app の `recordLessonCompletion` の `x-context` もそれに揃えて catalog にしている。しかし catalog の役割は「スポーツ、レッスン種別、コーチの提供メニュー」（context-map）で、完了の事実（誰がいつどのレッスンを受け終えたか）を持つ場所ではなく、Golden Set 0003 でも catalog / scheduling のどちらに置いても据わりが悪いと記録された。T14 では完了記録を live-lesson（通話セッション）と async-lesson（添削を返した動画）のそれぞれの集約から発行し、集約の外に lesson のコンテキストを作らなかった（下の決定）。そこで建設者に問う: **glossary の lesson を「レッスン種別」（catalog）と「完了したレッスン」（live-lesson / async-lesson が発行する事実）に分けるか、lesson.context を live-lesson / async-lesson の両方を指す形に改めるか、catalog のままにするか**。回答が出るまで glossary・events.yaml の `context`・OpenAPI の `x-context` は catalog のまま据え置き、回答に合わせて 3 つを同じ PR で直す。
+
+### 回答（建設者、2026-10-26）
+
+**分ける。** glossary の `lesson` は「レッスン種別」（catalog の持ち物。同期 / 非同期の別とスポーツごとの提供メニュー）として残し、完了の事実は新しい語 `lesson_completion`（完了したレッスン）として立てる。`lesson_completion` は live-lesson と async-lesson の両方が発行する事実なので、context は 1 つに決めず両方を列挙する。下の決定 1〜4 はそのまま採用する。
+
+これに合わせて T14b（Issue #55）で次を直した。
+
+- `specs/glossary.yaml`: `lesson` を「レッスン種別」（context: catalog）に改め、`lesson_completion` を `contexts: [live-lesson, async-lesson]` で追加。複数のコンテキストが発行する語だけ `contexts:`（配列）を許し、ほかの項目は `context:`（単数）のまま
+- `specs/analytics/events.yaml`: `lesson.completed` を `contexts: [live-lesson, async-lesson]` に
+- `specs/contracts/api/student-app/openapi.yaml`: `recordLessonCompletion` の `x-context` を `[live-lesson, async-lesson]` に（`x-context` が配列を取れることを `info.description` に明記）
 
 ## この Issue での決定（Question の回答を待たずに決めたこと）
 

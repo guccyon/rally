@@ -32,13 +32,10 @@ identity / catalog / matching / scheduling / live-lesson / async-lesson / messag
 - 「受講権（entitlement）」は契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称。月額では予約のたびに消費されるものではない。消費されるのはビデオ通話の月 2 回の枠だけ
 - 「スロット（slot）」はコーチが公開する予約枠。副業コーチが枠をなかなか開けないことが事業上の課題
 - 「予約（booking）」はスロットの確保。体験予約もこれ
+- 「レッスン（lesson）」はレッスン種別（catalog）を指し、完了の事実は「完了したレッスン（lesson_completion）」と呼ぶ。完了したレッスンは live-lesson と async-lesson の両方が発行する（docs/adr/0006）
 
 ## Question への回答（2026-10-26、docs/adr/0002）
 
 - 通話品質スコア: `call.ended` の 4 属性（packet_loss_rate / jitter_ms / round_trip_ms / disconnect_count）からの減点式。式はセマンティック層（analytics/kpi.yaml）に 1 か所
 - キャンセル規定: 判定は scheduling（24 時間前以降か）、消費の実行は entitlement（BookingCancelled の consumes_quota を購読）
 - コーチ側の最小操作: Gen1 は admin-web に「コーチ」ロールで同居。coach-web / coach-app は契約の枝だけ残す
-
-## 未決の Question（docs/adr/0006）
-
-- glossary の lesson の context（catalog）の見直し。T14 では完了記録を live-lesson / async-lesson のそれぞれの集約から発行し、lesson のコンテキストは作っていない
