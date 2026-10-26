@@ -36,6 +36,27 @@ impl ContractType {
     pub const fn unlimited_video_and_chat(self) -> bool {
         matches!(self, ContractType::Monthly)
     }
+
+    /// `sport` の動画添削を受ける契約種別（[`Self::covers`] の逆。ゴルフはワンショット、それ以外は月額）。
+    pub const fn for_sport(sport: Sport) -> Self {
+        if ContractType::OneShot.covers(sport) {
+            ContractType::OneShot
+        } else {
+            ContractType::Monthly
+        }
+    }
+
+    /// この契約種別の動画の添削に着手してよいか（不変条件 2）。`payment_confirmed` はその動画の決済が
+    /// 確定しているか。
+    ///
+    /// 月額は送り放題なので常に `true`。ワンショット（ゴルフ）は動画 1 回ごとの都度課金なので、決済が
+    /// 確定した動画だけ。
+    pub const fn may_start_review(self, payment_confirmed: bool) -> bool {
+        match self {
+            ContractType::Monthly => true,
+            ContractType::OneShot => payment_confirmed,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -62,6 +83,27 @@ mod tests {
                 "{sport:?}"
             );
         }
+    }
+
+    #[test]
+    fn golf_videos_are_reviewed_under_one_shot_and_the_rest_under_monthly() {
+        for sport in Sport::ALL {
+            let contract_type = ContractType::for_sport(sport);
+            assert!(contract_type.covers(sport), "{sport:?}");
+            assert_eq!(
+                contract_type == ContractType::OneShot,
+                sport == Sport::Golf,
+                "{sport:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_shot_reviews_start_only_after_the_payment_is_confirmed() {
+        assert!(ContractType::Monthly.may_start_review(false));
+        assert!(ContractType::Monthly.may_start_review(true));
+        assert!(!ContractType::OneShot.may_start_review(false));
+        assert!(ContractType::OneShot.may_start_review(true));
     }
 
     #[test]

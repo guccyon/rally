@@ -4,15 +4,16 @@ use std::time::SystemTime;
 
 use application::{
     Unavailable,
-    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription},
+    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
+    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, AccountRepository, InsertAccountError, InvalidToken, RegisterAccount,
         TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, InMemoryBookingRepository,
+        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryBookingRepository,
         InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        InMemoryVideoRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
@@ -100,6 +101,19 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         EndLiveLessonSession::new(
             InMemoryLiveLessonSessionRepository::default(),
             FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        SubmitVideo::new(
+            InMemoryVideoRepository::default(),
+            FixedVideoStorage,
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        GetVideoReview::new(InMemoryVideoRepository::default()),
+        ReturnVideoReview::new(
+            InMemoryVideoRepository::default(),
+            EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
             clock,
         ),

@@ -5,7 +5,7 @@ info:
   description: |
     admin-web（最小の管理画面）が呼ぶ API。本部とコーチが同じアプリに役割で同居し、画面は役割で出し分ける
     （ADR 0002 Q3）。コーチ側の最小操作（予約枠の登録・添削の返却・通話参加）もここに載せる。
-    Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。
+    Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す（予約枠の登録 `publishSlot`・添削の返却 `returnVideoReview`）。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
     - 各操作の `x-context` は `specs/context-map.yaml` の context id
@@ -28,6 +28,8 @@ security:
 tags:
   - name: scheduling
     description: 予約（スロット）
+  - name: async-lesson
+    description: 非同期レッスン（動画添削の返却）
 
 paths:
   /slots:
@@ -64,6 +66,53 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /videos/{video_id}/review:
+    post:
+      operationId: returnVideoReview
+      summary: 添削の返却（コーチ）
+      description: |
+        生徒が送った動画（student-app の `submitVideo`）に、認証したコーチが添削を返す。コーチの役割のトークンだけが
+        呼べる（それ以外は 403）。返せるのは自分に送られた動画だけで、それ以外の動画と UUID でない ID には 404
+        （動画があることも知らせない）。返却は動画 1 本につき 1 回で、返却済みなら 409 `invalid_video_state`。
+        ゴルフの動画はワンショット決済が確定するまで添削に着手できない（不変条件 2）。Gen1 はワンショットの決済を
+        実装しないので、ゴルフの動画には常に 409 `review_payment_not_confirmed`。月額（ゴルフ以外）の動画は常に返せる。
+        `comment` が空（空白だけ）か長すぎれば 422。返却すると行動イベント `video_review.returned`（KPI「添削の返却
+        リードタイム」の入力。動画の送付の時刻 `submitted_at` も載せる）を発火する。
+        生徒は student-app の `getVideoReview` で同じ形の `VideoReview` を読む。
+      tags: [async-lesson]
+      x-context: async-lesson
+      x-analytics-events: [video_review.returned]
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnVideoReviewRequest"
+      responses:
+        "200":
+          description: 返却した添削
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoReview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -87,8 +136,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotFound:
+      description: 対象が存在しない（または、そのアカウントには扱えないので存在を知らせない）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（同じコーチの枠と期間が重なるなど）
+      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、添削が返却済みなど）
       content:
         application/json:
           schema:
@@ -148,6 +203,48 @@ components:
           format: date-time
           description: 開始より後（期間は終了を含まない）
 
+    VideoReviewStatus:
+      type: string
+      description: "in_progress: コーチがまだ返却していない（未返却） / returned: 返却した"
+      enum: [in_progress, returned]
+
+    VideoReview:
+      type: object
+      description: glossary の video_review（生徒が送った動画をコーチが添削して返すこと）。student-app の VideoReview と同じ形
+      required: [video_id, student_id, coach_id, status]
+      properties:
+        review_id:
+          type: [string, "null"]
+          format: uuid
+          description: 返却されるまでは null
+        video_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/VideoReviewStatus"
+        comment:
+          type: [string, "null"]
+          description: コーチの添削コメント。返却されるまでは null
+        returned_at:
+          type: [string, "null"]
+          format: date-time
+
+    ReturnVideoReviewRequest:
+      type: object
+      required: [comment]
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: コーチの添削コメント（空白だけは不可）
+
     ErrorCode:
       type: string
       description: |
@@ -155,8 +252,11 @@ components:
       enum:
         - unauthorized
         - forbidden
+        - not_found
         - validation_failed
         - slot_overlaps
+        - invalid_video_state
+        - review_payment_not_confirmed
 
     Error:
       type: object

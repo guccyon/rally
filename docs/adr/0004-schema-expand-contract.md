@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -40,6 +40,8 @@
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
 | | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0〜2） |
 | `live_lesson` | `sessions` | 通話セッション（T12 の expand で追加）。確定した予約 1 件につき 1 つ（`sessions_booking_id_key`）。終了時に接続品質の生の指標 4 つ（`call.ended` と同じ。損失率は百分率）を揃えて持つ。予約は scheduling の持ち物なので `booking_id` に外部キーは張らない。通話品質スコアは保存しない（ADR 0002 Q1） |
+| `async_lesson` | `videos` | 生徒がコーチに送った動画（T13 の expand で追加）。スポーツは 5 種類（ゴルフは golf-app から送る）。動画本体は保存先（S3 への直接アップロード。Gen1 はモック）に置き、ここには持たない。状態の列は持たず、添削の行の有無で決まる |
+| | `video_reviews` | コーチが返した添削。動画 1 本につき 1 つ（`video_reviews_video_id_key`）。コメントは空でない |
 
 列挙は Postgres の enum 型ではなく `text` と `CHECK` で持つ（値の削除・改名が enum 型だと expand/contract に分けにくい）。
 
@@ -55,13 +57,15 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 | 月額の受講権は同じ生徒・同じスポーツの月額契約から 1 つ | `entitlements_subscription_fkey`（契約・生徒・スポーツの複合外部キー）と `subscription_id` の一意 |
 | コーチの表・予約・契約の相手は正しい役割のアカウント | `(account_id, role)` への複合外部キー |
 | 状態と時刻の整合（確定なら `confirmed_at`、キャンセルなら `cancelled_at`） | `bookings_status_timestamps` など |
+| 動画の添削の返却は 1 回 | `video_reviews_video_id_key` |
 
 制約にしないもの:
 
 - **同じコーチの枠が重ならないこと**（T07）: 判定は domain の集約 `CoachCalendar` の 1 か所に寄せ、DB の排他制約（`btree_gist` の `EXCLUDE USING gist (coach_id WITH =, tstzrange(starts_at, ends_at) WITH &&)`）は置かない。どの状態の枠が時間を占めるか（`closed` は占めない）は domain の規則で、排他制約にすると同じ規則を `WHERE` 句に写して 2 か所で持つことになり、拒否の理由（重なった枠）も domain の言葉で返しにくい。その代わり、並行な公開が互いを見落とさないよう、infra の `PgSlotRepository` はトランザクションの中でコーチごとの advisory lock（`pg_advisory_xact_lock`）を取ってから、期間に重なる枠の読み取り・判定・保存を行う。DB 以外の書き込み経路（手作業の SQL など）からの重なりは防げないことを受け入れる
 - **キャンセル規定**（開始 24 時間前以降のキャンセルは回数を消費）: 判定は scheduling のアプリケーションの 1 か所に置く（ADR 0002、不変条件 3）。DB にも置くと判定が 2 か所になる。予約に「消費するか」の列も持たない（消費の実行は entitlement が `BookingCancelled` を購読して行う。T09 / T11）
 - 枠の消費をいつ・どの予約で行うか、暦月をどのタイムゾーンで区切るか: T11 で決める。DB は「枠の行の残回数が 0〜2」だけを守る（T11 で決めた: ADR 0005）
-- ゴルフの添削はワンショット決済が確定した動画だけ（不変条件 2）、コーチへの支払い（不変条件 4）: async-lesson / billing のテーブルとともに段 5 以降
+- ゴルフの添削はワンショット決済が確定した動画だけ（不変条件 2）: 判定は domain の `ContractType::may_start_review` の 1 か所に置き、async-lesson は返却の前にポート `ReviewGate` で問い合わせる（T13）。決済は billing の持ち物で、Gen1 は billing のテーブルがないので DB では守らない（billing を実装するときに見直す）
+- コーチへの支払い（不変条件 4）: billing のテーブルとともに段 5 以降
 
 ### 5. 検査
 

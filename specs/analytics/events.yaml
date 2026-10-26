@@ -57,11 +57,12 @@ events:
     actor: student
     required: [student_id, coach_id, video_id, sport, occurred_at]
     kpi: "添削の返却リードタイム"
+  # 返却のリードタイム（occurred_at - submitted_at）をセマンティック層で計算できるよう、動画を送付した時刻 submitted_at（video.submitted の occurred_at と同じ）も持たせる
   - name: video_review.returned
     ja: "添削の返却"
     context: async-lesson
     actor: coach
-    required: [student_id, coach_id, video_id, review_id, occurred_at]
+    required: [student_id, coach_id, video_id, review_id, submitted_at, occurred_at]
     kpi: "添削の返却リードタイム"
   # レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く
   - name: lesson.completed

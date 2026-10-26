@@ -71,6 +71,16 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LiveLessonSessionAlreadyEnded => "通話セッションは終了済み".to_string(),
         DomainError::SessionEndsBeforeItStarts => "通話セッションの終了が開始より前".to_string(),
         DomainError::InvalidPacketLossRate => "パケット損失率は 0〜100（%）".to_string(),
+        DomainError::NotAVideoParty => "動画の当事者でない".to_string(),
+        DomainError::NotTheVideoCoach => "動画の送り先のコーチでない".to_string(),
+        DomainError::VideoReviewAlreadyReturned => "動画の添削は返却済み".to_string(),
+        DomainError::VideoReviewNotAllowed { sport } => format!(
+            "スポーツ {} の動画は決済が確定するまで添削に着手できない",
+            sport_to_contract(*sport)
+        ),
+        DomainError::ReviewReturnedBeforeSubmission => "添削の返却が動画の送付より前".to_string(),
+        DomainError::EmptyReviewComment => "添削コメントが空".to_string(),
+        DomainError::ReviewCommentTooLong { max } => format!("添削コメントは {max} 文字まで"),
     }
 }
 
@@ -219,6 +229,34 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::InvalidPacketLossRate),
             "パケット損失率は 0〜100（%）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotAVideoParty),
+            "動画の当事者でない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotTheVideoCoach),
+            "動画の送り先のコーチでない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::VideoReviewAlreadyReturned),
+            "動画の添削は返却済み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::VideoReviewNotAllowed { sport: Sport::Golf }),
+            "スポーツ golf の動画は決済が確定するまで添削に着手できない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::ReviewReturnedBeforeSubmission),
+            "添削の返却が動画の送付より前"
+        );
+        assert_eq!(
+            domain_error(&DomainError::EmptyReviewComment),
+            "添削コメントが空"
+        );
+        assert_eq!(
+            domain_error(&DomainError::ReviewCommentTooLong { max: 4000 }),
+            "添削コメントは 4000 文字まで"
         );
     }
 }

@@ -101,7 +101,7 @@ async fn subscription_entitlement(pool: &PgPool, student_id: &str) -> String {
 async fn migrations_create_core_tables(pool: PgPool) {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_schema || '.' || table_name FROM information_schema.tables
-         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson')
+         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson')
          ORDER BY 1",
     )
     .fetch_all(&pool)
@@ -110,6 +110,8 @@ async fn migrations_create_core_tables(pool: PgPool) {
     assert_eq!(
         tables,
         [
+            "async_lesson.video_reviews",
+            "async_lesson.videos",
             "entitlement.entitlements",
             "entitlement.live_lesson_quotas",
             "entitlement.subscriptions",
@@ -620,5 +622,116 @@ async fn live_lesson_session_records_quality_only_when_ended(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (CHECK_VIOLATION, "sessions_quality_when_ended")
+    );
+}
+
+/// 生徒 `student_id` がコーチ `coach_id` に送った動画の行を入れ、video_id を返す。
+async fn submit_video(
+    pool: &PgPool,
+    student_id: &str,
+    coach_id: &str,
+    sport: &str,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO async_lesson.videos (student_id, coach_id, sport, submitted_at)
+         VALUES ($1::uuid, $2::uuid, $3, '2026-10-26T10:00:00Z')
+         RETURNING video_id::text",
+    )
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(sport)
+    .fetch_one(pool)
+    .await
+}
+
+/// 動画 `video_id` に添削 `comment` を返した行を入れる。
+async fn return_review(
+    pool: &PgPool,
+    video_id: &str,
+    comment: &str,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO async_lesson.video_reviews (video_id, comment, returned_at)
+         VALUES ($1::uuid, $2, '2026-10-27T16:00:00Z')
+         RETURNING review_id::text",
+    )
+    .bind(video_id)
+    .bind(comment)
+    .fetch_one(pool)
+    .await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn video_parties_have_the_right_roles(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    submit_video(&pool, &student_id, &coach_id, "tennis")
+        .await
+        .unwrap();
+    // 生徒の欄にコーチ、コーチの欄に生徒は入らない
+    let (code, constraint) = violation(submit_video(&pool, &coach_id, &coach_id, "tennis").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "videos_student_fkey")
+    );
+    let (code, _) = violation(submit_video(&pool, &student_id, &student_id, "tennis").await);
+    assert_eq!(code, FOREIGN_KEY_VIOLATION);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn video_sports_match_the_identity_values(pool: PgPool) {
+    use domain::identity::Sport;
+    use infra::identity_values::sport_value;
+
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(&pool, "async_lesson.videos", "videos_sport_check").await,
+        sports
+    );
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let (code, constraint) =
+        violation(submit_video(&pool, &student_id, &coach_id, "cricket").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "videos_sport_check")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_video_has_at_most_one_review(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let video_id = submit_video(&pool, &student_id, &coach_id, "tennis")
+        .await
+        .unwrap();
+
+    // 空のコメントは入らない
+    for comment in ["", "   "] {
+        let (code, constraint) = violation(return_review(&pool, &video_id, comment).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "video_reviews_comment_check"),
+            "{comment:?}"
+        );
+    }
+    return_review(&pool, &video_id, "テイクバックが早い")
+        .await
+        .unwrap();
+    // 返却は 1 回
+    let (code, constraint) = violation(return_review(&pool, &video_id, "もう一度").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "video_reviews_video_id_key")
+    );
+    // ない動画の添削は入らない
+    let (code, constraint) =
+        violation(return_review(&pool, "00000000-0000-4000-8000-000000000000", "コメント").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "video_reviews_video_id_fkey")
     );
 }

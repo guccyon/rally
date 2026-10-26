@@ -3,14 +3,17 @@
 //! interface と infra の両方に依存してよいのはこのクレートだけ（docs/adr/0003-backend-layers.md の決定 5）。
 
 use application::{
+    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     clock::{Clock, SystemClock},
     entitlement::{
-        EntitlementQuotaGate, GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
+        EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, LiveLessonQuotaSubscriber,
+        StartSubscription,
     },
     identity::RegisterAccount,
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink,
     },
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
@@ -19,7 +22,7 @@ use application::{
     },
 };
 use axum::Router;
-use infra::{InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider};
+use infra::{InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage};
 
 /// HTTP のルーター（現在時刻は OS の時計）。組み立ては [`router_at`]。
 pub fn router() -> Router {
@@ -36,6 +39,10 @@ pub fn router() -> Router {
 /// 通話セッションの開始・終了は通話基盤のモック（`MockVideoCallProvider`。終了時に接続品質の指標を乱数で生成する）で
 /// 組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
 ///
+/// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）で、添削の返却は
+/// entitlement に着手してよいかを問い合わせて（`EntitlementReviewGate`。月額は常に通し、ゴルフは通さない）組み立てる。
+/// 動画と添削の保存先は当面インメモリ。
+///
 /// スロットの Postgres 実装（`infra::PgSlotRepository`）は `scheduling.slots` の外部キーが
 /// `identity.coaches` を指すので、アカウントの保存先を Postgres にするときに一緒に差し替える（予約・受講権も同じ）。
 pub fn router_at<C>(clock: C) -> Router
@@ -49,6 +56,7 @@ where
     let events = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
     let sessions = InMemoryLiveLessonSessionRepository::default();
     let video = MockVideoCallProvider::new();
+    let videos = InMemoryVideoRepository::default();
     interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -85,7 +93,15 @@ where
             analytics.clone(),
             clock.clone(),
         ),
-        EndLiveLessonSession::new(sessions, video, analytics, clock),
+        EndLiveLessonSession::new(sessions, video, analytics.clone(), clock.clone()),
+        SubmitVideo::new(
+            videos.clone(),
+            MockVideoStorage,
+            analytics.clone(),
+            clock.clone(),
+        ),
+        GetVideoReview::new(videos.clone()),
+        ReturnVideoReview::new(videos, EntitlementReviewGate, analytics, clock),
         MockTokenService,
     )
 }

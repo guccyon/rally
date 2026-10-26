@@ -5,14 +5,16 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     analytics::AnalyticsEvent,
-    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription},
+    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
+    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
+        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
+        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
         RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
@@ -105,6 +107,19 @@ fn app() -> App {
         EndLiveLessonSession::new(
             InMemoryLiveLessonSessionRepository::default(),
             FixedVideoCallProvider::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        SubmitVideo::new(
+            InMemoryVideoRepository::default(),
+            FixedVideoStorage,
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        GetVideoReview::new(InMemoryVideoRepository::default()),
+        ReturnVideoReview::new(
+            InMemoryVideoRepository::default(),
+            EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
             clock,
         ),

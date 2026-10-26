@@ -124,6 +124,17 @@ impl Contract {
                         .is_ok(),
                         "{at}: date-time（RFC 3339）でない {s}"
                     ),
+                    // スキームと `://` のあとに何かがある最小の形（絶対 URI）
+                    Some("uri") => assert!(
+                        s.split_once("://").is_some_and(|(scheme, rest)| {
+                            !rest.is_empty()
+                                && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                                && scheme
+                                    .chars()
+                                    .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+                        }),
+                        "{at}: uri でない {s}"
+                    ),
                     Some(other) => panic!("{at}: 検査できない format {other}"),
                     None => {}
                 }

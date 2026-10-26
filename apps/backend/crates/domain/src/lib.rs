@@ -3,6 +3,7 @@
 //! 純粋に保つ: I/O・非同期ランタイム・フレームワークに依存しない。
 //! ワークスペースの他のクレートにも依存しない（docs/adr/0003-backend-layers.md）。
 
+pub mod async_lesson;
 pub mod entitlement;
 mod error;
 pub mod identity;
