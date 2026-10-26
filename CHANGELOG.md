@@ -20,4 +20,5 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - レッスンの完了記録: `POST /lessons/completions`（通話セッション・動画の当事者だけ。終了した通話セッション（`live_lesson`）または添削が返された動画（`async_lesson`）を指定する。終了前のセッションは 409 `invalid_session_state`、未返却の動画は 409 `invalid_video_state`、2 回目は 409 `lesson_already_completed`）。`is_first_lesson` はその生徒の初回だけ true。`lesson.completed` を発火し、境界間イベント `LessonCompleted` を発行する。student-app の `ErrorCode` に `invalid_video_state` を追加（#39）
 
 ### 変更
+- 契約: `recordLessonCompletion` の `x-context` を `catalog` から `[live-lesson, async-lesson]` に変更し、glossary の lesson を「レッスン種別」と「完了したレッスン（lesson_completion）」に分けた。行動イベント `lesson.completed` も `contexts: [live-lesson, async-lesson]` に（#55）
 - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）

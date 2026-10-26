@@ -1,7 +1,7 @@
 # 行動イベントの定義（初版）。Gen1 の一周シナリオ「体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録」を覆う最小セット。
 # 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
 # モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義しない。
-# 各項目: name（<対象>.<出来事>）・ja・context・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
+# 各項目: name（<対象>.<出来事>）・ja・context（context-map.yaml の id。複数のコンテキストが発行するイベントだけ contexts: で id を列挙する。glossary と同じ規約）・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
 schema_version: "0.1"
 status: draft
 events:
@@ -64,12 +64,11 @@ events:
     actor: coach
     required: [student_id, coach_id, video_id, review_id, submitted_at, occurred_at]
     kpi: "添削の返却リードタイム"
-  # レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く
-  # 発火するのは live-lesson / async-lesson の集約が発行した完了記録で、context は glossary の lesson.context を見直す Question（docs/adr/0006）の回答に合わせて直す
+  # 発火するのは live-lesson / async-lesson の集約が発行した完了記録（glossary の lesson_completion）で、contexts はその両方（docs/adr/0006）
   # lesson_type は live_lesson | async_lesson（student-app の契約の LessonType と同じ）。is_first_lesson はその生徒の完了記録が同期・非同期あわせて 0 件のときだけ true
   - name: lesson.completed
     ja: "レッスンの完了記録"
-    context: catalog
+    contexts: [live-lesson, async-lesson]
     actor: coach
     required: [student_id, coach_id, lesson_id, lesson_type, is_first_lesson, occurred_at]
     kpi: "初回レッスンまでの日数"

@@ -8,7 +8,7 @@ info:
     実装（P1 Walking Skeleton の段 2〜5）はこの契約に合わせる。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（booking → Booking など）
-    - 各操作の `x-context` は `specs/context-map.yaml` の context id
+    - 各操作の `x-context` は `specs/context-map.yaml` の context id。複数のコンテキストが発行する事実を扱う操作だけ id の配列にする（glossary の `contexts` と同じ規約）
     - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
     - 外部連携（Stripe / Twilio Video / S3 直接アップロード）は Gen1 ではモックだが、契約は本物と同じ形で書く
     - 認証はモックのトークンを `bearerAuth` として置く（不透明なトークン。`components.securitySchemes.bearerAuth`）
@@ -428,8 +428,7 @@ paths:
       description: |
         同期レッスン（通話セッション）または非同期レッスン（添削が返却された動画）の完了を記録する。
         完了記録は live-lesson の通話セッション・async-lesson の動画のそれぞれの集約が発行する（docs/adr/0006）。
-        `x-context` は glossary の lesson と同じ context（catalog）のままにし、glossary の `lesson.context` を見直す
-        Question（docs/adr/0006）の回答に合わせて直す。
+        `x-context` は glossary の lesson_completion と同じく live-lesson と async-lesson の両方（docs/adr/0006）。
         `is_first_lesson` はサーバーが判定する（その生徒の完了記録が同期・非同期あわせて 0 件のときだけ true）。
         呼べるのは元のセッション・動画の当事者（生徒・コーチ）だけで、それ以外のアカウントとない ID には 404
         （あることも知らせない）。`session_id` / `video_id` が UUID でない、`lesson_type` に合わない ID を指定したときは 422。
@@ -437,7 +436,7 @@ paths:
         同じセッション・動画の 2 回目は 409 `lesson_already_completed`。記録すると行動イベント `lesson.completed` を
         発火し、境界間イベント `LessonCompleted` を発行する。
       tags: [catalog]
-      x-context: catalog
+      x-context: [live-lesson, async-lesson]
       x-analytics-events: [lesson.completed]
       requestBody:
         required: true
