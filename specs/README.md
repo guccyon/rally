@@ -10,3 +10,4 @@
 - `contracts/`: OpenAPI / AsyncAPI。5 アプリ分の境界を最初から引き、実装するのは Gen1 のクライアントのみ
 - `analytics/`: 行動イベントの定義とセマンティック層
 - `change-scenarios.yaml`: L3 の固定変更シナリオ
+  - 初版を配置済み（Blueprint のシナリオの種 7 件、すべて `status: candidate`。人間レビューで 10〜30 件に育てる）

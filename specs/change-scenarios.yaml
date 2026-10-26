@@ -1,0 +1,47 @@
+# L3（拡張性・結合度）の固定変更シナリオ集の初版。人間レビュー済みの 10〜30 件に育てる土台。
+# expected_contexts は context-map.yaml の id。影響範囲の実測は P2（L3 の実装）で行う。
+schema_version: "0.1"
+status: draft
+scenarios:
+  - id: cs-001
+    title: "新しいスポーツ（水泳）を追加する"
+    description: "対応スポーツに水泳を加え、コーチが水泳のレッスンを提供し生徒が検索・予約できるようにする。契約種別は月額とする。"
+    expected_contexts: [catalog, matching]
+    rationale: "スポーツとレッスン種別は catalog の責務で、検索・推薦は matching が担うため、予約や受講権の判定に手を入れずに済むのが望ましい。"
+    status: candidate
+  - id: cs-002
+    title: "ゴルフ以外のスポーツにもワンショット課金を開放する"
+    description: "テニスなどゴルフ以外のスポーツでも、動画添削 1 回ごとの都度課金を選べるようにする。"
+    expected_contexts: [entitlement, billing, async-lesson, catalog]
+    rationale: "ワンショット決済確定前は添削に着手できない不変条件（async-lesson の着手条件）と、契約種別の持ち方（entitlement）・決済（billing）・スポーツごとの提供可否（catalog）が関わる。"
+    status: candidate
+  - id: cs-003
+    title: "ビデオ通話の月間回数を契約プランごとに可変にする"
+    description: "月額契約のビデオ通話の上限を暦月 2 回固定ではなく、プランごとに設定できるようにする。"
+    expected_contexts: [entitlement, live-lesson, scheduling]
+    rationale: "月 2 回の上限は entitlement の利用権、消費は live-lesson、3 回目を予約できない判定は scheduling に現れるため、上限値の所在が一箇所に集まっているかが問われる。"
+    status: candidate
+  - id: cs-004
+    title: "グループレッスン（1 コーチ : N 生徒）を追加する"
+    description: "1 人のコーチが複数の生徒に同時にビデオ通話で指導するレッスン種別を追加する。"
+    expected_contexts: [catalog, scheduling, live-lesson, entitlement, billing]
+    rationale: "マンツーマン前提のレッスン種別・スロット・通話セッションに加え、回数消費の数え方と支払い算出が 1:N に対応する必要がある。"
+    status: candidate
+  - id: cs-005
+    title: "コーチへの支払いを月次締めから週次締めに変える"
+    description: "コーチへの支払いの締め日を月次から週次に変更する。"
+    expected_contexts: [billing]
+    rationale: "支払い額の算出と手数料は billing の責務で、締め周期の変更は他のコンテキストに波及しないのが望ましい。"
+    status: candidate
+  - id: cs-006
+    title: "動画添削に AI による一次フィードバックを挟む"
+    description: "生徒が送った動画に対し、コーチの添削の前に AI が一次フィードバックを生成して提示する。"
+    expected_contexts: [async-lesson, notification, analytics]
+    rationale: "添削ワークフローは async-lesson の責務で、一次フィードバックの通知は notification、利用の計測は analytics が受け持つ。"
+    status: candidate
+  - id: cs-007
+    title: "Twilio を別の通話基盤に差し替える"
+    description: "ビデオ通話の外部基盤を Twilio Video から別のサービスに置き換える。"
+    expected_contexts: [live-lesson]
+    rationale: "通話セッションと接続品質は live-lesson の責務で、外部連携はポート越しのため、差し替えは live-lesson に閉じるのが望ましい。"
+    status: candidate
