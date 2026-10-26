@@ -1,0 +1,22 @@
+name: rally_student_app
+description: "Rally の生徒アプリ（Gen1 の最小）"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.3
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  yaml: ^3.1.4
+
+flutter:
+  uses-material-design: true

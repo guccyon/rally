@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 生徒アプリの最小の画面（`apps/student-app/`、Flutter）: アカウント登録 → スロット検索（スポーツで絞る）→ 体験予約 → 予約の確定 → 通話の開始・終了（映像はモック）または動画の送付（ファイル選択はモック）→ 添削結果 → 完了記録 → 月額契約の開始（決済はモック）（#60）
 - admin-web の最小の画面（`apps/admin-web/`、Next.js）: モックのトークンでログインし、コーチは枠の公開・添削の返却・通話セッションの開始と終了、本部は予約・完了記録の一覧（API がないので「未実装」と表示）。admin-web の契約に、実装済みの `startLiveLessonSession` / `endLiveLessonSession`（student-app と同じ形）と `ErrorCode` の `invalid_booking_state` / `invalid_session_state` を追加（#59）
 - 合成シード v0: `cargo run -p seed -- --seed 42`。コーチ 30・生徒 1000・12 ヶ月の履歴（上位 3 コーチに生徒の約半分、初回後 30 日以内の離脱が最多、低品質の通話 約 15%）。各集約の Postgres の保存先もこのとき実装（#57）
 - バックエンドの骨格: Cargo ワークスペースと層（domain / application / infra / interface / server）、依存方向テスト、`GET /healthz`（#19）
