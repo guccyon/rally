@@ -110,6 +110,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
     assert_eq!(
         tables,
         [
+            "async_lesson.lesson_completions",
             "async_lesson.video_reviews",
             "async_lesson.videos",
             "entitlement.entitlements",
@@ -117,6 +118,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "entitlement.subscriptions",
             "identity.accounts",
             "identity.coaches",
+            "live_lesson.lesson_completions",
             "live_lesson.sessions",
             "scheduling.bookings",
             "scheduling.slots",
@@ -733,5 +735,192 @@ async fn a_video_has_at_most_one_review(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (FOREIGN_KEY_VIOLATION, "video_reviews_video_id_fkey")
+    );
+}
+
+/// 完了記録の行を `table`（`live_lesson.lesson_completions` / `async_lesson.lesson_completions`）に入れる。
+/// `source_column` は元の集約の列（`session_id` / `video_id`）。
+async fn complete_lesson(
+    pool: &PgPool,
+    table: &'static str,
+    source_column: &'static str,
+    source_id: &str,
+    (student_id, coach_id): (&str, &str),
+    is_first_lesson: bool,
+) -> Result<String, sqlx::Error> {
+    // テーブル名・列名はテストの定数だけ（利用者の入力ではない）
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO {table} ({source_column}, student_id, coach_id, is_first_lesson, completed_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, '2026-11-01T11:00:00Z')
+         RETURNING lesson_id::text"
+    )))
+    .bind(source_id)
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(is_first_lesson)
+    .fetch_one(pool)
+    .await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_live_lesson_session_is_completed_once_by_its_parties(pool: PgPool) {
+    const TABLE: &str = "live_lesson.lesson_completions";
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let session_id = start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let other_student = student(&pool).await;
+
+    // 生徒・コーチはセッションの当事者
+    let (code, constraint) = violation(
+        complete_lesson(
+            &pool,
+            TABLE,
+            "session_id",
+            &session_id,
+            (&other_student, &coach_id),
+            true,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_completions_session_fkey")
+    );
+    complete_lesson(
+        &pool,
+        TABLE,
+        "session_id",
+        &session_id,
+        (&student_id, &coach_id),
+        true,
+    )
+    .await
+    .unwrap();
+    // 同じセッションの完了は 1 回
+    let (code, constraint) = violation(
+        complete_lesson(
+            &pool,
+            TABLE,
+            "session_id",
+            &session_id,
+            (&student_id, &coach_id),
+            false,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "lesson_completions_session_id_key")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn only_reviewed_videos_are_completed_once_by_their_parties(pool: PgPool) {
+    const TABLE: &str = "async_lesson.lesson_completions";
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let other_coach = coach(&pool).await;
+    let video_id = submit_video(&pool, &student_id, &coach_id, "tennis")
+        .await
+        .unwrap();
+    let parties = (student_id.as_str(), coach_id.as_str());
+
+    // 添削を返していない動画は完了にできない
+    let (code, constraint) =
+        violation(complete_lesson(&pool, TABLE, "video_id", &video_id, parties, true).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_completions_video_id_fkey")
+    );
+    return_review(&pool, &video_id, "テイクバックが早い")
+        .await
+        .unwrap();
+    // 生徒・コーチは動画の当事者
+    let (code, constraint) = violation(
+        complete_lesson(
+            &pool,
+            TABLE,
+            "video_id",
+            &video_id,
+            (&student_id, &other_coach),
+            true,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_completions_video_fkey")
+    );
+    complete_lesson(&pool, TABLE, "video_id", &video_id, parties, true)
+        .await
+        .unwrap();
+    // 同じ動画の完了は 1 回
+    let (code, constraint) =
+        violation(complete_lesson(&pool, TABLE, "video_id", &video_id, parties, false).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "lesson_completions_video_id_key")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_student_has_at_most_one_first_lesson_per_table(pool: PgPool) {
+    // 同期: 同じ生徒の 2 つのセッション
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let first = start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let slot_id: String = sqlx::query_scalar(
+        "INSERT INTO scheduling.slots (coach_id, sport, starts_at, ends_at)
+         VALUES ($1::uuid, 'tennis', now() + interval '3 days', now() + interval '3 days 1 hour')
+         RETURNING slot_id::text",
+    )
+    .bind(&coach_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let second_booking = book(&pool, &slot_id, &student_id).await.unwrap();
+    let second = start_session(&pool, &second_booking, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let parties = (student_id.as_str(), coach_id.as_str());
+    const LIVE: &str = "live_lesson.lesson_completions";
+    complete_lesson(&pool, LIVE, "session_id", &first, parties, true)
+        .await
+        .unwrap();
+    let (code, constraint) =
+        violation(complete_lesson(&pool, LIVE, "session_id", &second, parties, true).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "lesson_completions_one_first_per_student")
+    );
+    complete_lesson(&pool, LIVE, "session_id", &second, parties, false)
+        .await
+        .unwrap();
+
+    // 非同期: 同じ生徒の 2 本の動画
+    const ASYNC: &str = "async_lesson.lesson_completions";
+    let mut videos = Vec::new();
+    for _ in 0..2 {
+        let video_id = submit_video(&pool, &student_id, &coach_id, "tennis")
+            .await
+            .unwrap();
+        return_review(&pool, &video_id, "テイクバックが早い")
+            .await
+            .unwrap();
+        videos.push(video_id);
+    }
+    complete_lesson(&pool, ASYNC, "video_id", &videos[0], parties, true)
+        .await
+        .unwrap();
+    let (code, constraint) =
+        violation(complete_lesson(&pool, ASYNC, "video_id", &videos[1], parties, true).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "lesson_completions_one_first_per_student")
     );
 }

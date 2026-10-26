@@ -6,7 +6,9 @@
 
 use std::{future::Future, time::SystemTime};
 
-use domain::{entitlement::SubscriptionId, identity::AccountId, scheduling::BookingId};
+use domain::{
+    entitlement::SubscriptionId, identity::AccountId, lesson::LessonId, scheduling::BookingId,
+};
 use uuid::Uuid;
 
 /// ドメインイベント。変種は AsyncAPI のメッセージに 1 対 1 で対応し、属性はペイロードの `required` と同じ。
@@ -37,6 +39,16 @@ pub enum DomainEvent {
         consumes_quota: bool,
         cancelled_at: SystemTime,
     },
+    /// `LessonCompleted`（live-lesson・async-lesson が発行し、billing・review・analytics が購読する）。
+    /// レッスン（通話セッション・添削を返した動画）の完了が記録された
+    LessonCompleted {
+        /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
+        event_id: Uuid,
+        occurred_at: SystemTime,
+        student_id: AccountId,
+        coach_id: AccountId,
+        lesson_id: LessonId,
+    },
     /// `SubscriptionStarted`（entitlement が発行し、billing・analytics が購読する）
     SubscriptionStarted {
         /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
@@ -53,6 +65,7 @@ impl DomainEvent {
         match self {
             DomainEvent::BookingConfirmed { .. } => "BookingConfirmed",
             DomainEvent::BookingCancelled { .. } => "BookingCancelled",
+            DomainEvent::LessonCompleted { .. } => "LessonCompleted",
             DomainEvent::SubscriptionStarted { .. } => "SubscriptionStarted",
         }
     }

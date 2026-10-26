@@ -8,6 +8,7 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     entitlement::SubscriptionId,
     identity::{AccountId, Sport},
+    lesson::{LessonId, LessonType},
     live_lesson::SessionId,
     scheduling::{BookingId, SlotId},
 };
@@ -101,6 +102,17 @@ pub enum AnalyticsEvent {
         submitted_at: SystemTime,
         occurred_at: SystemTime,
     },
+    /// `lesson.completed`（KPI「初回レッスンまでの日数」の入力。`is_first_lesson` は north star
+    /// 「初回レッスン後の 1 ヶ月継続率」の起点）
+    LessonCompleted {
+        student_id: AccountId,
+        coach_id: AccountId,
+        lesson_id: LessonId,
+        lesson_type: LessonType,
+        /// その生徒にとって初回のレッスンか（domain の `LessonCompletion` が判定する）
+        is_first_lesson: bool,
+        occurred_at: SystemTime,
+    },
     /// `subscription.started`（KPI「初回レッスン後の 1 ヶ月継続率」の入力）
     SubscriptionStarted {
         student_id: AccountId,
@@ -123,6 +135,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::CallEnded { .. } => "call.ended",
             AnalyticsEvent::VideoSubmitted { .. } => "video.submitted",
             AnalyticsEvent::VideoReviewReturned { .. } => "video_review.returned",
+            AnalyticsEvent::LessonCompleted { .. } => "lesson.completed",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
         }
     }

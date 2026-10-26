@@ -65,6 +65,8 @@ events:
     required: [student_id, coach_id, video_id, review_id, submitted_at, occurred_at]
     kpi: "添削の返却リードタイム"
   # レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く
+  # 発火するのは live-lesson / async-lesson の集約が発行した完了記録で、context は glossary の lesson.context を見直す Question（docs/adr/0006）の回答に合わせて直す
+  # lesson_type は live_lesson | async_lesson（student-app の契約の LessonType と同じ）。is_first_lesson はその生徒の完了記録が同期・非同期あわせて 0 件のときだけ true
   - name: lesson.completed
     ja: "レッスンの完了記録"
     context: catalog

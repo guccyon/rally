@@ -427,8 +427,15 @@ paths:
       summary: レッスンの完了記録
       description: |
         同期レッスン（通話セッション）または非同期レッスン（添削が返却された動画）の完了を記録する。
-        レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く。
-        `is_first_lesson` はサーバーが判定する。
+        完了記録は live-lesson の通話セッション・async-lesson の動画のそれぞれの集約が発行する（docs/adr/0006）。
+        `x-context` は glossary の lesson と同じ context（catalog）のままにし、glossary の `lesson.context` を見直す
+        Question（docs/adr/0006）の回答に合わせて直す。
+        `is_first_lesson` はサーバーが判定する（その生徒の完了記録が同期・非同期あわせて 0 件のときだけ true）。
+        呼べるのは元のセッション・動画の当事者（生徒・コーチ）だけで、それ以外のアカウントとない ID には 404
+        （あることも知らせない）。`session_id` / `video_id` が UUID でない、`lesson_type` に合わない ID を指定したときは 422。
+        終了していない通話セッションは 409 `invalid_session_state`、添削が返されていない動画は 409 `invalid_video_state`、
+        同じセッション・動画の 2 回目は 409 `lesson_already_completed`。記録すると行動イベント `lesson.completed` を
+        発火し、境界間イベント `LessonCompleted` を発行する。
       tags: [catalog]
       x-context: catalog
       x-analytics-events: [lesson.completed]
@@ -951,6 +958,7 @@ components:
         - live_lesson_quota_exceeded
         - subscription_already_active
         - invalid_session_state
+        - invalid_video_state
         - lesson_already_completed
 
     Error:

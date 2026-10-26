@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use application::{
     domain_event::DomainEvent, entitlement::subscription_id_uuid, identity::account_id_uuid,
-    scheduling::booking_id_uuid,
+    lesson::lesson_id_uuid, scheduling::booking_id_uuid,
 };
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -44,6 +44,19 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
             "booking_id": booking_id_uuid::format(*booking_id),
             "consumes_quota": consumes_quota,
             "cancelled_at": date_time(*cancelled_at)?,
+        })),
+        DomainEvent::LessonCompleted {
+            event_id,
+            occurred_at,
+            student_id,
+            coach_id,
+            lesson_id,
+        } => Ok(json!({
+            "event_id": event_id.hyphenated().to_string(),
+            "occurred_at": date_time(*occurred_at)?,
+            "student_id": account_id_uuid::format(*student_id),
+            "coach_id": account_id_uuid::format(*coach_id),
+            "lesson_id": lesson_id_uuid::format(*lesson_id),
         })),
         DomainEvent::SubscriptionStarted {
             event_id,

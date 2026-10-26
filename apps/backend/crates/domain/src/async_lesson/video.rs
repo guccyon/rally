@@ -4,6 +4,7 @@ use super::{ReviewComment, VideoId, VideoReview, VideoReviewId, VideoStatus};
 use crate::{
     DomainError,
     identity::{AccountId, Sport},
+    lesson::{LessonCompletion, LessonId, LessonSource},
 };
 
 /// 非同期レッスン（glossary の async_lesson）で生徒がコーチに送る動画。
@@ -83,6 +84,40 @@ impl Video {
         }
         self.review = Some(VideoReview::new(review_id, self.id, comment, now));
         Ok(())
+    }
+
+    /// 当事者 `account` が `now` に、この動画の非同期レッスンの完了を記録する（完了記録の ID は `lesson_id`）。
+    ///
+    /// `history` はその生徒の既存の完了記録（同期・非同期の両方。`is_first_lesson` の判定と重複の検出に使う。
+    /// [`LessonCompletion`]）。次の不変条件を破れば [`DomainError`] を返す。動画は変えない。
+    ///
+    /// - 記録できるのは動画の当事者（送った生徒・送り先のコーチ）だけ（[`DomainError::NotAVideoParty`]）
+    /// - 添削を返した動画だけ（[`DomainError::VideoReviewNotReturned`]）
+    /// - 記録は返却の後（同じ時刻は許す。[`DomainError::CompletionBeforeLessonEnded`]）
+    /// - 同じ動画の完了は 1 回（[`DomainError::LessonAlreadyCompleted`]）
+    pub fn complete(
+        &self,
+        lesson_id: LessonId,
+        account: AccountId,
+        history: &[LessonCompletion],
+        now: SystemTime,
+    ) -> Result<LessonCompletion, DomainError> {
+        self.ensure_visible_to(account)?;
+        let review = self
+            .review
+            .as_ref()
+            .ok_or(DomainError::VideoReviewNotReturned)?;
+        if now < review.returned_at() {
+            return Err(DomainError::CompletionBeforeLessonEnded);
+        }
+        LessonCompletion::record(
+            lesson_id,
+            self.student_id,
+            self.coach_id,
+            LessonSource::Async(self.id),
+            history,
+            now,
+        )
     }
 
     pub const fn id(&self) -> VideoId {
@@ -248,6 +283,75 @@ mod tests {
                 Err(expected)
             );
             assert_eq!(video, before);
+        }
+    }
+
+    const LESSON: LessonId = LessonId::from_u128(70);
+
+    fn reviewed() -> Video {
+        let mut video = submitted();
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(30))
+            .unwrap();
+        video
+    }
+
+    #[test]
+    fn the_parties_complete_a_reviewed_video() {
+        let video = reviewed();
+        for account in [STUDENT, COACH] {
+            let completion = video.complete(LESSON, account, &[], at(31)).unwrap();
+            assert_eq!(completion.id(), LESSON);
+            assert_eq!(
+                (completion.student_id(), completion.coach_id()),
+                (STUDENT, COACH)
+            );
+            assert_eq!(completion.source(), LessonSource::Async(VIDEO));
+            assert_eq!(completion.lesson_type(), crate::lesson::LessonType::Async);
+            assert_eq!(completion.completed_at(), at(31));
+            assert!(completion.is_first_lesson());
+        }
+        // 返却と同じ時刻にも記録できる
+        video.complete(LESSON, STUDENT, &[], at(30)).unwrap();
+    }
+
+    #[test]
+    fn completion_failures() {
+        let done = reviewed().complete(LESSON, STUDENT, &[], at(31)).unwrap();
+        for (video, account, history, now, expected) in [
+            (
+                reviewed(),
+                OTHER_COACH,
+                vec![],
+                at(31),
+                DomainError::NotAVideoParty,
+            ),
+            (
+                submitted(),
+                STUDENT,
+                vec![],
+                at(31),
+                DomainError::VideoReviewNotReturned,
+            ),
+            (
+                reviewed(),
+                STUDENT,
+                vec![],
+                at(29),
+                DomainError::CompletionBeforeLessonEnded,
+            ),
+            (
+                reviewed(),
+                COACH,
+                vec![done],
+                at(40),
+                DomainError::LessonAlreadyCompleted,
+            ),
+        ] {
+            assert_eq!(
+                video.complete(LessonId::from_u128(71), account, &history, now),
+                Err(expected)
+            );
         }
     }
 }

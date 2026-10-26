@@ -84,6 +84,14 @@ pub enum DomainError {
     EmptyReviewComment,
     /// 添削コメントが長すぎる（`max` は文字数）
     ReviewCommentTooLong { max: usize },
+    /// 通話セッションがまだ終了していないので、レッスンの完了を記録できない
+    LiveLessonSessionNotEnded,
+    /// 動画の添削がまだ返されていないので、レッスンの完了を記録できない
+    VideoReviewNotReturned,
+    /// レッスンの完了の記録がレッスンの終わり（通話の終了・添削の返却）より前
+    CompletionBeforeLessonEnded,
+    /// そのレッスン（通話セッション・動画）の完了はすでに記録してある
+    LessonAlreadyCompleted,
 }
 
 impl fmt::Display for DomainError {

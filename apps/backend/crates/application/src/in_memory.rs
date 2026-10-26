@@ -11,6 +11,7 @@ use domain::{
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
+    lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
@@ -28,6 +29,7 @@ use crate::{
         subscription_id_uuid,
     },
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
+    lesson::{LessonCompletionRepository, RecordCompletionError, lesson_id_uuid},
     live_lesson::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
         session_id_uuid,
@@ -602,5 +604,45 @@ impl VideoStorage for FixedVideoStorage {
             "https://fixed-storage.invalid/videos/{}",
             video_id_uuid::format(video_id)
         ))
+    }
+}
+
+/// [`LessonCompletionRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じ生徒の記録は直列になる（初回が 2 つにならない）。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryLessonCompletionRepository {
+    completions: Arc<Mutex<Vec<LessonCompletion>>>,
+}
+
+impl InMemoryLessonCompletionRepository {
+    /// 保存した完了記録（保存した順）。
+    pub fn all(&self) -> Vec<LessonCompletion> {
+        self.completions.lock().unwrap().clone()
+    }
+}
+
+impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
+    fn next_id(&self) -> LessonId {
+        lesson_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn record<F>(
+        &self,
+        student_id: AccountId,
+        record: F,
+    ) -> Result<LessonCompletion, RecordCompletionError>
+    where
+        F: FnOnce(&[LessonCompletion]) -> Result<LessonCompletion, DomainError> + Send,
+    {
+        let mut completions = self.completions.lock().unwrap();
+        let history: Vec<LessonCompletion> = completions
+            .iter()
+            .filter(|c| c.student_id() == student_id)
+            .cloned()
+            .collect();
+        let completion = record(&history).map_err(RecordCompletionError::Rejected)?;
+        completions.push(completion.clone());
+        Ok(completion)
     }
 }

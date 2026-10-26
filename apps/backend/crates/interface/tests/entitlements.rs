@@ -17,9 +17,11 @@ use application::{
     in_memory::{
         FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
         InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
     },
+    lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
@@ -166,6 +168,14 @@ fn router(now: SystemTime) -> Router {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        RecordLessonCompletion::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            InMemoryVideoRepository::default(),
+            InMemoryLessonCompletionRepository::default(),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         FakeTokens,

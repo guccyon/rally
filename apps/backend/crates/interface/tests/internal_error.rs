@@ -12,9 +12,11 @@ use application::{
     },
     in_memory::{
         FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemoryLiveLessonSessionRepository, InMemorySlotRepository,
-        InMemoryVideoRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
+    lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
@@ -115,6 +117,14 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        RecordLessonCompletion::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            InMemoryVideoRepository::default(),
+            InMemoryLessonCompletionRepository::default(),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         NoTokens,
