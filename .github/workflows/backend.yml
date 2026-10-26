@@ -1,0 +1,53 @@
+# バックエンド（apps/backend、Rust）の CI。L1 の決定論的な検査: fmt / clippy / test / 依存方向テスト。
+# backend に変更がない PR でも必須チェックが保留にならないよう、ジョブは常に走り、変更がなければ検査を飛ばして成功で終える。
+name: backend
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: backend に変更があるか
+        id: changed
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- apps/backend .github/workflows/backend.yml; then
+            echo "yes=false" >> "$GITHUB_OUTPUT"; echo "backend に変更なし。検査を飛ばして成功で終える"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          workspaces: apps/backend
+      - name: fmt
+        if: steps.changed.outputs.yes == 'true'
+        run: cargo fmt --all -- --check
+      - name: clippy
+        if: steps.changed.outputs.yes == 'true'
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test（依存方向テストを含む）
+        if: steps.changed.outputs.yes == 'true'
+        run: cargo test
