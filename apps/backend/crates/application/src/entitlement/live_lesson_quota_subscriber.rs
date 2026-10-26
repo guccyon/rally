@@ -75,7 +75,7 @@ where
                     Err(ReleaseLiveLessonQuotaError::Unavailable(error)) => Err(error.into()),
                 }
             }
-            DomainEvent::SubscriptionStarted { .. } => Ok(()),
+            DomainEvent::LessonCompleted { .. } | DomainEvent::SubscriptionStarted { .. } => Ok(()),
         }
     }
 }

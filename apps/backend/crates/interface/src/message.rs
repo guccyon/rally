@@ -81,6 +81,12 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::ReviewReturnedBeforeSubmission => "添削の返却が動画の送付より前".to_string(),
         DomainError::EmptyReviewComment => "添削コメントが空".to_string(),
         DomainError::ReviewCommentTooLong { max } => format!("添削コメントは {max} 文字まで"),
+        DomainError::LiveLessonSessionNotEnded => "通話セッションがまだ終了していない".to_string(),
+        DomainError::VideoReviewNotReturned => "動画の添削がまだ返されていない".to_string(),
+        DomainError::CompletionBeforeLessonEnded => {
+            "レッスンの完了の記録がレッスンの終わりより前".to_string()
+        }
+        DomainError::LessonAlreadyCompleted => "このレッスンの完了は記録済み".to_string(),
     }
 }
 
@@ -257,6 +263,22 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::ReviewCommentTooLong { max: 4000 }),
             "添削コメントは 4000 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionNotEnded),
+            "通話セッションがまだ終了していない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::VideoReviewNotReturned),
+            "動画の添削がまだ返されていない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::CompletionBeforeLessonEnded),
+            "レッスンの完了の記録がレッスンの終わりより前"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonAlreadyCompleted),
+            "このレッスンの完了は記録済み"
         );
     }
 }

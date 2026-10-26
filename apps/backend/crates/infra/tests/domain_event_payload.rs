@@ -7,9 +7,11 @@ use std::{
 
 use application::{
     domain_event::DomainEvent, entitlement::subscription_id_uuid, identity::account_id_uuid,
-    scheduling::booking_id_uuid,
+    lesson::lesson_id_uuid, scheduling::booking_id_uuid,
 };
-use domain::{entitlement::SubscriptionId, identity::AccountId, scheduling::BookingId};
+use domain::{
+    entitlement::SubscriptionId, identity::AccountId, lesson::LessonId, scheduling::BookingId,
+};
 use infra::{LoggingDomainEventPublisher, domain_event_payload::payload};
 use serde_json::Value;
 use serde_yaml::Value as Yaml;
@@ -210,12 +212,53 @@ fn subscription_started_payload_has_exactly_the_required_attributes_of_the_async
     );
 }
 
+fn lesson_completed() -> DomainEvent {
+    DomainEvent::LessonCompleted {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        lesson_id: LessonId::from_u128(5),
+    }
+}
+
+#[test]
+fn lesson_completed_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    let event = lesson_completed();
+    assert_eq!(event.name(), "LessonCompleted");
+    let body = assert_payload_matches_asyncapi(&event);
+    assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
+    assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
+    assert_eq!(
+        body["student_id"],
+        account_id_uuid::format(AccountId::from_u128(1))
+    );
+    assert_eq!(
+        body["coach_id"],
+        account_id_uuid::format(AccountId::from_u128(2))
+    );
+    assert_eq!(
+        body["lesson_id"],
+        lesson_id_uuid::format(LessonId::from_u128(5))
+    );
+    // 完了記録は live-lesson・async-lesson のそれぞれの集約が発行する（docs/adr/0006）
+    assert_eq!(
+        contexts("LessonCompleted", "x-publisher"),
+        ["live-lesson", "async-lesson"]
+    );
+    assert_eq!(
+        contexts("LessonCompleted", "x-subscribers"),
+        ["billing", "review", "analytics"]
+    );
+}
+
 #[test]
 fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
     for event in [
         booking_confirmed(),
         booking_cancelled(true),
         subscription_started(),
+        lesson_completed(),
     ] {
         let line = LoggingDomainEventPublisher::line(&event).unwrap();
         let json = line

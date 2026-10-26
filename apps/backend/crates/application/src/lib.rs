@@ -9,6 +9,7 @@ pub mod domain_event;
 pub mod entitlement;
 pub mod identity;
 pub mod in_memory;
+pub mod lesson;
 pub mod live_lesson;
 pub mod scheduling;
 mod unavailable;

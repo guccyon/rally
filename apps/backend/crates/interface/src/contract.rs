@@ -10,6 +10,7 @@ use domain::{
     async_lesson::{VideoContentType, VideoStatus},
     entitlement::{ContractType, SubscriptionStatus, YearMonth},
     identity::Sport,
+    lesson::LessonType,
     live_lesson::SessionStatus,
     scheduling::{BookingStatus, SlotStatus},
 };
@@ -79,6 +80,22 @@ pub(crate) const fn session_status_to_contract(status: SessionStatus) -> &'stati
         SessionStatus::InProgress => "in_progress",
         SessionStatus::Ended => "ended",
     }
+}
+
+/// student-app の `LessonType` の値（`RecordLessonCompletionRequest` の判別子と `Lesson.lesson_type`）。
+pub(crate) const fn lesson_type_to_contract(lesson_type: LessonType) -> &'static str {
+    match lesson_type {
+        LessonType::Live => "live_lesson",
+        LessonType::Async => "async_lesson",
+    }
+}
+
+/// `lesson_type` を読む。契約の enum にない値は 422。
+pub(crate) fn lesson_type_from_contract(value: &str) -> Result<LessonType, ApiError> {
+    LessonType::ALL
+        .into_iter()
+        .find(|lesson_type| lesson_type_to_contract(*lesson_type) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知のレッスンの種類: {value}")))
 }
 
 /// student-app の `SubmitVideoRequest.content_type` の値。
@@ -211,6 +228,21 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn lesson_types_are_live_lesson_and_async_lesson() {
+        assert_eq!(lesson_type_to_contract(LessonType::Live), "live_lesson");
+        assert_eq!(lesson_type_to_contract(LessonType::Async), "async_lesson");
+        for lesson_type in LessonType::ALL {
+            assert_eq!(
+                lesson_type_from_contract(lesson_type_to_contract(lesson_type)).unwrap(),
+                lesson_type
+            );
+        }
+        for value in ["", "live", "LIVE_LESSON"] {
+            assert!(lesson_type_from_contract(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]

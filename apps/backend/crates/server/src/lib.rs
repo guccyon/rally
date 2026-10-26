@@ -12,9 +12,10 @@ use application::{
     identity::RegisterAccount,
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
+    lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
@@ -42,6 +43,10 @@ pub fn router() -> Router {
 /// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）で、添削の返却は
 /// entitlement に着手してよいかを問い合わせて（`EntitlementReviewGate`。月額は常に通し、ゴルフは通さない）組み立てる。
 /// 動画と添削の保存先は当面インメモリ。
+///
+/// レッスンの完了記録は、通話セッション・動画の保存先と同じ中身を読み（元の集約が完了記録を発行する。
+/// docs/adr/0006）、完了記録の保存先も当面インメモリ。境界間イベント `LessonCompleted` は同じイベントバスで発行する
+/// （billing・review の購読はまだない）。
 ///
 /// スロットの Postgres 実装（`infra::PgSlotRepository`）は `scheduling.slots` の外部キーが
 /// `identity.coaches` を指すので、アカウントの保存先を Postgres にするときに一緒に差し替える（予約・受講権も同じ）。
@@ -82,7 +87,7 @@ where
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),
-            events,
+            events.clone(),
             clock.clone(),
         ),
         GetEntitlement::new(entitlements, clock.clone()),
@@ -93,7 +98,7 @@ where
             analytics.clone(),
             clock.clone(),
         ),
-        EndLiveLessonSession::new(sessions, video, analytics.clone(), clock.clone()),
+        EndLiveLessonSession::new(sessions.clone(), video, analytics.clone(), clock.clone()),
         SubmitVideo::new(
             videos.clone(),
             MockVideoStorage,
@@ -101,7 +106,20 @@ where
             clock.clone(),
         ),
         GetVideoReview::new(videos.clone()),
-        ReturnVideoReview::new(videos, EntitlementReviewGate, analytics, clock),
+        ReturnVideoReview::new(
+            videos.clone(),
+            EntitlementReviewGate,
+            analytics.clone(),
+            clock.clone(),
+        ),
+        RecordLessonCompletion::new(
+            sessions,
+            videos,
+            InMemoryLessonCompletionRepository::default(),
+            analytics,
+            events,
+            clock,
+        ),
         MockTokenService,
     )
 }

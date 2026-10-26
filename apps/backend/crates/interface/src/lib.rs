@@ -9,6 +9,7 @@ mod bookings;
 mod contract;
 mod entitlements;
 mod error;
+mod lessons;
 mod live_lesson_sessions;
 mod message;
 mod slots;
@@ -26,6 +27,7 @@ use application::{
     domain_event::DomainEventPublisher,
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
     identity::{AccountRepository, RegisterAccount, TokenIssuer, TokenVerifier},
+    lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
@@ -54,8 +56,10 @@ pub use error::ApiError;
 /// 役割で絞らず、予約の参加者（生徒・コーチ）かをユースケースが確かめる（契約に 403 がない）。
 /// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
 /// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
+/// `POST /lessons/completions`（レッスンの完了記録）も役割で絞らず、通話セッション・動画の当事者かをユースケースが
+/// 確かめる（契約に 403 がない）。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
@@ -69,6 +73,7 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, A, P, C, T>(
     submit_video: SubmitVideo<W, U, A, C>,
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, C>,
+    record_lesson_completion: RecordLessonCompletion<L, W, M, A, P, C>,
     tokens: T,
 ) -> Router
 where
@@ -83,6 +88,7 @@ where
     W: VideoRepository + 'static,
     U: VideoStorage + 'static,
     Q: ReviewGate + 'static,
+    M: LessonCompletionRepository + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -170,6 +176,14 @@ where
             get_video_review,
             return_video_review,
         }));
+    let lessons = Router::new()
+        .route(
+            "/lessons/completions",
+            post(lessons::record_lesson_completion::<L, W, M, A, P, C>),
+        )
+        .with_state(Arc::new(lessons::LessonsState {
+            record_lesson_completion,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
@@ -179,6 +193,7 @@ where
         .merge(entitlements)
         .merge(live_lesson_sessions)
         .merge(videos)
+        .merge(lessons)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

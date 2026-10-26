@@ -4,6 +4,7 @@ use super::{ConnectionQuality, SessionId, SessionStatus};
 use crate::{
     DomainError,
     identity::AccountId,
+    lesson::{LessonCompletion, LessonId, LessonSource},
     scheduling::{Booking, BookingId, BookingStatus},
 };
 
@@ -95,6 +96,41 @@ impl LiveLessonSession {
         self.ended_at = Some(now);
         self.quality = Some(quality);
         Ok(())
+    }
+
+    /// 参加者 `participant` が `now` に、このセッションの同期レッスンの完了を記録する（完了記録の ID は `lesson_id`）。
+    ///
+    /// `history` はその生徒の既存の完了記録（同期・非同期の両方。`is_first_lesson` の判定と重複の検出に使う。
+    /// [`LessonCompletion`]）。次の不変条件を破れば [`DomainError`] を返す。セッションは変えない。
+    ///
+    /// - 記録できるのは予約の生徒かコーチだけ（[`DomainError::NotASessionParticipant`]）
+    /// - 終了したセッションだけ（[`DomainError::LiveLessonSessionNotEnded`]）
+    /// - 記録は終了の後（同じ時刻は許す。[`DomainError::CompletionBeforeLessonEnded`]）
+    /// - 同じセッションの完了は 1 回（[`DomainError::LessonAlreadyCompleted`]）
+    pub fn complete(
+        &self,
+        lesson_id: LessonId,
+        participant: AccountId,
+        history: &[LessonCompletion],
+        now: SystemTime,
+    ) -> Result<LessonCompletion, DomainError> {
+        if !self.is_participant(participant) {
+            return Err(DomainError::NotASessionParticipant);
+        }
+        let ended_at = self
+            .ended_at
+            .ok_or(DomainError::LiveLessonSessionNotEnded)?;
+        if now < ended_at {
+            return Err(DomainError::CompletionBeforeLessonEnded);
+        }
+        LessonCompletion::record(
+            lesson_id,
+            self.student_id,
+            self.coach_id,
+            LessonSource::Live(self.id),
+            history,
+            now,
+        )
     }
 
     /// 予約の生徒かコーチか。
@@ -318,6 +354,76 @@ mod tests {
             );
             assert_eq!(session.end(participant, now, quality()), Err(expected));
             assert_eq!(session, before);
+        }
+    }
+
+    const LESSON: LessonId = LessonId::from_u128(70);
+
+    fn ended() -> LiveLessonSession {
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), None, at(600)).unwrap();
+        session.end(COACH, at(650), quality()).unwrap();
+        session
+    }
+
+    #[test]
+    fn participants_complete_an_ended_session() {
+        let session = ended();
+        for participant in [STUDENT, COACH] {
+            let completion = session.complete(LESSON, participant, &[], at(651)).unwrap();
+            assert_eq!(completion.id(), LESSON);
+            assert_eq!(
+                (completion.student_id(), completion.coach_id()),
+                (STUDENT, COACH)
+            );
+            assert_eq!(completion.source(), LessonSource::Live(SESSION));
+            assert_eq!(completion.lesson_type(), crate::lesson::LessonType::Live);
+            assert_eq!(completion.completed_at(), at(651));
+            assert!(completion.is_first_lesson());
+        }
+        // 終了と同じ時刻にも記録できる
+        session.complete(LESSON, STUDENT, &[], at(650)).unwrap();
+    }
+
+    #[test]
+    fn completion_failures() {
+        let started =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), None, at(600)).unwrap();
+        let done = ended().complete(LESSON, STUDENT, &[], at(651)).unwrap();
+        for (session, participant, history, now, expected) in [
+            (
+                ended(),
+                OTHER_STUDENT,
+                vec![],
+                at(651),
+                DomainError::NotASessionParticipant,
+            ),
+            (
+                started,
+                STUDENT,
+                vec![],
+                at(651),
+                DomainError::LiveLessonSessionNotEnded,
+            ),
+            (
+                ended(),
+                STUDENT,
+                vec![],
+                at(649),
+                DomainError::CompletionBeforeLessonEnded,
+            ),
+            (
+                ended(),
+                COACH,
+                vec![done],
+                at(700),
+                DomainError::LessonAlreadyCompleted,
+            ),
+        ] {
+            assert_eq!(
+                session.complete(LessonId::from_u128(71), participant, &history, now),
+                Err(expected)
+            );
         }
     }
 }

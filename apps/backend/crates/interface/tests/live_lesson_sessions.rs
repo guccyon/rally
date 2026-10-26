@@ -16,9 +16,11 @@ use application::{
     in_memory::{
         FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
         InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        ManualClock, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, ManualClock, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
     },
+    lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession, session_id_uuid},
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
@@ -158,6 +160,14 @@ fn app() -> App {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            clock.clone(),
+        ),
+        RecordLessonCompletion::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            InMemoryVideoRepository::default(),
+            InMemoryLessonCompletionRepository::default(),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             clock.clone(),
         ),
         FakeTokens,
