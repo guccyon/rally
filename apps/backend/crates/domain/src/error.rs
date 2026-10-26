@@ -44,6 +44,15 @@ pub enum DomainError {
     BookingOfAnotherStudent,
     /// 予約したスロットと別のスロットを渡した
     BookingOfAnotherSlot,
+    /// その契約種別ではそのスポーツの契約を結べない（月額はゴルフ以外、ワンショットはゴルフだけ）
+    SportNotCoveredByContract {
+        contract_type: crate::entitlement::ContractType,
+        sport: crate::identity::Sport,
+    },
+    /// 暦月の月が 1〜12 でない
+    InvalidMonth { month: u8 },
+    /// ビデオ通話の暦月の枠で使った回数が上限を超える
+    LiveLessonsUsedOverLimit { used: u8, limit: u8 },
 }
 
 impl fmt::Display for DomainError {

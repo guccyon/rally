@@ -5,13 +5,15 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     analytics::AnalyticsEvent,
+    entitlement::GetEntitlement,
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
     },
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots, slot_id_uuid,
@@ -97,6 +99,7 @@ fn app() -> App {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
+        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
         FakeTokens,
     );
     App { router, analytics }

@@ -7,6 +7,7 @@ mod accounts;
 pub mod auth;
 mod bookings;
 mod contract;
+mod entitlements;
 mod error;
 mod message;
 mod slots;
@@ -17,6 +18,7 @@ use application::{
     analytics::AnalyticsSink,
     clock::Clock,
     domain_event::DomainEventPublisher,
+    entitlement::{EntitlementRepository, GetEntitlement},
     identity::{AccountRepository, RegisterAccount, TokenIssuer, TokenVerifier},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots,
@@ -37,20 +39,23 @@ pub use error::ApiError;
 ///
 /// `/healthz` と `/accounts` 以外のルートは認証必須（[`AuthenticatedAccount`] を取る）。
 /// `POST /slots`（admin-web）はコーチだけ、`GET /slots`（student-app）は認証した利用者なら誰でも呼べる。
-/// `/bookings`（student-app の予約の作成・確定・キャンセル）は生徒だけ。
-pub fn router_with<R, S, B, A, P, C, T>(
+/// `/bookings`（student-app の予約の作成・確定・キャンセル）と `GET /entitlements/me`（受講権の照会）は生徒だけ。
+#[allow(clippy::too_many_arguments)]
+pub fn router_with<R, S, B, E, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
     create_booking: CreateBooking<B, A, C>,
     confirm_booking: ConfirmBooking<B, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
+    get_entitlement: GetEntitlement<E, C>,
     tokens: T,
 ) -> Router
 where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
     B: BookingRepository + 'static,
+    E: EntitlementRepository + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -90,11 +95,21 @@ where
             confirm_booking,
             cancel_booking,
         }));
+    let entitlements = Router::new()
+        .route(
+            "/entitlements/me",
+            get(entitlements::get_my_entitlement::<E, C>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(entitlements::EntitlementsState {
+            get_entitlement,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
         .merge(slots)
         .merge(bookings)
+        .merge(entitlements)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

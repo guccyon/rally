@@ -8,6 +8,7 @@ use std::{
 
 use domain::{
     DomainError,
+    entitlement::Entitlement,
     identity::{Account, AccountId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
@@ -17,6 +18,7 @@ use crate::{
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
+    entitlement::EntitlementRepository,
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -248,5 +250,42 @@ impl RecordingDomainEventPublisher {
 impl DomainEventPublisher for RecordingDomainEventPublisher {
     async fn publish(&self, event: DomainEvent) {
         self.events.lock().unwrap().push(event);
+    }
+}
+
+/// [`EntitlementRepository`] のインメモリ実装。複製は同じ中身を共有する。
+///
+/// 受講権を作るユースケース（月額契約の開始）は T11 なので、当面はテストの準備で入れたものだけを返す。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryEntitlementRepository {
+    entitlements: Arc<Mutex<Vec<Entitlement>>>,
+}
+
+impl InMemoryEntitlementRepository {
+    /// 既存の受講権を入れて作る（生徒ごとに 1 つかは確かめない。テストの準備用）。
+    pub fn with_entitlements(entitlements: impl IntoIterator<Item = Entitlement>) -> Self {
+        Self {
+            entitlements: Arc::new(Mutex::new(entitlements.into_iter().collect())),
+        }
+    }
+
+    /// 保存した受講権（保存した順）。
+    pub fn all(&self) -> Vec<Entitlement> {
+        self.entitlements.lock().unwrap().clone()
+    }
+}
+
+impl EntitlementRepository for InMemoryEntitlementRepository {
+    async fn find_by_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Option<Entitlement>, Unavailable> {
+        Ok(self
+            .entitlements
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|entitlement| entitlement.student_id() == student_id)
+            .cloned())
     }
 }

@@ -8,13 +8,15 @@ use std::time::{Duration, SystemTime};
 use application::{
     analytics::AnalyticsEvent,
     domain_event::DomainEvent,
+    entitlement::GetEntitlement,
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
     },
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots, booking_id_uuid,
@@ -134,6 +136,7 @@ fn app_with(extra: impl IntoIterator<Item = Slot>) -> App {
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
         CancelBooking::new(bookings, analytics.clone(), events.clone(), clock),
+        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
         FakeTokens,
     );
     App {

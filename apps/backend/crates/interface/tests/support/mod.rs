@@ -47,6 +47,19 @@ impl Contract {
 
     fn assert_matches(&self, schema: &Yaml, value: &Value, at: &str) {
         let schema = self.resolve(schema);
+        // `oneOf: [<スキーマ>, {type: "null"}]`（null を許す参照）だけを扱う
+        if let Some(branches) = schema["oneOf"].as_sequence() {
+            let is_null = |branch: &Yaml| self.resolve(branch)["type"].as_str() == Some("null");
+            let others: Vec<&Yaml> = branches.iter().filter(|b| !is_null(b)).collect();
+            assert!(
+                others.len() == 1 && others.len() < branches.len(),
+                "{at}: 検査できない oneOf"
+            );
+            if !value.is_null() {
+                self.assert_matches(others[0], value, at);
+            }
+            return;
+        }
         let ty = match &schema["type"] {
             // `type: [string, "null"]`
             Yaml::Sequence(types) => {
@@ -116,6 +129,20 @@ impl Contract {
                 }
             }
             Some("boolean") => assert!(value.is_boolean(), "{at}: boolean でない: {value}"),
+            Some("integer") => {
+                let n = value
+                    .as_i64()
+                    .unwrap_or_else(|| panic!("{at}: integer でない: {value}"));
+                if let Some(c) = schema["const"].as_i64() {
+                    assert_eq!(n, c, "{at}: const と違う");
+                }
+                if let Some(min) = schema["minimum"].as_i64() {
+                    assert!(n >= min, "{at}: {n} < minimum {min}");
+                }
+                if let Some(max) = schema["maximum"].as_i64() {
+                    assert!(n <= max, "{at}: {n} > maximum {max}");
+                }
+            }
             other => panic!("{at}: 検査できない type {other:?}"),
         }
     }
