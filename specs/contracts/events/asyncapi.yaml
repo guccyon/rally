@@ -1,6 +1,6 @@
 # 境界づけられたコンテキスト間のドメインイベント（初版）。行動イベント（specs/analytics/events.yaml）とは別物。
 # 発行元・購読先（x-publisher / x-subscribers）は context-map.yaml の id、属性名は analytics/events.yaml と揃える。
-# ペイロードは必須属性だけ（event_id・occurred_at・関係する student_id / coach_id・対象の id）。メッセージ基盤は選定しない。
+# ペイロードは必須属性だけ（event_id・occurred_at・関係する student_id / coach_id・対象の id と、購読側が判断に要る事実）。メッセージ基盤は選定しない。
 asyncapi: 3.0.0
 info:
   title: Rally Domain Events
@@ -17,6 +17,16 @@ channels:
     messages:
       BookingConfirmed:
         $ref: '#/components/messages/BookingConfirmed'
+  BookingCancelled:
+    address: BookingCancelled
+    description: |
+      予約がキャンセルされた。回数（ビデオ通話の暦月の枠）を消費するかはキャンセル規定に従って scheduling が判定し、
+      consumes_quota に載せる。消費の実行は entitlement が行う（docs/adr/0002 Q2。購読側は判定し直さない）。
+    x-publisher: [scheduling]
+    x-subscribers: [entitlement, notification, analytics]
+    messages:
+      BookingCancelled:
+        $ref: '#/components/messages/BookingCancelled'
   LessonCompleted:
     address: LessonCompleted
     description: レッスンの完了が記録された（同期レッスン・非同期レッスンの両方）。
@@ -41,6 +51,11 @@ components:
       title: 予約の確定
       payload:
         $ref: '#/components/schemas/BookingConfirmedPayload'
+    BookingCancelled:
+      name: BookingCancelled
+      title: 予約のキャンセル
+      payload:
+        $ref: '#/components/schemas/BookingCancelledPayload'
     LessonCompleted:
       name: LessonCompleted
       title: レッスンの完了記録
@@ -69,6 +84,22 @@ components:
         student_id: { type: string }
         coach_id: { type: string }
         booking_id: { type: string }
+    BookingCancelledPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, booking_id, consumes_quota, cancelled_at]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        booking_id: { type: string }
+        consumes_quota:
+          type: boolean
+          description: このキャンセルで回数を消費するか（scheduling のキャンセル規定による判定）
+        cancelled_at:
+          type: string
+          format: date-time
+          description: キャンセルした時刻
     LessonCompletedPayload:
       type: object
       required: [event_id, occurred_at, student_id, coach_id, lesson_id]

@@ -12,7 +12,7 @@ use application::{
         FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
     },
-    scheduling::{ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
+    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
 };
 use axum::{
     body::{Body, to_bytes},
@@ -63,6 +63,12 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
+            bookings.clone(),
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        CancelBooking::new(
             bookings,
             analytics.clone(),
             RecordingDomainEventPublisher::default(),

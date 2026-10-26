@@ -29,7 +29,8 @@ events:
     actor: system
     required: [student_id, coach_id, booking_id, slot_id, occurred_at]
     kpi: "コーチの予約枠充足率"
-  # 回数を消費するかの判定（キャンセル規定）は scheduling / entitlement のどちらに置くか未決のため、判定結果は属性に持たない
+  # 回数を消費するかの判定（キャンセル規定）は境界間イベント BookingCancelled の consumes_quota に載せ、行動イベントには持たない（docs/adr/0002 Q2）
+  # hours_before_start はキャンセルした時刻から開始時刻までの時間（時間単位で切り捨てた整数。開始後のキャンセルは負）
   - name: booking.cancelled
     ja: "予約のキャンセル"
     context: scheduling

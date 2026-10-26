@@ -6,10 +6,10 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 
 | パス | 層 | 依存してよいクレート |
 |---|---|---|
-| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`） | なし |
-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`BookingRepository`・`AnalyticsSink`・`DomainEventPublisher`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`）・障害の型（`Unavailable`） | domain |
+| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`） | なし |
+| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`AnalyticsSink`・`DomainEventPublisher`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`）・障害の型（`Unavailable`） | domain |
 | `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
+| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
 | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
@@ -104,6 +104,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | 契約の `BookingStatus` | `interface` の `contract.rs` |
 | 予約 ID の UUID のテキスト形式 | `application::scheduling::booking_id_uuid` |
 | 境界間イベントのペイロード（AsyncAPI） | `infra::domain_event_payload` |
+
+## scheduling: 予約のキャンセルとキャンセル規定
+
+- `POST /bookings/{booking_id}/cancel`（`cancelBooking`）: 生徒だけが呼べ、キャンセルできるのは自分の予約（`pending` / `confirmed`）だけ（別の生徒の予約・UUID でない ID は 404、キャンセル済みは 409 `invalid_booking_state`）。確定済みならスロットを `open` に戻す（検索に戻り、別の生徒が予約できる）。本文の `reason` は任意で、Gen1 では保存しない
+- キャンセル規定（開始の何時間前以降なら回数を消費するか）は `domain::scheduling::CancellationPolicy` の 1 か所だけに置く（不変条件 3。ADR 0002 Q2）。判定の境界（ちょうどの時刻は消費する側）と前後のテストもそこにある。閾値を application・interface・infra や entitlement に写さない
+- 判定の結果は境界間イベント `BookingCancelled` の `consumes_quota` に載せて発行する（scheduling → entitlement / notification / analytics）。受講権（ビデオ通話の暦月の枠）の消費の実行は entitlement が購読して行う（T11）。API のレスポンスと行動イベントには判定を載せない
+- 行動イベント `booking.cancelled` を 1 回発火する。`hours_before_start` はキャンセルした時刻から開始時刻までの時間を時間単位で切り捨てた整数（開始後のキャンセルは負）
+- 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・23 / 25 時間前の `consumes_quota`・スロットが空くこと・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingCancelled` のペイロードが AsyncAPI の `required` と一致すること）
 
 ## CI で走らせるコマンド
 

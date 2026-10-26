@@ -98,6 +98,19 @@ impl Slot {
         Ok(())
     }
 
+    /// 確定した予約のキャンセルで枠を公開中に戻す（[`SlotStatus::Booked`] → [`SlotStatus::Open`]）。
+    /// 予約済みでなければ [`DomainError::SlotNotBooked`] で、状態は変えない。予約のキャンセル
+    /// （[`super::Booking::cancel`]）から呼ぶ。
+    pub fn release(&mut self) -> Result<(), DomainError> {
+        if self.status != SlotStatus::Booked {
+            return Err(DomainError::SlotNotBooked {
+                status: self.status,
+            });
+        }
+        self.status = SlotStatus::Open;
+        Ok(())
+    }
+
     /// 期間が重なるか（コーチ・状態は見ない）。
     pub fn overlaps(&self, other: &Slot) -> bool {
         self.starts_at < other.ends_at && other.starts_at < self.ends_at
@@ -161,6 +174,20 @@ mod tests {
             })
         );
         assert_eq!(slot.status(), SlotStatus::Booked);
+    }
+
+    #[test]
+    fn releasing_reopens_only_a_booked_slot() {
+        let mut slot = slot(1, 10, 11);
+        assert_eq!(
+            slot.release(),
+            Err(DomainError::SlotNotBooked {
+                status: SlotStatus::Open
+            })
+        );
+        slot.book().unwrap();
+        slot.release().unwrap();
+        assert_eq!(slot.status(), SlotStatus::Open);
     }
 
     #[test]

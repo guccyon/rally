@@ -1,5 +1,6 @@
 //! `/bookings`。student-app の `POST /bookings`（`createBooking`）と
-//! `POST /bookings/{booking_id}/confirm`（`confirmBooking`）。どちらも生徒だけが呼べる。
+//! `POST /bookings/{booking_id}/confirm`（`confirmBooking`）・`POST /bookings/{booking_id}/cancel`
+//! （`cancelBooking`）。どれも生徒だけが呼べる。
 
 use std::sync::Arc;
 
@@ -9,8 +10,9 @@ use application::{
     domain_event::DomainEventPublisher,
     identity::account_id_uuid,
     scheduling::{
-        BookingRepository, ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError,
-        CreateBooking, CreateBookingCommand, CreateBookingError, booking_id_uuid, slot_id_uuid,
+        BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError, ConfirmBooking,
+        ConfirmBookingCommand, ConfirmBookingError, CreateBooking, CreateBookingCommand,
+        CreateBookingError, booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -35,6 +37,7 @@ use crate::{
 pub struct BookingsState<B, A, P, C> {
     pub create_booking: CreateBooking<B, A, C>,
     pub confirm_booking: ConfirmBooking<B, A, P, C>,
+    pub cancel_booking: CancelBooking<B, A, P, C>,
 }
 
 /// student-app の `CreateBookingRequest`。
@@ -44,7 +47,7 @@ pub struct CreateBookingRequest {
     is_trial: bool,
 }
 
-/// student-app の `Booking`。キャンセル（T09）はまだないので `cancelled_at` は常に null。
+/// student-app の `Booking`。
 #[derive(Serialize)]
 pub struct BookingBody {
     booking_id: String,
@@ -139,6 +142,46 @@ where
     Ok(Json(booking_body(&booking)?))
 }
 
+/// `POST /bookings/{booking_id}/cancel`。生徒だけが呼べ、キャンセルできるのは自分の予約だけ。
+///
+/// 回数を消費するかはレスポンスに含めない（契約。判定は境界間イベント `BookingCancelled` の
+/// `consumes_quota` で entitlement に渡す）。リクエストの本文（任意の `reason`）は読まない。
+pub async fn cancel_booking<B, A, P, C>(
+    State(state): State<Arc<BookingsState<B, A, P, C>>>,
+    account: AuthenticatedAccount,
+    Path(booking_id): Path<String>,
+) -> Result<Json<BookingBody>, ApiError>
+where
+    B: BookingRepository,
+    A: AnalyticsSink,
+    P: DomainEventPublisher,
+    C: Clock,
+{
+    // 契約の cancelBooking に 422 はないので、UUID でない ID はない予約として扱う
+    let booking_id = booking_id_uuid::parse(&booking_id).map_err(|_| booking_not_found())?;
+
+    let booking = state
+        .cancel_booking
+        .execute(CancelBookingCommand {
+            student_id: account.account_id(),
+            booking_id,
+        })
+        .await
+        .map_err(|error| match error {
+            // 別の生徒の予約は、あることも知らせない
+            CancelBookingError::BookingNotFound
+            | CancelBookingError::Invalid(DomainError::BookingOfAnotherStudent) => {
+                booking_not_found()
+            }
+            CancelBookingError::Invalid(error @ DomainError::BookingAlreadyCancelled) => {
+                ApiError::conflict("invalid_booking_state", message::domain_error(&error))
+            }
+            CancelBookingError::Invalid(error) => ApiError::internal(error),
+            CancelBookingError::Unavailable(error) => ApiError::internal(error),
+        })?;
+    Ok(Json(booking_body(&booking)?))
+}
+
 fn slot_not_found() -> ApiError {
     ApiError::not_found("予約できるスロットがない")
 }
@@ -161,6 +204,9 @@ fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {
             .confirmed_at()
             .map(date_time_to_contract)
             .transpose()?,
-        cancelled_at: None,
+        cancelled_at: booking
+            .cancelled_at()
+            .map(date_time_to_contract)
+            .transpose()?,
     })
 }

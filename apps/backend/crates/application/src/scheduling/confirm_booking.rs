@@ -211,7 +211,10 @@ mod tests {
             student_id,
             coach_id,
             booking_id,
-        } = &events[0];
+        } = &events[0]
+        else {
+            panic!("{:?}", events[0]);
+        };
         assert!(!event_id.is_nil());
         assert_eq!(
             (*occurred_at, *student_id, *coach_id, *booking_id),

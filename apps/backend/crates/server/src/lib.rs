@@ -9,7 +9,7 @@ use application::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
         RecordingAnalyticsSink,
     },
-    scheduling::{ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
+    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
 };
 use axum::Router;
 use infra::{LoggingDomainEventPublisher, MockTokenService};
@@ -34,6 +34,12 @@ pub fn router() -> Router {
         SearchSlots::new(slots, SystemClock),
         CreateBooking::new(bookings.clone(), analytics.clone(), SystemClock),
         ConfirmBooking::new(
+            bookings.clone(),
+            analytics.clone(),
+            LoggingDomainEventPublisher,
+            SystemClock,
+        ),
+        CancelBooking::new(
             bookings,
             analytics,
             LoggingDomainEventPublisher,

@@ -34,11 +34,15 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::SlotNotOpen { status } => {
             format!("スロットが公開中でない（{}）", slot_status_label(*status))
         }
+        DomainError::SlotNotBooked { status } => {
+            format!("スロットが予約済みでない（{}）", slot_status_label(*status))
+        }
         DomainError::SlotAlreadyBooked => "スロットはすでに予約されている".to_string(),
         DomainError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
         DomainError::BookingNotPending { status } => {
             format!("確定前の予約でない（{}）", booking_status_label(*status))
         }
+        DomainError::BookingAlreadyCancelled => "予約はキャンセル済み".to_string(),
         DomainError::BookingOfAnotherStudent => "別の生徒の予約は扱えない".to_string(),
         DomainError::BookingOfAnotherSlot => "予約と別のスロットは扱えない".to_string(),
     }
@@ -117,6 +121,16 @@ mod tests {
                 status: BookingStatus::Confirmed
             }),
             "確定前の予約でない（確定済み）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotNotBooked {
+                status: SlotStatus::Open
+            }),
+            "スロットが予約済みでない（公開中）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::BookingAlreadyCancelled),
+            "予約はキャンセル済み"
         );
         assert_eq!(
             domain_error(&DomainError::BookingOfAnotherStudent),

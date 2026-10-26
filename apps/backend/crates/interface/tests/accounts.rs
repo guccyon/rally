@@ -13,7 +13,7 @@ use application::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
         RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
-    scheduling::{ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
+    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
 };
 use axum::{
     Router,
@@ -68,6 +68,12 @@ fn app() -> App {
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
+            bookings.clone(),
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        CancelBooking::new(
             bookings,
             analytics.clone(),
             RecordingDomainEventPublisher::default(),

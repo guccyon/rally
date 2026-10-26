@@ -5,7 +5,7 @@ pub enum BookingStatus {
     Pending,
     /// 確定した。スロットは予約で埋まる（[`super::SlotStatus::Booked`]）
     Confirmed,
-    /// キャンセルした（キャンセルは T09）。スロットを確保しない
+    /// キャンセルした（[`super::Booking::cancel`]）。スロットを確保しない
     Cancelled,
 }
 
