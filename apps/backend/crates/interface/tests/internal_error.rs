@@ -4,13 +4,14 @@ use std::time::SystemTime;
 
 use application::{
     Unavailable,
+    entitlement::GetEntitlement,
     identity::{
         AccessToken, AccountRepository, InsertAccountError, InvalidToken, RegisterAccount,
         TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
-        RecordingDomainEventPublisher,
+        FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
+        InMemorySlotRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
     scheduling::{CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
 };
@@ -74,6 +75,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
+        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
         NoTokens,
     );
 

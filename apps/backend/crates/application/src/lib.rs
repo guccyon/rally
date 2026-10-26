@@ -5,6 +5,7 @@
 pub mod analytics;
 pub mod clock;
 pub mod domain_event;
+pub mod entitlement;
 pub mod identity;
 pub mod in_memory;
 pub mod scheduling;

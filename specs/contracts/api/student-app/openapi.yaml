@@ -255,6 +255,30 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /entitlements/me:
+    get:
+      operationId: getMyEntitlement
+      summary: 自分の受講権の照会
+      description: |
+        認証した生徒の受講権（契約種別と利用権）を返す。照会だけで、枠を消費しない。生徒だけが呼べる（それ以外の役割は 403）。
+        受講権がまだない（月額契約を開始していない）なら 404。`live_lesson_quota` は照会した時点の暦月の枠で、
+        前の月の枠を使っていても月をまたげば `used` は 0 から数える。
+      tags: [entitlement]
+      x-context: entitlement
+      responses:
+        "200":
+          description: 生徒の受講権
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entitlement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /live-lesson-sessions:
     post:
       operationId: startLiveLessonSession

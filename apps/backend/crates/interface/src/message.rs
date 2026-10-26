@@ -3,9 +3,12 @@
 use application::scheduling::slot_id_uuid;
 use domain::{
     DomainError,
+    entitlement::ContractType,
     identity::Role,
     scheduling::{BookingStatus, SlotStatus},
 };
+
+use crate::contract::sport_to_contract;
 
 /// 役割の呼び名。
 pub(crate) const fn role_label(role: Role) -> &'static str {
@@ -45,6 +48,26 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::BookingAlreadyCancelled => "予約はキャンセル済み".to_string(),
         DomainError::BookingOfAnotherStudent => "別の生徒の予約は扱えない".to_string(),
         DomainError::BookingOfAnotherSlot => "予約と別のスロットは扱えない".to_string(),
+        DomainError::SportNotCoveredByContract {
+            contract_type,
+            sport,
+        } => format!(
+            "{}ではスポーツ {} の契約を結べない",
+            contract_type_label(*contract_type),
+            sport_to_contract(*sport)
+        ),
+        DomainError::InvalidMonth { month } => format!("月は 1〜12（{month}）"),
+        DomainError::LiveLessonsUsedOverLimit { used, limit } => {
+            format!("ビデオ通話の枠は暦月 {limit} 回まで（使った回数 {used}）")
+        }
+    }
+}
+
+/// 契約種別の呼び名。
+const fn contract_type_label(contract_type: ContractType) -> &'static str {
+    match contract_type {
+        ContractType::Monthly => "月額",
+        ContractType::OneShot => "ワンショット",
     }
 }
 
@@ -69,6 +92,7 @@ const fn booking_status_label(status: BookingStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::identity::Sport;
 
     #[test]
     fn describes_each_domain_error() {
@@ -139,6 +163,21 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::BookingOfAnotherSlot),
             "予約と別のスロットは扱えない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SportNotCoveredByContract {
+                contract_type: ContractType::OneShot,
+                sport: Sport::Tennis,
+            }),
+            "ワンショットではスポーツ tennis の契約を結べない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::InvalidMonth { month: 13 }),
+            "月は 1〜12（13）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonsUsedOverLimit { used: 3, limit: 2 }),
+            "ビデオ通話の枠は暦月 2 回まで（使った回数 3）"
         );
     }
 }

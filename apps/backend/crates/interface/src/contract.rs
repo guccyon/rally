@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
+    entitlement::{ContractType, YearMonth},
     identity::Sport,
     scheduling::{BookingStatus, SlotStatus},
 };
@@ -68,6 +69,19 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
     }
+}
+
+/// student-app の `ContractType` の値。月額は `subscription`。
+pub(crate) const fn contract_type_to_contract(contract_type: ContractType) -> &'static str {
+    match contract_type {
+        ContractType::Monthly => "subscription",
+        ContractType::OneShot => "one_shot",
+    }
+}
+
+/// `LiveLessonQuota.month` の値（`YYYY-MM`）。
+pub(crate) fn year_month_to_contract(month: YearMonth) -> String {
+    format!("{:04}-{:02}", month.year(), month.month())
 }
 
 /// `format: date-time`（RFC 3339）で書く。
@@ -133,6 +147,27 @@ mod tests {
         assert_eq!(student_app_sport("tennis").unwrap(), Sport::Tennis);
         assert_eq!(admin_web_sport("golf").unwrap(), Sport::Golf);
         assert!(admin_web_sport("cricket").is_err());
+    }
+
+    #[test]
+    fn contract_types_are_subscription_and_one_shot() {
+        assert_eq!(
+            contract_type_to_contract(ContractType::Monthly),
+            "subscription"
+        );
+        assert_eq!(contract_type_to_contract(ContractType::OneShot), "one_shot");
+    }
+
+    #[test]
+    fn year_month_is_yyyy_mm() {
+        assert_eq!(
+            year_month_to_contract(YearMonth::new(2026, 3).unwrap()),
+            "2026-03"
+        );
+        assert_eq!(
+            year_month_to_contract(YearMonth::new(2026, 12).unwrap()),
+            "2026-12"
+        );
     }
 
     #[test]
