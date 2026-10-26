@@ -1,0 +1,15 @@
+# Golden Set ペア比較 0004（EvalSpec l4-pairwise）
+id: "0004"
+ticket: "github:guccyon/rally#10"
+gate: L4
+rubric_ids: [ARCH-002, DOC-002]
+pair:
+  a: { ref: "github:guccyon/rally#13", job: 16, tier: tier-large, note: "claude-opus-5-5、6 ターン、139k tokens" }
+  b: { ref: "github:guccyon/rally#16", job: 19, tier: tier-small, note: "claude-sonnet-5-5、4 ターン、86k tokens" }
+preferred: a
+confidence: medium
+reason: "a は互換ポリシーを manifest.yaml の compat.api に結び、行動イベント（analytics/）と契約（contracts/）の境界を明示し、イベントの例に発行元の context id を書いた（Issue の指示どおり）。b は例に発行元がなく、ReviewSubmitted が glossary の video_review と揃わない"
+polarity: both_acceptable
+scored_by: builder_candidate
+scored_at: "2026-10-26"
+lesson: "SSOT 同士の参照（manifest ↔ contracts、glossary ↔ events 名）を書けるかが L4 の差になる。rubric に『SSOT 間の相互参照』の項目を足す候補"
