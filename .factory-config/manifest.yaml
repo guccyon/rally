@@ -4,7 +4,9 @@
 # このファイルの変更は常に builder（Tetsuro）の承認が要る（change_type: constitution）。
 #
 # 由来: アカウントスキル pr-merge-criteria（2026-10-21 版）の基準を「環境 × 変更種別」の表に変換した初版。
-#       スキルの基準は人間の手元で動く Claude の運用ルール、この表はヘッドレス工場の権限。P0 では後者を前者より狭くする。
+#       2026-10-26 に Tetsuro とマージ基準を確定: CI が通れば承認なしでマージ。承認が要るのは「外部入力がシェル実行や
+#       エージェントのプロンプトにつながる経路を作る・変える変更」と「憲法の変更」。運用開始後は「公開・デプロイ」と「戻しにくい変更」も。
+#       この表は人間（builder）と工場の両方のマージ権限。工場の実行権限（pr_create まで）は phase_grants が別に縛る。
 
 schema_version: "0.1"
 status: draft                          # Tetsuro の署名で approved にする
@@ -51,18 +53,33 @@ autonomy:
       source: "憲章 05 節。ルール変更 PR は工場自身のパイプラインを通る"
     constitution:
       ja: "憲法の変更"
-      match: "この manifest.yaml、base/ の差し替え、Blueprint の autonomy・budgets"
-      source: "憲章 08 節「憲法の管理」は builder の署名"
+      match: "この manifest.yaml（autonomy・承認ゲート）、base/ の差し替え、Blueprint の autonomy・budgets、Engine の知財・利用許諾に関わる記述"
+      source: "憲章 08 節「憲法の管理」は builder の署名。2026-10-26 マージ基準"
+    untrusted_input_path:
+      ja: "外部入力がシェル実行やエージェントのプロンプトにつながる経路を作る・変える変更"
+      match: "Issue 本文・Webhook・PR コメント・利用者入力などの外部入力が、シェルのコマンド・環境変数・エージェントのプロンプトに流れ込む箇所の追加・変更（例: ワーカーのプロンプト組み立て、Webhook 受け口、ワーカーに渡す引数）"
+      source: "2026-10-26 Tetsuro「サーバーで動かす以上、プロンプトインジェクションや任意コード実行のリスクがある変更はチェックしたい」"
+      approval_via: "chat_summary"
+    irreversible:
+      ja: "戻しにくい変更"
+      match: "破壊的スキーマ、データ移行、外部サービスの設定変更など、巻き戻しが難しいもの"
+      source: "2026-10-26 Tetsuro。開発中は回してよく、運用開始時に承認制へ"
 
-  # Phase P0 の表（開始定義: P0 の権限は pr_create まで）
+  # 開発中（P0〜運用開始前）の表。merge の値は builder（人間の手元の Claude）が PR をマージするときの権限。
+  # 工場（ヘッドレスワーカー）の merge は phase_grants の P0（human_approve）が優先し、P0b 完了まで shadow 判定の記録だけ行う。
   matrix:
-    docs_only:         { pr_create: auto, merge: shadow,        deploy_test: forbidden, deploy_prod: forbidden }
-    design_decision:   { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
-    large_integration: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
-    dependency_update: { pr_create: auto, merge: shadow,        deploy_test: forbidden, deploy_prod: forbidden }
-    code_change:       { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
-    factory_rule:      { pr_create: shadow, merge: forbidden,   deploy_test: forbidden, deploy_prod: forbidden }   # P0 は自己進化を動かさない
-    constitution:      { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    docs_only:            { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden }
+    design_decision:      { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "事後報告（要点をチャットに）" }
+    large_integration:    { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "事後報告" }
+    dependency_update:    { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden }
+    code_change:          { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden }
+    irreversible:         { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "運用開始時に human_approve へ" }
+    untrusted_input_path: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    factory_rule:         { pr_create: shadow, merge: forbidden,   deploy_test: forbidden, deploy_prod: forbidden }   # P0 は自己進化を動かさない
+    constitution:         { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+  on_operation_start:     # 「実際に運用して動かす」と Tetsuro が宣言した時点で切り替える
+    irreversible: { merge: human_approve }
+    release: { deploy_test: human_approve, deploy_prod: human_approve, note: "公開・デプロイは改めて承認制" }
 
   # 次の Phase への解放（Blueprint autonomy.phase_grants と同じ。実績で次へ進む）
   phase_grants:
@@ -71,7 +88,7 @@ autonomy:
     P2:  { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: canary_human_approve }
     P3+: { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: auto_with_rollback }
   release_conditions:
-    merge_auto: "P0b 完了（直近 20 PR の結果紐付け・健康レポート 4 週・Golden Set 30 件）かつ shadow 判定と人間判断の一致の実績"
+    merge_auto: "工場（ヘッドレス）の自動マージは P0b 完了（直近 20 PR の結果紐付け・健康レポート 4 週・Golden Set 30 件）かつ shadow 判定と人間判断の一致の実績。builder の手元のマージは上の matrix のとおり開発中は auto"
     first_candidates: [docs_only, dependency_update]   # 人間の手元ではすでに自動マージしている種別から解放する
 
   # 環境・Phase を問わず常に人間承認（変更種別より優先）
