@@ -6,7 +6,10 @@
 use std::time::SystemTime;
 
 use application::scheduling::{SlotCursor, slot_id_uuid};
-use domain::{identity::Sport, scheduling::SlotStatus};
+use domain::{
+    identity::Sport,
+    scheduling::{BookingStatus, SlotStatus},
+};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::ApiError;
@@ -55,6 +58,15 @@ pub(crate) const fn slot_status_to_contract(status: SlotStatus) -> &'static str 
         SlotStatus::Open => "open",
         SlotStatus::Booked => "booked",
         SlotStatus::Closed => "closed",
+    }
+}
+
+/// student-app の `BookingStatus` の値。
+pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'static str {
+    match status {
+        BookingStatus::Pending => "pending",
+        BookingStatus::Confirmed => "confirmed",
+        BookingStatus::Cancelled => "cancelled",
     }
 }
 

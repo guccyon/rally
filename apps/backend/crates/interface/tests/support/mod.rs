@@ -115,6 +115,7 @@ impl Contract {
                     None => {}
                 }
             }
+            Some("boolean") => assert!(value.is_boolean(), "{at}: boolean でない: {value}"),
             other => panic!("{at}: 検査できない type {other:?}"),
         }
     }

@@ -10,9 +10,10 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
-    scheduling::{PublishSlot, SearchSlots, slot_id_uuid},
+    scheduling::{ConfirmBooking, CreateBooking, PublishSlot, SearchSlots, slot_id_uuid},
 };
 use axum::{
     Router,
@@ -72,6 +73,7 @@ fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
     let clock = FixedClock(SystemTime::UNIX_EPOCH + NOW);
     let slots = InMemorySlotRepository::default();
+    let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -80,6 +82,13 @@ fn app() -> App {
         ),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
+        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+        ConfirmBooking::new(
+            bookings,
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
         FakeTokens,
     );
     App { router, analytics }

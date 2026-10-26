@@ -746,7 +746,10 @@ version = "0.1.0"
 dependencies = [
  "application",
  "domain",
+ "serde_json",
+ "serde_yaml",
  "sqlx",
+ "time",
  "tokio",
 ]
 

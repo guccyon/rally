@@ -8,8 +8,11 @@ use application::{
         AccessToken, AccountRepository, InsertAccountError, InvalidToken, RegisterAccount,
         TokenClaims, TokenIssuer, TokenVerifier,
     },
-    in_memory::{FixedClock, InMemorySlotRepository, RecordingAnalyticsSink},
-    scheduling::{PublishSlot, SearchSlots},
+    in_memory::{
+        FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
+    },
+    scheduling::{ConfirmBooking, CreateBooking, PublishSlot, SearchSlots},
 };
 use axum::{
     body::{Body, to_bytes},
@@ -53,10 +56,18 @@ async fn storage_failure_is_500_internal_without_the_reason() {
     let analytics = RecordingAnalyticsSink::default();
     let clock = FixedClock(SystemTime::UNIX_EPOCH);
     let slots = InMemorySlotRepository::default();
+    let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
+        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+        ConfirmBooking::new(
+            bookings,
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
         NoTokens,
     );
 

@@ -86,6 +86,18 @@ impl Slot {
         Self::CAPACITY
     }
 
+    /// 予約の確定で枠を埋める（[`SlotStatus::Open`] → [`SlotStatus::Booked`]）。公開中でなければ
+    /// [`DomainError::SlotNotOpen`] で、状態は変えない。予約の確定（[`super::Booking::confirm`]）から呼ぶ。
+    pub fn book(&mut self) -> Result<(), DomainError> {
+        if self.status != SlotStatus::Open {
+            return Err(DomainError::SlotNotOpen {
+                status: self.status,
+            });
+        }
+        self.status = SlotStatus::Booked;
+        Ok(())
+    }
+
     /// 期間が重なるか（コーチ・状態は見ない）。
     pub fn overlaps(&self, other: &Slot) -> bool {
         self.starts_at < other.ends_at && other.starts_at < self.ends_at
@@ -135,6 +147,20 @@ mod tests {
                 Err(DomainError::SlotEndsBeforeItStarts)
             );
         }
+    }
+
+    #[test]
+    fn booking_fills_only_an_open_slot() {
+        let mut slot = slot(1, 10, 11);
+        slot.book().unwrap();
+        assert_eq!(slot.status(), SlotStatus::Booked);
+        assert_eq!(
+            slot.book(),
+            Err(DomainError::SlotNotOpen {
+                status: SlotStatus::Booked
+            })
+        );
+        assert_eq!(slot.status(), SlotStatus::Booked);
     }
 
     #[test]

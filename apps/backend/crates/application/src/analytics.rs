@@ -6,7 +6,7 @@ use std::{future::Future, time::SystemTime};
 
 use domain::{
     identity::{AccountId, Sport},
-    scheduling::SlotId,
+    scheduling::{BookingId, SlotId},
 };
 
 /// 行動イベント。変種は events.yaml の `name` に 1 対 1 で対応し、属性は `required` と同じ。
@@ -25,6 +25,23 @@ pub enum AnalyticsEvent {
         starts_at: SystemTime,
         occurred_at: SystemTime,
     },
+    /// `booking.created`（体験予約を含む。KPI「初回レッスンまでの日数」の入力）
+    BookingCreated {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        slot_id: SlotId,
+        is_trial: bool,
+        occurred_at: SystemTime,
+    },
+    /// `booking.confirmed`（KPI「コーチの予約枠充足率」の入力）
+    BookingConfirmed {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        slot_id: SlotId,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -33,6 +50,8 @@ impl AnalyticsEvent {
         match self {
             AnalyticsEvent::AccountRegistered { .. } => "account.registered",
             AnalyticsEvent::SlotPublished { .. } => "slot.published",
+            AnalyticsEvent::BookingCreated { .. } => "booking.created",
+            AnalyticsEvent::BookingConfirmed { .. } => "booking.confirmed",
         }
     }
 }
