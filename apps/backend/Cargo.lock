@@ -1655,6 +1655,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "seed"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "domain",
+ "infra",
+ "rand",
+ "sqlx",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -16,6 +16,8 @@ const LAYERS: &[(&str, &[&str])] = &[
     ("interface", &["domain", "application"]),
     // 組み立て用（composition root）。interface に infra の実装を渡す（ADR 0003 の決定 5）
     ("server", &["domain", "application", "infra", "interface"]),
+    // 合成シード（T18）。application のユースケースに infra の Postgres の実装を渡して書く。interface（HTTP）は通さない
+    ("seed", &["domain", "application", "infra"]),
 ];
 
 /// 層の規約の対象外のクレート（検査そのもの）。ワークスペースの他のクレートに依存しない。

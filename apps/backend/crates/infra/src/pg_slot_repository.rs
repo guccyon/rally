@@ -1,7 +1,5 @@
 //! スロットの保存先（Postgres の `scheduling.slots`）。
 
-use std::time::SystemTime;
-
 use application::{
     Unavailable,
     identity::account_id_uuid,
@@ -18,6 +16,7 @@ use sqlx::{
 
 use crate::{
     identity_values::{sport_from_value, sport_value},
+    pg_support::{lock, timestamp},
     scheduling_values::{slot_status_from_value, slot_status_value},
 };
 
@@ -32,7 +31,7 @@ pub struct PgSlotRepository {
 }
 
 /// `scheduling.slots` の 1 行（slot_id, coach_id, sport, starts_at, ends_at, status）。
-type SlotRow = (Uuid, Uuid, String, OffsetDateTime, OffsetDateTime, String);
+pub(crate) type SlotRow = (Uuid, Uuid, String, OffsetDateTime, OffsetDateTime, String);
 
 impl PgSlotRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -44,13 +43,7 @@ impl PgSlotRepository {
         coach_id: Uuid,
     ) -> Result<(), sqlx::Error> {
         // トランザクションの終わりに解放される。キーはコーチ ID から作る
-        sqlx::query(
-            "SELECT pg_advisory_xact_lock(hashtextextended('scheduling.slots:' || $1::text, 0))",
-        )
-        .bind(coach_id)
-        .execute(&mut **tx)
-        .await?;
-        Ok(())
+        lock(tx, &format!("scheduling.slots:{coach_id}")).await
     }
 }
 
@@ -141,11 +134,7 @@ fn unavailable(error: sqlx::Error) -> AddToCalendarError {
     AddToCalendarError::Unavailable(Unavailable::new(error))
 }
 
-fn timestamp(at: SystemTime) -> OffsetDateTime {
-    OffsetDateTime::from(at)
-}
-
-fn slot_from_row(
+pub(crate) fn slot_from_row(
     (slot_id, coach_id, sport, starts_at, ends_at, status): SlotRow,
 ) -> Result<Slot, Unavailable> {
     let sport = sport_from_value(&sport)

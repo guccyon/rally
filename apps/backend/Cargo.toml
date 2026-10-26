@@ -7,6 +7,7 @@ members = [
     "crates/interface",
     "crates/server",
     "crates/architecture",
+    "crates/seed",
 ]
 
 [workspace.package]
@@ -22,6 +23,7 @@ application = { path = "crates/application" }
 infra = { path = "crates/infra" }
 interface = { path = "crates/interface" }
 server = { path = "crates/server" }
+seed = { path = "crates/seed" }
 
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }

@@ -61,6 +61,30 @@ impl LiveLessonSession {
         })
     }
 
+    /// 保存先から読んだセッションを組み立てる（保存先の実装用）。`ended` は終了した時刻と、そのときに記録した
+    /// 接続品質（終了するまでは `None`）。終了が開始より前なら [`DomainError::SessionEndsBeforeItStarts`]。
+    pub fn restore(
+        id: SessionId,
+        booking_id: BookingId,
+        student_id: AccountId,
+        coach_id: AccountId,
+        started_at: SystemTime,
+        ended: Option<(SystemTime, ConnectionQuality)>,
+    ) -> Result<Self, DomainError> {
+        if ended.is_some_and(|(ended_at, _)| ended_at < started_at) {
+            return Err(DomainError::SessionEndsBeforeItStarts);
+        }
+        Ok(Self {
+            id,
+            booking_id,
+            student_id,
+            coach_id,
+            started_at,
+            ended_at: ended.map(|(ended_at, _)| ended_at),
+            quality: ended.map(|(_, quality)| quality),
+        })
+    }
+
     /// 参加者 `participant` が `now` にセッションを終了できるかを確かめる（[`LiveLessonSession::end`] と同じ判定）。
     ///
     /// 参加者でなければ [`DomainError::NotASessionParticipant`]、終了済みなら
@@ -425,5 +449,35 @@ mod tests {
                 Err(expected)
             );
         }
+    }
+
+    #[test]
+    fn restore_round_trips_an_ended_session_and_rejects_ending_before_start() {
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), None, at(600)).unwrap();
+        session.end(COACH, at(650), quality()).unwrap();
+
+        let restored = LiveLessonSession::restore(
+            SESSION,
+            session.booking_id(),
+            STUDENT,
+            COACH,
+            at(600),
+            Some((at(650), quality())),
+        )
+        .unwrap();
+        assert_eq!(restored, session);
+
+        assert_eq!(
+            LiveLessonSession::restore(
+                SESSION,
+                session.booking_id(),
+                STUDENT,
+                COACH,
+                at(600),
+                Some((at(599), quality())),
+            ),
+            Err(DomainError::SessionEndsBeforeItStarts)
+        );
     }
 }
