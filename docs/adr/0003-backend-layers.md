@@ -13,6 +13,7 @@
    | `application` | ユースケースと、外部連携のポート（trait） | `domain` |
    | `infra` | ポートの実装（Postgres・モックの外部連携） | `domain`・`application` |
    | `interface` | axum の HTTP | `domain`・`application`（`infra` には直接依存しない） |
+   | `server` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | `domain`・`application`・`infra`・`interface` |
 
 2. 依存方向は `cargo deny` ではなく、ワークスペース内のテスト `crates/architecture/tests/dependency_direction.rs` で検査する。`cargo metadata --no-deps` で各クレートの依存（通常・dev・build のすべて）を読み、上の表にない辺があれば落とす。表が規約の正本
    - 表にないクレートがワークスペースに増えても落とす（層を決めずにクレートを足させない）
@@ -20,7 +21,7 @@
    - domain が他の層に依存すると循環になるので、その場合は検査より先に cargo 自体が `cyclic package dependency` で落ちる
 3. 検査は `cargo test` に含まれるので、CI の `cargo test` がそのまま依存方向のゲートになる（L1）。CI のコマンドは `apps/backend/README.md`
 4. `interface` の `GET /healthz` は死活監視用で、student-app の契約（OpenAPI）には載せない
-5. 当面は HTTP サーバーの起動（`main`）を `interface` に置く。infra の実装を組み立てる必要が出たら（T04 以降）、`interface` と `infra` の両方に依存してよい組み立て用のクレート（composition root）を足し、この表に 1 行加える
+5. HTTP サーバーの起動（`main`）とポートの実装の組み立ては、`interface` と `infra` の両方に依存してよい組み立て用のクレート `server`（composition root）に置く。T06（Issue #29）で infra のモックの認証（`MockTokenService`）を組み立てる必要が出たので、当初 `interface` に置いていた `main` を移して表に 1 行加えた
 
 ## 意図的に違反させて落ちることの確認（2026-10-26）
 

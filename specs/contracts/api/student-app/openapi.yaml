@@ -11,7 +11,7 @@ info:
     - 各操作の `x-context` は `specs/context-map.yaml` の context id
     - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
     - 外部連携（Stripe / Twilio Video / S3 直接アップロード）は Gen1 ではモックだが、契約は本物と同じ形で書く
-    - 認証はモックのトークンを `bearerAuth` として置くだけ（方式の詳細は T06 で決める）
+    - 認証はモックのトークンを `bearerAuth` として置く（不透明なトークン。`components.securitySchemes.bearerAuth`）
 
     ## 互換ポリシー
 
@@ -395,7 +395,10 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: モックのトークン（Gen1）。発行・検証の方式は T06 で決める。
+      description: |
+        アカウント ID と役割を載せた不透明なトークン（`RegisterAccountResponse.access_token`）。
+        クライアントは中身を解釈しない。Gen1 は署名なしのモックで、本番では署名付きの方式に差し替える
+        （形式が変わってもクライアントへの影響はない）。トークンがない・無効なら 401、役割が操作に合わなければ 403。
 
   parameters:
     BookingId:
@@ -414,7 +417,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
-      description: 受講権がない
+      description: 受講権がない、または役割が操作に合わない
       content:
         application/json:
           schema:

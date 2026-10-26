@@ -25,6 +25,24 @@ impl ApiError {
         }
     }
 
+    /// 401 `unauthorized`（トークンがない、または無効）
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: "unauthorized",
+            message: message.into(),
+        }
+    }
+
+    /// 403 `forbidden`（役割や受講権が操作に合わない）
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code: "forbidden",
+            message: message.into(),
+        }
+    }
+
     /// 409 と、その理由の `code`
     pub fn conflict(code: &'static str, message: impl Into<String>) -> Self {
         Self {
