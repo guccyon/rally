@@ -1,0 +1,48 @@
+# L3（拡張性・結合度）の固定変更シナリオ（初版。Blueprint v0.4 のシナリオの種から起こしたもの）
+# 前提は product-context.md、expected_contexts は context-map.yaml の id を使う。
+# 影響範囲の実測は P2（L3 の実装）で行う。人間レビューを経て 10〜30 件に育てる。
+schema_version: "0.1"
+status: draft
+scenarios:
+  - id: cs-001
+    title: "新しいスポーツ（例: 水泳）を追加する"
+    description: "提供スポーツに水泳を加え、生徒が水泳のコーチを探してレッスンを受けられるようにする。契約種別は既存の月額を適用する。"
+    expected_contexts: [catalog, entitlement]
+    rationale: "スポーツは catalog の持ち物で、契約種別はスポーツごとに決まる（月額はゴルフ以外・ワンショットはゴルフだけ）ため entitlement の判定にも及ぶ。"
+    status: candidate
+  - id: cs-002
+    title: "ゴルフ以外のスポーツにもワンショット課金を開放する"
+    description: "現在ゴルフだけの契約種別であるワンショットを、ゴルフ以外のスポーツでも選べるようにする。"
+    expected_contexts: [entitlement, billing, async-lesson]
+    rationale: "契約種別は entitlement、都度課金の請求は billing が持ち、不変条件 2（ワンショット決済が確定した動画にしか添削に着手できない）の着手判定が async-lesson の添削ワークフローに及ぶ。"
+    status: candidate
+  - id: cs-003
+    title: "ビデオ通話の月間回数を契約プランごとに可変にする"
+    description: "月額契約のビデオ通話の上限（現在は暦月 2 回固定）を、契約プランごとに異なる回数にできるようにする。"
+    expected_contexts: [entitlement, live-lesson, scheduling]
+    rationale: "不変条件 1（暦月 2 回まで・3 回目は予約できない）の上限は entitlement の利用権、消費は live-lesson の「月 2 回の消費」、予約可否の判定は scheduling に及ぶ。"
+    status: candidate
+  - id: cs-004
+    title: "グループレッスン（1 コーチ : N 生徒）を追加する"
+    description: "マンツーマンに限られている同期レッスンに、1 人のコーチが複数の生徒を同時に指導するグループレッスンを加える。"
+    expected_contexts: [catalog, scheduling, live-lesson, entitlement, billing]
+    rationale: "レッスン種別は catalog、定員つきのスロットと予約は scheduling、多人数の通話セッションは live-lesson、生徒ごとの枠消費は entitlement、不変条件 4 のコーチへの支払い額の算出は billing に及ぶ。"
+    status: candidate
+  - id: cs-005
+    title: "コーチへの支払いを月次締めから週次締めに変える"
+    description: "コーチへの支払いの締め単位を月次から週次に変える。支払い額の算出規則（確定したレッスンのみ・契約種別ごとの固定手数料率）は変えない。"
+    expected_contexts: [billing]
+    rationale: "コーチへの支払い・手数料は billing の持ち物で、不変条件 4 の算出規則は変えずに締め単位だけを変えるため billing に閉じるはずである。"
+    status: candidate
+  - id: cs-006
+    title: "動画添削に AI による一次フィードバックを挟む"
+    description: "生徒が送った動画に対し、コーチの添削の前に AI が一次フィードバックを返す工程を加える。"
+    expected_contexts: [async-lesson]
+    rationale: "動画アップロードから添削・返却までのワークフローは async-lesson の持ち物で、不変条件 2 の着手条件を変えずに工程を 1 つ挟むだけなので async-lesson に閉じるはずである。"
+    status: candidate
+  - id: cs-007
+    title: "Twilio を別の通話基盤に差し替える"
+    description: "同期レッスンの通話基盤を Twilio Video から別のサービスに差し替える。ポート（契約）の形は変えない。"
+    expected_contexts: [live-lesson]
+    rationale: "通話セッション・接続品質・録画は live-lesson の持ち物で、外部連携はポートの形を本物と揃えているため差し替えは live-lesson のアダプタに閉じるはずである。"
+    status: candidate
