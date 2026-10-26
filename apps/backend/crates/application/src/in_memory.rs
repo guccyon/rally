@@ -9,15 +9,19 @@ use std::{
 use domain::{
     DomainError,
     identity::{Account, AccountId},
-    scheduling::{CoachCalendar, Slot, SlotId},
+    scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
 
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
+    domain_event::{DomainEvent, DomainEventPublisher},
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
-    scheduling::{AddToCalendarError, SlotCriteria, SlotRepository, slot_id_uuid},
+    scheduling::{
+        AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
+        UpdateBookingError, booking_id_uuid, slot_id_uuid,
+    },
 };
 
 /// [`AccountRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
@@ -135,5 +139,114 @@ impl SlotRepository for InMemorySlotRepository {
         found.sort_by_key(|slot| (slot.starts_at(), slot.id()));
         found.truncate(criteria.limit);
         Ok(found)
+    }
+}
+
+/// [`BookingRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// スロットは渡した [`InMemorySlotRepository`] と共有する（確定でスロットが埋まる）。読み取りから保存までは
+/// スロット → 予約の順に 2 つのロックを取った中で行うので、予約の作成・確定とスロットの公開は直列になる。
+#[derive(Debug, Clone)]
+pub struct InMemoryBookingRepository {
+    slots: InMemorySlotRepository,
+    bookings: Arc<Mutex<Vec<Booking>>>,
+}
+
+impl InMemoryBookingRepository {
+    pub fn new(slots: InMemorySlotRepository) -> Self {
+        Self {
+            slots,
+            bookings: Arc::default(),
+        }
+    }
+
+    /// 共有しているスロットの保存先。
+    pub fn slots(&self) -> &InMemorySlotRepository {
+        &self.slots
+    }
+
+    /// 保存した予約（保存した順）。
+    pub fn all(&self) -> Vec<Booking> {
+        self.bookings.lock().unwrap().clone()
+    }
+}
+
+impl BookingRepository for InMemoryBookingRepository {
+    fn next_id(&self) -> BookingId {
+        booking_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn reserve<F>(
+        &self,
+        slot_id: SlotId,
+        student_id: AccountId,
+        reserve: F,
+    ) -> Result<Booking, ReserveSlotError>
+    where
+        F: FnOnce(&Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+    {
+        let slots = self.slots.slots.lock().unwrap();
+        let mut bookings = self.bookings.lock().unwrap();
+        let slot = slots
+            .iter()
+            .find(|slot| slot.id() == slot_id)
+            .ok_or(ReserveSlotError::SlotNotFound)?;
+        let existing: Vec<Booking> = bookings
+            .iter()
+            .filter(|b| b.slot_id() == slot_id || b.student_id() == student_id)
+            .cloned()
+            .collect();
+        let booking = reserve(slot, &existing).map_err(ReserveSlotError::Rejected)?;
+        bookings.push(booking.clone());
+        Ok(booking)
+    }
+
+    async fn update<F>(
+        &self,
+        booking_id: BookingId,
+        update: F,
+    ) -> Result<Booking, UpdateBookingError>
+    where
+        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send,
+    {
+        let mut slots = self.slots.slots.lock().unwrap();
+        let mut bookings = self.bookings.lock().unwrap();
+        let booking = bookings
+            .iter_mut()
+            .find(|b| b.id() == booking_id)
+            .ok_or(UpdateBookingError::BookingNotFound)?;
+        let slot = slots
+            .iter_mut()
+            .find(|s| s.id() == booking.slot_id())
+            .ok_or_else(|| {
+                UpdateBookingError::Unavailable(Unavailable::new(
+                    "予約のスロットが保存されていない",
+                ))
+            })?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let (mut next_booking, mut next_slot) = (booking.clone(), slot.clone());
+        update(&mut next_booking, &mut next_slot).map_err(UpdateBookingError::Rejected)?;
+        *booking = next_booking.clone();
+        *slot = next_slot;
+        Ok(next_booking)
+    }
+}
+
+/// 発行したドメインイベントを記録する [`DomainEventPublisher`]。複製は同じ記録を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct RecordingDomainEventPublisher {
+    events: Arc<Mutex<Vec<DomainEvent>>>,
+}
+
+impl RecordingDomainEventPublisher {
+    /// 発行したイベント（発行した順）。
+    pub fn events(&self) -> Vec<DomainEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl DomainEventPublisher for RecordingDomainEventPublisher {
+    async fn publish(&self, event: DomainEvent) {
+        self.events.lock().unwrap().push(event);
     }
 }

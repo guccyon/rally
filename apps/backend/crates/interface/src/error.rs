@@ -46,6 +46,15 @@ impl ApiError {
         }
     }
 
+    /// 404 `not_found`（対象が存在しない）
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "not_found",
+            message: message.into(),
+        }
+    }
+
     /// 409 と、その理由の `code`
     pub fn conflict(code: &'static str, message: impl Into<String>) -> Self {
         Self {

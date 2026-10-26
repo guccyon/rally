@@ -5,6 +5,7 @@
 
 mod accounts;
 pub mod auth;
+mod bookings;
 mod contract;
 mod error;
 mod message;
@@ -15,8 +16,11 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     clock::Clock,
+    domain_event::DomainEventPublisher,
     identity::{AccountRepository, RegisterAccount, TokenIssuer, TokenVerifier},
-    scheduling::{PublishSlot, SearchSlots, SlotRepository},
+    scheduling::{
+        BookingRepository, ConfirmBooking, CreateBooking, PublishSlot, SearchSlots, SlotRepository,
+    },
 };
 use axum::{
     Router,
@@ -32,16 +36,21 @@ pub use error::ApiError;
 ///
 /// `/healthz` と `/accounts` 以外のルートは認証必須（[`AuthenticatedAccount`] を取る）。
 /// `POST /slots`（admin-web）はコーチだけ、`GET /slots`（student-app）は認証した利用者なら誰でも呼べる。
-pub fn router_with<R, S, A, C, T>(
+/// `/bookings`（student-app の予約の作成・確定）は生徒だけ。
+pub fn router_with<R, S, B, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
+    create_booking: CreateBooking<B, A, C>,
+    confirm_booking: ConfirmBooking<B, A, P, C>,
     tokens: T,
 ) -> Router
 where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
+    B: BookingRepository + 'static,
     A: AnalyticsSink + 'static,
+    P: DomainEventPublisher + 'static,
     C: Clock + 'static,
     T: TokenIssuer + TokenVerifier + 'static,
 {
@@ -63,10 +72,22 @@ where
             publish_slot,
             search_slots,
         }));
+    let bookings = Router::new()
+        .route("/bookings", post(bookings::create_booking::<B, A, P, C>))
+        .route(
+            "/bookings/{booking_id}/confirm",
+            post(bookings::confirm_booking::<B, A, P, C>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(bookings::BookingsState {
+            create_booking,
+            confirm_booking,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
         .merge(slots)
+        .merge(bookings)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

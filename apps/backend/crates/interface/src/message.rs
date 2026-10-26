@@ -1,7 +1,11 @@
 //! 利用者に見せる文言（API の `message`）。domain の値やエラーの変種から組み立てる。
 
 use application::scheduling::slot_id_uuid;
-use domain::{DomainError, identity::Role};
+use domain::{
+    DomainError,
+    identity::Role,
+    scheduling::{BookingStatus, SlotStatus},
+};
 
 /// 役割の呼び名。
 pub(crate) const fn role_label(role: Role) -> &'static str {
@@ -27,6 +31,34 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             slot_id_uuid::format(*existing)
         ),
         DomainError::SlotOfAnotherCoach => "別のコーチの枠は扱えない".to_string(),
+        DomainError::SlotNotOpen { status } => {
+            format!("スロットが公開中でない（{}）", slot_status_label(*status))
+        }
+        DomainError::SlotAlreadyBooked => "スロットはすでに予約されている".to_string(),
+        DomainError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
+        DomainError::BookingNotPending { status } => {
+            format!("確定前の予約でない（{}）", booking_status_label(*status))
+        }
+        DomainError::BookingOfAnotherStudent => "別の生徒の予約は扱えない".to_string(),
+        DomainError::BookingOfAnotherSlot => "予約と別のスロットは扱えない".to_string(),
+    }
+}
+
+/// スロットの状態の呼び名。
+const fn slot_status_label(status: SlotStatus) -> &'static str {
+    match status {
+        SlotStatus::Open => "公開中",
+        SlotStatus::Booked => "予約済み",
+        SlotStatus::Closed => "閉じている",
+    }
+}
+
+/// 予約の状態の呼び名。
+const fn booking_status_label(status: BookingStatus) -> &'static str {
+    match status {
+        BookingStatus::Pending => "確定前",
+        BookingStatus::Confirmed => "確定済み",
+        BookingStatus::Cancelled => "キャンセル済み",
     }
 }
 
@@ -65,6 +97,34 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::SlotOfAnotherCoach),
             "別のコーチの枠は扱えない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotNotOpen {
+                status: SlotStatus::Booked
+            }),
+            "スロットが公開中でない（予約済み）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotAlreadyBooked),
+            "スロットはすでに予約されている"
+        );
+        assert_eq!(
+            domain_error(&DomainError::TrialAlreadyUsed),
+            "体験予約は初回の予約だけ"
+        );
+        assert_eq!(
+            domain_error(&DomainError::BookingNotPending {
+                status: BookingStatus::Confirmed
+            }),
+            "確定前の予約でない（確定済み）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::BookingOfAnotherStudent),
+            "別の生徒の予約は扱えない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::BookingOfAnotherSlot),
+            "予約と別のスロットは扱えない"
         );
     }
 }
