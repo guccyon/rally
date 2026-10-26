@@ -1,0 +1,72 @@
+# 行動イベントの定義（Gen1 一周シナリオ: 体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録）
+# モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義しない。
+# name は <対象>.<出来事> の小文字スネークケース、context は context-map.yaml の id、kpi は関係する KPI 名（なければ null）。
+schema_version: "0.1"
+status: draft
+events:
+  - name: account.registered
+    ja: "アカウント登録"
+    context: identity
+    actor: student
+    required: [student_id, occurred_at, sport]
+    kpi: null
+  - name: slot.published
+    ja: "スロットの公開"
+    context: scheduling
+    actor: coach
+    required: [slot_id, coach_id, starts_at, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  - name: booking.created
+    ja: "体験予約の作成"
+    context: scheduling
+    actor: student
+    required: [booking_id, slot_id, student_id, coach_id, is_trial, occurred_at]
+    kpi: "初回レッスンまでの日数"
+  - name: booking.confirmed
+    ja: "予約の確定"
+    context: scheduling
+    actor: system
+    required: [booking_id, slot_id, student_id, coach_id, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  - name: booking.canceled
+    ja: "予約のキャンセル"
+    context: scheduling
+    actor: student
+    required: [booking_id, slot_id, student_id, coach_id, hours_before_start, occurred_at]
+    kpi: "コーチの予約枠充足率"
+  - name: call.started
+    ja: "通話の開始"
+    context: live-lesson
+    actor: system
+    required: [booking_id, student_id, coach_id, occurred_at]
+    kpi: null
+  - name: call.ended
+    ja: "通話の終了"
+    context: live-lesson
+    actor: system
+    required: [booking_id, student_id, coach_id, duration_seconds, avg_bitrate_kbps, packet_loss_rate, avg_latency_ms, occurred_at]
+    kpi: "通話品質スコア"
+  - name: video.submitted
+    ja: "動画の送付"
+    context: async-lesson
+    actor: student
+    required: [video_id, student_id, coach_id, occurred_at]
+    kpi: "添削の返却リードタイム"
+  - name: video_review.returned
+    ja: "添削の返却"
+    context: async-lesson
+    actor: coach
+    required: [video_id, student_id, coach_id, submitted_at, occurred_at]
+    kpi: "添削の返却リードタイム"
+  - name: lesson.completed
+    ja: "レッスンの完了記録"
+    context: scheduling
+    actor: system
+    required: [lesson_id, lesson_type, student_id, coach_id, is_trial, occurred_at]
+    kpi: "初回レッスンまでの日数"
+  - name: subscription.started
+    ja: "月額契約の開始"
+    context: entitlement
+    actor: student
+    required: [subscription_id, student_id, occurred_at]
+    kpi: "初回レッスン後の 1 ヶ月継続率"
