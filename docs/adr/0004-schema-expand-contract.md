@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -34,7 +34,7 @@
 |---|---|---|
 | `identity` | `accounts` | アカウント。`role` で生徒（`student`）・コーチ（`coach`）・本部（`headquarters`）を区別。生徒だけが `sport` を持つ。メールは大文字小文字を区別せず一意 |
 | | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる |
-| `scheduling` | `slots` | コーチが公開する予約枠 |
+| `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加） |
 | | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled` |
 | `entitlement` | `subscriptions` | 月額契約（ゴルフ以外） |
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
@@ -57,6 +57,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 
 制約にしないもの:
 
+- **同じコーチの枠が重ならないこと**（T07）: 判定は domain の集約 `CoachCalendar` の 1 か所に寄せ、DB の排他制約（`btree_gist` の `EXCLUDE USING gist (coach_id WITH =, tstzrange(starts_at, ends_at) WITH &&)`）は置かない。どの状態の枠が時間を占めるか（`closed` は占めない）は domain の規則で、排他制約にすると同じ規則を `WHERE` 句に写して 2 か所で持つことになり、拒否の理由（重なった枠）も domain の言葉で返しにくい。その代わり、並行な公開が互いを見落とさないよう、infra の `PgSlotRepository` はトランザクションの中でコーチごとの advisory lock（`pg_advisory_xact_lock`）を取ってから、期間に重なる枠の読み取り・判定・保存を行う。DB 以外の書き込み経路（手作業の SQL など）からの重なりは防げないことを受け入れる
 - **キャンセル規定**（開始 24 時間前以降のキャンセルは回数を消費）: 判定は scheduling のアプリケーションの 1 か所に置く（ADR 0002、不変条件 3）。DB にも置くと判定が 2 か所になる。予約に「消費するか」の列も持たない（消費の実行は entitlement が `BookingCancelled` を購読して行う。T09 / T11）
 - 枠の消費をいつ・どの予約で行うか、暦月をどのタイムゾーンで区切るか: T11 で決める。DB は「枠の行の残回数が 0〜2」だけを守る
 - ゴルフの添削はワンショット決済が確定した動画だけ（不変条件 2）、コーチへの支払い（不変条件 4）: async-lesson / billing のテーブルとともに段 5 以降

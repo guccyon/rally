@@ -1,0 +1,169 @@
+openapi: 3.1.0
+info:
+  title: Rally admin-web API
+  version: 0.1.0
+  description: |
+    admin-web（最小の管理画面）が呼ぶ API。本部とコーチが同じアプリに役割で同居し、画面は役割で出し分ける
+    （ADR 0002 Q3）。コーチ側の最小操作（予約枠の登録・添削の返却・通話参加）もここに載せる。
+    Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。
+
+    - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
+    - 各操作の `x-context` は `specs/context-map.yaml` の context id
+    - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
+    - 認証は student-app と同じモックのトークンを `bearerAuth` として置く（不透明なトークン）
+
+    ## 互換ポリシー
+
+    `.factory-config/manifest.yaml` の `compat.api` と一致させる（`specs/contracts/README.md`）。
+
+    - N-2: モバイルアプリは最新から 2 つ前の版まで（N-2）を API が支える（admin-web は Web なので
+      配信と同時に最新になるが、同じ API を共有するクライアントのために同じ規則で変更する）。
+      リクエスト・レスポンスを壊す変更（必須項目の追加、項目の削除・改名・型変更、enum の値の削除）はしない
+    - 90 日: 廃止する操作・項目は `deprecated: true` を付けてから 90 日は残す
+servers:
+  - url: /
+    description: ホストは環境ごとに決める（P1 はローカルの Docker Compose、本番相当の環境は P2）
+security:
+  - bearerAuth: []
+tags:
+  - name: scheduling
+    description: 予約（スロット）
+
+paths:
+  /slots:
+    post:
+      operationId: publishSlot
+      summary: スロットの公開（コーチ）
+      description: |
+        認証したコーチの予約枠を公開する。コーチの役割のトークンだけが呼べる（それ以外は 403）。
+        開始は終了より前（違えば 422）。期間は開始を含み終了を含まない。同じコーチの、時間を占める枠
+        （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。Gen1 の枠の定員は 1（マンツーマン）。
+        公開すると行動イベント `slot.published`（KPI「コーチの予約枠充足率」の入力）を発火する。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: [slot.published]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishSlotRequest"
+      responses:
+        "201":
+          description: 公開したスロット
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Slot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        アカウント ID と役割を載せた不透明なトークン（student-app の `RegisterAccountResponse.access_token` と同じ方式）。
+        クライアントは中身を解釈しない。Gen1 は署名なしのモックで、本番では署名付きの方式に差し替える。
+        トークンがない・無効なら 401、役割が操作に合わなければ 403。
+
+  responses:
+    Unauthorized:
+      description: トークンがない、または無効
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: 役割が操作に合わない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: 現在の状態では実行できない（同じコーチの枠と期間が重なるなど）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnprocessableEntity:
+      description: リクエストの内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Sport:
+      type: string
+      description: Blueprint のスポーツ 5 種類。コーチはゴルフの枠も公開できる（ゴルフの生徒は golf-app の範囲）。
+      enum: [tennis, golf, baseball, soccer, basketball]
+
+    SlotStatus:
+      type: string
+      description: |
+        open: 公開中で未予約（生徒の検索に出る）/ booked: 予約で埋まっている / closed: コーチが閉じた（時間を占めない）。
+      enum: [open, booked, closed]
+
+    Slot:
+      type: object
+      description: glossary の slot（コーチが公開する予約枠）
+      required: [slot_id, coach_id, sport, starts_at, ends_at, status]
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        sport:
+          $ref: "#/components/schemas/Sport"
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/SlotStatus"
+
+    PublishSlotRequest:
+      type: object
+      required: [sport, starts_at, ends_at]
+      properties:
+        sport:
+          $ref: "#/components/schemas/Sport"
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+          description: 開始より後（期間は終了を含まない）
+
+    ErrorCode:
+      type: string
+      description: |
+        機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
+      enum:
+        - unauthorized
+        - forbidden
+        - validation_failed
+        - slot_overlaps
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: 人間向けの説明（表示用ではない）

@@ -4,7 +4,10 @@
 
 use std::{future::Future, time::SystemTime};
 
-use domain::identity::{AccountId, Sport};
+use domain::{
+    identity::{AccountId, Sport},
+    scheduling::SlotId,
+};
 
 /// 行動イベント。変種は events.yaml の `name` に 1 対 1 で対応し、属性は `required` と同じ。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +18,13 @@ pub enum AnalyticsEvent {
         sport: Sport,
         occurred_at: SystemTime,
     },
+    /// `slot.published`（KPI「コーチの予約枠充足率」の入力）
+    SlotPublished {
+        coach_id: AccountId,
+        slot_id: SlotId,
+        starts_at: SystemTime,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -22,6 +32,7 @@ impl AnalyticsEvent {
     pub const fn name(&self) -> &'static str {
         match self {
             AnalyticsEvent::AccountRegistered { .. } => "account.registered",
+            AnalyticsEvent::SlotPublished { .. } => "slot.published",
         }
     }
 }
