@@ -36,7 +36,7 @@ contracts/
 | アプリ | Gen1 | 備考 |
 |---|---|---|
 | student-app | 実装する | 生徒アプリ（iOS / Android、ゴルフ以外） |
-| admin-web | 実装する | 最小の admin-web。コーチ側の最小操作（添削の返却・予約枠の登録・通話参加）も同居させる案（Question として未決） |
+| admin-web | 実装する | 最小の admin-web。コーチ側の最小操作（添削の返却・予約枠の登録・通話参加）も同居させる（docs/adr/0002 Q3） |
 | coach-app | 境界だけ引く | |
 | coach-web | 境界だけ引く | |
 | golf-app | 境界だけ引く | ゴルフのワンショット課金のアプリ |

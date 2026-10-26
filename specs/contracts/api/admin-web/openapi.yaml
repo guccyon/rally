@@ -5,7 +5,8 @@ info:
   description: |
     admin-web（最小の管理画面）が呼ぶ API。本部とコーチが同じアプリに役割で同居し、画面は役割で出し分ける
     （ADR 0002 Q3）。コーチ側の最小操作（予約枠の登録・添削の返却・通話参加）もここに載せる。
-    Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す（予約枠の登録 `publishSlot`・添削の返却 `returnVideoReview`）。
+    Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。通話への参加（`startLiveLessonSession` /
+    `endLiveLessonSession`）は student-app と同じ操作・同じ形で、予約の参加者であるコーチが呼ぶ。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
     - 各操作の `x-context` は `specs/context-map.yaml` の context id
@@ -28,6 +29,8 @@ security:
 tags:
   - name: scheduling
     description: 予約（スロット）
+  - name: live-lesson
+    description: 同期レッスン（通話への参加）
   - name: async-lesson
     description: 非同期レッスン（動画添削の返却）
 
@@ -65,6 +68,74 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /live-lesson-sessions:
+    post:
+      operationId: startLiveLessonSession
+      summary: 通話セッションの開始（コーチ）
+      description: |
+        確定した予約の通話を始める。student-app の `startLiveLessonSession` と同じ操作で、admin-web ではコーチが呼ぶ。
+        通話（Twilio Video）は Gen1 ではモックで、接続情報（`room_token`）もモックが返す。
+        呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントには予約がないのと同じ 404 を返す（役割では絞らない）。
+        確定前・キャンセル済みの予約は 409 `invalid_booking_state`、その予約のセッションがすでにあれば（終了済みを含む）
+        409 `invalid_session_state`（同じ予約のセッションは 1 つ）。`booking_id` が UUID でなければ 422。
+      tags: [live-lesson]
+      x-context: live-lesson
+      x-analytics-events: [call.started]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartLiveLessonSessionRequest"
+      responses:
+        "201":
+          description: 開始した通話セッション
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveLessonSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /live-lesson-sessions/{session_id}/end:
+    post:
+      operationId: endLiveLessonSession
+      summary: 通話セッションの終了（コーチ）
+      description: |
+        student-app の `endLiveLessonSession` と同じ操作で、admin-web ではコーチが呼ぶ。
+        接続品質の生の指標はモックがサーバー側で生成し、行動イベント `call.ended` に載せる（このレスポンスには含めない）。
+        呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントと UUID でない ID には 404。
+        終了済みのセッションは 409 `invalid_session_state`。終了後の `room_token` は null。
+      tags: [live-lesson]
+      x-context: live-lesson
+      x-analytics-events: [call.ended]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 終了した通話セッション
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveLessonSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /videos/{video_id}/review:
     post:
@@ -143,7 +214,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、添削が返却済みなど）
+      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、添削が返却済み、予約が未確定など）
       content:
         application/json:
           schema:
@@ -203,6 +274,53 @@ components:
           format: date-time
           description: 開始より後（期間は終了を含まない）
 
+    LiveLessonSessionStatus:
+      type: string
+      description: student-app の LiveLessonSessionStatus と同じ値
+      enum: [in_progress, ended]
+
+    LiveLessonSession:
+      type: object
+      description: 同期レッスン（glossary の live_lesson）の通話セッション。student-app の LiveLessonSession と同じ形
+      required: [session_id, booking_id, student_id, coach_id, status, started_at]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/LiveLessonSessionStatus"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+        duration_sec:
+          type: [integer, "null"]
+          minimum: 0
+          description: 終了するまでは null
+        room_token:
+          type: [string, "null"]
+          description: 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null
+
+    StartLiveLessonSessionRequest:
+      type: object
+      required: [booking_id]
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+          description: 確定した予約
+
     VideoReviewStatus:
       type: string
       description: "in_progress: コーチがまだ返却していない（未返却） / returned: 返却した"
@@ -255,6 +373,8 @@ components:
         - not_found
         - validation_failed
         - slot_overlaps
+        - invalid_booking_state
+        - invalid_session_state
         - invalid_video_state
         - review_payment_not_confirmed
 
