@@ -259,6 +259,10 @@ mod tests {
             BookingId::from_u128(1)
         }
 
+        async fn find(&self, _booking_id: BookingId) -> Result<Option<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn reserve<F>(
             &self,
             _slot_id: SlotId,

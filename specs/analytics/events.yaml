@@ -43,7 +43,8 @@ events:
     actor: system
     required: [student_id, coach_id, booking_id, session_id, occurred_at]
     kpi: null
-  # 通話品質スコアの定義は未決の Question。モックが生成する接続品質の生の指標を持たせ、スコアの式はセマンティック層で決める
+  # モックが生成する接続品質の生の指標を持たせ、通話品質スコアの式はセマンティック層の 1 か所に置く（docs/adr/0002 Q1）
+  # packet_loss_rate は失われたパケットの百分率（0〜100。Q1 の式の packet_loss_rate(%)）、jitter_ms / round_trip_ms はミリ秒、duration_sec は秒（切り捨て）
   - name: call.ended
     ja: "通話の終了"
     context: live-lesson

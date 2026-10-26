@@ -7,6 +7,7 @@ use domain::{
 };
 
 use super::{ReserveSlotError, UpdateBookingError};
+use crate::Unavailable;
 
 /// 予約の保存先のポート。予約とスロットの状態を一緒に読み書きする（予約の確定でスロットが埋まる）。
 /// 実装はテスト・ローカル起動用の [`crate::in_memory::InMemoryBookingRepository`]（Postgres の
@@ -17,6 +18,12 @@ use super::{ReserveSlotError, UpdateBookingError};
 pub trait BookingRepository: Send + Sync {
     /// 新しい予約の ID を払い出す。
     fn next_id(&self) -> BookingId;
+
+    /// `booking_id` の予約。なければ `None`。読むだけで何も変えない。
+    fn find(
+        &self,
+        booking_id: BookingId,
+    ) -> impl Future<Output = Result<Option<Booking>, Unavailable>> + Send;
 
     /// `slot_id` のスロットと、既存の予約（少なくともそのスロットの予約と `student_id` の生徒の予約）を
     /// 読み、`reserve` に渡す。`reserve` が `Ok` なら返した予約を保存して返す。

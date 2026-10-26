@@ -10,6 +10,7 @@ use domain::{
     DomainError,
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
+    live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
 
@@ -23,6 +24,10 @@ use crate::{
         subscription_id_uuid,
     },
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
+    live_lesson::{
+        InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
+        session_id_uuid,
+    },
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
         UpdateBookingError, booking_id_uuid, slot_id_uuid,
@@ -179,6 +184,16 @@ impl InMemoryBookingRepository {
 impl BookingRepository for InMemoryBookingRepository {
     fn next_id(&self) -> BookingId {
         booking_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn find(&self, booking_id: BookingId) -> Result<Option<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|b| b.id() == booking_id)
+            .cloned())
     }
 
     async fn reserve<F>(
@@ -365,5 +380,143 @@ impl ManualClock {
 impl Clock for ManualClock {
     fn now(&self) -> SystemTime {
         *self.0.lock().unwrap()
+    }
+}
+
+/// [`LiveLessonSessionRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じセッションの終了・同じ予約の開始は直列になる。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryLiveLessonSessionRepository {
+    sessions: Arc<Mutex<Vec<LiveLessonSession>>>,
+}
+
+impl InMemoryLiveLessonSessionRepository {
+    /// 既存のセッションを入れて作る（予約ごとに 1 つかは確かめない。テストの準備用）。
+    pub fn with_sessions(sessions: impl IntoIterator<Item = LiveLessonSession>) -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(sessions.into_iter().collect())),
+        }
+    }
+
+    /// 保存したセッション（保存した順）。
+    pub fn all(&self) -> Vec<LiveLessonSession> {
+        self.sessions.lock().unwrap().clone()
+    }
+}
+
+impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
+    fn next_id(&self) -> SessionId {
+        session_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn find(&self, session_id: SessionId) -> Result<Option<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id() == session_id)
+            .cloned())
+    }
+
+    async fn find_by_booking(
+        &self,
+        booking_id: BookingId,
+    ) -> Result<Option<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.booking_id() == booking_id)
+            .cloned())
+    }
+
+    async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        if sessions
+            .iter()
+            .any(|s| s.booking_id() == session.booking_id())
+        {
+            return Err(InsertSessionError::BookingAlreadyHasSession);
+        }
+        sessions.push(session);
+        Ok(())
+    }
+
+    async fn update<F>(
+        &self,
+        session_id: SessionId,
+        update: F,
+    ) -> Result<LiveLessonSession, UpdateSessionError>
+    where
+        F: FnOnce(&mut LiveLessonSession) -> Result<(), DomainError> + Send,
+    {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .iter_mut()
+            .find(|s| s.id() == session_id)
+            .ok_or(UpdateSessionError::NotFound)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let mut next = session.clone();
+        update(&mut next).map_err(UpdateSessionError::Rejected)?;
+        *session = next.clone();
+        Ok(next)
+    }
+}
+
+/// 閉じるときに常に同じ接続品質を返す [`VideoCallProvider`]（テスト用）。開いているルームを記録し、
+/// 開いていないルームを閉じようとすると障害を返す。トークンは `fixed-room.<セッション ID>.<参加者 ID>`。
+/// 複製は同じ記録を共有する。
+#[derive(Debug, Clone)]
+pub struct FixedVideoCallProvider {
+    quality: ConnectionQuality,
+    rooms: Arc<Mutex<Vec<SessionId>>>,
+}
+
+impl FixedVideoCallProvider {
+    pub fn new(quality: ConnectionQuality) -> Self {
+        Self {
+            quality,
+            rooms: Arc::default(),
+        }
+    }
+
+    /// 開いているルーム（作った順）。
+    pub fn open_rooms(&self) -> Vec<SessionId> {
+        self.rooms.lock().unwrap().clone()
+    }
+}
+
+impl Default for FixedVideoCallProvider {
+    /// 損失なし・ジッタ 10 ms・往復 50 ms・切断なし。
+    fn default() -> Self {
+        Self::new(ConnectionQuality::new(0.0, 10, 50, 0).expect("損失率 0 は百分率の範囲内"))
+    }
+}
+
+impl VideoCallProvider for FixedVideoCallProvider {
+    async fn create_room(
+        &self,
+        session_id: SessionId,
+        participant: AccountId,
+    ) -> Result<String, Unavailable> {
+        self.rooms.lock().unwrap().push(session_id);
+        Ok(format!(
+            "fixed-room.{}.{}",
+            session_id_uuid::format(session_id),
+            account_id_uuid::format(participant)
+        ))
+    }
+
+    async fn close_room(&self, session_id: SessionId) -> Result<ConnectionQuality, Unavailable> {
+        let mut rooms = self.rooms.lock().unwrap();
+        let index = rooms
+            .iter()
+            .position(|room| *room == session_id)
+            .ok_or_else(|| Unavailable::new("ルームが開いていない"))?;
+        rooms.remove(index);
+        Ok(self.quality)
     }
 }

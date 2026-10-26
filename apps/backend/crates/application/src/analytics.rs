@@ -7,11 +7,14 @@ use std::{future::Future, time::SystemTime};
 use domain::{
     entitlement::SubscriptionId,
     identity::{AccountId, Sport},
+    live_lesson::SessionId,
     scheduling::{BookingId, SlotId},
 };
 
 /// 行動イベント。変種は events.yaml の `name` に 1 対 1 で対応し、属性は `required` と同じ。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `call.ended` のパケット損失率が浮動小数点数なので `Eq` は実装しない。
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnalyticsEvent {
     /// `account.registered`
     AccountRegistered {
@@ -54,6 +57,30 @@ pub enum AnalyticsEvent {
         hours_before_start: i64,
         occurred_at: SystemTime,
     },
+    /// `call.started`
+    CallStarted {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        session_id: SessionId,
+        occurred_at: SystemTime,
+    },
+    /// `call.ended`（KPI「通話品質スコア」の入力）。接続品質の生の指標だけを持ち、スコアの式はセマンティック層の
+    /// 1 か所に置く（docs/adr/0002 Q1）
+    CallEnded {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        session_id: SessionId,
+        /// 通話の長さ（秒。切り捨て）
+        duration_sec: u64,
+        /// 失われたパケットの百分率（0〜100）
+        packet_loss_rate: f64,
+        jitter_ms: u32,
+        round_trip_ms: u32,
+        disconnect_count: u32,
+        occurred_at: SystemTime,
+    },
     /// `subscription.started`（KPI「初回レッスン後の 1 ヶ月継続率」の入力）
     SubscriptionStarted {
         student_id: AccountId,
@@ -72,6 +99,8 @@ impl AnalyticsEvent {
             AnalyticsEvent::BookingCreated { .. } => "booking.created",
             AnalyticsEvent::BookingConfirmed { .. } => "booking.confirmed",
             AnalyticsEvent::BookingCancelled { .. } => "booking.cancelled",
+            AnalyticsEvent::CallStarted { .. } => "call.started",
+            AnalyticsEvent::CallEnded { .. } => "call.ended",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
         }
     }

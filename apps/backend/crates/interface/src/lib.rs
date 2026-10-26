@@ -9,6 +9,7 @@ mod bookings;
 mod contract;
 mod entitlements;
 mod error;
+mod live_lesson_sessions;
 mod message;
 mod slots;
 mod subscriptions;
@@ -21,6 +22,10 @@ use application::{
     domain_event::DomainEventPublisher,
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
     identity::{AccountRepository, RegisterAccount, TokenIssuer, TokenVerifier},
+    live_lesson::{
+        BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
+        VideoCallProvider,
+    },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, QuotaGate,
         SearchSlots, SlotRepository,
@@ -41,9 +46,10 @@ pub use error::ApiError;
 /// `/healthz` と `/accounts` 以外のルートは認証必須（[`AuthenticatedAccount`] を取る）。
 /// `POST /slots`（admin-web）はコーチだけ、`GET /slots`（student-app）は認証した利用者なら誰でも呼べる。
 /// `/bookings`（student-app の予約の作成・確定・キャンセル）・`POST /subscriptions`（月額契約の開始）・
-/// `GET /entitlements/me`（受講権の照会）は生徒だけ。
+/// `GET /entitlements/me`（受講権の照会）は生徒だけ。`/live-lesson-sessions`（通話セッションの開始・終了）は
+/// 役割で絞らず、予約の参加者（生徒・コーチ）かをユースケースが確かめる（契約に 403 がない）。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
@@ -52,6 +58,8 @@ pub fn router_with<R, S, B, G, E, A, P, C, T>(
     cancel_booking: CancelBooking<B, A, P, C>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,
+    start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
+    end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
     tokens: T,
 ) -> Router
 where
@@ -60,6 +68,9 @@ where
     B: BookingRepository + 'static,
     G: QuotaGate + 'static,
     E: EntitlementRepository + 'static,
+    L: LiveLessonSessionRepository + 'static,
+    K: BookingLookup + 'static,
+    V: VideoCallProvider + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -117,6 +128,19 @@ where
         .with_state(Arc::new(subscriptions::SubscriptionsState {
             start_subscription,
         }));
+    let live_lesson_sessions = Router::new()
+        .route(
+            "/live-lesson-sessions",
+            post(live_lesson_sessions::start_live_lesson_session::<L, K, V, A, C>),
+        )
+        .route(
+            "/live-lesson-sessions/{session_id}/end",
+            post(live_lesson_sessions::end_live_lesson_session::<L, K, V, A, C>),
+        )
+        .with_state(Arc::new(live_lesson_sessions::LiveLessonSessionsState {
+            start_live_lesson_session,
+            end_live_lesson_session,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
@@ -124,6 +148,7 @@ where
         .merge(bookings)
         .merge(subscriptions)
         .merge(entitlements)
+        .merge(live_lesson_sessions)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

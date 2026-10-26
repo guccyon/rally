@@ -294,7 +294,11 @@ paths:
     post:
       operationId: startLiveLessonSession
       summary: 通話セッションの開始
-      description: 確定した予約の通話を始める。通話（Twilio Video）は Gen1 ではモックで、接続情報もモックが返す。
+      description: |
+        確定した予約の通話を始める。通話（Twilio Video）は Gen1 ではモックで、接続情報（`room_token`）もモックが返す。
+        呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントには予約がないのと同じ 404 を返す（役割では絞らない）。
+        確定前・キャンセル済みの予約は 409 `invalid_booking_state`、その予約のセッションがすでにあれば（終了済みを含む）
+        409 `invalid_session_state`（同じ予約のセッションは 1 つ）。`booking_id` が UUID でなければ 422。
       tags: [live-lesson]
       x-context: live-lesson
       x-analytics-events: [call.started]
@@ -317,14 +321,18 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /live-lesson-sessions/{session_id}/end:
     post:
       operationId: endLiveLessonSession
       summary: 通話セッションの終了
       description: |
-        接続品質の生の指標はモックがサーバー側で生成し、行動イベント `call.ended` に載せる。
-        通話品質スコアの定義は未決の Question のため、この API はスコアを返さない。
+        接続品質の生の指標はモックがサーバー側で生成し、行動イベント `call.ended` に載せる（このレスポンスには含めない）。
+        通話品質スコアは指標からセマンティック層で計算するので（docs/adr/0002 Q1）、この API はスコアを返さない。
+        呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントと UUID でない ID には 404。
+        終了済みのセッションは 409 `invalid_session_state`。終了後の `room_token` は null。
       tags: [live-lesson]
       x-context: live-lesson
       x-analytics-events: [call.ended]
