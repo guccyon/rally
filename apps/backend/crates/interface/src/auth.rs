@@ -34,13 +34,36 @@ impl TokenVerification {
 }
 
 /// 有効なトークンを示したアカウント。抽出できなければ 401 `unauthorized`。
+///
+/// 作れるのは抽出子（[`FromRequestParts`]）だけで、トークンを検証せずに外から組み立てることは
+/// できない。中身はアクセサで読む。
+///
+/// ```compile_fail
+/// use domain::identity::{AccountId, Role};
+/// use interface::AuthenticatedAccount;
+///
+/// let _ = AuthenticatedAccount {
+///     account_id: AccountId::from_u128(42),
+///     role: Role::Headquarters,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuthenticatedAccount {
-    pub account_id: AccountId,
-    pub role: Role,
+    account_id: AccountId,
+    role: Role,
 }
 
 impl AuthenticatedAccount {
+    /// トークンが示したアカウントの ID。
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    /// トークンが示した役割。
+    pub fn role(&self) -> Role {
+        self.role
+    }
+
     /// 役割が `allowed` のどれかでなければ 403 `forbidden`。
     pub fn require_role(&self, allowed: &[Role]) -> Result<(), ApiError> {
         if allowed.contains(&self.role) {
