@@ -423,3 +423,49 @@ async fn only_subscription_entitlements_have_live_lesson_quota(pool: PgPool) {
         (FOREIGN_KEY_VIOLATION, "live_lesson_quotas_entitlement_fkey")
     );
 }
+
+/// CHECK 制約の定義に並ぶ文字列リテラル（`'student'::text` の `student`）を出現順に返す。
+async fn check_values(pool: &PgPool, table: &str, constraint: &str) -> Vec<String> {
+    let definition: String = sqlx::query_scalar(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint
+         WHERE conrelid = $1::regclass AND conname = $2 AND contype = 'c'",
+    )
+    .bind(table)
+    .bind(constraint)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    definition
+        .split('\'')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn identity_values_match_the_accounts_checks(pool: PgPool) {
+    use domain::identity::{Role, Sport};
+    use infra::identity_values::{role_value, sport_value};
+
+    let roles: Vec<&str> = Role::ALL.into_iter().map(role_value).collect();
+    assert_eq!(
+        check_values(&pool, "identity.accounts", "accounts_role_check").await,
+        roles
+    );
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(&pool, "identity.accounts", "accounts_sport_check").await,
+        sports
+    );
+
+    // 対応表の値で実際に保存できる
+    for role in Role::ALL {
+        let sport = (role == Role::Student).then(|| sport_value(Sport::Tennis));
+        account(&pool, role_value(role), sport).await;
+    }
+    for sport in Sport::ALL {
+        account(&pool, role_value(Role::Student), Some(sport_value(sport))).await;
+    }
+}

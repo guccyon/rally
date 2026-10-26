@@ -2,6 +2,7 @@
 //!
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
+pub mod identity_values;
 mod mock_token;
 
 pub use mock_token::MockTokenService;

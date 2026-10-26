@@ -5,6 +5,7 @@ use domain::{
 
 use super::{AccountRepository, InsertAccountError};
 use crate::{
+    Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
 };
@@ -18,14 +19,14 @@ pub struct RegisterAccountCommand {
     pub sports: Vec<Sport>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum RegisterAccountError {
     /// 入力がドメインの不変条件を満たさない
     Invalid(DomainError),
     /// 同じメールアドレスのアカウントがすでにある
     EmailAlreadyRegistered,
     /// 保存先の障害
-    Unavailable(String),
+    Unavailable(Unavailable),
 }
 
 impl From<DomainError> for RegisterAccountError {
@@ -196,9 +197,10 @@ mod tests {
             ),
         ];
         for (command, expected) in cases {
-            assert_eq!(
-                use_case.execute(command).await,
-                Err(RegisterAccountError::Invalid(expected))
+            let result = use_case.execute(command).await;
+            assert!(
+                matches!(&result, Err(RegisterAccountError::Invalid(e)) if *e == expected),
+                "{result:?}"
             );
         }
 
@@ -214,11 +216,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            use_case
-                .execute(student("TARO@example.com", "たろう 2"))
-                .await,
-            Err(RegisterAccountError::EmailAlreadyRegistered)
+        let result = use_case
+            .execute(student("TARO@example.com", "たろう 2"))
+            .await;
+        assert!(
+            matches!(result, Err(RegisterAccountError::EmailAlreadyRegistered)),
+            "{result:?}"
         );
         assert_eq!(use_case.accounts().all().len(), 1);
         assert_eq!(use_case.analytics().events().len(), 1);
@@ -239,6 +242,43 @@ mod tests {
             .unwrap();
 
         assert_eq!(account.as_coach().unwrap().sports().len(), 2);
+        assert!(use_case.analytics().events().is_empty());
+    }
+
+    /// 保存に必ず失敗する保存先。
+    struct BrokenRepository;
+
+    impl AccountRepository for BrokenRepository {
+        fn next_id(&self) -> domain::identity::AccountId {
+            domain::identity::AccountId::from_u128(1)
+        }
+
+        async fn insert(&self, _account: Account) -> Result<(), InsertAccountError> {
+            Err(InsertAccountError::Unavailable(Unavailable::new(
+                "connection refused",
+            )))
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_failure_is_unavailable_with_its_source_and_nothing_is_emitted() {
+        let use_case = RegisterAccount::new(
+            BrokenRepository,
+            RecordingAnalyticsSink::default(),
+            FixedClock(SystemTime::UNIX_EPOCH + NOW),
+        );
+
+        let result = use_case
+            .execute(student("taro@example.com", "たろう"))
+            .await;
+
+        let Err(RegisterAccountError::Unavailable(error)) = result else {
+            panic!("{result:?}");
+        };
+        assert_eq!(
+            std::error::Error::source(&error).unwrap().to_string(),
+            "connection refused"
+        );
         assert!(use_case.analytics().events().is_empty());
     }
 }

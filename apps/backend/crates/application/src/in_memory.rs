@@ -11,7 +11,7 @@ use domain::identity::{Account, AccountId};
 use crate::{
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
-    identity::{AccountRepository, InsertAccountError},
+    identity::{AccountRepository, InsertAccountError, account_id_uuid},
 };
 
 /// [`AccountRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
@@ -29,7 +29,7 @@ impl InMemoryAccountRepository {
 
 impl AccountRepository for InMemoryAccountRepository {
     fn next_id(&self) -> AccountId {
-        AccountId::from_u128(uuid::Uuid::new_v4().as_u128())
+        account_id_uuid::from_uuid(uuid::Uuid::new_v4())
     }
 
     async fn insert(&self, account: Account) -> Result<(), InsertAccountError> {

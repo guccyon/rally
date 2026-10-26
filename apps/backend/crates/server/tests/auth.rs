@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use application::identity::{TokenClaims, TokenIssuer};
+use application::identity::{TokenClaims, TokenIssuer, account_id_uuid};
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
@@ -13,15 +13,15 @@ use axum::{
     routing::get,
 };
 use domain::identity::{AccountId, Role};
-use infra::MockTokenService;
+use infra::{MockTokenService, identity_values::role_value};
 use interface::{AuthenticatedAccount, auth::TokenVerification, require_role};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 async fn whoami(account: AuthenticatedAccount) -> Json<Value> {
     Json(json!({
-        "account_id": account.account_id.to_string(),
-        "role": account.role.as_str(),
+        "account_id": account_id_uuid::format(account.account_id),
+        "role": role_value(account.role),
     }))
 }
 
@@ -92,7 +92,10 @@ async fn missing_or_invalid_token_is_401_unauthorized() {
         ("形が不正", Some("Bearer not-a-token".to_string())),
         (
             "未知の役割",
-            Some(format!("Bearer mock.admin.{}", AccountId::from_u128(42))),
+            Some(format!(
+                "Bearer mock.admin.{}",
+                account_id_uuid::format(AccountId::from_u128(42))
+            )),
         ),
     ];
     for path in ["/any", "/coach-only"] {
@@ -123,8 +126,11 @@ async fn valid_token_with_allowed_role_is_200() {
         let (status, _, body) =
             get_with("/coach-only", Some(&format!("Bearer {}", token(role)))).await;
         assert_eq!(status, StatusCode::OK, "{role:?}: {body}");
-        assert_eq!(body["role"], role.as_str());
-        assert_eq!(body["account_id"], AccountId::from_u128(42).to_string());
+        assert_eq!(body["role"], role_value(role));
+        assert_eq!(
+            body["account_id"],
+            account_id_uuid::format(AccountId::from_u128(42))
+        );
     }
 
     // スキーム名は大文字小文字を問わない（RFC 6750）

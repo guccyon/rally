@@ -47,8 +47,8 @@ impl AuthenticatedAccount {
             Ok(())
         } else {
             Err(ApiError::forbidden(format!(
-                "役割 {} ではこの操作はできない",
-                self.role.as_str()
+                "{}の役割ではこの操作はできない",
+                crate::message::role_label(self.role)
             )))
         }
     }

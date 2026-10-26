@@ -7,9 +7,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 | パス | 層 | 依存してよいクレート |
 |---|---|---|
 | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件） | なし |
-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`AnalyticsSink`・`Clock`）。ポートのインメモリ実装（`in_memory`） | domain |
-| `crates/infra/` | Postgres（`migrations/`）・モックの外部連携（`MockTokenService`: アクセストークン） | domain・application |
-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`）・認証（`AuthenticatedAccount`・`require_role`） | domain・application（infra は不可） |
+| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`AnalyticsSink`・`Clock`）。ポートのインメモリ実装（`in_memory`）。アカウント ID と UUID の変換（`identity::account_id_uuid`）・障害の型（`Unavailable`） | domain |
+| `crates/infra/` | Postgres（`migrations/`）・モックの外部連携（`MockTokenService`: アクセストークン）・DB とトークンの文字列の対応表（`identity_values`） | domain・application |
+| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
 | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
@@ -51,9 +51,20 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
 
 `domain::identity` がモデルの生成時に検証し、破れば `DomainError` を返す。
 
-- 役割（`student` / `coach` / `headquarters`。DB の `identity.accounts.role` と同じ値）とスポーツの組み合わせ: 生徒はちょうど 1 つ、コーチは 1 つ以上（提供スポーツの集合）、本部はなし
+- 役割（生徒・コーチ・本部）とスポーツの組み合わせ: 生徒はちょうど 1 つ、コーチは 1 つ以上（提供スポーツの集合）、本部はなし
 - スポーツは Blueprint の 5 種類（tennis / golf / baseball / soccer / basketball）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）
 - 表示名は空（空白だけ）でなく 50 文字まで（契約の `maxLength`）。メールアドレスは `@` の前後が空でない最小の形で、一意性は大文字小文字を区別しない
+
+domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の文字列表現を知らない。対応表と文言は境界に置く。
+
+| 何の文字列か | 置き場所 |
+|---|---|
+| 契約（OpenAPI）の `Sport` の値 | `interface` の `contract.rs` |
+| API の `message`（`DomainError` の変種・役割の呼び名から組み立てる） | `interface` の `message.rs` |
+| DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
+| アカウント ID の UUID のテキスト形式（契約の `format: uuid`・トークン） | `application::identity::account_id_uuid`（`uuid` クレートに任せる。interface と infra の両方から使うので application に置く） |
+
+保存先の障害は `application::Unavailable`（原因を `source` に持つ）で返す。interface は 500 `internal` に固定の文言だけを返し、原因はクライアントに出さない（標準エラー出力に書く。統合テストは `crates/interface/tests/internal_error.rs`）。
 
 `POST /accounts` の統合テスト（`crates/interface/tests/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。トークンは `TokenIssuer` が発行する（このテストではテスト用の偽物）。
 

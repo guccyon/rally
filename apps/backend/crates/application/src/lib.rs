@@ -6,3 +6,6 @@ pub mod analytics;
 pub mod clock;
 pub mod identity;
 pub mod in_memory;
+mod unavailable;
+
+pub use unavailable::Unavailable;
