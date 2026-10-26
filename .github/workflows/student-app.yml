@@ -1,0 +1,50 @@
+# student-app（apps/student-app、Flutter）の CI。flutter analyze と flutter test（ウィジェットテスト・一周の画面遷移テスト）。
+# iOS / Android のビルドは P0〜P1 対象外。student-app に変更がない PR でも成功で終える。
+name: student-app
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: student-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  student-app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/student-app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: student-app か契約に変更があるか
+        id: changed
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- apps/student-app specs/contracts/api/student-app .github/workflows/student-app.yml; then
+            echo "yes=false" >> "$GITHUB_OUTPUT"; echo "student-app に変更なし。検査を飛ばして成功で終える"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: subosito/flutter-action@v2
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          channel: stable
+          cache: true
+      - name: pub get
+        if: steps.changed.outputs.yes == 'true'
+        run: flutter pub get
+      - name: analyze
+        if: steps.changed.outputs.yes == 'true'
+        run: flutter analyze
+      - name: test
+        if: steps.changed.outputs.yes == 'true'
+        run: flutter test
