@@ -5,3 +5,9 @@
 - `golden/`: ペア比較形式の採点。1 件ごとに「どちらが望ましいか」と採点理由 1 行を残す。正例・負例を 1:1 に近づけ、負例には意図的なアンチパターンを含める
 - 評価仕様は Engine の `definitions/evalspec.yaml`（`l4-pairwise`）
 - P0b の目標は 30 件（pr-merge-criteria の判断の記録 3 件を含む）。30 件は初期試行で、自動差し戻しの解放条件ではない
+
+## 記録
+
+| id | Ticket | 対象 | 選好 | 状態 |
+|---|---|---|---|---|
+| 0001 | #1 glossary の骨格 | PR #2（a）vs PR #4（b） | b | builder_candidate（Tetsuro の確認待ち） |
