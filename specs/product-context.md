@@ -24,7 +24,7 @@ identity / catalog / matching / scheduling / live-lesson / async-lesson / messag
 
 1. 月額契約の生徒のビデオ通話は暦月 2 回まで。3 回目は予約できない
 2. ゴルフアプリの添削は、ワンショット決済が確定した動画にしか着手できない
-3. キャンセル規定（開始 24 時間前以降のキャンセルは回数を消費）は scheduling と entitlement のどちらか一方で判定する（どちらかは Question として未決）
+3. キャンセル規定（開始 24 時間前以降のキャンセルは回数を消費）は scheduling と entitlement のどちらか一方で判定する（判定は scheduling。ADR 0002）
 4. コーチへの支払い額は確定したレッスンのみから算出し、手数料率は契約種別ごとに固定
 
 ## 用語の注意
@@ -33,8 +33,8 @@ identity / catalog / matching / scheduling / live-lesson / async-lesson / messag
 - 「スロット（slot）」はコーチが公開する予約枠。副業コーチが枠をなかなか開けないことが事業上の課題
 - 「予約（booking）」はスロットの確保。体験予約もこれ
 
-## 未決の Question（Blueprint より）
+## Question への回答（2026-10-26、docs/adr/0002）
 
-- 通話品質スコアの定義（モックが生成する指標のうち何を使うか）
-- キャンセル規定の判定を scheduling と entitlement のどちらに置くか
-- コーチ側の最小操作を admin-web に同居させる案でよいか
+- 通話品質スコア: `call.ended` の 4 属性（packet_loss_rate / jitter_ms / round_trip_ms / disconnect_count）からの減点式。式はセマンティック層（analytics/kpi.yaml）に 1 か所
+- キャンセル規定: 判定は scheduling（24 時間前以降か）、消費の実行は entitlement（BookingCancelled の consumes_quota を購読）
+- コーチ側の最小操作: Gen1 は admin-web に「コーチ」ロールで同居。coach-web / coach-app は契約の枝だけ残す
