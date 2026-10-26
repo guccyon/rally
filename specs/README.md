@@ -10,3 +10,4 @@
 - `contracts/`: OpenAPI / AsyncAPI。5 アプリ分の境界を最初から引き、実装するのは Gen1 のクライアントのみ
 - `analytics/`: 行動イベントの定義とセマンティック層
 - `change-scenarios.yaml`: L3 の固定変更シナリオ
+  - 初版を配置済み（Blueprint のシナリオの種から 7 件、すべて `status: candidate`）。構造は `scenarios:` の配列で、各項目は `id`・`title`・`description`・`expected_contexts`（context-map.yaml の id）・`rationale`・`status` を持つ
