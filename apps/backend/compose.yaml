@@ -1,6 +1,6 @@
-# ローカル開発用の Postgres（P1）。本番相当の環境は P2 の IaC で別に作る。
-# 手元からだけつながるよう 127.0.0.1 に限り、パスワードなし（trust）で動かす。秘密情報は置かない。
-# 使い方は apps/backend/README.md の「データベース」。
+# ローカル開発用の Postgres とオブジェクトストア（P1）。本番相当の環境は P2 の IaC で別に作る。
+# 手元からだけつながるよう 127.0.0.1 に限り、パスワードなし（trust）・認証なしで動かす。秘密情報は置かない。
+# 使い方は apps/backend/README.md の「データベース」と「行動イベントの配信先」。
 services:
   postgres:
     image: postgres:16
@@ -17,6 +17,19 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+  # S3 API のオブジェクトストア（モック）。行動イベントのモックの配信先（ANALYTICS_SINK=object_store）が
+  # バケット rally-analytics に JSON Lines を書く。認証情報は要らない（どんな署名・署名なしも受け付ける）
+  objectstore:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: rally-analytics
+      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /s3mockroot
+      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - objectstore-data:/s3mockroot
 
 volumes:
   postgres-data:
+  objectstore-data:

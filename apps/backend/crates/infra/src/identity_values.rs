@@ -21,7 +21,7 @@ pub fn role_from_value(value: &str) -> Option<Role> {
         .find(|role| role_value(*role) == value)
 }
 
-/// `identity.accounts.sport` の値（他のスキーマの `sport` 列も同じ値）。
+/// `identity.accounts.sport` の値（他のスキーマの `sport` 列と、行動イベントの `sport` 属性も同じ値）。
 pub const fn sport_value(sport: Sport) -> &'static str {
     match sport {
         Sport::Tennis => "tennis",

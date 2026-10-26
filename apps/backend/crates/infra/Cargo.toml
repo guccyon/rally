@@ -12,7 +12,10 @@ sqlx.workspace = true
 serde_json.workspace = true
 time.workspace = true
 rand.workspace = true
+object_store.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
 serde_yaml.workspace = true
+axum.workspace = true

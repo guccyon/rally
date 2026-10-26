@@ -2,7 +2,12 @@
 //!
 //! interface と infra の両方に依存してよいのはこのクレートだけ（docs/adr/0003-backend-layers.md の決定 5）。
 
+mod analytics_destination;
+
+pub use analytics_destination::AnalyticsDestination;
+
 use application::{
+    analytics::AnalyticsSink,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     clock::{Clock, SystemClock},
     entitlement::{
@@ -54,7 +59,15 @@ pub fn router_at<C>(clock: C) -> Router
 where
     C: Clock + Clone + 'static,
 {
-    let analytics = RecordingAnalyticsSink::default();
+    router_with_analytics(clock, RecordingAnalyticsSink::default())
+}
+
+/// [`router_at`] の行動イベントの配信先を `analytics` に替えたルーター（`main` は [`AnalyticsDestination`] で選ぶ）。
+pub fn router_with_analytics<C, A>(clock: C, analytics: A) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+{
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let entitlements = InMemoryEntitlementRepository::default();

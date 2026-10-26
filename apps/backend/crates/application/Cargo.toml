@@ -12,3 +12,4 @@ time.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+serde_yaml.workspace = true

@@ -34,3 +34,4 @@ serde_yaml = "0.9"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros", "uuid", "time"] }
 rand = "0.10"
+object_store = { version = "0.14", default-features = false, features = ["aws"] }

@@ -1,6 +1,6 @@
 # 行動イベントの定義（初版）。Gen1 の一周シナリオ「体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録」を覆う最小セット。
 # 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
-# モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義しない。
+# モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義せず、kpi.yaml の 1 か所に置く（kpi は kpi.yaml の ja を指す）。
 # 各項目: name（<対象>.<出来事>）・ja・context（context-map.yaml の id。複数のコンテキストが発行するイベントだけ contexts: で id を列挙する。glossary と同じ規約）・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
 schema_version: "0.1"
 status: draft
