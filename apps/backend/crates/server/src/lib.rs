@@ -2,9 +2,8 @@
 //!
 //! interface と infra の両方に依存してよいのはこのクレートだけ（docs/adr/0003-backend-layers.md の決定 5）。
 
-mod analytics_destination;
-
-pub use analytics_destination::AnalyticsDestination;
+// 配信先の選択は seed と共有するので infra に置き、ここでは同じ名前で公開し続ける
+pub use infra::AnalyticsDestination;
 
 use application::{
     analytics::AnalyticsSink,

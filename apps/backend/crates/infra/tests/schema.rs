@@ -114,9 +114,11 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "async_lesson.video_reviews",
             "async_lesson.videos",
             "entitlement.entitlements",
+            "entitlement.live_lesson_quota_bookings",
             "entitlement.live_lesson_quotas",
             "entitlement.subscriptions",
             "identity.accounts",
+            "identity.coach_sports",
             "identity.coaches",
             "live_lesson.lesson_completions",
             "live_lesson.sessions",
@@ -922,5 +924,111 @@ async fn a_student_has_at_most_one_first_lesson_per_table(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (UNIQUE_VIOLATION, "lesson_completions_one_first_per_student")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
+    use domain::scheduling::BookingStatus;
+    use infra::{
+        entitlement_values::{
+            CONTRACT_TYPES, SUBSCRIPTION_STATUSES, contract_type_value, subscription_status_value,
+        },
+        scheduling_values::booking_status_value,
+    };
+
+    let statuses: Vec<&str> = BookingStatus::ALL
+        .into_iter()
+        .map(booking_status_value)
+        .collect();
+    assert_eq!(
+        check_values(&pool, "scheduling.bookings", "bookings_status_check").await,
+        statuses
+    );
+    let contract_types: Vec<&str> = CONTRACT_TYPES.into_iter().map(contract_type_value).collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "entitlement.entitlements",
+            "entitlements_contract_type_check"
+        )
+        .await,
+        contract_types
+    );
+    let subscription_statuses: Vec<&str> = SUBSCRIPTION_STATUSES
+        .into_iter()
+        .map(subscription_status_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "entitlement.subscriptions",
+            "subscriptions_status_check"
+        )
+        .await,
+        subscription_statuses
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn only_coaches_have_coach_sports(pool: PgPool) {
+    use domain::identity::Sport;
+    use infra::identity_values::sport_value;
+
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(&pool, "identity.coach_sports", "coach_sports_sport_check").await,
+        sports
+    );
+    let coach_id = coach(&pool).await;
+    let insert = |id: String, sport: &'static str| {
+        sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, $2)")
+            .bind(id)
+            .bind(sport)
+            .execute(&pool)
+    };
+    insert(coach_id.clone(), "tennis").await.unwrap();
+    insert(coach_id.clone(), "golf").await.unwrap();
+    let (code, _) = violation(insert(coach_id.clone(), "tennis").await);
+    assert_eq!(code, UNIQUE_VIOLATION);
+    let (code, constraint) = violation(insert(student(&pool).await, "tennis").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "coach_sports_coach_id_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn quota_bookings_belong_to_a_quota_month(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let entitlement_id = subscription_entitlement(&pool, &student_id).await;
+    sqlx::query(
+        "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month) VALUES ($1::uuid, '2026-11-01')",
+    )
+    .bind(&entitlement_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let insert = |month: &'static str| {
+        sqlx::query(
+            "INSERT INTO entitlement.live_lesson_quota_bookings (entitlement_id, month, booking_id)
+             VALUES ($1::uuid, $2::date, gen_random_uuid())",
+        )
+        .bind(entitlement_id.clone())
+        .bind(month)
+        .execute(&pool)
+    };
+    insert("2026-11-01").await.unwrap();
+    // 枠の行がない月には入らない
+    let (code, constraint) = violation(insert("2026-12-01").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "live_lesson_quota_bookings_quota_fkey"
+        )
     );
 }

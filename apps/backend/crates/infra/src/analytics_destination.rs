@@ -1,10 +1,11 @@
-//! 行動イベントの配信先を環境変数で選ぶ。
+//! 行動イベントの配信先を環境変数で選ぶ（server と seed が共有する）。
 
 use application::{
     analytics::{AnalyticsEvent, AnalyticsSink},
     in_memory::RecordingAnalyticsSink,
 };
-use infra::ObjectStoreAnalyticsSink;
+
+use crate::ObjectStoreAnalyticsSink;
 
 /// 行動イベントの配信先。`ANALYTICS_SINK` で選ぶ。
 ///

@@ -1,0 +1,15 @@
+[package]
+name = "seed"
+description = "合成シード（コーチ 30・生徒 1000・直近 30 日の活動 100・12 ヶ月の履歴）を application のユースケースを通して Postgres に書くバイナリ。domain・application・infra に依存"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain.workspace = true
+application.workspace = true
+infra.workspace = true
+rand.workspace = true
+sqlx.workspace = true
+time.workspace = true
+tokio.workspace = true

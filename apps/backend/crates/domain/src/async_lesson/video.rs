@@ -44,6 +44,34 @@ impl Video {
         }
     }
 
+    /// 保存先から読んだ動画を組み立てる（保存先の実装用）。`review` は返却した添削の ID・コメント・返却した時刻
+    /// （返却するまでは `None`）。返却が送付より前なら [`DomainError::ReviewReturnedBeforeSubmission`]。
+    pub fn restore(
+        id: VideoId,
+        student_id: AccountId,
+        coach_id: AccountId,
+        sport: Sport,
+        submitted_at: SystemTime,
+        review: Option<(VideoReviewId, ReviewComment, SystemTime)>,
+    ) -> Result<Self, DomainError> {
+        if review
+            .as_ref()
+            .is_some_and(|(_, _, returned_at)| *returned_at < submitted_at)
+        {
+            return Err(DomainError::ReviewReturnedBeforeSubmission);
+        }
+        Ok(Self {
+            id,
+            student_id,
+            coach_id,
+            sport,
+            submitted_at,
+            review: review.map(|(review_id, comment, returned_at)| {
+                VideoReview::new(review_id, id, comment, returned_at)
+            }),
+        })
+    }
+
     /// `account` が動画の当事者（送った生徒か送り先のコーチ）でなければ [`DomainError::NotAVideoParty`]。
     pub fn ensure_visible_to(&self, account: AccountId) -> Result<(), DomainError> {
         if account == self.student_id || account == self.coach_id {
@@ -353,5 +381,36 @@ mod tests {
                 Err(expected)
             );
         }
+    }
+
+    #[test]
+    fn restore_round_trips_a_reviewed_video_and_rejects_returning_before_submission() {
+        let mut video = submitted();
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(5))
+            .unwrap();
+
+        let restored = Video::restore(
+            VIDEO,
+            STUDENT,
+            COACH,
+            Sport::Tennis,
+            NOW,
+            Some((REVIEW, comment(), at(5))),
+        )
+        .unwrap();
+        assert_eq!(restored, video);
+
+        assert_eq!(
+            Video::restore(
+                VIDEO,
+                STUDENT,
+                COACH,
+                Sport::Tennis,
+                at(5),
+                Some((REVIEW, comment(), at(4))),
+            ),
+            Err(DomainError::ReviewReturnedBeforeSubmission)
+        );
     }
 }

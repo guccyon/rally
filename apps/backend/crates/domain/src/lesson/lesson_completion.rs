@@ -48,6 +48,26 @@ impl LessonCompletion {
         })
     }
 
+    /// 保存先から読んだ完了記録を組み立てる（保存先の実装用）。`is_first_lesson` は記録した時点の判定
+    /// （[`LessonCompletion::record`]）をそのまま持つ。
+    pub const fn restore(
+        id: LessonId,
+        student_id: AccountId,
+        coach_id: AccountId,
+        source: LessonSource,
+        completed_at: SystemTime,
+        is_first_lesson: bool,
+    ) -> Self {
+        Self {
+            id,
+            student_id,
+            coach_id,
+            source,
+            completed_at,
+            is_first_lesson,
+        }
+    }
+
     pub const fn id(&self) -> LessonId {
         self.id
     }
@@ -142,5 +162,19 @@ mod tests {
             record(2, STUDENT, ASYNC, &[first]),
             Err(DomainError::LessonAlreadyCompleted)
         );
+    }
+
+    #[test]
+    fn restore_keeps_the_recorded_first_lesson_flag() {
+        let first = record(1, STUDENT, LIVE, &[]).unwrap();
+        let restored = LessonCompletion::restore(
+            first.id(),
+            STUDENT,
+            COACH,
+            LIVE,
+            NOW,
+            first.is_first_lesson(),
+        );
+        assert_eq!(restored, first);
     }
 }

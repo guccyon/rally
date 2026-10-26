@@ -69,6 +69,35 @@ impl Booking {
         })
     }
 
+    /// 保存先から読んだ予約を組み立てる（保存先の実装用）。コーチと開始時刻は予約したスロット `slot` のもの。
+    ///
+    /// 確定・キャンセルの時刻は `status` に合わせて保存先が持つ（DB の `bookings_status_timestamps`）。
+    /// 不変条件は作成・確定・キャンセルの時点で確かめたので、ここでは確かめない。
+    #[allow(clippy::too_many_arguments)]
+    pub const fn restore(
+        id: BookingId,
+        student_id: AccountId,
+        slot: &Slot,
+        is_trial: bool,
+        status: BookingStatus,
+        created_at: SystemTime,
+        confirmed_at: Option<SystemTime>,
+        cancelled_at: Option<SystemTime>,
+    ) -> Self {
+        Self {
+            id,
+            student_id,
+            slot_id: slot.id(),
+            coach_id: slot.coach_id(),
+            is_trial,
+            status,
+            starts_at: slot.starts_at(),
+            created_at,
+            confirmed_at,
+            cancelled_at,
+        }
+    }
+
     /// 予約した生徒 `student_id` が確定する。予約したスロット `slot` を [`SlotStatus::Booked`] にする。
     ///
     /// 別の生徒なら [`DomainError::BookingOfAnotherStudent`]、確定前（[`BookingStatus::Pending`]）で
@@ -443,5 +472,25 @@ mod tests {
                 status: SlotStatus::Closed
             })
         );
+    }
+
+    #[test]
+    fn restore_round_trips_a_confirmed_booking() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, true, &slot, &[]).unwrap();
+        booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
+
+        let restored = Booking::restore(
+            booking.id(),
+            STUDENT,
+            &slot,
+            true,
+            BookingStatus::Confirmed,
+            NOW,
+            Some(at(1)),
+            None,
+        );
+
+        assert_eq!(restored, booking);
     }
 }
