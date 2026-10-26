@@ -363,7 +363,10 @@ paths:
       summary: 動画の送付
       description: |
         添削を受ける動画を送る。動画本体は S3 への直接アップロード（Gen1 ではモック）で、
-        レスポンスの `upload_url` に PUT する。月額契約では送り放題。
+        レスポンスの `upload_url` に PUT する。月額契約では送り放題（送付の回数は数えない）。
+        生徒の役割のトークンだけが呼べる（それ以外は 403）。送る生徒はトークンのアカウント。
+        `sport` がゴルフ（golf-app の範囲）・`coach_id` が UUID でない・`content_type` が enum にない・`note` が長すぎる場合は 422。
+        Gen1 は動画本体のアップロードの完了を受け取らないので、レスポンスの `status` は `awaiting_upload`。`note` は Gen1 では保存しない。
       tags: [async-lesson]
       x-context: async-lesson
       x-analytics-events: [video.submitted]
@@ -393,7 +396,10 @@ paths:
     get:
       operationId: getVideoReview
       summary: 添削結果の取得
-      description: "コーチがまだ返却していなければ `status` は `in_progress` で、`comment` は null。"
+      description: |
+        コーチがまだ返却していなければ `status` は `in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null。
+        呼べるのは動画の当事者（送った生徒・送り先のコーチ）だけで、それ以外のアカウントと UUID でない ID には 404
+        （動画があることも知らせない）。返却は admin-web の `returnVideoReview`（コーチ）。
       tags: [async-lesson]
       x-context: async-lesson
       parameters:

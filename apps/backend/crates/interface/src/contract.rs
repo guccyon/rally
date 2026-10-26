@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
+    async_lesson::{VideoContentType, VideoStatus},
     entitlement::{ContractType, SubscriptionStatus, YearMonth},
     identity::Sport,
     live_lesson::SessionStatus,
@@ -77,6 +78,34 @@ pub(crate) const fn session_status_to_contract(status: SessionStatus) -> &'stati
     match status {
         SessionStatus::InProgress => "in_progress",
         SessionStatus::Ended => "ended",
+    }
+}
+
+/// student-app の `SubmitVideoRequest.content_type` の値。
+pub(crate) const fn video_content_type_to_contract(content_type: VideoContentType) -> &'static str {
+    match content_type {
+        VideoContentType::Mp4 => "video/mp4",
+        VideoContentType::QuickTime => "video/quicktime",
+    }
+}
+
+/// `content_type` を読む。契約の enum にない形式は 422。
+pub(crate) fn video_content_type_from_contract(value: &str) -> Result<VideoContentType, ApiError> {
+    VideoContentType::ALL
+        .into_iter()
+        .find(|content_type| video_content_type_to_contract(*content_type) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の動画の形式: {value}")))
+}
+
+/// 送付のレスポンスの student-app の `Video.status`（`VideoStatus`）。動画本体のアップロードの完了は Gen1 では
+/// 受け取らない（保存先はモック）ので、送付した直後の `awaiting_upload` だけを返す。
+pub(crate) const VIDEO_STATUS_AWAITING_UPLOAD: &str = "awaiting_upload";
+
+/// student-app・admin-web の `VideoReviewStatus` の値。添削を返すまでは `in_progress`（未返却）。
+pub(crate) const fn video_review_status_to_contract(status: VideoStatus) -> &'static str {
+    match status {
+        VideoStatus::Submitted => "in_progress",
+        VideoStatus::Reviewed => "returned",
     }
 }
 
@@ -182,6 +211,39 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn video_content_types_are_mp4_and_quicktime() {
+        for content_type in VideoContentType::ALL {
+            assert_eq!(
+                video_content_type_from_contract(video_content_type_to_contract(content_type))
+                    .unwrap(),
+                content_type
+            );
+        }
+        assert_eq!(
+            video_content_type_to_contract(VideoContentType::QuickTime),
+            "video/quicktime"
+        );
+        for value in ["", "video/webm", "VIDEO/MP4"] {
+            assert!(
+                video_content_type_from_contract(value).is_err(),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn video_review_statuses_are_in_progress_and_returned() {
+        assert_eq!(
+            video_review_status_to_contract(VideoStatus::Submitted),
+            "in_progress"
+        );
+        assert_eq!(
+            video_review_status_to_contract(VideoStatus::Reviewed),
+            "returned"
+        );
     }
 
     #[test]

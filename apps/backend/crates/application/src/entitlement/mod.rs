@@ -4,6 +4,7 @@ pub mod calendar_month;
 mod consume_live_lesson_quota;
 pub mod entitlement_id_uuid;
 mod entitlement_quota_gate;
+mod entitlement_review_gate;
 mod get_entitlement;
 mod insert_entitlement_error;
 mod live_lesson_quota_subscriber;
@@ -17,6 +18,7 @@ pub use consume_live_lesson_quota::{
     ConsumeLiveLessonQuota, ConsumeLiveLessonQuotaCommand, ConsumeLiveLessonQuotaError,
 };
 pub use entitlement_quota_gate::EntitlementQuotaGate;
+pub use entitlement_review_gate::EntitlementReviewGate;
 pub use get_entitlement::{GetEntitlement, GetEntitlementError, GetEntitlementQuery};
 pub use insert_entitlement_error::InsertEntitlementError;
 pub use live_lesson_quota_subscriber::LiveLessonQuotaSubscriber;

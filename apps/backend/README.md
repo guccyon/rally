@@ -6,10 +6,10 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 
 | パス | 層 | 依存してよいクレート |
 |---|---|---|
-| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`） | なし |
-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
-| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
+| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`） | なし |
+| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
+| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
+| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
 | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
@@ -45,7 +45,7 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
 ```
 
-ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッションの保存先と行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先と行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
 
 ## identity の不変条件
 
@@ -153,6 +153,23 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | 契約の `LiveLessonSessionStatus` | `interface` の `contract.rs` |
 | 通話セッション ID の UUID のテキスト形式 | `application::live_lesson::session_id_uuid` |
 | モックの `room_token`（`mock-room.<セッション ID>.<参加者 ID>`） | `infra` の `MockVideoCallProvider` |
+
+## async-lesson: 動画の送付と添削の返却
+
+- `POST /videos`（student-app の `submitVideo`）: 生徒だけが呼べる（コーチ・本部は 403）。送る生徒はトークンのアカウント。動画の保存先（ポート `async_lesson::VideoStorage`）に本体の PUT 先を発行させ、`upload_url` で返す。動画本体はクライアントが保存先に直接 PUT し、バックエンドは通さない。送付すると行動イベント `video.submitted` を 1 回発火する。送付の回数は数えない（月額は送り放題）。ゴルフ（golf-app の範囲）・`content_type` が `video/mp4` / `video/quicktime` でない・`coach_id` が UUID でない・`note` が 1000 文字を超えるときは 422。Gen1 はアップロードの完了を受け取らないので、レスポンスの `status` は常に `awaiting_upload`。`note` は長さだけを見て保存しない
+- `GET /videos/{video_id}/review`（`getVideoReview`）: 動画の当事者（送った生徒・送り先のコーチ）だけが読める（役割では絞らない。当事者でないアカウント・ない動画・UUID でない ID には 404）。コーチが返すまでは `status: in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null
+- `POST /videos/{video_id}/review`（admin-web の `returnVideoReview`）: コーチだけが呼べ（生徒・本部は 403）、返せるのは自分に送られた動画だけ（それ以外は 404）。返却は 1 回（2 回目は 409 `invalid_video_state`）、コメントが空か 4000 文字を超えると 422。返却すると行動イベント `video_review.returned` を 1 回発火する。返却のリードタイムをセマンティック層で `occurred_at - submitted_at` と計算できるよう、送付の時刻 `submitted_at` も載せる
+- 不変条件は `domain::async_lesson::Video` が持つ: 返せるのは送り先のコーチだけ、返却は 1 回、返却は送付の後（同じ時刻は許す）、着手できない動画は返せない。状態（`Submitted` / `Reviewed`）は添削の有無で決まる
+- 不変条件 2（ゴルフの添削はワンショット決済が確定した動画にしか着手できない）: 規則は `domain::entitlement::ContractType::may_start_review` の 1 か所（月額は常に可、ワンショットは決済が確定した動画だけ）。返却の前にポート `async_lesson::ReviewGate` で問い合わせ、実装の `entitlement::EntitlementReviewGate` は動画のスポーツの契約種別（`ContractType::for_sport`）で答える。Gen1 はワンショットの決済（billing）を実装しないので、ゴルフの動画には常に 409 `review_payment_not_confirmed`。Gen1 は着手と返却を分けないので、返却が着手を兼ねる
+- 保存先はポート `VideoRepository`。`server` は当面インメモリ（`InMemoryVideoRepository`）で、動画の保存先は infra の `MockVideoStorage`（`https://mock-storage.invalid/videos/<動画 ID>` を返す。署名・有効期限はなく、PUT しても何も保存されない）。Postgres のテーブル `async_lesson.videos` / `video_reviews`（expand）は置いたが、実装はアカウントの保存先を Postgres にするときに足す
+- 送り先のコーチがいるか・生徒のスポーツと合うかは確かめない（アカウントを読むポートがまだない。Postgres の実装では `videos.coach_id` の外部キーが `identity.coaches` を指す）。契約の `submitVideo` の 404 はそのときに返す
+- 統合テスト: `crates/interface/tests/videos.rs`（契約の形・送付 → 返却の一連と返却前の未返却・`video.submitted` / `video_review.returned` の属性・ゴルフの 409・403 / 404 / 409 / 422 / 401）、`crates/server/tests/videos.rs`（モックのトークンと保存先のモックで一周）、`crates/infra/tests/mock_video_storage.rs`、`crates/infra/tests/schema.rs`（`async_lesson` の制約。`--include-ignored`）
+
+| 何の文字列か | 置き場所 |
+|---|---|
+| 契約の `content_type`・`VideoReviewStatus`・送付のレスポンスの `VideoStatus`（`awaiting_upload`） | `interface` の `contract.rs` |
+| 動画 ID・添削 ID の UUID のテキスト形式 | `application::async_lesson::video_id_uuid`・`video_review_id_uuid` |
+| モックのアップロード URL | `infra` の `MockVideoStorage` |
 
 ## CI で走らせるコマンド
 

@@ -13,11 +13,15 @@ mod live_lesson_sessions;
 mod message;
 mod slots;
 mod subscriptions;
+mod videos;
 
 use std::sync::Arc;
 
 use application::{
     analytics::AnalyticsSink,
+    async_lesson::{
+        GetVideoReview, ReturnVideoReview, ReviewGate, SubmitVideo, VideoRepository, VideoStorage,
+    },
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
@@ -48,8 +52,10 @@ pub use error::ApiError;
 /// `/bookings`（student-app の予約の作成・確定・キャンセル）・`POST /subscriptions`（月額契約の開始）・
 /// `GET /entitlements/me`（受講権の照会）は生徒だけ。`/live-lesson-sessions`（通話セッションの開始・終了）は
 /// 役割で絞らず、予約の参加者（生徒・コーチ）かをユースケースが確かめる（契約に 403 がない）。
+/// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
+/// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
@@ -60,6 +66,9 @@ pub fn router_with<R, S, B, G, E, L, K, V, A, P, C, T>(
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
     end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
+    submit_video: SubmitVideo<W, U, A, C>,
+    get_video_review: GetVideoReview<W>,
+    return_video_review: ReturnVideoReview<W, Q, A, C>,
     tokens: T,
 ) -> Router
 where
@@ -71,6 +80,9 @@ where
     L: LiveLessonSessionRepository + 'static,
     K: BookingLookup + 'static,
     V: VideoCallProvider + 'static,
+    W: VideoRepository + 'static,
+    U: VideoStorage + 'static,
+    Q: ReviewGate + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -141,6 +153,23 @@ where
             start_live_lesson_session,
             end_live_lesson_session,
         }));
+    let videos = Router::new()
+        .route(
+            "/videos",
+            post(videos::submit_video::<W, U, Q, A, C>).route_layer(require_role(&[Role::Student])),
+        )
+        .route(
+            "/videos/{video_id}/review",
+            get(videos::get_video_review::<W, U, Q, A, C>).merge(
+                post(videos::return_video_review::<W, U, Q, A, C>)
+                    .route_layer(require_role(&[Role::Coach])),
+            ),
+        )
+        .with_state(Arc::new(videos::VideosState {
+            submit_video,
+            get_video_review,
+            return_video_review,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
@@ -149,6 +178,7 @@ where
         .merge(subscriptions)
         .merge(entitlements)
         .merge(live_lesson_sessions)
+        .merge(videos)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

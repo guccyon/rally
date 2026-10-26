@@ -8,6 +8,7 @@ use std::{
 
 use domain::{
     DomainError,
+    async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
@@ -17,6 +18,9 @@ use domain::{
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
+    async_lesson::{
+        UpdateVideoError, VideoRepository, VideoStorage, video_id_uuid, video_review_id_uuid,
+    },
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
     entitlement::{
@@ -518,5 +522,85 @@ impl VideoCallProvider for FixedVideoCallProvider {
             .ok_or_else(|| Unavailable::new("ルームが開いていない"))?;
         rooms.remove(index);
         Ok(self.quality)
+    }
+}
+
+/// [`VideoRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じ動画の返却は直列になる。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryVideoRepository {
+    videos: Arc<Mutex<Vec<Video>>>,
+}
+
+impl InMemoryVideoRepository {
+    /// 既存の動画を入れて作る（テストの準備用）。
+    pub fn with_videos(videos: impl IntoIterator<Item = Video>) -> Self {
+        Self {
+            videos: Arc::new(Mutex::new(videos.into_iter().collect())),
+        }
+    }
+
+    /// 保存した動画（保存した順）。
+    pub fn all(&self) -> Vec<Video> {
+        self.videos.lock().unwrap().clone()
+    }
+}
+
+impl VideoRepository for InMemoryVideoRepository {
+    fn next_video_id(&self) -> VideoId {
+        video_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    fn next_review_id(&self) -> VideoReviewId {
+        video_review_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn find(&self, video_id: VideoId) -> Result<Option<Video>, Unavailable> {
+        Ok(self
+            .videos
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|v| v.id() == video_id)
+            .cloned())
+    }
+
+    async fn insert(&self, video: Video) -> Result<(), Unavailable> {
+        self.videos.lock().unwrap().push(video);
+        Ok(())
+    }
+
+    async fn update<F>(&self, video_id: VideoId, update: F) -> Result<Video, UpdateVideoError>
+    where
+        F: FnOnce(&mut Video) -> Result<(), DomainError> + Send,
+    {
+        let mut videos = self.videos.lock().unwrap();
+        let video = videos
+            .iter_mut()
+            .find(|v| v.id() == video_id)
+            .ok_or(UpdateVideoError::NotFound)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let mut next = video.clone();
+        update(&mut next).map_err(UpdateVideoError::Rejected)?;
+        *video = next.clone();
+        Ok(next)
+    }
+}
+
+/// 常に `https://fixed-storage.invalid/videos/<動画 ID>` を返す [`VideoStorage`]（テスト用）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FixedVideoStorage;
+
+impl VideoStorage for FixedVideoStorage {
+    async fn issue_upload_url(
+        &self,
+        video_id: VideoId,
+        _content_type: VideoContentType,
+    ) -> Result<String, Unavailable> {
+        Ok(format!(
+            "https://fixed-storage.invalid/videos/{}",
+            video_id_uuid::format(video_id)
+        ))
     }
 }

@@ -5,6 +5,7 @@
 use std::{future::Future, time::SystemTime};
 
 use domain::{
+    async_lesson::{VideoId, VideoReviewId},
     entitlement::SubscriptionId,
     identity::{AccountId, Sport},
     live_lesson::SessionId,
@@ -81,6 +82,25 @@ pub enum AnalyticsEvent {
         disconnect_count: u32,
         occurred_at: SystemTime,
     },
+    /// `video.submitted`（KPI「添削の返却リードタイム」の入力）
+    VideoSubmitted {
+        student_id: AccountId,
+        coach_id: AccountId,
+        video_id: VideoId,
+        sport: Sport,
+        occurred_at: SystemTime,
+    },
+    /// `video_review.returned`（KPI「添削の返却リードタイム」の入力）。リードタイムをセマンティック層で
+    /// `occurred_at - submitted_at` と計算できるよう、動画を送付した時刻も持つ
+    VideoReviewReturned {
+        student_id: AccountId,
+        coach_id: AccountId,
+        video_id: VideoId,
+        review_id: VideoReviewId,
+        /// 動画を送付した時刻（`video.submitted` の `occurred_at` と同じ）
+        submitted_at: SystemTime,
+        occurred_at: SystemTime,
+    },
     /// `subscription.started`（KPI「初回レッスン後の 1 ヶ月継続率」の入力）
     SubscriptionStarted {
         student_id: AccountId,
@@ -101,6 +121,8 @@ impl AnalyticsEvent {
             AnalyticsEvent::BookingCancelled { .. } => "booking.cancelled",
             AnalyticsEvent::CallStarted { .. } => "call.started",
             AnalyticsEvent::CallEnded { .. } => "call.ended",
+            AnalyticsEvent::VideoSubmitted { .. } => "video.submitted",
+            AnalyticsEvent::VideoReviewReturned { .. } => "video_review.returned",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
         }
     }

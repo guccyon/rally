@@ -3,6 +3,7 @@
 //! 依存してよいのは domain だけ（docs/adr/0003-backend-layers.md）。
 
 pub mod analytics;
+pub mod async_lesson;
 pub mod clock;
 pub mod domain_event;
 pub mod entitlement;

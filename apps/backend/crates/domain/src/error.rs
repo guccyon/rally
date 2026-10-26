@@ -69,6 +69,21 @@ pub enum DomainError {
     SessionEndsBeforeItStarts,
     /// パケット損失率が 0〜100（百分率）の有限の値でない
     InvalidPacketLossRate,
+    /// 動画の当事者（送った生徒・送り先のコーチ）でないので、その動画を扱えない
+    NotAVideoParty,
+    /// 動画の送り先のコーチでないので、添削を返せない
+    NotTheVideoCoach,
+    /// 動画の添削はすでに返してある（返却は 1 回）
+    VideoReviewAlreadyReturned,
+    /// その動画の添削にはまだ着手できない（`sport` は動画のスポーツ。ゴルフはワンショット決済の確定が要る。
+    /// 不変条件 2）
+    VideoReviewNotAllowed { sport: crate::identity::Sport },
+    /// 添削の返却が動画の送付より前
+    ReviewReturnedBeforeSubmission,
+    /// 添削コメントが空（空白だけを含む）
+    EmptyReviewComment,
+    /// 添削コメントが長すぎる（`max` は文字数）
+    ReviewCommentTooLong { max: usize },
 }
 
 impl fmt::Display for DomainError {

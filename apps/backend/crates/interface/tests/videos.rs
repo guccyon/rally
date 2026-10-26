@@ -1,0 +1,508 @@
+//! `/videos` の統合テスト。student-app の `POST /videos`（`submitVideo`）・`GET /videos/{video_id}/review`
+//! （`getVideoReview`）と admin-web の `POST /videos/{video_id}/review`（`returnVideoReview`）のレスポンスの形を
+//! OpenAPI のスキーマで検査し、送付 → 返却の一連・返却前の取得が未返却（`in_progress`）になること・行動イベント
+//! `video.submitted` / `video_review.returned`（`submitted_at` 付き）・ゴルフの動画の添削に着手できないこと・
+//! 役割と当事者による 403 / 404 を確かめる。
+
+use std::time::{Duration, SystemTime};
+
+use application::{
+    analytics::AnalyticsEvent,
+    async_lesson::{
+        GetVideoReview, ReturnVideoReview, SubmitVideo, video_id_uuid, video_review_id_uuid,
+    },
+    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
+    identity::{
+        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
+        account_id_uuid,
+    },
+    in_memory::{
+        FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
+        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        ManualClock, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+    },
+    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
+    scheduling::{
+        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
+        SearchSlots,
+    },
+};
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
+};
+use domain::{
+    async_lesson::{Video, VideoId},
+    identity::{AccountId, Role, Sport},
+};
+use serde_json::{Value, json};
+use tower::ServiceExt;
+
+mod support;
+
+/// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
+struct FakeTokens;
+
+impl TokenIssuer for FakeTokens {
+    fn issue(&self, _claims: TokenClaims) -> AccessToken {
+        unreachable!("このテストでは発行しない")
+    }
+}
+
+impl TokenVerifier for FakeTokens {
+    fn verify(&self, token: &str) -> Result<TokenClaims, InvalidToken> {
+        let (role, id) = token.split_once(':').ok_or(InvalidToken)?;
+        let role = match role {
+            "student" => Role::Student,
+            "coach" => Role::Coach,
+            "headquarters" => Role::Headquarters,
+            _ => return Err(InvalidToken),
+        };
+        let id = id.parse().map_err(|_| InvalidToken)?;
+        Ok(TokenClaims {
+            account_id: AccountId::from_u128(id),
+            role,
+        })
+    }
+}
+
+const STUDENT: &str = "student:1";
+const OTHER_STUDENT: &str = "student:2";
+const COACH: &str = "coach:9";
+const OTHER_COACH: &str = "coach:8";
+const HEADQUARTERS: &str = "headquarters:5";
+
+/// 先に置いておくゴルフの動画（golf-app の範囲なので student-app からは送れない）
+const GOLF_VIDEO: VideoId = VideoId::from_u128(77);
+
+fn account_id(token: &str) -> AccountId {
+    AccountId::from_u128(token.split_once(':').unwrap().1.parse().unwrap())
+}
+
+/// 2026-10-26T10:00:00Z（動画を送る時刻）
+fn submitted_at() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_792_972_800 + 10 * 3600)
+}
+
+struct App {
+    router: Router,
+    clock: ManualClock,
+    analytics: RecordingAnalyticsSink,
+}
+
+/// 生徒 1 がコーチ 9 に送ったゴルフの動画 77 を置く。現在時刻は 2026-10-26 10:00。
+fn app() -> App {
+    let analytics = RecordingAnalyticsSink::default();
+    let events = RecordingDomainEventPublisher::default();
+    let clock = ManualClock::new(submitted_at());
+    let slots = InMemorySlotRepository::default();
+    let bookings = InMemoryBookingRepository::new(slots.clone());
+    let entitlements = InMemoryEntitlementRepository::default();
+    let videos = InMemoryVideoRepository::with_videos([Video::submit(
+        GOLF_VIDEO,
+        account_id(STUDENT),
+        account_id(COACH),
+        Sport::Golf,
+        submitted_at(),
+    )]);
+    let router = interface::router_with(
+        RegisterAccount::new(
+            InMemoryAccountRepository::default(),
+            analytics.clone(),
+            clock.clone(),
+        ),
+        PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+        SearchSlots::new(slots, clock.clone()),
+        CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+        ConfirmBooking::new(
+            bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            analytics.clone(),
+            events.clone(),
+            clock.clone(),
+        ),
+        CancelBooking::new(
+            bookings.clone(),
+            analytics.clone(),
+            events.clone(),
+            clock.clone(),
+        ),
+        StartSubscription::new(
+            entitlements.clone(),
+            analytics.clone(),
+            events,
+            clock.clone(),
+        ),
+        GetEntitlement::new(entitlements, clock.clone()),
+        StartLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            SchedulingBookingLookup::new(bookings),
+            FixedVideoCallProvider::default(),
+            analytics.clone(),
+            clock.clone(),
+        ),
+        EndLiveLessonSession::new(
+            InMemoryLiveLessonSessionRepository::default(),
+            FixedVideoCallProvider::default(),
+            analytics.clone(),
+            clock.clone(),
+        ),
+        SubmitVideo::new(
+            videos.clone(),
+            FixedVideoStorage,
+            analytics.clone(),
+            clock.clone(),
+        ),
+        GetVideoReview::new(videos.clone()),
+        ReturnVideoReview::new(
+            videos,
+            EntitlementReviewGate,
+            analytics.clone(),
+            clock.clone(),
+        ),
+        FakeTokens,
+    );
+    App {
+        router,
+        clock,
+        analytics,
+    }
+}
+
+async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+fn with_token(
+    request: axum::http::request::Builder,
+    token: Option<&str>,
+) -> axum::http::request::Builder {
+    match token {
+        Some(token) => request.header(header::AUTHORIZATION, format!("Bearer {token}")),
+        None => request,
+    }
+}
+
+fn post_json(path: &str, token: Option<&str>, body: Value) -> Request<Body> {
+    with_token(Request::post(path), token)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+fn tennis_video() -> Value {
+    json!({
+        "coach_id": account_id_uuid::format(account_id(COACH)),
+        "sport": "tennis",
+        "content_type": "video/mp4",
+        "note": "サーブのトスが安定しない"
+    })
+}
+
+fn review(comment: &str) -> Value {
+    json!({ "comment": comment })
+}
+
+impl App {
+    async fn submit(&self, token: Option<&str>, body: Value) -> (StatusCode, Value) {
+        let (status, body) = send(&self.router, post_json("/videos", token, body)).await;
+        support::Contract::load("student-app").assert_response("post", "/videos", status, &body);
+        (status, body)
+    }
+
+    /// 生徒がテニスの動画を送る。動画 ID を返す。
+    async fn submitted_video(&self) -> String {
+        let (status, video) = self.submit(Some(STUDENT), tennis_video()).await;
+        assert_eq!(status, StatusCode::CREATED, "{video}");
+        video["video_id"].as_str().unwrap().to_string()
+    }
+
+    async fn get_review(&self, token: Option<&str>, video_id: &str) -> (StatusCode, Value) {
+        let (status, body) = send(
+            &self.router,
+            with_token(Request::get(format!("/videos/{video_id}/review")), token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        support::Contract::load("student-app").assert_response(
+            "get",
+            "/videos/{video_id}/review",
+            status,
+            &body,
+        );
+        (status, body)
+    }
+
+    async fn return_review(
+        &self,
+        token: Option<&str>,
+        video_id: &str,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let (status, body) = send(
+            &self.router,
+            post_json(&format!("/videos/{video_id}/review"), token, body),
+        )
+        .await;
+        support::Contract::load("admin-web").assert_response(
+            "post",
+            "/videos/{video_id}/review",
+            status,
+            &body,
+        );
+        (status, body)
+    }
+
+    /// 発火した `video.*` / `video_review.*` の行動イベント。
+    fn video_events(&self) -> Vec<AnalyticsEvent> {
+        self.analytics
+            .events()
+            .into_iter()
+            .filter(|event| event.name().starts_with("video"))
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn a_submitted_video_is_unreturned_until_the_coach_returns_its_review() {
+    let app = app();
+
+    // 送付: アップロード先を受け取り、video.submitted を発火する
+    let (status, video) = app.submit(Some(STUDENT), tennis_video()).await;
+    assert_eq!(status, StatusCode::CREATED, "{video}");
+    let video_id = video["video_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        video["student_id"],
+        account_id_uuid::format(account_id(STUDENT))
+    );
+    assert_eq!(
+        video["coach_id"],
+        account_id_uuid::format(account_id(COACH))
+    );
+    assert_eq!(video["sport"], "tennis");
+    assert_eq!(video["status"], "awaiting_upload");
+    assert_eq!(
+        video["upload_url"],
+        format!("https://fixed-storage.invalid/videos/{video_id}")
+    );
+    assert_eq!(video["created_at"], "2026-10-26T10:00:00Z");
+    let video = video_id_uuid::parse(&video_id).unwrap();
+    assert_eq!(
+        app.video_events(),
+        vec![AnalyticsEvent::VideoSubmitted {
+            student_id: account_id(STUDENT),
+            coach_id: account_id(COACH),
+            video_id: video,
+            sport: Sport::Tennis,
+            occurred_at: submitted_at(),
+        }]
+    );
+
+    // 返却前の取得は未返却（生徒からもコーチからも）
+    for token in [STUDENT, COACH] {
+        let (status, body) = app.get_review(Some(token), &video_id).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "in_progress");
+        assert_eq!(body["video_id"], video_id.as_str());
+        assert_eq!(body["review_id"], Value::Null);
+        assert_eq!(body["comment"], Value::Null);
+        assert_eq!(body["returned_at"], Value::Null);
+    }
+
+    // 30 時間後にコーチが返却する
+    let returned_at = submitted_at() + Duration::from_secs(30 * 3600);
+    app.clock.set(returned_at);
+    let (status, returned) = app
+        .return_review(Some(COACH), &video_id, review("トスを体の前に上げる"))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{returned}");
+    assert_eq!(returned["status"], "returned");
+    assert_eq!(returned["comment"], "トスを体の前に上げる");
+    assert_eq!(returned["returned_at"], "2026-10-27T16:00:00Z");
+    let review_id = returned["review_id"].as_str().unwrap();
+
+    // 生徒が読む添削は、コーチが返したものと同じ
+    let (status, body) = app.get_review(Some(STUDENT), &video_id).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, returned);
+
+    // video_review.returned は送付の時刻も持つ（返却のリードタイム = occurred_at - submitted_at）
+    let events = app.video_events();
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(
+        events[1],
+        AnalyticsEvent::VideoReviewReturned {
+            student_id: account_id(STUDENT),
+            coach_id: account_id(COACH),
+            video_id: video,
+            review_id: video_review_id_uuid::parse(review_id).unwrap(),
+            submitted_at: submitted_at(),
+            occurred_at: returned_at,
+        }
+    );
+    assert_eq!(events[1].name(), "video_review.returned");
+}
+
+#[tokio::test]
+async fn monthly_students_can_submit_videos_without_limit() {
+    let app = app();
+    for _ in 0..3 {
+        app.submitted_video().await;
+    }
+    assert_eq!(app.video_events().len(), 3);
+}
+
+#[tokio::test]
+async fn a_review_is_returned_only_once() {
+    let app = app();
+    let video_id = app.submitted_video().await;
+    let (status, _) = app
+        .return_review(Some(COACH), &video_id, review("1 回目"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = app
+        .return_review(Some(COACH), &video_id, review("2 回目"))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "invalid_video_state");
+    let (_, body) = app.get_review(Some(STUDENT), &video_id).await;
+    assert_eq!(body["comment"], "1 回目", "最初の返却のまま");
+    assert_eq!(app.video_events().len(), 2, "送付と 1 回目の返却だけ");
+}
+
+#[tokio::test]
+async fn golf_reviews_cannot_start_without_a_confirmed_one_shot_payment() {
+    let app = app();
+    let golf_video = video_id_uuid::format(GOLF_VIDEO);
+
+    let (status, body) = app
+        .return_review(Some(COACH), &golf_video, review("グリップが強い"))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "review_payment_not_confirmed");
+    let (_, body) = app.get_review(Some(STUDENT), &golf_video).await;
+    assert_eq!(body["status"], "in_progress");
+    assert!(app.video_events().is_empty());
+}
+
+#[tokio::test]
+async fn invalid_submissions_are_unprocessable() {
+    let app = app();
+    let with = |key: &str, value: Value| {
+        let mut body = tennis_video();
+        body[key] = value;
+        body
+    };
+    for body in [
+        // ゴルフは golf-app の範囲
+        with("sport", json!("golf")),
+        with("sport", json!("cricket")),
+        with("coach_id", json!("not-a-uuid")),
+        with("content_type", json!("video/webm")),
+        with("note", json!("あ".repeat(1001))),
+        json!({ "sport": "tennis" }),
+    ] {
+        let (status, error) = app.submit(Some(STUDENT), body.clone()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body} {error}");
+        assert_eq!(error["code"], "validation_failed");
+    }
+    // note は任意で、1000 文字までは受け付ける
+    let mut body = tennis_video();
+    body.as_object_mut().unwrap().remove("note");
+    assert_eq!(app.submit(Some(STUDENT), body).await.0, StatusCode::CREATED);
+    let body = with("note", json!("あ".repeat(1000)));
+    assert_eq!(app.submit(Some(STUDENT), body).await.0, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn invalid_comments_are_unprocessable() {
+    let app = app();
+    let video_id = app.submitted_video().await;
+    for body in [
+        review(""),
+        review(" \u{3000}"),
+        review(&"あ".repeat(4001)),
+        json!({}),
+    ] {
+        let (status, error) = app
+            .return_review(Some(COACH), &video_id, body.clone())
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body} {error}");
+        assert_eq!(error["code"], "validation_failed");
+    }
+    let (_, body) = app.get_review(Some(STUDENT), &video_id).await;
+    assert_eq!(body["status"], "in_progress");
+}
+
+#[tokio::test]
+async fn only_students_submit_and_only_coaches_return() {
+    let app = app();
+    for token in [COACH, HEADQUARTERS] {
+        let (status, body) = app.submit(Some(token), tennis_video()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+    let video_id = app.submitted_video().await;
+    for token in [STUDENT, HEADQUARTERS] {
+        let (status, body) = app
+            .return_review(Some(token), &video_id, review("コメント"))
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+
+    assert_eq!(
+        app.submit(None, tennis_video()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.get_review(None, &video_id).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.return_review(None, &video_id, review("コメント"))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn videos_of_others_are_not_found() {
+    let app = app();
+    let video_id = app.submitted_video().await;
+
+    // 当事者でない生徒・コーチには、動画があることも知らせない
+    for token in [OTHER_STUDENT, OTHER_COACH, HEADQUARTERS] {
+        let (status, body) = app.get_review(Some(token), &video_id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{token} {body}");
+        assert_eq!(body["code"], "not_found");
+    }
+    let (status, body) = app
+        .return_review(Some(OTHER_COACH), &video_id, review("コメント"))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+
+    // ない動画・UUID でない ID も 404
+    let missing = video_id_uuid::format(VideoId::from_u128(404));
+    for id in [missing.as_str(), "not-a-uuid"] {
+        assert_eq!(
+            app.get_review(Some(STUDENT), id).await.0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            app.return_review(Some(COACH), id, review("コメント"))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    assert_eq!(app.video_events().len(), 1, "送付だけ");
+}

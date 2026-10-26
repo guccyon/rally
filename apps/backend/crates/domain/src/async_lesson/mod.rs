@@ -1,0 +1,22 @@
+//! async-lesson: 非同期レッスン（specs/context-map.yaml）。
+//!
+//! 生徒が送る動画（glossary の async_lesson。[`Video`]）と、コーチが添削して返すこと（glossary の video_review。
+//! [`VideoReview`]）。動画本体の保存先（S3 への直接アップロード）は application のポートで、ここでは扱わない。
+//! 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ。不変条件 2）の規則は
+//! [`crate::entitlement::ContractType::may_start_review`] の 1 か所に置く。
+
+mod review_comment;
+mod video;
+mod video_content_type;
+mod video_id;
+mod video_review;
+mod video_review_id;
+mod video_status;
+
+pub use review_comment::ReviewComment;
+pub use video::Video;
+pub use video_content_type::VideoContentType;
+pub use video_id::VideoId;
+pub use video_review::VideoReview;
+pub use video_review_id::VideoReviewId;
+pub use video_status::VideoStatus;

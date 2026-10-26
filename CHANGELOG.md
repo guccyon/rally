@@ -16,6 +16,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - 受講権の照会: `GET /entitlements/me`（生徒だけ。契約種別と、今の暦月のビデオ通話の枠 `live_lesson_quota`。月をまたげば `used` は 0 から。受講権がなければ 404）。契約に `getMyEntitlement` を追加（#33）
 - 月額契約の開始: `POST /subscriptions`（生徒だけ。受講権がすでにあれば 409 `subscription_already_active`、ゴルフは 422。決済は Gen1 では扱わない）。境界間イベント `SubscriptionStarted` を発行し、`subscription.started` を発火。ビデオ通話の暦月 2 回の枠を予約の確定で使い（3 回目の確定は 409 `live_lesson_quota_exceeded`）、開始 24 時間前以降のキャンセルは枠を使ったことに、それより前のキャンセルは確定で使った枠を戻す。暦月は日本時間で区切る（#33 の UTC から変更）（#34）
 - 通話セッション: `POST /live-lesson-sessions`（確定した予約の参加者（生徒・コーチ）だけ。確定前の予約は 409 `invalid_booking_state`、同じ予約の 2 回目は 409 `invalid_session_state`、`booking_id` が UUID でなければ 422）と `POST /live-lesson-sessions/{session_id}/end`（終了済みは 409 `invalid_session_state`）。通話基盤はモックで、終了時に接続品質の生の指標（約 15% は低品質の回線）を生成する。`call.started` / `call.ended`（4 属性）を発火（#37）
+- 動画の送付と添削の返却: `POST /videos`（生徒だけ。保存先はモックで、返る `upload_url` に PUT する。月額は送り放題）、`GET /videos/{video_id}/review`（動画の当事者だけ。返却前は `in_progress`）、admin-web の `POST /videos/{video_id}/review`（コーチだけ。返却済みは 409 `invalid_video_state`、ゴルフの動画はワンショット決済が確定するまで 409 `review_payment_not_confirmed`）。`video.submitted` / `video_review.returned` を発火し、`video_review.returned` の必須属性に `submitted_at` を追加（#38）
 
 ### 変更
 - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）
