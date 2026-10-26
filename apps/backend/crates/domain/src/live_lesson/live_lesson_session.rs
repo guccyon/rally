@@ -480,4 +480,30 @@ mod tests {
             Err(DomainError::SessionEndsBeforeItStarts)
         );
     }
+
+    #[test]
+    fn restore_accepts_ending_at_or_after_the_start() {
+        let restore = |ended_at| {
+            LiveLessonSession::restore(
+                SESSION,
+                BookingId::from_u128(20),
+                STUDENT,
+                COACH,
+                at(600),
+                Some((ended_at, quality())),
+            )
+        };
+        // 開始の 1 分前は断る
+        assert_eq!(
+            restore(at(599)),
+            Err(DomainError::SessionEndsBeforeItStarts)
+        );
+        // 開始と同じ時刻（通話の長さ 0 秒）と、その 1 分後は読める
+        let same = restore(at(600)).unwrap();
+        assert_eq!(same.ended_at(), Some(at(600)));
+        assert_eq!(same.duration(), Some(Duration::ZERO));
+        let later = restore(at(601)).unwrap();
+        assert_eq!(later.ended_at(), Some(at(601)));
+        assert_eq!(later.duration(), Some(Duration::from_secs(60)));
+    }
 }

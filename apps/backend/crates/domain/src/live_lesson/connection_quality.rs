@@ -71,6 +71,22 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_disconnect_count_as_given() {
+        assert_eq!(
+            ConnectionQuality::new(0.0, 0, 0, 0)
+                .unwrap()
+                .disconnect_count(),
+            0
+        );
+        assert_eq!(
+            ConnectionQuality::new(0.0, 0, 0, 3)
+                .unwrap()
+                .disconnect_count(),
+            3
+        );
+    }
+
+    #[test]
     fn packet_loss_rate_is_a_percentage() {
         ConnectionQuality::new(0.0, 0, 0, 0).unwrap();
         ConnectionQuality::new(100.0, 0, 0, 0).unwrap();

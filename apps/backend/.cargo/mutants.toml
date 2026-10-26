@@ -1,0 +1,7 @@
+# cargo-mutants の設定（L2 の差分ミューテーション。.github/workflows/mutation.yml と手元の `cargo mutants` が読む）。
+#
+# 等価な変異（どのテストでも振る舞いが変わらない変異）だけを除く。足すときは理由を 1 行ずつ書く。
+exclude_re = [
+    # Slot::capacity は定数 Slot::CAPACITY（Gen1 はマンツーマンなので 1）を返すだけで、`1` への置き換えは等価
+    'replace Slot::capacity -> u32 with 1$',
+]

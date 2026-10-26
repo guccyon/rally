@@ -243,3 +243,5 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+L2（テストの実質強度）として、PR の差分に cargo-mutants の差分ミューテーションを走らせる（`.github/workflows/mutation.yml`。shadow で PR は落とさない）。手元では `cargo install cargo-mutants` の後に `cargo mutants -p domain` などで確かめる（結果は `mutants.out/`）。等価な変異（どのテストでも振る舞いが変わらない変異）だけを `.cargo/mutants.toml` の `exclude_re` で除き、理由を書き添える。

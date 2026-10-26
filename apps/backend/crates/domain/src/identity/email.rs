@@ -68,4 +68,11 @@ mod tests {
             assert_eq!(Email::new(s), Err(DomainError::InvalidEmail), "{s:?}");
         }
     }
+
+    #[test]
+    fn displays_the_address_as_given() {
+        // 表示は正規化しない（大文字小文字はそのまま）
+        let email = Email::new("Taro@Example.com").unwrap();
+        assert_eq!(email.to_string(), "Taro@Example.com");
+    }
 }

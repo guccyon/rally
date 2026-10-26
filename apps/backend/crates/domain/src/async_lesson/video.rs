@@ -413,4 +413,32 @@ mod tests {
             Err(DomainError::ReviewReturnedBeforeSubmission)
         );
     }
+
+    #[test]
+    fn restore_accepts_returning_at_or_after_submission() {
+        let restore = |returned_at| {
+            Video::restore(
+                VIDEO,
+                STUDENT,
+                COACH,
+                Sport::Tennis,
+                at(5),
+                Some((REVIEW, comment(), returned_at)),
+            )
+        };
+        // 送付の 1 時間前は断る
+        assert_eq!(
+            restore(at(4)),
+            Err(DomainError::ReviewReturnedBeforeSubmission)
+        );
+        // 送付と同じ時刻と、その 1 時間後は読める
+        for returned_at in [at(5), at(6)] {
+            let video = restore(returned_at).unwrap();
+            assert_eq!(video.status(), VideoStatus::Reviewed);
+            assert_eq!(
+                video.review().map(VideoReview::returned_at),
+                Some(returned_at)
+            );
+        }
+    }
 }
