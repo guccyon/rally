@@ -4,8 +4,11 @@
 
 pub mod identity_values;
 mod mock_token;
+mod pg_slot_repository;
+pub mod scheduling_values;
 
 pub use mock_token::MockTokenService;
+pub use pg_slot_repository::PgSlotRepository;
 
 /// `migrations/` のマイグレーション（コンパイル時に埋め込む）。
 ///

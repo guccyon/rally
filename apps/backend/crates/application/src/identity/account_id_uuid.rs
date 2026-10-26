@@ -4,6 +4,8 @@
 use domain::identity::AccountId;
 use uuid::Uuid;
 
+use crate::uuid_text::parse_hyphenated;
+
 /// テキストが UUID のハイフン区切りの形でない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAccountId;
@@ -24,13 +26,9 @@ pub fn format(id: AccountId) -> String {
 /// ハイフン区切りの UUID を読む（大文字小文字は問わない）。ハイフンなし・波括弧・`urn:uuid:` の
 /// 形は受け付けない。
 pub fn parse(text: &str) -> Result<AccountId, InvalidAccountId> {
-    const HYPHENATED_LEN: usize = 36;
-    if text.len() != HYPHENATED_LEN {
-        return Err(InvalidAccountId);
-    }
-    Uuid::try_parse(text)
+    parse_hyphenated(text)
         .map(from_uuid)
-        .map_err(|_| InvalidAccountId)
+        .ok_or(InvalidAccountId)
 }
 
 #[cfg(test)]

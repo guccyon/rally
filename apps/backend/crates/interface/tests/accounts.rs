@@ -9,7 +9,10 @@ use application::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
     },
-    in_memory::{FixedClock, InMemoryAccountRepository, RecordingAnalyticsSink},
+    in_memory::{
+        FixedClock, InMemoryAccountRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+    },
+    scheduling::{PublishSlot, SearchSlots},
 };
 use axum::{
     Router,
@@ -18,13 +21,9 @@ use axum::{
 };
 use domain::identity::{Role, Sport};
 use serde_json::{Value, json};
-use serde_yaml::Value as Yaml;
 use tower::ServiceExt;
 
-const OPENAPI: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../../specs/contracts/api/student-app/openapi.yaml"
-);
+mod support;
 
 /// 2026-10-26T00:00:00Z
 const NOW: Duration = Duration::from_secs(1_792_972_800);
@@ -55,12 +54,16 @@ struct App {
 
 fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
+    let clock = FixedClock(SystemTime::UNIX_EPOCH + NOW);
+    let slots = InMemorySlotRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
             analytics.clone(),
-            FixedClock(SystemTime::UNIX_EPOCH + NOW),
+            clock,
         ),
+        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        SearchSlots::new(slots, clock),
         FakeTokens,
     );
     App { router, analytics }
@@ -91,89 +94,8 @@ fn request(email: &str, display_name: &str, sport: &str) -> String {
     json!({ "email": email, "display_name": display_name, "sport": sport }).to_string()
 }
 
-// --- OpenAPI のスキーマによる検査（このテストが使う範囲のキーワードだけ） ---
-
-fn openapi() -> Yaml {
-    serde_yaml::from_str(&std::fs::read_to_string(OPENAPI).unwrap()).unwrap()
-}
-
-fn resolve<'a>(root: &'a Yaml, node: &'a Yaml) -> &'a Yaml {
-    match node.get("$ref").and_then(Yaml::as_str) {
-        Some(reference) => {
-            let path = reference.strip_prefix("#/").expect("内部参照だけを扱う");
-            let target = path.split('/').fold(root, |node, key| &node[key]);
-            resolve(root, target)
-        }
-        None => node,
-    }
-}
-
-/// `POST /accounts` の `status` の応答の JSON スキーマ。契約にない status なら落とす。
-fn response_schema(root: &Yaml, status: StatusCode) -> &Yaml {
-    let responses = &root["paths"]["/accounts"]["post"]["responses"];
-    let response = responses
-        .get(status.as_str())
-        .unwrap_or_else(|| panic!("契約に {status} の応答がない"));
-    resolve(
-        root,
-        &resolve(root, response)["content"]["application/json"]["schema"],
-    )
-}
-
-fn assert_matches(root: &Yaml, schema: &Yaml, value: &Value, at: &str) {
-    let schema = resolve(root, schema);
-    match schema["type"].as_str() {
-        Some("object") => {
-            let object = value
-                .as_object()
-                .unwrap_or_else(|| panic!("{at}: object でない: {value}"));
-            let properties = schema["properties"].as_mapping().unwrap();
-            let declared: Vec<&str> = properties.keys().map(|k| k.as_str().unwrap()).collect();
-            for key in object.keys() {
-                assert!(
-                    declared.contains(&key.as_str()),
-                    "{at}: 契約にない項目 {key}"
-                );
-            }
-            for key in schema["required"].as_sequence().into_iter().flatten() {
-                let key = key.as_str().unwrap();
-                assert!(object.contains_key(key), "{at}: 必須の項目 {key} がない");
-            }
-            for (key, child) in properties {
-                let key = key.as_str().unwrap();
-                if let Some(v) = object.get(key) {
-                    assert_matches(root, child, v, &format!("{at}.{key}"));
-                }
-            }
-        }
-        Some("string") => {
-            let s = value
-                .as_str()
-                .unwrap_or_else(|| panic!("{at}: string でない: {value}"));
-            if let Some(values) = schema["enum"].as_sequence() {
-                assert!(
-                    values.iter().any(|v| v.as_str() == Some(s)),
-                    "{at}: enum にない値 {s}"
-                );
-            }
-            match schema["format"].as_str() {
-                Some("uuid") => assert!(account_id_uuid::parse(s).is_ok(), "{at}: uuid でない {s}"),
-                Some("date-time") => assert!(
-                    time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
-                        .is_ok(),
-                    "{at}: date-time（RFC 3339）でない {s}"
-                ),
-                Some(other) => panic!("{at}: 検査できない format {other}"),
-                None => {}
-            }
-        }
-        other => panic!("{at}: 検査できない type {other:?}"),
-    }
-}
-
 fn assert_contract(status: StatusCode, body: &Value) {
-    let root = openapi();
-    assert_matches(&root, response_schema(&root, status), body, "$");
+    support::Contract::load("student-app").assert_response("post", "/accounts", status, body);
 }
 
 // --- テスト ---
@@ -207,7 +129,10 @@ async fn registers_a_student_with_the_contract_shape() {
         student_id,
         sport,
         occurred_at,
-    } = &events[0];
+    } = &events[0]
+    else {
+        panic!("{:?}", events[0]);
+    };
     assert_eq!(events[0].name(), "account.registered");
     assert_eq!(account_id_uuid::format(*student_id), student["student_id"]);
     assert_eq!(*sport, Sport::Tennis);

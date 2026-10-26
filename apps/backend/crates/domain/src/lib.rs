@@ -5,5 +5,6 @@
 
 mod error;
 pub mod identity;
+pub mod scheduling;
 
 pub use error::DomainError;

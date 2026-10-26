@@ -1,5 +1,6 @@
 //! 利用者に見せる文言（API の `message`）。domain の値やエラーの変種から組み立てる。
 
+use application::scheduling::slot_id_uuid;
 use domain::{DomainError, identity::Role};
 
 /// 役割の呼び名。
@@ -20,6 +21,12 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::RoleAttributeMismatch { role, sports } => {
             format!("{}にスポーツ {sports} 個は持てない", role_label(*role))
         }
+        DomainError::SlotEndsBeforeItStarts => "スロットの開始が終了より前でない".to_string(),
+        DomainError::SlotOverlaps { existing } => format!(
+            "同じコーチの枠（{}）と期間が重なる",
+            slot_id_uuid::format(*existing)
+        ),
+        DomainError::SlotOfAnotherCoach => "別のコーチの枠は扱えない".to_string(),
     }
 }
 
@@ -44,6 +51,20 @@ mod tests {
                 sports: 2
             }),
             "生徒にスポーツ 2 個は持てない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotEndsBeforeItStarts),
+            "スロットの開始が終了より前でない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotOverlaps {
+                existing: domain::scheduling::SlotId::from_u128(1)
+            }),
+            "同じコーチの枠（00000000-0000-0000-0000-000000000001）と期間が重なる"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotOfAnotherCoach),
+            "別のコーチの枠は扱えない"
         );
     }
 }

@@ -469,3 +469,36 @@ async fn identity_values_match_the_accounts_checks(pool: PgPool) {
         account(&pool, role_value(Role::Student), Some(sport_value(sport))).await;
     }
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn scheduling_values_match_the_slots_checks(pool: PgPool) {
+    use domain::scheduling::SlotStatus;
+    use infra::scheduling_values::slot_status_value;
+
+    let statuses: Vec<&str> = SlotStatus::ALL.into_iter().map(slot_status_value).collect();
+    assert_eq!(
+        check_values(&pool, "scheduling.slots", "slots_status_check").await,
+        statuses
+    );
+
+    // 既定は公開中で、対応表にない値は入らない
+    let slot_id = slot(&pool).await;
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM scheduling.slots WHERE slot_id = $1::uuid")
+            .bind(&slot_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, slot_status_value(SlotStatus::Open));
+    let (code, constraint) = violation(
+        sqlx::query("UPDATE scheduling.slots SET status = 'cancelled' WHERE slot_id = $1::uuid")
+            .bind(&slot_id)
+            .execute(&pool)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "slots_status_check")
+    );
+}

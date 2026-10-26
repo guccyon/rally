@@ -8,7 +8,8 @@ use application::{
         AccessToken, AccountRepository, InsertAccountError, InvalidToken, RegisterAccount,
         TokenClaims, TokenIssuer, TokenVerifier,
     },
-    in_memory::{FixedClock, RecordingAnalyticsSink},
+    in_memory::{FixedClock, InMemorySlotRepository, RecordingAnalyticsSink},
+    scheduling::{PublishSlot, SearchSlots},
 };
 use axum::{
     body::{Body, to_bytes},
@@ -50,12 +51,12 @@ impl TokenVerifier for NoTokens {
 #[tokio::test]
 async fn storage_failure_is_500_internal_without_the_reason() {
     let analytics = RecordingAnalyticsSink::default();
+    let clock = FixedClock(SystemTime::UNIX_EPOCH);
+    let slots = InMemorySlotRepository::default();
     let router = interface::router_with(
-        RegisterAccount::new(
-            BrokenRepository,
-            analytics.clone(),
-            FixedClock(SystemTime::UNIX_EPOCH),
-        ),
+        RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
+        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        SearchSlots::new(slots, clock),
         NoTokens,
     );
 

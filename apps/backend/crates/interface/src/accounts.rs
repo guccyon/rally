@@ -1,6 +1,6 @@
 //! `POST /accounts`（OpenAPI の `registerAccount`）。student-app の生徒の登録。
 
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use application::{
     analytics::AnalyticsSink,
@@ -15,12 +15,11 @@ use axum::{
     extract::{State, rejection::JsonRejection},
     http::StatusCode,
 };
-use domain::identity::{Account, Role, Sport};
+use domain::identity::{Account, Role};
 use serde::{Deserialize, Serialize};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    contract::{sport_from_contract, sport_to_contract},
+    contract::{date_time_to_contract, sport_to_contract, student_app_sport},
     error::ApiError,
 };
 
@@ -102,19 +101,6 @@ where
     ))
 }
 
-/// student-app の `Sport`（ゴルフを除く 4 種類）。ゴルフは golf-app の範囲。
-fn student_app_sport(value: &str) -> Result<Sport, ApiError> {
-    match sport_from_contract(value) {
-        Some(Sport::Golf) => Err(ApiError::validation_failed(
-            "student-app はゴルフを扱わない（golf-app の範囲）",
-        )),
-        Some(sport) => Ok(sport),
-        None => Err(ApiError::validation_failed(format!(
-            "未知のスポーツ: {value}"
-        ))),
-    }
-}
-
 fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
     let student = account
         .as_student()
@@ -123,12 +109,6 @@ fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
         student_id: account_id_uuid::format(account.id()),
         display_name: account.display_name().as_str().to_string(),
         sport: sport_to_contract(student.sport()),
-        created_at: rfc3339(account.registered_at())?,
+        created_at: date_time_to_contract(account.registered_at())?,
     })
-}
-
-fn rfc3339(at: SystemTime) -> Result<String, ApiError> {
-    OffsetDateTime::from(at)
-        .format(&Rfc3339)
-        .map_err(ApiError::internal)
 }

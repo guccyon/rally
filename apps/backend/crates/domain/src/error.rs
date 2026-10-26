@@ -16,6 +16,12 @@ pub enum DomainError {
         role: crate::identity::Role,
         sports: usize,
     },
+    /// スロットの開始が終了より前でない
+    SlotEndsBeforeItStarts,
+    /// 同じコーチの時間を占める枠（`existing`）と期間が重なる
+    SlotOverlaps { existing: crate::scheduling::SlotId },
+    /// 別のコーチの枠をコーチのカレンダーに入れようとした
+    SlotOfAnotherCoach,
 }
 
 impl fmt::Display for DomainError {
