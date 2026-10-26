@@ -1,0 +1,9 @@
+[package]
+name = "application"
+description = "アプリケーション層。ユースケースとポート（外部連携の trait）を置く。domain に依存"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain.workspace = true
