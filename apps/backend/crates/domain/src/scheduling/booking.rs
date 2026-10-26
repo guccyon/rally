@@ -339,6 +339,13 @@ mod tests {
     }
 
     #[test]
+    fn regular_booking_is_not_a_trial() {
+        let slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &slot, &[]).unwrap();
+        assert!(!booking.is_trial());
+    }
+
+    #[test]
     fn only_open_slots_can_be_reserved() {
         for status in [SlotStatus::Booked, SlotStatus::Closed] {
             assert_eq!(

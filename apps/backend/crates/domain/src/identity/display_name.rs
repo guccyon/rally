@@ -60,4 +60,9 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn displays_the_name_as_given() {
+        assert_eq!(DisplayName::new("たろう").unwrap().to_string(), "たろう");
+    }
 }

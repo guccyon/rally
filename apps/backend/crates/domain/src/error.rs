@@ -101,3 +101,17 @@ impl fmt::Display for DomainError {
 }
 
 impl std::error::Error for DomainError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_is_the_debug_form() {
+        assert_eq!(DomainError::InvalidEmail.to_string(), "InvalidEmail");
+        assert_eq!(
+            DomainError::DisplayNameTooLong { max: 50 }.to_string(),
+            "DisplayNameTooLong { max: 50 }"
+        );
+    }
+}
