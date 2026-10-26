@@ -59,6 +59,7 @@ mod tests {
     use domain::{
         entitlement::{EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
         identity::Sport,
+        scheduling::BookingId,
     };
 
     use super::*;
@@ -66,9 +67,9 @@ mod tests {
 
     const STUDENT: AccountId = AccountId::from_u128(1);
 
-    /// 2026-11-01T00:00:00Z
+    /// 2026-11-01T00:00:00+09:00（暦月は日本時間で区切る）
     fn nov1() -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_491_200)
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_458_800)
     }
 
     fn october() -> YearMonth {
@@ -82,7 +83,11 @@ mod tests {
             STUDENT,
             Sport::Tennis,
             SubscriptionId::from_u128(20),
-            LiveLessonQuota::restore(october(), 2).unwrap(),
+            LiveLessonQuota::restore(
+                october(),
+                [BookingId::from_u128(1), BookingId::from_u128(2)],
+            )
+            .unwrap(),
         )
         .unwrap()
     }
@@ -116,7 +121,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entitlement.live_lesson_quota(),
-            Some(LiveLessonQuota::fresh(YearMonth::new(2026, 11).unwrap())),
+            Some(&LiveLessonQuota::fresh(YearMonth::new(2026, 11).unwrap())),
             "11 月は 0 から"
         );
         assert_eq!(

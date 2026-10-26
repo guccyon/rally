@@ -11,9 +11,11 @@ defaultContentType: application/json
 channels:
   BookingConfirmed:
     address: BookingConfirmed
-    description: 予約が確定した。
+    description: |
+      予約が確定した。entitlement はこれを購読し、月額の生徒のビデオ通話の暦月の枠を 1 回使う（不変条件 1。
+      暦月は occurred_at で決める。docs/adr/0005）。枠が残っているかは scheduling が確定の前に entitlement に問い合わせる。
     x-publisher: [scheduling]
-    x-subscribers: [notification, analytics]
+    x-subscribers: [entitlement, notification, analytics]
     messages:
       BookingConfirmed:
         $ref: '#/components/messages/BookingConfirmed'
@@ -22,6 +24,8 @@ channels:
     description: |
       予約がキャンセルされた。回数（ビデオ通話の暦月の枠）を消費するかはキャンセル規定に従って scheduling が判定し、
       consumes_quota に載せる。消費の実行は entitlement が行う（docs/adr/0002 Q2。購読側は判定し直さない）。
+      entitlement は consumes_quota が true ならその予約で枠を使ったことにし（確定で使っていればそのまま）、
+      false なら確定で使った枠を戻す（docs/adr/0005）。
     x-publisher: [scheduling]
     x-subscribers: [entitlement, notification, analytics]
     messages:

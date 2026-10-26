@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use application::{
     analytics::AnalyticsEvent,
     domain_event::DomainEvent,
-    entitlement::GetEntitlement,
+    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
@@ -29,8 +29,9 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
     identity::{AccountId, Role, Sport},
-    scheduling::{Slot, SlotId, SlotStatus},
+    scheduling::{BookingId, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -111,6 +112,14 @@ fn app() -> App {
 
 /// [`app`] のスロットに `extra` を足す。
 fn app_with(extra: impl IntoIterator<Item = Slot>) -> App {
+    app_with_entitlements(extra, InMemoryEntitlementRepository::default())
+}
+
+/// [`app_with`] の受講権の保存先を `entitlements` にする。
+fn app_with_entitlements(
+    extra: impl IntoIterator<Item = Slot>,
+    entitlements: InMemoryEntitlementRepository,
+) -> App {
     let analytics = RecordingAnalyticsSink::default();
     let events = RecordingDomainEventPublisher::default();
     let clock = FixedClock(SystemTime::UNIX_EPOCH + NOW);
@@ -134,9 +143,21 @@ fn app_with(extra: impl IntoIterator<Item = Slot>) -> App {
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots.clone(), clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
-        ConfirmBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
+        ConfirmBooking::new(
+            bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            analytics.clone(),
+            events.clone(),
+            clock,
+        ),
         CancelBooking::new(bookings, analytics.clone(), events.clone(), clock),
-        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
+        StartSubscription::new(
+            entitlements.clone(),
+            analytics.clone(),
+            events.clone(),
+            clock,
+        ),
+        GetEntitlement::new(entitlements, clock),
         FakeTokens,
     );
     App {
@@ -499,6 +520,44 @@ async fn missing_or_another_students_booking_is_404() {
     }
     assert_eq!(slot_status(&app, 10), SlotStatus::Open);
     assert!(app.events.events().is_empty());
+}
+
+#[tokio::test]
+async fn confirming_without_live_lesson_quota_left_is_409_live_lesson_quota_exceeded() {
+    // 今の暦月（2026-10）の枠を使い切った月額の生徒
+    let used_up = Entitlement::monthly(
+        EntitlementId::from_u128(30),
+        account_id(STUDENT),
+        Sport::Tennis,
+        SubscriptionId::from_u128(40),
+        LiveLessonQuota::restore(
+            YearMonth::new(2026, 10).unwrap(),
+            [BookingId::from_u128(1), BookingId::from_u128(2)],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let app = app_with_entitlements(
+        [],
+        InMemoryEntitlementRepository::with_entitlements([used_up]),
+    );
+    let booking_id = create(&app.router, STUDENT, 10, false).await;
+
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &booking_id).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_confirm_contract(status, &body);
+    assert_eq!(body["code"], "live_lesson_quota_exceeded");
+    assert_eq!(
+        slot_status(&app, 10),
+        SlotStatus::Open,
+        "確定しないのでスロットは空いたまま"
+    );
+    assert!(app.events.events().is_empty());
+
+    // 枠の制約は月額の生徒だけ。受講権のない生徒は確定できる
+    let other = create(&app.router, OTHER_STUDENT, 11, false).await;
+    let (status, body) = post_confirm(&app.router, Some(OTHER_STUDENT), &other).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }
 
 // --- POST /bookings/{booking_id}/cancel ---

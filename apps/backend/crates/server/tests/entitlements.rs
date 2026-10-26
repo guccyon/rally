@@ -1,6 +1,6 @@
-//! `GET /entitlements/me` を組み立て済みのルーター（`server::router()`）で通す。受講権を作る月額契約の開始は T11 なので、
-//! `POST /accounts` で登録したばかりの生徒は 404、コーチは 403。契約の形・月をまたいだ枠の検査は interface の
-//! `tests/entitlements.rs`。
+//! `GET /entitlements/me` を組み立て済みのルーター（`server::router()`）で通す。`POST /accounts` で登録したばかりの生徒は
+//! 月額契約を開始するまで 404、コーチは 403。月額契約の開始と枠の消費の一周は `tests/live_lesson_quota.rs`。
+//! 契約の形・月をまたいだ枠の検査は interface の `tests/entitlements.rs`。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{

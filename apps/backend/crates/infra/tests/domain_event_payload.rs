@@ -6,9 +6,10 @@ use std::{
 };
 
 use application::{
-    domain_event::DomainEvent, identity::account_id_uuid, scheduling::booking_id_uuid,
+    domain_event::DomainEvent, entitlement::subscription_id_uuid, identity::account_id_uuid,
+    scheduling::booking_id_uuid,
 };
-use domain::{identity::AccountId, scheduling::BookingId};
+use domain::{entitlement::SubscriptionId, identity::AccountId, scheduling::BookingId};
 use infra::{LoggingDomainEventPublisher, domain_event_payload::payload};
 use serde_json::Value;
 use serde_yaml::Value as Yaml;
@@ -157,28 +158,65 @@ fn booking_cancelled_payload_has_exactly_the_required_attributes_of_the_asyncapi
     }
 }
 
+/// AsyncAPI のチャンネル `channel` の `key`（x-publisher / x-subscribers）。
+fn contexts(channel: &str, key: &str) -> Vec<String> {
+    asyncapi()["channels"][channel][key]
+        .as_sequence()
+        .unwrap_or_else(|| panic!("{channel} に {key} がない"))
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect()
+}
+
 #[test]
-fn booking_cancelled_is_subscribed_by_entitlement() {
-    let root = asyncapi();
-    let channel = &root["channels"]["BookingCancelled"];
-    let names = |key: &str| -> Vec<String> {
-        channel[key]
-            .as_sequence()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap().to_string())
-            .collect()
-    };
-    assert_eq!(names("x-publisher"), ["scheduling"]);
+fn booking_events_are_subscribed_by_entitlement() {
+    for channel in ["BookingConfirmed", "BookingCancelled"] {
+        assert_eq!(contexts(channel, "x-publisher"), ["scheduling"]);
+        assert_eq!(
+            contexts(channel, "x-subscribers"),
+            ["entitlement", "notification", "analytics"],
+            "{channel}"
+        );
+    }
+}
+
+fn subscription_started() -> DomainEvent {
+    DomainEvent::SubscriptionStarted {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        subscription_id: SubscriptionId::from_u128(4),
+    }
+}
+
+#[test]
+fn subscription_started_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    let event = subscription_started();
+    assert_eq!(event.name(), "SubscriptionStarted");
+    let body = assert_payload_matches_asyncapi(&event);
+    assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
+    assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
     assert_eq!(
-        names("x-subscribers"),
-        ["entitlement", "notification", "analytics"]
+        body["student_id"],
+        account_id_uuid::format(AccountId::from_u128(1))
+    );
+    assert_eq!(
+        body["subscription_id"],
+        subscription_id_uuid::format(SubscriptionId::from_u128(4))
+    );
+    assert_eq!(
+        contexts("SubscriptionStarted", "x-publisher"),
+        ["entitlement"]
     );
 }
 
 #[test]
 fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
-    for event in [booking_confirmed(), booking_cancelled(true)] {
+    for event in [
+        booking_confirmed(),
+        booking_cancelled(true),
+        subscription_started(),
+    ] {
         let line = LoggingDomainEventPublisher::line(&event).unwrap();
         let json = line
             .strip_prefix(&format!("domain_event {} ", event.name()))

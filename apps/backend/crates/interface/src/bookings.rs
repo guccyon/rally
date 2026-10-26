@@ -12,7 +12,7 @@ use application::{
     scheduling::{
         BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError, ConfirmBooking,
         ConfirmBookingCommand, ConfirmBookingError, CreateBooking, CreateBookingCommand,
-        CreateBookingError, booking_id_uuid, slot_id_uuid,
+        CreateBookingError, QuotaGate, booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -34,11 +34,14 @@ use crate::{
 };
 
 /// `/bookings` のハンドラーが使うユースケース。
-pub struct BookingsState<B, A, P, C> {
+pub struct BookingsState<B, G, A, P, C> {
     pub create_booking: CreateBooking<B, A, C>,
-    pub confirm_booking: ConfirmBooking<B, A, P, C>,
+    pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
     pub cancel_booking: CancelBooking<B, A, P, C>,
 }
+
+/// ハンドラーが共有する [`BookingsState`]。
+type Shared<B, G, A, P, C> = Arc<BookingsState<B, G, A, P, C>>;
 
 /// student-app の `CreateBookingRequest`。
 #[derive(Deserialize)]
@@ -63,13 +66,14 @@ pub struct BookingBody {
 }
 
 /// `POST /bookings`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。予約する生徒はトークンのアカウント。
-pub async fn create_booking<B, A, P, C>(
-    State(state): State<Arc<BookingsState<B, A, P, C>>>,
+pub async fn create_booking<B, G, A, P, C>(
+    State(state): State<Shared<B, G, A, P, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<CreateBookingRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<BookingBody>), ApiError>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
@@ -106,13 +110,15 @@ where
 }
 
 /// `POST /bookings/{booking_id}/confirm`。生徒だけが呼べ、確定できるのは自分の予約だけ。
-pub async fn confirm_booking<B, A, P, C>(
-    State(state): State<Arc<BookingsState<B, A, P, C>>>,
+/// 月額の生徒のビデオ通話の暦月の枠が残っていなければ 409 `live_lesson_quota_exceeded`（不変条件 1）。
+pub async fn confirm_booking<B, G, A, P, C>(
+    State(state): State<Shared<B, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
@@ -136,6 +142,9 @@ where
             ConfirmBookingError::Invalid(
                 error @ (DomainError::BookingNotPending { .. } | DomainError::SlotNotOpen { .. }),
             ) => ApiError::conflict("invalid_booking_state", message::domain_error(&error)),
+            ConfirmBookingError::Invalid(error @ DomainError::LiveLessonQuotaExceeded) => {
+                ApiError::conflict("live_lesson_quota_exceeded", message::domain_error(&error))
+            }
             ConfirmBookingError::Invalid(error) => ApiError::internal(error),
             ConfirmBookingError::Unavailable(error) => ApiError::internal(error),
         })?;
@@ -146,13 +155,14 @@ where
 ///
 /// 回数を消費するかはレスポンスに含めない（契約。判定は境界間イベント `BookingCancelled` の
 /// `consumes_quota` で entitlement に渡す）。リクエストの本文（任意の `reason`）は読まない。
-pub async fn cancel_booking<B, A, P, C>(
-    State(state): State<Arc<BookingsState<B, A, P, C>>>,
+pub async fn cancel_booking<B, G, A, P, C>(
+    State(state): State<Shared<B, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,

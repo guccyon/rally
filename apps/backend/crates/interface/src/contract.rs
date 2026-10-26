@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
-    entitlement::{ContractType, YearMonth},
+    entitlement::{ContractType, SubscriptionStatus, YearMonth},
     identity::Sport,
     scheduling::{BookingStatus, SlotStatus},
 };
@@ -68,6 +68,14 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Pending => "pending",
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
+    }
+}
+
+/// student-app の `SubscriptionStatus` の値。
+pub(crate) const fn subscription_status_to_contract(status: SubscriptionStatus) -> &'static str {
+    match status {
+        SubscriptionStatus::Active => "active",
+        SubscriptionStatus::Cancelled => "cancelled",
     }
 }
 
@@ -156,6 +164,18 @@ mod tests {
             "subscription"
         );
         assert_eq!(contract_type_to_contract(ContractType::OneShot), "one_shot");
+    }
+
+    #[test]
+    fn subscription_statuses_are_active_and_cancelled() {
+        assert_eq!(
+            subscription_status_to_contract(SubscriptionStatus::Active),
+            "active"
+        );
+        assert_eq!(
+            subscription_status_to_contract(SubscriptionStatus::Cancelled),
+            "cancelled"
+        );
     }
 
     #[test]

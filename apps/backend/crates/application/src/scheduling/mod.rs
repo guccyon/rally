@@ -6,6 +6,7 @@ mod cancel_booking;
 mod confirm_booking;
 mod create_booking;
 mod publish_slot;
+mod quota_gate;
 mod repository;
 mod reserve_slot_error;
 mod search_slots;
@@ -20,6 +21,7 @@ pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError
 pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError};
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
 pub use publish_slot::{PublishSlot, PublishSlotCommand, PublishSlotError};
+pub use quota_gate::QuotaGate;
 pub use repository::{AddToCalendarError, SlotRepository};
 pub use reserve_slot_error::ReserveSlotError;
 pub use search_slots::{SearchSlots, SearchSlotsQuery};

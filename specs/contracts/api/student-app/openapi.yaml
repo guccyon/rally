@@ -133,8 +133,8 @@ paths:
         スロットを確保する。体験予約は `is_trial: true`。作成直後の状態は `pending` で、確定は `confirmBooking`。
         予約できるのは公開中のスロットだけ（閉じたスロットはないスロットと同じく 404）で、1 つのスロットに有効な
         （キャンセルされていない）予約は 1 件まで（409 `slot_already_booked`）。体験予約はその生徒の初回の予約だけ
-        （キャンセルされていない予約があれば 409 `trial_already_used`）。生徒だけが呼べる（それ以外の役割は 403）。予約では受講権を消費しない。
-        月額契約の生徒のビデオ通話は暦月 2 回まで（不変条件 1）。枠を超える予約は 409 `live_lesson_quota_exceeded` で拒否する。
+        （キャンセルされていない予約があれば 409 `trial_already_used`）。生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
+        月額契約の生徒のビデオ通話の暦月 2 回の枠（不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.created]
@@ -169,6 +169,9 @@ paths:
       description: |
         自分の `pending` の予約を確定し、スロットを予約済みにする。境界間イベント `BookingConfirmed` を発行する。
         別の生徒の予約は 404、`pending` でない予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
+        月額契約の生徒のビデオ通話は暦月 2 回まで（不変条件 1）。その暦月の枠が残っていなければ確定せず 409 `live_lesson_quota_exceeded`
+        （3 回目は予約できない。暦月は日本時間で区切り、翌月には再び確定できる）。確定すると entitlement が枠を 1 回使い
+        （`BookingConfirmed` の購読）、`getMyEntitlement` の `live_lesson_quota.used` が増える。受講権のない生徒（月額契約の前）は枠の制約を受けない。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.confirmed]
@@ -198,6 +201,8 @@ paths:
         自分の予約（`pending` / `confirmed`）をキャンセルする。`confirmed` ならスロットを公開中（`open`）に戻す。
         回数を消費するかはキャンセル規定（glossary の cancellation_policy）に従って scheduling が判定し、境界間イベント
         `BookingCancelled` の `consumes_quota` で entitlement に渡す（docs/adr/0002 Q2）。このレスポンスには含めない。
+        月額契約の生徒なら、開始 24 時間前以降のキャンセルはその予約で枠を使ったことになり（確定前の予約でも `used` が増える）、
+        それより前のキャンセルは確定で使った枠が戻る（docs/adr/0005）。
         別の生徒の予約は 404、キャンセル済みの予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
         本文の `reason` は任意で、Gen1 では保存しない。
       tags: [scheduling]
@@ -231,7 +236,11 @@ paths:
     post:
       operationId: startSubscription
       summary: 月額契約の開始
-      description: 決済（Stripe）は Gen1 ではモック。ワンショットは golf-app の契約で扱い、student-app では開始しない。
+      description: |
+        認証した生徒の月額契約を開始し、それによる受講権（今の暦月のまだ使っていないビデオ通話の枠）を作る。境界間イベント
+        `SubscriptionStarted` を発行する。生徒だけが呼べる（それ以外の役割は 403）。受講権がすでにあれば 409 `subscription_already_active`
+        （受講権は生徒ごとに 1 つ）。ゴルフは 422（月額はゴルフ以外）。決済（Stripe）は Gen1 ではモックで、`payment_method_token` は
+        受け取るだけで使わない（billing は Gen1 の範囲外）。ワンショットは golf-app の契約で扱い、student-app では開始しない。
       tags: [entitlement]
       x-context: entitlement
       x-analytics-events: [subscription.started]
@@ -250,6 +259,8 @@ paths:
                 $ref: "#/components/schemas/StartSubscriptionResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":

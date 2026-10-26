@@ -146,9 +146,10 @@ mod tests {
 
     use super::*;
     use crate::{
+        entitlement::EntitlementQuotaGate,
         in_memory::{
-            FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
-            RecordingDomainEventPublisher,
+            FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
+            InMemorySlotRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
         },
         scheduling::{ConfirmBooking, ConfirmBookingCommand, CreateBooking, CreateBookingCommand},
     };
@@ -199,6 +200,7 @@ mod tests {
         if confirm {
             booking = ConfirmBooking::new(
                 bookings.clone(),
+                EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
                 RecordingAnalyticsSink::default(),
                 RecordingDomainEventPublisher::default(),
                 FixedClock(CREATED_AT),

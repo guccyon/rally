@@ -5,7 +5,8 @@ use crate::{DomainError, identity::AccountId, identity::Sport};
 
 /// 月額の契約（glossary の subscription）。ゴルフ以外のスポーツで結ぶ。
 ///
-/// 契約の開始（決済を含む）は T11。ここでは型と、生成時の不変条件（スポーツ）だけを持つ。
+/// 契約の開始は application の `entitlement::StartSubscription`（決済は billing で、Gen1 の範囲外）。ここでは型と、
+/// 生成時の不変条件（スポーツ）だけを持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
     id: SubscriptionId,

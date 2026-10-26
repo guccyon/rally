@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     analytics::AnalyticsEvent,
-    entitlement::GetEntitlement,
+    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
@@ -71,12 +71,19 @@ fn app() -> App {
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,
         ),
         CancelBooking::new(
             bookings,
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        StartSubscription::new(
+            InMemoryEntitlementRepository::default(),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

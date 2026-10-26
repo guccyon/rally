@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use application::{
     Unavailable,
-    entitlement::GetEntitlement,
+    entitlement::{EntitlementQuotaGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, AccountRepository, InsertAccountError, InvalidToken, RegisterAccount,
         TokenClaims, TokenIssuer, TokenVerifier,
@@ -65,12 +65,19 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,
         ),
         CancelBooking::new(
             bookings,
+            analytics.clone(),
+            RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        StartSubscription::new(
+            InMemoryEntitlementRepository::default(),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

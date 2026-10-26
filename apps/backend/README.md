@@ -7,9 +7,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 | パス | 層 | 依存してよいクレート |
 |---|---|---|
 | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`） | なし |
-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`entitlement::GetEntitlement`・`EntitlementRepository`・`AnalyticsSink`・`DomainEventPublisher`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
-| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /entitlements/me`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
+| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
+| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
+| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`POST /subscriptions`、`GET /entitlements/me`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
 | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
@@ -45,7 +45,7 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
 ```
 
-ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約の保存先と行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権の保存先と行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
 
 ## identity の不変条件
 
@@ -93,10 +93,10 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 ## scheduling: 予約の作成と確定（体験予約を含む）
 
 - `POST /bookings`（student-app の `createBooking`）: 生徒だけが呼べる（`require_role(&[Role::Student])`。コーチ・本部は 403）。予約する生徒はトークンのアカウント。作成直後は `pending` で、スロットはまだ `open` のまま（受講権も消費しない）。作成すると行動イベント `booking.created` を 1 回発火する
-- `POST /bookings/{booking_id}/confirm`（`confirmBooking`）: 生徒だけが呼べ、確定できるのは自分の予約だけ（別の生徒の予約・UUID でない ID は 404）。確定するとスロットが `booked` になり（検索に出なくなる）、境界間イベント `BookingConfirmed` を発行し、行動イベント `booking.confirmed` を 1 回発火する。`pending` でなければ 409 `invalid_booking_state`
+- `POST /bookings/{booking_id}/confirm`（`confirmBooking`）: 生徒だけが呼べ、確定できるのは自分の予約だけ（別の生徒の予約・UUID でない ID は 404）。月額の生徒でその暦月のビデオ通話の枠が残っていなければ 409 `live_lesson_quota_exceeded`（下の entitlement の節）。確定するとスロットが `booked` になり（検索に出なくなる）、境界間イベント `BookingConfirmed` を発行し、行動イベント `booking.confirmed` を 1 回発火する。`pending` でなければ 409 `invalid_booking_state`
 - 不変条件は `domain::scheduling::Booking` が持つ: 公開中（`open`）のスロットにしか予約できない（予約済みは 409 `slot_already_booked`、閉じた枠はない枠と同じ 404）、1 スロットに有効な（キャンセルされていない）予約は 1 件（二重予約は 409 `slot_already_booked`）、体験予約はその生徒の初回だけ（キャンセルされていない予約が 1 件でもあれば 409 `trial_already_used`）
 - ポート `BookingRepository` は予約とスロットを一緒に読み書きし、判定は domain に任せて読み取りから保存までを直列にする。`server` は当面インメモリ（`InMemoryBookingRepository`。スロットの保存先と中身を共有）。Postgres の実装はアカウント・スロットの保存先を Postgres にするときに足す（DB は `bookings_one_active_per_slot` でも二重予約を防ぐ）
-- 境界間イベントはポート `DomainEventPublisher`（発行の失敗でユースケースを失敗させない）。Gen1 はメッセージ基盤を選定していないので、`server` は infra の `LoggingDomainEventPublisher`（`domain_event BookingConfirmed {...}` の 1 行を標準出力に書くだけ）で組み立てる
+- 境界間イベントはポート `DomainEventPublisher`（発行の失敗でユースケースを失敗させない）。Gen1 はメッセージ基盤を選定していないので、`server` は infra の `InMemoryDomainEventBus`（`LoggingDomainEventPublisher` と同じ `domain_event BookingConfirmed {...}` の 1 行を標準出力に書き、同じプロセスの購読側（entitlement）に渡す）で組み立てる
 - 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・二重予約・体験予約の 1 回限り・確定でスロットが埋まること・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで一周の入口を通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingConfirmed` のペイロードが AsyncAPI の `required` と一致すること）
 
 | 何の文字列か | 置き場所 |
@@ -109,23 +109,35 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - `POST /bookings/{booking_id}/cancel`（`cancelBooking`）: 生徒だけが呼べ、キャンセルできるのは自分の予約（`pending` / `confirmed`）だけ（別の生徒の予約・UUID でない ID は 404、キャンセル済みは 409 `invalid_booking_state`）。確定済みならスロットを `open` に戻す（検索に戻り、別の生徒が予約できる）。本文の `reason` は任意で、Gen1 では保存しない
 - キャンセル規定（開始の何時間前以降なら回数を消費するか）は `domain::scheduling::CancellationPolicy` の 1 か所だけに置く（不変条件 3。ADR 0002 Q2）。判定の境界（ちょうどの時刻は消費する側）と前後のテストもそこにある。閾値を application・interface・infra や entitlement に写さない
-- 判定の結果は境界間イベント `BookingCancelled` の `consumes_quota` に載せて発行する（scheduling → entitlement / notification / analytics）。受講権（ビデオ通話の暦月の枠）の消費の実行は entitlement が購読して行う（T11）。API のレスポンスと行動イベントには判定を載せない
+- 判定の結果は境界間イベント `BookingCancelled` の `consumes_quota` に載せて発行する（scheduling → entitlement / notification / analytics）。受講権（ビデオ通話の暦月の枠）の消費の実行は entitlement が購読して行う（下の「entitlement: 月額契約の開始と通話の枠の消費」）。API のレスポンスと行動イベントには判定を載せない
 - 行動イベント `booking.cancelled` を 1 回発火する。`hours_before_start` はキャンセルした時刻から開始時刻までの時間を時間単位で切り捨てた整数（開始後のキャンセルは負）
 - 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・23 / 25 時間前の `consumes_quota`・スロットが空くこと・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingCancelled` のペイロードが AsyncAPI の `required` と一致すること）
 
 ## entitlement: 契約種別と利用権の型
 
 - 契約種別は `domain::entitlement::ContractType`（`Monthly` / `OneShot`）。Gen1 で実装するのは月額だけだが、ワンショットも型として持つ。どの契約種別でどのスポーツを結べるか（月額はゴルフ以外、ワンショットはゴルフだけ）は `ContractType::covers` の 1 か所に置き、`Entitlement::monthly` / `Entitlement::one_shot`・`Subscription::new` は破れば `DomainError::SportNotCoveredByContract` を返す
-- 受講権 `Entitlement`: 月額は元の契約（`SubscriptionId`）・動画とチャットの送り放題・ビデオ通話の暦月の枠 `LiveLessonQuota`（`month`・`used`。上限 2 は `LiveLessonQuota` の中の 1 か所）を持つ。ワンショットは残りの動画添削回数を持ち、通話の枠はない
-- 月をまたいだら `used` は 0 から数える（`LiveLessonQuota::in_month` / `Entitlement::in_month`）。時刻がどの暦月かは `application::entitlement::calendar_month` の 1 か所で決める。タイムゾーンは T11 で決めるまで UTC（ADR 0004 の 4）
+- 受講権 `Entitlement`: 月額は元の契約（`SubscriptionId`）・動画とチャットの送り放題・ビデオ通話の暦月の枠 `LiveLessonQuota`（`month` と、その月に枠を使った予約の集合。`used` はその数。上限 2 は `LiveLessonQuota` の中の 1 か所）を持つ。ワンショットは残りの動画添削回数を持ち、通話の枠はない
+- 月をまたいだら `used` は 0 から数える（`LiveLessonQuota::in_month` / `Entitlement::in_month`）。時刻がどの暦月かは `application::entitlement::calendar_month` の 1 か所で決める。暦月は日本時間（UTC+9）で区切る（ADR 0005）
 - `GET /entitlements/me`（student-app の `getMyEntitlement`）: 生徒だけが呼べる（コーチ・本部は 403）。照会するのはトークンのアカウントの受講権で、通話の枠は今の暦月のもの。受講権がなければ 404。照会だけで何も保存しない
-- ポート `EntitlementRepository`。`server` は当面インメモリ（`InMemoryEntitlementRepository`）。受講権を作る月額契約の開始と枠の消費・Postgres の実装は T11 なので、今は `server` の照会は常に 404
+- ポート `EntitlementRepository`（受講権と月額契約）。`server` は当面インメモリ（`InMemoryEntitlementRepository`）。Postgres の実装はアカウントの保存先を Postgres にするときに足す（枠を予約ごとに持つので、`live_lesson_quotas` に予約ごとの行を expand で足す。ADR 0005）
 - 統合テスト: `crates/interface/tests/entitlements.rs`（契約の形・月をまたいだ枠のリセット・ワンショットの形・403 / 404）、`crates/server/tests/entitlements.rs`（モックのトークンで通す）
 
 | 何の文字列か | 置き場所 |
 |---|---|
 | 契約の `ContractType`（月額は `subscription`）・`LiveLessonQuota.month`（`YYYY-MM`） | `interface` の `contract.rs` |
 | 受講権 ID の UUID のテキスト形式 | `application::entitlement::entitlement_id_uuid` |
+| 月額契約 ID の UUID のテキスト形式 | `application::entitlement::subscription_id_uuid` |
+| 契約の `SubscriptionStatus` | `interface` の `contract.rs` |
+
+## entitlement: 月額契約の開始と通話の枠の消費（不変条件 1）
+
+いつ・どの予約で枠を消費するか、暦月の区切りは [ADR 0005](../../docs/adr/0005-live-lesson-quota-consumption.md)。
+
+- `POST /subscriptions`（student-app の `startSubscription`）: 生徒だけが呼べる（コーチ・本部は 403）。トークンのアカウントの月額契約（`active`）と、それによる受講権（今の暦月のまだ使っていない枠）を作る（`application::entitlement::StartSubscription`）。受講権がすでにあれば 409 `subscription_already_active`、ゴルフは 422。境界間イベント `SubscriptionStarted` を発行し、行動イベント `subscription.started` を 1 回発火する。決済（billing）は Gen1 の範囲外で、`payment_method_token` は受け取るだけで使わない
+- 枠の消費は entitlement が境界間イベントを購読して行う（`LiveLessonQuotaSubscriber`）。`BookingConfirmed` で `ConsumeLiveLessonQuota`、`BookingCancelled` の `consumes_quota: true` でも `ConsumeLiveLessonQuota`（確定で使った予約ならそのまま）、`false` なら `ReleaseLiveLessonQuota`（確定で使った分を戻す）。同じ予約で 2 回は使わない
+- 3 回目の拒否: `ConfirmBooking` は確定の前に scheduling のポート `QuotaGate` で entitlement に「もう 1 回予約してよいか」を問い合わせ（実装は `EntitlementQuotaGate`。規則は `Entitlement::may_book_live_lesson`）、否なら 409 `live_lesson_quota_exceeded`（確定しない）。scheduling は回数も上限も知らない。受講権のない生徒（月額契約の前の体験予約など）は制約を受けない
+- 購読のつなぎ込み: `server` は境界間イベントを infra の `InMemoryDomainEventBus`（メッセージ基盤のモック。標準出力に 1 行書き、同じプロセスの購読側にその場で渡す。購読側の失敗は標準エラー出力に書いて捨てる）で発行する。現在時刻は `server::router_at(clock)` で差し替えられる（`router()` は OS の時計）
+- 統合テスト: `crates/server/tests/live_lesson_quota.rs`（一周: 同じ暦月の 3 回目の確定が 409、翌月は再び確定できる、23 時間前のキャンセルで枠が減り 25 時間前のキャンセルで戻る）、`crates/interface/tests/subscriptions.rs`（契約の形・409・422・403 / 401）、`crates/interface/tests/bookings.rs`（409 `live_lesson_quota_exceeded`）、`crates/infra/tests/in_memory_domain_event_bus.rs`（購読側への配送）、`crates/infra/tests/domain_event_payload.rs`（`SubscriptionStarted` のペイロード）
 
 ## CI で走らせるコマンド
 

@@ -4,11 +4,13 @@
 
 pub mod domain_event_payload;
 pub mod identity_values;
+mod in_memory_domain_event_bus;
 mod logging_domain_event_publisher;
 mod mock_token;
 mod pg_slot_repository;
 pub mod scheduling_values;
 
+pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
 pub use mock_token::MockTokenService;
 pub use pg_slot_repository::PgSlotRepository;
