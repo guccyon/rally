@@ -8,9 +8,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 |---|---|---|
 | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`）・`lesson`（live-lesson と async-lesson が共有するレッスンの完了記録 `LessonCompletion`・`LessonId`・`LessonType`・`LessonSource`。コンテキストではない） | なし |
 | `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
-| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す）・DB とトークンと境界間イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`） | domain・application |
+| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
 | `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
-| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
+| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`） | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
@@ -20,7 +20,7 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 ローカルの Postgres は `compose.yaml`（Docker Compose）で起動する。スキーマは `crates/infra/migrations/` の sqlx のマイグレーションで、変更は expand → 移行 → contract の 3 段に分ける（[ADR 0004](../../docs/adr/0004-schema-expand-contract.md)）。
 
 ```sh
-docker compose up -d --wait                       # 127.0.0.1:5432 に Postgres 16
+docker compose up -d --wait                       # 127.0.0.1:5432 に Postgres 16、127.0.0.1:9090 にオブジェクトストア（下の「行動イベントの配信先」）
 export DATABASE_URL=postgres://rally@127.0.0.1:5432/rally
 cargo install sqlx-cli --no-default-features --features postgres,rustls   # 初回だけ
 cargo sqlx migrate run --source crates/infra/migrations
@@ -45,7 +45,8 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
 ```
 
-ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先と行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先は当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
+行動イベントの配信先は環境変数 `ANALYTICS_SINK` で選ぶ（既定はインメモリ。下の「行動イベントの配信先」）。
 
 ## identity の不変条件
 
@@ -185,6 +186,35 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 |---|---|
 | 契約の `LessonType`（`live_lesson` / `async_lesson`） | `interface` の `contract.rs` |
 | 完了記録 ID の UUID のテキスト形式 | `application::lesson::lesson_id_uuid` |
+
+## 行動イベントの配信先（モック）と発火の網羅
+
+行動イベントは `specs/analytics/events.yaml` が正で、KPI の式（セマンティック層）は `specs/analytics/kpi.yaml` の 1 か所に置く。バックエンドは式を持たず、生の属性を発火するだけ。
+
+- 発火はポート `application::analytics::AnalyticsSink`。配信先は `server` が環境変数で選ぶ（`server::AnalyticsDestination`）。知らない `ANALYTICS_SINK` の値では起動しない
+
+  | 環境変数 | 値 |
+  |---|---|
+  | `ANALYTICS_SINK` | `memory`（既定。プロセスの中に記録するだけ）・`object_store`（オブジェクトストアに書く） |
+  | `ANALYTICS_OBJECT_STORE_ENDPOINT` | S3 API のエンドポイント（既定 `http://127.0.0.1:9090`。compose の `objectstore`） |
+  | `ANALYTICS_OBJECT_STORE_BUCKET` | バケット（既定 `rally-analytics`。compose が作る） |
+
+- `object_store` は infra の `ObjectStoreAnalyticsSink`（Firebase / GA 相当のモック）。発火 1 回で 1 オブジェクト `events/<name>/dt=<UTC の日付>/<UUID>.jsonl` を書き、中身は JSON Lines の 1 行 `{"name": ..., "attributes": {...}}`（属性は events.yaml の `required` だけ。対応表は `infra::analytics_event_payload`）。ローカルのファイルシステムには何も残さない。モックなので認証情報は持たず署名しない。書けなければ標準エラー出力に書いて捨て、ユースケースは失敗させない（タイムアウトと再試行を短くして、配信先が止まっていても数秒で戻る）
+- compose の `objectstore` は S3 互換のモック（`adobe/s3mock`。認証なし。中身は Docker のボリューム `objectstore-data`）
+
+```sh
+docker compose up -d --wait objectstore
+ANALYTICS_SINK=object_store cargo run -p server
+curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオブジェクトの一覧（S3 の ListObjectsV2）
+```
+
+| 何の文字列か | 置き場所 |
+|---|---|
+| 行動イベントの属性（events.yaml の `required`）・`lesson_type` の値・JSON Lines の 1 行 | `infra::analytics_event_payload`（`sport` は `infra::identity_values`、時刻は `domain_event_payload` と同じ RFC 3339） |
+
+- テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周）
+- 発火の網羅: `crates/application/tests/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
+- セマンティック層: `crates/application/tests/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
 
 ## CI で走らせるコマンド
 

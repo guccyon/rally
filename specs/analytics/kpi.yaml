@@ -1,0 +1,118 @@
+# KPI の式（セマンティック層。初版）。KPI の式はここ 1 か所にだけ置き、バックエンド・モック・ダッシュボードに写さない。
+# 前提は product-context.md、入力は events.yaml の行動イベント。通話品質スコアの式は docs/adr/0002 Q1。
+# 実際の集計ジョブとダッシュボードは P5 の Report ラインで作る（ここは式の定義だけ）。
+#
+# 各項目: id（英小文字スネークケース）・ja（KPI 名。events.yaml の kpi はこの値を指す）・north_star（true は 1 つだけ）・
+#   formula（下の書き方の式）・inputs（formula が参照するイベント名。他の KPI を参照するならその inputs も含む）・
+#   window（集計の期間。<日数>d）・window_on（window を当てる時刻の属性）・direction（up_is_good | down_is_good）・note
+#
+# formula の書き方（擬似 SQL。名前は events.yaml の name と required の属性だけを使う）:
+#   from <イベント> as <別名> [where <条件>]   母集団。イベント 1 件が 1 行。window は window_on の時刻で絞る
+#   <別名>.<属性> / <イベント>.<属性>          属性。別名で同じイベントを 2 度参照できる（exists の中など）
+#   exists(<イベント> as <別名> where <条件>)   条件を満たすイベントがあるか
+#   first(<式> for <イベント> as <別名> where <条件>)   条件を満たすイベントのうち最も早いものの <式>（なければ null）
+#   ratio(<条件>)                          母集団のうち <条件> を満たす行の割合（0〜1）
+#   avg / median(<式>)                     母集団の <式> の平均 / 中央値。null の行は除く
+#   variance(<KPI の id> by <キー> having count >= <n>)   <キー> ごとに <KPI> を計算し、行が n 以上の群だけで母分散をとる
+#   clamp(<式>, <下限>, <上限>)・max(<a>, <b>)・coalesce(<a>, <b>)（最初の null でない値）
+#   hours_between(<始>, <終>) / days_between(<始>, <終>)   時刻の差（時間 / 日。小数）。days(<n>) は n 日の長さ
+#   now は集計した時刻。比較・算術は = <> < <= > >= + - * /、論理は and / or / not
+# 語彙（vocabulary）にない名前は、イベント名・<イベント>.<属性>・<別名>.<属性>・別名・他の KPI の id のどれかでなければならない
+# （crates/application/tests/kpi_semantic_layer.rs が検査する）。
+schema_version: "0.1"
+status: draft
+vocabulary: [from, as, where, and, or, not, exists, first, for, ratio, avg, median, variance, by, having, count,
+  clamp, max, coalesce, hours_between, days_between, days, now, "true", "false"]
+kpis:
+  # 起点は初回のレッスン（is_first_lesson。docs/adr/0006）。行動イベントに月額契約の解約がないので、「継続」を
+  # 「初回レッスンから 30 日以内に月額契約を始め、31〜60 日目にもレッスンを完了している」で近似する
+  - id: first_lesson_retention_1m
+    ja: "初回レッスン後の 1 ヶ月継続率"
+    north_star: true
+    formula: |
+      from lesson.completed as f where f.is_first_lesson = true
+      ratio(
+        exists(subscription.started as s
+               where s.student_id = f.student_id
+                 and s.occurred_at < f.occurred_at + days(30))
+        and exists(lesson.completed as l
+               where l.student_id = f.student_id
+                 and l.occurred_at >= f.occurred_at + days(30)
+                 and l.occurred_at < f.occurred_at + days(60)))
+    inputs: [lesson.completed, subscription.started]
+    window: 30d
+    window_on: f.occurred_at
+    direction: up_is_good
+    note: "母集団は 60 日目を観測し終えた生徒だけ（window は集計時点の 60 日前に終わる 30 日間）"
+  # 初回のレッスンを担当したコーチごとの継続率のばらつき。小さいほど、どのコーチに当たっても続く
+  - id: coach_retention_variance
+    ja: "コーチ別継続率の分散"
+    north_star: false
+    formula: |
+      from lesson.completed as f where f.is_first_lesson = true
+      variance(first_lesson_retention_1m by f.coach_id having count >= 5)
+    inputs: [lesson.completed, subscription.started]
+    window: 30d
+    window_on: f.occurred_at
+    direction: down_is_good
+    note: "初回レッスンが 5 件未満のコーチは標本が小さいので除く"
+  # 開始時刻が過ぎた枠のうち、確定した予約がキャンセルされずに残った枠の割合（キャンセルで枠は公開中に戻る）
+  - id: slot_fill_rate
+    ja: "コーチの予約枠充足率"
+    north_star: false
+    formula: |
+      from slot.published as p where p.starts_at < now
+      ratio(
+        exists(booking.confirmed as c
+               where c.slot_id = p.slot_id
+                 and not exists(booking.cancelled as x where x.booking_id = c.booking_id)))
+    inputs: [slot.published, booking.confirmed, booking.cancelled]
+    window: 30d
+    window_on: p.starts_at
+    direction: up_is_good
+    note: "コーチごとに見るときは p.coach_id で分ける"
+  # docs/adr/0002 Q1 の減点式（0〜100）を通話ごとに計算し、平均する。packet_loss_rate は百分率（0〜100）
+  - id: call_quality_score
+    ja: "通話品質スコア"
+    north_star: false
+    formula: |
+      from call.ended as e
+      avg(clamp(100
+        - 8 * e.packet_loss_rate
+        - 2 * max(0, (e.jitter_ms - 30) / 10)
+        - 3 * max(0, (e.round_trip_ms - 150) / 50)
+        - 10 * e.disconnect_count, 0, 100))
+    inputs: [call.ended]
+    window: 30d
+    window_on: e.occurred_at
+    direction: up_is_good
+    note: "重みは仮の初期値。合成シードで分布を見て P1 中に改訂する（ADR 0002 Q1）"
+  # 送付した動画ごとの返却までの時間（時間）の中央値。返されていない動画は集計時点までの経過時間で数え、遅いコーチを隠さない
+  - id: video_review_lead_time
+    ja: "添削の返却リードタイム"
+    north_star: false
+    formula: |
+      from video.submitted as v
+      median(coalesce(
+        first(hours_between(r.submitted_at, r.occurred_at)
+              for video_review.returned as r where r.video_id = v.video_id),
+        hours_between(v.occurred_at, now)))
+    inputs: [video.submitted, video_review.returned]
+    window: 30d
+    window_on: v.occurred_at
+    direction: down_is_good
+    note: "単位は時間"
+  # 体験予約から、その生徒の初回のレッスンの完了までの日数の中央値。初回をまだ終えていない生徒は除く
+  - id: days_to_first_lesson
+    ja: "初回レッスンまでの日数"
+    north_star: false
+    formula: |
+      from booking.created as b where b.is_trial = true
+      median(days_between(b.occurred_at,
+        first(l.occurred_at for lesson.completed as l
+              where l.student_id = b.student_id and l.is_first_lesson = true)))
+    inputs: [booking.created, lesson.completed]
+    window: 30d
+    window_on: b.occurred_at
+    direction: down_is_good
+    note: "体験予約を経ずに動画の送付から始めた生徒は母集団に入らない"

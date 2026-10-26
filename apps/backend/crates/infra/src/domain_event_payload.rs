@@ -72,7 +72,7 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
     }
 }
 
-/// `format: date-time`（RFC 3339）。
-fn date_time(at: SystemTime) -> Result<String, time::error::Format> {
+/// `format: date-time`（RFC 3339）。行動イベントの時刻（`crate::analytics_event_payload`）もこれで書く。
+pub(crate) fn date_time(at: SystemTime) -> Result<String, time::error::Format> {
     OffsetDateTime::from(at).format(&Rfc3339)
 }
