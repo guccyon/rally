@@ -1,0 +1,18 @@
+# 境界づけられたコンテキスト（初期案。Blueprint v0.4 の bounded_contexts_hint を写したもの）
+# Design ステージが精緻化する。glossary.yaml の context はこの id を使う。
+schema_version: "0.1"
+status: draft
+gen1_core: [identity, scheduling, entitlement]
+contexts:
+  - { id: identity,     ja: "アカウント・権限",   note: "生徒・コーチ・本部アカウント、権限、プロフィール" }
+  - { id: catalog,      ja: "カタログ",           note: "スポーツ、レッスン種別、コーチの提供メニュー" }
+  - { id: matching,     ja: "マッチング",         note: "検索・推薦・リクエスト・担当コーチの確定" }
+  - { id: scheduling,   ja: "予約",               note: "コーチの予約枠、予約、リスケ、キャンセル規定" }
+  - { id: live-lesson,  ja: "同期レッスン",       note: "通話セッション、接続品質、録画、月 2 回の消費" }
+  - { id: async-lesson, ja: "非同期レッスン",     note: "動画アップロード、添削ワークフロー、納期、返却" }
+  - { id: messaging,    ja: "メッセージ",         note: "チャット、履歴、既読、通知の発火元" }
+  - { id: entitlement,  ja: "受講権",             note: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）" }
+  - { id: billing,      ja: "課金",               note: "Stripe 連携、請求、コーチへの支払い・手数料" }
+  - { id: review,       ja: "評価",               note: "評価、レビュー、コーチ品質指標" }
+  - { id: notification, ja: "通知",               note: "プッシュ・メール配信（SNS / Pusher 相当）" }
+  - { id: analytics,    ja: "分析",               note: "行動イベント、セマンティック層の所有者" }
