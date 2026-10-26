@@ -1,6 +1,6 @@
 # specs/contracts/
 
-クライアントとバックエンド、境界づけられたコンテキスト同士の契約の置き場所。Blueprint v0.4 の「契約（contracts/）は 5 アプリ分の境界を最初から引く」に従い、Gen1 で実装しないアプリの分も枝だけ先に置く。中身（OpenAPI / AsyncAPI の本体）はまだない。
+クライアントとバックエンド、境界づけられたコンテキスト同士の契約の置き場所。Blueprint v0.4 の「契約（contracts/）は 5 アプリ分の境界を最初から引く」に従い、Gen1 で実装しないアプリの分も枝だけ先に置く。本体は `api/student-app/openapi.yaml`（Gen1 一周シナリオの最小 API）から書き始めている。
 
 ## 契約の種類
 
@@ -17,7 +17,7 @@
 ```
 contracts/
 ├── api/
-│   ├── student-app/   # Gen1 で実装
+│   ├── student-app/   # Gen1 で実装（openapi.yaml）
 │   ├── admin-web/     # Gen1 で実装
 │   ├── coach-app/     # 境界のみ
 │   ├── coach-web/     # 境界のみ
@@ -28,6 +28,8 @@ contracts/
 - `api/` の枝はクライアントアプリ単位で切る。1 アプリ 1 枝
 - イベントの発行元・購読先は `specs/context-map.yaml` の context id で書く
 - 本体を書くまでは `.gitkeep` だけを置く
+- OpenAPI は 3.1。スキーマ名は `specs/glossary.yaml` の id に揃え（booking → `Booking`）、各操作に `x-context`（context-map.yaml の id）を付ける。操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
+- 互換ポリシー（下記）は各 OpenAPI の `info.description` にも書く
 
 ## アプリと Gen1 の範囲
 
