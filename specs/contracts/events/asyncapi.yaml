@@ -1,0 +1,88 @@
+# 境界づけられたコンテキスト間のドメインイベント（初版）。行動イベント（specs/analytics/events.yaml）とは別物。
+# 発行元・購読先（x-publisher / x-subscribers）は context-map.yaml の id、属性名は analytics/events.yaml と揃える。
+# ペイロードは必須属性だけ（event_id・occurred_at・関係する student_id / coach_id・対象の id）。メッセージ基盤は選定しない。
+asyncapi: 3.0.0
+info:
+  title: Rally Domain Events
+  version: 0.1.0
+  description: 境界づけられたコンテキスト間のドメインイベントの契約（draft）。
+defaultContentType: application/json
+
+channels:
+  BookingConfirmed:
+    address: BookingConfirmed
+    description: 予約が確定した。
+    x-publisher: [scheduling]
+    x-subscribers: [notification, analytics]
+    messages:
+      BookingConfirmed:
+        $ref: '#/components/messages/BookingConfirmed'
+  LessonCompleted:
+    address: LessonCompleted
+    description: レッスンの完了が記録された（同期レッスン・非同期レッスンの両方）。
+    x-publisher: [live-lesson, async-lesson]
+    x-subscribers: [billing, review, analytics]
+    messages:
+      LessonCompleted:
+        $ref: '#/components/messages/LessonCompleted'
+  SubscriptionStarted:
+    address: SubscriptionStarted
+    description: 生徒の月額契約が始まった。
+    x-publisher: [entitlement]
+    x-subscribers: [billing, analytics]
+    messages:
+      SubscriptionStarted:
+        $ref: '#/components/messages/SubscriptionStarted'
+
+components:
+  messages:
+    BookingConfirmed:
+      name: BookingConfirmed
+      title: 予約の確定
+      payload:
+        $ref: '#/components/schemas/BookingConfirmedPayload'
+    LessonCompleted:
+      name: LessonCompleted
+      title: レッスンの完了記録
+      payload:
+        $ref: '#/components/schemas/LessonCompletedPayload'
+    SubscriptionStarted:
+      name: SubscriptionStarted
+      title: 月額契約の開始
+      payload:
+        $ref: '#/components/schemas/SubscriptionStartedPayload'
+
+  schemas:
+    EventId:
+      type: string
+      description: イベント 1 件ごとの一意な id。購読側の重複排除に使う。
+    OccurredAt:
+      type: string
+      format: date-time
+      description: 出来事が発生した時刻。
+    BookingConfirmedPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, booking_id]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        booking_id: { type: string }
+    LessonCompletedPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, lesson_id]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        lesson_id: { type: string }
+    SubscriptionStartedPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, subscription_id]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        subscription_id: { type: string }
