@@ -43,7 +43,9 @@ async fn video_round_trips_through_submit_and_review(pool: PgPool) {
     assert!(
         matches!(
             result,
-            Err(UpdateVideoError::Rejected(DomainError::VideoReviewAlreadyReturned))
+            Err(UpdateVideoError::Rejected(
+                DomainError::VideoReviewAlreadyReturned
+            ))
         ),
         "{result:?}"
     );

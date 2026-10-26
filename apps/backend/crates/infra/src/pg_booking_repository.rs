@@ -200,7 +200,9 @@ impl BookingRepository for PgBookingRepository {
             .await
             .map_err(UpdateBookingError::Unavailable)?
             .ok_or_else(|| {
-                UpdateBookingError::Unavailable(Unavailable::new("予約のスロットが保存されていない"))
+                UpdateBookingError::Unavailable(Unavailable::new(
+                    "予約のスロットが保存されていない",
+                ))
             })?;
         let row: BookingRow =
             sqlx::query_as(select_bookings!("WHERE b.booking_id = $1 FOR UPDATE OF b"))

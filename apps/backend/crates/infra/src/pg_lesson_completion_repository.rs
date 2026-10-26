@@ -71,21 +71,23 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         .map_err(unavailable)?;
         let history: Vec<LessonCompletion> = rows
             .into_iter()
-            .map(|(lesson_id, source_id, coach_id, is_first, completed_at, live)| {
-                let source = if live {
-                    LessonSource::Live(session_id_uuid::from_uuid(source_id))
-                } else {
-                    LessonSource::Async(video_id_uuid::from_uuid(source_id))
-                };
-                LessonCompletion::restore(
-                    lesson_id_uuid::from_uuid(lesson_id),
-                    student_id,
-                    account_id_uuid::from_uuid(coach_id),
-                    source,
-                    completed_at.into(),
-                    is_first,
-                )
-            })
+            .map(
+                |(lesson_id, source_id, coach_id, is_first, completed_at, live)| {
+                    let source = if live {
+                        LessonSource::Live(session_id_uuid::from_uuid(source_id))
+                    } else {
+                        LessonSource::Async(video_id_uuid::from_uuid(source_id))
+                    };
+                    LessonCompletion::restore(
+                        lesson_id_uuid::from_uuid(lesson_id),
+                        student_id,
+                        account_id_uuid::from_uuid(coach_id),
+                        source,
+                        completed_at.into(),
+                        is_first,
+                    )
+                },
+            )
             .collect();
         let completion = record(&history).map_err(RecordCompletionError::Rejected)?;
 

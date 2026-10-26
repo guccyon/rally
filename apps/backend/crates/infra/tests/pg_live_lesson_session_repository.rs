@@ -19,18 +19,28 @@ use support::at;
 async fn session_round_trips_through_start_and_end(pool: PgPool) {
     let sessions = PgLiveLessonSessionRepository::new(pool.clone());
     let booking = support::new_confirmed_booking(&pool).await;
-    let session =
-        LiveLessonSession::start(sessions.next_id(), booking.student_id(), &booking, None, at(10))
-            .unwrap();
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        booking.student_id(),
+        &booking,
+        None,
+        at(10),
+    )
+    .unwrap();
     sessions.insert(session.clone()).await.unwrap();
-    assert_eq!(sessions.find(session.id()).await.unwrap(), Some(session.clone()));
+    assert_eq!(
+        sessions.find(session.id()).await.unwrap(),
+        Some(session.clone())
+    );
     assert_eq!(
         sessions.find_by_booking(booking.id()).await.unwrap(),
         Some(session.clone())
     );
 
     let ended = sessions
-        .update(session.id(), |s| s.end(booking.coach_id(), at(11), support::quality()))
+        .update(session.id(), |s| {
+            s.end(booking.coach_id(), at(11), support::quality())
+        })
         .await
         .unwrap();
     assert_eq!(ended.status(), SessionStatus::Ended);
@@ -39,7 +49,9 @@ async fn session_round_trips_through_start_and_end(pool: PgPool) {
 
     // 終了は 1 回。拒否されたら何も変えない
     let result = sessions
-        .update(session.id(), |s| s.end(booking.coach_id(), at(12), support::quality()))
+        .update(session.id(), |s| {
+            s.end(booking.coach_id(), at(12), support::quality())
+        })
         .await;
     assert!(
         matches!(
@@ -51,7 +63,12 @@ async fn session_round_trips_through_start_and_end(pool: PgPool) {
         "{result:?}"
     );
     assert_eq!(
-        sessions.find(session.id()).await.unwrap().unwrap().ended_at(),
+        sessions
+            .find(session.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .ended_at(),
         Some(at(11))
     );
 }
@@ -62,8 +79,14 @@ async fn a_booking_has_at_most_one_session(pool: PgPool) {
     let sessions = PgLiveLessonSessionRepository::new(pool.clone());
     let booking = support::new_confirmed_booking(&pool).await;
     let start = || {
-        LiveLessonSession::start(sessions.next_id(), booking.student_id(), &booking, None, at(10))
-            .unwrap()
+        LiveLessonSession::start(
+            sessions.next_id(),
+            booking.student_id(),
+            &booking,
+            None,
+            at(10),
+        )
+        .unwrap()
     };
     sessions.insert(start()).await.unwrap();
     let result = sessions.insert(start()).await;

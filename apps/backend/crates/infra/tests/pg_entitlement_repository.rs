@@ -157,10 +157,7 @@ async fn quota_is_two_per_calendar_month_and_released_bookings_free_it(pool: PgP
     consume(&pool, student, booking(), dec10()).await.unwrap();
     assert_eq!(
         quota_rows(&pool).await,
-        [
-            ("2026-11".to_string(), 0, 2),
-            ("2026-12".to_string(), 1, 1)
-        ]
+        [("2026-11".to_string(), 0, 2), ("2026-12".to_string(), 1, 1)]
     );
     let entitlement = PgEntitlementRepository::new(pool.clone())
         .find_by_student(student)
@@ -177,5 +174,8 @@ async fn quota_is_two_per_calendar_month_and_released_bookings_free_it(pool: PgP
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(entitlement_id, entitlement_id_uuid::to_uuid(entitlement.id()));
+    assert_eq!(
+        entitlement_id,
+        entitlement_id_uuid::to_uuid(entitlement.id())
+    );
 }

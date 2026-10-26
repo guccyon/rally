@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 合成シード v0: `cargo run -p seed -- --seed 42`。コーチ 30・生徒 1000・12 ヶ月の履歴（上位 3 コーチに生徒の約半分、初回後 30 日以内の離脱が最多、低品質の通話 約 15%）。各集約の Postgres の保存先もこのとき実装（#57）
 - バックエンドの骨格: Cargo ワークスペースと層（domain / application / infra / interface / server）、依存方向テスト、`GET /healthz`（#19）
 - 契約: student-app の OpenAPI（11 操作、`x-context` 付き）と境界間イベントの AsyncAPI（BookingConfirmed / LessonCompleted / SubscriptionStarted）（#20, #21）
 - DB スキーマの初版（identity / scheduling / entitlement）と expand/contract のマイグレーション基盤（#22）

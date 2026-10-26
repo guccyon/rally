@@ -46,12 +46,17 @@ async fn booking_round_trips_through_confirm_and_cancel(pool: PgPool) {
     let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
 
     let booking = reserve(&bookings, student, &slot, true).await.unwrap();
-    assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(booking.clone()));
+    assert_eq!(
+        bookings.find(booking.id()).await.unwrap(),
+        Some(booking.clone())
+    );
     assert_eq!(booking.starts_at(), at(30));
     assert_eq!(booking.coach_id(), slot.coach_id());
 
     let confirmed = bookings
-        .update(booking.id(), |booking, slot| booking.confirm(student, slot, at(2)))
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))
+        })
         .await
         .unwrap();
     assert_eq!(confirmed.status(), BookingStatus::Confirmed);
@@ -80,7 +85,9 @@ async fn rejected_update_saves_nothing(pool: PgPool) {
 
     let other = support::student(&pool).await;
     let result = bookings
-        .update(booking.id(), |booking, slot| booking.confirm(other, slot, at(2)))
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(other, slot, at(2))
+        })
         .await;
     assert!(result.is_err(), "{result:?}");
     assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(booking));
@@ -99,13 +106,19 @@ async fn double_booking_and_second_trial_are_rejected(pool: PgPool) {
 
     let result = reserve(&bookings, second, &slot, false).await;
     assert!(
-        matches!(result, Err(ReserveSlotError::Rejected(DomainError::SlotAlreadyBooked))),
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(DomainError::SlotAlreadyBooked))
+        ),
         "{result:?}"
     );
     let other_slot = support::open_slot(&pool, coach, 40, 41).await;
     let result = reserve(&bookings, first, &other_slot, true).await;
     assert!(
-        matches!(result, Err(ReserveSlotError::Rejected(DomainError::TrialAlreadyUsed))),
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(DomainError::TrialAlreadyUsed))
+        ),
         "{result:?}"
     );
     let missing = support::open_slot(&pool, coach, 50, 51).await;
@@ -115,7 +128,10 @@ async fn double_booking_and_second_trial_are_rejected(pool: PgPool) {
         .await
         .unwrap();
     let result = reserve(&bookings, first, &missing, false).await;
-    assert!(matches!(result, Err(ReserveSlotError::SlotNotFound)), "{result:?}");
+    assert!(
+        matches!(result, Err(ReserveSlotError::SlotNotFound)),
+        "{result:?}"
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -138,7 +154,11 @@ async fn concurrent_reservations_of_a_slot_save_only_one(pool: PgPool) {
             .collect(),
     )
     .await;
-    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{results:?}");
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduling.bookings")
         .fetch_one(&pool)
         .await
@@ -146,9 +166,7 @@ async fn concurrent_reservations_of_a_slot_save_only_one(pool: PgPool) {
     assert_eq!(count, 1);
 }
 
-async fn join_all<T: std::fmt::Debug>(
-    handles: Vec<tokio::task::JoinHandle<T>>,
-) -> Vec<T> {
+async fn join_all<T: std::fmt::Debug>(handles: Vec<tokio::task::JoinHandle<T>>) -> Vec<T> {
     let mut results = Vec::new();
     for handle in handles {
         results.push(handle.await.unwrap());

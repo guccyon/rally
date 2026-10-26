@@ -15,8 +15,8 @@ use sqlx::{
 };
 
 use crate::{
-    pg_support::{lock, timestamp},
     identity_values::{sport_from_value, sport_value},
+    pg_support::{lock, timestamp},
     scheduling_values::{slot_status_from_value, slot_status_value},
 };
 

@@ -15,9 +15,8 @@ use application::{
         StartLiveLessonSessionCommand,
     },
     scheduling::{
-        CancelBooking, CancelBookingCommand, ConfirmBooking, ConfirmBookingCommand,
-        CreateBooking, CreateBookingCommand, PublishSlot, PublishSlotCommand,
-        SchedulingBookingLookup,
+        CancelBooking, CancelBookingCommand, ConfirmBooking, ConfirmBookingCommand, CreateBooking,
+        CreateBookingCommand, PublishSlot, PublishSlotCommand, SchedulingBookingLookup,
     },
 };
 use domain::{
@@ -82,7 +81,8 @@ where
         let entitlements = PgEntitlementRepository::new(pool.clone());
         let sessions = PgLiveLessonSessionRepository::new(pool.clone());
         let videos = PgVideoRepository::new(pool.clone());
-        let events = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
+        let events =
+            InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
         let video_calls = MockVideoCallProvider::with_seed(plan.seed);
 
         let register = RegisterAccount::new(
@@ -122,8 +122,12 @@ where
             analytics.clone(),
             clock.clone(),
         );
-        let end_call =
-            EndLiveLessonSession::new(sessions.clone(), video_calls, analytics.clone(), clock.clone());
+        let end_call = EndLiveLessonSession::new(
+            sessions.clone(),
+            video_calls,
+            analytics.clone(),
+            clock.clone(),
+        );
         let submit = SubmitVideo::new(
             videos.clone(),
             MockVideoStorage,
@@ -203,9 +207,10 @@ where
                     student_id = Some(account.id());
                     continue;
                 }
-                let student_id =
-                    student_id.ok_or_else(|| SeedError::new(format!("{who}: 登録より前の出来事")))?;
-                let missing = |what: &str| SeedError::new(format!("{who}: {what}がないのに {step:?}"));
+                let student_id = student_id
+                    .ok_or_else(|| SeedError::new(format!("{who}: 登録より前の出来事")))?;
+                let missing =
+                    |what: &str| SeedError::new(format!("{who}: {what}がないのに {step:?}"));
                 match *step {
                     Step::Register { .. } | Step::PublishSlot { .. } => unreachable!("上で扱った"),
                     Step::Book { is_trial, .. } => {

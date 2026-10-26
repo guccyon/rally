@@ -3,8 +3,8 @@
 use application::{
     Unavailable,
     entitlement::{
-        EntitlementRepository, InsertEntitlementError, UpdateEntitlementError,
-        entitlement_id_uuid, subscription_id_uuid,
+        EntitlementRepository, InsertEntitlementError, UpdateEntitlementError, entitlement_id_uuid,
+        subscription_id_uuid,
     },
     identity::account_id_uuid,
     scheduling::booking_id_uuid,
@@ -22,7 +22,9 @@ use sqlx::{
 };
 
 use crate::{
-    entitlement_values::{contract_type_from_value, contract_type_value, subscription_status_value},
+    entitlement_values::{
+        contract_type_from_value, contract_type_value, subscription_status_value,
+    },
     identity_values::{sport_from_value, sport_value},
     pg_support::{lock, month_start, timestamp, year_month},
 };
@@ -244,7 +246,11 @@ impl EntitlementRepository for PgEntitlementRepository {
         .bind(student_id)
         .bind(contract_type_value(entitlement.contract_type()))
         .bind(sport_value(entitlement.sport()))
-        .bind(entitlement.subscription_id().map(subscription_id_uuid::to_uuid))
+        .bind(
+            entitlement
+                .subscription_id()
+                .map(subscription_id_uuid::to_uuid),
+        )
         .bind(entitlement.unlimited_video_and_chat())
         .bind(
             entitlement

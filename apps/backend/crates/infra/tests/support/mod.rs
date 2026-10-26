@@ -96,9 +96,14 @@ pub fn quality() -> ConnectionQuality {
 pub async fn ended_session(pool: &PgPool, ended_at: u64) -> LiveLessonSession {
     let booking = new_confirmed_booking(pool).await;
     let sessions = PgLiveLessonSessionRepository::new(pool.clone());
-    let session =
-        LiveLessonSession::start(sessions.next_id(), booking.student_id(), &booking, None, at(10))
-            .unwrap();
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        booking.student_id(),
+        &booking,
+        None,
+        at(10),
+    )
+    .unwrap();
     sessions.insert(session.clone()).await.unwrap();
     sessions
         .update(session.id(), |session| {

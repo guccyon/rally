@@ -37,7 +37,11 @@ fn command(email: &str, role: Role, sports: Vec<Sport>) -> RegisterAccountComman
 async fn students_and_coaches_are_saved_with_their_sports(pool: PgPool) {
     let use_case = register_account(&pool);
     let student = use_case
-        .execute(command("taro@example.com", Role::Student, vec![Sport::Soccer]))
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Soccer],
+        ))
         .await
         .unwrap();
     let coach = use_case
@@ -87,12 +91,20 @@ async fn students_and_coaches_are_saved_with_their_sports(pool: PgPool) {
 async fn duplicate_email_is_rejected_case_insensitively_and_nothing_is_saved(pool: PgPool) {
     let use_case = register_account(&pool);
     use_case
-        .execute(command("taro@example.com", Role::Student, vec![Sport::Tennis]))
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Tennis],
+        ))
         .await
         .unwrap();
 
     let result = use_case
-        .execute(command("TARO@example.com", Role::Coach, vec![Sport::Tennis]))
+        .execute(command(
+            "TARO@example.com",
+            Role::Coach,
+            vec![Sport::Tennis],
+        ))
         .await;
     assert!(
         matches!(result, Err(RegisterAccountError::EmailAlreadyRegistered)),

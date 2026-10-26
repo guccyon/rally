@@ -946,7 +946,10 @@ async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
         check_values(&pool, "scheduling.bookings", "bookings_status_check").await,
         statuses
     );
-    let contract_types: Vec<&str> = CONTRACT_TYPES.into_iter().map(contract_type_value).collect();
+    let contract_types: Vec<&str> = CONTRACT_TYPES
+        .into_iter()
+        .map(contract_type_value)
+        .collect();
     assert_eq!(
         check_values(
             &pool,

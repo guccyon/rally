@@ -50,7 +50,12 @@ impl SeedPlan {
     /// 上位 3 人のコーチに付く生徒の割合
     pub const TOP_COACH_SHARE: f64 = 0.5;
     /// コーチに配るスポーツ（ゴルフ以外）
-    pub const SPORTS: [Sport; 4] = [Sport::Tennis, Sport::Soccer, Sport::Baseball, Sport::Basketball];
+    pub const SPORTS: [Sport; 4] = [
+        Sport::Tennis,
+        Sport::Soccer,
+        Sport::Baseball,
+        Sport::Basketball,
+    ];
 
     /// 上位 3 人の間の配分（%）
     const TOP_WEIGHTS: [f64; 3] = [45.0, 32.0, 23.0];
@@ -160,7 +165,8 @@ fn registration_times(rng: &mut StdRng, now: i64) -> Vec<i64> {
     strata
         .into_iter()
         .map(|stratum| {
-            let position = (stratum as f64 + rng.random_range(0.0..1.0)) / SeedPlan::STUDENTS as f64;
+            let position =
+                (stratum as f64 + rng.random_range(0.0..1.0)) / SeedPlan::STUDENTS as f64;
             now - history + (position * history as f64) as i64
         })
         .collect()
@@ -275,7 +281,15 @@ impl History {
             // 4 割は体験予約をしてキャンセルし、そのまま離脱する
             if rng.random_bool(0.4) {
                 let cancel = self.cancel_kind(rng);
-                self.live(rng, calendar, &mut steps, end, first_booking, true, Some(cancel));
+                self.live(
+                    rng,
+                    calendar,
+                    &mut steps,
+                    end,
+                    first_booking,
+                    true,
+                    Some(cancel),
+                );
             }
             return sorted(steps);
         }
@@ -349,7 +363,11 @@ impl History {
         // 離脱していない生徒は直近 30 日に必ず何かする（間隔が空いていれば動画を送る）
         if retention == Retention::Active && steps.iter().all(|s| secs(s.at()) < self.window_start)
         {
-            let latest = steps.iter().map(|s| secs(s.at())).max().unwrap_or(registered);
+            let latest = steps
+                .iter()
+                .map(|s| secs(s.at()))
+                .max()
+                .unwrap_or(registered);
             let from = latest.max(self.window_start) + HOUR;
             let submit = rng.random_range(from..self.now);
             self.video(rng, &mut steps, self.now, submit);
@@ -536,7 +554,10 @@ mod tests {
         }
         assert!(!by_sport.contains_key("Golf"));
         assert_eq!(by_sport.len(), 4, "{by_sport:?}");
-        assert!(by_sport.values().all(|n| (7..=8).contains(n)), "{by_sport:?}");
+        assert!(
+            by_sport.values().all(|n| (7..=8).contains(n)),
+            "{by_sport:?}"
+        );
     }
 
     #[test]
@@ -552,8 +573,14 @@ mod tests {
             sorted.sort_unstable_by(|a, b| b.cmp(a));
             assert_eq!(sorted[..3], per_coach[..3], "上位 3 人は先頭の 3 人");
             assert_eq!(sorted[..3].iter().sum::<usize>(), 500);
-            assert!(sorted.iter().all(|n| *n > 0), "全員に生徒がいる: {sorted:?}");
-            assert!(sorted[3] < sorted[2], "裾の先頭は 3 位より少ない: {sorted:?}");
+            assert!(
+                sorted.iter().all(|n| *n > 0),
+                "全員に生徒がいる: {sorted:?}"
+            );
+            assert!(
+                sorted[3] < sorted[2],
+                "裾の先頭は 3 位より少ない: {sorted:?}"
+            );
         }
     }
 
@@ -567,7 +594,10 @@ mod tests {
             assert!((0..days(365)).contains(&age), "{age}");
             per_month[(age * 12 / days(365)) as usize] += 1;
         }
-        assert!(per_month.iter().all(|n| (82..=85).contains(n)), "{per_month:?}");
+        assert!(
+            per_month.iter().all(|n| (82..=85).contains(n)),
+            "{per_month:?}"
+        );
     }
 
     #[test]
@@ -579,9 +609,9 @@ mod tests {
                 .students
                 .iter()
                 .filter(|s| {
-                    s.steps
-                        .iter()
-                        .any(|step| !matches!(step, Step::PublishSlot { .. }) && step.at() >= window_start)
+                    s.steps.iter().any(|step| {
+                        !matches!(step, Step::PublishSlot { .. }) && step.at() >= window_start
+                    })
                 })
                 .count();
             assert_eq!(active, SeedPlan::ACTIVE_STUDENTS, "seed {seed}");
@@ -628,7 +658,10 @@ mod tests {
         }
         for student in &plan.students {
             assert!(student.steps.is_sorted_by_key(Step::at));
-            let registered = student.steps.iter().find(|s| matches!(s, Step::Register { .. }));
+            let registered = student
+                .steps
+                .iter()
+                .find(|s| matches!(s, Step::Register { .. }));
             assert_eq!(registered.map(Step::at), Some(student.registered_at));
         }
     }

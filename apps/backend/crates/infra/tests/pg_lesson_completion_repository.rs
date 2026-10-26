@@ -29,7 +29,13 @@ async fn reviewed_video(pool: &PgPool, student: AccountId, coach: AccountId) -> 
     let review_id = videos.next_review_id();
     videos
         .update(video.id(), |v| {
-            v.return_review(review_id, coach, ReviewComment::new("よい").unwrap(), true, at(2))
+            v.return_review(
+                review_id,
+                coach,
+                ReviewComment::new("よい").unwrap(),
+                true,
+                at(2),
+            )
         })
         .await
         .unwrap()
@@ -44,7 +50,9 @@ async fn first_lesson_spans_live_and_async_completions(pool: PgPool) {
 
     let id = completions.next_id();
     let live = completions
-        .record(student, |history| session.complete(id, student, history, at(12)))
+        .record(student, |history| {
+            session.complete(id, student, history, at(12))
+        })
         .await
         .unwrap();
     assert!(live.is_first_lesson());
@@ -52,7 +60,9 @@ async fn first_lesson_spans_live_and_async_completions(pool: PgPool) {
     let video = reviewed_video(&pool, student, session.coach_id()).await;
     let id = completions.next_id();
     let async_lesson = completions
-        .record(student, |history| video.complete(id, student, history, at(13)))
+        .record(student, |history| {
+            video.complete(id, student, history, at(13))
+        })
         .await
         .unwrap();
     assert_eq!(async_lesson.lesson_type(), LessonType::Async);
@@ -69,7 +79,9 @@ async fn first_lesson_spans_live_and_async_completions(pool: PgPool) {
     assert!(
         matches!(
             result,
-            Err(RecordCompletionError::Rejected(DomainError::LessonAlreadyCompleted))
+            Err(RecordCompletionError::Rejected(
+                DomainError::LessonAlreadyCompleted
+            ))
         ),
         "{result:?}"
     );
@@ -93,8 +105,18 @@ async fn concurrent_first_records_of_a_student_leave_one_first_lesson(pool: PgPo
 
     let (live_id, async_id) = (completions.next_id(), completions.next_id());
     let (live, async_lesson) = tokio::join!(
-        completions.record(student, |history| session.complete(live_id, student, history, at(12))),
-        completions.record(student, |history| video.complete(async_id, student, history, at(12))),
+        completions.record(student, |history| session.complete(
+            live_id,
+            student,
+            history,
+            at(12)
+        )),
+        completions.record(student, |history| video.complete(
+            async_id,
+            student,
+            history,
+            at(12)
+        )),
     );
     let firsts = [live.unwrap(), async_lesson.unwrap()]
         .iter()
