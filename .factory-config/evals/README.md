@@ -10,4 +10,4 @@
 
 | id | Ticket | 対象 | 選好 | 状態 |
 |---|---|---|---|---|
-| 0001 | #1 glossary の骨格 | PR #2（a）vs PR #4（b） | b | builder_candidate（Tetsuro の確認待ち） |
+| 0001 | #1 glossary の骨格 | PR #2（a）vs PR #4（b） | b | confirmed（2026-10-26） |
