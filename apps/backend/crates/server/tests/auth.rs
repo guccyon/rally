@@ -1,4 +1,5 @@
 //! 認証と役割による認可の統合テスト。トークンは infra のモック（`MockTokenService`）で発行・検証する。
+//! 抽出子と層そのものの 401 / 403 / 200 は interface の `tests/auth.rs` が偽の検証器で確かめる。
 //!
 //! Gen1 の契約にはまだ認証必須のエンドポイントの実装がないので、`AuthenticatedAccount` と
 //! `require_role` を使う検査用のルートをこのテストで組み立てる。
@@ -20,8 +21,8 @@ use tower::ServiceExt;
 
 async fn whoami(account: AuthenticatedAccount) -> Json<Value> {
     Json(json!({
-        "account_id": account_id_uuid::format(account.account_id),
-        "role": role_value(account.role),
+        "account_id": account_id_uuid::format(account.account_id()),
+        "role": role_value(account.role()),
     }))
 }
 
