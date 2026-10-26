@@ -7,9 +7,10 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 | パス | 層 | 依存してよいクレート |
 |---|---|---|
 | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件） | なし |
-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`AnalyticsSink`・`Clock`）。ポートのインメモリ実装（`in_memory`） | domain |
-| `crates/infra/` | Postgres（`migrations/`）・モックの外部連携 | domain・application |
-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`） | domain・application（infra は不可） |
+| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`AnalyticsSink`・`Clock`）。ポートのインメモリ実装（`in_memory`） | domain |
+| `crates/infra/` | Postgres（`migrations/`）・モックの外部連携（`MockTokenService`: アクセストークン） | domain・application |
+| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`）・認証（`AuthenticatedAccount`・`require_role`） | domain・application（infra は不可） |
+| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
@@ -37,14 +38,14 @@ cargo test -p infra -- --include-ignored
 ## 起動
 
 ```sh
-cargo run -p interface            # 127.0.0.1:8080 で待ち受ける
-BIND_ADDR=0.0.0.0:3000 cargo run -p interface
+cargo run -p server               # 127.0.0.1:8080 で待ち受ける
+BIND_ADDR=0.0.0.0:3000 cargo run -p server
 curl -i http://127.0.0.1:8080/healthz   # 200 ok
 curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/json' \
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
 ```
 
-ポート（アカウントの保存先・行動トラッキング）は当面 `application::in_memory` のインメモリ実装で組み立てるので、登録したアカウントはプロセスを止めると消える。Postgres の実装は infra に置き、組み立て用のクレートを足すときに差し替える（ADR 0003 の決定 5）。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウントの保存先・行動トラッキングは当面 `application::in_memory` のインメモリ実装なので、登録したアカウントはプロセスを止めると消える。Postgres の実装は infra に置き、`server` で差し替える。
 
 ## identity の不変条件
 
@@ -54,7 +55,14 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
 - スポーツは Blueprint の 5 種類（tennis / golf / baseball / soccer / basketball）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）
 - 表示名は空（空白だけ）でなく 50 文字まで（契約の `maxLength`）。メールアドレスは `@` の前後が空でない最小の形で、一意性は大文字小文字を区別しない
 
-`POST /accounts` の統合テスト（`crates/interface/tests/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。
+`POST /accounts` の統合テスト（`crates/interface/tests/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。トークンは `TokenIssuer` が発行する（このテストではテスト用の偽物）。
+
+## 認証と認可（モック）
+
+- アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`、実装は infra の `MockTokenService` だけ
+- `MockTokenService` は**署名なし**の固定形式 `mock.<役割>.<アカウント ID>` で、誰でも任意の役割のトークンを作れる。Gen1 のローカル起動とテスト用で、本番では署名付きの実装に差し替える。パスワード・外部 IdP・失効は扱わない
+- `POST /accounts` と `GET /healthz` 以外のエンドポイントは認証必須にする。ハンドラーの引数に `interface::AuthenticatedAccount` を取れば、トークンがない・無効なら 401 `unauthorized`（`WWW-Authenticate: Bearer`）。役割で絞るルートは `route_layer(interface::require_role(&[Role::Coach]))` を重ね、役割が合わなければ 403 `forbidden`（admin-web の本部とコーチの同居。ADR 0002 Q3）
+- 401 / 403 / 200 の統合テストは `crates/server/tests/auth.rs`（infra のモックで発行したトークンと、`POST /accounts` が返したトークンを使う）
 
 ## CI で走らせるコマンド
 

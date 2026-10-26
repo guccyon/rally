@@ -5,6 +5,7 @@ members = [
     "crates/application",
     "crates/infra",
     "crates/interface",
+    "crates/server",
     "crates/architecture",
 ]
 
@@ -20,6 +21,7 @@ domain = { path = "crates/domain" }
 application = { path = "crates/application" }
 infra = { path = "crates/infra" }
 interface = { path = "crates/interface" }
+server = { path = "crates/server" }
 
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }

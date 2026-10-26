@@ -8,7 +8,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn healthz_returns_200() {
-    let response = interface::router()
+    let response = server::router()
         .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -22,7 +22,7 @@ async fn healthz_returns_200() {
 async fn healthz_over_tcp_returns_200() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, interface::router()).await });
+    tokio::spawn(async move { axum::serve(listener, server::router()).await });
 
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -41,7 +41,7 @@ async fn healthz_over_tcp_returns_200() {
 
 #[tokio::test]
 async fn unknown_path_returns_404() {
-    let response = interface::router()
+    let response = server::router()
         .oneshot(Request::get("/nope").body(Body::empty()).unwrap())
         .await
         .unwrap();

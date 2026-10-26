@@ -5,7 +5,9 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     analytics::AnalyticsEvent,
-    identity::RegisterAccount,
+    identity::{
+        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
+    },
     in_memory::{FixedClock, InMemoryAccountRepository, RecordingAnalyticsSink},
 };
 use axum::{
@@ -13,7 +15,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::Sport;
+use domain::identity::{Role, Sport};
 use serde_json::{Value, json};
 use serde_yaml::Value as Yaml;
 use tower::ServiceExt;
@@ -26,6 +28,25 @@ const OPENAPI: &str = concat!(
 /// 2026-10-26T00:00:00Z
 const NOW: Duration = Duration::from_secs(1_792_972_800);
 
+/// 発行した内容が読める形のトークン（interface は infra のモックに依存できないので、テスト用に置く）。
+struct FakeTokens;
+
+impl TokenIssuer for FakeTokens {
+    fn issue(&self, claims: TokenClaims) -> AccessToken {
+        AccessToken::new(format!(
+            "fake:{}:{}",
+            claims.role.as_str(),
+            claims.account_id
+        ))
+    }
+}
+
+impl TokenVerifier for FakeTokens {
+    fn verify(&self, _token: &str) -> Result<TokenClaims, InvalidToken> {
+        Err(InvalidToken)
+    }
+}
+
 struct App {
     router: Router,
     analytics: RecordingAnalyticsSink,
@@ -33,11 +54,14 @@ struct App {
 
 fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
-    let router = interface::router_with(RegisterAccount::new(
-        InMemoryAccountRepository::default(),
-        analytics.clone(),
-        FixedClock(SystemTime::UNIX_EPOCH + NOW),
-    ));
+    let router = interface::router_with(
+        RegisterAccount::new(
+            InMemoryAccountRepository::default(),
+            analytics.clone(),
+            FixedClock(SystemTime::UNIX_EPOCH + NOW),
+        ),
+        FakeTokens,
+    );
     App { router, analytics }
 }
 
@@ -169,7 +193,15 @@ async fn registers_a_student_with_the_contract_shape() {
     assert_eq!(student["display_name"], "たろう");
     assert_eq!(student["sport"], "tennis");
     assert_eq!(student["created_at"], "2026-10-26T00:00:00Z");
-    assert!(!body["access_token"].as_str().unwrap().is_empty());
+    assert_eq!(
+        body["access_token"],
+        format!(
+            "fake:{}:{}",
+            Role::Student.as_str(),
+            student["student_id"].as_str().unwrap()
+        ),
+        "トークンは TokenIssuer が生徒の ID と役割で発行する"
+    );
 
     let events = app.analytics.events();
     assert_eq!(events.len(), 1, "account.registered は 1 回だけ発火する");

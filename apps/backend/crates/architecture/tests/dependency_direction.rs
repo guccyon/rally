@@ -14,6 +14,8 @@ const LAYERS: &[(&str, &[&str])] = &[
     ("application", &["domain"]),
     ("infra", &["domain", "application"]),
     ("interface", &["domain", "application"]),
+    // 組み立て用（composition root）。interface に infra の実装を渡す（ADR 0003 の決定 5）
+    ("server", &["domain", "application", "infra", "interface"]),
 ];
 
 /// 層の規約の対象外のクレート（検査そのもの）。ワークスペースの他のクレートに依存しない。

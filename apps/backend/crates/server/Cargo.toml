@@ -1,0 +1,19 @@
+[package]
+name = "server"
+description = "組み立て用のクレート（composition root）。interface に infra のポートの実装を渡し、HTTP サーバーを起動する"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+application.workspace = true
+infra.workspace = true
+interface.workspace = true
+axum.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+domain.workspace = true
+tower.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+serde_json.workspace = true

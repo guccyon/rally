@@ -5,7 +5,10 @@ use std::{sync::Arc, time::SystemTime};
 use application::{
     analytics::AnalyticsSink,
     clock::Clock,
-    identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
+    identity::{
+        AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError,
+        TokenClaims, TokenIssuer,
+    },
 };
 use axum::{
     Json,
@@ -42,8 +45,14 @@ pub struct StudentBody {
     created_at: String,
 }
 
+/// `POST /accounts` のハンドラーが使うユースケースとトークンの発行。
+pub struct AccountsState<R, A, C> {
+    pub register_account: RegisterAccount<R, A, C>,
+    pub tokens: Arc<dyn TokenIssuer>,
+}
+
 pub async fn register_account<R, A, C>(
-    State(use_case): State<Arc<RegisterAccount<R, A, C>>>,
+    State(state): State<Arc<AccountsState<R, A, C>>>,
     request: Result<Json<RegisterAccountRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<RegisterAccountResponse>), ApiError>
 where
@@ -55,7 +64,8 @@ where
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let sport = student_app_sport(&request.sport)?;
 
-    let account = use_case
+    let account = state
+        .register_account
         .execute(RegisterAccountCommand {
             email: request.email,
             display_name: request.display_name,
@@ -73,8 +83,13 @@ where
         })?;
 
     let student = student_body(&account)?;
-    // T06（モックの認証）でトークンの発行・検証のポートに置き換える。
-    let access_token = format!("mock-{}", student.student_id);
+    let access_token = state
+        .tokens
+        .issue(TokenClaims {
+            account_id: account.id(),
+            role: account.role(),
+        })
+        .into_string();
     Ok((
         StatusCode::CREATED,
         Json(RegisterAccountResponse {
