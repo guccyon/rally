@@ -1,0 +1,11 @@
+[package]
+name = "architecture"
+description = "層の依存方向の検査（テストだけのクレート）。docs/adr/0003-backend-layers.md"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+cargo_metadata.workspace = true

@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/domain",
+    "crates/application",
+    "crates/infra",
+    "crates/interface",
+    "crates/architecture",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+# 層の依存方向は docs/adr/0003-backend-layers.md。
+# 許す辺は crates/architecture/tests/dependency_direction.rs の表が正。
+[workspace.dependencies]
+domain = { path = "crates/domain" }
+application = { path = "crates/application" }
+infra = { path = "crates/infra" }
+interface = { path = "crates/interface" }
+
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tower = { version = "0.5", features = ["util"] }
+cargo_metadata = "0.23"

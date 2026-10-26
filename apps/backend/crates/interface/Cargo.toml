@@ -1,0 +1,15 @@
+[package]
+name = "interface"
+description = "インターフェース層。axum の HTTP。application に依存し、infra には直接依存しない"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+application.workspace = true
+axum.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
