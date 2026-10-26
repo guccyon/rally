@@ -1,0 +1,15 @@
+# Golden Set ペア比較 0001（EvalSpec l4-pairwise の形式）
+# 同じ Ticket に対する 2 つの成果物のうち、設計として望ましい方と、その理由を 1 行で残す。
+id: "0001"
+ticket: "github:guccyon/rally#1"
+gate: L4
+rubric_ids: [ARCH-002]           # ドメインの定義を外側（手元の推測）から持ち込まない。用語整合率の対象
+pair:
+  a: { ref: "github:guccyon/rally#2", job: 12, note: "specs/ に前提がない状態でワーカーが推測で定義した" }
+  b: { ref: "github:guccyon/rally#4", job: 13, note: "specs/product-context.md と context-map.yaml を読んでから定義した" }
+preferred: b
+reason: "a は entitlement を『予約のたびに消費』、one_shot を『1 回分の受講権』とし context に未定義の lesson を使った。b は Blueprint の課金 2 種類と不変条件に一致し、context が context-map の id に揃っている"
+polarity: negative_example_is_a   # a が意図せず生まれたアンチパターン（前提の欠落）
+scored_by: builder_candidate      # Claude が起案。Tetsuro の確認で confirmed にする
+scored_at: "2026-10-26"
+lesson: "ワーカーに SSOT を読ませずに定義させると、用語が事業の実態からずれる。前提は specs/ に置き、プロンプトで先に読ませる（factory-engine PR #3）"
