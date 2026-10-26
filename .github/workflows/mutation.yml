@@ -49,6 +49,11 @@ jobs:
       - name: スコアを Job Summary に
         if: steps.diff.outputs.has == 'true'
         run: |
+          if [ ! -d mutants.out ]; then
+            echo "## L2 差分ミューテーション（shadow）" >> "$GITHUB_STEP_SUMMARY"
+            echo "- 変異の対象なし（差分がテストや設定だけ）" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           caught=$(wc -l < mutants.out/caught.txt 2>/dev/null || echo 0)
           missed=$(wc -l < mutants.out/missed.txt 2>/dev/null || echo 0)
           timeout=$(wc -l < mutants.out/timeout.txt 2>/dev/null || echo 0)
@@ -62,6 +67,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.diff.outputs.has == 'true'
         with:
+          if-no-files-found: ignore
           name: mutants-out
           path: apps/backend/mutants.out
           retention-days: 30
