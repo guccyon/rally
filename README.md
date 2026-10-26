@@ -19,6 +19,7 @@
 | `specs/` | SSOT（glossary・context-map・db-schemas・contracts・analytics） | P1 |
 | `apps/` | backend（Rust / axum）・student-app（Flutter）・admin-web（Next.js） | P1 |
 | `docs/adr/` | 設計判断の記録 | 随時 |
+| `docs/plans/` | Phase ごとの実行計画（P1 入口の Walking Skeleton: `p1-walking-skeleton.md`） | Phase 境界 |
 
 ## Blueprint
 
