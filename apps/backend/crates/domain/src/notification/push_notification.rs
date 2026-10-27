@@ -5,11 +5,18 @@ use crate::{
     scheduling::BookingId,
 };
 
-/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）ごとで、受け取る人は [`PushNotification::recipient`]。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）と受け取る側ごとで、受け取る人は
+/// [`PushNotification::recipient`]。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PushNotification {
     /// 予約が確定した（`BookingConfirmed`）ことを生徒に知らせる
     BookingConfirmed {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+    },
+    /// 予約が確定した（`BookingConfirmed`）ことを、予約を受けたコーチに新しい予約として知らせる
+    BookingReceived {
         student_id: AccountId,
         coach_id: AccountId,
         booking_id: BookingId,
@@ -38,6 +45,7 @@ impl PushNotification {
         match *self {
             PushNotification::BookingConfirmed { student_id, .. }
             | PushNotification::VideoReviewReturned { student_id, .. } => student_id,
+            PushNotification::BookingReceived { coach_id, .. } => coach_id,
             PushNotification::MessageReceived {
                 student_id,
                 coach_id,
@@ -66,6 +74,16 @@ mod tests {
             booking_id: BookingId::from_u128(3),
         };
         assert_eq!(notification.recipient(), STUDENT);
+    }
+
+    #[test]
+    fn a_received_booking_goes_to_the_coach() {
+        let notification = PushNotification::BookingReceived {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+        };
+        assert_eq!(notification.recipient(), COACH);
     }
 
     #[test]

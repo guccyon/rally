@@ -2,7 +2,8 @@
 //! （`PushNotificationSubscriber`）が境界間イベント `BookingConfirmed` で送り、scheduling は notification を直接呼ばない。
 //!
 //! 1. 生徒の登録 → コーチが枠を公開 → 生徒が予約（作成だけでは送らない）
-//! 2. 予約の確定 → 生徒に `BookingConfirmed` の通知が 1 件届く（送り先はモック `MockPushSender`）
+//! 2. 予約の確定 → 生徒に `BookingConfirmed`、コーチに `BookingReceived` の通知が 1 件ずつ届く（送り先はモック
+//!    `MockPushSender`）
 //! 3. 予約のキャンセルでは送らない（キャンセルの通知はまだない）
 //!
 //! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
@@ -65,7 +66,7 @@ async fn call(
 }
 
 #[tokio::test]
-async fn confirming_a_booking_pushes_a_notification_to_the_student() {
+async fn confirming_a_booking_pushes_a_notification_to_the_student_and_the_coach() {
     let push = MockPushSender::new();
     let router = server::router_with_push_sender(
         ManualClock::new(oct5()),
@@ -114,7 +115,7 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
     let booking_id = booking["booking_id"].as_str().unwrap();
     assert!(push.sent().is_empty(), "作成では送らない");
 
-    // 2. 確定で生徒に 1 件届く
+    // 2. 確定で生徒とコーチに 1 件ずつ届く
     call(
         &router,
         "POST",
@@ -124,13 +125,28 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
         StatusCode::OK,
     )
     .await;
-    let expected = PushNotification::BookingConfirmed {
-        student_id,
-        coach_id,
-        booking_id: booking_id_uuid::parse(booking_id).unwrap(),
-    };
-    assert_eq!(push.sent(), [expected]);
-    assert_eq!(push.sent()[0].recipient(), student_id);
+    let booking_id = booking_id_uuid::parse(booking_id).unwrap();
+    let expected = [
+        PushNotification::BookingConfirmed {
+            student_id,
+            coach_id,
+            booking_id,
+        },
+        PushNotification::BookingReceived {
+            student_id,
+            coach_id,
+            booking_id,
+        },
+    ];
+    assert_eq!(push.sent(), expected);
+    assert_eq!(
+        push.sent()
+            .iter()
+            .map(PushNotification::recipient)
+            .collect::<Vec<_>>(),
+        [student_id, coach_id]
+    );
+    let booking_id = booking_id_uuid::format(booking_id);
 
     // 3. キャンセルでは送らない
     call(
@@ -142,7 +158,7 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
         StatusCode::OK,
     )
     .await;
-    assert_eq!(push.sent(), [expected], "キャンセルの通知はまだない");
+    assert_eq!(push.sent(), expected, "キャンセルの通知はまだない");
 }
 
 /// 通知の送り先をモックにした組み立てと、コーチ 42 のトークン・登録した生徒（トークンとアカウント）。
@@ -220,7 +236,7 @@ async fn returning_a_video_review_pushes_a_notification_to_the_student() {
 async fn a_sent_message_pushes_a_notification_to_the_other_party() {
     let (router, push, coach_id, coach, student_id, student) = setup().await;
 
-    // 体験予約の確定でスレッドが開く（確定の通知が 1 件）
+    // 体験予約の確定でスレッドが開く（確定の通知が生徒とコーチに 1 件ずつ）
     let slot = call(
         &router,
         "POST",
@@ -262,7 +278,7 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
     .await;
     let thread_id = threads["threads"][0]["thread_id"].as_str().unwrap();
     let messages_path = format!("/message-threads/{thread_id}/messages");
-    assert_eq!(push.sent().len(), 1, "確定の通知だけ");
+    assert_eq!(push.sent().len(), 2, "確定の通知だけ");
 
     let received = |message: &Value, sender| PushNotification::MessageReceived {
         student_id,
@@ -282,8 +298,8 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
         StatusCode::CREATED,
     )
     .await;
-    assert_eq!(push.sent()[1..], [received(&welcome, MessageSender::Coach)]);
-    assert_eq!(push.sent()[1].recipient(), student_id);
+    assert_eq!(push.sent()[2..], [received(&welcome, MessageSender::Coach)]);
+    assert_eq!(push.sent()[2].recipient(), student_id);
 
     // 送れなかった送信（月額契約の前の生徒）では送らない
     call(
@@ -295,7 +311,7 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
         StatusCode::FORBIDDEN,
     )
     .await;
-    assert_eq!(push.sent().len(), 2);
+    assert_eq!(push.sent().len(), 3);
 
     // 月額契約の後、生徒が送るとコーチに届く
     call(
@@ -317,11 +333,11 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
     )
     .await;
     assert_eq!(
-        push.sent()[1..],
+        push.sent()[2..],
         [
             received(&welcome, MessageSender::Coach),
             received(&question, MessageSender::Student),
         ]
     );
-    assert_eq!(push.sent()[2].recipient(), coach_id);
+    assert_eq!(push.sent()[3].recipient(), coach_id);
 }

@@ -6,16 +6,17 @@ use uuid::Uuid;
 use super::PushSender;
 use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 
-/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）と添削の返却（`VideoReviewReturned`）で
-/// 生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を送る
-/// （[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
+/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、添削の返却
+/// （`VideoReviewReturned`）で生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を
+/// 送る（[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
 /// 呼ばない（context-map の向き）。
 ///
-/// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った境界間イベントの `event_id` を
-/// プロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。ほかのイベントは何もしない。
+/// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った通知を境界間イベントの `event_id` と組にして
+/// プロセスのメモリに覚える。1 つのイベントで複数の通知を送るときは通知ごとに覚え、送れなかった通知だけを再送で
+/// 送り直す。ほかのイベントは何もしない。
 pub struct PushNotificationSubscriber<P> {
     sender: P,
-    sent_events: Mutex<HashSet<Uuid>>,
+    sent: Mutex<HashSet<(Uuid, PushNotification)>>,
 }
 
 impl<P> PushNotificationSubscriber<P>
@@ -25,7 +26,7 @@ where
     pub fn new(sender: P) -> Self {
         Self {
             sender,
-            sent_events: Mutex::default(),
+            sent: Mutex::default(),
         }
     }
 
@@ -33,20 +34,25 @@ where
         &self.sender
     }
 
-    /// `event_id` のイベントの通知を一度だけ送る。同じ `event_id` を送っている途中・送った後なら何もしない。
+    /// `event_id` のイベントの通知 `notifications` を、それぞれ一度だけ送る。同じ `event_id` の同じ通知を送っている
+    /// 途中・送った後ならその通知は送らない。1 件が送れなくても残りは送り、送れなかったときは最初の障害を返す。
     async fn send_once(
         &self,
         event_id: Uuid,
-        notification: PushNotification,
+        notifications: &[PushNotification],
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        if !self.sent_events.lock().unwrap().insert(event_id) {
-            return Ok(());
+        let mut first_error = None;
+        for &notification in notifications {
+            let key = (event_id, notification);
+            if !self.sent.lock().unwrap().insert(key) {
+                continue;
+            }
+            if let Err(error) = self.sender.send(notification).await {
+                self.sent.lock().unwrap().remove(&key);
+                first_error.get_or_insert(error);
+            }
         }
-        let result = self.sender.send(notification).await;
-        if result.is_err() {
-            self.sent_events.lock().unwrap().remove(&event_id);
-        }
-        result.map_err(Into::into)
+        first_error.map_or(Ok(()), |error| Err(error.into()))
     }
 }
 
@@ -65,11 +71,18 @@ where
             } => {
                 self.send_once(
                     event_id,
-                    PushNotification::BookingConfirmed {
-                        student_id,
-                        coach_id,
-                        booking_id,
-                    },
+                    &[
+                        PushNotification::BookingConfirmed {
+                            student_id,
+                            coach_id,
+                            booking_id,
+                        },
+                        PushNotification::BookingReceived {
+                            student_id,
+                            coach_id,
+                            booking_id,
+                        },
+                    ],
                 )
                 .await
             }
@@ -83,12 +96,12 @@ where
             } => {
                 self.send_once(
                     event_id,
-                    PushNotification::VideoReviewReturned {
+                    &[PushNotification::VideoReviewReturned {
                         student_id,
                         coach_id,
                         video_id,
                         review_id,
-                    },
+                    }],
                 )
                 .await
             }
@@ -103,13 +116,13 @@ where
             } => {
                 self.send_once(
                     event_id,
-                    PushNotification::MessageReceived {
+                    &[PushNotification::MessageReceived {
                         student_id,
                         coach_id,
                         thread_id,
                         message_id,
                         sender: sender_role,
-                    },
+                    }],
                 )
                 .await
             }
@@ -122,10 +135,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::atomic::{AtomicBool, Ordering},
-        time::{Duration, SystemTime},
-    };
+    use std::time::{Duration, SystemTime};
 
     use domain::{
         async_lesson::{VideoId, VideoReviewId},
@@ -154,7 +164,8 @@ mod tests {
         }
     }
 
-    fn notification(booking: u128) -> PushNotification {
+    /// 予約の確定を生徒に知らせる通知
+    fn to_student(booking: u128) -> PushNotification {
         PushNotification::BookingConfirmed {
             student_id: STUDENT,
             coach_id: COACH,
@@ -162,8 +173,17 @@ mod tests {
         }
     }
 
+    /// 予約の確定をコーチに新しい予約として知らせる通知
+    fn to_coach(booking: u128) -> PushNotification {
+        PushNotification::BookingReceived {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(booking),
+        }
+    }
+
     #[tokio::test]
-    async fn a_confirmed_booking_notifies_the_student_once_per_event() {
+    async fn a_confirmed_booking_notifies_the_student_and_the_coach_once_per_event() {
         let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
         let first = Uuid::new_v4();
         subscriber.handle(&confirmed(first, 1)).await.unwrap();
@@ -176,10 +196,16 @@ mod tests {
         let sent = subscriber.sender().sent();
         assert_eq!(
             sent,
-            [notification(1), notification(2)],
-            "同じイベントの再送では送らない"
+            [to_student(1), to_coach(1), to_student(2), to_coach(2)],
+            "1 イベントで生徒とコーチに 1 件ずつ。同じイベントの再送では送らない"
         );
-        assert_eq!(sent[0].recipient(), STUDENT);
+        assert_eq!(
+            sent[..2]
+                .iter()
+                .map(PushNotification::recipient)
+                .collect::<Vec<_>>(),
+            [STUDENT, COACH]
+        );
     }
 
     #[tokio::test]
@@ -284,16 +310,27 @@ mod tests {
         assert!(subscriber.sender().sent().is_empty());
     }
 
-    /// `down` の間は障害を返し、それ以外は送った通知を記録する送り先。
+    /// `down_for` にあるアカウントへの通知には障害を返し、それ以外は送った通知を記録する送り先。
     #[derive(Default)]
     struct Flaky {
-        down: AtomicBool,
+        down_for: Mutex<HashSet<AccountId>>,
         sent: RecordingPushSender,
+    }
+
+    impl Flaky {
+        fn set_down_for(&self, accounts: &[AccountId]) {
+            *self.down_for.lock().unwrap() = accounts.iter().copied().collect();
+        }
     }
 
     impl PushSender for Flaky {
         async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
-            if self.down.load(Ordering::SeqCst) {
+            if self
+                .down_for
+                .lock()
+                .unwrap()
+                .contains(&notification.recipient())
+            {
                 return Err(Unavailable::new("push gateway is down"));
             }
             self.sent.send(notification).await
@@ -303,13 +340,48 @@ mod tests {
     #[tokio::test]
     async fn a_failed_send_is_retried_when_the_event_comes_again() {
         let subscriber = PushNotificationSubscriber::new(Flaky::default());
-        subscriber.sender().down.store(true, Ordering::SeqCst);
+        subscriber.sender().set_down_for(&[STUDENT, COACH]);
         let event = confirmed(Uuid::new_v4(), 1);
         assert!(subscriber.handle(&event).await.is_err());
         assert!(subscriber.sender().sent.sent().is_empty());
 
-        subscriber.sender().down.store(false, Ordering::SeqCst);
+        subscriber.sender().set_down_for(&[]);
         subscriber.handle(&event).await.unwrap();
-        assert_eq!(subscriber.sender().sent.sent(), [notification(1)]);
+        assert_eq!(
+            subscriber.sender().sent.sent(),
+            [to_student(1), to_coach(1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn only_the_notification_that_failed_is_sent_again() {
+        let subscriber = PushNotificationSubscriber::new(Flaky::default());
+        let event = confirmed(Uuid::new_v4(), 1);
+
+        // 生徒への通知だけ送れない。コーチへの通知は送る
+        subscriber.sender().set_down_for(&[STUDENT]);
+        assert!(subscriber.handle(&event).await.is_err());
+        assert_eq!(subscriber.sender().sent.sent(), [to_coach(1)]);
+
+        // 再送では生徒への通知だけを送り直す
+        subscriber.sender().set_down_for(&[]);
+        subscriber.handle(&event).await.unwrap();
+        subscriber.handle(&event).await.unwrap();
+        assert_eq!(
+            subscriber.sender().sent.sent(),
+            [to_coach(1), to_student(1)],
+            "送れたコーチへの通知は送り直さない"
+        );
+
+        // コーチへの通知だけ送れなかったときも同じ
+        let other = confirmed(Uuid::new_v4(), 2);
+        subscriber.sender().set_down_for(&[COACH]);
+        assert!(subscriber.handle(&other).await.is_err());
+        subscriber.sender().set_down_for(&[]);
+        subscriber.handle(&other).await.unwrap();
+        assert_eq!(
+            subscriber.sender().sent.sent()[2..],
+            [to_student(2), to_coach(2)]
+        );
     }
 }
