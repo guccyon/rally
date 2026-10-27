@@ -21,6 +21,11 @@ export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], s
   ended: "終了",
 };
 
+export const SLOT_SUPPLY_STATUS_LABELS: Record<Schemas["SlotSupplyStatus"], string> = {
+  sufficient: "足りている",
+  insufficient: "足りていない",
+};
+
 /** 契約の date-time を日本時間で表示する。 */
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
