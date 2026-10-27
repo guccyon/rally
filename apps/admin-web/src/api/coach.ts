@@ -27,6 +27,12 @@ export function coachApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listCoachReviews: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/reviews", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
   };
 }
 

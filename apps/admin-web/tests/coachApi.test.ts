@@ -116,4 +116,32 @@ describe("coachApi", () => {
     const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
     expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
+
+  test("listCoachReviews はトークンを付けて GET /api/coaches/{coach_id}/reviews を呼び、返った順のまま返す", async () => {
+    const list = {
+      coach_id: SLOT.coach_id,
+      reviews: [
+        {
+          review_id: "33333333-3333-4333-8333-333333333333",
+          lesson_id: "44444444-4444-4444-8444-444444444444",
+          rating: 4,
+          comment: "分かりやすかった",
+          submitted_at: "2026-10-20T03:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listCoachReviews(SLOT.coach_id);
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${SLOT.coach_id}/reviews`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("他のコーチの評価の一覧（403）は権限の文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.listCoachReviews("99999999-9999-4999-8999-999999999999");
+    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+  });
 });
