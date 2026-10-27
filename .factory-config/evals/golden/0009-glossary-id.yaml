@@ -1,0 +1,15 @@
+# Golden Set ペア比較 0009（EvalSpec l4-pairwise）。lesson の分割（ADR 0006 の回答）
+id: "0009"
+ticket: "github:guccyon/rally#55"
+gate: L4
+rubric_ids: [ARCH-002]
+pair:
+  a: { ref: "github:guccyon/rally#56", note: "マージした PR（元）" }
+  b: { ref: "file:patches/0009-variant.diff", derived_from: "github:guccyon/rally#56", note: "負例（builder が元の PR の差分に 1 つだけ欠陥を入れた）" }
+preferred: a
+confidence: high
+reason: "負例は glossary の新しい語の id を lesson_record にした（ADR・CHANGELOG・コードのコメント・events.yaml は lesson_completion）"
+polarity: one_flawed            # 負例は意図して作ったアンチパターン（evals/README の「負例には意図的なアンチパターンを含める」）
+scored_by: builder_candidate     # 欠陥を入れたのは builder。人が「負例の欠陥が本物か」を確かめたら confirmed にする
+scored_at: "2026-10-28"
+lesson: "用語の SSOT（glossary の id）と、それを参照する文書の食い違いを拾えるか"

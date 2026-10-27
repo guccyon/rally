@@ -1,0 +1,162 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 028f85d..4a1c4ed 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -20,4 +20,5 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ - レッスンの完了記録: `POST /lessons/completions`（通話セッション・動画の当事者だけ。終了した通話セッション（`live_lesson`）または添削が返された動画（`async_lesson`）を指定する。終了前のセッションは 409 `invalid_session_state`、未返却の動画は 409 `invalid_video_state`、2 回目は 409 `lesson_already_completed`）。`is_first_lesson` はその生徒の初回だけ true。`lesson.completed` を発火し、境界間イベント `LessonCompleted` を発行する。student-app の `ErrorCode` に `invalid_video_state` を追加（#39）
+ 
+ ### 変更
++- 契約: `recordLessonCompletion` の `x-context` を `catalog` から `[live-lesson, async-lesson]` に変更し、glossary の lesson を「レッスン種別」と「完了したレッスン（lesson_completion）」に分けた。行動イベント `lesson.completed` も `contexts: [live-lesson, async-lesson]` に（#55）
+ - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）
+diff --git a/apps/backend/crates/domain/src/lesson/mod.rs b/apps/backend/crates/domain/src/lesson/mod.rs
+index e470ab7..4cccb53 100644
+--- a/apps/backend/crates/domain/src/lesson/mod.rs
++++ b/apps/backend/crates/domain/src/lesson/mod.rs
+@@ -1,9 +1,9 @@
+-//! レッスンの完了記録（glossary の lesson）。同期レッスン（live-lesson）と非同期レッスン（async-lesson）が共有する値。
++//! レッスンの完了記録（glossary の lesson_completion）。同期レッスン（live-lesson）と非同期レッスン（async-lesson）が共有する値。
+ //!
+ //! 境界づけられたコンテキストではない（specs/context-map.yaml に足さない）。完了記録（[`LessonCompletion`]）は
+ //! live-lesson の [`crate::live_lesson::LiveLessonSession::complete`] と async-lesson の
+-//! [`crate::async_lesson::Video::complete`] がそれぞれの集約から発行する。glossary の `lesson.context`（catalog）を
+-//! 見直す Question は docs/adr/0006。
++//! [`crate::async_lesson::Video::complete`] がそれぞれの集約から発行する（glossary の `contexts` は
++//! live-lesson と async-lesson の両方。docs/adr/0006）。
+ 
+ mod lesson_completion;
+ mod lesson_id;
+diff --git a/docs/adr/0006-lesson-completion-placement.md b/docs/adr/0006-lesson-completion-placement.md
+index b4954b6..cf27f45 100644
+--- a/docs/adr/0006-lesson-completion-placement.md
++++ b/docs/adr/0006-lesson-completion-placement.md
+@@ -1,12 +1,22 @@
+ # ADR 0006: レッスンの完了記録の置き場所と、glossary の lesson の context を見直す Question
+ 
+-- 状態: 提案（2026-10-26、T14 / Issue #39）。Question は未決（建設者の回答待ち）
+-- 関係: ADR 0002（Gen1 の Question への回答。この ADR の Question はその後継）、ADR 0004（スキーマはコンテキストごと）、`specs/glossary.yaml`（lesson）、`specs/analytics/events.yaml`（lesson.completed）、`specs/contracts/events/asyncapi.yaml`（LessonCompleted）、`specs/contracts/api/student-app/openapi.yaml`（`recordLessonCompletion`）、`.factory-config/evals/golden/0003-analytics-events.yaml`（教訓）
++- 状態: 承認（2026-10-26、建設者が Question に回答。T14b / Issue #55）。提案は 2026-10-26、T14 / Issue #39
++- 関係: ADR 0002（Gen1 の Question への回答。この ADR の Question はその後継）、ADR 0004（スキーマはコンテキストごと）、`specs/glossary.yaml`（lesson / lesson_completion）、`specs/analytics/events.yaml`（lesson.completed）、`specs/contracts/events/asyncapi.yaml`（LessonCompleted）、`specs/contracts/api/student-app/openapi.yaml`（`recordLessonCompletion`）、`.factory-config/evals/golden/0003-analytics-events.yaml`（教訓）
+ 
+ ## Question: glossary の `lesson.context` を catalog のままにするか
+ 
+ glossary は lesson（コーチが生徒に提供する指導の単位）を catalog に置き、events.yaml の `lesson.completed` と student-app の `recordLessonCompletion` の `x-context` もそれに揃えて catalog にしている。しかし catalog の役割は「スポーツ、レッスン種別、コーチの提供メニュー」（context-map）で、完了の事実（誰がいつどのレッスンを受け終えたか）を持つ場所ではなく、Golden Set 0003 でも catalog / scheduling のどちらに置いても据わりが悪いと記録された。T14 では完了記録を live-lesson（通話セッション）と async-lesson（添削を返した動画）のそれぞれの集約から発行し、集約の外に lesson のコンテキストを作らなかった（下の決定）。そこで建設者に問う: **glossary の lesson を「レッスン種別」（catalog）と「完了したレッスン」（live-lesson / async-lesson が発行する事実）に分けるか、lesson.context を live-lesson / async-lesson の両方を指す形に改めるか、catalog のままにするか**。回答が出るまで glossary・events.yaml の `context`・OpenAPI の `x-context` は catalog のまま据え置き、回答に合わせて 3 つを同じ PR で直す。
+ 
++### 回答（建設者、2026-10-26）
++
++**分ける。** glossary の `lesson` は「レッスン種別」（catalog の持ち物。同期 / 非同期の別とスポーツごとの提供メニュー）として残し、完了の事実は新しい語 `lesson_completion`（完了したレッスン）として立てる。`lesson_completion` は live-lesson と async-lesson の両方が発行する事実なので、context は 1 つに決めず両方を列挙する。下の決定 1〜4 はそのまま採用する。
++
++これに合わせて T14b（Issue #55）で次を直した。
++
++- `specs/glossary.yaml`: `lesson` を「レッスン種別」（context: catalog）に改め、`lesson_completion` を `contexts: [live-lesson, async-lesson]` で追加。複数のコンテキストが発行する語だけ `contexts:`（配列）を許し、ほかの項目は `context:`（単数）のまま
++- `specs/analytics/events.yaml`: `lesson.completed` を `contexts: [live-lesson, async-lesson]` に
++- `specs/contracts/api/student-app/openapi.yaml`: `recordLessonCompletion` の `x-context` を `[live-lesson, async-lesson]` に（`x-context` が配列を取れることを `info.description` に明記）
++
+ ## この Issue での決定（Question の回答を待たずに決めたこと）
+ 
+ 1. **完了記録は元の集約が発行する**。domain の `LiveLessonSession::complete`（終了したセッションだけ）と `Video::complete`（添削を返した動画だけ）が `LessonCompletion` を返す。記録できるのは元の集約の当事者（生徒・コーチ）だけ。`LessonCompletion`・`LessonId`・`LessonType`・`LessonSource` は両者が共有する値で、`domain::lesson` に置く（共有カーネル。境界づけられたコンテキストではないので context-map には足さない）
+diff --git a/specs/analytics/events.yaml b/specs/analytics/events.yaml
+index ef4013b..397b521 100644
+--- a/specs/analytics/events.yaml
++++ b/specs/analytics/events.yaml
+@@ -1,7 +1,7 @@
+ # 行動イベントの定義（初版）。Gen1 の一周シナリオ「体験予約 → 初回レッスン（通話 or 動画送付）→ 完了記録」を覆う最小セット。
+ # 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
+ # モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義しない。
+-# 各項目: name（<対象>.<出来事>）・ja・context・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
++# 各項目: name（<対象>.<出来事>）・ja・context（context-map.yaml の id。複数のコンテキストが発行するイベントだけ contexts: で id を列挙する。glossary と同じ規約）・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
+ schema_version: "0.1"
+ status: draft
+ events:
+@@ -64,12 +64,11 @@ events:
+     actor: coach
+     required: [student_id, coach_id, video_id, review_id, submitted_at, occurred_at]
+     kpi: "添削の返却リードタイム"
+-  # レッスンは同期 / 非同期の両方を含むため、glossary の lesson と同じ context（catalog）に置く
+-  # 発火するのは live-lesson / async-lesson の集約が発行した完了記録で、context は glossary の lesson.context を見直す Question（docs/adr/0006）の回答に合わせて直す
++  # 発火するのは live-lesson / async-lesson の集約が発行した完了記録（glossary の lesson_completion）で、contexts はその両方（docs/adr/0006）
+   # lesson_type は live_lesson | async_lesson（student-app の契約の LessonType と同じ）。is_first_lesson はその生徒の完了記録が同期・非同期あわせて 0 件のときだけ true
+   - name: lesson.completed
+     ja: "レッスンの完了記録"
+-    context: catalog
++    contexts: [live-lesson, async-lesson]
+     actor: coach
+     required: [student_id, coach_id, lesson_id, lesson_type, is_first_lesson, occurred_at]
+     kpi: "初回レッスンまでの日数"
+diff --git a/specs/contracts/api/student-app/openapi.yaml b/specs/contracts/api/student-app/openapi.yaml
+index 71850d1..a3c0302 100644
+--- a/specs/contracts/api/student-app/openapi.yaml
++++ b/specs/contracts/api/student-app/openapi.yaml
+@@ -8,7 +8,7 @@ info:
+     実装（P1 Walking Skeleton の段 2〜5）はこの契約に合わせる。
+ 
+     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（booking → Booking など）
+-    - 各操作の `x-context` は `specs/context-map.yaml` の context id
++    - 各操作の `x-context` は `specs/context-map.yaml` の context id。複数のコンテキストが発行する事実を扱う操作だけ id の配列にする（glossary の `contexts` と同じ規約）
+     - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
+     - 外部連携（Stripe / Twilio Video / S3 直接アップロード）は Gen1 ではモックだが、契約は本物と同じ形で書く
+     - 認証はモックのトークンを `bearerAuth` として置く（不透明なトークン。`components.securitySchemes.bearerAuth`）
+@@ -428,8 +428,7 @@ paths:
+       description: |
+         同期レッスン（通話セッション）または非同期レッスン（添削が返却された動画）の完了を記録する。
+         完了記録は live-lesson の通話セッション・async-lesson の動画のそれぞれの集約が発行する（docs/adr/0006）。
+-        `x-context` は glossary の lesson と同じ context（catalog）のままにし、glossary の `lesson.context` を見直す
+-        Question（docs/adr/0006）の回答に合わせて直す。
++        `x-context` は glossary の lesson_completion と同じく live-lesson と async-lesson の両方（docs/adr/0006）。
+         `is_first_lesson` はサーバーが判定する（その生徒の完了記録が同期・非同期あわせて 0 件のときだけ true）。
+         呼べるのは元のセッション・動画の当事者（生徒・コーチ）だけで、それ以外のアカウントとない ID には 404
+         （あることも知らせない）。`session_id` / `video_id` が UUID でない、`lesson_type` に合わない ID を指定したときは 422。
+@@ -437,7 +436,7 @@ paths:
+         同じセッション・動画の 2 回目は 409 `lesson_already_completed`。記録すると行動イベント `lesson.completed` を
+         発火し、境界間イベント `LessonCompleted` を発行する。
+       tags: [catalog]
+-      x-context: catalog
++      x-context: [live-lesson, async-lesson]
+       x-analytics-events: [lesson.completed]
+       requestBody:
+         required: true
+diff --git a/specs/glossary.yaml b/specs/glossary.yaml
+index 3fc1142..3b13b01 100644
+--- a/specs/glossary.yaml
++++ b/specs/glossary.yaml
+@@ -1,5 +1,6 @@
+ # ドメイン用語（Blueprint v0.4 の domain_glossary の骨格）
+ # 前提は product-context.md、context は context-map.yaml の id を使う。用語の網羅は後続の Issue で行う。
++# 各項目の context は 1 つ（context:）。複数のコンテキストが発行する語だけ contexts:（id の配列）で列挙する（docs/adr/0006）。
+ schema_version: "0.1"
+ status: draft
+ terms:
+@@ -12,9 +13,13 @@ terms:
+     definition: "予約枠を公開し、同期レッスンの通話や非同期レッスンの動画添削で生徒を指導する利用者。"
+     context: identity
+   - id: lesson
+-    ja: "レッスン"
+-    definition: "コーチが生徒に提供する指導の単位で、同期レッスンと非同期レッスンの 2 種類がある。"
++    ja: "レッスン種別"
++    definition: "スポーツごとにコーチが提供するレッスンのメニューで、同期レッスンと非同期レッスンの別を持つ。"
+     context: catalog
++  - id: lesson_record
++    ja: "完了したレッスン"
++    definition: "生徒が同期レッスンの通話セッションまたは非同期レッスンの動画添削を受け終えた事実で、元の通話セッション・動画の集約が発行する（docs/adr/0006）。"
++    contexts: [live-lesson, async-lesson]
+   - id: live_lesson
+     ja: "同期レッスン"
+     definition: "ビデオ通話によるマンツーマンのレッスンで、月額契約では暦月 2 回までの枠を消費する。"
+diff --git a/specs/product-context.md b/specs/product-context.md
+index ed98e7f..9d02689 100644
+--- a/specs/product-context.md
++++ b/specs/product-context.md
+@@ -32,13 +32,10 @@ identity / catalog / matching / scheduling / live-lesson / async-lesson / messag
+ - 「受講権（entitlement）」は契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称。月額では予約のたびに消費されるものではない。消費されるのはビデオ通話の月 2 回の枠だけ
+ - 「スロット（slot）」はコーチが公開する予約枠。副業コーチが枠をなかなか開けないことが事業上の課題
+ - 「予約（booking）」はスロットの確保。体験予約もこれ
++- 「レッスン（lesson）」はレッスン種別（catalog）を指し、完了の事実は「完了したレッスン（lesson_completion）」と呼ぶ。完了したレッスンは live-lesson と async-lesson の両方が発行する（docs/adr/0006）
+ 
+ ## Question への回答（2026-10-26、docs/adr/0002）
+ 
+ - 通話品質スコア: `call.ended` の 4 属性（packet_loss_rate / jitter_ms / round_trip_ms / disconnect_count）からの減点式。式はセマンティック層（analytics/kpi.yaml）に 1 か所
+ - キャンセル規定: 判定は scheduling（24 時間前以降か）、消費の実行は entitlement（BookingCancelled の consumes_quota を購読）
+ - コーチ側の最小操作: Gen1 は admin-web に「コーチ」ロールで同居。coach-web / coach-app は契約の枝だけ残す
+-
+-## 未決の Question（docs/adr/0006）
+-
+-- glossary の lesson の context（catalog）の見直し。T14 では完了記録を live-lesson / async-lesson のそれぞれの集約から発行し、lesson のコンテキストは作っていない
