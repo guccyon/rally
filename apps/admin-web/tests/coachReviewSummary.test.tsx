@@ -86,7 +86,7 @@ describe("コーチの評価の件数と平均", () => {
         ok: true,
         data: { coach_id: COACH_ID, review_count: 3, average_rating: 3.67 },
       })
-      .mockResolvedValueOnce({ ok: false, message: "このロールでは実行できない操作です。" });
+      .mockResolvedValueOnce({ ok: false, message: "権限がないためアクセスできません。" });
     const user = userEvent.setup();
     render(<CoachReviewSummaryLookup api={{ getCoachReviewSummary }} description="説明" />);
 
@@ -96,7 +96,7 @@ describe("コーチの評価の件数と平均", () => {
 
     await user.click(screen.getByRole("button", { name: "評価を見る" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("このロールでは実行できない操作です。");
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
   });
 

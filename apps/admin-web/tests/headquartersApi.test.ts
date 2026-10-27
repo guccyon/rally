@@ -45,7 +45,7 @@ describe("headquartersApi", () => {
   test("本部以外のトークン（403）はロールの文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.getSlotSupply();
-    expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
+    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
 
   test("getCoachReviewSummary は指定したコーチの件数と平均を返す（評価が 0 件なら平均は null）", async () => {

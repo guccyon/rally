@@ -114,6 +114,6 @@ describe("coachApi", () => {
   test("他のコーチの評価（403）はロールの文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
-    expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
+    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
 });
