@@ -48,4 +48,6 @@ contracts/
 `.factory-config/manifest.yaml` の `compat.api` と一致させる。
 
 - `min_supported_mobile_version: N-2`: モバイルアプリは最新から 2 つ前の版までを API が支える
-- `deprecation_period_days: 90`: 廃止する API は deprecated にしてから 90 日は残す
+- `deprecation_period_days: 90`: 廃止する API は deprecated にしてから 90 日は残す。deprecated を付けるときは `x-deprecated-at: YYYY-MM-DD`（付けた日）も書く
+
+PR で契約を変えると、CI の `contract-compat`（L1）が base と比べて壊す変更を拾う（factory-engine の `core-gates/compat_check.py`）。拾うのは、操作・チャンネル・メッセージの削除、リクエストへの必須の項目の追加、型の変更、リクエストの enum の値の削除、レスポンス・イベントの項目の削除、必須だった項目を任意にすること。`x-deprecated-at` から 90 日たったものの削除は通す。P1 は shadow（PR は落とさない）
