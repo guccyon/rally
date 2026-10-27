@@ -69,4 +69,13 @@ describe("ロールでの出し分け", () => {
     expect(screen.getByRole("region", { name: "予約の一覧" })).toHaveTextContent("未実装");
     expect(screen.getByRole("region", { name: "完了記録の一覧" })).toHaveTextContent("未実装");
   });
+
+  test("本部の画面から予約枠の需給の画面へ移れる", () => {
+    render(<HeadquartersHome />);
+
+    expect(screen.getByRole("link", { name: "需給を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/slot-supply",
+    );
+  });
 });

@@ -16,7 +16,7 @@ npm run gen:api     # 契約から API の型 src/api/schema.ts を作り直す
 ## API
 
 - 型は契約 `specs/contracts/api/admin-web/openapi.yaml` から `openapi-typescript` で生成した `src/api/schema.ts` だけを使う（手書きの型を置かない）。契約を変えたら `npm run gen:api`。生成物が契約とずれていれば `tests/apiSchema.test.ts` が落ちる
-- 呼び出しは `openapi-fetch`。コーチの操作は `src/api/coach.ts`（operationId と 1 対 1）、契約の `ErrorCode` → 画面の文言は `src/api/errorMessage.ts` の 1 か所
+- 呼び出しは `openapi-fetch`。コーチの操作は `src/api/coach.ts`、本部の操作は `src/api/headquarters.ts`（どちらも operationId と 1 対 1。結果の形と失敗の文言化は `src/api/call.ts`）、契約の `ErrorCode` → 画面の文言は `src/api/errorMessage.ts` の 1 か所
 - ブラウザは同じオリジンの `/api/*` を呼び、`next.config.ts` の rewrites がバックエンドへ中継する。中継先は環境変数 `RALLY_API_URL`（既定 `http://127.0.0.1:8080`。バックエンドの既定の待ち受け）。rewrites は `next build` の時点で決まるので、`next start` で使うときはビルド時に設定する
 
 ## ログインとロール
@@ -29,5 +29,6 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ / 
 | | 動画の添削の返却（動画 ID を入力） | `returnVideoReview` |
 | | 通話への参加（予約 ID で開始、同じセッションを終了。映像はモックなので出さない） | `startLiveLessonSession` / `endLiveLessonSession` |
 | 本部（`/headquarters`） | 予約・完了記録の一覧 | なし（契約に API がないので「未実装」と表示） |
+| 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
 
 自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。
