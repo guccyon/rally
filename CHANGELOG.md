@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部向けのコーチの一覧の API: admin-web の `GET /coaches`（`listCoaches`）がコーチのアカウントの ID と表示名を、表示名の順（コードポイントの順、同じ表示名は ID の順）に返す。本部だけが読め、コーチ・生徒は 403。admin-web の画面はまだない（#113）
 - admin-web にコーチの評価の一覧: コーチの「自分の評価」で、件数と平均の下に `GET /coaches/{coach_id}/reviews` の評価を 1 件ずつ（点・一言・送った時刻、新しい順）出す。0 件なら「まだ評価はありません」。本部の画面は変わらない。API と契約の変更はない（#112）
 - コーチが受けた評価の一覧の API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）が評価の ID・完了したレッスンの ID・点・一言・送った時刻を、送った時刻の新しい順に返す。本部はどのコーチの分も、コーチは自分の分だけ読め、生徒は 403。admin-web の画面はまだない（#111）
 - 添削の返却とメッセージの受信でプッシュ通知（notification の後半）: 境界間イベント `VideoReviewReturned`（async-lesson）と `MessageSent`（messaging）を AsyncAPI に足して発行し、notification が購読して、添削の返却は生徒へ、メッセージは受け手（送り手でない側）へ送る。送り先は Gen1 ではモック。API の変更はない（#100）

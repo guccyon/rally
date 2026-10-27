@@ -75,6 +75,21 @@ impl AccountRepository for InMemoryAccountRepository {
         accounts.push(account);
         Ok(())
     }
+
+    async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
+        let mut coaches: Vec<Account> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.as_coach().is_some())
+            .cloned()
+            .collect();
+        coaches.sort_by(|a, b| {
+            (a.display_name().as_str(), a.id()).cmp(&(b.display_name().as_str(), b.id()))
+        });
+        Ok(coaches)
+    }
 }
 
 /// 発火したイベントを記録する [`AnalyticsSink`]。複製は同じ記録を共有する。

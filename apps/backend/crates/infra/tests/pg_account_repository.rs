@@ -6,7 +6,7 @@
 mod support;
 
 use application::{
-    identity::{RegisterAccount, RegisterAccountCommand, RegisterAccountError},
+    identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
     in_memory::{FixedClock, RecordingAnalyticsSink},
 };
 use domain::identity::{Role, Sport};
@@ -117,4 +117,59 @@ async fn duplicate_email_is_rejected_case_insensitively_and_nothing_is_saved(poo
     .await
     .unwrap();
     assert_eq!(counts, (1, 0));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coaches_are_listed_with_their_sports_in_code_point_order_of_display_names(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let register = |email: &'static str, display_name: &'static str, role, sports| {
+        let use_case = &use_case;
+        async move {
+            use_case
+                .execute(RegisterAccountCommand {
+                    display_name: display_name.to_string(),
+                    ..command(email, role, sports)
+                })
+                .await
+                .unwrap()
+        }
+    };
+    // 照合順序に依らずコードポイントの順（"B" < "a" < "あ"）。同じ表示名は ID の順
+    let hiragana = register("a@example.com", "あ", Role::Coach, vec![Sport::Golf]).await;
+    let lower = register("b@example.com", "a", Role::Coach, vec![Sport::Tennis]).await;
+    let upper = register(
+        "c@example.com",
+        "B",
+        Role::Coach,
+        vec![Sport::Soccer, Sport::Baseball],
+    )
+    .await;
+    let same_1 = register("d@example.com", "あ", Role::Coach, vec![Sport::Tennis]).await;
+    register("e@example.com", "0", Role::Student, vec![Sport::Tennis]).await;
+    register("f@example.com", "1", Role::Headquarters, vec![]).await;
+
+    let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
+    let mut same_name = [hiragana.clone(), same_1.clone()];
+    same_name.sort_by_key(|a| a.id());
+    assert_eq!(
+        coaches,
+        [upper, lower, same_name[0].clone(), same_name[1].clone()]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn no_coaches_is_an_empty_list(pool: PgPool) {
+    register_account(&pool)
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Tennis],
+        ))
+        .await
+        .unwrap();
+
+    let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
+    assert!(coaches.is_empty());
 }

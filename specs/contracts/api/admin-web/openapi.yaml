@@ -37,6 +37,8 @@ tags:
     description: 非同期レッスン（動画添削の返却）
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
+  - name: identity
+    description: アカウント（本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
 
@@ -108,6 +110,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SlotSupplyReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /coaches:
+    get:
+      operationId: listCoaches
+      summary: コーチの一覧（本部）
+      description: |
+        コーチの役割のアカウントをすべて、アカウントの ID と表示名で返す。本部がコーチを選ぶ（評価の件数と平均・一覧を
+        見るなど）のに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+
+        - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
+        - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      responses:
+        "200":
+          description: コーチの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -550,6 +579,32 @@ components:
           description: スポーツ 5 種類すべて（`Sport` の enum の順）
           items:
             $ref: "#/components/schemas/SlotSupply"
+
+    Coach:
+      type: object
+      description: glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ
+      required: [coach_id, display_name]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+          description: コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: アカウントの表示名
+
+    CoachList:
+      type: object
+      description: コーチの一覧（並べ方は `listCoaches` の説明）
+      required: [coaches]
+      properties:
+        coaches:
+          type: array
+          description: 表示名のコードポイントの順（同じ表示名は `coach_id` の順）
+          items:
+            $ref: "#/components/schemas/Coach"
 
     CoachReviewSummary:
       type: object
