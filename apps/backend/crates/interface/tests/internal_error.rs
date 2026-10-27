@@ -19,8 +19,8 @@ use application::{
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
-        SearchSlots,
+        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
+        SchedulingBookingLookup, SearchSlots,
     },
 };
 use axum::{
@@ -82,6 +82,10 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             bookings,
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
+            clock,
+        ),
+        GetSlotSupply::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             clock,
         ),
         StartSubscription::new(

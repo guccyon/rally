@@ -256,6 +256,26 @@ impl BookingRepository for InMemoryBookingRepository {
         *slot = next_slot;
         Ok(next_booking)
     }
+
+    async fn slots_starting_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<(Vec<Slot>, Vec<Booking>), Unavailable> {
+        let slots = self.slots.slots.lock().unwrap();
+        let bookings = self.bookings.lock().unwrap();
+        let found: Vec<Slot> = slots
+            .iter()
+            .filter(|s| from <= s.starts_at() && s.starts_at() < until)
+            .cloned()
+            .collect();
+        let booked = bookings
+            .iter()
+            .filter(|b| found.iter().any(|s| s.id() == b.slot_id()))
+            .cloned()
+            .collect();
+        Ok((found, booked))
+    }
 }
 
 /// 発行したドメインイベントを記録する [`DomainEventPublisher`]。複製は同じ記録を共有する。

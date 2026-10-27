@@ -1,5 +1,7 @@
 //! 予約の保存先（Postgres の `scheduling.bookings` と、予約したスロットの `scheduling.slots`）。
 
+use std::time::SystemTime;
+
 use application::{
     Unavailable,
     identity::account_id_uuid,
@@ -218,6 +220,46 @@ impl BookingRepository for PgBookingRepository {
             .map_err(update_unavailable)?;
         tx.commit().await.map_err(update_unavailable)?;
         Ok(booking)
+    }
+
+    async fn slots_starting_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<(Vec<Slot>, Vec<Booking>), Unavailable> {
+        // 枠と予約を同じスナップショットから読む
+        let mut tx = self.pool.begin().await.map_err(Unavailable::new)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(Unavailable::new)?;
+        let slot_rows: Vec<SlotRow> = sqlx::query_as(
+            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
+             WHERE starts_at >= $1 AND starts_at < $2",
+        )
+        .bind(timestamp(from))
+        .bind(timestamp(until))
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(Unavailable::new)?;
+        let booking_rows: Vec<BookingRow> = sqlx::query_as(select_bookings!(
+            "WHERE s.starts_at >= $1 AND s.starts_at < $2"
+        ))
+        .bind(timestamp(from))
+        .bind(timestamp(until))
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(Unavailable::new)?;
+        tx.commit().await.map_err(Unavailable::new)?;
+        let slots = slot_rows
+            .into_iter()
+            .map(slot_from_row)
+            .collect::<Result<_, _>>()?;
+        let bookings = booking_rows
+            .into_iter()
+            .map(booking_from_row)
+            .collect::<Result<_, _>>()?;
+        Ok((slots, bookings))
     }
 }
 

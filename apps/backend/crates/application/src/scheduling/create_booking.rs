@@ -289,6 +289,14 @@ mod tests {
                 "connection refused",
             )))
         }
+
+        async fn slots_starting_between(
+            &self,
+            _from: SystemTime,
+            _until: SystemTime,
+        ) -> Result<(Vec<Slot>, Vec<Booking>), Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

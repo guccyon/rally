@@ -1,5 +1,5 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
-//! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）。
+//! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -172,4 +172,55 @@ async fn join_all<T: std::fmt::Debug>(handles: Vec<tokio::task::JoinHandle<T>>) 
         results.push(handle.await.unwrap());
     }
     results
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn slots_starting_between_reads_slots_of_any_status_and_their_bookings(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let before = support::open_slot(&pool, coach, 9, 10).await;
+    let start = support::open_slot(&pool, coach, 10, 11).await;
+    let closed = support::open_slot(&pool, coach, 20, 21).await;
+    let end = support::open_slot(&pool, coach, 30, 31).await;
+    let cancelled = reserve(&bookings, first, &start, false).await.unwrap();
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(first, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, second, &start).await;
+    reserve(&bookings, first, &before, false).await.unwrap();
+    reserve(&bookings, second, &end, false).await.unwrap();
+    sqlx::query("UPDATE scheduling.slots SET status = 'closed' WHERE slot_id = $1")
+        .bind(application::scheduling::slot_id_uuid::to_uuid(closed.id()))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // 始まりは含み、終わりは含まない
+    let (mut slots, mut found) = bookings
+        .slots_starting_between(at(10), at(30))
+        .await
+        .unwrap();
+    slots.sort_by_key(Slot::starts_at);
+    found.sort_by_key(|b| b.cancelled_at().is_none());
+    let slot_ids: Vec<_> = slots.iter().map(|s| (s.id(), s.status())).collect();
+    assert_eq!(
+        slot_ids,
+        [
+            (start.id(), SlotStatus::Booked),
+            (closed.id(), SlotStatus::Closed)
+        ]
+    );
+    let booking_ids: Vec<_> = found.iter().map(|b| (b.id(), b.status())).collect();
+    assert_eq!(
+        booking_ids,
+        [
+            (cancelled.id(), BookingStatus::Cancelled),
+            (confirmed.id(), BookingStatus::Confirmed)
+        ]
+    );
 }

@@ -69,6 +69,43 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /slot-supply:
+    get:
+      operationId: getSlotSupply
+      summary: スポーツごとの予約枠の需給（本部）
+      description: |
+        スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`）と、
+        判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
+        呼べる（それ以外は 403）。スポーツは `Sport` の 5 種類すべてを、`Sport` の enum の順で返す。
+
+        判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
+
+        - 期間: 集計した時刻（サーバーの現在時刻）の 30 日前（含む）から集計した時刻（含まない）まで。
+          枠の開始時刻（`starts_at`）がこの期間に入る枠だけを数える（`window_start` / `window_end`）
+        - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
+          コーチが閉じた枠（`closed`）は数えない
+        - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
+          予約を作った生徒の数。予約の状態（未確定・確定・キャンセル）を問わず、同じ生徒は 1 人と数える。
+          スロットの検索は記録していないので数に入らない
+        - 判定: `booking_students >= 1` かつ `booking_students >= published_slots × 0.6` なら `insufficient`、
+          それ以外は `sufficient`（予約しようとした生徒がいなければ、枠が 0 でも `sufficient`）
+
+        行動イベントは発火しない。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: []
+      responses:
+        "200":
+          description: スポーツごとの予約枠の需給
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlotSupplyReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /live-lesson-sessions:
     post:
       operationId: startLiveLessonSession
@@ -273,6 +310,48 @@ components:
           type: string
           format: date-time
           description: 開始より後（期間は終了を含まない）
+
+    SlotSupplyStatus:
+      type: string
+      description: |
+        sufficient: 公開した枠が足りている / insufficient: 足りていない。判定の式は `getSlotSupply` の説明。
+      enum: [sufficient, insufficient]
+
+    SlotSupply:
+      type: object
+      description: スポーツ 1 つの予約枠の需給（期間と数え方は `getSlotSupply` の説明）
+      required: [sport, status, published_slots, booking_students]
+      properties:
+        sport:
+          $ref: "#/components/schemas/Sport"
+        status:
+          $ref: "#/components/schemas/SlotSupplyStatus"
+        published_slots:
+          type: integer
+          minimum: 0
+          description: 期間に開始する、そのスポーツの公開した枠（open / booked）の数
+        booking_students:
+          type: integer
+          minimum: 0
+          description: 期間に開始する、そのスポーツの枠に予約を作った生徒の数（予約の状態を問わない。同じ生徒は 1 人）
+
+    SlotSupplyReport:
+      type: object
+      required: [window_start, window_end, sports]
+      properties:
+        window_start:
+          type: string
+          format: date-time
+          description: 数えた期間の始まり（含む。集計した時刻の 30 日前）
+        window_end:
+          type: string
+          format: date-time
+          description: 数えた期間の終わり（含まない。集計した時刻）
+        sports:
+          type: array
+          description: スポーツ 5 種類すべて（`Sport` の enum の順）
+          items:
+            $ref: "#/components/schemas/SlotSupply"
 
     LiveLessonSessionStatus:
       type: string

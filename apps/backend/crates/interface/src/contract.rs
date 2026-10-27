@@ -12,7 +12,7 @@ use domain::{
     identity::Sport,
     lesson::LessonType,
     live_lesson::SessionStatus,
-    scheduling::{BookingStatus, SlotStatus},
+    scheduling::{BookingStatus, SlotStatus, SlotSupplyStatus},
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -62,6 +62,14 @@ pub(crate) const fn slot_status_to_contract(status: SlotStatus) -> &'static str 
         SlotStatus::Open => "open",
         SlotStatus::Booked => "booked",
         SlotStatus::Closed => "closed",
+    }
+}
+
+/// admin-web の `SlotSupplyStatus` の値。
+pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> &'static str {
+    match status {
+        SlotSupplyStatus::Sufficient => "sufficient",
+        SlotSupplyStatus::Insufficient => "insufficient",
     }
 }
 
