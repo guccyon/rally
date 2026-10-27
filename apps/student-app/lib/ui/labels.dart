@@ -39,3 +39,17 @@ String? readLabel(Message message) =>
     : message.readAt == null
     ? '未読'
     : '既読';
+
+/// レッスンの評価の点（契約では 1〜5）に添える言葉の目安。生徒ごとの評価の基準をそろえるためのもので、
+/// 文言を変えるときはここだけを変える。
+String ratingLabel(int rating) => switch (rating) {
+  1 => '不満だった',
+  2 => '少し物足りなかった',
+  3 => 'ふつう',
+  4 => 'よかった',
+  5 => 'とてもよかった',
+  _ => throw RangeError.range(rating, 1, 5, 'rating'),
+};
+
+/// 点と言葉の目安を合わせた表示。例: `4（よかった）`
+String ratingWithLabel(int rating) => '$rating（${ratingLabel(rating)}）';

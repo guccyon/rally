@@ -48,7 +48,7 @@ void main() {
       'comment': '丁寧でした',
     });
     expect(find.text('評価を送りました'), findsOneWidget);
-    expect(find.text('評価: 4 / 5'), findsOneWidget);
+    expect(find.text('評価: 4（よかった）'), findsOneWidget);
     expect(find.text('一言: 丁寧でした'), findsOneWidget);
     expect(sendButton(), findsNothing);
     expect(find.byType(TextField), findsNothing);
@@ -62,6 +62,65 @@ void main() {
 
     await tapText(tester, '月額契約へ進む');
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+  });
+
+  testWidgets('各点に言葉の目安を添え、選んだ点の言葉を選択肢の下にも出す', (tester) async {
+    await pumpScreen(
+      tester,
+      const LessonReviewScreen(),
+      api: FakeStudentApi(),
+      initial: afterCompletion,
+    );
+
+    const words = {
+      1: '不満だった',
+      2: '少し物足りなかった',
+      3: 'ふつう',
+      4: 'よかった',
+      5: 'とてもよかった',
+    };
+    final choices = find.byType(SegmentedButton<int>);
+    for (final MapEntry(key: rating, value: word) in words.entries) {
+      expect(
+        find.descendant(of: choices, matching: find.text('$rating')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: choices, matching: find.text(word)),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.text(
+        'コーチの指導を 1（不満だった）〜5（とてもよかった） で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('選んだ評価'), findsNothing);
+
+    await tapText(tester, '2');
+    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
+
+    await tapText(tester, 'とてもよかった');
+    expect(find.text('選んだ評価: 5（とてもよかった）'), findsOneWidget);
+    expect(find.textContaining('選んだ評価: 2'), findsNothing);
+  });
+
+  testWidgets('幅の狭い端末でも点の言葉がはみ出さない', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpScreen(
+      tester,
+      const LessonReviewScreen(),
+      api: FakeStudentApi(),
+      initial: afterCompletion,
+    );
+    await tapText(tester, '2');
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
   });
 
   testWidgets('409 lesson_already_reviewed なら文言を出し、評価済みとして入力できなくする', (
