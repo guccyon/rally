@@ -258,6 +258,10 @@ mod tests {
                 "connection refused",
             )))
         }
+
+        async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

@@ -13,7 +13,7 @@ use application::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, RegisterAccount},
+    identity::{AccountRepository, ListCoaches, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
@@ -166,7 +166,7 @@ fn compose<R, S, B, E, L, W, M, X, N, C, A, P>(
     push: P,
 ) -> Router
 where
-    R: AccountRepository + 'static,
+    R: AccountRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
     B: BookingRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
@@ -199,7 +199,8 @@ where
     ));
     let video = MockVideoCallProvider::new();
     interface::router_with(
-        RegisterAccount::new(accounts, analytics.clone(), clock.clone()),
+        RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
+        ListCoaches::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(slots, clock.clone()),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),

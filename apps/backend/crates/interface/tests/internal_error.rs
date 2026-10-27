@@ -44,6 +44,10 @@ impl AccountRepository for BrokenRepository {
     async fn insert(&self, _account: Account) -> Result<(), InsertAccountError> {
         Err(InsertAccountError::Unavailable(Unavailable::new(REASON)))
     }
+
+    async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
 }
 
 struct NoTokens;
@@ -68,6 +72,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
+        application::identity::ListCoaches::new(BrokenRepository),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

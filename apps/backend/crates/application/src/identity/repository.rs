@@ -17,6 +17,9 @@ pub trait AccountRepository: Send + Sync {
         &self,
         account: Account,
     ) -> impl Future<Output = Result<(), InsertAccountError>> + Send;
+
+    /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
+    fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
 }
 
 #[derive(Debug)]

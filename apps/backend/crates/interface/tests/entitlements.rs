@@ -119,6 +119,7 @@ fn router(now: SystemTime) -> Router {
             analytics.clone(),
             clock,
         ),
+        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

@@ -115,6 +115,7 @@ fn app() -> App {
             analytics.clone(),
             clock.clone(),
         ),
+        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(slots, clock.clone()),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),

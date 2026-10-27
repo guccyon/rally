@@ -64,6 +64,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチの一覧（本部）
+         * @description コーチの役割のアカウントをすべて、アカウントの ID と表示名で返す。本部がコーチを選ぶ（評価の件数と平均・一覧を
+         *     見るなど）のに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
+         *     - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listCoaches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/{coach_id}/review-summary": {
         parameters: {
             query?: never;
@@ -336,6 +362,21 @@ export interface components {
             /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
         };
+        /** @description glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ */
+        Coach: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+             */
+            coach_id: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+        };
+        /** @description コーチの一覧（並べ方は `listCoaches` の説明） */
+        CoachList: {
+            /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
+            coaches: components["schemas"]["Coach"][];
+        };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
             /** Format: uuid */
@@ -602,6 +643,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SlotSupplyReport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listCoaches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachList"];
                 };
             };
             401: components["responses"]["Unauthorized"];
