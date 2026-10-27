@@ -1076,6 +1076,29 @@ async fn send_message(
     .await
 }
 
+/// レッスン `lesson_id` に、生徒 `student_id` がコーチ `coach_id` を評価した行を入れる。
+async fn review_lesson(
+    pool: &PgPool,
+    lesson_id: &str,
+    student_id: &str,
+    coach_id: &str,
+    rating: i16,
+    comment: &str,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO review.lesson_reviews (lesson_id, student_id, coach_id, rating, comment, submitted_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, '2026-10-27T16:00:00Z')
+         RETURNING review_id::text",
+    )
+    .bind(lesson_id)
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(rating)
+    .bind(comment)
+    .fetch_one(pool)
+    .await
+}
+
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn a_student_and_a_coach_have_at_most_one_thread_with_the_right_roles(pool: PgPool) {
@@ -1182,5 +1205,58 @@ async fn messages_have_a_body_a_known_sender_and_are_read_after_sent(pool: PgPoo
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (FOREIGN_KEY_VIOLATION, "messages_thread_id_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_lesson_is_reviewed_once_by_a_student_with_one_to_five(pool: PgPool) {
+    const LESSON: &str = "00000000-0000-4000-8000-000000000001";
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+
+    // 点は 1〜5
+    for rating in [0, 6] {
+        let (code, constraint) =
+            violation(review_lesson(&pool, LESSON, &student_id, &coach_id, rating, "よい").await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "lesson_reviews_rating_check"),
+            "{rating}"
+        );
+    }
+    // 空の一言は入らない
+    let (code, constraint) =
+        violation(review_lesson(&pool, LESSON, &student_id, &coach_id, 3, "  ").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "lesson_reviews_comment_check")
+    );
+    // 生徒の欄にコーチ、コーチの欄に生徒は入らない
+    let (code, constraint) =
+        violation(review_lesson(&pool, LESSON, &coach_id, &coach_id, 3, "よい").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_reviews_student_fkey")
+    );
+    let (code, constraint) =
+        violation(review_lesson(&pool, LESSON, &student_id, &student_id, 3, "よい").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_reviews_coach_id_fkey")
+    );
+
+    for rating in [1, 5] {
+        let lesson = format!("00000000-0000-4000-8000-00000000000{rating}");
+        review_lesson(&pool, &lesson, &student_id, &coach_id, rating, "よい")
+            .await
+            .unwrap();
+    }
+    // 同じレッスンの評価は 1 つ
+    let (code, constraint) =
+        violation(review_lesson(&pool, LESSON, &student_id, &coach_id, 4, "もう一度").await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "lesson_reviews_lesson_id_key")
     );
 }

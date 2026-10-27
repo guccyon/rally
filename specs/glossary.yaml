@@ -56,6 +56,10 @@ terms:
     ja: "キャンセル規定"
     definition: "開始 24 時間前以降のキャンセルは回数を消費するという規定で、判定は scheduling、回数の消費の実行は entitlement が行う（docs/adr/0002 Q2）。"
     context: scheduling
+  - id: lesson_review
+    ja: "レッスンの評価"
+    definition: "生徒が完了したレッスン（lesson_completion）1 件につき 1 回だけ付ける 1〜5 の点と一言で、評価されるのはそのレッスンのコーチであり、コーチごとの件数と平均がコーチ品質の指標になる。"
+    context: review
   - id: message_thread
     ja: "スレッド"
     definition: "生徒と担当コーチの 1 対 1 のチャットで、生徒とコーチの組に 1 つあり、Gen1 では予約が確定したときに開く。"

@@ -26,6 +26,7 @@ String errorMessageOf(Object error) {
     ErrorCode.invalidVideoState => '添削がまだ返されていません。',
     ErrorCode.lessonAlreadyCompleted => 'このレッスンの完了はすでに記録されています。',
     ErrorCode.chatNotEntitled => 'チャットは月額契約を始めると使えます。',
+    ErrorCode.lessonAlreadyReviewed => 'このレッスンはすでに評価しています。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }

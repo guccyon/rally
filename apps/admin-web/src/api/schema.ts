@@ -64,6 +64,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/{coach_id}/review-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチの評価の件数と平均（本部・コーチ）
+         * @description コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の件数と、
+         *     点（1〜5）の平均を返す。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
+         *     生徒の役割のトークンは 403。
+         *
+         *     数え方と丸めはここが正本（実装は backend の domain `CoachReviewSummary` の 1 か所）。
+         *
+         *     - `review_count`: そのコーチへの評価の件数（期間で絞らない。これまでのすべて）
+         *     - `average_rating`: 点の平均を小数第 3 位で四捨五入し、小数第 2 位までにした値。評価が 0 件なら null
+         *
+         *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`review_count` は 0、`average_rating` は null。
+         *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
+         */
+        get: operations["getCoachReviewSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -279,6 +309,15 @@ export interface components {
             window_end: string;
             /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
+        };
+        /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
+        CoachReviewSummary: {
+            /** Format: uuid */
+            coach_id: string;
+            /** @description 評価の件数 */
+            review_count: number;
+            /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
+            average_rating: number | null;
         };
         /**
          * @description student-app の LiveLessonSessionStatus と同じ値
@@ -513,6 +552,31 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getCoachReviewSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの評価の件数と平均 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachReviewSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     startLiveLessonSession: {

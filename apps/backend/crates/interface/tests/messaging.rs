@@ -208,6 +208,17 @@ fn app() -> App {
             clock.clone(),
         ),
         MarkMessageThreadRead::new(threads, clock.clone()),
+        application::review::SubmitLessonReview::new(
+            application::lesson::LessonCompletionLookup::new(
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+            ),
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+            analytics.clone(),
+            clock.clone(),
+        ),
+        application::review::GetCoachReviewSummary::new(
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+        ),
         FakeTokens,
     );
     App {

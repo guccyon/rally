@@ -13,6 +13,7 @@ mod lessons;
 mod live_lesson_sessions;
 mod message;
 mod messaging;
+mod reviews;
 mod slot_supply;
 mod slots;
 mod subscriptions;
@@ -37,6 +38,9 @@ use application::{
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         SendMessage,
+    },
+    review::{
+        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
     },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
@@ -66,8 +70,10 @@ pub use error::ApiError;
 /// 確かめる（契約に 403 がない）。`GET /slot-supply`（admin-web のスポーツごとの予約枠の需給）は本部だけ。
 /// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
+/// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
+/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）は本部とコーチで、コーチは自分の分だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
@@ -87,6 +93,8 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, A, P, C, T>(
     list_messages: ListMessages<X>,
     send_message: SendMessage<X, H, A, C>,
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
+    submit_lesson_review: SubmitLessonReview<O, N, A, C>,
+    get_coach_review_summary: GetCoachReviewSummary<N>,
     tokens: T,
 ) -> Router
 where
@@ -104,6 +112,8 @@ where
     M: LessonCompletionRepository + 'static,
     X: MessageThreadRepository + 'static,
     H: ChatGate + 'static,
+    O: CompletedLessonLookup + 'static,
+    N: LessonReviewRepository + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -222,6 +232,21 @@ where
             send_message,
             mark_message_thread_read,
         }));
+    let reviews = Router::new()
+        .route(
+            "/lesson-reviews",
+            post(reviews::submit_lesson_review::<O, N, A, C>)
+                .route_layer(require_role(&[Role::Student])),
+        )
+        .route(
+            "/coaches/{coach_id}/review-summary",
+            get(reviews::get_coach_review_summary::<O, N, A, C>)
+                .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
+        )
+        .with_state(Arc::new(reviews::ReviewsState {
+            submit_lesson_review,
+            get_coach_review_summary,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
@@ -234,6 +259,7 @@ where
         .merge(videos)
         .merge(lessons)
         .merge(messaging)
+        .merge(reviews)
         .layer(auth::TokenVerification::layer(tokens))
 }
 

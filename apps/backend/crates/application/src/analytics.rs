@@ -11,6 +11,7 @@ use domain::{
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
+    review::{LessonReviewId, Rating},
     scheduling::{BookingId, SlotId},
 };
 
@@ -132,6 +133,15 @@ pub enum AnalyticsEvent {
         sender_role: MessageSender,
         occurred_at: SystemTime,
     },
+    /// `review.submitted`（生徒が完了したレッスンに付けた評価）
+    ReviewSubmitted {
+        student_id: AccountId,
+        coach_id: AccountId,
+        lesson_id: LessonId,
+        review_id: LessonReviewId,
+        rating: Rating,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -150,6 +160,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::LessonCompleted { .. } => "lesson.completed",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
             AnalyticsEvent::MessageSent { .. } => "message.sent",
+            AnalyticsEvent::ReviewSubmitted { .. } => "review.submitted",
         }
     }
 }

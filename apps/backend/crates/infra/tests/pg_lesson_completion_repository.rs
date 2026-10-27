@@ -124,3 +124,33 @@ async fn concurrent_first_records_of_a_student_leave_one_first_lesson(pool: PgPo
         .count();
     assert_eq!(firsts, 1);
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn finds_live_and_async_completions_by_their_lesson_id(pool: PgPool) {
+    let completions = PgLessonCompletionRepository::new(pool.clone());
+    let session = support::ended_session(&pool, 11).await;
+    let student = session.student_id();
+    let id = completions.next_id();
+    let live = completions
+        .record(student, |history| {
+            session.complete(id, student, history, at(12))
+        })
+        .await
+        .unwrap();
+    let video = reviewed_video(&pool, student, session.coach_id()).await;
+    let id = completions.next_id();
+    let async_lesson = completions
+        .record(student, |history| {
+            video.complete(id, student, history, at(13))
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(completions.find(live.id()).await.unwrap(), Some(live));
+    assert_eq!(
+        completions.find(async_lesson.id()).await.unwrap(),
+        Some(async_lesson)
+    );
+    assert_eq!(completions.find(completions.next_id()).await.unwrap(), None);
+}

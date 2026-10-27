@@ -13,6 +13,7 @@ use application::{
     lesson::lesson_id_uuid,
     live_lesson::session_id_uuid,
     messaging::{message_id_uuid, message_thread_id_uuid},
+    review::lesson_review_id_uuid,
     scheduling::{booking_id_uuid, slot_id_uuid},
 };
 use domain::lesson::LessonType;
@@ -200,6 +201,21 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
             "thread_id": message_thread_id_uuid::format(*thread_id),
             "message_id": message_id_uuid::format(*message_id),
             "sender_role": message_sender_value(*sender_role),
+            "occurred_at": date_time(*occurred_at)?,
+        }),
+        AnalyticsEvent::ReviewSubmitted {
+            student_id,
+            coach_id,
+            lesson_id,
+            review_id,
+            rating,
+            occurred_at,
+        } => json!({
+            "student_id": account_id_uuid::format(*student_id),
+            "coach_id": account_id_uuid::format(*coach_id),
+            "lesson_id": lesson_id_uuid::format(*lesson_id),
+            "review_id": lesson_review_id_uuid::format(*review_id),
+            "rating": rating.value(),
             "occurred_at": date_time(*occurred_at)?,
         }),
     })

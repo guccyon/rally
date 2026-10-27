@@ -7,6 +7,7 @@ use domain::{
 };
 
 use super::RecordCompletionError;
+use crate::Unavailable;
 
 /// レッスンの完了記録の保存先のポート。実装はテスト・ローカル起動用の
 /// [`crate::in_memory::InMemoryLessonCompletionRepository`]。
@@ -21,6 +22,12 @@ use super::RecordCompletionError;
 pub trait LessonCompletionRepository: Send + Sync {
     /// 新しい完了記録の ID を払い出す。
     fn next_id(&self) -> LessonId;
+
+    /// `lesson_id` の完了記録（同期・非同期のどちらでも）。なければ `None`。
+    fn find(
+        &self,
+        lesson_id: LessonId,
+    ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
 
     /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読み、`record` に渡す。`record` が `Ok` なら
     /// 返した記録を保存して返す。

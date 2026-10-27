@@ -100,6 +100,11 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::MessageReadBeforeSent => "メッセージの既読が送信より前".to_string(),
         DomainError::EmptyMessageBody => "メッセージの本文が空".to_string(),
         DomainError::MessageBodyTooLong { max } => format!("メッセージの本文は {max} 文字まで"),
+        DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
+        DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
+        DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
+        DomainError::NotTheLessonStudent => "完了したレッスンの生徒でない".to_string(),
+        DomainError::LessonAlreadyReviewed => "このレッスンは評価済み".to_string(),
     }
 }
 
@@ -320,6 +325,26 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::MessageBodyTooLong { max: 2000 }),
             "メッセージの本文は 2000 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::RatingOutOfRange { min: 1, max: 5 }),
+            "評価の点は 1〜5 の整数"
+        );
+        assert_eq!(
+            domain_error(&DomainError::EmptyLessonReviewComment),
+            "評価の一言が空"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonReviewCommentTooLong { max: 200 }),
+            "評価の一言は 200 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotTheLessonStudent),
+            "完了したレッスンの生徒でない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonAlreadyReviewed),
+            "このレッスンは評価済み"
         );
     }
 }

@@ -16,16 +16,17 @@ use application::{
     identity::{AccountRepository, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
-        InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
+        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
-    lesson::{LessonCompletionRepository, RecordLessonCompletion},
+    lesson::{LessonCompletionLookup, LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
     messaging::{
         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         MessageThreadSubscriber, SendMessage,
     },
+    review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
@@ -35,8 +36,8 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
     PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
-    PgSlotRepository, PgVideoRepository,
+    PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+    PgMessageThreadRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -69,6 +70,9 @@ pub fn router() -> Router {
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
+/// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
+/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）は同じ保存先から読む。
+///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
@@ -94,6 +98,7 @@ where
             videos: InMemoryVideoRepository::default(),
             completions: InMemoryLessonCompletionRepository::default(),
             threads: InMemoryMessageThreadRepository::default(),
+            reviews: InMemoryLessonReviewRepository::default(),
         },
         clock,
         analytics,
@@ -117,7 +122,8 @@ where
             sessions: PgLiveLessonSessionRepository::new(pool.clone()),
             videos: PgVideoRepository::new(pool.clone()),
             completions: PgLessonCompletionRepository::new(pool.clone()),
-            threads: PgMessageThreadRepository::new(pool),
+            threads: PgMessageThreadRepository::new(pool.clone()),
+            reviews: PgLessonReviewRepository::new(pool),
         },
         clock,
         analytics,
@@ -125,7 +131,7 @@ where
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X> {
+struct Repositories<R, S, B, E, L, W, M, X, N> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -134,11 +140,12 @@ struct Repositories<R, S, B, E, L, W, M, X> {
     videos: W,
     completions: M,
     threads: X,
+    reviews: N,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, C, A>(
-    repositories: Repositories<R, S, B, E, L, W, M, X>,
+fn compose<R, S, B, E, L, W, M, X, N, C, A>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N>,
     clock: C,
     analytics: A,
 ) -> Router
@@ -149,8 +156,9 @@ where
     E: EntitlementRepository + Clone + 'static,
     L: LiveLessonSessionRepository + Clone + 'static,
     W: VideoRepository + Clone + 'static,
-    M: LessonCompletionRepository + 'static,
+    M: LessonCompletionRepository + Clone + 'static,
     X: MessageThreadRepository + Clone + 'static,
+    N: LessonReviewRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
@@ -163,6 +171,7 @@ where
         videos,
         completions,
         threads,
+        reviews,
     } = repositories;
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
@@ -219,7 +228,7 @@ where
         RecordLessonCompletion::new(
             sessions,
             videos,
-            completions,
+            completions.clone(),
             analytics.clone(),
             events,
             clock.clone(),
@@ -229,10 +238,17 @@ where
         SendMessage::new(
             threads.clone(),
             EntitlementChatGate::new(entitlements),
-            analytics,
+            analytics.clone(),
             clock.clone(),
         ),
-        MarkMessageThreadRead::new(threads, clock),
+        MarkMessageThreadRead::new(threads, clock.clone()),
+        SubmitLessonReview::new(
+            LessonCompletionLookup::new(completions),
+            reviews.clone(),
+            analytics,
+            clock,
+        ),
+        GetCoachReviewSummary::new(reviews),
         MockTokenService,
     )
 }

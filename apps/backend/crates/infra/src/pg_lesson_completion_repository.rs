@@ -44,6 +44,28 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         lesson_id_uuid::from_uuid(Uuid::new_v4())
     }
 
+    async fn find(&self, lesson_id: LessonId) -> Result<Option<LessonCompletion>, Unavailable> {
+        let row: Option<(Uuid, Uuid, Uuid, Uuid, bool, OffsetDateTime, bool)> = sqlx::query_as(
+            "SELECT student_id, lesson_id, session_id, coach_id, is_first_lesson, completed_at, true
+             FROM live_lesson.lesson_completions WHERE lesson_id = $1
+             UNION ALL
+             SELECT student_id, lesson_id, video_id, coach_id, is_first_lesson, completed_at, false
+             FROM async_lesson.lesson_completions WHERE lesson_id = $1",
+        )
+        .bind(lesson_id_uuid::to_uuid(lesson_id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        Ok(row.map(
+            |(student_id, lesson_id, source_id, coach_id, is_first, completed_at, live)| {
+                completion_from_row(
+                    account_id_uuid::from_uuid(student_id),
+                    (lesson_id, source_id, coach_id, is_first, completed_at, live),
+                )
+            },
+        ))
+    }
+
     async fn record<F>(
         &self,
         student_id: AccountId,
@@ -71,23 +93,7 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         .map_err(unavailable)?;
         let history: Vec<LessonCompletion> = rows
             .into_iter()
-            .map(
-                |(lesson_id, source_id, coach_id, is_first, completed_at, live)| {
-                    let source = if live {
-                        LessonSource::Live(session_id_uuid::from_uuid(source_id))
-                    } else {
-                        LessonSource::Async(video_id_uuid::from_uuid(source_id))
-                    };
-                    LessonCompletion::restore(
-                        lesson_id_uuid::from_uuid(lesson_id),
-                        student_id,
-                        account_id_uuid::from_uuid(coach_id),
-                        source,
-                        completed_at.into(),
-                        is_first,
-                    )
-                },
-            )
+            .map(|row| completion_from_row(student_id, row))
             .collect();
         let completion = record(&history).map_err(RecordCompletionError::Rejected)?;
 
@@ -118,4 +124,24 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         tx.commit().await.map_err(unavailable)?;
         Ok(completion)
     }
+}
+
+/// 生徒 `student_id` の完了記録の 1 行を組み立てる。
+fn completion_from_row(
+    student_id: AccountId,
+    (lesson_id, source_id, coach_id, is_first, completed_at, live): CompletionRow,
+) -> LessonCompletion {
+    let source = if live {
+        LessonSource::Live(session_id_uuid::from_uuid(source_id))
+    } else {
+        LessonSource::Async(video_id_uuid::from_uuid(source_id))
+    };
+    LessonCompletion::restore(
+        lesson_id_uuid::from_uuid(lesson_id),
+        student_id,
+        account_id_uuid::from_uuid(coach_id),
+        source,
+        completed_at.into(),
+        is_first,
+    )
 }

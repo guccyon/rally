@@ -149,6 +149,17 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             application::in_memory::InMemoryMessageThreadRepository::default(),
             clock,
         ),
+        application::review::SubmitLessonReview::new(
+            application::lesson::LessonCompletionLookup::new(
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+            ),
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        application::review::GetCoachReviewSummary::new(
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+        ),
         NoTokens,
     );
 

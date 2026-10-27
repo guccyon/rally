@@ -35,6 +35,8 @@ tags:
     description: 同期レッスン（通話への参加）
   - name: async-lesson
     description: 非同期レッスン（動画添削の返却）
+  - name: review
+    description: 評価（コーチごとの評価の集計）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
 
@@ -110,6 +112,46 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /coaches/{coach_id}/review-summary:
+    get:
+      operationId: getCoachReviewSummary
+      summary: コーチの評価の件数と平均（本部・コーチ）
+      description: |
+        コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の件数と、
+        点（1〜5）の平均を返す。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
+        生徒の役割のトークンは 403。
+
+        数え方と丸めはここが正本（実装は backend の domain `CoachReviewSummary` の 1 か所）。
+
+        - `review_count`: そのコーチへの評価の件数（期間で絞らない。これまでのすべて）
+        - `average_rating`: 点の平均を小数第 3 位で四捨五入し、小数第 2 位までにした値。評価が 0 件なら null
+
+        `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`review_count` は 0、`average_rating` は null。
+        `coach_id` が UUID でなければ 404。行動イベントは発火しない。
+      tags: [review]
+      x-context: review
+      x-analytics-events: []
+      parameters:
+        - name: coach_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: コーチの評価の件数と平均
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachReviewSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /live-lesson-sessions:
     post:
@@ -472,6 +514,24 @@ components:
           description: スポーツ 5 種類すべて（`Sport` の enum の順）
           items:
             $ref: "#/components/schemas/SlotSupply"
+
+    CoachReviewSummary:
+      type: object
+      description: コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明）
+      required: [coach_id, review_count, average_rating]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        review_count:
+          type: integer
+          minimum: 0
+          description: 評価の件数
+        average_rating:
+          type: [number, "null"]
+          minimum: 1
+          maximum: 5
+          description: 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null
 
     LiveLessonSessionStatus:
       type: string

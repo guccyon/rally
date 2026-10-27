@@ -106,6 +106,16 @@ pub enum DomainError {
     EmptyMessageBody,
     /// メッセージの本文が長すぎる（`max` は文字数）
     MessageBodyTooLong { max: usize },
+    /// 評価の点が `min`〜`max` の整数でない
+    RatingOutOfRange { min: u8, max: u8 },
+    /// 評価の一言が空（空白だけを含む）
+    EmptyLessonReviewComment,
+    /// 評価の一言が長すぎる（`max` は文字数）
+    LessonReviewCommentTooLong { max: usize },
+    /// 完了したレッスンの生徒でないので、そのレッスンを評価できない
+    NotTheLessonStudent,
+    /// そのレッスン（完了したレッスン）の評価はすでに付けてある（評価は 1 回）
+    LessonAlreadyReviewed,
 }
 
 impl fmt::Display for DomainError {

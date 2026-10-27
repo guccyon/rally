@@ -90,6 +90,14 @@ events:
     actor: student
     required: [student_id, subscription_id, sport, occurred_at]
     kpi: "初回レッスン後の 1 ヶ月継続率"
+  # 生徒が完了したレッスン（glossary の lesson_completion）1 件につき 1 回だけ付ける評価（glossary の lesson_review）。
+  # rating は 1〜5 の整数（student-app の契約の LessonReview.rating と同じ）。一言（comment）は自由記述なので行動イベントには載せない
+  - name: review.submitted
+    ja: "レッスンの評価"
+    context: review
+    actor: student
+    required: [student_id, coach_id, lesson_id, review_id, rating, occurred_at]
+    kpi: null
   # 生徒と担当コーチの 1 対 1 のチャット（messaging）。生徒もコーチも送るので、送った側は sender_role（student | coach）に持たせる（actor は代表として student）
   # 月額の生徒はチャットが送り放題で、送信は回数を消費しない。スレッドは予約の確定（境界間イベント BookingConfirmed）で messaging が開く
   - name: message.sent
