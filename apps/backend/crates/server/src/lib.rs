@@ -26,6 +26,7 @@ use application::{
         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         MessageThreadSubscriber, SendMessage,
     },
+    notification::{PushNotificationSubscriber, PushSender},
     review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
@@ -34,8 +35,8 @@ use application::{
 };
 use axum::Router;
 use infra::{
-    InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
-    PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+    InMemoryDomainEventBus, MockPushSender, MockTokenService, MockVideoCallProvider,
+    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
     PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
     PgMessageThreadRepository, PgSlotRepository, PgVideoRepository,
 };
@@ -50,9 +51,10 @@ pub fn router() -> Router {
 /// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。本番では差し替える）で組み立てる。
 ///
 /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
-/// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）につなぐ。予約の確定・キャンセルで
+/// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）、notification の購読（`PushNotificationSubscriber`）につなぐ。予約の確定・キャンセルで
 /// ビデオ通話の暦月の枠が動き、予約の確定は entitlement に枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
 /// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。
+/// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
@@ -87,6 +89,16 @@ where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
+    router_with_push_sender(clock, analytics, MockPushSender::new())
+}
+
+/// [`router_with_analytics`] のプッシュ通知の送り先を `push` に替えたルーター（テストが送った通知を読むのに使う）。
+pub fn router_with_push_sender<C, A, P>(clock: C, analytics: A, push: P) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    P: PushSender + 'static,
+{
     let slots = InMemorySlotRepository::default();
     compose(
         Repositories {
@@ -102,12 +114,13 @@ where
         },
         clock,
         analytics,
+        push,
     )
 }
 
 /// 保存先をすべて infra の Postgres の実装にしたルーター（`pool` はマイグレーション `infra::MIGRATOR` を当てた DB）。
 /// 保存先のほかは [`router_with_analytics`] と同じで、境界間イベントはインメモリのイベントバス、通話基盤・動画の
-/// 保存先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
+/// 保存先・プッシュ通知の送り先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
 pub fn router_with_postgres<C, A>(pool: PgPool, clock: C, analytics: A) -> Router
 where
     C: Clock + Clone + 'static,
@@ -127,6 +140,7 @@ where
         },
         clock,
         analytics,
+        MockPushSender::new(),
     )
 }
 
@@ -144,10 +158,11 @@ struct Repositories<R, S, B, E, L, W, M, X, N> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, C, A>(
+fn compose<R, S, B, E, L, W, M, X, N, C, A, P>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N>,
     clock: C,
     analytics: A,
+    push: P,
 ) -> Router
 where
     R: AccountRepository + 'static,
@@ -161,6 +176,7 @@ where
     N: LessonReviewRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
+    P: PushSender + 'static,
 {
     let Repositories {
         accounts,
@@ -175,7 +191,10 @@ where
     } = repositories;
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
-        MessageThreadSubscriber::new(threads.clone()),
+        (
+            MessageThreadSubscriber::new(threads.clone()),
+            PushNotificationSubscriber::new(push),
+        ),
     ));
     let video = MockVideoCallProvider::new();
     interface::router_with(
