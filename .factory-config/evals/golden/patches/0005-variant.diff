@@ -1,0 +1,768 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index feb2730..174ac84 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- 予約の確定で生徒にプッシュ通知（notification の最小形・前半）: notification が境界間イベント `BookingConfirmed` を購読して送る。送り先の基盤は Gen1 ではモック（送った通知を記録し、標準出力に 1 行書く）。API の変更はない（#91）
+ - レッスンの評価（review の最小形）: 生徒が完了したレッスン 1 件につき 1 回、1〜5 の点と一言を付ける `POST /lesson-reviews`（2 回目は 409 `lesson_already_reviewed`）と、admin-web の本部とコーチ本人がコーチの評価の件数と平均を読む `GET /coaches/{coach_id}/review-summary`。評価で行動イベント `review.submitted` を発火（#92）
+ - 生徒と担当コーチのチャット（messaging の最小形）: student-app と admin-web の `GET /message-threads`・`GET /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/read`。スレッドは予約の確定で生徒とコーチの組に 1 つ開く。月額の生徒は送り放題（回数を消費しない）、月額契約の前の生徒の送信は 403 `chat_not_entitled`。送信時刻と既読を返し、送信で行動イベント `message.sent` を発火（#90）
+ - admin-web の本部の画面に「スポーツ別の予約枠の需給」（`/headquarters/slot-supply`）: `GET /slot-supply` の結果をスポーツごとに「足りている / 足りていない」と、公開した枠の数・予約しようとした生徒の数で一覧にし、集計の期間を出す。本部以外のロールでは入れず、API の 403 はその旨を表示（#85）
+diff --git a/apps/backend/README.md b/apps/backend/README.md
+index d4d7362..0874aee 100644
+--- a/apps/backend/README.md
++++ b/apps/backend/README.md
+@@ -6,9 +6,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス
+ 
+ | パス | 層 | 依存してよいクレート |
+ |---|---|---|
+-| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`・スポーツごとの予約枠の需給 `SlotSupply`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`）・`lesson`（live-lesson と async-lesson が共有するレッスンの完了記録 `LessonCompletion`・`LessonId`・`LessonType`・`LessonSource`。コンテキストではない） | なし |
+-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
+-| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
++| `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`・スポーツごとの予約枠の需給 `SlotSupply`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`）・`lesson`（live-lesson と async-lesson が共有するレッスンの完了記録 `LessonCompletion`・`LessonId`・`LessonType`・`LessonSource`。コンテキストではない）・`notification`（プッシュ通知 `PushNotification`） | なし |
++| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`notification::PushNotificationSubscriber`・`PushSender`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
++| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`MockPushSender`: プッシュ通知の送り先。送った通知を記録して標準出力に書く、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
+ | `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /slot-supply`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
+ | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`）。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
+ | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
+@@ -195,6 +195,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
+ | 契約の `LessonType`（`live_lesson` / `async_lesson`） | `interface` の `contract.rs` |
+ | 完了記録 ID の UUID のテキスト形式 | `application::lesson::lesson_id_uuid` |
+ 
++## notification: 予約の確定でのプッシュ通知（モック）
++
++- 通知のきっかけは境界間イベントの購読だけで、他のコンテキストは notification を直接呼ばない（`specs/context-map.yaml` の向き）。`application::notification::PushNotificationSubscriber` が `BookingConfirmed` を購読し、生徒に `domain::notification::PushNotification::BookingConfirmed`（コーチ・予約の ID を載せる。受け取る人は `recipient()`）を送る。ほかのイベントでは送らない（添削の返却・メッセージの受信・キャンセルの通知はまだない）
++- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> booking_confirmed <予約の ID>` の 1 行で標準出力に書く）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
++- 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った `event_id` をプロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。プロセスを再起動すると忘れる
++- 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
++- テスト: `crates/application/src/notification/push_notification_subscriber.rs`（1 イベント 1 回・ほかのイベントで送らない・失敗後の再送）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒に 1 件、キャンセルでは送らない）
++
+ ## 行動イベントの配信先（モック）と発火の網羅
+ 
+ 行動イベントは `specs/analytics/events.yaml` が正で、KPI の式（セマンティック層）は `specs/analytics/kpi.yaml` の 1 か所に置く。バックエンドは式を持たず、生の属性を発火するだけ。
+diff --git a/apps/backend/crates/application/src/in_memory.rs b/apps/backend/crates/application/src/in_memory.rs
+index 6bd6501..7f2f3c2 100644
+--- a/apps/backend/crates/application/src/in_memory.rs
++++ b/apps/backend/crates/application/src/in_memory.rs
+@@ -14,6 +14,7 @@ use domain::{
+     lesson::{LessonCompletion, LessonId},
+     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+     messaging::{MessageId, MessageThread, MessageThreadId},
++    notification::PushNotification,
+     review::{LessonReview, LessonReviewId},
+     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
+ };
+@@ -39,6 +40,7 @@ use crate::{
+     messaging::{
+         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
+     },
++    notification::PushSender,
+     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
+     scheduling::{
+         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
+@@ -829,3 +831,23 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
+             .collect())
+     }
+ }
++
++/// 送った通知を記録する [`PushSender`]（テスト用）。複製は同じ記録を共有する。
++#[derive(Debug, Clone, Default)]
++pub struct RecordingPushSender {
++    sent: Arc<Mutex<Vec<PushNotification>>>,
++}
++
++impl RecordingPushSender {
++    /// 送った通知（送った順）。
++    pub fn sent(&self) -> Vec<PushNotification> {
++        self.sent.lock().unwrap().clone()
++    }
++}
++
++impl PushSender for RecordingPushSender {
++    async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
++        self.sent.lock().unwrap().push(notification);
++        Ok(())
++    }
++}
+diff --git a/apps/backend/crates/application/src/lib.rs b/apps/backend/crates/application/src/lib.rs
+index 5a2a875..c302e5c 100644
+--- a/apps/backend/crates/application/src/lib.rs
++++ b/apps/backend/crates/application/src/lib.rs
+@@ -12,6 +12,7 @@ pub mod in_memory;
+ pub mod lesson;
+ pub mod live_lesson;
+ pub mod messaging;
++pub mod notification;
+ pub mod review;
+ pub mod scheduling;
+ mod unavailable;
+diff --git a/apps/backend/crates/application/src/notification/mod.rs b/apps/backend/crates/application/src/notification/mod.rs
+new file mode 100644
+index 0000000..60d75a7
+--- /dev/null
++++ b/apps/backend/crates/application/src/notification/mod.rs
+@@ -0,0 +1,7 @@
++//! notification のユースケースとポート。
++
++mod push_notification_subscriber;
++mod push_sender;
++
++pub use push_notification_subscriber::PushNotificationSubscriber;
++pub use push_sender::PushSender;
+diff --git a/apps/backend/crates/application/src/notification/push_notification_subscriber.rs b/apps/backend/crates/application/src/notification/push_notification_subscriber.rs
+new file mode 100644
+index 0000000..e983302
+--- /dev/null
++++ b/apps/backend/crates/application/src/notification/push_notification_subscriber.rs
+@@ -0,0 +1,184 @@
++use std::{collections::HashSet, error::Error, sync::Mutex};
++
++use domain::notification::PushNotification;
++use uuid::Uuid;
++
++use super::PushSender;
++use crate::domain_event::{DomainEvent, DomainEventSubscriber};
++
++/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で、生徒にプッシュ通知を送る
++/// （[`PushNotification::BookingConfirmed`]）。scheduling は notification を直接呼ばない（context-map の向き）。
++///
++/// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った境界間イベントの `event_id` を
++/// プロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。ほかのイベントは何もしない。
++pub struct PushNotificationSubscriber<P> {
++    sender: P,
++    sent_events: Mutex<HashSet<Uuid>>,
++}
++
++impl<P> PushNotificationSubscriber<P>
++where
++    P: PushSender,
++{
++    pub fn new(sender: P) -> Self {
++        Self {
++            sender,
++            sent_events: Mutex::default(),
++        }
++    }
++
++    pub fn sender(&self) -> &P {
++        &self.sender
++    }
++
++    /// `event_id` のイベントの通知を一度だけ送る。同じ `event_id` を送っている途中・送った後なら何もしない。
++    async fn send_once(
++        &self,
++        event_id: Uuid,
++        notification: PushNotification,
++    ) -> Result<(), Box<dyn Error + Send + Sync>> {
++        if !self.sent_events.lock().unwrap().insert(event_id) {
++            return Ok(());
++        }
++        let result = self.sender.send(notification).await;
++        if result.is_err() {
++            self.sent_events.lock().unwrap().remove(&event_id);
++        }
++        result.map_err(Into::into)
++    }
++}
++
++impl<P> DomainEventSubscriber for PushNotificationSubscriber<P>
++where
++    P: PushSender,
++{
++    async fn handle(&self, event: &DomainEvent) -> Result<(), Box<dyn Error + Send + Sync>> {
++        match *event {
++            DomainEvent::BookingConfirmed {
++                event_id,
++                student_id,
++                coach_id,
++                booking_id,
++                ..
++            } => {
++                self.send_once(
++                    event_id,
++                    PushNotification::BookingConfirmed {
++                        student_id,
++                        coach_id,
++                        booking_id,
++                    },
++                )
++                .await
++            }
++            DomainEvent::BookingCancelled { .. }
++            | DomainEvent::LessonCompleted { .. }
++            | DomainEvent::SubscriptionStarted { .. } => Ok(()),
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use std::{
++        sync::atomic::{AtomicBool, Ordering},
++        time::{Duration, SystemTime},
++    };
++
++    use domain::{identity::AccountId, scheduling::BookingId};
++
++    use super::*;
++    use crate::{Unavailable, in_memory::RecordingPushSender};
++
++    const STUDENT: AccountId = AccountId::from_u128(1);
++    const COACH: AccountId = AccountId::from_u128(9);
++
++    fn oct26() -> SystemTime {
++        SystemTime::UNIX_EPOCH + Duration::from_secs(1_792_972_800)
++    }
++
++    fn confirmed(event_id: Uuid, booking: u128) -> DomainEvent {
++        DomainEvent::BookingConfirmed {
++            event_id,
++            occurred_at: oct26(),
++            student_id: STUDENT,
++            coach_id: COACH,
++            booking_id: BookingId::from_u128(booking),
++        }
++    }
++
++    fn notification(booking: u128) -> PushNotification {
++        PushNotification::BookingConfirmed {
++            student_id: STUDENT,
++            coach_id: COACH,
++            booking_id: BookingId::from_u128(booking),
++        }
++    }
++
++    #[tokio::test]
++    async fn a_confirmed_booking_notifies_the_student_once_per_event() {
++        let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
++        let first = Uuid::new_v4();
++        subscriber.handle(&confirmed(first, 1)).await.unwrap();
++        subscriber.handle(&confirmed(first, 1)).await.unwrap();
++        subscriber
++            .handle(&confirmed(Uuid::new_v4(), 2))
++            .await
++            .unwrap();
++
++        let sent = subscriber.sender().sent();
++        assert_eq!(
++            sent,
++            [notification(1), notification(2)],
++            "同じイベントの再送では送らない"
++        );
++        assert_eq!(sent[0].recipient(), STUDENT);
++    }
++
++    #[tokio::test]
++    async fn other_events_send_nothing() {
++        let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
++        subscriber
++            .handle(&DomainEvent::BookingCancelled {
++                event_id: Uuid::new_v4(),
++                occurred_at: oct26(),
++                student_id: STUDENT,
++                coach_id: COACH,
++                booking_id: BookingId::from_u128(1),
++                consumes_quota: false,
++                cancelled_at: oct26(),
++            })
++            .await
++            .unwrap();
++        assert!(subscriber.sender().sent().is_empty());
++    }
++
++    /// `down` の間は障害を返し、それ以外は送った通知を記録する送り先。
++    #[derive(Default)]
++    struct Flaky {
++        down: AtomicBool,
++        sent: RecordingPushSender,
++    }
++
++    impl PushSender for Flaky {
++        async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
++            if self.down.load(Ordering::SeqCst) {
++                return Err(Unavailable::new("push gateway is down"));
++            }
++            self.sent.send(notification).await
++        }
++    }
++
++    #[tokio::test]
++    async fn a_failed_send_is_retried_when_the_event_comes_again() {
++        let subscriber = PushNotificationSubscriber::new(Flaky::default());
++        subscriber.sender().down.store(true, Ordering::SeqCst);
++        let event = confirmed(Uuid::new_v4(), 1);
++        assert!(subscriber.handle(&event).await.is_err());
++        assert!(subscriber.sender().sent.sent().is_empty());
++
++        subscriber.sender().down.store(false, Ordering::SeqCst);
++        subscriber.handle(&event).await.unwrap();
++        assert_eq!(subscriber.sender().sent.sent(), [notification(1)]);
++    }
++}
+diff --git a/apps/backend/crates/application/src/notification/push_sender.rs b/apps/backend/crates/application/src/notification/push_sender.rs
+new file mode 100644
+index 0000000..c5b543f
+--- /dev/null
++++ b/apps/backend/crates/application/src/notification/push_sender.rs
+@@ -0,0 +1,18 @@
++use std::future::Future;
++
++use domain::notification::PushNotification;
++
++use crate::Unavailable;
++
++/// プッシュ通知の送り先の基盤（SNS / Pusher 相当）のポート。送り先の端末は受け取るアカウント
++/// （[`PushNotification::recipient`]）で指し、端末の登録は基盤が持つ。
++///
++/// Gen1 の実装は infra のモック（`MockPushSender`。送った通知を記録し、標準出力に書く）と、テスト用の
++/// [`crate::in_memory::RecordingPushSender`]。
++pub trait PushSender: Send + Sync {
++    /// 通知 `notification` を送る。基盤に渡せなければ障害を返す。
++    fn send(
++        &self,
++        notification: PushNotification,
++    ) -> impl Future<Output = Result<(), Unavailable>> + Send;
++}
+diff --git a/apps/backend/crates/domain/src/lib.rs b/apps/backend/crates/domain/src/lib.rs
+index a25cc34..e7d789b 100644
+--- a/apps/backend/crates/domain/src/lib.rs
++++ b/apps/backend/crates/domain/src/lib.rs
+@@ -10,6 +10,7 @@ pub mod identity;
+ pub mod lesson;
+ pub mod live_lesson;
+ pub mod messaging;
++pub mod notification;
+ pub mod review;
+ pub mod scheduling;
+ 
+diff --git a/apps/backend/crates/domain/src/notification/mod.rs b/apps/backend/crates/domain/src/notification/mod.rs
+new file mode 100644
+index 0000000..aae7573
+--- /dev/null
++++ b/apps/backend/crates/domain/src/notification/mod.rs
+@@ -0,0 +1,9 @@
++//! notification: 通知（specs/context-map.yaml）。
++//!
++//! 生徒・コーチへのプッシュ通知（[`PushNotification`]）。送るきっかけは境界間イベントで、notification は
++//! 他のコンテキストから直接呼ばれない。Gen1 は保存せず、送るだけ（送り先の基盤はモック）。表示する文言は
++//! 境界のアダプタが決める。
++
++mod push_notification;
++
++pub use push_notification::PushNotification;
+diff --git a/apps/backend/crates/domain/src/notification/push_notification.rs b/apps/backend/crates/domain/src/notification/push_notification.rs
+new file mode 100644
+index 0000000..84e8e07
+--- /dev/null
++++ b/apps/backend/crates/domain/src/notification/push_notification.rs
+@@ -0,0 +1,36 @@
++use crate::{identity::AccountId, scheduling::BookingId};
++
++/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）ごとで、受け取る人は [`PushNotification::recipient`]。
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum PushNotification {
++    /// 予約が確定した（`BookingConfirmed`）ことを生徒に知らせる
++    BookingConfirmed {
++        student_id: AccountId,
++        coach_id: AccountId,
++        booking_id: BookingId,
++    },
++}
++
++impl PushNotification {
++    /// 通知を受け取るアカウント。
++    pub const fn recipient(&self) -> AccountId {
++        match *self {
++            PushNotification::BookingConfirmed { coach_id, .. } => coach_id,
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn a_confirmed_booking_goes_to_the_student() {
++        let notification = PushNotification::BookingConfirmed {
++            student_id: AccountId::from_u128(1),
++            coach_id: AccountId::from_u128(9),
++            booking_id: BookingId::from_u128(3),
++        };
++        assert_eq!(notification.recipient(), AccountId::from_u128(9));
++    }
++}
+diff --git a/apps/backend/crates/infra/src/lib.rs b/apps/backend/crates/infra/src/lib.rs
+index a1ed2ed..4c28f95 100644
+--- a/apps/backend/crates/infra/src/lib.rs
++++ b/apps/backend/crates/infra/src/lib.rs
+@@ -1,4 +1,4 @@
+-//! インフラ層。application のポートを Postgres とモックの外部連携（トークン・境界間イベント・通話基盤・動画の保存先・行動トラッキング）で実装する。
++//! インフラ層。application のポートを Postgres とモックの外部連携（トークン・境界間イベント・通話基盤・動画の保存先・プッシュ通知・行動トラッキング）で実装する。
+ //!
+ //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
+ 
+@@ -11,6 +11,7 @@ pub mod identity_values;
+ mod in_memory_domain_event_bus;
+ mod logging_domain_event_publisher;
+ pub mod messaging_values;
++mod mock_push_sender;
+ mod mock_token;
+ mod mock_video_call_provider;
+ mod mock_video_storage;
+@@ -31,6 +32,7 @@ pub use analytics_common_attributes::AnalyticsCommonAttributes;
+ pub use analytics_destination::AnalyticsDestination;
+ pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
+ pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
++pub use mock_push_sender::MockPushSender;
+ pub use mock_token::MockTokenService;
+ pub use mock_video_call_provider::MockVideoCallProvider;
+ pub use mock_video_storage::MockVideoStorage;
+diff --git a/apps/backend/crates/infra/src/mock_push_sender.rs b/apps/backend/crates/infra/src/mock_push_sender.rs
+new file mode 100644
+index 0000000..03afd58
+--- /dev/null
++++ b/apps/backend/crates/infra/src/mock_push_sender.rs
+@@ -0,0 +1,46 @@
++//! プッシュ通知の送り先の基盤（SNS / Pusher 相当）のモック（Gen1 の外部連携はすべてモック）。
++
++use std::sync::{Arc, Mutex};
++
++use application::{
++    Unavailable, identity::account_id_uuid, notification::PushSender, scheduling::booking_id_uuid,
++};
++use domain::notification::PushNotification;
++
++/// [`PushSender`] のモック。実際の端末には届けず、送った通知を記録して（[`MockPushSender::sent`]）、
++/// `push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。
++/// 記録はプロセスのメモリにだけ持ち、複製は同じ記録を共有する。
++#[derive(Debug, Clone, Default)]
++pub struct MockPushSender {
++    sent: Arc<Mutex<Vec<PushNotification>>>,
++}
++
++impl MockPushSender {
++    pub fn new() -> Self {
++        Self::default()
++    }
++
++    /// 送った通知（送った順）。
++    pub fn sent(&self) -> Vec<PushNotification> {
++        self.sent.lock().unwrap().clone()
++    }
++
++    /// 標準出力に書く 1 行。
++    pub fn line(notification: &PushNotification) -> String {
++        let recipient = account_id_uuid::format(notification.recipient());
++        match *notification {
++            PushNotification::BookingConfirmed { booking_id, .. } => format!(
++                "push_notification {recipient} booking_confirmed {}",
++                booking_id_uuid::format(booking_id)
++            ),
++        }
++    }
++}
++
++impl PushSender for MockPushSender {
++    async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
++        println!("{}", Self::line(&notification));
++        self.sent.lock().unwrap().push(notification);
++        Ok(())
++    }
++}
+diff --git a/apps/backend/crates/infra/tests/mock_push_sender.rs b/apps/backend/crates/infra/tests/mock_push_sender.rs
+new file mode 100644
+index 0000000..d5aacd2
+--- /dev/null
++++ b/apps/backend/crates/infra/tests/mock_push_sender.rs
+@@ -0,0 +1,34 @@
++//! プッシュ通知の送り先のモック（`MockPushSender`）の検査。送った通知を送った順に記録し、複製と共有することと、
++//! 標準出力に書く 1 行の形を確かめる。
++
++use application::notification::PushSender;
++use domain::{identity::AccountId, notification::PushNotification, scheduling::BookingId};
++use infra::MockPushSender;
++
++fn confirmed(booking: u128) -> PushNotification {
++    PushNotification::BookingConfirmed {
++        student_id: AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
++        coach_id: AccountId::from_u128(9),
++        booking_id: BookingId::from_u128(booking),
++    }
++}
++
++#[tokio::test]
++async fn records_sent_notifications_in_order_and_shares_them_with_clones() {
++    let sender = MockPushSender::new();
++    let clone = sender.clone();
++    assert!(sender.sent().is_empty());
++    clone.send(confirmed(1)).await.unwrap();
++    sender.send(confirmed(2)).await.unwrap();
++    assert_eq!(sender.sent(), [confirmed(1), confirmed(2)]);
++    assert_eq!(clone.sent(), sender.sent());
++}
++
++#[test]
++fn writes_one_line_per_notification() {
++    assert_eq!(
++        MockPushSender::line(&confirmed(1)),
++        "push_notification 01234567-89ab-4def-8123-456789abcdef booking_confirmed \
++         00000000-0000-0000-0000-000000000001"
++    );
++}
+diff --git a/apps/backend/crates/server/src/lib.rs b/apps/backend/crates/server/src/lib.rs
+index 47c6069..fc6faf7 100644
+--- a/apps/backend/crates/server/src/lib.rs
++++ b/apps/backend/crates/server/src/lib.rs
+@@ -26,6 +26,7 @@ use application::{
+         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
+         MessageThreadSubscriber, SendMessage,
+     },
++    notification::{PushNotificationSubscriber, PushSender},
+     review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
+     scheduling::{
+         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
+@@ -34,8 +35,8 @@ use application::{
+ };
+ use axum::Router;
+ use infra::{
+-    InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
+-    PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
++    InMemoryDomainEventBus, MockPushSender, MockTokenService, MockVideoCallProvider,
++    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+     PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+     PgMessageThreadRepository, PgSlotRepository, PgVideoRepository,
+ };
+@@ -50,9 +51,10 @@ pub fn router() -> Router {
+ /// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。本番では差し替える）で組み立てる。
+ ///
+ /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
+-/// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）につなぐ。予約の確定・キャンセルで
++/// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）、notification の購読（`PushNotificationSubscriber`）につなぐ。予約の確定・キャンセルで
+ /// ビデオ通話の暦月の枠が動き、予約の確定は entitlement に枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
+ /// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。
++/// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。
+ ///
+ /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
+ /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
+@@ -86,6 +88,16 @@ pub fn router_with_analytics<C, A>(clock: C, analytics: A) -> Router
+ where
+     C: Clock + Clone + 'static,
+     A: AnalyticsSink + Clone + 'static,
++{
++    router_with_push_sender(clock, analytics, MockPushSender::new())
++}
++
++/// [`router_with_analytics`] のプッシュ通知の送り先を `push` に替えたルーター（テストが送った通知を読むのに使う）。
++pub fn router_with_push_sender<C, A, P>(clock: C, analytics: A, push: P) -> Router
++where
++    C: Clock + Clone + 'static,
++    A: AnalyticsSink + Clone + 'static,
++    P: PushSender + 'static,
+ {
+     let slots = InMemorySlotRepository::default();
+     compose(
+@@ -102,12 +114,13 @@ where
+         },
+         clock,
+         analytics,
++        push,
+     )
+ }
+ 
+ /// 保存先をすべて infra の Postgres の実装にしたルーター（`pool` はマイグレーション `infra::MIGRATOR` を当てた DB）。
+ /// 保存先のほかは [`router_with_analytics`] と同じで、境界間イベントはインメモリのイベントバス、通話基盤・動画の
+-/// 保存先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
++/// 保存先・プッシュ通知の送り先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
+ pub fn router_with_postgres<C, A>(pool: PgPool, clock: C, analytics: A) -> Router
+ where
+     C: Clock + Clone + 'static,
+@@ -127,6 +140,7 @@ where
+         },
+         clock,
+         analytics,
++        MockPushSender::new(),
+     )
+ }
+ 
+@@ -144,10 +158,11 @@ struct Repositories<R, S, B, E, L, W, M, X, N> {
+ }
+ 
+ /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
+-fn compose<R, S, B, E, L, W, M, X, N, C, A>(
++fn compose<R, S, B, E, L, W, M, X, N, C, A, P>(
+     repositories: Repositories<R, S, B, E, L, W, M, X, N>,
+     clock: C,
+     analytics: A,
++    push: P,
+ ) -> Router
+ where
+     R: AccountRepository + 'static,
+@@ -161,6 +176,7 @@ where
+     N: LessonReviewRepository + Clone + 'static,
+     C: Clock + Clone + 'static,
+     A: AnalyticsSink + Clone + 'static,
++    P: PushSender + 'static,
+ {
+     let Repositories {
+         accounts,
+@@ -175,7 +191,10 @@ where
+     } = repositories;
+     let events = InMemoryDomainEventBus::new((
+         LiveLessonQuotaSubscriber::new(entitlements.clone()),
+-        MessageThreadSubscriber::new(threads.clone()),
++        (
++            MessageThreadSubscriber::new(threads.clone()),
++            PushNotificationSubscriber::new(push),
++        ),
+     ));
+     let video = MockVideoCallProvider::new();
+     interface::router_with(
+diff --git a/apps/backend/crates/server/tests/notifications.rs b/apps/backend/crates/server/tests/notifications.rs
+new file mode 100644
+index 0000000..9567a81
+--- /dev/null
++++ b/apps/backend/crates/server/tests/notifications.rs
+@@ -0,0 +1,140 @@
++//! 予約の確定でのプッシュ通知を、組み立て済みのルーターで確かめる（API の E2E）。通知は notification の購読
++//! （`PushNotificationSubscriber`）が境界間イベント `BookingConfirmed` で送り、scheduling は notification を直接呼ばない。
++//!
++//! 1. 生徒の登録 → コーチが枠を公開 → 生徒が予約（作成だけでは送らない）
++//! 2. 予約の確定 → 生徒に `BookingConfirmed` の通知が 1 件届く（送り先はモック `MockPushSender`）
++//! 3. 予約のキャンセルでは送らない（キャンセルの通知はまだない）
++
++use std::time::{Duration, SystemTime};
++
++use application::{
++    identity::{TokenClaims, TokenIssuer, account_id_uuid},
++    in_memory::{ManualClock, RecordingAnalyticsSink},
++    scheduling::booking_id_uuid,
++};
++use axum::{
++    Router,
++    body::{Body, to_bytes},
++    http::{Request, StatusCode, header},
++};
++use domain::{
++    identity::{AccountId, Role},
++    notification::PushNotification,
++};
++use infra::{MockPushSender, MockTokenService};
++use serde_json::{Value, json};
++use tower::ServiceExt;
++
++/// 2026-10-05T00:00:00Z（シナリオの始まり）
++fn oct5() -> SystemTime {
++    SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_158_400)
++}
++
++async fn call(
++    router: &Router,
++    method: &str,
++    path: &str,
++    token: Option<&str>,
++    body: Value,
++    expected: StatusCode,
++) -> Value {
++    let mut request = Request::builder()
++        .method(method)
++        .uri(path)
++        .header(header::CONTENT_TYPE, "application/json");
++    if let Some(token) = token {
++        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
++    }
++    let request = request.body(Body::from(body.to_string())).unwrap();
++    let response = router.clone().oneshot(request).await.unwrap();
++    let status = response.status();
++    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
++    let body: Value = if bytes.is_empty() {
++        Value::Null
++    } else {
++        serde_json::from_slice(&bytes).unwrap()
++    };
++    assert_eq!(status, expected, "{method} {path}: {body}");
++    body
++}
++
++#[tokio::test]
++async fn confirming_a_booking_pushes_a_notification_to_the_student() {
++    let push = MockPushSender::new();
++    let router = server::router_with_push_sender(
++        ManualClock::new(oct5()),
++        RecordingAnalyticsSink::default(),
++        push.clone(),
++    );
++    let coach_id = AccountId::from_u128(42);
++    let coach = MockTokenService
++        .issue(TokenClaims {
++            account_id: coach_id,
++            role: Role::Coach,
++        })
++        .into_string();
++
++    // 1. 予約の作成だけでは送らない
++    let account = call(
++        &router,
++        "POST",
++        "/accounts",
++        None,
++        json!({ "email": "taro@example.com", "display_name": "たろう", "sport": "tennis" }),
++        StatusCode::CREATED,
++    )
++    .await;
++    let student = account["access_token"].as_str().unwrap();
++    let student_id =
++        account_id_uuid::parse(account["student"]["student_id"].as_str().unwrap()).unwrap();
++    let slot = call(
++        &router,
++        "POST",
++        "/slots",
++        Some(&coach),
++        json!({ "sport": "tennis", "starts_at": "2026-10-10T10:00:00Z", "ends_at": "2026-10-10T11:00:00Z" }),
++        StatusCode::CREATED,
++    )
++    .await;
++    let booking = call(
++        &router,
++        "POST",
++        "/bookings",
++        Some(student),
++        json!({ "slot_id": slot["slot_id"], "is_trial": true }),
++        StatusCode::CREATED,
++    )
++    .await;
++    let booking_id = booking["booking_id"].as_str().unwrap();
++    assert!(push.sent().is_empty(), "作成では送らない");
++
++    // 2. 確定で生徒に 1 件届く
++    call(
++        &router,
++        "POST",
++        &format!("/bookings/{booking_id}/confirm"),
++        Some(student),
++        json!({}),
++        StatusCode::OK,
++    )
++    .await;
++    let expected = PushNotification::BookingConfirmed {
++        student_id,
++        coach_id,
++        booking_id: booking_id_uuid::parse(booking_id).unwrap(),
++    };
++    assert_eq!(push.sent(), [expected]);
++    assert_eq!(push.sent()[0].recipient(), student_id);
++
++    // 3. キャンセルでは送らない
++    call(
++        &router,
++        "POST",
++        &format!("/bookings/{booking_id}/cancel"),
++        Some(student),
++        json!({}),
++        StatusCode::OK,
++    )
++    .await;
++    assert_eq!(push.sent(), [expected], "キャンセルの通知はまだない");
++}
