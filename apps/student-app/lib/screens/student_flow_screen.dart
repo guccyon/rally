@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/student_flow.dart';
 import 'booking_pending_screen.dart';
 import 'lesson_completion_screen.dart';
+import 'lesson_review_screen.dart';
 import 'live_lesson_screen.dart';
 import 'message_threads_screen.dart';
 import 'messages_screen.dart';
@@ -28,6 +29,7 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.videoSubmit => const VideoSubmitScreen(),
       FlowStep.videoReview => const VideoReviewScreen(),
       FlowStep.lessonCompletion => const LessonCompletionScreen(),
+      FlowStep.lessonReview => const LessonReviewScreen(),
       FlowStep.subscription => const SubscriptionScreen(),
       FlowStep.messageThreads => const MessageThreadsScreen(),
       FlowStep.messages => const MessagesScreen(),

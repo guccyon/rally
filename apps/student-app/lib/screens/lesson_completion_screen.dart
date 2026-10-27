@@ -30,9 +30,14 @@ class LessonCompletionScreen extends ConsumerWidget {
           Text(lessonTypeLabel(lesson.lessonType)),
           Text('記録: ${formatDateTime(lesson.completedAt)}'),
           const SizedBox(height: 16),
+          FilledButton(
+            onPressed: state.busy ? null : notifier.goToReview,
+            child: const Text('レッスンを評価する'),
+          ),
+          const SizedBox(height: 16),
           const Text('月額契約で、動画とチャットは送り放題、ビデオ通話は月 2 回まで受けられます。'),
           const SizedBox(height: 8),
-          FilledButton(
+          OutlinedButton(
             onPressed: state.busy ? null : notifier.goToSubscription,
             child: const Text('月額契約へ進む'),
           ),

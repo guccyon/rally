@@ -644,6 +644,69 @@ class AsyncLessonCompletion extends RecordLessonCompletionRequest {
   };
 }
 
+/// `LessonReview`（glossary の lesson_review。完了したレッスン 1 件につき 1 回だけ付ける評価）
+class LessonReview {
+  const LessonReview({
+    required this.reviewId,
+    required this.lessonId,
+    required this.studentId,
+    required this.coachId,
+    required this.rating,
+    required this.comment,
+    required this.submittedAt,
+  });
+
+  final String reviewId;
+
+  /// 評価した完了したレッスン（`Lesson.lessonId`）
+  final String lessonId;
+  final String studentId;
+
+  /// 評価されたコーチ（そのレッスンのコーチ）
+  final String coachId;
+
+  /// 1（低い）〜5（高い）
+  final int rating;
+
+  /// 一言
+  final String comment;
+  final DateTime submittedAt;
+
+  factory LessonReview.fromJson(Map<String, dynamic> json) => LessonReview(
+    reviewId: json['review_id'] as String,
+    lessonId: json['lesson_id'] as String,
+    studentId: json['student_id'] as String,
+    coachId: json['coach_id'] as String,
+    rating: json['rating'] as int,
+    comment: json['comment'] as String,
+    submittedAt: _dateTime(json['submitted_at']),
+  );
+}
+
+/// `SubmitLessonReviewRequest`
+class SubmitLessonReviewRequest {
+  const SubmitLessonReviewRequest({
+    required this.lessonId,
+    required this.rating,
+    required this.comment,
+  });
+
+  /// 完了したレッスン（`Lesson.lessonId`）
+  final String lessonId;
+
+  /// 1（低い）〜5（高い）
+  final int rating;
+
+  /// 一言（200 文字まで。空白だけは不可）
+  final String comment;
+
+  Map<String, dynamic> toJson() => {
+    'lesson_id': lessonId,
+    'rating': rating,
+    'comment': comment,
+  };
+}
+
 /// `Message`（glossary の message。送信時刻と既読を持つ）
 class Message {
   const Message({

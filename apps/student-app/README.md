@@ -24,6 +24,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | 動画を送る（ファイルの選択と本体のアップロードはモック。送り先は体験予約のコーチ、スポーツはそのスロットのもの） | `submitVideo` |
 | 添削結果（未返却なら確かめ直す） | `getVideoReview` |
 | レッスンの完了 | `recordLessonCompletion`（通話なら `live_lesson`、動画なら `async_lesson`） |
+| レッスンの評価（完了のあとに 1〜5 の点と一言。評価済みを返す読み取りの API はないので、この端末で送れたときと 409 `lesson_already_reviewed` が返ったときに評価済みとして入力させない。評価せずに月額契約へ進むこともできる） | `submitLessonReview` |
 | 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
 | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
 | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |

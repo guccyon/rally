@@ -159,6 +159,55 @@ void main() {
     expect(recorded.isFirstLesson, isTrue);
   });
 
+  test('submitLessonReview は POST /lesson-reviews へ送り、評価を変換する', () async {
+    final review =
+        await apiReplying(201, {
+          'review_id': 'r1',
+          'lesson_id': 'l1',
+          'student_id': 's1',
+          'coach_id': 'c1',
+          'rating': 4,
+          'comment': '丁寧でした',
+          'submitted_at': '2026-10-28T04:00:00Z',
+        }).submitLessonReview(
+          const SubmitLessonReviewRequest(
+            lessonId: 'l1',
+            rating: 4,
+            comment: '丁寧でした',
+          ),
+        );
+
+    expect(sent.single.method, 'POST');
+    expect(sent.single.url.path, '/lesson-reviews');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(jsonDecode(sent.single.body), {
+      'lesson_id': 'l1',
+      'rating': 4,
+      'comment': '丁寧でした',
+    });
+    expect(review.coachId, 'c1');
+    expect(review.rating, 4);
+    expect(review.submittedAt, DateTime.utc(2026, 10, 28, 4));
+
+    final error =
+        await apiReplying(409, {
+              'code': 'lesson_already_reviewed',
+              'message': 'already reviewed',
+            })
+            .submitLessonReview(
+              const SubmitLessonReviewRequest(
+                lessonId: 'l1',
+                rating: 4,
+                comment: '丁寧でした',
+              ),
+            )
+            .then<Object?>((_) => null, onError: (Object e) => e);
+    expect(
+      (error as StudentApiException).error!.code,
+      ErrorCode.lessonAlreadyReviewed,
+    );
+  });
+
   test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
     final coachMessage = {
       'message_id': 'm1',

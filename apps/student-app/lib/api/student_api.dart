@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオとチャットで使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・レッスンの評価・チャットで使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -32,6 +32,9 @@ abstract interface class StudentApi {
 
   /// `recordLessonCompletion`（POST /lessons/completions）
   Future<Lesson> recordLessonCompletion(RecordLessonCompletionRequest body);
+
+  /// `submitLessonReview`（POST /lesson-reviews）。2 回目は 409 `lesson_already_reviewed`
+  Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body);
 
   /// `startSubscription`（POST /subscriptions）
   Future<StartSubscriptionResponse> startSubscription(
