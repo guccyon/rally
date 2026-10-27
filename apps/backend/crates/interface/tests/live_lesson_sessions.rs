@@ -23,8 +23,8 @@ use application::{
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession, session_id_uuid},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, SchedulingBookingLookup,
-        SearchSlots, booking_id_uuid, slot_id_uuid,
+        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
+        SchedulingBookingLookup, SearchSlots, booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -132,6 +132,10 @@ fn app() -> App {
             bookings.clone(),
             analytics.clone(),
             events.clone(),
+            clock.clone(),
+        ),
+        GetSlotSupply::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             clock.clone(),
         ),
         StartSubscription::new(

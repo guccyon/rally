@@ -22,8 +22,8 @@ use application::{
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
     scheduling::{
-        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, PublishSlot,
-        SchedulingBookingLookup, SearchSlots, SlotRepository,
+        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
+        PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
     },
 };
 use axum::Router;
@@ -57,6 +57,8 @@ pub fn router() -> Router {
 /// レッスンの完了記録は、通話セッション・動画の保存先と同じ中身を読み（元の集約が完了記録を発行する。
 /// docs/adr/0006）、完了記録の保存先も当面インメモリ。境界間イベント `LessonCompleted` は同じイベントバスで発行する
 /// （billing・review の購読はまだない）。
+///
+/// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -168,6 +170,7 @@ where
             events.clone(),
             clock.clone(),
         ),
+        GetSlotSupply::new(bookings.clone(), clock.clone()),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),
