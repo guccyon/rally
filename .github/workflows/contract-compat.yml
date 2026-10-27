@@ -1,0 +1,42 @@
+# L1（構造・境界）: 契約の互換性。PR の base と head の specs/contracts/ を比べ、支えている版のクライアント・購読先を壊す変更を拾う。
+# チェッカーは factory-engine の core-gates/compat_check.py を、固定した版で取って走らせる（Engine を上げるときはこの版も上げる）。
+# P1 は shadow: 結果を Job Summary に残すだけで、PR は落とさない（必須チェックにもしない）。格上げは工場のアーキテクチャの判断として確認してから。
+name: contract-compat
+
+on:
+  pull_request:
+    paths:
+      - "specs/contracts/**"
+      - ".factory-config/manifest.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: a51fd782b9d2e7d42674cedf9b299931efd0beac
+
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: チェッカーを取る
+        run: |
+          python3 -m pip install --quiet pyyaml
+          curl -fsSL -o /tmp/compat_check.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/core-gates/compat_check.py"
+      - name: 契約の互換性（shadow）
+        run: |
+          python3 /tmp/compat_check.py --base "origin/${{ github.base_ref }}" --json compat.json --summary "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contract-compat
+          path: compat.json
+          if-no-files-found: ignore
