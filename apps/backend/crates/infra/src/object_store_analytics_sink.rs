@@ -9,10 +9,14 @@ use object_store::{
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::analytics_event_payload::{attributes, line};
+use crate::{
+    AnalyticsCommonAttributes,
+    analytics_event_payload::{attributes, line},
+};
 
 /// [`AnalyticsSink`] のモック。イベントを JSON Lines（[`line`] の 1 行と改行）でオブジェクトストア（S3 API）に書く。
-/// ローカルのファイルシステムには何も残さない。
+/// 共通の任意属性は [`Self::with_common`] で渡したもののうち値が分かるものだけを付ける。ローカルのファイルシステムには
+/// 何も残さない。
 ///
 /// 1 回の発火で 1 オブジェクトを書き、キーは `events/<name>/dt=<occurred_at の UTC の日付>/<UUID v4>.jsonl`
 /// （集計側がイベント名と日付で絞れるように）。書けなければ標準エラー出力に書いて捨てる（発火の失敗でユースケースを
@@ -20,14 +24,24 @@ use crate::analytics_event_payload::{attributes, line};
 #[derive(Debug, Clone)]
 pub struct ObjectStoreAnalyticsSink {
     store: Arc<dyn ObjectStore>,
+    common: AnalyticsCommonAttributes,
 }
 
 impl ObjectStoreAnalyticsSink {
     /// キーの先頭。
     pub const KEY_PREFIX: &'static str = "events";
 
+    /// 共通の任意属性は付けない（[`Self::with_common`] で足す）。
     pub fn new(store: Arc<dyn ObjectStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            common: AnalyticsCommonAttributes::default(),
+        }
+    }
+
+    /// 各行に、`common` のうち値が分かる共通の任意属性（`release_id`・`app_version`）を付ける。
+    pub fn with_common(self, common: AnalyticsCommonAttributes) -> Self {
+        Self { common, ..self }
     }
 
     /// S3 API のオブジェクトストア（ローカルの compose の `objectstore`）の `bucket` に書く。`endpoint` は
@@ -77,7 +91,10 @@ impl ObjectStoreAnalyticsSink {
 
     async fn put(&self, event: &AnalyticsEvent) -> Result<(), String> {
         let key = Self::key(event, Uuid::new_v4()).map_err(|e| e.to_string())?;
-        let body = format!("{}\n", line(event).map_err(|e| e.to_string())?);
+        let body = format!(
+            "{}\n",
+            line(event, &self.common).map_err(|e| e.to_string())?
+        );
         self.store
             .put_opts(&key, body.into(), PutOptions::default())
             .await

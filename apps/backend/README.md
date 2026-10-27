@@ -198,8 +198,10 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
   | `ANALYTICS_SINK` | `memory`（既定。プロセスの中に記録するだけ）・`object_store`（オブジェクトストアに書く） |
   | `ANALYTICS_OBJECT_STORE_ENDPOINT` | S3 API のエンドポイント（既定 `http://127.0.0.1:9090`。compose の `objectstore`） |
   | `ANALYTICS_OBJECT_STORE_BUCKET` | バケット（既定 `rally-analytics`。compose が作る） |
+  | `ANALYTICS_RELEASE_ID` | 共通の任意属性 `release_id`（版の ID。例: `guccyon/rally@0.1.0`）。ないか空なら付けない |
+  | `ANALYTICS_APP_VERSION` | 共通の任意属性 `app_version`（アプリの版。例: `0.1.0`）。ないか空なら付けない |
 
-- `object_store` は infra の `ObjectStoreAnalyticsSink`（Firebase / GA 相当のモック）。発火 1 回で 1 オブジェクト `events/<name>/dt=<UTC の日付>/<UUID>.jsonl` を書き、中身は JSON Lines の 1 行 `{"name": ..., "attributes": {...}}`（属性は events.yaml の `required` だけ。対応表は `infra::analytics_event_payload`）。ローカルのファイルシステムには何も残さない。モックなので認証情報は持たず署名しない。書けなければ標準エラー出力に書いて捨て、ユースケースは失敗させない（タイムアウトと再試行を短くして、配信先が止まっていても数秒で戻る）
+- `object_store` は infra の `ObjectStoreAnalyticsSink`（Firebase / GA 相当のモック）。発火 1 回で 1 オブジェクト `events/<name>/dt=<UTC の日付>/<UUID>.jsonl` を書き、中身は JSON Lines の 1 行 `{"name": ..., "attributes": {...}}`（属性は events.yaml の `required` に、共通の任意属性 `common_optional`（`release_id`・`app_version`）のうち値が分かるものを足したもの。値は `ANALYTICS_RELEASE_ID` / `ANALYTICS_APP_VERSION` から読み（`infra::AnalyticsCommonAttributes`）、分からなければ付けずに発火する。対応表は `infra::analytics_event_payload`）。ローカルのファイルシステムには何も残さない。モックなので認証情報は持たず署名しない。書けなければ標準エラー出力に書いて捨て、ユースケースは失敗させない（タイムアウトと再試行を短くして、配信先が止まっていても数秒で戻る）
 - compose の `objectstore` は S3 互換のモック（`adobe/s3mock`。認証なし。中身は Docker のボリューム `objectstore-data`）
 
 ```sh
@@ -210,9 +212,9 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 
 | 何の文字列か | 置き場所 |
 |---|---|
-| 行動イベントの属性（events.yaml の `required`）・`lesson_type` の値・JSON Lines の 1 行 | `infra::analytics_event_payload`（`sport` は `infra::identity_values`、時刻は `domain_event_payload` と同じ RFC 3339） |
+| 行動イベントの属性（events.yaml の `required` と `common_optional`）・`lesson_type` の値・JSON Lines の 1 行 | `infra::analytics_event_payload`（`sport` は `infra::identity_values`、時刻は `domain_event_payload` と同じ RFC 3339） |
 
-- テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周）
+- テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形・共通の任意属性は値が分かるときだけ付き、どのイベントの `required` にもないこと）、`crates/infra/tests/analytics_common_attributes.rs`（環境変数から共通の任意属性を読むこと）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周。版の環境変数があれば `release_id` / `app_version` が付くこと）
 - 発火の網羅: `crates/application/tests/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
 - セマンティック層: `crates/application/tests/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
 

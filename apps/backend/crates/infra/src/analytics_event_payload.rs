@@ -1,6 +1,7 @@
 //! 行動イベントと、行動トラッキングに送る属性（specs/analytics/events.yaml）の対応表。
 //!
-//! 属性は events.yaml の `required` だけ。ID は UUID のハイフン区切り、時刻（`occurred_at`・`starts_at`・
+//! [`attributes`] は events.yaml の `required` だけ。共通の任意属性（`common_optional`）は [`line`] で値が分かる
+//! ときだけ足す。ID は UUID のハイフン区切り、時刻（`occurred_at`・`starts_at`・
 //! `submitted_at`）は RFC 3339。`sport` は DB と同じ値（[`crate::identity_values::sport_value`]）。
 //! events.yaml との一致は `tests/analytics_event_payload.rs` が確かめる。
 
@@ -16,7 +17,9 @@ use application::{
 use domain::lesson::LessonType;
 use serde_json::{Value, json};
 
-use crate::{domain_event_payload::date_time, identity_values::sport_value};
+use crate::{
+    AnalyticsCommonAttributes, domain_event_payload::date_time, identity_values::sport_value,
+};
 
 /// `lesson.completed` の `lesson_type` の値（student-app の契約の `LessonType` と同じ）。
 pub const fn lesson_type_value(lesson_type: LessonType) -> &'static str {
@@ -186,7 +189,18 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
 }
 
 /// 行動トラッキングに送る 1 行（JSON Lines の 1 行。末尾の改行は含まない）。
-/// `{"name": <events.yaml の name>, "attributes": <属性>}`。
-pub fn line(event: &AnalyticsEvent) -> Result<String, time::error::Format> {
-    Ok(json!({ "name": event.name(), "attributes": attributes(event)? }).to_string())
+/// `{"name": <events.yaml の name>, "attributes": <属性>}`。属性は [`attributes`] に、`common` のうち値が
+/// 分かるもの（events.yaml の `common_optional`。`release_id`・`app_version`）を足したもの。
+pub fn line(
+    event: &AnalyticsEvent,
+    common: &AnalyticsCommonAttributes,
+) -> Result<String, time::error::Format> {
+    let mut attributes = attributes(event)?;
+    if let Some(release_id) = &common.release_id {
+        attributes["release_id"] = json!(release_id);
+    }
+    if let Some(app_version) = &common.app_version {
+        attributes["app_version"] = json!(app_version);
+    }
+    Ok(json!({ "name": event.name(), "attributes": attributes }).to_string())
 }
