@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app に担当コーチとのチャットの画面: アプリバーの「チャット」からスレッドの一覧（未読の数・最後のメッセージ）→ メッセージの一覧と送信。開いたスレッドの相手のメッセージは既読にし、自分が送ったメッセージには既読・未読を出す。月額契約の前に送ると「チャットは月額契約を始めると使えます。」と出す。API と契約の変更はない（#93）
 - 予約の確定で生徒にプッシュ通知（notification の最小形・前半）: notification が境界間イベント `BookingConfirmed` を購読して送る。送り先の基盤は Gen1 ではモック（送った通知を記録し、標準出力に 1 行書く）。API の変更はない（#91）
 - レッスンの評価（review の最小形）: 生徒が完了したレッスン 1 件につき 1 回、1〜5 の点と一言を付ける `POST /lesson-reviews`（2 回目は 409 `lesson_already_reviewed`）と、admin-web の本部とコーチ本人がコーチの評価の件数と平均を読む `GET /coaches/{coach_id}/review-summary`。評価で行動イベント `review.submitted` を発火（#92）
 - 生徒と担当コーチのチャット（messaging の最小形）: student-app と admin-web の `GET /message-threads`・`GET /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/read`。スレッドは予約の確定で生徒とコーチの組に 1 つ開く。月額の生徒は送り放題（回数を消費しない）、月額契約の前の生徒の送信は 403 `chat_not_entitled`。送信時刻と既読を返し、送信で行動イベント `message.sent` を発火（#90）

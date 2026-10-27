@@ -25,3 +25,17 @@ String formatDateTime(DateTime value) {
   String two(int n) => n.toString().padLeft(2, '0');
   return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
 }
+
+/// 生徒から見た送り手
+String messageSenderLabel(MessageSenderRole role) => switch (role) {
+  MessageSenderRole.student => '自分',
+  MessageSenderRole.coach => 'コーチ',
+};
+
+/// 自分が送ったメッセージを相手が読んだか（相手から届いたものには出さない）
+String? readLabel(Message message) =>
+    message.senderRole != MessageSenderRole.student
+    ? null
+    : message.readAt == null
+    ? '未読'
+    : '既読';

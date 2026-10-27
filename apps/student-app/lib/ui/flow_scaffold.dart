@@ -4,17 +4,38 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/student_flow.dart';
 
 /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
+/// 登録後はアプリバーにチャットの入口を出す（チャットの画面では [leading] で戻り先を出す）。
 class FlowScaffold extends ConsumerWidget {
-  const FlowScaffold({super.key, required this.title, required this.children});
+  const FlowScaffold({
+    super.key,
+    required this.title,
+    required this.children,
+    this.leading,
+  });
 
   final String title;
   final List<Widget> children;
 
+  /// アプリバーの左端（戻るボタンなど）
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
+    final notifier = ref.read(studentFlowProvider.notifier);
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        leading: leading,
+        title: Text(title),
+        actions: [
+          if (state.accessToken != null && !state.step.isChat)
+            IconButton(
+              tooltip: 'チャット',
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: state.busy ? null : notifier.openChat,
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

@@ -159,6 +159,72 @@ void main() {
     expect(recorded.isFirstLesson, isTrue);
   });
 
+  test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
+    final coachMessage = {
+      'message_id': 'm1',
+      'thread_id': 't1',
+      'sender_id': 'c1',
+      'sender_role': 'coach',
+      'body': 'こんにちは',
+      'sent_at': '2026-10-26T03:00:00Z',
+      'read_at': null,
+    };
+    final thread = {
+      'thread_id': 't1',
+      'student_id': 's1',
+      'coach_id': 'c1',
+      'opened_at': '2026-10-26T02:00:00Z',
+      'last_message': coachMessage,
+      'unread_count': 1,
+    };
+
+    final threads = await apiReplying(200, {
+      'threads': [
+        thread,
+        {...thread, 'thread_id': 't2', 'last_message': null},
+      ],
+    }).listMessageThreads();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/message-threads');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(
+      threads.threads.first.lastMessage!.senderRole,
+      MessageSenderRole.coach,
+    );
+    expect(threads.threads.first.unreadCount, 1);
+    expect(threads.threads.last.lastMessage, isNull);
+
+    final list = await apiReplying(200, {
+      'thread_id': 't1',
+      'messages': [coachMessage],
+    }).listMessages('t1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/message-threads/t1/messages');
+    expect(list.messages.single.readAt, isNull);
+
+    final message = await apiReplying(201, {
+      ...coachMessage,
+      'message_id': 'm2',
+      'sender_id': 's1',
+      'sender_role': 'student',
+      'body': 'よろしく',
+    }).sendMessage('t1', const SendMessageRequest(body: 'よろしく'));
+    expect(sent.single.method, 'POST');
+    expect(sent.single.url.path, '/message-threads/t1/messages');
+    expect(jsonDecode(sent.single.body), {'body': 'よろしく'});
+    expect(message.senderRole, MessageSenderRole.student);
+
+    final read = await apiReplying(200, {
+      ...thread,
+      'last_message': {...coachMessage, 'read_at': '2026-10-26T03:05:00Z'},
+      'unread_count': 0,
+    }).markMessageThreadRead('t1');
+    expect(sent.single.method, 'POST');
+    expect(sent.single.url.path, '/message-threads/t1/read');
+    expect(read.unreadCount, 0);
+    expect(read.lastMessage!.readAt, DateTime.utc(2026, 10, 26, 3, 5));
+  });
+
   test('契約の Error を StudentApiException にし、画面の文言に変える', () async {
     final api = apiReplying(409, {
       'code': 'live_lesson_quota_exceeded',

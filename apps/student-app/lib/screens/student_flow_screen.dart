@@ -5,6 +5,8 @@ import '../state/student_flow.dart';
 import 'booking_pending_screen.dart';
 import 'lesson_completion_screen.dart';
 import 'live_lesson_screen.dart';
+import 'message_threads_screen.dart';
+import 'messages_screen.dart';
 import 'register_screen.dart';
 import 'slot_search_screen.dart';
 import 'subscription_screen.dart';
@@ -27,6 +29,8 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.videoReview => const VideoReviewScreen(),
       FlowStep.lessonCompletion => const LessonCompletionScreen(),
       FlowStep.subscription => const SubscriptionScreen(),
+      FlowStep.messageThreads => const MessageThreadsScreen(),
+      FlowStep.messages => const MessagesScreen(),
     };
   }
 }
