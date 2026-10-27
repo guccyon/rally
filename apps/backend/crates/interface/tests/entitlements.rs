@@ -213,6 +213,9 @@ fn router(now: SystemTime) -> Router {
         application::review::GetCoachReviewSummary::new(
             application::in_memory::InMemoryLessonReviewRepository::default(),
         ),
+        application::review::ListCoachReviews::new(
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+        ),
         FakeTokens,
     )
 }

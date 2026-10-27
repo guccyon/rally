@@ -1,5 +1,6 @@
 //! レッスンの評価。student-app の `POST /lesson-reviews`（`submitLessonReview`。生徒だけ）と、admin-web の
-//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部はどのコーチの分も、コーチは自分の分だけ）。
+//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部はどのコーチの分も、コーチは自分の分だけ）と、
+//! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。コーチが受けた評価の一覧。読める範囲は件数と平均と同じ）。
 //! 自分が生徒でないレッスンには、レッスンがあることも知らせない（404）。
 
 use std::sync::Arc;
@@ -10,8 +11,9 @@ use application::{
     identity::account_id_uuid,
     lesson::lesson_id_uuid,
     review::{
-        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
-        SubmitLessonReviewCommand, SubmitLessonReviewError, lesson_review_id_uuid,
+        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
+        SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
+        lesson_review_id_uuid,
     },
 };
 use axum::{
@@ -34,6 +36,7 @@ use crate::{
 pub struct ReviewsState<L, R, A, C> {
     pub submit_lesson_review: SubmitLessonReview<L, R, A, C>,
     pub get_coach_review_summary: GetCoachReviewSummary<R>,
+    pub list_coach_reviews: ListCoachReviews<R>,
 }
 
 /// ハンドラーが共有する [`ReviewsState`]。
@@ -65,6 +68,23 @@ pub struct CoachReviewSummaryBody {
     coach_id: String,
     review_count: u32,
     average_rating: Option<f64>,
+}
+
+/// admin-web の `CoachReview`。
+#[derive(Serialize)]
+pub struct CoachReviewBody {
+    review_id: String,
+    lesson_id: String,
+    rating: u8,
+    comment: String,
+    submitted_at: String,
+}
+
+/// admin-web の `CoachReviewList`。
+#[derive(Serialize)]
+pub struct CoachReviewListBody {
+    coach_id: String,
+    reviews: Vec<CoachReviewBody>,
 }
 
 /// `POST /lesson-reviews`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。評価するのはトークンのアカウント。
@@ -137,6 +157,40 @@ where
     Ok(Json(coach_review_summary_body(&summary)))
 }
 
+/// `GET /coaches/{coach_id}/reviews`（admin-web）。本部とコーチだけが呼べ（役割は `require_role` の層が確かめる）、
+/// コーチは自分の分だけを読める。
+pub async fn list_coach_reviews<L, R, A, C>(
+    State(state): State<Shared<L, R, A, C>>,
+    account: AuthenticatedAccount,
+    Path(coach_id): Path<String>,
+) -> Result<Json<CoachReviewListBody>, ApiError>
+where
+    L: CompletedLessonLookup,
+    R: LessonReviewRepository,
+    A: AnalyticsSink,
+    C: Clock,
+{
+    // 契約の listCoachReviews に 422 はないので、UUID でない ID はないものとして扱う
+    let coach_id =
+        account_id_uuid::parse(&coach_id).map_err(|_| ApiError::not_found("コーチがない"))?;
+    if account.role() == Role::Coach && account.account_id() != coach_id {
+        return Err(ApiError::forbidden("コーチは自分の評価だけを読める"));
+    }
+
+    let reviews = state
+        .list_coach_reviews
+        .execute(coach_id)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(CoachReviewListBody {
+        coach_id: account_id_uuid::format(coach_id),
+        reviews: reviews
+            .iter()
+            .map(coach_review_body)
+            .collect::<Result<_, _>>()?,
+    }))
+}
+
 fn lesson_review_body(review: &LessonReview) -> Result<LessonReviewBody, ApiError> {
     Ok(LessonReviewBody {
         review_id: lesson_review_id_uuid::format(review.id()),
@@ -155,4 +209,14 @@ fn coach_review_summary_body(summary: &CoachReviewSummary) -> CoachReviewSummary
         review_count: summary.review_count(),
         average_rating: summary.average_rating(),
     }
+}
+
+fn coach_review_body(review: &LessonReview) -> Result<CoachReviewBody, ApiError> {
+    Ok(CoachReviewBody {
+        review_id: lesson_review_id_uuid::format(review.id()),
+        lesson_id: lesson_id_uuid::format(review.lesson_id()),
+        rating: review.rating().value(),
+        comment: review.comment().as_str().to_string(),
+        submitted_at: date_time_to_contract(review.submitted_at())?,
+    })
 }

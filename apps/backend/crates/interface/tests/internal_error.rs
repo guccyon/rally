@@ -162,6 +162,9 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         application::review::GetCoachReviewSummary::new(
             application::in_memory::InMemoryLessonReviewRepository::default(),
         ),
+        application::review::ListCoachReviews::new(
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+        ),
         NoTokens,
     );
 
