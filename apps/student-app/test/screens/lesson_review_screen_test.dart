@@ -55,6 +55,10 @@ void main() {
     expect(container.read(studentFlowProvider).reviewedLessonIds, {
       Fixtures.liveLesson.lessonId,
     });
+    expect(
+      () => container.read(studentFlowProvider).reviewedLessonIds.add('other'),
+      throwsUnsupportedError,
+    );
 
     await tapText(tester, '月額契約へ進む');
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
@@ -83,6 +87,10 @@ void main() {
     expect(sendButton(), findsNothing);
     expect(find.byType(TextField), findsNothing);
     expect(container.read(studentFlowProvider).lessonReviewed, isTrue);
+    expect(
+      () => container.read(studentFlowProvider).reviewedLessonIds.add('other'),
+      throwsUnsupportedError,
+    );
   });
 
   testWidgets('ほかの失敗では評価済みにせず、入力を残して送り直せる', (tester) async {

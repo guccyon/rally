@@ -86,7 +86,8 @@ class StudentFlowState {
   final LessonReview? lessonReview;
 
   /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
-  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す
+  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す。
+  /// [copyWith] で変更できない Set に包む（`add` などで Riverpod を通さずに状態を変えさせない）
   final Set<String> reviewedLessonIds;
 
   /// 完了を記録したレッスンを評価済みと分かっているか
@@ -145,7 +146,9 @@ class StudentFlowState {
     review: review ?? this.review,
     lesson: lesson ?? this.lesson,
     lessonReview: lessonReview ?? this.lessonReview,
-    reviewedLessonIds: reviewedLessonIds ?? this.reviewedLessonIds,
+    reviewedLessonIds: reviewedLessonIds != null
+        ? Set.unmodifiable(reviewedLessonIds)
+        : this.reviewedLessonIds,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
