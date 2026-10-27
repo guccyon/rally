@@ -54,6 +54,8 @@ class StudentFlowState {
     this.threads,
     this.thread,
     this.messages,
+    // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
+    // ignore: prefer_initializing_formals
   }) : _reviewedLessonIds = reviewedLessonIds;
 
   final FlowStep step;
