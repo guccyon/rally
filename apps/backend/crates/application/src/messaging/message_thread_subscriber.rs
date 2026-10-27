@@ -58,7 +58,9 @@ where
             }
             DomainEvent::BookingCancelled { .. }
             | DomainEvent::LessonCompleted { .. }
-            | DomainEvent::SubscriptionStarted { .. } => Ok(()),
+            | DomainEvent::SubscriptionStarted { .. }
+            | DomainEvent::VideoReviewReturned { .. }
+            | DomainEvent::MessageSent { .. } => Ok(()),
         }
     }
 }

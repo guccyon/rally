@@ -167,7 +167,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - `POST /videos`（student-app の `submitVideo`）: 生徒だけが呼べる（コーチ・本部は 403）。送る生徒はトークンのアカウント。動画の保存先（ポート `async_lesson::VideoStorage`）に本体の PUT 先を発行させ、`upload_url` で返す。動画本体はクライアントが保存先に直接 PUT し、バックエンドは通さない。送付すると行動イベント `video.submitted` を 1 回発火する。送付の回数は数えない（月額は送り放題）。ゴルフ（golf-app の範囲）・`content_type` が `video/mp4` / `video/quicktime` でない・`coach_id` が UUID でない・`note` が 1000 文字を超えるときは 422。Gen1 はアップロードの完了を受け取らないので、レスポンスの `status` は常に `awaiting_upload`。`note` は長さだけを見て保存しない
 - `GET /videos/{video_id}/review`（`getVideoReview`）: 動画の当事者（送った生徒・送り先のコーチ）だけが読める（役割では絞らない。当事者でないアカウント・ない動画・UUID でない ID には 404）。コーチが返すまでは `status: in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null
-- `POST /videos/{video_id}/review`（admin-web の `returnVideoReview`）: コーチだけが呼べ（生徒・本部は 403）、返せるのは自分に送られた動画だけ（それ以外は 404）。返却は 1 回（2 回目は 409 `invalid_video_state`）、コメントが空か 4000 文字を超えると 422。返却すると行動イベント `video_review.returned` を 1 回発火する。返却のリードタイムをセマンティック層で `occurred_at - submitted_at` と計算できるよう、送付の時刻 `submitted_at` も載せる
+- `POST /videos/{video_id}/review`（admin-web の `returnVideoReview`）: コーチだけが呼べ（生徒・本部は 403）、返せるのは自分に送られた動画だけ（それ以外は 404）。返却は 1 回（2 回目は 409 `invalid_video_state`）、コメントが空か 4000 文字を超えると 422。返却すると境界間イベント `VideoReviewReturned` を発行し（notification が生徒に通知する）、行動イベント `video_review.returned` を 1 回発火する。返却のリードタイムをセマンティック層で `occurred_at - submitted_at` と計算できるよう、送付の時刻 `submitted_at` も載せる
 - 不変条件は `domain::async_lesson::Video` が持つ: 返せるのは送り先のコーチだけ、返却は 1 回、返却は送付の後（同じ時刻は許す）、着手できない動画は返せない。状態（`Submitted` / `Reviewed`）は添削の有無で決まる
 - 不変条件 2（ゴルフの添削はワンショット決済が確定した動画にしか着手できない）: 規則は `domain::entitlement::ContractType::may_start_review` の 1 か所（月額は常に可、ワンショットは決済が確定した動画だけ）。返却の前にポート `async_lesson::ReviewGate` で問い合わせ、実装の `entitlement::EntitlementReviewGate` は動画のスポーツの契約種別（`ContractType::for_sport`）で答える。Gen1 はワンショットの決済（billing）を実装しないので、ゴルフの動画には常に 409 `review_payment_not_confirmed`。Gen1 は着手と返却を分けないので、返却が着手を兼ねる
 - 保存先はポート `VideoRepository`。`server` は当面インメモリ（`InMemoryVideoRepository`）で、動画の保存先は infra の `MockVideoStorage`（`https://mock-storage.invalid/videos/<動画 ID>` を返す。署名・有効期限はなく、PUT しても何も保存されない）。Postgres のテーブル `async_lesson.videos` / `video_reviews`（expand）は置いたが、実装はアカウントの保存先を Postgres にするときに足す
@@ -195,13 +195,16 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | 契約の `LessonType`（`live_lesson` / `async_lesson`） | `interface` の `contract.rs` |
 | 完了記録 ID の UUID のテキスト形式 | `application::lesson::lesson_id_uuid` |
 
-## notification: 予約の確定でのプッシュ通知（モック）
+## notification: 予約の確定・添削の返却・メッセージの受信でのプッシュ通知（モック）
 
-- 通知のきっかけは境界間イベントの購読だけで、他のコンテキストは notification を直接呼ばない（`specs/context-map.yaml` の向き）。`application::notification::PushNotificationSubscriber` が `BookingConfirmed` を購読し、生徒に `domain::notification::PushNotification::BookingConfirmed`（コーチ・予約の ID を載せる。受け取る人は `recipient()`）を送る。ほかのイベントでは送らない（添削の返却・メッセージの受信・キャンセルの通知はまだない）
-- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> booking_confirmed <予約の ID>` の 1 行で標準出力に書く）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
+- 通知のきっかけは境界間イベントの購読だけで、他のコンテキストは notification を直接呼ばない（`specs/context-map.yaml` の向き）。`application::notification::PushNotificationSubscriber` が次の 3 つを購読し、`domain::notification::PushNotification` を送る（受け取る人は `recipient()`）。ほかのイベントでは送らない（キャンセルの通知はまだない）
+  - `BookingConfirmed`（scheduling）→ 生徒に `PushNotification::BookingConfirmed`（コーチ・予約の ID）
+  - `VideoReviewReturned`（async-lesson。添削の返却 `ReturnVideoReview` が発行）→ 動画を送った生徒に `PushNotification::VideoReviewReturned`（コーチ・動画・添削の ID）
+  - `MessageSent`（messaging。メッセージの送信 `SendMessage` が発行）→ 受け手（送り手でない側の当事者。`sender_role` が student ならコーチ、coach なら生徒）に `PushNotification::MessageReceived`（スレッド・メッセージの ID と送り手。本文は載せない）
+- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。種類と対象は `booking_confirmed <予約の ID>`・`video_review_returned <動画の ID>`・`message_received <スレッドの ID>`）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
 - 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った `event_id` をプロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。プロセスを再起動すると忘れる
-- 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
-- テスト: `crates/application/src/notification/push_notification_subscriber.rs`（1 イベント 1 回・ほかのイベントで送らない・失敗後の再送）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒に 1 件、キャンセルでは送らない）
+- 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。`ReturnVideoReview`・`SendMessage` にも同じバスを発行先として渡す。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
+- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒に 1 件、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
 
 ## 行動イベントの配信先（モック）と発火の網羅
 

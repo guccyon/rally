@@ -172,6 +172,7 @@ fn router(now: SystemTime) -> Router {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         RecordLessonCompletion::new(
@@ -194,6 +195,7 @@ fn router(now: SystemTime) -> Router {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         application::messaging::MarkMessageThreadRead::new(

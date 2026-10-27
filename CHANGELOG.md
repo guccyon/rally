@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 添削の返却とメッセージの受信でプッシュ通知（notification の後半）: 境界間イベント `VideoReviewReturned`（async-lesson）と `MessageSent`（messaging）を AsyncAPI に足して発行し、notification が購読して、添削の返却は生徒へ、メッセージは受け手（送り手でない側）へ送る。送り先は Gen1 ではモック。API の変更はない（#100）
 - admin-web にコーチの評価の件数と平均: コーチは「自分の評価」で自分のアカウント ID を入力して、本部は `/headquarters/coach-review-summary` でコーチ ID を指定して、`GET /coaches/{coach_id}/review-summary` の件数と平均（0 件なら「評価はまだありません」）を見る。API と契約の変更はない（#95）
 - student-app にレッスンの評価の画面: 完了を記録したあと「レッスンを評価する」から 1〜5 の点と一言を送る。送ったあとと、すでに評価済み（409 `lesson_already_reviewed`）のときは入力できない。API と契約の変更はない（#94）
 - student-app に担当コーチとのチャットの画面: アプリバーの「チャット」からスレッドの一覧（未読の数・最後のメッセージ）→ メッセージの一覧と送信。開いたスレッドの相手のメッセージは既読にし、自分が送ったメッセージには既読・未読を出す。月額契約の前に送ると「チャットは月額契約を始めると使えます。」と出す。API と契約の変更はない（#93）

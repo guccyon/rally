@@ -7,7 +7,12 @@
 use std::{future::Future, time::SystemTime};
 
 use domain::{
-    entitlement::SubscriptionId, identity::AccountId, lesson::LessonId, scheduling::BookingId,
+    async_lesson::{VideoId, VideoReviewId},
+    entitlement::SubscriptionId,
+    identity::AccountId,
+    lesson::LessonId,
+    messaging::{MessageId, MessageSender, MessageThreadId},
+    scheduling::BookingId,
 };
 use uuid::Uuid;
 
@@ -57,6 +62,30 @@ pub enum DomainEvent {
         student_id: AccountId,
         subscription_id: SubscriptionId,
     },
+    /// `VideoReviewReturned`（async-lesson が発行し、notification が購読する）。
+    /// コーチが動画の添削を返却した。notification は動画を送った生徒に知らせる
+    VideoReviewReturned {
+        /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
+        event_id: Uuid,
+        occurred_at: SystemTime,
+        student_id: AccountId,
+        coach_id: AccountId,
+        video_id: VideoId,
+        review_id: VideoReviewId,
+    },
+    /// `MessageSent`（messaging が発行し、notification が購読する）。
+    /// チャットのスレッドでメッセージが送られた。notification は受け手（送り手でない側の当事者）に知らせる
+    MessageSent {
+        /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
+        event_id: Uuid,
+        occurred_at: SystemTime,
+        student_id: AccountId,
+        coach_id: AccountId,
+        thread_id: MessageThreadId,
+        message_id: MessageId,
+        /// 送り手がスレッドのどちらの当事者か
+        sender_role: MessageSender,
+    },
 }
 
 impl DomainEvent {
@@ -67,6 +96,8 @@ impl DomainEvent {
             DomainEvent::BookingCancelled { .. } => "BookingCancelled",
             DomainEvent::LessonCompleted { .. } => "LessonCompleted",
             DomainEvent::SubscriptionStarted { .. } => "SubscriptionStarted",
+            DomainEvent::VideoReviewReturned { .. } => "VideoReviewReturned",
+            DomainEvent::MessageSent { .. } => "MessageSent",
         }
     }
 }

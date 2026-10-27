@@ -3,12 +3,14 @@ use domain::{
     async_lesson::{ReviewComment, Video, VideoId},
     identity::AccountId,
 };
+use uuid::Uuid;
 
 use super::{ReviewGate, UpdateVideoError, VideoRepository};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
+    domain_event::{DomainEvent, DomainEventPublisher},
 };
 
 /// 添削の返却の入力。`coach_id` は認証したコーチのアカウント（役割の確認は境界が、動画の送り先かは domain が
@@ -34,28 +36,32 @@ pub enum ReturnVideoReviewError {
 /// 添削の返却のユースケース（admin-web の `returnVideoReview`。コーチだけ）。
 ///
 /// 動画を読み、添削に着手してよいかを問い合わせ（[`ReviewGate`]。ゴルフはワンショット決済が確定した動画だけ。
-/// 不変条件 2）、domain の [`Video::return_review`] で添削を記録して保存する。保存したら行動イベント
+/// 不変条件 2）、domain の [`Video::return_review`] で添削を記録して保存する。保存したら境界間イベント
+/// `VideoReviewReturned` を発行し（notification はこれを購読して生徒に知らせる）、行動イベント
 /// `video_review.returned` を 1 回発火する。返却のリードタイムをセマンティック層で計算できるよう、送付の時刻
-/// （`submitted_at`）も載せる。拒否・失敗では発火しない。
-pub struct ReturnVideoReview<V, G, A, C> {
+/// （`submitted_at`）も載せる。拒否・失敗ではどちらも出さない。
+pub struct ReturnVideoReview<V, G, A, P, C> {
     videos: V,
     gate: G,
     analytics: A,
+    events: P,
     clock: C,
 }
 
-impl<V, G, A, C> ReturnVideoReview<V, G, A, C>
+impl<V, G, A, P, C> ReturnVideoReview<V, G, A, P, C>
 where
     V: VideoRepository,
     G: ReviewGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(videos: V, gate: G, analytics: A, clock: C) -> Self {
+    pub fn new(videos: V, gate: G, analytics: A, events: P, clock: C) -> Self {
         Self {
             videos,
             gate,
             analytics,
+            events,
             clock,
         }
     }
@@ -96,6 +102,16 @@ where
                 UpdateVideoError::Unavailable(error) => ReturnVideoReviewError::Unavailable(error),
             })?;
 
+        self.events
+            .publish(DomainEvent::VideoReviewReturned {
+                event_id: Uuid::new_v4(),
+                occurred_at: now,
+                student_id: video.student_id(),
+                coach_id: video.coach_id(),
+                video_id: video.id(),
+                review_id,
+            })
+            .await;
         self.analytics
             .emit(AnalyticsEvent::VideoReviewReturned {
                 student_id: video.student_id(),
@@ -117,6 +133,10 @@ where
     pub fn analytics(&self) -> &A {
         &self.analytics
     }
+
+    pub fn events(&self) -> &P {
+        &self.events
+    }
 }
 
 #[cfg(test)]
@@ -134,7 +154,7 @@ mod tests {
         entitlement::EntitlementReviewGate,
         in_memory::{
             FixedClock, FixedVideoStorage, InMemoryVideoRepository, ManualClock,
-            RecordingAnalyticsSink,
+            RecordingAnalyticsSink, RecordingDomainEventPublisher,
         },
     };
 
@@ -169,6 +189,7 @@ mod tests {
         InMemoryVideoRepository,
         EntitlementReviewGate,
         RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
         FixedClock,
     > {
         ReturnVideoReview::new(
@@ -178,6 +199,7 @@ mod tests {
             ]),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             FixedClock(returned_at()),
         )
     }
@@ -194,10 +216,12 @@ mod tests {
             clock.clone(),
         );
         let get = GetVideoReview::new(videos.clone());
+        let domain_events = RecordingDomainEventPublisher::default();
         let return_review = ReturnVideoReview::new(
             videos,
             EntitlementReviewGate,
             analytics.clone(),
+            domain_events.clone(),
             clock.clone(),
         );
 
@@ -253,6 +277,23 @@ mod tests {
             },
             "返却のリードタイム（occurred_at - submitted_at）を計算できる"
         );
+        // 境界間イベント（notification はこれで生徒に知らせる）
+        let published = domain_events.events();
+        assert_eq!(published.len(), 1);
+        assert!(
+            matches!(
+                published[0],
+                DomainEvent::VideoReviewReturned {
+                    occurred_at,
+                    student_id: STUDENT,
+                    coach_id: COACH,
+                    video_id: id,
+                    review_id,
+                    ..
+                } if occurred_at == returned_at() && id == video_id && review_id == review.id()
+            ),
+            "{published:?}"
+        );
     }
 
     #[tokio::test]
@@ -286,6 +327,7 @@ mod tests {
         );
         assert_eq!(use_case.videos().all(), before);
         assert!(use_case.analytics().events().is_empty());
+        assert!(use_case.events().events().is_empty());
     }
 
     #[tokio::test]
@@ -306,5 +348,6 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(use_case.analytics().events().len(), 1);
+        assert_eq!(use_case.events().events().len(), 1);
     }
 }

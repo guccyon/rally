@@ -2,7 +2,13 @@
 //! 標準出力に書く 1 行の形を確かめる。
 
 use application::notification::PushSender;
-use domain::{identity::AccountId, notification::PushNotification, scheduling::BookingId};
+use domain::{
+    async_lesson::{VideoId, VideoReviewId},
+    identity::AccountId,
+    messaging::{MessageId, MessageSender, MessageThreadId},
+    notification::PushNotification,
+    scheduling::BookingId,
+};
 use infra::MockPushSender;
 
 fn confirmed(booking: u128) -> PushNotification {
@@ -30,5 +36,33 @@ fn writes_one_line_per_notification() {
         MockPushSender::line(&confirmed(1)),
         "push_notification 01234567-89ab-4def-8123-456789abcdef booking_confirmed \
          00000000-0000-0000-0000-000000000001"
+    );
+}
+
+#[test]
+fn writes_the_video_for_a_returned_review_and_the_thread_for_a_received_message() {
+    let student = AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
+    let coach = AccountId::from_u128(9);
+    assert_eq!(
+        MockPushSender::line(&PushNotification::VideoReviewReturned {
+            student_id: student,
+            coach_id: coach,
+            video_id: VideoId::from_u128(2),
+            review_id: VideoReviewId::from_u128(3),
+        }),
+        "push_notification 01234567-89ab-4def-8123-456789abcdef video_review_returned \
+         00000000-0000-0000-0000-000000000002"
+    );
+    // 生徒が送ったメッセージは、受け手のコーチに届く
+    assert_eq!(
+        MockPushSender::line(&PushNotification::MessageReceived {
+            student_id: student,
+            coach_id: coach,
+            thread_id: MessageThreadId::from_u128(4),
+            message_id: MessageId::from_u128(5),
+            sender: MessageSender::Student,
+        }),
+        "push_notification 00000000-0000-0000-0000-000000000009 message_received \
+         00000000-0000-0000-0000-000000000004"
     );
 }

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     clock::Clock,
+    domain_event::DomainEventPublisher,
     identity::account_id_uuid,
     messaging::{
         ChatGate, ListMessageThreads, ListMessageThreadsError, ListMessageThreadsQuery,
@@ -38,15 +39,15 @@ use crate::{
 };
 
 /// `/message-threads` のハンドラーが使うユースケース。
-pub struct MessagingState<T, G, A, C> {
+pub struct MessagingState<T, G, A, P, C> {
     pub list_message_threads: ListMessageThreads<T>,
     pub list_messages: ListMessages<T>,
-    pub send_message: SendMessage<T, G, A, C>,
+    pub send_message: SendMessage<T, G, A, P, C>,
     pub mark_message_thread_read: MarkMessageThreadRead<T, C>,
 }
 
 /// ハンドラーが共有する [`MessagingState`]。
-type Shared<T, G, A, C> = Arc<MessagingState<T, G, A, C>>;
+type Shared<T, G, A, P, C> = Arc<MessagingState<T, G, A, P, C>>;
 
 /// student-app・admin-web の `SendMessageRequest`。
 #[derive(Deserialize)]
@@ -91,14 +92,15 @@ pub struct MessageListJson {
 }
 
 /// `GET /message-threads`。認証したアカウントが当事者のスレッドを、最後の出来事の新しい順に返す。
-pub async fn list_message_threads<T, G, A, C>(
-    State(state): State<Shared<T, G, A, C>>,
+pub async fn list_message_threads<T, G, A, P, C>(
+    State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<MessageThreadListJson>, ApiError>
 where
     T: MessageThreadRepository,
     G: ChatGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let threads = state
@@ -119,8 +121,8 @@ where
 }
 
 /// `GET /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージを送った順に読む（既読にはしない）。
-pub async fn list_messages<T, G, A, C>(
-    State(state): State<Shared<T, G, A, C>>,
+pub async fn list_messages<T, G, A, P, C>(
+    State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
 ) -> Result<Json<MessageListJson>, ApiError>
@@ -128,6 +130,7 @@ where
     T: MessageThreadRepository,
     G: ChatGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let thread = state
@@ -155,8 +158,8 @@ where
 }
 
 /// `POST /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージを送る。月額の生徒は送り放題。
-pub async fn send_message<T, G, A, C>(
-    State(state): State<Shared<T, G, A, C>>,
+pub async fn send_message<T, G, A, P, C>(
+    State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
     request: Result<Json<SendMessageRequest>, JsonRejection>,
@@ -165,6 +168,7 @@ where
     T: MessageThreadRepository,
     G: ChatGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let thread_id = parse_thread_id(&thread_id)?;
@@ -196,8 +200,8 @@ where
 }
 
 /// `POST /message-threads/{thread_id}/read`。スレッドの当事者が、相手から届いたメッセージをすべて既読にする。
-pub async fn mark_message_thread_read<T, G, A, C>(
-    State(state): State<Shared<T, G, A, C>>,
+pub async fn mark_message_thread_read<T, G, A, P, C>(
+    State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
 ) -> Result<Json<MessageThreadJson>, ApiError>
@@ -205,6 +209,7 @@ where
     T: MessageThreadRepository,
     G: ChatGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let thread = state

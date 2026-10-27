@@ -6,11 +6,21 @@ use std::{
 };
 
 use application::{
-    domain_event::DomainEvent, entitlement::subscription_id_uuid, identity::account_id_uuid,
-    lesson::lesson_id_uuid, scheduling::booking_id_uuid,
+    async_lesson::{video_id_uuid, video_review_id_uuid},
+    domain_event::DomainEvent,
+    entitlement::subscription_id_uuid,
+    identity::account_id_uuid,
+    lesson::lesson_id_uuid,
+    messaging::{message_id_uuid, message_thread_id_uuid},
+    scheduling::booking_id_uuid,
 };
 use domain::{
-    entitlement::SubscriptionId, identity::AccountId, lesson::LessonId, scheduling::BookingId,
+    async_lesson::{VideoId, VideoReviewId},
+    entitlement::SubscriptionId,
+    identity::AccountId,
+    lesson::LessonId,
+    messaging::{MessageId, MessageSender, MessageThreadId},
+    scheduling::BookingId,
 };
 use infra::{LoggingDomainEventPublisher, domain_event_payload::payload};
 use serde_json::Value;
@@ -258,6 +268,104 @@ fn lesson_completed_payload_has_exactly_the_required_attributes_of_the_asyncapi(
     );
 }
 
+fn video_review_returned() -> DomainEvent {
+    DomainEvent::VideoReviewReturned {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        video_id: VideoId::from_u128(6),
+        review_id: VideoReviewId::from_u128(7),
+    }
+}
+
+#[test]
+fn video_review_returned_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    let event = video_review_returned();
+    assert_eq!(event.name(), "VideoReviewReturned");
+    let body = assert_payload_matches_asyncapi(&event);
+    assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
+    assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
+    assert_eq!(
+        body["student_id"],
+        account_id_uuid::format(AccountId::from_u128(1))
+    );
+    assert_eq!(
+        body["coach_id"],
+        account_id_uuid::format(AccountId::from_u128(2))
+    );
+    assert_eq!(
+        body["video_id"],
+        video_id_uuid::format(VideoId::from_u128(6))
+    );
+    assert_eq!(
+        body["review_id"],
+        video_review_id_uuid::format(VideoReviewId::from_u128(7))
+    );
+    assert_eq!(
+        contexts("VideoReviewReturned", "x-publisher"),
+        ["async-lesson"]
+    );
+    assert_eq!(
+        contexts("VideoReviewReturned", "x-subscribers"),
+        ["notification"]
+    );
+}
+
+fn message_sent(sender_role: MessageSender) -> DomainEvent {
+    DomainEvent::MessageSent {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        thread_id: MessageThreadId::from_u128(8),
+        message_id: MessageId::from_u128(9),
+        sender_role,
+    }
+}
+
+#[test]
+fn message_sent_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    let root = asyncapi();
+    let allowed: Vec<&str> =
+        payload_schema(&root, "MessageSent")["properties"]["sender_role"]["enum"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+    for (sender_role, expected) in [
+        (MessageSender::Student, "student"),
+        (MessageSender::Coach, "coach"),
+    ] {
+        let event = message_sent(sender_role);
+        assert_eq!(event.name(), "MessageSent");
+        let body = assert_payload_matches_asyncapi(&event);
+        assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
+        assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
+        assert_eq!(
+            body["student_id"],
+            account_id_uuid::format(AccountId::from_u128(1))
+        );
+        assert_eq!(
+            body["coach_id"],
+            account_id_uuid::format(AccountId::from_u128(2))
+        );
+        assert_eq!(
+            body["thread_id"],
+            message_thread_id_uuid::format(MessageThreadId::from_u128(8))
+        );
+        assert_eq!(
+            body["message_id"],
+            message_id_uuid::format(MessageId::from_u128(9))
+        );
+        assert_eq!(body["sender_role"], expected);
+        assert!(allowed.contains(&expected), "{expected} が enum にない");
+    }
+    assert_eq!(contexts("MessageSent", "x-publisher"), ["messaging"]);
+    assert_eq!(contexts("MessageSent", "x-subscribers"), ["notification"]);
+}
+
 #[test]
 fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
     for event in [
@@ -265,6 +373,8 @@ fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
         booking_cancelled(true),
         subscription_started(),
         lesson_completed(),
+        video_review_returned(),
+        message_sent(MessageSender::Coach),
     ] {
         let line = LoggingDomainEventPublisher::line(&event).unwrap();
         let json = line

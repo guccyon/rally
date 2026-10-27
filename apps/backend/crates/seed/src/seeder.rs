@@ -138,6 +138,7 @@ where
             videos.clone(),
             EntitlementReviewGate,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         );
         let complete = RecordLessonCompletion::new(
