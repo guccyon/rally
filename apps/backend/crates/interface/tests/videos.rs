@@ -138,7 +138,7 @@ fn app() -> App {
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),
-            events,
+            events.clone(),
             clock.clone(),
         ),
         GetEntitlement::new(entitlements, clock.clone()),
@@ -166,6 +166,7 @@ fn app() -> App {
             videos,
             EntitlementReviewGate,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         ),
         RecordLessonCompletion::new(
@@ -188,6 +189,7 @@ fn app() -> App {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            events.clone(),
             clock.clone(),
         ),
         application::messaging::MarkMessageThreadRead::new(

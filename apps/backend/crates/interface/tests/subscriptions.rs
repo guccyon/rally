@@ -142,6 +142,7 @@ fn app() -> App {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            events.clone(),
             clock,
         ),
         RecordLessonCompletion::new(
@@ -164,6 +165,7 @@ fn app() -> App {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            events.clone(),
             clock,
         ),
         application::messaging::MarkMessageThreadRead::new(

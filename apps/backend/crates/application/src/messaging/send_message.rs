@@ -3,12 +3,14 @@ use domain::{
     identity::AccountId,
     messaging::{Message, MessageBody, MessageThread, MessageThreadId},
 };
+use uuid::Uuid;
 
 use super::{ChatGate, MessageThreadRepository, UpdateMessageThreadError};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
+    domain_event::{DomainEvent, DomainEventPublisher},
 };
 
 /// メッセージの送信の入力。`sender_id` は認証したアカウント（スレッドの当事者かは domain が確かめる）。
@@ -40,27 +42,31 @@ pub enum SendMessageError {
 /// メッセージの送信のユースケース（student-app・admin-web の `sendMessage`。スレッドの当事者だけ）。
 ///
 /// スレッドを読み、スレッドの生徒がチャットを送ってよいかを entitlement に問い合わせ（[`ChatGate`]。月額は送り
-/// 放題で、回数を消費しない）、domain の [`MessageThread::send`] で送って保存する。保存したら行動イベント
-/// `message.sent` を 1 回発火する。拒否・失敗では発火しない。
-pub struct SendMessage<T, G, A, C> {
+/// 放題で、回数を消費しない）、domain の [`MessageThread::send`] で送って保存する。保存したら境界間イベント
+/// `MessageSent` を発行し（notification はこれを購読して受け手に知らせる）、行動イベント `message.sent` を
+/// 1 回発火する。拒否・失敗ではどちらも出さない。
+pub struct SendMessage<T, G, A, P, C> {
     threads: T,
     gate: G,
     analytics: A,
+    events: P,
     clock: C,
 }
 
-impl<T, G, A, C> SendMessage<T, G, A, C>
+impl<T, G, A, P, C> SendMessage<T, G, A, P, C>
 where
     T: MessageThreadRepository,
     G: ChatGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(threads: T, gate: G, analytics: A, clock: C) -> Self {
+    pub fn new(threads: T, gate: G, analytics: A, events: P, clock: C) -> Self {
         Self {
             threads,
             gate,
             analytics,
+            events,
             clock,
         }
     }
@@ -115,6 +121,17 @@ where
             .cloned()
             .expect("送ったメッセージは保存したスレッドにある");
 
+        self.events
+            .publish(DomainEvent::MessageSent {
+                event_id: Uuid::new_v4(),
+                occurred_at: now,
+                student_id: thread.student_id(),
+                coach_id: thread.coach_id(),
+                thread_id: thread.id(),
+                message_id,
+                sender_role: message.sender(),
+            })
+            .await;
         self.analytics
             .emit(AnalyticsEvent::MessageSent {
                 student_id: thread.student_id(),
@@ -136,6 +153,10 @@ where
     pub fn analytics(&self) -> &A {
         &self.analytics
     }
+
+    pub fn events(&self) -> &P {
+        &self.events
+    }
 }
 
 #[cfg(test)]
@@ -153,7 +174,7 @@ mod tests {
         entitlement::EntitlementChatGate,
         in_memory::{
             FixedClock, InMemoryEntitlementRepository, InMemoryMessageThreadRepository,
-            RecordingAnalyticsSink,
+            RecordingAnalyticsSink, RecordingDomainEventPublisher,
         },
     };
 
@@ -176,6 +197,7 @@ mod tests {
         InMemoryMessageThreadRepository,
         EntitlementChatGate<InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
         FixedClock,
     >;
 
@@ -197,6 +219,7 @@ mod tests {
             ]),
             EntitlementChatGate::new(entitlements),
             RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             FixedClock(now()),
         )
     }
@@ -242,6 +265,25 @@ mod tests {
             }]
         );
         assert_eq!(events[0].name(), "message.sent");
+
+        // 境界間イベント（notification はこれで受け手のコーチに知らせる）
+        let published = use_case.events().events();
+        assert_eq!(published.len(), 1);
+        assert!(
+            matches!(
+                published[0],
+                DomainEvent::MessageSent {
+                    occurred_at,
+                    student_id: MONTHLY_STUDENT,
+                    coach_id: COACH,
+                    thread_id: MONTHLY_THREAD,
+                    message_id,
+                    sender_role: MessageSender::Student,
+                    ..
+                } if occurred_at == now() && message_id == sent.message.id()
+            ),
+            "{published:?}"
+        );
     }
 
     #[tokio::test]
@@ -254,6 +296,7 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(use_case.analytics().events().len(), 5);
+        assert_eq!(use_case.events().events().len(), 5);
     }
 
     #[tokio::test]
@@ -269,6 +312,14 @@ mod tests {
             AnalyticsEvent::MessageSent {
                 sender_role: MessageSender::Coach,
                 coach_id: COACH,
+                ..
+            }
+        ));
+        assert!(matches!(
+            use_case.events().events()[0],
+            DomainEvent::MessageSent {
+                sender_role: MessageSender::Coach,
+                student_id: TRIAL_STUDENT,
                 ..
             }
         ));
@@ -303,5 +354,6 @@ mod tests {
         );
         assert_eq!(use_case.threads().all(), before);
         assert!(use_case.analytics().events().is_empty());
+        assert!(use_case.events().events().is_empty());
     }
 }

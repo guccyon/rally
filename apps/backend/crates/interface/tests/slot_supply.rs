@@ -180,6 +180,7 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             analytics.clone(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         RecordLessonCompletion::new(
@@ -202,6 +203,7 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         application::messaging::MarkMessageThreadRead::new(

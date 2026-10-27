@@ -6,8 +6,10 @@ use uuid::Uuid;
 use super::PushSender;
 use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 
-/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で、生徒にプッシュ通知を送る
-/// （[`PushNotification::BookingConfirmed`]）。scheduling は notification を直接呼ばない（context-map の向き）。
+/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）と添削の返却（`VideoReviewReturned`）で
+/// 生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を送る
+/// （[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
+/// 呼ばない（context-map の向き）。
 ///
 /// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った境界間イベントの `event_id` を
 /// プロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。ほかのイベントは何もしない。
@@ -71,6 +73,46 @@ where
                 )
                 .await
             }
+            DomainEvent::VideoReviewReturned {
+                event_id,
+                student_id,
+                coach_id,
+                video_id,
+                review_id,
+                ..
+            } => {
+                self.send_once(
+                    event_id,
+                    PushNotification::VideoReviewReturned {
+                        student_id,
+                        coach_id,
+                        video_id,
+                        review_id,
+                    },
+                )
+                .await
+            }
+            DomainEvent::MessageSent {
+                event_id,
+                student_id,
+                coach_id,
+                thread_id,
+                message_id,
+                sender_role,
+                ..
+            } => {
+                self.send_once(
+                    event_id,
+                    PushNotification::MessageReceived {
+                        student_id,
+                        coach_id,
+                        thread_id,
+                        message_id,
+                        sender: sender_role,
+                    },
+                )
+                .await
+            }
             DomainEvent::BookingCancelled { .. }
             | DomainEvent::LessonCompleted { .. }
             | DomainEvent::SubscriptionStarted { .. } => Ok(()),
@@ -85,7 +127,12 @@ mod tests {
         time::{Duration, SystemTime},
     };
 
-    use domain::{identity::AccountId, scheduling::BookingId};
+    use domain::{
+        async_lesson::{VideoId, VideoReviewId},
+        identity::AccountId,
+        messaging::{MessageId, MessageSender, MessageThreadId},
+        scheduling::BookingId,
+    };
 
     use super::*;
     use crate::{Unavailable, in_memory::RecordingPushSender};
@@ -133,6 +180,90 @@ mod tests {
             "同じイベントの再送では送らない"
         );
         assert_eq!(sent[0].recipient(), STUDENT);
+    }
+
+    #[tokio::test]
+    async fn a_returned_review_notifies_the_student_once_per_event() {
+        let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
+        let event = DomainEvent::VideoReviewReturned {
+            event_id: Uuid::new_v4(),
+            occurred_at: oct26(),
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VideoId::from_u128(3),
+            review_id: VideoReviewId::from_u128(4),
+        };
+        subscriber.handle(&event).await.unwrap();
+        subscriber.handle(&event).await.unwrap();
+
+        let sent = subscriber.sender().sent();
+        assert_eq!(
+            sent,
+            [PushNotification::VideoReviewReturned {
+                student_id: STUDENT,
+                coach_id: COACH,
+                video_id: VideoId::from_u128(3),
+                review_id: VideoReviewId::from_u128(4),
+            }],
+            "同じイベントの再送では送らない"
+        );
+        assert_eq!(sent[0].recipient(), STUDENT);
+    }
+
+    #[tokio::test]
+    async fn a_sent_message_notifies_the_party_who_did_not_send_it() {
+        let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
+        let sent = |message: u128, sender_role| DomainEvent::MessageSent {
+            event_id: Uuid::from_u128(message),
+            occurred_at: oct26(),
+            student_id: STUDENT,
+            coach_id: COACH,
+            thread_id: MessageThreadId::from_u128(3),
+            message_id: MessageId::from_u128(message),
+            sender_role,
+        };
+        subscriber
+            .handle(&sent(1, MessageSender::Student))
+            .await
+            .unwrap();
+        subscriber
+            .handle(&sent(1, MessageSender::Student))
+            .await
+            .unwrap();
+        subscriber
+            .handle(&sent(2, MessageSender::Coach))
+            .await
+            .unwrap();
+
+        let notifications = subscriber.sender().sent();
+        assert_eq!(
+            notifications,
+            [
+                PushNotification::MessageReceived {
+                    student_id: STUDENT,
+                    coach_id: COACH,
+                    thread_id: MessageThreadId::from_u128(3),
+                    message_id: MessageId::from_u128(1),
+                    sender: MessageSender::Student,
+                },
+                PushNotification::MessageReceived {
+                    student_id: STUDENT,
+                    coach_id: COACH,
+                    thread_id: MessageThreadId::from_u128(3),
+                    message_id: MessageId::from_u128(2),
+                    sender: MessageSender::Coach,
+                },
+            ],
+            "同じイベントの再送では送らない"
+        );
+        assert_eq!(
+            notifications
+                .iter()
+                .map(PushNotification::recipient)
+                .collect::<Vec<_>>(),
+            [COACH, STUDENT],
+            "生徒が送ればコーチに、コーチが送れば生徒に届く"
+        );
     }
 
     #[tokio::test]

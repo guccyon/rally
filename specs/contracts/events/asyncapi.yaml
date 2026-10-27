@@ -49,6 +49,27 @@ channels:
     messages:
       SubscriptionStarted:
         $ref: '#/components/messages/SubscriptionStarted'
+  VideoReviewReturned:
+    address: VideoReviewReturned
+    description: |
+      コーチが動画の添削を返却した。notification はこれを購読し、動画を送った生徒にプッシュ通知を送る。
+      返却のリードタイムの計測は行動イベント video_review.returned が担い、ここには載せない。
+    x-publisher: [async-lesson]
+    x-subscribers: [notification]
+    messages:
+      VideoReviewReturned:
+        $ref: '#/components/messages/VideoReviewReturned'
+  MessageSent:
+    address: MessageSent
+    description: |
+      生徒と担当コーチのチャットのスレッドでメッセージが送られた（docs/adr/0007）。notification はこれを購読し、
+      受け手（送り手でない側の当事者。sender_role が student ならコーチ、coach なら生徒）にプッシュ通知を送る。
+      本文は載せない。
+    x-publisher: [messaging]
+    x-subscribers: [notification]
+    messages:
+      MessageSent:
+        $ref: '#/components/messages/MessageSent'
 
 components:
   messages:
@@ -72,6 +93,16 @@ components:
       title: 月額契約の開始
       payload:
         $ref: '#/components/schemas/SubscriptionStartedPayload'
+    VideoReviewReturned:
+      name: VideoReviewReturned
+      title: 添削の返却
+      payload:
+        $ref: '#/components/schemas/VideoReviewReturnedPayload'
+    MessageSent:
+      name: MessageSent
+      title: メッセージの送信
+      payload:
+        $ref: '#/components/schemas/MessageSentPayload'
 
   schemas:
     EventId:
@@ -123,3 +154,27 @@ components:
         occurred_at: { $ref: '#/components/schemas/OccurredAt' }
         student_id: { type: string }
         subscription_id: { type: string }
+    VideoReviewReturnedPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, video_id, review_id]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        video_id: { type: string }
+        review_id: { type: string }
+    MessageSentPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, thread_id, message_id, sender_role]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        thread_id: { type: string }
+        message_id: { type: string }
+        sender_role:
+          type: string
+          enum: [student, coach]
+          description: 送り手がスレッドのどちらの当事者か（行動イベント message.sent の sender_role と同じ値）

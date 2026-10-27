@@ -87,11 +87,11 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
     submit_video: SubmitVideo<W, U, A, C>,
     get_video_review: GetVideoReview<W>,
-    return_video_review: ReturnVideoReview<W, Q, A, C>,
+    return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     record_lesson_completion: RecordLessonCompletion<L, W, M, A, P, C>,
     list_message_threads: ListMessageThreads<X>,
     list_messages: ListMessages<X>,
-    send_message: SendMessage<X, H, A, C>,
+    send_message: SendMessage<X, H, A, P, C>,
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
     get_coach_review_summary: GetCoachReviewSummary<N>,
@@ -191,12 +191,13 @@ where
     let videos = Router::new()
         .route(
             "/videos",
-            post(videos::submit_video::<W, U, Q, A, C>).route_layer(require_role(&[Role::Student])),
+            post(videos::submit_video::<W, U, Q, A, P, C>)
+                .route_layer(require_role(&[Role::Student])),
         )
         .route(
             "/videos/{video_id}/review",
-            get(videos::get_video_review::<W, U, Q, A, C>).merge(
-                post(videos::return_video_review::<W, U, Q, A, C>)
+            get(videos::get_video_review::<W, U, Q, A, P, C>).merge(
+                post(videos::return_video_review::<W, U, Q, A, P, C>)
                     .route_layer(require_role(&[Role::Coach])),
             ),
         )
@@ -216,15 +217,16 @@ where
     let messaging = Router::new()
         .route(
             "/message-threads",
-            get(messaging::list_message_threads::<X, H, A, C>),
+            get(messaging::list_message_threads::<X, H, A, P, C>),
         )
         .route(
             "/message-threads/{thread_id}/messages",
-            get(messaging::list_messages::<X, H, A, C>).post(messaging::send_message::<X, H, A, C>),
+            get(messaging::list_messages::<X, H, A, P, C>)
+                .post(messaging::send_message::<X, H, A, P, C>),
         )
         .route(
             "/message-threads/{thread_id}/read",
-            post(messaging::mark_message_thread_read::<X, H, A, C>),
+            post(messaging::mark_message_thread_read::<X, H, A, P, C>),
         )
         .with_state(Arc::new(messaging::MessagingState {
             list_message_threads,

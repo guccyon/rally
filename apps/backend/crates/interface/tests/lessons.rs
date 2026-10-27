@@ -227,6 +227,7 @@ fn app() -> App {
             videos.clone(),
             EntitlementReviewGate,
             analytics.clone(),
+            events.clone(),
             clock,
         ),
         RecordLessonCompletion::new(
@@ -249,6 +250,7 @@ fn app() -> App {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            events.clone(),
             clock,
         ),
         application::messaging::MarkMessageThreadRead::new(

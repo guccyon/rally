@@ -13,6 +13,7 @@ use application::{
         video_review_id_uuid,
     },
     clock::Clock,
+    domain_event::DomainEventPublisher,
     identity::account_id_uuid,
 };
 use axum::{
@@ -40,14 +41,14 @@ use crate::{
 const NOTE_MAX_CHARS: usize = 1000;
 
 /// `/videos` のハンドラーが使うユースケース。
-pub struct VideosState<V, S, G, A, C> {
+pub struct VideosState<V, S, G, A, P, C> {
     pub submit_video: SubmitVideo<V, S, A, C>,
     pub get_video_review: GetVideoReview<V>,
-    pub return_video_review: ReturnVideoReview<V, G, A, C>,
+    pub return_video_review: ReturnVideoReview<V, G, A, P, C>,
 }
 
 /// ハンドラーが共有する [`VideosState`]。
-type Shared<V, S, G, A, C> = Arc<VideosState<V, S, G, A, C>>;
+type Shared<V, S, G, A, P, C> = Arc<VideosState<V, S, G, A, P, C>>;
 
 /// student-app の `SubmitVideoRequest`。
 #[derive(Deserialize)]
@@ -91,8 +92,8 @@ pub struct VideoReviewBody {
 /// `POST /videos`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。送る生徒はトークンのアカウント。
 ///
 /// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない。
-pub async fn submit_video<V, S, G, A, C>(
-    State(state): State<Shared<V, S, G, A, C>>,
+pub async fn submit_video<V, S, G, A, P, C>(
+    State(state): State<Shared<V, S, G, A, P, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<SubmitVideoRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<VideoBody>), ApiError>
@@ -101,6 +102,7 @@ where
     S: VideoStorage,
     G: ReviewGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let Json(request) =
@@ -146,8 +148,8 @@ where
 
 /// `GET /videos/{video_id}/review`。動画の当事者（送った生徒・送り先のコーチ）が添削を読む。コーチがまだ返して
 /// いなければ `in_progress`（未返却）。
-pub async fn get_video_review<V, S, G, A, C>(
-    State(state): State<Shared<V, S, G, A, C>>,
+pub async fn get_video_review<V, S, G, A, P, C>(
+    State(state): State<Shared<V, S, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
@@ -156,6 +158,7 @@ where
     S: VideoStorage,
     G: ReviewGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     // 契約の getVideoReview に 422 はないので、UUID でない ID はない動画として扱う
@@ -180,8 +183,8 @@ where
 
 /// `POST /videos/{video_id}/review`（admin-web）。コーチだけが呼べ（役割は `require_role` の層が確かめる）、
 /// 返せるのは自分に送られた動画だけ。
-pub async fn return_video_review<V, S, G, A, C>(
-    State(state): State<Shared<V, S, G, A, C>>,
+pub async fn return_video_review<V, S, G, A, P, C>(
+    State(state): State<Shared<V, S, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
     request: Result<Json<ReturnVideoReviewRequest>, JsonRejection>,
@@ -191,6 +194,7 @@ where
     S: VideoStorage,
     G: ReviewGate,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
     let video_id = video_id_uuid::parse(&video_id).map_err(|_| video_not_found())?;

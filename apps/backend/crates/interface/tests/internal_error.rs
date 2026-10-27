@@ -121,6 +121,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             InMemoryVideoRepository::default(),
             EntitlementReviewGate,
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         RecordLessonCompletion::new(
@@ -143,6 +144,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
                 application::in_memory::InMemoryEntitlementRepository::default(),
             ),
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         application::messaging::MarkMessageThreadRead::new(
