@@ -12,6 +12,7 @@ mod entitlements;
 mod error;
 mod lessons;
 mod live_lesson_sessions;
+mod me;
 mod message;
 mod messaging;
 mod reviews;
@@ -30,7 +31,9 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
-    identity::{AccountRepository, ListCoaches, RegisterAccount, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, GetAccount, ListCoaches, RegisterAccount, TokenIssuer, TokenVerifier,
+    },
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -75,10 +78,12 @@ pub use error::ApiError;
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
 /// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+/// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。
 #[allow(clippy::too_many_arguments)]
 pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
+    get_account: GetAccount<R>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
     create_booking: CreateBooking<B, A, C>,
@@ -135,6 +140,9 @@ where
         .route("/coaches", get(coaches::list_coaches::<R>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(coaches::CoachesState { list_coaches }));
+    let me = Router::new()
+        .route("/me", get(me::get_my_account::<R>))
+        .with_state(Arc::new(me::MeState { get_account }));
     let slots = Router::new()
         .route(
             "/slots",
@@ -268,6 +276,7 @@ where
         .route("/healthz", get(healthz))
         .merge(accounts)
         .merge(coaches)
+        .merge(me)
         .merge(slots)
         .merge(bookings)
         .merge(slot_supply)

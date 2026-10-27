@@ -38,7 +38,7 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
   - name: identity
-    description: アカウント（本部が見るコーチの一覧）
+    description: アカウント（ログイン中の本人のアカウント・本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
 
@@ -114,6 +114,32 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /me:
+    get:
+      operationId: getMyAccount
+      summary: ログイン中の本人のアカウント（本部・コーチ）
+      description: |
+        トークンが示す本人のアカウントの ID・役割・表示名を返す。admin-web がトークンの中身を読まずに、本人のアカウント ID
+        （コーチなら自分の評価を出すときの `coach_id`）と役割を知るのに使う。役割では絞らず、有効なトークンなら誰でも呼べる（403 はない）。
+
+        - トークンがない・無効なら 401。トークンが示すアカウントが存在しないときと、アカウントの役割がトークンの役割と
+          合わないときも、無効なトークンとして 401
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 本人のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /coaches:
     get:
@@ -579,6 +605,28 @@ components:
           description: スポーツ 5 種類すべて（`Sport` の enum の順）
           items:
             $ref: "#/components/schemas/SlotSupply"
+
+    AccountRole:
+      type: string
+      description: "アカウントの役割。student: 生徒 / coach: コーチ / headquarters: 本部（admin-web の画面を使うのはコーチと本部）"
+      enum: [student, coach, headquarters]
+
+    Account:
+      type: object
+      description: ログイン中の本人のアカウント（`getMyAccount`）。画面の出し分けと、本人の ID を使う操作に要る項目だけを持つ
+      required: [account_id, role, display_name]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+          description: アカウントの ID（コーチなら他の操作の `coach_id` と同じ値）
+        role:
+          $ref: "#/components/schemas/AccountRole"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: アカウントの表示名
 
     Coach:
       type: object

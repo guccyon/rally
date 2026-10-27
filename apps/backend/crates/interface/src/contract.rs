@@ -9,7 +9,7 @@ use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
     entitlement::{ContractType, SubscriptionStatus, YearMonth},
-    identity::Sport,
+    identity::{Role, Sport},
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::MessageSender,
@@ -71,6 +71,15 @@ pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> 
     match status {
         SlotSupplyStatus::Sufficient => "sufficient",
         SlotSupplyStatus::Insufficient => "insufficient",
+    }
+}
+
+/// admin-web の `AccountRole` の値（`Account.role`）。
+pub(crate) const fn role_to_contract(role: Role) -> &'static str {
+    match role {
+        Role::Student => "student",
+        Role::Coach => "coach",
+        Role::Headquarters => "headquarters",
     }
 }
 

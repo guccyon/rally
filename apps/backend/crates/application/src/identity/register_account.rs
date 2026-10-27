@@ -259,6 +259,13 @@ mod tests {
             )))
         }
 
+        async fn find(
+            &self,
+            _id: domain::identity::AccountId,
+        ) -> Result<Option<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }

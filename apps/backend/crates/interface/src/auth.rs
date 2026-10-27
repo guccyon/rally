@@ -103,7 +103,7 @@ fn bearer_token(parts: &Parts) -> Option<&str> {
 }
 
 /// 401 と `WWW-Authenticate: Bearer`（RFC 6750）。
-fn unauthorized(message: &str) -> Response {
+pub(crate) fn unauthorized(message: &str) -> Response {
     let mut response = ApiError::unauthorized(message).into_response();
     response
         .headers_mut()

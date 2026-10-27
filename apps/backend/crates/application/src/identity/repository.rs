@@ -18,6 +18,12 @@ pub trait AccountRepository: Send + Sync {
         account: Account,
     ) -> impl Future<Output = Result<(), InsertAccountError>> + Send;
 
+    /// ID のアカウント。なければ `None`。
+    fn find(
+        &self,
+        id: AccountId,
+    ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
+
     /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
     fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
 }

@@ -1,17 +1,17 @@
-//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。コーチの一覧も読む。
+//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID でのアカウントとコーチの一覧も読む。
 
 use application::{
     Unavailable,
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
 };
-use domain::identity::{Account, AccountId, Coach, DisplayName, Email, Profile, Role};
+use domain::identity::{Account, AccountId, Coach, DisplayName, Email, Profile, Role, Sport};
 use sqlx::{
     PgPool,
     types::{Uuid, time::OffsetDateTime},
 };
 
 use crate::{
-    identity_values::{role_value, sport_from_value, sport_value},
+    identity_values::{role_from_value, role_value, sport_from_value, sport_value},
     pg_support::{is_unique_violation, timestamp},
 };
 
@@ -26,6 +26,17 @@ pub struct PgAccountRepository {
 
 /// コーチの列（account_id, email, display_name, created_at, 提供スポーツ）。
 type CoachRow = (Uuid, String, String, OffsetDateTime, Vec<String>);
+
+/// アカウントの列（account_id, role, email, display_name, created_at, 生徒のスポーツ, コーチの提供スポーツ）。
+type AccountRow = (
+    Uuid,
+    String,
+    String,
+    String,
+    OffsetDateTime,
+    Option<String>,
+    Vec<String>,
+);
 
 impl PgAccountRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -84,6 +95,23 @@ impl AccountRepository for PgAccountRepository {
         tx.commit().await.map_err(unavailable)
     }
 
+    async fn find(&self, id: AccountId) -> Result<Option<Account>, Unavailable> {
+        // 生徒のスポーツは accounts.sport、コーチの提供スポーツは coach_sports から集める
+        let row: Option<AccountRow> = sqlx::query_as(
+            r#"SELECT a.account_id, a.role, a.email, a.display_name, a.created_at, a.sport,
+                      COALESCE(array_agg(s.sport) FILTER (WHERE s.sport IS NOT NULL), '{}')
+               FROM identity.accounts a
+               LEFT JOIN identity.coach_sports s ON s.coach_id = a.account_id
+               WHERE a.account_id = $1
+               GROUP BY a.account_id"#,
+        )
+        .bind(account_id_uuid::to_uuid(id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        row.map(account_from_row).transpose()
+    }
+
     async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
         // 表示名は照合順序に依らずコードポイントの順（COLLATE "C"。UTF-8 のバイト順と同じ）で並べる
         let rows: Vec<CoachRow> = sqlx::query_as(
@@ -103,16 +131,27 @@ impl AccountRepository for PgAccountRepository {
     }
 }
 
+fn account_from_row(
+    (account_id, role, email, display_name, created_at, student_sport, coach_sports): AccountRow,
+) -> Result<Account, Unavailable> {
+    let role =
+        role_from_value(&role).ok_or_else(|| Unavailable::new(format!("未知の役割: {role}")))?;
+    let sports = sports_from_values(student_sport.iter().chain(&coach_sports))?;
+    Account::new(
+        account_id_uuid::from_uuid(account_id),
+        Email::new(email).map_err(Unavailable::new)?,
+        DisplayName::new(display_name).map_err(Unavailable::new)?,
+        role,
+        sports,
+        created_at.into(),
+    )
+    .map_err(Unavailable::new)
+}
+
 fn coach_from_row(
     (account_id, email, display_name, created_at, sports): CoachRow,
 ) -> Result<Account, Unavailable> {
-    let sports = sports
-        .iter()
-        .map(|value| {
-            sport_from_value(value)
-                .ok_or_else(|| Unavailable::new(format!("未知のスポーツ: {value}")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let sports = sports_from_values(&sports)?;
     Ok(Account::with_profile(
         account_id_uuid::from_uuid(account_id),
         Email::new(email).map_err(Unavailable::new)?,
@@ -120,6 +159,18 @@ fn coach_from_row(
         Profile::Coach(Coach::new(sports).map_err(Unavailable::new)?),
         created_at.into(),
     ))
+}
+
+fn sports_from_values<'a>(
+    values: impl IntoIterator<Item = &'a String>,
+) -> Result<Vec<Sport>, Unavailable> {
+    values
+        .into_iter()
+        .map(|value| {
+            sport_from_value(value)
+                .ok_or_else(|| Unavailable::new(format!("未知のスポーツ: {value}")))
+        })
+        .collect()
 }
 
 fn unavailable(error: sqlx::Error) -> InsertAccountError {
