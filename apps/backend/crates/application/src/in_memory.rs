@@ -14,6 +14,7 @@ use domain::{
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId},
+    notification::PushNotification,
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
@@ -39,6 +40,7 @@ use crate::{
     messaging::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
+    notification::PushSender,
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -827,5 +829,25 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
             .filter(|r| r.coach_id() == coach_id)
             .cloned()
             .collect())
+    }
+}
+
+/// 送った通知を記録する [`PushSender`]（テスト用）。複製は同じ記録を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct RecordingPushSender {
+    sent: Arc<Mutex<Vec<PushNotification>>>,
+}
+
+impl RecordingPushSender {
+    /// 送った通知（送った順）。
+    pub fn sent(&self) -> Vec<PushNotification> {
+        self.sent.lock().unwrap().clone()
+    }
+}
+
+impl PushSender for RecordingPushSender {
+    async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
+        self.sent.lock().unwrap().push(notification);
+        Ok(())
     }
 }
