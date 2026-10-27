@@ -10,6 +10,7 @@ preferred: a
 confidence: high
 reason: "負例は送ったイベントの記録を insert から contains に変えた（記録しないので、同じイベントの再送で 2 回送る。doc コメントの「2 回送らない」と食い違う）"
 polarity: one_flawed            # 負例は意図して作ったアンチパターン（evals/README の「負例には意図的なアンチパターンを含める」）
-scored_by: builder_candidate     # 欠陥を入れたのは builder。人が「負例の欠陥が本物か」を確かめたら confirmed にする
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28 0005・0007 以外への指摘なし（確認の依頼の形「違うものだけ挙げる」による）
 lesson: "不変条件（冪等）を壊す 1 行の違いを、doc コメントの約束と突き合わせて拾えるか"
