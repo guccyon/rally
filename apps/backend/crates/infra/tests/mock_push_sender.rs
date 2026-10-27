@@ -40,6 +40,19 @@ fn writes_one_line_per_notification() {
 }
 
 #[test]
+fn writes_the_coach_and_the_booking_for_a_received_booking() {
+    assert_eq!(
+        MockPushSender::line(&PushNotification::BookingReceived {
+            student_id: AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+            coach_id: AccountId::from_u128(9),
+            booking_id: BookingId::from_u128(1),
+        }),
+        "push_notification 00000000-0000-0000-0000-000000000009 booking_received \
+         00000000-0000-0000-0000-000000000001"
+    );
+}
+
+#[test]
 fn writes_the_video_for_a_returned_review_and_the_thread_for_a_received_message() {
     let student = AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
     let coach = AccountId::from_u128(9);

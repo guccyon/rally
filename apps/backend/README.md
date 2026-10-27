@@ -204,13 +204,13 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 ## notification: 予約の確定・添削の返却・メッセージの受信でのプッシュ通知（モック）
 
 - 通知のきっかけは境界間イベントの購読だけで、他のコンテキストは notification を直接呼ばない（`specs/context-map.yaml` の向き）。`application::notification::PushNotificationSubscriber` が次の 3 つを購読し、`domain::notification::PushNotification` を送る（受け取る人は `recipient()`）。ほかのイベントでは送らない（キャンセルの通知はまだない）
-  - `BookingConfirmed`（scheduling）→ 生徒に `PushNotification::BookingConfirmed`（コーチ・予約の ID）
+  - `BookingConfirmed`（scheduling）→ 生徒に `PushNotification::BookingConfirmed`（予約の確定）、予約を受けたコーチに `PushNotification::BookingReceived`（新しい予約）の 2 件（どちらもコーチ・予約の ID）
   - `VideoReviewReturned`（async-lesson。添削の返却 `ReturnVideoReview` が発行）→ 動画を送った生徒に `PushNotification::VideoReviewReturned`（コーチ・動画・添削の ID）
   - `MessageSent`（messaging。メッセージの送信 `SendMessage` が発行）→ 受け手（送り手でない側の当事者。`sender_role` が student ならコーチ、coach なら生徒）に `PushNotification::MessageReceived`（スレッド・メッセージの ID と送り手。本文は載せない）
-- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。種類と対象は `booking_confirmed <予約の ID>`・`video_review_returned <動画の ID>`・`message_received <スレッドの ID>`）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
-- 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った `event_id` をプロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。プロセスを再起動すると忘れる
+- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。種類と対象は `booking_confirmed <予約の ID>`・`booking_received <予約の ID>`・`video_review_returned <動画の ID>`・`message_received <スレッドの ID>`）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
+- 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った通知を `event_id` と組にしてプロセスのメモリに覚える（1 イベントで 2 件送る予約の確定も通知ごとに覚え、送れなかった通知だけを再送で送り直す。1 件が送れなくても残りは送り、障害を返す）。プロセスを再起動すると忘れる
 - 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。`ReturnVideoReview`・`SendMessage` にも同じバスを発行先として渡す。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
-- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒に 1 件、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
+- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（予約の確定は生徒とコーチに 1 件ずつ・1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送・片方だけ失敗したときは失敗した方だけを再送で送る）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒とコーチに 1 件ずつ、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
 
 ## 行動イベントの配信先（モック）と発火の網羅
 
