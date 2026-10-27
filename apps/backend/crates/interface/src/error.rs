@@ -46,6 +46,15 @@ impl ApiError {
         }
     }
 
+    /// 403 と、その理由の `code`（役割は合っているが受講権が操作に合わないなど）
+    pub fn forbidden_because(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code,
+            message: message.into(),
+        }
+    }
+
     /// 404 `not_found`（対象が存在しない）
     pub fn not_found(message: impl Into<String>) -> Self {
         Self {

@@ -82,6 +82,12 @@ const EMITTERS: &[(&str, &str, &str, &str)] = &[
         "StartSubscription",
         "entitlement/start_subscription.rs",
     ),
+    (
+        "message.sent",
+        "MessageSent",
+        "SendMessage",
+        "messaging/send_message.rs",
+    ),
 ];
 
 fn src() -> PathBuf {

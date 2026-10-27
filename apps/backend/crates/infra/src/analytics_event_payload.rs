@@ -2,7 +2,7 @@
 //!
 //! [`attributes`] は events.yaml の `required` だけ。共通の任意属性（`common_optional`）は [`line`] で値が分かる
 //! ときだけ足す。ID は UUID のハイフン区切り、時刻（`occurred_at`・`starts_at`・
-//! `submitted_at`）は RFC 3339。`sport` は DB と同じ値（[`crate::identity_values::sport_value`]）。
+//! `submitted_at`）は RFC 3339。`sport` は DB と同じ値（[`crate::identity_values::sport_value`]）、`sender_role` も DB と同じ値（[`crate::messaging_values::message_sender_value`]）。
 //! events.yaml との一致は `tests/analytics_event_payload.rs` が確かめる。
 
 use application::{
@@ -12,6 +12,7 @@ use application::{
     identity::account_id_uuid,
     lesson::lesson_id_uuid,
     live_lesson::session_id_uuid,
+    messaging::{message_id_uuid, message_thread_id_uuid},
     scheduling::{booking_id_uuid, slot_id_uuid},
 };
 use domain::lesson::LessonType;
@@ -19,6 +20,7 @@ use serde_json::{Value, json};
 
 use crate::{
     AnalyticsCommonAttributes, domain_event_payload::date_time, identity_values::sport_value,
+    messaging_values::message_sender_value,
 };
 
 /// `lesson.completed` の `lesson_type` の値（student-app の契約の `LessonType` と同じ）。
@@ -183,6 +185,21 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
             "student_id": account_id_uuid::format(*student_id),
             "subscription_id": subscription_id_uuid::format(*subscription_id),
             "sport": sport_value(*sport),
+            "occurred_at": date_time(*occurred_at)?,
+        }),
+        AnalyticsEvent::MessageSent {
+            student_id,
+            coach_id,
+            thread_id,
+            message_id,
+            sender_role,
+            occurred_at,
+        } => json!({
+            "student_id": account_id_uuid::format(*student_id),
+            "coach_id": account_id_uuid::format(*coach_id),
+            "thread_id": message_thread_id_uuid::format(*thread_id),
+            "message_id": message_id_uuid::format(*message_id),
+            "sender_role": message_sender_value(*sender_role),
             "occurred_at": date_time(*occurred_at)?,
         }),
     })

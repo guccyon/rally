@@ -12,6 +12,7 @@ use domain::{
     identity::Sport,
     lesson::LessonType,
     live_lesson::SessionStatus,
+    messaging::MessageSender,
     scheduling::{BookingStatus, SlotStatus, SlotSupplyStatus},
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -131,6 +132,14 @@ pub(crate) const fn video_review_status_to_contract(status: VideoStatus) -> &'st
     match status {
         VideoStatus::Submitted => "in_progress",
         VideoStatus::Reviewed => "returned",
+    }
+}
+
+/// student-app・admin-web の `MessageSenderRole` の値（`Message.sender_role`）。
+pub(crate) const fn message_sender_to_contract(sender: MessageSender) -> &'static str {
+    match sender {
+        MessageSender::Student => "student",
+        MessageSender::Coach => "coach",
     }
 }
 

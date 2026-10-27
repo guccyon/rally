@@ -86,3 +86,74 @@ pub trait DomainEventSubscriber: Send + Sync {
         event: &DomainEvent,
     ) -> impl Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send;
 }
+
+/// 2 つの購読側に同じイベントを順に渡す（メッセージ基盤のモックが 1 つの購読側しか持たないので、複数の
+/// コンテキストの購読をまとめる）。片方が失敗しても、もう片方には渡す。失敗はどちらかの `Err` を返す
+/// （両方失敗すれば最初のもの）。
+impl<A, B> DomainEventSubscriber for (A, B)
+where
+    A: DomainEventSubscriber,
+    B: DomainEventSubscriber,
+{
+    async fn handle(
+        &self,
+        event: &DomainEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let first = self.0.handle(event).await;
+        let second = self.1.handle(event).await;
+        first.and(second)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    /// 受け取ったイベントの名前を記録し、`fail` なら失敗する購読側。
+    #[derive(Clone, Default)]
+    struct Recording {
+        seen: Arc<Mutex<Vec<&'static str>>>,
+        fail: bool,
+    }
+
+    impl DomainEventSubscriber for Recording {
+        async fn handle(
+            &self,
+            event: &DomainEvent,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.seen.lock().unwrap().push(event.name());
+            if self.fail {
+                Err("failed".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn event() -> DomainEvent {
+        DomainEvent::SubscriptionStarted {
+            event_id: Uuid::nil(),
+            occurred_at: SystemTime::UNIX_EPOCH,
+            student_id: AccountId::from_u128(1),
+            subscription_id: SubscriptionId::from_u128(2),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pair_passes_the_event_to_both_even_if_the_first_fails() {
+        let failing = Recording {
+            fail: true,
+            ..Recording::default()
+        };
+        let ok = Recording::default();
+        let pair = (failing.clone(), ok.clone());
+        assert!(pair.handle(&event()).await.is_err());
+        assert_eq!(*failing.seen.lock().unwrap(), ["SubscriptionStarted"]);
+        assert_eq!(*ok.seen.lock().unwrap(), ["SubscriptionStarted"]);
+
+        let both_ok = (Recording::default(), Recording::default());
+        assert!(both_ok.handle(&event()).await.is_ok());
+    }
+}
