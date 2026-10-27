@@ -818,15 +818,20 @@ class MessageList {
 class SendMessageRequest {
   /// 本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
   factory SendMessageRequest({required String body}) {
-    if (body.trim().isEmpty) {
-      throw ArgumentError.value(body, 'body', '空白だけの本文は送れません');
-    }
-    // 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える
-    if (body.runes.length > maxBodyLength) {
-      throw ArgumentError.value(body, 'body', '本文は $maxBodyLength 文字までです');
+    if (!isValidBody(body)) {
+      throw ArgumentError.value(
+        body,
+        'body',
+        '空白だけの本文と、$maxBodyLength 文字を超える本文は送れません',
+      );
     }
     return SendMessageRequest._(body);
   }
+
+  /// 契約の `SendMessageRequest.body` に収まるか（空白だけでなく、[maxBodyLength] 文字以内）。
+  /// 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える。画面の送信可否もこれを使う
+  static bool isValidBody(String body) =>
+      body.trim().isNotEmpty && body.runes.length <= maxBodyLength;
 
   const SendMessageRequest._(this.body);
 

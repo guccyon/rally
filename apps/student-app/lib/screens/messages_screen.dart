@@ -31,11 +31,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
   }
 
   /// 契約の `SendMessageRequest` に収まる本文か（入力欄の maxLength は書記素で数えるので、コードポイントでも確かめる）
-  bool get _sendable {
-    final body = _body.text.trim();
-    return body.isNotEmpty &&
-        body.runes.length <= SendMessageRequest.maxBodyLength;
-  }
+  bool get _sendable => SendMessageRequest.isValidBody(_body.text.trim());
 
   Future<void> _send() async {
     final sent = await ref
