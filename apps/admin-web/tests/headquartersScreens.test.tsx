@@ -68,11 +68,11 @@ describe("スポーツ別の予約枠の需給", () => {
   test("API のエラー（本部以外のトークンの 403 など）の文言を出し、一覧は出さない", async () => {
     const getSlotSupply = vi.fn<HeadquartersApi["getSlotSupply"]>(async () => ({
       ok: false,
-      message: "このロールでは実行できない操作です。",
+      message: "権限がないためアクセスできません。",
     }));
     render(<SlotSupplyReport api={{ getSlotSupply }} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("このロールでは実行できない操作です。");
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 

@@ -3,7 +3,7 @@ import type { Schemas } from "./client";
 // 契約の ErrorCode → 画面に出す日本語。Error.message は「表示用ではない」（契約）ので、文言はここ 1 か所で決める。
 const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   unauthorized: "トークンがないか無効です。ログインし直してください。",
-  forbidden: "このロールでは実行できない操作です。",
+  forbidden: "権限がないためアクセスできません。",
   not_found: "対象が見つかりません（ID を確かめてください）。",
   validation_failed: "入力の内容が正しくありません。",
   slot_overlaps: "公開済みの枠と時間が重なっています。",
