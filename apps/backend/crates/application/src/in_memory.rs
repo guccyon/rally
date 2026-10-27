@@ -13,6 +13,7 @@ use domain::{
     identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+    messaging::{MessageId, MessageThread, MessageThreadId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
 
@@ -33,6 +34,9 @@ use crate::{
     live_lesson::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
         session_id_uuid,
+    },
+    messaging::{
+        MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -664,5 +668,91 @@ impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
         let completion = record(&history).map_err(RecordCompletionError::Rejected)?;
         completions.push(completion.clone());
         Ok(completion)
+    }
+}
+
+/// [`MessageThreadRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じスレッドへの送信・既読と、同じ生徒とコーチの
+/// スレッドを開くことは直列になる。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryMessageThreadRepository {
+    threads: Arc<Mutex<Vec<MessageThread>>>,
+}
+
+impl InMemoryMessageThreadRepository {
+    /// 既存のスレッドを入れて作る（同じ生徒とコーチのスレッドが 1 つかは確かめない。テストの準備用）。
+    pub fn with_threads(threads: impl IntoIterator<Item = MessageThread>) -> Self {
+        Self {
+            threads: Arc::new(Mutex::new(threads.into_iter().collect())),
+        }
+    }
+
+    /// 保存したスレッド（開いた順）。
+    pub fn all(&self) -> Vec<MessageThread> {
+        self.threads.lock().unwrap().clone()
+    }
+}
+
+impl MessageThreadRepository for InMemoryMessageThreadRepository {
+    fn next_thread_id(&self) -> MessageThreadId {
+        message_thread_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    fn next_message_id(&self) -> MessageId {
+        message_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn open(&self, thread: MessageThread) -> Result<MessageThread, Unavailable> {
+        let mut threads = self.threads.lock().unwrap();
+        if let Some(existing) = threads
+            .iter()
+            .find(|t| t.student_id() == thread.student_id() && t.coach_id() == thread.coach_id())
+        {
+            return Ok(existing.clone());
+        }
+        threads.push(thread.clone());
+        Ok(thread)
+    }
+
+    async fn find(&self, thread_id: MessageThreadId) -> Result<Option<MessageThread>, Unavailable> {
+        Ok(self
+            .threads
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.id() == thread_id)
+            .cloned())
+    }
+
+    async fn list_for(&self, account_id: AccountId) -> Result<Vec<MessageThread>, Unavailable> {
+        Ok(self
+            .threads
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| t.student_id() == account_id || t.coach_id() == account_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn update<F>(
+        &self,
+        thread_id: MessageThreadId,
+        update: F,
+    ) -> Result<MessageThread, UpdateMessageThreadError>
+    where
+        F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send,
+    {
+        let mut threads = self.threads.lock().unwrap();
+        let thread = threads
+            .iter_mut()
+            .find(|t| t.id() == thread_id)
+            .ok_or(UpdateMessageThreadError::NotFound)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let mut next = thread.clone();
+        update(&mut next).map_err(UpdateMessageThreadError::Rejected)?;
+        *thread = next.clone();
+        Ok(next)
     }
 }

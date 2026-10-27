@@ -90,3 +90,11 @@ events:
     actor: student
     required: [student_id, subscription_id, sport, occurred_at]
     kpi: "初回レッスン後の 1 ヶ月継続率"
+  # 生徒と担当コーチの 1 対 1 のチャット（messaging）。生徒もコーチも送るので、送った側は sender_role（student | coach）に持たせる（actor は代表として student）
+  # 月額の生徒はチャットが送り放題で、送信は回数を消費しない。スレッドは予約の確定（境界間イベント BookingConfirmed）で messaging が開く
+  - name: message.sent
+    ja: "メッセージの送信"
+    context: messaging
+    actor: student
+    required: [student_id, coach_id, thread_id, message_id, sender_role, occurred_at]
+    kpi: null

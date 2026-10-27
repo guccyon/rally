@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -44,6 +44,8 @@
 | `async_lesson` | `videos` | 生徒がコーチに送った動画（T13 の expand で追加）。スポーツは 5 種類（ゴルフは golf-app から送る）。動画本体は保存先（S3 への直接アップロード。Gen1 はモック）に置き、ここには持たない。状態の列は持たず、添削の行の有無で決まる |
 | | `video_reviews` | コーチが返した添削。動画 1 本につき 1 つ（`video_reviews_video_id_key`）。コメントは空でない |
 | | `lesson_completions` | 非同期レッスンの完了記録（T14 の expand で追加。置き場所は ADR 0006）。添削を返した動画 1 本につき 1 行（`video_reviews` への外部キーと `lesson_completions_video_id_key`）。生徒・コーチは動画の当事者（`lesson_completions_video_fkey`） |
+| `messaging` | `threads` | 生徒と担当コーチの 1 対 1 のチャットのスレッド（D01 の expand で追加。ADR 0007）。生徒とコーチの組に 1 つ（`threads_student_id_coach_id_key`）。予約の確定で開くが、予約は scheduling の持ち物なので外部キーは張らない |
+| | `messages` | スレッドのメッセージ。送り手は当事者の別（`sender_role`: `student` / `coach`）で持ち、本文は空でない。既読（`read_at`）は送信の後（`messages_read_after_sent`）。送った順は `seq` |
 
 列挙は Postgres の enum 型ではなく `text` と `CHECK` で持つ（値の削除・改名が enum 型だと expand/contract に分けにくい）。
 
@@ -62,6 +64,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 | 動画の添削の返却は 1 回 | `video_reviews_video_id_key` |
 | レッスンの完了記録はセッション・動画 1 つにつき 1 回、非同期は添削を返した動画だけ | `lesson_completions_session_id_key` / `lesson_completions_video_id_key`、`async_lesson.lesson_completions.video_id` の `video_reviews` への外部キー |
 | 生徒の初回のレッスン（`is_first_lesson`）は 1 件 | テーブルごとの部分一意索引 `lesson_completions_one_first_per_student`（2 つのテーブルをまたいだ重なりは下の「制約にしないもの」） |
+| 同じ生徒とコーチのチャットのスレッドは 1 つ、既読は送信の後 | `threads_student_id_coach_id_key`、`messages_read_after_sent` |
 
 制約にしないもの:
 
@@ -70,6 +73,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 - 枠の消費をいつ・どの予約で行うか、暦月をどのタイムゾーンで区切るか: T11 で決める。DB は「枠の行の残回数が 0〜2」だけを守る（T11 で決めた: ADR 0005）
 - ゴルフの添削はワンショット決済が確定した動画だけ（不変条件 2）: 判定は domain の `ContractType::may_start_review` の 1 か所に置き、async-lesson は返却の前にポート `ReviewGate` で問い合わせる（T13）。決済は billing の持ち物で、Gen1 は billing のテーブルがないので DB では守らない（billing を実装するときに見直す）
 - レッスンの完了記録の `is_first_lesson` の判定と、同期・非同期のテーブルをまたいだ「初回は 1 件」（T14）: 判定は domain の `LessonCompletion` の 1 か所。テーブルは元の集約のスキーマに分けた（ADR 0006）ので、DB はテーブルごとの部分一意索引までを守り、またぎは Postgres の実装が生徒ごとの advisory lock で直列にする（`PgSlotRepository` と同じ）。通話セッションが終了済みかも domain（`LiveLessonSession::complete`）で判定し、DB では守らない
+- 生徒がチャットを送ってよいか（月額の送り放題。D01）: 判定は domain の `Entitlement::unlimited_video_and_chat`（規則は `ContractType`）の 1 か所で、messaging は送信の前にポート `ChatGate` で問い合わせる（ADR 0007）。送り放題なので送信の回数は保存しない
 - コーチへの支払い（不変条件 4）: billing のテーブルとともに段 5 以降
 
 ### 5. 検査

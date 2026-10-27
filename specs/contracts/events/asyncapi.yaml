@@ -14,8 +14,10 @@ channels:
     description: |
       予約が確定した。entitlement はこれを購読し、月額の生徒のビデオ通話の暦月の枠を 1 回使う（不変条件 1。
       暦月は occurred_at で決める。docs/adr/0005）。枠が残っているかは scheduling が確定の前に entitlement に問い合わせる。
+      messaging はこれを購読し、その生徒とコーチのチャットのスレッドを開く（生徒とコーチの組に 1 つ。Gen1 は matching が
+      ないので、確定した予約のコーチを担当コーチとみなす）。
     x-publisher: [scheduling]
-    x-subscribers: [entitlement, notification, analytics]
+    x-subscribers: [entitlement, messaging, notification, analytics]
     messages:
       BookingConfirmed:
         $ref: '#/components/messages/BookingConfirmed'

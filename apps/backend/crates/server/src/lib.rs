@@ -10,17 +10,22 @@ use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo, VideoRepository},
     clock::{Clock, SystemClock},
     entitlement::{
-        EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate, GetEntitlement,
-        LiveLessonQuotaSubscriber, StartSubscription,
+        EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
+        GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
     identity::{AccountRepository, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink,
     },
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
+    messaging::{
+        ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
+        MessageThreadSubscriber, SendMessage,
+    },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
@@ -30,8 +35,8 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
     PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgSlotRepository,
-    PgVideoRepository,
+    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -44,8 +49,12 @@ pub fn router() -> Router {
 /// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。本番では差し替える）で組み立てる。
 ///
 /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
-/// （`LiveLessonQuotaSubscriber`）につなぐ。予約の確定・キャンセルでビデオ通話の暦月の枠が動き、予約の確定は
-/// entitlement に枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
+/// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）につなぐ。予約の確定・キャンセルで
+/// ビデオ通話の暦月の枠が動き、予約の確定は entitlement に枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
+/// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。
+///
+/// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
+/// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
 ///
 /// 通話セッションの開始・終了は通話基盤のモック（`MockVideoCallProvider`。終了時に接続品質の指標を乱数で生成する）で
 /// 組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
@@ -84,6 +93,7 @@ where
             sessions: InMemoryLiveLessonSessionRepository::default(),
             videos: InMemoryVideoRepository::default(),
             completions: InMemoryLessonCompletionRepository::default(),
+            threads: InMemoryMessageThreadRepository::default(),
         },
         clock,
         analytics,
@@ -106,7 +116,8 @@ where
             entitlements: PgEntitlementRepository::new(pool.clone()),
             sessions: PgLiveLessonSessionRepository::new(pool.clone()),
             videos: PgVideoRepository::new(pool.clone()),
-            completions: PgLessonCompletionRepository::new(pool),
+            completions: PgLessonCompletionRepository::new(pool.clone()),
+            threads: PgMessageThreadRepository::new(pool),
         },
         clock,
         analytics,
@@ -114,7 +125,7 @@ where
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M> {
+struct Repositories<R, S, B, E, L, W, M, X> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -122,11 +133,12 @@ struct Repositories<R, S, B, E, L, W, M> {
     sessions: L,
     videos: W,
     completions: M,
+    threads: X,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, C, A>(
-    repositories: Repositories<R, S, B, E, L, W, M>,
+fn compose<R, S, B, E, L, W, M, X, C, A>(
+    repositories: Repositories<R, S, B, E, L, W, M, X>,
     clock: C,
     analytics: A,
 ) -> Router
@@ -138,6 +150,7 @@ where
     L: LiveLessonSessionRepository + Clone + 'static,
     W: VideoRepository + Clone + 'static,
     M: LessonCompletionRepository + 'static,
+    X: MessageThreadRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
@@ -149,8 +162,12 @@ where
         sessions,
         videos,
         completions,
+        threads,
     } = repositories;
-    let events = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
+    let events = InMemoryDomainEventBus::new((
+        LiveLessonQuotaSubscriber::new(entitlements.clone()),
+        MessageThreadSubscriber::new(threads.clone()),
+    ));
     let video = MockVideoCallProvider::new();
     interface::router_with(
         RegisterAccount::new(accounts, analytics.clone(), clock.clone()),
@@ -177,7 +194,7 @@ where
             events.clone(),
             clock.clone(),
         ),
-        GetEntitlement::new(entitlements, clock.clone()),
+        GetEntitlement::new(entitlements.clone(), clock.clone()),
         StartLiveLessonSession::new(
             sessions.clone(),
             SchedulingBookingLookup::new(bookings),
@@ -199,7 +216,23 @@ where
             analytics.clone(),
             clock.clone(),
         ),
-        RecordLessonCompletion::new(sessions, videos, completions, analytics, events, clock),
+        RecordLessonCompletion::new(
+            sessions,
+            videos,
+            completions,
+            analytics.clone(),
+            events,
+            clock.clone(),
+        ),
+        ListMessageThreads::new(threads.clone()),
+        ListMessages::new(threads.clone()),
+        SendMessage::new(
+            threads.clone(),
+            EntitlementChatGate::new(entitlements),
+            analytics,
+            clock.clone(),
+        ),
+        MarkMessageThreadRead::new(threads, clock),
         MockTokenService,
     )
 }

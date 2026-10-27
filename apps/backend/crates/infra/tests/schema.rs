@@ -101,7 +101,7 @@ async fn subscription_entitlement(pool: &PgPool, student_id: &str) -> String {
 async fn migrations_create_core_tables(pool: PgPool) {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_schema || '.' || table_name FROM information_schema.tables
-         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson')
+         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson', 'messaging')
          ORDER BY 1",
     )
     .fetch_all(&pool)
@@ -122,6 +122,8 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "identity.coaches",
             "live_lesson.lesson_completions",
             "live_lesson.sessions",
+            "messaging.messages",
+            "messaging.threads",
             "scheduling.bookings",
             "scheduling.slots",
         ]
@@ -1033,5 +1035,152 @@ async fn quota_bookings_belong_to_a_quota_month(pool: PgPool) {
             FOREIGN_KEY_VIOLATION,
             "live_lesson_quota_bookings_quota_fkey"
         )
+    );
+}
+
+/// 生徒 `student_id` と担当コーチ `coach_id` のスレッドの行を入れ、thread_id を返す。
+async fn open_thread(
+    pool: &PgPool,
+    student_id: &str,
+    coach_id: &str,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO messaging.threads (student_id, coach_id, opened_at)
+         VALUES ($1::uuid, $2::uuid, '2026-10-26T10:00:00Z')
+         RETURNING thread_id::text",
+    )
+    .bind(student_id)
+    .bind(coach_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// スレッド `thread_id` に `sender_role` が `body` を送った行を入れる（送信 10:00、既読は `read_at`）。
+async fn send_message(
+    pool: &PgPool,
+    thread_id: &str,
+    sender_role: &str,
+    body: &str,
+    read_at: Option<&str>,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO messaging.messages (thread_id, sender_role, body, sent_at, read_at)
+         VALUES ($1::uuid, $2, $3, '2026-10-26T10:00:00Z', $4::timestamptz)
+         RETURNING message_id::text",
+    )
+    .bind(thread_id)
+    .bind(sender_role)
+    .bind(body)
+    .bind(read_at)
+    .fetch_one(pool)
+    .await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_student_and_a_coach_have_at_most_one_thread_with_the_right_roles(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    open_thread(&pool, &student_id, &coach_id).await.unwrap();
+    // 同じ生徒とコーチのスレッドは 1 つ
+    let (code, constraint) = violation(open_thread(&pool, &student_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "threads_student_id_coach_id_key")
+    );
+    // 生徒の欄にコーチ、コーチの欄に生徒は入らない
+    let (code, constraint) = violation(open_thread(&pool, &coach_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "threads_student_fkey")
+    );
+    let (code, constraint) = violation(open_thread(&pool, &student_id, &student_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "threads_coach_id_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn messages_have_a_body_a_known_sender_and_are_read_after_sent(pool: PgPool) {
+    use domain::messaging::MessageSender;
+    use infra::messaging_values::message_sender_value;
+
+    let senders: Vec<&str> = MessageSender::ALL
+        .into_iter()
+        .map(message_sender_value)
+        .collect();
+    assert_eq!(
+        check_values(&pool, "messaging.messages", "messages_sender_role_check").await,
+        senders
+    );
+
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let thread_id = open_thread(&pool, &student_id, &coach_id).await.unwrap();
+    for sender in senders {
+        send_message(&pool, &thread_id, sender, "こんにちは", None)
+            .await
+            .unwrap();
+    }
+    send_message(
+        &pool,
+        &thread_id,
+        "student",
+        "読んだ",
+        Some("2026-10-26T10:00:00Z"),
+    )
+    .await
+    .unwrap();
+
+    for (sender, body, read_at, expected) in [
+        (
+            "headquarters",
+            "x",
+            None,
+            (CHECK_VIOLATION, "messages_sender_role_check"),
+        ),
+        (
+            "student",
+            "",
+            None,
+            (CHECK_VIOLATION, "messages_body_check"),
+        ),
+        (
+            "student",
+            "   ",
+            None,
+            (CHECK_VIOLATION, "messages_body_check"),
+        ),
+        (
+            "coach",
+            "x",
+            Some("2026-10-26T09:59:59Z"),
+            (CHECK_VIOLATION, "messages_read_after_sent"),
+        ),
+    ] {
+        let (code, constraint) =
+            violation(send_message(&pool, &thread_id, sender, body, read_at).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            expected,
+            "{sender} {body:?} {read_at:?}"
+        );
+    }
+    // ないスレッドのメッセージは入らない
+    let (code, constraint) = violation(
+        send_message(
+            &pool,
+            "00000000-0000-4000-8000-000000000000",
+            "student",
+            "x",
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "messages_thread_id_fkey")
     );
 }

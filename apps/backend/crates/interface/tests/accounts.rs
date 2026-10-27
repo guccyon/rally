@@ -137,6 +137,24 @@ fn app() -> App {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
+        application::messaging::ListMessageThreads::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+        ),
+        application::messaging::ListMessages::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+        ),
+        application::messaging::SendMessage::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+            application::entitlement::EntitlementChatGate::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+            ),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        application::messaging::MarkMessageThreadRead::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+            clock,
+        ),
         FakeTokens,
     );
     App { router, analytics }
