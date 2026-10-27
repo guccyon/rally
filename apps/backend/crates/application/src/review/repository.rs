@@ -30,7 +30,7 @@ pub trait LessonReviewRepository: Send + Sync {
         review: LessonReview,
     ) -> impl Future<Output = Result<(), InsertReviewError>> + Send;
 
-    /// コーチ `coach_id` への評価をすべて読む（数えない。数えるのは domain の
+    /// コーチ `coach_id` への評価をすべて読む（数えない・並べない。並べるのは [`super::ListCoachReviews`]、数えるのは domain の
     /// [`domain::review::CoachReviewSummary::tally`]）。
     fn find_by_coach(
         &self,

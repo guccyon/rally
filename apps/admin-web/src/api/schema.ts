@@ -94,6 +94,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/{coach_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチが受けた評価の一覧（本部・コーチ）
+         * @description コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の
+         *     点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
+         *     （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
+         *     生徒の役割のトークンは 403。
+         *
+         *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
+         *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
+         */
+        get: operations["listCoachReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -318,6 +344,34 @@ export interface components {
             review_count: number;
             /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
             average_rating: number | null;
+        };
+        /**
+         * @description コーチが受けた glossary の lesson_review（レッスンの評価）1 件。student-app の `LessonReview` から、
+         *     評価した生徒（`student_id`）と、一覧の `coach_id` と同じ値の `coach_id` を除いた形
+         */
+        CoachReview: {
+            /** Format: uuid */
+            review_id: string;
+            /**
+             * Format: uuid
+             * @description 評価された完了したレッスン
+             */
+            lesson_id: string;
+            rating: number;
+            /** @description 一言 */
+            comment: string;
+            /**
+             * Format: date-time
+             * @description 評価を送った時刻
+             */
+            submitted_at: string;
+        };
+        /** @description コーチ 1 人が受けた評価の一覧（並べ方は `listCoachReviews` の説明） */
+        CoachReviewList: {
+            /** Format: uuid */
+            coach_id: string;
+            /** @description 送った時刻の新しい順（同じ時刻は `review_id` の順） */
+            reviews: components["schemas"]["CoachReview"][];
         };
         /**
          * @description student-app の LiveLessonSessionStatus と同じ値
@@ -572,6 +626,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoachReviewSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCoachReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチが受けた評価の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachReviewList"];
                 };
             };
             401: components["responses"]["Unauthorized"];

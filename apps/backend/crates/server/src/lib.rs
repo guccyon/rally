@@ -27,7 +27,7 @@ use application::{
         MessageThreadSubscriber, SendMessage,
     },
     notification::{PushNotificationSubscriber, PushSender},
-    review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
+    review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
@@ -73,7 +73,8 @@ pub fn router() -> Router {
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
-/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）は同じ保存先から読む。
+/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
+/// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -269,7 +270,8 @@ where
             analytics,
             clock,
         ),
-        GetCoachReviewSummary::new(reviews),
+        GetCoachReviewSummary::new(reviews.clone()),
+        ListCoachReviews::new(reviews),
         MockTokenService,
     )
 }

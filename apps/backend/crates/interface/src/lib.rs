@@ -40,7 +40,8 @@ use application::{
         SendMessage,
     },
     review::{
-        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
+        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
+        SubmitLessonReview,
     },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
@@ -71,7 +72,8 @@ pub use error::ApiError;
 /// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
-/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）は本部とコーチで、コーチは自分の分だけ。
+/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
+/// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。
 #[allow(clippy::too_many_arguments)]
 pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
@@ -95,6 +97,7 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
     get_coach_review_summary: GetCoachReviewSummary<N>,
+    list_coach_reviews: ListCoachReviews<N>,
     tokens: T,
 ) -> Router
 where
@@ -245,9 +248,15 @@ where
             get(reviews::get_coach_review_summary::<O, N, A, C>)
                 .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
         )
+        .route(
+            "/coaches/{coach_id}/reviews",
+            get(reviews::list_coach_reviews::<O, N, A, C>)
+                .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
+        )
         .with_state(Arc::new(reviews::ReviewsState {
             submit_lesson_review,
             get_coach_review_summary,
+            list_coach_reviews,
         }));
     Router::new()
         .route("/healthz", get(healthz))
