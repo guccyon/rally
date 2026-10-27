@@ -26,7 +26,8 @@ impl SlotSupply {
     /// 数える期間の長さ。集計した時刻の 30 日前（含む）から集計した時刻（含まない）までに開始する枠を数える
     pub const WINDOW: Duration = Duration::from_secs(30 * 24 * 3600);
 
-    /// 公開した枠に対する、予約しようとした生徒の数の割合（%）がこれ以上なら「足りていない」
+    /// 公開した枠に対する、予約しようとした生徒の数の割合（%）がこれ以上なら「足りていない」。
+    /// 60 は仮の初期値（合成シードで見て決めた。実データで見直す。契約の `getSlotSupply` の説明と同じ）
     pub const SHORTAGE_PERCENT: u32 = 60;
 
     pub const fn new(sport: Sport, published_slots: u32, booking_students: u32) -> Self {

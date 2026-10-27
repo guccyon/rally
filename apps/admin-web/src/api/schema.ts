@@ -50,7 +50,8 @@ export interface paths {
          *       予約を作った生徒の数。予約の状態（未確定・確定・キャンセル）を問わず、同じ生徒は 1 人と数える。
          *       スロットの検索は記録していないので数に入らない
          *     - 判定: `booking_students >= 1` かつ `booking_students >= published_slots × 0.6` なら `insufficient`、
-         *       それ以外は `sufficient`（予約しようとした生徒がいなければ、枠が 0 でも `sufficient`）
+         *       それ以外は `sufficient`（予約しようとした生徒がいなければ、枠が 0 でも `sufficient`）。
+         *       0.6 は仮の初期値（2026-10-27、合成シードで見て決めた。実データでの見直しが前提。工場の judge が人に回し、builder が委任の範囲で仮置きとした）
          *
          *     行動イベントは発火しない。
          */
