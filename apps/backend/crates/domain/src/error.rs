@@ -92,6 +92,20 @@ pub enum DomainError {
     CompletionBeforeLessonEnded,
     /// そのレッスン（通話セッション・動画）の完了はすでに記録してある
     LessonAlreadyCompleted,
+    /// スレッドの生徒とコーチが同じアカウント
+    MessageThreadWithOneself,
+    /// スレッドの当事者（生徒・担当コーチ）でないので、そのスレッドを扱えない
+    NotAThreadParticipant,
+    /// 生徒がチャットを送れる利用権（月額の送り放題）を持たない
+    ChatNotAllowed,
+    /// メッセージの送信がスレッドを開いた時刻か前のメッセージの送信時刻より前
+    MessageSentBeforeLastActivity,
+    /// メッセージの既読が送信より前
+    MessageReadBeforeSent,
+    /// メッセージの本文が空（空白だけを含む）
+    EmptyMessageBody,
+    /// メッセージの本文が長すぎる（`max` は文字数）
+    MessageBodyTooLong { max: usize },
     /// 評価の点が `min`〜`max` の整数でない
     RatingOutOfRange { min: u8, max: u8 },
     /// 評価の一言が空（空白だけを含む）

@@ -5,6 +5,8 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- レッスンの評価（review の最小形）: 生徒が完了したレッスン 1 件につき 1 回、1〜5 の点と一言を付ける `POST /lesson-reviews`（2 回目は 409 `lesson_already_reviewed`）と、admin-web の本部とコーチ本人がコーチの評価の件数と平均を読む `GET /coaches/{coach_id}/review-summary`。評価で行動イベント `review.submitted` を発火（#92）
+- 生徒と担当コーチのチャット（messaging の最小形）: student-app と admin-web の `GET /message-threads`・`GET /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/read`。スレッドは予約の確定で生徒とコーチの組に 1 つ開く。月額の生徒は送り放題（回数を消費しない）、月額契約の前の生徒の送信は 403 `chat_not_entitled`。送信時刻と既読を返し、送信で行動イベント `message.sent` を発火（#90）
 - admin-web の本部の画面に「スポーツ別の予約枠の需給」（`/headquarters/slot-supply`）: `GET /slot-supply` の結果をスポーツごとに「足りている / 足りていない」と、公開した枠の数・予約しようとした生徒の数で一覧にし、集計の期間を出す。本部以外のロールでは入れず、API の 403 はその旨を表示（#85）
 - 行動イベントの共通の任意属性 `release_id`（版の ID。例: `guccyon/rally@0.1.0`）と `app_version`（アプリの版）を `specs/analytics/events.yaml` の `common_optional` に定義。`ANALYTICS_SINK=object_store` の配信先は、環境変数 `ANALYTICS_RELEASE_ID` / `ANALYTICS_APP_VERSION` があるときだけ各行に付ける（なければ従来どおり）（#81）
 - スポーツごとの予約枠の需給: admin-web の `GET /slot-supply`（本部だけ）。直近 30 日に開始する枠について、スポーツ 5 種類それぞれの公開した枠の数（`open` / `booked`）・予約しようとした生徒の数と、足りているか（生徒が枠の 60% 以上なら `insufficient`）を返す。合成シード（種 42）ではテニスとサッカーが `insufficient`（#77）

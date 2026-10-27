@@ -172,13 +172,19 @@ fn contexts(channel: &str, key: &str) -> Vec<String> {
 
 #[test]
 fn booking_events_are_subscribed_by_entitlement() {
-    for channel in ["BookingConfirmed", "BookingCancelled"] {
+    // 予約の確定は messaging も購読する（生徒と担当コーチのスレッドを開く）
+    for (channel, subscribers) in [
+        (
+            "BookingConfirmed",
+            &["entitlement", "messaging", "notification", "analytics"][..],
+        ),
+        (
+            "BookingCancelled",
+            &["entitlement", "notification", "analytics"][..],
+        ),
+    ] {
         assert_eq!(contexts(channel, "x-publisher"), ["scheduling"]);
-        assert_eq!(
-            contexts(channel, "x-subscribers"),
-            ["entitlement", "notification", "analytics"],
-            "{channel}"
-        );
+        assert_eq!(contexts(channel, "x-subscribers"), subscribers, "{channel}");
     }
 }
 

@@ -41,6 +41,8 @@ tags:
     description: レッスン（完了記録）
   - name: review
     description: 評価（レッスンの評価）
+  - name: messaging
+    description: メッセージ（生徒と担当コーチのチャット）
 
 paths:
   /accounts:
@@ -501,6 +503,112 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /message-threads:
+    get:
+      operationId: listMessageThreads
+      summary: スレッドの一覧
+      description: |
+        認証したアカウントが当事者（生徒・担当コーチ）のチャットのスレッドを、最後の出来事（最後のメッセージの送信、
+        なければスレッドを開いた時刻）の新しい順に返す。同じ時刻はスレッド ID の順。当事者のスレッドがなければ空。
+        スレッドは予約が確定したときに、その生徒とコーチの組に 1 つ開く（境界間イベント `BookingConfirmed` を
+        messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
+        `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
+        admin-web の `listMessageThreads`（コーチ）と同じ操作・同じ形。
+      tags: [messaging]
+      x-context: messaging
+      responses:
+        "200":
+          description: 当事者のスレッド
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageThreadList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /message-threads/{thread_id}/messages:
+    get:
+      operationId: listMessages
+      summary: メッセージの一覧
+      description: |
+        スレッドのメッセージを送った順に返す（読むだけで既読にはしない。既読は `markMessageThreadRead`）。
+        呼べるのはスレッドの当事者（生徒・担当コーチ）だけで、それ以外のアカウントと UUID でない ID には 404
+        （スレッドがあることも知らせない）。
+      tags: [messaging]
+      x-context: messaging
+      parameters:
+        - $ref: "#/components/parameters/MessageThreadId"
+      responses:
+        "200":
+          description: スレッドのメッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: sendMessage
+      summary: メッセージの送信
+      description: |
+        スレッドの当事者（生徒・担当コーチ）がメッセージを送る。送ったアカウントはトークンのアカウント。
+        生徒が送れるのは、チャットが送り放題の受講権（月額）を持つときだけで、送り放題なので送信の回数は数えない
+        （受講権を消費しない）。受講権のない生徒（月額契約の前）は 403 `chat_not_entitled`。コーチの送信は生徒の
+        契約に左右されない。当事者でないアカウントと UUID でない ID には 404。`body` が空（空白だけ）か長すぎれば 422。
+        送ると行動イベント `message.sent` を発火する。通知（プッシュ）と添付ファイルは扱わない。
+      tags: [messaging]
+      x-context: messaging
+      x-analytics-events: [message.sent]
+      parameters:
+        - $ref: "#/components/parameters/MessageThreadId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "201":
+          description: 送ったメッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /message-threads/{thread_id}/read:
+    post:
+      operationId: markMessageThreadRead
+      summary: 既読にする
+      description: |
+        スレッドの当事者が、相手から届いたメッセージをすべて既読にする（`read_at` はサーバーの現在時刻）。
+        自分が送ったメッセージと既読のメッセージは変えない（最初に読んだ時刻のまま。何度呼んでもよい）。
+        当事者でないアカウントと UUID でない ID には 404。既読にしたあとのスレッド（`unread_count` は 0）を返す。
+      tags: [messaging]
+      x-context: messaging
+      parameters:
+        - $ref: "#/components/parameters/MessageThreadId"
+      responses:
+        "200":
+          description: 既読にしたあとのスレッド
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageThread"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -514,6 +622,13 @@ components:
   parameters:
     BookingId:
       name: booking_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MessageThreadId:
+      name: thread_id
       in: path
       required: true
       schema:
@@ -969,19 +1084,6 @@ components:
           format: uuid
       additionalProperties: false
 
-    AsyncLessonCompletion:
-      type: object
-      description: 非同期レッスンの完了記録（添削が返却された動画を指定）
-      required: [lesson_type, video_id]
-      properties:
-        lesson_type:
-          type: string
-          const: async_lesson
-        video_id:
-          type: string
-          format: uuid
-      additionalProperties: false
-
     LessonReview:
       type: object
       description: glossary の lesson_review（生徒が完了したレッスン 1 件につき 1 回だけ付ける評価）
@@ -1031,6 +1133,112 @@ components:
           maxLength: 200
           description: 一言（空白だけは不可）
 
+    AsyncLessonCompletion:
+      type: object
+      description: 非同期レッスンの完了記録（添削が返却された動画を指定）
+      required: [lesson_type, video_id]
+      properties:
+        lesson_type:
+          type: string
+          const: async_lesson
+        video_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+
+    MessageSenderRole:
+      type: string
+      description: "student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った"
+      enum: [student, coach]
+
+    Message:
+      type: object
+      description: glossary の message（チャットのスレッドの中の 1 通。送信時刻と既読を持つ）
+      required: [message_id, thread_id, sender_id, sender_role, body, sent_at]
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        thread_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+          description: 送ったアカウント（スレッドの生徒か担当コーチ）
+        sender_role:
+          $ref: "#/components/schemas/MessageSenderRole"
+        body:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
+        read_at:
+          type: [string, "null"]
+          format: date-time
+          description: 受け取った側が読んだ時刻（既読）。読むまでは null
+
+    MessageThread:
+      type: object
+      description: glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）
+      required: [thread_id, student_id, coach_id, opened_at, unread_count]
+      properties:
+        thread_id:
+          type: string
+          format: uuid
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+        opened_at:
+          type: string
+          format: date-time
+          description: スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
+        last_message:
+          description: 最後のメッセージ。まだなければ null
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+        unread_count:
+          type: integer
+          minimum: 0
+          description: 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数
+
+    MessageThreadList:
+      type: object
+      required: [threads]
+      properties:
+        threads:
+          type: array
+          description: 最後の出来事の新しい順
+          items:
+            $ref: "#/components/schemas/MessageThread"
+
+    MessageList:
+      type: object
+      required: [thread_id, messages]
+      properties:
+        thread_id:
+          type: string
+          format: uuid
+        messages:
+          type: array
+          description: 送った順
+          items:
+            $ref: "#/components/schemas/Message"
+
+    SendMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 本文（空白だけは不可）
+
     ErrorCode:
       type: string
       description: |
@@ -1049,6 +1257,7 @@ components:
         - invalid_session_state
         - invalid_video_state
         - lesson_already_completed
+        - chat_not_entitled
         - lesson_already_reviewed
 
     Error:

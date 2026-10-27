@@ -12,6 +12,7 @@ mod error;
 mod lessons;
 mod live_lesson_sessions;
 mod message;
+mod messaging;
 mod reviews;
 mod slot_supply;
 mod slots;
@@ -33,6 +34,10 @@ use application::{
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
+    },
+    messaging::{
+        ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
+        SendMessage,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
@@ -63,10 +68,12 @@ pub use error::ApiError;
 /// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
 /// `POST /lessons/completions`（レッスンの完了記録）も役割で絞らず、通話セッション・動画の当事者かをユースケースが
 /// 確かめる（契約に 403 がない）。`GET /slot-supply`（admin-web のスポーツごとの予約枠の需給）は本部だけ。
+/// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
+/// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）は本部とコーチで、コーチは自分の分だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, O, N, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
@@ -82,6 +89,10 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, O, N, A, P, C, T>(
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, C>,
     record_lesson_completion: RecordLessonCompletion<L, W, M, A, P, C>,
+    list_message_threads: ListMessageThreads<X>,
+    list_messages: ListMessages<X>,
+    send_message: SendMessage<X, H, A, C>,
+    mark_message_thread_read: MarkMessageThreadRead<X, C>,
     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
     get_coach_review_summary: GetCoachReviewSummary<N>,
     tokens: T,
@@ -99,6 +110,8 @@ where
     U: VideoStorage + 'static,
     Q: ReviewGate + 'static,
     M: LessonCompletionRepository + 'static,
+    X: MessageThreadRepository + 'static,
+    H: ChatGate + 'static,
     O: CompletedLessonLookup + 'static,
     N: LessonReviewRepository + 'static,
     A: AnalyticsSink + 'static,
@@ -200,6 +213,25 @@ where
         .with_state(Arc::new(lessons::LessonsState {
             record_lesson_completion,
         }));
+    let messaging = Router::new()
+        .route(
+            "/message-threads",
+            get(messaging::list_message_threads::<X, H, A, C>),
+        )
+        .route(
+            "/message-threads/{thread_id}/messages",
+            get(messaging::list_messages::<X, H, A, C>).post(messaging::send_message::<X, H, A, C>),
+        )
+        .route(
+            "/message-threads/{thread_id}/read",
+            post(messaging::mark_message_thread_read::<X, H, A, C>),
+        )
+        .with_state(Arc::new(messaging::MessagingState {
+            list_message_threads,
+            list_messages,
+            send_message,
+            mark_message_thread_read,
+        }));
     let reviews = Router::new()
         .route(
             "/lesson-reviews",
@@ -226,6 +258,7 @@ where
         .merge(live_lesson_sessions)
         .merge(videos)
         .merge(lessons)
+        .merge(messaging)
         .merge(reviews)
         .layer(auth::TokenVerification::layer(tokens))
 }

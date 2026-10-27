@@ -83,6 +83,12 @@ const EMITTERS: &[(&str, &str, &str, &str)] = &[
         "entitlement/start_subscription.rs",
     ),
     (
+        "message.sent",
+        "MessageSent",
+        "SendMessage",
+        "messaging/send_message.rs",
+    ),
+    (
         "review.submitted",
         "ReviewSubmitted",
         "SubmitLessonReview",

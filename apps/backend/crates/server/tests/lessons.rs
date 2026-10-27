@@ -3,6 +3,7 @@
 //!
 //! - 体験予約 → 確定 → 通話の開始・終了 → 完了の記録で、`is_first_lesson` が true になる
 //! - 同じ生徒が動画を送り、添削が返されてから完了を記録すると、2 回目なので `is_first_lesson` は false
+//! - 生徒が完了したレッスンを 1 回だけ評価でき、本部とコーチ本人がコーチの評価の件数と平均を読める
 
 use std::time::{Duration, SystemTime};
 
@@ -188,4 +189,49 @@ async fn live_and_async_lessons_are_completed_and_only_the_first_is_the_first_le
     assert_eq!(second["video_id"], video_id);
     assert_eq!(second["student_id"], student_id);
     assert_eq!(second["is_first_lesson"], false, "同じ生徒の 2 回目");
+
+    // 生徒が通話のレッスンを評価する。2 回目は 409、コーチは評価できない
+    let lesson_id = first["lesson_id"].as_str().unwrap();
+    let review = json!({ "lesson_id": lesson_id, "rating": 4, "comment": "わかりやすかった" });
+    let reviewed = post_ok(
+        &router,
+        "/lesson-reviews",
+        &student,
+        review.clone(),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(reviewed["lesson_id"], lesson_id);
+    assert_eq!(reviewed["coach_id"], "00000000-0000-0000-0000-00000000002a");
+    assert_eq!(reviewed["rating"], 4);
+    let (status, body) = send(
+        &router,
+        post_json("/lesson-reviews", &student, review.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "lesson_already_reviewed");
+    let (status, _) = send(&router, post_json("/lesson-reviews", &coach, review)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // 本部とコーチ本人がコーチの評価の件数と平均を読める
+    let headquarters = MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(5),
+            role: Role::Headquarters,
+        })
+        .into_string();
+    for token in [&headquarters, &coach] {
+        let (status, summary) = send(
+            &router,
+            Request::get("/coaches/00000000-0000-0000-0000-00000000002a/review-summary")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{summary}");
+        assert_eq!(summary["review_count"], 1);
+        assert_eq!(summary["average_rating"], 4.0);
+    }
 }

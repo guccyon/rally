@@ -10,6 +10,7 @@ use domain::{
     identity::{AccountId, Sport},
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
+    messaging::{MessageId, MessageSender, MessageThreadId},
     review::{LessonReviewId, Rating},
     scheduling::{BookingId, SlotId},
 };
@@ -122,6 +123,16 @@ pub enum AnalyticsEvent {
         sport: Sport,
         occurred_at: SystemTime,
     },
+    /// `message.sent`（生徒と担当コーチのチャット。どちらが送ったかは `sender_role`）
+    MessageSent {
+        student_id: AccountId,
+        coach_id: AccountId,
+        thread_id: MessageThreadId,
+        message_id: MessageId,
+        /// 送ったのがスレッドの生徒かコーチか
+        sender_role: MessageSender,
+        occurred_at: SystemTime,
+    },
     /// `review.submitted`（生徒が完了したレッスンに付けた評価）
     ReviewSubmitted {
         student_id: AccountId,
@@ -148,6 +159,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::VideoReviewReturned { .. } => "video_review.returned",
             AnalyticsEvent::LessonCompleted { .. } => "lesson.completed",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
+            AnalyticsEvent::MessageSent { .. } => "message.sent",
             AnalyticsEvent::ReviewSubmitted { .. } => "review.submitted",
         }
     }

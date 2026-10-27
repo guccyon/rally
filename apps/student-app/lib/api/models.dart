@@ -125,6 +125,7 @@ enum ErrorCode {
   invalidSessionState('invalid_session_state'),
   invalidVideoState('invalid_video_state'),
   lessonAlreadyCompleted('lesson_already_completed'),
+  chatNotEntitled('chat_not_entitled'),
   lessonAlreadyReviewed('lesson_already_reviewed'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。

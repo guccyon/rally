@@ -131,6 +131,35 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
+        application::messaging::ListMessageThreads::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+        ),
+        application::messaging::ListMessages::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+        ),
+        application::messaging::SendMessage::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+            application::entitlement::EntitlementChatGate::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+            ),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        application::messaging::MarkMessageThreadRead::new(
+            application::in_memory::InMemoryMessageThreadRepository::default(),
+            clock,
+        ),
+        application::review::SubmitLessonReview::new(
+            application::lesson::LessonCompletionLookup::new(
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+            ),
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+            RecordingAnalyticsSink::default(),
+            clock,
+        ),
+        application::review::GetCoachReviewSummary::new(
+            application::in_memory::InMemoryLessonReviewRepository::default(),
+        ),
         NoTokens,
     );
 

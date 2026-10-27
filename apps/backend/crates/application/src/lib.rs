@@ -11,6 +11,7 @@ pub mod identity;
 pub mod in_memory;
 pub mod lesson;
 pub mod live_lesson;
+pub mod messaging;
 pub mod review;
 pub mod scheduling;
 mod unavailable;

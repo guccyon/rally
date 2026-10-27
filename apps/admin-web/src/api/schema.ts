@@ -168,6 +168,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/message-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * スレッドの一覧
+         * @description 認証したアカウントが当事者（生徒・担当コーチ）のチャットのスレッドを、最後の出来事（最後のメッセージの送信、
+         *     なければスレッドを開いた時刻）の新しい順に返す。同じ時刻はスレッド ID の順。当事者のスレッドがなければ空。
+         *     スレッドは予約が確定したときに、その生徒とコーチの組に 1 つ開く（境界間イベント `BookingConfirmed` を
+         *     messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
+         *     `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
+         *     student-app の `listMessageThreads`（生徒）と同じ操作・同じ形で、admin-web ではコーチが呼ぶ。
+         */
+        get: operations["listMessageThreads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/message-threads/{thread_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * メッセージの一覧
+         * @description スレッドのメッセージを送った順に返す（読むだけで既読にはしない。既読は `markMessageThreadRead`）。
+         *     呼べるのはスレッドの当事者（生徒・担当コーチ）だけで、それ以外のアカウントと UUID でない ID には 404
+         *     （スレッドがあることも知らせない）。
+         */
+        get: operations["listMessages"];
+        put?: never;
+        /**
+         * メッセージの送信
+         * @description スレッドの当事者（生徒・担当コーチ）がメッセージを送る。送ったアカウントはトークンのアカウント。
+         *     生徒が送れるのは、チャットが送り放題の受講権（月額）を持つときだけで、送り放題なので送信の回数は数えない
+         *     （受講権を消費しない）。受講権のない生徒（月額契約の前）は 403 `chat_not_entitled`。コーチの送信は生徒の
+         *     契約に左右されない。当事者でないアカウントと UUID でない ID には 404。`body` が空（空白だけ）か長すぎれば 422。
+         *     送ると行動イベント `message.sent` を発火する。通知（プッシュ）と添付ファイルは扱わない。
+         */
+        post: operations["sendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/message-threads/{thread_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 既読にする
+         * @description スレッドの当事者が、相手から届いたメッセージをすべて既読にする（`read_at` はサーバーの現在時刻）。
+         *     自分が送ったメッセージと既読のメッセージは変えない（最初に読んだ時刻のまま。何度呼んでもよい）。
+         *     当事者でないアカウントと UUID でない ID には 404。既読にしたあとのスレッド（`unread_count` は 0）を返す。
+         */
+        post: operations["markMessageThreadRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -303,10 +380,68 @@ export interface components {
             comment: string;
         };
         /**
+         * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った
+         * @enum {string}
+         */
+        MessageSenderRole: "student" | "coach";
+        /** @description glossary の message（チャットのスレッドの中の 1 通。送信時刻と既読を持つ）。student-app の同名のスキーマと同じ形 */
+        Message: {
+            /** Format: uuid */
+            message_id: string;
+            /** Format: uuid */
+            thread_id: string;
+            /**
+             * Format: uuid
+             * @description 送ったアカウント（スレッドの生徒か担当コーチ）
+             */
+            sender_id: string;
+            sender_role: components["schemas"]["MessageSenderRole"];
+            body: string;
+            /** Format: date-time */
+            sent_at: string;
+            /**
+             * Format: date-time
+             * @description 受け取った側が読んだ時刻（既読）。読むまでは null
+             */
+            read_at?: string | null;
+        };
+        /** @description glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマと同じ形 */
+        MessageThread: {
+            /** Format: uuid */
+            thread_id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /**
+             * Format: date-time
+             * @description スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
+             */
+            opened_at: string;
+            /** @description 最後のメッセージ。まだなければ null */
+            last_message?: components["schemas"]["Message"] | null;
+            /** @description 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数 */
+            unread_count: number;
+        };
+        MessageThreadList: {
+            /** @description 最後の出来事の新しい順 */
+            threads: components["schemas"]["MessageThread"][];
+        };
+        MessageList: {
+            /** Format: uuid */
+            thread_id: string;
+            /** @description 送った順 */
+            messages: components["schemas"]["Message"][];
+        };
+        SendMessageRequest: {
+            /** @description 本文（空白だけは不可） */
+            body: string;
+        };
+        /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -323,7 +458,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 役割が操作に合わない */
+        /** @description 役割が操作に合わない（チャットの送信では、生徒がチャットの送り放題の受講権を持たない） */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -360,7 +495,9 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        MessageThreadId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -524,6 +661,105 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listMessageThreads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当事者のスレッド */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageThreadList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["MessageThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description スレッドのメッセージ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    sendMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["MessageThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description 送ったメッセージ */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    markMessageThreadRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["MessageThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 既読にしたあとのスレッド */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageThread"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

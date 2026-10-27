@@ -4,7 +4,7 @@
 
 ## 定義済みのイベント（発行元 → 購読先は context-map.yaml の id）
 
-- `BookingConfirmed`: scheduling → notification / analytics
+- `BookingConfirmed`: scheduling → entitlement / messaging / notification / analytics（messaging は生徒と担当コーチのチャットのスレッドを開く）
 - `BookingCancelled`: scheduling → entitlement / notification / analytics（キャンセル規定の判定 `consumes_quota` を載せる。docs/adr/0002 Q2）
 - `LessonCompleted`: live-lesson / async-lesson → billing / review / analytics
 - `SubscriptionStarted`: entitlement → billing / analytics
