@@ -10,6 +10,7 @@ preferred: b
 confidence: high
 reason: "負例は評価の選択肢を 0〜10 にした（契約の rating は minimum 1・maximum 5、表示も / 10 に変えた）"
 polarity: one_flawed            # 負例は意図して作ったアンチパターン（evals/README の「負例には意図的なアンチパターンを含める」）
-scored_by: builder_candidate     # 欠陥を入れたのは builder。人が「負例の欠陥が本物か」を確かめたら confirmed にする
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「5 段階評価で充分。ユーザーは NPS とか知らない」。各点に言葉の目安を添えて評価の基準をそろえるのは別チケット
 lesson: "契約（specs/contracts）の値の範囲を、画面の実装が守っているか"

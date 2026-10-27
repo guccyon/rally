@@ -14,3 +14,11 @@
 | 0002 | #8 change-scenarios | PR #11（a, tier-large）vs PR #14（b, tier-small） | tie（builder の仮採点は a） | confirmed（2026-10-27） |
 | 0003 | #9 analytics events | PR #12（a, tier-large）vs PR #15（b, tier-small） | tie（builder の仮採点は a） | confirmed（2026-10-27） |
 | 0004 | #10 contracts の空枝 | PR #13（a, tier-large）vs PR #16（b, tier-small） | a | confirmed（2026-10-27） |
+| 0005 | #91 通知（受け取り手） | PR #101（b）vs 負例（a） | tie（Tetsuro「コーチも生徒も通知が欲しい」） | confirmed（2026-10-28） |
+| 0006 | #91 通知（重複送信の防止） | PR #101（a）vs 負例（b） | a | confirmed（2026-10-28） |
+| 0007 | #94 評価の入力（点の範囲） | PR #104（b）vs 負例（a） | b | confirmed（2026-10-28） |
+| 0008 | #55 lesson の分割（契約の x-context） | PR #56（a）vs 負例（b） | a | confirmed（2026-10-28） |
+| 0009 | #55 lesson の分割（glossary の id） | PR #56（a）vs 負例（b） | a | confirmed（2026-10-28） |
+| 0010 | #93 チャット画面（未読の既読時刻） | PR #102（b）vs 負例（a） | b | confirmed（2026-10-28） |
+
+- 0005〜0010 は負例（`polarity: one_flawed`）。マージ済みの PR の差分に builder が欠陥を 1 つだけ入れ、`patches/` に置いた。Tetsuro が欠陥が本物かを確かめた
