@@ -40,6 +40,21 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
   });
 
+  testWidgets('完了を記録したら評価の画面に進める', (tester) async {
+    final container = await pumpScreen(
+      tester,
+      const LessonCompletionScreen(),
+      api: FakeStudentApi(),
+      initial: afterCall,
+    );
+
+    expect(find.text('レッスンを評価する'), findsNothing);
+    await tapText(tester, '完了を記録する');
+    await tapText(tester, 'レッスンを評価する');
+
+    expect(container.read(studentFlowProvider).step, FlowStep.lessonReview);
+  });
+
   testWidgets('動画の添削のあとは async_lesson で完了を記録する', (tester) async {
     final api = FakeStudentApi();
     await pumpScreen(

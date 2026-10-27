@@ -77,6 +77,13 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<LessonReview> submitLessonReview(
+    SubmitLessonReviewRequest body,
+  ) async => LessonReview.fromJson(
+    await _send('POST', '/lesson-reviews', body: body.toJson()),
+  );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) async => StartSubscriptionResponse.fromJson(

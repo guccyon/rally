@@ -5,7 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）とチャットの画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とチャットの画面の段。
 enum FlowStep {
   register,
   slotSearch,
@@ -14,6 +14,9 @@ enum FlowStep {
   videoSubmit,
   videoReview,
   lessonCompletion,
+
+  /// 完了したレッスンの評価（1〜5 の点と一言）
+  lessonReview,
   subscription,
 
   /// 担当コーチとのスレッドの一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
@@ -41,6 +44,8 @@ class StudentFlowState {
     this.video,
     this.review,
     this.lesson,
+    this.lessonReview,
+    this.reviewedLessonIds = const {},
     this.subscription,
     this.entitlement,
     this.chatReturnStep,
@@ -76,6 +81,17 @@ class StudentFlowState {
 
   /// 完了を記録したレッスン
   final Lesson? lesson;
+
+  /// この端末で送った評価（`submitLessonReview` の応答）
+  final LessonReview? lessonReview;
+
+  /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
+  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す
+  final Set<String> reviewedLessonIds;
+
+  /// 完了を記録したレッスンを評価済みと分かっているか
+  bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
+
   final Subscription? subscription;
   final Entitlement? entitlement;
 
@@ -106,6 +122,8 @@ class StudentFlowState {
     Video? video,
     VideoReview? review,
     Lesson? lesson,
+    LessonReview? lessonReview,
+    Set<String>? reviewedLessonIds,
     Subscription? subscription,
     Entitlement? entitlement,
     FlowStep? chatReturnStep,
@@ -126,6 +144,8 @@ class StudentFlowState {
     video: video ?? this.video,
     review: review ?? this.review,
     lesson: lesson ?? this.lesson,
+    lessonReview: lessonReview ?? this.lessonReview,
+    reviewedLessonIds: reviewedLessonIds ?? this.reviewedLessonIds,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
@@ -271,6 +291,36 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
     state = state.copyWith(lesson: lesson);
   });
+
+  /// 完了したレッスンを評価する画面へ
+  void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
+
+  /// `submitLessonReview`。評価は完了したレッスン 1 件につき 1 回なので、送れたときも
+  /// 409 `lesson_already_reviewed` が返ったときも評価済みにする（以後は入力させない）。
+  Future<void> submitReview({required int rating, required String comment}) =>
+      _run(() async {
+        final lessonId = state.lesson!.lessonId;
+        try {
+          final review = await _api.submitLessonReview(
+            SubmitLessonReviewRequest(
+              lessonId: lessonId,
+              rating: rating,
+              comment: comment,
+            ),
+          );
+          state = state.copyWith(
+            lessonReview: review,
+            reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
+          );
+        } on StudentApiException catch (e) {
+          if (e.error?.code == ErrorCode.lessonAlreadyReviewed) {
+            state = state.copyWith(
+              reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
+            );
+          }
+          rethrow;
+        }
+      });
 
   /// 月額契約の画面へ
   void goToSubscription() =>

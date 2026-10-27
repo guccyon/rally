@@ -90,6 +90,7 @@ void main() {
         'submitVideo',
         'getVideoReview',
         'recordLessonCompletion',
+        'submitLessonReview',
         'startSubscription',
         'listMessageThreads',
         'listMessages',

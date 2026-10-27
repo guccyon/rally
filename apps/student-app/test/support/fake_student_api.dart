@@ -93,6 +93,22 @@ class FakeStudentApi implements StudentApi {
       );
 
   @override
+  Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body) =>
+      _answer(
+        'submitLessonReview',
+        () => LessonReview(
+          reviewId: Fixtures.reviewId,
+          lessonId: body.lessonId,
+          studentId: Fixtures.studentId,
+          coachId: Fixtures.coachId,
+          rating: body.rating,
+          comment: body.comment,
+          submittedAt: Fixtures.now,
+        ),
+        body,
+      );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) => _answer('startSubscription', () => Fixtures.subscriptionStarted, body);
@@ -157,6 +173,25 @@ abstract final class Fixtures {
   static const sessionId = '55555555-5555-4555-8555-555555555555';
   static const videoId = '66666666-6666-4666-8666-666666666666';
   static const threadId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  static const reviewId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+  /// 評価済み（`lesson_already_reviewed`）の 409
+  static const alreadyReviewed = StudentApiException(
+    statusCode: 409,
+    error: ApiError(
+      code: ErrorCode.lessonAlreadyReviewed,
+      message: 'lesson already reviewed',
+    ),
+  );
+
+  /// 入力の不備（`validation_failed`）の 422
+  static const validationFailed = StudentApiException(
+    statusCode: 422,
+    error: ApiError(
+      code: ErrorCode.validationFailed,
+      message: 'validation failed',
+    ),
+  );
 
   static final now = DateTime.utc(2026, 10, 26, 3);
 

@@ -7,7 +7,7 @@ import 'package:rally_student_app/state/student_flow.dart';
 import 'support/fake_student_api.dart';
 import 'support/pump.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）を画面遷移でたどる。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）を画面遷移でたどる。
 void main() {
   Future<void> pumpApp(WidgetTester tester, FakeStudentApi api) =>
       tester.pumpWidget(
@@ -39,6 +39,14 @@ void main() {
     expect(find.text('レッスンの完了'), findsOneWidget);
     await tapText(tester, '完了を記録する');
     expect(find.text('初回レッスンを完了しました'), findsOneWidget);
+    await tapText(tester, 'レッスンを評価する');
+
+    expect(find.text('レッスンの評価'), findsOneWidget);
+    await tapText(tester, '5');
+    await tester.enterText(find.byType(TextField), 'わかりやすかったです');
+    await tester.pump();
+    await tapText(tester, '評価を送る');
+    expect(find.text('評価を送りました'), findsOneWidget);
     await tapText(tester, '月額契約へ進む');
 
     expect(find.text('月額契約'), findsOneWidget);
@@ -46,7 +54,7 @@ void main() {
     expect(find.text('月額契約を開始しました'), findsOneWidget);
   }
 
-  testWidgets('通話で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 通話 → 完了記録 → 月額契約', (
+  testWidgets('通話で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 通話 → 完了記録 → 評価 → 月額契約', (
     tester,
   ) async {
     final api = FakeStudentApi();
@@ -67,43 +75,46 @@ void main() {
       'startLiveLessonSession',
       'endLiveLessonSession',
       'recordLessonCompletion',
+      'submitLessonReview',
       'startSubscription',
     ]);
   });
 
-  testWidgets('動画で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 動画の送付 → 添削結果 → 完了記録 → 月額契約', (
-    tester,
-  ) async {
-    final api = FakeStudentApi(
-      reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
-    );
-    await pumpApp(tester, api);
+  testWidgets(
+    '動画で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 動画の送付 → 添削結果 → 完了記録 → 評価 → 月額契約',
+    (tester) async {
+      final api = FakeStudentApi(
+        reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
+      );
+      await pumpApp(tester, api);
 
-    await registerAndBook(tester);
-    await tapText(tester, '動画を送って添削を受ける');
-    expect(find.text('動画を送る'), findsOneWidget);
-    await tapText(tester, '動画を選ぶ（モック）');
-    await tapText(tester, '送付する');
+      await registerAndBook(tester);
+      await tapText(tester, '動画を送って添削を受ける');
+      expect(find.text('動画を送る'), findsOneWidget);
+      await tapText(tester, '動画を選ぶ（モック）');
+      await tapText(tester, '送付する');
 
-    expect(find.text('添削結果'), findsOneWidget);
-    expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
-    await tapText(tester, '添削結果を確かめる');
-    expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
-    await tapText(tester, '完了の記録へ進む');
-    await recordAndSubscribe(tester);
+      expect(find.text('添削結果'), findsOneWidget);
+      expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
+      await tapText(tester, '添削結果を確かめる');
+      expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
+      await tapText(tester, '完了の記録へ進む');
+      await recordAndSubscribe(tester);
 
-    expect(api.calls, [
-      'registerAccount',
-      'searchSlots',
-      'createBooking',
-      'confirmBooking',
-      'submitVideo',
-      'getVideoReview',
-      'getVideoReview',
-      'recordLessonCompletion',
-      'startSubscription',
-    ]);
-  });
+      expect(api.calls, [
+        'registerAccount',
+        'searchSlots',
+        'createBooking',
+        'confirmBooking',
+        'submitVideo',
+        'getVideoReview',
+        'getVideoReview',
+        'recordLessonCompletion',
+        'submitLessonReview',
+        'startSubscription',
+      ]);
+    },
+  );
 
   testWidgets('チャット: 月額契約の後 → スレッドの一覧 → メッセージ（既読にする）→ 送信 → 一覧 → 閉じて元の画面', (
     tester,
