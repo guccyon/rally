@@ -257,7 +257,7 @@ void main() {
       'sender_id': 's1',
       'sender_role': 'student',
       'body': 'よろしく',
-    }).sendMessage('t1', const SendMessageRequest(body: 'よろしく'));
+    }).sendMessage('t1', SendMessageRequest(body: 'よろしく'));
     expect(sent.single.method, 'POST');
     expect(sent.single.url.path, '/message-threads/t1/messages');
     expect(jsonDecode(sent.single.body), {'body': 'よろしく'});

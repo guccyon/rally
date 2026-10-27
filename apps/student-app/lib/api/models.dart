@@ -787,9 +787,11 @@ class MessageThreadList {
 
   factory MessageThreadList.fromJson(Map<String, dynamic> json) =>
       MessageThreadList(
-        threads: (json['threads'] as List<dynamic>)
-            .map((e) => MessageThread.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        threads: List.unmodifiable(
+          (json['threads'] as List<dynamic>).map(
+            (e) => MessageThread.fromJson(e as Map<String, dynamic>),
+          ),
+        ),
       );
 }
 
@@ -804,15 +806,32 @@ class MessageList {
 
   factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
     threadId: json['thread_id'] as String,
-    messages: (json['messages'] as List<dynamic>)
-        .map((e) => Message.fromJson(e as Map<String, dynamic>))
-        .toList(),
+    messages: List.unmodifiable(
+      (json['messages'] as List<dynamic>).map(
+        (e) => Message.fromJson(e as Map<String, dynamic>),
+      ),
+    ),
   );
 }
 
 /// `SendMessageRequest`
 class SendMessageRequest {
-  const SendMessageRequest({required this.body});
+  /// 本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
+  factory SendMessageRequest({required String body}) {
+    if (body.trim().isEmpty) {
+      throw ArgumentError.value(body, 'body', '空白だけの本文は送れません');
+    }
+    // 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える
+    if (body.runes.length > maxBodyLength) {
+      throw ArgumentError.value(body, 'body', '本文は $maxBodyLength 文字までです');
+    }
+    return SendMessageRequest._(body);
+  }
+
+  const SendMessageRequest._(this.body);
+
+  /// 契約の `SendMessageRequest.body` の maxLength
+  static const maxBodyLength = 2000;
 
   /// 本文（2000 文字まで。空白だけは不可）
   final String body;

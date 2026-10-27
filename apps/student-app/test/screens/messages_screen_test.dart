@@ -110,7 +110,7 @@ void main() {
     );
 
     await tapText(tester, '新しいメッセージを確かめる');
-    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
+    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
 
     await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
     await tester.pumpAndSettle();

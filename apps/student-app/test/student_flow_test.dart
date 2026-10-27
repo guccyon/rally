@@ -155,8 +155,8 @@ void main() {
 
     expect(api.calls, [
       'listMessageThreads',
-      'listMessages',
       'markMessageThreadRead',
+      'listMessages',
       'sendMessage',
       'listMessageThreads',
     ]);
