@@ -50,14 +50,27 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
         Text('完了: ${formatDateTime(lesson.completedAt)}'),
         const SizedBox(height: 16),
         if (!state.lessonReviewed) ...[
-          const Text(
-            'コーチの指導を 1（低い）〜5（高い）で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
+          Text(
+            'コーチの指導を ${ratingWithLabel(1)}〜${ratingWithLabel(5)} で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
           ),
           const SizedBox(height: 8),
           SegmentedButton<int>(
             segments: [
               for (var rating = 1; rating <= 5; rating++)
-                ButtonSegment(value: rating, label: Text('$rating')),
+                ButtonSegment(
+                  value: rating,
+                  label: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$rating'),
+                      Text(
+                        ratingLabel(rating),
+                        style: Theme.of(context).textTheme.labelSmall,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
             ],
             selected: {?_rating},
             emptySelectionAllowed: true,
@@ -66,6 +79,8 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
                 ? null
                 : (selected) => setState(() => _rating = selected.firstOrNull),
           ),
+          if (_rating case final rating?)
+            Text('選んだ評価: ${ratingWithLabel(rating)}'),
           TextField(
             controller: _comment,
             enabled: !state.busy,
@@ -83,7 +98,7 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
           ),
         ] else if (sent != null && sent.lessonId == lesson.lessonId) ...[
           const Text('評価を送りました'),
-          Text('評価: ${sent.rating} / 5'),
+          Text('評価: ${ratingWithLabel(sent.rating)}'),
           Text('一言: ${sent.comment}'),
         ] else
           const Text('このレッスンは評価済みのため、入力できません。'),
