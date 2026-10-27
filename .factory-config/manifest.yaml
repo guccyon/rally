@@ -82,7 +82,7 @@ autonomy:
   # 工場をサーバー（EC2 など）に移しただけでは発動しない。切り替えは builder が宣言し、この表の変更と同じく承認付き PR で行う
   on_operation_start:
     irreversible: { merge: human_approve }
-    identity: { merge: human_approve, note: "always_human_approve の identity は運用開始から効く（開発中は承認不要。2026-10-27）" }
+    always_human_approve: { note: "always_human_approve の各項目は運用開始から効く（開発中は承認不要。2026-10-27 Tetsuro）" }
     release: { deploy_test: human_approve, deploy_prod: human_approve, note: "公開・デプロイは改めて承認制" }
 
   # 次の Phase への解放（Blueprint autonomy.phase_grants と同じ。実績で次へ進む）
@@ -95,15 +95,16 @@ autonomy:
     merge_auto: "工場（ヘッドレス）の自動マージは P0b 完了（直近 20 PR の結果紐付け・健康レポート 4 週・Golden Set 30 件）かつ shadow 判定と人間判断の一致の実績。builder の手元のマージは上の matrix のとおり開発中は auto"
     first_candidates: [docs_only, dependency_update]   # 人間の手元ではすでに自動マージしている種別から解放する
 
-  # 環境・Phase を問わず常に人間承認（変更種別より優先）
+  # 運用開始後は環境・Phase を問わず常に人間承認（変更種別より優先）。
+  # 2026-10-27 Tetsuro「アプリ側は一旦承認なしでいい」: 開発中（運用開始前）は rally の PR はすべて承認なしでマージする。各項目は from: operation_start
   always_human_approve:
     - { id: identity,           ja: "認証・権限の変更", from: operation_start, note: "2026-10-27 Tetsuro: 開発中（運用開始前）は承認不要。運用開始で承認制に戻る" }
-    - { id: payment_logic,      ja: "決済・支払い（billing / entitlement の金額に触れる変更）" }
-    - { id: destructive_schema, ja: "破壊的スキーマ変更（列・テーブルの削除、型の縮小）" }
-    - { id: secrets_iam,        ja: "秘密情報・権限設定（IAM、シークレット、CI の権限、ruleset）" }
-    - { id: store_submit,       ja: "ストア審査への提出" }
-    - { id: infra_cost,         ja: "インフラ月額コストの増分 > 30,000 円" }
-    - { id: external_write,     ja: "実機・本番・外部サービスへの破壊的な書き込み", source: "手元の運用ルール（外部への書き込みは同意を得てから。rubric SAFE-001）" }
+    - { id: payment_logic,      ja: "決済・支払い（billing / entitlement の金額に触れる変更）", from: operation_start }
+    - { id: destructive_schema, ja: "破壊的スキーマ変更（列・テーブルの削除、型の縮小）", from: operation_start }
+    - { id: secrets_iam,        ja: "秘密情報・権限設定（IAM、シークレット、CI の権限、ruleset）", from: operation_start }
+    - { id: store_submit,       ja: "ストア審査への提出", from: operation_start }
+    - { id: infra_cost,         ja: "インフラ月額コストの増分 > 30,000 円", from: operation_start }
+    - { id: external_write,     ja: "実機・本番・外部サービスへの破壊的な書き込み", source: "手元の運用ルール（外部への書き込みは同意を得てから。rubric SAFE-001）", from: operation_start }
 
   rollback:
     operator_one_click: true
