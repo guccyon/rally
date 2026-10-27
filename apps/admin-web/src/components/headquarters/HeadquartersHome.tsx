@@ -11,6 +11,11 @@ export function HeadquartersHome() {
           需給を見る
         </Link>
       </Section>
+      <Section title="コーチの評価">
+        <Link href="/headquarters/coach-review-summary" className="text-blue-600 underline">
+          評価の件数と平均を見る
+        </Link>
+      </Section>
       <Section title="予約の一覧">
         <NotImplemented>予約の一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>

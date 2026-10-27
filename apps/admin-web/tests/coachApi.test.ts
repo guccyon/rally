@@ -99,4 +99,21 @@ describe("coachApi", () => {
       "POST /api/live-lesson-sessions/ss-1/end",
     ]);
   });
+
+  test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
+    const summary = { coach_id: SLOT.coach_id, review_count: 2, average_rating: 4.5 };
+    const { api, fetchMock } = setup(json(200, summary));
+    const result = await api.getCoachReviewSummary(SLOT.coach_id);
+    expect(result).toEqual({ ok: true, data: summary });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${SLOT.coach_id}/review-summary`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("他のコーチの評価（403）はロールの文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
+    expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
+  });
 });
