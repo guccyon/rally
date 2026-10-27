@@ -11,6 +11,6 @@
 | id | Ticket | 対象 | 選好 | 状態 |
 |---|---|---|---|---|
 | 0001 | #1 glossary の骨格 | PR #2（a）vs PR #4（b） | b | confirmed（2026-10-26） |
-| 0002 | #8 change-scenarios | PR #11（a, tier-large）vs PR #14（b, tier-small） | a（low） | builder_candidate |
-| 0003 | #9 analytics events | PR #12（a, tier-large）vs PR #15（b, tier-small） | a（medium） | builder_candidate |
-| 0004 | #10 contracts の空枝 | PR #13（a, tier-large）vs PR #16（b, tier-small） | a（medium） | builder_candidate |
+| 0002 | #8 change-scenarios | PR #11（a, tier-large）vs PR #14（b, tier-small） | tie（builder の仮採点は a） | confirmed（2026-10-27） |
+| 0003 | #9 analytics events | PR #12（a, tier-large）vs PR #15（b, tier-small） | tie（builder の仮採点は a） | confirmed（2026-10-27） |
+| 0004 | #10 contracts の空枝 | PR #13（a, tier-large）vs PR #16（b, tier-small） | a | confirmed（2026-10-27） |

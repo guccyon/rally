@@ -6,10 +6,12 @@ rubric_ids: [ARCH-002, ARCH-004]
 pair:
   a: { ref: "github:guccyon/rally#11", job: 15, tier: tier-large, note: "claude-opus-5-5、9 ターン、199k tokens" }
   b: { ref: "github:guccyon/rally#14", job: 17, tier: tier-small, note: "claude-sonnet-5-5、3 ターン、65k tokens" }
-preferred: a
-confidence: low                   # 両方とも受け入れ条件は満たす。差は根拠の付け方
+preferred: tie                    # Tetsuro の確認で引き分け（集計から除く）。builder の仮採点は a
+builder_candidate_preferred: a
 reason: "a は 7 件すべての rationale を product-context の不変条件（番号）と context-map の note に結び、影響範囲を根拠なしに広げない。b は cs-006 で notification / analytics を推測で足し、rationale に『望ましい』という評価語が混ざる。b の cs-002 の catalog 追加（スポーツごとの提供可否）は a より妥当で、a に取り込む価値がある"
 polarity: both_acceptable
-scored_by: builder_candidate
-scored_at: "2026-10-26"
+scored_by: confirmed              # Tetsuro が 2026-10-27 に確認（「どちらもほとんど内容が同じで明らかな有意性は見られなかった」）
+scored_at: "2026-10-27"
+confirmed_by: builder
+review_note: "builder は細部の差を選好にしたが、人の目では有意差なし。L4 の判定器は細部の差を選好に化けさせないこと（tie を出せること）も見る"
 lesson: "tier-small でも受け入れ条件は満たす。差は『根拠を SSOT のどこに結ぶか』に出る。文書系の Issue は tier-small から始めて差分で昇格する運用の候補"
