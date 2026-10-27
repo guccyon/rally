@@ -12,6 +12,7 @@ use domain::{
     identity::{AccountId, Sport},
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
+    review::{LessonReviewId, Rating},
     scheduling::{BookingId, SlotId},
 };
 use infra::{
@@ -148,6 +149,14 @@ fn samples() -> Vec<AnalyticsEvent> {
             sport: Sport::Baseball,
             occurred_at: oct26(),
         },
+        AnalyticsEvent::ReviewSubmitted {
+            student_id: student(),
+            coach_id: coach(),
+            lesson_id: LessonId::from_u128(8),
+            review_id: LessonReviewId::from_u128(10),
+            rating: Rating::new(4).unwrap(),
+            occurred_at: oct26(),
+        },
     ]
 }
 
@@ -165,7 +174,8 @@ fn exhaustive(event: &AnalyticsEvent) {
         | AnalyticsEvent::VideoSubmitted { .. }
         | AnalyticsEvent::VideoReviewReturned { .. }
         | AnalyticsEvent::LessonCompleted { .. }
-        | AnalyticsEvent::SubscriptionStarted { .. } => {}
+        | AnalyticsEvent::SubscriptionStarted { .. }
+        | AnalyticsEvent::ReviewSubmitted { .. } => {}
     }
 }
 
@@ -258,6 +268,7 @@ fn values_follow_the_comments_of_events_yaml() {
     let lesson = by_name("lesson.completed");
     assert_eq!(lesson["lesson_type"], "live_lesson");
     assert_eq!(lesson["is_first_lesson"], true);
+    assert_eq!(by_name("review.submitted")["rating"], 4);
 }
 
 /// events.yaml の注記どおり、student-app の契約の `LessonType` と同じ値。

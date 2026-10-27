@@ -13,6 +13,7 @@ use domain::{
     identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+    review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
 
@@ -34,6 +35,7 @@ use crate::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
         session_id_uuid,
     },
+    review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
         UpdateBookingError, booking_id_uuid, slot_id_uuid,
@@ -647,6 +649,16 @@ impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
         lesson_id_uuid::from_uuid(uuid::Uuid::new_v4())
     }
 
+    async fn find(&self, lesson_id: LessonId) -> Result<Option<LessonCompletion>, Unavailable> {
+        Ok(self
+            .completions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.id() == lesson_id)
+            .cloned())
+    }
+
     async fn record<F>(
         &self,
         student_id: AccountId,
@@ -664,5 +676,66 @@ impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
         let completion = record(&history).map_err(RecordCompletionError::Rejected)?;
         completions.push(completion.clone());
         Ok(completion)
+    }
+}
+
+/// [`LessonReviewRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+///
+/// 保存は 1 つのロックの中で同じレッスンの評価を確かめてから行うので、同じレッスンへの並行な評価は 1 つだけ入る。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryLessonReviewRepository {
+    reviews: Arc<Mutex<Vec<LessonReview>>>,
+}
+
+impl InMemoryLessonReviewRepository {
+    /// 既存の評価を入れて作る（レッスンごとに 1 つかは確かめない。テストの準備用）。
+    pub fn with_reviews(reviews: impl IntoIterator<Item = LessonReview>) -> Self {
+        Self {
+            reviews: Arc::new(Mutex::new(reviews.into_iter().collect())),
+        }
+    }
+
+    /// 保存した評価（保存した順）。
+    pub fn all(&self) -> Vec<LessonReview> {
+        self.reviews.lock().unwrap().clone()
+    }
+}
+
+impl LessonReviewRepository for InMemoryLessonReviewRepository {
+    fn next_id(&self) -> LessonReviewId {
+        lesson_review_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn find_by_lesson(
+        &self,
+        lesson_id: LessonId,
+    ) -> Result<Option<LessonReview>, Unavailable> {
+        Ok(self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.lesson_id() == lesson_id)
+            .cloned())
+    }
+
+    async fn insert(&self, review: LessonReview) -> Result<(), InsertReviewError> {
+        let mut reviews = self.reviews.lock().unwrap();
+        if reviews.iter().any(|r| r.lesson_id() == review.lesson_id()) {
+            return Err(InsertReviewError::LessonAlreadyReviewed);
+        }
+        reviews.push(review);
+        Ok(())
+    }
+
+    async fn find_by_coach(&self, coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
+        Ok(self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.coach_id() == coach_id)
+            .cloned()
+            .collect())
     }
 }

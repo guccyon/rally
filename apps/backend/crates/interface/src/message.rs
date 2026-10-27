@@ -87,6 +87,11 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             "レッスンの完了の記録がレッスンの終わりより前".to_string()
         }
         DomainError::LessonAlreadyCompleted => "このレッスンの完了は記録済み".to_string(),
+        DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
+        DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
+        DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
+        DomainError::NotTheLessonStudent => "完了したレッスンの生徒でない".to_string(),
+        DomainError::LessonAlreadyReviewed => "このレッスンは評価済み".to_string(),
     }
 }
 
@@ -279,6 +284,26 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonAlreadyCompleted),
             "このレッスンの完了は記録済み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::RatingOutOfRange { min: 1, max: 5 }),
+            "評価の点は 1〜5 の整数"
+        );
+        assert_eq!(
+            domain_error(&DomainError::EmptyLessonReviewComment),
+            "評価の一言が空"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonReviewCommentTooLong { max: 200 }),
+            "評価の一言は 200 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotTheLessonStudent),
+            "完了したレッスンの生徒でない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonAlreadyReviewed),
+            "このレッスンは評価済み"
         );
     }
 }

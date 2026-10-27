@@ -39,6 +39,8 @@ tags:
     description: 非同期レッスン（動画送付・添削）
   - name: catalog
     description: レッスン（完了記録）
+  - name: review
+    description: 評価（レッスンの評価）
 
 paths:
   /accounts:
@@ -453,6 +455,45 @@ paths:
                 $ref: "#/components/schemas/Lesson"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+
+  /lesson-reviews:
+    post:
+      operationId: submitLessonReview
+      summary: レッスンの評価（生徒）
+      description: |
+        完了したレッスン（`recordLessonCompletion` が返した `lesson_id`）に、そのレッスンの生徒が評価（1〜5 の点と一言）を付ける。
+        評価されるのはそのレッスンのコーチ（サーバーが完了記録から決める）。生徒の役割のトークンだけが呼べる（それ以外は 403）。
+        評価は完了したレッスン 1 件につき 1 回で、2 回目は 409 `lesson_already_reviewed`（編集・削除はできない）。
+        ない `lesson_id` と、自分が生徒でないレッスンには 404（あることも知らせない）。`lesson_id` が UUID でない、
+        `rating` が 1〜5 の整数でない、`comment` が空（空白だけ）か長すぎるときは 422。
+        評価すると行動イベント `review.submitted` を発火する。コーチごとの件数と平均は admin-web の `getCoachReviewSummary`。
+      tags: [review]
+      x-context: review
+      x-analytics-events: [review.submitted]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitLessonReviewRequest"
+      responses:
+        "201":
+          description: 付けた評価
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonReview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -941,6 +982,55 @@ components:
           format: uuid
       additionalProperties: false
 
+    LessonReview:
+      type: object
+      description: glossary の lesson_review（生徒が完了したレッスン 1 件につき 1 回だけ付ける評価）
+      required: [review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        lesson_id:
+          type: string
+          format: uuid
+          description: 評価した完了したレッスン（`Lesson.lesson_id`）
+        student_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: 評価されたコーチ（そのレッスンのコーチ）
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          description: 一言
+        submitted_at:
+          type: string
+          format: date-time
+
+    SubmitLessonReviewRequest:
+      type: object
+      required: [lesson_id, rating, comment]
+      properties:
+        lesson_id:
+          type: string
+          format: uuid
+          description: 完了したレッスン（`Lesson.lesson_id`）
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: 1（低い）〜5（高い）
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 一言（空白だけは不可）
+
     ErrorCode:
       type: string
       description: |
@@ -959,6 +1049,7 @@ components:
         - invalid_session_state
         - invalid_video_state
         - lesson_already_completed
+        - lesson_already_reviewed
 
     Error:
       type: object

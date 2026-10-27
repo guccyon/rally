@@ -90,3 +90,11 @@ events:
     actor: student
     required: [student_id, subscription_id, sport, occurred_at]
     kpi: "初回レッスン後の 1 ヶ月継続率"
+  # 生徒が完了したレッスン（glossary の lesson_completion）1 件につき 1 回だけ付ける評価（glossary の lesson_review）。
+  # rating は 1〜5 の整数（student-app の契約の LessonReview.rating と同じ）。一言（comment）は自由記述なので行動イベントには載せない
+  - name: review.submitted
+    ja: "レッスンの評価"
+    context: review
+    actor: student
+    required: [student_id, coach_id, lesson_id, review_id, rating, occurred_at]
+    kpi: null

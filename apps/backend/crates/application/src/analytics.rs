@@ -10,6 +10,7 @@ use domain::{
     identity::{AccountId, Sport},
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
+    review::{LessonReviewId, Rating},
     scheduling::{BookingId, SlotId},
 };
 
@@ -121,6 +122,15 @@ pub enum AnalyticsEvent {
         sport: Sport,
         occurred_at: SystemTime,
     },
+    /// `review.submitted`（生徒が完了したレッスンに付けた評価）
+    ReviewSubmitted {
+        student_id: AccountId,
+        coach_id: AccountId,
+        lesson_id: LessonId,
+        review_id: LessonReviewId,
+        rating: Rating,
+        occurred_at: SystemTime,
+    },
 }
 
 impl AnalyticsEvent {
@@ -138,6 +148,7 @@ impl AnalyticsEvent {
             AnalyticsEvent::VideoReviewReturned { .. } => "video_review.returned",
             AnalyticsEvent::LessonCompleted { .. } => "lesson.completed",
             AnalyticsEvent::SubscriptionStarted { .. } => "subscription.started",
+            AnalyticsEvent::ReviewSubmitted { .. } => "review.submitted",
         }
     }
 }

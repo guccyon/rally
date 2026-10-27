@@ -25,6 +25,7 @@ String errorMessageOf(Object error) {
     ErrorCode.invalidSessionState => '通話の状態が変わっています。',
     ErrorCode.invalidVideoState => '添削がまだ返されていません。',
     ErrorCode.lessonAlreadyCompleted => 'このレッスンの完了はすでに記録されています。',
+    ErrorCode.lessonAlreadyReviewed => 'このレッスンはすでに評価しています。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }

@@ -16,11 +16,13 @@ use application::{
     identity::{AccountRepository, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink,
     },
-    lesson::{LessonCompletionRepository, RecordLessonCompletion},
+    lesson::{LessonCompletionLookup, LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
+    review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
@@ -30,8 +32,8 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockTokenService, MockVideoCallProvider, MockVideoStorage,
     PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgSlotRepository,
-    PgVideoRepository,
+    PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -60,6 +62,9 @@ pub fn router() -> Router {
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
+/// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
+/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）は同じ保存先から読む。
+///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
@@ -84,6 +89,7 @@ where
             sessions: InMemoryLiveLessonSessionRepository::default(),
             videos: InMemoryVideoRepository::default(),
             completions: InMemoryLessonCompletionRepository::default(),
+            reviews: InMemoryLessonReviewRepository::default(),
         },
         clock,
         analytics,
@@ -106,7 +112,8 @@ where
             entitlements: PgEntitlementRepository::new(pool.clone()),
             sessions: PgLiveLessonSessionRepository::new(pool.clone()),
             videos: PgVideoRepository::new(pool.clone()),
-            completions: PgLessonCompletionRepository::new(pool),
+            completions: PgLessonCompletionRepository::new(pool.clone()),
+            reviews: PgLessonReviewRepository::new(pool),
         },
         clock,
         analytics,
@@ -114,7 +121,7 @@ where
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M> {
+struct Repositories<R, S, B, E, L, W, M, N> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -122,11 +129,12 @@ struct Repositories<R, S, B, E, L, W, M> {
     sessions: L,
     videos: W,
     completions: M,
+    reviews: N,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, C, A>(
-    repositories: Repositories<R, S, B, E, L, W, M>,
+fn compose<R, S, B, E, L, W, M, N, C, A>(
+    repositories: Repositories<R, S, B, E, L, W, M, N>,
     clock: C,
     analytics: A,
 ) -> Router
@@ -137,7 +145,8 @@ where
     E: EntitlementRepository + Clone + 'static,
     L: LiveLessonSessionRepository + Clone + 'static,
     W: VideoRepository + Clone + 'static,
-    M: LessonCompletionRepository + 'static,
+    M: LessonCompletionRepository + Clone + 'static,
+    N: LessonReviewRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
@@ -149,6 +158,7 @@ where
         sessions,
         videos,
         completions,
+        reviews,
     } = repositories;
     let events = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));
     let video = MockVideoCallProvider::new();
@@ -199,7 +209,21 @@ where
             analytics.clone(),
             clock.clone(),
         ),
-        RecordLessonCompletion::new(sessions, videos, completions, analytics, events, clock),
+        RecordLessonCompletion::new(
+            sessions,
+            videos,
+            completions.clone(),
+            analytics.clone(),
+            events,
+            clock.clone(),
+        ),
+        SubmitLessonReview::new(
+            LessonCompletionLookup::new(completions),
+            reviews.clone(),
+            analytics,
+            clock,
+        ),
+        GetCoachReviewSummary::new(reviews),
         MockTokenService,
     )
 }
