@@ -355,11 +355,12 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void closeChat() =>
       state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
 
-  /// スレッドを開く。`listMessages` で読み、相手のメッセージを `markMessageThreadRead` で既読にする
+  /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
+  /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
   Future<void> openThread(MessageThread thread) => _run(() async {
-    final list = await _api.listMessages(thread.threadId);
     final read = await _api.markMessageThreadRead(thread.threadId);
+    final list = await _api.listMessages(thread.threadId);
     state = state.copyWith(
       thread: read,
       messages: list.messages,
@@ -367,11 +368,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// 開いているスレッドの新しいメッセージを確かめる（読み直して既読にする）
+  /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
   Future<void> refreshMessages() => _run(() async {
     final threadId = state.thread!.threadId;
-    final list = await _api.listMessages(threadId);
     final read = await _api.markMessageThreadRead(threadId);
+    final list = await _api.listMessages(threadId);
     state = state.copyWith(thread: read, messages: list.messages);
   });
 

@@ -16,9 +16,6 @@ class MessagesScreen extends ConsumerStatefulWidget {
 }
 
 class _MessagesScreenState extends ConsumerState<MessagesScreen> {
-  /// 契約の `SendMessageRequest.body` の maxLength
-  static const _maxLength = 2000;
-
   final _body = TextEditingController();
 
   @override
@@ -32,6 +29,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     _body.dispose();
     super.dispose();
   }
+
+  /// 契約の `SendMessageRequest` に収まる本文か（入力欄の maxLength は書記素で数えるので、コードポイントでも確かめる）
+  bool get _sendable => SendMessageRequest.isValidBody(_body.text.trim());
 
   Future<void> _send() async {
     final sent = await ref
@@ -64,12 +64,12 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         TextField(
           controller: _body,
           decoration: const InputDecoration(labelText: 'メッセージ'),
-          maxLength: _maxLength,
+          maxLength: SendMessageRequest.maxBodyLength,
           maxLines: 3,
           minLines: 1,
         ),
         FilledButton(
-          onPressed: state.busy || _body.text.trim().isEmpty ? null : _send,
+          onPressed: state.busy || !_sendable ? null : _send,
           child: const Text('送信する'),
         ),
       ],

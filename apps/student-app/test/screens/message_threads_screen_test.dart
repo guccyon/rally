@@ -31,7 +31,7 @@ void main() {
 
     await tapText(tester, '担当コーチ');
 
-    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
+    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
     expect(api.requests, [Fixtures.threadId, Fixtures.threadId]);
     final state = container.read(studentFlowProvider);
     expect(state.step, FlowStep.messages);
