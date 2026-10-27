@@ -14,7 +14,10 @@ use domain::{
     live_lesson::SessionId,
     scheduling::{BookingId, SlotId},
 };
-use infra::analytics_event_payload::{attributes, lesson_type_value, line};
+use infra::{
+    AnalyticsCommonAttributes,
+    analytics_event_payload::{attributes, lesson_type_value, line},
+};
 use serde_json::Value;
 use serde_yaml::Value as Yaml;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -282,11 +285,85 @@ fn lesson_type_values_match_the_student_app_contract() {
 #[test]
 fn line_is_one_json_object_with_the_name_and_the_attributes() {
     for event in samples() {
-        let text = line(&event).unwrap();
+        let text = line(&event, &AnalyticsCommonAttributes::default()).unwrap();
         assert!(!text.contains('\n'), "{text}");
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["name"], event.name());
         assert_eq!(value["attributes"], attributes(&event).unwrap());
         assert_eq!(value.as_object().unwrap().len(), 2);
+    }
+}
+
+/// events.yaml の `common_optional` の name。
+fn common_optional(root: &Yaml) -> BTreeSet<String> {
+    root["common_optional"]
+        .as_sequence()
+        .expect("events.yaml に common_optional がない")
+        .iter()
+        .map(|attribute| attribute["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn known_common() -> AnalyticsCommonAttributes {
+    AnalyticsCommonAttributes {
+        release_id: Some("guccyon/rally@0.1.0".to_string()),
+        app_version: Some("0.1.0".to_string()),
+    }
+}
+
+/// 共通の任意属性は optional。どのイベントの `required` にも入れない。
+#[test]
+fn common_optional_attributes_are_not_required_by_any_event() {
+    let root = events_yaml();
+    let common = common_optional(&root);
+    assert_eq!(
+        common,
+        BTreeSet::from(["release_id".to_string(), "app_version".to_string()])
+    );
+    for event in samples() {
+        let required = required(&root, event.name());
+        assert!(
+            required.is_disjoint(&common),
+            "{} の required に共通の任意属性がある",
+            event.name()
+        );
+    }
+}
+
+/// 値が分かる共通の任意属性は、すべてのイベントの行に events.yaml の `common_optional` の名前で付く。
+#[test]
+fn line_adds_the_known_common_attributes_to_every_event() {
+    let root = events_yaml();
+    let common = known_common();
+    for event in samples() {
+        let value: Value = serde_json::from_str(&line(&event, &common).unwrap()).unwrap();
+        let actual: BTreeSet<String> = value["attributes"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        let expected: BTreeSet<String> = required(&root, event.name())
+            .union(&common_optional(&root))
+            .cloned()
+            .collect();
+        assert_eq!(actual, expected, "{}", event.name());
+        assert_eq!(value["attributes"]["release_id"], "guccyon/rally@0.1.0");
+        assert_eq!(value["attributes"]["app_version"], "0.1.0");
+    }
+}
+
+/// 分からない共通の任意属性は付けない（欠けていても行は書ける）。
+#[test]
+fn line_omits_the_unknown_common_attributes() {
+    let only_version = AnalyticsCommonAttributes {
+        release_id: None,
+        app_version: Some("0.1.0".to_string()),
+    };
+    for event in samples() {
+        let value: Value = serde_json::from_str(&line(&event, &only_version).unwrap()).unwrap();
+        let mut expected = attributes(&event).unwrap();
+        expected["app_version"] = "0.1.0".into();
+        assert_eq!(value["attributes"], expected, "{}", event.name());
     }
 }

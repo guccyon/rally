@@ -2,6 +2,7 @@
 //!
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
+mod analytics_common_attributes;
 mod analytics_destination;
 pub mod analytics_event_payload;
 pub mod domain_event_payload;
@@ -23,6 +24,7 @@ mod pg_support;
 mod pg_video_repository;
 pub mod scheduling_values;
 
+pub use analytics_common_attributes::AnalyticsCommonAttributes;
 pub use analytics_destination::AnalyticsDestination;
 pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;

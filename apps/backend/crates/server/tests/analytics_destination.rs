@@ -45,10 +45,9 @@ fn unknown_sink_is_an_error() {
     }
 }
 
-/// `ANALYTICS_SINK=object_store` で組み立てたサーバーで生徒を登録すると、`account.registered` の 1 行が
-/// S3 API の PUT で配信先のバケットに届く。配信先は PUT Object だけに答える偽物。
-#[tokio::test]
-async fn registering_a_student_puts_account_registered_into_the_object_store() {
+/// `ANALYTICS_SINK=object_store`（と `vars`）で組み立てたサーバーで生徒を登録し、配信先に届いた 1 行を返す。
+/// 配信先は PUT Object だけに答える偽物。
+async fn line_of_registering_a_student(vars: &[(&str, &str)]) -> serde_json::Value {
     use std::sync::{Arc, Mutex};
 
     use application::clock::SystemClock;
@@ -57,7 +56,6 @@ async fn registering_a_student_puts_account_registered_into_the_object_store() {
         body::{Body, Bytes},
         http::{Request, StatusCode, Uri},
     };
-    use serde_json::Value;
     use tower::ServiceExt;
 
     let received: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
@@ -76,11 +74,12 @@ async fn registering_a_student_puts_account_registered_into_the_object_store() {
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, fake).await });
 
-    let analytics = choose(&[
+    let mut all = vec![
         ("ANALYTICS_SINK", "object_store"),
-        ("ANALYTICS_OBJECT_STORE_ENDPOINT", &endpoint),
-    ])
-    .unwrap();
+        ("ANALYTICS_OBJECT_STORE_ENDPOINT", endpoint.as_str()),
+    ];
+    all.extend_from_slice(vars);
+    let analytics = choose(&all).unwrap();
     let response = server::router_with_analytics(SystemClock, analytics)
         .oneshot(
             Request::post("/accounts")
@@ -105,7 +104,29 @@ async fn registering_a_student_puts_account_registered_into_the_object_store() {
         body.ends_with('\n') && body.matches('\n').count() == 1,
         "{body:?}"
     );
-    let line: Value = serde_json::from_str(body).unwrap();
+    serde_json::from_str(body).unwrap()
+}
+
+/// 生徒を登録すると、`account.registered` の 1 行が S3 API の PUT で配信先のバケットに届く。版が分からなければ
+/// 共通の任意属性は付かない。
+#[tokio::test]
+async fn registering_a_student_puts_account_registered_into_the_object_store() {
+    let line = line_of_registering_a_student(&[]).await;
     assert_eq!(line["name"], "account.registered");
     assert_eq!(line["attributes"]["sport"], "tennis");
+    assert!(line["attributes"].get("release_id").is_none(), "{line}");
+    assert!(line["attributes"].get("app_version").is_none(), "{line}");
+}
+
+/// `ANALYTICS_RELEASE_ID` / `ANALYTICS_APP_VERSION` があれば、行に `release_id` / `app_version` が付く。
+#[tokio::test]
+async fn known_release_is_added_to_the_line() {
+    let line = line_of_registering_a_student(&[
+        ("ANALYTICS_RELEASE_ID", "guccyon/rally@0.1.0"),
+        ("ANALYTICS_APP_VERSION", "0.1.0"),
+    ])
+    .await;
+    assert_eq!(line["name"], "account.registered");
+    assert_eq!(line["attributes"]["release_id"], "guccyon/rally@0.1.0");
+    assert_eq!(line["attributes"]["app_version"], "0.1.0");
 }

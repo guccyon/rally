@@ -2,8 +2,20 @@
 # 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
 # モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義せず、kpi.yaml の 1 か所に置く（kpi は kpi.yaml の ja を指す）。
 # 各項目: name（<対象>.<出来事>）・ja・context（context-map.yaml の id。複数のコンテキストが発行するイベントだけ contexts: で id を列挙する。glossary と同じ規約）・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
+# common_optional: すべての行動イベントに付けられる共通の任意属性。各項目は name・ja・description・example。
+# 発火する側は値が分かるときだけ付け、分からなければ付けない（欠けていても発火は止めない）。どのイベントの required にも入れない。
 schema_version: "0.1"
 status: draft
+# 利用者の声や不具合の報告を版（Release）に結ぶ入口（factory-engine ADR 0007「来歴とロット」の製品側）。版の付け方（Release を切ること）は工場の factoryctl release create で、ここでは定めない
+common_optional:
+  - name: release_id
+    ja: "版の ID"
+    description: "発火したアプリが属する版（Release）の ID。<リポジトリ>@<版> の形"
+    example: "guccyon/rally@0.1.0"
+  - name: app_version
+    ja: "アプリの版"
+    description: "発火したアプリの版"
+    example: "0.1.0"
 events:
   - name: account.registered
     ja: "アカウント登録"

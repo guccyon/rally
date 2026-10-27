@@ -13,7 +13,8 @@ use domain::{
     scheduling::{BookingId, SlotId},
 };
 
-/// 行動イベント。変種は events.yaml の `name` に 1 対 1 で対応し、属性は `required` と同じ。
+/// 行動イベント。変種は events.yaml の `name` に 1 対 1 で対応し、属性は `required` と同じ。共通の任意属性
+/// （`common_optional`。`release_id`・`app_version`）はイベントごとに変わらないので変種に持たせず、配信先が付ける。
 ///
 /// `call.ended` のパケット損失率が浮動小数点数なので `Eq` は実装しない。
 #[derive(Debug, Clone, PartialEq)]

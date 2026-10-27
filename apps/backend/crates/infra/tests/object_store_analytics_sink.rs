@@ -16,7 +16,7 @@ use domain::{
     identity::{AccountId, Sport},
     scheduling::SlotId,
 };
-use infra::{ObjectStoreAnalyticsSink, analytics_event_payload::line};
+use infra::{AnalyticsCommonAttributes, ObjectStoreAnalyticsSink, analytics_event_payload::line};
 use object_store::{ObjectStore, memory::InMemory, path::Path};
 use uuid::Uuid;
 
@@ -81,12 +81,43 @@ async fn emit_writes_one_json_line_per_event_to_the_object_store() {
     let registered_objects = objects(&store, "events/account.registered/dt=2026-10-26").await;
     assert_eq!(registered_objects.len(), 2, "発火ごとに 1 オブジェクト");
     for body in registered_objects {
-        assert_eq!(body, format!("{}\n", line(&registered()).unwrap()));
+        assert_eq!(
+            body,
+            format!(
+                "{}\n",
+                line(&registered(), &AnalyticsCommonAttributes::default()).unwrap()
+            )
+        );
     }
     assert_eq!(
         objects(&store, "events/slot.published/dt=2026-10-26").await,
-        [format!("{}\n", line(&published()).unwrap())]
+        [format!(
+            "{}\n",
+            line(&published(), &AnalyticsCommonAttributes::default()).unwrap()
+        )]
     );
+}
+
+/// `with_common` で渡した共通の任意属性のうち、値が分かるものだけが各行に付く。
+#[tokio::test]
+async fn emit_adds_the_known_common_attributes_to_each_line() {
+    let store = Arc::new(InMemory::new());
+    let common = AnalyticsCommonAttributes {
+        release_id: Some("guccyon/rally@0.1.0".to_string()),
+        app_version: None,
+    };
+    let sink = ObjectStoreAnalyticsSink::new(store.clone()).with_common(common.clone());
+
+    sink.emit(registered()).await;
+
+    let bodies = objects(&store, "events/account.registered/dt=2026-10-26").await;
+    assert_eq!(
+        bodies,
+        [format!("{}\n", line(&registered(), &common).unwrap())]
+    );
+    let value: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+    assert_eq!(value["attributes"]["release_id"], "guccyon/rally@0.1.0");
+    assert!(value["attributes"].get("app_version").is_none());
 }
 
 /// 受け取った PUT（パスと本文）。
@@ -140,7 +171,13 @@ async fn s3_puts_the_object_into_the_bucket_by_path_style() {
         .strip_suffix(".jsonl")
         .unwrap_or_else(|| panic!("{key}"));
     assert_eq!(Uuid::try_parse(id).unwrap().get_version_num(), 4);
-    assert_eq!(body, &format!("{}\n", line(&published()).unwrap()));
+    assert_eq!(
+        body,
+        &format!(
+            "{}\n",
+            line(&published(), &AnalyticsCommonAttributes::default()).unwrap()
+        )
+    );
 }
 
 /// 配信先が止まっていても、発火は失敗を標準エラー出力に書いて数秒で戻る（ユースケースを失敗させない）。
