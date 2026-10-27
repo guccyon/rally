@@ -5,6 +5,12 @@ import type { ApiClient } from "./client";
 export function headquartersApi(client: ApiClient) {
   return {
     getSlotSupply: () => call(() => client.GET("/slot-supply")),
+    getCoachReviewSummary: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/review-summary", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
   };
 }
 

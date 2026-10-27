@@ -47,4 +47,22 @@ describe("headquartersApi", () => {
     const result = await api.getSlotSupply();
     expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
   });
+
+  test("getCoachReviewSummary は指定したコーチの件数と平均を返す（評価が 0 件なら平均は null）", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const summary = { coach_id: coachId, review_count: 0, average_rating: null };
+    const { api, fetchMock } = setup(json(200, summary));
+    const result = await api.getCoachReviewSummary(coachId);
+    expect(result).toEqual({ ok: true, data: summary });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/review-summary`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("UUID でないコーチ ID（404）は ID を確かめる文言にする", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "not found" }));
+    const result = await api.getCoachReviewSummary("not-a-uuid");
+    expect(result).toEqual({ ok: false, message: "対象が見つかりません（ID を確かめてください）。" });
+  });
 });

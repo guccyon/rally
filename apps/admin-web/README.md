@@ -28,7 +28,9 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ / 
 | コーチ（`/coach`） | 予約枠の公開と、このログイン中に公開した枠の一覧 | `publishSlot` |
 | | 動画の添削の返却（動画 ID を入力） | `returnVideoReview` |
 | | 通話への参加（予約 ID で開始、同じセッションを終了。映像はモックなので出さない） | `startLiveLessonSession` / `endLiveLessonSession` |
+| | 自分の評価（自分のアカウント ID を入力して、評価の件数と点の平均。0 件なら平均は「評価はまだありません」。他のコーチの ID は API が 403） | `getCoachReviewSummary` |
 | 本部（`/headquarters`） | 予約・完了記録の一覧 | なし（契約に API がないので「未実装」と表示） |
 | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
+| 本部（`/headquarters/coach-review-summary`） | コーチの評価（コーチ ID を入力して、そのコーチの評価の件数と点の平均。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ） | `getCoachReviewSummary` |
 
-自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。
+自分の枠・届いた動画・自分の予約の一覧と、コーチの一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。トークンの中身は読まないので、コーチが自分の評価を見るときも自分のアカウント ID を入力する。
