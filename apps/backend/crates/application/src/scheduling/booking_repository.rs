@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, time::SystemTime};
 
 use domain::{
     DomainError,
@@ -45,4 +45,12 @@ pub trait BookingRepository: Send + Sync {
     ) -> impl Future<Output = Result<Booking, UpdateBookingError>> + Send
     where
         F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send;
+
+    /// 開始が `from`（含む）から `until`（含まない）までの枠（状態を問わない）と、それらの枠への予約
+    /// （状態を問わない）。読むだけで何も変えない。予約枠の需給（[`super::GetSlotSupply`]）が数える。
+    fn slots_starting_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> impl Future<Output = Result<(Vec<Slot>, Vec<Booking>), Unavailable>> + Send;
 }

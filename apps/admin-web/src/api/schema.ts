@@ -27,6 +27,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slot-supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * スポーツごとの予約枠の需給（本部）
+         * @description スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`）と、
+         *     判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
+         *     呼べる（それ以外は 403）。スポーツは `Sport` の 5 種類すべてを、`Sport` の enum の順で返す。
+         *
+         *     判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
+         *
+         *     - 期間: 集計した時刻（サーバーの現在時刻）の 30 日前（含む）から集計した時刻（含まない）まで。
+         *       枠の開始時刻（`starts_at`）がこの期間に入る枠だけを数える（`window_start` / `window_end`）
+         *     - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
+         *       コーチが閉じた枠（`closed`）は数えない
+         *     - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
+         *       予約を作った生徒の数。予約の状態（未確定・確定・キャンセル）を問わず、同じ生徒は 1 人と数える。
+         *       スロットの検索は記録していないので数に入らない
+         *     - 判定: `booking_students >= 1` かつ `booking_students >= published_slots × 0.6` なら `insufficient`、
+         *       それ以外は `sufficient`（予約しようとした生徒がいなければ、枠が 0 でも `sufficient`）。
+         *       0.6 は仮の初期値（2026-10-27、合成シードで見て決めた。実データでの見直しが前提。工場の judge が人に回し、builder が委任の範囲で仮置きとした）
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getSlotSupply"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -137,6 +174,34 @@ export interface components {
              * @description 開始より後（期間は終了を含まない）
              */
             ends_at: string;
+        };
+        /**
+         * @description sufficient: 公開した枠が足りている / insufficient: 足りていない。判定の式は `getSlotSupply` の説明。
+         * @enum {string}
+         */
+        SlotSupplyStatus: "sufficient" | "insufficient";
+        /** @description スポーツ 1 つの予約枠の需給（期間と数え方は `getSlotSupply` の説明） */
+        SlotSupply: {
+            sport: components["schemas"]["Sport"];
+            status: components["schemas"]["SlotSupplyStatus"];
+            /** @description 期間に開始する、そのスポーツの公開した枠（open / booked）の数 */
+            published_slots: number;
+            /** @description 期間に開始する、そのスポーツの枠に予約を作った生徒の数（予約の状態を問わない。同じ生徒は 1 人） */
+            booking_students: number;
+        };
+        SlotSupplyReport: {
+            /**
+             * Format: date-time
+             * @description 数えた期間の始まり（含む。集計した時刻の 30 日前）
+             */
+            window_start: string;
+            /**
+             * Format: date-time
+             * @description 数えた期間の終わり（含まない。集計した時刻）
+             */
+            window_end: string;
+            /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
+            sports: components["schemas"]["SlotSupply"][];
         };
         /**
          * @description student-app の LiveLessonSessionStatus と同じ値
@@ -289,6 +354,28 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getSlotSupply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description スポーツごとの予約枠の需給 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotSupplyReport"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     startLiveLessonSession: {

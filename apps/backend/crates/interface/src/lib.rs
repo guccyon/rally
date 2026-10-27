@@ -12,6 +12,7 @@ mod error;
 mod lessons;
 mod live_lesson_sessions;
 mod message;
+mod slot_supply;
 mod slots;
 mod subscriptions;
 mod videos;
@@ -33,8 +34,8 @@ use application::{
         VideoCallProvider,
     },
     scheduling::{
-        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, PublishSlot, QuotaGate,
-        SearchSlots, SlotRepository,
+        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
+        PublishSlot, QuotaGate, SearchSlots, SlotRepository,
     },
 };
 use axum::{
@@ -57,7 +58,7 @@ pub use error::ApiError;
 /// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
 /// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
 /// `POST /lessons/completions`（レッスンの完了記録）も役割で絞らず、通話セッション・動画の当事者かをユースケースが
-/// 確かめる（契約に 403 がない）。
+/// 確かめる（契約に 403 がない）。`GET /slot-supply`（admin-web のスポーツごとの予約枠の需給）は本部だけ。
 #[allow(clippy::too_many_arguments)]
 pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
@@ -66,6 +67,7 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, A, P, C, T>(
     create_booking: CreateBooking<B, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
+    get_slot_supply: GetSlotSupply<B, C>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
@@ -128,6 +130,10 @@ where
             confirm_booking,
             cancel_booking,
         }));
+    let slot_supply = Router::new()
+        .route("/slot-supply", get(slot_supply::get_slot_supply::<B, C>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(slot_supply::SlotSupplyState { get_slot_supply }));
     let entitlements = Router::new()
         .route(
             "/entitlements/me",
@@ -189,6 +195,7 @@ where
         .merge(accounts)
         .merge(slots)
         .merge(bookings)
+        .merge(slot_supply)
         .merge(subscriptions)
         .merge(entitlements)
         .merge(live_lesson_sessions)
