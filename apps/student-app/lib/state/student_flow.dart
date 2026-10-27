@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/error_message.dart';
@@ -45,14 +47,14 @@ class StudentFlowState {
     this.review,
     this.lesson,
     this.lessonReview,
-    this.reviewedLessonIds = const {},
+    Set<String> reviewedLessonIds = const {},
     this.subscription,
     this.entitlement,
     this.chatReturnStep,
     this.threads,
     this.thread,
     this.messages,
-  });
+  }) : _reviewedLessonIds = reviewedLessonIds;
 
   final FlowStep step;
 
@@ -87,8 +89,9 @@ class StudentFlowState {
 
   /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
   /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す。
-  /// [copyWith] で変更できない Set に包む（`add` などで Riverpod を通さずに状態を変えさせない）
-  final Set<String> reviewedLessonIds;
+  /// 読み出しは変更できないビューで返す（どの経路で作っても、`add` などで Riverpod を通さずに状態を変えさせない）
+  Set<String> get reviewedLessonIds => UnmodifiableSetView(_reviewedLessonIds);
+  final Set<String> _reviewedLessonIds;
 
   /// 完了を記録したレッスンを評価済みと分かっているか
   bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
@@ -146,9 +149,7 @@ class StudentFlowState {
     review: review ?? this.review,
     lesson: lesson ?? this.lesson,
     lessonReview: lessonReview ?? this.lessonReview,
-    reviewedLessonIds: reviewedLessonIds != null
-        ? Set.unmodifiable(reviewedLessonIds)
-        : this.reviewedLessonIds,
+    reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
