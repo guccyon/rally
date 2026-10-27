@@ -5,7 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）の画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）とチャットの画面の段。
 enum FlowStep {
   register,
   slotSearch,
@@ -15,6 +15,14 @@ enum FlowStep {
   videoReview,
   lessonCompletion,
   subscription,
+
+  /// 担当コーチとのスレッドの一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
+  messageThreads,
+
+  /// 1 つのスレッドのメッセージ
+  messages;
+
+  bool get isChat => this == messageThreads || this == messages;
 }
 
 /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
@@ -35,6 +43,10 @@ class StudentFlowState {
     this.lesson,
     this.subscription,
     this.entitlement,
+    this.chatReturnStep,
+    this.threads,
+    this.thread,
+    this.messages,
   });
 
   final FlowStep step;
@@ -67,6 +79,18 @@ class StudentFlowState {
   final Subscription? subscription;
   final Entitlement? entitlement;
 
+  /// チャットを閉じたときに戻る段（チャットを開いた段）
+  final FlowStep? chatReturnStep;
+
+  /// 担当コーチとのスレッド（`listMessageThreads`。未取得なら null）
+  final List<MessageThread>? threads;
+
+  /// 開いているスレッド
+  final MessageThread? thread;
+
+  /// 開いているスレッドのメッセージ（送った順）
+  final List<Message>? messages;
+
   /// `errorMessage` は引き継がない（渡さなければ消える）。
   StudentFlowState copyWith({
     FlowStep? step,
@@ -84,6 +108,10 @@ class StudentFlowState {
     Lesson? lesson,
     Subscription? subscription,
     Entitlement? entitlement,
+    FlowStep? chatReturnStep,
+    List<MessageThread>? threads,
+    MessageThread? thread,
+    List<Message>? messages,
   }) => StudentFlowState(
     step: step ?? this.step,
     busy: busy ?? this.busy,
@@ -100,6 +128,10 @@ class StudentFlowState {
     lesson: lesson ?? this.lesson,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
+    chatReturnStep: chatReturnStep ?? this.chatReturnStep,
+    threads: threads ?? this.threads,
+    thread: thread ?? this.thread,
+    messages: messages ?? this.messages,
   );
 }
 
@@ -257,6 +289,69 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       entitlement: response.entitlement,
     );
   });
+
+  /// チャットを開く（`listMessageThreads`）。閉じたら今の段に戻る。
+  Future<void> openChat() {
+    if (!state.step.isChat) {
+      state = state.copyWith(
+        chatReturnStep: state.step,
+        step: FlowStep.messageThreads,
+      );
+    }
+    return _run(_loadThreads);
+  }
+
+  /// チャットを閉じて、開いた段に戻る
+  void closeChat() =>
+      state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
+
+  /// スレッドを開く。`listMessages` で読み、相手のメッセージを `markMessageThreadRead` で既読にする
+  /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
+  Future<void> openThread(MessageThread thread) => _run(() async {
+    final list = await _api.listMessages(thread.threadId);
+    final read = await _api.markMessageThreadRead(thread.threadId);
+    state = state.copyWith(
+      thread: read,
+      messages: list.messages,
+      step: FlowStep.messages,
+    );
+  });
+
+  /// 開いているスレッドの新しいメッセージを確かめる（読み直して既読にする）
+  Future<void> refreshMessages() => _run(() async {
+    final threadId = state.thread!.threadId;
+    final list = await _api.listMessages(threadId);
+    final read = await _api.markMessageThreadRead(threadId);
+    state = state.copyWith(thread: read, messages: list.messages);
+  });
+
+  /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
+  Future<bool> sendMessage(String body) async {
+    var sent = false;
+    await _run(() async {
+      final message = await _api.sendMessage(
+        state.thread!.threadId,
+        SendMessageRequest(body: body),
+      );
+      state = state.copyWith(messages: [...?state.messages, message]);
+      sent = true;
+    });
+    return sent;
+  }
+
+  /// スレッドの一覧を読み直す
+  Future<void> refreshThreads() => _run(_loadThreads);
+
+  /// スレッドの一覧に戻る（未読の数と最後のメッセージを読み直す）
+  Future<void> backToThreads() {
+    state = state.copyWith(step: FlowStep.messageThreads);
+    return _run(_loadThreads);
+  }
+
+  Future<void> _loadThreads() async {
+    final list = await _api.listMessageThreads();
+    state = state.copyWith(threads: list.threads);
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     if (state.busy) return;

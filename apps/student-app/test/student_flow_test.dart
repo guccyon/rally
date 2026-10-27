@@ -104,4 +104,50 @@ void main() {
       'startSubscription',
     ]);
   });
+
+  testWidgets('チャット: 月額契約の後 → スレッドの一覧 → メッセージ（既読にする）→ 送信 → 一覧 → 閉じて元の画面', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpApp(tester, api);
+
+    expect(find.byTooltip('チャット'), findsNothing);
+    await registerAndBook(tester);
+    await tapText(tester, 'ビデオ通話で受ける');
+    await tapText(tester, '通話を開始する');
+    await tapText(tester, '通話を終了する');
+    await recordAndSubscribe(tester);
+    api.calls.clear();
+
+    await tester.tap(find.byTooltip('チャット'));
+    await tester.pumpAndSettle();
+    expect(find.text('チャット'), findsOneWidget);
+    expect(find.text('未読 1'), findsOneWidget);
+
+    await tapText(tester, '担当コーチ');
+    expect(find.text('担当コーチとのチャット'), findsOneWidget);
+    expect(find.text('体験レッスンでお待ちしています'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '次回もお願いします');
+    await tester.pump();
+    await tapText(tester, '送信する');
+    expect(find.text('次回もお願いします'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
+    await tester.pumpAndSettle();
+    expect(find.text('自分: 次回もお願いします'), findsOneWidget);
+    expect(find.text('未読 1'), findsNothing);
+
+    await tester.tap(find.byTooltip('チャットを閉じる'));
+    await tester.pumpAndSettle();
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+
+    expect(api.calls, [
+      'listMessageThreads',
+      'listMessages',
+      'markMessageThreadRead',
+      'sendMessage',
+      'listMessageThreads',
+    ]);
+  });
 }

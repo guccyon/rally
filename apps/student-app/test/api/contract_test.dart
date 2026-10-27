@@ -55,6 +55,10 @@ void main() {
       enumOf('LessonType'),
       LessonType.values.map((e) => e.wire).toList(),
     ),
+    'MessageSenderRole': (
+      enumOf('MessageSenderRole'),
+      MessageSenderRole.values.map((e) => e.wire).toList(),
+    ),
     'ErrorCode': (
       enumOf('ErrorCode'),
       ErrorCode.values
@@ -87,6 +91,10 @@ void main() {
         'getVideoReview',
         'recordLessonCompletion',
         'startSubscription',
+        'listMessageThreads',
+        'listMessages',
+        'sendMessage',
+        'markMessageThreadRead',
       ]),
     );
   });

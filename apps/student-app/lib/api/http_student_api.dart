@@ -83,6 +83,38 @@ class HttpStudentApi implements StudentApi {
     await _send('POST', '/subscriptions', body: body.toJson()),
   );
 
+  @override
+  Future<MessageThreadList> listMessageThreads() async =>
+      MessageThreadList.fromJson(await _send('GET', '/message-threads'));
+
+  @override
+  Future<MessageList> listMessages(String threadId) async =>
+      MessageList.fromJson(
+        await _send(
+          'GET',
+          '/message-threads/${Uri.encodeComponent(threadId)}/messages',
+        ),
+      );
+
+  @override
+  Future<Message> sendMessage(String threadId, SendMessageRequest body) async =>
+      Message.fromJson(
+        await _send(
+          'POST',
+          '/message-threads/${Uri.encodeComponent(threadId)}/messages',
+          body: body.toJson(),
+        ),
+      );
+
+  @override
+  Future<MessageThread> markMessageThreadRead(String threadId) async =>
+      MessageThread.fromJson(
+        await _send(
+          'POST',
+          '/message-threads/${Uri.encodeComponent(threadId)}/read',
+        ),
+      );
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {

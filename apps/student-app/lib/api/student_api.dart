@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオで使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオとチャットで使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -37,6 +37,18 @@ abstract interface class StudentApi {
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   );
+
+  /// `listMessageThreads`（GET /message-threads）
+  Future<MessageThreadList> listMessageThreads();
+
+  /// `listMessages`（GET /message-threads/{thread_id}/messages）。読むだけでは既読にならない
+  Future<MessageList> listMessages(String threadId);
+
+  /// `sendMessage`（POST /message-threads/{thread_id}/messages）
+  Future<Message> sendMessage(String threadId, SendMessageRequest body);
+
+  /// `markMessageThreadRead`（POST /message-threads/{thread_id}/read）
+  Future<MessageThread> markMessageThreadRead(String threadId);
 }
 
 /// API の失敗。契約の `Error` を返したときは [error] を持ち、通信の失敗などでは null。

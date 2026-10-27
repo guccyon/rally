@@ -7,12 +7,22 @@ class FakeStudentApi implements StudentApi {
   FakeStudentApi({
     List<Slot>? slots,
     List<VideoReview>? reviews,
+    List<MessageThread>? threads,
+    List<Message>? messages,
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
-       _reviews = reviews ?? [Fixtures.reviewReturned];
+       _reviews = reviews ?? [Fixtures.reviewReturned],
+       threads = List.of(threads ?? [Fixtures.thread]),
+       messages = List.of(messages ?? Fixtures.messages);
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
+
+  /// 担当コーチとのスレッド（`listMessageThreads` が返す）
+  final List<MessageThread> threads;
+
+  /// スレッドのメッセージ（`listMessages` が返す。`sendMessage` で末尾に足す）
+  final List<Message> messages;
   final Map<String, StudentApiException> failures;
 
   final List<String> calls = [];
@@ -86,6 +96,56 @@ class FakeStudentApi implements StudentApi {
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) => _answer('startSubscription', () => Fixtures.subscriptionStarted, body);
+
+  @override
+  Future<MessageThreadList> listMessageThreads() => _answer(
+    'listMessageThreads',
+    () => MessageThreadList(threads: [...threads]),
+  );
+
+  @override
+  Future<MessageList> listMessages(String threadId) => _answer(
+    'listMessages',
+    () => MessageList(threadId: threadId, messages: [...messages]),
+    threadId,
+  );
+
+  @override
+  Future<Message> sendMessage(String threadId, SendMessageRequest body) =>
+      _answer('sendMessage', () {
+        final message = Message(
+          messageId: 'message-${messages.length + 1}',
+          threadId: threadId,
+          senderId: Fixtures.studentId,
+          senderRole: MessageSenderRole.student,
+          body: body.body,
+          sentAt: Fixtures.now.add(Duration(minutes: messages.length + 1)),
+        );
+        messages.add(message);
+        _updateThread(threadId);
+        return message;
+      }, body);
+
+  @override
+  Future<MessageThread> markMessageThreadRead(String threadId) => _answer(
+    'markMessageThreadRead',
+    () => _updateThread(threadId, unreadCount: 0),
+    threadId,
+  );
+
+  /// スレッドの最後のメッセージ（と未読の数）を今のメッセージに合わせる
+  MessageThread _updateThread(String threadId, {int? unreadCount}) {
+    final index = threads.indexWhere((t) => t.threadId == threadId);
+    final thread = threads[index];
+    return threads[index] = MessageThread(
+      threadId: thread.threadId,
+      studentId: thread.studentId,
+      coachId: thread.coachId,
+      openedAt: thread.openedAt,
+      lastMessage: messages.lastOrNull,
+      unreadCount: unreadCount ?? thread.unreadCount,
+    );
+  }
 }
 
 /// 契約の形に沿った応答の見本
@@ -96,6 +156,7 @@ abstract final class Fixtures {
   static const bookingId = '44444444-4444-4444-8444-444444444444';
   static const sessionId = '55555555-5555-4555-8555-555555555555';
   static const videoId = '66666666-6666-4666-8666-666666666666';
+  static const threadId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
   static final now = DateTime.utc(2026, 10, 26, 3);
 
@@ -231,5 +292,35 @@ abstract final class Fixtures {
         remaining: 2,
       ),
     ),
+  );
+
+  /// 自分が送ってコーチが読んだメッセージと、コーチから届いてまだ読んでいないメッセージ
+  static final messages = [
+    Message(
+      messageId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      threadId: threadId,
+      senderId: studentId,
+      senderRole: MessageSenderRole.student,
+      body: 'よろしくお願いします',
+      sentAt: now,
+      readAt: now.add(const Duration(minutes: 1)),
+    ),
+    Message(
+      messageId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      threadId: threadId,
+      senderId: coachId,
+      senderRole: MessageSenderRole.coach,
+      body: '体験レッスンでお待ちしています',
+      sentAt: now.add(const Duration(minutes: 2)),
+    ),
+  ];
+
+  static final thread = MessageThread(
+    threadId: threadId,
+    studentId: studentId,
+    coachId: coachId,
+    openedAt: now,
+    lastMessage: messages.last,
+    unreadCount: 1,
   );
 }
