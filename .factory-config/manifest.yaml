@@ -6,6 +6,7 @@
 # 由来: アカウントスキル pr-merge-criteria（2026-10-21 版）の基準を「環境 × 変更種別」の表に変換した初版。
 #       2026-10-26 に Tetsuro とマージ基準を確定: CI が通れば承認なしでマージ。承認が要るのは「外部入力がシェル実行や
 #       エージェントのプロンプトにつながる経路を作る・変える変更」と「憲法の変更」。運用開始後は「公開・デプロイ」と「戻しにくい変更」も。
+#       2026-10-27 戦略会議 D4: 運用開始は「プロダクトを利用者に出した時点」と定義し直した（工場の置き場所とは切り離す）。
 #       この表は人間（builder）と工場の両方のマージ権限。工場の実行権限（pr_create まで）は phase_grants が別に縛る。
 
 schema_version: "0.1"
@@ -63,7 +64,7 @@ autonomy:
     irreversible:
       ja: "戻しにくい変更"
       match: "破壊的スキーマ、データ移行、外部サービスの設定変更など、巻き戻しが難しいもの"
-      source: "2026-10-26 Tetsuro。開発中は回してよく、運用開始時に承認制へ"
+      source: "2026-10-26 Tetsuro。開発中は回してよく、運用開始（利用者に出した時点。D4）で承認制へ"
 
   # 開発中（P0〜運用開始前）の表。merge の値は builder（人間の手元の Claude）が PR をマージするときの権限。
   # 工場（ヘッドレスワーカー）の merge は phase_grants の P0（human_approve）が優先し、P0b 完了まで shadow 判定の記録だけ行う。
@@ -77,7 +78,9 @@ autonomy:
     untrusted_input_path: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
     factory_rule:         { pr_create: shadow, merge: forbidden,   deploy_test: forbidden, deploy_prod: forbidden }   # P0 は自己進化を動かさない
     constitution:         { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
-  on_operation_start:     # 「実際に運用して動かす」と Tetsuro が宣言した時点で切り替える
+  # 運用開始 ＝ プロダクトを利用者（合成でない人）に出した時点（2026-10-27 戦略会議 D4）。
+  # 工場をサーバー（EC2 など）に移しただけでは発動しない。切り替えは builder が宣言し、この表の変更と同じく承認付き PR で行う
+  on_operation_start:
     irreversible: { merge: human_approve }
     release: { deploy_test: human_approve, deploy_prod: human_approve, note: "公開・デプロイは改めて承認制" }
 
