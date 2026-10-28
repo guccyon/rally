@@ -6,7 +6,7 @@ use crate::{Unavailable, clock::Clock};
 /// スポーツごとの予約枠の需給のユースケース（admin-web の `getSlotSupply`。本部だけが呼ぶ）。
 ///
 /// 現在時刻の [`SlotSupply::WINDOW`] 前（含む）から現在時刻（含まない）までに開始する枠と、それらへの予約を
-/// 読み、スポーツ 5 種類すべてについて [`SlotSupply::tally`] で数える。数え方と判定は domain の [`SlotSupply`] だけ。
+/// 読み、スポーツ 6 種類すべてについて [`SlotSupply::tally`] で数える。数え方と判定は domain の [`SlotSupply`] だけ。
 pub struct GetSlotSupply<B, C> {
     bookings: B,
     clock: C,
@@ -117,6 +117,7 @@ mod tests {
                 SlotSupply::new(Sport::Baseball, 0, 0),
                 SlotSupply::new(Sport::Soccer, 1, 0),
                 SlotSupply::new(Sport::Basketball, 0, 0),
+                SlotSupply::new(Sport::Swimming, 0, 0),
             ]
         );
         let statuses: Vec<_> = report.sports.iter().map(SlotSupply::status).collect();
@@ -124,6 +125,7 @@ mod tests {
             statuses,
             [
                 SlotSupplyStatus::Insufficient,
+                SlotSupplyStatus::Sufficient,
                 SlotSupplyStatus::Sufficient,
                 SlotSupplyStatus::Sufficient,
                 SlotSupplyStatus::Sufficient,

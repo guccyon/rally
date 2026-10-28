@@ -751,7 +751,7 @@ components:
     Sport:
       type: string
       description: student-app が扱うスポーツ。ゴルフは golf-app の範囲のため含めない。
-      enum: [tennis, baseball, soccer, basketball]
+      enum: [tennis, baseball, soccer, basketball, swimming]
 
     Student:
       type: object

@@ -53,7 +53,7 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
 `domain::identity` がモデルの生成時に検証し、破れば `DomainError` を返す。
 
 - 役割（生徒・コーチ・本部）とスポーツの組み合わせ: 生徒はちょうど 1 つ、コーチは 1 つ以上（提供スポーツの集合）、本部はなし
-- スポーツは Blueprint の 5 種類（tennis / golf / baseball / soccer / basketball）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）
+- スポーツは提供スポーツの 6 種類（Blueprint の tennis / golf / baseball / soccer / basketball と、変更シナリオ cs-001 で足した swimming）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）。水泳は DB の sport の CHECK 制約の付け直し（`20261028000003_expand_swimming.sql`）で足し、月額（ゴルフ以外）の規則（`ContractType::covers`）は変えずに月額に入る。水泳の一周（コーチ・枠・月額の受講権・予約）は `crates/server/tests/swimming.rs`（Postgres。`--include-ignored`）
 - コーチの自己紹介文（`CoachBio`）は空でもよく 400 文字まで（契約の `maxLength`。前後の空白も削らずに持つ）。登録したばかりのコーチは空
 - 表示名は空（空白だけ）でなく 50 文字まで（契約の `maxLength`）。メールアドレスは `@` の前後が空でない最小の形で、一意性は大文字小文字を区別しない
 
@@ -101,7 +101,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 | 何の文字列か | 置き場所 |
 |---|---|
-| 契約の `Sport`（admin-web は 5 種類、student-app はゴルフを除く 4 種類）・`SlotStatus`・`date-time`・`next_cursor` | `interface` の `contract.rs` |
+| 契約の `Sport`（admin-web は 6 種類、student-app はゴルフを除く 5 種類）・`SlotStatus`・`date-time`・`next_cursor` | `interface` の `contract.rs` |
 | DB の `scheduling.slots.status` の値 | `infra::scheduling_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
 | スロット ID の UUID のテキスト形式 | `application::scheduling::slot_id_uuid` |
 
@@ -130,7 +130,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## scheduling: スポーツごとの予約枠の需給
 
-- `GET /slot-supply`（admin-web の `getSlotSupply`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの採用計画に使う。スポーツ 5 種類すべてについて、公開した枠の数 `published_slots`・予約しようとした生徒の数 `booking_students` と、足りているか `status`（`sufficient` / `insufficient`）を返す。行動イベントは発火しない
+- `GET /slot-supply`（admin-web の `getSlotSupply`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの採用計画に使う。スポーツ 6 種類すべてについて、公開した枠の数 `published_slots`・予約しようとした生徒の数 `booking_students` と、足りているか `status`（`sufficient` / `insufficient`）を返す。行動イベントは発火しない
 - 判定の式と期間の正本は契約（`specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。実装は `domain::scheduling::SlotSupply` の 1 か所だけ（期間 `WINDOW` = 30 日、閾値 `SHORTAGE_PERCENT` = 60）で、数え方（`tally`）も domain が持つ。保存先は期間に開始する枠とその予約を読むだけ（`BookingRepository::slots_starting_between`）で、数えない。閾値と期間を application・interface・infra に写さない
 - 期間は現在時刻の 30 日前（含む）から現在時刻（含まない）に開始する枠。`published_slots` は `open` / `booked` の枠、`booking_students` は（閉じた枠を含む）その枠に予約を作った生徒（予約の状態を問わず、同じ生徒は 1 人）。生徒が 1 人以上で、`booking_students >= published_slots × 0.6` なら `insufficient`
 - スロットの検索は記録していない（行動イベントにも DB にもない）ので、需要は予約の作成だけから数える

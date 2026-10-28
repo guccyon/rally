@@ -4,6 +4,8 @@
 //! - 前進だけ（sqlx の `.up.sql` / `.down.sql` は使わない）
 //! - 破壊的な文（列・テーブルの削除、改名、型の変更、データの削除、NOT NULL の付与）は contract の段にだけ書ける。
 //!   contract のマイグレーションを含む PR は人間承認（manifest の destructive_schema）
+//! - 例外として、CHECK 制約を同じ名前で付け直す `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)`（1 つの ALTER TABLE）は
+//!   expand に書ける（許す値を足す緩和。値を減らす付け直しは contract に分ける。ADR 0004 の 2）
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,6 +95,16 @@ fn tokens(sql: &str) -> Vec<String> {
         .collect()
 }
 
+/// `DROP CONSTRAINT x ADD CONSTRAINT x CHECK`（トークンの並び）で始まるか。
+fn replaces_check_constraint(t: &[String]) -> bool {
+    matches!(
+        t,
+        [drop, c1, name, add, c2, same, check, ..]
+            if drop == "DROP" && c1 == "CONSTRAINT" && add == "ADD" && c2 == "CONSTRAINT"
+                && check == "CHECK" && name == same
+    )
+}
+
 /// contract の段にしか書けない破壊的な文を探す。
 fn destructive_statements(sql: &str) -> Vec<String> {
     let t = tokens(sql);
@@ -101,7 +113,10 @@ fn destructive_statements(sql: &str) -> Vec<String> {
     for i in 0..t.len() {
         let hit = match t[i].as_str() {
             // DROP NOT NULL / DROP DEFAULT は制約を緩めるだけなので expand に書ける
-            "DROP" => !matches!(at(i + 1), Some("NOT" | "DEFAULT")),
+            // DROP CONSTRAINT x, ADD CONSTRAINT x CHECK は同じ名前の CHECK の付け直しなので expand に書ける
+            "DROP" => {
+                !matches!(at(i + 1), Some("NOT" | "DEFAULT")) && !replaces_check_constraint(&t[i..])
+            }
             "RENAME" | "TRUNCATE" | "DELETE" => true,
             // ALTER [COLUMN] <列> TYPE / SET DATA TYPE（型の変更）
             "TYPE" => {
@@ -171,6 +186,10 @@ fn detects_destructive_statements() {
         "ALTER TABLE identity.accounts DROP COLUMN email;",
         "ALTER TABLE identity.accounts DROP email;",
         "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_email_check;",
+        // 別の名前の制約を足しても付け直しではない
+        "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_sport_check, ADD CONSTRAINT accounts_sport_v2 CHECK (sport <> '');",
+        // CHECK 以外（外部キー・一意）の付け直しは対象外
+        "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_email_key, ADD CONSTRAINT accounts_email_key UNIQUE (email);",
         "DROP INDEX scheduling.bookings_one_active_per_slot;",
         "ALTER TABLE identity.accounts RENAME COLUMN email TO mail;",
         "ALTER TABLE identity.accounts ALTER COLUMN display_name TYPE varchar(20);",
@@ -194,6 +213,7 @@ fn allows_additive_statements() {
         "ALTER TABLE identity.accounts ADD COLUMN locale text;",
         "ALTER TABLE identity.accounts ALTER COLUMN sport DROP NOT NULL;",
         "ALTER TABLE identity.accounts ALTER COLUMN role DROP DEFAULT;",
+        "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_sport_check, ADD CONSTRAINT accounts_sport_check CHECK (sport IN ('tennis', 'swimming'));",
         "CREATE INDEX accounts_created_at_idx ON identity.accounts (created_at);",
         "UPDATE identity.accounts SET locale = 'ja';",
         "-- DROP TABLE identity.accounts; はコメントなので数えない\nSELECT 1;",

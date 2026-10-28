@@ -286,7 +286,7 @@ async fn registers_a_student_with_the_contract_shape() {
 #[tokio::test]
 async fn accepts_every_student_app_sport() {
     let app = app();
-    for (i, sport) in ["tennis", "baseball", "soccer", "basketball"]
+    for (i, sport) in ["tennis", "baseball", "soccer", "basketball", "swimming"]
         .iter()
         .enumerate()
     {

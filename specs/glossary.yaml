@@ -6,7 +6,7 @@ status: draft
 terms:
   - id: student
     ja: "生徒"
-    definition: "コーチからテニス・ゴルフ・野球・サッカー・バスケットボールのオンラインレッスンを受ける利用者。"
+    definition: "コーチからテニス・ゴルフ・野球・サッカー・バスケットボール・水泳のオンラインレッスンを受ける利用者。"
     context: identity
   - id: coach
     ja: "コーチ"

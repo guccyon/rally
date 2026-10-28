@@ -30,7 +30,7 @@ async fn get_slot_supply(role: Role) -> (StatusCode, Value) {
 }
 
 #[tokio::test]
-async fn headquarters_reads_the_supply_of_the_five_sports() {
+async fn headquarters_reads_the_supply_of_the_six_sports() {
     let (status, body) = get_slot_supply(Role::Headquarters).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let sports: Vec<&str> = body["sports"]
@@ -41,7 +41,14 @@ async fn headquarters_reads_the_supply_of_the_five_sports() {
         .collect();
     assert_eq!(
         sports,
-        ["tennis", "golf", "baseball", "soccer", "basketball"]
+        [
+            "tennis",
+            "golf",
+            "baseball",
+            "soccer",
+            "basketball",
+            "swimming"
+        ]
     );
 }
 

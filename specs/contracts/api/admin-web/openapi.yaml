@@ -86,7 +86,7 @@ paths:
       description: |
         スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`）と、
         判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
-        呼べる（それ以外は 403）。スポーツは `Sport` の 5 種類すべてを、`Sport` の enum の順で返す。
+        呼べる（それ以外は 403）。スポーツは `Sport` の 6 種類すべてを、`Sport` の enum の順で返す。
 
         判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
 
@@ -651,8 +651,8 @@ components:
   schemas:
     Sport:
       type: string
-      description: Blueprint のスポーツ 5 種類。コーチはゴルフの枠も公開できる（ゴルフの生徒は golf-app の範囲）。
-      enum: [tennis, golf, baseball, soccer, basketball]
+      description: 提供スポーツ 6 種類（Blueprint の 5 種類と、変更シナリオ cs-001 で足した水泳）。コーチはゴルフの枠も公開できる（ゴルフの生徒は golf-app の範囲）。
+      enum: [tennis, golf, baseball, soccer, basketball, swimming]
 
     SlotStatus:
       type: string
@@ -822,7 +822,7 @@ components:
           description: 数えた期間の終わり（含まない。集計した時刻）
         sports:
           type: array
-          description: スポーツ 5 種類すべて（`Sport` の enum の順）
+          description: スポーツ 6 種類すべて（`Sport` の enum の順）
           items:
             $ref: "#/components/schemas/SlotSupply"
 

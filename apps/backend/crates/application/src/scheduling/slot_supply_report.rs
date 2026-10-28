@@ -9,6 +9,6 @@ pub struct SlotSupplyReport {
     pub window_start: SystemTime,
     /// 数えた期間の終わり（含まない。集計した時刻）
     pub window_end: SystemTime,
-    /// スポーツ 5 種類すべて（[`domain::identity::Sport::ALL`] の順）
+    /// スポーツ 6 種類すべて（[`domain::identity::Sport::ALL`] の順）
     pub sports: Vec<SlotSupply>,
 }

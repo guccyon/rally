@@ -300,6 +300,7 @@ async fn headquarters_reads_the_supply_of_every_sport_in_the_last_thirty_days() 
                 // 2 枠に 1 人（50%）
                 { "sport": "soccer", "status": "sufficient", "published_slots": 2, "booking_students": 1 },
                 { "sport": "basketball", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
+                { "sport": "swimming", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
             ],
         })
     );
