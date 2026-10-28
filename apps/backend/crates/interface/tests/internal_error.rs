@@ -155,6 +155,10 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
+        application::async_lesson::ListCoachVideos::new(
+            InMemoryVideoRepository::default(),
+            application::identity::IdentityStudentDisplayNameLookup::new(BrokenRepository),
+        ),
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
             InMemoryVideoRepository::default(),

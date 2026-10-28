@@ -7,7 +7,8 @@ info:
     （ADR 0002 Q3）。コーチ側の最小操作（予約枠の登録・添削の返却・通話参加）もここに載せる。
     Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。通話への参加（`startLiveLessonSession` /
     `endLiveLessonSession`）は student-app と同じ操作・同じ形で、予約の参加者であるコーチが呼ぶ。参加する予約は
-    コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。
+    コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
+    （`listMyCoachVideos`）から選ぶ。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
     student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
 
@@ -35,7 +36,7 @@ tags:
   - name: live-lesson
     description: 同期レッスン（通話への参加）
   - name: async-lesson
-    description: 非同期レッスン（動画添削の返却）
+    description: 非同期レッスン（コーチに届いた動画の一覧と、動画添削の返却）
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
   - name: identity
@@ -308,6 +309,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoachBookingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /coaches/me/videos:
+    get:
+      operationId: listMyCoachVideos
+      summary: 自分に届いた動画の一覧（コーチ）
+      description: |
+        トークンが示す本人（コーチ）に生徒が送った動画（student-app の `submitVideo`）を、添削待ちも返却済みも含めてすべて返す。
+        添削の返却（`returnVideoReview`）で動画を選ぶのに使う。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+
+        - 並べ方: 添削待ち（`review_status` が `in_progress`）を送られた時刻 `submitted_at` の古い順で先に（待たせている動画が上）、
+          その後に返却済み（`returned`）を返却した時刻 `returned_at` の新しい順。同じ時刻は動画 ID の順
+        - 各項目には動画の ID と、送った生徒の表示名 `student_display_name` と、送られた時刻と、添削の状態と、返却した時刻を載せる。
+          生徒のアカウントが引けないときは `student_display_name` を載せない。添削待ちの動画には `returned_at` を載せない
+        - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [async-lesson]
+      x-context: async-lesson
+      x-analytics-events: []
+      responses:
+        "200":
+          description: コーチに届いた動画の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachVideoList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -949,6 +981,41 @@ components:
           minLength: 1
           maxLength: 4000
           description: コーチの添削コメント（空白だけは不可）
+
+    CoachVideo:
+      type: object
+      description: コーチに届いた動画の一覧の 1 件。生徒が送った動画（glossary の async_lesson）と、その添削（glossary の video_review）の状態
+      required: [video_id, submitted_at, review_status]
+      properties:
+        video_id:
+          type: string
+          format: uuid
+        student_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 動画を送った生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない
+        submitted_at:
+          type: string
+          format: date-time
+          description: 生徒が動画を送った時刻
+        review_status:
+          $ref: "#/components/schemas/VideoReviewStatus"
+        returned_at:
+          type: string
+          format: date-time
+          description: コーチが添削を返した時刻。添削待ち（`in_progress`）のときは載らない
+
+    CoachVideoList:
+      type: object
+      description: コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明）
+      required: [videos]
+      properties:
+        videos:
+          type: array
+          description: 添削待ちを送られた時刻の古い順で先に、その後に返却済みを返却した時刻の新しい順（同じ時刻は動画 ID の順）
+          items:
+            $ref: "#/components/schemas/CoachVideo"
 
     MessageSenderRole:
       type: string

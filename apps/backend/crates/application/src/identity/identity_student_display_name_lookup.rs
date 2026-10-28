@@ -3,9 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use domain::identity::{AccountId, DisplayName};
 
 use super::AccountRepository;
-use crate::{Unavailable, scheduling::StudentDisplayNameLookup};
+use crate::{
+    Unavailable, async_lesson::VideoStudentDisplayNameLookup, scheduling::StudentDisplayNameLookup,
+};
 
-/// scheduling の [`StudentDisplayNameLookup`] の identity による実装。アカウントの保存先から読むだけで、何も変えない。
+/// scheduling の [`StudentDisplayNameLookup`] と async-lesson の [`VideoStudentDisplayNameLookup`] の identity による
+/// 実装。アカウントの保存先から読むだけで、何も変えない。
 ///
 /// 生徒でないアカウントと、ないアカウントは結果に含めない。
 #[derive(Debug, Clone)]
@@ -19,11 +22,11 @@ impl<R> IdentityStudentDisplayNameLookup<R> {
     }
 }
 
-impl<R> StudentDisplayNameLookup for IdentityStudentDisplayNameLookup<R>
+impl<R> IdentityStudentDisplayNameLookup<R>
 where
     R: AccountRepository,
 {
-    async fn find_student_display_names(
+    async fn student_display_names(
         &self,
         student_ids: &BTreeSet<AccountId>,
     ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
@@ -38,6 +41,30 @@ where
             names.insert(student_id, account.display_name().clone());
         }
         Ok(names)
+    }
+}
+
+impl<R> StudentDisplayNameLookup for IdentityStudentDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_student_display_names(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.student_display_names(student_ids).await
+    }
+}
+
+impl<R> VideoStudentDisplayNameLookup for IdentityStudentDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_student_display_names(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.student_display_names(student_ids).await
     }
 }
 
@@ -74,25 +101,32 @@ mod tests {
         }
 
         let ids = [1, 2, 3, 4].map(AccountId::from_u128).into();
-        let found = IdentityStudentDisplayNameLookup::new(accounts)
-            .find_student_display_names(&ids)
-            .await
-            .unwrap();
+        let lookup = IdentityStudentDisplayNameLookup::new(accounts);
+        let expected = BTreeMap::from([
+            (AccountId::from_u128(1), DisplayName::new("あおき").unwrap()),
+            (AccountId::from_u128(3), DisplayName::new("いとう").unwrap()),
+        ]);
 
         assert_eq!(
-            found,
-            BTreeMap::from([
-                (AccountId::from_u128(1), DisplayName::new("あおき").unwrap()),
-                (AccountId::from_u128(3), DisplayName::new("いとう").unwrap()),
-            ]),
+            StudentDisplayNameLookup::find_student_display_names(&lookup, &ids)
+                .await
+                .unwrap(),
+            expected,
             "コーチ（2）とないアカウント（4）は含めない"
+        );
+        assert_eq!(
+            VideoStudentDisplayNameLookup::find_student_display_names(&lookup, &ids)
+                .await
+                .unwrap(),
+            expected,
+            "async-lesson のポートも同じ答え"
         );
     }
 
     #[tokio::test]
     async fn no_ids_is_an_empty_map() {
-        let found = IdentityStudentDisplayNameLookup::new(InMemoryAccountRepository::default())
-            .find_student_display_names(&BTreeSet::new())
+        let lookup = IdentityStudentDisplayNameLookup::new(InMemoryAccountRepository::default());
+        let found = StudentDisplayNameLookup::find_student_display_names(&lookup, &BTreeSet::new())
             .await
             .unwrap();
         assert!(found.is_empty());

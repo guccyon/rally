@@ -7,7 +7,9 @@ pub use infra::AnalyticsDestination;
 
 use application::{
     analytics::AnalyticsSink,
-    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo, VideoRepository},
+    async_lesson::{
+        GetVideoReview, ListCoachVideos, ReturnVideoReview, SubmitVideo, VideoRepository,
+    },
     clock::{Clock, SystemClock},
     entitlement::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
@@ -84,7 +86,8 @@ pub fn router() -> Router {
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
-/// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`IdentityStudentDisplayNameLookup`）。
+/// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`IdentityStudentDisplayNameLookup`）。コーチに届いた動画の一覧
+/// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -249,7 +252,7 @@ where
         ),
         ListCoachBookings::new(
             bookings.clone(),
-            IdentityStudentDisplayNameLookup::new(accounts),
+            IdentityStudentDisplayNameLookup::new(accounts.clone()),
         ),
         StartSubscription::new(
             entitlements.clone(),
@@ -279,6 +282,10 @@ where
             analytics.clone(),
             events.clone(),
             clock.clone(),
+        ),
+        ListCoachVideos::new(
+            videos.clone(),
+            IdentityStudentDisplayNameLookup::new(accounts),
         ),
         RecordLessonCompletion::new(
             sessions,
