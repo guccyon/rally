@@ -31,41 +31,55 @@ class SlotSearchScreen extends ConsumerWidget {
           const Text('予約できるスロットはありません。')
         else
           for (final slot in slots)
-            Card(
-              child: ListTile(
-                title: Text(
-                  '${formatDateTime(slot.startsAt)} 〜 ${formatDateTime(slot.endsAt)}',
-                ),
-                subtitle: _SlotSubtitle(slot: slot),
-                trailing: FilledButton(
-                  onPressed: state.busy ? null : () => notifier.bookTrial(slot),
-                  child: const Text('体験予約する'),
-                ),
-              ),
+            _SlotCard(
+              slot: slot,
+              onBook: state.busy ? null : () => notifier.bookTrial(slot),
             ),
       ],
     );
   }
 }
 
-/// スロットの行の補足。スポーツと、載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）
-class _SlotSubtitle extends StatelessWidget {
-  const _SlotSubtitle({required this.slot});
+/// スロットの行。自己紹介文を行の幅で読めるよう縦に並べる: 日時 → スポーツ →
+/// 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→ 体験予約のボタン（行の幅いっぱい）
+class _SlotCard extends StatelessWidget {
+  const _SlotCard({required this.slot, required this.onBook});
 
   final Slot slot;
+  final VoidCallback? onBook;
 
   @override
   Widget build(BuildContext context) {
     final name = slot.coachDisplayName;
     final bio = slot.coachBio;
-    if (name == null && bio == null) return Text(sportLabel(slot.sport));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(sportLabel(slot.sport)),
-        if (name != null) Text('コーチ: $name'),
-        if (bio != null) _CoachBio(bio: bio),
-      ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              formatTimeRange(slot.startsAt, slot.endsAt),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(sportLabel(slot.sport)),
+            if (name != null) Text('コーチ: $name'),
+            if (bio != null) ...[
+              const SizedBox(height: 4),
+              _CoachBio(bio: bio),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: onBook,
+                child: const Text('体験予約する'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
