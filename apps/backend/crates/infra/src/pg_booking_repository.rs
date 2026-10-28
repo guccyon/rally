@@ -20,7 +20,7 @@ use sqlx::{
 };
 
 use crate::{
-    pg_slot_repository::{SlotRow, slot_from_row},
+    pg_slot_repository::{SlotRow, slot_columns, slot_from_row},
     pg_support::{lock, timestamp},
     scheduling_values::{booking_status_from_value, booking_status_value, slot_status_value},
 };
@@ -29,7 +29,9 @@ use crate::{
 ///
 /// 不変条件の判定は domain の [`Booking`] だけが行う。読み取りから保存までは 1 つのトランザクションで、
 /// スロットの行（`FOR UPDATE`）→ 生徒の advisory lock（予約の作成のみ。体験予約の判定のため）→ 予約の行の順に
-/// ロックを取る。二重予約は DB の `bookings_one_active_per_slot` でも防ぐ。
+/// ロックを取る。スロットの席の数（有効な予約の数）はロックを取った後の文で予約の行から数えるので、並行な予約が
+/// 互いを見落として定員を超えることはない。同じ生徒の同じ枠への二重予約は DB の
+/// `bookings_one_active_per_slot_student` でも防ぐ。
 #[derive(Debug, Clone)]
 pub struct PgBookingRepository {
     pool: PgPool,
@@ -51,6 +53,9 @@ type BookingRow = (
     OffsetDateTime,
     OffsetDateTime,
     String,
+    i16,
+    i64,
+    i64,
 );
 
 /// 予約と、予約したスロットを読む SELECT（`$where` は WHERE 句から後ろ）。
@@ -58,10 +63,9 @@ macro_rules! select_bookings {
     ($where:literal) => {
         concat!(
             "SELECT b.booking_id, b.student_id, b.is_trial, b.status, b.created_at,
-        b.confirmed_at, b.cancelled_at,
-        s.slot_id, s.coach_id, s.sport, s.starts_at, s.ends_at, s.status
-    FROM scheduling.bookings b JOIN scheduling.slots s ON s.slot_id = b.slot_id",
-            " ",
+        b.confirmed_at, b.cancelled_at, ",
+            slot_columns!(),
+            " FROM scheduling.bookings b JOIN scheduling.slots s ON s.slot_id = b.slot_id ",
             $where
         )
     };
@@ -73,19 +77,33 @@ impl PgBookingRepository {
     }
 
     /// スロットの行をロックして読む。なければ `None`。
+    ///
+    /// 席の数はロックを取った後の別の文で数える（READ COMMITTED では文ごとにスナップショットを取るので、ロックを
+    /// 待っている間に確定した他の予約も数に入る。ロックと同じ文で数えると、待つ前のスナップショットで数えてしまう）。
     async fn lock_slot(
         tx: &mut Transaction<'_, Postgres>,
         slot_id: Uuid,
     ) -> Result<Option<Slot>, Unavailable> {
-        let row: Option<SlotRow> = sqlx::query_as(
-            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
-             WHERE slot_id = $1 FOR UPDATE",
+        let locked: Option<Uuid> = sqlx::query_scalar(
+            "SELECT slot_id FROM scheduling.slots WHERE slot_id = $1 FOR UPDATE",
         )
         .bind(slot_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(Unavailable::new)?;
-        row.map(slot_from_row).transpose()
+        if locked.is_none() {
+            return Ok(None);
+        }
+        let row: SlotRow = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s WHERE s.slot_id = $1"
+        ))
+        .bind(slot_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(Unavailable::new)?;
+        slot_from_row(row).map(Some)
     }
 
     async fn save(
@@ -133,11 +151,11 @@ impl BookingRepository for PgBookingRepository {
         reserve: F,
     ) -> Result<Booking, ReserveSlotError>
     where
-        F: FnOnce(&Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
     {
         let student = account_id_uuid::to_uuid(student_id);
         let mut tx = self.pool.begin().await.map_err(reserve_unavailable)?;
-        let slot = Self::lock_slot(&mut tx, slot_id_uuid::to_uuid(slot_id))
+        let mut slot = Self::lock_slot(&mut tx, slot_id_uuid::to_uuid(slot_id))
             .await
             .map_err(ReserveSlotError::Unavailable)?
             .ok_or(ReserveSlotError::SlotNotFound)?;
@@ -158,7 +176,8 @@ impl BookingRepository for PgBookingRepository {
             .map(booking_from_row)
             .collect::<Result<Vec<_>, _>>()
             .map_err(ReserveSlotError::Unavailable)?;
-        let booking = reserve(&slot, &existing).map_err(ReserveSlotError::Rejected)?;
+        // 押さえた席（slot の数）は保存しない。数は予約の行から数える
+        let booking = reserve(&mut slot, &existing).map_err(ReserveSlotError::Rejected)?;
 
         sqlx::query(
             "INSERT INTO scheduling.bookings
@@ -233,10 +252,11 @@ impl BookingRepository for PgBookingRepository {
             .execute(&mut *tx)
             .await
             .map_err(Unavailable::new)?;
-        let slot_rows: Vec<SlotRow> = sqlx::query_as(
-            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
-             WHERE starts_at >= $1 AND starts_at < $2",
-        )
+        let slot_rows: Vec<SlotRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s WHERE s.starts_at >= $1 AND s.starts_at < $2"
+        ))
         .bind(timestamp(from))
         .bind(timestamp(until))
         .fetch_all(&mut *tx)
@@ -315,9 +335,22 @@ fn booking_and_slot_from_row(
         starts_at,
         ends_at,
         slot_status,
+        capacity,
+        pending,
+        confirmed,
     ): BookingRow,
 ) -> Result<(Booking, Slot), Unavailable> {
-    let slot = slot_from_row((slot_id, coach_id, sport, starts_at, ends_at, slot_status))?;
+    let slot = slot_from_row((
+        slot_id,
+        coach_id,
+        sport,
+        starts_at,
+        ends_at,
+        slot_status,
+        capacity,
+        pending,
+        confirmed,
+    ))?;
     let status = booking_status_from_value(&status)
         .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
     let booking = Booking::restore(

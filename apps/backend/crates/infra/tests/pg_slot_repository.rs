@@ -20,7 +20,7 @@ use application::{
 use domain::{
     DomainError,
     identity::{AccountId, Sport},
-    scheduling::{Booking, Slot, SlotStatus},
+    scheduling::{Booking, Slot, SlotCapacity, SlotStatus},
 };
 use infra::{PgAccountRepository, PgBookingRepository, PgSlotRepository};
 use sqlx::PgPool;
@@ -74,6 +74,7 @@ fn command(coach_id: AccountId, sport: Sport, from: u64, to: u64) -> PublishSlot
         sport,
         starts_at: at(from),
         ends_at: at(to),
+        capacity: SlotCapacity::ONE,
     }
 }
 
@@ -124,6 +125,65 @@ async fn published_slot_round_trips(pool: PgPool) {
         "コーチ",
         "枠のコーチの紹介を identity から引く"
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn capacity_and_remaining_seats_round_trip(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    let published = publish_slot(&pool)
+        .execute(PublishSlotCommand {
+            capacity: SlotCapacity::new(3).unwrap(),
+            ..command(coach_id, Sport::Tennis, 10, 11)
+        })
+        .await
+        .unwrap();
+    let slots = PgSlotRepository::new(pool.clone());
+    let read = || async {
+        slots
+            .slots_of_coach(coach_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+    };
+    assert_eq!(read().await, published);
+    assert_eq!(read().await.capacity().value(), 3);
+    assert_eq!(read().await.remaining_seats(), 3);
+
+    // 席の数は予約の行から数える（未確定も確定も数え、キャンセルは数えない）
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let confirmed = support::confirmed_booking(&pool, first, &published).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    let id = bookings.next_id();
+    bookings
+        .reserve(published.id(), second, |slot, existing| {
+            Booking::reserve(id, second, false, slot, existing, at(0))
+        })
+        .await
+        .unwrap();
+    let slot = read().await;
+    assert_eq!((slot.seats().pending(), slot.seats().confirmed()), (1, 1));
+    assert_eq!(slot.remaining_seats(), 1);
+    assert_eq!(slot.status(), SlotStatus::Open);
+    let found = SearchSlots::new(
+        slots.clone(),
+        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(0)),
+    )
+    .execute(query(20))
+    .await
+    .unwrap();
+    assert_eq!(found.items, vec![slot]);
+
+    bookings
+        .update(confirmed.id(), |booking, slot| {
+            booking.cancel(first, slot, at(1)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    assert_eq!(read().await.remaining_seats(), 2);
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

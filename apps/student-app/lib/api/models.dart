@@ -256,6 +256,8 @@ class Slot {
     required this.sport,
     required this.startsAt,
     required this.endsAt,
+    this.capacity = 1,
+    this.remainingSeats = 1,
     this.coachDisplayName,
     this.coachBio,
   });
@@ -265,6 +267,12 @@ class Slot {
   final Sport sport;
   final DateTime startsAt;
   final DateTime endsAt;
+
+  /// 定員（1 はマンツーマン、2 以上はグループレッスン）
+  final int capacity;
+
+  /// 残りの席（定員 − 未確定か確定の予約の数）
+  final int remainingSeats;
 
   /// コーチの表示名（任意。コーチのアカウントが引けなければない）
   final String? coachDisplayName;
@@ -278,6 +286,8 @@ class Slot {
     sport: Sport.fromWire(json['sport'] as String),
     startsAt: _dateTime(json['starts_at']),
     endsAt: _dateTime(json['ends_at']),
+    capacity: json['capacity'] as int,
+    remainingSeats: json['remaining_seats'] as int,
     coachDisplayName: json['coach_display_name'] as String?,
     coachBio: json['coach_bio'] as String?,
   );

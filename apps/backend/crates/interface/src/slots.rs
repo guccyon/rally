@@ -20,7 +20,10 @@ use axum::{
     },
     http::StatusCode,
 };
-use domain::{DomainError, scheduling::Slot};
+use domain::{
+    DomainError,
+    scheduling::{Slot, SlotCapacity},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -68,6 +71,8 @@ pub struct StudentAppSlotBody {
     sport: &'static str,
     starts_at: String,
     ends_at: String,
+    capacity: u8,
+    remaining_seats: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     coach_display_name: Option<String>,
     /// 自己紹介文を書いていない（空の）コーチは載せない
@@ -75,12 +80,13 @@ pub struct StudentAppSlotBody {
     coach_bio: Option<String>,
 }
 
-/// admin-web の `PublishSlotRequest`。
+/// admin-web の `PublishSlotRequest`。`capacity` は任意（省けば定員 1。範囲の検証は domain の [`SlotCapacity`]）。
 #[derive(Deserialize)]
 pub struct PublishSlotRequest {
     sport: String,
     starts_at: String,
     ends_at: String,
+    capacity: Option<i64>,
 }
 
 /// admin-web の `Slot`。
@@ -92,6 +98,8 @@ pub struct AdminWebSlotBody {
     starts_at: String,
     ends_at: String,
     status: &'static str,
+    capacity: u8,
+    remaining_seats: u32,
 }
 
 /// `GET /slots`。認証した利用者なら誰でも呼べる。
@@ -170,6 +178,11 @@ where
         sport: admin_web_sport(&request.sport)?,
         starts_at: date_time_from_contract("starts_at", &request.starts_at)?,
         ends_at: date_time_from_contract("ends_at", &request.ends_at)?,
+        capacity: request
+            .capacity
+            .map(SlotCapacity::new)
+            .transpose()?
+            .unwrap_or_default(),
     };
 
     let slot = state
@@ -209,6 +222,8 @@ pub(crate) fn student_app_slot_body(
         sport: sport_to_contract(slot.sport()),
         starts_at: date_time_to_contract(slot.starts_at())?,
         ends_at: date_time_to_contract(slot.ends_at())?,
+        capacity: slot.capacity().value(),
+        remaining_seats: slot.remaining_seats(),
         coach_display_name: coach.map(|coach| coach.display_name.as_str().to_string()),
         coach_bio: coach
             .map(|coach| coach.bio.as_str())
@@ -225,5 +240,7 @@ pub(crate) fn admin_web_slot_body(slot: &Slot) -> Result<AdminWebSlotBody, ApiEr
         starts_at: date_time_to_contract(slot.starts_at())?,
         ends_at: date_time_to_contract(slot.ends_at())?,
         status: slot_status_to_contract(slot.status()),
+        capacity: slot.capacity().value(),
+        remaining_seats: slot.remaining_seats(),
     })
 }

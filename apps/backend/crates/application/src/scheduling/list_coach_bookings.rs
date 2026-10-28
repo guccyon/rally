@@ -84,6 +84,7 @@ mod tests {
             at(hour),
             at(hour + 1),
             SlotStatus::Open,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }

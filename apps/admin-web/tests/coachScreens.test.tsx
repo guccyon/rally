@@ -34,6 +34,8 @@ describe("枠の公開", () => {
         starts_at: at(startsIn),
         ends_at: at(startsIn + 1),
         status,
+        capacity: 1,
+        remaining_seats: hasActiveBooking ? 0 : 1,
       },
       has_active_booking: hasActiveBooking,
     };
@@ -493,6 +495,8 @@ describe("通話への参加", () => {
         starts_at: at(startsIn),
         ends_at: at(startsIn + 1),
         status: "booked" as const,
+        capacity: 1,
+        remaining_seats: 0,
       },
       ...(studentName ? { student_display_name: studentName } : {}),
     };

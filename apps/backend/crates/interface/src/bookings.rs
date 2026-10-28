@@ -97,8 +97,11 @@ where
             CreateBookingError::Invalid(DomainError::SlotNotOpen {
                 status: SlotStatus::Closed,
             }) => slot_not_found(),
+            // 満席と、同じ生徒の同じ枠への 2 回目は、どちらも 409 slot_already_booked（文言で分ける）
             CreateBookingError::Invalid(
-                error @ (DomainError::SlotAlreadyBooked | DomainError::SlotNotOpen { .. }),
+                error @ (DomainError::SlotAlreadyBooked
+                | DomainError::SlotAlreadyBookedByStudent
+                | DomainError::SlotNotOpen { .. }),
             ) => ApiError::conflict("slot_already_booked", message::domain_error(&error)),
             CreateBookingError::Invalid(error @ DomainError::TrialAlreadyUsed) => {
                 ApiError::conflict("trial_already_used", message::domain_error(&error))

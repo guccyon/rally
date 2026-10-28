@@ -182,6 +182,7 @@ mod tests {
             Sport::Tennis,
             starts_at(),
             starts_at() + HOUR,
+            domain::scheduling::SlotCapacity::ONE,
         )
         .unwrap()]);
         let bookings = InMemoryBookingRepository::new(slots);
@@ -299,6 +300,86 @@ mod tests {
             }]
         );
         assert_eq!(analytics[0].name(), "booking.cancelled");
+    }
+
+    #[tokio::test]
+    async fn cancelling_one_of_a_full_group_slot_reopens_it() {
+        let slots = InMemorySlotRepository::with_slots([Slot::publish(
+            SLOT,
+            COACH,
+            Sport::Tennis,
+            starts_at(),
+            starts_at() + HOUR,
+            domain::scheduling::SlotCapacity::new(2).unwrap(),
+        )
+        .unwrap()]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        let create = CreateBooking::new(
+            bookings.clone(),
+            RecordingAnalyticsSink::default(),
+            FixedClock(CREATED_AT),
+        );
+        let confirm = ConfirmBooking::new(
+            bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
+            FixedClock(CREATED_AT),
+        );
+        let slot = || bookings.slots().all()[0].clone();
+        let mut confirmed = Vec::new();
+        for student_id in [STUDENT, OTHER_STUDENT] {
+            let booking = create
+                .execute(CreateBookingCommand {
+                    student_id,
+                    slot_id: SLOT,
+                    is_trial: false,
+                })
+                .await
+                .unwrap();
+            assert_eq!(slot().status(), SlotStatus::Open);
+            confirmed.push(
+                confirm
+                    .execute(ConfirmBookingCommand {
+                        student_id,
+                        booking_id: booking.id(),
+                    })
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert_eq!(
+            slot().status(),
+            SlotStatus::Booked,
+            "確定した予約が定員に達した"
+        );
+
+        let use_case = CancelBooking::new(
+            bookings.clone(),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
+            FixedClock(starts_at() - 48 * HOUR),
+        );
+        use_case
+            .execute(command(OTHER_STUDENT, confirmed[1].id()))
+            .await
+            .unwrap();
+        assert_eq!(
+            slot().status(),
+            SlotStatus::Open,
+            "空きができたら公開中に戻る"
+        );
+        assert_eq!(slot().remaining_seats(), 1);
+        assert_eq!(
+            bookings
+                .find(confirmed[0].id())
+                .await
+                .unwrap()
+                .unwrap()
+                .status(),
+            BookingStatus::Confirmed,
+            "ほかの生徒の予約はそのまま"
+        );
     }
 
     #[tokio::test]

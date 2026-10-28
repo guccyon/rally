@@ -167,6 +167,95 @@ async fn concurrent_reservations_of_a_slot_save_only_one(pool: PgPool) {
     assert_eq!(count, 1);
 }
 
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn concurrent_reservations_of_a_group_slot_save_up_to_the_capacity(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let slot =
+        support::open_slot_with_capacity(&pool, support::coach(&pool).await, 30, 31, 3).await;
+    let mut students = Vec::new();
+    for _ in 0..8 {
+        students.push(support::student(&pool).await);
+    }
+
+    let results = join_all(
+        students
+            .into_iter()
+            .map(|student| {
+                let (bookings, slot) = (bookings.clone(), slot.clone());
+                tokio::spawn(async move { reserve(&bookings, student, &slot, false).await })
+            })
+            .collect(),
+    )
+    .await;
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        3,
+        "{results:?}"
+    );
+    assert!(
+        results.iter().filter(|r| r.is_err()).all(|r| matches!(
+            r,
+            Err(ReserveSlotError::Rejected(DomainError::SlotAlreadyBooked))
+        )),
+        "{results:?}"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduling.bookings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 3);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn group_slot_is_booked_when_all_seats_are_confirmed_and_reopens_on_cancel(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let slot =
+        support::open_slot_with_capacity(&pool, support::coach(&pool).await, 30, 31, 2).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+
+    let mut confirmed = Vec::new();
+    for student in [first, second] {
+        let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+        assert_eq!(slot_status(&pool, &slot).await, "open");
+        confirmed.push(
+            bookings
+                .update(booking.id(), |booking, slot| {
+                    booking.confirm(student, slot, at(2))
+                })
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(slot_status(&pool, &slot).await, "booked", "確定 2 / 定員 2");
+
+    // 同じ生徒の 2 回目は拒む（満席でなくても）
+    bookings
+        .update(confirmed[1].id(), |booking, slot| {
+            booking.cancel(second, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        slot_status(&pool, &slot).await,
+        "open",
+        "空きができたら公開中に戻る"
+    );
+    let result = reserve(&bookings, first, &slot, false).await;
+    assert!(
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(
+                DomainError::SlotAlreadyBookedByStudent
+            ))
+        ),
+        "{result:?}"
+    );
+    // キャンセルした生徒はもう一度予約できる
+    reserve(&bookings, second, &slot, false).await.unwrap();
+}
+
 async fn join_all<T: std::fmt::Debug>(handles: Vec<tokio::task::JoinHandle<T>>) -> Vec<T> {
     let mut results = Vec::new();
     for handle in handles {
@@ -254,6 +343,7 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
         early.starts_at(),
         early.ends_at(),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let late = Slot::restore(
@@ -263,6 +353,8 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
         late.starts_at(),
         late.ends_at(),
         SlotStatus::Booked,
+        // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1),
     )
     .unwrap();
     assert_eq!(found, [(cancelled, early), (confirmed.clone(), late)]);
@@ -323,6 +415,7 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
         early.starts_at(),
         early.ends_at(),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let late = Slot::restore(
@@ -332,6 +425,8 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
         late.starts_at(),
         late.ends_at(),
         SlotStatus::Booked,
+        // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1),
     )
     .unwrap();
     assert_eq!(

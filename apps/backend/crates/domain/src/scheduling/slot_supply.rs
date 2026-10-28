@@ -106,25 +106,27 @@ mod tests {
             at(id as u64),
             at(id as u64 + 1),
             status,
+            crate::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }
 
     fn booking(id: u128, student: u128, slot: &Slot) -> Booking {
-        let open = Slot::restore(
+        let mut open = Slot::restore(
             slot.id(),
             slot.coach_id(),
             slot.sport(),
             slot.starts_at(),
             slot.ends_at(),
             SlotStatus::Open,
+            crate::scheduling::SlotSeats::default(),
         )
         .unwrap();
         Booking::reserve(
             BookingId::from_u128(id),
             AccountId::from_u128(student),
             false,
-            &open,
+            &mut open,
             &[],
             at(0),
         )

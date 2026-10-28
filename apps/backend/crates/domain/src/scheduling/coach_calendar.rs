@@ -77,6 +77,7 @@ mod tests {
             at(from),
             at(to),
             status,
+            crate::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }

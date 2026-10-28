@@ -325,6 +325,8 @@ async fn coach_publishes_a_slot_with_the_admin_web_contract_shape() {
     assert_eq!(body["starts_at"], "2026-11-01T10:00:00Z");
     assert_eq!(body["ends_at"], "2026-11-01T11:00:00Z");
     assert_eq!(body["status"], "open");
+    assert_eq!(body["capacity"], 1, "定員を省けばマンツーマン");
+    assert_eq!(body["remaining_seats"], 1);
 
     let events = app.analytics.events();
     assert_eq!(events.len(), 1, "slot.published は 1 回だけ発火する");
@@ -345,6 +347,26 @@ async fn coach_publishes_a_slot_with_the_admin_web_contract_shape() {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_527_200)
     );
     assert_eq!(*occurred_at, SystemTime::UNIX_EPOCH + NOW);
+}
+
+#[tokio::test]
+async fn coach_publishes_a_group_slot_with_a_capacity() {
+    let app = app();
+    let mut request = slot("tennis", &nov1(10), &nov1(11));
+    request["capacity"] = json!(3);
+
+    let (status, body) = post_slots(&app.router, Some(COACH_A), request).await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_admin_web(status, &body);
+    assert_eq!(body["capacity"], 3);
+    assert_eq!(body["remaining_seats"], 3);
+
+    // 生徒の検索にも定員と残りの席が出る
+    let (status, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+    assert_student_app(status, &body);
+    assert_eq!(body["items"][0]["capacity"], 3);
+    assert_eq!(body["items"][0]["remaining_seats"], 3);
 }
 
 #[tokio::test]
@@ -383,6 +405,18 @@ async fn invalid_publish_request_is_422_validation_failed() {
         (
             "必須項目の欠落",
             json!({ "sport": "tennis", "starts_at": nov1(10) }),
+        ),
+        (
+            "定員が 0",
+            json!({ "sport": "tennis", "starts_at": nov1(10), "ends_at": nov1(11), "capacity": 0 }),
+        ),
+        (
+            "定員が 7",
+            json!({ "sport": "tennis", "starts_at": nov1(10), "ends_at": nov1(11), "capacity": 7 }),
+        ),
+        (
+            "定員が整数でない",
+            json!({ "sport": "tennis", "starts_at": nov1(10), "ends_at": nov1(11), "capacity": "3" }),
         ),
     ];
     for (case, request) in cases {
@@ -435,6 +469,8 @@ async fn search_returns_open_slots_of_the_sport_with_the_student_app_contract_sh
     assert_eq!(first["sport"], "tennis");
     assert_eq!(first["starts_at"], nov1(10));
     assert_eq!(first["ends_at"], nov1(11));
+    assert_eq!(first["capacity"], 1);
+    assert_eq!(first["remaining_seats"], 1);
 
     // コーチも検索できる（認証した利用者なら誰でも）
     let (status, _) = get_slots(&app.router, Some(COACH_A), "sport=soccer").await;

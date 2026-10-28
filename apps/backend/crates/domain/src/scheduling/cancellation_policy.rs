@@ -42,19 +42,20 @@ mod tests {
     }
 
     fn booking() -> Booking {
-        let slot = Slot::publish(
+        let mut slot = Slot::publish(
             SlotId::from_u128(10),
             AccountId::from_u128(3),
             Sport::Tennis,
             starts_at(),
             starts_at() + HOUR,
+            crate::scheduling::SlotCapacity::ONE,
         )
         .unwrap();
         Booking::reserve(
             BookingId::from_u128(1),
             AccountId::from_u128(1),
             false,
-            &slot,
+            &mut slot,
             &[],
             SystemTime::UNIX_EPOCH,
         )

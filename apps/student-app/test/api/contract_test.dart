@@ -130,6 +130,8 @@ void main() {
       'sport',
       'starts_at',
       'ends_at',
+      'capacity',
+      'remaining_seats',
       'coach_display_name',
       'coach_bio',
     ]);

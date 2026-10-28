@@ -106,6 +106,7 @@ fn app() -> App {
         nov1_10(),
         nov1_10() + Duration::from_secs(3600),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap()]);
     let bookings = InMemoryBookingRepository::new(slots.clone());

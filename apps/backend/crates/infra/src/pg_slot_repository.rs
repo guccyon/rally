@@ -8,7 +8,7 @@ use application::{
 use domain::{
     DomainError,
     identity::AccountId,
-    scheduling::{CoachCalendar, Slot, SlotId, SlotStatus},
+    scheduling::{CoachCalendar, Slot, SlotCapacity, SlotId, SlotSeats, SlotStatus},
 };
 use sqlx::{
     PgPool, Postgres, Transaction,
@@ -31,8 +31,30 @@ pub struct PgSlotRepository {
     pool: PgPool,
 }
 
-/// `scheduling.slots` の 1 行（slot_id, coach_id, sport, starts_at, ends_at, status）。
-pub(crate) type SlotRow = (Uuid, Uuid, String, OffsetDateTime, OffsetDateTime, String);
+/// `scheduling.slots` の 1 行（slot_id, coach_id, sport, starts_at, ends_at, status, capacity）と、その枠の
+/// 未確定・確定の予約の数（[`slot_columns`]）。
+pub(crate) type SlotRow = (
+    Uuid,
+    Uuid,
+    String,
+    OffsetDateTime,
+    OffsetDateTime,
+    String,
+    i16,
+    i64,
+    i64,
+);
+
+/// [`SlotRow`] を読む SELECT の列（文字列リテラル）。スロットの別名は `s`。有効な予約の数（domain の [`SlotSeats`]）は
+/// 列に持たず、`scheduling.bookings` から状態ごとに数える。状態の値は [`crate::scheduling_values::booking_status_value`] と同じ（テストで確かめる）。
+macro_rules! slot_columns {
+    () => {
+        "s.slot_id, s.coach_id, s.sport, s.starts_at, s.ends_at, s.status, s.capacity,
+        (SELECT count(*) FROM scheduling.bookings sb WHERE sb.slot_id = s.slot_id AND sb.status = 'pending'),
+        (SELECT count(*) FROM scheduling.bookings sb WHERE sb.slot_id = s.slot_id AND sb.status = 'confirmed')"
+    };
+}
+pub(crate) use slot_columns;
 
 impl PgSlotRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -64,10 +86,12 @@ impl SlotRepository for PgSlotRepository {
             .map_err(unavailable)?;
 
         // slot の期間に重なる同じコーチの枠（状態を問わない。時間を占めるかは domain が決める）
-        let rows: Vec<SlotRow> = sqlx::query_as(
-            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
-             WHERE coach_id = $1 AND starts_at < $3 AND ends_at > $2",
-        )
+        let rows: Vec<SlotRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s
+             WHERE s.coach_id = $1 AND s.starts_at < $3 AND s.ends_at > $2"
+        ))
         .bind(coach_id)
         .bind(timestamp(slot.starts_at()))
         .bind(timestamp(slot.ends_at()))
@@ -84,8 +108,8 @@ impl SlotRepository for PgSlotRepository {
         add(&mut calendar, slot.clone()).map_err(AddToCalendarError::Rejected)?;
 
         sqlx::query(
-            "INSERT INTO scheduling.slots (slot_id, coach_id, sport, starts_at, ends_at, status)
-             VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO scheduling.slots (slot_id, coach_id, sport, starts_at, ends_at, status, capacity)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(slot_id_uuid::to_uuid(slot.id()))
         .bind(coach_id)
@@ -93,6 +117,7 @@ impl SlotRepository for PgSlotRepository {
         .bind(timestamp(slot.starts_at()))
         .bind(timestamp(slot.ends_at()))
         .bind(slot_status_value(slot.status()))
+        .bind(i16::from(slot.capacity().value()))
         .execute(&mut *tx)
         .await
         .map_err(unavailable)?;
@@ -105,17 +130,19 @@ impl SlotRepository for PgSlotRepository {
             .map(|c| (timestamp(c.starts_at), slot_id_uuid::to_uuid(c.slot_id)))
             .unzip();
         let limit = i64::try_from(criteria.limit).unwrap_or(i64::MAX);
-        let rows: Vec<SlotRow> = sqlx::query_as(
-            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
-             WHERE status = $1
-               AND sport = $2
-               AND ($3::uuid IS NULL OR coach_id = $3)
-               AND starts_at >= $4
-               AND ($5::timestamptz IS NULL OR starts_at < $5)
-               AND ($6::timestamptz IS NULL OR (starts_at, slot_id) > ($6, $7::uuid))
-             ORDER BY starts_at, slot_id
-             LIMIT $8",
-        )
+        let rows: Vec<SlotRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s
+             WHERE s.status = $1
+               AND s.sport = $2
+               AND ($3::uuid IS NULL OR s.coach_id = $3)
+               AND s.starts_at >= $4
+               AND ($5::timestamptz IS NULL OR s.starts_at < $5)
+               AND ($6::timestamptz IS NULL OR (s.starts_at, s.slot_id) > ($6, $7::uuid))
+             ORDER BY s.starts_at, s.slot_id
+             LIMIT $8"
+        ))
         .bind(slot_status_value(SlotStatus::Open))
         .bind(sport_value(criteria.sport))
         .bind(criteria.coach_id.map(account_id_uuid::to_uuid))
@@ -131,10 +158,11 @@ impl SlotRepository for PgSlotRepository {
     }
 
     async fn slots_of_coach(&self, coach_id: AccountId) -> Result<Vec<Slot>, Unavailable> {
-        let rows: Vec<SlotRow> = sqlx::query_as(
-            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
-             WHERE coach_id = $1",
-        )
+        let rows: Vec<SlotRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s WHERE s.coach_id = $1"
+        ))
         .bind(account_id_uuid::to_uuid(coach_id))
         .fetch_all(&self.pool)
         .await
@@ -148,12 +176,15 @@ fn unavailable(error: sqlx::Error) -> AddToCalendarError {
 }
 
 pub(crate) fn slot_from_row(
-    (slot_id, coach_id, sport, starts_at, ends_at, status): SlotRow,
+    (slot_id, coach_id, sport, starts_at, ends_at, status, capacity, pending, confirmed): SlotRow,
 ) -> Result<Slot, Unavailable> {
     let sport = sport_from_value(&sport)
         .ok_or_else(|| Unavailable::new(format!("未知の sport: {sport}")))?;
     let status = slot_status_from_value(&status)
         .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
+    let capacity = SlotCapacity::new(capacity.into()).map_err(Unavailable::new)?;
+    let count = |n: i64| u32::try_from(n).map_err(Unavailable::new);
+    let seats = SlotSeats::restore(capacity, count(pending)?, count(confirmed)?);
     Slot::restore(
         slot_id_uuid::from_uuid(slot_id),
         account_id_uuid::from_uuid(coach_id),
@@ -161,6 +192,22 @@ pub(crate) fn slot_from_row(
         starts_at.into(),
         ends_at.into(),
         status,
+        seats,
     )
     .map_err(Unavailable::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use domain::scheduling::BookingStatus;
+
+    use crate::scheduling_values::booking_status_value;
+
+    #[test]
+    fn slot_columns_count_bookings_by_the_stored_status_values() {
+        for status in [BookingStatus::Pending, BookingStatus::Confirmed] {
+            let value = format!("sb.status = '{}'", booking_status_value(status));
+            assert!(slot_columns!().contains(&value), "{value}");
+        }
+    }
 }

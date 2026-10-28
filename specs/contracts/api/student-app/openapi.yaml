@@ -78,7 +78,9 @@ paths:
       operationId: searchSlots
       summary: スロットの検索
       description: |
-        コーチが公開している予約枠のうち、まだ予約されていないものを返す。
+        コーチが公開している予約枠のうち、公開中（`open`。確定した予約が定員に達していない）のものを返す。
+        各枠には定員 `capacity`（1 はマンツーマン、2 以上はグループレッスン）と残りの席 `remaining_seats` を載せる。
+        未確定の予約で席が埋まった枠（`remaining_seats` が 0）も、確定するまでは返す（定員 1 の枠の今までの振る舞いと同じ）。
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
       tags: [scheduling]
       x-context: scheduling
@@ -140,7 +142,8 @@ paths:
       description: |
         スロットを確保する。体験予約は `is_trial: true`。作成直後の状態は `pending` で、確定は `confirmBooking`。
         予約できるのは公開中のスロットだけ（閉じたスロットはないスロットと同じく 404）で、1 つのスロットに有効な
-        （キャンセルされていない）予約は 1 件まで（409 `slot_already_booked`）。体験予約はその生徒の初回の予約だけ
+        （キャンセルされていない）予約はスロットの定員 `capacity` まで（満席は 409 `slot_already_booked`。定員 1 なら 1 件まで）。
+        同じ生徒が同じスロットに持てる有効な予約は 1 件まで（409 `slot_already_booked`）。体験予約はその生徒の初回の予約だけ
         （キャンセルされていない予約があれば 409 `trial_already_used`）。生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
         月額契約の生徒のビデオ通話の暦月の枠（上限は契約プランで決まる。不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
       tags: [scheduling]
@@ -801,7 +804,7 @@ components:
     Slot:
       type: object
       description: glossary の slot（コーチが公開する予約枠）
-      required: [slot_id, coach_id, sport, starts_at, ends_at]
+      required: [slot_id, coach_id, sport, starts_at, ends_at, capacity, remaining_seats]
       properties:
         slot_id:
           type: string
@@ -817,6 +820,16 @@ components:
         ends_at:
           type: string
           format: date-time
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: 定員（1 つの枠に入れる有効な予約の数）。1 はマンツーマン、2 以上はグループレッスン
+        remaining_seats:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 残りの席（定員 − 有効な予約（未確定か確定）の数）。0 なら予約すると 409 `slot_already_booked`
         coach_display_name:
           type: string
           minLength: 1

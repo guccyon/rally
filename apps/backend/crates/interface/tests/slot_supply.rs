@@ -83,6 +83,7 @@ fn slot(id: u128, sport: Sport, starts_at: SystemTime, status: SlotStatus) -> Sl
         starts_at,
         starts_at + HOUR,
         status,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap()
 }

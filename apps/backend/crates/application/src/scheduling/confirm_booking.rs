@@ -185,6 +185,7 @@ mod tests {
             Sport::Tennis,
             starts_at,
             starts_at + Duration::from_secs(3600),
+            domain::scheduling::SlotCapacity::ONE,
         )
         .unwrap()]);
         let bookings = InMemoryBookingRepository::new(slots);

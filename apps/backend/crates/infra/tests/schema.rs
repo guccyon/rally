@@ -239,18 +239,22 @@ async fn slot_must_end_after_it_starts(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn slot_cannot_be_double_booked(pool: PgPool) {
+async fn slot_takes_several_bookings_but_one_active_per_student(pool: PgPool) {
     let slot_id = slot(&pool).await;
-    let first = book(&pool, &slot_id, &student(&pool).await).await.unwrap();
+    let student_id = student(&pool).await;
+    let first = book(&pool, &slot_id, &student_id).await.unwrap();
 
-    let other_student = student(&pool).await;
-    let (code, constraint) = violation(book(&pool, &slot_id, &other_student).await);
+    // 1 つの枠に複数の生徒の予約を持てる（定員を超えないことは domain とスロットの行のロックが守る。D40）
+    book(&pool, &slot_id, &student(&pool).await).await.unwrap();
+
+    // 同じ生徒の同じ枠への有効な予約は 1 件まで
+    let (code, constraint) = violation(book(&pool, &slot_id, &student_id).await);
     assert_eq!(
         (code.as_str(), constraint.as_str()),
-        (UNIQUE_VIOLATION, "bookings_one_active_per_slot")
+        (UNIQUE_VIOLATION, "bookings_one_active_per_slot_student")
     );
 
-    // キャンセルされた予約は枠を占めない
+    // キャンセルされた予約は数えない
     sqlx::query(
         "UPDATE scheduling.bookings SET status = 'cancelled', cancelled_at = now()
          WHERE booking_id = $1::uuid",
@@ -259,7 +263,45 @@ async fn slot_cannot_be_double_booked(pool: PgPool) {
     .execute(&pool)
     .await
     .unwrap();
-    book(&pool, &slot_id, &other_student).await.unwrap();
+    book(&pool, &slot_id, &student_id).await.unwrap();
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn slot_capacity_defaults_to_one_and_is_one_to_six(pool: PgPool) {
+    let slot_id = slot(&pool).await;
+    let capacity: i16 =
+        sqlx::query_scalar("SELECT capacity FROM scheduling.slots WHERE slot_id = $1::uuid")
+            .bind(&slot_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        capacity,
+        i16::from(domain::scheduling::SlotCapacity::default().value()),
+        "既存の枠と定員を省いた枠はマンツーマン"
+    );
+
+    let set_capacity = |capacity: i16| {
+        sqlx::query("UPDATE scheduling.slots SET capacity = $1 WHERE slot_id = $2::uuid")
+            .bind(capacity)
+            .bind(&slot_id)
+            .execute(&pool)
+    };
+    for capacity in [
+        domain::scheduling::SlotCapacity::MIN,
+        domain::scheduling::SlotCapacity::MAX,
+    ] {
+        set_capacity(i16::from(capacity)).await.unwrap();
+    }
+    for capacity in [0, 7] {
+        let (code, constraint) = violation(set_capacity(capacity).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "slots_capacity_check"),
+            "{capacity}"
+        );
+    }
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

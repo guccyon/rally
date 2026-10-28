@@ -52,10 +52,29 @@ pub async fn coach(pool: &PgPool) -> AccountId {
     register(pool, Role::Coach, vec![Sport::Tennis]).await
 }
 
-/// `coach` の公開中の枠（`from` 時から `to` 時まで）。
+/// `coach` の公開中の枠（`from` 時から `to` 時まで。定員 1）。
 pub async fn open_slot(pool: &PgPool, coach: AccountId, from: u64, to: u64) -> Slot {
+    open_slot_with_capacity(pool, coach, from, to, 1).await
+}
+
+/// `coach` の定員 `capacity` の公開中の枠（`from` 時から `to` 時まで）。
+pub async fn open_slot_with_capacity(
+    pool: &PgPool,
+    coach: AccountId,
+    from: u64,
+    to: u64,
+    capacity: i64,
+) -> Slot {
     let slots = PgSlotRepository::new(pool.clone());
-    let slot = Slot::publish(slots.next_id(), coach, Sport::Tennis, at(from), at(to)).unwrap();
+    let slot = Slot::publish(
+        slots.next_id(),
+        coach,
+        Sport::Tennis,
+        at(from),
+        at(to),
+        domain::scheduling::SlotCapacity::new(capacity).unwrap(),
+    )
+    .unwrap();
     slots
         .add_to_calendar(slot.clone(), |calendar, slot| calendar.publish(slot))
         .await
