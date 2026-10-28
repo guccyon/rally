@@ -19,7 +19,10 @@
 
 ## 境界づけられたコンテキスト（初期案。`context-map.yaml` が正）
 
-identity / catalog / matching / scheduling / live-lesson / async-lesson / messaging / entitlement / billing / review / notification / analytics。Gen1 のコアは identity / scheduling / entitlement。
+- コア（主業務。生徒アプリでタブとして切り出す概念）: catalog / matching（レッスンの選択）、scheduling（予約）、live-lesson、async-lesson、messaging（チャット）、profile（プロフィール）
+- 支援（なくてもオンラインレッスンは成り立つが事業を支える）: review（評価）、entitlement、billing
+- 汎用: identity（アカウント・権限）、notification、analytics
+- 区分は docs/adr/0009（2026-10-29 Tetsuro の方針。async-lesson・catalog / matching・entitlement / billing の区分は builder の仮決めで、答え合わせ待ち）。Gen1 で最初に実装したのは identity / scheduling / entitlement
 
 ## 不変条件の種（L4 の「所在集中度」の検査対象）
 
