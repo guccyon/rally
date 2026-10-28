@@ -1,9 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
-import type { CoachApi } from "@/api/coach";
-import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
+import { CoachReviewList } from "@/components/CoachReviewList";
+import { CoachReviewSummaryView } from "@/components/CoachReviewSummaryView";
 import { formatDateTime } from "@/components/labels";
 
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
@@ -26,30 +25,10 @@ const REVIEWS = [
   },
 ];
 
-function summaryApi(reviewCount: number, averageRating: number | null) {
-  return vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
-    ok: true,
-    data: { coach_id: coachId, review_count: reviewCount, average_rating: averageRating },
-  }));
-}
-
 describe("コーチの評価の一覧", () => {
-  test("同じコーチ ID で listCoachReviews を呼び、点・一言・送った時刻を API の順（新しい順）に出す", async () => {
-    const getCoachReviewSummary = summaryApi(2, 4);
-    const listCoachReviews = vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
-      ok: true,
-      data: { coach_id: coachId, reviews: REVIEWS },
-    }));
-    const user = userEvent.setup();
-    render(
-      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
-    );
+  test("点・一言・送った時刻を API の順（新しい順）に出す", () => {
+    render(<CoachReviewList reviews={REVIEWS} />);
 
-    await user.type(screen.getByLabelText("コーチ ID"), ` ${COACH_ID} `);
-    await user.click(screen.getByRole("button", { name: "評価を見る" }));
-
-    expect(listCoachReviews).toHaveBeenCalledWith(COACH_ID);
-    expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
     const items = within(screen.getByRole("list", { name: "評価の一覧" })).getAllByRole("listitem");
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent("5 点");
@@ -60,56 +39,23 @@ describe("コーチの評価の一覧", () => {
     expect(items[1]).toHaveTextContent(formatDateTime("2026-10-01T09:30:00Z"));
   });
 
-  test("評価が 0 件なら「まだ評価はありません」と出す", async () => {
-    const getCoachReviewSummary = summaryApi(0, null);
-    const listCoachReviews = vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
-      ok: true,
-      data: { coach_id: coachId, reviews: [] },
-    }));
-    const user = userEvent.setup();
-    render(
-      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
-    );
+  test("評価が 0 件なら「まだ評価はありません」と出す", () => {
+    render(<CoachReviewList reviews={[]} />);
 
-    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
-    await user.click(screen.getByRole("button", { name: "評価を見る" }));
-
-    expect(await screen.findByText("まだ評価はありません")).toBeInTheDocument();
+    expect(screen.getByText("まだ評価はありません")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "評価の一覧" })).not.toBeInTheDocument();
   });
 
-  test("一覧の API のエラー（他のコーチの分の 403 など）の文言を出し、件数と平均も一覧も出さない", async () => {
-    const getCoachReviewSummary = summaryApi(2, 4);
-    const listCoachReviews = vi
-      .fn<CoachApi["listCoachReviews"]>()
-      .mockResolvedValueOnce({ ok: true, data: { coach_id: COACH_ID, reviews: REVIEWS } })
-      .mockResolvedValueOnce({ ok: false, message: "権限がないためアクセスできません。" });
-    const user = userEvent.setup();
+  test("件数と平均の下に一覧を出す", () => {
     render(
-      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
+      <CoachReviewSummaryView
+        summary={{ coach_id: COACH_ID, review_count: 2, average_rating: 4 }}
+        reviews={REVIEWS}
+      />,
     );
 
-    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
-    await user.click(screen.getByRole("button", { name: "評価を見る" }));
-    await screen.findByRole("list", { name: "評価の一覧" });
-
-    await user.click(screen.getByRole("button", { name: "評価を見る" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
-    expect(screen.queryByRole("list", { name: "評価の一覧" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
-  });
-
-  test("一覧の API を渡さなければ（本部の画面）一覧は出さない", async () => {
-    const user = userEvent.setup();
-    render(
-      <CoachReviewSummaryLookup api={{ getCoachReviewSummary: summaryApi(0, null) }} description="説明" />,
-    );
-
-    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
-    await user.click(screen.getByRole("button", { name: "評価を見る" }));
-
-    expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
-    expect(screen.queryByText("まだ評価はありません")).not.toBeInTheDocument();
+    const summary = screen.getByLabelText("評価の件数と平均");
+    const list = screen.getByRole("list", { name: "評価の一覧" });
+    expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

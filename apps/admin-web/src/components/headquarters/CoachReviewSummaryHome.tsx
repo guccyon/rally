@@ -5,10 +5,11 @@ import { useMemo } from "react";
 
 import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
-import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
-import { NotImplemented, Section } from "@/components/Section";
+import { Section } from "@/components/Section";
 
-/** 本部の画面: コーチ ID を指定して、そのコーチの評価の件数と平均を見る。 */
+import { CoachReviewPicker } from "./CoachReviewPicker";
+
+/** 本部の画面: コーチを一覧から選んで、そのコーチの評価の件数と平均と一覧を見る。 */
 export function CoachReviewSummaryHome({ token }: { token: string }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
@@ -19,15 +20,7 @@ export function CoachReviewSummaryHome({ token }: { token: string }) {
         </Link>
       </p>
       <Section title="コーチの評価">
-        <div className="space-y-4">
-          <NotImplemented>
-            コーチの一覧を取る API が admin-web の契約にないため、コーチ ID を入力して見ます。
-          </NotImplemented>
-          <CoachReviewSummaryLookup
-            api={api}
-            description="生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均です。"
-          />
-        </div>
+        <CoachReviewPicker api={api} />
       </Section>
     </>
   );
