@@ -331,6 +331,25 @@ impl BookingRepository for InMemoryBookingRepository {
             .collect();
         Ok((found, booked))
     }
+
+    async fn bookings_of_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        let slots = self.slots.slots.lock().unwrap();
+        let bookings = self.bookings.lock().unwrap();
+        bookings
+            .iter()
+            .filter(|b| b.student_id() == student_id)
+            .map(|b| {
+                let slot = slots
+                    .iter()
+                    .find(|s| s.id() == b.slot_id())
+                    .ok_or_else(|| Unavailable::new("予約のスロットが保存されていない"))?;
+                Ok((b.clone(), slot.clone()))
+            })
+            .collect()
+    }
 }
 
 /// 発行したドメインイベントを記録する [`DomainEventPublisher`]。複製は同じ記録を共有する。

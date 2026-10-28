@@ -324,6 +324,37 @@ class Booking {
   );
 }
 
+/// `MyBooking`（自分の予約の一覧の 1 件。予約と、予約したスロット）
+class MyBooking {
+  const MyBooking({required this.booking, required this.slot});
+
+  final Booking booking;
+
+  /// 予約したスロット（日時・スポーツ。コーチの表示名と自己紹介文は任意）
+  final Slot slot;
+
+  factory MyBooking.fromJson(Map<String, dynamic> json) => MyBooking(
+    booking: Booking.fromJson(json['booking'] as Map<String, dynamic>),
+    slot: Slot.fromJson(json['slot'] as Map<String, dynamic>),
+  );
+}
+
+/// `MyBookingList`
+class MyBookingList {
+  const MyBookingList({required this.bookings});
+
+  /// 予約したスロットの開始時刻の新しい順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
+  final List<MyBooking> bookings;
+
+  factory MyBookingList.fromJson(Map<String, dynamic> json) => MyBookingList(
+    bookings: List.unmodifiable(
+      (json['bookings'] as List<dynamic>).map(
+        (e) => MyBooking.fromJson(e as Map<String, dynamic>),
+      ),
+    ),
+  );
+}
+
 /// `CreateBookingRequest`
 class CreateBookingRequest {
   const CreateBookingRequest({required this.slotId, required this.isTrial});

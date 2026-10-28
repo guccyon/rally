@@ -15,6 +15,7 @@ mod live_lesson_sessions;
 mod me;
 mod message;
 mod messaging;
+mod my_bookings;
 mod notification_settings;
 mod reviews;
 mod slot_supply;
@@ -54,7 +55,7 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, PublishSlot, QuotaGate, SearchSlots, SlotRepository,
+        GetSlotSupply, ListMyBookings, PublishSlot, QuotaGate, SearchSlots, SlotRepository,
     },
 };
 use axum::{
@@ -71,7 +72,7 @@ pub use error::ApiError;
 ///
 /// `/healthz` と `/accounts` 以外のルートは認証必須（[`AuthenticatedAccount`] を取る）。
 /// `POST /slots`（admin-web）はコーチだけ、`GET /slots`（student-app）は認証した利用者なら誰でも呼べる。
-/// `/bookings`（student-app の予約の作成・確定・キャンセル）・`POST /subscriptions`（月額契約の開始）・
+/// `/bookings`（student-app の予約の作成・確定・キャンセルと、自分の予約の一覧 `GET /bookings/me`）・`POST /subscriptions`（月額契約の開始）・
 /// `GET /entitlements/me`（受講権の照会）は生徒だけ。`/live-lesson-sessions`（通話セッションの開始・終了）は
 /// 役割で絞らず、予約の参加者（生徒・コーチ）かをユースケースが確かめる（契約に 403 がない）。
 /// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
@@ -98,6 +99,7 @@ pub fn router_with<R, S, I, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     get_slot_supply: GetSlotSupply<B, C>,
+    list_my_bookings: ListMyBookings<B, I>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
@@ -189,6 +191,10 @@ where
             confirm_booking,
             cancel_booking,
         }));
+    let my_bookings = Router::new()
+        .route("/bookings/me", get(my_bookings::list_my_bookings::<B, I>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(my_bookings::MyBookingsState { list_my_bookings }));
     let slot_supply = Router::new()
         .route("/slot-supply", get(slot_supply::get_slot_supply::<B, C>))
         .route_layer(require_role(&[Role::Headquarters]))
@@ -309,6 +315,7 @@ where
         .merge(me)
         .merge(slots)
         .merge(bookings)
+        .merge(my_bookings)
         .merge(slot_supply)
         .merge(subscriptions)
         .merge(entitlements)

@@ -144,6 +144,12 @@ fn app() -> App {
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             clock.clone(),
         ),
+        application::scheduling::ListMyBookings::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::identity::IdentityCoachIntroductionLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

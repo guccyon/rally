@@ -261,6 +261,18 @@ impl BookingRepository for PgBookingRepository {
             .collect::<Result<_, _>>()?;
         Ok((slots, bookings))
     }
+
+    async fn bookings_of_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        let rows: Vec<BookingRow> = sqlx::query_as(select_bookings!("WHERE b.student_id = $1"))
+            .bind(account_id_uuid::to_uuid(student_id))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Unavailable::new)?;
+        rows.into_iter().map(booking_and_slot_from_row).collect()
+    }
 }
 
 fn reserve_unavailable(error: sqlx::Error) -> ReserveSlotError {
@@ -271,7 +283,12 @@ fn update_unavailable(error: sqlx::Error) -> UpdateBookingError {
     UpdateBookingError::Unavailable(Unavailable::new(error))
 }
 
-fn booking_from_row(
+fn booking_from_row(row: BookingRow) -> Result<Booking, Unavailable> {
+    booking_and_slot_from_row(row).map(|(booking, _)| booking)
+}
+
+/// 予約と、予約したスロット。
+fn booking_and_slot_from_row(
     (
         booking_id,
         student_id,
@@ -287,11 +304,11 @@ fn booking_from_row(
         ends_at,
         slot_status,
     ): BookingRow,
-) -> Result<Booking, Unavailable> {
+) -> Result<(Booking, Slot), Unavailable> {
     let slot = slot_from_row((slot_id, coach_id, sport, starts_at, ends_at, slot_status))?;
     let status = booking_status_from_value(&status)
         .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
-    Ok(Booking::restore(
+    let booking = Booking::restore(
         booking_id_uuid::from_uuid(booking_id),
         account_id_uuid::from_uuid(student_id),
         &slot,
@@ -300,5 +317,6 @@ fn booking_from_row(
         created_at.into(),
         confirmed_at.map(Into::into),
         cancelled_at.map(Into::into),
-    ))
+    );
+    Ok((booking, slot))
 }

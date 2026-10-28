@@ -199,7 +199,7 @@ fn limit(value: Option<&str>) -> Result<NonZeroUsize, ApiError> {
         .ok_or_else(|| ApiError::validation_failed(format!("limit は 1〜{MAX_LIMIT} の整数")))
 }
 
-fn student_app_slot_body(
+pub(crate) fn student_app_slot_body(
     slot: &Slot,
     coach: Option<&CoachIntroduction>,
 ) -> Result<StudentAppSlotBody, ApiError> {

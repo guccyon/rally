@@ -127,9 +127,40 @@ void main() {
       'coach_display_name',
       'coach_bio',
     ]);
-    final required =
-        ((schemas['Slot'] as YamlMap)['required'] as YamlList).cast<String>();
+    final required = ((schemas['Slot'] as YamlMap)['required'] as YamlList)
+        .cast<String>();
     expect(required, isNot(contains('coach_display_name')));
     expect(required, isNot(contains('coach_bio')));
+  });
+
+  String refOf(YamlMap node) => node[r'$ref'] as String;
+
+  test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {
+    // MyBooking.fromJson・MyBookingList.fromJson が読む項目
+    expect(propertiesOf('MyBooking'), ['booking', 'slot']);
+    final myBooking =
+        (schemas['MyBooking'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      refOf(myBooking['booking'] as YamlMap),
+      '#/components/schemas/Booking',
+    );
+    expect(refOf(myBooking['slot'] as YamlMap), '#/components/schemas/Slot');
+    expect(propertiesOf('MyBookingList'), ['bookings']);
+    final items =
+        (((schemas['MyBookingList'] as YamlMap)['properties']
+                    as YamlMap)['bookings']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/MyBooking');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/bookings/me'] as YamlMap)['get']
+            as YamlMap;
+    expect(operation['operationId'], 'listMyBookings');
+    final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+    final schema =
+        (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+            as YamlMap);
+    expect(refOf(schema), '#/components/schemas/MyBookingList');
   });
 }

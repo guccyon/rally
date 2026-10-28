@@ -170,6 +170,30 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /bookings/me:
+    get:
+      operationId: listMyBookings
+      summary: 自分の予約の一覧
+      description: |
+        認証した生徒の予約を、キャンセル済みも含めてすべて返す（状態は各予約の `status`）。並びは予約したスロットの開始時刻の
+        新しい順で、同じ開始時刻は予約の作成の新しい順。予約がなければ空。照会だけで何も変えない。生徒だけが呼べる（それ以外の役割は 403）。
+        各項目には予約したスロット（日時・スポーツ）を添え、スロットにはそのコーチの表示名 `coach_display_name` と
+        自己紹介文 `coach_bio` を `searchSlots` と同じく任意の項目として載せる。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒の予約の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyBookingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /bookings/{booking_id}/confirm:
     post:
       operationId: confirmBooking
@@ -849,6 +873,26 @@ components:
         cancelled_at:
           type: [string, "null"]
           format: date-time
+
+    MyBooking:
+      type: object
+      description: 自分の予約の一覧の 1 件。予約（glossary の booking）と、予約したスロット（glossary の slot）
+      required: [booking, slot]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        slot:
+          $ref: "#/components/schemas/Slot"
+
+    MyBookingList:
+      type: object
+      required: [bookings]
+      properties:
+        bookings:
+          type: array
+          description: 予約したスロットの開始時刻の新しい順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
+          items:
+            $ref: "#/components/schemas/MyBooking"
 
     CreateBookingRequest:
       type: object

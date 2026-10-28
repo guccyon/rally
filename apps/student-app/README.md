@@ -34,4 +34,5 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 
 - 契約 `specs/contracts/api/student-app/openapi.yaml` のスキーマを `lib/api/models.dart` に手で写した（ジェネレーターは Java が要るので使っていない）。型名は契約のスキーマ名に揃え、項目名は lowerCamelCase にする。契約の `Error` だけは Dart の `Error` と衝突するので `ApiError`
 - 操作は `lib/api/student_api.dart` の `StudentApi`（operationId と 1 対 1）、HTTP の実装は `lib/api/http_student_api.dart`。契約の `ErrorCode` → 画面の文言は `lib/api/error_message.dart` の 1 か所
+- `listMyBookings`（`GET /bookings/me`。自分の予約の一覧）は、応答のモデル（`MyBookingList`・`MyBooking`）だけを置いた。使う画面がまだないので `StudentApi` には足していない
 - 契約の enum とのずれ・操作の有無は `test/api/contract_test.dart` が検出する。契約を変えたら `models.dart` を合わせる
