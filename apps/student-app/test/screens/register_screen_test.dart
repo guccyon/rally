@@ -42,6 +42,29 @@ void main() {
     expect(state.searchSport, Sport.tennis);
   });
 
+  testWidgets('水泳を選んで登録すると、水泳で登録してそのままスロットを探す', (tester) async {
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const RegisterScreen(),
+      api: api,
+    );
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'メールアドレス'),
+      'yamada@example.com',
+    );
+    await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+    await tapText(tester, '水泳');
+    await tapText(tester, '登録する');
+
+    expect(api.calls, ['registerAccount', 'searchSlots']);
+    final request = api.requests.first as RegisterAccountRequest;
+    expect(request.toJson()['sport'], 'swimming');
+    expect(api.requests.last, Sport.swimming);
+    expect(container.read(studentFlowProvider).searchSport, Sport.swimming);
+  });
+
   testWidgets('未入力なら API を呼ばずに入力を促す', (tester) async {
     final api = FakeStudentApi();
     await pumpScreen(tester, const RegisterScreen(), api: api);

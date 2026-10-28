@@ -3,6 +3,17 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
 void main() {
+  test('スポーツの表示名は、契約の順に水泳まで日本語で出す', () {
+    expect(Sport.values.map(sportLabel), [
+      'テニス',
+      '野球',
+      'サッカー',
+      'バスケットボール',
+      '水泳',
+    ]);
+    expect(sportLabel(Sport.swimming), '水泳');
+  });
+
   test('評価の各点に言葉の目安を添える', () {
     expect(
       [for (var rating = 1; rating <= 5; rating++) ratingLabel(rating)],

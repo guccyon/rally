@@ -54,6 +54,37 @@ void main() {
     expect(find.text('予約できるスロットはありません。'), findsOneWidget);
   });
 
+  testWidgets('水泳で絞って検索すると水泳のスロットを出し、体験予約できる', (tester) async {
+    final slot = Fixtures.slot;
+    final swimming = Slot(
+      slotId: 'slot-swimming',
+      coachId: slot.coachId,
+      sport: Sport.swimming,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+    );
+    final api = FakeStudentApi(slots: [slot, swimming]);
+    final container = await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, '水泳');
+
+    expect(api.requests.last, Sport.swimming);
+    expect(container.read(studentFlowProvider).searchSport, Sport.swimming);
+    expect(find.text('水泳'), findsNWidgets(2), reason: '選択肢とスロットの行');
+    expect(find.text('体験予約する'), findsOneWidget);
+
+    await tapText(tester, '体験予約する');
+
+    final request = api.requests.last as CreateBookingRequest;
+    expect(request.toJson(), {'slot_id': 'slot-swimming', 'is_trial': true});
+    expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+  });
+
   testWidgets('先に予約されたスロットなら文言を出す', (tester) async {
     final api = FakeStudentApi(
       failures: {
