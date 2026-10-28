@@ -42,6 +42,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
 
 ### 変更
+- student-app のレッスンの評価: 点の選択肢を横並びのボタンから、「5　とてもよかった」のように点と言葉を 1 行にしたラジオボタンの縦の一覧（上から 5 → 1）に変えた。選んだものは一覧の印で分かるので、「選んだ評価: …」の表示はなくした。言葉の文言、API と契約の変更はない（#129）
 - student-app のチャット: スレッドを開いたときと「新しいメッセージを確かめる」で、既読にしてから（`markMessageThreadRead`）メッセージを読み直す（`listMessages`）順に変えた。生徒の画面に出ないままコーチのメッセージが既読になることがなくなる。空白だけ・2000 文字を超える本文は送信の要求を作れない（送信ボタンも押せない）。API と契約の変更はない（#103）
 - 契約: `recordLessonCompletion` の `x-context` を `catalog` から `[live-lesson, async-lesson]` に変更し、glossary の lesson を「レッスン種別」と「完了したレッスン（lesson_completion）」に分けた。行動イベント `lesson.completed` も `contexts: [live-lesson, async-lesson]` に（#55）
 - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）

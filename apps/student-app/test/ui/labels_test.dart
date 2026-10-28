@@ -8,6 +8,7 @@ void main() {
       ['不満だった', '少し物足りなかった', 'ふつう', 'よかった', 'とてもよかった'],
     );
     expect(ratingWithLabel(4), '4（よかった）');
+    expect(ratingChoiceLabel(5), '5　とてもよかった');
   });
 
   test('契約の範囲（1〜5）の外の点は受け付けない', () {

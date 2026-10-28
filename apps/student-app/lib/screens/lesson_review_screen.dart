@@ -54,33 +54,22 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
             'コーチの指導を ${ratingWithLabel(1)}〜${ratingWithLabel(5)} で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
           ),
           const SizedBox(height: 8),
-          SegmentedButton<int>(
-            segments: [
-              for (var rating = 1; rating <= 5; rating++)
-                ButtonSegment(
-                  value: rating,
-                  label: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('$rating'),
-                      Text(
-                        ratingLabel(rating),
-                        style: Theme.of(context).textTheme.labelSmall,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+          // 狭い幅でも言葉が折り返さないよう、点と言葉を 1 行にした選択肢を 5 → 1 の順に縦に並べる
+          RadioGroup<int>(
+            groupValue: _rating,
+            onChanged: (rating) => setState(() => _rating = rating),
+            child: Column(
+              children: [
+                for (var rating = 5; rating >= 1; rating--)
+                  RadioListTile<int>(
+                    value: rating,
+                    enabled: !state.busy,
+                    title: Text(ratingChoiceLabel(rating)),
+                    contentPadding: EdgeInsets.zero,
                   ),
-                ),
-            ],
-            selected: {?_rating},
-            emptySelectionAllowed: true,
-            showSelectedIcon: false,
-            onSelectionChanged: state.busy
-                ? null
-                : (selected) => setState(() => _rating = selected.firstOrNull),
+              ],
+            ),
           ),
-          if (_rating case final rating?)
-            Text('選んだ評価: ${ratingWithLabel(rating)}'),
           TextField(
             controller: _comment,
             enabled: !state.busy,
