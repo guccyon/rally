@@ -4,12 +4,12 @@ import { CoachReviewList } from "@/components/CoachReviewList";
 
 export type CoachReviewsApi = {
   getCoachReviewSummary: (coachId: string) => Promise<Result<Schemas["CoachReviewSummary"]>>;
-  listCoachReviews?: (coachId: string) => Promise<Result<Schemas["CoachReviewList"]>>;
+  listCoachReviews: (coachId: string) => Promise<Result<Schemas["CoachReviewList"]>>;
 };
 
 export type CoachReviews = {
   summary: Schemas["CoachReviewSummary"];
-  reviews: Schemas["CoachReview"][] | null;
+  reviews: Schemas["CoachReview"][];
 };
 
 /** 点の平均の表示。丸めは契約（getCoachReviewSummary）の正本どおり API が済ませているので、桁を揃えるだけ。 */
@@ -18,7 +18,7 @@ export function formatAverageRating(averageRating: number | null): string {
 }
 
 /**
- * コーチの評価の件数と平均（getCoachReviewSummary）を取る。`listCoachReviews` があれば同じ ID で評価の一覧も取る。
+ * コーチの評価の件数と平均（getCoachReviewSummary）と、同じ ID で評価の一覧（listCoachReviews）を取る。
  * どちらかが失敗したら、どちらも返さずに失敗の文言だけを返す。
  */
 export async function loadCoachReviews(
@@ -27,17 +27,14 @@ export async function loadCoachReviews(
 ): Promise<Result<CoachReviews>> {
   const [summaryResponse, listResponse] = await Promise.all([
     api.getCoachReviewSummary(coachId),
-    api.listCoachReviews?.(coachId),
+    api.listCoachReviews(coachId),
   ]);
   if (!summaryResponse.ok) return summaryResponse;
-  if (listResponse !== undefined && !listResponse.ok) return listResponse;
-  return {
-    ok: true,
-    data: { summary: summaryResponse.data, reviews: listResponse?.data.reviews ?? null },
-  };
+  if (!listResponse.ok) return listResponse;
+  return { ok: true, data: { summary: summaryResponse.data, reviews: listResponse.data.reviews } };
 }
 
-/** 評価の件数と平均と、一覧があればその下に一覧。コーチの「自分の評価」と本部の画面で共通。 */
+/** 評価の件数と平均と、その下に評価の一覧。コーチの「自分の評価」と本部の画面で共通。 */
 export function CoachReviewSummaryView({ summary, reviews }: CoachReviews) {
   return (
     <>
@@ -49,12 +46,10 @@ export function CoachReviewSummaryView({ summary, reviews }: CoachReviews) {
         <dt>点の平均（1〜5）</dt>
         <dd>{formatAverageRating(summary.average_rating)}</dd>
       </dl>
-      {reviews !== null && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
-          <CoachReviewList reviews={reviews} />
-        </div>
-      )}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
+        <CoachReviewList reviews={reviews} />
+      </div>
     </>
   );
 }
