@@ -229,4 +229,56 @@ void main() {
     );
     expect(tester.getSize(button).width, greaterThan(cardWidth * 0.8));
   });
+
+  testWidgets('グループレッスンの枠は、スポーツの下に定員と残りの席を出す', (tester) async {
+    final slot = Fixtures.slot;
+    final group = Slot(
+      slotId: slot.slotId,
+      coachId: slot.coachId,
+      sport: slot.sport,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      capacity: 4,
+      remainingSeats: 3,
+    );
+    final api = FakeStudentApi(slots: [group]);
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    final card = find.byType(Card);
+    Finder inCard(String text) =>
+        find.descendant(of: card, matching: find.text(text));
+    final seats = inCard('グループ（定員 4 人・残り 3 席）');
+    expect(seats, findsOneWidget);
+    expect(
+      tester.getTopLeft(seats).dy,
+      greaterThan(tester.getTopLeft(inCard('テニス')).dy),
+    );
+    expect(
+      tester.getTopLeft(inCard('体験予約する')).dy,
+      greaterThan(tester.getTopLeft(seats).dy),
+    );
+  });
+
+  testWidgets('定員 1 の枠には定員と残りの席を出さない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    expect(Fixtures.slot.capacity, 1);
+    expect(find.textContaining('定員'), findsNothing);
+    expect(find.textContaining('席'), findsNothing);
+  });
 }

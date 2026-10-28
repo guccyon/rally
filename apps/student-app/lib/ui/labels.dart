@@ -100,3 +100,9 @@ String subscriptionPlanChoiceLabel(SubscriptionPlan plan) =>
 /// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
 String liveLessonQuotaLabel(LiveLessonQuota quota) =>
     '月 ${quota.limit} 回のうち残り ${quota.remaining} 回';
+
+/// グループレッスンの枠（定員 2 以上）の定員と残りの席。例: `グループ（定員 4 人・残り 2 席）`。
+/// 定員 1（マンツーマン）の枠には出さないので null
+String? slotSeatsLabel(Slot slot) => slot.capacity < 2
+    ? null
+    : 'グループ（定員 ${slot.capacity} 人・残り ${slot.remainingSeats} 席）';
