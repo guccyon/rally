@@ -14,8 +14,8 @@ use application::{
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
     identity::{
-        AccountRepository, GetAccount, IdentityCoachIntroductionLookup, ListCoaches,
-        RegisterAccount, UpdateCoachProfile,
+        AccountRepository, GetAccount, IdentityCoachIntroductionLookup,
+        IdentityStudentDisplayNameLookup, ListCoaches, RegisterAccount, UpdateCoachProfile,
     },
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
@@ -37,7 +37,8 @@ use application::{
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
+        ListCoachBookings, ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots,
+        SlotRepository,
     },
 };
 use axum::Router;
@@ -82,7 +83,8 @@ pub fn router() -> Router {
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
-/// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。
+/// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
+/// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`IdentityStudentDisplayNameLookup`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -243,7 +245,11 @@ where
         GetSlotSupply::new(bookings.clone(), clock.clone()),
         ListMyBookings::new(
             bookings.clone(),
-            IdentityCoachIntroductionLookup::new(accounts),
+            IdentityCoachIntroductionLookup::new(accounts.clone()),
+        ),
+        ListCoachBookings::new(
+            bookings.clone(),
+            IdentityStudentDisplayNameLookup::new(accounts),
         ),
         StartSubscription::new(
             entitlements.clone(),

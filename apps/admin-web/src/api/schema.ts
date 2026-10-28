@@ -201,6 +201,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分の予約の一覧（コーチ）
+         * @description トークンが示す本人（コーチ）のスロットに入った予約を、キャンセル済みも含めてすべて返す（状態は各予約の `status`）。
+         *     通話への参加（`startLiveLessonSession`）で予約を選ぶのに使う。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - 並べ方: 予約されたスロットの開始時刻の古い順（これからの予約が上に来るように、日時の早い順）。同じ開始時刻は
+         *       予約の作成の新しい順（キャンセルされた枠を取り直した予約が、キャンセル済みの予約より上）
+         *     - 各項目には予約（`Booking`。student-app の `Booking` と同じ形）と、予約されたスロット（日時・スポーツ・状態）と、
+         *       予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
+         *     - 期間で絞らず、ページングもしない。予約がなければ `bookings` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listMyCoachBookings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -388,6 +418,45 @@ export interface components {
              * @description 開始より後（期間は終了を含まない）
              */
             ends_at: string;
+        };
+        /**
+         * @description student-app の BookingStatus と同じ値。pending: 未確定 / confirmed: 確定 / cancelled: キャンセル済み
+         * @enum {string}
+         */
+        BookingStatus: "pending" | "confirmed" | "cancelled";
+        /** @description glossary の booking（生徒によるスロットの確保。体験予約を含む）。student-app の Booking と同じ形 */
+        Booking: {
+            /** Format: uuid */
+            booking_id: string;
+            /** Format: uuid */
+            slot_id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /** @description 体験予約なら true */
+            is_trial: boolean;
+            status: components["schemas"]["BookingStatus"];
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            confirmed_at?: string | null;
+            /** Format: date-time */
+            cancelled_at?: string | null;
+        };
+        /** @description コーチの自分の予約の一覧の 1 件。予約（glossary の booking）と、予約されたスロット（glossary の slot）と、予約した生徒の表示名 */
+        CoachBooking: {
+            booking: components["schemas"]["Booking"];
+            slot: components["schemas"]["Slot"];
+            /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description コーチの自分の予約の一覧（並べ方は `listMyCoachBookings` の説明） */
+        CoachBookingList: {
+            /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
+            bookings: components["schemas"]["CoachBooking"][];
         };
         /**
          * @description sufficient: 公開した枠が足りている / insufficient: 足りていない。判定の式は `getSlotSupply` の説明。
@@ -845,6 +914,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listMyCoachBookings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの予約の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachBookingList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     startLiveLessonSession: {

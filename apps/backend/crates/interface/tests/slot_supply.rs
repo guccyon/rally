@@ -162,6 +162,12 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
         ),
+        application::scheduling::ListCoachBookings::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::identity::IdentityStudentDisplayNameLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),
             analytics.clone(),

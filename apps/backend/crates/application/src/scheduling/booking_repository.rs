@@ -60,4 +60,11 @@ pub trait BookingRepository: Send + Sync {
         &self,
         student_id: AccountId,
     ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
+
+    /// `coach_id` のコーチのスロットへの予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
+    /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）が読む。
+    fn bookings_of_coach(
+        &self,
+        coach_id: AccountId,
+    ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
 }

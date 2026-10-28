@@ -273,6 +273,18 @@ impl BookingRepository for PgBookingRepository {
             .map_err(Unavailable::new)?;
         rows.into_iter().map(booking_and_slot_from_row).collect()
     }
+
+    async fn bookings_of_coach(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        let rows: Vec<BookingRow> = sqlx::query_as(select_bookings!("WHERE s.coach_id = $1"))
+            .bind(account_id_uuid::to_uuid(coach_id))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Unavailable::new)?;
+        rows.into_iter().map(booking_and_slot_from_row).collect()
+    }
 }
 
 fn reserve_unavailable(error: sqlx::Error) -> ReserveSlotError {
