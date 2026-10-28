@@ -1,10 +1,10 @@
 use domain::{
     DomainError,
-    identity::{Account, AccountId, CoachBio},
+    identity::{Account, AccountId},
+    profile::CoachBio,
 };
 
-use super::AccountRepository;
-use crate::Unavailable;
+use crate::{Unavailable, identity::AccountRepository};
 
 /// コーチの自己紹介の変更の入力（検証前の値）。`coach_id` は認証したアカウント（役割の確認は境界が行う）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +65,10 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::identity::{DisplayName, Email, Role, Sport};
+    use domain::{
+        identity::{Email, Role, Sport},
+        profile::DisplayName,
+    };
 
     use super::*;
     use crate::in_memory::InMemoryAccountRepository;

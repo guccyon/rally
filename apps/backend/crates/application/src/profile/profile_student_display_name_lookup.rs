@@ -1,28 +1,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use domain::identity::{AccountId, DisplayName};
+use domain::{identity::AccountId, profile::DisplayName};
 
-use super::AccountRepository;
 use crate::{
-    Unavailable, async_lesson::VideoStudentDisplayNameLookup, scheduling::StudentDisplayNameLookup,
+    Unavailable, async_lesson::VideoStudentDisplayNameLookup, identity::AccountRepository,
+    scheduling::StudentDisplayNameLookup,
 };
 
-/// scheduling の [`StudentDisplayNameLookup`] と async-lesson の [`VideoStudentDisplayNameLookup`] の identity による
-/// 実装。アカウントの保存先から読むだけで、何も変えない。
+/// scheduling の [`StudentDisplayNameLookup`] と async-lesson の [`VideoStudentDisplayNameLookup`] の profile による
+/// 実装。アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
 ///
 /// 生徒でないアカウントと、ないアカウントは結果に含めない。
 #[derive(Debug, Clone)]
-pub struct IdentityStudentDisplayNameLookup<R> {
+pub struct ProfileStudentDisplayNameLookup<R> {
     accounts: R,
 }
 
-impl<R> IdentityStudentDisplayNameLookup<R> {
+impl<R> ProfileStudentDisplayNameLookup<R> {
     pub fn new(accounts: R) -> Self {
         Self { accounts }
     }
 }
 
-impl<R> IdentityStudentDisplayNameLookup<R>
+impl<R> ProfileStudentDisplayNameLookup<R>
 where
     R: AccountRepository,
 {
@@ -44,7 +44,7 @@ where
     }
 }
 
-impl<R> StudentDisplayNameLookup for IdentityStudentDisplayNameLookup<R>
+impl<R> StudentDisplayNameLookup for ProfileStudentDisplayNameLookup<R>
 where
     R: AccountRepository,
 {
@@ -56,7 +56,7 @@ where
     }
 }
 
-impl<R> VideoStudentDisplayNameLookup for IdentityStudentDisplayNameLookup<R>
+impl<R> VideoStudentDisplayNameLookup for ProfileStudentDisplayNameLookup<R>
 where
     R: AccountRepository,
 {
@@ -101,7 +101,7 @@ mod tests {
         }
 
         let ids = [1, 2, 3, 4].map(AccountId::from_u128).into();
-        let lookup = IdentityStudentDisplayNameLookup::new(accounts);
+        let lookup = ProfileStudentDisplayNameLookup::new(accounts);
         let expected = BTreeMap::from([
             (AccountId::from_u128(1), DisplayName::new("あおき").unwrap()),
             (AccountId::from_u128(3), DisplayName::new("いとう").unwrap()),
@@ -125,7 +125,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_ids_is_an_empty_map() {
-        let lookup = IdentityStudentDisplayNameLookup::new(InMemoryAccountRepository::default());
+        let lookup = ProfileStudentDisplayNameLookup::new(InMemoryAccountRepository::default());
         let found = StudentDisplayNameLookup::find_student_display_names(&lookup, &BTreeSet::new())
             .await
             .unwrap();

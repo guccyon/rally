@@ -156,13 +156,13 @@ fn app_with_entitlements(
             analytics.clone(),
             clock,
         ),
-        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+        application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
-        application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
+        application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots.clone(),
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
             clock,
@@ -182,11 +182,11 @@ fn app_with_entitlements(
         ),
         ListMyBookings::new(
             bookings.clone(),
-            application::identity::IdentityCoachIntroductionLookup::new(accounts.clone()),
+            application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
         ),
         ListCoachBookings::new(
             bookings.clone(),
-            application::identity::IdentityStudentDisplayNameLookup::new(accounts.clone()),
+            application::profile::ProfileStudentDisplayNameLookup::new(accounts.clone()),
         ),
         application::scheduling::ListCoachSlots::new(slots.clone(), bookings),
         StartSubscription::new(
@@ -228,7 +228,7 @@ fn app_with_entitlements(
         ),
         application::async_lesson::ListCoachVideos::new(
             InMemoryVideoRepository::default(),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
@@ -962,7 +962,10 @@ fn assert_list_contract(status: StatusCode, body: &Value) {
 /// コーチ `COACH` のアカウントを保存する（契約にコーチの登録の操作がないので、保存先に直に入れる）。
 async fn register_coach(app: &App) {
     use application::identity::AccountRepository;
-    use domain::identity::{Account, DisplayName, Email};
+    use domain::{
+        identity::{Account, Email},
+        profile::DisplayName,
+    };
 
     let account = Account::new(
         COACH,
@@ -1092,7 +1095,10 @@ fn assert_coach_list_contract(status: StatusCode, body: &Value) {
 /// 生徒 `STUDENT` のアカウントを表示名「あおき」で保存する（`OTHER_STUDENT` は保存しない）。
 async fn register_student(app: &App) {
     use application::identity::AccountRepository;
-    use domain::identity::{Account, DisplayName, Email};
+    use domain::{
+        identity::{Account, Email},
+        profile::DisplayName,
+    };
 
     let account = Account::new(
         account_id(STUDENT),

@@ -7,8 +7,8 @@ use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
-        AccessToken, AccountRepository, GetAccount, InvalidToken, ListCoaches, RegisterAccount,
-        TokenClaims, TokenIssuer, TokenVerifier,
+        AccessToken, AccountRepository, GetAccount, InvalidToken, RegisterAccount, TokenClaims,
+        TokenIssuer, TokenVerifier,
     },
     in_memory::{
         FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
@@ -19,6 +19,7 @@ use application::{
     },
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
+    profile::ListCoaches,
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
         SchedulingBookingLookup, SearchSlots,
@@ -29,7 +30,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{Account, AccountId, DisplayName, Email, Role, Sport};
+use domain::{
+    identity::{Account, AccountId, Email, Role, Sport},
+    profile::DisplayName,
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -99,11 +103,11 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
-        application::identity::UpdateCoachProfile::new(accounts),
+        application::profile::UpdateCoachProfile::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots,
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
             clock,
@@ -125,13 +129,13 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         GetSlotSupply::new(bookings, clock),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
@@ -178,7 +182,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         ),
         application::async_lesson::ListCoachVideos::new(
             InMemoryVideoRepository::default(),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),

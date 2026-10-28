@@ -6,7 +6,7 @@ gen1_core: [identity, scheduling, entitlement]   # Gen1 で最初に実装した
 # subdomain（docs/adr/0009、2026-10-29）: core = 主業務（生徒アプリでタブとして切り出す概念）/ supporting = なくてもオンラインレッスンは成り立つが事業を支える / generic = どの事業にもある
 contexts:
   - { id: identity,     ja: "アカウント・権限",   subdomain: generic,    note: "生徒・コーチ・本部アカウント、認証、権限（プロフィールは profile）" }
-  - { id: profile,      ja: "プロフィール",       subdomain: core,       note: "生徒・コーチの表示名、コーチの自己紹介・得意なスポーツなど、相手に見せる本人の情報（identity から切り出す。コードの移動は後の段）" }
+  - { id: profile,      ja: "プロフィール",       subdomain: core,       note: "生徒・コーチの表示名、コーチの自己紹介・得意なスポーツなど、相手に見せる本人の情報（identity から切り出した。backend のコードは domain / application の profile。データは当面 identity の表）" }
   - { id: catalog,      ja: "カタログ",           subdomain: core,       note: "スポーツ、レッスン種別、コーチの提供メニュー（レッスンの選択）" }
   - { id: matching,     ja: "マッチング",         subdomain: core,       note: "検索・推薦・リクエスト・担当コーチの確定（レッスンの選択）" }
   - { id: scheduling,   ja: "予約",               subdomain: core,       note: "コーチの予約枠、予約、リスケ、キャンセル規定" }

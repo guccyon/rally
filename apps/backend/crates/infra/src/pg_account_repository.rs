@@ -5,8 +5,9 @@ use application::{
     Unavailable,
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
 };
-use domain::identity::{
-    Account, AccountId, Coach, CoachBio, DisplayName, Email, Profile, Role, Sport,
+use domain::{
+    identity::{Account, AccountId, Coach, Email, Profile, Role, Sport},
+    profile::{CoachBio, DisplayName},
 };
 use sqlx::{
     PgPool,

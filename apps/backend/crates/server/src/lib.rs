@@ -17,10 +17,7 @@ use application::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{
-        AccountRepository, GetAccount, IdentityCoachIntroductionLookup,
-        IdentityStudentDisplayNameLookup, ListCoaches, RegisterAccount, UpdateCoachProfile,
-    },
+    identity::{AccountRepository, GetAccount, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
@@ -40,6 +37,10 @@ use application::{
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, PushNotificationSubscriber,
         PushSender, UpdateNotificationSettings,
+    },
+    profile::{
+        ListCoaches, ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup,
+        UpdateCoachProfile,
     },
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
@@ -91,8 +92,8 @@ pub fn router() -> Router {
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
-/// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
-/// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`IdentityStudentDisplayNameLookup`）。コーチに届いた動画の一覧
+/// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
+/// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`ProfileStudentDisplayNameLookup`）。コーチに届いた動画の一覧
 /// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
 /// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
 ///
@@ -271,7 +272,7 @@ where
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(
             slots.clone(),
-            IdentityCoachIntroductionLookup::new(accounts.clone()),
+            ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock.clone(),
         ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
@@ -291,11 +292,11 @@ where
         GetSlotSupply::new(bookings.clone(), clock.clone()),
         ListMyBookings::new(
             bookings.clone(),
-            IdentityCoachIntroductionLookup::new(accounts.clone()),
+            ProfileCoachIntroductionLookup::new(accounts.clone()),
         ),
         ListCoachBookings::new(
             bookings.clone(),
-            IdentityStudentDisplayNameLookup::new(accounts.clone()),
+            ProfileStudentDisplayNameLookup::new(accounts.clone()),
         ),
         ListCoachSlots::new(slots, bookings.clone()),
         StartSubscription::new(
@@ -330,7 +331,7 @@ where
         ),
         ListCoachVideos::new(
             videos.clone(),
-            IdentityStudentDisplayNameLookup::new(accounts),
+            ProfileStudentDisplayNameLookup::new(accounts),
         ),
         RecordLessonCompletion::new(
             sessions,

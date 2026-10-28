@@ -8,7 +8,7 @@ use crate::Unavailable;
 /// コーチの自分の予約の一覧のユースケース（admin-web の `listMyCoachBookings`。コーチだけが呼ぶ）。
 ///
 /// コーチ `coach_id` のスロットへの予約を、キャンセル済みも含めて予約されたスロットと一緒に読み、スロットの開始時刻の
-/// 古い順に並べる（同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。一覧に出る生徒の表示名は identity に
+/// 古い順に並べる（同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。一覧に出る生徒の表示名は profile に
 /// 問い合わせて（[`StudentDisplayNameLookup`]）添える。読むだけで何も変えない。
 pub struct ListCoachBookings<B, D> {
     bookings: B,
@@ -57,7 +57,8 @@ mod tests {
     };
 
     use domain::{
-        identity::{DisplayName, Sport},
+        identity::Sport,
+        profile::DisplayName,
         scheduling::{Booking, BookingStatus, Slot, SlotId, SlotStatus},
     };
 

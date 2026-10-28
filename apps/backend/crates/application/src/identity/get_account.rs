@@ -28,7 +28,10 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::identity::{DisplayName, Email, Role, Sport};
+    use domain::{
+        identity::{Email, Role, Sport},
+        profile::DisplayName,
+    };
 
     use super::*;
     use crate::in_memory::InMemoryAccountRepository;
