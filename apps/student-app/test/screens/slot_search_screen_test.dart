@@ -4,6 +4,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/slot_search_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -153,5 +154,48 @@ void main() {
 
     expect(find.text('テニス'), findsNWidgets(2));
     expect(find.textContaining('コーチ'), findsNothing);
+  });
+
+  testWidgets('スロットの行は日時・スポーツ・コーチ・自己紹介文・ボタンの順に縦に並べ、自己紹介文は行の幅で出す', (
+    tester,
+  ) async {
+    final bio = 'テニス歴二十年のコーチです。' * 20;
+    final slot = Fixtures.slotWithCoach(displayName: '佐藤', bio: bio);
+    final api = FakeStudentApi(slots: [slot]);
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    final card = find.byType(Card);
+    Finder inCard(String text) =>
+        find.descendant(of: card, matching: find.text(text));
+    final time = inCard(formatTimeRange(slot.startsAt, slot.endsAt));
+    final order = [
+      time,
+      inCard('テニス'),
+      inCard('コーチ: 佐藤'),
+      inCard(bio),
+      inCard('続きを読む'),
+      inCard('体験予約する'),
+    ];
+    final tops = [for (final f in order) tester.getTopLeft(f).dy];
+    for (var i = 1; i < tops.length; i++) {
+      expect(tops[i], greaterThan(tops[i - 1]), reason: '${i + 1} 番目の並び');
+    }
+    expect(tester.widget<Text>(time).maxLines, isNull);
+    expect(tester.getSize(time).height, lessThan(40), reason: '日時は 1 行');
+
+    final cardWidth = tester.getSize(card).width;
+    expect(tester.getSize(inCard(bio)).width, greaterThan(cardWidth * 0.8));
+    final button = find.ancestor(
+      of: inCard('体験予約する'),
+      matching: find.byType(FilledButton),
+    );
+    expect(tester.getSize(button).width, greaterThan(cardWidth * 0.8));
   });
 }

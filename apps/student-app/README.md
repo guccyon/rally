@@ -18,7 +18,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | 画面（`lib/screens/`） | 呼ぶ操作 |
 |---|---|
 | アカウント登録 | `registerAccount`（続けて生徒のスポーツで `searchSlots`） |
-| スロットを探す（スポーツで絞る。各行に、載っていればコーチの名前と自己紹介文。自己紹介文は 2 行までで、収まらなければ「続きを読む」で全文）・体験予約 | `searchSlots` / `createBooking`（`is_trial: true`） |
+| スロットを探す（スポーツで絞る。各行は縦に 日時（例: `10/28（水）3:00〜4:00`）→ スポーツ → 載っていればコーチの名前と自己紹介文 → 行の幅いっぱいの「体験予約する」。自己紹介文は 2 行までで、収まらなければ「続きを読む」で全文）・体験予約 | `searchSlots` / `createBooking`（`is_trial: true`） |
 | 予約の確定待ち（確定後に通話か動画の送付を選ぶ） | `confirmBooking` |
 | ビデオ通話（開始・終了のボタンだけ。映像はモック） | `startLiveLessonSession` / `endLiveLessonSession` |
 | 動画を送る（ファイルの選択と本体のアップロードはモック。送り先は体験予約のコーチ、スポーツはそのスロットのもの） | `submitVideo` |

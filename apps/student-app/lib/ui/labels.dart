@@ -26,6 +26,20 @@ String formatDateTime(DateTime value) {
   return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
 }
 
+/// 端末のタイムゾーンで、開始から終了までを 1 行に。例: `10/28（水）3:00〜4:00`。
+/// 終了が別の日なら終了にも日付を付ける。例: `10/28（水）23:30〜10/29（木）0:30`
+String formatTimeRange(DateTime start, DateTime end) {
+  final from = start.toLocal();
+  final to = end.toLocal();
+  String day(DateTime d) => '${d.month}/${d.day}（${_weekdays[d.weekday - 1]}）';
+  String time(DateTime d) => '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+  final sameDay =
+      from.year == to.year && from.month == to.month && from.day == to.day;
+  return '${day(from)}${time(from)}〜${sameDay ? '' : day(to)}${time(to)}';
+}
+
+const _weekdays = ['月', '火', '水', '木', '金', '土', '日'];
+
 /// 生徒から見た送り手
 String messageSenderLabel(MessageSenderRole role) => switch (role) {
   MessageSenderRole.student => '自分',
