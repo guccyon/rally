@@ -120,6 +120,29 @@ describe("coachApi", () => {
     });
   });
 
+  test("updateMyCoachProfile はトークンを付けて PUT /api/me/profile を呼び、置き換えたあとのアカウントを返す", async () => {
+    const account = {
+      account_id: SLOT.coach_id,
+      role: "coach",
+      display_name: "山田コーチ",
+      bio: "テニス歴 20 年です。",
+    };
+    const { api, fetchMock } = setup(json(200, account));
+    const result = await api.updateMyCoachProfile({ bio: "テニス歴 20 年です。" });
+    expect(result).toEqual({ ok: true, data: account });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe("/api/me/profile");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+    expect(await request.json()).toEqual({ bio: "テニス歴 20 年です。" });
+  });
+
+  test("updateMyCoachProfile の 422 は入力の文言にする", async () => {
+    const { api } = setup(json(422, { code: "validation_failed", message: "too long" }));
+    const result = await api.updateMyCoachProfile({ bio: "あ".repeat(401) });
+    expect(result).toEqual({ ok: false, message: "入力の内容が正しくありません。" });
+  });
+
   test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
     const summary = { coach_id: SLOT.coach_id, review_count: 2, average_rating: 4.5 };
     const { api, fetchMock } = setup(json(200, summary));
