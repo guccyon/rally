@@ -5,6 +5,8 @@ import type { ApiClient, Schemas } from "./client";
 export function coachApi(client: ApiClient) {
   return {
     getMyAccount: () => call(() => client.GET("/me")),
+    updateMyCoachProfile: (body: Schemas["UpdateCoachProfileRequest"]) =>
+      call(() => client.PUT("/me/profile", { body })),
     publishSlot: (body: Schemas["PublishSlotRequest"]) =>
       call(() => client.POST("/slots", { body })),
     returnVideoReview: (videoId: string, body: Schemas["ReturnVideoReviewRequest"]) =>
