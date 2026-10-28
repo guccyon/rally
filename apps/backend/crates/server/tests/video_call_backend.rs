@@ -18,10 +18,10 @@ use axum::{
 use domain::identity::{AccountId, Role};
 use infra::MockTokenService;
 use serde_json::{Value, json};
-use server::VideoCallBackend;
+use server::{UnknownVideoCallProvider, VideoCallBackend};
 use tower::ServiceExt;
 
-fn choose(vars: &[(&str, &str)]) -> Result<VideoCallBackend, String> {
+fn choose(vars: &[(&str, &str)]) -> Result<VideoCallBackend, UnknownVideoCallProvider> {
     let vars: HashMap<String, String> = vars
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -50,7 +50,13 @@ fn alt_chooses_the_other_backend() {
 fn unknown_provider_is_an_error() {
     for value in ["", "Twilio", "ALT", "zoom"] {
         let error = choose(&[("VIDEO_CALL_PROVIDER", value)]).unwrap_err();
-        assert!(error.contains("VIDEO_CALL_PROVIDER"), "{error}");
+        assert_eq!(
+            error,
+            UnknownVideoCallProvider {
+                value: value.to_string()
+            }
+        );
+        assert!(error.to_string().contains("VIDEO_CALL_PROVIDER"), "{error}");
     }
 }
 

@@ -6,7 +6,7 @@ use domain::{
     live_lesson::{ConnectionQuality, SessionId},
 };
 
-use crate::{MockAltVideoCallProvider, MockVideoCallProvider};
+use crate::{MockAltVideoCallProvider, MockVideoCallProvider, UnknownVideoCallProvider};
 
 /// 通話基盤。`VIDEO_CALL_PROVIDER` で選ぶ。どちらもモックで、ポート [`VideoCallProvider`] の形は同じ。
 ///
@@ -24,19 +24,21 @@ impl VideoCallBackend {
     pub const PROVIDER_VAR: &'static str = "VIDEO_CALL_PROVIDER";
 
     /// プロセスの環境変数から選ぶ。
-    pub fn from_env() -> Result<Self, String> {
+    pub fn from_env() -> Result<Self, UnknownVideoCallProvider> {
         Self::from_vars(|name| std::env::var(name).ok())
     }
 
-    /// `var`（環境変数の名前から値）で選ぶ。知らない `VIDEO_CALL_PROVIDER` の値は失敗にする（黙って既定に倒さない）。
-    pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+    /// `var`（環境変数の名前から値）で選ぶ。知らない `VIDEO_CALL_PROVIDER` の値は [`UnknownVideoCallProvider`] で
+    /// 失敗にする（黙って既定に倒さない）。
+    pub fn from_vars(
+        var: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, UnknownVideoCallProvider> {
         match var(Self::PROVIDER_VAR).as_deref() {
             None | Some("twilio") => Ok(Self::Twilio(MockVideoCallProvider::new())),
             Some("alt") => Ok(Self::Alt(MockAltVideoCallProvider::new())),
-            Some(other) => Err(format!(
-                "{} は twilio か alt（{other:?} は知らない）",
-                Self::PROVIDER_VAR
-            )),
+            Some(other) => Err(UnknownVideoCallProvider {
+                value: other.to_string(),
+            }),
         }
     }
 }

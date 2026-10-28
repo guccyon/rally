@@ -11,7 +11,9 @@ use server::{AnalyticsDestination, VideoCallBackend};
 async fn main() -> io::Result<()> {
     let addr = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
     let analytics = AnalyticsDestination::from_env().map_err(io::Error::other)?;
-    let video = VideoCallBackend::from_env().map_err(io::Error::other)?;
+    // main の Error は Debug で出るので、知らない通話基盤は Display の文言で渡す
+    let video =
+        VideoCallBackend::from_env().map_err(|error| io::Error::other(error.to_string()))?;
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("listening on {}", listener.local_addr()?);
     axum::serve(

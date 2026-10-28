@@ -5,7 +5,7 @@
 // 配信先の選択は seed と共有するので infra に置き、ここでは同じ名前で公開し続ける
 pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
-pub use infra::VideoCallBackend;
+pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 
 use application::{
     analytics::AnalyticsSink,
