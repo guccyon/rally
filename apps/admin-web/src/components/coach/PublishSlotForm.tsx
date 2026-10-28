@@ -11,6 +11,13 @@ const SPORTS = Object.keys(SPORT_LABELS) as Schemas["Sport"][];
 
 type CoachSlot = Schemas["CoachSlot"];
 
+/** 定員の選択肢（契約の `capacity` は 1〜6。1 はマンツーマン）。 */
+const CAPACITIES = [1, 2, 3, 4, 5, 6] as const;
+
+function capacityLabel(capacity: number): string {
+  return capacity === 1 ? "1 人（マンツーマン）" : `${capacity} 人`;
+}
+
 type ListState =
   | { kind: "loading" }
   | { kind: "loaded"; upcoming: CoachSlot[]; past: CoachSlot[] }
@@ -45,7 +52,15 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
               {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
             </td>
             <td className="py-1">{SLOT_STATUS_LABELS[item.slot.status]}</td>
-            <td className="py-1">{item.has_active_booking ? "予約あり" : "予約なし"}</td>
+            <td className="py-1">
+              {item.has_active_booking ? "予約あり" : "予約なし"}
+              {/* 定員 1 の枠（マンツーマン）は今までどおり予約の有無だけを出す。 */}
+              {item.slot.capacity > 1 && (
+                <span className="block text-xs text-gray-600">
+                  定員 {item.slot.capacity} 人・残り {item.slot.remaining_seats} 席
+                </span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -62,6 +77,7 @@ export function PublishSlotForm({
   const [sport, setSport] = useState<Schemas["Sport"]>("tennis");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  const [capacity, setCapacity] = useState<number>(1);
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,6 +117,7 @@ export function PublishSlotForm({
       sport,
       starts_at: starts.toISOString(),
       ends_at: ends.toISOString(),
+      capacity,
     });
     if (response.ok) {
       setResult({ ok: true, message: "枠を公開しました。" });
@@ -145,6 +162,20 @@ export function PublishSlotForm({
             value={endsAt}
             onChange={(event) => setEndsAt(event.target.value)}
           />
+        </label>
+        <label className="flex flex-col">
+          定員
+          <select
+            className="rounded border px-2 py-1"
+            value={capacity}
+            onChange={(event) => setCapacity(Number(event.target.value))}
+          >
+            {CAPACITIES.map((value) => (
+              <option key={value} value={value}>
+                {capacityLabel(value)}
+              </option>
+            ))}
+          </select>
         </label>
         <button
           type="submit"
