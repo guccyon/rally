@@ -2,27 +2,28 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use domain::identity::AccountId;
 
-use super::AccountRepository;
 use crate::{
     Unavailable,
+    identity::AccountRepository,
     scheduling::{CoachIntroduction, CoachIntroductionLookup},
 };
 
-/// scheduling の [`CoachIntroductionLookup`] の identity による実装。アカウントの保存先から読むだけで、何も変えない。
+/// scheduling の [`CoachIntroductionLookup`] の profile による実装。アカウントの保存先（データは当面 identity の表）から
+/// 読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
 #[derive(Debug, Clone)]
-pub struct IdentityCoachIntroductionLookup<R> {
+pub struct ProfileCoachIntroductionLookup<R> {
     accounts: R,
 }
 
-impl<R> IdentityCoachIntroductionLookup<R> {
+impl<R> ProfileCoachIntroductionLookup<R> {
     pub fn new(accounts: R) -> Self {
         Self { accounts }
     }
 }
 
-impl<R> CoachIntroductionLookup for IdentityCoachIntroductionLookup<R>
+impl<R> CoachIntroductionLookup for ProfileCoachIntroductionLookup<R>
 where
     R: AccountRepository,
 {
@@ -54,7 +55,10 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::identity::{Account, CoachBio, DisplayName, Email, Role, Sport};
+    use domain::{
+        identity::{Account, Email, Role, Sport},
+        profile::{CoachBio, DisplayName},
+    };
 
     use super::*;
     use crate::in_memory::InMemoryAccountRepository;
@@ -88,7 +92,7 @@ mod tests {
             .unwrap();
 
         let ids = [1, 2, 3, 4].map(AccountId::from_u128).into();
-        let found = IdentityCoachIntroductionLookup::new(accounts)
+        let found = ProfileCoachIntroductionLookup::new(accounts)
             .find_coach_introductions(&ids)
             .await
             .unwrap();
@@ -117,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_ids_is_an_empty_map() {
-        let found = IdentityCoachIntroductionLookup::new(InMemoryAccountRepository::default())
+        let found = ProfileCoachIntroductionLookup::new(InMemoryAccountRepository::default())
             .find_coach_introductions(&BTreeSet::new())
             .await
             .unwrap();

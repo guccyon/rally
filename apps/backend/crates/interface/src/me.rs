@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use application::identity::{
-    AccountRepository, GetAccount, UpdateCoachProfile, UpdateCoachProfileCommand,
-    UpdateCoachProfileError, account_id_uuid,
+use application::{
+    identity::{AccountRepository, GetAccount, account_id_uuid},
+    profile::{UpdateCoachProfile, UpdateCoachProfileCommand, UpdateCoachProfileError},
 };
 use axum::{
     Json,

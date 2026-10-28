@@ -363,9 +363,9 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
     // ユースケースを通すと、スロットの開始時刻の新しい順
     let list = application::scheduling::ListMyBookings::new(
         bookings.clone(),
-        application::identity::IdentityCoachIntroductionLookup::new(
-            infra::PgAccountRepository::new(pool.clone()),
-        ),
+        application::profile::ProfileCoachIntroductionLookup::new(infra::PgAccountRepository::new(
+            pool.clone(),
+        )),
     )
     .execute(student)
     .await
@@ -440,7 +440,7 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
     // ユースケースを通すと、スロットの開始時刻の古い順で、生徒の表示名が添わる
     let list = application::scheduling::ListCoachBookings::new(
         bookings.clone(),
-        application::identity::IdentityStudentDisplayNameLookup::new(
+        application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
     )

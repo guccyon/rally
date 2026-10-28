@@ -13,6 +13,7 @@ pub mod lesson;
 pub mod live_lesson;
 pub mod messaging;
 pub mod notification;
+pub mod profile;
 pub mod review;
 pub mod scheduling;
 mod unavailable;

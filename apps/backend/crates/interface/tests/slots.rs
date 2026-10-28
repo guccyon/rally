@@ -31,7 +31,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{Account, AccountId, CoachBio, DisplayName, Email, Role, Sport};
+use domain::{
+    identity::{Account, AccountId, Email, Role, Sport},
+    profile::{CoachBio, DisplayName},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -94,13 +97,13 @@ fn app() -> App {
             analytics.clone(),
             clock,
         ),
-        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+        application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
-        application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
+        application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots,
-            application::identity::IdentityCoachIntroductionLookup::new(accounts.clone()),
+            application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock,
         ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
@@ -123,13 +126,13 @@ fn app() -> App {
         ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
@@ -176,7 +179,7 @@ fn app() -> App {
         ),
         application::async_lesson::ListCoachVideos::new(
             InMemoryVideoRepository::default(),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),

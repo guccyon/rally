@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
-use domain::{
-    async_lesson::Video,
-    identity::{AccountId, DisplayName},
-};
+use domain::{async_lesson::Video, identity::AccountId, profile::DisplayName};
 
 /// コーチに届いた動画の一覧（[`super::ListCoachVideos`] の結果）。
 #[derive(Debug, Clone, PartialEq, Eq)]

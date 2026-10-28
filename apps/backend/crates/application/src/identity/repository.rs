@@ -1,6 +1,9 @@
 use std::future::Future;
 
-use domain::identity::{Account, AccountId, CoachBio};
+use domain::{
+    identity::{Account, AccountId},
+    profile::CoachBio,
+};
 
 use crate::Unavailable;
 

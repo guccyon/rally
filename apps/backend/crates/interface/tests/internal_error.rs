@@ -57,7 +57,7 @@ impl AccountRepository for BrokenRepository {
     async fn update_coach_bio(
         &self,
         _coach_id: AccountId,
-        _bio: domain::identity::CoachBio,
+        _bio: domain::profile::CoachBio,
     ) -> Result<Option<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
@@ -85,13 +85,13 @@ async fn storage_failure_is_500_internal_without_the_reason() {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
-        application::identity::ListCoaches::new(BrokenRepository),
+        application::profile::ListCoaches::new(BrokenRepository),
         application::identity::GetAccount::new(BrokenRepository),
-        application::identity::UpdateCoachProfile::new(BrokenRepository),
+        application::profile::UpdateCoachProfile::new(BrokenRepository),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots,
-            application::identity::IdentityCoachIntroductionLookup::new(BrokenRepository),
+            application::profile::ProfileCoachIntroductionLookup::new(BrokenRepository),
             clock,
         ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
@@ -114,11 +114,11 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityCoachIntroductionLookup::new(BrokenRepository),
+            application::profile::ProfileCoachIntroductionLookup::new(BrokenRepository),
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityStudentDisplayNameLookup::new(BrokenRepository),
+            application::profile::ProfileStudentDisplayNameLookup::new(BrokenRepository),
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -163,7 +163,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         application::async_lesson::ListCoachVideos::new(
             InMemoryVideoRepository::default(),
-            application::identity::IdentityStudentDisplayNameLookup::new(BrokenRepository),
+            application::profile::ProfileStudentDisplayNameLookup::new(BrokenRepository),
         ),
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),

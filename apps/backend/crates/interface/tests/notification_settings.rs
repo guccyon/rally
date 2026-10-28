@@ -83,13 +83,13 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             analytics.clone(),
             clock,
         ),
-        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+        application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
-        application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
+        application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots,
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
             clock,
@@ -114,13 +114,13 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityCoachIntroductionLookup::new(
+            application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),
@@ -167,7 +167,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         ),
         application::async_lesson::ListCoachVideos::new(
             InMemoryVideoRepository::default(),
-            application::identity::IdentityStudentDisplayNameLookup::new(
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
         ),

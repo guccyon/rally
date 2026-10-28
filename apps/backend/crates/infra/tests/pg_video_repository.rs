@@ -109,7 +109,7 @@ async fn videos_of_coach_reads_videos_sent_to_the_coach_with_their_reviews(pool:
     // ユースケースを通すと、添削待ちが送られた時刻の古い順で先、返却済みが後で、生徒の表示名が添わる
     let list = application::async_lesson::ListCoachVideos::new(
         videos.clone(),
-        application::identity::IdentityStudentDisplayNameLookup::new(
+        application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
     )

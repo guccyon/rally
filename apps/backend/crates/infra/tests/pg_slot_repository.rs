@@ -10,8 +10,9 @@ use std::{
 };
 
 use application::{
-    identity::{IdentityCoachIntroductionLookup, account_id_uuid},
+    identity::account_id_uuid,
     in_memory::{FixedClock, RecordingAnalyticsSink},
+    profile::ProfileCoachIntroductionLookup,
     scheduling::{
         BookingRepository, ListCoachSlots, PublishSlot, PublishSlotCommand, PublishSlotError,
         SearchSlots, SearchSlotsQuery, SlotRepository,
@@ -109,7 +110,7 @@ async fn published_slot_round_trips(pool: PgPool) {
 
     let found = SearchSlots::new(
         PgSlotRepository::new(pool.clone()),
-        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
         FixedClock(at(0)),
     )
     .execute(SearchSlotsQuery {
@@ -169,7 +170,7 @@ async fn capacity_and_remaining_seats_round_trip(pool: PgPool) {
     assert_eq!(slot.status(), SlotStatus::Open);
     let found = SearchSlots::new(
         slots.clone(),
-        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
         FixedClock(at(0)),
     )
     .execute(query(20))
@@ -295,7 +296,7 @@ async fn search_filters_open_slots_and_pages_in_start_order(pool: PgPool) {
     // 現在時刻は 10 時（過去の枠は出ない）
     let search = SearchSlots::new(
         PgSlotRepository::new(pool.clone()),
-        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
         FixedClock(at(10)),
     );
     let ids = |slots: &[Slot]| slots.iter().map(Slot::id).collect::<Vec<_>>();

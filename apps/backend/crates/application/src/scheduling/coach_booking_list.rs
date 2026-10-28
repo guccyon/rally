@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use domain::{
-    identity::{AccountId, DisplayName},
+    identity::AccountId,
+    profile::DisplayName,
     scheduling::{Booking, Slot},
 };
 

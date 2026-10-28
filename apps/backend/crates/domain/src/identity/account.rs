@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
-use super::{AccountId, Coach, DisplayName, Email, Profile, Role, Sport, Student};
-use crate::DomainError;
+use super::{AccountId, Coach, Email, Profile, Role, Sport, Student};
+use crate::{DomainError, profile::DisplayName};
 
 /// アカウント。生徒・コーチ・本部のどれか。
 #[derive(Debug, Clone, PartialEq, Eq)]

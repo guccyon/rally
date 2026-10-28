@@ -37,10 +37,7 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
-    identity::{
-        AccountRepository, GetAccount, ListCoaches, RegisterAccount, TokenIssuer, TokenVerifier,
-        UpdateCoachProfile,
-    },
+    identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -53,6 +50,7 @@ use application::{
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
     },
+    profile::{ListCoaches, UpdateCoachProfile},
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         SubmitLessonReview,

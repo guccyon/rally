@@ -25,7 +25,7 @@ pub struct SearchSlotsQuery {
 ///
 /// 公開中でまだ予約されていない枠を、スポーツ・コーチ・開始時刻の期間で絞り、
 /// （開始時刻, スロット ID）の昇順でページに分けて返す。ページに出るコーチの紹介（表示名と自己紹介文）は
-/// identity に問い合わせて（[`CoachIntroductionLookup`]）添える。
+/// profile に問い合わせて（[`CoachIntroductionLookup`]）添える。
 pub struct SearchSlots<S, I, C> {
     slots: S,
     coaches: I,
@@ -89,7 +89,7 @@ mod tests {
     };
 
     use domain::{
-        identity::{CoachBio, DisplayName},
+        profile::{CoachBio, DisplayName},
         scheduling::{Slot, SlotId, SlotStatus},
     };
 

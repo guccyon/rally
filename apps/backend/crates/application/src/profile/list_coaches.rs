@@ -1,7 +1,6 @@
 use domain::identity::Account;
 
-use super::AccountRepository;
-use crate::Unavailable;
+use crate::{Unavailable, identity::AccountRepository};
 
 /// コーチの一覧のユースケース（admin-web の `listCoaches`。本部だけが呼ぶ）。
 ///
@@ -28,7 +27,10 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::identity::{AccountId, DisplayName, Email, Role, Sport};
+    use domain::{
+        identity::{AccountId, Email, Role, Sport},
+        profile::DisplayName,
+    };
 
     use super::*;
     use crate::in_memory::InMemoryAccountRepository;

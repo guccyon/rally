@@ -40,7 +40,9 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
   - name: identity
-    description: アカウント（ログイン中の本人のアカウント・コーチの自己紹介文・本部が見るコーチの一覧）
+    description: アカウント（ログイン中の本人のアカウント）
+  - name: profile
+    description: プロフィール（コーチの自己紹介文・本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
 
@@ -158,8 +160,8 @@ paths:
         - トークンがない・無効なら 401。トークンが示すコーチのアカウントが存在しないときも、無効なトークンとして 401
 
         行動イベントは発火しない。
-      tags: [identity]
-      x-context: identity
+      tags: [profile]
+      x-context: profile
       x-analytics-events: []
       requestBody:
         required: true
@@ -193,8 +195,8 @@ paths:
         - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
 
         行動イベントは発火しない。
-      tags: [identity]
-      x-context: identity
+      tags: [profile]
+      x-context: profile
       x-analytics-events: []
       responses:
         "200":

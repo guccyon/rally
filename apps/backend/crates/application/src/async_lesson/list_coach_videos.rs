@@ -8,7 +8,7 @@ use crate::Unavailable;
 /// コーチに届いた動画の一覧のユースケース（admin-web の `listMyCoachVideos`。コーチだけが呼ぶ）。
 ///
 /// コーチ `coach_id` に送られた動画を、添削待ち（未返却）を送られた時刻の古い順で先に、その後に返却済みを返却した
-/// 時刻の新しい順に並べる（同じ時刻は動画 ID の順）。一覧に出る生徒の表示名は identity に問い合わせて
+/// 時刻の新しい順に並べる（同じ時刻は動画 ID の順）。一覧に出る生徒の表示名は profile に問い合わせて
 /// （[`VideoStudentDisplayNameLookup`]）添える。読むだけで何も変えない。
 pub struct ListCoachVideos<V, D> {
     videos: V,
@@ -60,7 +60,8 @@ mod tests {
 
     use domain::{
         async_lesson::{ReviewComment, VideoId, VideoReviewId},
-        identity::{DisplayName, Sport},
+        identity::Sport,
+        profile::DisplayName,
     };
 
     use super::*;

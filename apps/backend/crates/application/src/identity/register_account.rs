@@ -1,6 +1,7 @@
 use domain::{
     DomainError,
-    identity::{Account, DisplayName, Email, Profile, Role, Sport},
+    identity::{Account, Email, Profile, Role, Sport},
+    profile::DisplayName,
 };
 
 use super::{AccountRepository, InsertAccountError};
@@ -273,7 +274,7 @@ mod tests {
         async fn update_coach_bio(
             &self,
             _coach_id: domain::identity::AccountId,
-            _bio: domain::identity::CoachBio,
+            _bio: domain::profile::CoachBio,
         ) -> Result<Option<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }

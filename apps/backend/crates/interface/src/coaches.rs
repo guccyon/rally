@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use application::identity::{AccountRepository, ListCoaches, account_id_uuid};
+use application::{
+    identity::{AccountRepository, account_id_uuid},
+    profile::ListCoaches,
+};
 use axum::{Json, extract::State};
 use domain::identity::Account;
 use serde::Serialize;

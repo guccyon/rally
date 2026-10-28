@@ -10,11 +10,12 @@ use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
-    identity::{Account, AccountId, CoachBio, Profile},
+    identity::{Account, AccountId, Profile},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId},
     notification::{NotificationSettings, PushNotification},
+    profile::CoachBio,
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
