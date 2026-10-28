@@ -31,6 +31,7 @@ mod pg_slot_repository;
 mod pg_support;
 mod pg_video_repository;
 pub mod scheduling_values;
+mod unknown_video_call_provider;
 mod video_call_backend;
 
 pub use analytics_common_attributes::AnalyticsCommonAttributes;
@@ -54,6 +55,7 @@ pub use pg_message_thread_repository::PgMessageThreadRepository;
 pub use pg_notification_settings_repository::PgNotificationSettingsRepository;
 pub use pg_slot_repository::PgSlotRepository;
 pub use pg_video_repository::PgVideoRepository;
+pub use unknown_video_call_provider::UnknownVideoCallProvider;
 pub use video_call_backend::VideoCallBackend;
 
 /// `migrations/` のマイグレーション（コンパイル時に埋め込む）。
