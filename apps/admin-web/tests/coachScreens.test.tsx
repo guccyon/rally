@@ -25,6 +25,10 @@ describe("枠の公開", () => {
     startsIn: number,
     status: Schemas["SlotStatus"],
     hasActiveBooking: boolean,
+    seats: { capacity: number; remaining: number } = {
+      capacity: 1,
+      remaining: hasActiveBooking ? 0 : 1,
+    },
   ): Schemas["CoachSlot"] {
     return {
       slot: {
@@ -34,8 +38,8 @@ describe("枠の公開", () => {
         starts_at: at(startsIn),
         ends_at: at(startsIn + 1),
         status,
-        capacity: 1,
-        remaining_seats: hasActiveBooking ? 0 : 1,
+        capacity: seats.capacity,
+        remaining_seats: seats.remaining,
       },
       has_active_booking: hasActiveBooking,
     };
@@ -105,6 +109,7 @@ describe("枠の公開", () => {
       sport: "baseball",
       starts_at: new Date("2026-11-01T10:00").toISOString(),
       ends_at: new Date("2026-11-01T11:00").toISOString(),
+      capacity: 1,
     });
     expect(await screen.findByRole("status")).toHaveTextContent("枠を公開しました。");
     expect(listMyCoachSlots).toHaveBeenCalledTimes(2);
@@ -142,10 +147,78 @@ describe("枠の公開", () => {
       sport: "swimming",
       starts_at: new Date("2026-11-01T10:00").toISOString(),
       ends_at: new Date("2026-11-01T11:00").toISOString(),
+      capacity: 1,
     });
     const upcoming = await screen.findByRole("table", { name: "これからの枠" });
     expect(firstCells(upcoming)).toEqual(["水泳"]);
     expect(within(upcoming).getByRole("row", { name: /水泳/ })).toHaveTextContent("公開中");
+  });
+
+  test("定員の欄は 1〜6 人で既定は 1 人（マンツーマン）。選んだ定員を publishSlot に渡す", async () => {
+    const published = coachSlot("c0000000-0000-4000-8000-000000000008", "tennis", 72, "open", false, {
+      capacity: 4,
+      remaining: 4,
+    });
+    const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({
+      ok: true,
+      data: published.slot,
+    }));
+    const listMyCoachSlots = listOf([], [published]);
+    const user = userEvent.setup();
+    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+
+    await screen.findByText("まだ枠を公開していません。");
+    const capacitySelect = screen.getByLabelText("定員");
+    expect(within(capacitySelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "1 人（マンツーマン）",
+      "2 人",
+      "3 人",
+      "4 人",
+      "5 人",
+      "6 人",
+    ]);
+    expect(capacitySelect).toHaveDisplayValue("1 人（マンツーマン）");
+    await user.selectOptions(capacitySelect, "4 人");
+    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
+    await user.click(screen.getByRole("button", { name: "枠を公開" }));
+
+    expect(publishSlot).toHaveBeenCalledWith({
+      sport: "tennis",
+      starts_at: new Date("2026-11-01T10:00").toISOString(),
+      ends_at: new Date("2026-11-01T11:00").toISOString(),
+      capacity: 4,
+    });
+    const upcoming = await screen.findByRole("table", { name: "これからの枠" });
+    expect(within(upcoming).getByRole("row", { name: /テニス/ })).toHaveTextContent(
+      "定員 4 人・残り 4 席",
+    );
+  });
+
+  test("定員 2 以上の枠には定員と残りの席を出し、定員 1 の枠は予約の有無だけを出す", async () => {
+    const slots = [
+      coachSlot("c0000000-0000-4000-8000-000000000009", "soccer", 24, "open", true, {
+        capacity: 3,
+        remaining: 1,
+      }),
+      coachSlot("c0000000-0000-4000-8000-000000000010", "baseball", 48, "booked", true, {
+        capacity: 6,
+        remaining: 0,
+      }),
+      coachSlot("c0000000-0000-4000-8000-000000000011", "tennis", 72, "open", false),
+    ];
+    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(slots) }} />);
+
+    const upcoming = await screen.findByRole("table", { name: "これからの枠" });
+    const soccer = within(upcoming).getByRole("row", { name: /サッカー/ });
+    expect(soccer).toHaveTextContent("予約あり");
+    expect(soccer).toHaveTextContent("定員 3 人・残り 1 席");
+    expect(within(upcoming).getByRole("row", { name: /野球/ })).toHaveTextContent(
+      "定員 6 人・残り 0 席",
+    );
+    const tennis = within(upcoming).getByRole("row", { name: /テニス/ });
+    expect(tennis).toHaveTextContent("予約なし");
+    expect(tennis).not.toHaveTextContent(/定員|残り/);
   });
 
   test("枠が 0 件ならその旨を出す", async () => {
