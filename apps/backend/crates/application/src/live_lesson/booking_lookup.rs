@@ -15,4 +15,12 @@ pub trait BookingLookup: Send + Sync {
         &self,
         booking_id: BookingId,
     ) -> impl Future<Output = Result<Option<Booking>, Unavailable>> + Send;
+
+    /// `booking` と同じ枠の予約（状態を問わない。`booking` 自身を含む）。並びは決めない。グループレッスンの
+    /// 通話を始めるときに、確定した予約をすべてセッションに結び付けるのに使う（確定かの判定は domain の
+    /// [`domain::live_lesson::LiveLessonSession::start`]）。
+    fn find_slot_bookings(
+        &self,
+        booking: &Booking,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
 }

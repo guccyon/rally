@@ -310,6 +310,11 @@ export interface paths {
          *     呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントには予約がないのと同じ 404 を返す（役割では絞らない）。
          *     確定前・キャンセル済みの予約は 409 `invalid_booking_state`、その予約のセッションがすでにあれば（終了済みを含む）
          *     409 `invalid_session_state`（同じ予約のセッションは 1 つ）。`booking_id` が UUID でなければ 422。
+         *     グループレッスン（定員 2 以上の枠。変更シナリオ cs-004）では、通話を始めたときに確定していた同じ枠の予約を
+         *     すべて 1 つのセッションに結び付け（`bookings`）、全員が 1 つの通話ルームに入る。結び付いた予約が 2 つ以上の
+         *     通話中のセッションには、結び付いた予約のどれで呼んでも（2 人目以降の生徒・コーチ）新しく開始せずに同じセッションを
+         *     201 で返し、`room_token` はそのアカウントの参加のトークン（`call.started` は最初の開始の 1 回だけ）。終了した
+         *     セッションと、開始の後に確定した（結び付いていない）予約は 409 `invalid_session_state`。
          */
         post: operations["startLiveLessonSession"];
         delete?: never;
@@ -666,6 +671,19 @@ export interface components {
             duration_sec?: number | null;
             /** @description 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null */
             room_token?: string | null;
+            /**
+             * @description セッションに結び付いた予約の一覧。先頭は開始した予約（`booking_id` / `student_id` と同じ）。
+             *     マンツーマンの枠では 1 件、グループレッスンの枠では通話を始めたときに確定していた予約の数だけ。
+             *     完了したレッスン（`recordLessonCompletion`）は、この予約（生徒）ごとに 1 つ
+             */
+            bookings?: components["schemas"]["LiveLessonSessionBooking"][];
+        };
+        /** @description 通話セッションに結び付いた確定した予約と、その予約の生徒。student-app の LiveLessonSessionBooking と同じ形 */
+        LiveLessonSessionBooking: {
+            /** Format: uuid */
+            booking_id: string;
+            /** Format: uuid */
+            student_id: string;
         };
         StartLiveLessonSessionRequest: {
             /**

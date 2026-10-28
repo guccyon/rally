@@ -8,6 +8,8 @@
 //!   expand に書ける（許す値を足す緩和。値を減らす付け直しは contract に分ける。ADR 0004 の 2）
 //! - 例外として、[`RELAXABLE_UNIQUE_INDEXES`] に挙げた一意の索引の `DROP INDEX` は expand に書ける（一意性の緩和で、データは
 //!   消えず、古い版のアプリも動く。挙げるときに ADR 0004 の 2 に理由を書く）
+//! - 例外として、[`RELAXABLE_CONSTRAINTS`] に挙げた一意・外部キーの制約の `ALTER TABLE ... DROP CONSTRAINT` は expand に書ける
+//!   （同じ考え方の緩和。挙げるときに ADR 0004 の 2 に理由を書く）
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,6 +22,18 @@ const PHASES: &[&str] = &["expand", "migrate", "contract"];
 /// - `scheduling.bookings_one_active_per_slot`: 1 枠 1 予約。スロットの定員（D40 / 変更シナリオ cs-004）で、同じ枠に定員まで
 ///   予約を持てるようにする。定員の判定は domain で、予約の作成はスロットの行のロックの中で数える
 const RELAXABLE_UNIQUE_INDEXES: &[&str] = &["scheduling.bookings_one_active_per_slot"];
+
+/// expand で外してよい一意・外部キーの制約（`<スキーマ>.<テーブル>.<制約>`）。外しても古い版のアプリが動き、データも消えない
+/// 緩和だけを、ADR 0004 の 2 に理由を書いて挙げる。
+///
+/// - `live_lesson.lesson_completions.lesson_completions_session_id_key`: セッション 1 つにつき完了 1 回。グループレッスンの通話
+///   （D41 / 変更シナリオ cs-004）で、完了を生徒ごとに 1 回（`lesson_completions_session_student_key`）にする
+/// - `live_lesson.lesson_completions.lesson_completions_session_fkey`: 完了の生徒・コーチがセッションの（開始した予約の）当事者。
+///   グループレッスンの 2 人目以降の生徒は `sessions.student_id` にいない。コーチは `lesson_completions_session_coach_fkey` が守る
+const RELAXABLE_CONSTRAINTS: &[&str] = &[
+    "live_lesson.lesson_completions.lesson_completions_session_id_key",
+    "live_lesson.lesson_completions.lesson_completions_session_fkey",
+];
 
 fn migration_files() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -137,6 +151,40 @@ fn drops_relaxable_unique_index(t: &[String]) -> bool {
     }
 }
 
+/// `t[i..]` が `DROP CONSTRAINT [IF EXISTS] <制約>` で、直前の `ALTER TABLE <スキーマ> <テーブル>` とあわせて
+/// [`RELAXABLE_CONSTRAINTS`] にあるか。`CASCADE` を付けたものは、制約に頼る他の制約も消すので対象外。
+fn drops_relaxable_constraint(t: &[String], i: usize) -> bool {
+    let rest = match &t[i..] {
+        [drop, constraint, if_, exists, rest @ ..]
+            if drop == "DROP"
+                && constraint == "CONSTRAINT"
+                && if_ == "IF"
+                && exists == "EXISTS" =>
+        {
+            rest
+        }
+        [drop, constraint, rest @ ..] if drop == "DROP" && constraint == "CONSTRAINT" => rest,
+        _ => return false,
+    };
+    let [name, after @ ..] = rest else {
+        return false;
+    };
+    if after.first().is_some_and(|next| next == "CASCADE") {
+        return false;
+    }
+    let Some(table) = t[..i]
+        .windows(4)
+        .rev()
+        .find(|w| w[0] == "ALTER" && w[1] == "TABLE")
+        .map(|w| format!("{}.{}", w[2], w[3]))
+    else {
+        return false;
+    };
+    RELAXABLE_CONSTRAINTS
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&format!("{table}.{name}")))
+}
+
 /// contract の段にしか書けない破壊的な文を探す。
 fn destructive_statements(sql: &str) -> Vec<String> {
     let t = tokens(sql);
@@ -146,11 +194,12 @@ fn destructive_statements(sql: &str) -> Vec<String> {
         let hit = match t[i].as_str() {
             // DROP NOT NULL / DROP DEFAULT は制約を緩めるだけなので expand に書ける
             // DROP CONSTRAINT x, ADD CONSTRAINT x CHECK は同じ名前の CHECK の付け直しなので expand に書ける
-            // RELAXABLE_UNIQUE_INDEXES の DROP INDEX は一意性の緩和なので expand に書ける
+            // RELAXABLE_UNIQUE_INDEXES の DROP INDEX と RELAXABLE_CONSTRAINTS の DROP CONSTRAINT は緩和なので expand に書ける
             "DROP" => {
                 !matches!(at(i + 1), Some("NOT" | "DEFAULT"))
                     && !replaces_check_constraint(&t[i..])
                     && !drops_relaxable_unique_index(&t[i..])
+                    && !drops_relaxable_constraint(&t, i)
             }
             "RENAME" | "TRUNCATE" | "DELETE" => true,
             // ALTER [COLUMN] <列> TYPE / SET DATA TYPE（型の変更）
@@ -231,6 +280,11 @@ fn detects_destructive_statements() {
         "DROP INDEX bookings_one_active_per_slot;",
         "DROP INDEX scheduling.bookings_one_active_per_slot CASCADE;",
         "DROP INDEX scheduling.bookings_one_active_per_slot_student;",
+        // 外してよい制約でも、別のテーブルの同じ名前・挙げていない制約・CASCADE は対象外
+        "ALTER TABLE async_lesson.lesson_completions DROP CONSTRAINT lesson_completions_session_id_key;",
+        "ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT lesson_completions_video_id_key;",
+        "ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT lesson_completions_session_fkey CASCADE;",
+        "DROP CONSTRAINT lesson_completions_session_id_key;",
         "ALTER TABLE identity.accounts RENAME COLUMN email TO mail;",
         "ALTER TABLE identity.accounts ALTER COLUMN display_name TYPE varchar(20);",
         "ALTER TABLE identity.accounts ALTER display_name TYPE varchar(20);",
@@ -257,6 +311,8 @@ fn allows_additive_statements() {
         "CREATE INDEX accounts_created_at_idx ON identity.accounts (created_at);",
         "DROP INDEX scheduling.bookings_one_active_per_slot;",
         "DROP INDEX IF EXISTS scheduling.bookings_one_active_per_slot;",
+        "ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT lesson_completions_session_id_key;",
+        "ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT IF EXISTS lesson_completions_session_fkey;",
         "UPDATE identity.accounts SET locale = 'ja';",
         "-- DROP TABLE identity.accounts; はコメントなので数えない\nSELECT 1;",
         "/* RENAME */ COMMENT ON TABLE identity.accounts IS 'DROP TABLE と書いても文字列';",

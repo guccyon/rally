@@ -1,7 +1,10 @@
+use std::time::SystemTime;
+
 use domain::{
     DomainError,
     identity::AccountId,
     lesson::{LessonCompletion, LessonSource},
+    live_lesson::LiveLessonSession,
 };
 use uuid::Uuid;
 
@@ -41,6 +44,11 @@ pub enum RecordLessonCompletionError {
 /// [`LessonCompletion`] が、保存先が渡すその生徒の既存の記録から判定する。保存したら行動イベント
 /// `lesson.completed` を 1 回発火し、境界間イベント `LessonCompleted`（billing・review・analytics 向け）を
 /// 1 回発行する。拒否・失敗では何も出さない。
+///
+/// 通話セッションの完了は、セッションに結び付いた予約（生徒）ごとに 1 つ（グループレッスン）。生徒が記録すると
+/// 本人の完了だけを、コーチが記録すると結び付いた予約のうちまだ記録していないすべての生徒の完了を、予約の順に
+/// 記録する（マンツーマンでは 1 人分で、今までと同じ）。イベントは記録した完了ごとに出し、返すのは最初に記録した
+/// 完了。どの生徒も記録済みなら [`DomainError::LessonAlreadyCompleted`]。
 pub struct RecordLessonCompletion<L, V, R, A, P, C> {
     sessions: L,
     videos: V,
@@ -75,7 +83,6 @@ where
         command: RecordLessonCompletionCommand,
     ) -> Result<LessonCompletion, RecordLessonCompletionError> {
         let now = self.clock.now();
-        let lesson_id = self.completions.next_id();
         let account = command.account_id;
         let recorded = match command.source {
             LessonSource::Live(session_id) => {
@@ -85,13 +92,10 @@ where
                     .await
                     .map_err(RecordLessonCompletionError::Unavailable)?
                     .ok_or(RecordLessonCompletionError::SourceNotFound)?;
-                self.completions
-                    .record(session.student_id(), |history| {
-                        session.complete(lesson_id, account, history, now)
-                    })
-                    .await
+                return self.record_live(&session, account, now).await;
             }
             LessonSource::Async(video_id) => {
+                let lesson_id = self.completions.next_id();
                 let video = self
                     .videos
                     .find(video_id)
@@ -105,13 +109,57 @@ where
                     .await
             }
         };
-        let completion = recorded.map_err(|error| match error {
-            RecordCompletionError::Rejected(error) => RecordLessonCompletionError::Invalid(error),
-            RecordCompletionError::Unavailable(error) => {
-                RecordLessonCompletionError::Unavailable(error)
-            }
-        })?;
+        let completion = recorded.map_err(record_error)?;
+        self.announce(&completion, now).await;
+        Ok(completion)
+    }
 
+    /// 通話セッション `session` の完了を、`account` が生徒なら本人の分、そうでなければ（コーチ）結び付いた予約の
+    /// 生徒のうち記録していない全員の分だけ記録する。
+    async fn record_live(
+        &self,
+        session: &LiveLessonSession,
+        account: AccountId,
+        now: SystemTime,
+    ) -> Result<LessonCompletion, RecordLessonCompletionError> {
+        let students: Vec<AccountId> = session
+            .bookings()
+            .iter()
+            .map(|booking| booking.student_id())
+            .filter(|student| *student == account || account == session.coach_id())
+            .collect();
+        // 生徒でもコーチでもなければ、開始した予約の生徒の分を domain に判定させる（参加者でないと断る）
+        let students = if students.is_empty() {
+            vec![session.student_id()]
+        } else {
+            students
+        };
+        let mut first: Option<LessonCompletion> = None;
+        for student in students {
+            let lesson_id = self.completions.next_id();
+            let recorded = self
+                .completions
+                .record(student, |history| {
+                    session.complete_for(lesson_id, account, student, history, now)
+                })
+                .await;
+            match recorded {
+                Ok(completion) => {
+                    self.announce(&completion, now).await;
+                    first.get_or_insert(completion);
+                }
+                // 記録済みの生徒は飛ばす（コーチの記録で、まだの生徒の分だけ記録する）
+                Err(RecordCompletionError::Rejected(DomainError::LessonAlreadyCompleted)) => {}
+                Err(error) => return Err(record_error(error)),
+            }
+        }
+        first.ok_or(RecordLessonCompletionError::Invalid(
+            DomainError::LessonAlreadyCompleted,
+        ))
+    }
+
+    /// 記録した完了の行動イベント `lesson.completed` と境界間イベント `LessonCompleted` を 1 回ずつ出す。
+    async fn announce(&self, completion: &LessonCompletion, now: SystemTime) {
         self.analytics
             .emit(AnalyticsEvent::LessonCompleted {
                 student_id: completion.student_id(),
@@ -131,8 +179,6 @@ where
                 lesson_id: completion.id(),
             })
             .await;
-
-        Ok(completion)
     }
 
     pub fn completions(&self) -> &R {
@@ -145,6 +191,15 @@ where
 
     pub fn events(&self) -> &P {
         &self.events
+    }
+}
+
+fn record_error(error: RecordCompletionError) -> RecordLessonCompletionError {
+    match error {
+        RecordCompletionError::Rejected(error) => RecordLessonCompletionError::Invalid(error),
+        RecordCompletionError::Unavailable(error) => {
+            RecordLessonCompletionError::Unavailable(error)
+        }
     }
 }
 
@@ -222,7 +277,8 @@ mod tests {
         )
         .unwrap();
         booking.confirm(STUDENT, &mut slot, start()).unwrap();
-        let mut session = LiveLessonSession::start(id, STUDENT, &booking, None, start()).unwrap();
+        let mut session =
+            LiveLessonSession::start(id, STUDENT, &booking, &[], None, start()).unwrap();
         if ended {
             let quality = ConnectionQuality::new(0.0, 10, 50, 0).unwrap();
             session
@@ -455,5 +511,143 @@ mod tests {
         assert_eq!(use_case.completions().all().len(), 1);
         assert_eq!(use_case.analytics().events().len(), 1);
         assert_eq!(use_case.events().events().len(), 1);
+    }
+
+    /// 定員 3 の枠の生徒 1・2・3 の確定した予約を結び付けた、終了した通話セッション（コーチが開始）。
+    fn group_session(id: SessionId) -> LiveLessonSession {
+        let mut slot = Slot::restore(
+            SlotId::from_u128(20),
+            COACH,
+            Sport::Tennis,
+            start(),
+            start() + Duration::from_secs(3600),
+            SlotStatus::Open,
+            domain::scheduling::SlotSeats::vacant(
+                domain::scheduling::SlotCapacity::new(3).unwrap(),
+            ),
+        )
+        .unwrap();
+        let mut bookings: Vec<Booking> = Vec::new();
+        for (i, student) in GROUP.into_iter().enumerate() {
+            let mut booking = Booking::reserve(
+                BookingId::from_u128(20 + i as u128),
+                student,
+                false,
+                &mut slot,
+                &bookings,
+                start(),
+            )
+            .unwrap();
+            booking.confirm(student, &mut slot, start()).unwrap();
+            bookings.push(booking);
+        }
+        let mut session =
+            LiveLessonSession::start(id, COACH, &bookings[0], &bookings, None, start()).unwrap();
+        let quality = ConnectionQuality::new(0.0, 10, 50, 0).unwrap();
+        session
+            .end(COACH, start() + Duration::from_secs(3600), quality)
+            .unwrap();
+        session
+    }
+
+    const GROUP: [AccountId; 3] = [STUDENT, OTHER_STUDENT, AccountId::from_u128(3)];
+    const GROUP_SESSION: SessionId = SessionId::from_u128(33);
+
+    fn group_use_case() -> UseCase {
+        RecordLessonCompletion::new(
+            InMemoryLiveLessonSessionRepository::with_sessions([group_session(GROUP_SESSION)]),
+            InMemoryVideoRepository::default(),
+            InMemoryLessonCompletionRepository::default(),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
+            FixedClock(now()),
+        )
+    }
+
+    fn completed_students(use_case: &UseCase) -> Vec<AccountId> {
+        use_case
+            .completions()
+            .all()
+            .iter()
+            .map(LessonCompletion::student_id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn the_coach_completes_a_group_lesson_for_every_linked_student() {
+        let use_case = group_use_case();
+
+        let completion = use_case
+            .execute(command(COACH, LessonSource::Live(GROUP_SESSION)))
+            .await
+            .unwrap();
+
+        // 返すのは最初の 1 件、記録とイベントは 3 人分
+        assert_eq!(completion.student_id(), GROUP[0]);
+        assert_eq!(completed_students(&use_case), GROUP.to_vec());
+        assert!(
+            use_case
+                .completions()
+                .all()
+                .iter()
+                .all(|c| c.is_first_lesson() && c.source() == LessonSource::Live(GROUP_SESSION))
+        );
+        assert_eq!(use_case.analytics().events().len(), 3);
+        assert_eq!(use_case.events().events().len(), 3);
+
+        // 全員の分が記録済みなら 409（何も出さない）
+        let result = use_case
+            .execute(command(COACH, LessonSource::Live(GROUP_SESSION)))
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(RecordLessonCompletionError::Invalid(
+                    DomainError::LessonAlreadyCompleted
+                ))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(use_case.analytics().events().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_student_of_a_group_lesson_completes_only_their_own_and_the_coach_the_rest() {
+        let use_case = group_use_case();
+
+        let own = use_case
+            .execute(command(GROUP[1], LessonSource::Live(GROUP_SESSION)))
+            .await
+            .unwrap();
+        assert_eq!(own.student_id(), GROUP[1]);
+        assert_eq!(completed_students(&use_case), vec![GROUP[1]]);
+
+        // コーチはまだの 2 人の分だけを記録する
+        let rest = use_case
+            .execute(command(COACH, LessonSource::Live(GROUP_SESSION)))
+            .await
+            .unwrap();
+        assert_eq!(rest.student_id(), GROUP[0]);
+        assert_eq!(
+            completed_students(&use_case),
+            vec![GROUP[1], GROUP[0], GROUP[2]]
+        );
+
+        // 結び付いていない生徒は記録できない
+        let result = use_case
+            .execute(command(
+                AccountId::from_u128(99),
+                LessonSource::Live(GROUP_SESSION),
+            ))
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(RecordLessonCompletionError::Invalid(
+                    DomainError::NotASessionParticipant
+                ))
+            ),
+            "{result:?}"
+        );
     }
 }

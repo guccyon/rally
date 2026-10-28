@@ -154,3 +154,64 @@ async fn finds_live_and_async_completions_by_their_lesson_id(pool: PgPool) {
     );
     assert_eq!(completions.find(completions.next_id()).await.unwrap(), None);
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_group_session_is_completed_once_per_linked_student(pool: PgPool) {
+    use domain::live_lesson::LiveLessonSession;
+
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let completions = PgLessonCompletionRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let slot = support::open_slot_with_capacity(&pool, coach, 10, 11, 3).await;
+    let mut bookings = Vec::new();
+    for _ in 0..3 {
+        let student = support::student(&pool).await;
+        bookings.push(support::confirmed_booking(&pool, student, &slot).await);
+    }
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        coach,
+        &bookings[0],
+        &bookings,
+        None,
+        at(10),
+    )
+    .unwrap();
+    sessions.insert(session.clone()).await.unwrap();
+    let session = sessions
+        .update(session.id(), |s| s.end(coach, at(11), support::quality()))
+        .await
+        .unwrap();
+
+    // 同じセッションでも生徒ごとに 1 回ずつ入り、それぞれが生徒の初回
+    for booking in &bookings {
+        let student = booking.student_id();
+        let id = completions.next_id();
+        let completion = completions
+            .record(student, |history| {
+                session.complete_for(id, coach, student, history, at(12))
+            })
+            .await
+            .unwrap();
+        assert_eq!(completion.student_id(), student);
+        assert!(completion.is_first_lesson());
+        assert_eq!(completions.find(id).await.unwrap(), Some(completion));
+    }
+    let student = bookings[1].student_id();
+    let id = completions.next_id();
+    let result = completions
+        .record(student, |history| {
+            session.complete_for(id, student, student, history, at(13))
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(RecordCompletionError::Rejected(
+                DomainError::LessonAlreadyCompleted
+            ))
+        ),
+        "{result:?}"
+    );
+}

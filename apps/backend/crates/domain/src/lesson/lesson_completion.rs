@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use super::{LessonId, LessonSource, LessonType};
 use crate::{DomainError, identity::AccountId};
 
-/// レッスンの完了記録（glossary の lesson が終わったこと）。通話セッション・動画 1 つにつき 1 つ。
+/// レッスンの完了記録（glossary の lesson が終わったこと）。通話セッションに結び付いた予約（生徒）・動画 1 つにつき 1 つ。
 ///
 /// 作るのは live-lesson の [`crate::live_lesson::LiveLessonSession::complete`] と async-lesson の
 /// [`crate::async_lesson::Video::complete`] だけ（元の集約の不変条件はそこで確かめる）。
@@ -22,8 +22,8 @@ pub struct LessonCompletion {
 impl LessonCompletion {
     /// 生徒 `student_id` がコーチ `coach_id` から受けたレッスン（元は `source`）の完了を `now` に記録する。
     ///
-    /// `history` は既存の完了記録（少なくともその生徒のもの。他の生徒の記録は数えない）。同じ元の記録がすでに
-    /// あれば [`DomainError::LessonAlreadyCompleted`]。
+    /// `history` は既存の完了記録（少なくともその生徒のもの。他の生徒の記録は数えない）。同じ元の同じ生徒の記録が
+    /// すでにあれば [`DomainError::LessonAlreadyCompleted`]（グループレッスンの通話セッションは生徒ごとに 1 つ）。
     pub(crate) fn record(
         id: LessonId,
         student_id: AccountId,
@@ -32,7 +32,10 @@ impl LessonCompletion {
         history: &[LessonCompletion],
         now: SystemTime,
     ) -> Result<Self, DomainError> {
-        if history.iter().any(|completion| completion.source == source) {
+        if history
+            .iter()
+            .any(|completion| completion.source == source && completion.student_id == student_id)
+        {
             return Err(DomainError::LessonAlreadyCompleted);
         }
         let is_first_lesson = !history
@@ -160,6 +163,18 @@ mod tests {
         let first = record(1, STUDENT, ASYNC, &[]).unwrap();
         assert_eq!(
             record(2, STUDENT, ASYNC, &[first]),
+            Err(DomainError::LessonAlreadyCompleted)
+        );
+    }
+
+    #[test]
+    fn a_group_session_is_completed_once_per_student() {
+        // グループレッスンの通話セッションは、同じ元でも生徒ごとに 1 つ
+        let first = record(1, STUDENT, LIVE, &[]).unwrap();
+        let others = record(2, OTHER_STUDENT, LIVE, std::slice::from_ref(&first)).unwrap();
+        assert!(others.is_first_lesson());
+        assert_eq!(
+            record(3, STUDENT, LIVE, &[first, others]),
             Err(DomainError::LessonAlreadyCompleted)
         );
     }

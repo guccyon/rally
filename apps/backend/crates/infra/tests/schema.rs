@@ -4,7 +4,7 @@
 //! Postgres を起動し、`DATABASE_URL` を設定して `cargo test -p infra -- --include-ignored` で走らせる。
 //! `#[sqlx::test]` はテストごとに新しい DB を作って `infra::MIGRATOR` を当てる。
 
-use sqlx::PgPool;
+use sqlx::{PgPool, types::Uuid};
 
 /// 制約違反の SQLSTATE と制約名を取り出す。
 fn violation<T: std::fmt::Debug>(result: Result<T, sqlx::Error>) -> (String, String) {
@@ -121,6 +121,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "identity.coach_sports",
             "identity.coaches",
             "live_lesson.lesson_completions",
+            "live_lesson.session_bookings",
             "live_lesson.sessions",
             "messaging.messages",
             "messaging.threads",
@@ -998,29 +999,32 @@ async fn complete_lesson(
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn a_live_lesson_session_is_completed_once_by_its_parties(pool: PgPool) {
+async fn a_live_lesson_session_is_completed_once_per_student_by_its_coach(pool: PgPool) {
     const TABLE: &str = "live_lesson.lesson_completions";
     let (booking_id, student_id, coach_id) = session_parties(&pool).await;
     let session_id = start_session(&pool, &booking_id, &student_id, &coach_id)
         .await
         .unwrap();
-    let other_student = student(&pool).await;
+    let other_coach = coach(&pool).await;
 
-    // 生徒・コーチはセッションの当事者
+    // コーチはセッションのコーチ
     let (code, constraint) = violation(
         complete_lesson(
             &pool,
             TABLE,
             "session_id",
             &session_id,
-            (&other_student, &coach_id),
+            (&student_id, &other_coach),
             true,
         )
         .await,
     );
     assert_eq!(
         (code.as_str(), constraint.as_str()),
-        (FOREIGN_KEY_VIOLATION, "lesson_completions_session_fkey")
+        (
+            FOREIGN_KEY_VIOLATION,
+            "lesson_completions_session_coach_fkey"
+        )
     );
     complete_lesson(
         &pool,
@@ -1032,7 +1036,7 @@ async fn a_live_lesson_session_is_completed_once_by_its_parties(pool: PgPool) {
     )
     .await
     .unwrap();
-    // 同じセッションの完了は 1 回
+    // 同じセッションの同じ生徒の完了は 1 回
     let (code, constraint) = violation(
         complete_lesson(
             &pool,
@@ -1046,8 +1050,90 @@ async fn a_live_lesson_session_is_completed_once_by_its_parties(pool: PgPool) {
     );
     assert_eq!(
         (code.as_str(), constraint.as_str()),
-        (UNIQUE_VIOLATION, "lesson_completions_session_id_key")
+        (UNIQUE_VIOLATION, "lesson_completions_session_student_key")
     );
+    // グループレッスンの別の生徒の完了は同じセッションにも入る（生徒が結び付いた予約の生徒かは domain が判定する。D41）
+    complete_lesson(
+        &pool,
+        TABLE,
+        "session_id",
+        &session_id,
+        (&student(&pool).await, &coach_id),
+        true,
+    )
+    .await
+    .unwrap();
+}
+
+/// 通話セッション `session_id` に予約 `booking_id`（生徒 `student_id`）を `position` 番目に結び付ける。
+async fn link_booking(
+    pool: &PgPool,
+    session_id: &str,
+    booking_id: &str,
+    student_id: &str,
+    position: i16,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO live_lesson.session_bookings (session_id, booking_id, student_id, position)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4)",
+    )
+    .bind(session_id)
+    .bind(booking_id)
+    .bind(student_id)
+    .bind(position)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_booking_is_linked_to_at_most_one_live_lesson_session(pool: PgPool) {
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let session_id = start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    link_booking(&pool, &session_id, &booking_id, &student_id, 0)
+        .await
+        .unwrap();
+
+    // 同じ予約を別のセッションに結び付けられない
+    let (other_booking, other_student, _) = session_parties(&pool).await;
+    let other_session = start_session(&pool, &other_booking, &other_student, &coach_id)
+        .await
+        .unwrap();
+    let (code, constraint) =
+        violation(link_booking(&pool, &other_session, &booking_id, &student_id, 1).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "session_bookings_booking_id_key")
+    );
+    // 同じセッションに同じ生徒・同じ並びは 1 つ。生徒の欄は生徒だけ
+    let third_booking = Uuid::new_v4().to_string();
+    for (student, position, expected) in [
+        (
+            &student_id,
+            1,
+            (UNIQUE_VIOLATION, "session_bookings_session_student_key"),
+        ),
+        (
+            &other_student,
+            0,
+            (UNIQUE_VIOLATION, "session_bookings_session_position_key"),
+        ),
+        (
+            &coach_id,
+            1,
+            (FOREIGN_KEY_VIOLATION, "session_bookings_student_fkey"),
+        ),
+    ] {
+        let (code, constraint) =
+            violation(link_booking(&pool, &session_id, &third_booking, student, position).await);
+        assert_eq!((code.as_str(), constraint.as_str()), expected);
+    }
+    link_booking(&pool, &session_id, &third_booking, &other_student, 1)
+        .await
+        .unwrap();
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

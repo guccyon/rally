@@ -123,7 +123,7 @@ fn session(id: SessionId, booking: u128, ended: bool) -> LiveLessonSession {
         .confirm(account_id(STUDENT), &mut slot, nov1_10())
         .unwrap();
     let mut session =
-        LiveLessonSession::start(id, account_id(STUDENT), &booking, None, nov1_10()).unwrap();
+        LiveLessonSession::start(id, account_id(STUDENT), &booking, &[], None, nov1_10()).unwrap();
     if ended {
         session
             .end(

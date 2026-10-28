@@ -119,6 +119,7 @@ pub async fn ended_session(pool: &PgPool, ended_at: u64) -> LiveLessonSession {
         sessions.next_id(),
         booking.student_id(),
         &booking,
+        &[],
         None,
         at(10),
     )
