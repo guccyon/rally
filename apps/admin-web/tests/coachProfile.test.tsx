@@ -170,7 +170,11 @@ describe("自己紹介", () => {
   test("コーチの画面に「自己紹介」の欄があり、今の自己紹介文を出す", async () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
-      // 同じ画面の「通話への参加」が開いたときに呼ぶ。
+      // 同じ画面の「動画の添削」と「通話への参加」が開いたときに呼ぶ。
+      listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
+        ok: true,
+        data: { videos: [] },
+      })),
       listMyCoachBookings: vi.fn<CoachApi["listMyCoachBookings"]>(async () => ({
         ok: true,
         data: { bookings: [] },
