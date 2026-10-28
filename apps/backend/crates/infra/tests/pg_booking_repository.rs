@@ -354,7 +354,8 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
         late.ends_at(),
         SlotStatus::Booked,
         // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
-        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1),
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1)
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(found, [(cancelled, early), (confirmed.clone(), late)]);
@@ -426,7 +427,8 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
         late.ends_at(),
         SlotStatus::Booked,
         // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
-        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1),
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1)
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(

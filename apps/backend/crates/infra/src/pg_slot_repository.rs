@@ -184,7 +184,8 @@ pub(crate) fn slot_from_row(
         .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
     let capacity = SlotCapacity::new(capacity.into()).map_err(Unavailable::new)?;
     let count = |n: i64| u32::try_from(n).map_err(Unavailable::new);
-    let seats = SlotSeats::restore(capacity, count(pending)?, count(confirmed)?);
+    let seats = SlotSeats::restore(capacity, count(pending)?, count(confirmed)?)
+        .map_err(Unavailable::new)?;
     Slot::restore(
         slot_id_uuid::from_uuid(slot_id),
         account_id_uuid::from_uuid(coach_id),

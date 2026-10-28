@@ -107,6 +107,8 @@ mod tests {
     }
 
     fn slot(id: u128, coach: AccountId, sport: Sport, hour: u64, status: SlotStatus) -> Slot {
+        // 予約済みの枠は確定した予約 1 件で埋まっている
+        let confirmed = u32::from(status == SlotStatus::Booked);
         Slot::restore(
             SlotId::from_u128(id),
             coach,
@@ -114,7 +116,12 @@ mod tests {
             at(hour),
             at(hour + 1),
             status,
-            domain::scheduling::SlotSeats::default(),
+            domain::scheduling::SlotSeats::restore(
+                domain::scheduling::SlotCapacity::ONE,
+                0,
+                confirmed,
+            )
+            .unwrap(),
         )
         .unwrap()
     }

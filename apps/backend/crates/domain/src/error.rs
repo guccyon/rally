@@ -37,6 +37,13 @@ pub enum DomainError {
     },
     /// スロットに残りの席がない（有効な予約が定員に達している。定員 1 なら二重予約）
     SlotAlreadyBooked,
+    /// スロットの有効な予約（未確定か確定）の数 `active` が定員 `capacity` を超える
+    SlotSeatsOverCapacity { capacity: u8, active: u32 },
+    /// スロットの状態と席が合わない（予約済み（`Booked`）なら確定した予約が定員ちょうど、公開中（`Open`）なら
+    /// 定員未満。`status` は渡した状態）
+    SlotStatusMismatchesSeats {
+        status: crate::scheduling::SlotStatus,
+    },
     /// その生徒はそのスロットに有効な予約をすでに持っている（同じ生徒が同じ枠を 2 回は予約できない）
     SlotAlreadyBookedByStudent,
     /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにある）
