@@ -68,3 +68,7 @@ terms:
     ja: "メッセージ"
     definition: "スレッドの中で生徒または担当コーチが送る 1 通で、送信時刻と既読を持ち、月額の生徒は送り放題である。"
     context: messaging
+  - id: notification_settings
+    ja: "通知の受け取り設定"
+    definition: "アカウントごとに、プッシュ通知の種類（予約の確定・添削の返却・メッセージの受信）ごとに受け取るかを決める設定で、既定はすべて受け取る。"
+    context: notification

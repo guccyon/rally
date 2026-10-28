@@ -14,7 +14,7 @@ use domain::{
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId},
-    notification::PushNotification,
+    notification::{NotificationSettings, PushNotification},
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
 };
@@ -40,7 +40,7 @@ use crate::{
     messaging::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
-    notification::PushSender,
+    notification::{NotificationSettingsRepository, PushSender},
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -874,5 +874,60 @@ impl PushSender for RecordingPushSender {
     async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
         self.sent.lock().unwrap().push(notification);
         Ok(())
+    }
+}
+
+/// [`NotificationSettingsRepository`] のインメモリ実装。複製は同じ中身を共有する。
+///
+/// 読み取りから保存までは 1 つのロックの中で行うので、同じアカウントの変更は直列になる。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryNotificationSettingsRepository {
+    settings: Arc<Mutex<Vec<NotificationSettings>>>,
+}
+
+impl InMemoryNotificationSettingsRepository {
+    /// 既存の受け取り設定を入れて作る（アカウントごとに 1 つかは確かめない。テストの準備用）。
+    pub fn with_settings(settings: impl IntoIterator<Item = NotificationSettings>) -> Self {
+        Self {
+            settings: Arc::new(Mutex::new(settings.into_iter().collect())),
+        }
+    }
+
+    /// 保存した受け取り設定（最初に保存した順）。
+    pub fn all(&self) -> Vec<NotificationSettings> {
+        self.settings.lock().unwrap().clone()
+    }
+}
+
+impl NotificationSettingsRepository for InMemoryNotificationSettingsRepository {
+    async fn find(&self, account_id: AccountId) -> Result<NotificationSettings, Unavailable> {
+        Ok(self
+            .settings
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.account_id() == account_id)
+            .cloned()
+            .unwrap_or_else(|| NotificationSettings::new(account_id)))
+    }
+
+    async fn update<F>(
+        &self,
+        account_id: AccountId,
+        update: F,
+    ) -> Result<NotificationSettings, Unavailable>
+    where
+        F: FnOnce(&mut NotificationSettings) + Send,
+    {
+        let mut all = self.settings.lock().unwrap();
+        let index = match all.iter().position(|s| s.account_id() == account_id) {
+            Some(index) => index,
+            None => {
+                all.push(NotificationSettings::new(account_id));
+                all.len() - 1
+            }
+        };
+        update(&mut all[index]);
+        Ok(all[index].clone())
     }
 }

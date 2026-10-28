@@ -101,7 +101,7 @@ async fn subscription_entitlement(pool: &PgPool, student_id: &str) -> String {
 async fn migrations_create_core_tables(pool: PgPool) {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_schema || '.' || table_name FROM information_schema.tables
-         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson', 'messaging')
+         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson', 'messaging', 'notification')
          ORDER BY 1",
     )
     .fetch_all(&pool)
@@ -124,6 +124,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "live_lesson.sessions",
             "messaging.messages",
             "messaging.threads",
+            "notification.notification_settings",
             "scheduling.bookings",
             "scheduling.slots",
         ]
@@ -1258,5 +1259,88 @@ async fn a_lesson_is_reviewed_once_by_a_student_with_one_to_five(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (UNIQUE_VIOLATION, "lesson_reviews_lesson_id_key")
+    );
+}
+
+/// アカウント `account_id` の通知の種類 `kind` の受け取り設定の行を入れる。
+async fn set_notification(
+    pool: &PgPool,
+    account_id: &str,
+    kind: &str,
+    enabled: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification.notification_settings (account_id, kind, enabled)
+         VALUES ($1::uuid, $2, $3)",
+    )
+    .bind(account_id)
+    .bind(kind)
+    .bind(enabled)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn notification_settings_are_one_per_account_and_known_kind(pool: PgPool) {
+    use domain::notification::NotificationKind;
+    use infra::notification_values::notification_kind_value;
+
+    let kinds: Vec<&str> = NotificationKind::ALL
+        .into_iter()
+        .map(notification_kind_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.notification_settings",
+            "notification_settings_kind_check"
+        )
+        .await,
+        kinds
+    );
+
+    // 生徒もコーチも持てる
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    for kind in &kinds {
+        set_notification(&pool, &student_id, kind, false)
+            .await
+            .unwrap();
+        set_notification(&pool, &coach_id, kind, true)
+            .await
+            .unwrap();
+    }
+
+    // 未知の種類は入らない
+    let (code, constraint) =
+        violation(set_notification(&pool, &student_id, "booking_cancelled", false).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "notification_settings_kind_check")
+    );
+    // 同じアカウントの同じ種類は 1 つ
+    let (code, constraint) = violation(set_notification(&pool, &student_id, kinds[0], true).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "notification_settings_pkey")
+    );
+    // ないアカウントの設定は入らない
+    let (code, constraint) = violation(
+        set_notification(
+            &pool,
+            "00000000-0000-4000-8000-000000000001",
+            kinds[0],
+            false,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "notification_settings_account_id_fkey"
+        )
     );
 }

@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -46,6 +46,7 @@
 | | `lesson_completions` | 非同期レッスンの完了記録（T14 の expand で追加。置き場所は ADR 0006）。添削を返した動画 1 本につき 1 行（`video_reviews` への外部キーと `lesson_completions_video_id_key`）。生徒・コーチは動画の当事者（`lesson_completions_video_fkey`） |
 | `messaging` | `threads` | 生徒と担当コーチの 1 対 1 のチャットのスレッド（D01 の expand で追加。ADR 0007）。生徒とコーチの組に 1 つ（`threads_student_id_coach_id_key`）。予約の確定で開くが、予約は scheduling の持ち物なので外部キーは張らない |
 | | `messages` | スレッドのメッセージ。送り手は当事者の別（`sender_role`: `student` / `coach`）で持ち、本文は空でない。既読（`read_at`）は送信の後（`messages_read_after_sent`）。送った順は `seq` |
+| `notification` | `notification_settings` | 通知の受け取り設定（D16 の expand で追加）。アカウント × 通知の種類（`kind`: `booking_confirmed` / `video_review_returned` / `message_received`）で 1 行（`notification_settings_pkey`）、受け取るかは `enabled`。行のない種類は既定のオン（domain の `NotificationSettings`）として読むので、変えたことのないアカウントには行がない。通知そのものは保存しない |
 
 列挙は Postgres の enum 型ではなく `text` と `CHECK` で持つ（値の削除・改名が enum 型だと expand/contract に分けにくい）。
 

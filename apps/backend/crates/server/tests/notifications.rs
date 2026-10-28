@@ -8,6 +8,9 @@
 //!
 //! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
 //! `MessageSent`）では受け手（送り手でない側の当事者）に届く。
+//!
+//! 受け取る人が通知の受け取り設定（`PUT /notification-settings/me`）でその種類をオフにしていれば送らない。受け取り設定が
+//! Postgres に保存されることは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
 
 use std::time::{Duration, SystemTime};
 
@@ -340,4 +343,129 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
         ]
     );
     assert_eq!(push.sent()[3].recipient(), coach_id);
+}
+
+#[tokio::test]
+async fn a_kind_the_student_turned_off_is_not_pushed_to_the_student() {
+    let (router, push, coach_id, coach, student_id, student) = setup().await;
+
+    // 生徒が予約の確定の通知をオフにする
+    let settings = call(
+        &router,
+        "PUT",
+        "/notification-settings/me",
+        Some(&student),
+        json!({ "booking_confirmed": false }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(settings["booking_confirmed"], false);
+
+    let slot = call(
+        &router,
+        "POST",
+        "/slots",
+        Some(&coach),
+        json!({ "sport": "tennis", "starts_at": "2026-10-10T10:00:00Z", "ends_at": "2026-10-10T11:00:00Z" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let booking = call(
+        &router,
+        "POST",
+        "/bookings",
+        Some(&student),
+        json!({ "slot_id": slot["slot_id"], "is_trial": true }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let booking_id = booking["booking_id"].as_str().unwrap();
+    call(
+        &router,
+        "POST",
+        &format!("/bookings/{booking_id}/confirm"),
+        Some(&student),
+        json!({}),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        push.sent(),
+        [PushNotification::BookingReceived {
+            student_id,
+            coach_id,
+            booking_id: booking_id_uuid::parse(booking_id).unwrap(),
+        }],
+        "生徒には送らず、コーチ（受け取り設定はオンのまま）には送る"
+    );
+}
+
+/// 保存先を Postgres にした組み立てで、受け取り設定の変更が保存されて次の照会に出ることを確かめる。
+///
+/// Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+/// `cargo test -p server --test notifications -- --include-ignored` で走らせる。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(oct5()),
+        RecordingAnalyticsSink::default(),
+    );
+    let account = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "hanako@example.com", "display_name": "はなこ", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let student = account["access_token"].as_str().unwrap();
+    let all_on = json!({
+        "student_id": account["student"]["student_id"],
+        "booking_confirmed": true,
+        "video_review_returned": true,
+        "message_received": true,
+    });
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/notification-settings/me",
+            Some(student),
+            Value::Null,
+            StatusCode::OK
+        )
+        .await,
+        all_on,
+        "変えていなければすべてオン"
+    );
+
+    let mut expected = all_on;
+    expected["video_review_returned"] = json!(false);
+    assert_eq!(
+        call(
+            &router,
+            "PUT",
+            "/notification-settings/me",
+            Some(student),
+            json!({ "video_review_returned": false }),
+            StatusCode::OK,
+        )
+        .await,
+        expected
+    );
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/notification-settings/me",
+            Some(student),
+            Value::Null,
+            StatusCode::OK
+        )
+        .await,
+        expected
+    );
 }

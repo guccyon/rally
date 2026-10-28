@@ -191,6 +191,12 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         application::review::ListCoachReviews::new(
             application::in_memory::InMemoryLessonReviewRepository::default(),
         ),
+        application::notification::GetNotificationSettings::new(
+            application::in_memory::InMemoryNotificationSettingsRepository::default(),
+        ),
+        application::notification::UpdateNotificationSettings::new(
+            application::in_memory::InMemoryNotificationSettingsRepository::default(),
+        ),
         FakeTokens,
     )
 }

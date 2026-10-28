@@ -15,6 +15,7 @@ mod live_lesson_sessions;
 mod me;
 mod message;
 mod messaging;
+mod notification_settings;
 mod reviews;
 mod slot_supply;
 mod slots;
@@ -42,6 +43,9 @@ use application::{
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         SendMessage,
+    },
+    notification::{
+        GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
@@ -79,8 +83,9 @@ pub use error::ApiError;
 /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
 /// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。
+/// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
+pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
@@ -105,6 +110,8 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
     get_coach_review_summary: GetCoachReviewSummary<N>,
     list_coach_reviews: ListCoachReviews<N>,
+    get_notification_settings: GetNotificationSettings<Z>,
+    update_notification_settings: UpdateNotificationSettings<Z>,
     tokens: T,
 ) -> Router
 where
@@ -124,6 +131,7 @@ where
     H: ChatGate + 'static,
     O: CompletedLessonLookup + 'static,
     N: LessonReviewRepository + 'static,
+    Z: NotificationSettingsRepository + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
     C: Clock + 'static,
@@ -272,6 +280,17 @@ where
             get_coach_review_summary,
             list_coach_reviews,
         }));
+    let notification_settings = Router::new()
+        .route(
+            "/notification-settings/me",
+            get(notification_settings::get_my_notification_settings::<Z>)
+                .put(notification_settings::update_my_notification_settings::<Z>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(notification_settings::NotificationSettingsState {
+            get_notification_settings,
+            update_notification_settings,
+        }));
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
@@ -287,6 +306,7 @@ where
         .merge(lessons)
         .merge(messaging)
         .merge(reviews)
+        .merge(notification_settings)
         .layer(auth::TokenVerification::layer(tokens))
 }
 
