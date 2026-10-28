@@ -6,12 +6,14 @@ rubric_ids: [ARCH-002]
 pair:
   a: { ref: "file:patches/0015-variant.diff", derived_from: "github:guccyon/rally#124", note: "負例（builder が元の PR の差分に 1 つだけ欠陥を入れた）" }
   b: { ref: "github:guccyon/rally#124", note: "マージした PR（元）" }
-preferred: tie
+preferred: b   # 成果物として採点（2026-10-29 方針 A）: 負例はコード 1 行だけを変え、同じ差分の契約・試験・説明と食い違うので元が望ましい
+product_judgment: tie   # 製品の振る舞いとしての Tetsuro の判断（下の confirmed_by）。仕様への差し戻しとして扱う
 confidence: medium
 reason: "負例はPostgres の実装だけ並べ方を登録順にした（契約・README・インメモリの実装は表示名の順）"
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
+rescored_at: "2026-10-29"
 confirmed_by: Tetsuro   # 2026-10-28「些細。order を明示しないときの既定の物理順なら登録の昇順で良い。アプリは常に order を明示すべき」
 builder_candidate_was: b   # builder は欠陥として作ったが、人の目では欠陥でない（仕様からのずれと製品の価値の違い）
 lesson: "ポートの実装 2 つの振る舞いの食い違い"
