@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app のスロットを探す画面で、各枠にそのコーチの評価の件数と平均（例「★ 4.2（12 件）」、0 件なら「評価はまだありません」）を出し、「評価を見る」でそのコーチの評価の一覧（新しい順。点・一言・送った時刻）を開く（`getCoachReviewSummary` / `listCoachReviews`）。評価を読めなくても検索結果と体験予約はそのまま使え、評価の欄にだけその旨を出す。API と契約の変更はない（#194）
 - 生徒がコーチの評価を読める API: student-app の契約に `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。件数と平均）と `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。送った時刻の新しい順の一覧）を足し、生徒の役割のトークンでどのコーチの分も読めるようにした（今までは 403）。形・数え方・並びは admin-web と同じで、一覧に評価した生徒は載せない。本部（すべて）とコーチ（自分の分だけ）の読める範囲は変えない。student-app は型と API の呼び出しを契約に合わせただけで、画面はまだない（#193）
 - student-app のスロットを探す画面で、定員 2 以上の枠（グループレッスン）のスポーツの下に「グループ（定員 N 人・残り M 席）」を出す（`searchSlots` の `capacity` / `remaining_seats`）。定員 1 の枠は今までどおり。API と契約の変更はない（#188）
 - admin-web のコーチの「予約枠」で、枠を公開するときに定員（1〜6 人。既定は「1 人（マンツーマン）」）を選び、`publishSlot` の `capacity` で送る。自分の枠の一覧では、定員 2 以上の枠に「定員 N 人・残り M 席」を出す（定員 1 の枠は今までどおり）。API と契約の変更はない（#187）

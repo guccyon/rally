@@ -70,6 +70,7 @@ void main() {
     expect(api.calls, [
       'registerAccount',
       'searchSlots',
+      'getCoachReviewSummary',
       'createBooking',
       'confirmBooking',
       'startLiveLessonSession',
@@ -104,6 +105,7 @@ void main() {
       expect(api.calls, [
         'registerAccount',
         'searchSlots',
+        'getCoachReviewSummary',
         'createBooking',
         'confirmBooking',
         'submitVideo',

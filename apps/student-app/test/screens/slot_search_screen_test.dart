@@ -27,7 +27,7 @@ void main() {
 
     expect(find.text('スポーツを選ぶと、予約できるスロットを表示します。'), findsOneWidget);
     await tapText(tester, 'テニス');
-    expect(api.requests.last, Sport.tennis);
+    expect(api.requests.whereType<Sport>().last, Sport.tennis);
     expect(find.text('体験予約する'), findsOneWidget);
 
     await tapText(tester, '体験予約する');
@@ -50,7 +50,7 @@ void main() {
 
     await tapText(tester, 'サッカー');
 
-    expect(api.requests.last, Sport.soccer);
+    expect(api.requests.whereType<Sport>().last, Sport.soccer);
     expect(find.text('予約できるスロットはありません。'), findsOneWidget);
   });
 
@@ -73,7 +73,7 @@ void main() {
 
     await tapText(tester, '水泳');
 
-    expect(api.requests.last, Sport.swimming);
+    expect(api.requests.whereType<Sport>().last, Sport.swimming);
     expect(container.read(studentFlowProvider).searchSport, Sport.swimming);
     expect(find.text('水泳'), findsNWidgets(2), reason: '選択肢とスロットの行');
     expect(find.text('体験予約する'), findsOneWidget);
@@ -280,5 +280,193 @@ void main() {
     expect(Fixtures.slot.capacity, 1);
     expect(find.textContaining('定員'), findsNothing);
     expect(find.textContaining('席'), findsNothing);
+  });
+
+  group('コーチの評価', () {
+    testWidgets('検索結果の枠に、そのコーチの評価の件数と平均を出す', (tester) async {
+      final api = FakeStudentApi(
+        slots: [Fixtures.slotWithCoach(displayName: '佐藤')],
+      );
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+
+      expect(api.calls, ['searchSlots', 'getCoachReviewSummary']);
+      expect(api.requests.last, Fixtures.coachId);
+      final card = find.byType(Card);
+      Finder inCard(String text) =>
+          find.descendant(of: card, matching: find.text(text));
+      final summary = inCard('★ 4.5（2 件）');
+      expect(summary, findsOneWidget);
+      expect(inCard('評価を見る'), findsOneWidget);
+      expect(
+        tester.getTopLeft(summary).dy,
+        greaterThan(tester.getTopLeft(inCard('コーチ: 佐藤')).dy),
+      );
+      expect(
+        tester.getTopLeft(inCard('体験予約する')).dy,
+        greaterThan(tester.getTopLeft(summary).dy),
+      );
+    });
+
+    testWidgets('押すとそのコーチの評価の一覧を新しい順に出し、もう一度押すと閉じる', (tester) async {
+      final api = FakeStudentApi();
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+      await tapText(tester, 'テニス');
+
+      await tapText(tester, '評価を見る');
+
+      expect(api.calls.last, 'listCoachReviews');
+      expect(api.requests.last, Fixtures.coachId);
+      final [newer, older] = Fixtures.coachReviews;
+      final texts = [
+        '5 点（5 点満点）',
+        newer.comment,
+        formatDateTime(newer.submittedAt),
+        '4 点（5 点満点）',
+        older.comment,
+        formatDateTime(older.submittedAt),
+      ];
+      final tops = [for (final t in texts) tester.getTopLeft(find.text(t)).dy];
+      for (var i = 1; i < tops.length; i++) {
+        expect(tops[i], greaterThan(tops[i - 1]), reason: '${texts[i]} の並び');
+      }
+
+      await tapText(tester, '評価を閉じる');
+      expect(find.text(newer.comment), findsNothing);
+      expect(find.text('評価を見る'), findsOneWidget);
+
+      await tapText(tester, '評価を見る');
+      expect(
+        api.calls.where((c) => c == 'listCoachReviews'),
+        hasLength(1),
+        reason: '読んだ一覧は検索し直すまで使い回す',
+      );
+      expect(find.text(newer.comment), findsOneWidget);
+    });
+
+    testWidgets('評価が 0 件のコーチは、評価がまだない旨だけを出す', (tester) async {
+      final api = FakeStudentApi(
+        coachReviewSummaries: {
+          Fixtures.coachId: const CoachReviewSummary(
+            coachId: Fixtures.coachId,
+            reviewCount: 0,
+            averageRating: null,
+          ),
+        },
+      );
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+
+      expect(find.text('評価はまだありません'), findsOneWidget);
+      expect(find.text('評価を見る'), findsNothing);
+    });
+
+    testWidgets('同じコーチの枠が並んでも件数と平均は 1 回だけ読み、コーチごとに出す', (tester) async {
+      const otherCoachId = '23232323-2323-4323-8323-232323232323';
+      final slot = Fixtures.slot;
+      Slot slotOf(String slotId, String coachId) => Slot(
+        slotId: slotId,
+        coachId: coachId,
+        sport: slot.sport,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      );
+      final api = FakeStudentApi(
+        slots: [
+          slotOf('slot-1', Fixtures.coachId),
+          slotOf('slot-2', otherCoachId),
+          slotOf('slot-3', Fixtures.coachId),
+        ],
+        coachReviewSummaries: {
+          otherCoachId: const CoachReviewSummary(
+            coachId: otherCoachId,
+            reviewCount: 12,
+            averageRating: 4.17,
+          ),
+        },
+      );
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+
+      expect(
+        api.calls.where((c) => c == 'getCoachReviewSummary'),
+        hasLength(2),
+      );
+      expect(find.text('★ 4.5（2 件）'), findsNWidgets(2));
+      expect(find.text('★ 4.2（12 件）'), findsOneWidget);
+    });
+
+    testWidgets('件数と平均を読めなくても検索結果は出し、評価の欄にだけその旨を出す', (tester) async {
+      final api = FakeStudentApi(
+        failures: {'getCoachReviewSummary': Fixtures.unreachable},
+      );
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+
+      expect(find.text('評価を読み込めませんでした。'), findsOneWidget);
+      expect(find.text('評価を見る'), findsNothing);
+      final state = container.read(studentFlowProvider);
+      expect(state.slots, hasLength(1));
+      expect(state.errorMessage, isNull);
+      expect(state.busy, isFalse);
+
+      await tapText(tester, '体験予約する');
+      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+    });
+
+    testWidgets('評価の一覧を読めなければその旨を出し、読み直せる。検索結果はそのまま使える', (tester) async {
+      final failures = {'listCoachReviews': Fixtures.unreachable};
+      final api = FakeStudentApi(failures: failures);
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+      await tapText(tester, 'テニス');
+
+      await tapText(tester, '評価を見る');
+
+      expect(find.text('評価の一覧を読み込めませんでした。'), findsOneWidget);
+      expect(find.text('★ 4.5（2 件）'), findsOneWidget);
+      expect(container.read(studentFlowProvider).errorMessage, isNull);
+      expect(find.text('体験予約する'), findsOneWidget);
+
+      failures.clear();
+      await tapText(tester, 'もう一度読み込む');
+
+      expect(api.calls.where((c) => c == 'listCoachReviews'), hasLength(2));
+      expect(find.text('評価の一覧を読み込めませんでした。'), findsNothing);
+      expect(find.text(Fixtures.coachReviews.first.comment), findsOneWidget);
+    });
   });
 }

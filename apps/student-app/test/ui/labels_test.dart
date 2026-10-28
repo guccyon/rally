@@ -98,4 +98,22 @@ void main() {
     );
     expect(slotSeatsLabel(slot(capacity: 1, remainingSeats: 1)), isNull);
   });
+
+  test('コーチの評価の件数と平均は小数第 1 位までで出し、0 件なら評価がまだない旨を出す', () {
+    CoachReviewSummary summary(int count, double? average) =>
+        CoachReviewSummary(
+          coachId: 'coach-1',
+          reviewCount: count,
+          averageRating: average,
+        );
+    expect(coachReviewSummaryLabel(summary(12, 4.2)), '★ 4.2（12 件）');
+    expect(coachReviewSummaryLabel(summary(4, 4.25)), '★ 4.3（4 件）');
+    expect(coachReviewSummaryLabel(summary(3, 4.67)), '★ 4.7（3 件）');
+    expect(coachReviewSummaryLabel(summary(1, 5)), '★ 5.0（1 件）');
+    expect(coachReviewSummaryLabel(summary(0, null)), '評価はまだありません');
+  });
+
+  test('コーチが受けた評価の点は 5 点満点を添えて出す', () {
+    expect(coachReviewRatingLabel(4), '4 点（5 点満点）');
+  });
 }

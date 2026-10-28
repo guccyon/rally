@@ -41,7 +41,8 @@ class SlotSearchScreen extends ConsumerWidget {
 }
 
 /// スロットの行。自己紹介文を行の幅で読めるよう縦に並べる: 日時 → スポーツ →
-/// グループレッスンの枠なら定員と残りの席 → 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→ 体験予約のボタン（行の幅いっぱい）
+/// グループレッスンの枠なら定員と残りの席 → 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→
+/// コーチの評価の件数と平均（押すと評価の一覧）→ 体験予約のボタン（行の幅いっぱい）
 class _SlotCard extends StatelessWidget {
   const _SlotCard({required this.slot, required this.onBook});
 
@@ -71,6 +72,8 @@ class _SlotCard extends StatelessWidget {
               const SizedBox(height: 4),
               _CoachBio(bio: bio),
             ],
+            const SizedBox(height: 4),
+            _CoachReviews(coachId: slot.coachId),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -133,6 +136,108 @@ class _CoachBioState extends State<_CoachBio> {
           ),
         );
       },
+    );
+  }
+}
+
+/// コーチの評価の件数と平均。評価があれば押すとそのコーチの評価の一覧（新しい順。点・一言・送った時刻）を出す（もう一度押すと戻す）。
+/// 評価を読めなかったときは、この欄にだけその旨を出す（検索結果と体験予約はそのまま使える）
+class _CoachReviews extends ConsumerStatefulWidget {
+  const _CoachReviews({required this.coachId});
+
+  final String coachId;
+
+  @override
+  ConsumerState<_CoachReviews> createState() => _CoachReviewsState();
+}
+
+class _CoachReviewsState extends ConsumerState<_CoachReviews> {
+  bool _expanded = false;
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    final state = ref.read(studentFlowProvider);
+    if (_expanded && !state.coachReviews.containsKey(widget.coachId)) {
+      _load();
+    }
+  }
+
+  void _load() =>
+      ref.read(studentFlowProvider.notifier).loadCoachReviews(widget.coachId);
+
+  @override
+  Widget build(BuildContext context) {
+    final coachId = widget.coachId;
+    final summary = ref.watch(
+      studentFlowProvider.select((s) => s.coachReviewSummaries[coachId]),
+    );
+    final summaryFailed = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.coachReviewSummaryFailures.contains(coachId),
+      ),
+    );
+    if (summaryFailed) return const Text('評価を読み込めませんでした。');
+    if (summary == null) return const SizedBox.shrink();
+    final label = coachReviewSummaryLabel(summary);
+    if (summary.reviewCount == 0) return Text(label);
+    final link = TextStyle(color: Theme.of(context).colorScheme.primary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _toggle,
+          child: Row(
+            children: [
+              Text(label),
+              const SizedBox(width: 8),
+              Text(_expanded ? '評価を閉じる' : '評価を見る', style: link),
+            ],
+          ),
+        ),
+        if (_expanded) _list(),
+      ],
+    );
+  }
+
+  Widget _list() {
+    final coachId = widget.coachId;
+    final reviews = ref.watch(
+      studentFlowProvider.select((s) => s.coachReviews[coachId]),
+    );
+    final failed = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.coachReviewsFailures.contains(coachId),
+      ),
+    );
+    if (failed) {
+      return Row(
+        children: [
+          const Flexible(child: Text('評価の一覧を読み込めませんでした。')),
+          TextButton(onPressed: _load, child: const Text('もう一度読み込む')),
+        ],
+      );
+    }
+    if (reviews == null) return const Text('評価を読み込んでいます…');
+    // 契約どおり送った時刻の新しい順で返るので、返った順のまま出す
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final review in reviews)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(coachReviewRatingLabel(review.rating)),
+                Text(review.comment),
+                Text(
+                  formatDateTime(review.submittedAt),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
