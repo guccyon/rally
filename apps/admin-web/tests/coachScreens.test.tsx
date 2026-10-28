@@ -111,6 +111,41 @@ describe("枠の公開", () => {
     expect(screen.queryByText("まだ枠を公開していません。")).not.toBeInTheDocument();
   });
 
+  test("スポーツの欄に契約の全スポーツを出し、水泳の枠を公開すると一覧に「水泳」で出る", async () => {
+    const published = coachSlot("c0000000-0000-4000-8000-000000000007", "swimming", 72, "open", false);
+    const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({
+      ok: true,
+      data: published.slot,
+    }));
+    const listMyCoachSlots = listOf([], [published]);
+    const user = userEvent.setup();
+    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+
+    await screen.findByText("まだ枠を公開していません。");
+    const sportSelect = screen.getByLabelText("スポーツ");
+    expect(within(sportSelect).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "テニス",
+      "ゴルフ",
+      "野球",
+      "サッカー",
+      "バスケットボール",
+      "水泳",
+    ]);
+    await user.selectOptions(sportSelect, "水泳");
+    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
+    await user.click(screen.getByRole("button", { name: "枠を公開" }));
+
+    expect(publishSlot).toHaveBeenCalledWith({
+      sport: "swimming",
+      starts_at: new Date("2026-11-01T10:00").toISOString(),
+      ends_at: new Date("2026-11-01T11:00").toISOString(),
+    });
+    const upcoming = await screen.findByRole("table", { name: "これからの枠" });
+    expect(firstCells(upcoming)).toEqual(["水泳"]);
+    expect(within(upcoming).getByRole("row", { name: /水泳/ })).toHaveTextContent("公開中");
+  });
+
   test("枠が 0 件ならその旨を出す", async () => {
     render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf([]) }} />);
 
