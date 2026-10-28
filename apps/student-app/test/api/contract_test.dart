@@ -35,6 +35,10 @@ void main() {
       enumOf('SubscriptionStatus'),
       SubscriptionStatus.values.map((e) => e.wire).toList(),
     ),
+    'SubscriptionPlan': (
+      enumOf('SubscriptionPlan'),
+      SubscriptionPlan.values.map((e) => e.wire).toList(),
+    ),
     'LiveLessonSessionStatus': (
       enumOf('LiveLessonSessionStatus'),
       LiveLessonSessionStatus.values.map((e) => e.wire).toList(),
@@ -136,6 +140,38 @@ void main() {
   });
 
   String refOf(YamlMap node) => node[r'$ref'] as String;
+
+  List<String> requiredOf(String schema) =>
+      ((schemas[schema] as YamlMap)['required'] as YamlList)
+          .cast<String>()
+          .toList();
+
+  test('契約プランの項目が契約と一致する（startSubscription・getMyEntitlement）', () {
+    // StartSubscriptionRequest.toJson が書く項目。plan は任意（省けば standard）
+    expect(propertiesOf('StartSubscriptionRequest'), [
+      'sport',
+      'plan',
+      'payment_method_token',
+    ]);
+    expect(requiredOf('StartSubscriptionRequest'), isNot(contains('plan')));
+    final requestPlan =
+        ((schemas['StartSubscriptionRequest'] as YamlMap)['properties']
+                as YamlMap)['plan']
+            as YamlMap;
+    expect(refOf(requestPlan), '#/components/schemas/SubscriptionPlan');
+
+    // Subscription.fromJson・Entitlement.fromJson が読む項目
+    expect(propertiesOf('Subscription'), contains('plan'));
+    expect(requiredOf('Subscription'), contains('plan'));
+    expect(propertiesOf('Entitlement'), contains('plan'));
+    expect(requiredOf('Entitlement'), isNot(contains('plan')));
+    expect(propertiesOf('LiveLessonQuota'), [
+      'month',
+      'limit',
+      'used',
+      'remaining',
+    ]);
+  });
 
   test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {
     // MyBooking.fromJson・MyBookingList.fromJson が読む項目

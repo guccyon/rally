@@ -492,12 +492,14 @@ async fn subscription_entitlement_matches_its_subscription(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn live_lesson_quota_is_two_per_calendar_month(pool: PgPool) {
+async fn live_lesson_quota_cannot_be_used_beyond_its_remaining(pool: PgPool) {
+    // 残回数はプランの上限（domain の SubscriptionPlan）から数えて書く。DB は 0 以上だけを守り、上限の数は持たない
     let student_id = student(&pool).await;
     let entitlement_id = subscription_entitlement(&pool, &student_id).await;
 
     sqlx::query(
-        "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month) VALUES ($1::uuid, '2026-11-01')",
+        "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month, remaining_live_lessons)
+         VALUES ($1::uuid, '2026-11-01', 2)",
     )
     .bind(&entitlement_id)
     .execute(&pool)
@@ -515,7 +517,7 @@ async fn live_lesson_quota_is_two_per_calendar_month(pool: PgPool) {
     };
     consume().await.unwrap();
     consume().await.unwrap();
-    // 3 回目は入らない（不変条件 1）
+    // 残回数を使い切った後は入らない（standard の 3 回目。不変条件 1）
     let (code, constraint) = violation(consume().await);
     assert_eq!(
         (code.as_str(), constraint.as_str()),
@@ -528,7 +530,8 @@ async fn live_lesson_quota_is_two_per_calendar_month(pool: PgPool) {
     // 枠は暦月の初日で持つ
     let (code, _) = violation(
         sqlx::query(
-            "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month) VALUES ($1::uuid, '2026-12-15')",
+            "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month, remaining_live_lessons)
+             VALUES ($1::uuid, '2026-12-15', 2)",
         )
         .bind(&entitlement_id)
         .execute(&pool)
@@ -553,7 +556,8 @@ async fn only_subscription_entitlements_have_live_lesson_quota(pool: PgPool) {
     .unwrap();
     let (code, constraint) = violation(
         sqlx::query(
-            "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month) VALUES ($1::uuid, '2026-11-01')",
+            "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month, remaining_live_lessons)
+         VALUES ($1::uuid, '2026-11-01', 2)",
         )
         .bind(one_shot)
         .execute(&pool)
@@ -1119,7 +1123,8 @@ async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
     use domain::scheduling::BookingStatus;
     use infra::{
         entitlement_values::{
-            CONTRACT_TYPES, SUBSCRIPTION_STATUSES, contract_type_value, subscription_status_value,
+            CONTRACT_TYPES, SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUSES, contract_type_value,
+            subscription_plan_value, subscription_status_value,
         },
         scheduling_values::booking_status_value,
     };
@@ -1158,6 +1163,46 @@ async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
         .await,
         subscription_statuses
     );
+    let subscription_plans: Vec<&str> = SUBSCRIPTION_PLANS
+        .into_iter()
+        .map(subscription_plan_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "entitlement.subscriptions",
+            "subscriptions_plan_check"
+        )
+        .await,
+        subscription_plans
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn subscriptions_default_to_the_standard_plan_and_reject_unknown_plans(pool: PgPool) {
+    // 既存の契約（列を足す前の行）は standard として読む（変更シナリオ cs-003）
+    let student_id = student(&pool).await;
+    subscription_entitlement(&pool, &student_id).await;
+    let plan: String = sqlx::query_scalar("SELECT plan FROM entitlement.subscriptions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(plan, "standard");
+
+    let (code, constraint) = violation(
+        sqlx::query(
+            "INSERT INTO entitlement.subscriptions (student_id, sport, plan)
+             VALUES ($1::uuid, 'tennis', 'premium')",
+        )
+        .bind(student(&pool).await)
+        .execute(&pool)
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "subscriptions_plan_check")
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -1195,7 +1240,8 @@ async fn quota_bookings_belong_to_a_quota_month(pool: PgPool) {
     let student_id = student(&pool).await;
     let entitlement_id = subscription_entitlement(&pool, &student_id).await;
     sqlx::query(
-        "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month) VALUES ($1::uuid, '2026-11-01')",
+        "INSERT INTO entitlement.live_lesson_quotas (entitlement_id, month, remaining_live_lessons)
+         VALUES ($1::uuid, '2026-11-01', 2)",
     )
     .bind(&entitlement_id)
     .execute(&pool)

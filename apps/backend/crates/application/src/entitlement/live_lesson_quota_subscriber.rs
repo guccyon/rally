@@ -118,7 +118,10 @@ mod tests {
     use std::time::Duration;
 
     use domain::{
-        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
+        },
         identity::Sport,
     };
     use uuid::Uuid;
@@ -140,7 +143,10 @@ mod tests {
             STUDENT,
             Sport::Tennis,
             SubscriptionId::from_u128(20),
-            LiveLessonQuota::fresh(YearMonth::new(2026, 10).unwrap()),
+            LiveLessonQuota::fresh(
+                SubscriptionPlan::Standard,
+                YearMonth::new(2026, 10).unwrap(),
+            ),
         )
         .unwrap();
         LiveLessonQuotaSubscriber::new(InMemoryEntitlementRepository::with_entitlements([monthly]))

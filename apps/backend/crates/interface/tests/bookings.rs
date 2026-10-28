@@ -40,7 +40,9 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+    entitlement::{
+        Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+    },
     identity::{AccountId, Role, Sport},
     scheduling::{BookingId, Slot, SlotId, SlotStatus},
 };
@@ -650,6 +652,7 @@ async fn confirming_without_live_lesson_quota_left_is_409_live_lesson_quota_exce
         Sport::Tennis,
         SubscriptionId::from_u128(40),
         LiveLessonQuota::restore(
+            SubscriptionPlan::Standard,
             YearMonth::new(2026, 10).unwrap(),
             [BookingId::from_u128(1), BookingId::from_u128(2)],
         )

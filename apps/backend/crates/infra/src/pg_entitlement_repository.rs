@@ -13,6 +13,7 @@ use domain::{
     DomainError,
     entitlement::{
         ContractType, Entitlement, EntitlementId, LiveLessonQuota, Subscription, SubscriptionId,
+        SubscriptionPlan,
     },
     identity::AccountId,
 };
@@ -23,7 +24,8 @@ use sqlx::{
 
 use crate::{
     entitlement_values::{
-        contract_type_from_value, contract_type_value, subscription_status_value,
+        contract_type_from_value, contract_type_value, subscription_plan_from_value,
+        subscription_plan_value, subscription_status_value,
     },
     identity_values::{sport_from_value, sport_value},
     pg_support::{lock, month_start, timestamp, year_month},
@@ -32,7 +34,8 @@ use crate::{
 /// [`EntitlementRepository`] の Postgres 実装。
 ///
 /// 月額の通話の枠は暦月ごとの `live_lesson_quotas` の行（残回数）と、その月に枠を使った予約の
-/// `live_lesson_quota_bookings` の行で持ち（ADR 0005）、読むのは最後に記録した暦月の枠だけ。
+/// `live_lesson_quota_bookings` の行で持ち（ADR 0005）、読むのは最後に記録した暦月の枠だけ。枠の上限は元の契約の
+/// `subscriptions.plan`（契約プラン）から domain が決める。
 /// 不変条件の判定は domain の [`Entitlement`] だけが行い、読み取りから保存までは生徒ごとの advisory lock で
 /// 直列にする。
 #[derive(Debug, Clone)]
@@ -40,8 +43,16 @@ pub struct PgEntitlementRepository {
     pool: PgPool,
 }
 
-/// `entitlement.entitlements` の 1 行（entitlement_id, contract_type, sport, subscription_id, remaining_video_reviews）。
-type EntitlementRow = (Uuid, String, String, Option<Uuid>, Option<i32>);
+/// `entitlement.entitlements` の 1 行（entitlement_id, contract_type, sport, subscription_id, remaining_video_reviews）と、
+/// 元の月額契約のプラン（ワンショットは null）。
+type EntitlementRow = (
+    Uuid,
+    String,
+    String,
+    Option<Uuid>,
+    Option<i32>,
+    Option<String>,
+);
 
 impl PgEntitlementRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -60,14 +71,18 @@ impl PgEntitlementRepository {
         student_id: AccountId,
     ) -> Result<Option<Entitlement>, Unavailable> {
         let row: Option<EntitlementRow> = sqlx::query_as(
-            "SELECT entitlement_id, contract_type, sport, subscription_id, remaining_video_reviews
-             FROM entitlement.entitlements WHERE student_id = $1",
+            "SELECT e.entitlement_id, e.contract_type, e.sport, e.subscription_id,
+                    e.remaining_video_reviews, s.plan
+             FROM entitlement.entitlements e
+             LEFT JOIN entitlement.subscriptions s ON s.subscription_id = e.subscription_id
+             WHERE e.student_id = $1",
         )
         .bind(account_id_uuid::to_uuid(student_id))
         .fetch_optional(&mut **tx)
         .await
         .map_err(Unavailable::new)?;
-        let Some((entitlement_id, contract_type, sport, subscription_id, remaining)) = row else {
+        let Some((entitlement_id, contract_type, sport, subscription_id, remaining, plan)) = row
+        else {
             return Ok(None);
         };
         let id = entitlement_id_uuid::from_uuid(entitlement_id);
@@ -79,7 +94,11 @@ impl PgEntitlementRepository {
             ContractType::Monthly => {
                 let subscription_id = subscription_id
                     .ok_or_else(|| Unavailable::new("月額の受講権に元の契約がない"))?;
-                let quota = Self::read_quota(tx, entitlement_id).await?;
+                let plan =
+                    plan.ok_or_else(|| Unavailable::new("月額の受講権の元の契約にプランがない"))?;
+                let plan = subscription_plan_from_value(&plan)
+                    .ok_or_else(|| Unavailable::new(format!("未知の plan: {plan}")))?;
+                let quota = Self::read_quota(tx, entitlement_id, plan).await?;
                 Entitlement::monthly(
                     id,
                     student_id,
@@ -98,10 +117,11 @@ impl PgEntitlementRepository {
         entitlement.map(Some).map_err(Unavailable::new)
     }
 
-    /// 最後に記録した暦月の枠。
+    /// `plan` の契約の、最後に記録した暦月の枠。
     async fn read_quota(
         tx: &mut Transaction<'_, Postgres>,
         entitlement_id: Uuid,
+        plan: SubscriptionPlan,
     ) -> Result<LiveLessonQuota, Unavailable> {
         let month: Option<Date> = sqlx::query_scalar(
             "SELECT max(month) FROM entitlement.live_lesson_quotas WHERE entitlement_id = $1",
@@ -121,6 +141,7 @@ impl PgEntitlementRepository {
         .await
         .map_err(Unavailable::new)?;
         LiveLessonQuota::restore(
+            plan,
             year_month(month),
             bookings.into_iter().map(booking_id_uuid::from_uuid),
         )
@@ -225,12 +246,13 @@ impl EntitlementRepository for PgEntitlementRepository {
 
         let started_at = timestamp(subscription.started_at());
         sqlx::query(
-            "INSERT INTO entitlement.subscriptions (subscription_id, student_id, sport, status, started_at)
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO entitlement.subscriptions (subscription_id, student_id, sport, plan, status, started_at)
+             VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(subscription_id_uuid::to_uuid(subscription.id()))
         .bind(account_id_uuid::to_uuid(subscription.student_id()))
         .bind(sport_value(subscription.sport()))
+        .bind(subscription_plan_value(subscription.plan()))
         .bind(subscription_status_value(subscription.status()))
         .bind(started_at)
         .execute(&mut *tx)

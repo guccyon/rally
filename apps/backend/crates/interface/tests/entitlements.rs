@@ -34,7 +34,9 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+    entitlement::{
+        Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+    },
     identity::{AccountId, Role, Sport},
     scheduling::BookingId,
 };
@@ -75,6 +77,8 @@ const MONTHLY_STUDENT: &str = "student:1";
 const ONE_SHOT_STUDENT: &str = "student:2";
 /// 受講権のない生徒
 const NEW_STUDENT: &str = "student:3";
+/// plus の月額の受講権を持つ生徒
+const PLUS_STUDENT: &str = "student:4";
 
 /// 2026-11-01T00:00:00+09:00（暦月は日本時間で区切る）
 fn nov1() -> SystemTime {
@@ -88,8 +92,26 @@ fn monthly() -> Entitlement {
         Sport::Tennis,
         SubscriptionId::from_u128(20),
         LiveLessonQuota::restore(
+            SubscriptionPlan::Standard,
             YearMonth::new(2026, 10).unwrap(),
             [BookingId::from_u128(1), BookingId::from_u128(2)],
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+/// 10 月に 3 回使った plus の月額の受講権
+fn plus() -> Entitlement {
+    Entitlement::monthly(
+        EntitlementId::from_u128(12),
+        AccountId::from_u128(4),
+        Sport::Soccer,
+        SubscriptionId::from_u128(21),
+        LiveLessonQuota::restore(
+            SubscriptionPlan::Plus,
+            YearMonth::new(2026, 10).unwrap(),
+            (1..=3).map(BookingId::from_u128),
         )
         .unwrap(),
     )
@@ -110,7 +132,8 @@ fn one_shot() -> Entitlement {
 fn router(now: SystemTime) -> Router {
     let clock = FixedClock(now);
     let analytics = RecordingAnalyticsSink::default();
-    let entitlements = InMemoryEntitlementRepository::with_entitlements([monthly(), one_shot()]);
+    let entitlements =
+        InMemoryEntitlementRepository::with_entitlements([monthly(), one_shot(), plus()]);
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
     interface::router_with(
@@ -297,6 +320,7 @@ async fn returns_the_monthly_entitlement_with_the_quota_of_the_current_month() {
             "student_id": account_id_uuid::format(AccountId::from_u128(1)),
             "contract_type": "subscription",
             "sport": "tennis",
+            "plan": "standard",
             "unlimited_video_and_chat": true,
             "live_lesson_quota": { "month": "2026-10", "limit": 2, "used": 2, "remaining": 0 },
             "remaining_video_reviews": null,
@@ -319,12 +343,33 @@ async fn crossing_the_month_resets_used_to_0() {
 }
 
 #[tokio::test]
+async fn plus_returns_the_plan_and_a_limit_of_4() {
+    let router = router(nov1() - Duration::from_secs(1));
+
+    let (status, body) = get_my_entitlement(&router, Some(PLUS_STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["plan"], "plus");
+    assert_eq!(
+        body["live_lesson_quota"],
+        json!({ "month": "2026-10", "limit": 4, "used": 3, "remaining": 1 })
+    );
+
+    // 月をまたいでもプランの上限のまま 0 から
+    let (_, body) = get_my_entitlement(&self::router(nov1()), Some(PLUS_STUDENT)).await;
+    assert_eq!(
+        body["live_lesson_quota"],
+        json!({ "month": "2026-11", "limit": 4, "used": 0, "remaining": 4 })
+    );
+}
+
+#[tokio::test]
 async fn returns_the_one_shot_entitlement_without_a_live_lesson_quota() {
     let (status, body) = get_my_entitlement(&router(nov1()), Some(ONE_SHOT_STUDENT)).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["contract_type"], "one_shot");
     assert_eq!(body["sport"], "golf");
+    assert_eq!(body["plan"], Value::Null, "プランは月額だけ");
     assert_eq!(body["unlimited_video_and_chat"], false);
     assert_eq!(body["live_lesson_quota"], Value::Null);
     assert_eq!(body["remaining_video_reviews"], 1);

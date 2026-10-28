@@ -43,7 +43,10 @@ mod tests {
     use std::time::Duration;
 
     use domain::{
-        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
+        },
         identity::Sport,
         scheduling::BookingId,
     };
@@ -63,6 +66,7 @@ mod tests {
             Sport::Tennis,
             SubscriptionId::from_u128(student + 200),
             LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
                 YearMonth::new(2026, 10).unwrap(),
                 (1..=used).map(BookingId::from_u128),
             )

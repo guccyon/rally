@@ -21,6 +21,7 @@ use application::{
 };
 use domain::{
     async_lesson::{ReviewComment, VideoContentType, VideoId},
+    entitlement::SubscriptionPlan,
     identity::{AccountId, Role},
     lesson::LessonSource,
     live_lesson::SessionId,
@@ -277,7 +278,12 @@ where
                     }
                     Step::Subscribe { .. } => {
                         subscribe
-                            .execute(StartSubscriptionCommand { student_id, sport })
+                            .execute(StartSubscriptionCommand {
+                                student_id,
+                                sport,
+                                // 合成シードの契約は既定のプラン（暦月 2 回）
+                                plan: SubscriptionPlan::default(),
+                            })
                             .await
                             .map_err(|e| failed(&who, "月額契約の開始", e))?;
                     }

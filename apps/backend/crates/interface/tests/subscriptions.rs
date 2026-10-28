@@ -1,6 +1,7 @@
 //! `POST /subscriptions`（student-app の `startSubscription`）の統合テスト。レスポンスの形を OpenAPI のスキーマで
 //! 検査し、開始した受講権が `GET /entitlements/me` で見えること・境界間イベント `SubscriptionStarted` と行動イベント
-//! `subscription.started`・2 回目の 409・ゴルフの 422・生徒以外の 403 を確かめる。
+//! `subscription.started`・契約プラン（省けば standard、plus は暦月 4 回）・2 回目の 409・ゴルフと未知のプランの 422・
+//! 生徒以外の 403 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -272,11 +273,13 @@ async fn student_starts_a_monthly_subscription_with_the_contract_shape() {
     let subscription = &body["subscription"];
     assert_eq!(subscription["student_id"], student_id);
     assert_eq!(subscription["sport"], "tennis");
+    assert_eq!(subscription["plan"], "standard", "省いたら standard");
     assert_eq!(subscription["status"], "active");
     assert_eq!(subscription["started_at"], "2026-10-26T00:00:00Z");
     let entitlement = &body["entitlement"];
     assert_eq!(entitlement["student_id"], student_id);
     assert_eq!(entitlement["contract_type"], "subscription");
+    assert_eq!(entitlement["plan"], "standard");
     assert_eq!(entitlement["unlimited_video_and_chat"], true);
     assert_eq!(
         entitlement["live_lesson_quota"],
@@ -330,6 +333,37 @@ async fn student_starts_a_monthly_subscription_with_the_contract_shape() {
 }
 
 #[tokio::test]
+async fn student_chooses_the_plus_plan_with_4_live_lessons_a_month() {
+    let app = app();
+
+    let (status, body) = post_subscriptions(
+        &app.router,
+        Some(STUDENT),
+        json!({ "sport": "tennis", "plan": "plus", "payment_method_token": "tok_mock" }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["subscription"]["plan"], "plus");
+    assert_eq!(body["entitlement"]["plan"], "plus");
+    assert_eq!(
+        body["entitlement"]["live_lesson_quota"],
+        json!({ "month": "2026-10", "limit": 4, "used": 0, "remaining": 4 })
+    );
+
+    // standard を明示しても省いたときと同じ
+    let (status, body) = post_subscriptions(
+        &app.router,
+        Some("student:2"),
+        json!({ "sport": "tennis", "plan": "standard", "payment_method_token": "tok_mock" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["subscription"]["plan"], "standard");
+    assert_eq!(body["entitlement"]["live_lesson_quota"]["limit"], 2);
+}
+
+#[tokio::test]
 async fn second_subscription_is_409_subscription_already_active() {
     let app = app();
     let (status, _) = post_subscriptions(&app.router, Some(STUDENT), tennis()).await;
@@ -355,6 +389,8 @@ async fn golf_and_invalid_requests_are_422_validation_failed() {
         json!({ "sport": "golf", "payment_method_token": "tok_mock" }),
         json!({ "sport": "cricket", "payment_method_token": "tok_mock" }),
         json!({ "sport": "tennis" }),
+        json!({ "sport": "tennis", "plan": "premium", "payment_method_token": "tok_mock" }),
+        json!({ "sport": "tennis", "plan": 4, "payment_method_token": "tok_mock" }),
         json!({}),
     ] {
         let (status, response) = post_subscriptions(&app.router, Some(STUDENT), body.clone()).await;

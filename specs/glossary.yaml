@@ -22,7 +22,7 @@ terms:
     contexts: [live-lesson, async-lesson]
   - id: live_lesson
     ja: "同期レッスン"
-    definition: "ビデオ通話によるマンツーマンのレッスンで、月額契約では暦月 2 回までの枠を消費する。"
+    definition: "ビデオ通話によるマンツーマンのレッスンで、月額契約では契約プランで決まる暦月の上限までの枠を消費する。"
     context: live-lesson
   - id: async_lesson
     ja: "非同期レッスン"
@@ -38,11 +38,15 @@ terms:
     context: scheduling
   - id: entitlement
     ja: "受講権"
-    definition: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称で、月額では予約のたびに消費されず、消費されるのはビデオ通話の暦月 2 回の枠だけである。"
+    definition: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称で、月額では予約のたびに消費されず、消費されるのはビデオ通話の暦月の枠（上限は契約プランで決まる）だけである。"
     context: entitlement
   - id: subscription
     ja: "月額"
-    definition: "ゴルフ以外のスポーツの契約種別で、動画とチャットは送り放題、ビデオ通話は暦月 2 回までの定額課金。"
+    definition: "ゴルフ以外のスポーツの契約種別で、動画とチャットは送り放題、ビデオ通話は契約プランで決まる暦月の上限までの定額課金。"
+    context: entitlement
+  - id: subscription_plan
+    ja: "契約プラン"
+    definition: "月額契約ごとに選ぶプランで、ビデオ通話の暦月の上限を決め、スタンダード（standard、暦月 2 回。既定）とプラス（plus、暦月 4 回）がある（変更シナリオ cs-003）。"
     context: entitlement
   - id: one_shot
     ja: "ワンショット"

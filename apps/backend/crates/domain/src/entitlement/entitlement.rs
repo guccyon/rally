@@ -1,4 +1,6 @@
-use super::{ContractType, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth};
+use super::{
+    ContractType, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+};
 use crate::{
     DomainError,
     identity::{AccountId, Sport},
@@ -8,7 +10,7 @@ use crate::{
 /// 受講権（glossary の entitlement）。契約種別と利用権の総称。
 ///
 /// - 月額: 元の契約（[`SubscriptionId`]）を持ち、動画とチャットは送り放題、ビデオ通話は暦月の枠
-///   （[`LiveLessonQuota`]）。予約のたびには消費されず、消費されるのは通話の枠だけ
+///   （[`LiveLessonQuota`]。上限は元の契約のプラン）。予約のたびには消費されず、消費されるのは通話の枠だけ
 /// - ワンショット: ゴルフだけ。残りの動画添削回数を持つ（Gen1 では型だけ）
 ///
 /// ビデオ通話を予約してよいか（[`Self::may_book_live_lesson`]）と枠の消費・戻し（[`Self::consume_live_lesson`]・
@@ -131,6 +133,11 @@ impl Entitlement {
         self.contract_type.unlimited_video_and_chat()
     }
 
+    /// 元の月額契約のプラン（ワンショットは `None`）。通話の枠の上限を決める。
+    pub fn plan(&self) -> Option<SubscriptionPlan> {
+        self.live_lesson_quota.as_ref().map(LiveLessonQuota::plan)
+    }
+
     /// ビデオ通話の暦月の枠（月額のみ）。今の月の枠にするには先に [`Self::in_month`] を通す。
     pub const fn live_lesson_quota(&self) -> Option<&LiveLessonQuota> {
         self.live_lesson_quota.as_ref()
@@ -172,11 +179,12 @@ mod tests {
 
     #[test]
     fn monthly_has_unlimited_video_and_chat_and_a_live_lesson_quota() {
-        let quota = LiveLessonQuota::fresh(ym(2026, 10));
+        let quota = LiveLessonQuota::fresh(SubscriptionPlan::Standard, ym(2026, 10));
         let entitlement = monthly(Sport::Tennis, quota.clone()).unwrap();
         assert_eq!(entitlement.contract_type(), ContractType::Monthly);
         assert!(entitlement.unlimited_video_and_chat());
         assert_eq!(entitlement.live_lesson_quota(), Some(&quota));
+        assert_eq!(entitlement.plan(), Some(SubscriptionPlan::Standard));
         assert_eq!(
             entitlement.subscription_id(),
             Some(SubscriptionId::from_u128(20))
@@ -187,7 +195,10 @@ mod tests {
     #[test]
     fn monthly_rejects_golf() {
         assert_eq!(
-            monthly(Sport::Golf, LiveLessonQuota::fresh(ym(2026, 10))),
+            monthly(
+                Sport::Golf,
+                LiveLessonQuota::fresh(SubscriptionPlan::Standard, ym(2026, 10))
+            ),
             Err(DomainError::SportNotCoveredByContract {
                 contract_type: ContractType::Monthly,
                 sport: Sport::Golf,
@@ -201,6 +212,7 @@ mod tests {
         assert_eq!(entitlement.contract_type(), ContractType::OneShot);
         assert!(!entitlement.unlimited_video_and_chat());
         assert_eq!(entitlement.live_lesson_quota(), None);
+        assert_eq!(entitlement.plan(), None);
         assert_eq!(entitlement.subscription_id(), None);
         assert_eq!(entitlement.remaining_video_reviews(), Some(1));
     }
@@ -221,7 +233,12 @@ mod tests {
 
     #[test]
     fn crossing_the_month_resets_the_live_lesson_quota() {
-        let october = LiveLessonQuota::restore(ym(2026, 10), [booking(1), booking(2)]).unwrap();
+        let october = LiveLessonQuota::restore(
+            SubscriptionPlan::Standard,
+            ym(2026, 10),
+            [booking(1), booking(2)],
+        )
+        .unwrap();
         let entitlement = monthly(Sport::Tennis, october.clone()).unwrap();
 
         assert_eq!(
@@ -250,7 +267,11 @@ mod tests {
     #[test]
     fn monthly_may_book_two_live_lessons_a_month_and_the_third_is_rejected() {
         let october = ym(2026, 10);
-        let mut entitlement = monthly(Sport::Tennis, LiveLessonQuota::fresh(october)).unwrap();
+        let mut entitlement = monthly(
+            Sport::Tennis,
+            LiveLessonQuota::fresh(SubscriptionPlan::Standard, october),
+        )
+        .unwrap();
         for id in [1, 2] {
             assert!(entitlement.may_book_live_lesson(october));
             entitlement
@@ -279,11 +300,49 @@ mod tests {
     }
 
     #[test]
+    fn plus_may_book_four_live_lessons_a_month_and_the_fifth_is_rejected() {
+        let october = ym(2026, 10);
+        let mut entitlement = monthly(
+            Sport::Tennis,
+            LiveLessonQuota::fresh(SubscriptionPlan::Plus, october),
+        )
+        .unwrap();
+        assert_eq!(entitlement.plan(), Some(SubscriptionPlan::Plus));
+        for id in 1..=4 {
+            assert!(entitlement.may_book_live_lesson(october), "{id} 回目");
+            entitlement
+                .consume_live_lesson(booking(id), october)
+                .unwrap();
+        }
+        assert!(
+            !entitlement.may_book_live_lesson(october),
+            "5 回目は予約できない"
+        );
+        assert_eq!(
+            entitlement.consume_live_lesson(booking(5), october),
+            Err(DomainError::LiveLessonQuotaExceeded)
+        );
+
+        // 翌月はプランのまま 0 から数える
+        let november = entitlement.in_month(ym(2026, 11));
+        let quota = november.live_lesson_quota().unwrap();
+        assert_eq!(
+            (quota.plan(), quota.used(), quota.remaining()),
+            (SubscriptionPlan::Plus, 0, 4)
+        );
+    }
+
+    #[test]
     fn releasing_a_live_lesson_returns_the_quota_of_the_month() {
         let october = ym(2026, 10);
         let mut entitlement = monthly(
             Sport::Tennis,
-            LiveLessonQuota::restore(october, [booking(1), booking(2)]).unwrap(),
+            LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
+                october,
+                [booking(1), booking(2)],
+            )
+            .unwrap(),
         )
         .unwrap();
         entitlement.release_live_lesson(booking(1), october);
@@ -294,7 +353,10 @@ mod tests {
         entitlement.release_live_lesson(booking(2), ym(2026, 11));
         assert_eq!(
             entitlement.live_lesson_quota(),
-            Some(&LiveLessonQuota::fresh(ym(2026, 11)))
+            Some(&LiveLessonQuota::fresh(
+                SubscriptionPlan::Standard,
+                ym(2026, 11)
+            ))
         );
     }
 

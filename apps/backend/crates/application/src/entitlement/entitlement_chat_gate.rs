@@ -35,7 +35,10 @@ where
 #[cfg(test)]
 mod tests {
     use domain::{
-        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
+        },
         identity::Sport,
     };
 
@@ -54,7 +57,7 @@ mod tests {
                 MONTHLY,
                 Sport::Tennis,
                 SubscriptionId::from_u128(20),
-                LiveLessonQuota::fresh(october),
+                LiveLessonQuota::fresh(SubscriptionPlan::Standard, october),
             )
             .unwrap(),
             Entitlement::one_shot(EntitlementId::from_u128(11), ONE_SHOT, Sport::Golf, 1).unwrap(),

@@ -5,7 +5,7 @@ use crate::{DomainError, identity::Sport};
 /// 外部での文字列表現（契約の `ContractType`・DB の `contract_type`）は境界のアダプタが決める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContractType {
-    /// 月額（glossary の subscription）。ゴルフ以外。動画とチャットは送り放題、ビデオ通話は暦月 2 回まで
+    /// 月額（glossary の subscription）。ゴルフ以外。動画とチャットは送り放題、ビデオ通話は暦月の上限（契約プランで決まる）まで
     Monthly,
     /// ワンショット（glossary の one_shot）。ゴルフだけ。動画添削 1 回ごとの都度課金
     OneShot,

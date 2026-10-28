@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -37,9 +37,9 @@
 | | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる。自己紹介文 `bio`（D18 の expand で追加。既定は空文字列、`coaches_bio_length` で 400 文字まで） |
 | `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加） |
 | | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled` |
-| `entitlement` | `subscriptions` | 月額契約（ゴルフ以外） |
+| `entitlement` | `subscriptions` | 月額契約（ゴルフ以外）。契約プラン `plan`（D37 の expand で追加。変更シナリオ cs-003。`standard` / `plus`、既定は `standard` で既存の契約も standard） |
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
-| | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0〜2） |
+| | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0 以上。上限は契約プランで決まる。D37 の expand で 0〜2 から緩め、既定値の 2 も外した） |
 | `live_lesson` | `sessions` | 通話セッション（T12 の expand で追加）。確定した予約 1 件につき 1 つ（`sessions_booking_id_key`）。終了時に接続品質の生の指標 4 つ（`call.ended` と同じ。損失率は百分率）を揃えて持つ。予約は scheduling の持ち物なので `booking_id` に外部キーは張らない。通話品質スコアは保存しない（ADR 0002 Q1） |
 | | `lesson_completions` | 同期レッスンの完了記録（T14 の expand で追加。置き場所は ADR 0006）。セッション 1 つにつき 1 行（`lesson_completions_session_id_key`）。生徒・コーチはセッションの当事者（複合外部キー `lesson_completions_session_fkey`）。`is_first_lesson` は記録した時点の値で持つ |
 | `async_lesson` | `videos` | 生徒がコーチに送った動画（T13 の expand で追加）。スポーツは 6 種類（D31 の expand で水泳を追加）（ゴルフは golf-app から送る）。動画本体は保存先（S3 への直接アップロード。Gen1 はモック）に置き、ここには持たない。状態の列は持たず、添削の行の有無で決まる。AI の一次フィードバック（D34 の expand で追加。変更シナリオ cs-006）は `ai_feedback_comment` / `ai_feedback_created_at` の列で、揃って NULL（なし。AI が失敗したときと既存の動画）か揃って値を持つ（`videos_ai_feedback_shape`）。添削の行とは別に持ち、返却では書き換えない |
@@ -58,7 +58,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 | 不変条件 | 制約 |
 |---|---|
 | 1 つのスロットに有効な予約は 1 件（二重予約の防止） | `bookings_one_active_per_slot`（`status <> 'cancelled'` の部分一意索引） |
-| 月額契約の生徒のビデオ通話は暦月 2 回まで（product-context の不変条件 1） | `live_lesson_quotas.remaining_live_lessons` が 0〜2。3 回目の消費は負になって入らない。枠を持てるのは月額の受講権だけ |
+| 月額契約の生徒のビデオ通話は契約プランで決まる暦月の上限まで（product-context の不変条件 1） | `live_lesson_quotas.remaining_live_lessons` が 0 以上。使い切った後の消費は負になって入らない。枠を持てるのは月額の受講権だけ。契約プランは `subscriptions_plan_check` の値だけ |
 | 月額はゴルフ以外、ワンショットはゴルフだけ | `subscriptions.sport` の `CHECK`、`entitlements_subscription_shape` / `entitlements_one_shot_shape` |
 | 月額の受講権は同じ生徒・同じスポーツの月額契約から 1 つ | `entitlements_subscription_fkey`（契約・生徒・スポーツの複合外部キー）と `subscription_id` の一意 |
 | コーチの表・予約・契約の相手は正しい役割のアカウント | `(account_id, role)` への複合外部キー |
@@ -78,6 +78,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 - ゴルフの添削はワンショット決済が確定した動画だけ（不変条件 2）: 判定は domain の `ContractType::may_start_review` の 1 か所に置き、async-lesson は返却の前にポート `ReviewGate` で問い合わせる（T13）。決済は billing の持ち物で、Gen1 は billing のテーブルがないので DB では守らない（billing を実装するときに見直す）
 - レッスンの完了記録の `is_first_lesson` の判定と、同期・非同期のテーブルをまたいだ「初回は 1 件」（T14）: 判定は domain の `LessonCompletion` の 1 か所。テーブルは元の集約のスキーマに分けた（ADR 0006）ので、DB はテーブルごとの部分一意索引までを守り、またぎは Postgres の実装が生徒ごとの advisory lock で直列にする（`PgSlotRepository` と同じ）。通話セッションが終了済みかも domain（`LiveLessonSession::complete`）で判定し、DB では守らない
 - 生徒がチャットを送ってよいか（月額の送り放題。D01）: 判定は domain の `Entitlement::unlimited_video_and_chat`（規則は `ContractType`）の 1 か所で、messaging は送信の前にポート `ChatGate` で問い合わせる（ADR 0007）。送り放題なので送信の回数は保存しない
+- 契約プランごとの暦月の上限の数（D37。standard 2 回・plus 4 回）: 判定は domain の `SubscriptionPlan::live_lessons_per_month` の 1 か所で、`LiveLessonQuota` がそこから上限を受け取る。プランは `subscriptions` に、残回数は `live_lesson_quotas` にあり、上限を CHECK にするとプランの数を SQL に写して 2 か所で持つことになるので、DB は残回数が 0 以上だけを守る（上の端の 2 も外した）
 - コーチへの支払い（不変条件 4）: billing のテーブルとともに段 5 以降
 
 ### 5. 検査

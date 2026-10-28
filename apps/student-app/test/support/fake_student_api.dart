@@ -473,6 +473,7 @@ abstract final class Fixtures {
       subscriptionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       studentId: studentId,
       sport: Sport.tennis,
+      plan: SubscriptionPlan.standard,
       status: SubscriptionStatus.active,
       startedAt: now,
     ),
@@ -481,6 +482,7 @@ abstract final class Fixtures {
       studentId: studentId,
       contractType: ContractType.subscription,
       sport: 'tennis',
+      plan: SubscriptionPlan.standard,
       unlimitedVideoAndChat: true,
       liveLessonQuota: LiveLessonQuota(
         month: '2026-10',

@@ -1,7 +1,10 @@
-//! 月額契約の生徒のビデオ通話の暦月 2 回の枠（不変条件 1）を、組み立て済みのルーター（`server::router_at`）で
-//! 一周させる。境界間イベントは infra のインメモリのイベントバスで entitlement の購読につながっている。
+//! 月額契約の生徒のビデオ通話の暦月の枠（不変条件 1。上限は契約プランで決まる）を、組み立て済みのルーター
+//! （`server::router_at`）で一周させる。境界間イベントは infra のインメモリのイベントバスで entitlement の購読に
+//! つながっている。
 //!
-//! - 同じ暦月に 3 回目の予約の確定は 409 `live_lesson_quota_exceeded`、翌月には再び確定できる
+//! - プランを選ばない契約（standard）は、同じ暦月に 3 回目の予約の確定が 409 `live_lesson_quota_exceeded`、翌月には
+//!   再び確定できる
+//! - plus の契約は 4 回目まで確定でき、5 回目が 409 `live_lesson_quota_exceeded`（変更シナリオ cs-003）
 //! - 開始の 23 時間前のキャンセルで枠が減り、25 時間前のキャンセルでは確定で使った枠が戻る
 
 use std::time::{Duration, SystemTime};
@@ -54,8 +57,13 @@ struct Scenario {
     student: String,
 }
 
-/// 2026-10-05（日本時間）に生徒を登録し、テニスの月額契約を開始した状態から始める。
+/// 2026-10-05（日本時間）に生徒を登録し、テニスの月額契約（プランは選ばない＝standard）を開始した状態から始める。
 async fn subscribed_student() -> Scenario {
+    subscribed_student_with(json!({ "sport": "tennis", "payment_method_token": "tok_mock" })).await
+}
+
+/// 2026-10-05（日本時間）に生徒を登録し、`request` で月額契約を開始した状態から始める。
+async fn subscribed_student_with(request: Value) -> Scenario {
     let clock = ManualClock::new(oct5_jst());
     let router = server::router_at(clock.clone());
     let coach = MockTokenService
@@ -78,15 +86,7 @@ async fn subscribed_student() -> Scenario {
     assert_eq!(status, StatusCode::CREATED, "{account}");
     let student = account["access_token"].as_str().unwrap().to_string();
 
-    let (status, body) = send(
-        &router,
-        post_json(
-            "/subscriptions",
-            &student,
-            json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
-        ),
-    )
-    .await;
+    let (status, body) = send(&router, post_json("/subscriptions", &student, request)).await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     Scenario {
         router,
@@ -162,8 +162,14 @@ impl Scenario {
     }
 }
 
+/// standard の契約の `live_lesson_quota`。
 fn quota(month: &str, used: u8) -> Value {
-    json!({ "month": month, "limit": 2, "used": used, "remaining": 2 - used })
+    quota_of(2, month, used)
+}
+
+/// 上限 `limit` の `live_lesson_quota`。
+fn quota_of(limit: u8, month: &str, used: u8) -> Value {
+    json!({ "month": month, "limit": limit, "used": used, "remaining": limit - used })
 }
 
 #[tokio::test]
@@ -200,6 +206,56 @@ async fn third_confirmation_in_the_same_month_is_rejected_and_the_next_month_all
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "confirmed");
     assert_eq!(s.quota().await, quota("2026-11", 1));
+}
+
+#[tokio::test]
+async fn plus_confirms_up_to_the_fourth_in_the_same_month_and_rejects_the_fifth() {
+    let s = subscribed_student_with(
+        json!({ "sport": "tennis", "plan": "plus", "payment_method_token": "tok_mock" }),
+    )
+    .await;
+    let (status, me) = send(
+        &s.router,
+        Request::get("/entitlements/me")
+            .header(header::AUTHORIZATION, format!("Bearer {}", s.student))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{me}");
+    assert_eq!(me["plan"], "plus");
+    assert_eq!(s.quota().await, quota_of(4, "2026-10", 0));
+
+    let mut bookings = Vec::new();
+    for day in 1..=5 {
+        bookings.push(
+            s.book(
+                &format!("2026-12-{day:02}T01:00:00Z"),
+                &format!("2026-12-{day:02}T02:00:00Z"),
+            )
+            .await,
+        );
+    }
+    for (used, booking) in (1..=4).zip(&bookings) {
+        let (status, body) = s.confirm(booking).await;
+        assert_eq!(status, StatusCode::OK, "{used} 回目: {body}");
+        assert_eq!(s.quota().await, quota_of(4, "2026-10", used));
+    }
+
+    let (status, body) = s.confirm(&bookings[4]).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        body["code"], "live_lesson_quota_exceeded",
+        "5 回目は予約できない"
+    );
+    assert_eq!(s.quota().await, quota_of(4, "2026-10", 4));
+
+    // 翌月はプランの上限から再び数える
+    s.clock.set(nov1_jst());
+    assert_eq!(s.quota().await, quota_of(4, "2026-11", 0));
+    let (status, body) = s.confirm(&bookings[4]).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(s.quota().await, quota_of(4, "2026-11", 1));
 }
 
 #[tokio::test]

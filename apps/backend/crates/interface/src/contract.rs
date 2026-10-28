@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
-    entitlement::{ContractType, SubscriptionStatus, YearMonth},
+    entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
     identity::{Role, Sport},
     lesson::LessonType,
     live_lesson::SessionStatus,
@@ -159,6 +159,27 @@ pub(crate) const fn subscription_status_to_contract(status: SubscriptionStatus) 
         SubscriptionStatus::Active => "active",
         SubscriptionStatus::Cancelled => "cancelled",
     }
+}
+
+/// student-app の `SubscriptionPlan` の値。
+pub(crate) const fn subscription_plan_to_contract(plan: SubscriptionPlan) -> &'static str {
+    match plan {
+        SubscriptionPlan::Standard => "standard",
+        SubscriptionPlan::Plus => "plus",
+    }
+}
+
+/// `plan` を読む。省いたら既定のプラン（standard）。契約の enum にない値は 422。
+pub(crate) fn subscription_plan_from_contract(
+    value: Option<&str>,
+) -> Result<SubscriptionPlan, ApiError> {
+    let Some(value) = value else {
+        return Ok(SubscriptionPlan::default());
+    };
+    SubscriptionPlan::ALL
+        .into_iter()
+        .find(|plan| subscription_plan_to_contract(*plan) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の契約プラン: {value}")))
 }
 
 /// student-app の `ContractType` の値。月額は `subscription`。
@@ -315,6 +336,34 @@ mod tests {
             subscription_status_to_contract(SubscriptionStatus::Cancelled),
             "cancelled"
         );
+    }
+
+    #[test]
+    fn subscription_plans_are_standard_and_plus_and_default_to_standard() {
+        for plan in SubscriptionPlan::ALL {
+            assert_eq!(
+                subscription_plan_from_contract(Some(subscription_plan_to_contract(plan))).ok(),
+                Some(plan)
+            );
+        }
+        assert_eq!(
+            subscription_plan_to_contract(SubscriptionPlan::Standard),
+            "standard"
+        );
+        assert_eq!(
+            subscription_plan_to_contract(SubscriptionPlan::Plus),
+            "plus"
+        );
+        assert_eq!(
+            subscription_plan_from_contract(None).ok(),
+            Some(SubscriptionPlan::Standard)
+        );
+        for value in ["", "Plus", "premium"] {
+            assert!(
+                subscription_plan_from_contract(Some(value)).is_err(),
+                "{value:?}"
+            );
+        }
     }
 
     #[test]

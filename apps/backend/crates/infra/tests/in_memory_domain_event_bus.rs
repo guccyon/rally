@@ -14,7 +14,9 @@ use application::{
     in_memory::InMemoryEntitlementRepository,
 };
 use domain::{
-    entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+    entitlement::{
+        Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+    },
     identity::{AccountId, Sport},
     scheduling::BookingId,
 };
@@ -104,7 +106,10 @@ async fn entitlement_consumes_the_live_lesson_quota_through_the_bus() {
         STUDENT,
         Sport::Tennis,
         SubscriptionId::from_u128(20),
-        LiveLessonQuota::fresh(YearMonth::new(2026, 10).unwrap()),
+        LiveLessonQuota::fresh(
+            SubscriptionPlan::Standard,
+            YearMonth::new(2026, 10).unwrap(),
+        ),
     )
     .unwrap()]);
     let bus = InMemoryDomainEventBus::new(LiveLessonQuotaSubscriber::new(entitlements.clone()));

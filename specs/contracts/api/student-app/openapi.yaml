@@ -142,7 +142,7 @@ paths:
         予約できるのは公開中のスロットだけ（閉じたスロットはないスロットと同じく 404）で、1 つのスロットに有効な
         （キャンセルされていない）予約は 1 件まで（409 `slot_already_booked`）。体験予約はその生徒の初回の予約だけ
         （キャンセルされていない予約があれば 409 `trial_already_used`）。生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
-        月額契約の生徒のビデオ通話の暦月 2 回の枠（不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
+        月額契約の生徒のビデオ通話の暦月の枠（上限は契約プランで決まる。不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.created]
@@ -201,8 +201,9 @@ paths:
       description: |
         自分の `pending` の予約を確定し、スロットを予約済みにする。境界間イベント `BookingConfirmed` を発行する。
         別の生徒の予約は 404、`pending` でない予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
-        月額契約の生徒のビデオ通話は暦月 2 回まで（不変条件 1）。その暦月の枠が残っていなければ確定せず 409 `live_lesson_quota_exceeded`
-        （3 回目は予約できない。暦月は日本時間で区切り、翌月には再び確定できる）。確定すると entitlement が枠を 1 回使い
+        月額契約の生徒のビデオ通話は、契約プランで決まる暦月の上限まで（standard 2 回・plus 4 回。不変条件 1）。その暦月の枠が
+        残っていなければ確定せず 409 `live_lesson_quota_exceeded`（standard の 3 回目・plus の 5 回目は予約できない。暦月は日本時間で
+        区切り、翌月には再び確定できる）。確定すると entitlement が枠を 1 回使い
         （`BookingConfirmed` の購読）、`getMyEntitlement` の `live_lesson_quota.used` が増える。受講権のない生徒（月額契約の前）は枠の制約を受けない。
       tags: [scheduling]
       x-context: scheduling
@@ -269,7 +270,8 @@ paths:
       operationId: startSubscription
       summary: 月額契約の開始
       description: |
-        認証した生徒の月額契約を開始し、それによる受講権（今の暦月のまだ使っていないビデオ通話の枠）を作る。境界間イベント
+        認証した生徒の月額契約を開始し、それによる受講権（今の暦月のまだ使っていないビデオ通話の枠）を作る。契約プラン `plan`
+        （ビデオ通話の暦月の上限を決める。standard 2 回・plus 4 回）は省略できて、省いたら `standard`。境界間イベント
         `SubscriptionStarted` を発行する。生徒だけが呼べる（それ以外の役割は 403）。受講権がすでにあれば 409 `subscription_already_active`
         （受講権は生徒ごとに 1 つ）。ゴルフは 422（月額はゴルフ以外）。決済（Stripe）は Gen1 ではモックで、`payment_method_token` は
         受け取るだけで使わない（billing は Gen1 の範囲外）。ワンショットは golf-app の契約で扱い、student-app では開始しない。
@@ -305,7 +307,8 @@ paths:
       description: |
         認証した生徒の受講権（契約種別と利用権）を返す。照会だけで、枠を消費しない。生徒だけが呼べる（それ以外の役割は 403）。
         受講権がまだない（月額契約を開始していない）なら 404。`live_lesson_quota` は照会した時点の暦月の枠で、
-        前の月の枠を使っていても月をまたげば `used` は 0 から数える。
+        前の月の枠を使っていても月をまたげば `used` は 0 から数える。暦月の上限（`live_lesson_quota.limit`）は月額契約のプラン
+        （`plan`）で決まる。
       tags: [entitlement]
       x-context: entitlement
       responses:
@@ -737,7 +740,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（予約済みのスロット、ビデオ通話の暦月 2 回の枠の超過など）
+      description: 現在の状態では実行できない（予約済みのスロット、ビデオ通話の暦月の枠の超過など）
       content:
         application/json:
           schema:
@@ -918,11 +921,18 @@ components:
       description: 契約種別。Gen1 で実装するのは subscription（月額）のみで、one_shot（ワンショット）は型として持つ。
       enum: [subscription, one_shot]
 
+    SubscriptionPlan:
+      type: string
+      description: |
+        glossary の subscription_plan（月額契約のプラン）。ビデオ通話の暦月の上限を決める。standard は暦月 2 回（既定）、
+        plus は暦月 4 回。料金と決済は扱わない（billing は Gen1 の範囲外）。
+      enum: [standard, plus]
+
     Entitlement:
       type: object
       description: |
         glossary の entitlement（契約種別と利用権の総称）。月額では予約のたびに消費されず、
-        消費されるのはビデオ通話の暦月 2 回の枠だけ。
+        消費されるのはビデオ通話の暦月の枠（上限は契約プランで決まる）だけ。
       required: [entitlement_id, student_id, contract_type, sport]
       properties:
         entitlement_id:
@@ -936,6 +946,11 @@ components:
         sport:
           type: string
           description: 月額は Sport のいずれか。ワンショットは golf
+        plan:
+          oneOf:
+            - $ref: "#/components/schemas/SubscriptionPlan"
+            - type: "null"
+          description: 元の月額契約のプラン（月額のみ。ワンショットは null）。ビデオ通話の暦月の上限を決める
         unlimited_video_and_chat:
           type: boolean
           description: 動画とチャットが送り放題か（月額は true）
@@ -951,7 +966,7 @@ components:
 
     LiveLessonQuota:
       type: object
-      description: ビデオ通話の暦月の枠（月額は暦月 2 回まで）
+      description: ビデオ通話の暦月の枠（月額は契約プランで決まる暦月の上限まで）
       required: [month, limit, used, remaining]
       properties:
         month:
@@ -960,15 +975,16 @@ components:
           description: 暦月（YYYY-MM）
         limit:
           type: integer
-          const: 2
+          minimum: 1
+          description: 暦月の上限。月額契約のプラン（SubscriptionPlan）で決まる（standard 2・plus 4）
         used:
           type: integer
           minimum: 0
-          maximum: 2
+          description: この暦月に使った回数（limit まで）
         remaining:
           type: integer
           minimum: 0
-          maximum: 2
+          description: この暦月の残り回数（limit - used）
 
     SubscriptionStatus:
       type: string
@@ -977,7 +993,7 @@ components:
     Subscription:
       type: object
       description: glossary の subscription（月額。ゴルフ以外）
-      required: [subscription_id, student_id, sport, status, started_at]
+      required: [subscription_id, student_id, sport, plan, status, started_at]
       properties:
         subscription_id:
           type: string
@@ -987,6 +1003,8 @@ components:
           format: uuid
         sport:
           $ref: "#/components/schemas/Sport"
+        plan:
+          $ref: "#/components/schemas/SubscriptionPlan"
         status:
           $ref: "#/components/schemas/SubscriptionStatus"
         started_at:
@@ -999,6 +1017,9 @@ components:
       properties:
         sport:
           $ref: "#/components/schemas/Sport"
+        plan:
+          $ref: "#/components/schemas/SubscriptionPlan"
+          description: 契約プラン。省いたら standard
         payment_method_token:
           type: string
           description: 決済手段のトークン（Stripe 相当。Gen1 はモック）

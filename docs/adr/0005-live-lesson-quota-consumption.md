@@ -11,7 +11,7 @@
 
 ## 決定
 
-1. **枠は「その月に枠を使った予約の集合」で持つ**。使った回数はその数で、上限 2 は `domain::entitlement::LiveLessonQuota::LIMIT` の 1 か所だけ。同じ予約で 2 回は使わない（同じイベントが 2 回届いても数が変わらない）
+1. **枠は「その月に枠を使った予約の集合」で持つ**。使った回数はその数で、上限 2 は `domain::entitlement::LiveLessonQuota::LIMIT` の 1 か所だけ（D37 / Issue #174 で、上限は契約プランの `domain::entitlement::SubscriptionPlan::live_lessons_per_month` の 1 か所に移した。standard 2 回・plus 4 回。`LiveLessonQuota` はプランを持ち、上限をそこから受け取る。以下の「3 回目」は standard の場合で、plus では 5 回目）。同じ予約で 2 回は使わない（同じイベントが 2 回届いても数が変わらない）
 2. **消費・戻しの契機**（entitlement が境界間イベントを購読して行う。`application::entitlement::LiveLessonQuotaSubscriber`）
    | 出来事 | 枠 |
    |---|---|

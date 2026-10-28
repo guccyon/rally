@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 月額契約のプラン（変更シナリオ cs-003）: 月額契約にスタンダード（`standard`、ビデオ通話は暦月 2 回。既定）とプラス（`plus`、暦月 4 回）を置いた。student-app の `POST /subscriptions`（`startSubscription`）のリクエストに任意の `plan` を足し（省けば standard、未知の値は 422）、応答の `Subscription` に `plan`、`Entitlement`（`getMyEntitlement` と開始の応答）に任意で null になりうる `plan` を足した。暦月の上限は `live_lesson_quota.limit` で返し、plus は 4 回目まで確定でき 5 回目は 409 `live_lesson_quota_exceeded`。standard は今までと同じ（3 回目が 409）。既存の契約は standard。料金・決済・契約の途中でのプランの変更は扱わない。DB は列の追加と残回数の CHECK の緩和だけ（expand）。student-app は型を契約に合わせただけで、画面はまだない（#174）
 - student-app の添削結果の画面で、AI の一次フィードバック（`getVideoReview` の `ai_feedback`）があれば「AI の一次フィードバック」として、AI が自動で作った文でコーチの添削ではない旨と一緒に、コーチの添削とは別の枠に出す。コーチの返却を待つ間は待ちの文言と確かめ直すボタンと一緒に出し、返却後は「コーチの添削」と両方を出す。ないときは今までどおり。API と契約の変更はない（#170）
 - admin-web のコーチの「動画の添削」で、添削待ちの動画の「添削する」を開くと、添削コメントの欄の上に AI の一次フィードバック（`listMyCoachVideos` の `ai_feedback`）を「AI の一次フィードバック（参考）」として、AI が自動で作った文でコーチの添削ではない旨と一緒に出す。ないときは何も出さず、返却済みの行には出さない。返却するコメントには入らない。API と契約の変更はない（#169）
 - 動画への AI の一次フィードバック（変更シナリオ cs-006）: 生徒が動画を送ると、その直後に AI（Gen1 はモック。スポーツごとの決まった文）が一次フィードバックの短い文を作って動画に保存する。student-app の `GET /videos/{video_id}/review`（`getVideoReview`）と admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）の応答に、任意で null になりうる項目 `ai_feedback`（`comment` と `created_at`）を足した（同じ形の admin-web の `returnVideoReview` の応答にも載る）。コーチの添削とは別の項目で、返却で上書きされない。AI が失敗しても送付は成功し、`ai_feedback` は null のまま。既存の項目は変えない。DB は列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面はまだない（#168）
