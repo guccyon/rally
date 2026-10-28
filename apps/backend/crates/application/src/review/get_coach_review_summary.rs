@@ -3,10 +3,11 @@ use domain::{identity::AccountId, review::CoachReviewSummary};
 use super::LessonReviewRepository;
 use crate::Unavailable;
 
-/// コーチごとの評価の件数と平均のユースケース（admin-web の `getCoachReviewSummary`。本部と、自分の分だけのコーチが呼ぶ）。
+/// コーチごとの評価の件数と平均のユースケース（admin-web・student-app の `getCoachReviewSummary`。本部と生徒と、
+/// 自分の分だけのコーチが呼ぶ）。
 ///
 /// コーチへの評価を読み、domain の [`CoachReviewSummary::tally`] で数える。数え方と平均の丸めは domain だけ。
-/// 誰が呼べるか（役割と、コーチは自分の分だけ）は境界（interface）が確かめる。
+/// 誰が呼べるか（役割と、コーチは自分の分だけ）は境界（interface）が確かめ、ここは呼んだ人によって結果を変えない。
 pub struct GetCoachReviewSummary<R> {
     reviews: R,
 }

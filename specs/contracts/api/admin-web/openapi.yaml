@@ -211,11 +211,11 @@ paths:
   /coaches/{coach_id}/review-summary:
     get:
       operationId: getCoachReviewSummary
-      summary: コーチの評価の件数と平均（本部・コーチ）
+      summary: コーチの評価の件数と平均（本部・コーチ・生徒）
       description: |
         コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の件数と、
         点（1〜5）の平均を返す。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
-        生徒の役割のトークンは 403。
+        生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
 
         数え方と丸めはここが正本（実装は backend の domain `CoachReviewSummary` の 1 か所）。
 
@@ -251,12 +251,13 @@ paths:
   /coaches/{coach_id}/reviews:
     get:
       operationId: listCoachReviews
-      summary: コーチが受けた評価の一覧（本部・コーチ）
+      summary: コーチが受けた評価の一覧（本部・コーチ・生徒）
       description: |
         コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の
         点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
         （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
-        生徒の役割のトークンは 403。
+        生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
+        各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。
 
         `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
         `coach_id` が UUID でなければ 404。行動イベントは発火しない。

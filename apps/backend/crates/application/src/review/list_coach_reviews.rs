@@ -5,11 +5,13 @@ use domain::{identity::AccountId, review::LessonReview};
 use super::LessonReviewRepository;
 use crate::Unavailable;
 
-/// コーチが受けた評価の一覧のユースケース（admin-web の `listCoachReviews`。本部と、自分の分だけのコーチが呼ぶ）。
+/// コーチが受けた評価の一覧のユースケース（admin-web・student-app の `listCoachReviews`。本部と生徒と、自分の分だけの
+/// コーチが呼ぶ）。
 /// 照会だけで、何も保存しない。
 ///
 /// コーチへの評価を、送った時刻の新しい順に返す。同じ時刻は評価の ID の順。評価がなければ空。
-/// 誰が呼べるか（役割と、コーチは自分の分だけ）は境界（interface）が確かめる。
+/// 誰が呼べるか（役割と、コーチは自分の分だけ）は境界（interface）が確かめ、ここは呼んだ人によって結果を変えない。
+/// 評価した生徒を一覧に載せないのも境界（interface のレスポンスの形）。
 pub struct ListCoachReviews<R> {
     reviews: R,
 }

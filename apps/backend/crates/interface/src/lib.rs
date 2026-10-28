@@ -87,8 +87,8 @@ pub use error::ApiError;
 /// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
-/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
-/// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+/// `GET /coaches/{coach_id}/review-summary`（admin-web・student-app のコーチの評価の件数と平均）と
+/// `GET /coaches/{coach_id}/reviews`（コーチが受けた評価の一覧）は本部・コーチ・生徒で、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
 /// `GET /coaches/me/bookings`（admin-web のコーチの自分の予約の一覧）と `GET /coaches/me/slots`（コーチの自分の枠の
 /// 一覧）と `GET /coaches/me/videos`（コーチに届いた動画の一覧）はコーチだけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
@@ -322,13 +322,19 @@ where
         )
         .route(
             "/coaches/{coach_id}/review-summary",
-            get(reviews::get_coach_review_summary::<O, N, A, C>)
-                .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
+            get(reviews::get_coach_review_summary::<O, N, A, C>).route_layer(require_role(&[
+                Role::Headquarters,
+                Role::Coach,
+                Role::Student,
+            ])),
         )
         .route(
             "/coaches/{coach_id}/reviews",
-            get(reviews::list_coach_reviews::<O, N, A, C>)
-                .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
+            get(reviews::list_coach_reviews::<O, N, A, C>).route_layer(require_role(&[
+                Role::Headquarters,
+                Role::Coach,
+                Role::Student,
+            ])),
         )
         .with_state(Arc::new(reviews::ReviewsState {
             submit_lesson_review,

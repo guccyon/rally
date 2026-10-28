@@ -93,6 +93,21 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<CoachReviewSummary> getCoachReviewSummary(String coachId) async =>
+      CoachReviewSummary.fromJson(
+        await _send(
+          'GET',
+          '/coaches/${Uri.encodeComponent(coachId)}/review-summary',
+        ),
+      );
+
+  @override
+  Future<CoachReviewList> listCoachReviews(String coachId) async =>
+      CoachReviewList.fromJson(
+        await _send('GET', '/coaches/${Uri.encodeComponent(coachId)}/reviews'),
+      );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) async => StartSubscriptionResponse.fromJson(

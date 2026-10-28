@@ -243,6 +243,63 @@ void main() {
     );
   });
 
+  test('コーチの評価の件数と平均・一覧は GET /coaches/{coach_id}/… へ送り、変換する', () async {
+    final summary = await apiReplying(200, {
+      'coach_id': 'c1',
+      'review_count': 3,
+      'average_rating': 4,
+    }).getCoachReviewSummary('c1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/coaches/c1/review-summary');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(summary.coachId, 'c1');
+    expect(summary.reviewCount, 3);
+    // JSON の整数でも小数として読む
+    expect(summary.averageRating, 4.0);
+
+    final empty = await apiReplying(200, {
+      'coach_id': 'c2',
+      'review_count': 0,
+      'average_rating': null,
+    }).getCoachReviewSummary('c2');
+    expect(empty.reviewCount, 0);
+    expect(empty.averageRating, isNull);
+
+    final list = await apiReplying(200, {
+      'coach_id': 'c1',
+      'reviews': [
+        {
+          'review_id': 'r2',
+          'lesson_id': 'l2',
+          'rating': 5,
+          'comment': '丁寧でした',
+          'submitted_at': '2026-10-28T04:00:00Z',
+        },
+        {
+          'review_id': 'r1',
+          'lesson_id': 'l1',
+          'rating': 3,
+          'comment': 'ふつう',
+          'submitted_at': '2026-10-27T04:00:00Z',
+        },
+      ],
+    }).listCoachReviews('c1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/coaches/c1/reviews');
+    expect(list.coachId, 'c1');
+    // 返った順（新しい順）のまま
+    expect(list.reviews.map((r) => r.reviewId), ['r2', 'r1']);
+    expect(list.reviews.first.rating, 5);
+    expect(list.reviews.first.comment, '丁寧でした');
+    expect(list.reviews.first.submittedAt, DateTime.utc(2026, 10, 28, 4));
+
+    final none = await apiReplying(200, {
+      'coach_id': 'c2',
+      'reviews': <Object>[],
+    }).listCoachReviews('c2');
+    expect(none.reviews, isEmpty);
+  });
+
   test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
     final coachMessage = {
       'message_id': 'm1',

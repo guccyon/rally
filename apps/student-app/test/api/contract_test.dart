@@ -97,6 +97,8 @@ void main() {
         'getVideoReview',
         'recordLessonCompletion',
         'submitLessonReview',
+        'getCoachReviewSummary',
+        'listCoachReviews',
         'startSubscription',
         'listMessageThreads',
         'listMessages',
@@ -173,6 +175,53 @@ void main() {
       'used',
       'remaining',
     ]);
+  });
+
+  test('コーチの評価の項目が契約と一致し、評価した生徒を載せない（getCoachReviewSummary・listCoachReviews）', () {
+    // CoachReviewSummary.fromJson・CoachReview.fromJson・CoachReviewList.fromJson が読む項目
+    expect(propertiesOf('CoachReviewSummary'), [
+      'coach_id',
+      'review_count',
+      'average_rating',
+    ]);
+    final average =
+        ((schemas['CoachReviewSummary'] as YamlMap)['properties']
+                as YamlMap)['average_rating']
+            as YamlMap;
+    expect((average['type'] as YamlList).cast<String>(), ['number', 'null']);
+    expect(propertiesOf('CoachReview'), [
+      'review_id',
+      'lesson_id',
+      'rating',
+      'comment',
+      'submitted_at',
+    ]);
+    expect(propertiesOf('CoachReview'), isNot(contains('student_id')));
+    expect(propertiesOf('CoachReviewList'), ['coach_id', 'reviews']);
+    final items =
+        (((schemas['CoachReviewList'] as YamlMap)['properties']
+                    as YamlMap)['reviews']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/CoachReview');
+
+    for (final (path, operationId, schema) in [
+      (
+        '/coaches/{coach_id}/review-summary',
+        'getCoachReviewSummary',
+        'CoachReviewSummary',
+      ),
+      ('/coaches/{coach_id}/reviews', 'listCoachReviews', 'CoachReviewList'),
+    ]) {
+      final operation =
+          ((spec['paths'] as YamlMap)[path] as YamlMap)['get'] as YamlMap;
+      expect(operation['operationId'], operationId);
+      final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+      final body =
+          (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+              as YamlMap);
+      expect(refOf(body), '#/components/schemas/$schema');
+    }
   });
 
   test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {

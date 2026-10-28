@@ -1,6 +1,7 @@
-//! レッスンの評価。student-app の `POST /lesson-reviews`（`submitLessonReview`。生徒だけ）と、admin-web の
-//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部はどのコーチの分も、コーチは自分の分だけ）と、
+//! レッスンの評価。student-app の `POST /lesson-reviews`（`submitLessonReview`。生徒だけ）と、admin-web・student-app の
+//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部と生徒はどのコーチの分も、コーチは自分の分だけ）と、
 //! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。コーチが受けた評価の一覧。読める範囲は件数と平均と同じ）。
+//! 評価の一覧には、評価した生徒を特定できる項目を載せない（[`CoachReviewBody`] に `student_id` がない）。
 //! 自分が生徒でないレッスンには、レッスンがあることも知らせない（404）。
 
 use std::sync::Arc;
@@ -62,7 +63,7 @@ pub struct LessonReviewBody {
     submitted_at: String,
 }
 
-/// admin-web の `CoachReviewSummary`。
+/// admin-web・student-app の `CoachReviewSummary`。
 #[derive(Serialize)]
 pub struct CoachReviewSummaryBody {
     coach_id: String,
@@ -70,7 +71,7 @@ pub struct CoachReviewSummaryBody {
     average_rating: Option<f64>,
 }
 
-/// admin-web の `CoachReview`。
+/// admin-web・student-app の `CoachReview`。評価した生徒（`student_id`）は載せない。
 #[derive(Serialize)]
 pub struct CoachReviewBody {
     review_id: String,
@@ -80,7 +81,7 @@ pub struct CoachReviewBody {
     submitted_at: String,
 }
 
-/// admin-web の `CoachReviewList`。
+/// admin-web・student-app の `CoachReviewList`。
 #[derive(Serialize)]
 pub struct CoachReviewListBody {
     coach_id: String,
@@ -129,8 +130,8 @@ where
     Ok((StatusCode::CREATED, Json(lesson_review_body(&review)?)))
 }
 
-/// `GET /coaches/{coach_id}/review-summary`（admin-web）。本部とコーチだけが呼べ（役割は `require_role` の層が
-/// 確かめる）、コーチは自分の分だけを読める。
+/// `GET /coaches/{coach_id}/review-summary`（admin-web・student-app）。本部・コーチ・生徒が呼べ（役割は `require_role` の
+/// 層が確かめる）、コーチは自分の分だけを読める。本部と生徒はどのコーチの分も読める。
 pub async fn get_coach_review_summary<L, R, A, C>(
     State(state): State<Shared<L, R, A, C>>,
     account: AuthenticatedAccount,
@@ -157,8 +158,8 @@ where
     Ok(Json(coach_review_summary_body(&summary)))
 }
 
-/// `GET /coaches/{coach_id}/reviews`（admin-web）。本部とコーチだけが呼べ（役割は `require_role` の層が確かめる）、
-/// コーチは自分の分だけを読める。
+/// `GET /coaches/{coach_id}/reviews`（admin-web・student-app）。本部・コーチ・生徒が呼べ（役割は `require_role` の層が
+/// 確かめる）、コーチは自分の分だけを読める。本部と生徒はどのコーチの分も読める。
 pub async fn list_coach_reviews<L, R, A, C>(
     State(state): State<Shared<L, R, A, C>>,
     account: AuthenticatedAccount,
