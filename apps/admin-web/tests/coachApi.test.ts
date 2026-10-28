@@ -100,6 +100,26 @@ describe("coachApi", () => {
     ]);
   });
 
+  test("getMyAccount はトークンを付けて GET /api/me を呼び、本人のアカウントを返す", async () => {
+    const account = { account_id: SLOT.coach_id, role: "coach", display_name: "山田コーチ" };
+    const { api, fetchMock } = setup(json(200, account));
+    const result = await api.getMyAccount();
+    expect(result).toEqual({ ok: true, data: account });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/me");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("getMyAccount の 401 はログインし直す文言にする", async () => {
+    const { api } = setup(json(401, { code: "unauthorized", message: "unauthorized" }));
+    const result = await api.getMyAccount();
+    expect(result).toEqual({
+      ok: false,
+      message: "トークンがないか無効です。ログインし直してください。",
+    });
+  });
+
   test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
     const summary = { coach_id: SLOT.coach_id, review_count: 2, average_rating: 4.5 };
     const { api, fetchMock } = setup(json(200, summary));

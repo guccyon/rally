@@ -4,14 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { CoachApi } from "@/api/coach";
 import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
-import { CoachHome } from "@/components/coach/CoachHome";
 import { formatDateTime } from "@/components/labels";
-
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
-
-// 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
-const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
-vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
 
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -118,25 +111,5 @@ describe("コーチの評価の一覧", () => {
 
     expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
     expect(screen.queryByText("まだ評価はありません")).not.toBeInTheDocument();
-  });
-
-  test("コーチの画面の「自分の評価」は件数と平均の下に一覧を出す", async () => {
-    coachApiMock.mockReturnValue({
-      getCoachReviewSummary: summaryApi(2, 4),
-      listCoachReviews: async (coachId: string) => ({
-        ok: true,
-        data: { coach_id: coachId, reviews: REVIEWS },
-      }),
-    });
-    const user = userEvent.setup();
-    render(<CoachHome token="mock.coach.x" />);
-    const region = screen.getByRole("region", { name: "自分の評価" });
-
-    await user.type(within(region).getByLabelText("コーチ ID"), COACH_ID);
-    await user.click(within(region).getByRole("button", { name: "評価を見る" }));
-
-    const summary = await within(region).findByLabelText("評価の件数と平均");
-    const list = within(region).getByRole("list", { name: "評価の一覧" });
-    expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

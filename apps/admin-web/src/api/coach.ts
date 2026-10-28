@@ -4,6 +4,7 @@ import type { ApiClient, Schemas } from "./client";
 /** コーチの操作（契約の operationId と 1 対 1）。 */
 export function coachApi(client: ApiClient) {
   return {
+    getMyAccount: () => call(() => client.GET("/me")),
     publishSlot: (body: Schemas["PublishSlotRequest"]) =>
       call(() => client.POST("/slots", { body })),
     returnVideoReview: (videoId: string, body: Schemas["ReturnVideoReviewRequest"]) =>
