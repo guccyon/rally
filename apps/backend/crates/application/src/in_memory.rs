@@ -10,7 +10,7 @@ use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
-    identity::{Account, AccountId},
+    identity::{Account, AccountId, CoachBio, Profile},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId},
@@ -99,6 +99,28 @@ impl AccountRepository for InMemoryAccountRepository {
             (a.display_name().as_str(), a.id()).cmp(&(b.display_name().as_str(), b.id()))
         });
         Ok(coaches)
+    }
+
+    async fn update_coach_bio(
+        &self,
+        coach_id: AccountId,
+        bio: CoachBio,
+    ) -> Result<Option<Account>, Unavailable> {
+        let mut accounts = self.accounts.lock().unwrap();
+        let Some(account) = accounts.iter_mut().find(|a| a.id() == coach_id) else {
+            return Ok(None);
+        };
+        let Some(coach) = account.as_coach() else {
+            return Ok(None);
+        };
+        *account = Account::with_profile(
+            account.id(),
+            account.email().clone(),
+            account.display_name().clone(),
+            Profile::Coach(coach.clone().with_bio(bio)),
+            account.registered_at(),
+        );
+        Ok(Some(account.clone()))
     }
 }
 

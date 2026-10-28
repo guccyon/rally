@@ -75,6 +75,7 @@ export interface paths {
          * ログイン中の本人のアカウント（本部・コーチ）
          * @description トークンが示す本人のアカウントの ID・役割・表示名を返す。admin-web がトークンの中身を読まずに、本人のアカウント ID
          *     （コーチなら自分の評価を出すときの `coach_id`）と役割を知るのに使う。役割では絞らず、有効なトークンなら誰でも呼べる（403 はない）。
+         *     コーチのときだけ、自己紹介文 `bio`（`updateMyCoachProfile` で書いたもの。書いていなければ空文字列）も返す。
          *
          *     - トークンがない・無効なら 401。トークンが示すアカウントが存在しないときと、アカウントの役割がトークンの役割と
          *       合わないときも、無効なトークンとして 401
@@ -84,6 +85,33 @@ export interface paths {
          */
         get: operations["getMyAccount"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 自分の自己紹介文の変更（コーチ）
+         * @description トークンが示す本人（コーチ）の自己紹介文を `bio` に置き換え、置き換えたあとの本人のアカウント（`getMyAccount` と
+         *     同じ形。`bio` を含む）を返す。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - `bio` は 0〜400 文字（Unicode のコードポイントで数える）。空文字列で消せる。書いたとおりに保存する（前後の空白も削らない）
+         *     - `bio` がない・文字列でない・400 文字を超えるときは 422 `validation_failed`。そのときは何も変えない
+         *     - トークンがない・無効なら 401。トークンが示すコーチのアカウントが存在しないときも、無効なトークンとして 401
+         *
+         *     行動イベントは発火しない。
+         */
+        put: operations["updateMyCoachProfile"];
         post?: never;
         delete?: never;
         options?: never;
@@ -404,6 +432,13 @@ export interface components {
             role: components["schemas"]["AccountRole"];
             /** @description アカウントの表示名 */
             display_name: string;
+            /** @description コーチの自己紹介文（コーチのときだけ載る。書いていなければ空文字列）。本部・生徒には載らない */
+            bio?: string;
+        };
+        /** @description 自分の自己紹介文の変更（`updateMyCoachProfile`）。今の自己紹介文を丸ごと置き換える */
+        UpdateCoachProfileRequest: {
+            /** @description 自己紹介文（0〜400 文字。空文字列で消す） */
+            bio: string;
         };
         /** @description glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ */
         Coach: {
@@ -711,6 +746,33 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateMyCoachProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCoachProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description 自己紹介文を置き換えたあとの本人のアカウント */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listCoaches: {

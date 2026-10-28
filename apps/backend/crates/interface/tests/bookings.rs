@@ -147,6 +147,7 @@ fn app_with_entitlements(
         ),
         application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
+        application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots.clone(), clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

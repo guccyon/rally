@@ -16,6 +16,8 @@ pub enum DomainError {
         role: crate::identity::Role,
         sports: usize,
     },
+    /// コーチの自己紹介文が長すぎる（`max` は文字数）
+    CoachBioTooLong { max: usize },
     /// スロットの開始が終了より前でない
     SlotEndsBeforeItStarts,
     /// 同じコーチの時間を占める枠（`existing`）と期間が重なる

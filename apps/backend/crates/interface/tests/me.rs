@@ -1,5 +1,6 @@
-//! `GET /me`（admin-web の `getMyAccount`）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで
-//! 検査し、トークンが示す本人のアカウント（ID・役割・表示名）を返すことと、トークンがなければ 401 であることを確かめる。
+//! `GET /me`（admin-web の `getMyAccount`）と `PUT /me/profile`（`updateMyCoachProfile`）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで
+//! 検査し、トークンが示す本人のアカウント（ID・役割・表示名、コーチなら自己紹介文）を返すことと、トークンがなければ 401 であることを確かめる。
+//! 自己紹介文の変更はコーチだけ（本部・生徒は 403）で、400 文字を超えれば 422 であることも確かめる。
 
 use std::time::SystemTime;
 
@@ -96,7 +97,8 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
         ListCoaches::new(accounts.clone()),
-        GetAccount::new(accounts),
+        GetAccount::new(accounts.clone()),
+        application::identity::UpdateCoachProfile::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
@@ -223,12 +225,14 @@ async fn coach_gets_own_account() {
     let router = app(accounts().await);
     let (status, body) = get_my_account(&router, Some("coach:2")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // 自己紹介文を書いていないコーチは空文字列
     assert_eq!(
         body,
         json!({
             "account_id": "00000000-0000-0000-0000-000000000002",
             "role": "coach",
             "display_name": "たなか",
+            "bio": "",
         })
     );
 }
@@ -273,6 +277,112 @@ async fn token_of_unknown_account_or_other_role_is_unauthorized() {
     for token in ["coach:99", "headquarters:2", "coach:3"] {
         let (status, body) = get_my_account(&router, Some(token)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token}: {body}");
+        assert_eq!(body["code"], "unauthorized");
+    }
+}
+
+async fn update_my_coach_profile(
+    router: &Router,
+    token: Option<&str>,
+    body: &str,
+) -> (StatusCode, Value) {
+    let mut request = Request::put("/me/profile").header(header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let response = router
+        .clone()
+        .oneshot(request.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    let body = serde_json::from_slice(&bytes).unwrap();
+    support::Contract::load("admin-web").assert_response("put", "/me/profile", status, &body);
+    (status, body)
+}
+
+fn bio_request(bio: &str) -> String {
+    json!({ "bio": bio }).to_string()
+}
+
+#[tokio::test]
+async fn coach_updates_own_bio_and_get_me_returns_it() {
+    let router = app(accounts().await);
+    let (status, body) =
+        update_my_coach_profile(&router, Some("coach:2"), &bio_request("テニス歴 20 年")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "account_id": "00000000-0000-0000-0000-000000000002",
+            "role": "coach",
+            "display_name": "たなか",
+            "bio": "テニス歴 20 年",
+        })
+    );
+    let (_, me) = get_my_account(&router, Some("coach:2")).await;
+    assert_eq!(me["bio"], "テニス歴 20 年");
+
+    // 400 文字ちょうどまで書け、空文字列で消せる
+    let full = "あ".repeat(400);
+    let (status, body) =
+        update_my_coach_profile(&router, Some("coach:2"), &bio_request(&full)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["bio"], full.as_str());
+    let (status, body) = update_my_coach_profile(&router, Some("coach:2"), &bio_request("")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["bio"], "");
+    let (_, me) = get_my_account(&router, Some("coach:2")).await;
+    assert_eq!(me["bio"], "");
+}
+
+#[tokio::test]
+async fn bio_over_400_chars_or_malformed_request_is_422_and_nothing_changes() {
+    let router = app(accounts().await);
+    update_my_coach_profile(&router, Some("coach:2"), &bio_request("前の文")).await;
+
+    let too_long = bio_request(&"あ".repeat(401));
+    for request in [too_long.as_str(), "{}", r#"{"bio": 1}"#, "not json"] {
+        let (status, body) = update_my_coach_profile(&router, Some("coach:2"), request).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{request}: {body}"
+        );
+        assert_eq!(body["code"], "validation_failed");
+    }
+    let (_, body) = update_my_coach_profile(&router, Some("coach:2"), &too_long).await;
+    assert_eq!(body["message"], "自己紹介文は 400 文字まで");
+
+    let (_, me) = get_my_account(&router, Some("coach:2")).await;
+    assert_eq!(me["bio"], "前の文");
+}
+
+#[tokio::test]
+async fn headquarters_and_student_cannot_update_a_bio() {
+    let router = app(accounts().await);
+    for token in [HEADQUARTERS, "student:3"] {
+        let (status, body) =
+            update_my_coach_profile(&router, Some(token), &bio_request("自己紹介")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+    // 本部・生徒の GET /me に bio は載らない
+    for token in [HEADQUARTERS, "student:3"] {
+        let (_, me) = get_my_account(&router, Some(token)).await;
+        assert!(me.get("bio").is_none(), "{token}: {me}");
+    }
+}
+
+#[tokio::test]
+async fn bio_update_without_valid_coach_token_is_unauthorized() {
+    let router = app(accounts().await);
+    // トークンがない・無効、コーチのアカウントがない（99）、トークンはコーチだがアカウントは生徒（3）
+    for token in [None, Some("nobody:1"), Some("coach:99"), Some("coach:3")] {
+        let (status, body) =
+            update_my_coach_profile(&router, token, &bio_request("自己紹介")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
         assert_eq!(body["code"], "unauthorized");
     }
 }

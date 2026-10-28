@@ -98,7 +98,8 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
         ListCoaches::new(accounts.clone()),
-        GetAccount::new(accounts),
+        GetAccount::new(accounts.clone()),
+        application::identity::UpdateCoachProfile::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

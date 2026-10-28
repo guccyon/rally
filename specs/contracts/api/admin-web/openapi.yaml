@@ -38,7 +38,7 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
   - name: identity
-    description: アカウント（ログイン中の本人のアカウント・本部が見るコーチの一覧）
+    description: アカウント（ログイン中の本人のアカウント・コーチの自己紹介文・本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
 
@@ -122,6 +122,7 @@ paths:
       description: |
         トークンが示す本人のアカウントの ID・役割・表示名を返す。admin-web がトークンの中身を読まずに、本人のアカウント ID
         （コーチなら自分の評価を出すときの `coach_id`）と役割を知るのに使う。役割では絞らず、有効なトークンなら誰でも呼べる（403 はない）。
+        コーチのときだけ、自己紹介文 `bio`（`updateMyCoachProfile` で書いたもの。書いていなければ空文字列）も返す。
 
         - トークンがない・無効なら 401。トークンが示すアカウントが存在しないときと、アカウントの役割がトークンの役割と
           合わないときも、無効なトークンとして 401
@@ -140,6 +141,42 @@ paths:
                 $ref: "#/components/schemas/Account"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /me/profile:
+    put:
+      operationId: updateMyCoachProfile
+      summary: 自分の自己紹介文の変更（コーチ）
+      description: |
+        トークンが示す本人（コーチ）の自己紹介文を `bio` に置き換え、置き換えたあとの本人のアカウント（`getMyAccount` と
+        同じ形。`bio` を含む）を返す。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+
+        - `bio` は 0〜400 文字（Unicode のコードポイントで数える）。空文字列で消せる。書いたとおりに保存する（前後の空白も削らない）
+        - `bio` がない・文字列でない・400 文字を超えるときは 422 `validation_failed`。そのときは何も変えない
+        - トークンがない・無効なら 401。トークンが示すコーチのアカウントが存在しないときも、無効なトークンとして 401
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCoachProfileRequest"
+      responses:
+        "200":
+          description: 自己紹介文を置き換えたあとの本人のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /coaches:
     get:
@@ -627,6 +664,20 @@ components:
           minLength: 1
           maxLength: 50
           description: アカウントの表示名
+        bio:
+          type: string
+          maxLength: 400
+          description: コーチの自己紹介文（コーチのときだけ載る。書いていなければ空文字列）。本部・生徒には載らない
+
+    UpdateCoachProfileRequest:
+      type: object
+      description: 自分の自己紹介文の変更（`updateMyCoachProfile`）。今の自己紹介文を丸ごと置き換える
+      required: [bio]
+      properties:
+        bio:
+          type: string
+          maxLength: 400
+          description: 自己紹介文（0〜400 文字。空文字列で消す）
 
     Coach:
       type: object

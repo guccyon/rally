@@ -34,6 +34,7 @@ use application::{
     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
     identity::{
         AccountRepository, GetAccount, ListCoaches, RegisterAccount, TokenIssuer, TokenVerifier,
+        UpdateCoachProfile,
     },
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
@@ -59,7 +60,7 @@ use application::{
 use axum::{
     Router,
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use domain::identity::Role;
 
@@ -82,13 +83,15 @@ pub use error::ApiError;
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
 /// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
-/// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。
+/// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
+/// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
 pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
+    update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, C>,
     create_booking: CreateBooking<B, A, C>,
@@ -150,7 +153,14 @@ where
         .with_state(Arc::new(coaches::CoachesState { list_coaches }));
     let me = Router::new()
         .route("/me", get(me::get_my_account::<R>))
-        .with_state(Arc::new(me::MeState { get_account }));
+        .route(
+            "/me/profile",
+            put(me::update_my_coach_profile::<R>).route_layer(require_role(&[Role::Coach])),
+        )
+        .with_state(Arc::new(me::MeState {
+            get_account,
+            update_coach_profile,
+        }));
     let slots = Router::new()
         .route(
             "/slots",

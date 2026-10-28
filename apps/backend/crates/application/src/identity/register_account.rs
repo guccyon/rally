@@ -269,6 +269,14 @@ mod tests {
         async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
+
+        async fn update_coach_bio(
+            &self,
+            _coach_id: domain::identity::AccountId,
+            _bio: domain::identity::CoachBio,
+        ) -> Result<Option<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]
