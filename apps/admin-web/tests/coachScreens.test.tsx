@@ -321,6 +321,81 @@ describe("添削の返却", () => {
     ]);
   });
 
+  const AI_COMMENT = "フォームの安定性に注目して、コーチの添削をお待ちください。";
+  function aiFeedback(comment: string) {
+    return { comment, created_at: "2026-10-20T01:00:05Z" };
+  }
+
+  test("添削する動画に AI の一次フィードバックがあれば、コメントの欄の上に参考として出し、返却には入れない", async () => {
+    const listMyCoachVideos = listOf(
+      [{ ...VIDEOS[0]!, ai_feedback: aiFeedback(AI_COMMENT) }, ...VIDEOS.slice(1)],
+      VIDEOS.slice(1),
+    );
+    const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>(async (videoId, body) =>
+      returned(videoId, body.comment),
+    );
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview }} />);
+
+    // 選ぶまでは出さない。
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    expect(screen.queryByText(AI_COMMENT)).not.toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "添削する" }));
+
+    const ai = screen.getByRole("region", { name: "AI の一次フィードバック（参考）" });
+    expect(ai).toHaveTextContent(AI_COMMENT);
+    expect(ai).toHaveTextContent("コーチの添削ではなく");
+    // コメントの欄より前に出し、欄には入れない。
+    const textarea = screen.getByLabelText("添削コメント");
+    expect(ai.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(textarea).toHaveValue("");
+
+    await user.type(textarea, "腰の回転を早めましょう");
+    await user.click(screen.getByRole("button", { name: "添削を返却" }));
+    expect(returnVideoReview).toHaveBeenCalledWith(VIDEO_ID, { comment: "腰の回転を早めましょう" });
+    expect(screen.queryByText(AI_COMMENT)).not.toBeInTheDocument();
+  });
+
+  test("AI の一次フィードバックがない（null・載っていない・空白だけ）ときは何も出さない", async () => {
+    const third = "b0000000-0000-4000-8000-000000000005";
+    const listMyCoachVideos = listOf([
+      { ...VIDEOS[0]!, ai_feedback: null },
+      VIDEOS[1]!,
+      { ...coachVideo(third, "2026-10-22T01:00:00Z", undefined, "田中さん"), ai_feedback: aiFeedback("  ") },
+    ]);
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview: vi.fn() }} />);
+
+    const waiting = await screen.findByRole("table", { name: "添削待ち" });
+    for (const name of [/佐藤さん/, /名前を表示できません/, /田中さん/]) {
+      await user.click(
+        within(within(waiting).getByRole("row", { name })).getByRole("button", { name: "添削する" }),
+      );
+      expect(screen.getByLabelText("添削コメント")).toBeInTheDocument();
+      expect(screen.queryByText(/AI の一次フィードバック/)).not.toBeInTheDocument();
+    }
+  });
+
+  test("返却済みの行には AI の一次フィードバックを出さない", async () => {
+    render(
+      <ReturnVideoReviewForm
+        api={{
+          listMyCoachVideos: listOf([
+            VIDEOS[0]!,
+            { ...VIDEOS[2]!, ai_feedback: aiFeedback(AI_COMMENT) },
+            VIDEOS[3]!,
+          ]),
+          returnVideoReview: vi.fn(),
+        }}
+      />,
+    );
+
+    const done = await screen.findByRole("table", { name: "返却済み" });
+    expect(within(done).getByRole("row", { name: /古田さん/ })).not.toHaveTextContent(AI_COMMENT);
+    expect(screen.queryByText(AI_COMMENT)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI の一次フィードバック/)).not.toBeInTheDocument();
+  });
+
   test("コメントが空白だけなら API を呼ばない", async () => {
     const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>();
     const user = userEvent.setup();
