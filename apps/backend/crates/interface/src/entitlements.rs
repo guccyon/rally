@@ -16,7 +16,10 @@ use serde::Serialize;
 
 use crate::{
     auth::AuthenticatedAccount,
-    contract::{contract_type_to_contract, sport_to_contract, year_month_to_contract},
+    contract::{
+        contract_type_to_contract, sport_to_contract, subscription_plan_to_contract,
+        year_month_to_contract,
+    },
     error::ApiError,
 };
 
@@ -32,12 +35,13 @@ pub struct EntitlementBody {
     student_id: String,
     contract_type: &'static str,
     sport: &'static str,
+    plan: Option<&'static str>,
     unlimited_video_and_chat: bool,
     live_lesson_quota: Option<LiveLessonQuotaBody>,
     remaining_video_reviews: Option<u32>,
 }
 
-/// student-app の `LiveLessonQuota`。
+/// student-app の `LiveLessonQuota`。`limit` は契約プランで決まる暦月の上限。
 #[derive(Serialize)]
 pub struct LiveLessonQuotaBody {
     month: String,
@@ -74,6 +78,7 @@ pub(crate) fn entitlement_body(entitlement: &Entitlement) -> EntitlementBody {
         student_id: account_id_uuid::format(entitlement.student_id()),
         contract_type: contract_type_to_contract(entitlement.contract_type()),
         sport: sport_to_contract(entitlement.sport()),
+        plan: entitlement.plan().map(subscription_plan_to_contract),
         unlimited_video_and_chat: entitlement.unlimited_video_and_chat(),
         live_lesson_quota: entitlement.live_lesson_quota().map(live_lesson_quota_body),
         remaining_video_reviews: entitlement.remaining_video_reviews(),

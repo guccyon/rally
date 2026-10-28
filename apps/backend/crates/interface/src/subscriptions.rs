@@ -24,6 +24,7 @@ use crate::{
     auth::AuthenticatedAccount,
     contract::{
         date_time_to_contract, sport_to_contract, student_app_sport,
+        subscription_plan_from_contract, subscription_plan_to_contract,
         subscription_status_to_contract,
     },
     entitlements::{EntitlementBody, entitlement_body},
@@ -39,6 +40,9 @@ pub struct SubscriptionsState<E, A, P, C> {
 #[derive(Deserialize)]
 pub struct StartSubscriptionRequest {
     sport: String,
+    /// 省いたら standard
+    #[serde(default)]
+    plan: Option<String>,
     /// 決済（billing）は Gen1 の範囲外なので、受け取るだけで使わない
     #[allow(dead_code)]
     payment_method_token: String,
@@ -50,6 +54,7 @@ pub struct SubscriptionBody {
     subscription_id: String,
     student_id: String,
     sport: &'static str,
+    plan: &'static str,
     status: &'static str,
     started_at: String,
 }
@@ -78,6 +83,7 @@ where
     let command = StartSubscriptionCommand {
         student_id: account.account_id(),
         sport: student_app_sport(&request.sport)?,
+        plan: subscription_plan_from_contract(request.plan.as_deref())?,
     };
 
     let (subscription, entitlement) =
@@ -107,6 +113,7 @@ fn subscription_body(subscription: &Subscription) -> Result<SubscriptionBody, Ap
         subscription_id: subscription_id_uuid::format(subscription.id()),
         student_id: account_id_uuid::format(subscription.student_id()),
         sport: sport_to_contract(subscription.sport()),
+        plan: subscription_plan_to_contract(subscription.plan()),
         status: subscription_status_to_contract(subscription.status()),
         started_at: date_time_to_contract(subscription.started_at())?,
     })

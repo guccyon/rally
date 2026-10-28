@@ -53,9 +53,9 @@ pub enum DomainError {
     },
     /// 暦月の月が 1〜12 でない
     InvalidMonth { month: u8 },
-    /// ビデオ通話の暦月の枠で使った回数が上限を超える
+    /// ビデオ通話の暦月の枠で使った回数が契約プランの上限を超える
     LiveLessonsUsedOverLimit { used: u8, limit: u8 },
-    /// ビデオ通話の暦月の枠が残っていない（月額の 3 回目。不変条件 1）
+    /// ビデオ通話の暦月の枠が残っていない（月額で契約プランの上限を超える回。不変条件 1）
     LiveLessonQuotaExceeded,
     /// 予約の参加者（生徒・コーチ）でないので、その通話セッションを扱えない
     NotASessionParticipant,

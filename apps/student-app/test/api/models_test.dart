@@ -159,4 +159,71 @@ void main() {
     expect(item.slot.coachBio, isNull);
     expect(() => list.bookings.clear(), throwsUnsupportedError);
   });
+
+  group('契約プラン', () {
+    test('StartSubscriptionRequest は plan を選んだときだけ送る', () {
+      expect(
+        const StartSubscriptionRequest(
+          sport: Sport.tennis,
+          paymentMethodToken: 'tok_mock',
+        ).toJson(),
+        {'sport': 'tennis', 'payment_method_token': 'tok_mock'},
+      );
+      expect(
+        const StartSubscriptionRequest(
+          sport: Sport.tennis,
+          plan: SubscriptionPlan.plus,
+          paymentMethodToken: 'tok_mock',
+        ).toJson(),
+        {
+          'sport': 'tennis',
+          'plan': 'plus',
+          'payment_method_token': 'tok_mock',
+        },
+      );
+    });
+
+    test('Entitlement.fromJson はプランと暦月の上限を読み、ワンショットのプランは null', () {
+      final plus = Entitlement.fromJson({
+        'entitlement_id': 'e1',
+        'student_id': 's1',
+        'contract_type': 'subscription',
+        'sport': 'tennis',
+        'plan': 'plus',
+        'unlimited_video_and_chat': true,
+        'live_lesson_quota': {
+          'month': '2026-10',
+          'limit': 4,
+          'used': 1,
+          'remaining': 3,
+        },
+        'remaining_video_reviews': null,
+      });
+      expect(plus.plan, SubscriptionPlan.plus);
+      expect(plus.liveLessonQuota!.limit, 4);
+
+      final oneShot = Entitlement.fromJson({
+        'entitlement_id': 'e2',
+        'student_id': 's2',
+        'contract_type': 'one_shot',
+        'sport': 'golf',
+        'plan': null,
+        'live_lesson_quota': null,
+        'remaining_video_reviews': 1,
+      });
+      expect(oneShot.plan, isNull);
+    });
+
+    test('Subscription.fromJson はプランを読む', () {
+      final subscription = Subscription.fromJson({
+        'subscription_id': 'sub1',
+        'student_id': 's1',
+        'sport': 'tennis',
+        'plan': 'standard',
+        'status': 'active',
+        'started_at': '2026-10-26T00:00:00Z',
+      });
+      expect(subscription.plan, SubscriptionPlan.standard);
+    });
+  });
 }

@@ -57,7 +57,9 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        entitlement::{EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+        },
         identity::Sport,
         scheduling::BookingId,
     };
@@ -84,6 +86,7 @@ mod tests {
             Sport::Tennis,
             SubscriptionId::from_u128(20),
             LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
                 october(),
                 [BookingId::from_u128(1), BookingId::from_u128(2)],
             )
@@ -121,7 +124,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             entitlement.live_lesson_quota(),
-            Some(&LiveLessonQuota::fresh(YearMonth::new(2026, 11).unwrap())),
+            Some(&LiveLessonQuota::fresh(
+                SubscriptionPlan::Standard,
+                YearMonth::new(2026, 11).unwrap()
+            )),
             "11 月は 0 から"
         );
         assert_eq!(

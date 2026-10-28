@@ -54,6 +54,19 @@ enum SubscriptionStatus {
       _fromWire(values, value, (e) => e.wire);
 }
 
+/// `SubscriptionPlan`（glossary の subscription_plan）。ビデオ通話の暦月の上限を決める（standard 2 回・plus 4 回）。
+/// 上限の数はサーバーが `LiveLessonQuota.limit` で返すので、ここには持たない。
+enum SubscriptionPlan {
+  standard('standard'),
+  plus('plus');
+
+  const SubscriptionPlan(this.wire);
+  final String wire;
+
+  static SubscriptionPlan fromWire(String value) =>
+      _fromWire(values, value, (e) => e.wire);
+}
+
 /// `LiveLessonSessionStatus`
 enum LiveLessonSessionStatus {
   inProgress('in_progress'),
@@ -366,7 +379,7 @@ class CreateBookingRequest {
   Map<String, dynamic> toJson() => {'slot_id': slotId, 'is_trial': isTrial};
 }
 
-/// `LiveLessonQuota`
+/// `LiveLessonQuota`。`limit` は月額契約のプランで決まる暦月の上限。
 class LiveLessonQuota {
   const LiveLessonQuota({
     required this.month,
@@ -397,6 +410,7 @@ class Entitlement {
     required this.studentId,
     required this.contractType,
     required this.sport,
+    this.plan,
     this.unlimitedVideoAndChat,
     this.liveLessonQuota,
     this.remainingVideoReviews,
@@ -408,6 +422,9 @@ class Entitlement {
 
   /// 月額は Sport のいずれか、ワンショットは golf なので文字列のまま持つ（契約も string）。
   final String sport;
+
+  /// 元の月額契約のプラン（月額のみ。ワンショットは null）
+  final SubscriptionPlan? plan;
   final bool? unlimitedVideoAndChat;
   final LiveLessonQuota? liveLessonQuota;
   final int? remainingVideoReviews;
@@ -417,6 +434,9 @@ class Entitlement {
     studentId: json['student_id'] as String,
     contractType: ContractType.fromWire(json['contract_type'] as String),
     sport: json['sport'] as String,
+    plan: json['plan'] == null
+        ? null
+        : SubscriptionPlan.fromWire(json['plan'] as String),
     unlimitedVideoAndChat: json['unlimited_video_and_chat'] as bool?,
     liveLessonQuota: json['live_lesson_quota'] == null
         ? null
@@ -433,6 +453,7 @@ class Subscription {
     required this.subscriptionId,
     required this.studentId,
     required this.sport,
+    required this.plan,
     required this.status,
     required this.startedAt,
   });
@@ -440,6 +461,7 @@ class Subscription {
   final String subscriptionId;
   final String studentId;
   final Sport sport;
+  final SubscriptionPlan plan;
   final SubscriptionStatus status;
   final DateTime startedAt;
 
@@ -447,6 +469,7 @@ class Subscription {
     subscriptionId: json['subscription_id'] as String,
     studentId: json['student_id'] as String,
     sport: Sport.fromWire(json['sport'] as String),
+    plan: SubscriptionPlan.fromWire(json['plan'] as String),
     status: SubscriptionStatus.fromWire(json['status'] as String),
     startedAt: _dateTime(json['started_at']),
   );
@@ -456,16 +479,21 @@ class Subscription {
 class StartSubscriptionRequest {
   const StartSubscriptionRequest({
     required this.sport,
+    this.plan,
     required this.paymentMethodToken,
   });
 
   final Sport sport;
+
+  /// 契約プラン。null なら送らず、サーバーが standard にする
+  final SubscriptionPlan? plan;
 
   /// 決済手段のトークン（Gen1 はモック。サーバーは受け取るだけで使わない）
   final String paymentMethodToken;
 
   Map<String, dynamic> toJson() => {
     'sport': sport.wire,
+    if (plan != null) 'plan': plan!.wire,
     'payment_method_token': paymentMethodToken,
   };
 }

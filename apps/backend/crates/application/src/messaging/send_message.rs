@@ -164,7 +164,10 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
+        },
         identity::Sport,
         messaging::MessageSender,
     };
@@ -209,7 +212,10 @@ mod tests {
                 MONTHLY_STUDENT,
                 Sport::Tennis,
                 SubscriptionId::from_u128(31),
-                LiveLessonQuota::fresh(YearMonth::new(2026, 10).unwrap()),
+                LiveLessonQuota::fresh(
+                    SubscriptionPlan::Standard,
+                    YearMonth::new(2026, 10).unwrap(),
+                ),
             )
             .unwrap()]);
         SendMessage::new(

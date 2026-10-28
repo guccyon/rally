@@ -1,17 +1,18 @@
 use std::time::SystemTime;
 
-use super::{ContractType, SubscriptionId, SubscriptionStatus};
+use super::{ContractType, SubscriptionId, SubscriptionPlan, SubscriptionStatus};
 use crate::{DomainError, identity::AccountId, identity::Sport};
 
 /// 月額の契約（glossary の subscription）。ゴルフ以外のスポーツで結ぶ。
 ///
 /// 契約の開始は application の `entitlement::StartSubscription`（決済は billing で、Gen1 の範囲外）。ここでは型と、
-/// 生成時の不変条件（スポーツ）だけを持つ。
+/// 生成時の不変条件（スポーツ）と、ビデオ通話の暦月の上限を決めるプラン（[`SubscriptionPlan`]）を持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
     id: SubscriptionId,
     student_id: AccountId,
     sport: Sport,
+    plan: SubscriptionPlan,
     status: SubscriptionStatus,
     started_at: SystemTime,
 }
@@ -22,6 +23,7 @@ impl Subscription {
         id: SubscriptionId,
         student_id: AccountId,
         sport: Sport,
+        plan: SubscriptionPlan,
         status: SubscriptionStatus,
         started_at: SystemTime,
     ) -> Result<Self, DomainError> {
@@ -30,6 +32,7 @@ impl Subscription {
             id,
             student_id,
             sport,
+            plan,
             status,
             started_at,
         })
@@ -45,6 +48,10 @@ impl Subscription {
 
     pub const fn sport(&self) -> Sport {
         self.sport
+    }
+
+    pub const fn plan(&self) -> SubscriptionPlan {
+        self.plan
     }
 
     pub const fn status(&self) -> SubscriptionStatus {
@@ -65,6 +72,7 @@ mod tests {
             SubscriptionId::from_u128(1),
             AccountId::from_u128(2),
             sport,
+            SubscriptionPlan::Plus,
             SubscriptionStatus::Active,
             SystemTime::UNIX_EPOCH,
         )
@@ -74,6 +82,7 @@ mod tests {
     fn subscribes_to_sports_other_than_golf() {
         let subscription = subscription(Sport::Tennis).unwrap();
         assert_eq!(subscription.sport(), Sport::Tennis);
+        assert_eq!(subscription.plan(), SubscriptionPlan::Plus);
         assert_eq!(subscription.status(), SubscriptionStatus::Active);
         assert_eq!(subscription.started_at(), SystemTime::UNIX_EPOCH);
     }

@@ -8,7 +8,7 @@ contexts:
   - { id: catalog,      ja: "カタログ",           note: "スポーツ、レッスン種別、コーチの提供メニュー" }
   - { id: matching,     ja: "マッチング",         note: "検索・推薦・リクエスト・担当コーチの確定" }
   - { id: scheduling,   ja: "予約",               note: "コーチの予約枠、予約、リスケ、キャンセル規定" }
-  - { id: live-lesson,  ja: "同期レッスン",       note: "通話セッション、接続品質、録画、月 2 回の消費" }
+  - { id: live-lesson,  ja: "同期レッスン",       note: "通話セッション、接続品質、録画、月間の回数の消費（上限は entitlement の契約プラン）" }
   - { id: async-lesson, ja: "非同期レッスン",     note: "動画アップロード、添削ワークフロー、納期、返却" }
   - { id: messaging,    ja: "メッセージ",         note: "チャット、履歴、既読、通知の発火元" }
   - { id: entitlement,  ja: "受講権",             note: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）" }

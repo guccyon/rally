@@ -1,6 +1,8 @@
 use domain::{
     DomainError,
-    entitlement::{Entitlement, LiveLessonQuota, Subscription, SubscriptionStatus},
+    entitlement::{
+        Entitlement, LiveLessonQuota, Subscription, SubscriptionPlan, SubscriptionStatus,
+    },
     identity::{AccountId, Sport},
 };
 use uuid::Uuid;
@@ -13,13 +15,15 @@ use crate::{
     domain_event::{DomainEvent, DomainEventPublisher},
 };
 
-/// 月額契約の開始の入力。`student_id` は認証した生徒のアカウント（役割の確認は境界が行う）。
+/// 月額契約の開始の入力。`student_id` は認証した生徒のアカウント（役割の確認は境界が行う）。`plan` は契約プラン
+/// （境界がプランの指定を省いたら既定の [`SubscriptionPlan::Standard`]）。
 ///
-/// 決済（billing）は Gen1 の範囲外なので、決済手段は受け取らない。
+/// 決済（billing）は Gen1 の範囲外なので、決済手段もプランの料金も受け取らない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartSubscriptionCommand {
     pub student_id: AccountId,
     pub sport: Sport,
+    pub plan: SubscriptionPlan,
 }
 
 #[derive(Debug)]
@@ -34,7 +38,7 @@ pub enum StartSubscriptionError {
 
 /// 月額契約の開始のユースケース（student-app の `startSubscription`）。月額だけで、ワンショットは開始しない。
 ///
-/// 契約中（`active`）の月額契約と、それによる受講権（今の暦月のまだ使っていない通話の枠）を作って一緒に
+/// 契約中（`active`）の月額契約と、それによる受講権（今の暦月のまだ使っていない、プランの上限の通話の枠）を作って一緒に
 /// 保存する。保存したら境界間イベント `SubscriptionStarted` を発行し、行動イベント `subscription.started` を
 /// 1 回発火する。拒否・保存の失敗ではどちらも出さない。
 pub struct StartSubscription<E, A, P, C> {
@@ -65,11 +69,16 @@ where
         command: StartSubscriptionCommand,
     ) -> Result<(Subscription, Entitlement), StartSubscriptionError> {
         let now = self.clock.now();
-        let StartSubscriptionCommand { student_id, sport } = command;
+        let StartSubscriptionCommand {
+            student_id,
+            sport,
+            plan,
+        } = command;
         let subscription = Subscription::new(
             self.entitlements.next_subscription_id(),
             student_id,
             sport,
+            plan,
             SubscriptionStatus::Active,
             now,
         )
@@ -79,7 +88,7 @@ where
             student_id,
             sport,
             subscription.id(),
-            LiveLessonQuota::fresh(calendar_month::of(now)),
+            LiveLessonQuota::fresh(plan, calendar_month::of(now)),
         )
         .map_err(StartSubscriptionError::Invalid)?;
 
@@ -165,6 +174,7 @@ mod tests {
         StartSubscriptionCommand {
             student_id: STUDENT,
             sport,
+            plan: SubscriptionPlan::Standard,
         }
     }
 
@@ -178,17 +188,27 @@ mod tests {
             (
                 subscription.student_id(),
                 subscription.sport(),
+                subscription.plan(),
                 subscription.status(),
                 subscription.started_at()
             ),
-            (STUDENT, Sport::Tennis, SubscriptionStatus::Active, now())
+            (
+                STUDENT,
+                Sport::Tennis,
+                SubscriptionPlan::Standard,
+                SubscriptionStatus::Active,
+                now()
+            )
         );
         assert_eq!(entitlement.contract_type(), ContractType::Monthly);
         assert_eq!(entitlement.subscription_id(), Some(subscription.id()));
         assert_eq!(
             entitlement.live_lesson_quota(),
-            Some(&LiveLessonQuota::fresh(YearMonth::new(2026, 10).unwrap())),
-            "今の暦月のまだ使っていない枠"
+            Some(&LiveLessonQuota::fresh(
+                SubscriptionPlan::Standard,
+                YearMonth::new(2026, 10).unwrap()
+            )),
+            "今の暦月のまだ使っていない、standard の上限の枠"
         );
         assert_eq!(use_case.entitlements().all(), vec![entitlement.clone()]);
         assert_eq!(
@@ -226,6 +246,26 @@ mod tests {
             }]
         );
         assert_eq!(analytics[0].name(), "subscription.started");
+    }
+
+    #[tokio::test]
+    async fn plus_starts_with_a_quota_of_4_live_lessons() {
+        let use_case = use_case();
+
+        let (subscription, entitlement) = use_case
+            .execute(StartSubscriptionCommand {
+                plan: SubscriptionPlan::Plus,
+                ..command(Sport::Swimming)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(subscription.plan(), SubscriptionPlan::Plus);
+        assert_eq!(entitlement.plan(), Some(SubscriptionPlan::Plus));
+        let quota = entitlement.live_lesson_quota().unwrap();
+        assert_eq!((quota.limit(), quota.remaining()), (4, 4));
+        assert_eq!(use_case.entitlements().all(), vec![entitlement.clone()]);
+        assert_eq!(use_case.entitlements().subscriptions(), vec![subscription]);
     }
 
     #[tokio::test]

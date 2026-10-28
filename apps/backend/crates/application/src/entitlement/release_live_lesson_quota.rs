@@ -71,7 +71,9 @@ mod tests {
     use std::time::Duration;
 
     use domain::{
-        entitlement::{EntitlementId, LiveLessonQuota, SubscriptionId, YearMonth},
+        entitlement::{
+            EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+        },
         identity::Sport,
     };
 
@@ -93,6 +95,7 @@ mod tests {
             Sport::Tennis,
             SubscriptionId::from_u128(20),
             LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
                 YearMonth::new(2026, 10).unwrap(),
                 [BookingId::from_u128(1), BookingId::from_u128(2)],
             )

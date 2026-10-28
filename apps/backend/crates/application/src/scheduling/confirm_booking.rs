@@ -136,7 +136,9 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        entitlement::{Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId},
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+        },
         identity::Sport,
         scheduling::{BookingStatus, Slot, SlotId, SlotStatus},
     };
@@ -325,6 +327,7 @@ mod tests {
             Sport::Tennis,
             SubscriptionId::from_u128(40),
             LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
                 calendar_month::of(now()),
                 [BookingId::from_u128(1), BookingId::from_u128(2)],
             )
