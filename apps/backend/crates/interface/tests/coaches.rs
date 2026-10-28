@@ -7,8 +7,8 @@ use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
-        AccessToken, AccountRepository, InvalidToken, ListCoaches, RegisterAccount, TokenClaims,
-        TokenIssuer, TokenVerifier,
+        AccessToken, AccountRepository, GetAccount, InvalidToken, ListCoaches, RegisterAccount,
+        TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
         FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
@@ -97,7 +97,8 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
-        ListCoaches::new(accounts),
+        ListCoaches::new(accounts.clone()),
+        GetAccount::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

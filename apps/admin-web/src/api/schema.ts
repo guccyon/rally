@@ -64,6 +64,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ログイン中の本人のアカウント（本部・コーチ）
+         * @description トークンが示す本人のアカウントの ID・役割・表示名を返す。admin-web がトークンの中身を読まずに、本人のアカウント ID
+         *     （コーチなら自分の評価を出すときの `coach_id`）と役割を知るのに使う。役割では絞らず、有効なトークンなら誰でも呼べる（403 はない）。
+         *
+         *     - トークンがない・無効なら 401。トークンが示すアカウントが存在しないときと、アカウントの役割がトークンの役割と
+         *       合わないときも、無効なトークンとして 401
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getMyAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches": {
         parameters: {
             query?: never;
@@ -362,6 +389,22 @@ export interface components {
             /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
         };
+        /**
+         * @description アカウントの役割。student: 生徒 / coach: コーチ / headquarters: 本部（admin-web の画面を使うのはコーチと本部）
+         * @enum {string}
+         */
+        AccountRole: "student" | "coach" | "headquarters";
+        /** @description ログイン中の本人のアカウント（`getMyAccount`）。画面の出し分けと、本人の ID を使う操作に要る項目だけを持つ */
+        Account: {
+            /**
+             * Format: uuid
+             * @description アカウントの ID（コーチなら他の操作の `coach_id` と同じ値）
+             */
+            account_id: string;
+            role: components["schemas"]["AccountRole"];
+            /** @description アカウントの表示名 */
+            display_name: string;
+        };
         /** @description glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ */
         Coach: {
             /**
@@ -647,6 +690,27 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getMyAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本人のアカウント */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     listCoaches: {

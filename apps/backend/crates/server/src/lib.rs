@@ -13,7 +13,7 @@ use application::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, ListCoaches, RegisterAccount},
+    identity::{AccountRepository, GetAccount, ListCoaches, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
@@ -200,7 +200,8 @@ where
     let video = MockVideoCallProvider::new();
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
-        ListCoaches::new(accounts),
+        ListCoaches::new(accounts.clone()),
+        GetAccount::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(slots, clock.clone()),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),

@@ -173,3 +173,44 @@ async fn no_coaches_is_an_empty_list(pool: PgPool) {
     let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
     assert!(coaches.is_empty());
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn accounts_of_each_role_are_found_by_id_with_their_sports(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let student = use_case
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Soccer],
+        ))
+        .await
+        .unwrap();
+    let coach = use_case
+        .execute(command(
+            "coach@example.com",
+            Role::Coach,
+            vec![Sport::Tennis, Sport::Golf],
+        ))
+        .await
+        .unwrap();
+    let headquarters = use_case
+        .execute(command("hq@example.com", Role::Headquarters, vec![]))
+        .await
+        .unwrap();
+
+    let accounts = PgAccountRepository::new(pool);
+    for account in [student, coach, headquarters] {
+        assert_eq!(accounts.find(account.id()).await.unwrap(), Some(account));
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn unknown_account_is_none(pool: PgPool) {
+    let found = PgAccountRepository::new(pool)
+        .find(domain::identity::AccountId::from_u128(42))
+        .await
+        .unwrap();
+    assert_eq!(found, None);
+}

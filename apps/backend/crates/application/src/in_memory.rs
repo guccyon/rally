@@ -76,6 +76,16 @@ impl AccountRepository for InMemoryAccountRepository {
         Ok(())
     }
 
+    async fn find(&self, id: AccountId) -> Result<Option<Account>, Unavailable> {
+        Ok(self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|a| a.id() == id)
+            .cloned())
+    }
+
     async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
         let mut coaches: Vec<Account> = self
             .accounts
