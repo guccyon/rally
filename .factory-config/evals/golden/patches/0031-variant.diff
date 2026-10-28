@@ -1,0 +1,266 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ba53a39..e0a15d1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -34,5 +34,6 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
+ 
+ ### 変更
++- student-app のチャット: スレッドを開いたときと「新しいメッセージを確かめる」で、既読にしてから（`markMessageThreadRead`）メッセージを読み直す（`listMessages`）順に変えた。生徒の画面に出ないままコーチのメッセージが既読になることがなくなる。空白だけ・2000 文字を超える本文は送信の要求を作れない（送信ボタンも押せない）。API と契約の変更はない（#103）
+ - 契約: `recordLessonCompletion` の `x-context` を `catalog` から `[live-lesson, async-lesson]` に変更し、glossary の lesson を「レッスン種別」と「完了したレッスン（lesson_completion）」に分けた。行動イベント `lesson.completed` も `contexts: [live-lesson, async-lesson]` に（#55）
+ - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index 9dd501c..36e542b 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -787,9 +787,11 @@ class MessageThreadList {
+ 
+   factory MessageThreadList.fromJson(Map<String, dynamic> json) =>
+       MessageThreadList(
+-        threads: (json['threads'] as List<dynamic>)
+-            .map((e) => MessageThread.fromJson(e as Map<String, dynamic>))
+-            .toList(),
++        threads: List.unmodifiable(
++          (json['threads'] as List<dynamic>).map(
++            (e) => MessageThread.fromJson(e as Map<String, dynamic>),
++          ),
++        ),
+       );
+ }
+ 
+@@ -804,15 +806,37 @@ class MessageList {
+ 
+   factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
+     threadId: json['thread_id'] as String,
+-    messages: (json['messages'] as List<dynamic>)
+-        .map((e) => Message.fromJson(e as Map<String, dynamic>))
+-        .toList(),
++    messages: List.unmodifiable(
++      (json['messages'] as List<dynamic>).map(
++        (e) => Message.fromJson(e as Map<String, dynamic>),
++      ),
++    ),
+   );
+ }
+ 
+ /// `SendMessageRequest`
+ class SendMessageRequest {
+-  const SendMessageRequest({required this.body});
++  /// 本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
++  factory SendMessageRequest({required String body}) {
++    if (!isValidBody(body)) {
++      throw ArgumentError.value(
++        body,
++        'body',
++        '空白だけの本文と、$maxBodyLength 文字を超える本文は送れません',
++      );
++    }
++    return SendMessageRequest._(body);
++  }
++
++  /// 契約の `SendMessageRequest.body` に収まるか（空白だけでなく、[maxBodyLength] 文字以内）。
++  /// 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える。画面の送信可否もこれを使う
++  static bool isValidBody(String body) =>
++      body.trim().isNotEmpty && body.length <= maxBodyLength;
++
++  const SendMessageRequest._(this.body);
++
++  /// 契約の `SendMessageRequest.body` の maxLength
++  static const maxBodyLength = 2000;
+ 
+   /// 本文（2000 文字まで。空白だけは不可）
+   final String body;
+diff --git a/apps/student-app/lib/screens/messages_screen.dart b/apps/student-app/lib/screens/messages_screen.dart
+index 88ad2f3..e966762 100644
+--- a/apps/student-app/lib/screens/messages_screen.dart
++++ b/apps/student-app/lib/screens/messages_screen.dart
+@@ -16,9 +16,6 @@ class MessagesScreen extends ConsumerStatefulWidget {
+ }
+ 
+ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
+-  /// 契約の `SendMessageRequest.body` の maxLength
+-  static const _maxLength = 2000;
+-
+   final _body = TextEditingController();
+ 
+   @override
+@@ -33,6 +30,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
+     super.dispose();
+   }
+ 
++  /// 契約の `SendMessageRequest` に収まる本文か（入力欄の maxLength は書記素で数えるので、コードポイントでも確かめる）
++  bool get _sendable => SendMessageRequest.isValidBody(_body.text.trim());
++
+   Future<void> _send() async {
+     final sent = await ref
+         .read(studentFlowProvider.notifier)
+@@ -64,12 +64,12 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
+         TextField(
+           controller: _body,
+           decoration: const InputDecoration(labelText: 'メッセージ'),
+-          maxLength: _maxLength,
++          maxLength: SendMessageRequest.maxBodyLength,
+           maxLines: 3,
+           minLines: 1,
+         ),
+         FilledButton(
+-          onPressed: state.busy || _body.text.trim().isEmpty ? null : _send,
++          onPressed: state.busy || !_sendable ? null : _send,
+           child: const Text('送信する'),
+         ),
+       ],
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index 83995f0..f795641 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -355,11 +355,12 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+   void closeChat() =>
+       state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
+ 
+-  /// スレッドを開く。`listMessages` で読み、相手のメッセージを `markMessageThreadRead` で既読にする
++  /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
+   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
++  /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
+   Future<void> openThread(MessageThread thread) => _run(() async {
+-    final list = await _api.listMessages(thread.threadId);
+     final read = await _api.markMessageThreadRead(thread.threadId);
++    final list = await _api.listMessages(thread.threadId);
+     state = state.copyWith(
+       thread: read,
+       messages: list.messages,
+@@ -367,11 +368,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+     );
+   });
+ 
+-  /// 開いているスレッドの新しいメッセージを確かめる（読み直して既読にする）
++  /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
+   Future<void> refreshMessages() => _run(() async {
+     final threadId = state.thread!.threadId;
+-    final list = await _api.listMessages(threadId);
+     final read = await _api.markMessageThreadRead(threadId);
++    final list = await _api.listMessages(threadId);
+     state = state.copyWith(thread: read, messages: list.messages);
+   });
+ 
+diff --git a/apps/student-app/test/api/http_student_api_test.dart b/apps/student-app/test/api/http_student_api_test.dart
+index 61ae5f4..31801f9 100644
+--- a/apps/student-app/test/api/http_student_api_test.dart
++++ b/apps/student-app/test/api/http_student_api_test.dart
+@@ -257,7 +257,7 @@ void main() {
+       'sender_id': 's1',
+       'sender_role': 'student',
+       'body': 'よろしく',
+-    }).sendMessage('t1', const SendMessageRequest(body: 'よろしく'));
++    }).sendMessage('t1', SendMessageRequest(body: 'よろしく'));
+     expect(sent.single.method, 'POST');
+     expect(sent.single.url.path, '/message-threads/t1/messages');
+     expect(jsonDecode(sent.single.body), {'body': 'よろしく'});
+diff --git a/apps/student-app/test/api/models_test.dart b/apps/student-app/test/api/models_test.dart
+new file mode 100644
+index 0000000..eff68f0
+--- /dev/null
++++ b/apps/student-app/test/api/models_test.dart
+@@ -0,0 +1,63 @@
++import 'package:flutter_test/flutter_test.dart';
++import 'package:rally_student_app/api/models.dart';
++
++void main() {
++  group('SendMessageRequest', () {
++    test('2000 文字までの本文は作れる', () {
++      final body = 'あ' * SendMessageRequest.maxBodyLength;
++      expect(SendMessageRequest(body: body).toJson(), {'body': body});
++    });
++
++    test('空・空白だけの本文は ArgumentError', () {
++      expect(() => SendMessageRequest(body: ''), throwsArgumentError);
++      expect(() => SendMessageRequest(body: ' 　\n'), throwsArgumentError);
++    });
++
++    test('2000 文字を超える本文は ArgumentError（コードポイントで数える）', () {
++      expect(() => SendMessageRequest(body: 'あ' * 2001), throwsArgumentError);
++      // サロゲートペアの文字は 1 文字と数える
++      expect(SendMessageRequest(body: '😀' * 2000).body, '😀' * 2000);
++      expect(() => SendMessageRequest(body: '😀' * 2001), throwsArgumentError);
++    });
++  });
++
++  final message = {
++    'message_id': 'm1',
++    'thread_id': 't1',
++    'sender_id': 'c1',
++    'sender_role': 'coach',
++    'body': 'こんにちは',
++    'sent_at': '2026-10-26T03:00:00Z',
++    'read_at': null,
++  };
++
++  test('MessageThreadList.fromJson のスレッドは書き換えられない', () {
++    final list = MessageThreadList.fromJson({
++      'threads': [
++        {
++          'thread_id': 't1',
++          'student_id': 's1',
++          'coach_id': 'c1',
++          'opened_at': '2026-10-26T02:00:00Z',
++          'last_message': message,
++          'unread_count': 1,
++        },
++      ],
++    });
++
++    expect(list.threads, hasLength(1));
++    expect(() => list.threads.clear(), throwsUnsupportedError);
++    expect(() => list.threads[0] = list.threads[0], throwsUnsupportedError);
++  });
++
++  test('MessageList.fromJson のメッセージは書き換えられない', () {
++    final list = MessageList.fromJson({
++      'thread_id': 't1',
++      'messages': [message],
++    });
++
++    expect(list.messages, hasLength(1));
++    expect(() => list.messages.add(list.messages[0]), throwsUnsupportedError);
++    expect(() => list.messages[0] = list.messages[0], throwsUnsupportedError);
++  });
++}
+diff --git a/apps/student-app/test/screens/message_threads_screen_test.dart b/apps/student-app/test/screens/message_threads_screen_test.dart
+index ce0be44..992eaf9 100644
+--- a/apps/student-app/test/screens/message_threads_screen_test.dart
++++ b/apps/student-app/test/screens/message_threads_screen_test.dart
+@@ -31,7 +31,7 @@ void main() {
+ 
+     await tapText(tester, '担当コーチ');
+ 
+-    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
++    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
+     expect(api.requests, [Fixtures.threadId, Fixtures.threadId]);
+     final state = container.read(studentFlowProvider);
+     expect(state.step, FlowStep.messages);
+diff --git a/apps/student-app/test/screens/messages_screen_test.dart b/apps/student-app/test/screens/messages_screen_test.dart
+index 71c2104..921ddb8 100644
+--- a/apps/student-app/test/screens/messages_screen_test.dart
++++ b/apps/student-app/test/screens/messages_screen_test.dart
+@@ -110,7 +110,7 @@ void main() {
+     );
+ 
+     await tapText(tester, '新しいメッセージを確かめる');
+-    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
++    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
+ 
+     await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
+     await tester.pumpAndSettle();
+diff --git a/apps/student-app/test/student_flow_test.dart b/apps/student-app/test/student_flow_test.dart
+index 6807dce..804b801 100644
+--- a/apps/student-app/test/student_flow_test.dart
++++ b/apps/student-app/test/student_flow_test.dart
+@@ -155,8 +155,8 @@ void main() {
+ 
+     expect(api.calls, [
+       'listMessageThreads',
+-      'listMessages',
+       'markMessageThreadRead',
++      'listMessages',
+       'sendMessage',
+       'listMessageThreads',
+     ]);

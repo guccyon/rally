@@ -1,0 +1,1092 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index eed8489..e20f498 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- 本部向けのコーチの一覧の API: admin-web の `GET /coaches`（`listCoaches`）がコーチのアカウントの ID と表示名を、表示名の順（コードポイントの順、同じ表示名は ID の順）に返す。本部だけが読め、コーチ・生徒は 403。admin-web の画面はまだない（#113）
+ - admin-web にコーチの評価の一覧: コーチの「自分の評価」で、件数と平均の下に `GET /coaches/{coach_id}/reviews` の評価を 1 件ずつ（点・一言・送った時刻、新しい順）出す。0 件なら「まだ評価はありません」。本部の画面は変わらない。API と契約の変更はない（#112）
+ - コーチが受けた評価の一覧の API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）が評価の ID・完了したレッスンの ID・点・一言・送った時刻を、送った時刻の新しい順に返す。本部はどのコーチの分も、コーチは自分の分だけ読め、生徒は 403。admin-web の画面はまだない（#111）
+ - 添削の返却とメッセージの受信でプッシュ通知（notification の後半）: 境界間イベント `VideoReviewReturned`（async-lesson）と `MessageSent`（messaging）を AsyncAPI に足して発行し、notification が購読して、添削の返却は生徒へ、メッセージは受け手（送り手でない側）へ送る。送り先は Gen1 ではモック。API の変更はない（#100）
+diff --git a/apps/admin-web/README.md b/apps/admin-web/README.md
+index a415eae..42f7eae 100644
+--- a/apps/admin-web/README.md
++++ b/apps/admin-web/README.md
+@@ -33,4 +33,4 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ /
+ | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
+ | 本部（`/headquarters/coach-review-summary`） | コーチの評価（コーチ ID を入力して、そのコーチの評価の件数と点の平均。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ） | `getCoachReviewSummary` |
+ 
+-自分の枠・届いた動画・自分の予約の一覧と、コーチの一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。トークンの中身は読まないので、コーチが自分の評価を見るときも自分のアカウント ID を入力する。
++自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。コーチの一覧の API（`listCoaches`。本部だけ）は契約と `src/api/schema.ts` にあるが、それを使う画面はまだなく、本部はコーチ ID を入力する。トークンの中身は読まないので、コーチが自分の評価を見るときも自分のアカウント ID を入力する。
+diff --git a/apps/admin-web/src/api/schema.ts b/apps/admin-web/src/api/schema.ts
+index fef7c85..4712a9b 100644
+--- a/apps/admin-web/src/api/schema.ts
++++ b/apps/admin-web/src/api/schema.ts
+@@ -64,6 +64,32 @@ export interface paths {
+         patch?: never;
+         trace?: never;
+     };
++    "/coaches": {
++        parameters: {
++            query?: never;
++            header?: never;
++            path?: never;
++            cookie?: never;
++        };
++        /**
++         * コーチの一覧（本部）
++         * @description コーチの役割のアカウントをすべて、アカウントの ID と表示名で返す。本部がコーチを選ぶ（評価の件数と平均・一覧を
++         *     見るなど）のに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
++         *
++         *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
++         *     - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
++         *
++         *     行動イベントは発火しない。
++         */
++        get: operations["listCoaches"];
++        put?: never;
++        post?: never;
++        delete?: never;
++        options?: never;
++        head?: never;
++        patch?: never;
++        trace?: never;
++    };
+     "/coaches/{coach_id}/review-summary": {
+         parameters: {
+             query?: never;
+@@ -336,6 +362,21 @@ export interface components {
+             /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
+             sports: components["schemas"]["SlotSupply"][];
+         };
++        /** @description glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ */
++        Coach: {
++            /**
++             * Format: uuid
++             * @description コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
++             */
++            coach_id: string;
++            /** @description アカウントの表示名 */
++            display_name: string;
++        };
++        /** @description コーチの一覧（並べ方は `listCoaches` の説明） */
++        CoachList: {
++            /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
++            coaches: components["schemas"]["Coach"][];
++        };
+         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
+         CoachReviewSummary: {
+             /** Format: uuid */
+@@ -608,6 +649,28 @@ export interface operations {
+             403: components["responses"]["Forbidden"];
+         };
+     };
++    listCoaches: {
++        parameters: {
++            query?: never;
++            header?: never;
++            path?: never;
++            cookie?: never;
++        };
++        requestBody?: never;
++        responses: {
++            /** @description コーチの一覧 */
++            200: {
++                headers: {
++                    [name: string]: unknown;
++                };
++                content: {
++                    "application/json": components["schemas"]["CoachList"];
++                };
++            };
++            401: components["responses"]["Unauthorized"];
++            403: components["responses"]["Forbidden"];
++        };
++    };
+     getCoachReviewSummary: {
+         parameters: {
+             query?: never;
+diff --git a/apps/backend/README.md b/apps/backend/README.md
+index 5ddfd27..a12b756 100644
+--- a/apps/backend/README.md
++++ b/apps/backend/README.md
+@@ -7,9 +7,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス
+ | パス | 層 | 依存してよいクレート |
+ |---|---|---|
+ | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツと不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`・スポーツごとの予約枠の需給 `SlotSupply`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`）・`lesson`（live-lesson と async-lesson が共有するレッスンの完了記録 `LessonCompletion`・`LessonId`・`LessonType`・`LessonSource`。コンテキストではない）・`notification`（プッシュ通知 `PushNotification`） | なし |
+-| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`notification::PushNotificationSubscriber`・`PushSender`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
++| `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`ListCoaches`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`notification::PushNotificationSubscriber`・`PushSender`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
+ | `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`MockPushSender`: プッシュ通知の送り先。送った通知を記録して標準出力に書く、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
+-| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /slot-supply`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
++| `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /slot-supply`、`GET /coaches`、`POST /subscriptions`、`GET /entitlements/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
+ | `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`）。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
+ | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
+ 
+@@ -69,6 +69,12 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
+ 
+ `POST /accounts` の統合テスト（`crates/interface/tests/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。トークンは `TokenIssuer` が発行する（このテストではテスト用の偽物）。
+ 
++## identity: 本部向けのコーチの一覧
++
++- `GET /coaches`（admin-web の `listCoaches`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの役割のアカウントの `coach_id` と `display_name` を返す。絞り込み・ページングはせず、行動イベントは発火しない
++- 並べ方の正本は契約（表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。保存先のポート `AccountRepository::list_coaches` が並べて返す。Postgres は `ORDER BY display_name COLLATE "C", account_id`（DB の照合順序に依らない。UTF-8 のバイト順はコードポイントの順と同じ）、インメモリは `(表示名の文字列, AccountId)` の順で、両方が同じ並びになる。読んだ行は `Account`（提供スポーツを含む）に戻す
++- テスト: `application::identity::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
++
+ ## 認証と認可（モック）
+ 
+ - アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`、実装は infra の `MockTokenService` だけ
+diff --git a/apps/backend/crates/application/src/identity/list_coaches.rs b/apps/backend/crates/application/src/identity/list_coaches.rs
+new file mode 100644
+index 0000000..0accad8
+--- /dev/null
++++ b/apps/backend/crates/application/src/identity/list_coaches.rs
+@@ -0,0 +1,85 @@
++use domain::identity::Account;
++
++use super::AccountRepository;
++use crate::Unavailable;
++
++/// コーチの一覧のユースケース（admin-web の `listCoaches`。本部だけが呼ぶ）。
++///
++/// コーチのアカウントを表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
++/// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
++pub struct ListCoaches<R> {
++    accounts: R,
++}
++
++impl<R> ListCoaches<R>
++where
++    R: AccountRepository,
++{
++    pub fn new(accounts: R) -> Self {
++        Self { accounts }
++    }
++
++    pub async fn execute(&self) -> Result<Vec<Account>, Unavailable> {
++        self.accounts.list_coaches().await
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use std::time::SystemTime;
++
++    use domain::identity::{AccountId, DisplayName, Email, Role, Sport};
++
++    use super::*;
++    use crate::in_memory::InMemoryAccountRepository;
++
++    fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Account {
++        Account::new(
++            AccountId::from_u128(id),
++            Email::new(format!("user{id}@example.com")).unwrap(),
++            DisplayName::new(display_name).unwrap(),
++            role,
++            sports.iter().copied(),
++            SystemTime::UNIX_EPOCH,
++        )
++        .unwrap()
++    }
++
++    #[tokio::test]
++    async fn lists_only_coaches_in_display_name_order() {
++        let accounts = InMemoryAccountRepository::default();
++        for account in [
++            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
++            account(2, "あおき", Role::Student, &[Sport::Tennis]),
++            account(3, "いとう", Role::Coach, &[Sport::Soccer, Sport::Golf]),
++            account(4, "うえの", Role::Headquarters, &[]),
++            // 同じ表示名は ID の順
++            account(6, "いとう", Role::Coach, &[Sport::Baseball]),
++            account(5, "いとう", Role::Coach, &[Sport::Basketball]),
++        ] {
++            accounts.insert(account).await.unwrap();
++        }
++
++        let coaches = ListCoaches::new(accounts).execute().await.unwrap();
++        let listed: Vec<_> = coaches
++            .iter()
++            .map(|a| (a.id().as_u128(), a.display_name().as_str()))
++            .collect();
++        assert_eq!(
++            listed,
++            [(3, "いとう"), (5, "いとう"), (6, "いとう"), (1, "たなか")]
++        );
++    }
++
++    #[tokio::test]
++    async fn no_coaches_is_an_empty_list() {
++        let accounts = InMemoryAccountRepository::default();
++        accounts
++            .insert(account(1, "あおき", Role::Student, &[Sport::Tennis]))
++            .await
++            .unwrap();
++
++        let coaches = ListCoaches::new(accounts).execute().await.unwrap();
++        assert!(coaches.is_empty());
++    }
++}
+diff --git a/apps/backend/crates/application/src/identity/mod.rs b/apps/backend/crates/application/src/identity/mod.rs
+index ee3b475..c31a5e3 100644
+--- a/apps/backend/crates/application/src/identity/mod.rs
++++ b/apps/backend/crates/application/src/identity/mod.rs
+@@ -1,10 +1,12 @@
+ //! identity のユースケースとポート。
+ 
+ pub mod account_id_uuid;
++mod list_coaches;
+ mod register_account;
+ mod repository;
+ mod token;
+ 
++pub use list_coaches::ListCoaches;
+ pub use register_account::{RegisterAccount, RegisterAccountCommand, RegisterAccountError};
+ pub use repository::{AccountRepository, InsertAccountError};
+ pub use token::{AccessToken, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier};
+diff --git a/apps/backend/crates/application/src/identity/register_account.rs b/apps/backend/crates/application/src/identity/register_account.rs
+index 89b56f7..3236ee0 100644
+--- a/apps/backend/crates/application/src/identity/register_account.rs
++++ b/apps/backend/crates/application/src/identity/register_account.rs
+@@ -258,6 +258,10 @@ mod tests {
+                 "connection refused",
+             )))
+         }
++
++        async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
++            Err(Unavailable::new("connection refused"))
++        }
+     }
+ 
+     #[tokio::test]
+diff --git a/apps/backend/crates/application/src/identity/repository.rs b/apps/backend/crates/application/src/identity/repository.rs
+index 00ab6bb..e7a9d76 100644
+--- a/apps/backend/crates/application/src/identity/repository.rs
++++ b/apps/backend/crates/application/src/identity/repository.rs
+@@ -17,6 +17,9 @@ pub trait AccountRepository: Send + Sync {
+         &self,
+         account: Account,
+     ) -> impl Future<Output = Result<(), InsertAccountError>> + Send;
++
++    /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
++    fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
+ }
+ 
+ #[derive(Debug)]
+diff --git a/apps/backend/crates/application/src/in_memory.rs b/apps/backend/crates/application/src/in_memory.rs
+index 7f2f3c2..b59153d 100644
+--- a/apps/backend/crates/application/src/in_memory.rs
++++ b/apps/backend/crates/application/src/in_memory.rs
+@@ -75,6 +75,21 @@ impl AccountRepository for InMemoryAccountRepository {
+         accounts.push(account);
+         Ok(())
+     }
++
++    async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
++        let mut coaches: Vec<Account> = self
++            .accounts
++            .lock()
++            .unwrap()
++            .iter()
++            .filter(|a| a.as_coach().is_some())
++            .cloned()
++            .collect();
++        coaches.sort_by(|a, b| {
++            (a.display_name().as_str(), a.id()).cmp(&(b.display_name().as_str(), b.id()))
++        });
++        Ok(coaches)
++    }
+ }
+ 
+ /// 発火したイベントを記録する [`AnalyticsSink`]。複製は同じ記録を共有する。
+diff --git a/apps/backend/crates/infra/src/pg_account_repository.rs b/apps/backend/crates/infra/src/pg_account_repository.rs
+index 4b6e089..5a7a504 100644
+--- a/apps/backend/crates/infra/src/pg_account_repository.rs
++++ b/apps/backend/crates/infra/src/pg_account_repository.rs
+@@ -1,14 +1,17 @@
+-//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。
++//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。コーチの一覧も読む。
+ 
+ use application::{
+     Unavailable,
+     identity::{AccountRepository, InsertAccountError, account_id_uuid},
+ };
+-use domain::identity::{Account, AccountId, Profile};
+-use sqlx::{PgPool, types::Uuid};
++use domain::identity::{Account, AccountId, Coach, DisplayName, Email, Profile, Role};
++use sqlx::{
++    PgPool,
++    types::{Uuid, time::OffsetDateTime},
++};
+ 
+ use crate::{
+-    identity_values::{role_value, sport_value},
++    identity_values::{role_value, sport_from_value, sport_value},
+     pg_support::{is_unique_violation, timestamp},
+ };
+ 
+@@ -21,6 +24,9 @@ pub struct PgAccountRepository {
+     pool: PgPool,
+ }
+ 
++/// コーチの列（account_id, email, display_name, created_at, 提供スポーツ）。
++type CoachRow = (Uuid, String, String, OffsetDateTime, Vec<String>);
++
+ impl PgAccountRepository {
+     pub fn new(pool: PgPool) -> Self {
+         Self { pool }
+@@ -77,6 +83,43 @@ impl AccountRepository for PgAccountRepository {
+         }
+         tx.commit().await.map_err(unavailable)
+     }
++
++    async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
++        // 表示名は照合順序に依らずコードポイントの順（COLLATE "C"。UTF-8 のバイト順と同じ）で並べる
++        let rows: Vec<CoachRow> = sqlx::query_as(
++            r#"SELECT a.account_id, a.email, a.display_name, a.created_at,
++                      COALESCE(array_agg(s.sport) FILTER (WHERE s.sport IS NOT NULL), '{}')
++               FROM identity.accounts a
++               LEFT JOIN identity.coach_sports s ON s.coach_id = a.account_id
++               WHERE a.role IN ($1, 'student')
++               GROUP BY a.account_id
++               ORDER BY a.display_name COLLATE "C", a.account_id"#,
++        )
++        .bind(role_value(Role::Coach))
++        .fetch_all(&self.pool)
++        .await
++        .map_err(Unavailable::new)?;
++        rows.into_iter().map(coach_from_row).collect()
++    }
++}
++
++fn coach_from_row(
++    (account_id, email, display_name, created_at, sports): CoachRow,
++) -> Result<Account, Unavailable> {
++    let sports = sports
++        .iter()
++        .map(|value| {
++            sport_from_value(value)
++                .ok_or_else(|| Unavailable::new(format!("未知のスポーツ: {value}")))
++        })
++        .collect::<Result<Vec<_>, _>>()?;
++    Ok(Account::with_profile(
++        account_id_uuid::from_uuid(account_id),
++        Email::new(email).map_err(Unavailable::new)?,
++        DisplayName::new(display_name).map_err(Unavailable::new)?,
++        Profile::Coach(Coach::new(sports).map_err(Unavailable::new)?),
++        created_at.into(),
++    ))
+ }
+ 
+ fn unavailable(error: sqlx::Error) -> InsertAccountError {
+diff --git a/apps/backend/crates/infra/tests/pg_account_repository.rs b/apps/backend/crates/infra/tests/pg_account_repository.rs
+index f26230b..30fd361 100644
+--- a/apps/backend/crates/infra/tests/pg_account_repository.rs
++++ b/apps/backend/crates/infra/tests/pg_account_repository.rs
+@@ -6,7 +6,7 @@
+ mod support;
+ 
+ use application::{
+-    identity::{RegisterAccount, RegisterAccountCommand, RegisterAccountError},
++    identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
+     in_memory::{FixedClock, RecordingAnalyticsSink},
+ };
+ use domain::identity::{Role, Sport};
+@@ -118,3 +118,58 @@ async fn duplicate_email_is_rejected_case_insensitively_and_nothing_is_saved(poo
+     .unwrap();
+     assert_eq!(counts, (1, 0));
+ }
++
++#[ignore = "Postgres が要る（DATABASE_URL）"]
++#[sqlx::test(migrator = "infra::MIGRATOR")]
++async fn coaches_are_listed_with_their_sports_in_code_point_order_of_display_names(pool: PgPool) {
++    let use_case = register_account(&pool);
++    let register = |email: &'static str, display_name: &'static str, role, sports| {
++        let use_case = &use_case;
++        async move {
++            use_case
++                .execute(RegisterAccountCommand {
++                    display_name: display_name.to_string(),
++                    ..command(email, role, sports)
++                })
++                .await
++                .unwrap()
++        }
++    };
++    // 照合順序に依らずコードポイントの順（"B" < "a" < "あ"）。同じ表示名は ID の順
++    let hiragana = register("a@example.com", "あ", Role::Coach, vec![Sport::Golf]).await;
++    let lower = register("b@example.com", "a", Role::Coach, vec![Sport::Tennis]).await;
++    let upper = register(
++        "c@example.com",
++        "B",
++        Role::Coach,
++        vec![Sport::Soccer, Sport::Baseball],
++    )
++    .await;
++    let same_1 = register("d@example.com", "あ", Role::Coach, vec![Sport::Tennis]).await;
++    register("e@example.com", "0", Role::Student, vec![Sport::Tennis]).await;
++    register("f@example.com", "1", Role::Headquarters, vec![]).await;
++
++    let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
++    let mut same_name = [hiragana.clone(), same_1.clone()];
++    same_name.sort_by_key(|a| a.id());
++    assert_eq!(
++        coaches,
++        [upper, lower, same_name[0].clone(), same_name[1].clone()]
++    );
++}
++
++#[ignore = "Postgres が要る（DATABASE_URL）"]
++#[sqlx::test(migrator = "infra::MIGRATOR")]
++async fn no_coaches_is_an_empty_list(pool: PgPool) {
++    register_account(&pool)
++        .execute(command(
++            "taro@example.com",
++            Role::Student,
++            vec![Sport::Tennis],
++        ))
++        .await
++        .unwrap();
++
++    let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
++    assert!(coaches.is_empty());
++}
+diff --git a/apps/backend/crates/interface/src/coaches.rs b/apps/backend/crates/interface/src/coaches.rs
+new file mode 100644
+index 0000000..cfdce68
+--- /dev/null
++++ b/apps/backend/crates/interface/src/coaches.rs
+@@ -0,0 +1,53 @@
++//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）。本部だけが呼べる。
++
++use std::sync::Arc;
++
++use application::identity::{AccountRepository, ListCoaches, account_id_uuid};
++use axum::{Json, extract::State};
++use domain::identity::Account;
++use serde::Serialize;
++
++use crate::{auth::AuthenticatedAccount, error::ApiError};
++
++/// `/coaches` のハンドラーが使うユースケース。
++pub struct CoachesState<R> {
++    pub list_coaches: ListCoaches<R>,
++}
++
++/// admin-web の `CoachList`。
++#[derive(Serialize)]
++pub struct CoachListBody {
++    coaches: Vec<CoachBody>,
++}
++
++/// admin-web の `Coach`。
++#[derive(Serialize)]
++pub struct CoachBody {
++    coach_id: String,
++    display_name: String,
++}
++
++/// `GET /coaches`。本部だけが呼べる（役割は `require_role` の層が確かめる）。
++pub async fn list_coaches<R>(
++    State(state): State<Arc<CoachesState<R>>>,
++    _account: AuthenticatedAccount,
++) -> Result<Json<CoachListBody>, ApiError>
++where
++    R: AccountRepository,
++{
++    let coaches = state
++        .list_coaches
++        .execute()
++        .await
++        .map_err(ApiError::internal)?;
++    Ok(Json(CoachListBody {
++        coaches: coaches.iter().map(coach_body).collect(),
++    }))
++}
++
++fn coach_body(account: &Account) -> CoachBody {
++    CoachBody {
++        coach_id: account_id_uuid::format(account.id()),
++        display_name: account.display_name().as_str().to_string(),
++    }
++}
+diff --git a/apps/backend/crates/interface/src/lib.rs b/apps/backend/crates/interface/src/lib.rs
+index e7f8b8a..854650f 100644
+--- a/apps/backend/crates/interface/src/lib.rs
++++ b/apps/backend/crates/interface/src/lib.rs
+@@ -6,6 +6,7 @@
+ mod accounts;
+ pub mod auth;
+ mod bookings;
++mod coaches;
+ mod contract;
+ mod entitlements;
+ mod error;
+@@ -29,7 +30,7 @@ use application::{
+     clock::Clock,
+     domain_event::DomainEventPublisher,
+     entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
+-    identity::{AccountRepository, RegisterAccount, TokenIssuer, TokenVerifier},
++    identity::{AccountRepository, ListCoaches, RegisterAccount, TokenIssuer, TokenVerifier},
+     lesson::{LessonCompletionRepository, RecordLessonCompletion},
+     live_lesson::{
+         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
+@@ -73,10 +74,11 @@ pub use error::ApiError;
+ /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
+ /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
+ /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
+-/// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。
++/// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+ #[allow(clippy::too_many_arguments)]
+ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
+     register_account: RegisterAccount<R, A, C>,
++    list_coaches: ListCoaches<R>,
+     publish_slot: PublishSlot<S, A, C>,
+     search_slots: SearchSlots<S, C>,
+     create_booking: CreateBooking<B, A, C>,
+@@ -129,6 +131,10 @@ where
+             register_account,
+             tokens: tokens.clone(),
+         }));
++    let coaches = Router::new()
++        .route("/coaches", get(coaches::list_coaches::<R>))
++        .route_layer(require_role(&[Role::Headquarters]))
++        .with_state(Arc::new(coaches::CoachesState { list_coaches }));
+     let slots = Router::new()
+         .route(
+             "/slots",
+@@ -261,6 +267,7 @@ where
+     Router::new()
+         .route("/healthz", get(healthz))
+         .merge(accounts)
++        .merge(coaches)
+         .merge(slots)
+         .merge(bookings)
+         .merge(slot_supply)
+diff --git a/apps/backend/crates/interface/tests/accounts.rs b/apps/backend/crates/interface/tests/accounts.rs
+index 1fcc19c..547a564 100644
+--- a/apps/backend/crates/interface/tests/accounts.rs
++++ b/apps/backend/crates/interface/tests/accounts.rs
+@@ -74,6 +74,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/bookings.rs b/apps/backend/crates/interface/tests/bookings.rs
+index 8f4e785..e1c30c4 100644
+--- a/apps/backend/crates/interface/tests/bookings.rs
++++ b/apps/backend/crates/interface/tests/bookings.rs
+@@ -145,6 +145,7 @@ fn app_with_entitlements(
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots.clone(), clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/coaches.rs b/apps/backend/crates/interface/tests/coaches.rs
+new file mode 100644
+index 0000000..58e22c6
+--- /dev/null
++++ b/apps/backend/crates/interface/tests/coaches.rs
+@@ -0,0 +1,253 @@
++//! `GET /coaches`（admin-web の `listCoaches`）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで
++//! 検査し、本部だけが呼べることと、コーチだけを表示名の順で返すことを確かめる。
++
++use std::time::SystemTime;
++
++use application::{
++    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
++    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
++    identity::{
++        AccessToken, AccountRepository, InvalidToken, ListCoaches, RegisterAccount, TokenClaims,
++        TokenIssuer, TokenVerifier,
++    },
++    in_memory::{
++        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
++        InMemoryBookingRepository, InMemoryEntitlementRepository,
++        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
++        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
++        RecordingDomainEventPublisher,
++    },
++    lesson::RecordLessonCompletion,
++    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
++    scheduling::{
++        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
++        SchedulingBookingLookup, SearchSlots,
++    },
++};
++use axum::{
++    Router,
++    body::{Body, to_bytes},
++    http::{Request, StatusCode, header},
++};
++use domain::identity::{Account, AccountId, DisplayName, Email, Role, Sport};
++use serde_json::{Value, json};
++use tower::ServiceExt;
++
++mod support;
++
++/// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
++struct FakeTokens;
++
++impl TokenIssuer for FakeTokens {
++    fn issue(&self, _claims: TokenClaims) -> AccessToken {
++        unreachable!("このテストでは発行しない")
++    }
++}
++
++impl TokenVerifier for FakeTokens {
++    fn verify(&self, token: &str) -> Result<TokenClaims, InvalidToken> {
++        let (role, id) = token.split_once(':').ok_or(InvalidToken)?;
++        let role = match role {
++            "student" => Role::Student,
++            "coach" => Role::Coach,
++            "headquarters" => Role::Headquarters,
++            _ => return Err(InvalidToken),
++        };
++        let id = id.parse().map_err(|_| InvalidToken)?;
++        Ok(TokenClaims {
++            account_id: AccountId::from_u128(id),
++            role,
++        })
++    }
++}
++
++const HEADQUARTERS: &str = "headquarters:1";
++
++fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Account {
++    Account::new(
++        AccountId::from_u128(id),
++        Email::new(format!("user{id}@example.com")).unwrap(),
++        DisplayName::new(display_name).unwrap(),
++        role,
++        sports.iter().copied(),
++        SystemTime::UNIX_EPOCH,
++    )
++    .unwrap()
++}
++
++/// コーチ 3 人（うち 2 人は同じ表示名）と、生徒・本部が 1 人ずつ。
++async fn accounts() -> InMemoryAccountRepository {
++    let accounts = InMemoryAccountRepository::default();
++    for account in [
++        account(1, "本部", Role::Headquarters, &[]),
++        account(2, "たなか", Role::Coach, &[Sport::Tennis]),
++        account(3, "あおき", Role::Student, &[Sport::Tennis]),
++        account(5, "いとう", Role::Coach, &[Sport::Soccer, Sport::Golf]),
++        account(4, "いとう", Role::Coach, &[Sport::Baseball]),
++    ] {
++        accounts.insert(account).await.unwrap();
++    }
++    accounts
++}
++
++fn app(accounts: InMemoryAccountRepository) -> Router {
++    let analytics = RecordingAnalyticsSink::default();
++    let clock = FixedClock(SystemTime::UNIX_EPOCH);
++    let slots = InMemorySlotRepository::default();
++    let bookings = InMemoryBookingRepository::new(slots.clone());
++    interface::router_with(
++        RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
++        ListCoaches::new(accounts),
++        PublishSlot::new(slots.clone(), analytics.clone(), clock),
++        SearchSlots::new(slots, clock),
++        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
++        ConfirmBooking::new(
++            bookings.clone(),
++            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        CancelBooking::new(
++            bookings.clone(),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        GetSlotSupply::new(bookings, clock),
++        StartSubscription::new(
++            InMemoryEntitlementRepository::default(),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
++        StartLiveLessonSession::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
++                InMemorySlotRepository::default(),
++            )),
++            FixedVideoCallProvider::default(),
++            analytics.clone(),
++            clock,
++        ),
++        EndLiveLessonSession::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            FixedVideoCallProvider::default(),
++            analytics.clone(),
++            clock,
++        ),
++        SubmitVideo::new(
++            InMemoryVideoRepository::default(),
++            FixedVideoStorage,
++            analytics.clone(),
++            clock,
++        ),
++        GetVideoReview::new(InMemoryVideoRepository::default()),
++        ReturnVideoReview::new(
++            InMemoryVideoRepository::default(),
++            EntitlementReviewGate,
++            analytics.clone(),
++            application::in_memory::RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        RecordLessonCompletion::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            InMemoryVideoRepository::default(),
++            InMemoryLessonCompletionRepository::default(),
++            analytics,
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        application::messaging::ListMessageThreads::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++        ),
++        application::messaging::ListMessages::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++        ),
++        application::messaging::SendMessage::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++            application::entitlement::EntitlementChatGate::new(
++                application::in_memory::InMemoryEntitlementRepository::default(),
++            ),
++            RecordingAnalyticsSink::default(),
++            application::in_memory::RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        application::messaging::MarkMessageThreadRead::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++            clock,
++        ),
++        application::review::SubmitLessonReview::new(
++            application::lesson::LessonCompletionLookup::new(
++                application::in_memory::InMemoryLessonCompletionRepository::default(),
++            ),
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++            RecordingAnalyticsSink::default(),
++            clock,
++        ),
++        application::review::GetCoachReviewSummary::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
++        FakeTokens,
++    )
++}
++
++async fn list_coaches(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
++    let mut request = Request::get("/coaches");
++    if let Some(token) = token {
++        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
++    }
++    let response = router
++        .clone()
++        .oneshot(request.body(Body::empty()).unwrap())
++        .await
++        .unwrap();
++    let status = response.status();
++    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
++    let body = serde_json::from_slice(&bytes).unwrap();
++    support::Contract::load("admin-web").assert_response("get", "/coaches", status, &body);
++    (status, body)
++}
++
++#[tokio::test]
++async fn headquarters_lists_only_coaches_in_display_name_order() {
++    let router = app(accounts().await);
++    let (status, body) = list_coaches(&router, Some(HEADQUARTERS)).await;
++    assert_eq!(status, StatusCode::OK, "{body}");
++    assert_eq!(
++        body,
++        json!({
++            "coaches": [
++                // 同じ表示名は ID の順
++                { "coach_id": "00000000-0000-0000-0000-000000000004", "display_name": "いとう" },
++                { "coach_id": "00000000-0000-0000-0000-000000000005", "display_name": "いとう" },
++                { "coach_id": "00000000-0000-0000-0000-000000000002", "display_name": "たなか" },
++            ],
++        })
++    );
++}
++
++#[tokio::test]
++async fn no_coaches_is_an_empty_list() {
++    let router = app(InMemoryAccountRepository::default());
++    let (status, body) = list_coaches(&router, Some(HEADQUARTERS)).await;
++    assert_eq!(status, StatusCode::OK, "{body}");
++    assert_eq!(body, json!({ "coaches": [] }));
++}
++
++#[tokio::test]
++async fn only_headquarters_may_list_coaches() {
++    let router = app(accounts().await);
++    for token in ["coach:2", "student:3"] {
++        let (status, body) = list_coaches(&router, Some(token)).await;
++        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
++        assert_eq!(body["code"], "forbidden");
++    }
++    let (status, body) = list_coaches(&router, None).await;
++    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
++    assert_eq!(body["code"], "unauthorized");
++}
+diff --git a/apps/backend/crates/interface/tests/entitlements.rs b/apps/backend/crates/interface/tests/entitlements.rs
+index 02c0f95..42dd6a8 100644
+--- a/apps/backend/crates/interface/tests/entitlements.rs
++++ b/apps/backend/crates/interface/tests/entitlements.rs
+@@ -119,6 +119,7 @@ fn router(now: SystemTime) -> Router {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/internal_error.rs b/apps/backend/crates/interface/tests/internal_error.rs
+index ad7ed8b..9d2a36a 100644
+--- a/apps/backend/crates/interface/tests/internal_error.rs
++++ b/apps/backend/crates/interface/tests/internal_error.rs
+@@ -44,6 +44,10 @@ impl AccountRepository for BrokenRepository {
+     async fn insert(&self, _account: Account) -> Result<(), InsertAccountError> {
+         Err(InsertAccountError::Unavailable(Unavailable::new(REASON)))
+     }
++
++    async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
++        Err(Unavailable::new(REASON))
++    }
+ }
+ 
+ struct NoTokens;
+@@ -68,6 +72,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
+     let bookings = InMemoryBookingRepository::new(slots.clone());
+     let router = interface::router_with(
+         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
++        application::identity::ListCoaches::new(BrokenRepository),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/lessons.rs b/apps/backend/crates/interface/tests/lessons.rs
+index 29e6caa..81955b6 100644
+--- a/apps/backend/crates/interface/tests/lessons.rs
++++ b/apps/backend/crates/interface/tests/lessons.rs
+@@ -186,6 +186,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/live_lesson_sessions.rs b/apps/backend/crates/interface/tests/live_lesson_sessions.rs
+index 1694cb8..ad3a8dd 100644
+--- a/apps/backend/crates/interface/tests/live_lesson_sessions.rs
++++ b/apps/backend/crates/interface/tests/live_lesson_sessions.rs
+@@ -118,6 +118,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock.clone(),
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+         SearchSlots::new(slots, clock.clone()),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+diff --git a/apps/backend/crates/interface/tests/messaging.rs b/apps/backend/crates/interface/tests/messaging.rs
+index 02cc971..611aed8 100644
+--- a/apps/backend/crates/interface/tests/messaging.rs
++++ b/apps/backend/crates/interface/tests/messaging.rs
+@@ -141,6 +141,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock.clone(),
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+         SearchSlots::new(slots, clock.clone()),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+diff --git a/apps/backend/crates/interface/tests/reviews.rs b/apps/backend/crates/interface/tests/reviews.rs
+index 300342d..67de083 100644
+--- a/apps/backend/crates/interface/tests/reviews.rs
++++ b/apps/backend/crates/interface/tests/reviews.rs
+@@ -113,6 +113,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/slot_supply.rs b/apps/backend/crates/interface/tests/slot_supply.rs
+index 3efa8cc..2e9c2f8 100644
+--- a/apps/backend/crates/interface/tests/slot_supply.rs
++++ b/apps/backend/crates/interface/tests/slot_supply.rs
+@@ -130,6 +130,7 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/slots.rs b/apps/backend/crates/interface/tests/slots.rs
+index 216eecb..4ab4299 100644
+--- a/apps/backend/crates/interface/tests/slots.rs
++++ b/apps/backend/crates/interface/tests/slots.rs
+@@ -90,6 +90,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/subscriptions.rs b/apps/backend/crates/interface/tests/subscriptions.rs
+index f66d1b2..1b24966 100644
+--- a/apps/backend/crates/interface/tests/subscriptions.rs
++++ b/apps/backend/crates/interface/tests/subscriptions.rs
+@@ -94,6 +94,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock,
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock),
+         SearchSlots::new(slots, clock),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+diff --git a/apps/backend/crates/interface/tests/videos.rs b/apps/backend/crates/interface/tests/videos.rs
+index 78ea186..897f303 100644
+--- a/apps/backend/crates/interface/tests/videos.rs
++++ b/apps/backend/crates/interface/tests/videos.rs
+@@ -115,6 +115,7 @@ fn app() -> App {
+             analytics.clone(),
+             clock.clone(),
+         ),
++        application::identity::ListCoaches::new(InMemoryAccountRepository::default()),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+         SearchSlots::new(slots, clock.clone()),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+diff --git a/apps/backend/crates/server/src/lib.rs b/apps/backend/crates/server/src/lib.rs
+index ee78ebd..b54c081 100644
+--- a/apps/backend/crates/server/src/lib.rs
++++ b/apps/backend/crates/server/src/lib.rs
+@@ -13,7 +13,7 @@ use application::{
+         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
+         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
+     },
+-    identity::{AccountRepository, RegisterAccount},
++    identity::{AccountRepository, ListCoaches, RegisterAccount},
+     in_memory::{
+         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
+         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
+@@ -166,7 +166,7 @@ fn compose<R, S, B, E, L, W, M, X, N, C, A, P>(
+     push: P,
+ ) -> Router
+ where
+-    R: AccountRepository + 'static,
++    R: AccountRepository + Clone + 'static,
+     S: SlotRepository + Clone + 'static,
+     B: BookingRepository + Clone + 'static,
+     E: EntitlementRepository + Clone + 'static,
+@@ -199,7 +199,8 @@ where
+     ));
+     let video = MockVideoCallProvider::new();
+     interface::router_with(
+-        RegisterAccount::new(accounts, analytics.clone(), clock.clone()),
++        RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
++        ListCoaches::new(accounts),
+         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+         SearchSlots::new(slots, clock.clone()),
+         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+diff --git a/specs/contracts/api/admin-web/openapi.yaml b/specs/contracts/api/admin-web/openapi.yaml
+index ea63d61..8507eff 100644
+--- a/specs/contracts/api/admin-web/openapi.yaml
++++ b/specs/contracts/api/admin-web/openapi.yaml
+@@ -37,6 +37,8 @@ tags:
+     description: 非同期レッスン（動画添削の返却）
+   - name: review
+     description: 評価（コーチごとの評価の集計と一覧）
++  - name: identity
++    description: アカウント（本部が見るコーチの一覧）
+   - name: messaging
+     description: メッセージ（生徒と担当コーチのチャット）
+ 
+@@ -113,6 +115,33 @@ paths:
+         "403":
+           $ref: "#/components/responses/Forbidden"
+ 
++  /coaches:
++    get:
++      operationId: listCoaches
++      summary: コーチの一覧（本部）
++      description: |
++        コーチの役割のアカウントをすべて、アカウントの ID と表示名で返す。本部がコーチを選ぶ（評価の件数と平均・一覧を
++        見るなど）のに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
++
++        - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
++        - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
++
++        行動イベントは発火しない。
++      tags: [identity]
++      x-context: identity
++      x-analytics-events: []
++      responses:
++        "200":
++          description: コーチの一覧
++          content:
++            application/json:
++              schema:
++                $ref: "#/components/schemas/CoachList"
++        "401":
++          $ref: "#/components/responses/Unauthorized"
++        "403":
++          $ref: "#/components/responses/Forbidden"
++
+   /coaches/{coach_id}/review-summary:
+     get:
+       operationId: getCoachReviewSummary
+@@ -551,6 +580,32 @@ components:
+           items:
+             $ref: "#/components/schemas/SlotSupply"
+ 
++    Coach:
++      type: object
++      description: glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ
++      required: [coach_id, display_name]
++      properties:
++        coach_id:
++          type: string
++          format: uuid
++          description: コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
++        display_name:
++          type: string
++          minLength: 1
++          maxLength: 50
++          description: アカウントの表示名
++
++    CoachList:
++      type: object
++      description: コーチの一覧（並べ方は `listCoaches` の説明）
++      required: [coaches]
++      properties:
++        coaches:
++          type: array
++          description: 表示名のコードポイントの順（同じ表示名は `coach_id` の順）
++          items:
++            $ref: "#/components/schemas/Coach"
++
+     CoachReviewSummary:
+       type: object
+       description: コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明）

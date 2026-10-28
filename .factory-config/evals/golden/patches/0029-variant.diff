@@ -1,0 +1,796 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 929aa8c..bd3c4c0 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- student-app にレッスンの評価の画面: 完了を記録したあと「レッスンを評価する」から 1〜5 の点と一言を送る。送ったあとと、すでに評価済み（409 `lesson_already_reviewed`）のときは入力できない。API と契約の変更はない（#94）
+ - student-app に担当コーチとのチャットの画面: アプリバーの「チャット」からスレッドの一覧（未読の数・最後のメッセージ）→ メッセージの一覧と送信。開いたスレッドの相手のメッセージは既読にし、自分が送ったメッセージには既読・未読を出す。月額契約の前に送ると「チャットは月額契約を始めると使えます。」と出す。API と契約の変更はない（#93）
+ - 予約の確定で生徒にプッシュ通知（notification の最小形・前半）: notification が境界間イベント `BookingConfirmed` を購読して送る。送り先の基盤は Gen1 ではモック（送った通知を記録し、標準出力に 1 行書く）。API の変更はない（#91）
+ - レッスンの評価（review の最小形）: 生徒が完了したレッスン 1 件につき 1 回、1〜5 の点と一言を付ける `POST /lesson-reviews`（2 回目は 409 `lesson_already_reviewed`）と、admin-web の本部とコーチ本人がコーチの評価の件数と平均を読む `GET /coaches/{coach_id}/review-summary`。評価で行動イベント `review.submitted` を発火（#92）
+diff --git a/README.md b/README.md
+index 4e4e502..c74ee74 100644
+--- a/README.md
++++ b/README.md
+@@ -19,7 +19,7 @@
+ | `specs/` | SSOT（glossary・context-map・db-schemas・contracts・analytics） | P1 |
+ | `apps/` | backend（Rust / axum。`apps/backend/` に層ごとの Cargo ワークスペースと `/healthz`、CI のコマンドは `apps/backend/README.md`）・student-app（Flutter）・admin-web（Next.js） | P1（backend の骨格を配置済み） |
+ | `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
+-| `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 月額契約の画面と、担当コーチとのチャット（スレッドの一覧・メッセージの一覧と送信・既読）。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
++| `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 評価 → 月額契約の画面と、担当コーチとのチャット（スレッドの一覧・メッセージの一覧と送信・既読）。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
+ | `docs/adr/` | 設計判断の記録 | 随時 |
+ | `docs/plans/` | Phase ごとの実行計画（P1 入口の Walking Skeleton: `p1-walking-skeleton.md`） | Phase 境界 |
+ 
+diff --git a/apps/student-app/README.md b/apps/student-app/README.md
+index 55308cb..d969e5a 100644
+--- a/apps/student-app/README.md
++++ b/apps/student-app/README.md
+@@ -24,6 +24,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（
+ | 動画を送る（ファイルの選択と本体のアップロードはモック。送り先は体験予約のコーチ、スポーツはそのスロットのもの） | `submitVideo` |
+ | 添削結果（未返却なら確かめ直す） | `getVideoReview` |
+ | レッスンの完了 | `recordLessonCompletion`（通話なら `live_lesson`、動画なら `async_lesson`） |
++| レッスンの評価（完了のあとに 1〜5 の点と一言。評価済みを返す読み取りの API はないので、この端末で送れたときと 409 `lesson_already_reviewed` が返ったときに評価済みとして入力させない。評価せずに月額契約へ進むこともできる） | `submitLessonReview` |
+ | 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
+ | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
+ | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
+diff --git a/apps/student-app/lib/api/http_student_api.dart b/apps/student-app/lib/api/http_student_api.dart
+index 08eac71..1c07a01 100644
+--- a/apps/student-app/lib/api/http_student_api.dart
++++ b/apps/student-app/lib/api/http_student_api.dart
+@@ -76,6 +76,13 @@ class HttpStudentApi implements StudentApi {
+     await _send('POST', '/lessons/completions', body: body.toJson()),
+   );
+ 
++  @override
++  Future<LessonReview> submitLessonReview(
++    SubmitLessonReviewRequest body,
++  ) async => LessonReview.fromJson(
++    await _send('POST', '/lesson-reviews', body: body.toJson()),
++  );
++
+   @override
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index 9be9c36..9dd501c 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -644,6 +644,69 @@ class AsyncLessonCompletion extends RecordLessonCompletionRequest {
+   };
+ }
+ 
++/// `LessonReview`（glossary の lesson_review。完了したレッスン 1 件につき 1 回だけ付ける評価）
++class LessonReview {
++  const LessonReview({
++    required this.reviewId,
++    required this.lessonId,
++    required this.studentId,
++    required this.coachId,
++    required this.rating,
++    required this.comment,
++    required this.submittedAt,
++  });
++
++  final String reviewId;
++
++  /// 評価した完了したレッスン（`Lesson.lessonId`）
++  final String lessonId;
++  final String studentId;
++
++  /// 評価されたコーチ（そのレッスンのコーチ）
++  final String coachId;
++
++  /// 1（低い）〜5（高い）
++  final int rating;
++
++  /// 一言
++  final String comment;
++  final DateTime submittedAt;
++
++  factory LessonReview.fromJson(Map<String, dynamic> json) => LessonReview(
++    reviewId: json['review_id'] as String,
++    lessonId: json['lesson_id'] as String,
++    studentId: json['student_id'] as String,
++    coachId: json['coach_id'] as String,
++    rating: json['rating'] as int,
++    comment: json['comment'] as String,
++    submittedAt: _dateTime(json['submitted_at']),
++  );
++}
++
++/// `SubmitLessonReviewRequest`
++class SubmitLessonReviewRequest {
++  const SubmitLessonReviewRequest({
++    required this.lessonId,
++    required this.rating,
++    required this.comment,
++  });
++
++  /// 完了したレッスン（`Lesson.lessonId`）
++  final String lessonId;
++
++  /// 1（低い）〜5（高い）
++  final int rating;
++
++  /// 一言（200 文字まで。空白だけは不可）
++  final String comment;
++
++  Map<String, dynamic> toJson() => {
++    'lesson_id': lessonId,
++    'rating': rating,
++    'comment': comment,
++  };
++}
++
+ /// `Message`（glossary の message。送信時刻と既読を持つ）
+ class Message {
+   const Message({
+diff --git a/apps/student-app/lib/api/student_api.dart b/apps/student-app/lib/api/student_api.dart
+index 2bb904e..d53f2c5 100644
+--- a/apps/student-app/lib/api/student_api.dart
++++ b/apps/student-app/lib/api/student_api.dart
+@@ -1,6 +1,6 @@
+ import 'models.dart';
+ 
+-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオとチャットで使うものだけ）。
++/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・レッスンの評価・チャットで使うものだけ）。
+ ///
+ /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
+ abstract interface class StudentApi {
+@@ -33,6 +33,9 @@ abstract interface class StudentApi {
+   /// `recordLessonCompletion`（POST /lessons/completions）
+   Future<Lesson> recordLessonCompletion(RecordLessonCompletionRequest body);
+ 
++  /// `submitLessonReview`（POST /lesson-reviews）。2 回目は 409 `lesson_already_reviewed`
++  Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body);
++
+   /// `startSubscription`（POST /subscriptions）
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+diff --git a/apps/student-app/lib/screens/lesson_completion_screen.dart b/apps/student-app/lib/screens/lesson_completion_screen.dart
+index 60db322..b5d5db2 100644
+--- a/apps/student-app/lib/screens/lesson_completion_screen.dart
++++ b/apps/student-app/lib/screens/lesson_completion_screen.dart
+@@ -30,9 +30,14 @@ class LessonCompletionScreen extends ConsumerWidget {
+           Text(lessonTypeLabel(lesson.lessonType)),
+           Text('記録: ${formatDateTime(lesson.completedAt)}'),
+           const SizedBox(height: 16),
++          FilledButton(
++            onPressed: state.busy ? null : notifier.goToReview,
++            child: const Text('レッスンを評価する'),
++          ),
++          const SizedBox(height: 16),
+           const Text('月額契約で、動画とチャットは送り放題、ビデオ通話は月 2 回まで受けられます。'),
+           const SizedBox(height: 8),
+-          FilledButton(
++          OutlinedButton(
+             onPressed: state.busy ? null : notifier.goToSubscription,
+             child: const Text('月額契約へ進む'),
+           ),
+diff --git a/apps/student-app/lib/screens/lesson_review_screen.dart b/apps/student-app/lib/screens/lesson_review_screen.dart
+new file mode 100644
+index 0000000..c95f7b5
+--- /dev/null
++++ b/apps/student-app/lib/screens/lesson_review_screen.dart
+@@ -0,0 +1,98 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../state/student_flow.dart';
++import '../ui/flow_scaffold.dart';
++import '../ui/labels.dart';
++
++/// 完了したレッスンの評価（`submitLessonReview`）。評価はレッスン 1 件につき 1 回なので、
++/// この端末で送ったか、送って 409 `lesson_already_reviewed` が返ったら入力させない。
++class LessonReviewScreen extends ConsumerStatefulWidget {
++  const LessonReviewScreen({super.key});
++
++  @override
++  ConsumerState<LessonReviewScreen> createState() => _LessonReviewScreenState();
++}
++
++class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
++  /// 契約の `SubmitLessonReviewRequest.comment` の maxLength
++  static const _maxLength = 200;
++
++  final _comment = TextEditingController();
++  int? _rating;
++
++  @override
++  void initState() {
++    super.initState();
++    _comment.addListener(() => setState(() {}));
++  }
++
++  @override
++  void dispose() {
++    _comment.dispose();
++    super.dispose();
++  }
++
++  void _submit() => ref
++      .read(studentFlowProvider.notifier)
++      .submitReview(rating: _rating!, comment: _comment.text.trim());
++
++  @override
++  Widget build(BuildContext context) {
++    final state = ref.watch(studentFlowProvider);
++    final notifier = ref.read(studentFlowProvider.notifier);
++    final lesson = state.lesson!;
++    final sent = state.lessonReview;
++    return FlowScaffold(
++      title: 'レッスンの評価',
++      children: [
++        Text(lessonTypeLabel(lesson.lessonType)),
++        Text('完了: ${formatDateTime(lesson.completedAt)}'),
++        const SizedBox(height: 16),
++        if (!state.lessonReviewed) ...[
++          const Text(
++            'コーチの指導を 1（低い）〜5（高い）で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
++          ),
++          const SizedBox(height: 8),
++          SegmentedButton<int>(
++            segments: [
++              for (var rating = 1; rating <= 5; rating++)
++                ButtonSegment(value: rating, label: Text('$rating')),
++            ],
++            selected: {?_rating},
++            emptySelectionAllowed: true,
++            showSelectedIcon: false,
++            onSelectionChanged: state.busy
++                ? null
++                : (selected) => setState(() => _rating = selected.firstOrNull),
++          ),
++          TextField(
++            controller: _comment,
++            enabled: !state.busy,
++            decoration: const InputDecoration(labelText: '一言'),
++            maxLength: _maxLength,
++            maxLines: 3,
++            minLines: 1,
++          ),
++          FilledButton(
++            onPressed:
++                state.busy || _rating == null
++                ? null
++                : _submit,
++            child: const Text('評価を送る'),
++          ),
++        ] else if (sent != null && sent.lessonId == lesson.lessonId) ...[
++          const Text('評価を送りました'),
++          Text('評価: ${sent.rating} / 5'),
++          Text('一言: ${sent.comment}'),
++        ] else
++          const Text('このレッスンは評価済みのため、入力できません。'),
++        const SizedBox(height: 16),
++        OutlinedButton(
++          onPressed: state.busy ? null : notifier.goToSubscription,
++          child: const Text('月額契約へ進む'),
++        ),
++      ],
++    );
++  }
++}
+diff --git a/apps/student-app/lib/screens/student_flow_screen.dart b/apps/student-app/lib/screens/student_flow_screen.dart
+index b169c30..ec1bf6a 100644
+--- a/apps/student-app/lib/screens/student_flow_screen.dart
++++ b/apps/student-app/lib/screens/student_flow_screen.dart
+@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import '../state/student_flow.dart';
+ import 'booking_pending_screen.dart';
+ import 'lesson_completion_screen.dart';
++import 'lesson_review_screen.dart';
+ import 'live_lesson_screen.dart';
+ import 'message_threads_screen.dart';
+ import 'messages_screen.dart';
+@@ -28,6 +29,7 @@ class StudentFlowScreen extends ConsumerWidget {
+       FlowStep.videoSubmit => const VideoSubmitScreen(),
+       FlowStep.videoReview => const VideoReviewScreen(),
+       FlowStep.lessonCompletion => const LessonCompletionScreen(),
++      FlowStep.lessonReview => const LessonReviewScreen(),
+       FlowStep.subscription => const SubscriptionScreen(),
+       FlowStep.messageThreads => const MessageThreadsScreen(),
+       FlowStep.messages => const MessagesScreen(),
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index 29b74eb..83995f0 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -5,7 +5,7 @@ import '../api/http_student_api.dart';
+ import '../api/models.dart';
+ import '../api/student_api.dart';
+ 
+-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）とチャットの画面の段。
++/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とチャットの画面の段。
+ enum FlowStep {
+   register,
+   slotSearch,
+@@ -14,6 +14,9 @@ enum FlowStep {
+   videoSubmit,
+   videoReview,
+   lessonCompletion,
++
++  /// 完了したレッスンの評価（1〜5 の点と一言）
++  lessonReview,
+   subscription,
+ 
+   /// 担当コーチとのスレッドの一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
+@@ -41,6 +44,8 @@ class StudentFlowState {
+     this.video,
+     this.review,
+     this.lesson,
++    this.lessonReview,
++    this.reviewedLessonIds = const {},
+     this.subscription,
+     this.entitlement,
+     this.chatReturnStep,
+@@ -76,6 +81,17 @@ class StudentFlowState {
+ 
+   /// 完了を記録したレッスン
+   final Lesson? lesson;
++
++  /// この端末で送った評価（`submitLessonReview` の応答）
++  final LessonReview? lessonReview;
++
++  /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
++  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す
++  final Set<String> reviewedLessonIds;
++
++  /// 完了を記録したレッスンを評価済みと分かっているか
++  bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
++
+   final Subscription? subscription;
+   final Entitlement? entitlement;
+ 
+@@ -106,6 +122,8 @@ class StudentFlowState {
+     Video? video,
+     VideoReview? review,
+     Lesson? lesson,
++    LessonReview? lessonReview,
++    Set<String>? reviewedLessonIds,
+     Subscription? subscription,
+     Entitlement? entitlement,
+     FlowStep? chatReturnStep,
+@@ -126,6 +144,8 @@ class StudentFlowState {
+     video: video ?? this.video,
+     review: review ?? this.review,
+     lesson: lesson ?? this.lesson,
++    lessonReview: lessonReview ?? this.lessonReview,
++    reviewedLessonIds: reviewedLessonIds ?? this.reviewedLessonIds,
+     subscription: subscription ?? this.subscription,
+     entitlement: entitlement ?? this.entitlement,
+     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
+@@ -272,6 +292,36 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+     state = state.copyWith(lesson: lesson);
+   });
+ 
++  /// 完了したレッスンを評価する画面へ
++  void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
++
++  /// `submitLessonReview`。評価は完了したレッスン 1 件につき 1 回なので、送れたときも
++  /// 409 `lesson_already_reviewed` が返ったときも評価済みにする（以後は入力させない）。
++  Future<void> submitReview({required int rating, required String comment}) =>
++      _run(() async {
++        final lessonId = state.lesson!.lessonId;
++        try {
++          final review = await _api.submitLessonReview(
++            SubmitLessonReviewRequest(
++              lessonId: lessonId,
++              rating: rating,
++              comment: comment,
++            ),
++          );
++          state = state.copyWith(
++            lessonReview: review,
++            reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
++          );
++        } on StudentApiException catch (e) {
++          if (e.error?.code == ErrorCode.lessonAlreadyReviewed) {
++            state = state.copyWith(
++              reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
++            );
++          }
++          rethrow;
++        }
++      });
++
+   /// 月額契約の画面へ
+   void goToSubscription() =>
+       state = state.copyWith(step: FlowStep.subscription);
+diff --git a/apps/student-app/test/api/contract_test.dart b/apps/student-app/test/api/contract_test.dart
+index eba9239..e7f6dda 100644
+--- a/apps/student-app/test/api/contract_test.dart
++++ b/apps/student-app/test/api/contract_test.dart
+@@ -90,6 +90,7 @@ void main() {
+         'submitVideo',
+         'getVideoReview',
+         'recordLessonCompletion',
++        'submitLessonReview',
+         'startSubscription',
+         'listMessageThreads',
+         'listMessages',
+diff --git a/apps/student-app/test/api/http_student_api_test.dart b/apps/student-app/test/api/http_student_api_test.dart
+index 0043e8f..61ae5f4 100644
+--- a/apps/student-app/test/api/http_student_api_test.dart
++++ b/apps/student-app/test/api/http_student_api_test.dart
+@@ -159,6 +159,55 @@ void main() {
+     expect(recorded.isFirstLesson, isTrue);
+   });
+ 
++  test('submitLessonReview は POST /lesson-reviews へ送り、評価を変換する', () async {
++    final review =
++        await apiReplying(201, {
++          'review_id': 'r1',
++          'lesson_id': 'l1',
++          'student_id': 's1',
++          'coach_id': 'c1',
++          'rating': 4,
++          'comment': '丁寧でした',
++          'submitted_at': '2026-10-28T04:00:00Z',
++        }).submitLessonReview(
++          const SubmitLessonReviewRequest(
++            lessonId: 'l1',
++            rating: 4,
++            comment: '丁寧でした',
++          ),
++        );
++
++    expect(sent.single.method, 'POST');
++    expect(sent.single.url.path, '/lesson-reviews');
++    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
++    expect(jsonDecode(sent.single.body), {
++      'lesson_id': 'l1',
++      'rating': 4,
++      'comment': '丁寧でした',
++    });
++    expect(review.coachId, 'c1');
++    expect(review.rating, 4);
++    expect(review.submittedAt, DateTime.utc(2026, 10, 28, 4));
++
++    final error =
++        await apiReplying(409, {
++              'code': 'lesson_already_reviewed',
++              'message': 'already reviewed',
++            })
++            .submitLessonReview(
++              const SubmitLessonReviewRequest(
++                lessonId: 'l1',
++                rating: 4,
++                comment: '丁寧でした',
++              ),
++            )
++            .then<Object?>((_) => null, onError: (Object e) => e);
++    expect(
++      (error as StudentApiException).error!.code,
++      ErrorCode.lessonAlreadyReviewed,
++    );
++  });
++
+   test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
+     final coachMessage = {
+       'message_id': 'm1',
+diff --git a/apps/student-app/test/screens/lesson_completion_screen_test.dart b/apps/student-app/test/screens/lesson_completion_screen_test.dart
+index f609f1b..7f6087d 100644
+--- a/apps/student-app/test/screens/lesson_completion_screen_test.dart
++++ b/apps/student-app/test/screens/lesson_completion_screen_test.dart
+@@ -40,6 +40,21 @@ void main() {
+     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+   });
+ 
++  testWidgets('完了を記録したら評価の画面に進める', (tester) async {
++    final container = await pumpScreen(
++      tester,
++      const LessonCompletionScreen(),
++      api: FakeStudentApi(),
++      initial: afterCall,
++    );
++
++    expect(find.text('レッスンを評価する'), findsNothing);
++    await tapText(tester, '完了を記録する');
++    await tapText(tester, 'レッスンを評価する');
++
++    expect(container.read(studentFlowProvider).step, FlowStep.lessonReview);
++  });
++
+   testWidgets('動画の添削のあとは async_lesson で完了を記録する', (tester) async {
+     final api = FakeStudentApi();
+     await pumpScreen(
+diff --git a/apps/student-app/test/screens/lesson_review_screen_test.dart b/apps/student-app/test/screens/lesson_review_screen_test.dart
+new file mode 100644
+index 0000000..71d716c
+--- /dev/null
++++ b/apps/student-app/test/screens/lesson_review_screen_test.dart
+@@ -0,0 +1,122 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:rally_student_app/api/models.dart';
++import 'package:rally_student_app/screens/lesson_review_screen.dart';
++import 'package:rally_student_app/state/student_flow.dart';
++
++import '../support/fake_student_api.dart';
++import '../support/pump.dart';
++
++void main() {
++  final afterCompletion = StudentFlowState(
++    step: FlowStep.lessonReview,
++    student: Fixtures.student,
++    bookedSlot: Fixtures.slot,
++    booking: Fixtures.bookingConfirmed,
++    session: Fixtures.sessionEnded,
++    lesson: Fixtures.liveLesson,
++  );
++
++  Finder sendButton() => find.widgetWithText(FilledButton, '評価を送る');
++
++  testWidgets('点と一言がそろうまで送れず、送ると submitLessonReview を呼んで入力できなくする', (
++    tester,
++  ) async {
++    final api = FakeStudentApi();
++    final container = await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: api,
++      initial: afterCompletion,
++    );
++
++    expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
++    await tapText(tester, '4');
++    expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
++    await tester.enterText(find.byType(TextField), '   ');
++    await tester.pump();
++    expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
++
++    await tester.enterText(find.byType(TextField), '  丁寧でした  ');
++    await tester.pump();
++    await tapText(tester, '評価を送る');
++
++    expect(api.calls, ['submitLessonReview']);
++    expect((api.requests.single as SubmitLessonReviewRequest).toJson(), {
++      'lesson_id': Fixtures.liveLesson.lessonId,
++      'rating': 4,
++      'comment': '丁寧でした',
++    });
++    expect(find.text('評価を送りました'), findsOneWidget);
++    expect(find.text('評価: 4 / 5'), findsOneWidget);
++    expect(find.text('一言: 丁寧でした'), findsOneWidget);
++    expect(sendButton(), findsNothing);
++    expect(find.byType(TextField), findsNothing);
++    expect(container.read(studentFlowProvider).reviewedLessonIds, {
++      Fixtures.liveLesson.lessonId,
++    });
++
++    await tapText(tester, '月額契約へ進む');
++    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
++  });
++
++  testWidgets('409 lesson_already_reviewed なら文言を出し、評価済みとして入力できなくする', (
++    tester,
++  ) async {
++    final api = FakeStudentApi(
++      failures: {'submitLessonReview': Fixtures.alreadyReviewed},
++    );
++    final container = await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: api,
++      initial: afterCompletion,
++    );
++
++    await tapText(tester, '5');
++    await tester.enterText(find.byType(TextField), 'よかった');
++    await tester.pump();
++    await tapText(tester, '評価を送る');
++
++    expect(find.text('このレッスンはすでに評価しています。'), findsOneWidget);
++    expect(find.text('このレッスンは評価済みのため、入力できません。'), findsOneWidget);
++    expect(sendButton(), findsNothing);
++    expect(find.byType(TextField), findsNothing);
++    expect(container.read(studentFlowProvider).lessonReviewed, isTrue);
++  });
++
++  testWidgets('ほかの失敗では評価済みにせず、入力を残して送り直せる', (tester) async {
++    final api = FakeStudentApi(
++      failures: {'submitLessonReview': Fixtures.validationFailed},
++    );
++    final container = await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: api,
++      initial: afterCompletion,
++    );
++
++    await tapText(tester, '3');
++    await tester.enterText(find.byType(TextField), 'ふつう');
++    await tester.pump();
++    await tapText(tester, '評価を送る');
++
++    expect(find.text('入力内容を確かめてください。'), findsOneWidget);
++    expect(container.read(studentFlowProvider).lessonReviewed, isFalse);
++    expect(tester.widget<FilledButton>(sendButton()).onPressed, isNotNull);
++  });
++
++  testWidgets('この端末で評価済みのレッスンは開いた時点で入力させない', (tester) async {
++    await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: FakeStudentApi(),
++      initial: afterCompletion.copyWith(
++        reviewedLessonIds: {Fixtures.liveLesson.lessonId},
++      ),
++    );
++
++    expect(find.text('このレッスンは評価済みのため、入力できません。'), findsOneWidget);
++    expect(sendButton(), findsNothing);
++  });
++}
+diff --git a/apps/student-app/test/student_flow_test.dart b/apps/student-app/test/student_flow_test.dart
+index 1ffd91b..6807dce 100644
+--- a/apps/student-app/test/student_flow_test.dart
++++ b/apps/student-app/test/student_flow_test.dart
+@@ -7,7 +7,7 @@ import 'package:rally_student_app/state/student_flow.dart';
+ import 'support/fake_student_api.dart';
+ import 'support/pump.dart';
+ 
+-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）を画面遷移でたどる。
++/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）を画面遷移でたどる。
+ void main() {
+   Future<void> pumpApp(WidgetTester tester, FakeStudentApi api) =>
+       tester.pumpWidget(
+@@ -39,6 +39,14 @@ void main() {
+     expect(find.text('レッスンの完了'), findsOneWidget);
+     await tapText(tester, '完了を記録する');
+     expect(find.text('初回レッスンを完了しました'), findsOneWidget);
++    await tapText(tester, 'レッスンを評価する');
++
++    expect(find.text('レッスンの評価'), findsOneWidget);
++    await tapText(tester, '5');
++    await tester.enterText(find.byType(TextField), 'わかりやすかったです');
++    await tester.pump();
++    await tapText(tester, '評価を送る');
++    expect(find.text('評価を送りました'), findsOneWidget);
+     await tapText(tester, '月額契約へ進む');
+ 
+     expect(find.text('月額契約'), findsOneWidget);
+@@ -46,7 +54,7 @@ void main() {
+     expect(find.text('月額契約を開始しました'), findsOneWidget);
+   }
+ 
+-  testWidgets('通話で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 通話 → 完了記録 → 月額契約', (
++  testWidgets('通話で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 通話 → 完了記録 → 評価 → 月額契約', (
+     tester,
+   ) async {
+     final api = FakeStudentApi();
+@@ -67,43 +75,46 @@ void main() {
+       'startLiveLessonSession',
+       'endLiveLessonSession',
+       'recordLessonCompletion',
++      'submitLessonReview',
+       'startSubscription',
+     ]);
+   });
+ 
+-  testWidgets('動画で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 動画の送付 → 添削結果 → 完了記録 → 月額契約', (
+-    tester,
+-  ) async {
+-    final api = FakeStudentApi(
+-      reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
+-    );
+-    await pumpApp(tester, api);
+-
+-    await registerAndBook(tester);
+-    await tapText(tester, '動画を送って添削を受ける');
+-    expect(find.text('動画を送る'), findsOneWidget);
+-    await tapText(tester, '動画を選ぶ（モック）');
+-    await tapText(tester, '送付する');
+-
+-    expect(find.text('添削結果'), findsOneWidget);
+-    expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
+-    await tapText(tester, '添削結果を確かめる');
+-    expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
+-    await tapText(tester, '完了の記録へ進む');
+-    await recordAndSubscribe(tester);
+-
+-    expect(api.calls, [
+-      'registerAccount',
+-      'searchSlots',
+-      'createBooking',
+-      'confirmBooking',
+-      'submitVideo',
+-      'getVideoReview',
+-      'getVideoReview',
+-      'recordLessonCompletion',
+-      'startSubscription',
+-    ]);
+-  });
++  testWidgets(
++    '動画で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 動画の送付 → 添削結果 → 完了記録 → 評価 → 月額契約',
++    (tester) async {
++      final api = FakeStudentApi(
++        reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
++      );
++      await pumpApp(tester, api);
++
++      await registerAndBook(tester);
++      await tapText(tester, '動画を送って添削を受ける');
++      expect(find.text('動画を送る'), findsOneWidget);
++      await tapText(tester, '動画を選ぶ（モック）');
++      await tapText(tester, '送付する');
++
++      expect(find.text('添削結果'), findsOneWidget);
++      expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
++      await tapText(tester, '添削結果を確かめる');
++      expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
++      await tapText(tester, '完了の記録へ進む');
++      await recordAndSubscribe(tester);
++
++      expect(api.calls, [
++        'registerAccount',
++        'searchSlots',
++        'createBooking',
++        'confirmBooking',
++        'submitVideo',
++        'getVideoReview',
++        'getVideoReview',
++        'recordLessonCompletion',
++        'submitLessonReview',
++        'startSubscription',
++      ]);
++    },
++  );
+ 
+   testWidgets('チャット: 月額契約の後 → スレッドの一覧 → メッセージ（既読にする）→ 送信 → 一覧 → 閉じて元の画面', (
+     tester,
+diff --git a/apps/student-app/test/support/fake_student_api.dart b/apps/student-app/test/support/fake_student_api.dart
+index b3b3e19..c42d12b 100644
+--- a/apps/student-app/test/support/fake_student_api.dart
++++ b/apps/student-app/test/support/fake_student_api.dart
+@@ -92,6 +92,22 @@ class FakeStudentApi implements StudentApi {
+         body,
+       );
+ 
++  @override
++  Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body) =>
++      _answer(
++        'submitLessonReview',
++        () => LessonReview(
++          reviewId: Fixtures.reviewId,
++          lessonId: body.lessonId,
++          studentId: Fixtures.studentId,
++          coachId: Fixtures.coachId,
++          rating: body.rating,
++          comment: body.comment,
++          submittedAt: Fixtures.now,
++        ),
++        body,
++      );
++
+   @override
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+@@ -157,6 +173,25 @@ abstract final class Fixtures {
+   static const sessionId = '55555555-5555-4555-8555-555555555555';
+   static const videoId = '66666666-6666-4666-8666-666666666666';
+   static const threadId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
++  static const reviewId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
++
++  /// 評価済み（`lesson_already_reviewed`）の 409
++  static const alreadyReviewed = StudentApiException(
++    statusCode: 409,
++    error: ApiError(
++      code: ErrorCode.lessonAlreadyReviewed,
++      message: 'lesson already reviewed',
++    ),
++  );
++
++  /// 入力の不備（`validation_failed`）の 422
++  static const validationFailed = StudentApiException(
++    statusCode: 422,
++    error: ApiError(
++      code: ErrorCode.validationFailed,
++      message: 'validation failed',
++    ),
++  );
+ 
+   static final now = DateTime.utc(2026, 10, 26, 3);
+ 

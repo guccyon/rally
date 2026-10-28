@@ -1,0 +1,189 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8dbc991..544bbf1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- student-app のレッスンの評価で、1〜5 の各点に言葉の目安（1「不満だった」〜5「とてもよかった」）を添え、選んだ点と送った後の評価も「4（よかった）」のように言葉付きで出す。API と契約の変更はない（#120）
+ - 予約の確定をコーチにもプッシュ通知: 予約が確定すると、生徒への「予約の確定」に加えて、予約を受けたコーチに「新しい予約」の通知（`BookingReceived`）を 1 件送る。同じイベントの再送では送らず、片方だけ送れなかったときは送れなかった方だけを再送で送る。送り先は Gen1 ではモック。API と契約の変更はない（#119）
+ - 本部向けのコーチの一覧の API: admin-web の `GET /coaches`（`listCoaches`）がコーチのアカウントの ID と表示名を、表示名の順（コードポイントの順、同じ表示名は ID の順）に返す。本部だけが読め、コーチ・生徒は 403。admin-web の画面はまだない（#113）
+ - admin-web にコーチの評価の一覧: コーチの「自分の評価」で、件数と平均の下に `GET /coaches/{coach_id}/reviews` の評価を 1 件ずつ（点・一言・送った時刻、新しい順）出す。0 件なら「まだ評価はありません」。本部の画面は変わらない。API と契約の変更はない（#112）
+diff --git a/apps/student-app/lib/screens/lesson_review_screen.dart b/apps/student-app/lib/screens/lesson_review_screen.dart
+index c95f7b5..a126814 100644
+--- a/apps/student-app/lib/screens/lesson_review_screen.dart
++++ b/apps/student-app/lib/screens/lesson_review_screen.dart
+@@ -50,14 +50,27 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
+         Text('完了: ${formatDateTime(lesson.completedAt)}'),
+         const SizedBox(height: 16),
+         if (!state.lessonReviewed) ...[
+-          const Text(
+-            'コーチの指導を 1（低い）〜5（高い）で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
++          Text(
++            'コーチの指導を ${ratingWithLabel(1)}〜${ratingWithLabel(5)} で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
+           ),
+           const SizedBox(height: 8),
+           SegmentedButton<int>(
+             segments: [
+               for (var rating = 1; rating <= 5; rating++)
+-                ButtonSegment(value: rating, label: Text('$rating')),
++                ButtonSegment(
++                  value: rating,
++                  label: Column(
++                    mainAxisSize: MainAxisSize.min,
++                    children: [
++                      Text('$rating'),
++                      Text(
++                        ratingLabel(rating),
++                        style: Theme.of(context).textTheme.labelSmall,
++                        textAlign: TextAlign.center,
++                      ),
++                    ],
++                  ),
++                ),
+             ],
+             selected: {?_rating},
+             emptySelectionAllowed: true,
+@@ -66,6 +79,8 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
+                 ? null
+                 : (selected) => setState(() => _rating = selected.firstOrNull),
+           ),
++          if (_rating case final rating?)
++            Text('選んだ評価: ${ratingWithLabel(rating)}'),
+           TextField(
+             controller: _comment,
+             enabled: !state.busy,
+@@ -83,7 +98,7 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
+           ),
+         ] else if (sent != null && sent.lessonId == lesson.lessonId) ...[
+           const Text('評価を送りました'),
+-          Text('評価: ${sent.rating} / 5'),
++          Text('評価: ${ratingWithLabel(sent.rating)}'),
+           Text('一言: ${sent.comment}'),
+         ] else
+           const Text('このレッスンは評価済みのため、入力できません。'),
+diff --git a/apps/student-app/lib/ui/labels.dart b/apps/student-app/lib/ui/labels.dart
+index a95a2d0..4b7471b 100644
+--- a/apps/student-app/lib/ui/labels.dart
++++ b/apps/student-app/lib/ui/labels.dart
+@@ -39,3 +39,17 @@ String? readLabel(Message message) =>
+     : message.readAt == null
+     ? '未読'
+     : '既読';
++
++/// レッスンの評価の点（契約では 1〜5）に添える言葉の目安。生徒ごとの評価の基準をそろえるためのもので、
++/// 文言を変えるときはここだけを変える。
++String ratingLabel(int rating) => switch (rating) {
++  1 => '不満だった',
++  2 => 'ふつう',
++  3 => 'ふつう',
++  4 => 'よかった',
++  5 => 'とてもよかった',
++  _ => throw RangeError.range(rating, 1, 5, 'rating'),
++};
++
++/// 点と言葉の目安を合わせた表示。例: `4（よかった）`
++String ratingWithLabel(int rating) => '$rating（${ratingLabel(rating)}）';
+diff --git a/apps/student-app/test/screens/lesson_review_screen_test.dart b/apps/student-app/test/screens/lesson_review_screen_test.dart
+index 4c0d7b2..fe2d68c 100644
+--- a/apps/student-app/test/screens/lesson_review_screen_test.dart
++++ b/apps/student-app/test/screens/lesson_review_screen_test.dart
+@@ -48,7 +48,7 @@ void main() {
+       'comment': '丁寧でした',
+     });
+     expect(find.text('評価を送りました'), findsOneWidget);
+-    expect(find.text('評価: 4 / 5'), findsOneWidget);
++    expect(find.text('評価: 4（よかった）'), findsOneWidget);
+     expect(find.text('一言: 丁寧でした'), findsOneWidget);
+     expect(sendButton(), findsNothing);
+     expect(find.byType(TextField), findsNothing);
+@@ -64,6 +64,65 @@ void main() {
+     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+   });
+ 
++  testWidgets('各点に言葉の目安を添え、選んだ点の言葉を選択肢の下にも出す', (tester) async {
++    await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: FakeStudentApi(),
++      initial: afterCompletion,
++    );
++
++    const words = {
++      1: '不満だった',
++      2: '少し物足りなかった',
++      3: 'ふつう',
++      4: 'よかった',
++      5: 'とてもよかった',
++    };
++    final choices = find.byType(SegmentedButton<int>);
++    for (final MapEntry(key: rating, value: word) in words.entries) {
++      expect(
++        find.descendant(of: choices, matching: find.text('$rating')),
++        findsOneWidget,
++      );
++      expect(
++        find.descendant(of: choices, matching: find.text(word)),
++        findsOneWidget,
++      );
++    }
++    expect(
++      find.text(
++        'コーチの指導を 1（不満だった）〜5（とてもよかった） で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
++      ),
++      findsOneWidget,
++    );
++    expect(find.textContaining('選んだ評価'), findsNothing);
++
++    await tapText(tester, '2');
++    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
++
++    await tapText(tester, 'とてもよかった');
++    expect(find.text('選んだ評価: 5（とてもよかった）'), findsOneWidget);
++    expect(find.textContaining('選んだ評価: 2'), findsNothing);
++  });
++
++  testWidgets('幅の狭い端末でも点の言葉がはみ出さない', (tester) async {
++    tester.view.physicalSize = const Size(320, 640);
++    tester.view.devicePixelRatio = 1;
++    addTearDown(tester.view.reset);
++
++    await pumpScreen(
++      tester,
++      const LessonReviewScreen(),
++      api: FakeStudentApi(),
++      initial: afterCompletion,
++    );
++    await tapText(tester, '2');
++
++    expect(tester.takeException(), isNull);
++    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
++  });
++
+   testWidgets('409 lesson_already_reviewed なら文言を出し、評価済みとして入力できなくする', (
+     tester,
+   ) async {
+diff --git a/apps/student-app/test/ui/labels_test.dart b/apps/student-app/test/ui/labels_test.dart
+new file mode 100644
+index 0000000..b2544f6
+--- /dev/null
++++ b/apps/student-app/test/ui/labels_test.dart
+@@ -0,0 +1,17 @@
++import 'package:flutter_test/flutter_test.dart';
++import 'package:rally_student_app/ui/labels.dart';
++
++void main() {
++  test('評価の各点に言葉の目安を添える', () {
++    expect(
++      [for (var rating = 1; rating <= 5; rating++) ratingLabel(rating)],
++      ['不満だった', '少し物足りなかった', 'ふつう', 'よかった', 'とてもよかった'],
++    );
++    expect(ratingWithLabel(4), '4（よかった）');
++  });
++
++  test('契約の範囲（1〜5）の外の点は受け付けない', () {
++    expect(() => ratingLabel(0), throwsRangeError);
++    expect(() => ratingLabel(6), throwsRangeError);
++  });
++}

@@ -1,0 +1,1000 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e0a15d1..0fe854e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- コーチが受けた評価の一覧の API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）が評価の ID・完了したレッスンの ID・点・一言・送った時刻を、送った時刻の新しい順に返す。本部はどのコーチの分も、コーチは自分の分だけ読め、生徒は 403。admin-web の画面はまだない（#111）
+ - 添削の返却とメッセージの受信でプッシュ通知（notification の後半）: 境界間イベント `VideoReviewReturned`（async-lesson）と `MessageSent`（messaging）を AsyncAPI に足して発行し、notification が購読して、添削の返却は生徒へ、メッセージは受け手（送り手でない側）へ送る。送り先は Gen1 ではモック。API の変更はない（#100）
+ - admin-web にコーチの評価の件数と平均: コーチは「自分の評価」で自分のアカウント ID を入力して、本部は `/headquarters/coach-review-summary` でコーチ ID を指定して、`GET /coaches/{coach_id}/review-summary` の件数と平均（0 件なら「評価はまだありません」）を見る。API と契約の変更はない（#95）
+ - student-app にレッスンの評価の画面: 完了を記録したあと「レッスンを評価する」から 1〜5 の点と一言を送る。送ったあとと、すでに評価済み（409 `lesson_already_reviewed`）のときは入力できない。API と契約の変更はない（#94）
+diff --git a/apps/admin-web/src/api/schema.ts b/apps/admin-web/src/api/schema.ts
+index 29643b4..fef7c85 100644
+--- a/apps/admin-web/src/api/schema.ts
++++ b/apps/admin-web/src/api/schema.ts
+@@ -94,6 +94,32 @@ export interface paths {
+         patch?: never;
+         trace?: never;
+     };
++    "/coaches/{coach_id}/reviews": {
++        parameters: {
++            query?: never;
++            header?: never;
++            path?: never;
++            cookie?: never;
++        };
++        /**
++         * コーチが受けた評価の一覧（本部・コーチ）
++         * @description コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の
++         *     点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
++         *     （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
++         *     生徒の役割のトークンは 403。
++         *
++         *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
++         *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
++         */
++        get: operations["listCoachReviews"];
++        put?: never;
++        post?: never;
++        delete?: never;
++        options?: never;
++        head?: never;
++        patch?: never;
++        trace?: never;
++    };
+     "/live-lesson-sessions": {
+         parameters: {
+             query?: never;
+@@ -319,6 +345,34 @@ export interface components {
+             /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
+             average_rating: number | null;
+         };
++        /**
++         * @description コーチが受けた glossary の lesson_review（レッスンの評価）1 件。student-app の `LessonReview` から、
++         *     評価した生徒（`student_id`）と、一覧の `coach_id` と同じ値の `coach_id` を除いた形
++         */
++        CoachReview: {
++            /** Format: uuid */
++            review_id: string;
++            /**
++             * Format: uuid
++             * @description 評価された完了したレッスン
++             */
++            lesson_id: string;
++            rating: number;
++            /** @description 一言 */
++            comment: string;
++            /**
++             * Format: date-time
++             * @description 評価を送った時刻
++             */
++            submitted_at: string;
++        };
++        /** @description コーチ 1 人が受けた評価の一覧（並べ方は `listCoachReviews` の説明） */
++        CoachReviewList: {
++            /** Format: uuid */
++            coach_id: string;
++            /** @description 送った時刻の新しい順（同じ時刻は `review_id` の順） */
++            reviews: components["schemas"]["CoachReview"][];
++        };
+         /**
+          * @description student-app の LiveLessonSessionStatus と同じ値
+          * @enum {string}
+@@ -579,6 +633,31 @@ export interface operations {
+             404: components["responses"]["NotFound"];
+         };
+     };
++    listCoachReviews: {
++        parameters: {
++            query?: never;
++            header?: never;
++            path: {
++                coach_id: string;
++            };
++            cookie?: never;
++        };
++        requestBody?: never;
++        responses: {
++            /** @description コーチが受けた評価の一覧 */
++            200: {
++                headers: {
++                    [name: string]: unknown;
++                };
++                content: {
++                    "application/json": components["schemas"]["CoachReviewList"];
++                };
++            };
++            401: components["responses"]["Unauthorized"];
++            403: components["responses"]["Forbidden"];
++            404: components["responses"]["NotFound"];
++        };
++    };
+     startLiveLessonSession: {
+         parameters: {
+             query?: never;
+diff --git a/apps/backend/crates/application/src/review/list_coach_reviews.rs b/apps/backend/crates/application/src/review/list_coach_reviews.rs
+new file mode 100644
+index 0000000..79faa5e
+--- /dev/null
++++ b/apps/backend/crates/application/src/review/list_coach_reviews.rs
+@@ -0,0 +1,81 @@
++use std::cmp::Reverse;
++
++use domain::{identity::AccountId, review::LessonReview};
++
++use super::LessonReviewRepository;
++use crate::Unavailable;
++
++/// コーチが受けた評価の一覧のユースケース（admin-web の `listCoachReviews`。本部と、自分の分だけのコーチが呼ぶ）。
++/// 照会だけで、何も保存しない。
++///
++/// コーチへの評価を、送った時刻の新しい順に返す。同じ時刻は評価の ID の順。評価がなければ空。
++/// 誰が呼べるか（役割と、コーチは自分の分だけ）は境界（interface）が確かめる。
++pub struct ListCoachReviews<R> {
++    reviews: R,
++}
++
++impl<R> ListCoachReviews<R>
++where
++    R: LessonReviewRepository,
++{
++    pub fn new(reviews: R) -> Self {
++        Self { reviews }
++    }
++
++    pub async fn execute(&self, coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
++        let mut reviews = self.reviews.find_by_coach(coach_id).await?;
++        reviews.sort_by_key(|review| (Reverse(review.submitted_at()), review.id()));
++        Ok(reviews)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use std::time::{Duration, SystemTime};
++
++    use domain::{
++        lesson::LessonId,
++        review::{LessonReviewComment, LessonReviewId, Rating},
++    };
++
++    use super::*;
++    use crate::in_memory::InMemoryLessonReviewRepository;
++
++    const COACH: AccountId = AccountId::from_u128(3);
++    const OTHER_COACH: AccountId = AccountId::from_u128(4);
++    const NO_REVIEWS_COACH: AccountId = AccountId::from_u128(5);
++
++    fn review(id: u128, coach_id: AccountId, submitted_secs: u64) -> LessonReview {
++        LessonReview::restore(
++            LessonReviewId::from_u128(id),
++            LessonId::from_u128(id),
++            AccountId::from_u128(100 + id),
++            coach_id,
++            Rating::new(4).unwrap(),
++            LessonReviewComment::new("よい").unwrap(),
++            SystemTime::UNIX_EPOCH + Duration::from_secs(submitted_secs),
++        )
++    }
++
++    #[tokio::test]
++    async fn lists_only_the_reviews_of_the_coach_newest_first() {
++        let use_case = ListCoachReviews::new(InMemoryLessonReviewRepository::with_reviews([
++            review(1, COACH, 10),
++            review(2, COACH, 30),
++            review(3, OTHER_COACH, 40),
++            // 同じ時刻は ID の順
++            review(5, COACH, 20),
++            review(4, COACH, 20),
++        ]));
++
++        let reviews = use_case.execute(COACH).await.unwrap();
++        let ids: Vec<LessonReviewId> = reviews.iter().map(LessonReview::id).collect();
++        assert_eq!(
++            ids,
++            [2, 4, 5, 1].map(LessonReviewId::from_u128),
++            "新しい順で、他のコーチの評価を含まない"
++        );
++
++        assert!(use_case.execute(NO_REVIEWS_COACH).await.unwrap().is_empty());
++    }
++}
+diff --git a/apps/backend/crates/application/src/review/mod.rs b/apps/backend/crates/application/src/review/mod.rs
+index a553afa..e1badb5 100644
+--- a/apps/backend/crates/application/src/review/mod.rs
++++ b/apps/backend/crates/application/src/review/mod.rs
+@@ -1,4 +1,4 @@
+-//! review のユースケースとポート。レッスンの評価（glossary の lesson_review）と、コーチごとの評価の集計。
++//! review のユースケースとポート。レッスンの評価（glossary の lesson_review）と、コーチごとの評価の集計と一覧。
+ //!
+ //! 評価の対象の完了したレッスンは live-lesson / async-lesson が発行した事実で、review は
+ //! [`CompletedLessonLookup`] で読むだけ（実装は [`crate::lesson::LessonCompletionLookup`]）。
+@@ -7,12 +7,14 @@ mod completed_lesson_lookup;
+ mod get_coach_review_summary;
+ mod insert_review_error;
+ pub mod lesson_review_id_uuid;
++mod list_coach_reviews;
+ mod repository;
+ mod submit_lesson_review;
+ 
+ pub use completed_lesson_lookup::CompletedLessonLookup;
+ pub use get_coach_review_summary::GetCoachReviewSummary;
+ pub use insert_review_error::InsertReviewError;
++pub use list_coach_reviews::ListCoachReviews;
+ pub use repository::LessonReviewRepository;
+ pub use submit_lesson_review::{
+     SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
+diff --git a/apps/backend/crates/application/src/review/repository.rs b/apps/backend/crates/application/src/review/repository.rs
+index 3efe993..5ceb168 100644
+--- a/apps/backend/crates/application/src/review/repository.rs
++++ b/apps/backend/crates/application/src/review/repository.rs
+@@ -30,7 +30,7 @@ pub trait LessonReviewRepository: Send + Sync {
+         review: LessonReview,
+     ) -> impl Future<Output = Result<(), InsertReviewError>> + Send;
+ 
+-    /// コーチ `coach_id` への評価をすべて読む（数えない。数えるのは domain の
++    /// コーチ `coach_id` への評価をすべて読む（数えない・並べない。並べるのは [`super::ListCoachReviews`]、数えるのは domain の
+     /// [`domain::review::CoachReviewSummary::tally`]）。
+     fn find_by_coach(
+         &self,
+diff --git a/apps/backend/crates/interface/src/lib.rs b/apps/backend/crates/interface/src/lib.rs
+index 478e9da..e7f8b8a 100644
+--- a/apps/backend/crates/interface/src/lib.rs
++++ b/apps/backend/crates/interface/src/lib.rs
+@@ -40,7 +40,8 @@ use application::{
+         SendMessage,
+     },
+     review::{
+-        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
++        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
++        SubmitLessonReview,
+     },
+     scheduling::{
+         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
+@@ -71,7 +72,8 @@ pub use error::ApiError;
+ /// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
+ /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
+ /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
+-/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）は本部とコーチで、コーチは自分の分だけ。
++/// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
++/// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。
+ #[allow(clippy::too_many_arguments)]
+ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
+     register_account: RegisterAccount<R, A, C>,
+@@ -95,6 +97,7 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, A, P, C, T>(
+     mark_message_thread_read: MarkMessageThreadRead<X, C>,
+     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
+     get_coach_review_summary: GetCoachReviewSummary<N>,
++    list_coach_reviews: ListCoachReviews<N>,
+     tokens: T,
+ ) -> Router
+ where
+@@ -245,9 +248,15 @@ where
+             get(reviews::get_coach_review_summary::<O, N, A, C>)
+                 .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
+         )
++        .route(
++            "/coaches/{coach_id}/reviews",
++            get(reviews::list_coach_reviews::<O, N, A, C>)
++                .route_layer(require_role(&[Role::Headquarters, Role::Coach])),
++        )
+         .with_state(Arc::new(reviews::ReviewsState {
+             submit_lesson_review,
+             get_coach_review_summary,
++            list_coach_reviews,
+         }));
+     Router::new()
+         .route("/healthz", get(healthz))
+diff --git a/apps/backend/crates/interface/src/reviews.rs b/apps/backend/crates/interface/src/reviews.rs
+index efd1b8c..f5669f7 100644
+--- a/apps/backend/crates/interface/src/reviews.rs
++++ b/apps/backend/crates/interface/src/reviews.rs
+@@ -1,5 +1,6 @@
+ //! レッスンの評価。student-app の `POST /lesson-reviews`（`submitLessonReview`。生徒だけ）と、admin-web の
+-//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部はどのコーチの分も、コーチは自分の分だけ）。
++//! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部はどのコーチの分も、コーチは自分の分だけ）と、
++//! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。コーチが受けた評価の一覧。読める範囲は件数と平均と同じ）。
+ //! 自分が生徒でないレッスンには、レッスンがあることも知らせない（404）。
+ 
+ use std::sync::Arc;
+@@ -10,8 +11,9 @@ use application::{
+     identity::account_id_uuid,
+     lesson::lesson_id_uuid,
+     review::{
+-        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview,
+-        SubmitLessonReviewCommand, SubmitLessonReviewError, lesson_review_id_uuid,
++        CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
++        SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
++        lesson_review_id_uuid,
+     },
+ };
+ use axum::{
+@@ -34,6 +36,7 @@ use crate::{
+ pub struct ReviewsState<L, R, A, C> {
+     pub submit_lesson_review: SubmitLessonReview<L, R, A, C>,
+     pub get_coach_review_summary: GetCoachReviewSummary<R>,
++    pub list_coach_reviews: ListCoachReviews<R>,
+ }
+ 
+ /// ハンドラーが共有する [`ReviewsState`]。
+@@ -67,6 +70,23 @@ pub struct CoachReviewSummaryBody {
+     average_rating: Option<f64>,
+ }
+ 
++/// admin-web の `CoachReview`。
++#[derive(Serialize)]
++pub struct CoachReviewBody {
++    review_id: String,
++    lesson_id: String,
++    rating: u8,
++    comment: String,
++    submitted_at: String,
++}
++
++/// admin-web の `CoachReviewList`。
++#[derive(Serialize)]
++pub struct CoachReviewListBody {
++    coach_id: String,
++    reviews: Vec<CoachReviewBody>,
++}
++
+ /// `POST /lesson-reviews`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。評価するのはトークンのアカウント。
+ pub async fn submit_lesson_review<L, R, A, C>(
+     State(state): State<Shared<L, R, A, C>>,
+@@ -137,6 +157,40 @@ where
+     Ok(Json(coach_review_summary_body(&summary)))
+ }
+ 
++/// `GET /coaches/{coach_id}/reviews`（admin-web）。本部とコーチだけが呼べ（役割は `require_role` の層が確かめる）、
++/// コーチは自分の分だけを読める。
++pub async fn list_coach_reviews<L, R, A, C>(
++    State(state): State<Shared<L, R, A, C>>,
++    account: AuthenticatedAccount,
++    Path(coach_id): Path<String>,
++) -> Result<Json<CoachReviewListBody>, ApiError>
++where
++    L: CompletedLessonLookup,
++    R: LessonReviewRepository,
++    A: AnalyticsSink,
++    C: Clock,
++{
++    // 契約の listCoachReviews に 422 はないので、UUID でない ID はないものとして扱う
++    let coach_id =
++        account_id_uuid::parse(&coach_id).map_err(|_| ApiError::not_found("コーチがない"))?;
++    if account.role() == Role::Coach && account.account_id() != coach_id {
++        return Err(ApiError::forbidden("コーチは自分の評価だけを読める"));
++    }
++
++    let reviews = state
++        .list_coach_reviews
++        .execute(coach_id)
++        .await
++        .map_err(ApiError::internal)?;
++    Ok(Json(CoachReviewListBody {
++        coach_id: account_id_uuid::format(coach_id),
++        reviews: reviews
++            .iter()
++            .map(coach_review_body)
++            .collect::<Result<_, _>>()?,
++    }))
++}
++
+ fn lesson_review_body(review: &LessonReview) -> Result<LessonReviewBody, ApiError> {
+     Ok(LessonReviewBody {
+         review_id: lesson_review_id_uuid::format(review.id()),
+@@ -156,3 +210,13 @@ fn coach_review_summary_body(summary: &CoachReviewSummary) -> CoachReviewSummary
+         average_rating: summary.average_rating(),
+     }
+ }
++
++fn coach_review_body(review: &LessonReview) -> Result<CoachReviewBody, ApiError> {
++    Ok(CoachReviewBody {
++        review_id: lesson_review_id_uuid::format(review.id()),
++        lesson_id: lesson_id_uuid::format(review.lesson_id()),
++        rating: review.rating().value(),
++        comment: review.comment().as_str().to_string(),
++        submitted_at: date_time_to_contract(review.submitted_at())?,
++    })
++}
+diff --git a/apps/backend/crates/interface/tests/accounts.rs b/apps/backend/crates/interface/tests/accounts.rs
+index 1aa14fc..1fcc19c 100644
+--- a/apps/backend/crates/interface/tests/accounts.rs
++++ b/apps/backend/crates/interface/tests/accounts.rs
+@@ -168,6 +168,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App { router, analytics }
+diff --git a/apps/backend/crates/interface/tests/bookings.rs b/apps/backend/crates/interface/tests/bookings.rs
+index 65a32be..8f4e785 100644
+--- a/apps/backend/crates/interface/tests/bookings.rs
++++ b/apps/backend/crates/interface/tests/bookings.rs
+@@ -234,6 +234,9 @@ fn app_with_entitlements(
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/interface/tests/entitlements.rs b/apps/backend/crates/interface/tests/entitlements.rs
+index 4574f95..02c0f95 100644
+--- a/apps/backend/crates/interface/tests/entitlements.rs
++++ b/apps/backend/crates/interface/tests/entitlements.rs
+@@ -213,6 +213,9 @@ fn router(now: SystemTime) -> Router {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     )
+ }
+diff --git a/apps/backend/crates/interface/tests/internal_error.rs b/apps/backend/crates/interface/tests/internal_error.rs
+index c850075..ad7ed8b 100644
+--- a/apps/backend/crates/interface/tests/internal_error.rs
++++ b/apps/backend/crates/interface/tests/internal_error.rs
+@@ -162,6 +162,9 @@ async fn storage_failure_is_500_internal_without_the_reason() {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         NoTokens,
+     );
+ 
+diff --git a/apps/backend/crates/interface/tests/lessons.rs b/apps/backend/crates/interface/tests/lessons.rs
+index a1dfddf..29e6caa 100644
+--- a/apps/backend/crates/interface/tests/lessons.rs
++++ b/apps/backend/crates/interface/tests/lessons.rs
+@@ -268,6 +268,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/interface/tests/live_lesson_sessions.rs b/apps/backend/crates/interface/tests/live_lesson_sessions.rs
+index 3d3111b..1694cb8 100644
+--- a/apps/backend/crates/interface/tests/live_lesson_sessions.rs
++++ b/apps/backend/crates/interface/tests/live_lesson_sessions.rs
+@@ -205,6 +205,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/interface/tests/messaging.rs b/apps/backend/crates/interface/tests/messaging.rs
+index c66a81a..02cc971 100644
+--- a/apps/backend/crates/interface/tests/messaging.rs
++++ b/apps/backend/crates/interface/tests/messaging.rs
+@@ -221,6 +221,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/interface/tests/reviews.rs b/apps/backend/crates/interface/tests/reviews.rs
+new file mode 100644
+index 0000000..300342d
+--- /dev/null
++++ b/apps/backend/crates/interface/tests/reviews.rs
+@@ -0,0 +1,304 @@
++//! `GET /coaches/{coach_id}/reviews`（admin-web の `listCoachReviews`）の統合テスト。レスポンスの形を admin-web の
++//! OpenAPI のスキーマで検査し、本部はどのコーチの分も、コーチは自分の分だけを読めること（生徒は 403）と、
++//! 送った時刻の新しい順に並ぶことを確かめる。
++
++use std::time::{Duration, SystemTime};
++
++use application::{
++    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
++    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
++    identity::{
++        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
++    },
++    in_memory::{
++        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
++        InMemoryBookingRepository, InMemoryEntitlementRepository,
++        InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
++        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
++        RecordingAnalyticsSink, RecordingDomainEventPublisher,
++    },
++    lesson::RecordLessonCompletion,
++    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
++    review::{GetCoachReviewSummary, ListCoachReviews, SubmitLessonReview},
++    scheduling::{
++        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
++        SchedulingBookingLookup, SearchSlots,
++    },
++};
++use axum::{
++    Router,
++    body::{Body, to_bytes},
++    http::{Request, StatusCode, header},
++};
++use domain::{
++    identity::{AccountId, Role},
++    lesson::LessonId,
++    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
++};
++use serde_json::{Value, json};
++use tower::ServiceExt;
++
++mod support;
++
++/// 2026-10-26T00:00:00Z（現在時刻）
++const NOW: Duration = Duration::from_secs(1_792_972_800);
++const HOUR: Duration = Duration::from_secs(3600);
++
++/// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
++struct FakeTokens;
++
++impl TokenIssuer for FakeTokens {
++    fn issue(&self, _claims: TokenClaims) -> AccessToken {
++        unreachable!("このテストでは発行しない")
++    }
++}
++
++impl TokenVerifier for FakeTokens {
++    fn verify(&self, token: &str) -> Result<TokenClaims, InvalidToken> {
++        let (role, id) = token.split_once(':').ok_or(InvalidToken)?;
++        let role = match role {
++            "student" => Role::Student,
++            "coach" => Role::Coach,
++            "headquarters" => Role::Headquarters,
++            _ => return Err(InvalidToken),
++        };
++        let id = id.parse().map_err(|_| InvalidToken)?;
++        Ok(TokenClaims {
++            account_id: AccountId::from_u128(id),
++            role,
++        })
++    }
++}
++
++const HEADQUARTERS: &str = "headquarters:1";
++/// 評価を受けたコーチ（ID 42 = 0x2a）と、そのトークン
++const COACH_ID: &str = "00000000-0000-0000-0000-00000000002a";
++const COACH: &str = "coach:42";
++const OTHER_COACH: &str = "coach:43";
++
++fn now() -> SystemTime {
++    SystemTime::UNIX_EPOCH + NOW
++}
++
++fn review(id: u128, coach: u128, rating: i64, comment: &str, hours_ago: u32) -> LessonReview {
++    LessonReview::restore(
++        LessonReviewId::from_u128(id),
++        LessonId::from_u128(10 + id),
++        AccountId::from_u128(100 + id),
++        AccountId::from_u128(coach),
++        Rating::new(rating).unwrap(),
++        LessonReviewComment::new(comment).unwrap(),
++        now() - HOUR * hours_ago,
++    )
++}
++
++/// コーチ 42 への評価 3 件（保存した順は新しい順でない）と、コーチ 43 への評価 1 件。
++fn reviews() -> InMemoryLessonReviewRepository {
++    InMemoryLessonReviewRepository::with_reviews([
++        review(1, 42, 3, "ふつう", 48),
++        review(2, 42, 5, "とてもよい", 1),
++        review(3, 43, 1, "別のコーチ", 2),
++        review(4, 42, 4, "よい", 24),
++    ])
++}
++
++fn app(reviews: InMemoryLessonReviewRepository) -> Router {
++    let analytics = RecordingAnalyticsSink::default();
++    let clock = FixedClock(now());
++    let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::default());
++    let slots = bookings.slots().clone();
++    interface::router_with(
++        RegisterAccount::new(
++            InMemoryAccountRepository::default(),
++            analytics.clone(),
++            clock,
++        ),
++        PublishSlot::new(slots.clone(), analytics.clone(), clock),
++        SearchSlots::new(slots, clock),
++        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
++        ConfirmBooking::new(
++            bookings.clone(),
++            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        CancelBooking::new(
++            bookings.clone(),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        GetSlotSupply::new(bookings, clock),
++        StartSubscription::new(
++            InMemoryEntitlementRepository::default(),
++            analytics.clone(),
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
++        StartLiveLessonSession::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
++                InMemorySlotRepository::default(),
++            )),
++            FixedVideoCallProvider::default(),
++            analytics.clone(),
++            clock,
++        ),
++        EndLiveLessonSession::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            FixedVideoCallProvider::default(),
++            analytics.clone(),
++            clock,
++        ),
++        SubmitVideo::new(
++            InMemoryVideoRepository::default(),
++            FixedVideoStorage,
++            analytics.clone(),
++            clock,
++        ),
++        GetVideoReview::new(InMemoryVideoRepository::default()),
++        ReturnVideoReview::new(
++            InMemoryVideoRepository::default(),
++            EntitlementReviewGate,
++            analytics.clone(),
++            application::in_memory::RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        RecordLessonCompletion::new(
++            InMemoryLiveLessonSessionRepository::default(),
++            InMemoryVideoRepository::default(),
++            InMemoryLessonCompletionRepository::default(),
++            analytics,
++            RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        application::messaging::ListMessageThreads::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++        ),
++        application::messaging::ListMessages::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++        ),
++        application::messaging::SendMessage::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++            application::entitlement::EntitlementChatGate::new(
++                application::in_memory::InMemoryEntitlementRepository::default(),
++            ),
++            RecordingAnalyticsSink::default(),
++            application::in_memory::RecordingDomainEventPublisher::default(),
++            clock,
++        ),
++        application::messaging::MarkMessageThreadRead::new(
++            application::in_memory::InMemoryMessageThreadRepository::default(),
++            clock,
++        ),
++        SubmitLessonReview::new(
++            application::lesson::LessonCompletionLookup::new(
++                application::in_memory::InMemoryLessonCompletionRepository::default(),
++            ),
++            reviews.clone(),
++            RecordingAnalyticsSink::default(),
++            clock,
++        ),
++        GetCoachReviewSummary::new(reviews.clone()),
++        ListCoachReviews::new(reviews),
++        FakeTokens,
++    )
++}
++
++async fn list_coach_reviews(
++    router: &Router,
++    coach_id: &str,
++    token: Option<&str>,
++) -> (StatusCode, Value) {
++    let mut request = Request::get(format!("/coaches/{coach_id}/reviews"));
++    if let Some(token) = token {
++        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
++    }
++    let response = router
++        .clone()
++        .oneshot(request.body(Body::empty()).unwrap())
++        .await
++        .unwrap();
++    let status = response.status();
++    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
++    let body = serde_json::from_slice(&bytes).unwrap();
++    support::Contract::load("admin-web").assert_response(
++        "get",
++        "/coaches/{coach_id}/reviews",
++        status,
++        &body,
++    );
++    (status, body)
++}
++
++#[tokio::test]
++async fn headquarters_and_the_coach_read_the_reviews_newest_first() {
++    let router = app(reviews());
++    for token in [HEADQUARTERS, COACH] {
++        let (status, body) = list_coach_reviews(&router, COACH_ID, Some(token)).await;
++        assert_eq!(status, StatusCode::OK, "{token}: {body}");
++        assert_eq!(
++            body,
++            json!({
++                "coach_id": COACH_ID,
++                // 送った時刻の新しい順。他のコーチへの評価は含まない
++                "reviews": [
++                    {
++                        "review_id": "00000000-0000-0000-0000-000000000002",
++                        "lesson_id": "00000000-0000-0000-0000-00000000000c",
++                        "rating": 5,
++                        "comment": "とてもよい",
++                        "submitted_at": "2026-10-25T23:00:00Z",
++                    },
++                    {
++                        "review_id": "00000000-0000-0000-0000-000000000004",
++                        "lesson_id": "00000000-0000-0000-0000-00000000000e",
++                        "rating": 4,
++                        "comment": "よい",
++                        "submitted_at": "2026-10-25T00:00:00Z",
++                    },
++                    {
++                        "review_id": "00000000-0000-0000-0000-000000000001",
++                        "lesson_id": "00000000-0000-0000-0000-00000000000b",
++                        "rating": 3,
++                        "comment": "ふつう",
++                        "submitted_at": "2026-10-24T00:00:00Z",
++                    },
++                ],
++            }),
++            "{token}"
++        );
++    }
++}
++
++#[tokio::test]
++async fn a_coach_without_reviews_has_an_empty_list() {
++    let router = app(reviews());
++    let coach_id = "00000000-0000-0000-0000-000000000063";
++    let (status, body) = list_coach_reviews(&router, coach_id, Some(HEADQUARTERS)).await;
++    assert_eq!(status, StatusCode::OK, "{body}");
++    assert_eq!(body, json!({ "coach_id": coach_id, "reviews": [] }));
++}
++
++#[tokio::test]
++async fn other_coaches_and_students_may_not_read_the_reviews() {
++    let router = app(reviews());
++    for token in [OTHER_COACH, "student:3"] {
++        let (status, body) = list_coach_reviews(&router, COACH_ID, Some(token)).await;
++        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
++        assert_eq!(body["code"], "forbidden");
++    }
++    let (status, body) = list_coach_reviews(&router, COACH_ID, None).await;
++    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
++    assert_eq!(body["code"], "unauthorized");
++}
++
++#[tokio::test]
++async fn a_coach_id_that_is_not_a_uuid_is_not_found() {
++    let router = app(reviews());
++    let (status, body) = list_coach_reviews(&router, "not-a-uuid", Some(HEADQUARTERS)).await;
++    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
++    assert_eq!(body["code"], "not_found");
++}
+diff --git a/apps/backend/crates/interface/tests/slot_supply.rs b/apps/backend/crates/interface/tests/slot_supply.rs
+index 75de551..3efa8cc 100644
+--- a/apps/backend/crates/interface/tests/slot_supply.rs
++++ b/apps/backend/crates/interface/tests/slot_supply.rs
+@@ -221,6 +221,9 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     )
+ }
+diff --git a/apps/backend/crates/interface/tests/slots.rs b/apps/backend/crates/interface/tests/slots.rs
+index a30b20a..216eecb 100644
+--- a/apps/backend/crates/interface/tests/slots.rs
++++ b/apps/backend/crates/interface/tests/slots.rs
+@@ -184,6 +184,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App { router, analytics }
+diff --git a/apps/backend/crates/interface/tests/subscriptions.rs b/apps/backend/crates/interface/tests/subscriptions.rs
+index 1948900..f66d1b2 100644
+--- a/apps/backend/crates/interface/tests/subscriptions.rs
++++ b/apps/backend/crates/interface/tests/subscriptions.rs
+@@ -183,6 +183,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/interface/tests/videos.rs b/apps/backend/crates/interface/tests/videos.rs
+index 2a6b383..78ea186 100644
+--- a/apps/backend/crates/interface/tests/videos.rs
++++ b/apps/backend/crates/interface/tests/videos.rs
+@@ -207,6 +207,9 @@ fn app() -> App {
+         application::review::GetCoachReviewSummary::new(
+             application::in_memory::InMemoryLessonReviewRepository::default(),
+         ),
++        application::review::ListCoachReviews::new(
++            application::in_memory::InMemoryLessonReviewRepository::default(),
++        ),
+         FakeTokens,
+     );
+     App {
+diff --git a/apps/backend/crates/server/src/lib.rs b/apps/backend/crates/server/src/lib.rs
+index 3679101..ee78ebd 100644
+--- a/apps/backend/crates/server/src/lib.rs
++++ b/apps/backend/crates/server/src/lib.rs
+@@ -27,7 +27,7 @@ use application::{
+         MessageThreadSubscriber, SendMessage,
+     },
+     notification::{PushNotificationSubscriber, PushSender},
+-    review::{GetCoachReviewSummary, LessonReviewRepository, SubmitLessonReview},
++    review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
+     scheduling::{
+         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
+         PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
+@@ -73,7 +73,8 @@ pub fn router() -> Router {
+ /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+ ///
+ /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
+-/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）は同じ保存先から読む。
++/// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
++/// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。
+ ///
+ /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
+ pub fn router_at<C>(clock: C) -> Router
+@@ -269,7 +270,8 @@ where
+             analytics,
+             clock,
+         ),
+-        GetCoachReviewSummary::new(reviews),
++        GetCoachReviewSummary::new(reviews.clone()),
++        ListCoachReviews::new(reviews),
+         MockTokenService,
+     )
+ }
+diff --git a/specs/contracts/api/admin-web/openapi.yaml b/specs/contracts/api/admin-web/openapi.yaml
+index 293cbc0..ea63d61 100644
+--- a/specs/contracts/api/admin-web/openapi.yaml
++++ b/specs/contracts/api/admin-web/openapi.yaml
+@@ -36,7 +36,7 @@ tags:
+   - name: async-lesson
+     description: 非同期レッスン（動画添削の返却）
+   - name: review
+-    description: 評価（コーチごとの評価の集計）
++    description: 評価（コーチごとの評価の集計と一覧）
+   - name: messaging
+     description: メッセージ（生徒と担当コーチのチャット）
+ 
+@@ -153,6 +153,42 @@ paths:
+         "404":
+           $ref: "#/components/responses/NotFound"
+ 
++  /coaches/{coach_id}/reviews:
++    get:
++      operationId: listCoachReviews
++      summary: コーチが受けた評価の一覧（本部・コーチ）
++      description: |
++        コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の
++        点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
++        （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
++        生徒の役割のトークンは 403。
++
++        `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
++        `coach_id` が UUID でなければ 404。行動イベントは発火しない。
++      tags: [review]
++      x-context: identity
++      x-analytics-events: []
++      parameters:
++        - name: coach_id
++          in: path
++          required: true
++          schema:
++            type: string
++            format: uuid
++      responses:
++        "200":
++          description: コーチが受けた評価の一覧
++          content:
++            application/json:
++              schema:
++                $ref: "#/components/schemas/CoachReviewList"
++        "401":
++          $ref: "#/components/responses/Unauthorized"
++        "403":
++          $ref: "#/components/responses/Forbidden"
++        "404":
++          $ref: "#/components/responses/NotFound"
++
+   /live-lesson-sessions:
+     post:
+       operationId: startLiveLessonSession
+@@ -533,6 +569,46 @@ components:
+           maximum: 5
+           description: 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null
+ 
++    CoachReview:
++      type: object
++      description: |
++        コーチが受けた glossary の lesson_review（レッスンの評価）1 件。student-app の `LessonReview` から、
++        評価した生徒（`student_id`）と、一覧の `coach_id` と同じ値の `coach_id` を除いた形
++      required: [review_id, lesson_id, rating, comment, submitted_at]
++      properties:
++        review_id:
++          type: string
++          format: uuid
++        lesson_id:
++          type: string
++          format: uuid
++          description: 評価された完了したレッスン
++        rating:
++          type: integer
++          minimum: 1
++          maximum: 5
++        comment:
++          type: string
++          description: 一言
++        submitted_at:
++          type: string
++          format: date-time
++          description: 評価を送った時刻
++
++    CoachReviewList:
++      type: object
++      description: コーチ 1 人が受けた評価の一覧（並べ方は `listCoachReviews` の説明）
++      required: [coach_id, reviews]
++      properties:
++        coach_id:
++          type: string
++          format: uuid
++        reviews:
++          type: array
++          description: 送った時刻の新しい順（同じ時刻は `review_id` の順）
++          items:
++            $ref: "#/components/schemas/CoachReview"
++
+     LiveLessonSessionStatus:
+       type: string
+       description: student-app の LiveLessonSessionStatus と同じ値

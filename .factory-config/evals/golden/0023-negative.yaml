@@ -1,0 +1,15 @@
+# Golden Set ペア比較 0023（EvalSpec l4-pairwise）。負例
+id: "0023"
+ticket: "github:guccyon/rally#112"
+gate: L4
+rubric_ids: [ARCH-002]
+pair:
+  a: { ref: "file:patches/0023-variant.diff", derived_from: "github:guccyon/rally#121", note: "負例（builder が元の PR の差分に 1 つだけ欠陥を入れた）" }
+  b: { ref: "github:guccyon/rally#121", note: "マージした PR（元）" }
+preferred: b
+confidence: high
+reason: "負例は点の表示を「10 点満点」にした（契約は 1〜5）"
+polarity: one_flawed
+scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_at: "2026-10-28"
+lesson: "表示の尺度が契約と食い違う"

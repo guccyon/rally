@@ -1,0 +1,592 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 4190c53..d6e6eaa 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- admin-web のコーチの「自分の評価」で、アカウント ID を入力せずに、開いたときから本人の評価の件数と平均と一覧を出す（`GET /me` で本人の ID を知る）。本部の画面は変わらない。API と契約の変更はない（#123）
+ - ログイン中の本人のアカウントの API: admin-web の `GET /me`（`getMyAccount`）がトークンの示すアカウントの ID・役割（`student` / `coach` / `headquarters`）・表示名を返す。役割では絞らず、トークンがない・無効なら 401（トークンのアカウントがない、または役割が合わないときも 401）。admin-web の画面はまだない（#122）
+ - student-app のレッスンの評価で、1〜5 の各点に言葉の目安（1「不満だった」〜5「とてもよかった」）を添え、選んだ点と送った後の評価も「4（よかった）」のように言葉付きで出す。API と契約の変更はない（#120）
+ - 予約の確定をコーチにもプッシュ通知: 予約が確定すると、生徒への「予約の確定」に加えて、予約を受けたコーチに「新しい予約」の通知（`BookingReceived`）を 1 件送る。同じイベントの再送では送らず、片方だけ送れなかったときは送れなかった方だけを再送で送る。送り先は Gen1 ではモック。API と契約の変更はない（#119）
+diff --git a/apps/admin-web/README.md b/apps/admin-web/README.md
+index 5cfebf9..42c054b 100644
+--- a/apps/admin-web/README.md
++++ b/apps/admin-web/README.md
+@@ -28,9 +28,9 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ /
+ | コーチ（`/coach`） | 予約枠の公開と、このログイン中に公開した枠の一覧 | `publishSlot` |
+ | | 動画の添削の返却（動画 ID を入力） | `returnVideoReview` |
+ | | 通話への参加（予約 ID で開始、同じセッションを終了。映像はモックなので出さない） | `startLiveLessonSession` / `endLiveLessonSession` |
+-| | 自分の評価（自分のアカウント ID を入力して、評価の件数と点の平均と、その下に評価の一覧（点・一言・送った時刻。並びは API が返した新しい順のまま）。0 件なら平均は「評価はまだありません」、一覧は「まだ評価はありません」。他のコーチの ID は API が 403 で、件数と平均も一覧も出さない） | `getCoachReviewSummary` / `listCoachReviews` |
++| | 自分の評価（ID は入力しない。開いたときに本人のアカウントを API に聞き、その ID で評価の件数と点の平均と、その下に評価の一覧（点・一言・送った時刻。並びは API が返した新しい順のまま）を出す。0 件なら平均は「評価はまだありません」、一覧は「まだ評価はありません」。本人のアカウントが取れないとき（401 など）・コーチのアカウントでないとき・評価の API が失敗したときは、その文言だけを出す） | `getMyAccount` / `getCoachReviewSummary` / `listCoachReviews` |
+ | 本部（`/headquarters`） | 予約・完了記録の一覧 | なし（契約に API がないので「未実装」と表示） |
+ | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
+ | 本部（`/headquarters/coach-review-summary`） | コーチの評価（コーチ ID を入力して、そのコーチの評価の件数と点の平均。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ） | `getCoachReviewSummary` |
+ 
+-自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。コーチの一覧の API（`listCoaches`。本部だけ）は契約と `src/api/schema.ts` にあるが、それを使う画面はまだなく、本部はコーチ ID を入力する。ログイン中の本人のアカウント（ID・役割・表示名）を返す API（`getMyAccount`）も契約と `src/api/schema.ts` にあるが、それを使う画面はまだない。トークンの中身は読まないので、コーチが自分の評価を見るときも今は自分のアカウント ID を入力する。
++自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。コーチの一覧の API（`listCoaches`。本部だけ）は契約と `src/api/schema.ts` にあるが、それを使う画面はまだなく、本部はコーチ ID を入力する。トークンの中身は読まないので、本人のアカウント ID はログイン中の本人のアカウントを返す API（`getMyAccount`）で知る（今はコーチの「自分の評価」だけが使う）。
+diff --git a/apps/admin-web/src/api/coach.ts b/apps/admin-web/src/api/coach.ts
+index c57a36e..510be34 100644
+--- a/apps/admin-web/src/api/coach.ts
++++ b/apps/admin-web/src/api/coach.ts
+@@ -4,6 +4,7 @@ import type { ApiClient, Schemas } from "./client";
+ /** コーチの操作（契約の operationId と 1 対 1）。 */
+ export function coachApi(client: ApiClient) {
+   return {
++    getMyAccount: () => call(() => client.GET("/me")),
+     publishSlot: (body: Schemas["PublishSlotRequest"]) =>
+       call(() => client.POST("/slots", { body })),
+     returnVideoReview: (videoId: string, body: Schemas["ReturnVideoReviewRequest"]) =>
+diff --git a/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+index 8614523..1e84b24 100644
+--- a/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
++++ b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+@@ -2,61 +2,47 @@
+ 
+ import { type FormEvent, useState } from "react";
+ 
+-import type { Schemas } from "@/api/client";
+-import type { Result } from "@/api/call";
+-import { CoachReviewList } from "@/components/CoachReviewList";
++import {
++  type CoachReviews,
++  type CoachReviewsApi,
++  CoachReviewSummaryView,
++  loadCoachReviews,
++} from "@/components/CoachReviewSummaryView";
+ import { ResultMessage } from "@/components/ResultMessage";
+ 
+-type GetCoachReviewSummary = (coachId: string) => Promise<Result<Schemas["CoachReviewSummary"]>>;
+-type ListCoachReviews = (coachId: string) => Promise<Result<Schemas["CoachReviewList"]>>;
+-
+-/** 点の平均の表示。丸めは契約（getCoachReviewSummary）の正本どおり API が済ませているので、桁を揃えるだけ。 */
+-export function formatAverageRating(averageRating: number | null): string {
+-  return averageRating === null ? "評価はまだありません" : averageRating.toFixed(2);
+-}
+-
+ /**
+- * コーチの評価の件数と平均（getCoachReviewSummary）。コーチと本部で共通。
+- * トークンは不透明なもの（中身を読まない）なので、コーチも自分のアカウント ID を入力する。
++ * コーチ ID を入力して、そのコーチの評価の件数と平均（getCoachReviewSummary）を見る（本部の画面）。
+  * `listCoachReviews` を渡すと、同じ ID で評価の一覧（listCoachReviews）も取り、件数と平均の下に出す。
+  * どちらかが失敗したら、どちらも出さずに失敗の文言だけを出す。
++ * コーチの「自分の評価」は入力せずに本人の分を出す（`coach/MyCoachReviews`）。
+  */
+ export function CoachReviewSummaryLookup({
+   api,
+   description,
+ }: {
+-  api: { getCoachReviewSummary: GetCoachReviewSummary; listCoachReviews?: ListCoachReviews };
++  api: CoachReviewsApi;
+   description: string;
+ }) {
+   const [coachId, setCoachId] = useState("");
+-  const [summary, setSummary] = useState<Schemas["CoachReviewSummary"] | null>(null);
+-  const [reviews, setReviews] = useState<Schemas["CoachReview"][] | null>(null);
++  const [result, setResult] = useState<CoachReviews | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
+ 
+   async function onSubmit(event: FormEvent) {
+     event.preventDefault();
+-    setSummary(null);
+-    setReviews(null);
++    setResult(null);
+     if (coachId.trim() === "") {
+       setError("コーチ ID を入力してください。");
+       return;
+     }
+     setError(null);
+     setBusy(true);
+-    const id = coachId.trim();
+-    const [summaryResponse, listResponse] = await Promise.all([
+-      api.getCoachReviewSummary(id),
+-      api.listCoachReviews?.(id),
+-    ]);
++    const response = await loadCoachReviews(api, coachId.trim());
+     setBusy(false);
+-    if (!summaryResponse.ok) {
+-      setError(summaryResponse.message);
+-    } else if (listResponse !== undefined && !listResponse.ok) {
+-      setError(listResponse.message);
++    if (response.ok) {
++      setResult(response.data);
+     } else {
+-      setSummary(summaryResponse.data);
+-      setReviews(listResponse?.data.reviews ?? null);
++      setError(response.message);
+     }
+   }
+ 
+@@ -81,22 +67,7 @@ export function CoachReviewSummaryLookup({
+         </button>
+       </form>
+       {error !== null && <ResultMessage result={{ ok: false, message: error }} />}
+-      {summary !== null && (
+-        <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
+-          <dt>コーチ ID</dt>
+-          <dd className="font-mono">{summary.coach_id}</dd>
+-          <dt>評価の件数</dt>
+-          <dd>{summary.review_count} 件</dd>
+-          <dt>点の平均（1〜5）</dt>
+-          <dd>{formatAverageRating(summary.average_rating)}</dd>
+-        </dl>
+-      )}
+-      {reviews !== null && (
+-        <div className="space-y-2">
+-          <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
+-          <CoachReviewList reviews={reviews} />
+-        </div>
+-      )}
++      {result !== null && <CoachReviewSummaryView summary={result.summary} reviews={result.reviews} />}
+     </div>
+   );
+ }
+diff --git a/apps/admin-web/src/components/CoachReviewSummaryView.tsx b/apps/admin-web/src/components/CoachReviewSummaryView.tsx
+new file mode 100644
+index 0000000..6576de1
+--- /dev/null
++++ b/apps/admin-web/src/components/CoachReviewSummaryView.tsx
+@@ -0,0 +1,60 @@
++import type { Result } from "@/api/call";
++import type { Schemas } from "@/api/client";
++import { CoachReviewList } from "@/components/CoachReviewList";
++
++export type CoachReviewsApi = {
++  getCoachReviewSummary: (coachId: string) => Promise<Result<Schemas["CoachReviewSummary"]>>;
++  listCoachReviews?: (coachId: string) => Promise<Result<Schemas["CoachReviewList"]>>;
++};
++
++export type CoachReviews = {
++  summary: Schemas["CoachReviewSummary"];
++  reviews: Schemas["CoachReview"][] | null;
++};
++
++/** 点の平均の表示。丸めは契約（getCoachReviewSummary）の正本どおり API が済ませているので、桁を揃えるだけ。 */
++export function formatAverageRating(averageRating: number | null): string {
++  return averageRating === null ? "評価はまだありません" : averageRating.toFixed(0);
++}
++
++/**
++ * コーチの評価の件数と平均（getCoachReviewSummary）を取る。`listCoachReviews` があれば同じ ID で評価の一覧も取る。
++ * どちらかが失敗したら、どちらも返さずに失敗の文言だけを返す。
++ */
++export async function loadCoachReviews(
++  api: CoachReviewsApi,
++  coachId: string,
++): Promise<Result<CoachReviews>> {
++  const [summaryResponse, listResponse] = await Promise.all([
++    api.getCoachReviewSummary(coachId),
++    api.listCoachReviews?.(coachId),
++  ]);
++  if (!summaryResponse.ok) return summaryResponse;
++  if (listResponse !== undefined && !listResponse.ok) return listResponse;
++  return {
++    ok: true,
++    data: { summary: summaryResponse.data, reviews: listResponse?.data.reviews ?? null },
++  };
++}
++
++/** 評価の件数と平均と、一覧があればその下に一覧。コーチの「自分の評価」と本部の画面で共通。 */
++export function CoachReviewSummaryView({ summary, reviews }: CoachReviews) {
++  return (
++    <>
++      <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
++        <dt>コーチ ID</dt>
++        <dd className="font-mono">{summary.coach_id}</dd>
++        <dt>評価の件数</dt>
++        <dd>{summary.review_count} 件</dd>
++        <dt>点の平均（1〜5）</dt>
++        <dd>{formatAverageRating(summary.average_rating)}</dd>
++      </dl>
++      {reviews !== null && (
++        <div className="space-y-2">
++          <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
++          <CoachReviewList reviews={reviews} />
++        </div>
++      )}
++    </>
++  );
++}
+diff --git a/apps/admin-web/src/components/coach/CoachHome.tsx b/apps/admin-web/src/components/coach/CoachHome.tsx
+index 066da20..f7c0560 100644
+--- a/apps/admin-web/src/components/coach/CoachHome.tsx
++++ b/apps/admin-web/src/components/coach/CoachHome.tsx
+@@ -4,14 +4,14 @@ import { useMemo } from "react";
+ 
+ import { createApiClient } from "@/api/client";
+ import { coachApi } from "@/api/coach";
+-import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
+ import { Section } from "@/components/Section";
+ 
+ import { LiveSessionPanel } from "./LiveSessionPanel";
++import { MyCoachReviews } from "./MyCoachReviews";
+ import { PublishSlotForm } from "./PublishSlotForm";
+ import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
+ 
+-/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、自分の評価の件数と平均と一覧。 */
++/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、開いたときから出す自分の評価の件数と平均と一覧。 */
+ export function CoachHome({ token }: { token: string }) {
+   const api = useMemo(() => coachApi(createApiClient(token)), [token]);
+   return (
+@@ -26,10 +26,7 @@ export function CoachHome({ token }: { token: string }) {
+         <LiveSessionPanel api={api} />
+       </Section>
+       <Section title="自分の評価">
+-        <CoachReviewSummaryLookup
+-          api={api}
+-          description="自分のアカウント ID を入力すると、生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言を出します（他のコーチの分は見られません）。"
+-        />
++        <MyCoachReviews api={api} />
+       </Section>
+     </>
+   );
+diff --git a/apps/admin-web/src/components/coach/MyCoachReviews.tsx b/apps/admin-web/src/components/coach/MyCoachReviews.tsx
+new file mode 100644
+index 0000000..0706691
+--- /dev/null
++++ b/apps/admin-web/src/components/coach/MyCoachReviews.tsx
+@@ -0,0 +1,65 @@
++"use client";
++
++import { useCallback, useEffect, useState } from "react";
++
++import type { CoachApi } from "@/api/coach";
++import {
++  type CoachReviews,
++  CoachReviewSummaryView,
++  loadCoachReviews,
++} from "@/components/CoachReviewSummaryView";
++import { ResultMessage } from "@/components/ResultMessage";
++
++type State =
++  | { kind: "loading" }
++  | { kind: "loaded"; reviews: CoachReviews }
++  | { kind: "failed"; message: string };
++
++const NOT_COACH = "コーチのアカウントでログインしたときだけ、自分の評価を見られます。";
++
++/**
++ * コーチの「自分の評価」。開いたときに、ログイン中の本人のアカウント（getMyAccount）の ID で
++ * 評価の件数と平均（getCoachReviewSummary）と一覧（listCoachReviews）を出す。
++ * トークンは不透明なもの（中身を読まない）なので、本人の ID は API に聞く。
++ */
++export function MyCoachReviews({
++  api,
++}: {
++  api: Pick<CoachApi, "getMyAccount" | "getCoachReviewSummary" | "listCoachReviews">;
++}) {
++  const [state, setState] = useState<State>({ kind: "loading" });
++
++  const fetchReviews = useCallback(async (): Promise<State> => {
++    const account = await api.getMyAccount();
++    if (!account.ok) return { kind: "failed", message: account.message };
++    if (account.data.role !== "coach") return { kind: "failed", message: NOT_COACH };
++    const response = await loadCoachReviews(api, account.data.account_id);
++    return response.ok
++      ? { kind: "loaded", reviews: response.data }
++      : { kind: "failed", message: response.message };
++  }, [api]);
++
++  // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
++  useEffect(() => {
++    let active = true;
++    void fetchReviews().then((next) => {
++      if (active) setState(next);
++    });
++    return () => {
++      active = false;
++    };
++  }, [fetchReviews]);
++
++  return (
++    <div className="space-y-4">
++      <p className="text-sm">
++        生徒がレッスンに付けたあなたへの評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言です。
++      </p>
++      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
++      {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
++      {state.kind === "loaded" && (
++        <CoachReviewSummaryView summary={state.reviews.summary} reviews={state.reviews.reviews} />
++      )}
++    </div>
++  );
++}
+diff --git a/apps/admin-web/tests/coachApi.test.ts b/apps/admin-web/tests/coachApi.test.ts
+index a7de10d..d3a1ac4 100644
+--- a/apps/admin-web/tests/coachApi.test.ts
++++ b/apps/admin-web/tests/coachApi.test.ts
+@@ -100,6 +100,26 @@ describe("coachApi", () => {
+     ]);
+   });
+ 
++  test("getMyAccount はトークンを付けて GET /api/me を呼び、本人のアカウントを返す", async () => {
++    const account = { account_id: SLOT.coach_id, role: "coach", display_name: "山田コーチ" };
++    const { api, fetchMock } = setup(json(200, account));
++    const result = await api.getMyAccount();
++    expect(result).toEqual({ ok: true, data: account });
++    const request = fetchMock.mock.calls[0]![0];
++    expect(request.method).toBe("GET");
++    expect(new URL(request.url).pathname).toBe("/api/me");
++    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
++  });
++
++  test("getMyAccount の 401 はログインし直す文言にする", async () => {
++    const { api } = setup(json(401, { code: "unauthorized", message: "unauthorized" }));
++    const result = await api.getMyAccount();
++    expect(result).toEqual({
++      ok: false,
++      message: "トークンがないか無効です。ログインし直してください。",
++    });
++  });
++
+   test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
+     const summary = { coach_id: SLOT.coach_id, review_count: 2, average_rating: 4.5 };
+     const { api, fetchMock } = setup(json(200, summary));
+diff --git a/apps/admin-web/tests/coachReviewList.test.tsx b/apps/admin-web/tests/coachReviewList.test.tsx
+index 6f50d49..3d47cba 100644
+--- a/apps/admin-web/tests/coachReviewList.test.tsx
++++ b/apps/admin-web/tests/coachReviewList.test.tsx
+@@ -4,15 +4,8 @@ import { describe, expect, test, vi } from "vitest";
+ 
+ import type { CoachApi } from "@/api/coach";
+ import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
+-import { CoachHome } from "@/components/coach/CoachHome";
+ import { formatDateTime } from "@/components/labels";
+ 
+-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+-
+-// 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
+-const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
+-vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
+-
+ const COACH_ID = "22222222-2222-4222-8222-222222222222";
+ 
+ // API が返す並び（送った時刻の新しい順）。
+@@ -119,24 +112,4 @@ describe("コーチの評価の一覧", () => {
+     expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
+     expect(screen.queryByText("まだ評価はありません")).not.toBeInTheDocument();
+   });
+-
+-  test("コーチの画面の「自分の評価」は件数と平均の下に一覧を出す", async () => {
+-    coachApiMock.mockReturnValue({
+-      getCoachReviewSummary: summaryApi(2, 4),
+-      listCoachReviews: async (coachId: string) => ({
+-        ok: true,
+-        data: { coach_id: coachId, reviews: REVIEWS },
+-      }),
+-    });
+-    const user = userEvent.setup();
+-    render(<CoachHome token="mock.coach.x" />);
+-    const region = screen.getByRole("region", { name: "自分の評価" });
+-
+-    await user.type(within(region).getByLabelText("コーチ ID"), COACH_ID);
+-    await user.click(within(region).getByRole("button", { name: "評価を見る" }));
+-
+-    const summary = await within(region).findByLabelText("評価の件数と平均");
+-    const list = within(region).getByRole("list", { name: "評価の一覧" });
+-    expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+-  });
+ });
+diff --git a/apps/admin-web/tests/coachReviewSummary.test.tsx b/apps/admin-web/tests/coachReviewSummary.test.tsx
+index 9afac7b..9e118bd 100644
+--- a/apps/admin-web/tests/coachReviewSummary.test.tsx
++++ b/apps/admin-web/tests/coachReviewSummary.test.tsx
+@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
+ import { beforeEach, describe, expect, test, vi } from "vitest";
+ 
+ import type { CoachApi } from "@/api/coach";
+-import { CoachReviewSummaryLookup, formatAverageRating } from "@/components/CoachReviewSummaryLookup";
++import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
++import { formatAverageRating } from "@/components/CoachReviewSummaryView";
+ import { RoleGate } from "@/components/RoleGate";
+-import { CoachHome } from "@/components/coach/CoachHome";
+ import { CoachReviewSummaryHome } from "@/components/headquarters/CoachReviewSummaryHome";
+ import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
+ import { saveSession } from "@/session/session";
+@@ -108,13 +108,6 @@ describe("コーチの評価の件数と平均", () => {
+ });
+ 
+ describe("画面への配置", () => {
+-  test("コーチの画面に「自分の評価」を出す", () => {
+-    render(<CoachHome token="mock.coach.x" />);
+-
+-    const region = screen.getByRole("region", { name: "自分の評価" });
+-    expect(within(region).getByLabelText("コーチ ID")).toBeInTheDocument();
+-  });
+-
+   test("本部の画面からコーチの評価の画面へ移れる", () => {
+     render(<HeadquartersHome />);
+ 
+diff --git a/apps/admin-web/tests/myCoachReviews.test.tsx b/apps/admin-web/tests/myCoachReviews.test.tsx
+new file mode 100644
+index 0000000..e61c437
+--- /dev/null
++++ b/apps/admin-web/tests/myCoachReviews.test.tsx
+@@ -0,0 +1,165 @@
++import { render, screen, within } from "@testing-library/react";
++import { beforeEach, describe, expect, test, vi } from "vitest";
++
++import type { CoachApi } from "@/api/coach";
++import { CoachHome } from "@/components/coach/CoachHome";
++import { MyCoachReviews } from "@/components/coach/MyCoachReviews";
++import { formatDateTime } from "@/components/labels";
++
++// 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
++const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
++vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
++
++const COACH_ID = "22222222-2222-4222-8222-222222222222";
++
++const ACCOUNT = { account_id: COACH_ID, role: "coach" as const, display_name: "山田コーチ" };
++
++// API が返す並び（送った時刻の新しい順）。
++const REVIEWS = [
++  {
++    review_id: "33333333-3333-4333-8333-333333333333",
++    lesson_id: "44444444-4444-4444-8444-444444444444",
++    rating: 5,
++    comment: "フォームがよく分かりました",
++    submitted_at: "2026-10-20T03:00:00Z",
++  },
++  {
++    review_id: "55555555-5555-4555-8555-555555555555",
++    lesson_id: "66666666-6666-4666-8666-666666666666",
++    rating: 3,
++    comment: "もう少し時間がほしかった",
++    submitted_at: "2026-10-01T09:30:00Z",
++  },
++];
++
++/** 件数と平均の一覧（dl）を [見出し, 値] の組にする。 */
++function summaryOf(list: HTMLElement) {
++  return Array.from(list.querySelectorAll("dt")).map((dt) => [
++    dt.textContent,
++    dt.nextElementSibling?.textContent,
++  ]);
++}
++
++type ReviewsApi = Pick<CoachApi, "getMyAccount" | "getCoachReviewSummary" | "listCoachReviews">;
++
++function mockApi(overrides: Partial<ReviewsApi> = {}) {
++  return {
++    getMyAccount: vi.fn<CoachApi["getMyAccount"]>(async () => ({ ok: true, data: ACCOUNT })),
++    getCoachReviewSummary: vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, review_count: 2, average_rating: 4 },
++    })),
++    listCoachReviews: vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, reviews: REVIEWS },
++    })),
++    ...overrides,
++  };
++}
++
++beforeEach(() => {
++  coachApiMock.mockReset();
++});
++
++describe("自分の評価", () => {
++  test("開いたときに getMyAccount の本人の ID で件数と平均と一覧を出す（ID は入力しない）", async () => {
++    const api = mockApi();
++    render(<MyCoachReviews api={api} />);
++
++    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
++    const summary = await screen.findByLabelText("評価の件数と平均");
++    expect(api.getMyAccount).toHaveBeenCalledTimes(1);
++    expect(api.getCoachReviewSummary).toHaveBeenCalledWith(COACH_ID);
++    expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID);
++    expect(summaryOf(summary)).toEqual([
++      ["コーチ ID", COACH_ID],
++      ["評価の件数", "2 件"],
++      ["点の平均（1〜5）", "4.00"],
++    ]);
++    const list = screen.getByRole("list", { name: "評価の一覧" });
++    expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++    const items = within(list).getAllByRole("listitem");
++    expect(items).toHaveLength(2);
++    expect(items[0]).toHaveTextContent("5 点");
++    expect(items[0]).toHaveTextContent("フォームがよく分かりました");
++    expect(items[0]).toHaveTextContent(formatDateTime("2026-10-20T03:00:00Z"));
++    expect(screen.queryByLabelText("コーチ ID")).not.toBeInTheDocument();
++    expect(screen.queryByRole("button", { name: "評価を見る" })).not.toBeInTheDocument();
++    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
++  });
++
++  test("評価が 0 件なら、平均も一覧も「まだない」と出す", async () => {
++    const api = mockApi({
++      getCoachReviewSummary: vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
++        ok: true,
++        data: { coach_id: coachId, review_count: 0, average_rating: null },
++      })),
++      listCoachReviews: vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
++        ok: true,
++        data: { coach_id: coachId, reviews: [] },
++      })),
++    });
++    render(<MyCoachReviews api={api} />);
++
++    const summary = await screen.findByLabelText("評価の件数と平均");
++    expect(summaryOf(summary)).toContainEqual(["点の平均（1〜5）", "評価はまだありません"]);
++    expect(screen.getByText("まだ評価はありません")).toBeInTheDocument();
++  });
++
++  test("本人のアカウントが取れなければ（401 など）その文言を出し、評価の API は呼ばない", async () => {
++    const api = mockApi({
++      getMyAccount: vi.fn<CoachApi["getMyAccount"]>(async () => ({
++        ok: false,
++        message: "トークンがないか無効です。ログインし直してください。",
++      })),
++    });
++    render(<MyCoachReviews api={api} />);
++
++    expect(await screen.findByRole("alert")).toHaveTextContent(
++      "トークンがないか無効です。ログインし直してください。",
++    );
++    expect(api.getCoachReviewSummary).not.toHaveBeenCalled();
++    expect(api.listCoachReviews).not.toHaveBeenCalled();
++    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
++  });
++
++  test("本人のアカウントがコーチでなければ、その旨を出し、評価の API は呼ばない", async () => {
++    const api = mockApi({
++      getMyAccount: vi.fn<CoachApi["getMyAccount"]>(async () => ({
++        ok: true,
++        data: { ...ACCOUNT, role: "headquarters" },
++      })),
++    });
++    render(<MyCoachReviews api={api} />);
++
++    expect(await screen.findByRole("alert")).toHaveTextContent(
++      "コーチのアカウントでログインしたときだけ、自分の評価を見られます。",
++    );
++    expect(api.getCoachReviewSummary).not.toHaveBeenCalled();
++  });
++
++  test("評価の API のエラーの文言を出し、件数と平均も一覧も出さない", async () => {
++    const api = mockApi({
++      listCoachReviews: vi.fn<CoachApi["listCoachReviews"]>(async () => ({
++        ok: false,
++        message: "サーバーに接続できません。",
++      })),
++    });
++    render(<MyCoachReviews api={api} />);
++
++    expect(await screen.findByRole("alert")).toHaveTextContent("サーバーに接続できません。");
++    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
++    expect(screen.queryByRole("list", { name: "評価の一覧" })).not.toBeInTheDocument();
++  });
++
++  test("コーチの画面の「自分の評価」は、開いたときから本人の評価を出す", async () => {
++    coachApiMock.mockReturnValue(mockApi());
++    render(<CoachHome token="mock.coach.x" />);
++    const region = screen.getByRole("region", { name: "自分の評価" });
++
++    expect(within(region).queryByLabelText("コーチ ID")).not.toBeInTheDocument();
++    const summary = await within(region).findByLabelText("評価の件数と平均");
++    expect(summaryOf(summary)).toContainEqual(["評価の件数", "2 件"]);
++    expect(within(region).getByRole("list", { name: "評価の一覧" })).toBeInTheDocument();
++  });
++});
