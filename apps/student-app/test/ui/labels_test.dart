@@ -56,4 +56,25 @@ void main() {
       '10/28（水）23:30〜10/29（木）0:30',
     );
   });
+
+  test('月額契約のプランは名前とビデオ通話の暦月の上限で出す', () {
+    expect(SubscriptionPlan.values.map(subscriptionPlanChoiceLabel), [
+      'スタンダード　ビデオ通話 月 2 回',
+      'プラス　ビデオ通話 月 4 回',
+    ]);
+  });
+
+  test('今月のビデオ通話の残り回数は、プランの上限と合わせて出す', () {
+    expect(
+      liveLessonQuotaLabel(
+        const LiveLessonQuota(
+          month: '2026-10',
+          limit: 4,
+          used: 1,
+          remaining: 3,
+        ),
+      ),
+      '月 4 回のうち残り 3 回',
+    );
+  });
 }

@@ -373,11 +373,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void goToSubscription() =>
       state = state.copyWith(step: FlowStep.subscription);
 
-  /// `startSubscription`。決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
-  Future<void> startSubscription() => _run(() async {
+  /// `startSubscription`。[plan] は選んだ契約プラン（既定は standard）。
+  /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
+  Future<void> startSubscription({
+    SubscriptionPlan plan = SubscriptionPlan.standard,
+  }) => _run(() async {
     final response = await _api.startSubscription(
       StartSubscriptionRequest(
         sport: state.student!.sport,
+        plan: plan,
         paymentMethodToken: mockPaymentMethodToken,
       ),
     );
