@@ -10,6 +10,8 @@ preferred: b
 confidence: high
 reason: "負例は選び直したときの古い応答を捨てる条件を外した（素早く選び直すと前のコーチの評価が表示に残る）"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28
+severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "非同期の競合の防止の欠落"

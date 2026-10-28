@@ -10,6 +10,8 @@ preferred: a
 confidence: high
 reason: "負例は本部の「コーチの評価」の画面をコーチの役割で開くようにした（本部は開けなくなる）"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「作業が滞る。権限差や担当だけの表示の仕様があればミスリードに繋がる」
+severity: major            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "画面の出し分けの役割の誤り"

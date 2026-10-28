@@ -10,6 +10,8 @@ preferred: b
 confidence: high
 reason: "負例はトークンの役割と保存されている役割が食い違っても、保存されている役割を返すようにした（契約と試験は 401）"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「通行証と保存先の役割の食い違いを見逃す。生徒とコーチの取り違えは絶対にあってはいけない（取り違えて相手の役割でアクセスできるならクリティカル）」
+severity: major            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "認証の条件の欠落"
