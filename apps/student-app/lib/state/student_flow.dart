@@ -192,7 +192,10 @@ class StudentFlowState {
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
-    myBookings: myBookings ?? this.myBookings,
+    // 外から書き換えて state = を通さずに状態を変えられないよう、読み取り専用で持つ（const のコンストラクタでは包めないので copyWith で包む）
+    myBookings: myBookings != null
+        ? List.unmodifiable(myBookings)
+        : this.myBookings,
   );
 }
 
