@@ -103,6 +103,7 @@ fn slot(id: u128, status: SlotStatus) -> Slot {
         nov1(hour),
         nov1(hour + 1),
         status,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap()
 }
@@ -694,6 +695,7 @@ fn slot_starting_in(id: u128, hours: u64) -> Slot {
         starts_at,
         starts_at + Duration::from_secs(3600),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap()
 }
@@ -1027,6 +1029,8 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
             "sport": "tennis",
             "starts_at": "2026-11-01T10:00:00Z",
             "ends_at": "2026-11-01T11:00:00Z",
+            "capacity": 1,
+            "remaining_seats": 0,
             "coach_display_name": "たなか",
         }),
         "自己紹介文を書いていないコーチは coach_bio を載せない"
@@ -1112,6 +1116,7 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
         nov1(20),
         nov1(21),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let app = app_with([other_coach_slot]);
@@ -1165,6 +1170,8 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
             "starts_at": "2026-11-01T10:00:00Z",
             "ends_at": "2026-11-01T11:00:00Z",
             "status": "booked",
+            "capacity": 1,
+            "remaining_seats": 0,
         })
     );
     assert_eq!(
@@ -1235,6 +1242,7 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
         SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(48 * 3600),
         SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(47 * 3600),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let other_coach_slot = Slot::restore(
@@ -1244,6 +1252,7 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
         nov1(20),
         nov1(21),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let app = app_with([ended, other_coach_slot]);
@@ -1294,6 +1303,8 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
                 "starts_at": "2026-11-01T10:00:00Z",
                 "ends_at": "2026-11-01T11:00:00Z",
                 "status": "booked",
+                "capacity": 1,
+                "remaining_seats": 0,
             },
             "has_active_booking": true,
         })

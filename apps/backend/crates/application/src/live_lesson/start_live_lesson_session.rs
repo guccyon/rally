@@ -186,6 +186,7 @@ mod tests {
             now(),
             now() + Duration::from_secs(3600),
             SlotStatus::Open,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap()]);
         let bookings = InMemoryBookingRepository::new(slots);

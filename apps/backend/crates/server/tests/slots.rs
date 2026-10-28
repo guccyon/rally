@@ -138,12 +138,15 @@ async fn coach_lists_own_slots_with_whether_a_booking_is_in() {
     };
     let (status, body) = send(&router, get(&coach)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // 予約した枠は、未確定の予約が席を押さえている（定員 1 なので残りは 0）
+    let mut booked = slots[0].clone();
+    booked["remaining_seats"] = json!(0);
     assert_eq!(
         body,
         json!({
             "slots": [
                 { "slot": slots[1], "has_active_booking": false },
-                { "slot": slots[0], "has_active_booking": true },
+                { "slot": booked, "has_active_booking": true },
             ]
         }),
         "開始時刻の古い順で、別のコーチの枠は出ない"

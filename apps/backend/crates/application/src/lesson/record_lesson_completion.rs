@@ -209,13 +209,14 @@ mod tests {
             start(),
             start() + Duration::from_secs(3600),
             SlotStatus::Open,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap();
         let mut booking = Booking::reserve(
             BookingId::from_u128(booking),
             STUDENT,
             false,
-            &slot,
+            &mut slot,
             &[],
             start(),
         )

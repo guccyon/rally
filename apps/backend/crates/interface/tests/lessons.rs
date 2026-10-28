@@ -107,13 +107,14 @@ fn session(id: SessionId, booking: u128, ended: bool) -> LiveLessonSession {
         nov1_10(),
         nov1_10() + Duration::from_secs(3600),
         SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
     let mut booking = Booking::reserve(
         BookingId::from_u128(booking),
         account_id(STUDENT),
         false,
-        &slot,
+        &mut slot,
         &[],
         nov1_10(),
     )

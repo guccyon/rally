@@ -52,7 +52,8 @@ paths:
       description: |
         認証したコーチの予約枠を公開する。コーチの役割のトークンだけが呼べる（それ以外は 403）。
         開始は終了より前（違えば 422）。期間は開始を含み終了を含まない。同じコーチの、時間を占める枠
-        （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。Gen1 の枠の定員は 1（マンツーマン）。
+        （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。定員 `capacity` は 1〜6（範囲外は 422）で、省けば 1
+        （マンツーマン）。2 以上はグループレッスンの枠（変更シナリオ cs-004）で、定員まで生徒の予約を受ける。
         公開すると行動イベント `slot.published`（KPI「コーチの予約枠充足率」の入力）を発火する。
       tags: [scheduling]
       x-context: scheduling
@@ -659,13 +660,14 @@ components:
     SlotStatus:
       type: string
       description: |
-        open: 公開中で未予約（生徒の検索に出る）/ booked: 予約で埋まっている / closed: コーチが閉じた（時間を占めない）。
+        open: 公開中で、確定した予約が定員に達していない（生徒の検索に出る）/ booked: 確定した予約が定員に達して埋まっている /
+        closed: コーチが閉じた（時間を占めない）。定員 1 の枠では、open は未予約か未確定の予約だけ、booked は予約の確定で埋まった状態。
       enum: [open, booked, closed]
 
     Slot:
       type: object
       description: glossary の slot（コーチが公開する予約枠）
-      required: [slot_id, coach_id, sport, starts_at, ends_at, status]
+      required: [slot_id, coach_id, sport, starts_at, ends_at, status, capacity, remaining_seats]
       properties:
         slot_id:
           type: string
@@ -683,6 +685,16 @@ components:
           format: date-time
         status:
           $ref: "#/components/schemas/SlotStatus"
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: 定員（1 つの枠に入れる有効な予約の数）。1 はマンツーマン
+        remaining_seats:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 残りの席（定員 − 有効な予約（未確定 `pending` か確定 `confirmed`）の数）。キャンセル済みの予約は数えない
 
     PublishSlotRequest:
       type: object
@@ -697,6 +709,11 @@ components:
           type: string
           format: date-time
           description: 開始より後（期間は終了を含まない）
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 6
+          description: 定員（1〜6）。省いたら 1（マンツーマン）。2 以上はグループレッスンの枠
 
     BookingStatus:
       type: string

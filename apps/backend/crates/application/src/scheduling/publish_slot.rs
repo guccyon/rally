@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use domain::{
     DomainError,
     identity::{AccountId, Sport},
-    scheduling::Slot,
+    scheduling::{Slot, SlotCapacity},
 };
 
 use super::{AddToCalendarError, SlotRepository};
@@ -20,6 +20,8 @@ pub struct PublishSlotCommand {
     pub sport: Sport,
     pub starts_at: SystemTime,
     pub ends_at: SystemTime,
+    /// 定員（1〜6。契約で省かれたら境界が [`SlotCapacity::default`] の 1 を渡す）
+    pub capacity: SlotCapacity,
 }
 
 #[derive(Debug)]
@@ -38,7 +40,7 @@ impl From<DomainError> for PublishSlotError {
 
 /// スロットの公開のユースケース（コーチだけが呼ぶ。admin-web の `publishSlot`）。
 ///
-/// 枠を作り（開始 < 終了の検証）、コーチのカレンダー（[`domain::scheduling::CoachCalendar`]）で
+/// 定員つきの枠を作り（開始 < 終了の検証）、コーチのカレンダー（[`domain::scheduling::CoachCalendar`]）で
 /// 同じコーチの枠と重ならないことを確かめて保存する。保存したら行動イベント `slot.published`
 /// （KPI「コーチの予約枠充足率」の入力）を 1 回発火する。拒否・保存の失敗では発火しない。
 pub struct PublishSlot<S, A, C> {
@@ -68,6 +70,7 @@ where
             command.sport,
             command.starts_at,
             command.ends_at,
+            command.capacity,
         )?;
 
         self.slots
@@ -134,6 +137,7 @@ mod tests {
             sport: Sport::Tennis,
             starts_at: at(from),
             ends_at: at(to),
+            capacity: SlotCapacity::ONE,
         }
     }
 
@@ -145,6 +149,8 @@ mod tests {
 
         assert_eq!(slot.status(), SlotStatus::Open);
         assert_eq!(slot.coach_id(), COACH);
+        assert_eq!(slot.capacity(), SlotCapacity::ONE);
+        assert_eq!(slot.remaining_seats(), 1);
         assert_eq!(use_case.slots().all(), vec![slot.clone()]);
         let events = use_case.analytics().events();
         assert_eq!(
@@ -157,6 +163,23 @@ mod tests {
             }]
         );
         assert_eq!(events[0].name(), "slot.published");
+    }
+
+    #[tokio::test]
+    async fn publishes_a_slot_with_the_given_capacity() {
+        let use_case = use_case();
+
+        let slot = use_case
+            .execute(PublishSlotCommand {
+                capacity: SlotCapacity::new(3).unwrap(),
+                ..command(COACH, 10, 11)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(slot.capacity().value(), 3);
+        assert_eq!(slot.remaining_seats(), 3);
+        assert_eq!(use_case.slots().all(), vec![slot]);
     }
 
     #[tokio::test]

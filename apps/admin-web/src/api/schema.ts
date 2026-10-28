@@ -17,7 +17,8 @@ export interface paths {
          * スロットの公開（コーチ）
          * @description 認証したコーチの予約枠を公開する。コーチの役割のトークンだけが呼べる（それ以外は 403）。
          *     開始は終了より前（違えば 422）。期間は開始を含み終了を含まない。同じコーチの、時間を占める枠
-         *     （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。Gen1 の枠の定員は 1（マンツーマン）。
+         *     （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。定員 `capacity` は 1〜6（範囲外は 422）で、省けば 1
+         *     （マンツーマン）。2 以上はグループレッスンの枠（変更シナリオ cs-004）で、定員まで生徒の予約を受ける。
          *     公開すると行動イベント `slot.published`（KPI「コーチの予約枠充足率」の入力）を発火する。
          */
         post: operations["publishSlot"];
@@ -454,7 +455,8 @@ export interface components {
          */
         Sport: "tennis" | "golf" | "baseball" | "soccer" | "basketball" | "swimming";
         /**
-         * @description open: 公開中で未予約（生徒の検索に出る）/ booked: 予約で埋まっている / closed: コーチが閉じた（時間を占めない）。
+         * @description open: 公開中で、確定した予約が定員に達していない（生徒の検索に出る）/ booked: 確定した予約が定員に達して埋まっている /
+         *     closed: コーチが閉じた（時間を占めない）。定員 1 の枠では、open は未予約か未確定の予約だけ、booked は予約の確定で埋まった状態。
          * @enum {string}
          */
         SlotStatus: "open" | "booked" | "closed";
@@ -470,6 +472,10 @@ export interface components {
             /** Format: date-time */
             ends_at: string;
             status: components["schemas"]["SlotStatus"];
+            /** @description 定員（1 つの枠に入れる有効な予約の数）。1 はマンツーマン */
+            capacity: number;
+            /** @description 残りの席（定員 − 有効な予約（未確定 `pending` か確定 `confirmed`）の数）。キャンセル済みの予約は数えない */
+            remaining_seats: number;
         };
         PublishSlotRequest: {
             sport: components["schemas"]["Sport"];
@@ -480,6 +486,8 @@ export interface components {
              * @description 開始より後（期間は終了を含まない）
              */
             ends_at: string;
+            /** @description 定員（1〜6）。省いたら 1（マンツーマン）。2 以上はグループレッスンの枠 */
+            capacity?: number;
         };
         /**
          * @description student-app の BookingStatus と同じ値。pending: 未確定 / confirmed: 確定 / cancelled: キャンセル済み

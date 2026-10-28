@@ -25,7 +25,7 @@ use domain::{
     identity::{AccountId, Role},
     lesson::LessonSource,
     live_lesson::SessionId,
-    scheduling::{BookingId, SlotId},
+    scheduling::{BookingId, SlotCapacity, SlotId},
 };
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockVideoCallProvider, MockVideoStorage,
@@ -178,6 +178,8 @@ where
                     sport: plan.coaches[slot.coach].sport,
                     starts_at: slot.starts_at,
                     ends_at: slot.ends_at,
+                    // 合成シードの枠はマンツーマン（定員 1）
+                    capacity: SlotCapacity::default(),
                 })
                 .await
                 .map_err(|e| failed(&format!("コーチ {}", slot.coach + 1), "枠の公開", e))?;

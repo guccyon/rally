@@ -26,7 +26,8 @@ pub trait BookingRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<Booking>, Unavailable>> + Send;
 
     /// `slot_id` のスロットと、既存の予約（少なくともそのスロットの予約と `student_id` の生徒の予約）を
-    /// 読み、`reserve` に渡す。`reserve` が `Ok` なら返した予約を保存して返す。
+    /// 読み、`reserve` に渡す。`reserve` が `Ok` なら返した予約を保存して返す。スロットの席の数
+    /// （[`domain::scheduling::SlotSeats`]）は予約から数えるので、`reserve` が押さえた席は保存しない。
     fn reserve<F>(
         &self,
         slot_id: SlotId,
@@ -34,7 +35,7 @@ pub trait BookingRepository: Send + Sync {
         reserve: F,
     ) -> impl Future<Output = Result<Booking, ReserveSlotError>> + Send
     where
-        F: FnOnce(&Slot, &[Booking]) -> Result<Booking, DomainError> + Send;
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send;
 
     /// `booking_id` の予約と、そのスロットを読み、`update` に渡す。`update` が `Ok` なら予約と
     /// スロットの両方を保存し、保存した予約を返す。

@@ -114,6 +114,7 @@ mod tests {
             at(hour),
             at(hour + 1),
             status,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }

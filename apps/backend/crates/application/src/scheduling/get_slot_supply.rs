@@ -67,6 +67,7 @@ mod tests {
             starts_at,
             starts_at + Duration::from_secs(3600),
             SlotStatus::Open,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }

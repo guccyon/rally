@@ -276,12 +276,12 @@ impl BookingRepository for InMemoryBookingRepository {
         reserve: F,
     ) -> Result<Booking, ReserveSlotError>
     where
-        F: FnOnce(&Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
     {
-        let slots = self.slots.slots.lock().unwrap();
+        let mut slots = self.slots.slots.lock().unwrap();
         let mut bookings = self.bookings.lock().unwrap();
         let slot = slots
-            .iter()
+            .iter_mut()
             .find(|slot| slot.id() == slot_id)
             .ok_or(ReserveSlotError::SlotNotFound)?;
         let existing: Vec<Booking> = bookings
@@ -289,7 +289,10 @@ impl BookingRepository for InMemoryBookingRepository {
             .filter(|b| b.slot_id() == slot_id || b.student_id() == student_id)
             .cloned()
             .collect();
-        let booking = reserve(slot, &existing).map_err(ReserveSlotError::Rejected)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す（席の数はスロットが持つ）
+        let mut next_slot = slot.clone();
+        let booking = reserve(&mut next_slot, &existing).map_err(ReserveSlotError::Rejected)?;
+        *slot = next_slot;
         bookings.push(booking.clone());
         Ok(booking)
     }

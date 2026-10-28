@@ -6,11 +6,20 @@
 //!   contract のマイグレーションを含む PR は人間承認（manifest の destructive_schema）
 //! - 例外として、CHECK 制約を同じ名前で付け直す `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)`（1 つの ALTER TABLE）は
 //!   expand に書ける（許す値を足す緩和。値を減らす付け直しは contract に分ける。ADR 0004 の 2）
+//! - 例外として、[`RELAXABLE_UNIQUE_INDEXES`] に挙げた一意の索引の `DROP INDEX` は expand に書ける（一意性の緩和で、データは
+//!   消えず、古い版のアプリも動く。挙げるときに ADR 0004 の 2 に理由を書く）
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const PHASES: &[&str] = &["expand", "migrate", "contract"];
+
+/// expand で外してよい一意の索引（`<スキーマ>.<索引>`）。外しても古い版のアプリが動き、データも消えない緩和だけを、
+/// ADR 0004 の 2 に理由を書いて挙げる。
+///
+/// - `scheduling.bookings_one_active_per_slot`: 1 枠 1 予約。スロットの定員（D40 / 変更シナリオ cs-004）で、同じ枠に定員まで
+///   予約を持てるようにする。定員の判定は domain で、予約の作成はスロットの行のロックの中で数える
+const RELAXABLE_UNIQUE_INDEXES: &[&str] = &["scheduling.bookings_one_active_per_slot"];
 
 fn migration_files() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -105,6 +114,29 @@ fn replaces_check_constraint(t: &[String]) -> bool {
     )
 }
 
+/// `DROP INDEX [IF EXISTS] <スキーマ> <索引>`（トークンの並び）で、索引が [`RELAXABLE_UNIQUE_INDEXES`] にあるか。
+/// `CASCADE` を付けたものは、索引に頼る制約も消すので対象外。
+fn drops_relaxable_unique_index(t: &[String]) -> bool {
+    let rest = match t {
+        [drop, index, if_, exists, rest @ ..]
+            if drop == "DROP" && index == "INDEX" && if_ == "IF" && exists == "EXISTS" =>
+        {
+            rest
+        }
+        [drop, index, rest @ ..] if drop == "DROP" && index == "INDEX" => rest,
+        _ => return false,
+    };
+    match rest {
+        [schema, name, after @ ..] => {
+            after.first().is_none_or(|next| next != "CASCADE")
+                && RELAXABLE_UNIQUE_INDEXES
+                    .iter()
+                    .any(|allowed| allowed.eq_ignore_ascii_case(&format!("{schema}.{name}")))
+        }
+        _ => false,
+    }
+}
+
 /// contract の段にしか書けない破壊的な文を探す。
 fn destructive_statements(sql: &str) -> Vec<String> {
     let t = tokens(sql);
@@ -114,8 +146,11 @@ fn destructive_statements(sql: &str) -> Vec<String> {
         let hit = match t[i].as_str() {
             // DROP NOT NULL / DROP DEFAULT は制約を緩めるだけなので expand に書ける
             // DROP CONSTRAINT x, ADD CONSTRAINT x CHECK は同じ名前の CHECK の付け直しなので expand に書ける
+            // RELAXABLE_UNIQUE_INDEXES の DROP INDEX は一意性の緩和なので expand に書ける
             "DROP" => {
-                !matches!(at(i + 1), Some("NOT" | "DEFAULT")) && !replaces_check_constraint(&t[i..])
+                !matches!(at(i + 1), Some("NOT" | "DEFAULT"))
+                    && !replaces_check_constraint(&t[i..])
+                    && !drops_relaxable_unique_index(&t[i..])
             }
             "RENAME" | "TRUNCATE" | "DELETE" => true,
             // ALTER [COLUMN] <列> TYPE / SET DATA TYPE（型の変更）
@@ -190,7 +225,12 @@ fn detects_destructive_statements() {
         "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_sport_check, ADD CONSTRAINT accounts_sport_v2 CHECK (sport <> '');",
         // CHECK 以外（外部キー・一意）の付け直しは対象外
         "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_email_key, ADD CONSTRAINT accounts_email_key UNIQUE (email);",
-        "DROP INDEX scheduling.bookings_one_active_per_slot;",
+        "DROP INDEX scheduling.slots_open_sport_starts_at_idx;",
+        // 外してよい一意の索引でも、別のスキーマの同じ名前や CASCADE は対象外
+        "DROP INDEX identity.bookings_one_active_per_slot;",
+        "DROP INDEX bookings_one_active_per_slot;",
+        "DROP INDEX scheduling.bookings_one_active_per_slot CASCADE;",
+        "DROP INDEX scheduling.bookings_one_active_per_slot_student;",
         "ALTER TABLE identity.accounts RENAME COLUMN email TO mail;",
         "ALTER TABLE identity.accounts ALTER COLUMN display_name TYPE varchar(20);",
         "ALTER TABLE identity.accounts ALTER display_name TYPE varchar(20);",
@@ -215,6 +255,8 @@ fn allows_additive_statements() {
         "ALTER TABLE identity.accounts ALTER COLUMN role DROP DEFAULT;",
         "ALTER TABLE identity.accounts DROP CONSTRAINT accounts_sport_check, ADD CONSTRAINT accounts_sport_check CHECK (sport IN ('tennis', 'swimming'));",
         "CREATE INDEX accounts_created_at_idx ON identity.accounts (created_at);",
+        "DROP INDEX scheduling.bookings_one_active_per_slot;",
+        "DROP INDEX IF EXISTS scheduling.bookings_one_active_per_slot;",
         "UPDATE identity.accounts SET locale = 'ja';",
         "-- DROP TABLE identity.accounts; はコメントなので数えない\nSELECT 1;",
         "/* RENAME */ COMMENT ON TABLE identity.accounts IS 'DROP TABLE と書いても文字列';",

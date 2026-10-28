@@ -229,17 +229,18 @@ mod tests {
 
     /// 生徒が予約した直後（確定前）の予約と、そのスロット。
     fn pending() -> (Booking, Slot) {
-        let slot = Slot::restore(
+        let mut slot = Slot::restore(
             SlotId::from_u128(10),
             COACH,
             Sport::Tennis,
             at(600),
             at(660),
             SlotStatus::Open,
+            crate::scheduling::SlotSeats::default(),
         )
         .unwrap();
         let booking =
-            Booking::reserve(BookingId::from_u128(20), STUDENT, true, &slot, &[], NOW).unwrap();
+            Booking::reserve(BookingId::from_u128(20), STUDENT, true, &mut slot, &[], NOW).unwrap();
         (booking, slot)
     }
 

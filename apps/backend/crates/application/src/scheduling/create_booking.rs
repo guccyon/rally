@@ -24,7 +24,7 @@ pub struct CreateBookingCommand {
 pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
-    /// 予約がドメインの不変条件を満たさない（公開中でない、二重予約、2 回目の体験予約）
+    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約）
     Invalid(DomainError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -33,8 +33,9 @@ pub enum CreateBookingError {
 /// 予約の作成のユースケース（体験予約を含む。student-app の `createBooking`）。
 ///
 /// スロットとその予約・生徒の予約を読み、domain の [`Booking::reserve`] で不変条件（公開中のスロット
-/// だけ、1 スロット 1 予約、体験予約は初回だけ）を確かめて、確定前（`pending`）の予約を保存する。
-/// スロットはまだ埋めない（確定で埋まる。[`super::ConfirmBooking`]）。受講権も消費しない。
+/// だけ、有効な予約はスロットの定員まで、同じ生徒は同じスロットに 1 つ、体験予約は初回だけ）を確かめて、
+/// 確定前（`pending`）の予約を保存する。スロットはまだ埋めない（確定した予約が定員に達すると埋まる。
+/// [`super::ConfirmBooking`]）。受講権も消費しない（ビデオ通話の暦月の枠は生徒ごとの予約の確定で数える）。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
 pub struct CreateBooking<B, A, C> {
     bookings: B,
@@ -109,7 +110,7 @@ mod tests {
 
     use domain::{
         identity::Sport,
-        scheduling::{BookingId, BookingStatus, Slot, SlotStatus},
+        scheduling::{BookingId, BookingStatus, Slot, SlotCapacity, SlotSeats, SlotStatus},
     };
 
     use super::*;
@@ -136,11 +137,26 @@ mod tests {
             starts_at,
             starts_at + Duration::from_secs(3600),
             status,
+            domain::scheduling::SlotSeats::default(),
         )
         .unwrap()
     }
 
-    /// スロット 10・11・14 は公開中、12 は予約で埋まり、13 は閉じている。
+    fn group_slot(id: u128, capacity: i64) -> Slot {
+        let open = slot(id, SlotStatus::Open);
+        Slot::restore(
+            open.id(),
+            COACH,
+            Sport::Tennis,
+            open.starts_at(),
+            open.ends_at(),
+            SlotStatus::Open,
+            SlotSeats::vacant(SlotCapacity::new(capacity).unwrap()),
+        )
+        .unwrap()
+    }
+
+    /// スロット 10・11・14 は公開中、12 は予約で埋まり、13 は閉じている。15 は定員 3 の公開中の枠。
     fn use_case() -> UseCase {
         let slots = InMemorySlotRepository::with_slots([
             slot(10, SlotStatus::Open),
@@ -148,6 +164,7 @@ mod tests {
             slot(12, SlotStatus::Booked),
             slot(13, SlotStatus::Closed),
             slot(14, SlotStatus::Open),
+            group_slot(15, 3),
         ]);
         CreateBooking::new(
             InMemoryBookingRepository::new(slots),
@@ -216,6 +233,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn group_slot_takes_bookings_up_to_the_capacity() {
+        let use_case = use_case();
+        let students = [STUDENT, OTHER_STUDENT, AccountId::from_u128(3)];
+        for student in students {
+            use_case.execute(command(student, 15, false)).await.unwrap();
+        }
+        let group = |use_case: &UseCase| {
+            use_case
+                .bookings()
+                .slots()
+                .all()
+                .into_iter()
+                .find(|slot| slot.id() == SlotId::from_u128(15))
+                .unwrap()
+        };
+        assert_eq!(group(&use_case).remaining_seats(), 0);
+        assert_eq!(
+            group(&use_case).status(),
+            SlotStatus::Open,
+            "確定するまでは公開中"
+        );
+
+        // 4 人目は満席で拒む
+        assert_invalid(
+            use_case
+                .execute(command(AccountId::from_u128(4), 15, false))
+                .await,
+            DomainError::SlotAlreadyBooked,
+        );
+        assert_eq!(use_case.bookings().all().len(), 3);
+        assert_eq!(use_case.analytics().events().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn the_same_student_cannot_book_a_group_slot_twice() {
+        let use_case = use_case();
+        use_case.execute(command(STUDENT, 15, false)).await.unwrap();
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 15, false)).await,
+            DomainError::SlotAlreadyBookedByStudent,
+        );
+        // 別の生徒は予約できる
+        use_case
+            .execute(command(OTHER_STUDENT, 15, false))
+            .await
+            .unwrap();
+        assert_eq!(use_case.bookings().all().len(), 2);
+        assert_eq!(use_case.analytics().events().len(), 2);
+    }
+
+    #[tokio::test]
     async fn trial_booking_is_only_once_per_student() {
         let use_case = use_case();
         use_case.execute(command(STUDENT, 10, true)).await.unwrap();
@@ -270,7 +339,7 @@ mod tests {
             _reserve: F,
         ) -> Result<Booking, ReserveSlotError>
         where
-            F: FnOnce(&Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+            F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
         {
             Err(ReserveSlotError::Unavailable(Unavailable::new(
                 "connection refused",
