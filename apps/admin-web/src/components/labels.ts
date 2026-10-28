@@ -16,6 +16,12 @@ export const SLOT_STATUS_LABELS: Record<Schemas["SlotStatus"], string> = {
   closed: "終了",
 };
 
+export const BOOKING_STATUS_LABELS: Record<Schemas["BookingStatus"], string> = {
+  pending: "確定待ち",
+  confirmed: "確定済み",
+  cancelled: "キャンセル済み",
+};
+
 export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], string> = {
   in_progress: "通話中",
   ended: "終了",

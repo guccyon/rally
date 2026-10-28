@@ -16,6 +16,7 @@ export function coachApi(client: ApiClient) {
           body,
         }),
       ),
+    listMyCoachBookings: () => call(() => client.GET("/coaches/me/bookings")),
     startLiveLessonSession: (body: Schemas["StartLiveLessonSessionRequest"]) =>
       call(() => client.POST("/live-lesson-sessions", { body })),
     endLiveLessonSession: (sessionId: string) =>
