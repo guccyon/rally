@@ -1,0 +1,1152 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 174ac84..929aa8c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- student-app に担当コーチとのチャットの画面: アプリバーの「チャット」からスレッドの一覧（未読の数・最後のメッセージ）→ メッセージの一覧と送信。開いたスレッドの相手のメッセージは既読にし、自分が送ったメッセージには既読・未読を出す。月額契約の前に送ると「チャットは月額契約を始めると使えます。」と出す。API と契約の変更はない（#93）
+ - 予約の確定で生徒にプッシュ通知（notification の最小形・前半）: notification が境界間イベント `BookingConfirmed` を購読して送る。送り先の基盤は Gen1 ではモック（送った通知を記録し、標準出力に 1 行書く）。API の変更はない（#91）
+ - レッスンの評価（review の最小形）: 生徒が完了したレッスン 1 件につき 1 回、1〜5 の点と一言を付ける `POST /lesson-reviews`（2 回目は 409 `lesson_already_reviewed`）と、admin-web の本部とコーチ本人がコーチの評価の件数と平均を読む `GET /coaches/{coach_id}/review-summary`。評価で行動イベント `review.submitted` を発火（#92）
+ - 生徒と担当コーチのチャット（messaging の最小形）: student-app と admin-web の `GET /message-threads`・`GET /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/messages`・`POST /message-threads/{thread_id}/read`。スレッドは予約の確定で生徒とコーチの組に 1 つ開く。月額の生徒は送り放題（回数を消費しない）、月額契約の前の生徒の送信は 403 `chat_not_entitled`。送信時刻と既読を返し、送信で行動イベント `message.sent` を発火（#90）
+diff --git a/README.md b/README.md
+index 22d6162..4e4e502 100644
+--- a/README.md
++++ b/README.md
+@@ -19,7 +19,7 @@
+ | `specs/` | SSOT（glossary・context-map・db-schemas・contracts・analytics） | P1 |
+ | `apps/` | backend（Rust / axum。`apps/backend/` に層ごとの Cargo ワークスペースと `/healthz`、CI のコマンドは `apps/backend/README.md`）・student-app（Flutter）・admin-web（Next.js） | P1（backend の骨格を配置済み） |
+ | `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
+-| `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 月額契約の画面。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
++| `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 月額契約の画面と、担当コーチとのチャット（スレッドの一覧・メッセージの一覧と送信・既読）。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
+ | `docs/adr/` | 設計判断の記録 | 随時 |
+ | `docs/plans/` | Phase ごとの実行計画（P1 入口の Walking Skeleton: `p1-walking-skeleton.md`） | Phase 境界 |
+ 
+diff --git a/apps/student-app/README.md b/apps/student-app/README.md
+index fc71453..55308cb 100644
+--- a/apps/student-app/README.md
++++ b/apps/student-app/README.md
+@@ -25,6 +25,8 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（
+ | 添削結果（未返却なら確かめ直す） | `getVideoReview` |
+ | レッスンの完了 | `recordLessonCompletion`（通話なら `live_lesson`、動画なら `async_lesson`） |
+ | 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
++| チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
++| チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
+ 
+ ## API
+ 
+diff --git a/apps/student-app/lib/api/http_student_api.dart b/apps/student-app/lib/api/http_student_api.dart
+index c998f36..08eac71 100644
+--- a/apps/student-app/lib/api/http_student_api.dart
++++ b/apps/student-app/lib/api/http_student_api.dart
+@@ -83,6 +83,38 @@ class HttpStudentApi implements StudentApi {
+     await _send('POST', '/subscriptions', body: body.toJson()),
+   );
+ 
++  @override
++  Future<MessageThreadList> listMessageThreads() async =>
++      MessageThreadList.fromJson(await _send('GET', '/message-threads'));
++
++  @override
++  Future<MessageList> listMessages(String threadId) async =>
++      MessageList.fromJson(
++        await _send(
++          'GET',
++          '/message-threads/${Uri.encodeComponent(threadId)}/messages',
++        ),
++      );
++
++  @override
++  Future<Message> sendMessage(String threadId, SendMessageRequest body) async =>
++      Message.fromJson(
++        await _send(
++          'POST',
++          '/message-threads/${Uri.encodeComponent(threadId)}/messages',
++          body: body.toJson(),
++        ),
++      );
++
++  @override
++  Future<MessageThread> markMessageThreadRead(String threadId) async =>
++      MessageThread.fromJson(
++        await _send(
++          'POST',
++          '/message-threads/${Uri.encodeComponent(threadId)}/read',
++        ),
++      );
++
+   Future<Map<String, dynamic>> _send(
+     String method,
+     String path, {
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index 5cf575a..9be9c36 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -110,6 +110,18 @@ enum LessonType {
+       _fromWire(values, value, (e) => e.wire);
+ }
+ 
++/// `MessageSenderRole`（スレッドのどちらの当事者が送ったか）
++enum MessageSenderRole {
++  student('student'),
++  coach('coach');
++
++  const MessageSenderRole(this.wire);
++  final String wire;
++
++  static MessageSenderRole fromWire(String value) =>
++      _fromWire(values, value, (e) => e.wire);
++}
++
+ /// `ErrorCode`。値は追加されうるので、知らない値は [ErrorCode.unknown] として扱う（契約の注記どおり）。
+ enum ErrorCode {
+   unauthorized('unauthorized'),
+@@ -632,6 +644,119 @@ class AsyncLessonCompletion extends RecordLessonCompletionRequest {
+   };
+ }
+ 
++/// `Message`（glossary の message。送信時刻と既読を持つ）
++class Message {
++  const Message({
++    required this.messageId,
++    required this.threadId,
++    required this.senderId,
++    required this.senderRole,
++    required this.body,
++    required this.sentAt,
++    this.readAt,
++  });
++
++  final String messageId;
++  final String threadId;
++
++  /// 送ったアカウント（スレッドの生徒か担当コーチ）
++  final String senderId;
++  final MessageSenderRole senderRole;
++  final String body;
++  final DateTime sentAt;
++
++  /// 受け取った側が読んだ時刻（既読）。読むまでは null
++  final DateTime? readAt;
++
++  factory Message.fromJson(Map<String, dynamic> json) => Message(
++    messageId: json['message_id'] as String,
++    threadId: json['thread_id'] as String,
++    senderId: json['sender_id'] as String,
++    senderRole: MessageSenderRole.fromWire(json['sender_role'] as String),
++    body: json['body'] as String,
++    sentAt: _dateTime(json['sent_at']),
++    readAt: _dateTimeOrNull(json['read_at']),
++  );
++}
++
++/// `MessageThread`（glossary の message_thread。生徒と担当コーチの組に 1 つ）
++class MessageThread {
++  const MessageThread({
++    required this.threadId,
++    required this.studentId,
++    required this.coachId,
++    required this.openedAt,
++    required this.unreadCount,
++    this.lastMessage,
++  });
++
++  final String threadId;
++  final String studentId;
++  final String coachId;
++
++  /// スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
++  final DateTime openedAt;
++
++  /// 最後のメッセージ。まだなければ null
++  final Message? lastMessage;
++
++  /// 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）の数
++  final int unreadCount;
++
++  factory MessageThread.fromJson(Map<String, dynamic> json) => MessageThread(
++    threadId: json['thread_id'] as String,
++    studentId: json['student_id'] as String,
++    coachId: json['coach_id'] as String,
++    openedAt: _dateTime(json['opened_at']),
++    lastMessage: json['last_message'] == null
++        ? null
++        : Message.fromJson(json['last_message'] as Map<String, dynamic>),
++    unreadCount: 0,
++  );
++}
++
++/// `MessageThreadList`
++class MessageThreadList {
++  const MessageThreadList({required this.threads});
++
++  /// 最後の出来事の新しい順
++  final List<MessageThread> threads;
++
++  factory MessageThreadList.fromJson(Map<String, dynamic> json) =>
++      MessageThreadList(
++        threads: (json['threads'] as List<dynamic>)
++            .map((e) => MessageThread.fromJson(e as Map<String, dynamic>))
++            .toList(),
++      );
++}
++
++/// `MessageList`
++class MessageList {
++  const MessageList({required this.threadId, required this.messages});
++
++  final String threadId;
++
++  /// 送った順
++  final List<Message> messages;
++
++  factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
++    threadId: json['thread_id'] as String,
++    messages: (json['messages'] as List<dynamic>)
++        .map((e) => Message.fromJson(e as Map<String, dynamic>))
++        .toList(),
++  );
++}
++
++/// `SendMessageRequest`
++class SendMessageRequest {
++  const SendMessageRequest({required this.body});
++
++  /// 本文（2000 文字まで。空白だけは不可）
++  final String body;
++
++  Map<String, dynamic> toJson() => {'body': body};
++}
++
+ /// `Error`
+ class ApiError {
+   const ApiError({required this.code, required this.message});
+diff --git a/apps/student-app/lib/api/student_api.dart b/apps/student-app/lib/api/student_api.dart
+index 74e1f74..2bb904e 100644
+--- a/apps/student-app/lib/api/student_api.dart
++++ b/apps/student-app/lib/api/student_api.dart
+@@ -1,6 +1,6 @@
+ import 'models.dart';
+ 
+-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオで使うものだけ）。
++/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオとチャットで使うものだけ）。
+ ///
+ /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
+ abstract interface class StudentApi {
+@@ -37,6 +37,18 @@ abstract interface class StudentApi {
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+   );
++
++  /// `listMessageThreads`（GET /message-threads）
++  Future<MessageThreadList> listMessageThreads();
++
++  /// `listMessages`（GET /message-threads/{thread_id}/messages）。読むだけでは既読にならない
++  Future<MessageList> listMessages(String threadId);
++
++  /// `sendMessage`（POST /message-threads/{thread_id}/messages）
++  Future<Message> sendMessage(String threadId, SendMessageRequest body);
++
++  /// `markMessageThreadRead`（POST /message-threads/{thread_id}/read）
++  Future<MessageThread> markMessageThreadRead(String threadId);
+ }
+ 
+ /// API の失敗。契約の `Error` を返したときは [error] を持ち、通信の失敗などでは null。
+diff --git a/apps/student-app/lib/screens/message_threads_screen.dart b/apps/student-app/lib/screens/message_threads_screen.dart
+new file mode 100644
+index 0000000..339b24d
+--- /dev/null
++++ b/apps/student-app/lib/screens/message_threads_screen.dart
+@@ -0,0 +1,53 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../state/student_flow.dart';
++import '../ui/flow_scaffold.dart';
++import '../ui/labels.dart';
++
++/// 担当コーチとのスレッドの一覧（`listMessageThreads`）。スレッドは予約が確定すると開く。
++class MessageThreadsScreen extends ConsumerWidget {
++  const MessageThreadsScreen({super.key});
++
++  @override
++  Widget build(BuildContext context, WidgetRef ref) {
++    final state = ref.watch(studentFlowProvider);
++    final notifier = ref.read(studentFlowProvider.notifier);
++    final threads = state.threads;
++    return FlowScaffold(
++      title: 'チャット',
++      leading: IconButton(
++        tooltip: 'チャットを閉じる',
++        icon: const Icon(Icons.close),
++        onPressed: state.busy ? null : notifier.closeChat,
++      ),
++      children: [
++        if (threads != null && threads.isEmpty)
++          const Text('まだスレッドはありません。予約が確定すると、担当コーチとのスレッドが開きます。'),
++        for (final thread in threads ?? const [])
++          Card(
++            child: ListTile(
++              title: const Text('担当コーチ'),
++              subtitle: Text(
++                thread.lastMessage == null
++                    ? 'まだメッセージはありません'
++                    : '${messageSenderLabel(thread.lastMessage!.senderRole)}: '
++                          '${thread.lastMessage!.body}',
++                maxLines: 1,
++                overflow: TextOverflow.ellipsis,
++              ),
++              trailing: thread.unreadCount > 0
++                  ? Badge(label: Text('未読 ${thread.unreadCount}'))
++                  : null,
++              onTap: state.busy ? null : () => notifier.openThread(thread),
++            ),
++          ),
++        const SizedBox(height: 8),
++        OutlinedButton(
++          onPressed: state.busy ? null : notifier.refreshThreads,
++          child: const Text('一覧を更新する'),
++        ),
++      ],
++    );
++  }
++}
+diff --git a/apps/student-app/lib/screens/messages_screen.dart b/apps/student-app/lib/screens/messages_screen.dart
+new file mode 100644
+index 0000000..88ad2f3
+--- /dev/null
++++ b/apps/student-app/lib/screens/messages_screen.dart
+@@ -0,0 +1,116 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../api/models.dart';
++import '../state/student_flow.dart';
++import '../ui/flow_scaffold.dart';
++import '../ui/labels.dart';
++
++/// 担当コーチとのメッセージ（`listMessages` / `sendMessage`）。開いたら相手のメッセージは既読にする。
++/// 自分が送ったメッセージには、コーチが読んだか（既読・未読）を出す。
++class MessagesScreen extends ConsumerStatefulWidget {
++  const MessagesScreen({super.key});
++
++  @override
++  ConsumerState<MessagesScreen> createState() => _MessagesScreenState();
++}
++
++class _MessagesScreenState extends ConsumerState<MessagesScreen> {
++  /// 契約の `SendMessageRequest.body` の maxLength
++  static const _maxLength = 2000;
++
++  final _body = TextEditingController();
++
++  @override
++  void initState() {
++    super.initState();
++    _body.addListener(() => setState(() {}));
++  }
++
++  @override
++  void dispose() {
++    _body.dispose();
++    super.dispose();
++  }
++
++  Future<void> _send() async {
++    final sent = await ref
++        .read(studentFlowProvider.notifier)
++        .sendMessage(_body.text.trim());
++    if (sent && mounted) _body.clear();
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final state = ref.watch(studentFlowProvider);
++    final notifier = ref.read(studentFlowProvider.notifier);
++    final messages = state.messages ?? const <Message>[];
++    return FlowScaffold(
++      title: '担当コーチとのチャット',
++      leading: IconButton(
++        tooltip: 'スレッドの一覧へ戻る',
++        icon: const Icon(Icons.arrow_back),
++        onPressed: state.busy ? null : notifier.backToThreads,
++      ),
++      children: [
++        if (messages.isEmpty) const Text('まだメッセージはありません。'),
++        for (final message in messages) _MessageTile(message: message),
++        const SizedBox(height: 8),
++        OutlinedButton(
++          onPressed: state.busy ? null : notifier.refreshMessages,
++          child: const Text('新しいメッセージを確かめる'),
++        ),
++        const SizedBox(height: 16),
++        TextField(
++          controller: _body,
++          decoration: const InputDecoration(labelText: 'メッセージ'),
++          maxLength: _maxLength,
++          maxLines: 3,
++          minLines: 1,
++        ),
++        FilledButton(
++          onPressed: state.busy || _body.text.trim().isEmpty ? null : _send,
++          child: const Text('送信する'),
++        ),
++      ],
++    );
++  }
++}
++
++class _MessageTile extends StatelessWidget {
++  const _MessageTile({required this.message});
++
++  final Message message;
++
++  @override
++  Widget build(BuildContext context) {
++    final mine = message.senderRole == MessageSenderRole.student;
++    final read = readLabel(message);
++    return Align(
++      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
++      child: Card(
++        color: mine ? Theme.of(context).colorScheme.primaryContainer : null,
++        child: Padding(
++          padding: const EdgeInsets.all(12),
++          child: Column(
++            crossAxisAlignment: mine
++                ? CrossAxisAlignment.end
++                : CrossAxisAlignment.start,
++            children: [
++              Text(message.body),
++              const SizedBox(height: 4),
++              Text(
++                [
++                  messageSenderLabel(message.senderRole),
++                  formatDateTime(message.sentAt),
++                  ?read,
++                ].join(' ・ '),
++                style: Theme.of(context).textTheme.bodySmall,
++              ),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
+diff --git a/apps/student-app/lib/screens/student_flow_screen.dart b/apps/student-app/lib/screens/student_flow_screen.dart
+index e82a450..b169c30 100644
+--- a/apps/student-app/lib/screens/student_flow_screen.dart
++++ b/apps/student-app/lib/screens/student_flow_screen.dart
+@@ -5,6 +5,8 @@ import '../state/student_flow.dart';
+ import 'booking_pending_screen.dart';
+ import 'lesson_completion_screen.dart';
+ import 'live_lesson_screen.dart';
++import 'message_threads_screen.dart';
++import 'messages_screen.dart';
+ import 'register_screen.dart';
+ import 'slot_search_screen.dart';
+ import 'subscription_screen.dart';
+@@ -27,6 +29,8 @@ class StudentFlowScreen extends ConsumerWidget {
+       FlowStep.videoReview => const VideoReviewScreen(),
+       FlowStep.lessonCompletion => const LessonCompletionScreen(),
+       FlowStep.subscription => const SubscriptionScreen(),
++      FlowStep.messageThreads => const MessageThreadsScreen(),
++      FlowStep.messages => const MessagesScreen(),
+     };
+   }
+ }
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index ecde0e0..29b74eb 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -5,7 +5,7 @@ import '../api/http_student_api.dart';
+ import '../api/models.dart';
+ import '../api/student_api.dart';
+ 
+-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）の画面の段。
++/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 月額契約）とチャットの画面の段。
+ enum FlowStep {
+   register,
+   slotSearch,
+@@ -15,6 +15,14 @@ enum FlowStep {
+   videoReview,
+   lessonCompletion,
+   subscription,
++
++  /// 担当コーチとのスレッドの一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
++  messageThreads,
++
++  /// 1 つのスレッドのメッセージ
++  messages;
++
++  bool get isChat => this == messageThreads || this == messages;
+ }
+ 
+ /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
+@@ -35,6 +43,10 @@ class StudentFlowState {
+     this.lesson,
+     this.subscription,
+     this.entitlement,
++    this.chatReturnStep,
++    this.threads,
++    this.thread,
++    this.messages,
+   });
+ 
+   final FlowStep step;
+@@ -67,6 +79,18 @@ class StudentFlowState {
+   final Subscription? subscription;
+   final Entitlement? entitlement;
+ 
++  /// チャットを閉じたときに戻る段（チャットを開いた段）
++  final FlowStep? chatReturnStep;
++
++  /// 担当コーチとのスレッド（`listMessageThreads`。未取得なら null）
++  final List<MessageThread>? threads;
++
++  /// 開いているスレッド
++  final MessageThread? thread;
++
++  /// 開いているスレッドのメッセージ（送った順）
++  final List<Message>? messages;
++
+   /// `errorMessage` は引き継がない（渡さなければ消える）。
+   StudentFlowState copyWith({
+     FlowStep? step,
+@@ -84,6 +108,10 @@ class StudentFlowState {
+     Lesson? lesson,
+     Subscription? subscription,
+     Entitlement? entitlement,
++    FlowStep? chatReturnStep,
++    List<MessageThread>? threads,
++    MessageThread? thread,
++    List<Message>? messages,
+   }) => StudentFlowState(
+     step: step ?? this.step,
+     busy: busy ?? this.busy,
+@@ -100,6 +128,10 @@ class StudentFlowState {
+     lesson: lesson ?? this.lesson,
+     subscription: subscription ?? this.subscription,
+     entitlement: entitlement ?? this.entitlement,
++    chatReturnStep: chatReturnStep ?? this.chatReturnStep,
++    threads: threads ?? this.threads,
++    thread: thread ?? this.thread,
++    messages: messages ?? this.messages,
+   );
+ }
+ 
+@@ -258,6 +290,69 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+     );
+   });
+ 
++  /// チャットを開く（`listMessageThreads`）。閉じたら今の段に戻る。
++  Future<void> openChat() {
++    if (!state.step.isChat) {
++      state = state.copyWith(
++        chatReturnStep: state.step,
++        step: FlowStep.messageThreads,
++      );
++    }
++    return _run(_loadThreads);
++  }
++
++  /// チャットを閉じて、開いた段に戻る
++  void closeChat() =>
++      state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
++
++  /// スレッドを開く。`listMessages` で読み、相手のメッセージを `markMessageThreadRead` で既読にする
++  /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
++  Future<void> openThread(MessageThread thread) => _run(() async {
++    final list = await _api.listMessages(thread.threadId);
++    final read = await _api.markMessageThreadRead(thread.threadId);
++    state = state.copyWith(
++      thread: read,
++      messages: list.messages,
++      step: FlowStep.messages,
++    );
++  });
++
++  /// 開いているスレッドの新しいメッセージを確かめる（読み直して既読にする）
++  Future<void> refreshMessages() => _run(() async {
++    final threadId = state.thread!.threadId;
++    final list = await _api.listMessages(threadId);
++    final read = await _api.markMessageThreadRead(threadId);
++    state = state.copyWith(thread: read, messages: list.messages);
++  });
++
++  /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
++  Future<bool> sendMessage(String body) async {
++    var sent = false;
++    await _run(() async {
++      final message = await _api.sendMessage(
++        state.thread!.threadId,
++        SendMessageRequest(body: body),
++      );
++      state = state.copyWith(messages: [...?state.messages, message]);
++      sent = true;
++    });
++    return sent;
++  }
++
++  /// スレッドの一覧を読み直す
++  Future<void> refreshThreads() => _run(_loadThreads);
++
++  /// スレッドの一覧に戻る（未読の数と最後のメッセージを読み直す）
++  Future<void> backToThreads() {
++    state = state.copyWith(step: FlowStep.messageThreads);
++    return _run(_loadThreads);
++  }
++
++  Future<void> _loadThreads() async {
++    final list = await _api.listMessageThreads();
++    state = state.copyWith(threads: list.threads);
++  }
++
+   Future<void> _run(Future<void> Function() action) async {
+     if (state.busy) return;
+     state = state.copyWith(busy: true);
+diff --git a/apps/student-app/lib/ui/flow_scaffold.dart b/apps/student-app/lib/ui/flow_scaffold.dart
+index b99cd6f..f7fccbe 100644
+--- a/apps/student-app/lib/ui/flow_scaffold.dart
++++ b/apps/student-app/lib/ui/flow_scaffold.dart
+@@ -4,17 +4,38 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import '../state/student_flow.dart';
+ 
+ /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
++/// 登録後はアプリバーにチャットの入口を出す（チャットの画面では [leading] で戻り先を出す）。
+ class FlowScaffold extends ConsumerWidget {
+-  const FlowScaffold({super.key, required this.title, required this.children});
++  const FlowScaffold({
++    super.key,
++    required this.title,
++    required this.children,
++    this.leading,
++  });
+ 
+   final String title;
+   final List<Widget> children;
+ 
++  /// アプリバーの左端（戻るボタンなど）
++  final Widget? leading;
++
+   @override
+   Widget build(BuildContext context, WidgetRef ref) {
+     final state = ref.watch(studentFlowProvider);
++    final notifier = ref.read(studentFlowProvider.notifier);
+     return Scaffold(
+-      appBar: AppBar(title: Text(title)),
++      appBar: AppBar(
++        leading: leading,
++        title: Text(title),
++        actions: [
++          if (state.accessToken != null && !state.step.isChat)
++            IconButton(
++              tooltip: 'チャット',
++              icon: const Icon(Icons.chat_bubble_outline),
++              onPressed: state.busy ? null : notifier.openChat,
++            ),
++        ],
++      ),
+       body: ListView(
+         padding: const EdgeInsets.all(16),
+         children: [
+diff --git a/apps/student-app/lib/ui/labels.dart b/apps/student-app/lib/ui/labels.dart
+index 71120bd..a95a2d0 100644
+--- a/apps/student-app/lib/ui/labels.dart
++++ b/apps/student-app/lib/ui/labels.dart
+@@ -25,3 +25,17 @@ String formatDateTime(DateTime value) {
+   String two(int n) => n.toString().padLeft(2, '0');
+   return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
+ }
++
++/// 生徒から見た送り手
++String messageSenderLabel(MessageSenderRole role) => switch (role) {
++  MessageSenderRole.student => '自分',
++  MessageSenderRole.coach => 'コーチ',
++};
++
++/// 自分が送ったメッセージを相手が読んだか（相手から届いたものには出さない）
++String? readLabel(Message message) =>
++    message.senderRole != MessageSenderRole.student
++    ? null
++    : message.readAt == null
++    ? '未読'
++    : '既読';
+diff --git a/apps/student-app/test/api/contract_test.dart b/apps/student-app/test/api/contract_test.dart
+index e33d564..eba9239 100644
+--- a/apps/student-app/test/api/contract_test.dart
++++ b/apps/student-app/test/api/contract_test.dart
+@@ -55,6 +55,10 @@ void main() {
+       enumOf('LessonType'),
+       LessonType.values.map((e) => e.wire).toList(),
+     ),
++    'MessageSenderRole': (
++      enumOf('MessageSenderRole'),
++      MessageSenderRole.values.map((e) => e.wire).toList(),
++    ),
+     'ErrorCode': (
+       enumOf('ErrorCode'),
+       ErrorCode.values
+@@ -87,6 +91,10 @@ void main() {
+         'getVideoReview',
+         'recordLessonCompletion',
+         'startSubscription',
++        'listMessageThreads',
++        'listMessages',
++        'sendMessage',
++        'markMessageThreadRead',
+       ]),
+     );
+   });
+diff --git a/apps/student-app/test/api/http_student_api_test.dart b/apps/student-app/test/api/http_student_api_test.dart
+index 3c6666b..0043e8f 100644
+--- a/apps/student-app/test/api/http_student_api_test.dart
++++ b/apps/student-app/test/api/http_student_api_test.dart
+@@ -159,6 +159,72 @@ void main() {
+     expect(recorded.isFirstLesson, isTrue);
+   });
+ 
++  test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
++    final coachMessage = {
++      'message_id': 'm1',
++      'thread_id': 't1',
++      'sender_id': 'c1',
++      'sender_role': 'coach',
++      'body': 'こんにちは',
++      'sent_at': '2026-10-26T03:00:00Z',
++      'read_at': null,
++    };
++    final thread = {
++      'thread_id': 't1',
++      'student_id': 's1',
++      'coach_id': 'c1',
++      'opened_at': '2026-10-26T02:00:00Z',
++      'last_message': coachMessage,
++      'unread_count': 1,
++    };
++
++    final threads = await apiReplying(200, {
++      'threads': [
++        thread,
++        {...thread, 'thread_id': 't2', 'last_message': null},
++      ],
++    }).listMessageThreads();
++    expect(sent.single.method, 'GET');
++    expect(sent.single.url.path, '/message-threads');
++    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
++    expect(
++      threads.threads.first.lastMessage!.senderRole,
++      MessageSenderRole.coach,
++    );
++    expect(threads.threads.first.unreadCount, 1);
++    expect(threads.threads.last.lastMessage, isNull);
++
++    final list = await apiReplying(200, {
++      'thread_id': 't1',
++      'messages': [coachMessage],
++    }).listMessages('t1');
++    expect(sent.single.method, 'GET');
++    expect(sent.single.url.path, '/message-threads/t1/messages');
++    expect(list.messages.single.readAt, isNull);
++
++    final message = await apiReplying(201, {
++      ...coachMessage,
++      'message_id': 'm2',
++      'sender_id': 's1',
++      'sender_role': 'student',
++      'body': 'よろしく',
++    }).sendMessage('t1', const SendMessageRequest(body: 'よろしく'));
++    expect(sent.single.method, 'POST');
++    expect(sent.single.url.path, '/message-threads/t1/messages');
++    expect(jsonDecode(sent.single.body), {'body': 'よろしく'});
++    expect(message.senderRole, MessageSenderRole.student);
++
++    final read = await apiReplying(200, {
++      ...thread,
++      'last_message': {...coachMessage, 'read_at': '2026-10-26T03:05:00Z'},
++      'unread_count': 0,
++    }).markMessageThreadRead('t1');
++    expect(sent.single.method, 'POST');
++    expect(sent.single.url.path, '/message-threads/t1/read');
++    expect(read.unreadCount, 0);
++    expect(read.lastMessage!.readAt, DateTime.utc(2026, 10, 26, 3, 5));
++  });
++
+   test('契約の Error を StudentApiException にし、画面の文言に変える', () async {
+     final api = apiReplying(409, {
+       'code': 'live_lesson_quota_exceeded',
+diff --git a/apps/student-app/test/screens/message_threads_screen_test.dart b/apps/student-app/test/screens/message_threads_screen_test.dart
+new file mode 100644
+index 0000000..ce0be44
+--- /dev/null
++++ b/apps/student-app/test/screens/message_threads_screen_test.dart
+@@ -0,0 +1,59 @@
++import 'package:flutter_test/flutter_test.dart';
++import 'package:rally_student_app/api/models.dart';
++import 'package:rally_student_app/screens/message_threads_screen.dart';
++import 'package:rally_student_app/state/student_flow.dart';
++
++import '../support/fake_student_api.dart';
++import '../support/pump.dart';
++
++void main() {
++  StudentFlowState threadsOpened({required List<MessageThread> threads}) =>
++      StudentFlowState(
++        step: FlowStep.messageThreads,
++        chatReturnStep: FlowStep.subscription,
++        accessToken: Fixtures.registered.accessToken,
++        student: Fixtures.student,
++        threads: threads,
++      );
++
++  testWidgets('スレッドに最後のメッセージと未読の数を出し、開くと読んで既読にしてメッセージの画面へ進む', (tester) async {
++    final api = FakeStudentApi();
++    final container = await pumpScreen(
++      tester,
++      const MessageThreadsScreen(),
++      api: api,
++      initial: threadsOpened(threads: [Fixtures.thread]),
++    );
++
++    expect(find.text('担当コーチ'), findsOneWidget);
++    expect(find.text('コーチ: 体験レッスンでお待ちしています'), findsOneWidget);
++    expect(find.text('未読 1'), findsOneWidget);
++
++    await tapText(tester, '担当コーチ');
++
++    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
++    expect(api.requests, [Fixtures.threadId, Fixtures.threadId]);
++    final state = container.read(studentFlowProvider);
++    expect(state.step, FlowStep.messages);
++    expect(state.thread!.unreadCount, 0);
++    expect(state.messages, hasLength(2));
++  });
++
++  testWidgets('スレッドがなければその旨を出し、閉じるとチャットを開いた段に戻る', (tester) async {
++    final container = await pumpScreen(
++      tester,
++      const MessageThreadsScreen(),
++      api: FakeStudentApi(threads: []),
++      initial: threadsOpened(threads: []),
++    );
++
++    expect(
++      find.text('まだスレッドはありません。予約が確定すると、担当コーチとのスレッドが開きます。'),
++      findsOneWidget,
++    );
++
++    await tester.tap(find.byTooltip('チャットを閉じる'));
++    await tester.pumpAndSettle();
++    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
++  });
++}
+diff --git a/apps/student-app/test/screens/messages_screen_test.dart b/apps/student-app/test/screens/messages_screen_test.dart
+new file mode 100644
+index 0000000..71c2104
+--- /dev/null
++++ b/apps/student-app/test/screens/messages_screen_test.dart
+@@ -0,0 +1,120 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:rally_student_app/api/models.dart';
++import 'package:rally_student_app/api/student_api.dart';
++import 'package:rally_student_app/screens/messages_screen.dart';
++import 'package:rally_student_app/state/student_flow.dart';
++
++import '../support/fake_student_api.dart';
++import '../support/pump.dart';
++
++void main() {
++  StudentFlowState threadOpened() => StudentFlowState(
++    step: FlowStep.messages,
++    chatReturnStep: FlowStep.subscription,
++    accessToken: Fixtures.registered.accessToken,
++    student: Fixtures.student,
++    threads: [Fixtures.thread],
++    thread: Fixtures.thread,
++    messages: Fixtures.messages,
++  );
++
++  testWidgets('メッセージを送った順に出し、自分が送ったものにだけ既読・未読を出す', (tester) async {
++    await pumpScreen(
++      tester,
++      const MessagesScreen(),
++      api: FakeStudentApi(),
++      initial: threadOpened(),
++    );
++
++    expect(find.text('よろしくお願いします'), findsOneWidget);
++    expect(find.text('体験レッスンでお待ちしています'), findsOneWidget);
++    expect(
++      tester.getTopLeft(find.text('よろしくお願いします')).dy,
++      lessThan(tester.getTopLeft(find.text('体験レッスンでお待ちしています')).dy),
++    );
++    expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 既読$')), findsOneWidget);
++    expect(find.textContaining(RegExp(r'^コーチ ・ [^・]*$')), findsOneWidget);
++    expect(find.textContaining('未読'), findsNothing);
++  });
++
++  testWidgets('送信すると sendMessage を呼び、未読のメッセージとして末尾に足して入力欄を空にする', (
++    tester,
++  ) async {
++    final api = FakeStudentApi();
++    await pumpScreen(
++      tester,
++      const MessagesScreen(),
++      api: api,
++      initial: threadOpened(),
++    );
++
++    final send = find.widgetWithText(FilledButton, '送信する');
++    expect(tester.widget<FilledButton>(send).onPressed, isNull);
++
++    await tester.enterText(find.byType(TextField), '  フォームを見てください  ');
++    await tester.pump();
++    await tapText(tester, '送信する');
++
++    expect(api.calls, ['sendMessage']);
++    expect((api.requests.single as SendMessageRequest).toJson(), {
++      'body': 'フォームを見てください',
++    });
++    expect(find.text('フォームを見てください'), findsOneWidget);
++    expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 未読$')), findsOneWidget);
++    expect(
++      tester.widget<TextField>(find.byType(TextField)).controller!.text,
++      '',
++    );
++  });
++
++  testWidgets('月額契約の前の生徒が送ると 403 chat_not_entitled の文言を出し、入力は残す', (
++    tester,
++  ) async {
++    final api = FakeStudentApi(
++      failures: {
++        'sendMessage': const StudentApiException(
++          statusCode: 403,
++          error: ApiError(
++            code: ErrorCode.chatNotEntitled,
++            message: 'not entitled',
++          ),
++        ),
++      },
++    );
++    await pumpScreen(
++      tester,
++      const MessagesScreen(),
++      api: api,
++      initial: threadOpened(),
++    );
++
++    await tester.enterText(find.byType(TextField), '質問です');
++    await tester.pump();
++    await tapText(tester, '送信する');
++
++    expect(find.text('チャットは月額契約を始めると使えます。'), findsOneWidget);
++    expect(
++      tester.widget<TextField>(find.byType(TextField)).controller!.text,
++      '質問です',
++    );
++  });
++
++  testWidgets('新しいメッセージを確かめると読み直して既読にし、戻るとスレッドの一覧を読み直す', (tester) async {
++    final api = FakeStudentApi();
++    final container = await pumpScreen(
++      tester,
++      const MessagesScreen(),
++      api: api,
++      initial: threadOpened(),
++    );
++
++    await tapText(tester, '新しいメッセージを確かめる');
++    expect(api.calls, ['listMessages', 'markMessageThreadRead']);
++
++    await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
++    await tester.pumpAndSettle();
++    expect(api.calls.last, 'listMessageThreads');
++    expect(container.read(studentFlowProvider).step, FlowStep.messageThreads);
++  });
++}
+diff --git a/apps/student-app/test/student_flow_test.dart b/apps/student-app/test/student_flow_test.dart
+index 906d0fb..1ffd91b 100644
+--- a/apps/student-app/test/student_flow_test.dart
++++ b/apps/student-app/test/student_flow_test.dart
+@@ -104,4 +104,50 @@ void main() {
+       'startSubscription',
+     ]);
+   });
++
++  testWidgets('チャット: 月額契約の後 → スレッドの一覧 → メッセージ（既読にする）→ 送信 → 一覧 → 閉じて元の画面', (
++    tester,
++  ) async {
++    final api = FakeStudentApi();
++    await pumpApp(tester, api);
++
++    expect(find.byTooltip('チャット'), findsNothing);
++    await registerAndBook(tester);
++    await tapText(tester, 'ビデオ通話で受ける');
++    await tapText(tester, '通話を開始する');
++    await tapText(tester, '通話を終了する');
++    await recordAndSubscribe(tester);
++    api.calls.clear();
++
++    await tester.tap(find.byTooltip('チャット'));
++    await tester.pumpAndSettle();
++    expect(find.text('チャット'), findsOneWidget);
++    expect(find.text('未読 1'), findsOneWidget);
++
++    await tapText(tester, '担当コーチ');
++    expect(find.text('担当コーチとのチャット'), findsOneWidget);
++    expect(find.text('体験レッスンでお待ちしています'), findsOneWidget);
++
++    await tester.enterText(find.byType(TextField), '次回もお願いします');
++    await tester.pump();
++    await tapText(tester, '送信する');
++    expect(find.text('次回もお願いします'), findsOneWidget);
++
++    await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
++    await tester.pumpAndSettle();
++    expect(find.text('自分: 次回もお願いします'), findsOneWidget);
++    expect(find.text('未読 1'), findsNothing);
++
++    await tester.tap(find.byTooltip('チャットを閉じる'));
++    await tester.pumpAndSettle();
++    expect(find.text('月額契約を開始しました'), findsOneWidget);
++
++    expect(api.calls, [
++      'listMessageThreads',
++      'listMessages',
++      'markMessageThreadRead',
++      'sendMessage',
++      'listMessageThreads',
++    ]);
++  });
+ }
+diff --git a/apps/student-app/test/support/fake_student_api.dart b/apps/student-app/test/support/fake_student_api.dart
+index 7878eb0..b3b3e19 100644
+--- a/apps/student-app/test/support/fake_student_api.dart
++++ b/apps/student-app/test/support/fake_student_api.dart
+@@ -7,12 +7,22 @@ class FakeStudentApi implements StudentApi {
+   FakeStudentApi({
+     List<Slot>? slots,
+     List<VideoReview>? reviews,
++    List<MessageThread>? threads,
++    List<Message>? messages,
+     this.failures = const {},
+   }) : slots = slots ?? [Fixtures.slot],
+-       _reviews = reviews ?? [Fixtures.reviewReturned];
++       _reviews = reviews ?? [Fixtures.reviewReturned],
++       threads = List.of(threads ?? [Fixtures.thread]),
++       messages = List.of(messages ?? Fixtures.messages);
+ 
+   final List<Slot> slots;
+   final List<VideoReview> _reviews;
++
++  /// 担当コーチとのスレッド（`listMessageThreads` が返す）
++  final List<MessageThread> threads;
++
++  /// スレッドのメッセージ（`listMessages` が返す。`sendMessage` で末尾に足す）
++  final List<Message> messages;
+   final Map<String, StudentApiException> failures;
+ 
+   final List<String> calls = [];
+@@ -86,6 +96,56 @@ class FakeStudentApi implements StudentApi {
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+   ) => _answer('startSubscription', () => Fixtures.subscriptionStarted, body);
++
++  @override
++  Future<MessageThreadList> listMessageThreads() => _answer(
++    'listMessageThreads',
++    () => MessageThreadList(threads: [...threads]),
++  );
++
++  @override
++  Future<MessageList> listMessages(String threadId) => _answer(
++    'listMessages',
++    () => MessageList(threadId: threadId, messages: [...messages]),
++    threadId,
++  );
++
++  @override
++  Future<Message> sendMessage(String threadId, SendMessageRequest body) =>
++      _answer('sendMessage', () {
++        final message = Message(
++          messageId: 'message-${messages.length + 1}',
++          threadId: threadId,
++          senderId: Fixtures.studentId,
++          senderRole: MessageSenderRole.student,
++          body: body.body,
++          sentAt: Fixtures.now.add(Duration(minutes: messages.length + 1)),
++        );
++        messages.add(message);
++        _updateThread(threadId);
++        return message;
++      }, body);
++
++  @override
++  Future<MessageThread> markMessageThreadRead(String threadId) => _answer(
++    'markMessageThreadRead',
++    () => _updateThread(threadId, unreadCount: 0),
++    threadId,
++  );
++
++  /// スレッドの最後のメッセージ（と未読の数）を今のメッセージに合わせる
++  MessageThread _updateThread(String threadId, {int? unreadCount}) {
++    final index = threads.indexWhere((t) => t.threadId == threadId);
++    final thread = threads[index];
++    return threads[index] = MessageThread(
++      threadId: thread.threadId,
++      studentId: thread.studentId,
++      coachId: thread.coachId,
++      openedAt: thread.openedAt,
++      lastMessage: messages.lastOrNull,
++      unreadCount: unreadCount ?? thread.unreadCount,
++    );
++  }
+ }
+ 
+ /// 契約の形に沿った応答の見本
+@@ -96,6 +156,7 @@ abstract final class Fixtures {
+   static const bookingId = '44444444-4444-4444-8444-444444444444';
+   static const sessionId = '55555555-5555-4555-8555-555555555555';
+   static const videoId = '66666666-6666-4666-8666-666666666666';
++  static const threadId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ 
+   static final now = DateTime.utc(2026, 10, 26, 3);
+ 
+@@ -232,4 +293,34 @@ abstract final class Fixtures {
+       ),
+     ),
+   );
++
++  /// 自分が送ってコーチが読んだメッセージと、コーチから届いてまだ読んでいないメッセージ
++  static final messages = [
++    Message(
++      messageId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
++      threadId: threadId,
++      senderId: studentId,
++      senderRole: MessageSenderRole.student,
++      body: 'よろしくお願いします',
++      sentAt: now,
++      readAt: now.add(const Duration(minutes: 1)),
++    ),
++    Message(
++      messageId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
++      threadId: threadId,
++      senderId: coachId,
++      senderRole: MessageSenderRole.coach,
++      body: '体験レッスンでお待ちしています',
++      sentAt: now.add(const Duration(minutes: 2)),
++    ),
++  ];
++
++  static final thread = MessageThread(
++    threadId: threadId,
++    studentId: studentId,
++    coachId: coachId,
++    openedAt: now,
++    lastMessage: messages.last,
++    unreadCount: 1,
++  );
+ }

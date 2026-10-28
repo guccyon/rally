@@ -1,0 +1,374 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0fe854e..eed8489 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- admin-web にコーチの評価の一覧: コーチの「自分の評価」で、件数と平均の下に `GET /coaches/{coach_id}/reviews` の評価を 1 件ずつ（点・一言・送った時刻、新しい順）出す。0 件なら「まだ評価はありません」。本部の画面は変わらない。API と契約の変更はない（#112）
+ - コーチが受けた評価の一覧の API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）が評価の ID・完了したレッスンの ID・点・一言・送った時刻を、送った時刻の新しい順に返す。本部はどのコーチの分も、コーチは自分の分だけ読め、生徒は 403。admin-web の画面はまだない（#111）
+ - 添削の返却とメッセージの受信でプッシュ通知（notification の後半）: 境界間イベント `VideoReviewReturned`（async-lesson）と `MessageSent`（messaging）を AsyncAPI に足して発行し、notification が購読して、添削の返却は生徒へ、メッセージは受け手（送り手でない側）へ送る。送り先は Gen1 ではモック。API の変更はない（#100）
+ - admin-web にコーチの評価の件数と平均: コーチは「自分の評価」で自分のアカウント ID を入力して、本部は `/headquarters/coach-review-summary` でコーチ ID を指定して、`GET /coaches/{coach_id}/review-summary` の件数と平均（0 件なら「評価はまだありません」）を見る。API と契約の変更はない（#95）
+diff --git a/README.md b/README.md
+index b809d4a..472a155 100644
+--- a/README.md
++++ b/README.md
+@@ -18,7 +18,7 @@
+ | `.factory-config/evals/` | この製品の Golden Set とルール検証。`golden/` にペア比較の採点を置く | 骨格 |
+ | `specs/` | SSOT（glossary・context-map・db-schemas・contracts・analytics） | P1 |
+ | `apps/` | backend（Rust / axum。`apps/backend/` に層ごとの Cargo ワークスペースと `/healthz`、CI のコマンドは `apps/backend/README.md`）・student-app（Flutter）・admin-web（Next.js） | P1（backend の骨格を配置済み） |
+-| `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加・自分の評価の件数と平均）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`。コーチの評価の件数と平均 `/headquarters/coach-review-summary`。`getCoachReviewSummary`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
++| `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加・自分の評価の件数と平均と一覧）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`。コーチの評価の件数と平均 `/headquarters/coach-review-summary`。`getCoachReviewSummary`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
+ | `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 評価 → 月額契約の画面と、担当コーチとのチャット（スレッドの一覧・メッセージの一覧と送信・既読）。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
+ | `docs/adr/` | 設計判断の記録 | 随時 |
+ | `docs/plans/` | Phase ごとの実行計画（P1 入口の Walking Skeleton: `p1-walking-skeleton.md`） | Phase 境界 |
+diff --git a/apps/admin-web/README.md b/apps/admin-web/README.md
+index 9530743..a415eae 100644
+--- a/apps/admin-web/README.md
++++ b/apps/admin-web/README.md
+@@ -28,7 +28,7 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ /
+ | コーチ（`/coach`） | 予約枠の公開と、このログイン中に公開した枠の一覧 | `publishSlot` |
+ | | 動画の添削の返却（動画 ID を入力） | `returnVideoReview` |
+ | | 通話への参加（予約 ID で開始、同じセッションを終了。映像はモックなので出さない） | `startLiveLessonSession` / `endLiveLessonSession` |
+-| | 自分の評価（自分のアカウント ID を入力して、評価の件数と点の平均。0 件なら平均は「評価はまだありません」。他のコーチの ID は API が 403） | `getCoachReviewSummary` |
++| | 自分の評価（自分のアカウント ID を入力して、評価の件数と点の平均と、その下に評価の一覧（点・一言・送った時刻。並びは API が返した新しい順のまま）。0 件なら平均は「評価はまだありません」、一覧は「まだ評価はありません」。他のコーチの ID は API が 403 で、件数と平均も一覧も出さない） | `getCoachReviewSummary` / `listCoachReviews` |
+ | 本部（`/headquarters`） | 予約・完了記録の一覧 | なし（契約に API がないので「未実装」と表示） |
+ | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
+ | 本部（`/headquarters/coach-review-summary`） | コーチの評価（コーチ ID を入力して、そのコーチの評価の件数と点の平均。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ） | `getCoachReviewSummary` |
+diff --git a/apps/admin-web/src/api/coach.ts b/apps/admin-web/src/api/coach.ts
+index 9e85304..c57a36e 100644
+--- a/apps/admin-web/src/api/coach.ts
++++ b/apps/admin-web/src/api/coach.ts
+@@ -27,6 +27,12 @@ export function coachApi(client: ApiClient) {
+           params: { path: { coach_id: coachId } },
+         }),
+       ),
++    listCoachReviews: (coachId: string) =>
++      call(() =>
++        client.GET("/coaches/{coach_id}/reviews", {
++          params: { path: { coach_id: coachId } },
++        }),
++      ),
+   };
+ }
+ 
+diff --git a/apps/admin-web/src/components/CoachReviewList.tsx b/apps/admin-web/src/components/CoachReviewList.tsx
+new file mode 100644
+index 0000000..b7f4307
+--- /dev/null
++++ b/apps/admin-web/src/components/CoachReviewList.tsx
+@@ -0,0 +1,26 @@
++import type { Schemas } from "@/api/client";
++import { formatDateTime } from "@/components/labels";
++
++/**
++ * コーチが受けた評価の一覧（listCoachReviews）。並べ方は契約の正本どおり API が済ませている（送った時刻の新しい順）ので、
++ * 返った順のまま出す。
++ */
++export function CoachReviewList({ reviews }: { reviews: Schemas["CoachReview"][] }) {
++  if (reviews.length === 0) {
++    return <p className="text-sm">まだ評価はありません</p>;
++  }
++  return (
++    <ul aria-label="評価の一覧" className="divide-y rounded border text-sm">
++      {reviews.map((review) => (
++        <li key={review.review_id} className="space-y-1 px-3 py-2">
++          <p>
++            <span className="font-semibold">{review.rating} 点</span>
++            <span className="text-gray-500">（10 点満点）</span>
++          </p>
++          <p>{review.comment}</p>
++          <p className="text-gray-500">{formatDateTime(review.submitted_at)}</p>
++        </li>
++      ))}
++    </ul>
++  );
++}
+diff --git a/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+index 5fcc0be..8614523 100644
+--- a/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
++++ b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+@@ -4,9 +4,11 @@ import { type FormEvent, useState } from "react";
+ 
+ import type { Schemas } from "@/api/client";
+ import type { Result } from "@/api/call";
++import { CoachReviewList } from "@/components/CoachReviewList";
+ import { ResultMessage } from "@/components/ResultMessage";
+ 
+ type GetCoachReviewSummary = (coachId: string) => Promise<Result<Schemas["CoachReviewSummary"]>>;
++type ListCoachReviews = (coachId: string) => Promise<Result<Schemas["CoachReviewList"]>>;
+ 
+ /** 点の平均の表示。丸めは契約（getCoachReviewSummary）の正本どおり API が済ませているので、桁を揃えるだけ。 */
+ export function formatAverageRating(averageRating: number | null): string {
+@@ -16,34 +18,45 @@ export function formatAverageRating(averageRating: number | null): string {
+ /**
+  * コーチの評価の件数と平均（getCoachReviewSummary）。コーチと本部で共通。
+  * トークンは不透明なもの（中身を読まない）なので、コーチも自分のアカウント ID を入力する。
++ * `listCoachReviews` を渡すと、同じ ID で評価の一覧（listCoachReviews）も取り、件数と平均の下に出す。
++ * どちらかが失敗したら、どちらも出さずに失敗の文言だけを出す。
+  */
+ export function CoachReviewSummaryLookup({
+   api,
+   description,
+ }: {
+-  api: { getCoachReviewSummary: GetCoachReviewSummary };
++  api: { getCoachReviewSummary: GetCoachReviewSummary; listCoachReviews?: ListCoachReviews };
+   description: string;
+ }) {
+   const [coachId, setCoachId] = useState("");
+   const [summary, setSummary] = useState<Schemas["CoachReviewSummary"] | null>(null);
++  const [reviews, setReviews] = useState<Schemas["CoachReview"][] | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
+ 
+   async function onSubmit(event: FormEvent) {
+     event.preventDefault();
+     setSummary(null);
++    setReviews(null);
+     if (coachId.trim() === "") {
+       setError("コーチ ID を入力してください。");
+       return;
+     }
+     setError(null);
+     setBusy(true);
+-    const response = await api.getCoachReviewSummary(coachId.trim());
++    const id = coachId.trim();
++    const [summaryResponse, listResponse] = await Promise.all([
++      api.getCoachReviewSummary(id),
++      api.listCoachReviews?.(id),
++    ]);
+     setBusy(false);
+-    if (response.ok) {
+-      setSummary(response.data);
++    if (!summaryResponse.ok) {
++      setError(summaryResponse.message);
++    } else if (listResponse !== undefined && !listResponse.ok) {
++      setError(listResponse.message);
+     } else {
+-      setError(response.message);
++      setSummary(summaryResponse.data);
++      setReviews(listResponse?.data.reviews ?? null);
+     }
+   }
+ 
+@@ -78,6 +91,12 @@ export function CoachReviewSummaryLookup({
+           <dd>{formatAverageRating(summary.average_rating)}</dd>
+         </dl>
+       )}
++      {reviews !== null && (
++        <div className="space-y-2">
++          <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
++          <CoachReviewList reviews={reviews} />
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/apps/admin-web/src/components/coach/CoachHome.tsx b/apps/admin-web/src/components/coach/CoachHome.tsx
+index f5cb9e1..066da20 100644
+--- a/apps/admin-web/src/components/coach/CoachHome.tsx
++++ b/apps/admin-web/src/components/coach/CoachHome.tsx
+@@ -11,7 +11,7 @@ import { LiveSessionPanel } from "./LiveSessionPanel";
+ import { PublishSlotForm } from "./PublishSlotForm";
+ import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
+ 
+-/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、自分の評価の件数と平均。 */
++/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、自分の評価の件数と平均と一覧。 */
+ export function CoachHome({ token }: { token: string }) {
+   const api = useMemo(() => coachApi(createApiClient(token)), [token]);
+   return (
+@@ -28,7 +28,7 @@ export function CoachHome({ token }: { token: string }) {
+       <Section title="自分の評価">
+         <CoachReviewSummaryLookup
+           api={api}
+-          description="自分のアカウント ID を入力すると、生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均を出します（他のコーチの分は見られません）。"
++          description="自分のアカウント ID を入力すると、生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言を出します（他のコーチの分は見られません）。"
+         />
+       </Section>
+     </>
+diff --git a/apps/admin-web/tests/coachApi.test.ts b/apps/admin-web/tests/coachApi.test.ts
+index 261a1e9..a7de10d 100644
+--- a/apps/admin-web/tests/coachApi.test.ts
++++ b/apps/admin-web/tests/coachApi.test.ts
+@@ -116,4 +116,32 @@ describe("coachApi", () => {
+     const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
+     expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+   });
++
++  test("listCoachReviews はトークンを付けて GET /api/coaches/{coach_id}/reviews を呼び、返った順のまま返す", async () => {
++    const list = {
++      coach_id: SLOT.coach_id,
++      reviews: [
++        {
++          review_id: "33333333-3333-4333-8333-333333333333",
++          lesson_id: "44444444-4444-4444-8444-444444444444",
++          rating: 4,
++          comment: "分かりやすかった",
++          submitted_at: "2026-10-20T03:00:00Z",
++        },
++      ],
++    };
++    const { api, fetchMock } = setup(json(200, list));
++    const result = await api.listCoachReviews(SLOT.coach_id);
++    expect(result).toEqual({ ok: true, data: list });
++    const request = fetchMock.mock.calls[0]![0];
++    expect(request.method).toBe("GET");
++    expect(new URL(request.url).pathname).toBe(`/api/coaches/${SLOT.coach_id}/reviews`);
++    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
++  });
++
++  test("他のコーチの評価の一覧（403）は権限の文言にする", async () => {
++    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
++    const result = await api.listCoachReviews("99999999-9999-4999-8999-999999999999");
++    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
++  });
+ });
+diff --git a/apps/admin-web/tests/coachReviewList.test.tsx b/apps/admin-web/tests/coachReviewList.test.tsx
+new file mode 100644
+index 0000000..6f50d49
+--- /dev/null
++++ b/apps/admin-web/tests/coachReviewList.test.tsx
+@@ -0,0 +1,142 @@
++import { render, screen, within } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { describe, expect, test, vi } from "vitest";
++
++import type { CoachApi } from "@/api/coach";
++import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
++import { CoachHome } from "@/components/coach/CoachHome";
++import { formatDateTime } from "@/components/labels";
++
++vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
++
++// 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
++const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
++vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
++
++const COACH_ID = "22222222-2222-4222-8222-222222222222";
++
++// API が返す並び（送った時刻の新しい順）。
++const REVIEWS = [
++  {
++    review_id: "33333333-3333-4333-8333-333333333333",
++    lesson_id: "44444444-4444-4444-8444-444444444444",
++    rating: 5,
++    comment: "フォームがよく分かりました",
++    submitted_at: "2026-10-20T03:00:00Z",
++  },
++  {
++    review_id: "55555555-5555-4555-8555-555555555555",
++    lesson_id: "66666666-6666-4666-8666-666666666666",
++    rating: 3,
++    comment: "もう少し時間がほしかった",
++    submitted_at: "2026-10-01T09:30:00Z",
++  },
++];
++
++function summaryApi(reviewCount: number, averageRating: number | null) {
++  return vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
++    ok: true,
++    data: { coach_id: coachId, review_count: reviewCount, average_rating: averageRating },
++  }));
++}
++
++describe("コーチの評価の一覧", () => {
++  test("同じコーチ ID で listCoachReviews を呼び、点・一言・送った時刻を API の順（新しい順）に出す", async () => {
++    const getCoachReviewSummary = summaryApi(2, 4);
++    const listCoachReviews = vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, reviews: REVIEWS },
++    }));
++    const user = userEvent.setup();
++    render(
++      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
++    );
++
++    await user.type(screen.getByLabelText("コーチ ID"), ` ${COACH_ID} `);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(listCoachReviews).toHaveBeenCalledWith(COACH_ID);
++    expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
++    const items = within(screen.getByRole("list", { name: "評価の一覧" })).getAllByRole("listitem");
++    expect(items).toHaveLength(2);
++    expect(items[0]).toHaveTextContent("5 点");
++    expect(items[0]).toHaveTextContent("フォームがよく分かりました");
++    expect(items[0]).toHaveTextContent(formatDateTime("2026-10-20T03:00:00Z"));
++    expect(items[1]).toHaveTextContent("3 点");
++    expect(items[1]).toHaveTextContent("もう少し時間がほしかった");
++    expect(items[1]).toHaveTextContent(formatDateTime("2026-10-01T09:30:00Z"));
++  });
++
++  test("評価が 0 件なら「まだ評価はありません」と出す", async () => {
++    const getCoachReviewSummary = summaryApi(0, null);
++    const listCoachReviews = vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, reviews: [] },
++    }));
++    const user = userEvent.setup();
++    render(
++      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
++    );
++
++    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(await screen.findByText("まだ評価はありません")).toBeInTheDocument();
++    expect(screen.queryByRole("list", { name: "評価の一覧" })).not.toBeInTheDocument();
++  });
++
++  test("一覧の API のエラー（他のコーチの分の 403 など）の文言を出し、件数と平均も一覧も出さない", async () => {
++    const getCoachReviewSummary = summaryApi(2, 4);
++    const listCoachReviews = vi
++      .fn<CoachApi["listCoachReviews"]>()
++      .mockResolvedValueOnce({ ok: true, data: { coach_id: COACH_ID, reviews: REVIEWS } })
++      .mockResolvedValueOnce({ ok: false, message: "権限がないためアクセスできません。" });
++    const user = userEvent.setup();
++    render(
++      <CoachReviewSummaryLookup api={{ getCoachReviewSummary, listCoachReviews }} description="説明" />,
++    );
++
++    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++    await screen.findByRole("list", { name: "評価の一覧" });
++
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
++    expect(screen.queryByRole("list", { name: "評価の一覧" })).not.toBeInTheDocument();
++    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
++  });
++
++  test("一覧の API を渡さなければ（本部の画面）一覧は出さない", async () => {
++    const user = userEvent.setup();
++    render(
++      <CoachReviewSummaryLookup api={{ getCoachReviewSummary: summaryApi(0, null) }} description="説明" />,
++    );
++
++    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(await screen.findByLabelText("評価の件数と平均")).toBeInTheDocument();
++    expect(screen.queryByText("まだ評価はありません")).not.toBeInTheDocument();
++  });
++
++  test("コーチの画面の「自分の評価」は件数と平均の下に一覧を出す", async () => {
++    coachApiMock.mockReturnValue({
++      getCoachReviewSummary: summaryApi(2, 4),
++      listCoachReviews: async (coachId: string) => ({
++        ok: true,
++        data: { coach_id: coachId, reviews: REVIEWS },
++      }),
++    });
++    const user = userEvent.setup();
++    render(<CoachHome token="mock.coach.x" />);
++    const region = screen.getByRole("region", { name: "自分の評価" });
++
++    await user.type(within(region).getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(within(region).getByRole("button", { name: "評価を見る" }));
++
++    const summary = await within(region).findByLabelText("評価の件数と平均");
++    const list = within(region).getByRole("list", { name: "評価の一覧" });
++    expect(summary.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++  });
++});

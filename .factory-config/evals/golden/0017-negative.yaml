@@ -1,0 +1,15 @@
+# Golden Set ペア比較 0017（EvalSpec l4-pairwise）。負例
+id: "0017"
+ticket: "github:guccyon/rally#119"
+gate: L4
+rubric_ids: [ARCH-002]
+pair:
+  a: { ref: "github:guccyon/rally#126", note: "マージした PR（元）" }
+  b: { ref: "file:patches/0017-variant.diff", derived_from: "github:guccyon/rally#126", note: "負例（builder が元の PR の差分に 1 つだけ欠陥を入れた）" }
+preferred: a
+confidence: high
+reason: "負例はコーチ向けの「新しい予約が入りました」の受け取り手を生徒にした（試験はコーチを期待したまま）"
+polarity: one_flawed
+scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_at: "2026-10-28"
+lesson: "通知の受け取り手と、doc コメント・試験の食い違い"

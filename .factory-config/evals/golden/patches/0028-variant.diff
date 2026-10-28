@@ -1,0 +1,480 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index bd3c4c0..f0b76cf 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- admin-web にコーチの評価の件数と平均: コーチは「自分の評価」で自分のアカウント ID を入力して、本部は `/headquarters/coach-review-summary` でコーチ ID を指定して、`GET /coaches/{coach_id}/review-summary` の件数と平均（0 件なら「評価はまだありません」）を見る。API と契約の変更はない（#95）
+ - student-app にレッスンの評価の画面: 完了を記録したあと「レッスンを評価する」から 1〜5 の点と一言を送る。送ったあとと、すでに評価済み（409 `lesson_already_reviewed`）のときは入力できない。API と契約の変更はない（#94）
+ - student-app に担当コーチとのチャットの画面: アプリバーの「チャット」からスレッドの一覧（未読の数・最後のメッセージ）→ メッセージの一覧と送信。開いたスレッドの相手のメッセージは既読にし、自分が送ったメッセージには既読・未読を出す。月額契約の前に送ると「チャットは月額契約を始めると使えます。」と出す。API と契約の変更はない（#93）
+ - 予約の確定で生徒にプッシュ通知（notification の最小形・前半）: notification が境界間イベント `BookingConfirmed` を購読して送る。送り先の基盤は Gen1 ではモック（送った通知を記録し、標準出力に 1 行書く）。API の変更はない（#91）
+diff --git a/README.md b/README.md
+index c74ee74..b809d4a 100644
+--- a/README.md
++++ b/README.md
+@@ -18,7 +18,7 @@
+ | `.factory-config/evals/` | この製品の Golden Set とルール検証。`golden/` にペア比較の採点を置く | 骨格 |
+ | `specs/` | SSOT（glossary・context-map・db-schemas・contracts・analytics） | P1 |
+ | `apps/` | backend（Rust / axum。`apps/backend/` に層ごとの Cargo ワークスペースと `/healthz`、CI のコマンドは `apps/backend/README.md`）・student-app（Flutter）・admin-web（Next.js） | P1（backend の骨格を配置済み） |
+-| `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
++| `apps/admin-web/` | 最小の管理画面（Next.js App Router・TypeScript）。コーチ（枠の公開・添削の返却・通話参加・自分の評価の件数と平均）と本部（一覧と、スポーツ別の予約枠の需給 `/headquarters/slot-supply`。`getSlotSupply`。コーチの評価の件数と平均 `/headquarters/coach-review-summary`。`getCoachReviewSummary`）をロールで出し分ける。API の型は admin-web の OpenAPI から生成。コマンドは `apps/admin-web/README.md` | P1（最小の画面を配置済み） |
+ | `apps/student-app/` | 生徒アプリの最小（Flutter・Riverpod）。アカウント登録 → スロット検索 → 体験予約 → 確定 → 通話（モック）か動画の送付（モック）→ 添削結果 → 完了記録 → 評価 → 月額契約の画面と、担当コーチとのチャット（スレッドの一覧・メッセージの一覧と送信・既読）。API のスキーマは student-app の OpenAPI に揃えて `lib/api/` に置く。確認は `flutter analyze` と `flutter test` まで（実機ビルドは対象外）。コマンドは `apps/student-app/README.md` | P1（最小の画面を配置済み） |
+ | `docs/adr/` | 設計判断の記録 | 随時 |
+ | `docs/plans/` | Phase ごとの実行計画（P1 入口の Walking Skeleton: `p1-walking-skeleton.md`） | Phase 境界 |
+diff --git a/apps/admin-web/README.md b/apps/admin-web/README.md
+index cab4459..9530743 100644
+--- a/apps/admin-web/README.md
++++ b/apps/admin-web/README.md
+@@ -28,7 +28,9 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ /
+ | コーチ（`/coach`） | 予約枠の公開と、このログイン中に公開した枠の一覧 | `publishSlot` |
+ | | 動画の添削の返却（動画 ID を入力） | `returnVideoReview` |
+ | | 通話への参加（予約 ID で開始、同じセッションを終了。映像はモックなので出さない） | `startLiveLessonSession` / `endLiveLessonSession` |
++| | 自分の評価（自分のアカウント ID を入力して、評価の件数と点の平均。0 件なら平均は「評価はまだありません」。他のコーチの ID は API が 403） | `getCoachReviewSummary` |
+ | 本部（`/headquarters`） | 予約・完了記録の一覧 | なし（契約に API がないので「未実装」と表示） |
+ | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
++| 本部（`/headquarters/coach-review-summary`） | コーチの評価（コーチ ID を入力して、そのコーチの評価の件数と点の平均。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ） | `getCoachReviewSummary` |
+ 
+-自分の枠・届いた動画・自分の予約の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。
++自分の枠・届いた動画・自分の予約の一覧と、コーチの一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出し、ID を入力して操作する。トークンの中身は読まないので、コーチが自分の評価を見るときも自分のアカウント ID を入力する。
+diff --git a/apps/admin-web/src/api/coach.ts b/apps/admin-web/src/api/coach.ts
+index 616e509..9e85304 100644
+--- a/apps/admin-web/src/api/coach.ts
++++ b/apps/admin-web/src/api/coach.ts
+@@ -21,6 +21,12 @@ export function coachApi(client: ApiClient) {
+           params: { path: { session_id: sessionId } },
+         }),
+       ),
++    getCoachReviewSummary: (coachId: string) =>
++      call(() =>
++        client.GET("/coaches/{coach_id}/review-summary", {
++          params: { path: { coach_id: coachId } },
++        }),
++      ),
+   };
+ }
+ 
+diff --git a/apps/admin-web/src/api/headquarters.ts b/apps/admin-web/src/api/headquarters.ts
+index e13f1e6..d9b45df 100644
+--- a/apps/admin-web/src/api/headquarters.ts
++++ b/apps/admin-web/src/api/headquarters.ts
+@@ -5,6 +5,12 @@ import type { ApiClient } from "./client";
+ export function headquartersApi(client: ApiClient) {
+   return {
+     getSlotSupply: () => call(() => client.GET("/slot-supply")),
++    getCoachReviewSummary: (coachId: string) =>
++      call(() =>
++        client.GET("/coaches/{coach_id}/review-summary", {
++          params: { path: { coach_id: coachId } },
++        }),
++      ),
+   };
+ }
+ 
+diff --git a/apps/admin-web/src/app/headquarters/coach-review-summary/page.tsx b/apps/admin-web/src/app/headquarters/coach-review-summary/page.tsx
+new file mode 100644
+index 0000000..1feb50f
+--- /dev/null
++++ b/apps/admin-web/src/app/headquarters/coach-review-summary/page.tsx
+@@ -0,0 +1,12 @@
++"use client";
++
++import { RoleGate } from "@/components/RoleGate";
++import { CoachReviewSummaryHome } from "@/components/headquarters/CoachReviewSummaryHome";
++
++export default function CoachReviewSummaryPage() {
++  return (
++    <RoleGate role="headquarters">
++      {(session) => <CoachReviewSummaryHome token={session.token} />}
++    </RoleGate>
++  );
++}
+diff --git a/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+new file mode 100644
+index 0000000..5fcc0be
+--- /dev/null
++++ b/apps/admin-web/src/components/CoachReviewSummaryLookup.tsx
+@@ -0,0 +1,83 @@
++"use client";
++
++import { type FormEvent, useState } from "react";
++
++import type { Schemas } from "@/api/client";
++import type { Result } from "@/api/call";
++import { ResultMessage } from "@/components/ResultMessage";
++
++type GetCoachReviewSummary = (coachId: string) => Promise<Result<Schemas["CoachReviewSummary"]>>;
++
++/** 点の平均の表示。丸めは契約（getCoachReviewSummary）の正本どおり API が済ませているので、桁を揃えるだけ。 */
++export function formatAverageRating(averageRating: number | null): string {
++  return averageRating === null ? "0.00" : averageRating.toFixed(2);
++}
++
++/**
++ * コーチの評価の件数と平均（getCoachReviewSummary）。コーチと本部で共通。
++ * トークンは不透明なもの（中身を読まない）なので、コーチも自分のアカウント ID を入力する。
++ */
++export function CoachReviewSummaryLookup({
++  api,
++  description,
++}: {
++  api: { getCoachReviewSummary: GetCoachReviewSummary };
++  description: string;
++}) {
++  const [coachId, setCoachId] = useState("");
++  const [summary, setSummary] = useState<Schemas["CoachReviewSummary"] | null>(null);
++  const [error, setError] = useState<string | null>(null);
++  const [busy, setBusy] = useState(false);
++
++  async function onSubmit(event: FormEvent) {
++    event.preventDefault();
++    setSummary(null);
++    if (coachId.trim() === "") {
++      setError("コーチ ID を入力してください。");
++      return;
++    }
++    setError(null);
++    setBusy(true);
++    const response = await api.getCoachReviewSummary(coachId.trim());
++    setBusy(false);
++    if (response.ok) {
++      setSummary(response.data);
++    } else {
++      setError(response.message);
++    }
++  }
++
++  return (
++    <div className="space-y-4">
++      <p className="text-sm">{description}</p>
++      <form onSubmit={onSubmit} className="space-y-3">
++        <label className="block">
++          コーチ ID
++          <input
++            className="mt-1 block w-full rounded border px-2 py-1 font-mono"
++            value={coachId}
++            onChange={(event) => setCoachId(event.target.value)}
++          />
++        </label>
++        <button
++          type="submit"
++          disabled={busy}
++          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
++        >
++          評価を見る
++        </button>
++      </form>
++      {error !== null && <ResultMessage result={{ ok: false, message: error }} />}
++      {summary !== null && (
++        <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
++          <dt>コーチ ID</dt>
++          <dd className="font-mono">{summary.coach_id}</dd>
++          <dt>評価の件数</dt>
++          <dd>{summary.review_count} 件</dd>
++          <dt>点の平均（1〜5）</dt>
++          <dd>{formatAverageRating(summary.average_rating)}</dd>
++        </dl>
++      )}
++    </div>
++  );
++}
+diff --git a/apps/admin-web/src/components/coach/CoachHome.tsx b/apps/admin-web/src/components/coach/CoachHome.tsx
+index 340219c..f5cb9e1 100644
+--- a/apps/admin-web/src/components/coach/CoachHome.tsx
++++ b/apps/admin-web/src/components/coach/CoachHome.tsx
+@@ -4,13 +4,14 @@ import { useMemo } from "react";
+ 
+ import { createApiClient } from "@/api/client";
+ import { coachApi } from "@/api/coach";
++import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
+ import { Section } from "@/components/Section";
+ 
+ import { LiveSessionPanel } from "./LiveSessionPanel";
+ import { PublishSlotForm } from "./PublishSlotForm";
+ import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
+ 
+-/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）。 */
++/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、自分の評価の件数と平均。 */
+ export function CoachHome({ token }: { token: string }) {
+   const api = useMemo(() => coachApi(createApiClient(token)), [token]);
+   return (
+@@ -24,6 +25,12 @@ export function CoachHome({ token }: { token: string }) {
+       <Section title="通話への参加">
+         <LiveSessionPanel api={api} />
+       </Section>
++      <Section title="自分の評価">
++        <CoachReviewSummaryLookup
++          api={api}
++          description="自分のアカウント ID を入力すると、生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均を出します（他のコーチの分は見られません）。"
++        />
++      </Section>
+     </>
+   );
+ }
+diff --git a/apps/admin-web/src/components/headquarters/CoachReviewSummaryHome.tsx b/apps/admin-web/src/components/headquarters/CoachReviewSummaryHome.tsx
+new file mode 100644
+index 0000000..53114be
+--- /dev/null
++++ b/apps/admin-web/src/components/headquarters/CoachReviewSummaryHome.tsx
+@@ -0,0 +1,34 @@
++"use client";
++
++import Link from "next/link";
++import { useMemo } from "react";
++
++import { createApiClient } from "@/api/client";
++import { headquartersApi } from "@/api/headquarters";
++import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
++import { NotImplemented, Section } from "@/components/Section";
++
++/** 本部の画面: コーチ ID を指定して、そのコーチの評価の件数と平均を見る。 */
++export function CoachReviewSummaryHome({ token }: { token: string }) {
++  const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
++  return (
++    <>
++      <p className="mb-4 text-sm">
++        <Link href="/headquarters" className="text-blue-600 underline">
++          本部の画面へ戻る
++        </Link>
++      </p>
++      <Section title="コーチの評価">
++        <div className="space-y-4">
++          <NotImplemented>
++            コーチの一覧を取る API が admin-web の契約にないため、コーチ ID を入力して見ます。
++          </NotImplemented>
++          <CoachReviewSummaryLookup
++            api={api}
++            description="生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均です。"
++          />
++        </div>
++      </Section>
++    </>
++  );
++}
+diff --git a/apps/admin-web/src/components/headquarters/HeadquartersHome.tsx b/apps/admin-web/src/components/headquarters/HeadquartersHome.tsx
+index 3edc652..42f4625 100644
+--- a/apps/admin-web/src/components/headquarters/HeadquartersHome.tsx
++++ b/apps/admin-web/src/components/headquarters/HeadquartersHome.tsx
+@@ -11,6 +11,11 @@ export function HeadquartersHome() {
+           需給を見る
+         </Link>
+       </Section>
++      <Section title="コーチの評価">
++        <Link href="/headquarters/coach-review-summary" className="text-blue-600 underline">
++          評価の件数と平均を見る
++        </Link>
++      </Section>
+       <Section title="予約の一覧">
+         <NotImplemented>予約の一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
+       </Section>
+diff --git a/apps/admin-web/tests/coachApi.test.ts b/apps/admin-web/tests/coachApi.test.ts
+index f8ad9ab..9abf3c5 100644
+--- a/apps/admin-web/tests/coachApi.test.ts
++++ b/apps/admin-web/tests/coachApi.test.ts
+@@ -99,4 +99,21 @@ describe("coachApi", () => {
+       "POST /api/live-lesson-sessions/ss-1/end",
+     ]);
+   });
++
++  test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
++    const summary = { coach_id: SLOT.coach_id, review_count: 2, average_rating: 4.5 };
++    const { api, fetchMock } = setup(json(200, summary));
++    const result = await api.getCoachReviewSummary(SLOT.coach_id);
++    expect(result).toEqual({ ok: true, data: summary });
++    const request = fetchMock.mock.calls[0]![0];
++    expect(request.method).toBe("GET");
++    expect(new URL(request.url).pathname).toBe(`/api/coaches/${SLOT.coach_id}/review-summary`);
++    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
++  });
++
++  test("他のコーチの評価（403）はロールの文言にする", async () => {
++    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
++    const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
++    expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
++  });
+ });
+diff --git a/apps/admin-web/tests/coachReviewSummary.test.tsx b/apps/admin-web/tests/coachReviewSummary.test.tsx
+new file mode 100644
+index 0000000..edad4c6
+--- /dev/null
++++ b/apps/admin-web/tests/coachReviewSummary.test.tsx
+@@ -0,0 +1,151 @@
++import { render, screen, within } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { beforeEach, describe, expect, test, vi } from "vitest";
++
++import type { CoachApi } from "@/api/coach";
++import { CoachReviewSummaryLookup, formatAverageRating } from "@/components/CoachReviewSummaryLookup";
++import { RoleGate } from "@/components/RoleGate";
++import { CoachHome } from "@/components/coach/CoachHome";
++import { CoachReviewSummaryHome } from "@/components/headquarters/CoachReviewSummaryHome";
++import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
++import { saveSession } from "@/session/session";
++
++const replace = vi.fn();
++vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
++
++beforeEach(() => {
++  replace.mockReset();
++});
++
++const COACH_ID = "22222222-2222-4222-8222-222222222222";
++
++/** 件数と平均の一覧（dl）を [見出し, 値] の組にする。 */
++function summaryOf(list: HTMLElement) {
++  return Array.from(list.querySelectorAll("dt")).map((dt) => [
++    dt.textContent,
++    dt.nextElementSibling?.textContent,
++  ]);
++}
++
++describe("コーチの評価の件数と平均", () => {
++  test("入力したコーチ ID で getCoachReviewSummary を呼び、件数と平均を出す", async () => {
++    const getCoachReviewSummary = vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, review_count: 12, average_rating: 4.5 },
++    }));
++    const user = userEvent.setup();
++    render(<CoachReviewSummaryLookup api={{ getCoachReviewSummary }} description="説明" />);
++
++    await user.type(screen.getByLabelText("コーチ ID"), ` ${COACH_ID} `);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(getCoachReviewSummary).toHaveBeenCalledWith(COACH_ID);
++    const summary = await screen.findByLabelText("評価の件数と平均");
++    expect(summaryOf(summary)).toEqual([
++      ["コーチ ID", COACH_ID],
++      ["評価の件数", "12 件"],
++      ["点の平均（1〜5）", "4.50"],
++    ]);
++  });
++
++  test("評価が 0 件（平均が null）なら、平均はまだないと出す", async () => {
++    const getCoachReviewSummary = vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
++      ok: true,
++      data: { coach_id: coachId, review_count: 0, average_rating: null },
++    }));
++    const user = userEvent.setup();
++    render(<CoachReviewSummaryLookup api={{ getCoachReviewSummary }} description="説明" />);
++
++    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    const summary = await screen.findByLabelText("評価の件数と平均");
++    expect(summaryOf(summary)).toEqual([
++      ["コーチ ID", COACH_ID],
++      ["評価の件数", "0 件"],
++      ["点の平均（1〜5）", "評価はまだありません"],
++    ]);
++  });
++
++  test("コーチ ID が空なら API を呼ばずに知らせる", async () => {
++    const getCoachReviewSummary = vi.fn<CoachApi["getCoachReviewSummary"]>();
++    const user = userEvent.setup();
++    render(<CoachReviewSummaryLookup api={{ getCoachReviewSummary }} description="説明" />);
++
++    await user.type(screen.getByLabelText("コーチ ID"), "   ");
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(getCoachReviewSummary).not.toHaveBeenCalled();
++    expect(screen.getByRole("alert")).toHaveTextContent("コーチ ID を入力してください。");
++  });
++
++  test("API のエラー（他のコーチの分の 403 など）の文言を出し、前の結果は消す", async () => {
++    const getCoachReviewSummary = vi
++      .fn<CoachApi["getCoachReviewSummary"]>()
++      .mockResolvedValueOnce({
++        ok: true,
++        data: { coach_id: COACH_ID, review_count: 3, average_rating: 3.67 },
++      })
++      .mockResolvedValueOnce({ ok: false, message: "このロールでは実行できない操作です。" });
++    const user = userEvent.setup();
++    render(<CoachReviewSummaryLookup api={{ getCoachReviewSummary }} description="説明" />);
++
++    await user.type(screen.getByLabelText("コーチ ID"), COACH_ID);
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++    await screen.findByLabelText("評価の件数と平均");
++
++    await user.click(screen.getByRole("button", { name: "評価を見る" }));
++
++    expect(await screen.findByRole("alert")).toHaveTextContent("このロールでは実行できない操作です。");
++    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
++  });
++
++  test("平均は API が丸めた値を小数第 2 位まで揃えて出す", () => {
++    expect(formatAverageRating(4)).toBe("4.00");
++    expect(formatAverageRating(3.67)).toBe("3.67");
++    expect(formatAverageRating(null)).toBe("評価はまだありません");
++  });
++});
++
++describe("画面への配置", () => {
++  test("コーチの画面に「自分の評価」を出す", () => {
++    render(<CoachHome token="mock.coach.x" />);
++
++    const region = screen.getByRole("region", { name: "自分の評価" });
++    expect(within(region).getByLabelText("コーチ ID")).toBeInTheDocument();
++  });
++
++  test("本部の画面からコーチの評価の画面へ移れる", () => {
++    render(<HeadquartersHome />);
++
++    expect(screen.getByRole("link", { name: "評価の件数と平均を見る" })).toHaveAttribute(
++      "href",
++      "/headquarters/coach-review-summary",
++    );
++  });
++
++  test("本部のコーチの評価の画面は、コーチ ID を入力して見る", () => {
++    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
++    render(
++      <RoleGate role="headquarters">
++        {(session) => <CoachReviewSummaryHome token={session.token} />}
++      </RoleGate>,
++    );
++
++    const region = screen.getByRole("region", { name: "コーチの評価" });
++    expect(within(region).getByLabelText("コーチ ID")).toBeInTheDocument();
++    expect(replace).not.toHaveBeenCalled();
++  });
++
++  test("本部以外のロールでは本部のコーチの評価の画面に入れず、ログイン画面へ戻す", () => {
++    saveSession({ role: "coach", token: "mock.coach.x" });
++    render(
++      <RoleGate role="headquarters">
++        {(session) => <CoachReviewSummaryHome token={session.token} />}
++      </RoleGate>,
++    );
++
++    expect(screen.queryByRole("region", { name: "コーチの評価" })).not.toBeInTheDocument();
++    expect(replace).toHaveBeenCalledWith("/");
++  });
++});
+diff --git a/apps/admin-web/tests/headquartersApi.test.ts b/apps/admin-web/tests/headquartersApi.test.ts
+index 56efaff..8a2c390 100644
+--- a/apps/admin-web/tests/headquartersApi.test.ts
++++ b/apps/admin-web/tests/headquartersApi.test.ts
+@@ -47,4 +47,22 @@ describe("headquartersApi", () => {
+     const result = await api.getSlotSupply();
+     expect(result).toEqual({ ok: false, message: "このロールでは実行できない操作です。" });
+   });
++
++  test("getCoachReviewSummary は指定したコーチの件数と平均を返す（評価が 0 件なら平均は null）", async () => {
++    const coachId = "22222222-2222-4222-8222-222222222222";
++    const summary = { coach_id: coachId, review_count: 0, average_rating: null };
++    const { api, fetchMock } = setup(json(200, summary));
++    const result = await api.getCoachReviewSummary(coachId);
++    expect(result).toEqual({ ok: true, data: summary });
++    const request = fetchMock.mock.calls[0]![0];
++    expect(request.method).toBe("GET");
++    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/review-summary`);
++    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
++  });
++
++  test("UUID でないコーチ ID（404）は ID を確かめる文言にする", async () => {
++    const { api } = setup(json(404, { code: "not_found", message: "not found" }));
++    const result = await api.getCoachReviewSummary("not-a-uuid");
++    expect(result).toEqual({ ok: false, message: "対象が見つかりません（ID を確かめてください）。" });
++  });
+ });

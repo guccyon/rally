@@ -1,0 +1,527 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e20f498..8dbc991 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- 予約の確定をコーチにもプッシュ通知: 予約が確定すると、生徒への「予約の確定」に加えて、予約を受けたコーチに「新しい予約」の通知（`BookingReceived`）を 1 件送る。同じイベントの再送では送らず、片方だけ送れなかったときは送れなかった方だけを再送で送る。送り先は Gen1 ではモック。API と契約の変更はない（#119）
+ - 本部向けのコーチの一覧の API: admin-web の `GET /coaches`（`listCoaches`）がコーチのアカウントの ID と表示名を、表示名の順（コードポイントの順、同じ表示名は ID の順）に返す。本部だけが読め、コーチ・生徒は 403。admin-web の画面はまだない（#113）
+ - admin-web にコーチの評価の一覧: コーチの「自分の評価」で、件数と平均の下に `GET /coaches/{coach_id}/reviews` の評価を 1 件ずつ（点・一言・送った時刻、新しい順）出す。0 件なら「まだ評価はありません」。本部の画面は変わらない。API と契約の変更はない（#112）
+ - コーチが受けた評価の一覧の API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）が評価の ID・完了したレッスンの ID・点・一言・送った時刻を、送った時刻の新しい順に返す。本部はどのコーチの分も、コーチは自分の分だけ読め、生徒は 403。admin-web の画面はまだない（#111）
+diff --git a/apps/backend/README.md b/apps/backend/README.md
+index a12b756..c22b6af 100644
+--- a/apps/backend/README.md
++++ b/apps/backend/README.md
+@@ -204,13 +204,13 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
+ ## notification: 予約の確定・添削の返却・メッセージの受信でのプッシュ通知（モック）
+ 
+ - 通知のきっかけは境界間イベントの購読だけで、他のコンテキストは notification を直接呼ばない（`specs/context-map.yaml` の向き）。`application::notification::PushNotificationSubscriber` が次の 3 つを購読し、`domain::notification::PushNotification` を送る（受け取る人は `recipient()`）。ほかのイベントでは送らない（キャンセルの通知はまだない）
+-  - `BookingConfirmed`（scheduling）→ 生徒に `PushNotification::BookingConfirmed`（コーチ・予約の ID）
++  - `BookingConfirmed`（scheduling）→ 生徒に `PushNotification::BookingConfirmed`（予約の確定）、予約を受けたコーチに `PushNotification::BookingReceived`（新しい予約）の 2 件（どちらもコーチ・予約の ID）
+   - `VideoReviewReturned`（async-lesson。添削の返却 `ReturnVideoReview` が発行）→ 動画を送った生徒に `PushNotification::VideoReviewReturned`（コーチ・動画・添削の ID）
+   - `MessageSent`（messaging。メッセージの送信 `SendMessage` が発行）→ 受け手（送り手でない側の当事者。`sender_role` が student ならコーチ、coach なら生徒）に `PushNotification::MessageReceived`（スレッド・メッセージの ID と送り手。本文は載せない）
+-- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。種類と対象は `booking_confirmed <予約の ID>`・`video_review_returned <動画の ID>`・`message_received <スレッドの ID>`）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
+-- 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った `event_id` をプロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。プロセスを再起動すると忘れる
++- 送り先の基盤はポート `PushSender`。Gen1 の実装は infra の `MockPushSender`（実際の端末には届けず、送った通知を `sent()` で読めるように記録し、`push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く。種類と対象は `booking_confirmed <予約の ID>`・`booking_received <予約の ID>`・`video_review_returned <動画の ID>`・`message_received <スレッドの ID>`）。テスト用に `in_memory::RecordingPushSender`。表示する文言は扱わない（本物の基盤につなぐときに infra のアダプタで決める）
++- 通知は保存しない（マイグレーション・HTTP の操作はない）。同じイベントの再送で 2 回送らないよう、送った通知を `event_id` と組にしてプロセスのメモリに覚える（1 イベントで 2 件送る予約の確定も通知ごとに覚え、送れなかった通知だけを再送で送り直す。1 件が送れなくても残りは送り、障害を返す）。プロセスを再起動すると忘れる
+ - 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。`ReturnVideoReview`・`SendMessage` にも同じバスを発行先として渡す。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
+-- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒に 1 件、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
++- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（予約の確定は生徒とコーチに 1 件ずつ・1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送・片方だけ失敗したときは失敗した方だけを再送で送る）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒とコーチに 1 件ずつ、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
+ 
+ ## 行動イベントの配信先（モック）と発火の網羅
+ 
+diff --git a/apps/backend/crates/application/src/notification/push_notification_subscriber.rs b/apps/backend/crates/application/src/notification/push_notification_subscriber.rs
+index 8fb074f..e3ead80 100644
+--- a/apps/backend/crates/application/src/notification/push_notification_subscriber.rs
++++ b/apps/backend/crates/application/src/notification/push_notification_subscriber.rs
+@@ -6,16 +6,17 @@ use uuid::Uuid;
+ use super::PushSender;
+ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
+ 
+-/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）と添削の返却（`VideoReviewReturned`）で
+-/// 生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を送る
+-/// （[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
++/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、添削の返却
++/// （`VideoReviewReturned`）で生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を
++/// 送る（[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
+ /// 呼ばない（context-map の向き）。
+ ///
+-/// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った境界間イベントの `event_id` を
+-/// プロセスのメモリに覚える（送れなかったイベントは覚えず、再送で送り直す）。ほかのイベントは何もしない。
++/// 通知は保存しないので、同じイベントの再送で 2 回送らないように、送った通知を境界間イベントの `event_id` と組にして
++/// プロセスのメモリに覚える。1 つのイベントで複数の通知を送るときは通知ごとに覚え、送れなかった通知だけを再送で
++/// 送り直す。ほかのイベントは何もしない。
+ pub struct PushNotificationSubscriber<P> {
+     sender: P,
+-    sent_events: Mutex<HashSet<Uuid>>,
++    sent: Mutex<HashSet<(Uuid, PushNotification)>>,
+ }
+ 
+ impl<P> PushNotificationSubscriber<P>
+@@ -25,7 +26,7 @@ where
+     pub fn new(sender: P) -> Self {
+         Self {
+             sender,
+-            sent_events: Mutex::default(),
++            sent: Mutex::default(),
+         }
+     }
+ 
+@@ -33,20 +34,25 @@ where
+         &self.sender
+     }
+ 
+-    /// `event_id` のイベントの通知を一度だけ送る。同じ `event_id` を送っている途中・送った後なら何もしない。
++    /// `event_id` のイベントの通知 `notifications` を、それぞれ一度だけ送る。同じ `event_id` の同じ通知を送っている
++    /// 途中・送った後ならその通知は送らない。1 件が送れなくても残りは送り、送れなかったときは最初の障害を返す。
+     async fn send_once(
+         &self,
+         event_id: Uuid,
+-        notification: PushNotification,
++        notifications: &[PushNotification],
+     ) -> Result<(), Box<dyn Error + Send + Sync>> {
+-        if !self.sent_events.lock().unwrap().insert(event_id) {
+-            return Ok(());
+-        }
+-        let result = self.sender.send(notification).await;
+-        if result.is_err() {
+-            self.sent_events.lock().unwrap().remove(&event_id);
++        let mut first_error = None;
++        for &notification in notifications {
++            let key = (event_id, notification);
++            if !self.sent.lock().unwrap().insert(key) {
++                continue;
++            }
++            if let Err(error) = self.sender.send(notification).await {
++                self.sent.lock().unwrap().remove(&key);
++                first_error.get_or_insert(error);
++            }
+         }
+-        result.map_err(Into::into)
++        first_error.map_or(Ok(()), |error| Err(error.into()))
+     }
+ }
+ 
+@@ -65,11 +71,18 @@ where
+             } => {
+                 self.send_once(
+                     event_id,
+-                    PushNotification::BookingConfirmed {
+-                        student_id,
+-                        coach_id,
+-                        booking_id,
+-                    },
++                    &[
++                        PushNotification::BookingConfirmed {
++                            student_id,
++                            coach_id,
++                            booking_id,
++                        },
++                        PushNotification::BookingReceived {
++                            student_id,
++                            coach_id,
++                            booking_id,
++                        },
++                    ],
+                 )
+                 .await
+             }
+@@ -83,12 +96,12 @@ where
+             } => {
+                 self.send_once(
+                     event_id,
+-                    PushNotification::VideoReviewReturned {
++                    &[PushNotification::VideoReviewReturned {
+                         student_id,
+                         coach_id,
+                         video_id,
+                         review_id,
+-                    },
++                    }],
+                 )
+                 .await
+             }
+@@ -103,13 +116,13 @@ where
+             } => {
+                 self.send_once(
+                     event_id,
+-                    PushNotification::MessageReceived {
++                    &[PushNotification::MessageReceived {
+                         student_id,
+                         coach_id,
+                         thread_id,
+                         message_id,
+                         sender: sender_role,
+-                    },
++                    }],
+                 )
+                 .await
+             }
+@@ -122,10 +135,7 @@ where
+ 
+ #[cfg(test)]
+ mod tests {
+-    use std::{
+-        sync::atomic::{AtomicBool, Ordering},
+-        time::{Duration, SystemTime},
+-    };
++    use std::time::{Duration, SystemTime};
+ 
+     use domain::{
+         async_lesson::{VideoId, VideoReviewId},
+@@ -154,7 +164,8 @@ mod tests {
+         }
+     }
+ 
+-    fn notification(booking: u128) -> PushNotification {
++    /// 予約の確定を生徒に知らせる通知
++    fn to_student(booking: u128) -> PushNotification {
+         PushNotification::BookingConfirmed {
+             student_id: STUDENT,
+             coach_id: COACH,
+@@ -162,8 +173,17 @@ mod tests {
+         }
+     }
+ 
++    /// 予約の確定をコーチに新しい予約として知らせる通知
++    fn to_coach(booking: u128) -> PushNotification {
++        PushNotification::BookingReceived {
++            student_id: STUDENT,
++            coach_id: COACH,
++            booking_id: BookingId::from_u128(booking),
++        }
++    }
++
+     #[tokio::test]
+-    async fn a_confirmed_booking_notifies_the_student_once_per_event() {
++    async fn a_confirmed_booking_notifies_the_student_and_the_coach_once_per_event() {
+         let subscriber = PushNotificationSubscriber::new(RecordingPushSender::default());
+         let first = Uuid::new_v4();
+         subscriber.handle(&confirmed(first, 1)).await.unwrap();
+@@ -176,10 +196,16 @@ mod tests {
+         let sent = subscriber.sender().sent();
+         assert_eq!(
+             sent,
+-            [notification(1), notification(2)],
+-            "同じイベントの再送では送らない"
++            [to_student(1), to_coach(1), to_student(2), to_coach(2)],
++            "1 イベントで生徒とコーチに 1 件ずつ。同じイベントの再送では送らない"
++        );
++        assert_eq!(
++            sent[..2]
++                .iter()
++                .map(PushNotification::recipient)
++                .collect::<Vec<_>>(),
++            [STUDENT, COACH]
+         );
+-        assert_eq!(sent[0].recipient(), STUDENT);
+     }
+ 
+     #[tokio::test]
+@@ -284,16 +310,27 @@ mod tests {
+         assert!(subscriber.sender().sent().is_empty());
+     }
+ 
+-    /// `down` の間は障害を返し、それ以外は送った通知を記録する送り先。
++    /// `down_for` にあるアカウントへの通知には障害を返し、それ以外は送った通知を記録する送り先。
+     #[derive(Default)]
+     struct Flaky {
+-        down: AtomicBool,
++        down_for: Mutex<HashSet<AccountId>>,
+         sent: RecordingPushSender,
+     }
+ 
++    impl Flaky {
++        fn set_down_for(&self, accounts: &[AccountId]) {
++            *self.down_for.lock().unwrap() = accounts.iter().copied().collect();
++        }
++    }
++
+     impl PushSender for Flaky {
+         async fn send(&self, notification: PushNotification) -> Result<(), Unavailable> {
+-            if self.down.load(Ordering::SeqCst) {
++            if self
++                .down_for
++                .lock()
++                .unwrap()
++                .contains(&notification.recipient())
++            {
+                 return Err(Unavailable::new("push gateway is down"));
+             }
+             self.sent.send(notification).await
+@@ -303,13 +340,48 @@ mod tests {
+     #[tokio::test]
+     async fn a_failed_send_is_retried_when_the_event_comes_again() {
+         let subscriber = PushNotificationSubscriber::new(Flaky::default());
+-        subscriber.sender().down.store(true, Ordering::SeqCst);
++        subscriber.sender().set_down_for(&[STUDENT, COACH]);
+         let event = confirmed(Uuid::new_v4(), 1);
+         assert!(subscriber.handle(&event).await.is_err());
+         assert!(subscriber.sender().sent.sent().is_empty());
+ 
+-        subscriber.sender().down.store(false, Ordering::SeqCst);
++        subscriber.sender().set_down_for(&[]);
+         subscriber.handle(&event).await.unwrap();
+-        assert_eq!(subscriber.sender().sent.sent(), [notification(1)]);
++        assert_eq!(
++            subscriber.sender().sent.sent(),
++            [to_student(1), to_coach(1)]
++        );
++    }
++
++    #[tokio::test]
++    async fn only_the_notification_that_failed_is_sent_again() {
++        let subscriber = PushNotificationSubscriber::new(Flaky::default());
++        let event = confirmed(Uuid::new_v4(), 1);
++
++        // 生徒への通知だけ送れない。コーチへの通知は送る
++        subscriber.sender().set_down_for(&[STUDENT]);
++        assert!(subscriber.handle(&event).await.is_err());
++        assert_eq!(subscriber.sender().sent.sent(), [to_coach(1)]);
++
++        // 再送では生徒への通知だけを送り直す
++        subscriber.sender().set_down_for(&[]);
++        subscriber.handle(&event).await.unwrap();
++        subscriber.handle(&event).await.unwrap();
++        assert_eq!(
++            subscriber.sender().sent.sent(),
++            [to_coach(1), to_student(1)],
++            "送れたコーチへの通知は送り直さない"
++        );
++
++        // コーチへの通知だけ送れなかったときも同じ
++        let other = confirmed(Uuid::new_v4(), 2);
++        subscriber.sender().set_down_for(&[COACH]);
++        assert!(subscriber.handle(&other).await.is_err());
++        subscriber.sender().set_down_for(&[]);
++        subscriber.handle(&other).await.unwrap();
++        assert_eq!(
++            subscriber.sender().sent.sent()[2..],
++            [to_student(2), to_coach(2)]
++        );
+     }
+ }
+diff --git a/apps/backend/crates/domain/src/notification/push_notification.rs b/apps/backend/crates/domain/src/notification/push_notification.rs
+index 46e4a6b..65f0937 100644
+--- a/apps/backend/crates/domain/src/notification/push_notification.rs
++++ b/apps/backend/crates/domain/src/notification/push_notification.rs
+@@ -5,8 +5,9 @@ use crate::{
+     scheduling::BookingId,
+ };
+ 
+-/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）ごとで、受け取る人は [`PushNotification::recipient`]。
+-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）と受け取る側ごとで、受け取る人は
++/// [`PushNotification::recipient`]。
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+ pub enum PushNotification {
+     /// 予約が確定した（`BookingConfirmed`）ことを生徒に知らせる
+     BookingConfirmed {
+@@ -14,6 +15,12 @@ pub enum PushNotification {
+         coach_id: AccountId,
+         booking_id: BookingId,
+     },
++    /// 予約が確定した（`BookingConfirmed`）ことを、予約を受けたコーチに新しい予約として知らせる
++    BookingReceived {
++        student_id: AccountId,
++        coach_id: AccountId,
++        booking_id: BookingId,
++    },
+     /// 動画の添削が返却された（`VideoReviewReturned`）ことを、動画を送った生徒に知らせる
+     VideoReviewReturned {
+         student_id: AccountId,
+@@ -38,6 +45,7 @@ impl PushNotification {
+         match *self {
+             PushNotification::BookingConfirmed { student_id, .. }
+             | PushNotification::VideoReviewReturned { student_id, .. } => student_id,
++            PushNotification::BookingReceived { student_id, .. } => student_id,
+             PushNotification::MessageReceived {
+                 student_id,
+                 coach_id,
+@@ -68,6 +76,16 @@ mod tests {
+         assert_eq!(notification.recipient(), STUDENT);
+     }
+ 
++    #[test]
++    fn a_received_booking_goes_to_the_coach() {
++        let notification = PushNotification::BookingReceived {
++            student_id: STUDENT,
++            coach_id: COACH,
++            booking_id: BookingId::from_u128(3),
++        };
++        assert_eq!(notification.recipient(), COACH);
++    }
++
+     #[test]
+     fn a_returned_review_goes_to_the_student() {
+         let notification = PushNotification::VideoReviewReturned {
+diff --git a/apps/backend/crates/infra/src/mock_push_sender.rs b/apps/backend/crates/infra/src/mock_push_sender.rs
+index 14dc076..f9c2e97 100644
+--- a/apps/backend/crates/infra/src/mock_push_sender.rs
++++ b/apps/backend/crates/infra/src/mock_push_sender.rs
+@@ -35,6 +35,10 @@ impl MockPushSender {
+                 "push_notification {recipient} booking_confirmed {}",
+                 booking_id_uuid::format(booking_id)
+             ),
++            PushNotification::BookingReceived { booking_id, .. } => format!(
++                "push_notification {recipient} booking_received {}",
++                booking_id_uuid::format(booking_id)
++            ),
+             PushNotification::VideoReviewReturned { video_id, .. } => format!(
+                 "push_notification {recipient} video_review_returned {}",
+                 video_id_uuid::format(video_id)
+diff --git a/apps/backend/crates/infra/tests/mock_push_sender.rs b/apps/backend/crates/infra/tests/mock_push_sender.rs
+index a5c71ca..33b34da 100644
+--- a/apps/backend/crates/infra/tests/mock_push_sender.rs
++++ b/apps/backend/crates/infra/tests/mock_push_sender.rs
+@@ -39,6 +39,19 @@ fn writes_one_line_per_notification() {
+     );
+ }
+ 
++#[test]
++fn writes_the_coach_and_the_booking_for_a_received_booking() {
++    assert_eq!(
++        MockPushSender::line(&PushNotification::BookingReceived {
++            student_id: AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
++            coach_id: AccountId::from_u128(9),
++            booking_id: BookingId::from_u128(1),
++        }),
++        "push_notification 00000000-0000-0000-0000-000000000009 booking_received \
++         00000000-0000-0000-0000-000000000001"
++    );
++}
++
+ #[test]
+ fn writes_the_video_for_a_returned_review_and_the_thread_for_a_received_message() {
+     let student = AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
+diff --git a/apps/backend/crates/server/tests/notifications.rs b/apps/backend/crates/server/tests/notifications.rs
+index d98bd9f..d3bcc57 100644
+--- a/apps/backend/crates/server/tests/notifications.rs
++++ b/apps/backend/crates/server/tests/notifications.rs
+@@ -2,7 +2,8 @@
+ //! （`PushNotificationSubscriber`）が境界間イベント `BookingConfirmed` で送り、scheduling は notification を直接呼ばない。
+ //!
+ //! 1. 生徒の登録 → コーチが枠を公開 → 生徒が予約（作成だけでは送らない）
+-//! 2. 予約の確定 → 生徒に `BookingConfirmed` の通知が 1 件届く（送り先はモック `MockPushSender`）
++//! 2. 予約の確定 → 生徒に `BookingConfirmed`、コーチに `BookingReceived` の通知が 1 件ずつ届く（送り先はモック
++//!    `MockPushSender`）
+ //! 3. 予約のキャンセルでは送らない（キャンセルの通知はまだない）
+ //!
+ //! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
+@@ -65,7 +66,7 @@ async fn call(
+ }
+ 
+ #[tokio::test]
+-async fn confirming_a_booking_pushes_a_notification_to_the_student() {
++async fn confirming_a_booking_pushes_a_notification_to_the_student_and_the_coach() {
+     let push = MockPushSender::new();
+     let router = server::router_with_push_sender(
+         ManualClock::new(oct5()),
+@@ -114,7 +115,7 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
+     let booking_id = booking["booking_id"].as_str().unwrap();
+     assert!(push.sent().is_empty(), "作成では送らない");
+ 
+-    // 2. 確定で生徒に 1 件届く
++    // 2. 確定で生徒とコーチに 1 件ずつ届く
+     call(
+         &router,
+         "POST",
+@@ -124,13 +125,28 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
+         StatusCode::OK,
+     )
+     .await;
+-    let expected = PushNotification::BookingConfirmed {
+-        student_id,
+-        coach_id,
+-        booking_id: booking_id_uuid::parse(booking_id).unwrap(),
+-    };
+-    assert_eq!(push.sent(), [expected]);
+-    assert_eq!(push.sent()[0].recipient(), student_id);
++    let booking_id = booking_id_uuid::parse(booking_id).unwrap();
++    let expected = [
++        PushNotification::BookingConfirmed {
++            student_id,
++            coach_id,
++            booking_id,
++        },
++        PushNotification::BookingReceived {
++            student_id,
++            coach_id,
++            booking_id,
++        },
++    ];
++    assert_eq!(push.sent(), expected);
++    assert_eq!(
++        push.sent()
++            .iter()
++            .map(PushNotification::recipient)
++            .collect::<Vec<_>>(),
++        [student_id, coach_id]
++    );
++    let booking_id = booking_id_uuid::format(booking_id);
+ 
+     // 3. キャンセルでは送らない
+     call(
+@@ -142,7 +158,7 @@ async fn confirming_a_booking_pushes_a_notification_to_the_student() {
+         StatusCode::OK,
+     )
+     .await;
+-    assert_eq!(push.sent(), [expected], "キャンセルの通知はまだない");
++    assert_eq!(push.sent(), expected, "キャンセルの通知はまだない");
+ }
+ 
+ /// 通知の送り先をモックにした組み立てと、コーチ 42 のトークン・登録した生徒（トークンとアカウント）。
+@@ -220,7 +236,7 @@ async fn returning_a_video_review_pushes_a_notification_to_the_student() {
+ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
+     let (router, push, coach_id, coach, student_id, student) = setup().await;
+ 
+-    // 体験予約の確定でスレッドが開く（確定の通知が 1 件）
++    // 体験予約の確定でスレッドが開く（確定の通知が生徒とコーチに 1 件ずつ）
+     let slot = call(
+         &router,
+         "POST",
+@@ -262,7 +278,7 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
+     .await;
+     let thread_id = threads["threads"][0]["thread_id"].as_str().unwrap();
+     let messages_path = format!("/message-threads/{thread_id}/messages");
+-    assert_eq!(push.sent().len(), 1, "確定の通知だけ");
++    assert_eq!(push.sent().len(), 2, "確定の通知だけ");
+ 
+     let received = |message: &Value, sender| PushNotification::MessageReceived {
+         student_id,
+@@ -282,8 +298,8 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
+         StatusCode::CREATED,
+     )
+     .await;
+-    assert_eq!(push.sent()[1..], [received(&welcome, MessageSender::Coach)]);
+-    assert_eq!(push.sent()[1].recipient(), student_id);
++    assert_eq!(push.sent()[2..], [received(&welcome, MessageSender::Coach)]);
++    assert_eq!(push.sent()[2].recipient(), student_id);
+ 
+     // 送れなかった送信（月額契約の前の生徒）では送らない
+     call(
+@@ -295,7 +311,7 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
+         StatusCode::FORBIDDEN,
+     )
+     .await;
+-    assert_eq!(push.sent().len(), 2);
++    assert_eq!(push.sent().len(), 3);
+ 
+     // 月額契約の後、生徒が送るとコーチに届く
+     call(
+@@ -317,11 +333,11 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
+     )
+     .await;
+     assert_eq!(
+-        push.sent()[1..],
++        push.sent()[2..],
+         [
+             received(&welcome, MessageSender::Coach),
+             received(&question, MessageSender::Student),
+         ]
+     );
+-    assert_eq!(push.sent()[2].recipient(), coach_id);
++    assert_eq!(push.sent()[3].recipient(), coach_id);
+ }

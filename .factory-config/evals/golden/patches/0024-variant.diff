@@ -1,0 +1,216 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 9936c4d..fd5eeeb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -42,6 +42,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
+ 
+ ### 変更
++- student-app のレッスンの評価: 点の選択肢を横並びのボタンから、「5　とてもよかった」のように点と言葉を 1 行にしたラジオボタンの縦の一覧（上から 5 → 1）に変えた。選んだものは一覧の印で分かるので、「選んだ評価: …」の表示はなくした。言葉の文言、API と契約の変更はない（#129）
+ - student-app のチャット: スレッドを開いたときと「新しいメッセージを確かめる」で、既読にしてから（`markMessageThreadRead`）メッセージを読み直す（`listMessages`）順に変えた。生徒の画面に出ないままコーチのメッセージが既読になることがなくなる。空白だけ・2000 文字を超える本文は送信の要求を作れない（送信ボタンも押せない）。API と契約の変更はない（#103）
+ - 契約: `recordLessonCompletion` の `x-context` を `catalog` から `[live-lesson, async-lesson]` に変更し、glossary の lesson を「レッスン種別」と「完了したレッスン（lesson_completion）」に分けた。行動イベント `lesson.completed` も `contexts: [live-lesson, async-lesson]` に（#55）
+ - `access_token` の形式が `mock-<id>` から `mock.<ロール>.<id>` に変わった。旧形式のトークンは検証に通らない（#29）
+diff --git a/apps/student-app/lib/screens/lesson_review_screen.dart b/apps/student-app/lib/screens/lesson_review_screen.dart
+index a126814..b7d80e0 100644
+--- a/apps/student-app/lib/screens/lesson_review_screen.dart
++++ b/apps/student-app/lib/screens/lesson_review_screen.dart
+@@ -54,33 +54,22 @@ class _LessonReviewScreenState extends ConsumerState<LessonReviewScreen> {
+             'コーチの指導を ${ratingWithLabel(1)}〜${ratingWithLabel(5)} で評価し、一言を添えてください。評価は 1 回だけで、送ったあとは変えられません。',
+           ),
+           const SizedBox(height: 8),
+-          SegmentedButton<int>(
+-            segments: [
+-              for (var rating = 1; rating <= 5; rating++)
+-                ButtonSegment(
+-                  value: rating,
+-                  label: Column(
+-                    mainAxisSize: MainAxisSize.min,
+-                    children: [
+-                      Text('$rating'),
+-                      Text(
+-                        ratingLabel(rating),
+-                        style: Theme.of(context).textTheme.labelSmall,
+-                        textAlign: TextAlign.center,
+-                      ),
+-                    ],
++          // 狭い幅でも言葉が折り返さないよう、点と言葉を 1 行にした選択肢を 5 → 1 の順に縦に並べる
++          RadioGroup<int>(
++            groupValue: _rating,
++            onChanged: (rating) => setState(() => _rating = rating),
++            child: Column(
++              children: [
++                for (var rating = 1; rating <= 5; rating++)
++                  RadioListTile<int>(
++                    value: rating,
++                    enabled: !state.busy,
++                    title: Text(ratingChoiceLabel(rating)),
++                    contentPadding: EdgeInsets.zero,
+                   ),
+-                ),
+-            ],
+-            selected: {?_rating},
+-            emptySelectionAllowed: true,
+-            showSelectedIcon: false,
+-            onSelectionChanged: state.busy
+-                ? null
+-                : (selected) => setState(() => _rating = selected.firstOrNull),
++              ],
++            ),
+           ),
+-          if (_rating case final rating?)
+-            Text('選んだ評価: ${ratingWithLabel(rating)}'),
+           TextField(
+             controller: _comment,
+             enabled: !state.busy,
+diff --git a/apps/student-app/lib/ui/labels.dart b/apps/student-app/lib/ui/labels.dart
+index 4b7471b..11c5127 100644
+--- a/apps/student-app/lib/ui/labels.dart
++++ b/apps/student-app/lib/ui/labels.dart
+@@ -53,3 +53,6 @@ String ratingLabel(int rating) => switch (rating) {
+ 
+ /// 点と言葉の目安を合わせた表示。例: `4（よかった）`
+ String ratingWithLabel(int rating) => '$rating（${ratingLabel(rating)}）';
++
++/// 評価の選択肢の 1 行（点と言葉の目安を全角の空白で並べる）。例: `4　よかった`
++String ratingChoiceLabel(int rating) => '$rating　${ratingLabel(rating)}';
+diff --git a/apps/student-app/test/screens/lesson_review_screen_test.dart b/apps/student-app/test/screens/lesson_review_screen_test.dart
+index fe2d68c..b9164a0 100644
+--- a/apps/student-app/test/screens/lesson_review_screen_test.dart
++++ b/apps/student-app/test/screens/lesson_review_screen_test.dart
+@@ -31,7 +31,7 @@ void main() {
+     );
+ 
+     expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
+-    await tapText(tester, '4');
++    await tapText(tester, '4　よかった');
+     expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
+     await tester.enterText(find.byType(TextField), '   ');
+     await tester.pump();
+@@ -64,7 +64,7 @@ void main() {
+     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+   });
+ 
+-  testWidgets('各点に言葉の目安を添え、選んだ点の言葉を選択肢の下にも出す', (tester) async {
++  testWidgets('点と言葉の目安を 1 行にした選択肢を 5 → 1 の順に縦に並べ、選んだものに印を付ける', (tester) async {
+     await pumpScreen(
+       tester,
+       const LessonReviewScreen(),
+@@ -72,23 +72,18 @@ void main() {
+       initial: afterCompletion,
+     );
+ 
+-    const words = {
+-      1: '不満だった',
+-      2: '少し物足りなかった',
+-      3: 'ふつう',
+-      4: 'よかった',
+-      5: 'とてもよかった',
+-    };
+-    final choices = find.byType(SegmentedButton<int>);
+-    for (final MapEntry(key: rating, value: word) in words.entries) {
+-      expect(
+-        find.descendant(of: choices, matching: find.text('$rating')),
+-        findsOneWidget,
+-      );
+-      expect(
+-        find.descendant(of: choices, matching: find.text(word)),
+-        findsOneWidget,
+-      );
++    const choices = ['5　とてもよかった', '4　よかった', '3　ふつう', '2　少し物足りなかった', '1　不満だった'];
++    final tiles = find.byType(RadioListTile<int>);
++    expect(tiles, findsNWidgets(5));
++    expect([
++      for (final tile in tester.widgetList<RadioListTile<int>>(tiles))
++        (tile.title! as Text).data,
++    ], choices);
++    final tops = [
++      for (final choice in choices) tester.getTopLeft(find.text(choice)).dy,
++    ];
++    for (var i = 1; i < tops.length; i++) {
++      expect(tops[i], greaterThan(tops[i - 1]));
+     }
+     expect(
+       find.text(
+@@ -98,15 +93,19 @@ void main() {
+     );
+     expect(find.textContaining('選んだ評価'), findsNothing);
+ 
+-    await tapText(tester, '2');
+-    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
++    int? selected() => RadioGroup.maybeOf<int>(
++      tester.element(find.byType(RadioListTile<int>).first),
++    )?.groupValue;
++    expect(selected(), isNull);
+ 
+-    await tapText(tester, 'とてもよかった');
+-    expect(find.text('選んだ評価: 5（とてもよかった）'), findsOneWidget);
+-    expect(find.textContaining('選んだ評価: 2'), findsNothing);
++    await tapText(tester, '2　少し物足りなかった');
++    expect(selected(), 2);
++
++    await tapText(tester, '5　とてもよかった');
++    expect(selected(), 5);
+   });
+ 
+-  testWidgets('幅の狭い端末でも点の言葉がはみ出さない', (tester) async {
++  testWidgets('幅の狭い端末でも選択肢の言葉が折り返さず、はみ出さない', (tester) async {
+     tester.view.physicalSize = const Size(320, 640);
+     tester.view.devicePixelRatio = 1;
+     addTearDown(tester.view.reset);
+@@ -117,10 +116,11 @@ void main() {
+       api: FakeStudentApi(),
+       initial: afterCompletion,
+     );
+-    await tapText(tester, '2');
++    await tapText(tester, '2　少し物足りなかった');
+ 
+     expect(tester.takeException(), isNull);
+-    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
++    final line = tester.getSize(find.text('3　ふつう')).height;
++    expect(tester.getSize(find.text('2　少し物足りなかった')).height, line);
+   });
+ 
+   testWidgets('409 lesson_already_reviewed なら文言を出し、評価済みとして入力できなくする', (
+@@ -136,7 +136,7 @@ void main() {
+       initial: afterCompletion,
+     );
+ 
+-    await tapText(tester, '5');
++    await tapText(tester, '5　とてもよかった');
+     await tester.enterText(find.byType(TextField), 'よかった');
+     await tester.pump();
+     await tapText(tester, '評価を送る');
+@@ -163,7 +163,7 @@ void main() {
+       initial: afterCompletion,
+     );
+ 
+-    await tapText(tester, '3');
++    await tapText(tester, '3　ふつう');
+     await tester.enterText(find.byType(TextField), 'ふつう');
+     await tester.pump();
+     await tapText(tester, '評価を送る');
+diff --git a/apps/student-app/test/student_flow_test.dart b/apps/student-app/test/student_flow_test.dart
+index 804b801..8a0900c 100644
+--- a/apps/student-app/test/student_flow_test.dart
++++ b/apps/student-app/test/student_flow_test.dart
+@@ -42,7 +42,7 @@ void main() {
+     await tapText(tester, 'レッスンを評価する');
+ 
+     expect(find.text('レッスンの評価'), findsOneWidget);
+-    await tapText(tester, '5');
++    await tapText(tester, '5　とてもよかった');
+     await tester.enterText(find.byType(TextField), 'わかりやすかったです');
+     await tester.pump();
+     await tapText(tester, '評価を送る');
+diff --git a/apps/student-app/test/ui/labels_test.dart b/apps/student-app/test/ui/labels_test.dart
+index b2544f6..10db335 100644
+--- a/apps/student-app/test/ui/labels_test.dart
++++ b/apps/student-app/test/ui/labels_test.dart
+@@ -8,6 +8,7 @@ void main() {
+       ['不満だった', '少し物足りなかった', 'ふつう', 'よかった', 'とてもよかった'],
+     );
+     expect(ratingWithLabel(4), '4（よかった）');
++    expect(ratingChoiceLabel(5), '5　とてもよかった');
+   });
+ 
+   test('契約の範囲（1〜5）の外の点は受け付けない', () {
