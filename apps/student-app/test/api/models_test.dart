@@ -101,6 +101,8 @@ void main() {
       'sport': 'tennis',
       'starts_at': '2026-11-01T10:00:00Z',
       'ends_at': '2026-11-01T11:00:00Z',
+      'capacity': 1,
+      'remaining_seats': 1,
     };
 
     test('コーチの表示名と自己紹介文を読む', () {
@@ -143,6 +145,8 @@ void main() {
             'sport': 'tennis',
             'starts_at': '2026-11-01T10:00:00Z',
             'ends_at': '2026-11-01T11:00:00Z',
+            'capacity': 1,
+            'remaining_seats': 1,
             'coach_display_name': 'たなか',
           },
         },
