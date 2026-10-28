@@ -42,7 +42,7 @@ void main() {
     await tapText(tester, 'レッスンを評価する');
 
     expect(find.text('レッスンの評価'), findsOneWidget);
-    await tapText(tester, '5');
+    await tapText(tester, '5　とてもよかった');
     await tester.enterText(find.byType(TextField), 'わかりやすかったです');
     await tester.pump();
     await tapText(tester, '評価を送る');

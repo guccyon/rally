@@ -31,7 +31,7 @@ void main() {
     );
 
     expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
-    await tapText(tester, '4');
+    await tapText(tester, '4　よかった');
     expect(tester.widget<FilledButton>(sendButton()).onPressed, isNull);
     await tester.enterText(find.byType(TextField), '   ');
     await tester.pump();
@@ -64,7 +64,7 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
   });
 
-  testWidgets('各点に言葉の目安を添え、選んだ点の言葉を選択肢の下にも出す', (tester) async {
+  testWidgets('点と言葉の目安を 1 行にした選択肢を 5 → 1 の順に縦に並べ、選んだものに印を付ける', (tester) async {
     await pumpScreen(
       tester,
       const LessonReviewScreen(),
@@ -72,23 +72,18 @@ void main() {
       initial: afterCompletion,
     );
 
-    const words = {
-      1: '不満だった',
-      2: '少し物足りなかった',
-      3: 'ふつう',
-      4: 'よかった',
-      5: 'とてもよかった',
-    };
-    final choices = find.byType(SegmentedButton<int>);
-    for (final MapEntry(key: rating, value: word) in words.entries) {
-      expect(
-        find.descendant(of: choices, matching: find.text('$rating')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: choices, matching: find.text(word)),
-        findsOneWidget,
-      );
+    const choices = ['5　とてもよかった', '4　よかった', '3　ふつう', '2　少し物足りなかった', '1　不満だった'];
+    final tiles = find.byType(RadioListTile<int>);
+    expect(tiles, findsNWidgets(5));
+    expect([
+      for (final tile in tester.widgetList<RadioListTile<int>>(tiles))
+        (tile.title! as Text).data,
+    ], choices);
+    final tops = [
+      for (final choice in choices) tester.getTopLeft(find.text(choice)).dy,
+    ];
+    for (var i = 1; i < tops.length; i++) {
+      expect(tops[i], greaterThan(tops[i - 1]));
     }
     expect(
       find.text(
@@ -98,15 +93,19 @@ void main() {
     );
     expect(find.textContaining('選んだ評価'), findsNothing);
 
-    await tapText(tester, '2');
-    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
+    int? selected() => RadioGroup.maybeOf<int>(
+      tester.element(find.byType(RadioListTile<int>).first),
+    )?.groupValue;
+    expect(selected(), isNull);
 
-    await tapText(tester, 'とてもよかった');
-    expect(find.text('選んだ評価: 5（とてもよかった）'), findsOneWidget);
-    expect(find.textContaining('選んだ評価: 2'), findsNothing);
+    await tapText(tester, '2　少し物足りなかった');
+    expect(selected(), 2);
+
+    await tapText(tester, '5　とてもよかった');
+    expect(selected(), 5);
   });
 
-  testWidgets('幅の狭い端末でも点の言葉がはみ出さない', (tester) async {
+  testWidgets('幅の狭い端末でも選択肢の言葉が折り返さず、はみ出さない', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -117,10 +116,11 @@ void main() {
       api: FakeStudentApi(),
       initial: afterCompletion,
     );
-    await tapText(tester, '2');
+    await tapText(tester, '2　少し物足りなかった');
 
     expect(tester.takeException(), isNull);
-    expect(find.text('選んだ評価: 2（少し物足りなかった）'), findsOneWidget);
+    final line = tester.getSize(find.text('3　ふつう')).height;
+    expect(tester.getSize(find.text('2　少し物足りなかった')).height, line);
   });
 
   testWidgets('409 lesson_already_reviewed なら文言を出し、評価済みとして入力できなくする', (
@@ -136,7 +136,7 @@ void main() {
       initial: afterCompletion,
     );
 
-    await tapText(tester, '5');
+    await tapText(tester, '5　とてもよかった');
     await tester.enterText(find.byType(TextField), 'よかった');
     await tester.pump();
     await tapText(tester, '評価を送る');
@@ -163,7 +163,7 @@ void main() {
       initial: afterCompletion,
     );
 
-    await tapText(tester, '3');
+    await tapText(tester, '3　ふつう');
     await tester.enterText(find.byType(TextField), 'ふつう');
     await tester.pump();
     await tapText(tester, '評価を送る');

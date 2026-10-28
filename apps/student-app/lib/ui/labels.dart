@@ -53,3 +53,6 @@ String ratingLabel(int rating) => switch (rating) {
 
 /// 点と言葉の目安を合わせた表示。例: `4（よかった）`
 String ratingWithLabel(int rating) => '$rating（${ratingLabel(rating)}）';
+
+/// 評価の選択肢の 1 行（点と言葉の目安を全角の空白で並べる）。例: `4　よかった`
+String ratingChoiceLabel(int rating) => '$rating　${ratingLabel(rating)}';
