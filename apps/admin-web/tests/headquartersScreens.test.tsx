@@ -26,6 +26,7 @@ const REPORT: Schemas["SlotSupplyReport"] = {
     { sport: "baseball", status: "sufficient", published_slots: 12, booking_students: 3 },
     { sport: "soccer", status: "insufficient", published_slots: 5, booking_students: 4 },
     { sport: "basketball", status: "sufficient", published_slots: 7, booking_students: 1 },
+    { sport: "swimming", status: "insufficient", published_slots: 2, booking_students: 6 },
   ],
 };
 
@@ -51,13 +52,21 @@ describe("スポーツ別の予約枠の需給", () => {
       "0",
       "0",
     ]);
-    // 契約の順（Sport の enum の順）のまま出す。見出しの行を除いて 5 行
+    const swimming = screen.getByRole("row", { name: /水泳/ });
+    expect(within(swimming).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "水泳",
+      "足りていない",
+      "2",
+      "6",
+    ]);
+    // 契約の順（Sport の enum の順）のまま出す。見出しの行を除いて 6 行
     expect(screen.getAllByRole("row").slice(1).map((row) => row.firstChild?.textContent)).toEqual([
       "テニス",
       "ゴルフ",
       "野球",
       "サッカー",
       "バスケットボール",
+      "水泳",
     ]);
     expect(screen.getByText(/集計の期間/)).toHaveTextContent(
       `${formatDateTime(REPORT.window_start)} 〜 ${formatDateTime(REPORT.window_end)}`,
