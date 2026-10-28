@@ -106,3 +106,15 @@ String liveLessonQuotaLabel(LiveLessonQuota quota) =>
 String? slotSeatsLabel(Slot slot) => slot.capacity < 2
     ? null
     : 'グループ（定員 ${slot.capacity} 人・残り ${slot.remainingSeats} 席）';
+
+/// コーチの評価の件数と平均（コーチを選ぶ手がかり）。例: `★ 4.2（12 件）`。平均はサーバーが小数第 2 位まで丸めた値を、
+/// 小数第 1 位に四捨五入して出す。評価が 0 件なら `評価はまだありません`
+String coachReviewSummaryLabel(CoachReviewSummary summary) {
+  final average = summary.averageRating;
+  if (summary.reviewCount == 0 || average == null) return '評価はまだありません';
+  final rounded = (average * 10).round() / 10;
+  return '★ ${rounded.toStringAsFixed(1)}（${summary.reviewCount} 件）';
+}
+
+/// コーチが受けた評価 1 件の点（admin-web の評価の一覧と同じ書き方）。例: `4 点（5 点満点）`
+String coachReviewRatingLabel(int rating) => '$rating 点（5 点満点）';

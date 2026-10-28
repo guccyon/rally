@@ -29,7 +29,11 @@ void main() {
     await fillForm(tester);
     await tapText(tester, '登録する');
 
-    expect(api.calls, ['registerAccount', 'searchSlots']);
+    expect(api.calls, [
+      'registerAccount',
+      'searchSlots',
+      'getCoachReviewSummary',
+    ]);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson(), {
       'email': 'yamada@example.com',
@@ -61,7 +65,7 @@ void main() {
     expect(api.calls, ['registerAccount', 'searchSlots']);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson()['sport'], 'swimming');
-    expect(api.requests.last, Sport.swimming);
+    expect(api.requests.whereType<Sport>().last, Sport.swimming);
     expect(container.read(studentFlowProvider).searchSport, Sport.swimming);
   });
 

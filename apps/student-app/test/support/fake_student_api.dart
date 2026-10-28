@@ -11,6 +11,7 @@ class FakeStudentApi implements StudentApi {
     List<Message>? messages,
     NotificationSettings? notificationSettings,
     List<MyBooking>? myBookings,
+    this.coachReviewSummaries = const {},
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
@@ -34,6 +35,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
   final List<MyBooking> myBookings;
+
+  /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
+  final Map<String, CoachReviewSummary> coachReviewSummaries;
   final Map<String, StudentApiException> failures;
 
   final List<String> calls = [];
@@ -142,11 +146,13 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId) => _answer(
     'getCoachReviewSummary',
-    () => CoachReviewSummary(
-      coachId: coachId,
-      reviewCount: Fixtures.coachReviews.length,
-      averageRating: 4.5,
-    ),
+    () =>
+        coachReviewSummaries[coachId] ??
+        CoachReviewSummary(
+          coachId: coachId,
+          reviewCount: Fixtures.coachReviews.length,
+          averageRating: 4.5,
+        ),
     coachId,
   );
 

@@ -50,6 +50,10 @@ class StudentFlowState {
     this.student,
     this.searchSport,
     this.slots,
+    this.coachReviewSummaries = const {},
+    this.coachReviewSummaryFailures = const {},
+    this.coachReviews = const {},
+    this.coachReviewsFailures = const {},
     this.bookedSlot,
     this.booking,
     this.session,
@@ -87,6 +91,18 @@ class StudentFlowState {
   /// スロットを絞ったスポーツ（未検索なら null）
   final Sport? searchSport;
   final List<Slot>? slots;
+
+  /// 検索結果のコーチの評価の件数と平均（`getCoachReviewSummary`。コーチの ID ごと）。検索のたびに読み直す
+  final Map<String, CoachReviewSummary> coachReviewSummaries;
+
+  /// 評価の件数と平均を読めなかったコーチの ID（検索結果は出し、評価の欄にだけその旨を出す）
+  final Set<String> coachReviewSummaryFailures;
+
+  /// 開いたコーチの評価の一覧（`listCoachReviews`。コーチの ID ごと。送った時刻の新しい順）。検索のたびに捨てる
+  final Map<String, List<CoachReview>> coachReviews;
+
+  /// 評価の一覧を読めなかったコーチの ID
+  final Set<String> coachReviewsFailures;
 
   /// 体験予約したスロット（動画の送付でスポーツを使う）
   final Slot? bookedSlot;
@@ -149,6 +165,10 @@ class StudentFlowState {
     Student? student,
     Sport? searchSport,
     List<Slot>? slots,
+    Map<String, CoachReviewSummary>? coachReviewSummaries,
+    Set<String>? coachReviewSummaryFailures,
+    Map<String, List<CoachReview>>? coachReviews,
+    Set<String>? coachReviewsFailures,
     Slot? bookedSlot,
     Booking? booking,
     LiveLessonSession? session,
@@ -175,6 +195,11 @@ class StudentFlowState {
     student: student ?? this.student,
     searchSport: searchSport ?? this.searchSport,
     slots: slots ?? this.slots,
+    coachReviewSummaries: coachReviewSummaries ?? this.coachReviewSummaries,
+    coachReviewSummaryFailures:
+        coachReviewSummaryFailures ?? this.coachReviewSummaryFailures,
+    coachReviews: coachReviews ?? this.coachReviews,
+    coachReviewsFailures: coachReviewsFailures ?? this.coachReviewsFailures,
     bookedSlot: bookedSlot ?? this.bookedSlot,
     booking: booking ?? this.booking,
     session: session ?? this.session,
@@ -251,15 +276,73 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       student: response.student,
       step: FlowStep.slotSearch,
     );
-    final page = await _api.searchSlots(sport: sport);
-    state = state.copyWith(searchSport: sport, slots: page.items);
+    await _search(sport);
   });
 
   /// `searchSlots`。スポーツで絞る。
-  Future<void> searchSlots(Sport sport) => _run(() async {
+  Future<void> searchSlots(Sport sport) => _run(() => _search(sport));
+
+  /// スロットを探し、出てきたコーチの評価の件数と平均（`getCoachReviewSummary`）を読む。
+  /// 評価を読めなくても検索結果は出す（そのコーチを [StudentFlowState.coachReviewSummaryFailures] に入れるだけで、失敗の文言は出さない）
+  Future<void> _search(Sport sport) async {
     final page = await _api.searchSlots(sport: sport);
-    state = state.copyWith(searchSport: sport, slots: page.items);
-  });
+    state = state.copyWith(
+      searchSport: sport,
+      slots: page.items,
+      coachReviewSummaries: const {},
+      coachReviewSummaryFailures: const {},
+      coachReviews: const {},
+      coachReviewsFailures: const {},
+    );
+    final coachIds = {for (final slot in page.items) slot.coachId};
+    final summaries = <String, CoachReviewSummary>{};
+    final failures = <String>{};
+    Future<void> load(String coachId) async {
+      try {
+        summaries[coachId] = await _api.getCoachReviewSummary(coachId);
+      } on StudentApiException {
+        failures.add(coachId);
+      }
+    }
+
+    await Future.wait(coachIds.map(load));
+    if (!ref.mounted) return;
+    state = state.copyWith(
+      coachReviewSummaries: Map.unmodifiable(summaries),
+      coachReviewSummaryFailures: Set.unmodifiable(failures),
+    );
+  }
+
+  /// コーチの評価の一覧（`listCoachReviews`）を読む。検索結果の操作を止めないよう、busy にせず失敗の文言も出さない
+  /// （読めなければそのコーチを [StudentFlowState.coachReviewsFailures] に入れ、評価の欄にだけその旨を出す）。
+  Future<void> loadCoachReviews(String coachId) async {
+    state = state.copyWith(
+      errorMessage: state.errorMessage,
+      coachReviewsFailures: Set.unmodifiable(
+        state.coachReviewsFailures.difference({coachId}),
+      ),
+    );
+    try {
+      final list = await _api.listCoachReviews(coachId);
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        coachReviews: Map.unmodifiable({
+          ...state.coachReviews,
+          coachId: list.reviews,
+        }),
+      );
+    } on StudentApiException {
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        coachReviewsFailures: Set.unmodifiable({
+          ...state.coachReviewsFailures,
+          coachId,
+        }),
+      );
+    }
+  }
 
   /// `createBooking`（体験予約）。作成直後は pending なので確定待ちへ。
   Future<void> bookTrial(Slot slot) => _run(() async {
