@@ -13,7 +13,10 @@ use application::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, ListCoaches, RegisterAccount, UpdateCoachProfile},
+    identity::{
+        AccountRepository, GetAccount, IdentityCoachIntroductionLookup, ListCoaches,
+        RegisterAccount, UpdateCoachProfile,
+    },
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
@@ -77,6 +80,9 @@ pub fn router() -> Router {
 /// （billing・review の購読はまだない）。
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+///
+/// スロットの検索（`GET /slots`）は、ページに出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
+/// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -213,9 +219,13 @@ where
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
-        UpdateCoachProfile::new(accounts),
+        UpdateCoachProfile::new(accounts.clone()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
-        SearchSlots::new(slots, clock.clone()),
+        SearchSlots::new(
+            slots,
+            IdentityCoachIntroductionLookup::new(accounts),
+            clock.clone(),
+        ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
         ConfirmBooking::new(
             bookings.clone(),

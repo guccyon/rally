@@ -115,4 +115,21 @@ void main() {
     );
     expect(kinds, propertiesOf('UpdateNotificationSettingsRequest'));
   });
+
+  test('Slot の項目が契約と一致し、コーチの紹介は任意の項目である', () {
+    // Slot.fromJson が読む項目
+    expect(propertiesOf('Slot'), [
+      'slot_id',
+      'coach_id',
+      'sport',
+      'starts_at',
+      'ends_at',
+      'coach_display_name',
+      'coach_bio',
+    ]);
+    final required =
+        ((schemas['Slot'] as YamlMap)['required'] as YamlList).cast<String>();
+    expect(required, isNot(contains('coach_display_name')));
+    expect(required, isNot(contains('coach_bio')));
+  });
 }

@@ -2,6 +2,7 @@
 
 pub mod account_id_uuid;
 mod get_account;
+mod identity_coach_introduction_lookup;
 mod list_coaches;
 mod register_account;
 mod repository;
@@ -9,6 +10,7 @@ mod token;
 mod update_coach_profile;
 
 pub use get_account::GetAccount;
+pub use identity_coach_introduction_lookup::IdentityCoachIntroductionLookup;
 pub use list_coaches::ListCoaches;
 pub use register_account::{RegisterAccount, RegisterAccountCommand, RegisterAccountError};
 pub use repository::{AccountRepository, InsertAccountError};

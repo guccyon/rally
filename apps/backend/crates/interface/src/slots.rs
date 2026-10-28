@@ -8,8 +8,8 @@ use application::{
     clock::Clock,
     identity::account_id_uuid,
     scheduling::{
-        PublishSlot, PublishSlotCommand, PublishSlotError, SearchSlots, SearchSlotsQuery,
-        SlotRepository, slot_id_uuid,
+        CoachIntroduction, CoachIntroductionLookup, PublishSlot, PublishSlotCommand,
+        PublishSlotError, SearchSlots, SearchSlotsQuery, SlotRepository, slot_id_uuid,
     },
 };
 use axum::{
@@ -37,9 +37,9 @@ const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 
 /// `/slots` のハンドラーが使うユースケース。
-pub struct SlotsState<S, A, C> {
+pub struct SlotsState<S, I, A, C> {
     pub publish_slot: PublishSlot<S, A, C>,
-    pub search_slots: SearchSlots<S, C>,
+    pub search_slots: SearchSlots<S, I, C>,
 }
 
 /// student-app の `searchSlots` のクエリ。値の検証はハンドラーで行う。
@@ -60,7 +60,7 @@ pub struct SlotPageBody {
     next_cursor: Option<String>,
 }
 
-/// student-app の `Slot`。
+/// student-app の `Slot`。コーチの紹介（表示名・自己紹介文）は任意の項目で、引けなければ載せない。
 #[derive(Serialize)]
 pub struct StudentAppSlotBody {
     slot_id: String,
@@ -68,6 +68,11 @@ pub struct StudentAppSlotBody {
     sport: &'static str,
     starts_at: String,
     ends_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coach_display_name: Option<String>,
+    /// 自己紹介文を書いていない（空の）コーチは載せない
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coach_bio: Option<String>,
 }
 
 /// admin-web の `PublishSlotRequest`。
@@ -90,13 +95,14 @@ pub struct AdminWebSlotBody {
 }
 
 /// `GET /slots`。認証した利用者なら誰でも呼べる。
-pub async fn search_slots<S, A, C>(
-    State(state): State<Arc<SlotsState<S, A, C>>>,
+pub async fn search_slots<S, I, A, C>(
+    State(state): State<Arc<SlotsState<S, I, A, C>>>,
     _account: AuthenticatedAccount,
     params: Result<Query<SearchSlotsParams>, QueryRejection>,
 ) -> Result<Json<SlotPageBody>, ApiError>
 where
     S: SlotRepository,
+    I: CoachIntroductionLookup,
     A: AnalyticsSink,
     C: Clock,
 {
@@ -139,20 +145,21 @@ where
         items: page
             .items
             .iter()
-            .map(student_app_slot_body)
+            .map(|slot| student_app_slot_body(slot, page.coaches.get(&slot.coach_id())))
             .collect::<Result<_, _>>()?,
         next_cursor: page.next_cursor.map(slot_cursor_to_contract),
     }))
 }
 
 /// `POST /slots`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。
-pub async fn publish_slot<S, A, C>(
-    State(state): State<Arc<SlotsState<S, A, C>>>,
+pub async fn publish_slot<S, I, A, C>(
+    State(state): State<Arc<SlotsState<S, I, A, C>>>,
     account: AuthenticatedAccount,
     request: Result<Json<PublishSlotRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<AdminWebSlotBody>), ApiError>
 where
     S: SlotRepository,
+    I: CoachIntroductionLookup,
     A: AnalyticsSink,
     C: Clock,
 {
@@ -192,13 +199,21 @@ fn limit(value: Option<&str>) -> Result<NonZeroUsize, ApiError> {
         .ok_or_else(|| ApiError::validation_failed(format!("limit は 1〜{MAX_LIMIT} の整数")))
 }
 
-fn student_app_slot_body(slot: &Slot) -> Result<StudentAppSlotBody, ApiError> {
+fn student_app_slot_body(
+    slot: &Slot,
+    coach: Option<&CoachIntroduction>,
+) -> Result<StudentAppSlotBody, ApiError> {
     Ok(StudentAppSlotBody {
         slot_id: slot_id_uuid::format(slot.id()),
         coach_id: account_id_uuid::format(slot.coach_id()),
         sport: sport_to_contract(slot.sport()),
         starts_at: date_time_to_contract(slot.starts_at())?,
         ends_at: date_time_to_contract(slot.ends_at())?,
+        coach_display_name: coach.map(|coach| coach.display_name.as_str().to_string()),
+        coach_bio: coach
+            .map(|coach| coach.bio.as_str())
+            .filter(|bio| !bio.is_empty())
+            .map(str::to_string),
     })
 }
 

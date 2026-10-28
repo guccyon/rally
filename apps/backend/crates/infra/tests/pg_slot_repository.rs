@@ -10,7 +10,7 @@ use std::{
 };
 
 use application::{
-    identity::account_id_uuid,
+    identity::{IdentityCoachIntroductionLookup, account_id_uuid},
     in_memory::{FixedClock, RecordingAnalyticsSink},
     scheduling::{
         PublishSlot, PublishSlotCommand, PublishSlotError, SearchSlots, SearchSlotsQuery,
@@ -22,7 +22,7 @@ use domain::{
     identity::{AccountId, Sport},
     scheduling::{Slot, SlotStatus},
 };
-use infra::PgSlotRepository;
+use infra::{PgAccountRepository, PgSlotRepository};
 use sqlx::PgPool;
 
 /// 2026-11-01T00:00:00Z
@@ -32,7 +32,7 @@ fn at(hour: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + BASE + Duration::from_secs(hour * 3600)
 }
 
-/// コーチのアカウントと identity.coaches の行を作る（slots.coach_id の外部キー）。
+/// コーチのアカウントと identity.coaches（slots.coach_id の外部キー）・identity.coach_sports の行を作る。
 async fn coach(pool: &PgPool) -> AccountId {
     let id: sqlx::types::Uuid = sqlx::query_scalar(
         "INSERT INTO identity.accounts (role, email, display_name)
@@ -43,6 +43,12 @@ async fn coach(pool: &PgPool) -> AccountId {
     .await
     .unwrap();
     sqlx::query("INSERT INTO identity.coaches (coach_id) VALUES ($1)")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    // 検索がコーチの紹介を引く（提供スポーツのないコーチは読めない）
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1, 'tennis')")
         .bind(id)
         .execute(pool)
         .await
@@ -98,15 +104,24 @@ async fn published_slot_round_trips(pool: PgPool) {
         .await
         .unwrap();
 
-    let found = SearchSlots::new(PgSlotRepository::new(pool.clone()), FixedClock(at(0)))
-        .execute(SearchSlotsQuery {
-            sport: Sport::Golf,
-            ..query(20)
-        })
-        .await
-        .unwrap();
+    let found = SearchSlots::new(
+        PgSlotRepository::new(pool.clone()),
+        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(0)),
+    )
+    .execute(SearchSlotsQuery {
+        sport: Sport::Golf,
+        ..query(20)
+    })
+    .await
+    .unwrap();
     assert_eq!(found.items, vec![published]);
     assert_eq!(found.items[0].status(), SlotStatus::Open);
+    assert_eq!(
+        found.coaches[&coach_id].display_name.as_str(),
+        "コーチ",
+        "枠のコーチの紹介を identity から引く"
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -211,7 +226,11 @@ async fn search_filters_open_slots_and_pages_in_start_order(pool: PgPool) {
     set_status(&pool, &booked, "booked").await;
 
     // 現在時刻は 10 時（過去の枠は出ない）
-    let search = SearchSlots::new(PgSlotRepository::new(pool.clone()), FixedClock(at(10)));
+    let search = SearchSlots::new(
+        PgSlotRepository::new(pool.clone()),
+        IdentityCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(10)),
+    );
     let ids = |slots: &[Slot]| slots.iter().map(Slot::id).collect::<Vec<_>>();
 
     // 同じ開始時刻はスロット ID の順

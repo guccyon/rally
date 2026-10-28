@@ -3,6 +3,7 @@
 
 use std::time::{Duration, SystemTime};
 
+use application::identity::AccountRepository;
 use application::{
     analytics::AnalyticsEvent,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
@@ -30,7 +31,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{AccountId, Role};
+use domain::identity::{Account, AccountId, CoachBio, DisplayName, Email, Role, Sport};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -77,11 +78,14 @@ fn coach_id(token: &str) -> String {
 struct App {
     router: Router,
     analytics: RecordingAnalyticsSink,
+    /// `GET /slots` がコーチの紹介を引くアカウントの保存先
+    accounts: InMemoryAccountRepository,
 }
 
 fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
     let clock = FixedClock(SystemTime::UNIX_EPOCH + NOW);
+    let accounts = InMemoryAccountRepository::default();
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
@@ -94,7 +98,11 @@ fn app() -> App {
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
-        SearchSlots::new(slots, clock),
+        SearchSlots::new(
+            slots,
+            application::identity::IdentityCoachIntroductionLookup::new(accounts.clone()),
+            clock,
+        ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),
@@ -198,7 +206,11 @@ fn app() -> App {
         ),
         FakeTokens,
     );
-    App { router, analytics }
+    App {
+        router,
+        analytics,
+        accounts,
+    }
 }
 
 async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
@@ -530,5 +542,58 @@ async fn search_without_a_valid_token_is_401() {
         let (status, body) = get_slots(&app.router, token, "sport=tennis").await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
         assert_student_app(status, &body);
+    }
+}
+
+/// コーチ `token` のアカウントを保存する（契約にコーチの登録の操作がないので、保存先に直に入れる）。
+async fn register_coach(app: &App, token: &str, display_name: &str, bio: &str) {
+    let id = AccountId::from_u128(token.split_once(':').unwrap().1.parse().unwrap());
+    let account = Account::new(
+        id,
+        Email::new(format!("{display_name}@example.com")).unwrap(),
+        DisplayName::new(display_name).unwrap(),
+        Role::Coach,
+        [Sport::Tennis],
+        SystemTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    app.accounts.insert(account).await.unwrap();
+    app.accounts
+        .update_coach_bio(id, CoachBio::new(bio).unwrap())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn search_adds_the_coach_display_name_and_bio() {
+    let app = app();
+    register_coach(&app, COACH_A, "たなか", "テニス歴 20 年").await;
+    // 自己紹介文を書いていないコーチ
+    register_coach(&app, COACH_B, "いとう", "").await;
+    let a10 = publish(&app.router, COACH_A, "tennis", 10).await;
+    let b11 = publish(&app.router, COACH_B, "tennis", 11).await;
+    // アカウントの見つからないコーチ
+    let unknown = publish(&app.router, "coach:9", "tennis", 12).await;
+
+    let (status, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_student_app(status, &body);
+    assert_eq!(item_ids(&body), [a10, b11, unknown]);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items[0]["coach_display_name"], "たなか");
+    assert_eq!(items[0]["coach_bio"], "テニス歴 20 年");
+    assert_eq!(items[1]["coach_display_name"], "いとう");
+    assert!(
+        !items[1].as_object().unwrap().contains_key("coach_bio"),
+        "自己紹介文がないコーチは項目なし: {}",
+        items[1]
+    );
+    for key in ["coach_display_name", "coach_bio"] {
+        assert!(
+            !items[2].as_object().unwrap().contains_key(key),
+            "紹介が引けないコーチは {key} なし: {}",
+            items[2]
+        );
     }
 }
