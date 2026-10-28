@@ -26,6 +26,9 @@ pub struct SubmitVideoCommand {
 pub struct SubmittedVideo {
     pub video: Video,
     pub upload_url: String,
+    /// AI の一次フィードバックを付けられなかった理由（付けられたら `None`）。送付は成功しているので、
+    /// 外の層（interface）がログに書く
+    pub ai_feedback_failure: Option<String>,
 }
 
 #[derive(Debug)]
@@ -41,7 +44,7 @@ pub enum SubmitVideoError {
 ///
 /// 保存した直後に同じ処理の中で AI の一次フィードバックを作らせ（[`AiFeedbackGenerator`]）、動画に付けて保存する
 /// （作った時刻は [`Clock`] の今）。AI や保存先が失敗しても送付は成功させ、一次フィードバックは空のままにする
-/// （失敗は標準エラー出力に書く）。添削の着手条件・返却の流れには関わらない。
+/// （失敗の理由は [`SubmittedVideo::ai_feedback_failure`] で返し、書くのは外の層）。添削の着手条件・返却の流れには関わらない。
 ///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
 /// （[`super::ReturnVideoReview`]）。
@@ -109,42 +112,44 @@ where
             content_type: command.content_type,
             note: command.note,
         };
-        let video = self.attach_ai_feedback(video, &request).await;
-        Ok(SubmittedVideo { video, upload_url })
+        let (video, ai_feedback_failure) = self.attach_ai_feedback(video, &request).await;
+        Ok(SubmittedVideo {
+            video,
+            upload_url,
+            ai_feedback_failure,
+        })
     }
 
     /// 保存した動画 `video` に AI の一次フィードバックを付けて保存し、付けた動画を返す。どこかで失敗したら
-    /// 標準エラー出力に書き、`video` をそのまま返す（送付は失敗させない）。
-    async fn attach_ai_feedback(&self, video: Video, request: &AiFeedbackRequest) -> Video {
+    /// `video` をそのまま、失敗の理由と一緒に返す（送付は失敗させない）。
+    async fn attach_ai_feedback(
+        &self,
+        video: Video,
+        request: &AiFeedbackRequest,
+    ) -> (Video, Option<String>) {
         let failed = |reason: &dyn std::fmt::Display| {
-            eprintln!(
+            Some(format!(
                 "動画 {} の AI の一次フィードバックを付けられない（一次フィードバックなしで続ける）: {reason}",
                 video_id_uuid::format(video.id())
-            );
+            ))
         };
         let feedback = match self.ai_feedback.generate(request).await {
             Ok(comment) => AiFeedback::new(comment, self.clock.now()),
-            Err(error) => {
-                failed(&error);
-                return video;
-            }
+            Err(error) => return (video.clone(), failed(&error)),
         };
         let feedback = match feedback {
             Ok(feedback) => feedback,
-            Err(error) => {
-                failed(&error);
-                return video;
-            }
+            Err(error) => return (video.clone(), failed(&error)),
         };
         match self
             .videos
             .update(video.id(), |v| v.record_ai_feedback(feedback))
             .await
         {
-            Ok(updated) => updated,
+            Ok(updated) => (updated, None),
             Err(error) => {
-                failed(&format!("{error:?}"));
-                video
+                let reason = failed(&format!("{error:?}"));
+                (video, reason)
             }
         }
     }
@@ -315,6 +320,7 @@ mod tests {
             "保存した動画に付いている"
         );
         assert_eq!(video.review(), None, "コーチの添削とは別の項目");
+        assert_eq!(submitted.ai_feedback_failure, None);
     }
 
     #[tokio::test]
@@ -328,6 +334,10 @@ mod tests {
             let submitted = use_case.execute(command()).await.unwrap();
 
             assert_eq!(submitted.video.ai_feedback(), None);
+            assert!(
+                submitted.ai_feedback_failure.is_some(),
+                "失敗の理由は外の層に返す（application は書かない）"
+            );
             assert_eq!(use_case.videos().all(), vec![submitted.video.clone()]);
             assert_eq!(submitted.video.status(), VideoStatus::Submitted);
             assert_eq!(

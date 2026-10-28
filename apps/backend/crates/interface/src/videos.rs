@@ -154,6 +154,9 @@ where
         .map_err(|error| match error {
             SubmitVideoError::Unavailable(error) => ApiError::internal(error),
         })?;
+    if let Some(reason) = &submitted.ai_feedback_failure {
+        eprintln!("{reason}"); // 送付は成功している。AI の一次フィードバックの失敗はログだけに残す
+    }
     let video = &submitted.video;
     Ok((
         StatusCode::CREATED,
