@@ -2,7 +2,8 @@
 //! （`getVideoReview`）と admin-web の `POST /videos/{video_id}/review`（`returnVideoReview`）のレスポンスの形を
 //! OpenAPI のスキーマで検査し、送付 → 返却の一連・返却前の取得が未返却（`in_progress`）になること・行動イベント
 //! `video.submitted` / `video_review.returned`（`submitted_at` 付き）・ゴルフの動画の添削に着手できないこと・
-//! 役割と当事者による 403 / 404 を確かめる。
+//! 役割と当事者による 403 / 404 を確かめる。admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）は、コーチ本人に
+//! 送られた動画だけを添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返し、コーチ以外は 403 になることを確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -13,8 +14,8 @@ use application::{
     },
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
-        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
-        account_id_uuid,
+        AccessToken, AccountRepository, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer,
+        TokenVerifier, account_id_uuid,
     },
     in_memory::{
         FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
@@ -37,7 +38,7 @@ use axum::{
 };
 use domain::{
     async_lesson::{Video, VideoId},
-    identity::{AccountId, Role, Sport},
+    identity::{Account, AccountId, DisplayName, Email, Role, Sport},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -79,6 +80,9 @@ const HEADQUARTERS: &str = "headquarters:5";
 /// 先に置いておくゴルフの動画（golf-app の範囲なので student-app からは送れない）
 const GOLF_VIDEO: VideoId = VideoId::from_u128(77);
 
+/// 先に置いておく、別のコーチ（`OTHER_COACH`）に送られた動画
+const OTHER_COACH_VIDEO: VideoId = VideoId::from_u128(78);
+
 fn account_id(token: &str) -> AccountId {
     AccountId::from_u128(token.split_once(':').unwrap().1.parse().unwrap())
 }
@@ -89,12 +93,14 @@ fn submitted_at() -> SystemTime {
 }
 
 struct App {
+    accounts: InMemoryAccountRepository,
     router: Router,
     clock: ManualClock,
     analytics: RecordingAnalyticsSink,
 }
 
-/// 生徒 1 がコーチ 9 に送ったゴルフの動画 77 を置く。現在時刻は 2026-10-26 10:00。
+/// 生徒 1 がコーチ 9 に送ったゴルフの動画 77 と、生徒 1 がコーチ 8 に送ったテニスの動画 78 を置く。アカウントは
+/// 置かない（生徒の表示名を引くテストが [`App::student_named`] で置く）。現在時刻は 2026-10-26 10:00。
 fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
     let events = RecordingDomainEventPublisher::default();
@@ -102,13 +108,23 @@ fn app() -> App {
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let entitlements = InMemoryEntitlementRepository::default();
-    let videos = InMemoryVideoRepository::with_videos([Video::submit(
-        GOLF_VIDEO,
-        account_id(STUDENT),
-        account_id(COACH),
-        Sport::Golf,
-        submitted_at(),
-    )]);
+    let accounts = InMemoryAccountRepository::default();
+    let videos = InMemoryVideoRepository::with_videos([
+        Video::submit(
+            GOLF_VIDEO,
+            account_id(STUDENT),
+            account_id(COACH),
+            Sport::Golf,
+            submitted_at(),
+        ),
+        Video::submit(
+            OTHER_COACH_VIDEO,
+            account_id(STUDENT),
+            account_id(OTHER_COACH),
+            Sport::Tennis,
+            submitted_at(),
+        ),
+    ]);
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -184,11 +200,15 @@ fn app() -> App {
         ),
         GetVideoReview::new(videos.clone()),
         ReturnVideoReview::new(
-            videos,
+            videos.clone(),
             EntitlementReviewGate,
             analytics.clone(),
             events.clone(),
             clock.clone(),
+        ),
+        application::async_lesson::ListCoachVideos::new(
+            videos,
+            application::identity::IdentityStudentDisplayNameLookup::new(accounts.clone()),
         ),
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
@@ -240,6 +260,7 @@ fn app() -> App {
         FakeTokens,
     );
     App {
+        accounts,
         router,
         clock,
         analytics,
@@ -328,6 +349,37 @@ impl App {
         support::Contract::load("admin-web").assert_response(
             "post",
             "/videos/{video_id}/review",
+            status,
+            &body,
+        );
+        (status, body)
+    }
+
+    /// `token` の生徒のアカウントを表示名 `display_name` で置く。
+    async fn student_named(&self, token: &str, display_name: &str) {
+        let account = Account::new(
+            account_id(token),
+            Email::new(format!("{}@example.com", account_id(token).as_u128())).unwrap(),
+            DisplayName::new(display_name).unwrap(),
+            Role::Student,
+            [Sport::Tennis],
+            submitted_at(),
+        )
+        .unwrap();
+        self.accounts.insert(account).await.unwrap();
+    }
+
+    async fn list_coach_videos(&self, token: Option<&str>) -> (StatusCode, Value) {
+        let (status, body) = send(
+            &self.router,
+            with_token(Request::get("/coaches/me/videos"), token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        support::Contract::load("admin-web").assert_response(
+            "get",
+            "/coaches/me/videos",
             status,
             &body,
         );
@@ -580,4 +632,84 @@ async fn videos_of_others_are_not_found() {
         );
     }
     assert_eq!(app.video_events().len(), 1, "送付だけ");
+}
+
+#[tokio::test]
+async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returned() {
+    let app = app();
+    app.student_named(STUDENT, "あおき").await;
+    let golf = video_id_uuid::format(GOLF_VIDEO);
+
+    // 1 時間後に生徒 1、2 時間後に生徒 2（アカウントがなく表示名を引けない）が送り、3 時間後に生徒 1 の動画を返却する
+    let hour = |h: u64| submitted_at() + Duration::from_secs(h * 3600);
+    app.clock.set(hour(1));
+    let first = app.submitted_video().await;
+    app.clock.set(hour(2));
+    let (status, second) = app.submit(Some(OTHER_STUDENT), tennis_video()).await;
+    assert_eq!(status, StatusCode::CREATED, "{second}");
+    let second = second["video_id"].as_str().unwrap().to_string();
+    app.clock.set(hour(3));
+    let (status, body) = app
+        .return_review(Some(COACH), &first, review("トスを体の前に上げる"))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = app.list_coach_videos(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // 添削待ちが送られた時刻の古い順で先（ゴルフ → 生徒 2）、返却済みが後。別のコーチに送られた動画は出ない
+    assert_eq!(
+        body,
+        json!({
+            "videos": [
+                {
+                    "video_id": golf,
+                    "student_display_name": "あおき",
+                    "submitted_at": "2026-10-26T10:00:00Z",
+                    "review_status": "in_progress"
+                },
+                {
+                    "video_id": second,
+                    "submitted_at": "2026-10-26T12:00:00Z",
+                    "review_status": "in_progress"
+                },
+                {
+                    "video_id": first,
+                    "student_display_name": "あおき",
+                    "submitted_at": "2026-10-26T11:00:00Z",
+                    "review_status": "returned",
+                    "returned_at": "2026-10-26T13:00:00Z"
+                }
+            ]
+        })
+    );
+
+    // 別のコーチには、そのコーチに送られた動画だけ
+    let (status, body) = app.list_coach_videos(Some(OTHER_COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ids: Vec<_> = body["videos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|video| video["video_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, [video_id_uuid::format(OTHER_COACH_VIDEO)]);
+
+    // 動画が届いていないコーチは空の配列
+    let (status, body) = app.list_coach_videos(Some("coach:3")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "videos": [] }));
+}
+
+#[tokio::test]
+async fn only_coaches_list_their_videos() {
+    let app = app();
+    for token in [STUDENT, HEADQUARTERS] {
+        let (status, body) = app.list_coach_videos(Some(token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token} {body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+    assert_eq!(
+        app.list_coach_videos(None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
 }

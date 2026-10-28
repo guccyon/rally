@@ -213,6 +213,12 @@ fn app() -> App {
             events.clone(),
             clock.clone(),
         ),
+        application::async_lesson::ListCoachVideos::new(
+            InMemoryVideoRepository::default(),
+            application::identity::IdentityStudentDisplayNameLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
             videos,

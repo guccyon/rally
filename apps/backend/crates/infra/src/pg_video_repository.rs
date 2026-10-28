@@ -8,6 +8,7 @@ use application::{
 use domain::{
     DomainError,
     async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
+    identity::AccountId,
 };
 use sqlx::{
     PgPool,
@@ -68,6 +69,21 @@ impl VideoRepository for PgVideoRepository {
         .await
         .map_err(Unavailable::new)?;
         row.map(video_from_row).transpose()
+    }
+
+    async fn videos_of_coach(&self, coach_id: AccountId) -> Result<Vec<Video>, Unavailable> {
+        let rows: Vec<VideoRow> = sqlx::query_as(
+            "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
+                    r.review_id, r.comment, r.returned_at
+             FROM async_lesson.videos v
+             LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
+             WHERE v.coach_id = $1",
+        )
+        .bind(account_id_uuid::to_uuid(coach_id))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(video_from_row).collect()
     }
 
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {

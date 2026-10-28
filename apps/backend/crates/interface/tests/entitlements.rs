@@ -196,6 +196,12 @@ fn router(now: SystemTime) -> Router {
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
+        application::async_lesson::ListCoachVideos::new(
+            InMemoryVideoRepository::default(),
+            application::identity::IdentityStudentDisplayNameLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
             InMemoryVideoRepository::default(),

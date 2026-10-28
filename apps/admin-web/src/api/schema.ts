@@ -231,6 +231,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/videos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分に届いた動画の一覧（コーチ）
+         * @description トークンが示す本人（コーチ）に生徒が送った動画（student-app の `submitVideo`）を、添削待ちも返却済みも含めてすべて返す。
+         *     添削の返却（`returnVideoReview`）で動画を選ぶのに使う。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - 並べ方: 添削待ち（`review_status` が `in_progress`）を送られた時刻 `submitted_at` の古い順で先に（待たせている動画が上）、
+         *       その後に返却済み（`returned`）を返却した時刻 `returned_at` の新しい順。同じ時刻は動画 ID の順
+         *     - 各項目には動画の ID と、送った生徒の表示名 `student_display_name` と、送られた時刻と、添削の状態と、返却した時刻を載せる。
+         *       生徒のアカウントが引けないときは `student_display_name` を載せない。添削待ちの動画には `returned_at` を載せない
+         *     - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listMyCoachVideos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -621,6 +651,29 @@ export interface components {
             /** @description コーチの添削コメント（空白だけは不可） */
             comment: string;
         };
+        /** @description コーチに届いた動画の一覧の 1 件。生徒が送った動画（glossary の async_lesson）と、その添削（glossary の video_review）の状態 */
+        CoachVideo: {
+            /** Format: uuid */
+            video_id: string;
+            /** @description 動画を送った生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 生徒が動画を送った時刻
+             */
+            submitted_at: string;
+            review_status: components["schemas"]["VideoReviewStatus"];
+            /**
+             * Format: date-time
+             * @description コーチが添削を返した時刻。添削待ち（`in_progress`）のときは載らない
+             */
+            returned_at?: string;
+        };
+        /** @description コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明） */
+        CoachVideoList: {
+            /** @description 添削待ちを送られた時刻の古い順で先に、その後に返却済みを返却した時刻の新しい順（同じ時刻は動画 ID の順） */
+            videos: components["schemas"]["CoachVideo"][];
+        };
         /**
          * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った
          * @enum {string}
@@ -932,6 +985,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoachBookingList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyCoachVideos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチに届いた動画の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachVideoList"];
                 };
             };
             401: components["responses"]["Unauthorized"];

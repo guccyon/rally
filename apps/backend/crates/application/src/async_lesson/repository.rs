@@ -3,6 +3,7 @@ use std::future::Future;
 use domain::{
     DomainError,
     async_lesson::{Video, VideoId, VideoReviewId},
+    identity::AccountId,
 };
 
 use super::UpdateVideoError;
@@ -26,6 +27,12 @@ pub trait VideoRepository: Send + Sync {
         &self,
         video_id: VideoId,
     ) -> impl Future<Output = Result<Option<Video>, Unavailable>> + Send;
+
+    /// `coach_id` のコーチに送られた動画（状態を問わない。返却した添削を含む）。並びは決めない。
+    fn videos_of_coach(
+        &self,
+        coach_id: AccountId,
+    ) -> impl Future<Output = Result<Vec<Video>, Unavailable>> + Send;
 
     /// 送付した動画を保存する。
     fn insert(&self, video: Video) -> impl Future<Output = Result<(), Unavailable>> + Send;
