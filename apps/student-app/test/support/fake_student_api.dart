@@ -248,6 +248,17 @@ abstract final class Fixtures {
     endsAt: now.add(const Duration(days: 2, hours: 1)),
   );
 
+  /// [slot] に、コーチの名前と自己紹介文（どちらも任意）を添えたもの
+  static Slot slotWithCoach({String? displayName, String? bio}) => Slot(
+    slotId: slot.slotId,
+    coachId: slot.coachId,
+    sport: slot.sport,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    coachDisplayName: displayName,
+    coachBio: bio,
+  );
+
   static final bookingPending = Booking(
     bookingId: bookingId,
     slotId: slotId,
