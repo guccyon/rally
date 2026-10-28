@@ -23,7 +23,7 @@ const MIN_DAYS_BETWEEN_CONFIRMS: i64 = 20;
 /// 合成データの計画（Blueprint の synthetic_seed）。乱数は `seed` だけから引くので、同じ `seed` と `now` なら
 /// 同じ計画になる。時刻はすべて `now` からの相対で決める（`now` が違えば同じ形の履歴が平行移動する）。
 ///
-/// - コーチ 30 人。スポーツはゴルフ以外の 4 つに順に配る。生徒の 50% が上位 3 人に付き、残りは長い裾（4 位からの 1/順位の重み）
+/// - コーチ 30 人。スポーツはゴルフ以外の 5 つに順に配る。生徒の 50% が上位 3 人に付き、残りは長い裾（4 位からの 1/順位の重み）
 /// - 生徒 1000 人（ゴルフ以外。ワンショットは扱わない）。登録日は 12 ヶ月に一様に散らす
 /// - 直近 30 日に活動がある生徒は 100 人（直近 30 日の登録と、離脱していない [`Retention::Active`] の合計）
 /// - 継続は [`Retention`] の分布で、初回レッスン後 30 日以内の離脱が最多
@@ -50,11 +50,12 @@ impl SeedPlan {
     /// 上位 3 人のコーチに付く生徒の割合
     pub const TOP_COACH_SHARE: f64 = 0.5;
     /// コーチに配るスポーツ（ゴルフ以外）
-    pub const SPORTS: [Sport; 4] = [
+    pub const SPORTS: [Sport; 5] = [
         Sport::Tennis,
         Sport::Soccer,
         Sport::Baseball,
         Sport::Basketball,
+        Sport::Swimming,
     ];
 
     /// 上位 3 人の間の配分（%）
@@ -545,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn thirty_coaches_spread_over_the_four_sports_other_than_golf() {
+    fn thirty_coaches_spread_over_the_five_sports_other_than_golf() {
         let plan = plan(42);
         assert_eq!(plan.coaches.len(), 30);
         let mut by_sport: BTreeMap<String, usize> = BTreeMap::new();
@@ -553,11 +554,8 @@ mod tests {
             *by_sport.entry(format!("{:?}", coach.sport)).or_default() += 1;
         }
         assert!(!by_sport.contains_key("Golf"));
-        assert_eq!(by_sport.len(), 4, "{by_sport:?}");
-        assert!(
-            by_sport.values().all(|n| (7..=8).contains(n)),
-            "{by_sport:?}"
-        );
+        assert_eq!(by_sport.len(), 5, "{by_sport:?}");
+        assert!(by_sport.values().all(|n| *n == 6), "{by_sport:?}");
     }
 
     #[test]

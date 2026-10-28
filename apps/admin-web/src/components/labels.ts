@@ -8,6 +8,7 @@ export const SPORT_LABELS: Record<Schemas["Sport"], string> = {
   baseball: "野球",
   soccer: "サッカー",
   basketball: "バスケットボール",
+  swimming: "水泳",
 };
 
 export const SLOT_STATUS_LABELS: Record<Schemas["SlotStatus"], string> = {

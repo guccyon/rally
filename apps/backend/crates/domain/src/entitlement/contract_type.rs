@@ -99,6 +99,17 @@ mod tests {
     }
 
     #[test]
+    fn swimming_is_monthly_and_never_one_shot() {
+        // 変更シナリオ cs-001 で足した水泳は、規則を変えずに月額（ゴルフ以外）に入る
+        assert!(ContractType::Monthly.covers(Sport::Swimming));
+        assert!(!ContractType::OneShot.covers(Sport::Swimming));
+        assert_eq!(
+            ContractType::for_sport(Sport::Swimming),
+            ContractType::Monthly
+        );
+    }
+
+    #[test]
     fn one_shot_reviews_start_only_after_the_payment_is_confirmed() {
         assert!(ContractType::Monthly.may_start_review(false));
         assert!(ContractType::Monthly.may_start_review(true));

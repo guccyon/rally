@@ -29,6 +29,7 @@ pub const fn sport_value(sport: Sport) -> &'static str {
         Sport::Baseball => "baseball",
         Sport::Soccer => "soccer",
         Sport::Basketball => "basketball",
+        Sport::Swimming => "swimming",
     }
 }
 

@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -18,13 +18,14 @@
 
 | 段 | ファイル名 | 書けるもの | 古い版のアプリ |
 |---|---|---|---|
-| expand | `..._expand_...` | テーブル・列（NULL 可か既定値つき）・索引・制約の追加。`DROP NOT NULL` / `DROP DEFAULT` などの緩和 | そのまま動く |
+| expand | `..._expand_...` | テーブル・列（NULL 可か既定値つき）・索引・制約の追加。`DROP NOT NULL` / `DROP DEFAULT` などの緩和。許す値を足すだけの CHECK 制約の付け直し（同じ名前で `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)` を 1 つの `ALTER TABLE` に書く） | そのまま動く |
 | 移行 | `..._migrate_...` | データの写し替え（`UPDATE` / `INSERT`）。アプリは新旧の両方に書く版を先に出す | そのまま動く |
 | contract | `..._contract_...` | 列・テーブル・索引・制約の削除、改名、型の変更、`SET NOT NULL`、データの削除（`DELETE` / `TRUNCATE`） | 古い版が使わなくなってから当てる |
 
 - 改名は「新しい列を expand → 両方に書いて写す → 古い列を contract」で行い、`RENAME` は使わない
 - **contract は人間承認**。contract のマイグレーションを含む PR は manifest の `always_human_approve` の `destructive_schema`（列・テーブルの削除、型の縮小）に当たり、変更種別に関わらず builder の承認なしにマージしない。contract は、それを待つ expand / 移行と別の PR に分ける
-- expand / 移行の段に破壊的な文（`DROP`（`DROP NOT NULL` / `DROP DEFAULT` を除く）・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
+- 許す値を減らす CHECK 制約の付け直しは、同じ書き方でも contract の段に分ける（古い版が書く値を拒む）。検査は値の増減までは見ないので、レビューで確かめる
+- expand / 移行の段に破壊的な文（`DROP`（`DROP NOT NULL` / `DROP DEFAULT` と、同じ名前の CHECK 制約の付け直しを除く）・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
 
 ### 3. 初版のスキーマ（Gen1 のコア 3 コンテキスト）
 
@@ -41,7 +42,7 @@
 | | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0〜2） |
 | `live_lesson` | `sessions` | 通話セッション（T12 の expand で追加）。確定した予約 1 件につき 1 つ（`sessions_booking_id_key`）。終了時に接続品質の生の指標 4 つ（`call.ended` と同じ。損失率は百分率）を揃えて持つ。予約は scheduling の持ち物なので `booking_id` に外部キーは張らない。通話品質スコアは保存しない（ADR 0002 Q1） |
 | | `lesson_completions` | 同期レッスンの完了記録（T14 の expand で追加。置き場所は ADR 0006）。セッション 1 つにつき 1 行（`lesson_completions_session_id_key`）。生徒・コーチはセッションの当事者（複合外部キー `lesson_completions_session_fkey`）。`is_first_lesson` は記録した時点の値で持つ |
-| `async_lesson` | `videos` | 生徒がコーチに送った動画（T13 の expand で追加）。スポーツは 5 種類（ゴルフは golf-app から送る）。動画本体は保存先（S3 への直接アップロード。Gen1 はモック）に置き、ここには持たない。状態の列は持たず、添削の行の有無で決まる |
+| `async_lesson` | `videos` | 生徒がコーチに送った動画（T13 の expand で追加）。スポーツは 6 種類（D31 の expand で水泳を追加）（ゴルフは golf-app から送る）。動画本体は保存先（S3 への直接アップロード。Gen1 はモック）に置き、ここには持たない。状態の列は持たず、添削の行の有無で決まる |
 | | `video_reviews` | コーチが返した添削。動画 1 本につき 1 つ（`video_reviews_video_id_key`）。コメントは空でない |
 | | `lesson_completions` | 非同期レッスンの完了記録（T14 の expand で追加。置き場所は ADR 0006）。添削を返した動画 1 本につき 1 行（`video_reviews` への外部キーと `lesson_completions_video_id_key`）。生徒・コーチは動画の当事者（`lesson_completions_video_fkey`） |
 | `messaging` | `threads` | 生徒と担当コーチの 1 対 1 のチャットのスレッド（D01 の expand で追加。ADR 0007）。生徒とコーチの組に 1 つ（`threads_student_id_coach_id_key`）。予約の確定で開くが、予約は scheduling の持ち物なので外部キーは張らない |

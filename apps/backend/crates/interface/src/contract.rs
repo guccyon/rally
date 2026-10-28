@@ -28,6 +28,7 @@ pub(crate) const fn sport_to_contract(sport: Sport) -> &'static str {
         Sport::Baseball => "baseball",
         Sport::Soccer => "soccer",
         Sport::Basketball => "basketball",
+        Sport::Swimming => "swimming",
     }
 }
 
@@ -37,7 +38,7 @@ pub(crate) fn sport_from_contract(value: &str) -> Option<Sport> {
         .find(|sport| sport_to_contract(*sport) == value)
 }
 
-/// student-app の `Sport`（ゴルフを除く 4 種類）。ゴルフは golf-app の範囲なので 422。
+/// student-app の `Sport`（ゴルフを除く 5 種類）。ゴルフは golf-app の範囲なので 422。
 pub(crate) fn student_app_sport(value: &str) -> Result<Sport, ApiError> {
     match sport_from_contract(value) {
         Some(Sport::Golf) => Err(ApiError::validation_failed(
@@ -48,7 +49,7 @@ pub(crate) fn student_app_sport(value: &str) -> Result<Sport, ApiError> {
     }
 }
 
-/// admin-web の `Sport`（5 種類すべて）。
+/// admin-web の `Sport`（6 種類すべて）。
 pub(crate) fn admin_web_sport(value: &str) -> Result<Sport, ApiError> {
     sport_from_contract(value).ok_or_else(|| unknown_sport(value))
 }

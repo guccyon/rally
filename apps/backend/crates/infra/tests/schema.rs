@@ -318,6 +318,98 @@ async fn subscription_is_not_for_golf(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn subscription_sports_are_the_sports_monthly_covers(pool: PgPool) {
+    use domain::{entitlement::ContractType, identity::Sport};
+    use infra::identity_values::sport_value;
+
+    let monthly: Vec<&str> = Sport::ALL
+        .into_iter()
+        .filter(|sport| ContractType::Monthly.covers(*sport))
+        .map(sport_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "entitlement.subscriptions",
+            "subscriptions_sport_check"
+        )
+        .await,
+        monthly
+    );
+    assert_eq!(
+        check_values(
+            &pool,
+            "entitlement.entitlements",
+            "entitlements_sport_check"
+        )
+        .await,
+        Sport::ALL.into_iter().map(sport_value).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        check_values(&pool, "scheduling.slots", "slots_sport_check").await,
+        Sport::ALL.into_iter().map(sport_value).collect::<Vec<_>>()
+    );
+}
+
+/// 変更シナリオ cs-001 で足した水泳は、コーチ・枠・月額の契約と受講権に入り、ワンショットには入らない。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn swimming_goes_through_coaches_slots_and_monthly_entitlements(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    sqlx::query(
+        "INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'swimming')",
+    )
+    .bind(&coach_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO scheduling.slots (coach_id, sport, starts_at, ends_at)
+         VALUES ($1::uuid, 'swimming', '2026-12-01T01:00:00Z', '2026-12-01T02:00:00Z')",
+    )
+    .bind(&coach_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let student_id = account(&pool, "student", Some("swimming")).await;
+    let subscription_id: String = sqlx::query_scalar(
+        "INSERT INTO entitlement.subscriptions (student_id, sport)
+         VALUES ($1::uuid, 'swimming') RETURNING subscription_id::text",
+    )
+    .bind(&student_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO entitlement.entitlements
+             (student_id, contract_type, sport, subscription_id, unlimited_video_and_chat)
+         VALUES ($1::uuid, 'subscription', 'swimming', $2::uuid, true)",
+    )
+    .bind(&student_id)
+    .bind(&subscription_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (code, constraint) = violation(
+        sqlx::query(
+            "INSERT INTO entitlement.entitlements
+                 (student_id, contract_type, sport, unlimited_video_and_chat, remaining_video_reviews)
+             VALUES ($1::uuid, 'one_shot', 'swimming', false, 1)",
+        )
+        .bind(&student_id)
+        .execute(&pool)
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "entitlements_one_shot_shape")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn entitlement_shape_follows_contract_type(pool: PgPool) {
     let student_id = student(&pool).await;
 
