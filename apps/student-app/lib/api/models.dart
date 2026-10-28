@@ -122,6 +122,17 @@ enum MessageSenderRole {
       _fromWire(values, value, (e) => e.wire);
 }
 
+/// 通知の種類。`NotificationSettings` と `UpdateNotificationSettingsRequest` の、受け取るかを持つ項目で、[wire] は項目名。
+/// 契約に種類が増えたら test/api/contract_test.dart が検出するので、ここに足す。
+enum NotificationKind {
+  bookingConfirmed('booking_confirmed'),
+  videoReviewReturned('video_review_returned'),
+  messageReceived('message_received');
+
+  const NotificationKind(this.wire);
+  final String wire;
+}
+
 /// `ErrorCode`。値は追加されうるので、知らない値は [ErrorCode.unknown] として扱う（契約の注記どおり）。
 enum ErrorCode {
   unauthorized('unauthorized'),
@@ -842,6 +853,92 @@ class SendMessageRequest {
   final String body;
 
   Map<String, dynamic> toJson() => {'body': body};
+}
+
+/// `NotificationSettings`（glossary の notification_settings。種類ごとに受け取るか。既定はすべて true）
+class NotificationSettings {
+  const NotificationSettings({
+    required this.studentId,
+    required this.bookingConfirmed,
+    required this.videoReviewReturned,
+    required this.messageReceived,
+  });
+
+  final String studentId;
+
+  /// 予約が確定したときの通知を受け取るか
+  final bool bookingConfirmed;
+
+  /// 動画の添削が返却されたときの通知を受け取るか
+  final bool videoReviewReturned;
+
+  /// 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
+  final bool messageReceived;
+
+  /// [kind] の通知を受け取るか
+  bool receives(NotificationKind kind) => switch (kind) {
+    NotificationKind.bookingConfirmed => bookingConfirmed,
+    NotificationKind.videoReviewReturned => videoReviewReturned,
+    NotificationKind.messageReceived => messageReceived,
+  };
+
+  /// [kind] だけを [receives] に変えた設定
+  NotificationSettings withKind(NotificationKind kind, bool receives) =>
+      NotificationSettings(
+        studentId: studentId,
+        bookingConfirmed: kind == NotificationKind.bookingConfirmed
+            ? receives
+            : bookingConfirmed,
+        videoReviewReturned: kind == NotificationKind.videoReviewReturned
+            ? receives
+            : videoReviewReturned,
+        messageReceived: kind == NotificationKind.messageReceived
+            ? receives
+            : messageReceived,
+      );
+
+  factory NotificationSettings.fromJson(Map<String, dynamic> json) =>
+      NotificationSettings(
+        studentId: json['student_id'] as String,
+        bookingConfirmed: json['booking_confirmed'] as bool,
+        videoReviewReturned: json['video_review_returned'] as bool,
+        messageReceived: json['message_received'] as bool,
+      );
+}
+
+/// `UpdateNotificationSettingsRequest`。書いた種類（null でない項目）だけを変え、書かなかった種類は今の設定のまま
+class UpdateNotificationSettingsRequest {
+  const UpdateNotificationSettingsRequest({
+    this.bookingConfirmed,
+    this.videoReviewReturned,
+    this.messageReceived,
+  });
+
+  /// [kind] 1 つだけを [receives] に変える
+  factory UpdateNotificationSettingsRequest.only(
+    NotificationKind kind,
+    bool receives,
+  ) => switch (kind) {
+    NotificationKind.bookingConfirmed => UpdateNotificationSettingsRequest(
+      bookingConfirmed: receives,
+    ),
+    NotificationKind.videoReviewReturned => UpdateNotificationSettingsRequest(
+      videoReviewReturned: receives,
+    ),
+    NotificationKind.messageReceived => UpdateNotificationSettingsRequest(
+      messageReceived: receives,
+    ),
+  };
+
+  final bool? bookingConfirmed;
+  final bool? videoReviewReturned;
+  final bool? messageReceived;
+
+  Map<String, dynamic> toJson() => {
+    'booking_confirmed': ?bookingConfirmed,
+    'video_review_returned': ?videoReviewReturned,
+    'message_received': ?messageReceived,
+  };
 }
 
 /// `Error`

@@ -96,7 +96,23 @@ void main() {
         'listMessages',
         'sendMessage',
         'markMessageThreadRead',
+        'getMyNotificationSettings',
+        'updateMyNotificationSettings',
       ]),
     );
+  });
+
+  List<String> propertiesOf(String schema) =>
+      ((schemas[schema] as YamlMap)['properties'] as YamlMap).keys
+          .cast<String>()
+          .toList();
+
+  test('NotificationKind が契約の通知の種類（NotificationSettings の真偽値の項目）と一致する', () {
+    final kinds = NotificationKind.values.map((e) => e.wire).toList();
+    expect(
+      kinds,
+      propertiesOf('NotificationSettings').where((p) => p != 'student_id'),
+    );
+    expect(kinds, propertiesOf('UpdateNotificationSettingsRequest'));
   });
 }
