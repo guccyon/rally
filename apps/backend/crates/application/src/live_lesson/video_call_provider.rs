@@ -7,13 +7,15 @@ use domain::{
 
 use crate::Unavailable;
 
-/// 通話基盤（Twilio Video 相当）のポート。ルームは通話セッション 1 つにつき 1 つで、セッション ID で指す。
+/// 通話基盤（Twilio Video 相当）のポート。ルームは通話セッション 1 つにつき 1 つで、セッション ID で指す
+/// （グループレッスンでも 1 つのルームに全員が入る）。
 ///
 /// Gen1 の実装は infra のモック（`MockVideoCallProvider`。接続品質の指標を乱数で生成する）と、テスト用の
 /// [`crate::in_memory::FixedVideoCallProvider`]。録画は扱わない。
 pub trait VideoCallProvider: Send + Sync {
     /// セッション `session_id` の通話ルームを作り、参加者 `participant` がルームに参加するためのトークン
-    /// （クライアントには不透明）を返す。
+    /// （クライアントには不透明）を返す。ルームがすでに開いていれば作り直さず、そのルームに参加するトークンを返す
+    /// （グループレッスンの 2 人目以降）。
     fn create_room(
         &self,
         session_id: SessionId,

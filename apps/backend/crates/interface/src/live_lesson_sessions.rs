@@ -47,7 +47,8 @@ pub struct StartLiveLessonSessionRequest {
 }
 
 /// student-app の `LiveLessonSession`。接続品質の指標と通話品質スコアは返さない（指標は行動イベント
-/// `call.ended` に載せる）。
+/// `call.ended` に載せる）。`booking_id` / `student_id` は開始した予約、`bookings` は結び付いた予約の一覧
+/// （グループレッスンでは人数分。先頭は開始した予約）。
 #[derive(Serialize)]
 pub struct LiveLessonSessionBody {
     session_id: String,
@@ -59,9 +60,18 @@ pub struct LiveLessonSessionBody {
     ended_at: Option<String>,
     duration_sec: Option<u64>,
     room_token: Option<String>,
+    bookings: Vec<LiveLessonSessionBookingBody>,
 }
 
-/// `POST /live-lesson-sessions`。確定した予約の参加者（生徒・コーチ）が通話を始める。
+/// student-app の `LiveLessonSessionBooking`（通話セッションに結び付いた予約）。
+#[derive(Serialize)]
+pub struct LiveLessonSessionBookingBody {
+    booking_id: String,
+    student_id: String,
+}
+
+/// `POST /live-lesson-sessions`。確定した予約の参加者（生徒・コーチ）が通話を始める。グループレッスンの通話中の
+/// セッションに結び付いた予約なら、同じセッションに入る（201 で同じセッションを返す）。
 pub async fn start_live_lesson_session<L, K, V, A, C>(
     State(state): State<Shared<L, K, V, A, C>>,
     account: AuthenticatedAccount,
@@ -165,5 +175,13 @@ fn session_body(
         ended_at: session.ended_at().map(date_time_to_contract).transpose()?,
         duration_sec: session.duration().map(|duration| duration.as_secs()),
         room_token,
+        bookings: session
+            .bookings()
+            .iter()
+            .map(|booking| LiveLessonSessionBookingBody {
+                booking_id: booking_id_uuid::format(booking.booking_id()),
+                student_id: account_id_uuid::format(booking.student_id()),
+            })
+            .collect(),
     })
 }

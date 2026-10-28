@@ -13,8 +13,10 @@ use crate::Unavailable;
 /// [`crate::in_memory::InMemoryLiveLessonSessionRepository`]（Postgres の `live_lesson.sessions` の実装は、
 /// 予約の保存先を Postgres にするときに足す）。
 ///
-/// 不変条件の判定は domain の [`LiveLessonSession`] が行う。保存先は「同じ予約のセッションは 1 つ」を
-/// 保存の時点でも守る（並行な開始が両方保存されないように。DB では `sessions_booking_id_key`）。
+/// 不変条件の判定は domain の [`LiveLessonSession`] が行う。保存先は「同じ予約のセッションは 1 つ」を、
+/// セッションに結び付いた予約（[`LiveLessonSession::bookings`]。グループレッスンでは人数分）のすべてについて
+/// 保存の時点でも守る（並行な開始が両方保存されないように。DB では `sessions_booking_id_key` と
+/// `session_bookings_booking_id_key`）。
 pub trait LiveLessonSessionRepository: Send + Sync {
     /// 新しいセッションの ID を払い出す。
     fn next_id(&self) -> SessionId;
@@ -25,14 +27,14 @@ pub trait LiveLessonSessionRepository: Send + Sync {
         session_id: SessionId,
     ) -> impl Future<Output = Result<Option<LiveLessonSession>, Unavailable>> + Send;
 
-    /// `booking_id` の予約のセッション。なければ `None`。
+    /// `booking_id` の予約が結び付いたセッション（開始した予約でなくてもよい）。なければ `None`。
     fn find_by_booking(
         &self,
         booking_id: BookingId,
     ) -> impl Future<Output = Result<Option<LiveLessonSession>, Unavailable>> + Send;
 
-    /// 新しいセッションを保存する。同じ予約のセッションがすでにあれば
-    /// [`InsertSessionError::BookingAlreadyHasSession`]。
+    /// 新しいセッションを、結び付いた予約とともに保存する。結び付いた予約のどれかのセッションがすでにあれば
+    /// [`InsertSessionError::BookingAlreadyHasSession`]（何も保存しない）。
     fn insert(
         &self,
         session: LiveLessonSession,

@@ -563,16 +563,20 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .lock()
             .unwrap()
             .iter()
-            .find(|s| s.booking_id() == booking_id)
+            .find(|s| s.bookings().iter().any(|b| b.booking_id() == booking_id))
             .cloned())
     }
 
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
         let mut sessions = self.sessions.lock().unwrap();
-        if sessions
-            .iter()
-            .any(|s| s.booking_id() == session.booking_id())
-        {
+        if sessions.iter().any(|s| {
+            s.bookings().iter().any(|linked| {
+                session
+                    .bookings()
+                    .iter()
+                    .any(|b| b.booking_id() == linked.booking_id())
+            })
+        }) {
             return Err(InsertSessionError::BookingAlreadyHasSession);
         }
         sessions.push(session);
@@ -600,8 +604,8 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
     }
 }
 
-/// 閉じるときに常に同じ接続品質を返す [`VideoCallProvider`]（テスト用）。開いているルームを記録し、
-/// 開いていないルームを閉じようとすると障害を返す。トークンは `fixed-room.<セッション ID>.<参加者 ID>`。
+/// 閉じるときに常に同じ接続品質を返す [`VideoCallProvider`]（テスト用）。開いているルームを記録し（同じセッションの
+/// ルームは 1 つ）、開いていないルームを閉じようとすると障害を返す。トークンは `fixed-room.<セッション ID>.<参加者 ID>`。
 /// 複製は同じ記録を共有する。
 #[derive(Debug, Clone)]
 pub struct FixedVideoCallProvider {
@@ -636,7 +640,10 @@ impl VideoCallProvider for FixedVideoCallProvider {
         session_id: SessionId,
         participant: AccountId,
     ) -> Result<String, Unavailable> {
-        self.rooms.lock().unwrap().push(session_id);
+        let mut rooms = self.rooms.lock().unwrap();
+        if !rooms.contains(&session_id) {
+            rooms.push(session_id);
+        }
         Ok(format!(
             "fixed-room.{}.{}",
             session_id_uuid::format(session_id),

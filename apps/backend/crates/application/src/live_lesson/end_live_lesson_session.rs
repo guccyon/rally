@@ -188,7 +188,7 @@ mod tests {
         .unwrap();
         booking.confirm(STUDENT, &mut slot, STARTED_AT).unwrap();
         let session =
-            LiveLessonSession::start(SESSION, STUDENT, &booking, None, STARTED_AT).unwrap();
+            LiveLessonSession::start(SESSION, STUDENT, &booking, &[], None, STARTED_AT).unwrap();
         let video = FixedVideoCallProvider::new(quality());
         video.create_room(SESSION, STUDENT).await.unwrap();
         EndLiveLessonSession::new(
