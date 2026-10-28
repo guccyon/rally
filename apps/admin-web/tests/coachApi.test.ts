@@ -223,4 +223,36 @@ describe("coachApi", () => {
     const result = await api.listMyCoachBookings();
     expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
+
+  test("listMyCoachVideos はトークンを付けて GET /api/coaches/me/videos を呼び、返った順のまま返す", async () => {
+    const list = {
+      videos: [
+        {
+          video_id: "66666666-6666-4666-8666-666666666666",
+          student_display_name: "佐藤さん",
+          submitted_at: "2026-10-20T03:00:00Z",
+          review_status: "in_progress",
+        },
+        {
+          video_id: "66666666-6666-4666-8666-666666666667",
+          submitted_at: "2026-10-18T03:00:00Z",
+          review_status: "returned",
+          returned_at: "2026-10-19T03:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listMyCoachVideos();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/coaches/me/videos");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("listMyCoachVideos の 403 は権限の文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.listMyCoachVideos();
+    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+  });
 });

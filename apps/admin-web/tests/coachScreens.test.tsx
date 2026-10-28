@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
+import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { LiveSessionPanel } from "@/components/coach/LiveSessionPanel";
 import { PublishSlotForm } from "@/components/coach/PublishSlotForm";
@@ -74,42 +75,180 @@ describe("枠の公開", () => {
 });
 
 describe("添削の返却", () => {
-  test("動画 ID とコメントを returnVideoReview に渡す", async () => {
-    const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>(async (videoId, body) => ({
-      ok: true,
+  // API が返す並び（添削待ちを送られた時刻の古い順、その後に返却済みを返却した時刻の新しい順）。
+  function coachVideo(
+    id: string,
+    submittedAt: string,
+    returnedAt?: string,
+    studentName?: string,
+  ): Schemas["CoachVideo"] {
+    return {
+      video_id: id,
+      submitted_at: submittedAt,
+      review_status: returnedAt ? "returned" : "in_progress",
+      ...(returnedAt ? { returned_at: returnedAt } : {}),
+      ...(studentName ? { student_display_name: studentName } : {}),
+    };
+  }
+  const OTHER_VIDEO_ID = "b0000000-0000-4000-8000-000000000002";
+  const VIDEOS = [
+    coachVideo(VIDEO_ID, "2026-10-20T01:00:00Z", undefined, "佐藤さん"),
+    coachVideo(OTHER_VIDEO_ID, "2026-10-21T01:00:00Z"),
+    coachVideo("b0000000-0000-4000-8000-000000000003", "2026-10-10T01:00:00Z", "2026-10-15T01:00:00Z", "古田さん"),
+    coachVideo("b0000000-0000-4000-8000-000000000004", "2026-10-11T01:00:00Z", "2026-10-12T01:00:00Z", "中村さん"),
+  ];
+
+  function listOf(...lists: Schemas["CoachVideo"][][]) {
+    const fn = vi.fn<CoachApi["listMyCoachVideos"]>();
+    for (const videos of lists) fn.mockResolvedValueOnce({ ok: true, data: { videos } });
+    return fn;
+  }
+
+  function returned(videoId: string, comment: string) {
+    return {
+      ok: true as const,
       data: {
         review_id: "77777777-7777-4777-8777-777777777777",
         video_id: videoId,
         student_id: STUDENT_ID,
         coach_id: COACH_ID,
-        status: "returned",
-        comment: body.comment,
+        status: "returned" as const,
+        comment,
         returned_at: "2026-11-01T01:00:00Z",
       },
-    }));
-    const user = userEvent.setup();
-    render(<ReturnVideoReviewForm api={{ returnVideoReview }} />);
+    };
+  }
 
-    await user.type(screen.getByLabelText("動画 ID"), VIDEO_ID);
+  function firstCells(table: HTMLElement) {
+    return within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[0]!.textContent);
+  }
+
+  test("添削待ちを API の順で上に、返却済みを API の順のまま畳んで下に出す", async () => {
+    render(
+      <ReturnVideoReviewForm api={{ listMyCoachVideos: listOf(VIDEOS), returnVideoReview: vi.fn() }} />,
+    );
+
+    const waiting = await screen.findByRole("table", { name: "添削待ち" });
+    expect(firstCells(waiting)).toEqual(["佐藤さん", "（名前を表示できません）"]);
+    const sato = within(waiting).getByRole("row", { name: /佐藤さん/ });
+    expect(sato).toHaveTextContent(formatDateTime(VIDEOS[0]!.submitted_at));
+    expect(within(sato).getByRole("button", { name: "添削する" })).toBeEnabled();
+
+    const done = screen.getByRole("table", { name: "返却済み" });
+    expect(firstCells(done)).toEqual(["古田さん", "中村さん"]);
+    expect(within(done).getByRole("row", { name: /古田さん/ })).toHaveTextContent(
+      formatDateTime("2026-10-15T01:00:00Z"),
+    );
+    expect(within(done).queryByRole("button")).not.toBeInTheDocument();
+    const details = done.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details.querySelector("summary")).toHaveTextContent("返却済み（2 件）");
+
+    // 選ぶまではコメントの欄を出さない。動画 ID の入力欄と「未実装」の注記はない。
+    expect(screen.queryByLabelText("添削コメント")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("動画 ID")).not.toBeInTheDocument();
+    expect(screen.queryByText(/未実装/)).not.toBeInTheDocument();
+  });
+
+  test("行を選んでコメントを書き、返却したら一覧を取り直す", async () => {
+    const listMyCoachVideos = listOf(VIDEOS, [
+      VIDEOS[1]!,
+      { ...VIDEOS[0]!, review_status: "returned", returned_at: "2026-11-01T01:00:00Z" },
+      ...VIDEOS.slice(2),
+    ]);
+    const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>(async (videoId, body) =>
+      returned(videoId, body.comment),
+    );
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview }} />);
+
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "添削する" }));
+    const form = screen.getByRole("form", { name: "添削を書く" });
+    expect(form).toHaveTextContent("佐藤さんの動画");
     await user.type(screen.getByLabelText("添削コメント"), "腰の回転を早めましょう");
     await user.click(screen.getByRole("button", { name: "添削を返却" }));
 
     expect(returnVideoReview).toHaveBeenCalledWith(VIDEO_ID, { comment: "腰の回転を早めましょう" });
-    expect(await screen.findByRole("status")).toHaveTextContent("添削を返却しました");
-    expect(screen.getByLabelText("添削コメント")).toHaveValue("");
+    expect(await screen.findByRole("status")).toHaveTextContent("佐藤さんに添削を返却しました");
+    expect(listMyCoachVideos).toHaveBeenCalledTimes(2);
+    expect(screen.queryByLabelText("添削コメント")).not.toBeInTheDocument();
+    expect(firstCells(screen.getByRole("table", { name: "添削待ち" }))).toEqual([
+      "（名前を表示できません）",
+    ]);
+    expect(firstCells(screen.getByRole("table", { name: "返却済み" }))).toEqual([
+      "佐藤さん",
+      "古田さん",
+      "中村さん",
+    ]);
   });
 
   test("コメントが空白だけなら API を呼ばない", async () => {
     const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>();
     const user = userEvent.setup();
-    render(<ReturnVideoReviewForm api={{ returnVideoReview }} />);
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos: listOf(VIDEOS), returnVideoReview }} />);
 
-    await user.type(screen.getByLabelText("動画 ID"), VIDEO_ID);
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "添削する" }));
     await user.type(screen.getByLabelText("添削コメント"), "   ");
     await user.click(screen.getByRole("button", { name: "添削を返却" }));
 
     expect(returnVideoReview).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("添削コメントを入力してください。");
+  });
+
+  test("返却できなければ文言を出し、コメントの欄を残す", async () => {
+    const listMyCoachVideos = listOf(VIDEOS);
+    const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>(async () => ({
+      ok: false,
+      message: "この動画の添削はすでに返却済みです。",
+    }));
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview }} />);
+
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "添削する" }));
+    await user.type(screen.getByLabelText("添削コメント"), "腰の回転を早めましょう");
+    await user.click(screen.getByRole("button", { name: "添削を返却" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("すでに返却済みです。");
+    expect(screen.getByLabelText("添削コメント")).toHaveValue("腰の回転を早めましょう");
+    expect(listMyCoachVideos).toHaveBeenCalledTimes(1);
+  });
+
+  test("動画が 0 件ならその旨を出す", async () => {
+    render(
+      <ReturnVideoReviewForm api={{ listMyCoachVideos: listOf([]), returnVideoReview: vi.fn() }} />,
+    );
+
+    expect(await screen.findByText("まだ動画は届いていません。")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("添削待ちがなく返却済みだけなら、添削待ちがない旨と返却済みを出す", async () => {
+    render(
+      <ReturnVideoReviewForm
+        api={{ listMyCoachVideos: listOf(VIDEOS.slice(2)), returnVideoReview: vi.fn() }}
+      />,
+    );
+
+    expect(await screen.findByText("添削待ちの動画はありません。")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "返却済み" })).toBeInTheDocument();
+  });
+
+  test("一覧の API が失敗したら、その文言だけを出す", async () => {
+    const listMyCoachVideos = vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
+      ok: false,
+      message: "権限がないためアクセスできません。",
+    }));
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview: vi.fn() }} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添削する" })).not.toBeInTheDocument();
   });
 });
 
