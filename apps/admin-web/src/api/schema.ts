@@ -38,7 +38,7 @@ export interface paths {
          * スポーツごとの予約枠の需給（本部）
          * @description スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`）と、
          *     判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
-         *     呼べる（それ以外は 403）。スポーツは `Sport` の 5 種類すべてを、`Sport` の enum の順で返す。
+         *     呼べる（それ以外は 403）。スポーツは `Sport` の 6 種類すべてを、`Sport` の enum の順で返す。
          *
          *     判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
          *
@@ -447,10 +447,10 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description Blueprint のスポーツ 5 種類。コーチはゴルフの枠も公開できる（ゴルフの生徒は golf-app の範囲）。
+         * @description 提供スポーツ 6 種類（Blueprint の 5 種類と、変更シナリオ cs-001 で足した水泳）。コーチはゴルフの枠も公開できる（ゴルフの生徒は golf-app の範囲）。
          * @enum {string}
          */
-        Sport: "tennis" | "golf" | "baseball" | "soccer" | "basketball";
+        Sport: "tennis" | "golf" | "baseball" | "soccer" | "basketball" | "swimming";
         /**
          * @description open: 公開中で未予約（生徒の検索に出る）/ booked: 予約で埋まっている / closed: コーチが閉じた（時間を占めない）。
          * @enum {string}
@@ -554,7 +554,7 @@ export interface components {
              * @description 数えた期間の終わり（含まない。集計した時刻）
              */
             window_end: string;
-            /** @description スポーツ 5 種類すべて（`Sport` の enum の順） */
+            /** @description スポーツ 6 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
         };
         /**

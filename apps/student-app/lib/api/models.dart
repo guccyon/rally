@@ -7,7 +7,8 @@ enum Sport {
   tennis('tennis'),
   baseball('baseball'),
   soccer('soccer'),
-  basketball('basketball');
+  basketball('basketball'),
+  swimming('swimming');
 
   const Sport(this.wire);
   final String wire;

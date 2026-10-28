@@ -6,6 +6,7 @@ String sportLabel(Sport sport) => switch (sport) {
   Sport.baseball => '野球',
   Sport.soccer => 'サッカー',
   Sport.basketball => 'バスケットボール',
+  Sport.swimming => '水泳',
 };
 
 String bookingStatusLabel(BookingStatus status) => switch (status) {
