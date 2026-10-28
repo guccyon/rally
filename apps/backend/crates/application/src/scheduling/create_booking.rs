@@ -129,6 +129,8 @@ mod tests {
     const OTHER_STUDENT: AccountId = AccountId::from_u128(2);
 
     fn slot(id: u128, status: SlotStatus) -> Slot {
+        // 予約済みの枠は確定した予約 1 件で埋まっている
+        let confirmed = u32::from(status == SlotStatus::Booked);
         let starts_at = NOW + Duration::from_secs(id as u64 * 3600);
         Slot::restore(
             SlotId::from_u128(id),
@@ -137,7 +139,12 @@ mod tests {
             starts_at,
             starts_at + Duration::from_secs(3600),
             status,
-            domain::scheduling::SlotSeats::default(),
+            domain::scheduling::SlotSeats::restore(
+                domain::scheduling::SlotCapacity::ONE,
+                0,
+                confirmed,
+            )
+            .unwrap(),
         )
         .unwrap()
     }

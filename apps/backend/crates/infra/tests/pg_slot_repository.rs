@@ -219,13 +219,18 @@ async fn overlapping_slot_of_the_same_coach_is_rejected(pool: PgPool) {
         .execute(command(other_coach, Sport::Tennis, 10, 12))
         .await
         .unwrap();
-    // 予約済みの枠も時間を占め、閉じた枠は占めない
-    set_status(&pool, &first, "booked").await;
+    // 予約済みの枠（確定した予約で埋まった枠）も時間を占め、閉じた枠は占めない
+    support::confirmed_booking(&pool, support::student(&pool).await, &first).await;
+    let result = use_case
+        .execute(command(coach_id, Sport::Tennis, 10, 11))
+        .await;
     assert!(
-        use_case
-            .execute(command(coach_id, Sport::Tennis, 10, 11))
-            .await
-            .is_err()
+        matches!(
+            &result,
+            Err(PublishSlotError::Invalid(DomainError::SlotOverlaps { existing }))
+                if *existing == first.id()
+        ),
+        "{result:?}"
     );
     set_status(&pool, &first, "closed").await;
     use_case
@@ -285,7 +290,7 @@ async fn search_filters_open_slots_and_pages_in_start_order(pool: PgPool) {
     let b11 = publish(coach_b, Sport::Tennis, 11).await;
     let t14 = publish(coach_b, Sport::Tennis, 14).await;
     let booked = publish(coach_a, Sport::Tennis, 15).await;
-    set_status(&pool, &booked, "booked").await;
+    support::confirmed_booking(&pool, support::student(&pool).await, &booked).await;
 
     // 現在時刻は 10 時（過去の枠は出ない）
     let search = SearchSlots::new(

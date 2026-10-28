@@ -225,6 +225,13 @@ mod tests {
     }
 
     fn slot_with_capacity(id: u128, status: SlotStatus, capacity: i64) -> Slot {
+        let capacity = SlotCapacity::new(capacity).unwrap();
+        // 予約済みの枠は確定した予約で定員まで埋まっている
+        let confirmed = if status == SlotStatus::Booked {
+            capacity.value().into()
+        } else {
+            0
+        };
         Slot::restore(
             SlotId::from_u128(id),
             COACH,
@@ -232,7 +239,7 @@ mod tests {
             at(id as u64),
             at(id as u64 + 1),
             status,
-            SlotSeats::vacant(SlotCapacity::new(capacity).unwrap()),
+            SlotSeats::restore(capacity, 0, confirmed).unwrap(),
         )
         .unwrap()
     }

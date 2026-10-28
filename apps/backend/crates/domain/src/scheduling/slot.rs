@@ -48,7 +48,9 @@ impl Slot {
     }
 
     /// 保存した枠を読み戻す（状態を問わない）。開始と終了の検証は [`Slot::publish`] と同じ。
-    /// `seats` は保存先が予約の行から数えた席（[`SlotSeats::restore`]）。
+    /// `seats` は保存先が予約の行から数えた席（[`SlotSeats::restore`]）。状態と席が合わなければ
+    /// [`DomainError::SlotStatusMismatchesSeats`]（予約済みなら確定した予約が定員ちょうど、公開中なら定員未満。
+    /// 閉じた枠は問わない）。
     pub fn restore(
         id: SlotId,
         coach_id: AccountId,
@@ -60,6 +62,14 @@ impl Slot {
     ) -> Result<Self, DomainError> {
         if starts_at >= ends_at {
             return Err(DomainError::SlotEndsBeforeItStarts);
+        }
+        let consistent = match status {
+            SlotStatus::Open => !seats.is_fully_confirmed(),
+            SlotStatus::Booked => seats.is_fully_confirmed(),
+            SlotStatus::Closed => true,
+        };
+        if !consistent {
+            return Err(DomainError::SlotStatusMismatchesSeats { status });
         }
         Ok(Self {
             id,
@@ -319,7 +329,7 @@ mod tests {
             at(10),
             at(11),
             SlotStatus::Closed,
-            SlotSeats::restore(SlotCapacity::ONE, 0, 1),
+            SlotSeats::restore(SlotCapacity::ONE, 0, 1).unwrap(),
         )
         .unwrap();
         let before = closed.clone();
@@ -336,6 +346,43 @@ mod tests {
             })
         );
         assert_eq!(closed, before);
+    }
+
+    #[test]
+    fn restored_status_must_match_the_seats() {
+        let restore = |status, pending, confirmed| {
+            Slot::restore(
+                SlotId::from_u128(1),
+                AccountId::from_u128(1),
+                Sport::Tennis,
+                at(10),
+                at(11),
+                status,
+                SlotSeats::restore(SlotCapacity::new(2).unwrap(), pending, confirmed).unwrap(),
+            )
+        };
+        for (status, pending, confirmed) in [
+            (SlotStatus::Open, 0, 0),
+            (SlotStatus::Open, 2, 0),
+            (SlotStatus::Open, 1, 1),
+            (SlotStatus::Booked, 0, 2),
+            (SlotStatus::Closed, 0, 0),
+            (SlotStatus::Closed, 0, 2),
+        ] {
+            let slot = restore(status, pending, confirmed).unwrap();
+            assert_eq!(slot.status(), status);
+        }
+        for (status, pending, confirmed) in [
+            (SlotStatus::Open, 0, 2),
+            (SlotStatus::Booked, 0, 0),
+            (SlotStatus::Booked, 1, 1),
+        ] {
+            assert_eq!(
+                restore(status, pending, confirmed),
+                Err(DomainError::SlotStatusMismatchesSeats { status }),
+                "{status:?} {pending}/{confirmed}"
+            );
+        }
     }
 
     #[test]

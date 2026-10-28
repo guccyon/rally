@@ -46,6 +46,13 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         }
         DomainError::SlotAlreadyBooked => "スロットはすでに予約されている".to_string(),
         DomainError::SlotAlreadyBookedByStudent => "このスロットはすでに予約している".to_string(),
+        DomainError::SlotSeatsOverCapacity { capacity, active } => {
+            format!("スロットの有効な予約は定員 {capacity} まで（{active} 件）")
+        }
+        DomainError::SlotStatusMismatchesSeats { status } => format!(
+            "スロットの状態と予約の数が合わない（{}）",
+            slot_status_label(*status)
+        ),
         DomainError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
         DomainError::BookingNotPending { status } => {
             format!("確定前の予約でない（{}）", booking_status_label(*status))
@@ -202,6 +209,19 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::SlotCapacityOutOfRange { min: 1, max: 6 }),
             "スロットの定員は 1〜6 の整数"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotSeatsOverCapacity {
+                capacity: 1,
+                active: 2
+            }),
+            "スロットの有効な予約は定員 1 まで（2 件）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SlotStatusMismatchesSeats {
+                status: SlotStatus::Booked
+            }),
+            "スロットの状態と予約の数が合わない（予約済み）"
         );
         assert_eq!(
             domain_error(&DomainError::TrialAlreadyUsed),

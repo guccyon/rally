@@ -1,4 +1,5 @@
 use super::SlotCapacity;
+use crate::DomainError;
 
 /// スロットの席（定員と、有効な予約の数）。有効な予約は未確定（`Pending`）か確定（`Confirmed`）の予約で、
 /// キャンセルした予約は数えない。
@@ -22,14 +23,25 @@ impl SlotSeats {
         }
     }
 
-    /// 保存先から数えた席を組み立てる（保存先の実装用）。数が定員を超えていても確かめない
-    /// （予約の時点で確かめた。残りの席は 0 として読む）。
-    pub const fn restore(capacity: SlotCapacity, pending: u32, confirmed: u32) -> Self {
-        Self {
+    /// 保存先から数えた席を組み立てる（保存先の実装用）。有効な予約（未確定と確定）の数が定員を超えたら
+    /// [`DomainError::SlotSeatsOverCapacity`]。
+    pub const fn restore(
+        capacity: SlotCapacity,
+        pending: u32,
+        confirmed: u32,
+    ) -> Result<Self, DomainError> {
+        let active = pending.saturating_add(confirmed);
+        if active > capacity.value() as u32 {
+            return Err(DomainError::SlotSeatsOverCapacity {
+                capacity: capacity.value(),
+                active,
+            });
+        }
+        Ok(Self {
             capacity,
             pending,
             confirmed,
-        }
+        })
     }
 
     pub const fn capacity(self) -> SlotCapacity {
@@ -51,7 +63,7 @@ impl SlotSeats {
         self.pending + self.confirmed
     }
 
-    /// 残りの席（定員 − 有効な予約の数。0 未満にはしない）。
+    /// 残りの席（定員 − 有効な予約の数）。
     pub const fn remaining(self) -> u32 {
         (self.capacity.value() as u32).saturating_sub(self.active())
     }
@@ -101,12 +113,26 @@ mod tests {
 
     #[test]
     fn remaining_counts_pending_and_confirmed() {
-        let seats = SlotSeats::restore(capacity(3), 1, 1);
+        let seats = SlotSeats::restore(capacity(3), 1, 1).unwrap();
         assert_eq!((seats.active(), seats.remaining()), (2, 1));
         assert!(!seats.is_fully_confirmed());
-        assert!(SlotSeats::restore(capacity(3), 0, 3).is_fully_confirmed());
-        // 数が定員を超えていても残りは 0
-        assert_eq!(SlotSeats::restore(capacity(1), 2, 0).remaining(), 0);
+        let full = SlotSeats::restore(capacity(3), 0, 3).unwrap();
+        assert!(full.is_fully_confirmed());
+        assert_eq!(full.remaining(), 0);
+    }
+
+    #[test]
+    fn restored_seats_must_not_exceed_the_capacity() {
+        for (pending, confirmed) in [(2, 0), (1, 1), (0, 2), (u32::MAX, 1)] {
+            assert_eq!(
+                SlotSeats::restore(capacity(1), pending, confirmed),
+                Err(DomainError::SlotSeatsOverCapacity {
+                    capacity: 1,
+                    active: pending.saturating_add(confirmed),
+                }),
+                "{pending} + {confirmed}"
+            );
+        }
     }
 
     #[test]
