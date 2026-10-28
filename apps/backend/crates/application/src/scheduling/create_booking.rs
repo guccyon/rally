@@ -304,6 +304,13 @@ mod tests {
         ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
+
+        async fn bookings_of_coach(
+            &self,
+            _coach_id: AccountId,
+        ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

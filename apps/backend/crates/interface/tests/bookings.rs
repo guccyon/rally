@@ -3,6 +3,8 @@
 //! レスポンスの形を OpenAPI のスキーマで検査し、二重予約の拒否・体験予約の 1 回限り・確定でスロットが埋まること・
 //! キャンセルでスロットが空くこととキャンセル規定の判定（`consumes_quota`）・発火するイベントを確かめる。
 //! `GET /bookings/me`（`listMyBookings`）は本人の予約だけをスロットの開始時刻の新しい順に返すことと、生徒以外は 403 を確かめる。
+//! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
+//! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -25,8 +27,9 @@ use application::{
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, ListMyBookings, PublishSlot,
-        SchedulingBookingLookup, SearchSlots, booking_id_uuid, slot_id_uuid,
+        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, ListCoachBookings,
+        ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots, booking_id_uuid,
+        slot_id_uuid,
     },
 };
 use axum::{
@@ -173,8 +176,12 @@ fn app_with_entitlements(
             clock,
         ),
         ListMyBookings::new(
-            bookings,
+            bookings.clone(),
             application::identity::IdentityCoachIntroductionLookup::new(accounts.clone()),
+        ),
+        ListCoachBookings::new(
+            bookings,
+            application::identity::IdentityStudentDisplayNameLookup::new(accounts.clone()),
         ),
         StartSubscription::new(
             entitlements.clone(),
@@ -1041,5 +1048,152 @@ async fn only_authenticated_students_can_list_their_bookings() {
         let (status, body) = get_my_bookings(&app.router, token).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
         assert_list_contract(status, &body);
+    }
+}
+
+// --- GET /coaches/me/bookings ---
+
+const COACH_TOKEN: &str = "coach:9";
+
+async fn get_my_coach_bookings(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
+    let mut request = Request::get("/coaches/me/bookings");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    send(router, request.body(Body::empty()).unwrap()).await
+}
+
+fn assert_coach_list_contract(status: StatusCode, body: &Value) {
+    support::Contract::load("admin-web").assert_response(
+        "get",
+        "/coaches/me/bookings",
+        status,
+        body,
+    );
+}
+
+/// 生徒 `STUDENT` のアカウントを表示名「あおき」で保存する（`OTHER_STUDENT` は保存しない）。
+async fn register_student(app: &App) {
+    use application::identity::AccountRepository;
+    use domain::identity::{Account, DisplayName, Email};
+
+    let account = Account::new(
+        account_id(STUDENT),
+        Email::new("aoki@example.com").unwrap(),
+        DisplayName::new("あおき").unwrap(),
+        Role::Student,
+        [Sport::Tennis],
+        SystemTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    app.accounts.insert(account).await.unwrap();
+}
+
+#[tokio::test]
+async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled_ones() {
+    // スロット 20 は別のコーチの枠
+    let other_coach_slot = Slot::restore(
+        SlotId::from_u128(20),
+        AccountId::from_u128(8),
+        Sport::Tennis,
+        nov1(20),
+        nov1(21),
+        SlotStatus::Open,
+    )
+    .unwrap();
+    let app = app_with([other_coach_slot]);
+    register_student(&app).await;
+    let cancelled = create(&app.router, STUDENT, 12, false).await;
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let pending = create(&app.router, OTHER_STUDENT, 11, false).await;
+    let confirmed = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // 別のコーチの枠への予約は出ない
+    create(&app.router, STUDENT, 20, false).await;
+    let analytics = app.analytics.events().len();
+    let events = app.events.events().len();
+
+    let (status, body) = get_my_coach_bookings(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_list_contract(status, &body);
+    let items = body["bookings"].as_array().unwrap();
+    let listed: Vec<(&str, &str, &str)> = items
+        .iter()
+        .map(|item| {
+            (
+                item["booking"]["booking_id"].as_str().unwrap(),
+                item["booking"]["status"].as_str().unwrap(),
+                item["slot"]["slot_id"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (confirmed.as_str(), "confirmed", slot_id(10).as_str()),
+            (pending.as_str(), "pending", slot_id(11).as_str()),
+            (cancelled.as_str(), "cancelled", slot_id(12).as_str()),
+        ]
+    );
+    let coach_id = account_id_uuid::format(COACH);
+    assert!(
+        items
+            .iter()
+            .all(|i| i["booking"]["coach_id"] == coach_id && i["slot"]["coach_id"] == coach_id)
+    );
+    assert_eq!(
+        items[0]["slot"],
+        json!({
+            "slot_id": slot_id(10),
+            "coach_id": coach_id,
+            "sport": "tennis",
+            "starts_at": "2026-11-01T10:00:00Z",
+            "ends_at": "2026-11-01T11:00:00Z",
+            "status": "booked",
+        })
+    );
+    assert_eq!(
+        items[0]["booking"]["student_id"],
+        account_id_uuid::format(account_id(STUDENT))
+    );
+    assert_eq!(items[0]["booking"]["is_trial"], true);
+    assert_eq!(items[0]["student_display_name"], "あおき");
+    assert_eq!(items[2]["student_display_name"], "あおき");
+    assert!(
+        items[1].get("student_display_name").is_none(),
+        "アカウントが引けない生徒は student_display_name を載せない: {}",
+        items[1]
+    );
+    // 照会では何も発火しない
+    assert_eq!(app.analytics.events().len(), analytics);
+    assert_eq!(app.events.events().len(), events);
+}
+
+#[tokio::test]
+async fn coach_without_bookings_gets_an_empty_list() {
+    let app = app();
+    create(&app.router, STUDENT, 10, false).await;
+    let (status, body) = get_my_coach_bookings(&app.router, Some("coach:8")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_list_contract(status, &body);
+    assert_eq!(body, json!({ "bookings": [] }));
+}
+
+#[tokio::test]
+async fn only_authenticated_coaches_can_list_their_bookings() {
+    let app = app();
+    create(&app.router, STUDENT, 10, false).await;
+    for token in [STUDENT, "headquarters:5"] {
+        let (status, body) = get_my_coach_bookings(&app.router, Some(token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        assert_coach_list_contract(status, &body);
+        assert_eq!(body["code"], "forbidden");
+    }
+    for token in [None, Some("unknown")] {
+        let (status, body) = get_my_coach_bookings(&app.router, token).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
+        assert_coach_list_contract(status, &body);
     }
 }

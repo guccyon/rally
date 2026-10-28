@@ -2,6 +2,7 @@
 //! 登録した生徒が体験予約して確定するまで（一周シナリオの入口）と、確定した予約のキャンセル。境界間イベントは
 //! infra のモック（標準出力に書くだけ）。契約の形・拒否の細かい検査は interface の `tests/bookings.rs`。
 //! 自分の予約の一覧（`GET /bookings/me`）は本人の分だけを返し、生徒以外は 403。
+//! コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は本人の枠への予約だけを生徒の表示名と一緒に返し、コーチ以外は 403。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -246,5 +247,79 @@ async fn student_lists_only_own_bookings() {
 
     // コーチは呼べない
     let (status, body) = send(&router, get(&coach)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+async fn coach_lists_only_bookings_of_own_slots_with_student_display_names() {
+    let router = server::router();
+    let coach_token = |id: u128| {
+        MockTokenService
+            .issue(TokenClaims {
+                account_id: AccountId::from_u128(id),
+                role: Role::Coach,
+            })
+            .into_string()
+    };
+    let (coach, other_coach) = (coach_token(42), coach_token(43));
+    let mut slots = Vec::new();
+    for (token, hour) in [(&coach, "12"), (&coach, "10"), (&other_coach, "11")] {
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                Some(token),
+                json!({
+                    "sport": "tennis",
+                    "starts_at": format!("2099-01-01T{hour}:00:00Z"),
+                    "ends_at": format!("2099-01-01T{hour}:30:00Z"),
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        slots.push(slot);
+    }
+    let student = register(&router, "taro@example.com").await;
+    let mut booking_ids = Vec::new();
+    for (slot, is_trial) in [(&slots[0], true), (&slots[1], false), (&slots[2], false)] {
+        let (status, booking) = send(
+            &router,
+            post_json(
+                "/bookings",
+                Some(&student),
+                json!({ "slot_id": slot["slot_id"], "is_trial": is_trial }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{booking}");
+        booking_ids.push(booking["booking_id"].clone());
+    }
+
+    let get = |token: &str| {
+        Request::get("/coaches/me/bookings")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, body) = send(&router, get(&coach)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let bookings = body["bookings"].as_array().unwrap();
+    let listed: Vec<_> = bookings
+        .iter()
+        .map(|item| item["booking"]["booking_id"].clone())
+        .collect();
+    assert_eq!(
+        listed,
+        [booking_ids[1].clone(), booking_ids[0].clone()],
+        "開始時刻の古い順で、別のコーチの枠への予約は出ない: {body}"
+    );
+    assert_eq!(bookings[0]["slot"]["starts_at"], "2099-01-01T10:00:00Z");
+    assert_eq!(bookings[0]["slot"]["status"], "open");
+    assert_eq!(bookings[0]["booking"]["status"], "pending");
+    assert_eq!(bookings[0]["student_display_name"], "たろう");
+
+    // 生徒は呼べない
+    let (status, body) = send(&router, get(&student)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 }

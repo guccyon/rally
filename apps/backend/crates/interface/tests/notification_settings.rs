@@ -118,6 +118,12 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
         ),
+        application::scheduling::ListCoachBookings::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::identity::IdentityStudentDisplayNameLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

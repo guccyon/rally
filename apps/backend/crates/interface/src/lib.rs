@@ -6,6 +6,7 @@
 mod accounts;
 pub mod auth;
 mod bookings;
+mod coach_bookings;
 mod coaches;
 mod contract;
 mod entitlements;
@@ -55,7 +56,8 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, ListMyBookings, PublishSlot, QuotaGate, SearchSlots, SlotRepository,
+        GetSlotSupply, ListCoachBookings, ListMyBookings, PublishSlot, QuotaGate, SearchSlots,
+        SlotRepository, StudentDisplayNameLookup,
     },
 };
 use axum::{
@@ -84,11 +86,12 @@ pub use error::ApiError;
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web のコーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`
 /// （コーチが受けた評価の一覧）は本部とコーチで、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+/// `GET /coaches/me/bookings`（admin-web のコーチの自分の予約の一覧）はコーチだけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, I, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
@@ -100,6 +103,7 @@ pub fn router_with<R, S, I, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C
     cancel_booking: CancelBooking<B, A, P, C>,
     get_slot_supply: GetSlotSupply<B, C>,
     list_my_bookings: ListMyBookings<B, I>,
+    list_coach_bookings: ListCoachBookings<B, D>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
@@ -123,6 +127,7 @@ where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
     I: CoachIntroductionLookup + 'static,
+    D: StudentDisplayNameLookup + 'static,
     B: BookingRepository + 'static,
     G: QuotaGate + 'static,
     E: EntitlementRepository + 'static,
@@ -195,6 +200,15 @@ where
         .route("/bookings/me", get(my_bookings::list_my_bookings::<B, I>))
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(my_bookings::MyBookingsState { list_my_bookings }));
+    let coach_bookings = Router::new()
+        .route(
+            "/coaches/me/bookings",
+            get(coach_bookings::list_my_coach_bookings::<B, D>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(coach_bookings::CoachBookingsState {
+            list_coach_bookings,
+        }));
     let slot_supply = Router::new()
         .route("/slot-supply", get(slot_supply::get_slot_supply::<B, C>))
         .route_layer(require_role(&[Role::Headquarters]))
@@ -316,6 +330,7 @@ where
         .merge(slots)
         .merge(bookings)
         .merge(my_bookings)
+        .merge(coach_bookings)
         .merge(slot_supply)
         .merge(subscriptions)
         .merge(entitlements)

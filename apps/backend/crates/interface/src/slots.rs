@@ -217,7 +217,7 @@ pub(crate) fn student_app_slot_body(
     })
 }
 
-fn admin_web_slot_body(slot: &Slot) -> Result<AdminWebSlotBody, ApiError> {
+pub(crate) fn admin_web_slot_body(slot: &Slot) -> Result<AdminWebSlotBody, ApiError> {
     Ok(AdminWebSlotBody {
         slot_id: slot_id_uuid::format(slot.id()),
         coach_id: account_id_uuid::format(slot.coach_id()),

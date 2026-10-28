@@ -1,6 +1,6 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
-//! 生徒の予約とそのスロットの読み取り（本人の予約の一覧）。
+//! 生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -293,4 +293,75 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
             .unwrap()
             .is_empty()
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let late = support::open_slot(&pool, coach, 30, 31).await;
+    let early = support::open_slot(&pool, coach, 10, 11).await;
+    let others = support::open_slot(&pool, other_coach, 20, 21).await;
+    let cancelled = reserve(&bookings, other, &early, false).await.unwrap();
+    let cancelled = bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(other, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &late).await;
+    reserve(&bookings, student, &others, false).await.unwrap();
+
+    let mut found = bookings.bookings_of_coach(coach).await.unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let early = Slot::restore(
+        early.id(),
+        coach,
+        early.sport(),
+        early.starts_at(),
+        early.ends_at(),
+        SlotStatus::Open,
+    )
+    .unwrap();
+    let late = Slot::restore(
+        late.id(),
+        coach,
+        late.sport(),
+        late.starts_at(),
+        late.ends_at(),
+        SlotStatus::Booked,
+    )
+    .unwrap();
+    assert_eq!(
+        found,
+        [(cancelled, early), (confirmed.clone(), late)],
+        "別のコーチの枠への予約は読まない"
+    );
+
+    // ユースケースを通すと、スロットの開始時刻の古い順で、生徒の表示名が添わる
+    let list = application::scheduling::ListCoachBookings::new(
+        bookings.clone(),
+        application::identity::IdentityStudentDisplayNameLookup::new(
+            infra::PgAccountRepository::new(pool.clone()),
+        ),
+    )
+    .execute(coach)
+    .await
+    .unwrap();
+    let statuses: Vec<_> = list.items.iter().map(|(b, _)| b.status()).collect();
+    assert_eq!(
+        statuses,
+        [BookingStatus::Cancelled, BookingStatus::Confirmed]
+    );
+    assert_eq!(list.items[1].0, confirmed);
+    assert_eq!(
+        list.students.get(&student).map(|name| name.as_str()),
+        Some("テスト")
+    );
+    assert_eq!(list.students.len(), 2);
+
+    let nobody = support::coach(&pool).await;
+    assert!(bookings.bookings_of_coach(nobody).await.unwrap().is_empty());
 }
