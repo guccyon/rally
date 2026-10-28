@@ -1,0 +1,327 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
+import 'package:rally_student_app/screens/student_flow_screen.dart';
+import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/labels.dart';
+
+import '../support/fake_student_api.dart';
+import '../support/pump.dart';
+
+void main() {
+  final afterSubscription = StudentFlowState(
+    step: FlowStep.subscription,
+    accessToken: Fixtures.registered.accessToken,
+    student: Fixtures.student,
+    subscription: Fixtures.subscriptionStarted.subscription,
+    entitlement: Fixtures.subscriptionStarted.entitlement,
+  );
+
+  /// 月額契約の前（受講権がない）
+  final beforeSubscription = StudentFlowState(
+    step: FlowStep.slotSearch,
+    accessToken: Fixtures.registered.accessToken,
+    student: Fixtures.student,
+  );
+
+  const quotaNotice = '今キャンセルすると、今月のビデオ通話の回数を 1 回使います。';
+  const cancelLabel = 'この予約をキャンセルする';
+
+  MyBooking bookingOf(String bookingId) =>
+      Fixtures.myBookings.firstWhere((b) => b.booking.bookingId == bookingId);
+
+  String timeOf(MyBooking item) =>
+      formatTimeRange(item.slot.startsAt, item.slot.endsAt);
+
+  /// 一覧の 1 件（日時の行で探す）
+  Finder cardOf(MyBooking item) => find.widgetWithText(Card, timeOf(item));
+
+  Future<void> openBookings(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('自分の予約'));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> tapCancelOf(WidgetTester tester, MyBooking item) async {
+    final button = find.descendant(
+      of: cardOf(item),
+      matching: find.widgetWithText(OutlinedButton, cancelLabel),
+    );
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'アプリバーから開くと listMyBookings で読み込み、日時・スポーツ・コーチ・状態を出し、閉じると開いた画面に戻る',
+    (tester) async {
+      final api = FakeStudentApi();
+      final container = await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: api,
+        initial: afterSubscription,
+      );
+
+      await openBookings(tester);
+
+      expect(api.calls, ['listMyBookings']);
+      expect(find.text('自分の予約'), findsOneWidget);
+      expect(find.byType(Card), findsNWidgets(4));
+      for (final (id, sport, coach, status) in [
+        ('booking-later', 'テニス', 'コーチ: 佐藤', '状態: 確定済み'),
+        ('booking-soon', 'サッカー', 'コーチ: 鈴木', '状態: 確定待ち'),
+        ('booking-cancelled', 'テニス', 'コーチ: 佐藤', '状態: キャンセル済み'),
+        ('booking-past', 'テニス', 'コーチ: 佐藤', '状態: 確定済み'),
+      ]) {
+        final card = cardOf(bookingOf(id));
+        expect(card, findsOneWidget, reason: id);
+        for (final text in [sport, coach, status]) {
+          expect(
+            find.descendant(of: card, matching: find.text(text)),
+            findsOneWidget,
+            reason: '$id: $text',
+          );
+        }
+      }
+      // まだ始まっていない予約（キャンセル済みを除く）だけにキャンセルのボタン
+      for (final (id, cancellable) in [
+        ('booking-later', true),
+        ('booking-soon', true),
+        ('booking-cancelled', false),
+        ('booking-past', false),
+      ]) {
+        expect(
+          find.descendant(
+            of: cardOf(bookingOf(id)),
+            matching: find.text(cancelLabel),
+          ),
+          cancellable ? findsOneWidget : findsNothing,
+          reason: id,
+        );
+      }
+      // 自分の予約の画面からはほかの脇の画面を重ねて開かない
+      expect(find.byTooltip('チャット'), findsNothing);
+      expect(find.byTooltip('通知の設定'), findsNothing);
+      expect(find.byTooltip('自分の予約'), findsNothing);
+
+      await tester.tap(find.byTooltip('自分の予約を閉じる'));
+      await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    },
+  );
+
+  testWidgets('コーチの名前がない予約は名前の行を出さず、予約がなければそう伝える', (tester) async {
+    final api = FakeStudentApi(
+      myBookings: [
+        Fixtures.myBooking(
+          bookingId: 'booking-no-coach',
+          startsIn: const Duration(days: 3),
+          coachDisplayName: null,
+        ),
+      ],
+    );
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+    );
+    await openBookings(tester);
+
+    expect(find.textContaining('コーチ:'), findsNothing);
+    expect(find.text('テニス'), findsOneWidget);
+
+    api.myBookings.clear();
+    await tapText(tester, '一覧を更新する');
+    expect(api.calls, ['listMyBookings', 'listMyBookings']);
+    expect(find.byType(Card), findsNothing);
+    expect(find.text('まだ予約はありません。スロットを探して予約すると、ここに出ます。'), findsOneWidget);
+  });
+
+  testWidgets('24 時間より先の予約は、確認してから cancelBooking でキャンセルし、状態をキャンセル済みにする', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+    );
+    await openBookings(tester);
+    final later = bookingOf('booking-later');
+
+    await tapCancelOf(tester, later);
+
+    expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
+    expect(find.text('${timeOf(later)} のテニスの予約をキャンセルします。'), findsOneWidget);
+    expect(find.text(quotaNotice), findsNothing);
+    expect(api.calls, ['listMyBookings']);
+
+    await tapText(tester, 'キャンセルする');
+
+    expect(api.calls, ['listMyBookings', 'cancelBooking']);
+    expect(api.requests.single, 'booking-later');
+    expect(find.text('予約をキャンセルしますか？'), findsNothing);
+    final card = cardOf(later);
+    expect(
+      find.descendant(of: card, matching: find.text('状態: キャンセル済み')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.text(cancelLabel)),
+      findsNothing,
+    );
+    expect(
+      container
+          .read(studentFlowProvider)
+          .myBookings!
+          .firstWhere((b) => b.booking.bookingId == 'booking-later')
+          .booking
+          .status,
+      BookingStatus.cancelled,
+    );
+    // ほかの予約はそのまま
+    expect(find.text(cancelLabel), findsOneWidget);
+  });
+
+  testWidgets('24 時間を切った予約は、確認に今月のビデオ通話の回数を 1 回使うことを添え、やめればキャンセルしない', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+    );
+    await openBookings(tester);
+    final soon = bookingOf('booking-soon');
+
+    await tapCancelOf(tester, soon);
+
+    expect(find.text('${timeOf(soon)} のサッカーの予約をキャンセルします。'), findsOneWidget);
+    expect(find.text(quotaNotice), findsOneWidget);
+
+    await tapText(tester, 'やめる');
+
+    expect(api.calls, ['listMyBookings']);
+    expect(find.text('予約をキャンセルしますか？'), findsNothing);
+    expect(
+      find.descendant(of: cardOf(soon), matching: find.text('状態: 確定待ち')),
+      findsOneWidget,
+    );
+
+    await tapCancelOf(tester, soon);
+    await tapText(tester, 'キャンセルする');
+    expect(api.calls, ['listMyBookings', 'cancelBooking']);
+    expect(api.requests.single, 'booking-soon');
+    expect(
+      find.descendant(of: cardOf(soon), matching: find.text('状態: キャンセル済み')),
+      findsOneWidget,
+    );
+  });
+
+  for (final (title, before, notice) in [
+    ('開始のちょうど 24 時間前は回数を使うことを添える', Duration(hours: 24), true),
+    ('開始の 24 時間と 1 分前なら回数のことは添えない', Duration(hours: 24, minutes: 1), false),
+  ]) {
+    testWidgets(title, (tester) async {
+      final later = bookingOf('booking-later');
+      await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: FakeStudentApi(),
+        initial: afterSubscription,
+        now: later.booking.startsAt.subtract(before),
+      );
+      await openBookings(tester);
+
+      await tapCancelOf(tester, later);
+
+      expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
+      expect(find.text(quotaNotice), notice ? findsOneWidget : findsNothing);
+    });
+  }
+
+  testWidgets('月額契約の前は、24 時間を切っていても回数のことは添えない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: beforeSubscription,
+    );
+    await openBookings(tester);
+
+    await tapCancelOf(tester, bookingOf('booking-soon'));
+
+    expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
+    expect(find.text(quotaNotice), findsNothing);
+  });
+
+  testWidgets('キャンセルに失敗したら状態を変えずに知らせ、やり直せる', (tester) async {
+    final api = FakeStudentApi(
+      failures: {
+        'cancelBooking': const StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.invalidBookingState,
+            message: 'invalid booking state',
+          ),
+        ),
+      },
+    );
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+    );
+    await openBookings(tester);
+    final later = bookingOf('booking-later');
+
+    await tapCancelOf(tester, later);
+    await tapText(tester, 'キャンセルする');
+
+    expect(api.calls, ['listMyBookings', 'cancelBooking']);
+    // 失敗の文言は一覧の先頭に出る（ボタンを押すときに ensureVisible で下へ送ったので戻す）
+    await tester.drag(find.byType(ListView), const Offset(0, 600));
+    await tester.pumpAndSettle();
+    expect(find.text('予約の状態が変わっています。予約を確かめてください。'), findsOneWidget);
+    expect(
+      find.descendant(of: cardOf(later), matching: find.text('状態: 確定済み')),
+      findsOneWidget,
+    );
+    final button = tester.widget<OutlinedButton>(
+      find.descendant(
+        of: cardOf(later),
+        matching: find.widgetWithText(OutlinedButton, cancelLabel),
+      ),
+    );
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('読み込みに失敗したら知らせ、読み込み直せる', (tester) async {
+    final failures = {'listMyBookings': Fixtures.unreachable};
+    final api = FakeStudentApi(failures: failures);
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+    );
+    await openBookings(tester);
+
+    expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsOneWidget);
+    expect(find.textContaining('状態:'), findsNothing);
+
+    failures.clear();
+    await tapText(tester, '一覧を更新する');
+
+    expect(api.calls, ['listMyBookings', 'listMyBookings']);
+    expect(find.byType(Card), findsNWidgets(4));
+    expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsNothing);
+  });
+}

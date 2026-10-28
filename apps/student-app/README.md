@@ -29,10 +29,10 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
 | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
 | 通知の受け取り設定（予約の確定・添削の返却・メッセージの受信の種類ごとのスイッチ。登録後はどの画面からもアプリバーの「通知の設定」で開き、閉じると開いた画面に戻る。切り替えたらその種類だけをすぐ保存し、失敗したら元に戻して文言を出す） | `getMyNotificationSettings` / `updateMyNotificationSettings` |
+| 自分の予約（登録後はどの画面からもアプリバーの「自分の予約」で開き、閉じると開いた画面に戻る。キャンセル済みも含めて、日時・スポーツ・載っていればコーチの名前・状態を出す。まだ始まっていない予約（キャンセル済みを除く）には「この予約をキャンセルする」を出し、押すと確認する。月額契約の生徒が開始 24 時間前以降にキャンセルするときは「今キャンセルすると、今月のビデオ通話の回数を 1 回使います。」と添える（回数を使うかを決めるのはサーバーで、ここは同じ境界で確認の文言を出すだけ。今の時刻は `clockProvider` で、テストでは固定する）。キャンセルできたらその予約をキャンセル済みにし、失敗したら状態を変えずに文言を出す） | `listMyBookings` / `cancelBooking` |
 
 ## API
 
 - 契約 `specs/contracts/api/student-app/openapi.yaml` のスキーマを `lib/api/models.dart` に手で写した（ジェネレーターは Java が要るので使っていない）。型名は契約のスキーマ名に揃え、項目名は lowerCamelCase にする。契約の `Error` だけは Dart の `Error` と衝突するので `ApiError`
 - 操作は `lib/api/student_api.dart` の `StudentApi`（operationId と 1 対 1）、HTTP の実装は `lib/api/http_student_api.dart`。契約の `ErrorCode` → 画面の文言は `lib/api/error_message.dart` の 1 か所
-- `listMyBookings`（`GET /bookings/me`。自分の予約の一覧）は、応答のモデル（`MyBookingList`・`MyBooking`）だけを置いた。使う画面がまだないので `StudentApi` には足していない
 - 契約の enum とのずれ・操作の有無は `test/api/contract_test.dart` が検出する。契約を変えたら `models.dart` を合わせる

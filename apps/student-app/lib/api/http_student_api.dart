@@ -44,6 +44,15 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<MyBookingList> listMyBookings() async =>
+      MyBookingList.fromJson(await _send('GET', '/bookings/me'));
+
+  @override
+  Future<Booking> cancelBooking(String bookingId) async => Booking.fromJson(
+    await _send('POST', '/bookings/${Uri.encodeComponent(bookingId)}/cancel'),
+  );
+
+  @override
   Future<LiveLessonSession> startLiveLessonSession(
     StartLiveLessonSessionRequest body,
   ) async => LiveLessonSession.fromJson(

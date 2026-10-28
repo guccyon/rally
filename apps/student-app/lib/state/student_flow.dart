@@ -7,7 +7,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とチャット・通知の受け取り設定の画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）と自分の予約・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
   register,
   slotSearch,
@@ -28,12 +28,16 @@ enum FlowStep {
   messages,
 
   /// 通知の受け取り設定（登録後のどの段からも開け、閉じると開いた段に戻る）
-  notificationSettings;
+  notificationSettings,
+
+  /// 自分の予約の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
+  myBookings;
 
   bool get isChat => this == messageThreads || this == messages;
 
-  /// 一周シナリオの脇に開く画面（チャットと通知の受け取り設定）。ここからはほかの脇の画面を開かない
-  bool get isAside => isChat || this == notificationSettings;
+  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・自分の予約）。ここからはほかの脇の画面を開かない
+  bool get isAside =>
+      isChat || this == notificationSettings || this == myBookings;
 }
 
 /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
@@ -62,6 +66,8 @@ class StudentFlowState {
     this.messages,
     this.settingsReturnStep,
     this.notificationSettings,
+    this.bookingsReturnStep,
+    this.myBookings,
     // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
     // ignore: prefer_initializing_formals
   }) : _reviewedLessonIds = reviewedLessonIds;
@@ -128,6 +134,12 @@ class StudentFlowState {
   /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
   final NotificationSettings? notificationSettings;
 
+  /// 自分の予約の一覧を閉じたときに戻る段（一覧を開いた段）
+  final FlowStep? bookingsReturnStep;
+
+  /// 自分の予約（`listMyBookings`。未取得なら null）。キャンセルしたらその予約を応答で置き換える
+  final List<MyBooking>? myBookings;
+
   /// `errorMessage` は引き継がない（渡さなければ消える）。
   StudentFlowState copyWith({
     FlowStep? step,
@@ -153,6 +165,8 @@ class StudentFlowState {
     List<Message>? messages,
     FlowStep? settingsReturnStep,
     NotificationSettings? notificationSettings,
+    FlowStep? bookingsReturnStep,
+    List<MyBooking>? myBookings,
   }) => StudentFlowState(
     step: step ?? this.step,
     busy: busy ?? this.busy,
@@ -177,6 +191,8 @@ class StudentFlowState {
     messages: messages ?? this.messages,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
+    bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
+    myBookings: myBookings ?? this.myBookings,
   );
 }
 
@@ -193,6 +209,9 @@ final studentApiProvider = Provider<StudentApi>(
     accessToken: () => ref.read(studentFlowProvider).accessToken,
   ),
 );
+
+/// 今の時刻。予約が始まったか・キャンセルで回数を使うかの表示に使う。テストでは固定の時刻に差し替える。
+final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
 final studentFlowProvider =
     NotifierProvider<StudentFlowNotifier, StudentFlowState>(
@@ -471,6 +490,59 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     final settings = await _api.getMyNotificationSettings();
     state = state.copyWith(notificationSettings: settings);
   }
+
+  /// 自分の予約の一覧を開く（`listMyBookings`）。閉じたら今の段に戻る。
+  Future<void> openMyBookings() {
+    if (state.step != FlowStep.myBookings) {
+      state = state.copyWith(
+        bookingsReturnStep: state.step,
+        step: FlowStep.myBookings,
+      );
+    }
+    return _run(_loadMyBookings);
+  }
+
+  /// 自分の予約の一覧を読み直す
+  Future<void> refreshMyBookings() => _run(_loadMyBookings);
+
+  /// 自分の予約の一覧を閉じて、開いた段に戻る
+  void closeMyBookings() => state = state.copyWith(
+    step: state.bookingsReturnStep ?? FlowStep.slotSearch,
+  );
+
+  /// キャンセルのボタンを出すか。キャンセル済みでなく、まだ始まっていない予約だけ
+  bool canCancel(Booking booking) =>
+      booking.status != BookingStatus.cancelled &&
+      booking.startsAt.isAfter(_now());
+
+  /// 今キャンセルすると今月のビデオ通話の回数を使うか（確認の文言を添えるかの目安）。
+  /// 回数を使うかを決めるのはサーバー（scheduling のキャンセル規定。開始 24 時間前ちょうどからを含む）で、
+  /// ここは確認に添える文言のためだけに同じ境界で見る。回数の制約があるのは月額契約の生徒だけ（docs/adr/0005 の 6）
+  bool cancellationUsesQuota(Booking booking) =>
+      state.entitlement?.contractType == ContractType.subscription &&
+      !_now().add(_quotaConsumingNotice).isBefore(booking.startsAt);
+
+  static const _quotaConsumingNotice = Duration(hours: 24);
+
+  /// `cancelBooking`。キャンセルできたら一覧のその予約を応答で置き換える。
+  Future<void> cancelBooking(Booking booking) => _run(() async {
+    final cancelled = await _api.cancelBooking(booking.bookingId);
+    state = state.copyWith(
+      myBookings: [
+        for (final item in state.myBookings ?? const <MyBooking>[])
+          item.booking.bookingId == cancelled.bookingId
+              ? MyBooking(booking: cancelled, slot: item.slot)
+              : item,
+      ],
+    );
+  });
+
+  Future<void> _loadMyBookings() async {
+    final list = await _api.listMyBookings();
+    state = state.copyWith(myBookings: list.bookings);
+  }
+
+  DateTime _now() => ref.read(clockProvider)();
 
   Future<void> _run(Future<void> Function() action) async {
     if (state.busy) return;

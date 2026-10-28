@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・レッスンの評価・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・レッスンの評価・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -15,6 +15,13 @@ abstract interface class StudentApi {
 
   /// `confirmBooking`（POST /bookings/{booking_id}/confirm）
   Future<Booking> confirmBooking(String bookingId);
+
+  /// `listMyBookings`（GET /bookings/me）。キャンセル済みも含み、スロットの開始時刻の新しい順
+  Future<MyBookingList> listMyBookings();
+
+  /// `cancelBooking`（POST /bookings/{booking_id}/cancel）。本文（任意の `reason`）は送らない。
+  /// 回数を消費するかはサーバー（scheduling）が判定し、応答には含まれない
+  Future<Booking> cancelBooking(String bookingId);
 
   /// `startLiveLessonSession`（POST /live-lesson-sessions）
   Future<LiveLessonSession> startLiveLessonSession(

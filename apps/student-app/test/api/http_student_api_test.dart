@@ -104,6 +104,37 @@ void main() {
     );
     expect(sent.single.url.path, '/bookings/b1/confirm');
 
+    expect(
+      (await apiReplying(200, {
+        ...booking,
+        'status': 'cancelled',
+        'cancelled_at': '2026-10-27T03:00:00Z',
+      }).cancelBooking('b1')).status,
+      BookingStatus.cancelled,
+    );
+    expect(sent.single.method, 'POST');
+    expect(sent.single.url.path, '/bookings/b1/cancel');
+    expect(sent.single.body, isEmpty);
+
+    final myBookings = await apiReplying(200, {
+      'bookings': [
+        {
+          'booking': booking,
+          'slot': {
+            'slot_id': 'sl1',
+            'coach_id': 'c1',
+            'sport': 'tennis',
+            'starts_at': '2026-10-28T03:00:00Z',
+            'ends_at': '2026-10-28T04:00:00Z',
+            'coach_display_name': '佐藤',
+          },
+        },
+      ],
+    }).listMyBookings();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/bookings/me');
+    expect(myBookings.bookings.single.slot.coachDisplayName, '佐藤');
+
     final session = {
       'session_id': 'ls1',
       'booking_id': 'b1',
