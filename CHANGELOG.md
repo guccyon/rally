@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app に通知の受け取り設定の画面: 登録後はアプリバーの「通知の設定」から開き、「予約が確定したとき」「動画の添削が返ってきたとき」「担当コーチからメッセージが届いたとき」のスイッチで受け取るかを切り替える。切り替えるとその種類だけをすぐ保存し（`PUT /notification-settings/me`）、保存に失敗したら元に戻して知らせる。API と契約の変更はない（#135）
 - 通知の受け取り設定の API: student-app の `GET /notification-settings/me`（`getMyNotificationSettings`）と `PUT /notification-settings/me`（`updateMyNotificationSettings`）で、生徒が通知の種類（予約の確定・添削の返却・メッセージの受信）ごとに受け取るかを読み書きする（既定はすべて受け取る。PUT は書いた種類だけを変える。生徒以外は 403）。オフにした種類のプッシュ通知は送らず、送らなかった通知はあとでオンに戻しても送り直さない。DB は表の追加だけ（expand）。student-app の画面はまだない（#134）
 - admin-web の本部の「コーチの評価」（`/headquarters/coach-review-summary`）で、コーチ ID の入力をやめ、開いたときに `GET /coaches` で取ったコーチの一覧（表示名）から選んで、件数と平均とその下に評価の一覧（`GET /coaches/{coach_id}/reviews`。コーチの「自分の評価」と同じ表示）を出す。API と契約の変更はない（#114）
 - admin-web のコーチの「自分の評価」で、アカウント ID を入力せずに、開いたときから本人の評価の件数と平均と一覧を出す（`GET /me` で本人の ID を知る）。本部の画面は変わらない。API と契約の変更はない（#123）

@@ -28,6 +28,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
 | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
 | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
+| 通知の受け取り設定（予約の確定・添削の返却・メッセージの受信の種類ごとのスイッチ。登録後はどの画面からもアプリバーの「通知の設定」で開き、閉じると開いた画面に戻る。切り替えたらその種類だけをすぐ保存し、失敗したら元に戻して文言を出す） | `getMyNotificationSettings` / `updateMyNotificationSettings` |
 
 ## API
 

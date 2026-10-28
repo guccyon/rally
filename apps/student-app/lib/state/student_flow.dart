@@ -7,7 +7,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とチャットの画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とチャット・通知の受け取り設定の画面の段。
 enum FlowStep {
   register,
   slotSearch,
@@ -25,9 +25,15 @@ enum FlowStep {
   messageThreads,
 
   /// 1 つのスレッドのメッセージ
-  messages;
+  messages,
+
+  /// 通知の受け取り設定（登録後のどの段からも開け、閉じると開いた段に戻る）
+  notificationSettings;
 
   bool get isChat => this == messageThreads || this == messages;
+
+  /// 一周シナリオの脇に開く画面（チャットと通知の受け取り設定）。ここからはほかの脇の画面を開かない
+  bool get isAside => isChat || this == notificationSettings;
 }
 
 /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
@@ -54,6 +60,8 @@ class StudentFlowState {
     this.threads,
     this.thread,
     this.messages,
+    this.settingsReturnStep,
+    this.notificationSettings,
     // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
     // ignore: prefer_initializing_formals
   }) : _reviewedLessonIds = reviewedLessonIds;
@@ -113,6 +121,13 @@ class StudentFlowState {
   /// 開いているスレッドのメッセージ（送った順）
   final List<Message>? messages;
 
+  /// 通知の受け取り設定を閉じたときに戻る段（設定を開いた段）
+  final FlowStep? settingsReturnStep;
+
+  /// 通知の受け取り設定（`getMyNotificationSettings`。未取得なら null）。
+  /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
+  final NotificationSettings? notificationSettings;
+
   /// `errorMessage` は引き継がない（渡さなければ消える）。
   StudentFlowState copyWith({
     FlowStep? step,
@@ -136,6 +151,8 @@ class StudentFlowState {
     List<MessageThread>? threads,
     MessageThread? thread,
     List<Message>? messages,
+    FlowStep? settingsReturnStep,
+    NotificationSettings? notificationSettings,
   }) => StudentFlowState(
     step: step ?? this.step,
     busy: busy ?? this.busy,
@@ -158,6 +175,8 @@ class StudentFlowState {
     threads: threads ?? this.threads,
     thread: thread ?? this.thread,
     messages: messages ?? this.messages,
+    settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
+    notificationSettings: notificationSettings ?? this.notificationSettings,
   );
 }
 
@@ -408,6 +427,49 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   Future<void> _loadThreads() async {
     final list = await _api.listMessageThreads();
     state = state.copyWith(threads: list.threads);
+  }
+
+  /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
+  Future<void> openNotificationSettings() {
+    if (state.step != FlowStep.notificationSettings) {
+      state = state.copyWith(
+        settingsReturnStep: state.step,
+        step: FlowStep.notificationSettings,
+      );
+    }
+    return _run(_loadNotificationSettings);
+  }
+
+  /// 通知の受け取り設定を読み直す（読み込みに失敗したとき）
+  Future<void> refreshNotificationSettings() => _run(_loadNotificationSettings);
+
+  /// 通知の受け取り設定を閉じて、開いた段に戻る
+  void closeNotificationSettings() => state = state.copyWith(
+    step: state.settingsReturnStep ?? FlowStep.slotSearch,
+  );
+
+  /// `updateMyNotificationSettings`。[kind] の種類だけを変えて保存する。画面はすぐに切り替え、
+  /// 保存に失敗したら切り替える前に戻して失敗を知らせる（成功したらサーバーが返した設定にそろえる）。
+  Future<void> setNotification(NotificationKind kind, bool receives) =>
+      _run(() async {
+        final before = state.notificationSettings!;
+        state = state.copyWith(
+          notificationSettings: before.withKind(kind, receives),
+        );
+        try {
+          final saved = await _api.updateMyNotificationSettings(
+            UpdateNotificationSettingsRequest.only(kind, receives),
+          );
+          state = state.copyWith(notificationSettings: saved);
+        } on StudentApiException {
+          if (ref.mounted) state = state.copyWith(notificationSettings: before);
+          rethrow;
+        }
+      });
+
+  Future<void> _loadNotificationSettings() async {
+    final settings = await _api.getMyNotificationSettings();
+    state = state.copyWith(notificationSettings: settings);
   }
 
   Future<void> _run(Future<void> Function() action) async {

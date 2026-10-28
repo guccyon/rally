@@ -9,11 +9,14 @@ class FakeStudentApi implements StudentApi {
     List<VideoReview>? reviews,
     List<MessageThread>? threads,
     List<Message>? messages,
+    NotificationSettings? notificationSettings,
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
        _reviews = reviews ?? [Fixtures.reviewReturned],
        threads = List.of(threads ?? [Fixtures.thread]),
-       messages = List.of(messages ?? Fixtures.messages);
+       messages = List.of(messages ?? Fixtures.messages),
+       notificationSettings =
+           notificationSettings ?? Fixtures.notificationSettings;
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
@@ -23,6 +26,9 @@ class FakeStudentApi implements StudentApi {
 
   /// スレッドのメッセージ（`listMessages` が返す。`sendMessage` で末尾に足す）
   final List<Message> messages;
+
+  /// 通知の受け取り設定（`getMyNotificationSettings` が返す。`updateMyNotificationSettings` で書いた種類だけを変える）
+  NotificationSettings notificationSettings;
   final Map<String, StudentApiException> failures;
 
   final List<String> calls = [];
@@ -149,6 +155,22 @@ class FakeStudentApi implements StudentApi {
     threadId,
   );
 
+  @override
+  Future<NotificationSettings> getMyNotificationSettings() =>
+      _answer('getMyNotificationSettings', () => notificationSettings);
+
+  @override
+  Future<NotificationSettings> updateMyNotificationSettings(
+    UpdateNotificationSettingsRequest body,
+  ) => _answer('updateMyNotificationSettings', () {
+    for (final kind in NotificationKind.values) {
+      if (body.toJson()[kind.wire] case final bool receives) {
+        notificationSettings = notificationSettings.withKind(kind, receives);
+      }
+    }
+    return notificationSettings;
+  }, body);
+
   /// スレッドの最後のメッセージ（と未読の数）を今のメッセージに合わせる
   MessageThread _updateThread(String threadId, {int? unreadCount}) {
     final index = threads.indexWhere((t) => t.threadId == threadId);
@@ -191,6 +213,17 @@ abstract final class Fixtures {
       code: ErrorCode.validationFailed,
       message: 'validation failed',
     ),
+  );
+
+  /// 通信の失敗（契約の `Error` なし）
+  static const unreachable = StudentApiException();
+
+  /// まだ変えていない通知の受け取り設定（既定はすべて受け取る）
+  static const notificationSettings = NotificationSettings(
+    studentId: studentId,
+    bookingConfirmed: true,
+    videoReviewReturned: true,
+    messageReceived: true,
   );
 
   static final now = DateTime.utc(2026, 10, 26, 3);

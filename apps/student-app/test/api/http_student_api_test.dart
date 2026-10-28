@@ -274,6 +274,39 @@ void main() {
     expect(read.lastMessage!.readAt, DateTime.utc(2026, 10, 26, 3, 5));
   });
 
+  test('通知の受け取り設定の操作のパスと、書いた種類だけを送る変更', () async {
+    final settings = {
+      'student_id': 's1',
+      'booking_confirmed': true,
+      'video_review_returned': true,
+      'message_received': true,
+    };
+
+    final read = await apiReplying(200, settings).getMyNotificationSettings();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/notification-settings/me');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(read.studentId, 's1');
+    expect(NotificationKind.values.map(read.receives), everyElement(isTrue));
+
+    final updated =
+        await apiReplying(200, {
+          ...settings,
+          'video_review_returned': false,
+        }).updateMyNotificationSettings(
+          UpdateNotificationSettingsRequest.only(
+            NotificationKind.videoReviewReturned,
+            false,
+          ),
+        );
+    expect(sent.single.method, 'PUT');
+    expect(sent.single.url.path, '/notification-settings/me');
+    expect(jsonDecode(sent.single.body), {'video_review_returned': false});
+    expect(updated.videoReviewReturned, isFalse);
+    expect(updated.bookingConfirmed, isTrue);
+    expect(updated.messageReceived, isTrue);
+  });
+
   test('契約の Error を StudentApiException にし、画面の文言に変える', () async {
     final api = apiReplying(409, {
       'code': 'live_lesson_quota_exceeded',

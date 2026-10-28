@@ -56,3 +56,10 @@ String ratingWithLabel(int rating) => '$rating（${ratingLabel(rating)}）';
 
 /// 評価の選択肢の 1 行（点と言葉の目安を全角の空白で並べる）。例: `4　よかった`
 String ratingChoiceLabel(int rating) => '$rating　${ratingLabel(rating)}';
+
+/// 通知の種類の文言。生徒に伝わるよう、いつ届く通知かで書く
+String notificationKindLabel(NotificationKind kind) => switch (kind) {
+  NotificationKind.bookingConfirmed => '予約が確定したとき',
+  NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
+  NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
+};

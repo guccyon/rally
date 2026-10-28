@@ -122,6 +122,19 @@ class HttpStudentApi implements StudentApi {
         ),
       );
 
+  @override
+  Future<NotificationSettings> getMyNotificationSettings() async =>
+      NotificationSettings.fromJson(
+        await _send('GET', '/notification-settings/me'),
+      );
+
+  @override
+  Future<NotificationSettings> updateMyNotificationSettings(
+    UpdateNotificationSettingsRequest body,
+  ) async => NotificationSettings.fromJson(
+    await _send('PUT', '/notification-settings/me', body: body.toJson()),
+  );
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
