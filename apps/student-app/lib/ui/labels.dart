@@ -78,3 +78,25 @@ String notificationKindLabel(NotificationKind kind) => switch (kind) {
   NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
   NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
 };
+
+/// 月額契約のプランの名前
+String subscriptionPlanLabel(SubscriptionPlan plan) => switch (plan) {
+  SubscriptionPlan.standard => 'スタンダード',
+  SubscriptionPlan.plus => 'プラス',
+};
+
+/// プランを選ぶときに添える、ビデオ通話の暦月の上限（不変条件 1。standard 2 回・plus 4 回）。
+/// 契約の前は受講権がなく上限をサーバーから受け取れないので、選ぶ前の案内のためだけにここに持つ。
+/// 契約したあとの上限と残り回数は、サーバーが返す `LiveLessonQuota` を出す
+int subscriptionPlanLiveLessonLimit(SubscriptionPlan plan) => switch (plan) {
+  SubscriptionPlan.standard => 2,
+  SubscriptionPlan.plus => 4,
+};
+
+/// プランの選択肢の 1 行（名前と回数を全角の空白で並べる）。例: `プラス　ビデオ通話 月 4 回`
+String subscriptionPlanChoiceLabel(SubscriptionPlan plan) =>
+    '${subscriptionPlanLabel(plan)}　ビデオ通話 月 ${subscriptionPlanLiveLessonLimit(plan)} 回';
+
+/// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
+String liveLessonQuotaLabel(LiveLessonQuota quota) =>
+    '月 ${quota.limit} 回のうち残り ${quota.remaining} 回';

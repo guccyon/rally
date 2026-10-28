@@ -142,7 +142,13 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
-  ) => _answer('startSubscription', () => Fixtures.subscriptionStarted, body);
+  ) => _answer(
+    'startSubscription',
+    () => Fixtures.subscriptionStartedWith(
+      body.plan ?? SubscriptionPlan.standard,
+    ),
+    body,
+  );
 
   @override
   Future<MessageThreadList> listMessageThreads() => _answer(
@@ -468,30 +474,40 @@ abstract final class Fixtures {
     completedAt: now,
   );
 
-  static final subscriptionStarted = StartSubscriptionResponse(
-    subscription: Subscription(
-      subscriptionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      studentId: studentId,
-      sport: Sport.tennis,
-      plan: SubscriptionPlan.standard,
-      status: SubscriptionStatus.active,
-      startedAt: now,
-    ),
-    entitlement: const Entitlement(
-      entitlementId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      studentId: studentId,
-      contractType: ContractType.subscription,
-      sport: 'tennis',
-      plan: SubscriptionPlan.standard,
-      unlimitedVideoAndChat: true,
-      liveLessonQuota: LiveLessonQuota(
-        month: '2026-10',
-        limit: 2,
-        used: 0,
-        remaining: 2,
-      ),
-    ),
+  static final subscriptionStarted = subscriptionStartedWith(
+    SubscriptionPlan.standard,
   );
+
+  /// [plan] で始めた月額契約。今月のビデオ通話はまだ使っていない（上限は standard 2 回・plus 4 回）
+  static StartSubscriptionResponse subscriptionStartedWith(
+    SubscriptionPlan plan,
+  ) {
+    final limit = plan == SubscriptionPlan.plus ? 4 : 2;
+    return StartSubscriptionResponse(
+      subscription: Subscription(
+        subscriptionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        studentId: studentId,
+        sport: Sport.tennis,
+        plan: plan,
+        status: SubscriptionStatus.active,
+        startedAt: now,
+      ),
+      entitlement: Entitlement(
+        entitlementId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        studentId: studentId,
+        contractType: ContractType.subscription,
+        sport: 'tennis',
+        plan: plan,
+        unlimitedVideoAndChat: true,
+        liveLessonQuota: LiveLessonQuota(
+          month: '2026-10',
+          limit: limit,
+          used: 0,
+          remaining: limit,
+        ),
+      ),
+    );
+  }
 
   /// 自分が送ってコーチが読んだメッセージと、コーチから届いてまだ読んでいないメッセージ
   static final messages = [

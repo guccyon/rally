@@ -25,7 +25,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | 添削結果（未返却なら確かめ直す。AI の一次フィードバック `ai_feedback` があれば、未返却でも返却後でも「AI の一次フィードバック」として、AI が自動で作った文でコーチの添削ではない旨と一緒に、コーチの添削とは別の枠に出す。ないときは出さない） | `getVideoReview` |
 | レッスンの完了 | `recordLessonCompletion`（通話なら `live_lesson`、動画なら `async_lesson`） |
 | レッスンの評価（完了のあとに 1〜5 の点と一言。評価済みを返す読み取りの API はないので、この端末で送れたときと 409 `lesson_already_reviewed` が返ったときに評価済みとして入力させない。評価せずに月額契約へ進むこともできる） | `submitLessonReview` |
-| 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
+| 月額契約（プランをスタンダード「ビデオ通話 月 2 回」とプラス「ビデオ通話 月 4 回」から選ぶ。既定はスタンダードで、選んだプランを `plan` で送る。選ぶ前の回数の案内は `lib/ui/labels.dart` に持ち、開始後はプランと、今月のビデオ通話を応答の `live_lesson_quota` から「月 N 回のうち残り M 回」で出す。決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
 | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
 | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
 | 通知の受け取り設定（予約の確定・添削の返却・メッセージの受信の種類ごとのスイッチ。登録後はどの画面からもアプリバーの「通知の設定」で開き、閉じると開いた画面に戻る。切り替えたらその種類だけをすぐ保存し、失敗したら元に戻して文言を出す） | `getMyNotificationSettings` / `updateMyNotificationSettings` |
