@@ -39,8 +39,8 @@ use application::{
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        ListCoachBookings, ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots,
-        SlotRepository,
+        ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
+        SearchSlots, SlotRepository,
     },
 };
 use axum::Router;
@@ -87,7 +87,8 @@ pub fn router() -> Router {
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
 /// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`IdentityStudentDisplayNameLookup`）。コーチに届いた動画の一覧
-/// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。
+/// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
+/// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -227,7 +228,7 @@ where
         UpdateCoachProfile::new(accounts.clone()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(
-            slots,
+            slots.clone(),
             IdentityCoachIntroductionLookup::new(accounts.clone()),
             clock.clone(),
         ),
@@ -254,6 +255,7 @@ where
             bookings.clone(),
             IdentityStudentDisplayNameLookup::new(accounts.clone()),
         ),
+        ListCoachSlots::new(slots, bookings.clone()),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

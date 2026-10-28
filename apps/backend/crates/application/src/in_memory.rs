@@ -211,6 +211,17 @@ impl SlotRepository for InMemorySlotRepository {
         found.truncate(criteria.limit);
         Ok(found)
     }
+
+    async fn slots_of_coach(&self, coach_id: AccountId) -> Result<Vec<Slot>, Unavailable> {
+        Ok(self
+            .slots
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|slot| slot.coach_id() == coach_id)
+            .cloned()
+            .collect())
+    }
 }
 
 /// [`BookingRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。

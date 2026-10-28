@@ -5,6 +5,8 @@
 //! `GET /bookings/me`（`listMyBookings`）は本人の予約だけをスロットの開始時刻の新しい順に返すことと、生徒以外は 403 を確かめる。
 //! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
 //! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
+//! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
+//! 有効な予約が入っているかを添えて返すことと、コーチ以外は 403 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -180,9 +182,10 @@ fn app_with_entitlements(
             application::identity::IdentityCoachIntroductionLookup::new(accounts.clone()),
         ),
         ListCoachBookings::new(
-            bookings,
+            bookings.clone(),
             application::identity::IdentityStudentDisplayNameLookup::new(accounts.clone()),
         ),
+        application::scheduling::ListCoachSlots::new(slots.clone(), bookings),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),
@@ -1201,5 +1204,122 @@ async fn only_authenticated_coaches_can_list_their_bookings() {
         let (status, body) = get_my_coach_bookings(&app.router, token).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
         assert_coach_list_contract(status, &body);
+    }
+}
+
+// --- GET /coaches/me/slots ---
+
+async fn get_my_coach_slots(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
+    let mut request = Request::get("/coaches/me/slots");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    send(router, request.body(Body::empty()).unwrap()).await
+}
+
+fn assert_coach_slot_list_contract(status: StatusCode, body: &Value) {
+    support::Contract::load("admin-web").assert_response("get", "/coaches/me/slots", status, body);
+}
+
+#[tokio::test]
+async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_booked() {
+    // スロット 5 は終わった枠（現在時刻の 2 日前）、20 は別のコーチの枠
+    let ended = Slot::restore(
+        SlotId::from_u128(5),
+        COACH,
+        Sport::Tennis,
+        SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(48 * 3600),
+        SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(47 * 3600),
+        SlotStatus::Open,
+    )
+    .unwrap();
+    let other_coach_slot = Slot::restore(
+        SlotId::from_u128(20),
+        AccountId::from_u128(8),
+        Sport::Tennis,
+        nov1(20),
+        nov1(21),
+        SlotStatus::Open,
+    )
+    .unwrap();
+    let app = app_with([ended, other_coach_slot]);
+    // 10 は確定、11 は未確定、12 はキャンセル済みの予約だけ、13（閉じた枠）は予約なし
+    let confirmed = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    create(&app.router, OTHER_STUDENT, 11, false).await;
+    let cancelled = create(&app.router, STUDENT, 12, false).await;
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    create(&app.router, STUDENT, 20, false).await;
+    let analytics = app.analytics.events().len();
+    let events = app.events.events().len();
+
+    let (status, body) = get_my_coach_slots(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_slot_list_contract(status, &body);
+    let items = body["slots"].as_array().unwrap();
+    let listed: Vec<(&str, &str, bool)> = items
+        .iter()
+        .map(|item| {
+            (
+                item["slot"]["slot_id"].as_str().unwrap(),
+                item["slot"]["status"].as_str().unwrap(),
+                item["has_active_booking"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (slot_id(5).as_str(), "open", false),
+            (slot_id(10).as_str(), "booked", true),
+            (slot_id(11).as_str(), "open", true),
+            (slot_id(12).as_str(), "open", false),
+            (slot_id(13).as_str(), "closed", false),
+        ],
+        "開始時刻の古い順で、別のコーチの枠は出ない"
+    );
+    assert_eq!(
+        items[1],
+        json!({
+            "slot": {
+                "slot_id": slot_id(10),
+                "coach_id": account_id_uuid::format(COACH),
+                "sport": "tennis",
+                "starts_at": "2026-11-01T10:00:00Z",
+                "ends_at": "2026-11-01T11:00:00Z",
+                "status": "booked",
+            },
+            "has_active_booking": true,
+        })
+    );
+    // 照会では何も発火しない
+    assert_eq!(app.analytics.events().len(), analytics);
+    assert_eq!(app.events.events().len(), events);
+}
+
+#[tokio::test]
+async fn coach_without_slots_gets_an_empty_slot_list() {
+    let app = app();
+    let (status, body) = get_my_coach_slots(&app.router, Some("coach:8")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_slot_list_contract(status, &body);
+    assert_eq!(body, json!({ "slots": [] }));
+}
+
+#[tokio::test]
+async fn only_authenticated_coaches_can_list_their_slots() {
+    let app = app();
+    for token in [STUDENT, "headquarters:5"] {
+        let (status, body) = get_my_coach_slots(&app.router, Some(token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        assert_coach_slot_list_contract(status, &body);
+        assert_eq!(body["code"], "forbidden");
+    }
+    for token in [None, Some("unknown")] {
+        let (status, body) = get_my_coach_slots(&app.router, token).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
+        assert_coach_slot_list_contract(status, &body);
     }
 }

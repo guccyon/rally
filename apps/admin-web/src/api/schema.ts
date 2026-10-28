@@ -231,6 +231,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分の枠の一覧（コーチ）
+         * @description トークンが示す本人（コーチ）が公開した予約枠（`publishSlot`）を、状態（`open` / `booked` / `closed`）を問わず、
+         *     開始時刻が過ぎた枠（終わった枠）も含めてすべて返す。管理画面の「予約枠」に、自分の枠と予約が入っているかを出すのに使う。
+         *     コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - 並べ方: 枠の開始時刻 `starts_at` の古い順。同じ開始時刻は `slot_id` の順
+         *     - 各項目には枠（`Slot`）と、その枠に有効な予約（未確定 `pending` か確定 `confirmed`）が入っているか `has_active_booking` を載せる。
+         *       キャンセル済みの予約しかない枠は `false`。予約の中身は自分の予約の一覧（`listMyCoachBookings`）で見る
+         *     - 期間で絞らず、ページングもしない。枠がなければ `slots` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listMyCoachSlots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/videos": {
         parameters: {
             query?: never;
@@ -487,6 +517,17 @@ export interface components {
         CoachBookingList: {
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["CoachBooking"][];
+        };
+        /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
+        CoachSlot: {
+            slot: components["schemas"]["Slot"];
+            /** @description 枠に有効な予約（未確定 `pending` か確定 `confirmed`）が入っていれば true。キャンセル済みの予約しかなければ false */
+            has_active_booking: boolean;
+        };
+        /** @description コーチの自分の枠の一覧（並べ方は `listMyCoachSlots` の説明） */
+        CoachSlotList: {
+            /** @description 枠の開始時刻の古い順（同じ開始時刻は `slot_id` の順）。終わった枠・閉じた枠も含む */
+            slots: components["schemas"]["CoachSlot"][];
         };
         /**
          * @description sufficient: 公開した枠が足りている / insufficient: 足りていない。判定の式は `getSlotSupply` の説明。
@@ -985,6 +1026,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoachBookingList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyCoachSlots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの枠の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachSlotList"];
                 };
             };
             401: components["responses"]["Unauthorized"];
