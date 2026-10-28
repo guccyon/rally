@@ -1,0 +1,386 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8f098bf..72d2188 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の
+ ## [Unreleased]
+ 
+ ### 追加
++- student-app の月額契約の画面で、プラン（スタンダード「ビデオ通話 月 2 回」／プラス「ビデオ通話 月 4 回」。既定はスタンダード）を選んで契約を始める（`startSubscription` の `plan` を送る）。開始後はプランと、今月のビデオ通話を「月 N 回のうち残り M 回」とプランの上限で出す。料金の表示はない。API と契約の変更はない（#175）
+ - 月額契約のプラン（変更シナリオ cs-003）: 月額契約にスタンダード（`standard`、ビデオ通話は暦月 2 回。既定）とプラス（`plus`、暦月 4 回）を置いた。student-app の `POST /subscriptions`（`startSubscription`）のリクエストに任意の `plan` を足し（省けば standard、未知の値は 422）、応答の `Subscription` に `plan`、`Entitlement`（`getMyEntitlement` と開始の応答）に任意で null になりうる `plan` を足した。暦月の上限は `live_lesson_quota.limit` で返し、plus は 4 回目まで確定でき 5 回目は 409 `live_lesson_quota_exceeded`。standard は今までと同じ（3 回目が 409）。既存の契約は standard。料金・決済・契約の途中でのプランの変更は扱わない。DB は列の追加と残回数の CHECK の緩和だけ（expand）。student-app は型を契約に合わせただけで、画面はまだない（#174）
+ - student-app の添削結果の画面で、AI の一次フィードバック（`getVideoReview` の `ai_feedback`）があれば「AI の一次フィードバック」として、AI が自動で作った文でコーチの添削ではない旨と一緒に、コーチの添削とは別の枠に出す。コーチの返却を待つ間は待ちの文言と確かめ直すボタンと一緒に出し、返却後は「コーチの添削」と両方を出す。ないときは今までどおり。API と契約の変更はない（#170）
+ - admin-web のコーチの「動画の添削」で、添削待ちの動画の「添削する」を開くと、添削コメントの欄の上に AI の一次フィードバック（`listMyCoachVideos` の `ai_feedback`）を「AI の一次フィードバック（参考）」として、AI が自動で作った文でコーチの添削ではない旨と一緒に出す。ないときは何も出さず、返却済みの行には出さない。返却するコメントには入らない。API と契約の変更はない（#169）
+diff --git a/apps/student-app/README.md b/apps/student-app/README.md
+index 22e101b..5d6a0a5 100644
+--- a/apps/student-app/README.md
++++ b/apps/student-app/README.md
+@@ -25,7 +25,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（
+ | 添削結果（未返却なら確かめ直す。AI の一次フィードバック `ai_feedback` があれば、未返却でも返却後でも「AI の一次フィードバック」として、AI が自動で作った文でコーチの添削ではない旨と一緒に、コーチの添削とは別の枠に出す。ないときは出さない） | `getVideoReview` |
+ | レッスンの完了 | `recordLessonCompletion`（通話なら `live_lesson`、動画なら `async_lesson`） |
+ | レッスンの評価（完了のあとに 1〜5 の点と一言。評価済みを返す読み取りの API はないので、この端末で送れたときと 409 `lesson_already_reviewed` が返ったときに評価済みとして入力させない。評価せずに月額契約へ進むこともできる） | `submitLessonReview` |
+-| 月額契約（決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
++| 月額契約（プランをスタンダード「ビデオ通話 月 2 回」とプラス「ビデオ通話 月 4 回」から選ぶ。既定はスタンダードで、選んだプランを `plan` で送る。選ぶ前の回数の案内は `lib/ui/labels.dart` に持ち、開始後はプランと、今月のビデオ通話を応答の `live_lesson_quota` から「月 N 回のうち残り M 回」で出す。決済はモック。`payment_method_token` は固定のモック値） | `startSubscription` |
+ | チャット: 担当コーチとのスレッドの一覧（未読の数・最後のメッセージ。登録後はどの画面からもアプリバーの「チャット」で開き、閉じると開いた画面に戻る） | `listMessageThreads` |
+ | チャット: メッセージ（送った順。自分が送ったものに既読・未読。開いたときと確かめ直したときに相手のメッセージを既読にする）と送信（月額契約の前は 403 `chat_not_entitled` の文言） | `listMessages` / `markMessageThreadRead` / `sendMessage` |
+ | 通知の受け取り設定（予約の確定・添削の返却・メッセージの受信の種類ごとのスイッチ。登録後はどの画面からもアプリバーの「通知の設定」で開き、閉じると開いた画面に戻る。切り替えたらその種類だけをすぐ保存し、失敗したら元に戻して文言を出す） | `getMyNotificationSettings` / `updateMyNotificationSettings` |
+diff --git a/apps/student-app/lib/screens/subscription_screen.dart b/apps/student-app/lib/screens/subscription_screen.dart
+index 831da35..ebeaa28 100644
+--- a/apps/student-app/lib/screens/subscription_screen.dart
++++ b/apps/student-app/lib/screens/subscription_screen.dart
+@@ -1,16 +1,24 @@
+ import 'package:flutter/material.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
++import '../api/models.dart';
+ import '../state/student_flow.dart';
+ import '../ui/flow_scaffold.dart';
+ import '../ui/labels.dart';
+ 
+-/// 月額契約の開始（`startSubscription`）。決済は Gen1 ではモック。
+-class SubscriptionScreen extends ConsumerWidget {
++/// 月額契約の開始（`startSubscription`）。契約プランを選んで始める（既定はスタンダード）。決済は Gen1 ではモック。
++class SubscriptionScreen extends ConsumerStatefulWidget {
+   const SubscriptionScreen({super.key});
+ 
+   @override
+-  Widget build(BuildContext context, WidgetRef ref) {
++  ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
++}
++
++class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
++  SubscriptionPlan _plan = SubscriptionPlan.standard;
++
++  @override
++  Widget build(BuildContext context) {
+     final state = ref.watch(studentFlowProvider);
+     final notifier = ref.read(studentFlowProvider.notifier);
+     final subscription = state.subscription;
+@@ -19,20 +27,38 @@ class SubscriptionScreen extends ConsumerWidget {
+       title: '月額契約',
+       children: [
+         Text('スポーツ: ${sportLabel(state.student!.sport)}'),
+-        const Text('動画とチャットは送り放題、ビデオ通話は暦月 2 回まで。'),
++        const Text('動画とチャットは送り放題です。ビデオ通話は、選んだプランの回数まで毎月使えます。'),
+         const SizedBox(height: 16),
+         if (subscription == null) ...[
++          const Text('プランを選んでください'),
++          RadioGroup<SubscriptionPlan>(
++            groupValue: _plan,
++            onChanged: (plan) => setState(() => _plan = plan!),
++            child: Column(
++              children: [
++                for (final plan in SubscriptionPlan.values)
++                  RadioListTile<SubscriptionPlan>(
++                    value: plan,
++                    enabled: !state.busy,
++                    title: Text(subscriptionPlanChoiceLabel(plan)),
++                    contentPadding: EdgeInsets.zero,
++                  ),
++              ],
++            ),
++          ),
+           const Text('決済はモックです（請求は発生しません）。'),
+           const SizedBox(height: 8),
+           FilledButton(
+-            onPressed: state.busy ? null : notifier.startSubscription,
++            onPressed: state.busy
++                ? null
++                : () => notifier.startSubscription(),
+             child: const Text('月額契約を始める'),
+           ),
+         ] else ...[
+           const Text('月額契約を開始しました'),
++          Text('プラン: ${subscriptionPlanLabel(subscription.plan)}'),
+           Text('開始: ${formatDateTime(subscription.startedAt)}'),
+-          if (quota != null)
+-            Text('今月のビデオ通話: 残り ${quota.remaining} / ${quota.limit} 回'),
++          if (quota != null) Text('今月のビデオ通話: ${liveLessonQuotaLabel(quota)}'),
+         ],
+       ],
+     );
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index 778a204..7c5c603 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -373,11 +373,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+   void goToSubscription() =>
+       state = state.copyWith(step: FlowStep.subscription);
+ 
+-  /// `startSubscription`。決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
+-  Future<void> startSubscription() => _run(() async {
++  /// `startSubscription`。[plan] は選んだ契約プラン（既定は standard）。
++  /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
++  Future<void> startSubscription({
++    SubscriptionPlan plan = SubscriptionPlan.standard,
++  }) => _run(() async {
+     final response = await _api.startSubscription(
+       StartSubscriptionRequest(
+         sport: state.student!.sport,
++        plan: plan,
+         paymentMethodToken: mockPaymentMethodToken,
+       ),
+     );
+diff --git a/apps/student-app/lib/ui/labels.dart b/apps/student-app/lib/ui/labels.dart
+index c5c6669..94e6272 100644
+--- a/apps/student-app/lib/ui/labels.dart
++++ b/apps/student-app/lib/ui/labels.dart
+@@ -78,3 +78,25 @@ String notificationKindLabel(NotificationKind kind) => switch (kind) {
+   NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
+   NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
+ };
++
++/// 月額契約のプランの名前
++String subscriptionPlanLabel(SubscriptionPlan plan) => switch (plan) {
++  SubscriptionPlan.standard => 'スタンダード',
++  SubscriptionPlan.plus => 'プラス',
++};
++
++/// プランを選ぶときに添える、ビデオ通話の暦月の上限（不変条件 1。standard 2 回・plus 4 回）。
++/// 契約の前は受講権がなく上限をサーバーから受け取れないので、選ぶ前の案内のためだけにここに持つ。
++/// 契約したあとの上限と残り回数は、サーバーが返す `LiveLessonQuota` を出す
++int subscriptionPlanLiveLessonLimit(SubscriptionPlan plan) => switch (plan) {
++  SubscriptionPlan.standard => 2,
++  SubscriptionPlan.plus => 4,
++};
++
++/// プランの選択肢の 1 行（名前と回数を全角の空白で並べる）。例: `プラス　ビデオ通話 月 4 回`
++String subscriptionPlanChoiceLabel(SubscriptionPlan plan) =>
++    '${subscriptionPlanLabel(plan)}　ビデオ通話 月 ${subscriptionPlanLiveLessonLimit(plan)} 回';
++
++/// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
++String liveLessonQuotaLabel(LiveLessonQuota quota) =>
++    '月 ${quota.limit} 回のうち残り ${quota.remaining} 回';
+diff --git a/apps/student-app/test/screens/subscription_screen_test.dart b/apps/student-app/test/screens/subscription_screen_test.dart
+index abb58a6..cea97bd 100644
+--- a/apps/student-app/test/screens/subscription_screen_test.dart
++++ b/apps/student-app/test/screens/subscription_screen_test.dart
+@@ -1,3 +1,4 @@
++import 'package:flutter/material.dart';
+ import 'package:flutter_test/flutter_test.dart';
+ import 'package:rally_student_app/api/models.dart';
+ import 'package:rally_student_app/screens/subscription_screen.dart';
+@@ -7,30 +8,102 @@ import '../support/fake_student_api.dart';
+ import '../support/pump.dart';
+ 
+ void main() {
+-  testWidgets('月額契約を始めると、モックの決済トークンで startSubscription を呼び、今月の通話の枠を出す', (
+-    tester,
+-  ) async {
++  Future<FakeStudentApi> pumpSubscription(
++    WidgetTester tester, {
++    StudentFlowState? initial,
++  }) async {
+     final api = FakeStudentApi();
+     await pumpScreen(
+       tester,
+       const SubscriptionScreen(),
+       api: api,
+-      initial: StudentFlowState(
+-        step: FlowStep.subscription,
+-        student: Fixtures.student,
+-      ),
++      initial:
++          initial ??
++          StudentFlowState(
++            step: FlowStep.subscription,
++            student: Fixtures.student,
++          ),
+     );
++    return api;
++  }
++
++  RadioListTile<SubscriptionPlan> planTile(WidgetTester tester, String text) =>
++      tester.widget(
++        find.ancestor(
++          of: find.text(text),
++          matching: find.byType(RadioListTile<SubscriptionPlan>),
++        ),
++      );
++
++  testWidgets('プランは月のビデオ通話の回数を添えて出し、既定のスタンダードで始めると今月の通話の枠を出す', (tester) async {
++    final api = await pumpSubscription(tester);
+ 
+     expect(find.text('スポーツ: テニス'), findsOneWidget);
++    expect(find.text('スタンダード　ビデオ通話 月 2 回'), findsOneWidget);
++    expect(find.text('プラス　ビデオ通話 月 4 回'), findsOneWidget);
++    final group = tester.widget<RadioGroup<SubscriptionPlan>>(
++      find.byType(RadioGroup<SubscriptionPlan>),
++    );
++    expect(group.groupValue, SubscriptionPlan.standard);
++
+     await tapText(tester, '月額契約を始める');
+ 
+     final request = api.requests.single as StartSubscriptionRequest;
+     expect(request.toJson(), {
+       'sport': 'tennis',
++      'plan': 'standard',
+       'payment_method_token': mockPaymentMethodToken,
+     });
+     expect(find.text('月額契約を開始しました'), findsOneWidget);
+-    expect(find.text('今月のビデオ通話: 残り 2 / 2 回'), findsOneWidget);
++    expect(find.text('プラン: スタンダード'), findsOneWidget);
++    expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
++    expect(find.text('月額契約を始める'), findsNothing);
++    expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
++  });
++
++  testWidgets('プラスを選んで始めると plus で startSubscription を呼び、月 4 回の枠を出す', (
++    tester,
++  ) async {
++    final api = await pumpSubscription(tester);
++
++    await tapText(tester, 'プラス　ビデオ通話 月 4 回');
++    expect(planTile(tester, 'プラス　ビデオ通話 月 4 回').value, SubscriptionPlan.plus);
++    await tapText(tester, '月額契約を始める');
++
++    final request = api.requests.single as StartSubscriptionRequest;
++    expect(request.plan, SubscriptionPlan.plus);
++    expect(request.toJson()['plan'], 'plus');
++    expect(find.text('プラン: プラス'), findsOneWidget);
++    expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
++  });
++
++  testWidgets('今月の残り回数は、受講権のプランの上限と合わせて出す', (tester) async {
++    final started = Fixtures.subscriptionStartedWith(SubscriptionPlan.plus);
++    final entitlement = started.entitlement;
++    await pumpSubscription(
++      tester,
++      initial: StudentFlowState(
++        step: FlowStep.subscription,
++        student: Fixtures.student,
++        subscription: started.subscription,
++        entitlement: Entitlement(
++          entitlementId: entitlement.entitlementId,
++          studentId: entitlement.studentId,
++          contractType: entitlement.contractType,
++          sport: entitlement.sport,
++          plan: entitlement.plan,
++          unlimitedVideoAndChat: true,
++          liveLessonQuota: const LiveLessonQuota(
++            month: '2026-10',
++            limit: 4,
++            used: 1,
++            remaining: 3,
++          ),
++        ),
++      ),
++    );
++
++    expect(find.text('今月のビデオ通話: 月 4 回のうち残り 3 回'), findsOneWidget);
+     expect(find.text('月額契約を始める'), findsNothing);
+   });
+ }
+diff --git a/apps/student-app/test/support/fake_student_api.dart b/apps/student-app/test/support/fake_student_api.dart
+index b4edb63..17b5386 100644
+--- a/apps/student-app/test/support/fake_student_api.dart
++++ b/apps/student-app/test/support/fake_student_api.dart
+@@ -142,7 +142,13 @@ class FakeStudentApi implements StudentApi {
+   @override
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+-  ) => _answer('startSubscription', () => Fixtures.subscriptionStarted, body);
++  ) => _answer(
++    'startSubscription',
++    () => Fixtures.subscriptionStartedWith(
++      body.plan ?? SubscriptionPlan.standard,
++    ),
++    body,
++  );
+ 
+   @override
+   Future<MessageThreadList> listMessageThreads() => _answer(
+@@ -468,31 +474,41 @@ abstract final class Fixtures {
+     completedAt: now,
+   );
+ 
+-  static final subscriptionStarted = StartSubscriptionResponse(
+-    subscription: Subscription(
+-      subscriptionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+-      studentId: studentId,
+-      sport: Sport.tennis,
+-      plan: SubscriptionPlan.standard,
+-      status: SubscriptionStatus.active,
+-      startedAt: now,
+-    ),
+-    entitlement: const Entitlement(
+-      entitlementId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+-      studentId: studentId,
+-      contractType: ContractType.subscription,
+-      sport: 'tennis',
+-      plan: SubscriptionPlan.standard,
+-      unlimitedVideoAndChat: true,
+-      liveLessonQuota: LiveLessonQuota(
+-        month: '2026-10',
+-        limit: 2,
+-        used: 0,
+-        remaining: 2,
+-      ),
+-    ),
++  static final subscriptionStarted = subscriptionStartedWith(
++    SubscriptionPlan.standard,
+   );
+ 
++  /// [plan] で始めた月額契約。今月のビデオ通話はまだ使っていない（上限は standard 2 回・plus 4 回）
++  static StartSubscriptionResponse subscriptionStartedWith(
++    SubscriptionPlan plan,
++  ) {
++    final limit = plan == SubscriptionPlan.plus ? 4 : 2;
++    return StartSubscriptionResponse(
++      subscription: Subscription(
++        subscriptionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
++        studentId: studentId,
++        sport: Sport.tennis,
++        plan: plan,
++        status: SubscriptionStatus.active,
++        startedAt: now,
++      ),
++      entitlement: Entitlement(
++        entitlementId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
++        studentId: studentId,
++        contractType: ContractType.subscription,
++        sport: 'tennis',
++        plan: plan,
++        unlimitedVideoAndChat: true,
++        liveLessonQuota: LiveLessonQuota(
++          month: '2026-10',
++          limit: limit,
++          used: 0,
++          remaining: limit,
++        ),
++      ),
++    );
++  }
++
+   /// 自分が送ってコーチが読んだメッセージと、コーチから届いてまだ読んでいないメッセージ
+   static final messages = [
+     Message(
+diff --git a/apps/student-app/test/ui/labels_test.dart b/apps/student-app/test/ui/labels_test.dart
+index 607c5b8..fbc1aef 100644
+--- a/apps/student-app/test/ui/labels_test.dart
++++ b/apps/student-app/test/ui/labels_test.dart
+@@ -56,4 +56,25 @@ void main() {
+       '10/28（水）23:30〜10/29（木）0:30',
+     );
+   });
++
++  test('月額契約のプランは名前とビデオ通話の暦月の上限で出す', () {
++    expect(SubscriptionPlan.values.map(subscriptionPlanChoiceLabel), [
++      'スタンダード　ビデオ通話 月 2 回',
++      'プラス　ビデオ通話 月 4 回',
++    ]);
++  });
++
++  test('今月のビデオ通話の残り回数は、プランの上限と合わせて出す', () {
++    expect(
++      liveLessonQuotaLabel(
++        const LiveLessonQuota(
++          month: '2026-10',
++          limit: 4,
++          used: 1,
++          remaining: 3,
++        ),
++      ),
++      '月 4 回のうち残り 3 回',
++    );
++  });
+ }

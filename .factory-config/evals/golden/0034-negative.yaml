@@ -1,0 +1,16 @@
+# Golden Set ペア比較 0034（EvalSpec l4-pairwise）。負例
+id: "0034"
+ticket: "github:guccyon/rally#175"
+gate: L4
+rubric_ids: [ARCH-002]
+pair:
+  a: { ref: "file:patches/0034-variant.diff", derived_from: "github:guccyon/rally#181", note: "負例（builder が元の PR の差分に 1 つだけ欠陥を入れた）" }
+  b: { ref: "github:guccyon/rally#181", note: "マージした PR（元）" }
+preferred: b
+confidence: high
+reason: "負例は月額契約の画面でプランを選ばせるが、契約を始めるときに選んだプランを送らない。プラスを選んでもスタンダードで契約される（同じ差分の README・CHANGELOG・試験は「選んだプランを plan で送る」）"
+polarity: one_flawed
+scored_by: builder_candidate   # Tetsuro の確認待ち（30 件目。選んだのと違うプランで契約されるのは利用者を誤らせるのでメジャーと見た）
+scored_at: "2026-10-29"
+severity: major
+lesson: "画面で選ばせた値を送らない（入力の取りこぼし）"
