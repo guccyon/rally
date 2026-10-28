@@ -424,6 +424,30 @@ abstract final class Fixtures {
     returnedAt: now,
   );
 
+  static final aiFeedback = AiFeedback(
+    comment: 'フォームの全体の流れは安定しています',
+    createdAt: now,
+  );
+
+  static final reviewInProgressWithAi = VideoReview(
+    videoId: videoId,
+    studentId: studentId,
+    coachId: coachId,
+    status: VideoReviewStatus.inProgress,
+    aiFeedback: aiFeedback,
+  );
+
+  static final reviewReturnedWithAi = VideoReview(
+    reviewId: reviewReturned.reviewId,
+    videoId: videoId,
+    studentId: studentId,
+    coachId: coachId,
+    status: VideoReviewStatus.returned,
+    comment: reviewReturned.comment,
+    returnedAt: now,
+    aiFeedback: aiFeedback,
+  );
+
   static final liveLesson = Lesson(
     lessonId: '88888888-8888-4888-8888-888888888888',
     studentId: studentId,

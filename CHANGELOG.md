@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app の添削結果の画面で、AI の一次フィードバック（`getVideoReview` の `ai_feedback`）があれば「AI の一次フィードバック」として、AI が自動で作った文でコーチの添削ではない旨と一緒に、コーチの添削とは別の枠に出す。コーチの返却を待つ間は待ちの文言と確かめ直すボタンと一緒に出し、返却後は「コーチの添削」と両方を出す。ないときは今までどおり。API と契約の変更はない（#170）
 - admin-web のコーチの「動画の添削」で、添削待ちの動画の「添削する」を開くと、添削コメントの欄の上に AI の一次フィードバック（`listMyCoachVideos` の `ai_feedback`）を「AI の一次フィードバック（参考）」として、AI が自動で作った文でコーチの添削ではない旨と一緒に出す。ないときは何も出さず、返却済みの行には出さない。返却するコメントには入らない。API と契約の変更はない（#169）
 - 動画への AI の一次フィードバック（変更シナリオ cs-006）: 生徒が動画を送ると、その直後に AI（Gen1 はモック。スポーツごとの決まった文）が一次フィードバックの短い文を作って動画に保存する。student-app の `GET /videos/{video_id}/review`（`getVideoReview`）と admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）の応答に、任意で null になりうる項目 `ai_feedback`（`comment` と `created_at`）を足した（同じ形の admin-web の `returnVideoReview` の応答にも載る）。コーチの添削とは別の項目で、返却で上書きされない。AI が失敗しても送付は成功し、`ai_feedback` は null のまま。既存の項目は変えない。DB は列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面はまだない（#168）
 - 提供スポーツに水泳（`swimming`）を足した（変更シナリオ cs-001）。admin-web と student-app の契約の `Sport` の enum の末尾に `swimming` を足し、水泳の生徒の登録・水泳のコーチの枠の公開と検索・月額契約（ゴルフ以外なので月額。ワンショットにはならない）と予約が通る。`GET /slot-supply` は 6 種類を返す。DB は sport の CHECK 制約の付け直しだけ（expand）。admin-web の生成した型と student-app の型・表示名も揃えた（スポーツを選ぶ欄に水泳が出る）（#165）

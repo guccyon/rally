@@ -597,6 +597,19 @@ class SubmitVideoRequest {
   };
 }
 
+/// `AiFeedback`（glossary の ai_feedback。コーチの添削の前に AI が返す一次フィードバック。コーチの添削とは別のもの）
+class AiFeedback {
+  const AiFeedback({required this.comment, required this.createdAt});
+
+  final String comment;
+  final DateTime createdAt;
+
+  factory AiFeedback.fromJson(Map<String, dynamic> json) => AiFeedback(
+    comment: json['comment'] as String,
+    createdAt: _dateTime(json['created_at']),
+  );
+}
+
 /// `VideoReview`（glossary の video_review）
 class VideoReview {
   const VideoReview({
@@ -607,6 +620,7 @@ class VideoReview {
     this.reviewId,
     this.comment,
     this.returnedAt,
+    this.aiFeedback,
   });
 
   final String? reviewId;
@@ -617,6 +631,9 @@ class VideoReview {
   final String? comment;
   final DateTime? returnedAt;
 
+  /// AI の一次フィードバック。AI が作れなかったとき（項目がない・null）は null。返却で上書きされない
+  final AiFeedback? aiFeedback;
+
   factory VideoReview.fromJson(Map<String, dynamic> json) => VideoReview(
     reviewId: json['review_id'] as String?,
     videoId: json['video_id'] as String,
@@ -625,6 +642,9 @@ class VideoReview {
     status: VideoReviewStatus.fromWire(json['status'] as String),
     comment: json['comment'] as String?,
     returnedAt: _dateTimeOrNull(json['returned_at']),
+    aiFeedback: json['ai_feedback'] == null
+        ? null
+        : AiFeedback.fromJson(json['ai_feedback'] as Map<String, dynamic>),
   );
 }
 

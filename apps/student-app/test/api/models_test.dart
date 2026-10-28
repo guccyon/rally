@@ -61,6 +61,39 @@ void main() {
     expect(() => list.messages[0] = list.messages[0], throwsUnsupportedError);
   });
 
+  group('VideoReview.fromJson', () {
+    final review = {
+      'review_id': null,
+      'video_id': 'v1',
+      'student_id': 's1',
+      'coach_id': 'c1',
+      'status': 'in_progress',
+      'comment': null,
+      'returned_at': null,
+    };
+
+    test('AI の一次フィードバックを読む', () {
+      final parsed = VideoReview.fromJson({
+        ...review,
+        'ai_feedback': {
+          'comment': 'フォームは安定しています',
+          'created_at': '2026-10-26T03:00:00Z',
+        },
+      });
+      expect(parsed.aiFeedback?.comment, 'フォームは安定しています');
+      expect(parsed.aiFeedback?.createdAt, DateTime.utc(2026, 10, 26, 3));
+      expect(parsed.comment, isNull);
+    });
+
+    test('AI の一次フィードバックが null・項目がなければ null', () {
+      expect(
+        VideoReview.fromJson({...review, 'ai_feedback': null}).aiFeedback,
+        isNull,
+      );
+      expect(VideoReview.fromJson(review).aiFeedback, isNull);
+    });
+  });
+
   group('Slot.fromJson', () {
     final slot = {
       'slot_id': 's1',
