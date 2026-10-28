@@ -8,9 +8,9 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 |---|---|---|
 | `crates/domain/` | ドメイン。純粋（I/O なし）。`identity`（アカウント・役割・スポーツ・コーチの自己紹介文 `CoachBio` と不変条件）・`scheduling`（スロットと、重なりを判定する集約 `CoachCalendar`・予約 `Booking`・キャンセル規定 `CancellationPolicy`・スポーツごとの予約枠の需給 `SlotSupply`）・`entitlement`（契約種別 `ContractType`・受講権 `Entitlement`・通話の暦月の枠 `LiveLessonQuota`・暦月 `YearMonth`・月額契約 `Subscription`・契約プラン `SubscriptionPlan`）・`live_lesson`（通話セッション `LiveLessonSession`・接続品質の生の指標 `ConnectionQuality`）・`async_lesson`（動画 `Video`・添削 `VideoReview`・添削コメント `ReviewComment`・動画の形式 `VideoContentType`・AI の一次フィードバック `AiFeedback`）・`lesson`（live-lesson と async-lesson が共有するレッスンの完了記録 `LessonCompletion`・`LessonId`・`LessonType`・`LessonSource`。コンテキストではない）・`notification`（プッシュ通知 `PushNotification`・通知の種類 `NotificationKind`・通知の受け取り設定 `NotificationSettings`） | なし |
 | `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`ListCoaches`・`GetAccount`・`UpdateCoachProfile`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CoachIntroductionLookup`（スロットの検索に添えるコーチの紹介。実装は `identity::IdentityCoachIntroductionLookup`）・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`ListMyBookings`（自分の予約の一覧）・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`AiFeedbackGenerator`（AI の一次フィードバック。材料は `AiFeedbackRequest`）・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`notification::PushNotificationSubscriber`・`PushSender`・`GetNotificationSettings`・`UpdateNotificationSettings`・`NotificationSettingsRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
-| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤。終了時に接続品質の指標を乱数で生成する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`MockAiFeedbackGenerator`: AI の一次フィードバック。スポーツごとの決まった文を返し、外に出ない、`MockPushSender`: プッシュ通知の送り先。送った通知を記録して標準出力に書く、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
+| `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤（Twilio Video 相当）。終了時に接続品質の指標を乱数で生成する、`MockAltVideoCallProvider`: 別の通話基盤を想定したモック。生の値の単位が違い、アダプタの中でポートの単位に換算する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`MockAiFeedbackGenerator`: AI の一次フィードバック。スポーツごとの決まった文を返し、外に出ない、`MockPushSender`: プッシュ通知の送り先。送った通知を記録して標準出力に書く、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
 | `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`GET /bookings/me`、`GET /coaches/me/bookings`、`GET /coaches/me/videos`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /slot-supply`、`GET /coaches`、`GET /me`、`PUT /me/profile`、`POST /subscriptions`、`GET /entitlements/me`、`GET /notification-settings/me`、`PUT /notification-settings/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
-| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先を環境変数で選ぶ（`AnalyticsDestination`）。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
+| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先（`AnalyticsDestination`）と通話基盤（`VideoCallBackend`）を環境変数で選ぶ。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
@@ -47,6 +47,7 @@ curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/jso
 
 ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先は当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server::router_with_postgres` で組み立てられる（`main` はまだ使わない）。
 行動イベントの配信先は環境変数 `ANALYTICS_SINK` で選ぶ（既定はインメモリ。下の「行動イベントの配信先」）。
+通話基盤は環境変数 `VIDEO_CALL_PROVIDER` で選ぶ（既定は `twilio`。下の「通話基盤の切り替え」）。
 
 ## identity の不変条件
 
@@ -170,15 +171,29 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - `POST /live-lesson-sessions`（student-app の `startLiveLessonSession`）: 予約の参加者（生徒・コーチ）だけが呼べる（役割では絞らない。参加者でないアカウントには予約がないのと同じ 404）。予約は scheduling の保存先から読み（ポート `live_lesson::BookingLookup`、実装は `scheduling::SchedulingBookingLookup`）、通話基盤にルームを作らせて参加用の `room_token` を返す。開始すると行動イベント `call.started` を 1 回発火する
 - `POST /live-lesson-sessions/{session_id}/end`（`endLiveLessonSession`）: 参加者が終了する。通話基盤がルームを閉じて接続品質の生の指標（`packet_loss_rate`（百分率 0〜100）・`jitter_ms`・`round_trip_ms`・`disconnect_count`）を返し、セッションに記録して行動イベント `call.ended`（4 属性と `duration_sec`）を 1 回発火する。指標と通話品質スコアはレスポンスに載せない。スコアの式はセマンティック層の 1 か所で、バックエンドには置かない（ADR 0002 Q1）
 - 不変条件は `domain::live_lesson::LiveLessonSession` が持つ: 確定した予約にしか開始できない（確定前・キャンセル済みは 409 `invalid_booking_state`）、同じ予約のセッションは 1 つ（終了済みを含め 2 回目は 409 `invalid_session_state`）、終了は開始の後（同じ時刻は許す）、終了は 1 回（409 `invalid_session_state`）。並行な開始は保存先が予約ごとに 1 つに絞る（DB では `sessions_booking_id_key`）
-- 通話基盤はポート `live_lesson::VideoCallProvider`。`server` は infra の `MockVideoCallProvider` で組み立てる。Blueprint の「回線品質の低いセッションを 15% 混ぜる」に合わせ、15% の確率で品質の低い回線（損失 2〜12%・ジッタ 40〜150 ms・往復 200〜600 ms・切断 0〜3 回）、それ以外は良好な回線（損失 0〜1%・ジッタ 30 ms 以内・往復 150 ms 以内・切断なし）の一様分布から引く。テストは種を固定できる（`MockVideoCallProvider::with_seed`）。録画と実際の Twilio 連携は扱わない
+- 通話基盤はポート `live_lesson::VideoCallProvider`。`server` は既定で infra の `MockVideoCallProvider` で組み立てる（もう 1 つのモックへの切り替えは次の項）。Blueprint の「回線品質の低いセッションを 15% 混ぜる」に合わせ、15% の確率で品質の低い回線（損失 2〜12%・ジッタ 40〜150 ms・往復 200〜600 ms・切断 0〜3 回）、それ以外は良好な回線（損失 0〜1%・ジッタ 30 ms 以内・往復 150 ms 以内・切断なし）の一様分布から引く。テストは種を固定できる（`MockVideoCallProvider::with_seed`）。録画と実際の Twilio 連携は扱わない
+- 通話基盤の切り替え（変更シナリオ cs-007）: `server` の起動時に環境変数 `VIDEO_CALL_PROVIDER` で選ぶ（`infra::VideoCallBackend`。`server::VideoCallBackend` でも公開）。知らない値（空文字列・大文字を含む）では起動しない。ポート `VideoCallProvider` の形・API の契約・行動イベント・通話品質スコアの式は、どちらを選んでも変わらない
+
+  | `VIDEO_CALL_PROVIDER` | 通話基盤 |
+  |---|---|
+  | なし・`twilio` | Twilio Video 相当のモック（`MockVideoCallProvider`）。基盤の生の値がポートの単位（損失は百分率、ジッタと往復の遅延はミリ秒） |
+  | `alt` | 別の通話基盤を想定したモック（`MockAltVideoCallProvider`）。基盤の生の値は損失が 0〜1 の割合、ジッタと往復の遅延が秒で、アダプタの中でポートの単位に換算する（割合 × 100、秒 × 1000 をミリ秒に四捨五入）。範囲外・負・NaN の生の値は障害（`Unavailable`）。分布は `twilio` と同じ（15% が品質の低い回線） |
+
+  ```sh
+  VIDEO_CALL_PROVIDER=alt cargo run -p server
+  ```
+
+  組み立ては `server::router_with_video_call`（`main` が使う）。`router_at` / `router_with_analytics` / `router_with_push_sender` / `router_with_postgres` は `twilio` のまま
 - 保存先はポート `LiveLessonSessionRepository`。`server` は当面インメモリ（`InMemoryLiveLessonSessionRepository`）。Postgres のテーブル `live_lesson.sessions`（expand）は置いたが、実装は予約の保存先を Postgres にするときに足す。予約は scheduling の持ち物なので外部キーは張らない（ADR 0004 の 3）
-- 統合テスト: `crates/interface/tests/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・参加者以外の 404・422 / 401）、`crates/server/tests/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周）、`crates/infra/tests/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
+- 統合テスト: `crates/interface/tests/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・参加者以外の 404・422 / 401）、`crates/server/tests/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周）、`crates/infra/tests/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/mock_alt_video_call_provider.rs`（別の基盤の生の値からの換算を境界の値で・範囲外は障害・分布）、`crates/infra/tests/video_call_provider_contract.rs`（ポートの契約を両方のモックと `VideoCallBackend` が満たすこと）、`crates/server/tests/video_call_backend.rs`（環境変数での切り替えと、選んだ基盤で組み立てたルーターで通話を一周。`room_token` の形で基盤を見分ける）、`crates/infra/tests/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
 | 契約の `LiveLessonSessionStatus` | `interface` の `contract.rs` |
 | 通話セッション ID の UUID のテキスト形式 | `application::live_lesson::session_id_uuid` |
 | モックの `room_token`（`mock-room.<セッション ID>.<参加者 ID>`） | `infra` の `MockVideoCallProvider` |
+| 別の基盤のモックの `room_token`（`mock-alt-room.<セッション ID>.<参加者 ID>`） | `infra` の `MockAltVideoCallProvider` |
+| `VIDEO_CALL_PROVIDER` の値（`twilio` / `alt`） | `infra` の `VideoCallBackend` |
 
 ## async-lesson: 動画の送付と添削の返却
 
