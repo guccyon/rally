@@ -13,7 +13,7 @@ use application::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, ListCoaches, RegisterAccount},
+    identity::{AccountRepository, GetAccount, ListCoaches, RegisterAccount, UpdateCoachProfile},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
@@ -212,7 +212,8 @@ where
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
         ListCoaches::new(accounts.clone()),
-        GetAccount::new(accounts),
+        GetAccount::new(accounts.clone()),
+        UpdateCoachProfile::new(accounts),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(slots, clock.clone()),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),

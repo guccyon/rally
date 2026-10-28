@@ -52,6 +52,14 @@ impl AccountRepository for BrokenRepository {
     async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
+
+    async fn update_coach_bio(
+        &self,
+        _coach_id: AccountId,
+        _bio: domain::identity::CoachBio,
+    ) -> Result<Option<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
 }
 
 struct NoTokens;
@@ -78,6 +86,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
         application::identity::ListCoaches::new(BrokenRepository),
         application::identity::GetAccount::new(BrokenRepository),
+        application::identity::UpdateCoachProfile::new(BrokenRepository),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(slots, clock),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),

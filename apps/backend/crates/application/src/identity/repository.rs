@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use domain::identity::{Account, AccountId};
+use domain::identity::{Account, AccountId, CoachBio};
 
 use crate::Unavailable;
 
@@ -26,6 +26,14 @@ pub trait AccountRepository: Send + Sync {
 
     /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
     fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
+
+    /// コーチ `coach_id` の自己紹介文を `bio` に置き換え、置き換えたあとのアカウントを返す。コーチのアカウントが
+    /// なければ（ID のアカウントがないか、コーチでなければ）何も変えずに `None`。
+    fn update_coach_bio(
+        &self,
+        coach_id: AccountId,
+        bio: CoachBio,
+    ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
 }
 
 #[derive(Debug)]

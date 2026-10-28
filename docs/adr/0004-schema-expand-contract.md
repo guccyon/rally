@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -33,7 +33,7 @@
 | スキーマ | テーブル | 内容 |
 |---|---|---|
 | `identity` | `accounts` | アカウント。`role` で生徒（`student`）・コーチ（`coach`）・本部（`headquarters`）を区別。生徒だけが `sport` を持つ。メールは大文字小文字を区別せず一意 |
-| | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる |
+| | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる。自己紹介文 `bio`（D18 の expand で追加。既定は空文字列、`coaches_bio_length` で 400 文字まで） |
 | `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加） |
 | | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled` |
 | `entitlement` | `subscriptions` | 月額契約（ゴルフ以外） |
@@ -66,6 +66,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 | レッスンの完了記録はセッション・動画 1 つにつき 1 回、非同期は添削を返した動画だけ | `lesson_completions_session_id_key` / `lesson_completions_video_id_key`、`async_lesson.lesson_completions.video_id` の `video_reviews` への外部キー |
 | 生徒の初回のレッスン（`is_first_lesson`）は 1 件 | テーブルごとの部分一意索引 `lesson_completions_one_first_per_student`（2 つのテーブルをまたいだ重なりは下の「制約にしないもの」） |
 | 同じ生徒とコーチのチャットのスレッドは 1 つ、既読は送信の後 | `threads_student_id_coach_id_key`、`messages_read_after_sent` |
+| コーチの自己紹介文は 400 文字まで（判定は domain の `CoachBio`。DB は壊れた値を入れないため） | `coaches_bio_length` |
 
 制約にしないもの:
 

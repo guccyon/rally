@@ -1,4 +1,4 @@
-//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証。
+//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証（コーチの自己紹介文 `coaches.bio` を含む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,7 +9,7 @@ use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
     in_memory::{FixedClock, RecordingAnalyticsSink},
 };
-use domain::identity::{Role, Sport};
+use domain::identity::{CoachBio, Role, Sport};
 use infra::PgAccountRepository;
 use sqlx::{PgPool, types::Uuid};
 
@@ -213,4 +213,84 @@ async fn unknown_account_is_none(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(found, None);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_bio_is_empty_at_first_and_replaced_by_update(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let coach = use_case
+        .execute(command(
+            "coach@example.com",
+            Role::Coach,
+            vec![Sport::Tennis, Sport::Golf],
+        ))
+        .await
+        .unwrap();
+    let accounts = PgAccountRepository::new(pool.clone());
+
+    // 登録したばかりのコーチの自己紹介文は空
+    let found = accounts.find(coach.id()).await.unwrap().unwrap();
+    assert_eq!(found.as_coach().unwrap().bio(), &CoachBio::default());
+
+    // 上限ちょうど（400 文字。DB の char_length も文字で数える）まで書け、読み直しても同じ
+    for text in [
+        "テニス歴 20 年。初心者歓迎",
+        &"あ".repeat(CoachBio::MAX_CHARS),
+        "",
+    ] {
+        let bio = CoachBio::new(text).unwrap();
+        let updated = accounts
+            .update_coach_bio(coach.id(), bio.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.as_coach().unwrap().bio(), &bio);
+        assert_eq!(
+            updated.as_coach().unwrap().sports(),
+            coach.as_coach().unwrap().sports(),
+            "提供スポーツはそのまま"
+        );
+        assert_eq!(
+            accounts.find(coach.id()).await.unwrap(),
+            Some(updated.clone())
+        );
+        assert_eq!(accounts.list_coaches().await.unwrap(), [updated]);
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bio_of_non_coach_or_unknown_account_is_not_updated(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let student = use_case
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Soccer],
+        ))
+        .await
+        .unwrap();
+    let headquarters = use_case
+        .execute(command("hq@example.com", Role::Headquarters, vec![]))
+        .await
+        .unwrap();
+    let accounts = PgAccountRepository::new(pool);
+
+    for id in [
+        student.id(),
+        headquarters.id(),
+        domain::identity::AccountId::from_u128(42),
+    ] {
+        let updated = accounts
+            .update_coach_bio(id, CoachBio::new("自己紹介").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(updated, None, "{id:?}");
+    }
+    assert_eq!(accounts.find(student.id()).await.unwrap(), Some(student));
+    assert_eq!(
+        accounts.find(headquarters.id()).await.unwrap(),
+        Some(headquarters)
+    );
 }

@@ -181,6 +181,45 @@ async fn only_coach_accounts_can_be_coaches(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_bio_defaults_to_empty_and_is_at_most_400_chars(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    let bio: String =
+        sqlx::query_scalar("SELECT bio FROM identity.coaches WHERE coach_id = $1::uuid")
+            .bind(&coach_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(bio, "");
+
+    let set_bio = |bio: String| {
+        let pool = pool.clone();
+        let coach_id = coach_id.clone();
+        async move {
+            sqlx::query("UPDATE identity.coaches SET bio = $2 WHERE coach_id = $1::uuid")
+                .bind(coach_id)
+                .bind(bio)
+                .execute(&pool)
+                .await
+        }
+    };
+    // 文字数で数える（「あ」は UTF-8 で 3 バイト）
+    set_bio("あ".repeat(400)).await.unwrap();
+    let (code, constraint) = violation(set_bio("あ".repeat(401)).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "coaches_bio_length")
+    );
+    let (code, _) = violation(
+        sqlx::query("UPDATE identity.coaches SET bio = NULL WHERE coach_id = $1::uuid")
+            .bind(&coach_id)
+            .execute(&pool)
+            .await,
+    );
+    assert_eq!(code, "23502", "NULL は入らない（NOT NULL）");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn slot_must_end_after_it_starts(pool: PgPool) {
     let coach_id = coach(&pool).await;
     let (code, constraint) = violation(
