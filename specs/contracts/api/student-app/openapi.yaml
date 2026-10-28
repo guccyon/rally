@@ -77,7 +77,9 @@ paths:
     get:
       operationId: searchSlots
       summary: スロットの検索
-      description: コーチが公開している予約枠のうち、まだ予約されていないものを返す。
+      description: |
+        コーチが公開している予約枠のうち、まだ予約されていないものを返す。
+        各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
       tags: [scheduling]
       x-context: scheduling
       parameters:
@@ -786,6 +788,16 @@ components:
         ends_at:
           type: string
           format: date-time
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: コーチの表示名。コーチのアカウントが引けなければ載らない
+        coach_bio:
+          type: string
+          minLength: 1
+          maxLength: 400
+          description: コーチの自己紹介文（書いたとおり）。自己紹介文を書いていない（空の）コーチと、コーチのアカウントが引けないときは載らない
 
     SlotPage:
       type: object

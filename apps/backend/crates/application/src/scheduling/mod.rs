@@ -3,6 +3,8 @@
 pub mod booking_id_uuid;
 mod booking_repository;
 mod cancel_booking;
+mod coach_introduction;
+mod coach_introduction_lookup;
 mod confirm_booking;
 mod create_booking;
 mod get_slot_supply;
@@ -21,6 +23,8 @@ mod update_booking_error;
 
 pub use booking_repository::BookingRepository;
 pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError};
+pub use coach_introduction::CoachIntroduction;
+pub use coach_introduction_lookup::CoachIntroductionLookup;
 pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError};
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
 pub use get_slot_supply::GetSlotSupply;

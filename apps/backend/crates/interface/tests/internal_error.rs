@@ -88,7 +88,11 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         application::identity::GetAccount::new(BrokenRepository),
         application::identity::UpdateCoachProfile::new(BrokenRepository),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
-        SearchSlots::new(slots, clock),
+        SearchSlots::new(
+            slots,
+            application::identity::IdentityCoachIntroductionLookup::new(BrokenRepository),
+            clock,
+        ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),

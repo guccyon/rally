@@ -60,4 +60,31 @@ void main() {
     expect(() => list.messages.add(list.messages[0]), throwsUnsupportedError);
     expect(() => list.messages[0] = list.messages[0], throwsUnsupportedError);
   });
+
+  group('Slot.fromJson', () {
+    final slot = {
+      'slot_id': 's1',
+      'coach_id': 'c1',
+      'sport': 'tennis',
+      'starts_at': '2026-11-01T10:00:00Z',
+      'ends_at': '2026-11-01T11:00:00Z',
+    };
+
+    test('コーチの表示名と自己紹介文を読む', () {
+      final parsed = Slot.fromJson({
+        ...slot,
+        'coach_display_name': 'たなか',
+        'coach_bio': 'テニス歴 20 年',
+      });
+      expect(parsed.coachDisplayName, 'たなか');
+      expect(parsed.coachBio, 'テニス歴 20 年');
+    });
+
+    test('コーチの紹介の項目がなければ null', () {
+      final parsed = Slot.fromJson(slot);
+      expect(parsed.slotId, 's1');
+      expect(parsed.coachDisplayName, isNull);
+      expect(parsed.coachBio, isNull);
+    });
+  });
 }

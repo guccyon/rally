@@ -119,7 +119,13 @@ fn app() -> App {
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
-        SearchSlots::new(slots, clock.clone()),
+        SearchSlots::new(
+            slots,
+            application::identity::IdentityCoachIntroductionLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+            clock.clone(),
+        ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
         ConfirmBooking::new(
             bookings.clone(),

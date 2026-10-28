@@ -242,6 +242,8 @@ class Slot {
     required this.sport,
     required this.startsAt,
     required this.endsAt,
+    this.coachDisplayName,
+    this.coachBio,
   });
 
   final String slotId;
@@ -250,12 +252,20 @@ class Slot {
   final DateTime startsAt;
   final DateTime endsAt;
 
+  /// コーチの表示名（任意。コーチのアカウントが引けなければない）
+  final String? coachDisplayName;
+
+  /// コーチの自己紹介文（任意。自己紹介文を書いていないコーチはない）
+  final String? coachBio;
+
   factory Slot.fromJson(Map<String, dynamic> json) => Slot(
     slotId: json['slot_id'] as String,
     coachId: json['coach_id'] as String,
     sport: Sport.fromWire(json['sport'] as String),
     startsAt: _dateTime(json['starts_at']),
     endsAt: _dateTime(json['ends_at']),
+    coachDisplayName: json['coach_display_name'] as String?,
+    coachBio: json['coach_bio'] as String?,
   );
 }
 

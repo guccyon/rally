@@ -53,8 +53,8 @@ use application::{
         SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        PublishSlot, QuotaGate, SearchSlots, SlotRepository,
+        BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
+        GetSlotSupply, PublishSlot, QuotaGate, SearchSlots, SlotRepository,
     },
 };
 use axum::{
@@ -87,13 +87,13 @@ pub use error::ApiError;
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<R, S, I, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, A, C>,
-    search_slots: SearchSlots<S, C>,
+    search_slots: SearchSlots<S, I, C>,
     create_booking: CreateBooking<B, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
@@ -120,6 +120,7 @@ pub fn router_with<R, S, B, G, E, L, K, V, W, U, Q, M, X, H, O, N, Z, A, P, C, T
 where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
+    I: CoachIntroductionLookup + 'static,
     B: BookingRepository + 'static,
     G: QuotaGate + 'static,
     E: EntitlementRepository + 'static,
@@ -164,8 +165,8 @@ where
     let slots = Router::new()
         .route(
             "/slots",
-            get(slots::search_slots::<S, A, C>).merge(
-                post(slots::publish_slot::<S, A, C>).route_layer(require_role(&[Role::Coach])),
+            get(slots::search_slots::<S, I, A, C>).merge(
+                post(slots::publish_slot::<S, I, A, C>).route_layer(require_role(&[Role::Coach])),
             ),
         )
         .with_state(Arc::new(slots::SlotsState {

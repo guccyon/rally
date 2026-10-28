@@ -117,7 +117,13 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::identity::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
-        SearchSlots::new(slots, clock),
+        SearchSlots::new(
+            slots,
+            application::identity::IdentityCoachIntroductionLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock),
         ConfirmBooking::new(
             bookings.clone(),
