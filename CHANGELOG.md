@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 動画への AI の一次フィードバック（変更シナリオ cs-006）: 生徒が動画を送ると、その直後に AI（Gen1 はモック。スポーツごとの決まった文）が一次フィードバックの短い文を作って動画に保存する。student-app の `GET /videos/{video_id}/review`（`getVideoReview`）と admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）の応答に、任意で null になりうる項目 `ai_feedback`（`comment` と `created_at`）を足した（同じ形の admin-web の `returnVideoReview` の応答にも載る）。コーチの添削とは別の項目で、返却で上書きされない。AI が失敗しても送付は成功し、`ai_feedback` は null のまま。既存の項目は変えない。DB は列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面はまだない（#168）
 - 提供スポーツに水泳（`swimming`）を足した（変更シナリオ cs-001）。admin-web と student-app の契約の `Sport` の enum の末尾に `swimming` を足し、水泳の生徒の登録・水泳のコーチの枠の公開と検索・月額契約（ゴルフ以外なので月額。ワンショットにはならない）と予約が通る。`GET /slot-supply` は 6 種類を返す。DB は sport の CHECK 制約の付け直しだけ（expand）。admin-web の生成した型と student-app の型・表示名も揃えた（スポーツを選ぶ欄に水泳が出る）（#165）
 - admin-web のコーチの「予約枠」で、このログイン中に公開した枠だけでなく、`GET /coaches/me/slots` で取った自分の枠をすべて出す。終わっていない枠は「これからの枠」として日時の早い順に上に、終わった枠は「終わった枠」として新しい順に下に畳んで出し、各行に予約が入っているか（予約あり / 予約なし）を出す。枠を公開したら一覧を取り直す。API と契約の変更はない（#162）
 - コーチの自分の枠の一覧の API: admin-web の `GET /coaches/me/slots`（`listMyCoachSlots`）が、コーチ本人が公開した枠を、状態（`open` / `booked` / `closed`）を問わず終わった枠も含めて、有効な予約（未確定か確定）が入っているか `has_active_booking` と一緒に、開始時刻の古い順に返す。コーチ以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面はまだない（#161）

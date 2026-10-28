@@ -1,4 +1,4 @@
-//! 動画と添削の保存先（Postgres の `async_lesson.videos`・`video_reviews`）。
+//! 動画と添削の保存先（Postgres の `async_lesson.videos`・`video_reviews`）。AI の一次フィードバックは `videos` の列。
 
 use application::{
     Unavailable,
@@ -7,7 +7,7 @@ use application::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
+    async_lesson::{AiFeedback, ReviewComment, Video, VideoId, VideoReviewId},
     identity::AccountId,
 };
 use sqlx::{
@@ -23,13 +23,15 @@ use crate::{
 /// [`VideoRepository`] の Postgres 実装。
 ///
 /// 動画の状態は添削の行の有無で決まる。返却は動画の行のロック（`FOR UPDATE`）の中で読み取りから保存までを行い、
-/// 「返却は 1 回」は DB の `video_reviews_video_id_key` でも守る。
+/// 「返却は 1 回」は DB の `video_reviews_video_id_key` でも守る。AI の一次フィードバックは動画の行の
+/// `ai_feedback_comment`・`ai_feedback_created_at` に書き、添削の行とは別に持つ（添削の返却では書き換えない）。
 #[derive(Debug, Clone)]
 pub struct PgVideoRepository {
     pool: PgPool,
 }
 
-/// 動画の列（video_id, student_id, coach_id, sport, submitted_at）と、添削の列（review_id, comment, returned_at）。
+/// 動画の列（video_id, student_id, coach_id, sport, submitted_at）と、添削の列（review_id, comment, returned_at）と、
+/// AI の一次フィードバックの列（ai_feedback_comment, ai_feedback_created_at）。
 type VideoRow = (
     Uuid,
     Uuid,
@@ -37,6 +39,8 @@ type VideoRow = (
     String,
     OffsetDateTime,
     Option<Uuid>,
+    Option<String>,
+    Option<OffsetDateTime>,
     Option<String>,
     Option<OffsetDateTime>,
 );
@@ -59,7 +63,8 @@ impl VideoRepository for PgVideoRepository {
     async fn find(&self, video_id: VideoId) -> Result<Option<Video>, Unavailable> {
         let row: Option<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
-                    r.review_id, r.comment, r.returned_at
+                    r.review_id, r.comment, r.returned_at,
+                    v.ai_feedback_comment, v.ai_feedback_created_at
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.video_id = $1",
@@ -74,7 +79,8 @@ impl VideoRepository for PgVideoRepository {
     async fn videos_of_coach(&self, coach_id: AccountId) -> Result<Vec<Video>, Unavailable> {
         let rows: Vec<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
-                    r.review_id, r.comment, r.returned_at
+                    r.review_id, r.comment, r.returned_at,
+                    v.ai_feedback_comment, v.ai_feedback_created_at
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.coach_id = $1",
@@ -110,7 +116,8 @@ impl VideoRepository for PgVideoRepository {
         let mut tx = self.pool.begin().await.map_err(unavailable)?;
         let row: Option<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
-                    r.review_id, r.comment, r.returned_at
+                    r.review_id, r.comment, r.returned_at,
+                    v.ai_feedback_comment, v.ai_feedback_created_at
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.video_id = $1
@@ -124,9 +131,10 @@ impl VideoRepository for PgVideoRepository {
             .ok_or(UpdateVideoError::NotFound)
             .and_then(|row| video_from_row(row).map_err(UpdateVideoError::Unavailable))?;
         let had_review = video.review().is_some();
+        let had_ai_feedback = video.ai_feedback().is_some();
         update(&mut video).map_err(UpdateVideoError::Rejected)?;
 
-        // 動画が変わるのは添削の返却だけ（返却した添削は変わらない）
+        // 動画が変わるのは添削の返却と AI の一次フィードバックを付けることだけ（どちらも付けた後は変わらない）
         if let (false, Some(review)) = (had_review, video.review()) {
             sqlx::query(
                 "INSERT INTO async_lesson.video_reviews (review_id, video_id, comment, returned_at)
@@ -140,13 +148,37 @@ impl VideoRepository for PgVideoRepository {
             .await
             .map_err(unavailable)?;
         }
+        if let (false, Some(feedback)) = (had_ai_feedback, video.ai_feedback()) {
+            sqlx::query(
+                "UPDATE async_lesson.videos
+                 SET ai_feedback_comment = $2, ai_feedback_created_at = $3
+                 WHERE video_id = $1",
+            )
+            .bind(video_id_uuid::to_uuid(video.id()))
+            .bind(feedback.comment())
+            .bind(timestamp(feedback.created_at()))
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+        }
         tx.commit().await.map_err(unavailable)?;
         Ok(video)
     }
 }
 
 fn video_from_row(
-    (video_id, student_id, coach_id, sport, submitted_at, review_id, comment, returned_at): VideoRow,
+    (
+        video_id,
+        student_id,
+        coach_id,
+        sport,
+        submitted_at,
+        review_id,
+        comment,
+        returned_at,
+        ai_feedback_comment,
+        ai_feedback_created_at,
+    ): VideoRow,
 ) -> Result<Video, Unavailable> {
     let sport = sport_from_value(&sport)
         .ok_or_else(|| Unavailable::new(format!("未知の sport: {sport}")))?;
@@ -158,7 +190,7 @@ fn video_from_row(
         )),
         _ => None,
     };
-    Video::restore(
+    let mut video = Video::restore(
         video_id_uuid::from_uuid(video_id),
         account_id_uuid::from_uuid(student_id),
         account_id_uuid::from_uuid(coach_id),
@@ -166,5 +198,13 @@ fn video_from_row(
         submitted_at.into(),
         review,
     )
-    .map_err(Unavailable::new)
+    .map_err(Unavailable::new)?;
+    if let (Some(comment), Some(created_at)) = (ai_feedback_comment, ai_feedback_created_at) {
+        video
+            .record_ai_feedback(
+                AiFeedback::new(comment, created_at.into()).map_err(Unavailable::new)?,
+            )
+            .map_err(Unavailable::new)?;
+    }
+    Ok(video)
 }

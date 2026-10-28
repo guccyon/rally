@@ -1,4 +1,4 @@
-//! インフラ層。application のポートを Postgres とモックの外部連携（トークン・境界間イベント・通話基盤・動画の保存先・プッシュ通知・行動トラッキング）で実装する。
+//! インフラ層。application のポートを Postgres とモックの外部連携（トークン・境界間イベント・通話基盤・動画の保存先・AI の一次フィードバック・プッシュ通知・行動トラッキング）で実装する。
 //!
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
@@ -11,6 +11,7 @@ pub mod identity_values;
 mod in_memory_domain_event_bus;
 mod logging_domain_event_publisher;
 pub mod messaging_values;
+mod mock_ai_feedback_generator;
 mod mock_push_sender;
 mod mock_token;
 mod mock_video_call_provider;
@@ -34,6 +35,7 @@ pub use analytics_common_attributes::AnalyticsCommonAttributes;
 pub use analytics_destination::AnalyticsDestination;
 pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
+pub use mock_ai_feedback_generator::MockAiFeedbackGenerator;
 pub use mock_push_sender::MockPushSender;
 pub use mock_token::MockTokenService;
 pub use mock_video_call_provider::MockVideoCallProvider;

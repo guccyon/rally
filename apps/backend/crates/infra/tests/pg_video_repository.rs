@@ -1,5 +1,5 @@
 //! `PgVideoRepository`（`async_lesson.videos`・`video_reviews`）の検証。送付・返却の往復と、2 回目の返却の拒否と、
-//! コーチに送られた動画の列挙。
+//! コーチに送られた動画の列挙と、AI の一次フィードバックの往復（添削の返却で変わらないこと）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,7 +9,7 @@ mod support;
 use application::async_lesson::{UpdateVideoError, VideoRepository};
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video, VideoStatus},
+    async_lesson::{AiFeedback, ReviewComment, Video, VideoStatus},
     identity::Sport,
 };
 use infra::PgVideoRepository;
@@ -124,4 +124,75 @@ async fn videos_of_coach_reads_videos_sent_to_the_coach_with_their_reviews(pool:
 
     let nobody = support::coach(&pool).await;
     assert!(videos.videos_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn ai_feedback_round_trips_and_survives_the_coachs_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let video = Video::submit(
+        videos.next_video_id(),
+        student,
+        coach,
+        Sport::Swimming,
+        at(1),
+    );
+    videos.insert(video.clone()).await.unwrap();
+    assert_eq!(
+        videos
+            .find(video.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .ai_feedback(),
+        None,
+        "付けるまでは空"
+    );
+
+    let feedback = AiFeedback::new("呼吸のタイミングを見直しましょう", at(1)).unwrap();
+    let with_feedback = videos
+        .update(video.id(), |v| v.record_ai_feedback(feedback.clone()))
+        .await
+        .unwrap();
+    assert_eq!(with_feedback.ai_feedback(), Some(&feedback));
+    assert_eq!(
+        videos.find(video.id()).await.unwrap(),
+        Some(with_feedback.clone())
+    );
+
+    // 2 回目は付けられず、保存した一次フィードバックは変わらない
+    let result = videos
+        .update(video.id(), |v| {
+            v.record_ai_feedback(AiFeedback::new("別の文", at(2)).unwrap())
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(UpdateVideoError::Rejected(
+                DomainError::AiFeedbackAlreadyRecorded
+            ))
+        ),
+        "{result:?}"
+    );
+
+    // コーチの添削の返却は一次フィードバックを上書きしない（別の項目）
+    let comment = ReviewComment::new("キックが膝から曲がっている").unwrap();
+    let review_id = videos.next_review_id();
+    let reviewed = videos
+        .update(video.id(), |v| {
+            v.return_review(review_id, coach, comment.clone(), true, at(5))
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.ai_feedback(), Some(&feedback));
+    assert_eq!(reviewed.review().unwrap().comment(), &comment);
+    let found = videos.find(video.id()).await.unwrap().unwrap();
+    assert_eq!(found, reviewed);
+    assert_eq!(
+        videos.videos_of_coach(coach).await.unwrap(),
+        [reviewed],
+        "コーチの一覧でも読める"
+    );
 }

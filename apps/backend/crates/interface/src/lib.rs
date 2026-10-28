@@ -31,8 +31,8 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     async_lesson::{
-        GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate, SubmitVideo,
-        VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
+        AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate,
+        SubmitVideo, VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -95,7 +95,7 @@ pub use error::ApiError;
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Q, F, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
@@ -113,7 +113,7 @@ pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Q, F, M, X, H, O, N, Z, A
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
     end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
-    submit_video: SubmitVideo<W, U, A, C>,
+    submit_video: SubmitVideo<W, U, Y, A, C>,
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     list_coach_videos: ListCoachVideos<W, F>,
@@ -142,6 +142,7 @@ where
     V: VideoCallProvider + 'static,
     W: VideoRepository + 'static,
     U: VideoStorage + 'static,
+    Y: AiFeedbackGenerator + 'static,
     Q: ReviewGate + 'static,
     F: VideoStudentDisplayNameLookup + 'static,
     M: LessonCompletionRepository + 'static,
@@ -270,13 +271,13 @@ where
     let videos = Router::new()
         .route(
             "/videos",
-            post(videos::submit_video::<W, U, Q, A, P, C>)
+            post(videos::submit_video::<W, U, Y, Q, A, P, C>)
                 .route_layer(require_role(&[Role::Student])),
         )
         .route(
             "/videos/{video_id}/review",
-            get(videos::get_video_review::<W, U, Q, A, P, C>).merge(
-                post(videos::return_video_review::<W, U, Q, A, P, C>)
+            get(videos::get_video_review::<W, U, Y, Q, A, P, C>).merge(
+                post(videos::return_video_review::<W, U, Y, Q, A, P, C>)
                     .route_layer(require_role(&[Role::Coach])),
             ),
         )

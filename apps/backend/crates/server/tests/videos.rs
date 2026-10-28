@@ -2,7 +2,8 @@
 //! モック（`MockVideoStorage`）で、添削に着手してよいかは entitlement（`EntitlementReviewGate`）に問い合わせる。
 //!
 //! - 送付するとモックの保存先の URL が返り、返却前の取得は未返却（`in_progress`）
-//! - コーチが返却すると、生徒が読む添削が `returned` になる
+//! - 送付の直後に AI の一次フィードバックのモック（`MockAiFeedbackGenerator`）の文が付く
+//! - コーチが返却すると、生徒が読む添削が `returned` になり、一次フィードバックはそのまま
 
 use std::time::{Duration, SystemTime};
 
@@ -15,8 +16,8 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{AccountId, Role};
-use infra::{MockTokenService, MockVideoStorage};
+use domain::identity::{AccountId, Role, Sport};
+use infra::{MockAiFeedbackGenerator, MockTokenService, MockVideoStorage};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -98,6 +99,11 @@ async fn a_submitted_video_is_reviewed_and_returned() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "in_progress");
     assert_eq!(body["comment"], Value::Null);
+    let ai_feedback = json!({
+        "comment": MockAiFeedbackGenerator::comment_for(Sport::Tennis),
+        "created_at": "2026-10-26T10:00:00Z",
+    });
+    assert_eq!(body["ai_feedback"], ai_feedback);
 
     // 翌日にコーチが返却する
     clock.set(oct26_10() + Duration::from_secs(86_400));
@@ -117,4 +123,5 @@ async fn a_submitted_video_is_reviewed_and_returned() {
     assert_eq!(body["status"], "returned");
     assert_eq!(body["comment"], "フォロースルーを大きく");
     assert_eq!(body["returned_at"], "2026-10-27T10:00:00Z");
+    assert_eq!(body["ai_feedback"], ai_feedback);
 }

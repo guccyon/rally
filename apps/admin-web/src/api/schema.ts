@@ -277,6 +277,8 @@ export interface paths {
          *       その後に返却済み（`returned`）を返却した時刻 `returned_at` の新しい順。同じ時刻は動画 ID の順
          *     - 各項目には動画の ID と、送った生徒の表示名 `student_display_name` と、送られた時刻と、添削の状態と、返却した時刻を載せる。
          *       生徒のアカウントが引けないときは `student_display_name` を載せない。添削待ちの動画には `returned_at` を載せない
+         *     - 各項目の `ai_feedback` は、動画の送付の直後に AI（Gen1 はモック）が返した一次フィードバック（文と作った時刻）。
+         *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
          *     - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -669,6 +671,19 @@ export interface components {
          * @enum {string}
          */
         VideoReviewStatus: "in_progress" | "returned";
+        /**
+         * @description glossary の ai_feedback（生徒が送った動画に、コーチの添削の前に AI が返す一次フィードバック）。
+         *     コーチの添削（`VideoReview` の `comment`）とは別の項目で、添削の返却で上書きされない。Gen1 の AI はモック。student-app の AiFeedback と同じ形
+         */
+        AiFeedback: {
+            /** @description AI の一次フィードバックの短い文 */
+            comment: string;
+            /**
+             * Format: date-time
+             * @description 一次フィードバックを作った時刻（動画の送付の直後）
+             */
+            created_at: string;
+        };
         /** @description glossary の video_review（生徒が送った動画をコーチが添削して返すこと）。student-app の VideoReview と同じ形 */
         VideoReview: {
             /**
@@ -687,6 +702,8 @@ export interface components {
             comment?: string | null;
             /** Format: date-time */
             returned_at?: string | null;
+            /** @description AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目 */
+            ai_feedback?: components["schemas"]["AiFeedback"] | null;
         };
         ReturnVideoReviewRequest: {
             /** @description コーチの添削コメント（空白だけは不可） */
@@ -709,6 +726,8 @@ export interface components {
              * @description コーチが添削を返した時刻。添削待ち（`in_progress`）のときは載らない
              */
             returned_at?: string;
+            /** @description AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目で、返却で上書きされない */
+            ai_feedback?: components["schemas"]["AiFeedback"] | null;
         };
         /** @description コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明） */
         CoachVideoList: {

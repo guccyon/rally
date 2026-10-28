@@ -17,8 +17,8 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
-        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        FixedAiFeedbackGenerator, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
         InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
         ManualClock, RecordingAnalyticsSink, RecordingDomainEventPublisher,
@@ -206,6 +206,7 @@ fn app() -> App {
         SubmitVideo::new(
             videos.clone(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             analytics.clone(),
             clock.clone(),
         ),

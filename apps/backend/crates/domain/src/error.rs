@@ -88,6 +88,12 @@ pub enum DomainError {
     ReviewCommentTooLong { max: usize },
     /// 通話セッションがまだ終了していないので、レッスンの完了を記録できない
     LiveLessonSessionNotEnded,
+    /// AI の一次フィードバックの文が空（空白だけを含む）
+    EmptyAiFeedback,
+    /// 動画の AI の一次フィードバックはすでに付けてある（1 本に 1 つ）
+    AiFeedbackAlreadyRecorded,
+    /// AI の一次フィードバックを作った時刻が動画の送付より前
+    AiFeedbackBeforeSubmission,
     /// 動画の添削がまだ返されていないので、レッスンの完了を記録できない
     VideoReviewNotReturned,
     /// レッスンの完了の記録がレッスンの終わり（通話の終了・添削の返却）より前

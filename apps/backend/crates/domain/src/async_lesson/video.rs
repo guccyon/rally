@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use super::{ReviewComment, VideoId, VideoReview, VideoReviewId, VideoStatus};
+use super::{AiFeedback, ReviewComment, VideoId, VideoReview, VideoReviewId, VideoStatus};
 use crate::{
     DomainError,
     identity::{AccountId, Sport},
@@ -13,6 +13,10 @@ use crate::{
 /// （[`Video::return_review`]）と [`VideoReview`] を持つ [`VideoStatus::Reviewed`] になる。動画を扱えるのは
 /// 送った生徒と送り先のコーチ（当事者）だけ。
 ///
+/// コーチの添削の前に AI の一次フィードバック（[`AiFeedback`]）を 1 つ持てる（[`Video::record_ai_feedback`]）。
+/// 一次フィードバックは添削とは別の項目で、状態（[`VideoStatus`]）にも添削の着手条件にも関わらず、添削の返却で
+/// 変わらない。
+///
 /// 送付の回数は数えない（月額は送り放題）。添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ。
 /// 不変条件 2）は [`crate::entitlement::ContractType::may_start_review`] が決め、返却はその答えに従う。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +27,7 @@ pub struct Video {
     sport: Sport,
     submitted_at: SystemTime,
     review: Option<VideoReview>,
+    ai_feedback: Option<AiFeedback>,
 }
 
 impl Video {
@@ -41,6 +46,7 @@ impl Video {
             sport,
             submitted_at: now,
             review: None,
+            ai_feedback: None,
         }
     }
 
@@ -69,7 +75,26 @@ impl Video {
             review: review.map(|(review_id, comment, returned_at)| {
                 VideoReview::new(review_id, id, comment, returned_at)
             }),
+            ai_feedback: None,
         })
+    }
+
+    /// AI の一次フィードバック `feedback` を動画に付ける（送付の直後に付ける。保存先から読んだ動画を組み立てるときにも
+    /// 使う）。次の不変条件を破れば [`DomainError`] を返し、動画を変えない。
+    ///
+    /// - 一次フィードバックは動画 1 本に 1 つ（[`DomainError::AiFeedbackAlreadyRecorded`]）
+    /// - 作ったのは送付の後（同じ時刻は許す。[`DomainError::AiFeedbackBeforeSubmission`]）
+    ///
+    /// 添削の有無は問わない（一次フィードバックは添削とは別の項目）。
+    pub fn record_ai_feedback(&mut self, feedback: AiFeedback) -> Result<(), DomainError> {
+        if self.ai_feedback.is_some() {
+            return Err(DomainError::AiFeedbackAlreadyRecorded);
+        }
+        if feedback.created_at() < self.submitted_at {
+            return Err(DomainError::AiFeedbackBeforeSubmission);
+        }
+        self.ai_feedback = Some(feedback);
+        Ok(())
     }
 
     /// `account` が動画の当事者（送った生徒か送り先のコーチ）でなければ [`DomainError::NotAVideoParty`]。
@@ -178,6 +203,11 @@ impl Video {
     /// 返却した添削。返却するまでは `None`。
     pub const fn review(&self) -> Option<&VideoReview> {
         self.review.as_ref()
+    }
+
+    /// AI の一次フィードバック。まだない（作る前か、作るのに失敗した）ときは `None`。
+    pub const fn ai_feedback(&self) -> Option<&AiFeedback> {
+        self.ai_feedback.as_ref()
     }
 }
 
@@ -381,6 +411,54 @@ mod tests {
                 Err(expected)
             );
         }
+    }
+
+    fn ai_feedback(hour: u64) -> AiFeedback {
+        AiFeedback::new("ラケットの面が上を向いています", at(hour)).unwrap()
+    }
+
+    #[test]
+    fn a_submitted_video_has_no_ai_feedback_until_one_is_recorded() {
+        let mut video = submitted();
+        assert_eq!(video.ai_feedback(), None);
+        video.record_ai_feedback(ai_feedback(0)).unwrap();
+        assert_eq!(video.ai_feedback(), Some(&ai_feedback(0)));
+        assert_eq!(video.status(), VideoStatus::Submitted);
+    }
+
+    #[test]
+    fn ai_feedback_is_recorded_once_and_not_before_submission() {
+        let mut video = submitted();
+        video.record_ai_feedback(ai_feedback(1)).unwrap();
+        let before = video.clone();
+        assert_eq!(
+            video.record_ai_feedback(ai_feedback(2)),
+            Err(DomainError::AiFeedbackAlreadyRecorded)
+        );
+        assert_eq!(video, before);
+
+        let mut video = Video::submit(VIDEO, STUDENT, COACH, Sport::Tennis, at(5));
+        assert_eq!(
+            video.record_ai_feedback(ai_feedback(4)),
+            Err(DomainError::AiFeedbackBeforeSubmission)
+        );
+        assert_eq!(video.ai_feedback(), None);
+    }
+
+    #[test]
+    fn returning_a_review_keeps_the_ai_feedback() {
+        let mut video = submitted();
+        video.record_ai_feedback(ai_feedback(1)).unwrap();
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(30))
+            .unwrap();
+        assert_eq!(video.ai_feedback(), Some(&ai_feedback(1)));
+        assert_eq!(video.review().unwrap().comment(), &comment());
+
+        // 返却した後の動画にも付けられる（添削とは別の項目）
+        let mut reviewed = reviewed();
+        reviewed.record_ai_feedback(ai_feedback(31)).unwrap();
+        assert_eq!(reviewed.ai_feedback(), Some(&ai_feedback(31)));
     }
 
     #[test]

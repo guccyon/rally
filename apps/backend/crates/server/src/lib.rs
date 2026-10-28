@@ -45,11 +45,11 @@ use application::{
 };
 use axum::Router;
 use infra::{
-    InMemoryDomainEventBus, MockPushSender, MockTokenService, MockVideoCallProvider,
-    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
-    PgMessageThreadRepository, PgNotificationSettingsRepository, PgSlotRepository,
-    PgVideoRepository,
+    InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
+    MockVideoCallProvider, MockVideoStorage, PgAccountRepository, PgBookingRepository,
+    PgEntitlementRepository, PgLessonCompletionRepository, PgLessonReviewRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationSettingsRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -74,7 +74,8 @@ pub fn router() -> Router {
 /// 通話セッションの開始・終了は通話基盤のモック（`MockVideoCallProvider`。終了時に接続品質の指標を乱数で生成する）で
 /// 組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
 ///
-/// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）で、添削の返却は
+/// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）と AI の一次フィードバックの
+/// モック（`MockAiFeedbackGenerator`。スポーツごとの決まった文を返す）で、添削の返却は
 /// entitlement に着手してよいかを問い合わせて（`EntitlementReviewGate`。月額は常に通し、ゴルフは通さない）組み立てる。
 /// 動画と添削の保存先は当面インメモリ。
 ///
@@ -274,6 +275,7 @@ where
         SubmitVideo::new(
             videos.clone(),
             MockVideoStorage,
+            MockAiFeedbackGenerator,
             analytics.clone(),
             clock.clone(),
         ),

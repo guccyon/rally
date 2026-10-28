@@ -7,10 +7,10 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     async_lesson::{
-        GetVideoReview, GetVideoReviewError, GetVideoReviewQuery, ReturnVideoReview,
-        ReturnVideoReviewCommand, ReturnVideoReviewError, ReviewGate, SubmitVideo,
-        SubmitVideoCommand, SubmitVideoError, VideoRepository, VideoStorage, video_id_uuid,
-        video_review_id_uuid,
+        AiFeedbackGenerator, GetVideoReview, GetVideoReviewError, GetVideoReviewQuery,
+        ReturnVideoReview, ReturnVideoReviewCommand, ReturnVideoReviewError, ReviewGate,
+        SubmitVideo, SubmitVideoCommand, SubmitVideoError, VideoRepository, VideoStorage,
+        video_id_uuid, video_review_id_uuid,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -41,14 +41,14 @@ use crate::{
 const NOTE_MAX_CHARS: usize = 1000;
 
 /// `/videos` のハンドラーが使うユースケース。
-pub struct VideosState<V, S, G, A, P, C> {
-    pub submit_video: SubmitVideo<V, S, A, C>,
+pub struct VideosState<V, S, F, G, A, P, C> {
+    pub submit_video: SubmitVideo<V, S, F, A, C>,
     pub get_video_review: GetVideoReview<V>,
     pub return_video_review: ReturnVideoReview<V, G, A, P, C>,
 }
 
 /// ハンドラーが共有する [`VideosState`]。
-type Shared<V, S, G, A, P, C> = Arc<VideosState<V, S, G, A, P, C>>;
+type Shared<V, S, F, G, A, P, C> = Arc<VideosState<V, S, F, G, A, P, C>>;
 
 /// student-app の `SubmitVideoRequest`。
 #[derive(Deserialize)]
@@ -87,19 +87,41 @@ pub struct VideoReviewBody {
     status: &'static str,
     comment: Option<String>,
     returned_at: Option<String>,
+    ai_feedback: Option<AiFeedbackBody>,
+}
+
+/// student-app・admin-web の `AiFeedback`（AI の一次フィードバック）。admin-web の `CoachVideo` でも使う。
+#[derive(Serialize)]
+pub struct AiFeedbackBody {
+    comment: String,
+    created_at: String,
+}
+
+/// 動画の AI の一次フィードバック。まだない（作る前か、作るのに失敗した）ときは `None`（契約の null）。
+pub(crate) fn ai_feedback_body(video: &Video) -> Result<Option<AiFeedbackBody>, ApiError> {
+    video
+        .ai_feedback()
+        .map(|feedback| {
+            Ok(AiFeedbackBody {
+                comment: feedback.comment().to_string(),
+                created_at: date_time_to_contract(feedback.created_at())?,
+            })
+        })
+        .transpose()
 }
 
 /// `POST /videos`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。送る生徒はトークンのアカウント。
 ///
-/// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない。
-pub async fn submit_video<V, S, G, A, P, C>(
-    State(state): State<Shared<V, S, G, A, P, C>>,
+/// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない（AI の一次フィードバックの材料に渡すだけ）。
+pub async fn submit_video<V, S, F, G, A, P, C>(
+    State(state): State<Shared<V, S, F, G, A, P, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<SubmitVideoRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<VideoBody>), ApiError>
 where
     V: VideoRepository,
     S: VideoStorage,
+    F: AiFeedbackGenerator,
     G: ReviewGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -122,6 +144,7 @@ where
             .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))?,
         sport: student_app_sport(&request.sport)?,
         content_type: video_content_type_from_contract(&request.content_type)?,
+        note: request.note,
     };
 
     let submitted = state
@@ -131,6 +154,9 @@ where
         .map_err(|error| match error {
             SubmitVideoError::Unavailable(error) => ApiError::internal(error),
         })?;
+    if let Some(reason) = &submitted.ai_feedback_failure {
+        eprintln!("{reason}"); // 送付は成功している。AI の一次フィードバックの失敗はログだけに残す
+    }
     let video = &submitted.video;
     Ok((
         StatusCode::CREATED,
@@ -148,14 +174,15 @@ where
 
 /// `GET /videos/{video_id}/review`。動画の当事者（送った生徒・送り先のコーチ）が添削を読む。コーチがまだ返して
 /// いなければ `in_progress`（未返却）。
-pub async fn get_video_review<V, S, G, A, P, C>(
-    State(state): State<Shared<V, S, G, A, P, C>>,
+pub async fn get_video_review<V, S, F, G, A, P, C>(
+    State(state): State<Shared<V, S, F, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
 where
     V: VideoRepository,
     S: VideoStorage,
+    F: AiFeedbackGenerator,
     G: ReviewGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -183,8 +210,8 @@ where
 
 /// `POST /videos/{video_id}/review`（admin-web）。コーチだけが呼べ（役割は `require_role` の層が確かめる）、
 /// 返せるのは自分に送られた動画だけ。
-pub async fn return_video_review<V, S, G, A, P, C>(
-    State(state): State<Shared<V, S, G, A, P, C>>,
+pub async fn return_video_review<V, S, F, G, A, P, C>(
+    State(state): State<Shared<V, S, F, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
     request: Result<Json<ReturnVideoReviewRequest>, JsonRejection>,
@@ -192,6 +219,7 @@ pub async fn return_video_review<V, S, G, A, P, C>(
 where
     V: VideoRepository,
     S: VideoStorage,
+    F: AiFeedbackGenerator,
     G: ReviewGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -245,5 +273,6 @@ fn review_body(video: &Video) -> Result<VideoReviewBody, ApiError> {
         returned_at: review
             .map(|review| date_time_to_contract(review.returned_at()))
             .transpose()?,
+        ai_feedback: ai_feedback_body(video)?,
     })
 }
