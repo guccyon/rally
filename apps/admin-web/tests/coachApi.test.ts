@@ -187,4 +187,40 @@ describe("coachApi", () => {
     const result = await api.listCoachReviews("99999999-9999-4999-8999-999999999999");
     expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
+
+  test("listMyCoachBookings はトークンを付けて GET /api/coaches/me/bookings を呼び、返った順のまま返す", async () => {
+    const list = {
+      bookings: [
+        {
+          booking: {
+            booking_id: "44444444-4444-4444-8444-444444444444",
+            slot_id: SLOT.slot_id,
+            student_id: "33333333-3333-4333-8333-333333333333",
+            coach_id: SLOT.coach_id,
+            is_trial: true,
+            status: "confirmed",
+            starts_at: SLOT.starts_at,
+            created_at: "2026-10-20T03:00:00Z",
+            confirmed_at: "2026-10-20T03:00:01Z",
+            cancelled_at: null,
+          },
+          slot: { ...SLOT, status: "booked" },
+          student_display_name: "佐藤さん",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listMyCoachBookings();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/coaches/me/bookings");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("listMyCoachBookings の 403 は権限の文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.listMyCoachBookings();
+    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+  });
 });

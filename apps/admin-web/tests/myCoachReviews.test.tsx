@@ -153,7 +153,14 @@ describe("自分の評価", () => {
   });
 
   test("コーチの画面の「自分の評価」は、開いたときから本人の評価を出す", async () => {
-    coachApiMock.mockReturnValue(mockApi());
+    coachApiMock.mockReturnValue({
+      ...mockApi(),
+      // 同じ画面の「通話への参加」が開いたときに呼ぶ。
+      listMyCoachBookings: vi.fn<CoachApi["listMyCoachBookings"]>(async () => ({
+        ok: true,
+        data: { bookings: [] },
+      })),
+    });
     render(<CoachHome token="mock.coach.x" />);
     const region = screen.getByRole("region", { name: "自分の評価" });
 

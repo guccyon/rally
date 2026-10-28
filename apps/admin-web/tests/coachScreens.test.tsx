@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import type { CoachApi } from "@/api/coach";
 import { LiveSessionPanel } from "@/components/coach/LiveSessionPanel";
 import { PublishSlotForm } from "@/components/coach/PublishSlotForm";
 import { ReturnVideoReviewForm } from "@/components/coach/ReturnVideoReviewForm";
+import { formatDateTime } from "@/components/labels";
 
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const STUDENT_ID = "33333333-3333-4333-8333-333333333333";
@@ -113,6 +114,48 @@ describe("添削の返却", () => {
 });
 
 describe("通話への参加", () => {
+  const HOUR = 60 * 60 * 1000;
+  const at = (offsetHours: number) => new Date(Date.now() + offsetHours * HOUR).toISOString();
+
+  // API が返す並び（スロットの開始時刻の古い順）。終わった 2 件・通話中の時間帯の 1 件・これからの 2 件。
+  function coachBooking(
+    id: string,
+    startsIn: number,
+    status: "pending" | "confirmed" | "cancelled",
+    studentName?: string,
+  ) {
+    return {
+      booking: {
+        booking_id: id,
+        slot_id: id.replace(/^./, "1"),
+        student_id: STUDENT_ID,
+        coach_id: COACH_ID,
+        is_trial: false,
+        status,
+        starts_at: at(startsIn),
+        created_at: at(-100),
+        confirmed_at: status === "confirmed" ? at(-99) : null,
+        cancelled_at: status === "cancelled" ? at(-98) : null,
+      },
+      slot: {
+        slot_id: id.replace(/^./, "1"),
+        coach_id: COACH_ID,
+        sport: "tennis" as const,
+        starts_at: at(startsIn),
+        ends_at: at(startsIn + 1),
+        status: "booked" as const,
+      },
+      ...(studentName ? { student_display_name: studentName } : {}),
+    };
+  }
+  const BOOKINGS = [
+    coachBooking("a0000000-0000-4000-8000-000000000001", -48, "confirmed", "古田さん"),
+    coachBooking("a0000000-0000-4000-8000-000000000002", -24, "cancelled", "中村さん"),
+    coachBooking(BOOKING_ID, -0.5, "confirmed", "佐藤さん"),
+    coachBooking("a0000000-0000-4000-8000-000000000004", 24, "pending", "鈴木さん"),
+    coachBooking("a0000000-0000-4000-8000-000000000005", 48, "confirmed"),
+  ];
+
   const started = {
     session_id: SESSION_ID,
     booking_id: BOOKING_ID,
@@ -125,7 +168,52 @@ describe("通話への参加", () => {
     room_token: "mock-room",
   };
 
-  test("予約 ID で通話を開始し、同じセッションを終了する", async () => {
+  function listOf(bookings: typeof BOOKINGS) {
+    return vi.fn<CoachApi["listMyCoachBookings"]>(async () => ({ ok: true, data: { bookings } }));
+  }
+
+  function rowTexts(table: HTMLElement) {
+    return within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[1]!.textContent);
+  }
+
+  test("これからの予約を API の順で上に、終わった予約を新しい順で畳んで下に出す", async () => {
+    render(
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf(BOOKINGS),
+          startLiveLessonSession: vi.fn(),
+          endLiveLessonSession: vi.fn(),
+        }}
+      />,
+    );
+
+    const upcoming = await screen.findByRole("table", { name: "これからの予約" });
+    expect(rowTexts(upcoming)).toEqual(["佐藤さん", "鈴木さん", "（名前を表示できません）"]);
+    const sato = within(upcoming).getByRole("row", { name: /佐藤さん/ });
+    expect(sato).toHaveTextContent(formatDateTime(BOOKINGS[2]!.slot.starts_at));
+    expect(sato).toHaveTextContent("確定済み");
+    expect(within(sato).getByRole("button", { name: "通話を開始" })).toBeEnabled();
+    // 確定していない予約からは始められない。
+    const suzuki = within(upcoming).getByRole("row", { name: /鈴木さん/ });
+    expect(suzuki).toHaveTextContent("確定待ち");
+    expect(within(suzuki).queryByRole("button")).not.toBeInTheDocument();
+
+    const past = screen.getByRole("table", { name: "終わった予約" });
+    expect(rowTexts(past)).toEqual(["中村さん", "古田さん"]);
+    expect(within(past).getByRole("row", { name: /中村さん/ })).toHaveTextContent("キャンセル済み");
+    expect(within(past).queryByRole("button")).not.toBeInTheDocument();
+    const details = past.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details.querySelector("summary")).toHaveTextContent("終わった予約（2 件）");
+
+    expect(screen.queryByLabelText("予約 ID")).not.toBeInTheDocument();
+    expect(screen.queryByText(/未実装/)).not.toBeInTheDocument();
+  });
+
+  test("確定した予約の行から通話を開始し、同じセッションを終了する", async () => {
     const startLiveLessonSession = vi.fn<CoachApi["startLiveLessonSession"]>(async () => ({
       ok: true,
       data: started,
@@ -141,14 +229,25 @@ describe("通話への参加", () => {
       },
     }));
     const user = userEvent.setup();
-    render(<LiveSessionPanel api={{ startLiveLessonSession, endLiveLessonSession }} />);
+    render(
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf(BOOKINGS),
+          startLiveLessonSession,
+          endLiveLessonSession,
+        }}
+      />,
+    );
 
-    await user.type(screen.getByLabelText("予約 ID"), BOOKING_ID);
-    await user.click(screen.getByRole("button", { name: "通話を開始" }));
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "通話を開始" }));
 
     expect(startLiveLessonSession).toHaveBeenCalledWith({ booking_id: BOOKING_ID });
     expect(await screen.findByText("通話中")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "通話を開始" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("通話を開始しました。");
+    for (const button of screen.getAllByRole("button", { name: "通話を開始" })) {
+      expect(button).toBeDisabled();
+    }
 
     await user.click(screen.getByRole("button", { name: "通話を終了" }));
 
@@ -160,17 +259,69 @@ describe("通話への参加", () => {
   test("開始できなければ文言を出し、終了ボタンを出さない", async () => {
     const startLiveLessonSession = vi.fn<CoachApi["startLiveLessonSession"]>(async () => ({
       ok: false,
-      message: "予約が確定していないか、キャンセルされています。",
+      message: "この通話はすでに開始済みか、終了しています。",
     }));
     const user = userEvent.setup();
     render(
-      <LiveSessionPanel api={{ startLiveLessonSession, endLiveLessonSession: vi.fn() }} />,
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf(BOOKINGS),
+          startLiveLessonSession,
+          endLiveLessonSession: vi.fn(),
+        }}
+      />,
     );
 
-    await user.type(screen.getByLabelText("予約 ID"), BOOKING_ID);
-    await user.click(screen.getByRole("button", { name: "通話を開始" }));
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "通話を開始" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("予約が確定していない");
+    expect(await screen.findByRole("alert")).toHaveTextContent("すでに開始済みか");
     expect(screen.queryByRole("button", { name: "通話を終了" })).not.toBeInTheDocument();
+  });
+
+  test("予約が 0 件ならその旨を出す", async () => {
+    render(
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf([]),
+          startLiveLessonSession: vi.fn(),
+          endLiveLessonSession: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("まだ予約はありません。")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("これからの予約がなく終わった予約だけなら、これからの予約がない旨と終わった予約を出す", async () => {
+    render(
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf(BOOKINGS.slice(0, 2)),
+          startLiveLessonSession: vi.fn(),
+          endLiveLessonSession: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("これからの予約はありません。")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "終わった予約" })).toBeInTheDocument();
+  });
+
+  test("一覧の API が失敗したら、その文言だけを出す", async () => {
+    const listMyCoachBookings = vi.fn<CoachApi["listMyCoachBookings"]>(async () => ({
+      ok: false,
+      message: "権限がないためアクセスできません。",
+    }));
+    render(
+      <LiveSessionPanel
+        api={{ listMyCoachBookings, startLiveLessonSession: vi.fn(), endLiveLessonSession: vi.fn() }}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "通話を開始" })).not.toBeInTheDocument();
   });
 });
