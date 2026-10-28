@@ -27,6 +27,12 @@ function splitVideos(videos: CoachVideo[]) {
   return { waiting, returned };
 }
 
+/** AI の一次フィードバックの文。ない（null・載っていない・空白だけ）ときは null。 */
+function aiFeedbackComment(video: CoachVideo) {
+  const comment = video.ai_feedback?.comment;
+  return comment && comment.trim() !== "" ? comment : null;
+}
+
 function studentName(video: CoachVideo) {
   return video.student_display_name ?? "（名前を表示できません）";
 }
@@ -34,6 +40,8 @@ function studentName(video: CoachVideo) {
 /**
  * 添削の返却。開いたときに自分に届いた動画の一覧（listMyCoachVideos）を出し、添削待ちの行を選ぶと
  * 添削コメントの欄を開いて返却（returnVideoReview）する。返却したら一覧を取り直す。
+ * 欄の上には AI の一次フィードバック（glossary の ai_feedback）を参考として出す。コーチの添削とは別のもので、
+ * 返却するコメントには入れない。ないときは何も出さない。
  */
 export function ReturnVideoReviewForm({
   api,
@@ -95,6 +103,8 @@ export function ReturnVideoReviewForm({
     setBusy(false);
   }
 
+  const selectedAiFeedback = selected ? aiFeedbackComment(selected) : null;
+
   return (
     <div className="space-y-4">
       <p className="text-sm">
@@ -154,6 +164,18 @@ export function ReturnVideoReviewForm({
               <p className="text-sm">
                 {studentName(selected)}の動画（{formatDateTime(selected.submitted_at)} に届いたもの）
               </p>
+              {selectedAiFeedback && (
+                <section
+                  aria-label="AI の一次フィードバック（参考）"
+                  className="rounded border border-dashed bg-gray-50 p-2 text-sm"
+                >
+                  <h4 className="font-semibold">AI の一次フィードバック（参考）</h4>
+                  <p className="text-xs text-gray-500">
+                    AI が自動で作った文です。コーチの添削ではなく、下の添削コメントには入りません。
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedAiFeedback}</p>
+                </section>
+              )}
               <label className="block">
                 添削コメント
                 <textarea
