@@ -874,6 +874,58 @@ async fn a_video_has_at_most_one_review(pool: PgPool) {
     );
 }
 
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn ai_feedback_has_a_non_empty_comment_and_a_time_after_submission(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let video_id = submit_video(&pool, &student_id, &coach_id, "tennis")
+        .await
+        .unwrap();
+    // 送付は '2026-10-26T10:00:00Z'
+    let set = |comment: Option<&'static str>, created_at: Option<&'static str>| {
+        sqlx::query(
+            "UPDATE async_lesson.videos
+             SET ai_feedback_comment = $2, ai_feedback_created_at = $3::timestamptz
+             WHERE video_id = $1::uuid",
+        )
+        .bind(video_id.clone())
+        .bind(comment)
+        .bind(created_at)
+        .execute(&pool)
+    };
+    for (comment, created_at, expected) in [
+        (
+            Some("  "),
+            Some("2026-10-26T10:00:00Z"),
+            "videos_ai_feedback_comment_check",
+        ),
+        (Some("文"), None, "videos_ai_feedback_shape"),
+        (
+            None,
+            Some("2026-10-26T10:00:00Z"),
+            "videos_ai_feedback_shape",
+        ),
+        (
+            Some("文"),
+            Some("2026-10-26T09:59:59Z"),
+            "videos_ai_feedback_after_submission",
+        ),
+    ] {
+        let (code, constraint) = violation(set(comment, created_at).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected),
+            "{comment:?} {created_at:?}"
+        );
+    }
+    // 送付と同じ時刻の一次フィードバックは入り、揃って NULL（なし）にも戻せる
+    set(Some("フォームを確認しました"), Some("2026-10-26T10:00:00Z"))
+        .await
+        .unwrap();
+    set(None, None).await.unwrap();
+}
+
 /// 完了記録の行を `table`（`live_lesson.lesson_completions` / `async_lesson.lesson_completions`）に入れる。
 /// `source_column` は元の集約の列（`session_id` / `video_id`）。
 async fn complete_lesson(

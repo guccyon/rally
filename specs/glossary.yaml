@@ -52,6 +52,10 @@ terms:
     ja: "動画添削"
     definition: "生徒が送った動画をコーチが添削して返すことで、ゴルフではワンショット決済が確定した動画にしか着手できない。"
     context: async-lesson
+  - id: ai_feedback
+    ja: "AI の一次フィードバック"
+    definition: "生徒が送った動画に、コーチの添削の前に AI が返す短い文で、動画添削とは別の項目として持ち、添削の着手条件には関わらない（変更シナリオ cs-006）。"
+    context: async-lesson
   - id: cancellation_policy
     ja: "キャンセル規定"
     definition: "開始 24 時間前以降のキャンセルは回数を消費するという規定で、判定は scheduling、回数の消費の実行は entitlement が行う（docs/adr/0002 Q2）。"

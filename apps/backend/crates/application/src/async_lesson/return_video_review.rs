@@ -153,8 +153,8 @@ mod tests {
         async_lesson::{GetVideoReview, GetVideoReviewQuery, SubmitVideo, SubmitVideoCommand},
         entitlement::EntitlementReviewGate,
         in_memory::{
-            FixedClock, FixedVideoStorage, InMemoryVideoRepository, ManualClock,
-            RecordingAnalyticsSink, RecordingDomainEventPublisher,
+            FixedAiFeedbackGenerator, FixedClock, FixedVideoStorage, InMemoryVideoRepository,
+            ManualClock, RecordingAnalyticsSink, RecordingDomainEventPublisher,
         },
     };
 
@@ -212,6 +212,7 @@ mod tests {
         let submit = SubmitVideo::new(
             videos.clone(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             analytics.clone(),
             clock.clone(),
         );
@@ -231,6 +232,7 @@ mod tests {
                 coach_id: COACH,
                 sport: Sport::Tennis,
                 content_type: VideoContentType::QuickTime,
+                note: None,
             })
             .await
             .unwrap()
@@ -259,6 +261,12 @@ mod tests {
         let review = after.review().unwrap();
         assert_eq!(review.comment(), &comment());
         assert_eq!(review.returned_at(), returned_at());
+        assert!(before.ai_feedback().is_some());
+        assert_eq!(
+            after.ai_feedback(),
+            before.ai_feedback(),
+            "AI の一次フィードバックは添削とは別の項目で、返却で上書きされない"
+        );
 
         let events = analytics.events();
         assert_eq!(

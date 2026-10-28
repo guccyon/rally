@@ -83,6 +83,11 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::EmptyReviewComment => "添削コメントが空".to_string(),
         DomainError::ReviewCommentTooLong { max } => format!("添削コメントは {max} 文字まで"),
         DomainError::LiveLessonSessionNotEnded => "通話セッションがまだ終了していない".to_string(),
+        DomainError::EmptyAiFeedback => "AI の一次フィードバックが空".to_string(),
+        DomainError::AiFeedbackAlreadyRecorded => "AI の一次フィードバックは付与済み".to_string(),
+        DomainError::AiFeedbackBeforeSubmission => {
+            "AI の一次フィードバックの作成が動画の送付より前".to_string()
+        }
         DomainError::VideoReviewNotReturned => "動画の添削がまだ返されていない".to_string(),
         DomainError::CompletionBeforeLessonEnded => {
             "レッスンの完了の記録がレッスンの終わりより前".to_string()

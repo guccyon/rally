@@ -27,9 +27,10 @@ use domain::{
     scheduling::{BookingId, SlotId},
 };
 use infra::{
-    InMemoryDomainEventBus, MockVideoCallProvider, MockVideoStorage, PgAccountRepository,
-    PgBookingRepository, PgEntitlementRepository, PgLessonCompletionRepository,
-    PgLiveLessonSessionRepository, PgSlotRepository, PgVideoRepository,
+    InMemoryDomainEventBus, MockAiFeedbackGenerator, MockVideoCallProvider, MockVideoStorage,
+    PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgSlotRepository,
+    PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -131,6 +132,7 @@ where
         let submit = SubmitVideo::new(
             videos.clone(),
             MockVideoStorage,
+            MockAiFeedbackGenerator,
             analytics.clone(),
             clock.clone(),
         );
@@ -286,6 +288,7 @@ where
                                 coach_id,
                                 sport,
                                 content_type: VideoContentType::Mp4,
+                                note: None,
                             })
                             .await
                             .map_err(|e| failed(&who, "動画の送付", e))?;

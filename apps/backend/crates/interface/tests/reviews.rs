@@ -11,8 +11,8 @@ use application::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
-        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
         InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
         RecordingAnalyticsSink, RecordingDomainEventPublisher,
@@ -180,6 +180,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             analytics.clone(),
             clock,
         ),

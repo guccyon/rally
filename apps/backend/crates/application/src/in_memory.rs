@@ -23,7 +23,8 @@ use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     async_lesson::{
-        UpdateVideoError, VideoRepository, VideoStorage, video_id_uuid, video_review_id_uuid,
+        AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
+        video_id_uuid, video_review_id_uuid,
     },
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
@@ -739,6 +740,21 @@ impl VideoStorage for FixedVideoStorage {
             "https://fixed-storage.invalid/videos/{}",
             video_id_uuid::format(video_id)
         ))
+    }
+}
+
+/// 常に [`FixedAiFeedbackGenerator::COMMENT`] を返す [`AiFeedbackGenerator`]（テスト用）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FixedAiFeedbackGenerator;
+
+impl FixedAiFeedbackGenerator {
+    /// 返す一次フィードバックの文。
+    pub const COMMENT: &'static str = "AI の一次フィードバック（テスト用の固定の文）";
+}
+
+impl AiFeedbackGenerator for FixedAiFeedbackGenerator {
+    async fn generate(&self, _request: &AiFeedbackRequest) -> Result<String, Unavailable> {
+        Ok(Self::COMMENT.to_string())
     }
 }
 

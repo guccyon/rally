@@ -20,8 +20,8 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
-        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
         InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
@@ -211,6 +211,7 @@ fn app_with_entitlements(
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),
             clock,
         ),

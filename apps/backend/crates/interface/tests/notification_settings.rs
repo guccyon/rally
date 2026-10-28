@@ -13,8 +13,8 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
-        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
         InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
         RecordingAnalyticsSink, RecordingDomainEventPublisher,
@@ -153,6 +153,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             analytics.clone(),
             clock,
         ),

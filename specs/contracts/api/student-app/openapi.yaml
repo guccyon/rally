@@ -430,6 +430,8 @@ paths:
       summary: 添削結果の取得
       description: |
         コーチがまだ返却していなければ `status` は `in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null。
+        `ai_feedback` は動画の送付の直後に AI（Gen1 はモック）が返した一次フィードバックで、コーチの添削とは別の項目
+        （返却で上書きされない）。AI が作れなかったときは null（送付は成功している）。
         呼べるのは動画の当事者（送った生徒・送り先のコーチ）だけで、それ以外のアカウントと UUID でない ID には 404
         （動画があることも知らせない）。返却は admin-web の `returnVideoReview`（コーチ）。
       tags: [async-lesson]
@@ -1107,6 +1109,22 @@ components:
       type: string
       enum: [in_progress, returned]
 
+    AiFeedback:
+      type: object
+      description: |
+        glossary の ai_feedback（生徒が送った動画に、コーチの添削の前に AI が返す一次フィードバック）。
+        コーチの添削（`VideoReview` の `comment`）とは別の項目で、添削の返却で上書きされない。Gen1 の AI はモック
+      required: [comment, created_at]
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          description: AI の一次フィードバックの短い文
+        created_at:
+          type: string
+          format: date-time
+          description: 一次フィードバックを作った時刻（動画の送付の直後）
+
     VideoReview:
       type: object
       description: glossary の video_review（生徒が送った動画をコーチが添削して返すこと）
@@ -1133,6 +1151,11 @@ components:
         returned_at:
           type: [string, "null"]
           format: date-time
+        ai_feedback:
+          description: AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目
+          oneOf:
+            - $ref: "#/components/schemas/AiFeedback"
+            - type: "null"
 
     LessonType:
       type: string

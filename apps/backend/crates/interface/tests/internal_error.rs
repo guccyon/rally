@@ -11,10 +11,11 @@ use application::{
         TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedClock, FixedVideoCallProvider, FixedVideoStorage, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
-        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
     },
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
@@ -148,6 +149,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),
             clock,
         ),

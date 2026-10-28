@@ -4,6 +4,8 @@
 //! `video.submitted` / `video_review.returned`（`submitted_at` 付き）・ゴルフの動画の添削に着手できないこと・
 //! 役割と当事者による 403 / 404 を確かめる。admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）は、コーチ本人に
 //! 送られた動画だけを添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返し、コーチ以外は 403 になることを確かめる。
+//! AI の一次フィードバック（`ai_feedback`）は送付の直後に付き、添削とは別の項目として返却の後も変わらないこと、
+//! AI が作れなかった動画は null になることを `getVideoReview` と `listMyCoachVideos` で確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -18,8 +20,8 @@ use application::{
         TokenVerifier, account_id_uuid,
     },
     in_memory::{
-        FixedVideoCallProvider, FixedVideoStorage, InMemoryAccountRepository,
-        InMemoryBookingRepository, InMemoryEntitlementRepository,
+        FixedAiFeedbackGenerator, FixedVideoCallProvider, FixedVideoStorage,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
         InMemorySlotRepository, InMemoryVideoRepository, ManualClock, RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
@@ -199,6 +201,7 @@ fn app() -> App {
         SubmitVideo::new(
             videos.clone(),
             FixedVideoStorage,
+            FixedAiFeedbackGenerator,
             analytics.clone(),
             clock.clone(),
         ),
@@ -444,6 +447,11 @@ async fn a_submitted_video_is_unreturned_until_the_coach_returns_its_review() {
         assert_eq!(body["review_id"], Value::Null);
         assert_eq!(body["comment"], Value::Null);
         assert_eq!(body["returned_at"], Value::Null);
+        // AI の一次フィードバックは送付の直後に付いている（添削とは別の項目）
+        assert_eq!(
+            body["ai_feedback"],
+            fixed_ai_feedback("2026-10-26T10:00:00Z")
+        );
     }
 
     // 30 時間後にコーチが返却する
@@ -456,6 +464,11 @@ async fn a_submitted_video_is_unreturned_until_the_coach_returns_its_review() {
     assert_eq!(returned["status"], "returned");
     assert_eq!(returned["comment"], "トスを体の前に上げる");
     assert_eq!(returned["returned_at"], "2026-10-27T16:00:00Z");
+    assert_eq!(
+        returned["ai_feedback"],
+        fixed_ai_feedback("2026-10-26T10:00:00Z"),
+        "コーチの返却で上書きされない"
+    );
     let review_id = returned["review_id"].as_str().unwrap();
 
     // 生徒が読む添削は、コーチが返したものと同じ
@@ -478,6 +491,14 @@ async fn a_submitted_video_is_unreturned_until_the_coach_returns_its_review() {
         }
     );
     assert_eq!(events[1].name(), "video_review.returned");
+}
+
+/// [`FixedAiFeedbackGenerator`] が `created_at` に作った一次フィードバックの契約の形。
+fn fixed_ai_feedback(created_at: &str) -> Value {
+    json!({
+        "comment": FixedAiFeedbackGenerator::COMMENT,
+        "created_at": created_at,
+    })
 }
 
 #[tokio::test]
@@ -669,19 +690,24 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
                     "video_id": golf,
                     "student_display_name": "あおき",
                     "submitted_at": "2026-10-26T10:00:00Z",
-                    "review_status": "in_progress"
+                    "review_status": "in_progress",
+                    // 一次フィードバックなしで保存された動画（AI が作れなかった）は null
+                    "ai_feedback": null
                 },
                 {
                     "video_id": second,
                     "submitted_at": "2026-10-26T12:00:00Z",
-                    "review_status": "in_progress"
+                    "review_status": "in_progress",
+                    "ai_feedback": fixed_ai_feedback("2026-10-26T12:00:00Z")
                 },
                 {
                     "video_id": first,
                     "student_display_name": "あおき",
                     "submitted_at": "2026-10-26T11:00:00Z",
                     "review_status": "returned",
-                    "returned_at": "2026-10-26T13:00:00Z"
+                    "returned_at": "2026-10-26T13:00:00Z",
+                    // 返却の後も、送付の直後に作った一次フィードバックのまま
+                    "ai_feedback": fixed_ai_feedback("2026-10-26T11:00:00Z")
                 }
             ]
         })
