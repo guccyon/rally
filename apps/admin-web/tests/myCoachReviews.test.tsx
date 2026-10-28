@@ -155,7 +155,11 @@ describe("自分の評価", () => {
   test("コーチの画面の「自分の評価」は、開いたときから本人の評価を出す", async () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
-      // 同じ画面の「動画の添削」と「通話への参加」が開いたときに呼ぶ。
+      // 同じ画面の「予約枠」と「動画の添削」と「通話への参加」が開いたときに呼ぶ。
+      listMyCoachSlots: vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({
+        ok: true,
+        data: { slots: [] },
+      })),
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
         data: { videos: [] },

@@ -1,23 +1,87 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { ResultMessage } from "@/components/ResultMessage";
-import { NotImplemented } from "@/components/Section";
 import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
 const SPORTS = Object.keys(SPORT_LABELS) as Schemas["Sport"][];
 
-/** 枠の公開（publishSlot）と、このログイン中に公開した枠の一覧。 */
-export function PublishSlotForm({ api }: { api: Pick<CoachApi, "publishSlot"> }) {
+type CoachSlot = Schemas["CoachSlot"];
+
+type ListState =
+  | { kind: "loading" }
+  | { kind: "loaded"; upcoming: CoachSlot[]; past: CoachSlot[] }
+  | { kind: "failed"; message: string };
+
+/**
+ * API の並び（開始時刻の古い順）を、終わっていない枠（終了時刻が今より後）と終わった枠に分ける。
+ * これからの枠は API の順のまま、終わった枠は新しい順（API の逆順）にする。
+ */
+function splitSlots(slots: CoachSlot[], now: number) {
+  const upcoming = slots.filter((item) => new Date(item.slot.ends_at).getTime() > now);
+  const past = slots.filter((item) => new Date(item.slot.ends_at).getTime() <= now).reverse();
+  return { upcoming, past };
+}
+
+function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
+  return (
+    <table aria-label={label} className="w-full text-left text-sm">
+      <thead>
+        <tr>
+          <th className="py-1">スポーツ</th>
+          <th className="py-1">日時</th>
+          <th className="py-1">状態</th>
+          <th className="py-1">予約</th>
+        </tr>
+      </thead>
+      <tbody>
+        {slots.map((item) => (
+          <tr key={item.slot.slot_id} className="border-t">
+            <td className="py-1">{SPORT_LABELS[item.slot.sport]}</td>
+            <td className="py-1">
+              {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
+            </td>
+            <td className="py-1">{SLOT_STATUS_LABELS[item.slot.status]}</td>
+            <td className="py-1">{item.has_active_booking ? "予約あり" : "予約なし"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** 枠の公開（publishSlot）と、開いたときから出す自分の枠の一覧（listMyCoachSlots）。公開したら一覧を取り直す。 */
+export function PublishSlotForm({
+  api,
+}: {
+  api: Pick<CoachApi, "publishSlot" | "listMyCoachSlots">;
+}) {
   const [sport, setSport] = useState<Schemas["Sport"]>("tennis");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
-  const [slots, setSlots] = useState<Schemas["Slot"][]>([]);
+  const [list, setList] = useState<ListState>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const fetchSlots = useCallback(async (): Promise<ListState> => {
+    const response = await api.listMyCoachSlots();
+    if (!response.ok) return { kind: "failed", message: response.message };
+    return { kind: "loaded", ...splitSlots(response.data.slots, Date.now()) };
+  }, [api]);
+
+  // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
+  useEffect(() => {
+    let active = true;
+    void fetchSlots().then((next) => {
+      if (active) setList(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetchSlots]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -38,13 +102,13 @@ export function PublishSlotForm({ api }: { api: Pick<CoachApi, "publishSlot"> })
       starts_at: starts.toISOString(),
       ends_at: ends.toISOString(),
     });
-    setBusy(false);
     if (response.ok) {
-      setSlots((current) => [response.data, ...current]);
       setResult({ ok: true, message: "枠を公開しました。" });
+      setList(await fetchSlots());
     } else {
       setResult(response);
     }
+    setBusy(false);
   }
 
   return (
@@ -91,33 +155,30 @@ export function PublishSlotForm({ api }: { api: Pick<CoachApi, "publishSlot"> })
         </button>
       </form>
       <ResultMessage result={result} />
-      <h3 className="font-medium">公開した枠</h3>
-      <NotImplemented>
-        自分の枠の一覧を取る API が admin-web の契約にないため、このログイン中に公開した枠だけを表示します。
-      </NotImplemented>
-      {slots.length === 0 ? (
-        <p className="text-sm text-gray-500">まだ公開していません。</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th>スポーツ</th>
-              <th>開始</th>
-              <th>終了</th>
-              <th>状態</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slots.map((slot) => (
-              <tr key={slot.slot_id}>
-                <td>{SPORT_LABELS[slot.sport]}</td>
-                <td>{formatDateTime(slot.starts_at)}</td>
-                <td>{formatDateTime(slot.ends_at)}</td>
-                <td>{SLOT_STATUS_LABELS[slot.status]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
+      {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
+        <p className="text-sm">まだ枠を公開していません。</p>
+      )}
+      {list.kind === "loaded" && (list.upcoming.length > 0 || list.past.length > 0) && (
+        <>
+          <div className="space-y-2">
+            <h3 className="font-semibold">これからの枠</h3>
+            {list.upcoming.length === 0 ? (
+              <p className="text-sm">これからの枠はありません。</p>
+            ) : (
+              <SlotTable label="これからの枠" slots={list.upcoming} />
+            )}
+          </div>
+          {list.past.length > 0 && (
+            <details>
+              <summary className="cursor-pointer font-semibold">
+                終わった枠（{list.past.length} 件）
+              </summary>
+              <SlotTable label="終わった枠" slots={list.past} />
+            </details>
+          )}
+        </>
       )}
     </div>
   );
