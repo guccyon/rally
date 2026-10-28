@@ -16,19 +16,84 @@ const SESSION_ID = "55555555-5555-4555-8555-555555555555";
 const VIDEO_ID = "66666666-6666-4666-8666-666666666666";
 
 describe("枠の公開", () => {
-  test("入力した枠を publishSlot に渡し、公開した枠を一覧に出す", async () => {
-    const publishSlot = vi.fn<CoachApi["publishSlot"]>(async (body) => ({
-      ok: true,
-      data: {
-        slot_id: "11111111-1111-4111-8111-111111111111",
-        coach_id: COACH_ID,
-        status: "open",
-        ...body,
-      },
-    }));
-    const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot }} />);
+  const HOUR = 60 * 60 * 1000;
+  const at = (offsetHours: number) => new Date(Date.now() + offsetHours * HOUR).toISOString();
 
+  function coachSlot(
+    id: string,
+    sport: Schemas["Sport"],
+    startsIn: number,
+    status: Schemas["SlotStatus"],
+    hasActiveBooking: boolean,
+  ): Schemas["CoachSlot"] {
+    return {
+      slot: {
+        slot_id: id,
+        coach_id: COACH_ID,
+        sport,
+        starts_at: at(startsIn),
+        ends_at: at(startsIn + 1),
+        status,
+      },
+      has_active_booking: hasActiveBooking,
+    };
+  }
+  // API が返す並び（開始時刻の古い順）。終わった 2 件・いま開いている時間帯の 1 件・これからの 2 件。
+  const SLOTS = [
+    coachSlot("c0000000-0000-4000-8000-000000000001", "golf", -48, "closed", false),
+    coachSlot("c0000000-0000-4000-8000-000000000002", "soccer", -24, "booked", true),
+    coachSlot("c0000000-0000-4000-8000-000000000003", "tennis", -0.5, "booked", true),
+    coachSlot("c0000000-0000-4000-8000-000000000004", "basketball", 24, "open", false),
+    coachSlot("c0000000-0000-4000-8000-000000000005", "golf", 48, "booked", true),
+  ];
+
+  function listOf(...lists: Schemas["CoachSlot"][][]) {
+    const fn = vi.fn<CoachApi["listMyCoachSlots"]>();
+    for (const slots of lists) fn.mockResolvedValueOnce({ ok: true, data: { slots } });
+    return fn;
+  }
+
+  function firstCells(table: HTMLElement) {
+    return within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[0]!.textContent);
+  }
+
+  test("これからの枠を API の順で上に、終わった枠を新しい順で畳んで下に出し、予約が入っているかを出す", async () => {
+    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS) }} />);
+
+    const upcoming = await screen.findByRole("table", { name: "これからの枠" });
+    expect(firstCells(upcoming)).toEqual(["テニス", "バスケットボール", "ゴルフ"]);
+    const tennis = within(upcoming).getByRole("row", { name: /テニス/ });
+    expect(tennis).toHaveTextContent(formatDateTime(SLOTS[2]!.slot.starts_at));
+    expect(tennis).toHaveTextContent("予約済み");
+    expect(tennis).toHaveTextContent("予約あり");
+    const basketball = within(upcoming).getByRole("row", { name: /バスケットボール/ });
+    expect(basketball).toHaveTextContent("公開中");
+    expect(basketball).toHaveTextContent("予約なし");
+
+    const past = screen.getByRole("table", { name: "終わった枠" });
+    expect(firstCells(past)).toEqual(["サッカー", "ゴルフ"]);
+    expect(within(past).getByRole("row", { name: /ゴルフ/ })).toHaveTextContent("予約なし");
+    const details = past.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details.querySelector("summary")).toHaveTextContent("終わった枠（2 件）");
+
+    expect(screen.queryByText(/未実装/)).not.toBeInTheDocument();
+  });
+
+  test("入力した枠を publishSlot に渡し、公開したら一覧を取り直す", async () => {
+    const published = coachSlot("c0000000-0000-4000-8000-000000000006", "baseball", 72, "open", false);
+    const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({
+      ok: true,
+      data: published.slot,
+    }));
+    const listMyCoachSlots = listOf([], [published]);
+    const user = userEvent.setup();
+    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+
+    expect(await screen.findByText("まだ枠を公開していません。")).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("スポーツ"), "野球");
     await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
     await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
@@ -40,37 +105,72 @@ describe("枠の公開", () => {
       ends_at: new Date("2026-11-01T11:00").toISOString(),
     });
     expect(await screen.findByRole("status")).toHaveTextContent("枠を公開しました。");
-    const row = screen.getByRole("row", { name: /野球/ });
-    expect(row).toHaveTextContent("公開中");
+    expect(listMyCoachSlots).toHaveBeenCalledTimes(2);
+    const upcoming = await screen.findByRole("table", { name: "これからの枠" });
+    expect(within(upcoming).getByRole("row", { name: /野球/ })).toHaveTextContent("公開中");
+    expect(screen.queryByText("まだ枠を公開していません。")).not.toBeInTheDocument();
+  });
+
+  test("枠が 0 件ならその旨を出す", async () => {
+    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf([]) }} />);
+
+    expect(await screen.findByText("まだ枠を公開していません。")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("これからの枠がなく終わった枠だけなら、これからの枠がない旨と終わった枠を出す", async () => {
+    render(
+      <PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS.slice(0, 2)) }} />,
+    );
+
+    expect(await screen.findByText("これからの枠はありません。")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "終わった枠" })).toBeInTheDocument();
+  });
+
+  test("一覧の API が失敗したら、その文言を出す", async () => {
+    const listMyCoachSlots = vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({
+      ok: false,
+      message: "権限がないためアクセスできません。",
+    }));
+    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots }} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   test("終了が開始より前なら API を呼ばずに知らせる", async () => {
     const publishSlot = vi.fn<CoachApi["publishSlot"]>();
+    const listMyCoachSlots = listOf([]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot }} />);
+    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
 
+    await screen.findByText("まだ枠を公開していません。");
     await user.type(screen.getByLabelText("開始"), "2026-11-01T11:00");
     await user.type(screen.getByLabelText("終了"), "2026-11-01T10:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(publishSlot).not.toHaveBeenCalled();
+    expect(listMyCoachSlots).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("alert")).toHaveTextContent("終了は開始より後にしてください。");
   });
 
-  test("API のエラーの文言を出す", async () => {
+  test("公開の API のエラーの文言を出し、一覧は取り直さない", async () => {
     const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({
       ok: false,
       message: "公開済みの枠と時間が重なっています。",
     }));
+    const listMyCoachSlots = listOf([]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot }} />);
+    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
 
+    await screen.findByText("まだ枠を公開していません。");
     await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
     await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("公開済みの枠と時間が重なっています。");
-    expect(screen.getByText("まだ公開していません。")).toBeInTheDocument();
+    expect(listMyCoachSlots).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("まだ枠を公開していません。")).toBeInTheDocument();
   });
 });
 
