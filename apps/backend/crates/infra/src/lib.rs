@@ -12,6 +12,7 @@ mod in_memory_domain_event_bus;
 mod logging_domain_event_publisher;
 pub mod messaging_values;
 mod mock_ai_feedback_generator;
+mod mock_alt_video_call_provider;
 mod mock_push_sender;
 mod mock_token;
 mod mock_video_call_provider;
@@ -30,12 +31,14 @@ mod pg_slot_repository;
 mod pg_support;
 mod pg_video_repository;
 pub mod scheduling_values;
+mod video_call_backend;
 
 pub use analytics_common_attributes::AnalyticsCommonAttributes;
 pub use analytics_destination::AnalyticsDestination;
 pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
 pub use mock_ai_feedback_generator::MockAiFeedbackGenerator;
+pub use mock_alt_video_call_provider::MockAltVideoCallProvider;
 pub use mock_push_sender::MockPushSender;
 pub use mock_token::MockTokenService;
 pub use mock_video_call_provider::MockVideoCallProvider;
@@ -51,6 +54,7 @@ pub use pg_message_thread_repository::PgMessageThreadRepository;
 pub use pg_notification_settings_repository::PgNotificationSettingsRepository;
 pub use pg_slot_repository::PgSlotRepository;
 pub use pg_video_repository::PgVideoRepository;
+pub use video_call_backend::VideoCallBackend;
 
 /// `migrations/` のマイグレーション（コンパイル時に埋め込む）。
 ///

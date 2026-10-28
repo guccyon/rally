@@ -4,6 +4,8 @@
 
 // 配信先の選択は seed と共有するので infra に置き、ここでは同じ名前で公開し続ける
 pub use infra::AnalyticsDestination;
+// 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
+pub use infra::VideoCallBackend;
 
 use application::{
     analytics::AnalyticsSink,
@@ -27,7 +29,10 @@ use application::{
         RecordingAnalyticsSink,
     },
     lesson::{LessonCompletionLookup, LessonCompletionRepository, RecordLessonCompletion},
-    live_lesson::{EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession},
+    live_lesson::{
+        EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
+        VideoCallProvider,
+    },
     messaging::{
         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         MessageThreadSubscriber, SendMessage,
@@ -46,10 +51,10 @@ use application::{
 use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
-    MockVideoCallProvider, MockVideoStorage, PgAccountRepository, PgBookingRepository,
-    PgEntitlementRepository, PgLessonCompletionRepository, PgLessonReviewRepository,
-    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationSettingsRepository,
-    PgSlotRepository, PgVideoRepository,
+    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+    PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+    PgMessageThreadRepository, PgNotificationSettingsRepository, PgSlotRepository,
+    PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -71,8 +76,8 @@ pub fn router() -> Router {
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
 ///
-/// 通話セッションの開始・終了は通話基盤のモック（`MockVideoCallProvider`。終了時に接続品質の指標を乱数で生成する）で
-/// 組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
+/// 通話セッションの開始・終了は通話基盤のモック（既定の [`VideoCallBackend`]。Twilio Video 相当の `MockVideoCallProvider`。
+/// 終了時に接続品質の指標を乱数で生成する）で組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
 ///
 /// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）と AI の一次フィードバックの
 /// モック（`MockAiFeedbackGenerator`。スポーツごとの決まった文を返す）で、添削の返却は
@@ -109,7 +114,23 @@ where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
-    router_with_push_sender(clock, analytics, MockPushSender::new())
+    router_with_video_call(clock, analytics, VideoCallBackend::default())
+}
+
+/// [`router_with_analytics`] の通話基盤を `video` に替えたルーター（`main` は [`VideoCallBackend`] で選ぶ）。
+pub fn router_with_video_call<C, A, V>(clock: C, analytics: A, video: V) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+{
+    compose(
+        in_memory_repositories(),
+        clock,
+        analytics,
+        MockPushSender::new(),
+        video,
+    )
 }
 
 /// [`router_with_analytics`] のプッシュ通知の送り先を `push` に替えたルーター（テストが送った通知を読むのに使う）。
@@ -119,24 +140,42 @@ where
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + 'static,
 {
-    let slots = InMemorySlotRepository::default();
     compose(
-        Repositories {
-            accounts: InMemoryAccountRepository::default(),
-            bookings: InMemoryBookingRepository::new(slots.clone()),
-            slots,
-            entitlements: InMemoryEntitlementRepository::default(),
-            sessions: InMemoryLiveLessonSessionRepository::default(),
-            videos: InMemoryVideoRepository::default(),
-            completions: InMemoryLessonCompletionRepository::default(),
-            threads: InMemoryMessageThreadRepository::default(),
-            reviews: InMemoryLessonReviewRepository::default(),
-            notification_settings: InMemoryNotificationSettingsRepository::default(),
-        },
+        in_memory_repositories(),
         clock,
         analytics,
         push,
+        VideoCallBackend::default(),
     )
+}
+
+/// 保存先をすべてインメモリにした集約ごとの保存先。
+#[allow(clippy::type_complexity)]
+fn in_memory_repositories() -> Repositories<
+    InMemoryAccountRepository,
+    InMemorySlotRepository,
+    InMemoryBookingRepository,
+    InMemoryEntitlementRepository,
+    InMemoryLiveLessonSessionRepository,
+    InMemoryVideoRepository,
+    InMemoryLessonCompletionRepository,
+    InMemoryMessageThreadRepository,
+    InMemoryLessonReviewRepository,
+    InMemoryNotificationSettingsRepository,
+> {
+    let slots = InMemorySlotRepository::default();
+    Repositories {
+        accounts: InMemoryAccountRepository::default(),
+        bookings: InMemoryBookingRepository::new(slots.clone()),
+        slots,
+        entitlements: InMemoryEntitlementRepository::default(),
+        sessions: InMemoryLiveLessonSessionRepository::default(),
+        videos: InMemoryVideoRepository::default(),
+        completions: InMemoryLessonCompletionRepository::default(),
+        threads: InMemoryMessageThreadRepository::default(),
+        reviews: InMemoryLessonReviewRepository::default(),
+        notification_settings: InMemoryNotificationSettingsRepository::default(),
+    }
 }
 
 /// 保存先をすべて infra の Postgres の実装にしたルーター（`pool` はマイグレーション `infra::MIGRATOR` を当てた DB）。
@@ -163,6 +202,7 @@ where
         clock,
         analytics,
         MockPushSender::new(),
+        VideoCallBackend::default(),
     )
 }
 
@@ -181,11 +221,12 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, Z, C, A, P>(
+fn compose<R, S, B, E, L, W, M, X, N, Z, C, A, P, V>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z>,
     clock: C,
     analytics: A,
     push: P,
+    video: V,
 ) -> Router
 where
     R: AccountRepository + Clone + 'static,
@@ -201,6 +242,7 @@ where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + 'static,
+    V: VideoCallProvider + Clone + 'static,
 {
     let Repositories {
         accounts,
@@ -221,7 +263,6 @@ where
             PushNotificationSubscriber::new(push, notification_settings.clone()),
         ),
     ));
-    let video = MockVideoCallProvider::new();
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
         ListCoaches::new(accounts.clone()),
