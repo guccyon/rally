@@ -140,6 +140,24 @@ class FakeStudentApi implements StudentApi {
       );
 
   @override
+  Future<CoachReviewSummary> getCoachReviewSummary(String coachId) => _answer(
+    'getCoachReviewSummary',
+    () => CoachReviewSummary(
+      coachId: coachId,
+      reviewCount: Fixtures.coachReviews.length,
+      averageRating: 4.5,
+    ),
+    coachId,
+  );
+
+  @override
+  Future<CoachReviewList> listCoachReviews(String coachId) => _answer(
+    'listCoachReviews',
+    () => CoachReviewList(coachId: coachId, reviews: Fixtures.coachReviews),
+    coachId,
+  );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) => _answer(
@@ -453,6 +471,24 @@ abstract final class Fixtures {
     returnedAt: now,
     aiFeedback: aiFeedback,
   );
+
+  /// コーチが受けた評価（送った時刻の新しい順）
+  static final coachReviews = [
+    CoachReview(
+      reviewId: reviewId,
+      lessonId: '77777777-7777-4777-8777-777777777777',
+      rating: 5,
+      comment: '丁寧でした',
+      submittedAt: now,
+    ),
+    CoachReview(
+      reviewId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      lessonId: '88888888-8888-4888-8888-888888888888',
+      rating: 4,
+      comment: 'わかりやすかった',
+      submittedAt: now.subtract(const Duration(days: 1)),
+    ),
+  ];
 
   static final liveLesson = Lesson(
     lessonId: '88888888-8888-4888-8888-888888888888',

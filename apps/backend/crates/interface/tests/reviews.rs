@@ -1,6 +1,7 @@
-//! `GET /coaches/{coach_id}/reviews`（admin-web の `listCoachReviews`）の統合テスト。レスポンスの形を admin-web の
-//! OpenAPI のスキーマで検査し、本部はどのコーチの分も、コーチは自分の分だけを読めること（生徒は 403）と、
-//! 送った時刻の新しい順に並ぶことを確かめる。
+//! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）と `GET /coaches/{coach_id}/review-summary`
+//! （`getCoachReviewSummary`）の統合テスト。どちらも admin-web と student-app の契約にある同じ操作なので、レスポンスの形を
+//! 両方の OpenAPI のスキーマで検査する。本部と生徒はどのコーチの分も、コーチは自分の分だけを読めること（他のコーチの分は
+//! 403）と、送った時刻の新しい順に並ぶこと、評価がなければ 0 件になることを確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -75,6 +76,10 @@ const HEADQUARTERS: &str = "headquarters:1";
 const COACH_ID: &str = "00000000-0000-0000-0000-00000000002a";
 const COACH: &str = "coach:42";
 const OTHER_COACH: &str = "coach:43";
+/// 評価したどの生徒（ID 101〜104）でもない生徒
+const STUDENT: &str = "student:3";
+/// 評価の対象のコーチ 42 に評価を付けた生徒（review 2 の ID 102）
+const REVIEWER_STUDENT: &str = "student:102";
 
 fn now() -> SystemTime {
     SystemTime::UNIX_EPOCH + NOW
@@ -245,12 +250,14 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
     )
 }
 
-async fn list_coach_reviews(
+/// `GET <path>` を送り、レスポンスの形を admin-web と student-app の両方の契約で検査する。
+async fn get(
     router: &Router,
-    coach_id: &str,
+    path: &str,
+    template: &str,
     token: Option<&str>,
 ) -> (StatusCode, Value) {
-    let mut request = Request::get(format!("/coaches/{coach_id}/reviews"));
+    let mut request = Request::get(path);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -262,26 +269,51 @@ async fn list_coach_reviews(
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap();
-    support::Contract::load("admin-web").assert_response(
-        "get",
-        "/coaches/{coach_id}/reviews",
-        status,
-        &body,
-    );
+    for app in ["admin-web", "student-app"] {
+        support::Contract::load(app).assert_response("get", template, status, &body);
+    }
     (status, body)
 }
 
+async fn list_coach_reviews(
+    router: &Router,
+    coach_id: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    get(
+        router,
+        &format!("/coaches/{coach_id}/reviews"),
+        "/coaches/{coach_id}/reviews",
+        token,
+    )
+    .await
+}
+
+async fn get_coach_review_summary(
+    router: &Router,
+    coach_id: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    get(
+        router,
+        &format!("/coaches/{coach_id}/review-summary"),
+        "/coaches/{coach_id}/review-summary",
+        token,
+    )
+    .await
+}
+
 #[tokio::test]
-async fn headquarters_and_the_coach_read_the_reviews_newest_first() {
+async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
     let router = app(reviews());
-    for token in [HEADQUARTERS, COACH] {
+    for token in [HEADQUARTERS, COACH, STUDENT, REVIEWER_STUDENT] {
         let (status, body) = list_coach_reviews(&router, COACH_ID, Some(token)).await;
         assert_eq!(status, StatusCode::OK, "{token}: {body}");
         assert_eq!(
             body,
             json!({
                 "coach_id": COACH_ID,
-                // 送った時刻の新しい順。他のコーチへの評価は含まない
+                // 送った時刻の新しい順。他のコーチへの評価と、評価した生徒（student_id）は含まない
                 "reviews": [
                     {
                         "review_id": "00000000-0000-0000-0000-000000000002",
@@ -312,23 +344,87 @@ async fn headquarters_and_the_coach_read_the_reviews_newest_first() {
 }
 
 #[tokio::test]
-async fn a_coach_without_reviews_has_an_empty_list() {
+async fn a_student_reads_the_reviews_of_any_coach() {
     let router = app(reviews());
-    let coach_id = "00000000-0000-0000-0000-000000000063";
-    let (status, body) = list_coach_reviews(&router, coach_id, Some(HEADQUARTERS)).await;
+    let other_coach_id = "00000000-0000-0000-0000-00000000002b";
+    let (status, body) = list_coach_reviews(&router, other_coach_id, Some(STUDENT)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body, json!({ "coach_id": coach_id, "reviews": [] }));
+    assert_eq!(
+        body,
+        json!({
+            "coach_id": other_coach_id,
+            "reviews": [{
+                "review_id": "00000000-0000-0000-0000-000000000003",
+                "lesson_id": "00000000-0000-0000-0000-00000000000d",
+                "rating": 1,
+                "comment": "別のコーチ",
+                "submitted_at": "2026-10-25T22:00:00Z",
+            }],
+        })
+    );
+
+    let (status, body) = get_coach_review_summary(&router, other_coach_id, Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({ "coach_id": other_coach_id, "review_count": 1, "average_rating": 1.0 })
+    );
 }
 
 #[tokio::test]
-async fn other_coaches_and_students_may_not_read_the_reviews() {
+async fn a_coach_without_reviews_has_an_empty_list() {
     let router = app(reviews());
-    for token in [OTHER_COACH, "student:3"] {
-        let (status, body) = list_coach_reviews(&router, COACH_ID, Some(token)).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
-        assert_eq!(body["code"], "forbidden");
+    let coach_id = "00000000-0000-0000-0000-000000000063";
+    for token in [HEADQUARTERS, STUDENT] {
+        let (status, body) = list_coach_reviews(&router, coach_id, Some(token)).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {body}");
+        assert_eq!(body, json!({ "coach_id": coach_id, "reviews": [] }));
     }
+}
+
+#[tokio::test]
+async fn headquarters_the_coach_and_students_read_the_summary() {
+    let router = app(reviews());
+    for token in [HEADQUARTERS, COACH, STUDENT] {
+        let (status, body) = get_coach_review_summary(&router, COACH_ID, Some(token)).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {body}");
+        // (3 + 5 + 4) / 3 = 4.0。他のコーチへの評価は数えない
+        assert_eq!(
+            body,
+            json!({ "coach_id": COACH_ID, "review_count": 3, "average_rating": 4.0 }),
+            "{token}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_coach_without_reviews_has_no_average() {
+    let router = app(reviews());
+    let coach_id = "00000000-0000-0000-0000-000000000063";
+    for token in [HEADQUARTERS, STUDENT] {
+        let (status, body) = get_coach_review_summary(&router, coach_id, Some(token)).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {body}");
+        assert_eq!(
+            body,
+            json!({ "coach_id": coach_id, "review_count": 0, "average_rating": null })
+        );
+    }
+}
+
+#[tokio::test]
+async fn other_coaches_may_not_read_the_reviews() {
+    let router = app(reviews());
+    let (status, body) = list_coach_reviews(&router, COACH_ID, Some(OTHER_COACH)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "forbidden");
+    let (status, body) = get_coach_review_summary(&router, COACH_ID, Some(OTHER_COACH)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "forbidden");
+
     let (status, body) = list_coach_reviews(&router, COACH_ID, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert_eq!(body["code"], "unauthorized");
+    let (status, body) = get_coach_review_summary(&router, COACH_ID, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(body["code"], "unauthorized");
 }
@@ -336,7 +432,12 @@ async fn other_coaches_and_students_may_not_read_the_reviews() {
 #[tokio::test]
 async fn a_coach_id_that_is_not_a_uuid_is_not_found() {
     let router = app(reviews());
-    let (status, body) = list_coach_reviews(&router, "not-a-uuid", Some(HEADQUARTERS)).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
-    assert_eq!(body["code"], "not_found");
+    for token in [HEADQUARTERS, STUDENT] {
+        let (status, body) = list_coach_reviews(&router, "not-a-uuid", Some(token)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{token}: {body}");
+        assert_eq!(body["code"], "not_found");
+        let (status, body) = get_coach_review_summary(&router, "not-a-uuid", Some(token)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{token}: {body}");
+        assert_eq!(body["code"], "not_found");
+    }
 }

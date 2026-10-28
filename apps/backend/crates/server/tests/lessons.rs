@@ -3,7 +3,7 @@
 //!
 //! - 体験予約 → 確定 → 通話の開始・終了 → 完了の記録で、`is_first_lesson` が true になる
 //! - 同じ生徒が動画を送り、添削が返されてから完了を記録すると、2 回目なので `is_first_lesson` は false
-//! - 生徒が完了したレッスンを 1 回だけ評価でき、本部とコーチ本人がコーチの評価の件数と平均を読める
+//! - 生徒が完了したレッスンを 1 回だけ評価でき、本部とコーチ本人と生徒がコーチの評価の件数と平均を読める
 
 use std::time::{Duration, SystemTime};
 
@@ -214,14 +214,14 @@ async fn live_and_async_lessons_are_completed_and_only_the_first_is_the_first_le
     let (status, _) = send(&router, post_json("/lesson-reviews", &coach, review)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // 本部とコーチ本人がコーチの評価の件数と平均を読める
+    // 本部とコーチ本人と生徒がコーチの評価の件数と平均を読める
     let headquarters = MockTokenService
         .issue(TokenClaims {
             account_id: AccountId::from_u128(5),
             role: Role::Headquarters,
         })
         .into_string();
-    for token in [&headquarters, &coach] {
+    for token in [&headquarters, &coach, &student] {
         let (status, summary) = send(
             &router,
             Request::get("/coaches/00000000-0000-0000-0000-00000000002a/review-summary")

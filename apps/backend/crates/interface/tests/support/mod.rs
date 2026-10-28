@@ -154,6 +154,17 @@ impl Contract {
                     assert!(n <= max, "{at}: {n} > maximum {max}");
                 }
             }
+            Some("number") => {
+                let n = value
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("{at}: number でない: {value}"));
+                if let Some(min) = schema["minimum"].as_f64() {
+                    assert!(n >= min, "{at}: {n} < minimum {min}");
+                }
+                if let Some(max) = schema["maximum"].as_f64() {
+                    assert!(n <= max, "{at}: {n} > maximum {max}");
+                }
+            }
             other => panic!("{at}: 検査できない type {other:?}"),
         }
     }

@@ -818,6 +818,83 @@ class SubmitLessonReviewRequest {
   };
 }
 
+/// `CoachReviewSummary`（コーチ 1 人の lesson_review の件数と平均。数え方と丸めは契約の `getCoachReviewSummary`）
+class CoachReviewSummary {
+  const CoachReviewSummary({
+    required this.coachId,
+    required this.reviewCount,
+    required this.averageRating,
+  });
+
+  final String coachId;
+
+  /// 評価の件数（これまでのすべて）
+  final int reviewCount;
+
+  /// 点（1〜5）の平均。小数第 2 位まで（サーバーが丸める）。評価が 0 件なら null
+  final double? averageRating;
+
+  factory CoachReviewSummary.fromJson(Map<String, dynamic> json) =>
+      CoachReviewSummary(
+        coachId: json['coach_id'] as String,
+        reviewCount: json['review_count'] as int,
+        averageRating: (json['average_rating'] as num?)?.toDouble(),
+      );
+}
+
+/// `CoachReview`（コーチが受けた lesson_review 1 件。評価した生徒は載らない）
+class CoachReview {
+  const CoachReview({
+    required this.reviewId,
+    required this.lessonId,
+    required this.rating,
+    required this.comment,
+    required this.submittedAt,
+  });
+
+  final String reviewId;
+
+  /// 評価された完了したレッスン
+  final String lessonId;
+
+  /// 1（低い）〜5（高い）
+  final int rating;
+
+  /// 一言
+  final String comment;
+
+  /// 評価を送った時刻
+  final DateTime submittedAt;
+
+  factory CoachReview.fromJson(Map<String, dynamic> json) => CoachReview(
+    reviewId: json['review_id'] as String,
+    lessonId: json['lesson_id'] as String,
+    rating: json['rating'] as int,
+    comment: json['comment'] as String,
+    submittedAt: _dateTime(json['submitted_at']),
+  );
+}
+
+/// `CoachReviewList`
+class CoachReviewList {
+  const CoachReviewList({required this.coachId, required this.reviews});
+
+  final String coachId;
+
+  /// 送った時刻の新しい順（同じ時刻は `review_id` の順）
+  final List<CoachReview> reviews;
+
+  factory CoachReviewList.fromJson(Map<String, dynamic> json) =>
+      CoachReviewList(
+        coachId: json['coach_id'] as String,
+        reviews: List.unmodifiable(
+          (json['reviews'] as List<dynamic>).map(
+            (e) => CoachReview.fromJson(e as Map<String, dynamic>),
+          ),
+        ),
+      );
+}
+
 /// `Message`（glossary の message。送信時刻と既読を持つ）
 class Message {
   const Message({
