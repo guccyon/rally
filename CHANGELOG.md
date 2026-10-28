@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- グループレッスンの通話と完了（変更シナリオ cs-004）: 定員 2 以上の枠では、通話を始めたときに確定していた同じ枠の予約をすべて 1 つのセッションに結び付け（応答の `bookings`）、2 人目以降の生徒は同じセッションに入る。完了したレッスンは生徒ごとに 1 つ（コーチが記録すると全員の分）。マンツーマンの枠は今と同じ。DB はセッションと予約の結び付けの表（expand → migrate）と、完了の一意・外部キーの制約の緩和（#186）
 - 予約枠に定員（1〜6 人、既定 1）を持たせ、定員まで予約を受ける（グループレッスン、変更シナリオ cs-004）。admin-web の `publishSlot` に任意の `capacity`、枠の応答（両アプリ）に `capacity` と残りの席 `remaining_seats`。同じ生徒が同じ枠を 2 回は予約できない。定員 1 の枠は今と同じ。DB は枠の定員の列と予約の一意の制約の緩和（expand）。両アプリの型は契約に合わせたが、画面はまだ変えない（#185）
 - student-app の月額契約の画面で、プラン（スタンダード「ビデオ通話 月 2 回」／プラス「ビデオ通話 月 4 回」。既定はスタンダード）を選んで契約を始める（`startSubscription` の `plan` を送る）。開始後はプランと、今月のビデオ通話を「月 N 回のうち残り M 回」とプランの上限で出す。料金の表示はない。API と契約の変更はない（#175）
 - 月額契約のプラン（変更シナリオ cs-003）: 月額契約にスタンダード（`standard`、ビデオ通話は暦月 2 回。既定）とプラス（`plus`、暦月 4 回）を置いた。student-app の `POST /subscriptions`（`startSubscription`）のリクエストに任意の `plan` を足し（省けば standard、未知の値は 422）、応答の `Subscription` に `plan`、`Entitlement`（`getMyEntitlement` と開始の応答）に任意で null になりうる `plan` を足した。暦月の上限は `live_lesson_quota.limit` で返し、plus は 4 回目まで確定でき 5 回目は 409 `live_lesson_quota_exceeded`。standard は今までと同じ（3 回目が 409）。既存の契約は standard。料金・決済・契約の途中でのプランの変更は扱わない。DB は列の追加と残回数の CHECK の緩和だけ（expand）。student-app は型を契約に合わせただけで、画面はまだない（#174）
