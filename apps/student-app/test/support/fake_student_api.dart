@@ -10,8 +10,10 @@ class FakeStudentApi implements StudentApi {
     List<MessageThread>? threads,
     List<Message>? messages,
     NotificationSettings? notificationSettings,
+    List<MyBooking>? myBookings,
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
+       myBookings = List.of(myBookings ?? Fixtures.myBookings),
        _reviews = reviews ?? [Fixtures.reviewReturned],
        threads = List.of(threads ?? [Fixtures.thread]),
        messages = List.of(messages ?? Fixtures.messages),
@@ -29,6 +31,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 通知の受け取り設定（`getMyNotificationSettings` が返す。`updateMyNotificationSettings` で書いた種類だけを変える）
   NotificationSettings notificationSettings;
+
+  /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
+  final List<MyBooking> myBookings;
   final Map<String, StudentApiException> failures;
 
   final List<String> calls = [];
@@ -66,6 +71,26 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<Booking> confirmBooking(String bookingId) =>
       _answer('confirmBooking', () => Fixtures.bookingConfirmed, bookingId);
+
+  @override
+  Future<MyBookingList> listMyBookings() =>
+      _answer('listMyBookings', () => MyBookingList(bookings: [...myBookings]));
+
+  @override
+  Future<Booking> cancelBooking(String bookingId) =>
+      _answer('cancelBooking', () {
+        final index = myBookings.indexWhere(
+          (b) => b.booking.bookingId == bookingId,
+        );
+        final item = myBookings[index];
+        final cancelled = Fixtures.bookingWith(
+          item.booking,
+          status: BookingStatus.cancelled,
+          cancelledAt: Fixtures.now,
+        );
+        myBookings[index] = MyBooking(booking: cancelled, slot: item.slot);
+        return cancelled;
+      }, bookingId);
 
   @override
   Future<LiveLessonSession> startLiveLessonSession(
@@ -281,6 +306,75 @@ abstract final class Fixtures {
     createdAt: now,
     confirmedAt: now,
   );
+
+  /// [booking] の状態とキャンセルの時刻を変えたもの
+  static Booking bookingWith(
+    Booking booking, {
+    required BookingStatus status,
+    DateTime? cancelledAt,
+  }) => Booking(
+    bookingId: booking.bookingId,
+    slotId: booking.slotId,
+    studentId: booking.studentId,
+    coachId: booking.coachId,
+    isTrial: booking.isTrial,
+    status: status,
+    startsAt: booking.startsAt,
+    createdAt: booking.createdAt,
+    confirmedAt: booking.confirmedAt,
+    cancelledAt: cancelledAt ?? booking.cancelledAt,
+  );
+
+  /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）
+  static MyBooking myBooking({
+    required String bookingId,
+    required Duration startsIn,
+    BookingStatus status = BookingStatus.confirmed,
+    Sport sport = Sport.tennis,
+    String? coachDisplayName = '佐藤',
+  }) {
+    final startsAt = now.add(startsIn);
+    return MyBooking(
+      booking: Booking(
+        bookingId: bookingId,
+        slotId: 'slot-$bookingId',
+        studentId: studentId,
+        coachId: coachId,
+        isTrial: false,
+        status: status,
+        startsAt: startsAt,
+        createdAt: now.subtract(const Duration(days: 7)),
+        confirmedAt: status == BookingStatus.pending ? null : now,
+        cancelledAt: status == BookingStatus.cancelled ? now : null,
+      ),
+      slot: Slot(
+        slotId: 'slot-$bookingId',
+        coachId: coachId,
+        sport: sport,
+        startsAt: startsAt,
+        endsAt: startsAt.add(const Duration(hours: 1)),
+        coachDisplayName: coachDisplayName,
+      ),
+    );
+  }
+
+  /// 3 日後（確定済み）・12 時間後（確定待ち）・6 時間後（キャンセル済み）・2 日前（確定済みで終わったもの）の 4 件（開始時刻の新しい順）
+  static final myBookings = [
+    myBooking(bookingId: 'booking-later', startsIn: const Duration(days: 3)),
+    myBooking(
+      bookingId: 'booking-soon',
+      startsIn: const Duration(hours: 12),
+      status: BookingStatus.pending,
+      sport: Sport.soccer,
+      coachDisplayName: '鈴木',
+    ),
+    myBooking(
+      bookingId: 'booking-cancelled',
+      startsIn: const Duration(hours: 6),
+      status: BookingStatus.cancelled,
+    ),
+    myBooking(bookingId: 'booking-past', startsIn: const Duration(days: -2)),
+  ];
 
   static final sessionInProgress = LiveLessonSession(
     sessionId: sessionId,

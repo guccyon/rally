@@ -161,4 +161,16 @@ void main() {
       'listMessageThreads',
     ]);
   });
+
+  test('自分の予約は copyWith で読み取り専用にして持ち、外から書き換えられない', () {
+    final source = [...Fixtures.myBookings];
+    final state = const StudentFlowState(step: FlowStep.myBookings)
+        .copyWith(myBookings: source);
+    source.clear();
+    expect(state.myBookings, hasLength(Fixtures.myBookings.length));
+    expect(
+      () => state.myBookings!.add(Fixtures.myBookings.first),
+      throwsUnsupportedError,
+    );
+  });
 }

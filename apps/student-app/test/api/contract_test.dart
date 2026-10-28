@@ -85,6 +85,8 @@ void main() {
         'searchSlots',
         'createBooking',
         'confirmBooking',
+        'listMyBookings',
+        'cancelBooking',
         'startLiveLessonSession',
         'endLiveLessonSession',
         'submitVideo',

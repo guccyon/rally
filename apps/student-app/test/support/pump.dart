@@ -6,17 +6,20 @@ import 'package:rally_student_app/state/student_flow.dart';
 import 'fake_student_api.dart';
 
 /// [screen] を、API をモックにした ProviderScope で描く。[initial] で途中の段から始める。
+/// 今の時刻は [now]（既定は [Fixtures.now]）に固定する。
 Future<ProviderContainer> pumpScreen(
   WidgetTester tester,
   Widget screen, {
   required FakeStudentApi api,
   StudentFlowState initial = const StudentFlowState(),
+  DateTime? now,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         studentApiProvider.overrideWithValue(api),
         studentFlowProvider.overrideWith(() => StudentFlowNotifier(initial)),
+        clockProvider.overrideWithValue(() => now ?? Fixtures.now),
       ],
       child: MaterialApp(home: screen),
     ),
