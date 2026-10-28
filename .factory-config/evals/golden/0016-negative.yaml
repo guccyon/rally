@@ -10,6 +10,8 @@ preferred: a
 confidence: high
 reason: "負例はコーチの一覧に生徒のアカウントも混ざるようにした"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「コーチの一覧に生徒が入るのは情報漏洩のインシデント」
+severity: critical            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "問い合わせの条件の誤り（コーチの一覧に生徒が混ざる）"

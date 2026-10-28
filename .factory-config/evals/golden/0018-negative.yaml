@@ -10,6 +10,8 @@ preferred: b
 confidence: high
 reason: "負例は送った記録を残さないようにした（再送で同じ通知が 2 回届く）"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「重複通知」
+severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "冪等の不変条件を壊す 1 行"

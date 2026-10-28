@@ -10,6 +10,8 @@ preferred: a
 confidence: high
 reason: "負例は2 点と 3 点の言葉を同じ「ふつう」にした（基準をそろえる目的が崩れる）"
 polarity: one_flawed
-scored_by: builder_candidate     # 欠陥を入れたのは builder。Tetsuro の答え合わせで confirmed にする（判定は先に回す。2026-10-28 Tetsuro「判断がブロッカーにならないよう、作業を進めつつ答え合わせ」）
+scored_by: confirmed
 scored_at: "2026-10-28"
+confirmed_by: Tetsuro   # 2026-10-28「意味合いが変わり、言葉も重複してユーザーの混乱を招く（マイナー＋）」
+severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "評価の目安の言葉の重複（要求の目的を損なう）"
