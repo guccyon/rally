@@ -4,14 +4,14 @@ import { useMemo } from "react";
 
 import { createApiClient } from "@/api/client";
 import { coachApi } from "@/api/coach";
-import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
 import { Section } from "@/components/Section";
 
 import { LiveSessionPanel } from "./LiveSessionPanel";
+import { MyCoachReviews } from "./MyCoachReviews";
 import { PublishSlotForm } from "./PublishSlotForm";
 import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
 
-/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、自分の評価の件数と平均と一覧。 */
+/** コーチの画面: 枠の公開・添削の返却・通話への参加（ADR 0002 Q3）と、開いたときから出す自分の評価の件数と平均と一覧。 */
 export function CoachHome({ token }: { token: string }) {
   const api = useMemo(() => coachApi(createApiClient(token)), [token]);
   return (
@@ -26,10 +26,7 @@ export function CoachHome({ token }: { token: string }) {
         <LiveSessionPanel api={api} />
       </Section>
       <Section title="自分の評価">
-        <CoachReviewSummaryLookup
-          api={api}
-          description="自分のアカウント ID を入力すると、生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言を出します（他のコーチの分は見られません）。"
-        />
+        <MyCoachReviews api={api} />
       </Section>
     </>
   );

@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { CoachApi } from "@/api/coach";
-import { CoachReviewSummaryLookup, formatAverageRating } from "@/components/CoachReviewSummaryLookup";
+import { CoachReviewSummaryLookup } from "@/components/CoachReviewSummaryLookup";
+import { formatAverageRating } from "@/components/CoachReviewSummaryView";
 import { RoleGate } from "@/components/RoleGate";
-import { CoachHome } from "@/components/coach/CoachHome";
 import { CoachReviewSummaryHome } from "@/components/headquarters/CoachReviewSummaryHome";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
@@ -108,13 +108,6 @@ describe("コーチの評価の件数と平均", () => {
 });
 
 describe("画面への配置", () => {
-  test("コーチの画面に「自分の評価」を出す", () => {
-    render(<CoachHome token="mock.coach.x" />);
-
-    const region = screen.getByRole("region", { name: "自分の評価" });
-    expect(within(region).getByLabelText("コーチ ID")).toBeInTheDocument();
-  });
-
   test("本部の画面からコーチの評価の画面へ移れる", () => {
     render(<HeadquartersHome />);
 
