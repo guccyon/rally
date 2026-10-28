@@ -172,6 +172,10 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
         ),
+        application::scheduling::ListCoachSlots::new(
+            InMemorySlotRepository::default(),
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

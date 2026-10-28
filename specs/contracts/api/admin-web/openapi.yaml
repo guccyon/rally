@@ -8,7 +8,7 @@ info:
     Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。通話への参加（`startLiveLessonSession` /
     `endLiveLessonSession`）は student-app と同じ操作・同じ形で、予約の参加者であるコーチが呼ぶ。参加する予約は
     コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
-    （`listMyCoachVideos`）から選ぶ。
+    （`listMyCoachVideos`）から選ぶ。公開した枠は、コーチの自分の枠の一覧（`listMyCoachSlots`）で見る。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
     student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
 
@@ -309,6 +309,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoachBookingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /coaches/me/slots:
+    get:
+      operationId: listMyCoachSlots
+      summary: 自分の枠の一覧（コーチ）
+      description: |
+        トークンが示す本人（コーチ）が公開した予約枠（`publishSlot`）を、状態（`open` / `booked` / `closed`）を問わず、
+        開始時刻が過ぎた枠（終わった枠）も含めてすべて返す。管理画面の「予約枠」に、自分の枠と予約が入っているかを出すのに使う。
+        コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+
+        - 並べ方: 枠の開始時刻 `starts_at` の古い順。同じ開始時刻は `slot_id` の順
+        - 各項目には枠（`Slot`）と、その枠に有効な予約（未確定 `pending` か確定 `confirmed`）が入っているか `has_active_booking` を載せる。
+          キャンセル済みの予約しかない枠は `false`。予約の中身は自分の予約の一覧（`listMyCoachBookings`）で見る
+        - 期間で絞らず、ページングもしない。枠がなければ `slots` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: []
+      responses:
+        "200":
+          description: コーチの枠の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachSlotList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -730,6 +761,28 @@ components:
           description: 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
           items:
             $ref: "#/components/schemas/CoachBooking"
+
+    CoachSlot:
+      type: object
+      description: コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか
+      required: [slot, has_active_booking]
+      properties:
+        slot:
+          $ref: "#/components/schemas/Slot"
+        has_active_booking:
+          type: boolean
+          description: 枠に有効な予約（未確定 `pending` か確定 `confirmed`）が入っていれば true。キャンセル済みの予約しかなければ false
+
+    CoachSlotList:
+      type: object
+      description: コーチの自分の枠の一覧（並べ方は `listMyCoachSlots` の説明）
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          description: 枠の開始時刻の古い順（同じ開始時刻は `slot_id` の順）。終わった枠・閉じた枠も含む
+          items:
+            $ref: "#/components/schemas/CoachSlot"
 
     SlotSupplyStatus:
       type: string

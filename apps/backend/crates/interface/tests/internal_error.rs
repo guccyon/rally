@@ -119,6 +119,10 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::identity::IdentityStudentDisplayNameLookup::new(BrokenRepository),
         ),
+        application::scheduling::ListCoachSlots::new(
+            InMemorySlotRepository::default(),
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),
             analytics.clone(),

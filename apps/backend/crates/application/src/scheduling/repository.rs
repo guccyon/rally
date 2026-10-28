@@ -2,6 +2,7 @@ use std::future::Future;
 
 use domain::{
     DomainError,
+    identity::AccountId,
     scheduling::{CoachCalendar, Slot, SlotId},
 };
 
@@ -32,6 +33,13 @@ pub trait SlotRepository: Send + Sync {
     fn search(
         &self,
         criteria: &SlotCriteria,
+    ) -> impl Future<Output = Result<Vec<Slot>, Unavailable>> + Send;
+
+    /// `coach_id` のコーチの枠（状態を問わない。終わった枠も含む）。並びは決めない。読むだけで何も変えない。
+    /// コーチの自分の枠の一覧（[`super::ListCoachSlots`]）が読む。
+    fn slots_of_coach(
+        &self,
+        coach_id: AccountId,
     ) -> impl Future<Output = Result<Vec<Slot>, Unavailable>> + Send;
 }
 

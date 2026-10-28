@@ -225,6 +225,13 @@ mod tests {
         async fn search(&self, _criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
+
+        async fn slots_of_coach(
+            &self,
+            _coach_id: domain::identity::AccountId,
+        ) -> Result<Vec<Slot>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

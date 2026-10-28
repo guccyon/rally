@@ -34,4 +34,4 @@ Gen1 は本物の認証がない。ログイン画面でロール（コーチ / 
 | 本部（`/headquarters/slot-supply`） | スポーツ別の予約枠の需給（足りている / 足りていない、公開した枠の数、予約しようとした生徒の数、集計の期間）。判定は API が返した値をそのまま出す（式は契約の `getSlotSupply` が正本） | `getSlotSupply` |
 | 本部（`/headquarters/coach-review-summary`） | コーチの評価（ID は入力しない。開いたときにコーチの一覧を取り、表示名（API が返した表示名の順のまま）から選んだコーチの評価の件数と点の平均と、その下に評価の一覧を出す。件数と平均・一覧の表示はコーチの「自分の評価」と同じ部品。数え方と丸めは契約の `getCoachReviewSummary` が正本で、画面は返った値を小数第 2 位まで揃えて出すだけ。コーチが 1 人もいなければ「コーチがまだいません」。一覧や評価の API が失敗したときは、その文言だけを出す） | `listCoaches` / `getCoachReviewSummary` / `listCoachReviews` |
 
-自分の枠の一覧を取る API は admin-web の契約にまだないので、画面に「未実装」と出す。添削の返却は、コーチに届いた動画の一覧の API（`listMyCoachVideos`）から動画を選ぶ。通話への参加は、コーチの自分の予約の一覧の API（`listMyCoachBookings`）から予約を選ぶ。本部はコーチの一覧の API（`listCoaches`。本部だけ）でコーチを選ぶ。トークンの中身は読まないので、本人のアカウント ID はログイン中の本人のアカウントを返す API（`getMyAccount`）で知る（今はコーチの「自分の評価」と「自己紹介」が使う）。
+自分の枠の一覧を取る API（`listMyCoachSlots`）は契約にあるが、画面はまだ使わず、このログイン中に公開した枠だけを出す。添削の返却は、コーチに届いた動画の一覧の API（`listMyCoachVideos`）から動画を選ぶ。通話への参加は、コーチの自分の予約の一覧の API（`listMyCoachBookings`）から予約を選ぶ。本部はコーチの一覧の API（`listCoaches`。本部だけ）でコーチを選ぶ。トークンの中身は読まないので、本人のアカウント ID はログイン中の本人のアカウントを返す API（`getMyAccount`）で知る（今はコーチの「自分の評価」と「自己紹介」が使う）。

@@ -124,6 +124,10 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
         ),
+        application::scheduling::ListCoachSlots::new(
+            InMemorySlotRepository::default(),
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

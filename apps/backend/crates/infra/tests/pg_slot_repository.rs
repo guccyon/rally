@@ -1,5 +1,5 @@
 //! `PgSlotRepository`（`scheduling.slots`）の検証。重なる枠の拒否（並行な公開を含む）と、
-//! 検索の絞り込み・ページング。
+//! 検索の絞り込み・ページング。コーチの枠の読み取り（`slots_of_coach`）と、それを読むコーチの自分の枠の一覧。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -13,17 +13,19 @@ use application::{
     identity::{IdentityCoachIntroductionLookup, account_id_uuid},
     in_memory::{FixedClock, RecordingAnalyticsSink},
     scheduling::{
-        PublishSlot, PublishSlotCommand, PublishSlotError, SearchSlots, SearchSlotsQuery,
-        SlotRepository,
+        BookingRepository, ListCoachSlots, PublishSlot, PublishSlotCommand, PublishSlotError,
+        SearchSlots, SearchSlotsQuery, SlotRepository,
     },
 };
 use domain::{
     DomainError,
     identity::{AccountId, Sport},
-    scheduling::{Slot, SlotStatus},
+    scheduling::{Booking, Slot, SlotStatus},
 };
-use infra::{PgAccountRepository, PgSlotRepository};
+use infra::{PgAccountRepository, PgBookingRepository, PgSlotRepository};
 use sqlx::PgPool;
+
+mod support;
 
 /// 2026-11-01T00:00:00Z
 const BASE: Duration = Duration::from_secs(1_793_491_200);
@@ -305,4 +307,88 @@ async fn search_of_the_repository_respects_the_limit(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(found.len(), 2);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn slots_of_coach_reads_own_slots_of_any_status(pool: PgPool) {
+    let slots = PgSlotRepository::new(pool.clone());
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach_id, other_coach) = (coach(&pool).await, coach(&pool).await);
+    let student = support::student(&pool).await;
+    let publish = publish_slot(&pool);
+    let mut published = Vec::new();
+    for (from, to) in [(40, 41), (10, 11), (30, 31), (20, 21), (50, 51)] {
+        published.push(
+            publish
+                .execute(command(coach_id, Sport::Tennis, from, to))
+                .await
+                .unwrap(),
+        );
+    }
+    let [cancelled, open, confirmed, pending, closed] = published.try_into().unwrap();
+    let others = publish
+        .execute(command(other_coach, Sport::Tennis, 10, 11))
+        .await
+        .unwrap();
+    set_status(&pool, &closed, "closed").await;
+    support::confirmed_booking(&pool, student, &confirmed).await;
+    let reserve = |slot: &Slot| {
+        let id = bookings.next_id();
+        bookings.reserve(slot.id(), student, move |slot, existing| {
+            Booking::reserve(id, student, false, slot, existing, at(0))
+        })
+    };
+    reserve(&pending).await.unwrap();
+    reserve(&others).await.unwrap();
+    let to_cancel = reserve(&cancelled).await.unwrap();
+    bookings
+        .update(to_cancel.id(), |booking, slot| {
+            booking.cancel(student, slot, at(1)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let mut found = slots.slots_of_coach(coach_id).await.unwrap();
+    found.sort_by_key(|slot| slot.starts_at());
+    let statuses: Vec<_> = found
+        .iter()
+        .map(|slot| (slot.id(), slot.status()))
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            (open.id(), SlotStatus::Open),
+            (pending.id(), SlotStatus::Open),
+            (confirmed.id(), SlotStatus::Booked),
+            (cancelled.id(), SlotStatus::Open),
+            (closed.id(), SlotStatus::Closed),
+        ],
+        "別のコーチの枠は読まない"
+    );
+    assert_eq!(found[0], open);
+
+    // ユースケースを通すと、開始時刻の古い順で、有効な予約が入っているかが添わる
+    let list = ListCoachSlots::new(slots.clone(), bookings)
+        .execute(coach_id)
+        .await
+        .unwrap();
+    let listed: Vec<_> = list
+        .items
+        .iter()
+        .map(|(slot, has_active_booking)| (slot.id(), *has_active_booking))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (open.id(), false),
+            (pending.id(), true),
+            (confirmed.id(), true),
+            (cancelled.id(), false),
+            (closed.id(), false),
+        ]
+    );
+
+    let nobody = coach(&pool).await;
+    assert!(slots.slots_of_coach(nobody).await.unwrap().is_empty());
 }

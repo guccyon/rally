@@ -7,6 +7,7 @@ use application::{
 };
 use domain::{
     DomainError,
+    identity::AccountId,
     scheduling::{CoachCalendar, Slot, SlotId, SlotStatus},
 };
 use sqlx::{
@@ -123,6 +124,18 @@ impl SlotRepository for PgSlotRepository {
         .bind(after_starts_at)
         .bind(after_slot_id)
         .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(slot_from_row).collect()
+    }
+
+    async fn slots_of_coach(&self, coach_id: AccountId) -> Result<Vec<Slot>, Unavailable> {
+        let rows: Vec<SlotRow> = sqlx::query_as(
+            "SELECT slot_id, coach_id, sport, starts_at, ends_at, status FROM scheduling.slots
+             WHERE coach_id = $1",
+        )
+        .bind(account_id_uuid::to_uuid(coach_id))
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;
