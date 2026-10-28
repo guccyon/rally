@@ -87,4 +87,43 @@ void main() {
       expect(parsed.coachBio, isNull);
     });
   });
+
+  test('MyBookingList.fromJson は予約とスロットを読み、一覧は書き換えられない', () {
+    final list = MyBookingList.fromJson({
+      'bookings': [
+        {
+          'booking': {
+            'booking_id': 'b1',
+            'slot_id': 's1',
+            'student_id': 'st1',
+            'coach_id': 'c1',
+            'is_trial': true,
+            'status': 'cancelled',
+            'starts_at': '2026-11-01T10:00:00Z',
+            'created_at': '2026-10-26T00:00:00Z',
+            'confirmed_at': null,
+            'cancelled_at': '2026-10-27T00:00:00Z',
+          },
+          'slot': {
+            'slot_id': 's1',
+            'coach_id': 'c1',
+            'sport': 'tennis',
+            'starts_at': '2026-11-01T10:00:00Z',
+            'ends_at': '2026-11-01T11:00:00Z',
+            'coach_display_name': 'たなか',
+          },
+        },
+      ],
+    });
+
+    expect(list.bookings, hasLength(1));
+    final item = list.bookings[0];
+    expect(item.booking.bookingId, 'b1');
+    expect(item.booking.status, BookingStatus.cancelled);
+    expect(item.slot.sport, Sport.tennis);
+    expect(item.slot.endsAt, DateTime.utc(2026, 11, 1, 11));
+    expect(item.slot.coachDisplayName, 'たなか');
+    expect(item.slot.coachBio, isNull);
+    expect(() => list.bookings.clear(), throwsUnsupportedError);
+  });
 }

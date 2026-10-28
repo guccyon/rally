@@ -200,7 +200,7 @@ fn booking_not_found() -> ApiError {
     ApiError::not_found("予約がない")
 }
 
-fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {
+pub(crate) fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {
     Ok(BookingBody {
         booking_id: booking_id_uuid::format(booking.id()),
         slot_id: slot_id_uuid::format(booking.slot_id()),

@@ -37,7 +37,7 @@ use application::{
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
+        ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots, SlotRepository,
     },
 };
 use axum::Router;
@@ -81,7 +81,7 @@ pub fn router() -> Router {
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
 ///
-/// スロットの検索（`GET /slots`）は、ページに出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
+/// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`IdentityCoachIntroductionLookup`。scheduling は identity を直接読まない）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
@@ -223,7 +223,7 @@ where
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(
             slots,
-            IdentityCoachIntroductionLookup::new(accounts),
+            IdentityCoachIntroductionLookup::new(accounts.clone()),
             clock.clone(),
         ),
         CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
@@ -241,6 +241,10 @@ where
             clock.clone(),
         ),
         GetSlotSupply::new(bookings.clone(), clock.clone()),
+        ListMyBookings::new(
+            bookings.clone(),
+            IdentityCoachIntroductionLookup::new(accounts),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

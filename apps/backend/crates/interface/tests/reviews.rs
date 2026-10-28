@@ -139,6 +139,12 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             clock,
         ),
         GetSlotSupply::new(bookings, clock),
+        application::scheduling::ListMyBookings::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::identity::IdentityCoachIntroductionLookup::new(
+                InMemoryAccountRepository::default(),
+            ),
+        ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),
             analytics.clone(),
