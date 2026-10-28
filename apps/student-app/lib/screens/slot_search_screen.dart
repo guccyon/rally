@@ -41,7 +41,7 @@ class SlotSearchScreen extends ConsumerWidget {
 }
 
 /// スロットの行。自己紹介文を行の幅で読めるよう縦に並べる: 日時 → スポーツ →
-/// 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→ 体験予約のボタン（行の幅いっぱい）
+/// グループレッスンの枠なら定員と残りの席 → 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→ 体験予約のボタン（行の幅いっぱい）
 class _SlotCard extends StatelessWidget {
   const _SlotCard({required this.slot, required this.onBook});
 
@@ -52,6 +52,7 @@ class _SlotCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = slot.coachDisplayName;
     final bio = slot.coachBio;
+    final seats = slotSeatsLabel(slot);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -64,6 +65,7 @@ class _SlotCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(sportLabel(slot.sport)),
+            if (seats != null) Text(seats),
             if (name != null) Text('コーチ: $name'),
             if (bio != null) ...[
               const SizedBox(height: 4),

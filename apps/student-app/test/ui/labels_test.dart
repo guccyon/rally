@@ -77,4 +77,25 @@ void main() {
       '月 4 回のうち残り 3 回',
     );
   });
+
+  test('定員 2 以上の枠はグループとして定員と残りの席を出し、定員 1 の枠には出さない', () {
+    Slot slot({required int capacity, required int remainingSeats}) => Slot(
+      slotId: 'slot-1',
+      coachId: 'coach-1',
+      sport: Sport.tennis,
+      startsAt: DateTime.utc(2026, 10, 28, 3),
+      endsAt: DateTime.utc(2026, 10, 28, 4),
+      capacity: capacity,
+      remainingSeats: remainingSeats,
+    );
+    expect(
+      slotSeatsLabel(slot(capacity: 4, remainingSeats: 2)),
+      'グループ（定員 4 人・残り 2 席）',
+    );
+    expect(
+      slotSeatsLabel(slot(capacity: 2, remainingSeats: 0)),
+      'グループ（定員 2 人・残り 0 席）',
+    );
+    expect(slotSeatsLabel(slot(capacity: 1, remainingSeats: 1)), isNull);
+  });
 }
