@@ -43,6 +43,8 @@ tags:
     description: 評価（レッスンの評価）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
+  - name: notification
+    description: 通知（プッシュ通知の受け取り設定）
 
 paths:
   /accounts:
@@ -608,6 +610,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /notification-settings/me:
+    get:
+      operationId: getMyNotificationSettings
+      summary: 自分の通知の受け取り設定の照会
+      description: |
+        認証した生徒の通知の受け取り設定（プッシュ通知の種類ごとに受け取るか）を返す。まだ変えていなければすべて true
+        （既定はすべて受け取る）。照会だけで、何も保存しない。生徒だけが呼べる（それ以外の役割は 403）。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒の通知の受け取り設定
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateMyNotificationSettings
+      summary: 自分の通知の受け取り設定の変更
+      description: |
+        認証した生徒の通知の受け取り設定を変え、変えたあとの設定を返す。リクエストに書いた種類だけを変え、
+        書かなかった種類は今の設定のまま（空のオブジェクトなら何も変えない）。生徒だけが呼べる（それ以外の役割は 403）。
+        値が真偽値でないときは 422。受け取るかは通知を送る時点の設定で決まり、false の種類の通知は送らない。
+        送らなかった通知は、あとで true に戻しても送り直さない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationSettingsRequest"
+      responses:
+        "200":
+          description: 変えたあとの通知の受け取り設定
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
 components:
   securitySchemes:
@@ -1238,6 +1292,40 @@ components:
           minLength: 1
           maxLength: 2000
           description: 本文（空白だけは不可）
+
+    NotificationSettings:
+      type: object
+      description: |
+        glossary の notification_settings（プッシュ通知の種類ごとに受け取るか。既定はすべて true）。
+        種類は追加しうる（項目が増える）。
+      required: [student_id, booking_confirmed, video_review_returned, message_received]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+        booking_confirmed:
+          type: boolean
+          description: 予約が確定したときの通知を受け取るか
+        video_review_returned:
+          type: boolean
+          description: 動画の添削が返却されたときの通知を受け取るか
+        message_received:
+          type: boolean
+          description: 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
+
+    UpdateNotificationSettingsRequest:
+      type: object
+      description: 変える種類だけを書く。書かなかった種類は今の設定のまま
+      properties:
+        booking_confirmed:
+          type: boolean
+          description: 予約が確定したときの通知を受け取るか
+        video_review_returned:
+          type: boolean
+          description: 動画の添削が返却されたときの通知を受け取るか
+        message_received:
+          type: boolean
+          description: 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
 
     ErrorCode:
       type: string

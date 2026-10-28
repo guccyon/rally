@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 通知の受け取り設定の API: student-app の `GET /notification-settings/me`（`getMyNotificationSettings`）と `PUT /notification-settings/me`（`updateMyNotificationSettings`）で、生徒が通知の種類（予約の確定・添削の返却・メッセージの受信）ごとに受け取るかを読み書きする（既定はすべて受け取る。PUT は書いた種類だけを変える。生徒以外は 403）。オフにした種類のプッシュ通知は送らず、送らなかった通知はあとでオンに戻しても送り直さない。DB は表の追加だけ（expand）。student-app の画面はまだない（#134）
 - admin-web の本部の「コーチの評価」（`/headquarters/coach-review-summary`）で、コーチ ID の入力をやめ、開いたときに `GET /coaches` で取ったコーチの一覧（表示名）から選んで、件数と平均とその下に評価の一覧（`GET /coaches/{coach_id}/reviews`。コーチの「自分の評価」と同じ表示）を出す。API と契約の変更はない（#114）
 - admin-web のコーチの「自分の評価」で、アカウント ID を入力せずに、開いたときから本人の評価の件数と平均と一覧を出す（`GET /me` で本人の ID を知る）。本部の画面は変わらない。API と契約の変更はない（#123）
 - ログイン中の本人のアカウントの API: admin-web の `GET /me`（`getMyAccount`）がトークンの示すアカウントの ID・役割（`student` / `coach` / `headquarters`）・表示名を返す。役割では絞らず、トークンがない・無効なら 401（トークンのアカウントがない、または役割が合わないときも 401）。admin-web の画面はまだない（#122）

@@ -1,3 +1,4 @@
+use super::NotificationKind;
 use crate::{
     async_lesson::{VideoId, VideoReviewId},
     identity::AccountId,
@@ -57,6 +58,16 @@ impl PushNotification {
             },
         }
     }
+
+    /// 通知の種類（受け取り設定でオン / オフを決める単位）。予約の確定は生徒への知らせもコーチへの知らせも同じ種類。
+    pub const fn kind(&self) -> NotificationKind {
+        match *self {
+            PushNotification::BookingConfirmed { .. }
+            | PushNotification::BookingReceived { .. } => NotificationKind::BookingConfirmed,
+            PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
+            PushNotification::MessageReceived { .. } => NotificationKind::MessageReceived,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -74,6 +85,7 @@ mod tests {
             booking_id: BookingId::from_u128(3),
         };
         assert_eq!(notification.recipient(), STUDENT);
+        assert_eq!(notification.kind(), NotificationKind::BookingConfirmed);
     }
 
     #[test]
@@ -84,6 +96,11 @@ mod tests {
             booking_id: BookingId::from_u128(3),
         };
         assert_eq!(notification.recipient(), COACH);
+        assert_eq!(
+            notification.kind(),
+            NotificationKind::BookingConfirmed,
+            "コーチへの知らせも予約の確定の種類"
+        );
     }
 
     #[test]
@@ -95,6 +112,7 @@ mod tests {
             review_id: VideoReviewId::from_u128(4),
         };
         assert_eq!(notification.recipient(), STUDENT);
+        assert_eq!(notification.kind(), NotificationKind::VideoReviewReturned);
     }
 
     #[test]
@@ -108,5 +126,9 @@ mod tests {
         };
         assert_eq!(received(MessageSender::Student).recipient(), COACH);
         assert_eq!(received(MessageSender::Coach).recipient(), STUDENT);
+        assert_eq!(
+            received(MessageSender::Coach).kind(),
+            NotificationKind::MessageReceived
+        );
     }
 }
