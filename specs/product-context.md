@@ -22,7 +22,7 @@
 - コア（主業務）: catalog / matching（商品＝コーチとレッスン内容のセットの選択）、scheduling（予約）、live-lesson、async-lesson（添削依頼。結果はチャットにインラインで展開）、messaging（チャット。会話でありレッスンのログ）、profile（プロフィール）
 - 支援（なくてもオンラインレッスンは成り立つが事業を支える、このサービス固有のもの）: review（評価）、entitlement（プラン）、billing
 - 汎用: identity（アカウント・権限）、license（ライセンス。Gen1 は境界だけで、実装は entitlement の中）、notification、analytics
-- 区分は docs/adr/0009（2026-10-28〜29 Tetsuro）。Gen1 で最初に実装したのは identity / scheduling / entitlement
+- 区分は docs/adr/0009（2026-10-28〜29 オーナー）。Gen1 で最初に実装したのは identity / scheduling / entitlement
 
 ## 不変条件の種（L4 の「所在集中度」の検査対象）
 

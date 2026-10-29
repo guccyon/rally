@@ -12,6 +12,6 @@ reason: "負例は本文の上限を 5000 にした（契約の maxLength は 20
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「Tetsuro の基準「DB と整合なら欠陥ではない、2000 の制約があればメジャー」。DB の表には上限がないが、サーバーのドメイン（MessageBody::MAX_CHARS）が 2000 で断るので、2001〜5000 字は入力できて送ると拒否される → メジャーとして扱う（builder の当てはめ、Tetsuro の訂正可）」
-severity: major            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「オーナー の基準「DB と整合なら欠陥ではない、2000 の制約があればメジャー」。DB の表には上限がないが、サーバーのドメイン（MessageBody::MAX_CHARS）が 2000 で断るので、2001〜5000 字は入力できて送ると拒否される → メジャーとして扱う（builder の当てはめ、オーナー の訂正可）」
+severity: major            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "契約の上限を画面が守らない"

@@ -1,16 +1,16 @@
 # Rally 工場の manifest（憲法レベルの設定）
 # この工場が「どこまで自分でやってよいか」「いくら使ってよいか」を機械可読で持つ。
 # 正本の Blueprint: ~/work/自律型ソフトウェア事業部/10_blueprint-rally.yaml（autonomy / budgets / compat_policy）
-# このファイルの変更は常に builder（Tetsuro）の承認が要る（change_type: constitution）。
+# このファイルの変更は常に builder（オーナー）の承認が要る（change_type: constitution）。
 #
 # 由来: アカウントスキル pr-merge-criteria（2026-10-21 版）の基準を「環境 × 変更種別」の表に変換した初版。
-#       2026-10-26 に Tetsuro とマージ基準を確定: CI が通れば承認なしでマージ。承認が要るのは「外部入力がシェル実行や
+#       2026-10-26 に オーナー とマージ基準を確定: CI が通れば承認なしでマージ。承認が要るのは「外部入力がシェル実行や
 #       エージェントのプロンプトにつながる経路を作る・変える変更」と「憲法の変更」。運用開始後は「公開・デプロイ」と「戻しにくい変更」も。
 #       2026-10-27 戦略会議 D4: 運用開始は「プロダクトを利用者に出した時点」と定義し直した（工場の置き場所とは切り離す）。
 #       この表は人間（builder）と工場の両方のマージ権限。工場の実行権限（pr_create まで）は phase_grants が別に縛る。
 
 schema_version: "0.1"
-status: draft                          # Tetsuro の署名で approved にする
+status: draft                          # オーナー の署名で approved にする
 engine:
   repo: guccyon/factory-engine
   version: null                        # P0 は base を手で置く。版付き配布は P0a 以降
@@ -59,12 +59,12 @@ autonomy:
     untrusted_input_path:
       ja: "外部入力がシェル実行やエージェントのプロンプトにつながる経路を作る・変える変更"
       match: "Issue 本文・Webhook・PR コメント・利用者入力などの外部入力が、シェルのコマンド・環境変数・エージェントのプロンプトに流れ込む箇所の追加・変更（例: ワーカーのプロンプト組み立て、Webhook 受け口、ワーカーに渡す引数）"
-      source: "2026-10-26 Tetsuro「サーバーで動かす以上、プロンプトインジェクションや任意コード実行のリスクがある変更はチェックしたい」"
+      source: "2026-10-26 オーナー「サーバーで動かす以上、プロンプトインジェクションや任意コード実行のリスクがある変更はチェックしたい」"
       approval_via: "chat_summary"
     irreversible:
       ja: "戻しにくい変更"
       match: "破壊的スキーマ、データ移行、外部サービスの設定変更など、巻き戻しが難しいもの"
-      source: "2026-10-26 Tetsuro。開発中は回してよく、運用開始（利用者に出した時点。D4）で承認制へ"
+      source: "2026-10-26 オーナー。開発中は回してよく、運用開始（利用者に出した時点。D4）で承認制へ"
 
   # 開発中（P0〜運用開始前）の表。merge の値は builder（人間の手元の Claude）が PR をマージするときの権限。
   # 工場（ヘッドレスワーカー）の merge は phase_grants の P0（human_approve）が優先し、P0b 完了まで shadow 判定の記録だけ行う。
@@ -82,7 +82,7 @@ autonomy:
   # 工場をサーバー（EC2 など）に移しただけでは発動しない。切り替えは builder が宣言し、この表の変更と同じく承認付き PR で行う
   on_operation_start:
     irreversible: { merge: human_approve }
-    always_human_approve: { note: "always_human_approve の各項目は運用開始から効く（開発中は承認不要。2026-10-27 Tetsuro）" }
+    always_human_approve: { note: "always_human_approve の各項目は運用開始から効く（開発中は承認不要。2026-10-27 オーナー）" }
     release: { deploy_test: human_approve, deploy_prod: human_approve, note: "公開・デプロイは改めて承認制" }
 
   # 次の Phase への解放（Blueprint autonomy.phase_grants と同じ。実績で次へ進む）
@@ -96,9 +96,9 @@ autonomy:
     first_candidates: [docs_only, dependency_update]   # 人間の手元ではすでに自動マージしている種別から解放する
 
   # 運用開始後は環境・Phase を問わず常に人間承認（変更種別より優先）。
-  # 2026-10-27 Tetsuro「アプリ側は一旦承認なしでいい」: 開発中（運用開始前）は rally の PR はすべて承認なしでマージする。各項目は from: operation_start
+  # 2026-10-27 オーナー「アプリ側は一旦承認なしでいい」: 開発中（運用開始前）は rally の PR はすべて承認なしでマージする。各項目は from: operation_start
   always_human_approve:
-    - { id: identity,           ja: "認証・権限の変更", from: operation_start, note: "2026-10-27 Tetsuro: 開発中（運用開始前）は承認不要。運用開始で承認制に戻る" }
+    - { id: identity,           ja: "認証・権限の変更", from: operation_start, note: "2026-10-27 オーナー: 開発中（運用開始前）は承認不要。運用開始で承認制に戻る" }
     - { id: payment_logic,      ja: "決済・支払い（billing / entitlement の金額に触れる変更）", from: operation_start }
     - { id: destructive_schema, ja: "破壊的スキーマ変更（列・テーブルの削除、型の縮小）", from: operation_start }
     - { id: secrets_iam,        ja: "秘密情報・権限設定（IAM、シークレット、CI の権限、ruleset）", from: operation_start }

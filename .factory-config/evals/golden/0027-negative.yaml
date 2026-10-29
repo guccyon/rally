@@ -12,6 +12,6 @@ reason: "負例は本部の「コーチの評価」の画面をコーチの役�
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「作業が滞る。権限差や担当だけの表示の仕様があればミスリードに繋がる」
-severity: major            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「作業が滞る。権限差や担当だけの表示の仕様があればミスリードに繋がる」
+severity: major            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "画面の出し分けの役割の誤り"

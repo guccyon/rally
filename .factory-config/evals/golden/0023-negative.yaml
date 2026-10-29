@@ -12,6 +12,6 @@ reason: "負例は点の表示を「10 点満点」にした（契約は 1〜5�
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「ファーストクラスのドメインではないので業務は止まらない」
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「ファーストクラスのドメインではないので業務は止まらない」
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "表示の尺度が契約と食い違う"

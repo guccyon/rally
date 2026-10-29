@@ -12,6 +12,6 @@ reason: "負例は送った記録を残さないようにした（再送で同�
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「重複通知」
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「重複通知」
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "冪等の不変条件を壊す 1 行"

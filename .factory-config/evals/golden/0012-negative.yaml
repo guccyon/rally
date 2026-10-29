@@ -12,6 +12,6 @@ reason: "負例は評価の一覧を古い順に並べた（契約と CHANGELOG 
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「改悪。並び替えはあってもよいが既定は新しい順」
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「改悪。並び替えはあってもよいが既定は新しい順」
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "並べ方の正本（契約）と実装の食い違い"

@@ -12,6 +12,6 @@ reason: "負例はコーチ向けの「新しい予約が入りました」の�
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「通知の宛先違いのミスリードは業務遂行が困難になるのと同程度」
-severity: major            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「通知の宛先違いのミスリードは業務遂行が困難になるのと同程度」
+severity: major            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "通知の受け取り手と、doc コメント・試験の食い違い"
