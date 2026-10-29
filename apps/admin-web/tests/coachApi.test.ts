@@ -280,4 +280,76 @@ describe("coachApi", () => {
     const result = await api.listMyCoachVideos();
     expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
   });
+  const THREAD_ID = "88888888-8888-4888-8888-888888888888";
+  const MESSAGE = {
+    message_id: "99999999-9999-4999-8999-999999999999",
+    thread_id: THREAD_ID,
+    sender_id: "22222222-2222-4222-8222-222222222222",
+    sender_role: "coach",
+    kind: "text",
+    body: "こんにちは",
+    sent_at: "2026-10-20T03:00:00Z",
+    read_at: null,
+  };
+  const THREAD = {
+    thread_id: THREAD_ID,
+    student_id: "33333333-3333-4333-8333-333333333333",
+    coach_id: "22222222-2222-4222-8222-222222222222",
+    opened_at: "2026-10-01T03:00:00Z",
+    last_message: MESSAGE,
+    unread_count: 0,
+  };
+
+  test("listMessageThreads はトークンを付けて GET /api/message-threads を呼び、返った順のまま返す", async () => {
+    const other = {
+      ...THREAD,
+      thread_id: "88888888-8888-4888-8888-888888888889",
+      last_message: null,
+      unread_count: 3,
+    };
+    const list = { threads: [THREAD, other] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listMessageThreads();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/message-threads");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("listMessages は GET /api/message-threads/{thread_id}/messages を呼び、404 は見つからない旨の文言にする", async () => {
+    const list = { thread_id: THREAD_ID, messages: [MESSAGE] };
+    const ok = setup(json(200, list));
+    expect(await ok.api.listMessages(THREAD_ID)).toEqual({ ok: true, data: list });
+    const request = ok.fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/message-threads/${THREAD_ID}/messages`);
+
+    const missing = setup(json(404, { code: "not_found", message: "not found" }));
+    expect(await missing.api.listMessages(THREAD_ID)).toEqual({
+      ok: false,
+      message: "対象が見つかりません（ID を確かめてください）。",
+    });
+  });
+
+  test("sendMessage は本文を POST /api/message-threads/{thread_id}/messages に送り、送ったメッセージを返す", async () => {
+    const { api, fetchMock } = setup(json(201, MESSAGE));
+    const result = await api.sendMessage(THREAD_ID, { body: "こんにちは" });
+    expect(result).toEqual({ ok: true, data: MESSAGE });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/message-threads/${THREAD_ID}/messages`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+    expect(await request.json()).toEqual({ body: "こんにちは" });
+  });
+
+  test("markMessageThreadRead は POST /api/message-threads/{thread_id}/read を呼び、既読にしたスレッドを返す", async () => {
+    const { api, fetchMock } = setup(json(200, THREAD));
+    const result = await api.markMessageThreadRead(THREAD_ID);
+    expect(result).toEqual({ ok: true, data: THREAD });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/message-threads/${THREAD_ID}/read`);
+  });
 });
+
