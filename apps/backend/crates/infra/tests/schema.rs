@@ -1485,12 +1485,12 @@ async fn a_student_and_a_coach_have_at_most_one_thread_with_the_right_roles(pool
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn messages_have_a_body_a_known_sender_and_are_read_after_sent(pool: PgPool) {
-    use domain::messaging::MessageSender;
-    use infra::messaging_values::message_sender_value;
+    use domain::messaging::MessageAuthor;
+    use infra::messaging_values::message_author_value;
 
-    let senders: Vec<&str> = MessageSender::ALL
+    let senders: Vec<&str> = MessageAuthor::ALL
         .into_iter()
-        .map(message_sender_value)
+        .map(message_author_value)
         .collect();
     assert_eq!(
         check_values(&pool, "messaging.messages", "messages_sender_role_check").await,
@@ -1564,6 +1564,211 @@ async fn messages_have_a_body_a_known_sender_and_are_read_after_sent(pool: PgPoo
         (code.as_str(), constraint.as_str()),
         (FOREIGN_KEY_VIOLATION, "messages_thread_id_fkey")
     );
+}
+
+/// スレッド `thread_id` に、種類 `kind` のメッセージの行を入れる（送信 10:00）。
+async fn post_message(
+    pool: &PgPool,
+    thread_id: &str,
+    sender_role: &str,
+    kind: &str,
+    body: Option<&str>,
+    video_id: Option<&str>,
+    review_id: Option<&str>,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO messaging.messages (thread_id, sender_role, kind, body, video_id, review_id, sent_at)
+         VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6::uuid, '2026-10-26T10:00:00Z')
+         RETURNING message_id::text",
+    )
+    .bind(thread_id)
+    .bind(sender_role)
+    .bind(kind)
+    .bind(body)
+    .bind(video_id)
+    .bind(review_id)
+    .fetch_one(pool)
+    .await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn messages_have_the_shape_and_the_sender_of_their_kind(pool: PgPool) {
+    use domain::messaging::MessageKind;
+    use infra::messaging_values::message_kind_value;
+
+    const VIDEO: &str = "00000000-0000-4000-8000-000000000001";
+    const OTHER_VIDEO: &str = "00000000-0000-4000-8000-000000000002";
+    const REVIEW: &str = "00000000-0000-4000-8000-000000000003";
+
+    let kinds: Vec<&str> = MessageKind::ALL
+        .into_iter()
+        .map(message_kind_value)
+        .collect();
+    assert_eq!(
+        check_values(&pool, "messaging.messages", "messages_kind_check").await,
+        kinds
+    );
+
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let thread_id = open_thread(&pool, &student_id, &coach_id).await.unwrap();
+    // 種類を書かない行（古い版のアプリ）は本文の種類
+    let old = send_message(&pool, &thread_id, "coach", "こんにちは", None)
+        .await
+        .unwrap();
+    let kind: String =
+        sqlx::query_scalar("SELECT kind FROM messaging.messages WHERE message_id = $1::uuid")
+            .bind(&old)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(kind, "text");
+    post_message(
+        &pool,
+        &thread_id,
+        "system",
+        "text",
+        Some("お知らせ"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    post_message(
+        &pool,
+        &thread_id,
+        "student",
+        "video_review_request",
+        None,
+        Some(VIDEO),
+        None,
+    )
+    .await
+    .unwrap();
+    post_message(
+        &pool,
+        &thread_id,
+        "coach",
+        "video_review_return",
+        None,
+        Some(VIDEO),
+        Some(REVIEW),
+    )
+    .await
+    .unwrap();
+    // 別の動画の依頼は入る
+    post_message(
+        &pool,
+        &thread_id,
+        "student",
+        "video_review_request",
+        None,
+        Some(OTHER_VIDEO),
+        None,
+    )
+    .await
+    .unwrap();
+
+    for (sender, kind, body, video, review, expected) in [
+        (
+            "student",
+            "stamp",
+            Some("x"),
+            None,
+            None,
+            (CHECK_VIOLATION, "messages_kind_check"),
+        ),
+        (
+            "student",
+            "text",
+            None,
+            None,
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "student",
+            "text",
+            Some("x"),
+            Some(VIDEO),
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "student",
+            "video_review_request",
+            Some("x"),
+            Some(VIDEO),
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "student",
+            "video_review_request",
+            None,
+            None,
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "coach",
+            "video_review_return",
+            None,
+            Some(VIDEO),
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "coach",
+            "video_review_request",
+            None,
+            Some(OTHER_VIDEO),
+            None,
+            (CHECK_VIOLATION, "messages_kind_sender"),
+        ),
+        (
+            "student",
+            "video_review_return",
+            None,
+            Some(OTHER_VIDEO),
+            Some(REVIEW),
+            (CHECK_VIOLATION, "messages_kind_sender"),
+        ),
+        (
+            "system",
+            "video_review_request",
+            None,
+            Some(OTHER_VIDEO),
+            None,
+            (CHECK_VIOLATION, "messages_kind_sender"),
+        ),
+        // 同じ動画の依頼・返却はスレッドに 1 通ずつ
+        (
+            "student",
+            "video_review_request",
+            None,
+            Some(VIDEO),
+            None,
+            (UNIQUE_VIOLATION, "messages_one_per_video_and_kind"),
+        ),
+        (
+            "coach",
+            "video_review_return",
+            None,
+            Some(VIDEO),
+            Some(REVIEW),
+            (UNIQUE_VIOLATION, "messages_one_per_video_and_kind"),
+        ),
+    ] {
+        let (code, constraint) =
+            violation(post_message(&pool, &thread_id, sender, kind, body, video, review).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            expected,
+            "{sender} {kind} {body:?} {video:?} {review:?}"
+        );
+    }
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

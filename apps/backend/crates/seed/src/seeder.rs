@@ -135,6 +135,7 @@ where
             MockVideoStorage,
             MockAiFeedbackGenerator,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         );
         let review = ReturnVideoReview::new(

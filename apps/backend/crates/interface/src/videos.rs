@@ -42,7 +42,7 @@ const NOTE_MAX_CHARS: usize = 1000;
 
 /// `/videos` のハンドラーが使うユースケース。
 pub struct VideosState<V, S, F, G, A, P, C> {
-    pub submit_video: SubmitVideo<V, S, F, A, C>,
+    pub submit_video: SubmitVideo<V, S, F, A, P, C>,
     pub get_video_review: GetVideoReview<V>,
     pub return_video_review: ReturnVideoReview<V, G, A, P, C>,
 }

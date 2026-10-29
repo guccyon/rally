@@ -187,6 +187,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

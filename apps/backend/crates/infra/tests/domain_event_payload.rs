@@ -308,7 +308,46 @@ fn video_review_returned_payload_has_exactly_the_required_attributes_of_the_asyn
     );
     assert_eq!(
         contexts("VideoReviewReturned", "x-subscribers"),
-        ["notification"]
+        ["notification", "messaging"]
+    );
+}
+
+fn video_review_requested() -> DomainEvent {
+    DomainEvent::VideoReviewRequested {
+        event_id: uuid_from(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+        occurred_at: oct26(),
+        student_id: AccountId::from_u128(1),
+        coach_id: AccountId::from_u128(2),
+        video_id: VideoId::from_u128(6),
+    }
+}
+
+#[test]
+fn video_review_requested_payload_has_exactly_the_required_attributes_of_the_asyncapi() {
+    let event = video_review_requested();
+    assert_eq!(event.name(), "VideoReviewRequested");
+    let body = assert_payload_matches_asyncapi(&event);
+    assert_eq!(body["event_id"], "01234567-89ab-4def-8123-456789abcdef");
+    assert_eq!(body["occurred_at"], "2026-10-26T00:00:00Z");
+    assert_eq!(
+        body["student_id"],
+        account_id_uuid::format(AccountId::from_u128(1))
+    );
+    assert_eq!(
+        body["coach_id"],
+        account_id_uuid::format(AccountId::from_u128(2))
+    );
+    assert_eq!(
+        body["video_id"],
+        video_id_uuid::format(VideoId::from_u128(6))
+    );
+    assert_eq!(
+        contexts("VideoReviewRequested", "x-publisher"),
+        ["async-lesson"]
+    );
+    assert_eq!(
+        contexts("VideoReviewRequested", "x-subscribers"),
+        ["messaging"]
     );
 }
 
@@ -373,6 +412,7 @@ fn logging_publisher_writes_the_message_name_and_the_payload_on_one_line() {
         booking_cancelled(true),
         subscription_started(),
         lesson_completed(),
+        video_review_requested(),
         video_review_returned(),
         message_sent(MessageSender::Coach),
     ] {

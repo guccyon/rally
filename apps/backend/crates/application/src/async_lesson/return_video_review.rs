@@ -214,6 +214,7 @@ mod tests {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            RecordingDomainEventPublisher::default(),
             clock.clone(),
         );
         let get = GetVideoReview::new(videos.clone());

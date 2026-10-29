@@ -120,6 +120,10 @@ where
             .find(|message| message.id() == message_id)
             .cloned()
             .expect("送ったメッセージは保存したスレッドにある");
+        let sender_role = message
+            .author()
+            .participant()
+            .expect("送れるのは当事者だけ");
 
         self.events
             .publish(DomainEvent::MessageSent {
@@ -129,7 +133,7 @@ where
                 coach_id: thread.coach_id(),
                 thread_id: thread.id(),
                 message_id,
-                sender_role: message.sender(),
+                sender_role,
             })
             .await;
         self.analytics
@@ -138,7 +142,7 @@ where
                 coach_id: thread.coach_id(),
                 thread_id: thread.id(),
                 message_id,
-                sender_role: message.sender(),
+                sender_role,
                 occurred_at: now,
             })
             .await;
@@ -169,7 +173,7 @@ mod tests {
             YearMonth,
         },
         identity::Sport,
-        messaging::MessageSender,
+        messaging::{MessageAuthor, MessageSender},
     };
 
     use super::*;
@@ -245,7 +249,10 @@ mod tests {
             .execute(command(MONTHLY_STUDENT, MONTHLY_THREAD))
             .await
             .unwrap();
-        assert_eq!(sent.message.sender(), MessageSender::Student);
+        assert_eq!(
+            sent.message.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
         assert_eq!(sent.message.sent_at(), now());
         assert_eq!(sent.message.read_at(), None);
         assert_eq!(sent.thread.messages(), std::slice::from_ref(&sent.message));
@@ -312,7 +319,10 @@ mod tests {
             .execute(command(COACH, TRIAL_THREAD))
             .await
             .unwrap();
-        assert_eq!(sent.message.sender(), MessageSender::Coach);
+        assert_eq!(
+            sent.message.author(),
+            MessageAuthor::Participant(MessageSender::Coach)
+        );
         assert!(matches!(
             use_case.analytics().events()[0],
             AnalyticsEvent::MessageSent {

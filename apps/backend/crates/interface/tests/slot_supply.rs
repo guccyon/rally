@@ -200,6 +200,7 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

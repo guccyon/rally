@@ -1,16 +1,31 @@
-use std::error::Error;
+use std::{error::Error, time::SystemTime};
+
+use domain::{
+    DomainError,
+    identity::AccountId,
+    messaging::{MessageId, MessageThread},
+};
 
 use super::{
     MessageThreadRepository, OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
+    UpdateMessageThreadError,
 };
 use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 
-/// messaging による境界間イベントの購読。予約の確定（`BookingConfirmed`）で、その生徒とコーチのスレッドを開く
-/// （[`OpenMessageThread`]。開いた時刻は `occurred_at`）。
+/// messaging による境界間イベントの購読。
 ///
-/// Gen1 は担当コーチを確定する matching がないので、確定した予約のコーチを担当コーチとみなす（予約をキャンセル
-/// してもスレッドは閉じない）。同じ生徒とコーチのスレッドは 1 つなので、同じイベントが 2 回届いても結果は
-/// 変わらない。ほかのイベントは何もしない。
+/// - 予約の確定（`BookingConfirmed`）で、その生徒とコーチのスレッドを開く（[`OpenMessageThread`]。開いた時刻は
+///   `occurred_at`）。Gen1 は担当コーチを確定する matching がないので、確定した予約のコーチを担当コーチとみなす
+///   （予約をキャンセルしてもスレッドは閉じない）
+/// - 添削依頼（async-lesson の `VideoReviewRequested`）と添削の返却（`VideoReviewReturned`）で、その生徒とコーチの
+///   スレッドに（なければ `occurred_at` に開いて）添削依頼・添削の返却のメッセージを足す（送信時刻は `occurred_at`）。
+///   チャットは会話でありレッスンのログでもある（docs/adr/0009 の答え合わせ）。メッセージは動画・添削を ID で指すだけで、
+///   添削の有無・回数・状態は async-lesson が持つ。チャットの送り放題の判定（`ChatGate`）は通さず、境界間イベント
+///   `MessageSent` と行動イベント `message.sent` も出さない（当事者が送ったのではなく、プッシュ通知は
+///   notification が async-lesson のイベントから送る）
+///
+/// 同じ生徒とコーチのスレッドは 1 つで、同じ動画の添削依頼・返却はスレッドに 1 通ずつなので、同じイベントが 2 回
+/// 届いても結果は変わらない。ほかのイベントは何もしない。
 pub struct MessageThreadSubscriber<T> {
     open: OpenMessageThread<T>,
 }
@@ -28,6 +43,51 @@ where
     pub fn threads(&self) -> &T {
         self.open.threads()
     }
+
+    /// 生徒 `student_id` とコーチ `coach_id` のスレッドを（なければ `at` に開いて）返す。
+    async fn open(
+        &self,
+        student_id: AccountId,
+        coach_id: AccountId,
+        at: SystemTime,
+    ) -> Result<MessageThread, Box<dyn Error + Send + Sync>> {
+        self.open
+            .execute(OpenMessageThreadCommand {
+                student_id,
+                coach_id,
+                at,
+            })
+            .await
+            .map_err(|error| match error {
+                OpenMessageThreadError::Invalid(error) => error.into(),
+                OpenMessageThreadError::Unavailable(error) => error.into(),
+            })
+    }
+
+    /// 生徒 `student_id` とコーチ `coach_id` のスレッドを（なければ `at` に開いて）、`post` でメッセージを足して保存する。
+    /// `post` は新しいメッセージの ID を受け取る。
+    async fn post<F>(
+        &self,
+        student_id: AccountId,
+        coach_id: AccountId,
+        at: SystemTime,
+        post: F,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>
+    where
+        F: FnOnce(&mut MessageThread, MessageId) -> Result<(), DomainError> + Send,
+    {
+        let thread = self.open(student_id, coach_id, at).await?;
+        let message_id = self.threads().next_message_id();
+        self.threads()
+            .update(thread.id(), |thread| post(thread, message_id))
+            .await
+            .map(|_| ())
+            .map_err(|error| match error {
+                UpdateMessageThreadError::NotFound => "開いたスレッドがない".into(),
+                UpdateMessageThreadError::Rejected(error) => error.into(),
+                UpdateMessageThreadError::Unavailable(error) => error.into(),
+            })
+    }
 }
 
 impl<T> DomainEventSubscriber for MessageThreadSubscriber<T>
@@ -41,25 +101,42 @@ where
                 student_id,
                 coach_id,
                 ..
+            } => self
+                .open(student_id, coach_id, occurred_at)
+                .await
+                .map(|_| ()),
+            DomainEvent::VideoReviewRequested {
+                occurred_at,
+                student_id,
+                coach_id,
+                video_id,
+                ..
             } => {
-                let result = self
-                    .open
-                    .execute(OpenMessageThreadCommand {
-                        student_id,
-                        coach_id,
-                        at: occurred_at,
-                    })
-                    .await;
-                match result {
-                    Ok(_) => Ok(()),
-                    Err(OpenMessageThreadError::Invalid(error)) => Err(error.into()),
-                    Err(OpenMessageThreadError::Unavailable(error)) => Err(error.into()),
-                }
+                self.post(student_id, coach_id, occurred_at, |thread, message_id| {
+                    thread
+                        .post_video_review_request(message_id, video_id, occurred_at)
+                        .map(|_| ())
+                })
+                .await
+            }
+            DomainEvent::VideoReviewReturned {
+                occurred_at,
+                student_id,
+                coach_id,
+                video_id,
+                review_id,
+                ..
+            } => {
+                self.post(student_id, coach_id, occurred_at, |thread, message_id| {
+                    thread
+                        .post_video_review_return(message_id, video_id, review_id, occurred_at)
+                        .map(|_| ())
+                })
+                .await
             }
             DomainEvent::BookingCancelled { .. }
             | DomainEvent::LessonCompleted { .. }
             | DomainEvent::SubscriptionStarted { .. }
-            | DomainEvent::VideoReviewReturned { .. }
             | DomainEvent::MessageSent { .. } => Ok(()),
         }
     }
@@ -69,7 +146,11 @@ where
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use domain::{identity::AccountId, scheduling::BookingId};
+    use domain::{
+        async_lesson::{VideoId, VideoReviewId},
+        messaging::{MessageAuthor, MessageContent, MessageSender},
+        scheduling::BookingId,
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -126,6 +207,137 @@ mod tests {
             })
             .await
             .unwrap();
+        assert!(subscriber.threads().all().is_empty());
+    }
+
+    const VIDEO: VideoId = VideoId::from_u128(40);
+    const REVIEW: VideoReviewId = VideoReviewId::from_u128(50);
+
+    fn at(hour: u64) -> SystemTime {
+        oct26() + Duration::from_secs(hour * 3600)
+    }
+
+    fn requested(event_id: Uuid, hour: u64) -> DomainEvent {
+        DomainEvent::VideoReviewRequested {
+            event_id,
+            occurred_at: at(hour),
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VIDEO,
+        }
+    }
+
+    fn returned(event_id: Uuid, hour: u64) -> DomainEvent {
+        DomainEvent::VideoReviewReturned {
+            event_id,
+            occurred_at: at(hour),
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VIDEO,
+            review_id: REVIEW,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_video_review_request_opens_the_thread_if_there_is_none_and_is_posted_once() {
+        let subscriber = MessageThreadSubscriber::new(InMemoryMessageThreadRepository::default());
+        let event = requested(Uuid::new_v4(), 1);
+        subscriber.handle(&event).await.unwrap();
+        subscriber.handle(&event).await.unwrap();
+
+        let threads = subscriber.threads().all();
+        assert_eq!(threads.len(), 1);
+        let thread = &threads[0];
+        assert_eq!(
+            (thread.student_id(), thread.coach_id(), thread.opened_at()),
+            (STUDENT, COACH, at(1)),
+            "スレッドがなければ依頼の時刻に開く"
+        );
+        assert_eq!(
+            thread.messages().len(),
+            1,
+            "同じイベントが 2 回届いても 1 通"
+        );
+        let message = &thread.messages()[0];
+        assert_eq!(
+            message.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
+        assert_eq!(
+            message.content(),
+            &MessageContent::VideoReviewRequest { video_id: VIDEO }
+        );
+        assert_eq!(message.sent_at(), at(1));
+        assert_eq!(thread.unread_count_for(COACH), 1);
+    }
+
+    #[tokio::test]
+    async fn the_request_and_the_return_join_the_conversation_of_the_existing_thread() {
+        let subscriber = MessageThreadSubscriber::new(InMemoryMessageThreadRepository::default());
+        subscriber.handle(&confirmed(1)).await.unwrap();
+        subscriber
+            .handle(&requested(Uuid::new_v4(), 1))
+            .await
+            .unwrap();
+        let event = returned(Uuid::new_v4(), 30);
+        subscriber.handle(&event).await.unwrap();
+        subscriber.handle(&event).await.unwrap();
+
+        let threads = subscriber.threads().all();
+        assert_eq!(threads.len(), 1, "予約の確定で開いたスレッドに足す");
+        assert_eq!(threads[0].opened_at(), oct26());
+        let messages: Vec<_> = threads[0]
+            .messages()
+            .iter()
+            .map(|m| (m.author(), m.content().clone(), m.sent_at()))
+            .collect();
+        assert_eq!(
+            messages,
+            [
+                (
+                    MessageAuthor::Participant(MessageSender::Student),
+                    MessageContent::VideoReviewRequest { video_id: VIDEO },
+                    at(1)
+                ),
+                (
+                    MessageAuthor::Participant(MessageSender::Coach),
+                    MessageContent::VideoReviewReturn {
+                        video_id: VIDEO,
+                        review_id: REVIEW
+                    },
+                    at(30)
+                ),
+            ]
+        );
+        assert_eq!(threads[0].unread_count_for(STUDENT), 1);
+    }
+
+    #[tokio::test]
+    async fn a_return_without_a_thread_opens_one() {
+        let subscriber = MessageThreadSubscriber::new(InMemoryMessageThreadRepository::default());
+        subscriber
+            .handle(&returned(Uuid::new_v4(), 2))
+            .await
+            .unwrap();
+        let threads = subscriber.threads().all();
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].opened_at(), at(2));
+        assert_eq!(threads[0].messages().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_request_with_oneself_is_an_error_and_saves_nothing() {
+        let subscriber = MessageThreadSubscriber::new(InMemoryMessageThreadRepository::default());
+        let result = subscriber
+            .handle(&DomainEvent::VideoReviewRequested {
+                event_id: Uuid::new_v4(),
+                occurred_at: at(1),
+                student_id: STUDENT,
+                coach_id: STUDENT,
+                video_id: VIDEO,
+            })
+            .await;
+        assert!(result.is_err());
         assert!(subscriber.threads().all().is_empty());
     }
 }

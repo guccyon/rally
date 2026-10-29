@@ -5,6 +5,7 @@ use domain::{
     DomainError,
     entitlement::ContractType,
     identity::Role,
+    messaging::MessageContent,
     scheduling::{BookingStatus, SlotStatus},
 };
 
@@ -117,11 +118,24 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::MessageReadBeforeSent => "メッセージの既読が送信より前".to_string(),
         DomainError::EmptyMessageBody => "メッセージの本文が空".to_string(),
         DomainError::MessageBodyTooLong { max } => format!("メッセージの本文は {max} 文字まで"),
+        DomainError::MessageAuthorMismatchesKind => {
+            "メッセージの送り手が種類に合わない".to_string()
+        }
         DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
         DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
         DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
         DomainError::NotTheLessonStudent => "完了したレッスンの生徒でない".to_string(),
         DomainError::LessonAlreadyReviewed => "このレッスンは評価済み".to_string(),
+    }
+}
+
+/// メッセージの本文（student-app・admin-web の `Message.body`）。本文の種類は本文そのもの、添削依頼・添削の返却は
+/// 短い説明（種類を契約に出すまでの当面の形）。
+pub(crate) fn message_content_text(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(body) => body.as_str().to_string(),
+        MessageContent::VideoReviewRequest { .. } => "動画の添削を依頼しました".to_string(),
+        MessageContent::VideoReviewReturn { .. } => "動画の添削を返しました".to_string(),
     }
 }
 
@@ -369,6 +383,10 @@ mod tests {
             "メッセージの本文は 2000 文字まで"
         );
         assert_eq!(
+            domain_error(&DomainError::MessageAuthorMismatchesKind),
+            "メッセージの送り手が種類に合わない"
+        );
+        assert_eq!(
             domain_error(&DomainError::RatingOutOfRange { min: 1, max: 5 }),
             "評価の点は 1〜5 の整数"
         );
@@ -387,6 +405,32 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonAlreadyReviewed),
             "このレッスンは評価済み"
+        );
+    }
+    #[test]
+    fn describes_each_message_content_as_a_body() {
+        use domain::{
+            async_lesson::{VideoId, VideoReviewId},
+            messaging::MessageBody,
+        };
+        assert_eq!(
+            message_content_text(&MessageContent::Text(
+                MessageBody::new("こんにちは").unwrap()
+            )),
+            "こんにちは"
+        );
+        assert_eq!(
+            message_content_text(&MessageContent::VideoReviewRequest {
+                video_id: VideoId::from_u128(1)
+            }),
+            "動画の添削を依頼しました"
+        );
+        assert_eq!(
+            message_content_text(&MessageContent::VideoReviewReturn {
+                video_id: VideoId::from_u128(1),
+                review_id: VideoReviewId::from_u128(2)
+            }),
+            "動画の添削を返しました"
         );
     }
 }

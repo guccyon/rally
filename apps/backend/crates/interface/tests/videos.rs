@@ -14,6 +14,7 @@ use application::{
     async_lesson::{
         GetVideoReview, ReturnVideoReview, SubmitVideo, video_id_uuid, video_review_id_uuid,
     },
+    domain_event::DomainEvent,
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
         AccessToken, AccountRepository, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer,
@@ -100,6 +101,7 @@ struct App {
     router: Router,
     clock: ManualClock,
     analytics: RecordingAnalyticsSink,
+    events: RecordingDomainEventPublisher,
 }
 
 /// 生徒 1 がコーチ 9 に送ったゴルフの動画 77 と、生徒 1 がコーチ 8 に送ったテニスの動画 78 を置く。アカウントは
@@ -204,6 +206,7 @@ fn app() -> App {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         ),
         GetVideoReview::new(videos.clone()),
@@ -272,6 +275,7 @@ fn app() -> App {
         router,
         clock,
         analytics,
+        events,
     }
 }
 
@@ -437,6 +441,20 @@ async fn a_submitted_video_is_unreturned_until_the_coach_returns_its_review() {
             sport: Sport::Tennis,
             occurred_at: submitted_at(),
         }]
+    );
+    // 境界間イベント（messaging はこれでスレッドに添削依頼のメッセージを足す）
+    let published = app.events.events();
+    assert_eq!(published.len(), 1, "{published:?}");
+    assert!(
+        matches!(
+            published[0],
+            DomainEvent::VideoReviewRequested { occurred_at, student_id, coach_id, video_id, .. }
+                if occurred_at == submitted_at()
+                    && student_id == account_id(STUDENT)
+                    && coach_id == account_id(COACH)
+                    && video_id == video
+        ),
+        "{published:?}"
     );
 
     // 返却前の取得は未返却（生徒からもコーチからも）

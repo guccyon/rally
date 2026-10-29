@@ -216,6 +216,7 @@ fn app_with_entitlements(
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

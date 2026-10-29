@@ -62,8 +62,19 @@ pub enum DomainEvent {
         student_id: AccountId,
         subscription_id: SubscriptionId,
     },
-    /// `VideoReviewReturned`（async-lesson が発行し、notification が購読する）。
-    /// コーチが動画の添削を返却した。notification は動画を送った生徒に知らせる
+    /// `VideoReviewRequested`（async-lesson が発行し、messaging が購読する）。
+    /// 生徒が動画を添削依頼として送った。messaging はその生徒とコーチのスレッドに添削依頼のメッセージを足す
+    VideoReviewRequested {
+        /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
+        event_id: Uuid,
+        occurred_at: SystemTime,
+        student_id: AccountId,
+        coach_id: AccountId,
+        video_id: VideoId,
+    },
+    /// `VideoReviewReturned`（async-lesson が発行し、notification・messaging が購読する）。
+    /// コーチが動画の添削を返却した。notification は動画を送った生徒に知らせ、messaging はその生徒とコーチの
+    /// スレッドに添削の返却のメッセージを足す
     VideoReviewReturned {
         /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
         event_id: Uuid,
@@ -96,6 +107,7 @@ impl DomainEvent {
             DomainEvent::BookingCancelled { .. } => "BookingCancelled",
             DomainEvent::LessonCompleted { .. } => "LessonCompleted",
             DomainEvent::SubscriptionStarted { .. } => "SubscriptionStarted",
+            DomainEvent::VideoReviewRequested { .. } => "VideoReviewRequested",
             DomainEvent::VideoReviewReturned { .. } => "VideoReviewReturned",
             DomainEvent::MessageSent { .. } => "MessageSent",
         }

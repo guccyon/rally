@@ -213,6 +213,7 @@ fn app() -> App {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         ),
         GetVideoReview::new(videos.clone()),

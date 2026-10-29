@@ -155,6 +155,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

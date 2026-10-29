@@ -63,6 +63,8 @@ events:
     actor: system
     required: [student_id, coach_id, booking_id, session_id, duration_sec, packet_loss_rate, jitter_ms, round_trip_ms, disconnect_count, occurred_at]
     kpi: "通話品質スコア"
+  # 動画の送付は添削依頼でもある。チャットに添削依頼を流すのは境界間イベント VideoReviewRequested（specs/contracts/events/asyncapi.yaml）で、
+  # 行動イベントはこの video.submitted の 1 つのまま（添削依頼の行動イベントは足さない。同じ出来事を 2 回数えないため）
   - name: video.submitted
     ja: "動画の送付"
     context: async-lesson

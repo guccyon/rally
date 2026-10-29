@@ -77,6 +77,7 @@ where
             }
             DomainEvent::LessonCompleted { .. }
             | DomainEvent::SubscriptionStarted { .. }
+            | DomainEvent::VideoReviewRequested { .. }
             | DomainEvent::VideoReviewReturned { .. }
             | DomainEvent::MessageSent { .. } => Ok(()),
         }

@@ -111,7 +111,7 @@ pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
     end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
-    submit_video: SubmitVideo<W, U, Y, A, C>,
+    submit_video: SubmitVideo<W, U, Y, A, P, C>,
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     list_coach_videos: ListCoachVideos<W, F>,

@@ -49,13 +49,26 @@ channels:
     messages:
       SubscriptionStarted:
         $ref: '#/components/messages/SubscriptionStarted'
+  VideoReviewRequested:
+    address: VideoReviewRequested
+    description: |
+      生徒が動画を添削依頼として送った（動画の送付）。messaging はこれを購読し、その生徒とコーチのチャットのスレッドに
+      （なければ開いて）添削依頼のメッセージを足す（チャットは会話でありレッスンのログでもある。docs/adr/0009 の答え合わせ）。
+      同じ動画の添削依頼はスレッドに 1 通。添削の有無・回数・状態は async-lesson だけが持ち、ここには載せない。
+      送付の計測は行動イベント video.submitted が担う。
+    x-publisher: [async-lesson]
+    x-subscribers: [messaging]
+    messages:
+      VideoReviewRequested:
+        $ref: '#/components/messages/VideoReviewRequested'
   VideoReviewReturned:
     address: VideoReviewReturned
     description: |
       コーチが動画の添削を返却した。notification はこれを購読し、動画を送った生徒にプッシュ通知を送る。
+      messaging はこれを購読し、その生徒とコーチのスレッドに（なければ開いて）添削の返却のメッセージを足す（同じ動画の返却は 1 通）。
       返却のリードタイムの計測は行動イベント video_review.returned が担い、ここには載せない。
     x-publisher: [async-lesson]
-    x-subscribers: [notification]
+    x-subscribers: [notification, messaging]
     messages:
       VideoReviewReturned:
         $ref: '#/components/messages/VideoReviewReturned'
@@ -93,6 +106,11 @@ components:
       title: 月額契約の開始
       payload:
         $ref: '#/components/schemas/SubscriptionStartedPayload'
+    VideoReviewRequested:
+      name: VideoReviewRequested
+      title: 添削依頼
+      payload:
+        $ref: '#/components/schemas/VideoReviewRequestedPayload'
     VideoReviewReturned:
       name: VideoReviewReturned
       title: 添削の返却
@@ -154,6 +172,15 @@ components:
         occurred_at: { $ref: '#/components/schemas/OccurredAt' }
         student_id: { type: string }
         subscription_id: { type: string }
+    VideoReviewRequestedPayload:
+      type: object
+      required: [event_id, occurred_at, student_id, coach_id, video_id]
+      properties:
+        event_id: { $ref: '#/components/schemas/EventId' }
+        occurred_at: { $ref: '#/components/schemas/OccurredAt' }
+        student_id: { type: string }
+        coach_id: { type: string }
+        video_id: { type: string }
     VideoReviewReturnedPayload:
       type: object
       required: [event_id, occurred_at, student_id, coach_id, video_id, review_id]
