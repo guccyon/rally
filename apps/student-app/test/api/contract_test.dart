@@ -63,6 +63,10 @@ void main() {
       enumOf('MessageSenderRole'),
       MessageSenderRole.values.map((e) => e.wire).toList(),
     ),
+    'MessageKind': (
+      enumOf('MessageKind'),
+      MessageKind.values.map((e) => e.wire).toList(),
+    ),
     'ErrorCode': (
       enumOf('ErrorCode'),
       ErrorCode.values
@@ -222,6 +226,29 @@ void main() {
               as YamlMap);
       expect(refOf(body), '#/components/schemas/$schema');
     }
+  });
+
+  test('Message の項目が契約と一致し、種類ごとの中身は任意の項目である（listMessages・sendMessage）', () {
+    // Message.tryFromJson が読む項目
+    expect(propertiesOf('Message'), [
+      'message_id',
+      'thread_id',
+      'sender_id',
+      'sender_role',
+      'kind',
+      'body',
+      'video_id',
+      'review_id',
+      'sent_at',
+      'read_at',
+    ]);
+    expect(requiredOf('Message'), containsAll(['kind', 'body']));
+    expect(requiredOf('Message'), isNot(contains('video_id')));
+    expect(requiredOf('Message'), isNot(contains('review_id')));
+    final kind =
+        ((schemas['Message'] as YamlMap)['properties'] as YamlMap)['kind']
+            as YamlMap;
+    expect(refOf(kind), '#/components/schemas/MessageKind');
   });
 
   test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {

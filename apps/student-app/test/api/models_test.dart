@@ -26,10 +26,82 @@ void main() {
     'thread_id': 't1',
     'sender_id': 'c1',
     'sender_role': 'coach',
+    'kind': 'text',
     'body': 'こんにちは',
     'sent_at': '2026-10-26T03:00:00Z',
     'read_at': null,
   };
+
+  group('Message の種類', () {
+    test('本文は動画・添削を指さない', () {
+      final parsed = Message.fromJson(message);
+      expect(parsed.kind, MessageKind.text);
+      expect(parsed.body, 'こんにちは');
+      expect(parsed.videoId, isNull);
+      expect(parsed.reviewId, isNull);
+    });
+
+    test('添削依頼は動画の ID、添削の返却は動画の ID と添削の ID を持つ', () {
+      final request = Message.fromJson({
+        ...message,
+        'sender_id': 's1',
+        'sender_role': 'student',
+        'kind': 'video_review_request',
+        'body': '動画の添削を依頼しました',
+        'video_id': 'v1',
+      });
+      expect(request.kind, MessageKind.videoReviewRequest);
+      expect(request.senderRole, MessageSenderRole.student);
+      expect(request.videoId, 'v1');
+      expect(request.reviewId, isNull);
+
+      final returned = Message.fromJson({
+        ...message,
+        'kind': 'video_review_returned',
+        'body': '動画の添削を返しました',
+        'video_id': 'v1',
+        'review_id': 'r1',
+      });
+      expect(returned.kind, MessageKind.videoReviewReturned);
+      expect(returned.videoId, 'v1');
+      expect(returned.reviewId, 'r1');
+    });
+
+    test('システムが流したメッセージを読む', () {
+      final parsed = Message.fromJson({
+        ...message,
+        'sender_id': '00000000-0000-0000-0000-000000000000',
+        'sender_role': 'system',
+        'body': '年末年始はお休みです',
+      });
+      expect(parsed.senderRole, MessageSenderRole.system);
+    });
+
+    final unknown = {...message, 'message_id': 'm9', 'kind': 'sticker'};
+
+    test('知らない種類のメッセージは一覧で読み飛ばす', () {
+      final list = MessageList.fromJson({
+        'thread_id': 't1',
+        'messages': [message, unknown],
+      });
+      expect(list.messages.map((m) => m.messageId), ['m1']);
+      expect(Message.tryFromJson(unknown), isNull);
+      expect(() => Message.fromJson(unknown), throwsFormatException);
+    });
+
+    test('最後のメッセージが知らない種類なら、ないものとして扱う', () {
+      final thread = MessageThread.fromJson({
+        'thread_id': 't1',
+        'student_id': 's1',
+        'coach_id': 'c1',
+        'opened_at': '2026-10-26T02:00:00Z',
+        'last_message': unknown,
+        'unread_count': 1,
+      });
+      expect(thread.lastMessage, isNull);
+      expect(thread.unreadCount, 1);
+    });
+  });
 
   test('MessageThreadList.fromJson のスレッドは書き換えられない', () {
     final list = MessageThreadList.fromJson({

@@ -409,6 +409,9 @@ export interface paths {
         /**
          * メッセージの一覧
          * @description スレッドのメッセージを送った順に返す（読むだけで既読にはしない。既読は `markMessageThreadRead`）。
+         *     メッセージには種類（`kind`）があり、当事者の本文のほかに、生徒の動画の送付（添削依頼）とコーチの添削の返却が
+         *     送り手つきで並ぶ（async-lesson の境界間イベントから messaging が足す）。種類は後方互換に増えるので、
+         *     クライアントは知らない種類のメッセージを読み飛ばしてよい。
          *     呼べるのはスレッドの当事者（生徒・担当コーチ）だけで、それ以外のアカウントと UUID でない ID には 404
          *     （スレッドがあることも知らせない）。
          */
@@ -420,7 +423,7 @@ export interface paths {
          *     生徒が送れるのは、チャットが送り放題の受講権（月額）を持つときだけで、送り放題なので送信の回数は数えない
          *     （受講権を消費しない）。受講権のない生徒（月額契約の前）は 403 `chat_not_entitled`。コーチの送信は生徒の
          *     契約に左右されない。当事者でないアカウントと UUID でない ID には 404。`body` が空（空白だけ）か長すぎれば 422。
-         *     送ると行動イベント `message.sent` を発火する。通知（プッシュ）と添付ファイルは扱わない。
+         *     送れるのは本文だけで、応答の `kind` は `text`。送ると行動イベント `message.sent` を発火する。通知（プッシュ）と添付ファイルは扱わない。
          */
         post: operations["sendMessage"];
         delete?: never;
@@ -762,10 +765,20 @@ export interface components {
             videos: components["schemas"]["CoachVideo"][];
         };
         /**
-         * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った
+         * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った / system: システムが流した（当事者のどちらでもない。お知らせなど）
          * @enum {string}
          */
-        MessageSenderRole: "student" | "coach";
+        MessageSenderRole: "student" | "coach" | "system";
+        /**
+         * @description メッセージの種類。種類ごとに `Message` の中身の項目が決まる。
+         *     - text: 当事者どうしの本文（`body` が本文）
+         *     - video_review_request: 生徒が動画を添削依頼として送った（送り手は student。`video_id`）
+         *     - video_review_returned: コーチが動画の添削を返した（送り手は coach。`video_id`・`review_id`）
+         *
+         *     種類は後方互換に増える（スタンプなど）。クライアントは知らない種類のメッセージを読み飛ばしてよい（表示しない）。
+         * @enum {string}
+         */
+        MessageKind: "text" | "video_review_request" | "video_review_returned";
         /** @description glossary の message（チャットのスレッドの中の 1 通。送信時刻と既読を持つ）。student-app の同名のスキーマと同じ形 */
         Message: {
             /** Format: uuid */
@@ -774,11 +787,27 @@ export interface components {
             thread_id: string;
             /**
              * Format: uuid
-             * @description 送ったアカウント（スレッドの生徒か担当コーチ）
+             * @description 送ったアカウント（スレッドの生徒か担当コーチ）。`sender_role` が `system` のときはどのアカウントでもなく、
+             *     nil UUID（`00000000-0000-0000-0000-000000000000`）
              */
             sender_id: string;
             sender_role: components["schemas"]["MessageSenderRole"];
+            kind: components["schemas"]["MessageKind"];
+            /**
+             * @description `kind` が `text` なら本文。それ以外の種類では、種類を知らない版のクライアントがそのまま表示できる短い説明
+             *     （例: 「動画の添削を依頼しました」）。種類の中身は `video_id`・`review_id` が持つので、知っている種類はこの文言に頼らない
+             */
             body: string;
+            /**
+             * Format: uuid
+             * @description 添削を依頼した・返した動画（`getVideoReview` の `video_id`）。`kind` が `video_review_request`・`video_review_returned` のときだけある
+             */
+            video_id?: string;
+            /**
+             * Format: uuid
+             * @description 返した添削（`VideoReview.review_id`）。`kind` が `video_review_returned` のときだけある
+             */
+            review_id?: string;
             /** Format: date-time */
             sent_at: string;
             /**
@@ -800,7 +829,7 @@ export interface components {
              * @description スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
              */
             opened_at: string;
-            /** @description 最後のメッセージ。まだなければ null */
+            /** @description 最後のメッセージ。まだなければ null。知らない種類（`kind`）のメッセージなら、クライアントは null と同じに扱ってよい */
             last_message?: components["schemas"]["Message"] | null;
             /** @description 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数 */
             unread_count: number;

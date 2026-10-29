@@ -124,16 +124,37 @@ enum LessonType {
       _fromWire(values, value, (e) => e.wire);
 }
 
-/// `MessageSenderRole`（スレッドのどちらの当事者が送ったか）
+/// `MessageSenderRole`（スレッドのどちらの当事者が送ったか。[system] はシステムが流したもので、当事者のどちらでもない）
 enum MessageSenderRole {
   student('student'),
-  coach('coach');
+  coach('coach'),
+  system('system');
 
   const MessageSenderRole(this.wire);
   final String wire;
 
   static MessageSenderRole fromWire(String value) =>
       _fromWire(values, value, (e) => e.wire);
+}
+
+/// `MessageKind`（メッセージの種類）。種類は契約で後方互換に増えるので、知らない値は [fromWireOrNull] が null を返し、
+/// そのメッセージは読み飛ばす（[Message.tryFromJson]）。
+enum MessageKind {
+  /// 当事者どうしの本文
+  text('text'),
+
+  /// 生徒が動画を添削依頼として送った（[Message.videoId]）
+  videoReviewRequest('video_review_request'),
+
+  /// コーチが動画の添削を返した（[Message.videoId]・[Message.reviewId]）
+  videoReviewReturned('video_review_returned');
+
+  const MessageKind(this.wire);
+  final String wire;
+
+  /// 契約にない（このアプリの版が知らない）値なら null。
+  static MessageKind? fromWireOrNull(String value) =>
+      values.where((e) => e.wire == value).firstOrNull;
 }
 
 /// 通知の種類。`NotificationSettings` と `UpdateNotificationSettingsRequest` の、受け取るかを持つ項目で、[wire] は項目名。
@@ -895,7 +916,7 @@ class CoachReviewList {
       );
 }
 
-/// `Message`（glossary の message。送信時刻と既読を持つ）
+/// `Message`（glossary の message。種類・送信時刻と既読を持つ）
 class Message {
   const Message({
     required this.messageId,
@@ -904,30 +925,56 @@ class Message {
     required this.senderRole,
     required this.body,
     required this.sentAt,
+    this.kind = MessageKind.text,
+    this.videoId,
+    this.reviewId,
     this.readAt,
   });
 
   final String messageId;
   final String threadId;
 
-  /// 送ったアカウント（スレッドの生徒か担当コーチ）
+  /// 送ったアカウント（スレッドの生徒か担当コーチ）。システムが流したものは nil UUID
   final String senderId;
   final MessageSenderRole senderRole;
+
+  /// 種類。中身は種類ごとに [body]（本文）か [videoId]・[reviewId]
+  final MessageKind kind;
+
+  /// [MessageKind.text] なら本文。それ以外の種類では、種類を知らない版向けの短い説明
   final String body;
+
+  /// 添削を依頼した・返した動画。[MessageKind.videoReviewRequest]・[MessageKind.videoReviewReturned] のときだけある
+  final String? videoId;
+
+  /// 返した添削。[MessageKind.videoReviewReturned] のときだけある
+  final String? reviewId;
   final DateTime sentAt;
 
   /// 受け取った側が読んだ時刻（既読）。読むまでは null
   final DateTime? readAt;
 
-  factory Message.fromJson(Map<String, dynamic> json) => Message(
-    messageId: json['message_id'] as String,
-    threadId: json['thread_id'] as String,
-    senderId: json['sender_id'] as String,
-    senderRole: MessageSenderRole.fromWire(json['sender_role'] as String),
-    body: json['body'] as String,
-    sentAt: _dateTime(json['sent_at']),
-    readAt: _dateTimeOrNull(json['read_at']),
-  );
+  /// 知らない種類（`kind`）なら [FormatException]。一覧では [tryFromJson] で読み飛ばす。
+  factory Message.fromJson(Map<String, dynamic> json) =>
+      tryFromJson(json) ?? (throw FormatException('契約にない値です: ${json['kind']}'));
+
+  /// 知らない種類（`kind`）のメッセージなら null（契約の注記どおり読み飛ばす）。
+  static Message? tryFromJson(Map<String, dynamic> json) {
+    final kind = MessageKind.fromWireOrNull(json['kind'] as String);
+    if (kind == null) return null;
+    return Message(
+      messageId: json['message_id'] as String,
+      threadId: json['thread_id'] as String,
+      senderId: json['sender_id'] as String,
+      senderRole: MessageSenderRole.fromWire(json['sender_role'] as String),
+      kind: kind,
+      body: json['body'] as String,
+      videoId: json['video_id'] as String?,
+      reviewId: json['review_id'] as String?,
+      sentAt: _dateTime(json['sent_at']),
+      readAt: _dateTimeOrNull(json['read_at']),
+    );
+  }
 }
 
 /// `MessageThread`（glossary の message_thread。生徒と担当コーチの組に 1 つ）
@@ -948,7 +995,7 @@ class MessageThread {
   /// スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
   final DateTime openedAt;
 
-  /// 最後のメッセージ。まだなければ null
+  /// 最後のメッセージ。まだないか、知らない種類なら null
   final Message? lastMessage;
 
   /// 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）の数
@@ -961,7 +1008,7 @@ class MessageThread {
     openedAt: _dateTime(json['opened_at']),
     lastMessage: json['last_message'] == null
         ? null
-        : Message.fromJson(json['last_message'] as Map<String, dynamic>),
+        : Message.tryFromJson(json['last_message'] as Map<String, dynamic>),
     unreadCount: json['unread_count'] as int,
   );
 }
@@ -989,15 +1036,15 @@ class MessageList {
 
   final String threadId;
 
-  /// 送った順
+  /// 送った順。知らない種類のメッセージは読み飛ばして含めない
   final List<Message> messages;
 
   factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
     threadId: json['thread_id'] as String,
     messages: List.unmodifiable(
-      (json['messages'] as List<dynamic>).map(
-        (e) => Message.fromJson(e as Map<String, dynamic>),
-      ),
+      (json['messages'] as List<dynamic>)
+          .map((e) => Message.tryFromJson(e as Map<String, dynamic>))
+          .nonNulls,
     ),
   );
 }

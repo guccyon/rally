@@ -7,7 +7,8 @@
 //! 3. 生徒が月額契約 → 送り放題で送れる（受講権の通話の枠は変わらない）→ コーチが既読にして返信 → 生徒が読む
 //! 4. 同じコーチとの 2 件目の予約を確定してもスレッドは 1 つのまま
 //! 5. 生徒が動画を送り（添削依頼）、コーチが添削を返すと、同じスレッドに依頼と返却のメッセージが並ぶ
-//!    （async-lesson の `VideoReviewRequested` / `VideoReviewReturned` を messaging が購読する。応答の形は本文のメッセージと同じ）
+//!    （async-lesson の `VideoReviewRequested` / `VideoReviewReturned` を messaging が購読する）。依頼は種類
+//!    `video_review_request` と動画の ID、返却は `video_review_returned` と動画の ID・添削の ID で返る
 //!
 //! 保存先がインメモリの組み立て（`server::router_at`）と、Postgres の組み立て（`server::router_with_postgres`。
 //! `#[ignore]`、`DATABASE_URL` を設定して `--include-ignored` で走らせる）の両方で同じ一周を通す。
@@ -375,11 +376,15 @@ async fn chat_round_trip(
     assert_eq!(coach_threads["threads"].as_array().unwrap().len(), 1);
     assert_eq!(coach_threads["threads"][0]["unread_count"], 1, "届いた依頼");
     assert_eq!(
-        coach_threads["threads"][0]["last_message"]["body"],
-        "動画の添削を依頼しました"
+        coach_threads["threads"][0]["last_message"]["kind"],
+        "video_review_request"
+    );
+    assert_eq!(
+        coach_threads["threads"][0]["last_message"]["video_id"],
+        video_id
     );
     clock.set(oct5() + Duration::from_secs(7200));
-    call(
+    let review = call(
         &router,
         "POST",
         &format!("/videos/{video_id}/review"),
@@ -399,14 +404,24 @@ async fn chat_round_trip(
     .await;
     let messages = list["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 7);
+    assert!(
+        messages[..5].iter().all(|m| m["kind"] == "text"),
+        "当事者が送ったものは本文"
+    );
     let request = &messages[5];
     assert_eq!(request["sender_role"], "student");
     assert_eq!(request["sender_id"], student_id);
+    assert_eq!(request["kind"], "video_review_request");
+    assert_eq!(request["video_id"], video_id);
+    assert_eq!(request.get("review_id"), None);
     assert_eq!(request["body"], "動画の添削を依頼しました");
     assert_eq!(request["sent_at"], "2026-10-05T01:00:00Z");
     let returned = &messages[6];
     assert_eq!(returned["sender_role"], "coach");
     assert_eq!(returned["sender_id"], account_id_uuid::format(coach_id));
+    assert_eq!(returned["kind"], "video_review_returned");
+    assert_eq!(returned["video_id"], video_id);
+    assert_eq!(returned["review_id"], review["review_id"]);
     assert_eq!(returned["body"], "動画の添削を返しました");
     assert_eq!(returned["sent_at"], "2026-10-05T02:00:00Z");
     assert_eq!(returned["read_at"], Value::Null);
