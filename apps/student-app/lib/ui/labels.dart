@@ -55,7 +55,8 @@ String messageSummaryLabel(Message message) => switch (message.kind) {
     '添削を依頼しました（${formatDateTime(message.sentAt)}）',
   MessageKind.videoReviewReturned =>
     'コーチから添削が返ってきました（${formatDateTime(message.sentAt)}）',
-  MessageKind.text || MessageKind.other =>
+  // スタンプは body の短い説明（「スタンプ: ありがとう」）をそのまま出す（絵柄は次のチケット）
+  MessageKind.text || MessageKind.stamp || MessageKind.other =>
     '${messageSenderLabel(message.senderRole)}: ${message.body}',
 };
 

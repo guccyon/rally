@@ -20,7 +20,7 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     messaging::{
         Message, MessageAuthor, MessageBody, MessageContent, MessageKind, MessageSender,
-        MessageThread,
+        MessageThread, Stamp,
     },
 };
 use infra::PgMessageThreadRepository;
@@ -71,7 +71,8 @@ async fn messages_and_reads_round_trip(pool: PgPool) {
         let id = threads.next_message_id();
         threads
             .update(thread.id(), |t| {
-                t.send(id, sender, body(text), true, at(2)).map(|_| ())
+                t.send(id, sender, MessageContent::Text(body(text)), true, at(2))
+                    .map(|_| ())
             })
             .await
             .unwrap();
@@ -101,8 +102,14 @@ async fn messages_and_reads_round_trip(pool: PgPool) {
     let before = stored.clone();
     let result = threads
         .update(thread.id(), |t| {
-            t.send(threads.next_message_id(), student, body("x"), false, at(4))
-                .map(|_| ())
+            t.send(
+                threads.next_message_id(),
+                student,
+                MessageContent::Text(body("x")),
+                false,
+                at(4),
+            )
+            .map(|_| ())
         })
         .await;
     assert!(
@@ -144,8 +151,14 @@ async fn list_for_returns_the_threads_of_the_participant(pool: PgPool) {
     let id = threads.next_message_id();
     let talked = threads
         .update(opened[0].id(), |t| {
-            t.send(id, coach, body("こんにちは"), true, at(2))
-                .map(|_| ())
+            t.send(
+                id,
+                coach,
+                MessageContent::Text(body("こんにちは")),
+                true,
+                at(2),
+            )
+            .map(|_| ())
         })
         .await
         .unwrap();
@@ -183,7 +196,8 @@ async fn concurrent_sends_are_both_kept(pool: PgPool) {
         async move {
             threads
                 .update(thread_id, |t| {
-                    t.send(id, sender, body(text), true, at(2)).map(|_| ())
+                    t.send(id, sender, MessageContent::Text(body(text)), true, at(2))
+                        .map(|_| ())
                 })
                 .await
         }
@@ -242,8 +256,14 @@ async fn video_review_messages_round_trip_once_per_video(pool: PgPool) {
     let text = threads.next_message_id();
     threads
         .update(thread.id(), |t| {
-            t.send(text, coach, body("拝見します"), true, at(3))
-                .map(|_| ())
+            t.send(
+                text,
+                coach,
+                MessageContent::Text(body("拝見します")),
+                true,
+                at(3),
+            )
+            .map(|_| ())
         })
         .await
         .unwrap();
@@ -407,6 +427,52 @@ async fn system_messages_and_old_rows_are_read(pool: PgPool) {
         [Some(at(3)), None]
     );
     assert_eq!(threads.find(thread.id()).await.unwrap(), Some(read));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn stamps_round_trip_with_every_id(pool: PgPool) {
+    let threads = PgMessageThreadRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let thread = threads
+        .open(MessageThread::open(threads.next_thread_id(), student, coach, at(1)).unwrap())
+        .await
+        .unwrap();
+    for (i, stamp) in Stamp::ALL.into_iter().enumerate() {
+        let sender = if i % 2 == 0 { student } else { coach };
+        let id = threads.next_message_id();
+        threads
+            .update(thread.id(), |t| {
+                t.send(id, sender, MessageContent::Stamp(stamp), true, at(2))
+                    .map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+    let stored = threads.find(thread.id()).await.unwrap().unwrap();
+    assert_eq!(
+        stored
+            .messages()
+            .iter()
+            .map(|m| (m.author(), m.content().clone()))
+            .collect::<Vec<_>>(),
+        Stamp::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(i, stamp)| (
+                if i % 2 == 0 { STUDENT } else { COACH },
+                MessageContent::Stamp(stamp)
+            ))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        stored
+            .messages()
+            .iter()
+            .all(|m| m.content().kind() == MessageKind::Stamp && m.content().body().is_none())
+    );
+    assert_eq!(stored.unread_count_for(coach), 4);
+    assert_eq!(stored.unread_count_for(student), 4);
 }
 
 fn support_timestamp(at: std::time::SystemTime) -> sqlx::types::time::OffsetDateTime {

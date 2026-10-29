@@ -19,6 +19,13 @@ void main() {
       expect(SendMessageRequest(body: '😀' * 2000).body, '😀' * 2000);
       expect(() => SendMessageRequest(body: '😀' * 2001), throwsArgumentError);
     });
+
+    test('本文の代わりにスタンプを送る（本文は書かない）', () {
+      final request = SendMessageRequest.stamp(StampId.niceShot);
+      expect(request.toJson(), {'stamp_id': 'nice_shot'});
+      expect(request.body, isNull);
+      expect(SendMessageRequest(body: 'x').stampId, isNull);
+    });
   });
 
   final message = {
@@ -75,6 +82,35 @@ void main() {
         'body': '年末年始はお休みです',
       });
       expect(parsed.senderRole, MessageSenderRole.system);
+    });
+
+    test('スタンプは種類とスタンプの ID と、古い版向けの本文の説明を読む', () {
+      final parsed = Message.fromJson({
+        ...message,
+        'kind': 'stamp',
+        'stamp_id': 'got_it',
+        'body': 'スタンプ: 了解',
+      });
+      expect(parsed.kind, MessageKind.stamp);
+      expect(parsed.stampId, StampId.gotIt);
+      expect(parsed.body, 'スタンプ: 了解');
+      expect(parsed.videoId, isNull);
+      expect(Message.fromJson(message).stampId, isNull);
+    });
+
+    test('知らないスタンプの ID は null として読む（本文の説明は残る）', () {
+      final parsed = Message.fromJson({
+        ...message,
+        'kind': 'stamp',
+        'stamp_id': 'heart',
+        'body': 'スタンプ: ハート',
+      });
+      expect(parsed.kind, MessageKind.stamp);
+      expect(parsed.stampId, isNull);
+      expect(parsed.body, 'スタンプ: ハート');
+      for (final stamp in StampId.values) {
+        expect(StampId.tryFromWire(stamp.wire), stamp);
+      }
     });
 
     final unknown = {...message, 'message_id': 'm9', 'kind': 'sticker'};

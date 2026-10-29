@@ -1,10 +1,11 @@
-use super::{MessageAuthor, MessageBody, MessageKind, MessageSender};
+use super::{MessageAuthor, MessageBody, MessageKind, MessageSender, Stamp};
 use crate::async_lesson::{VideoId, VideoReviewId};
 
 /// メッセージの中身。種類（[`MessageKind`]）ごとに持つものを型で分ける（本文を持つのは本文の種類だけ）。
 ///
 /// 添削依頼・添削の返却は async-lesson の動画・添削を ID で指すだけで、添削の有無・回数・状態の写しは持たない
-/// （それらは async-lesson の持ち物）。スタンプや AI コンシェルジュの発言は、変種を足して表す。
+/// （それらは async-lesson の持ち物）。スタンプは決まった種類（[`Stamp`]）のどれかだけを持つ。AI コンシェルジュの発言などは、
+/// 変種を足して表す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageContent {
     /// 本文（当事者どうしの会話）
@@ -16,6 +17,8 @@ pub enum MessageContent {
         video_id: VideoId,
         review_id: VideoReviewId,
     },
+    /// スタンプ。当事者が本文の代わりに送った（本文は持たない）
+    Stamp(Stamp),
 }
 
 impl MessageContent {
@@ -24,6 +27,7 @@ impl MessageContent {
             MessageContent::Text(_) => MessageKind::Text,
             MessageContent::VideoReviewRequest { .. } => MessageKind::VideoReviewRequest,
             MessageContent::VideoReviewReturn { .. } => MessageKind::VideoReviewReturn,
+            MessageContent::Stamp(_) => MessageKind::Stamp,
         }
     }
 
@@ -32,14 +36,15 @@ impl MessageContent {
         match self {
             MessageContent::Text(body) => Some(body),
             MessageContent::VideoReviewRequest { .. }
-            | MessageContent::VideoReviewReturn { .. } => None,
+            | MessageContent::VideoReviewReturn { .. }
+            | MessageContent::Stamp(_) => None,
         }
     }
 
-    /// 指している動画。本文の種類なら `None`。
+    /// 指している動画。添削依頼・添削の返却でなければ `None`。
     pub const fn video_id(&self) -> Option<VideoId> {
         match self {
-            MessageContent::Text(_) => None,
+            MessageContent::Text(_) | MessageContent::Stamp(_) => None,
             MessageContent::VideoReviewRequest { video_id }
             | MessageContent::VideoReviewReturn { video_id, .. } => Some(*video_id),
         }
@@ -49,12 +54,24 @@ impl MessageContent {
     pub const fn review_id(&self) -> Option<VideoReviewId> {
         match self {
             MessageContent::VideoReviewReturn { review_id, .. } => Some(*review_id),
-            MessageContent::Text(_) | MessageContent::VideoReviewRequest { .. } => None,
+            MessageContent::Text(_)
+            | MessageContent::VideoReviewRequest { .. }
+            | MessageContent::Stamp(_) => None,
+        }
+    }
+
+    /// スタンプ。スタンプの種類でなければ `None`。
+    pub const fn stamp(&self) -> Option<Stamp> {
+        match self {
+            MessageContent::Stamp(stamp) => Some(*stamp),
+            MessageContent::Text(_)
+            | MessageContent::VideoReviewRequest { .. }
+            | MessageContent::VideoReviewReturn { .. } => None,
         }
     }
 
     /// 送り手 `author` がこの種類のメッセージを流せるか。本文は誰でも（システムのお知らせも本文）、添削依頼は生徒、
-    /// 添削の返却はコーチだけ。
+    /// 添削の返却はコーチ、スタンプは当事者（生徒・コーチ）だけ。
     pub const fn allows(&self, author: MessageAuthor) -> bool {
         match self {
             MessageContent::Text(_) => true,
@@ -64,6 +81,7 @@ impl MessageContent {
             MessageContent::VideoReviewReturn { .. } => {
                 matches!(author, MessageAuthor::Participant(MessageSender::Coach))
             }
+            MessageContent::Stamp(_) => matches!(author, MessageAuthor::Participant(_)),
         }
     }
 }
@@ -125,5 +143,27 @@ mod tests {
             [false, true, false]
         );
         assert!(request.allows(STUDENT) && returned.allows(COACH));
+    }
+
+    #[test]
+    fn a_stamp_has_only_the_stamp_and_is_from_a_participant() {
+        for stamp in Stamp::ALL {
+            let content = MessageContent::Stamp(stamp);
+            assert_eq!(content.kind(), MessageKind::Stamp);
+            assert_eq!(content.stamp(), Some(stamp));
+            assert_eq!(content.body(), None, "本文は持たない");
+            assert_eq!((content.video_id(), content.review_id()), (None, None));
+            assert_eq!(
+                MessageAuthor::ALL.map(|a| content.allows(a)),
+                [true, true, false],
+                "当事者だけが送る"
+            );
+        }
+        let text = MessageContent::Text(MessageBody::new("x").unwrap());
+        assert_eq!(text.stamp(), None);
+        assert_eq!(
+            MessageContent::VideoReviewRequest { video_id: VIDEO }.stamp(),
+            None
+        );
     }
 }

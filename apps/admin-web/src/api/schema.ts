@@ -423,7 +423,9 @@ export interface paths {
          *     生徒が送れるのは、チャットが送り放題の受講権（月額）を持つときだけで、送り放題なので送信の回数は数えない
          *     （受講権を消費しない）。受講権のない生徒（月額契約の前）は 403 `chat_not_entitled`。コーチの送信は生徒の
          *     契約に左右されない。当事者でないアカウントと UUID でない ID には 404。`body` が空（空白だけ）か長すぎれば 422。
-         *     送れるのは本文だけで、応答の `kind` は `text`。送ると行動イベント `message.sent` を発火する。通知（プッシュ）と添付ファイルは扱わない。
+         *     送れるのは本文（`body`）かスタンプ（`stamp_id`）のどちらか 1 つで、応答の `kind` は本文なら `text`、スタンプなら `stamp`。
+         *     両方を送る・どちらも送らない・知らないスタンプの ID は 422。スタンプも本文と同じ受講権で送れ、同じく相手に通知する。
+         *     送ると行動イベント `message.sent` を発火する。添付ファイルは扱わない。
          */
         post: operations["sendMessage"];
         delete?: never;
@@ -774,11 +776,25 @@ export interface components {
          *     - text: 当事者どうしの本文（`body` が本文）
          *     - video_review_request: 生徒が動画を添削依頼として送った（送り手は student。`video_id`）
          *     - video_review_returned: コーチが動画の添削を返した（送り手は coach。`video_id`・`review_id`）
+         *     - stamp: 当事者が本文の代わりにスタンプを送った（送り手は student か coach。`stamp_id`）
          *
-         *     種類は後方互換に増える（スタンプなど）。クライアントは知らない種類のメッセージを読み飛ばしてよい（表示しない）。
+         *     種類は後方互換に増える（AI コンシェルジュの発言など）。クライアントは知らない種類のメッセージを読み飛ばしてよい（表示しない）。
          * @enum {string}
          */
-        MessageKind: "text" | "video_review_request" | "video_review_returned";
+        MessageKind: "text" | "video_review_request" | "video_review_returned" | "stamp";
+        /**
+         * @description スタンプの ID（決まった 8 種類）。画像と表示の文言はクライアントが持つ。`Message.body` の説明の呼び名は次のとおり。
+         *     - thanks: ありがとう
+         *     - good: いいね
+         *     - got_it: 了解
+         *     - lets_go: がんばろう
+         *     - nice_shot: ナイスショット
+         *     - tired: おつかれさま
+         *     - question: 質問
+         *     - ok: OK
+         * @enum {string}
+         */
+        StampId: "thanks" | "good" | "got_it" | "lets_go" | "nice_shot" | "tired" | "question" | "ok";
         /** @description glossary の message（チャットのスレッドの中の 1 通。送信時刻と既読を持つ）。student-app の同名のスキーマと同じ形 */
         Message: {
             /** Format: uuid */
@@ -795,7 +811,8 @@ export interface components {
             kind: components["schemas"]["MessageKind"];
             /**
              * @description `kind` が `text` なら本文。それ以外の種類では、種類を知らない版のクライアントがそのまま表示できる短い説明
-             *     （例: 「動画の添削を依頼しました」）。種類の中身は `video_id`・`review_id` が持つので、知っている種類はこの文言に頼らない
+             *     （例: 「動画の添削を依頼しました」「スタンプ: ありがとう」）。種類の中身は `video_id`・`review_id`・`stamp_id` が持つので、
+             *     知っている種類はこの文言に頼らない
              */
             body: string;
             /**
@@ -808,6 +825,8 @@ export interface components {
              * @description 返した添削（`VideoReview.review_id`）。`kind` が `video_review_returned` のときだけある
              */
             review_id?: string;
+            /** @description 送ったスタンプ。`kind` が `stamp` のときだけある */
+            stamp_id?: components["schemas"]["StampId"];
             /** Format: date-time */
             sent_at: string;
             /**
@@ -844,9 +863,12 @@ export interface components {
             /** @description 送った順 */
             messages: components["schemas"]["Message"][];
         };
+        /** @description 本文（`body`）かスタンプ（`stamp_id`）のどちらか 1 つを送る（両方・どちらもなしは 422） */
         SendMessageRequest: {
             /** @description 本文（空白だけは不可） */
-            body: string;
+            body?: string;
+            /** @description 本文の代わりに送るスタンプ */
+            stamp_id?: components["schemas"]["StampId"];
         };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。

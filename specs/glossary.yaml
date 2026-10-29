@@ -74,7 +74,11 @@ terms:
     context: messaging
   - id: message
     ja: "メッセージ"
-    definition: "スレッドの中の 1 通で、本文・添削依頼・添削の返却の種類があり、送り手（生徒・担当コーチ・システム）と送信時刻と既読を持ち、月額の生徒は本文を送り放題である。"
+    definition: "スレッドの中の 1 通で、本文・添削依頼・添削の返却・スタンプの種類があり、送り手（生徒・担当コーチ・システム）と送信時刻と既読を持ち、月額の生徒は本文とスタンプを送り放題である。"
+    context: messaging
+  - id: stamp
+    ja: "スタンプ"
+    definition: "チャットで当事者（生徒・担当コーチ）が本文の代わりに送る、決まった 8 種類のどれかの絵柄のメッセージで、本文は持たない。"
     context: messaging
   - id: notification_settings
     ja: "通知の受け取り設定"

@@ -149,6 +149,9 @@ enum MessageKind {
   /// コーチが動画の添削を返した（[Message.videoId]・[Message.reviewId]）
   videoReviewReturned('video_review_returned'),
 
+  /// 当事者が本文の代わりにスタンプを送った（[Message.stampId]）
+  stamp('stamp'),
+
   /// 契約にない（このアプリの版が知らない）種類。契約の値ではない
   other('');
 
@@ -160,6 +163,26 @@ enum MessageKind {
     (e) => e != other && e.wire == value,
     orElse: () => other,
   );
+}
+
+/// `StampId`（スタンプの ID。決まった 8 種類）。画像と表示の文言はクライアントが持つ（画面は別のチケット）。
+/// 契約で後方互換に増えうるので、知らない値は [tryFromWire] が null にする（そのメッセージは `body` の説明を出す）。
+enum StampId {
+  thanks('thanks'),
+  good('good'),
+  gotIt('got_it'),
+  letsGo('lets_go'),
+  niceShot('nice_shot'),
+  tired('tired'),
+  question('question'),
+  ok('ok');
+
+  const StampId(this.wire);
+  final String wire;
+
+  /// 契約にない（このアプリの版が知らない）値と null は null。
+  static StampId? tryFromWire(String? value) =>
+      values.where((e) => e.wire == value).firstOrNull;
 }
 
 /// 通知の種類。`NotificationSettings` と `UpdateNotificationSettingsRequest` の、受け取るかを持つ項目で、[wire] は項目名。
@@ -933,6 +956,7 @@ class Message {
     this.kind = MessageKind.text,
     this.videoId,
     this.reviewId,
+    this.stampId,
     this.readAt,
   });
 
@@ -943,7 +967,7 @@ class Message {
   final String senderId;
   final MessageSenderRole senderRole;
 
-  /// 種類。中身は種類ごとに [body]（本文）か [videoId]・[reviewId]
+  /// 種類。中身は種類ごとに [body]（本文）か [videoId]・[reviewId] か [stampId]
   final MessageKind kind;
 
   /// [MessageKind.text] なら本文。それ以外の種類では、種類を知らない版向けの短い説明（[MessageKind.other] ではこれを本文として出す）
@@ -954,6 +978,9 @@ class Message {
 
   /// 返した添削。[MessageKind.videoReviewReturned] のときだけある
   final String? reviewId;
+
+  /// 送ったスタンプ。[MessageKind.stamp] のときだけある（このアプリの版が知らない ID なら null）
+  final StampId? stampId;
   final DateTime sentAt;
 
   /// 受け取った側が読んだ時刻（既読）。読むまでは null
@@ -969,6 +996,7 @@ class Message {
     body: json['body'] as String,
     videoId: json['video_id'] as String?,
     reviewId: json['review_id'] as String?,
+    stampId: StampId.tryFromWire(json['stamp_id'] as String?),
     sentAt: _dateTime(json['sent_at']),
     readAt: _dateTimeOrNull(json['read_at']),
   );
@@ -1046,9 +1074,9 @@ class MessageList {
   );
 }
 
-/// `SendMessageRequest`
+/// `SendMessageRequest`（本文かスタンプのどちらか 1 つ）
 class SendMessageRequest {
-  /// 本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
+  /// 本文を送る。本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
   factory SendMessageRequest({required String body}) {
     if (!isValidBody(body)) {
       throw ArgumentError.value(
@@ -1057,23 +1085,32 @@ class SendMessageRequest {
         '空白だけの本文と、$maxBodyLength 文字を超える本文は送れません',
       );
     }
-    return SendMessageRequest._(body);
+    return SendMessageRequest._(body, null);
   }
+
+  /// 本文の代わりにスタンプを送る
+  const SendMessageRequest.stamp(StampId stampId) : this._(null, stampId);
 
   /// 契約の `SendMessageRequest.body` に収まるか（空白だけでなく、[maxBodyLength] 文字以内）。
   /// 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える。画面の送信可否もこれを使う
   static bool isValidBody(String body) =>
       body.trim().isNotEmpty && body.runes.length <= maxBodyLength;
 
-  const SendMessageRequest._(this.body);
+  const SendMessageRequest._(this.body, this.stampId);
 
   /// 契約の `SendMessageRequest.body` の maxLength
   static const maxBodyLength = 2000;
 
-  /// 本文（2000 文字まで。空白だけは不可）
-  final String body;
+  /// 本文（2000 文字まで。空白だけは不可）。スタンプを送るときは null
+  final String? body;
 
-  Map<String, dynamic> toJson() => {'body': body};
+  /// スタンプ。本文を送るときは null
+  final StampId? stampId;
+
+  Map<String, dynamic> toJson() => {
+    'body': ?body,
+    'stamp_id': ?stampId?.wire,
+  };
 }
 
 /// `NotificationSettings`（glossary の notification_settings。種類ごとに受け取るか。既定はすべて true）

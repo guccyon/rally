@@ -1,7 +1,7 @@
 use domain::{
     DomainError,
     identity::AccountId,
-    messaging::{Message, MessageBody, MessageThread, MessageThreadId},
+    messaging::{Message, MessageContent, MessageThread, MessageThreadId},
 };
 use uuid::Uuid;
 
@@ -14,11 +14,12 @@ use crate::{
 };
 
 /// メッセージの送信の入力。`sender_id` は認証したアカウント（スレッドの当事者かは domain が確かめる）。
+/// `content` は本文かスタンプ（チャットとして送れる種類かは domain が確かめる）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendMessageCommand {
     pub sender_id: AccountId,
     pub thread_id: MessageThreadId,
-    pub body: MessageBody,
+    pub content: MessageContent,
 }
 
 /// 送ったメッセージと、送ったあとのスレッド。
@@ -32,19 +33,19 @@ pub struct SentMessage {
 pub enum SendMessageError {
     /// スレッドがない
     ThreadNotFound,
-    /// 送信がドメインの不変条件を満たさない（当事者でない、生徒がチャットの送り放題を持たない、
-    /// 前のメッセージより前の送信）
+    /// 送信がドメインの不変条件を満たさない（当事者でない、チャットとして送れない種類、生徒がチャットの送り放題を
+    /// 持たない、前のメッセージより前の送信）
     Invalid(DomainError),
     /// 保存先・問い合わせ先の障害
     Unavailable(Unavailable),
 }
 
-/// メッセージの送信のユースケース（student-app・admin-web の `sendMessage`。スレッドの当事者だけ）。
+/// メッセージの送信のユースケース（student-app・admin-web の `sendMessage`。スレッドの当事者だけ。本文かスタンプ）。
 ///
 /// スレッドを読み、スレッドの生徒がチャットを送ってよいかを entitlement に問い合わせ（[`ChatGate`]。月額は送り
 /// 放題で、回数を消費しない）、domain の [`MessageThread::send`] で送って保存する。保存したら境界間イベント
 /// `MessageSent` を発行し（notification はこれを購読して受け手に知らせる）、行動イベント `message.sent` を
-/// 1 回発火する。拒否・失敗ではどちらも出さない。
+/// 1 回発火する（本文とスタンプで同じ。どちらにも本文は載せない）。拒否・失敗ではどちらも出さない。
 pub struct SendMessage<T, G, A, P, C> {
     threads: T,
     gate: G,
@@ -100,7 +101,7 @@ where
                     .send(
                         message_id,
                         command.sender_id,
-                        command.body,
+                        command.content,
                         student_may_chat,
                         now,
                     )
@@ -173,7 +174,7 @@ mod tests {
             YearMonth,
         },
         identity::Sport,
-        messaging::{MessageAuthor, MessageSender},
+        messaging::{MessageAuthor, MessageBody, MessageSender, Stamp},
     };
 
     use super::*;
@@ -238,7 +239,7 @@ mod tests {
         SendMessageCommand {
             sender_id,
             thread_id,
-            body: MessageBody::new("次のレッスンの相談です").unwrap(),
+            content: MessageContent::Text(MessageBody::new("次のレッスンの相談です").unwrap()),
         }
     }
 
@@ -366,6 +367,98 @@ mod tests {
             .await;
         assert!(
             matches!(result, Err(SendMessageError::ThreadNotFound)),
+            "{result:?}"
+        );
+        assert_eq!(use_case.threads().all(), before);
+        assert!(use_case.analytics().events().is_empty());
+        assert!(use_case.events().events().is_empty());
+    }
+
+    fn stamp(sender_id: AccountId, thread_id: MessageThreadId, stamp: Stamp) -> SendMessageCommand {
+        SendMessageCommand {
+            sender_id,
+            thread_id,
+            content: MessageContent::Stamp(stamp),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stamp_is_sent_and_notified_like_text() {
+        let use_case = use_case();
+        let sent = use_case
+            .execute(stamp(MONTHLY_STUDENT, MONTHLY_THREAD, Stamp::Thanks))
+            .await
+            .unwrap();
+        assert_eq!(
+            sent.message.content(),
+            &MessageContent::Stamp(Stamp::Thanks)
+        );
+        assert_eq!(
+            sent.message.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
+        assert_eq!(sent.thread.messages(), std::slice::from_ref(&sent.message));
+        assert_eq!(
+            use_case.analytics().events(),
+            vec![AnalyticsEvent::MessageSent {
+                student_id: MONTHLY_STUDENT,
+                coach_id: COACH,
+                thread_id: MONTHLY_THREAD,
+                message_id: sent.message.id(),
+                sender_role: MessageSender::Student,
+                occurred_at: now(),
+            }]
+        );
+        // notification はこれで受け手のコーチに知らせる（本文のメッセージと同じ）
+        assert!(matches!(
+            use_case.events().events()[..],
+            [DomainEvent::MessageSent {
+                sender_role: MessageSender::Student,
+                coach_id: COACH,
+                message_id,
+                ..
+            }] if message_id == sent.message.id()
+        ));
+
+        // コーチは受講権のない生徒にも送れる
+        let sent = use_case
+            .execute(stamp(COACH, TRIAL_THREAD, Stamp::NiceShot))
+            .await
+            .unwrap();
+        assert_eq!(sent.message.content().stamp(), Some(Stamp::NiceShot));
+    }
+
+    #[tokio::test]
+    async fn stamps_are_rejected_like_text() {
+        let use_case = use_case();
+        let before = use_case.threads().all();
+        let result = use_case
+            .execute(stamp(TRIAL_STUDENT, TRIAL_THREAD, Stamp::Good))
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(SendMessageError::Invalid(DomainError::ChatNotAllowed))
+            ),
+            "{result:?}"
+        );
+        // 添削依頼はチャットとして送れない（async-lesson の出来事から足すもの）
+        let result = use_case
+            .execute(SendMessageCommand {
+                sender_id: MONTHLY_STUDENT,
+                thread_id: MONTHLY_THREAD,
+                content: MessageContent::VideoReviewRequest {
+                    video_id: domain::async_lesson::VideoId::from_u128(40),
+                },
+            })
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(SendMessageError::Invalid(
+                    DomainError::MessageKindNotSendable
+                ))
+            ),
             "{result:?}"
         );
         assert_eq!(use_case.threads().all(), before);

@@ -6,9 +6,12 @@
 //! `chat_not_entitled`。
 //!
 //! メッセージは種類（`kind`）と種類ごとの中身を返す: 本文（`text`）、添削依頼（`video_review_request`。`video_id`）、
-//! 添削の返却（`video_review_returned`。`video_id`・`review_id`）。添削依頼・返却（messaging が async-lesson の
-//! 境界間イベントから足す）の `body` には、種類を知らない版のクライアント向けの短い説明
-//! （[`message::message_content_text`]）を入れる（契約の `body` は必須）。
+//! 添削の返却（`video_review_returned`。`video_id`・`review_id`）、スタンプ（`stamp`。`stamp_id`）。添削依頼・返却
+//! （messaging が async-lesson の境界間イベントから足す）とスタンプの `body` には、種類を知らない版のクライアント向けの
+//! 短い説明（[`message::message_content_text`]）を入れる（契約の `body` は必須）。
+//!
+//! 送信（`sendMessage`）は本文（`body`）かスタンプ（`stamp_id`）のどちらか 1 つ。両方・どちらもなし・知らないスタンプの
+//! ID は 422。
 //! システムが流したメッセージ（今は流す処理がない）は `sender_role` を `system`、`sender_id` を nil UUID で返す。
 
 use std::sync::Arc;
@@ -34,7 +37,7 @@ use axum::{
 use domain::{
     DomainError,
     identity::AccountId,
-    messaging::{Message, MessageBody, MessageThread, MessageThreadId},
+    messaging::{Message, MessageBody, MessageContent, MessageThread, MessageThreadId},
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +45,7 @@ use crate::{
     auth::AuthenticatedAccount,
     contract::{
         SYSTEM_MESSAGE_SENDER_ID, date_time_to_contract, message_author_to_contract,
-        message_kind_to_contract,
+        message_kind_to_contract, stamp_from_contract, stamp_to_contract,
     },
     error::ApiError,
     message,
@@ -59,14 +62,15 @@ pub struct MessagingState<T, G, A, P, C> {
 /// ハンドラーが共有する [`MessagingState`]。
 type Shared<T, G, A, P, C> = Arc<MessagingState<T, G, A, P, C>>;
 
-/// student-app・admin-web の `SendMessageRequest`。
+/// student-app・admin-web の `SendMessageRequest`。本文かスタンプのどちらか 1 つ（[`send_message_content`]）。
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
-    body: String,
+    body: Option<String>,
+    stamp_id: Option<String>,
 }
 
 /// student-app・admin-web の `Message`（domain の [`MessageBody`] と名前が重ならないよう `Json` を付ける）。
-/// `video_id`・`review_id` は種類（`kind`）が持つときだけ出す。
+/// `video_id`・`review_id`・`stamp_id` は種類（`kind`）が持つときだけ出す。
 #[derive(Serialize)]
 pub struct MessageJson {
     message_id: String,
@@ -79,6 +83,8 @@ pub struct MessageJson {
     video_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     review_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stamp_id: Option<&'static str>,
     sent_at: String,
     read_at: Option<String>,
 }
@@ -173,7 +179,8 @@ where
     }))
 }
 
-/// `POST /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージを送る。月額の生徒は送り放題。
+/// `POST /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージ（本文かスタンプ）を送る。月額の生徒は
+/// 送り放題。
 pub async fn send_message<T, G, A, P, C>(
     State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
@@ -193,7 +200,7 @@ where
     let command = SendMessageCommand {
         sender_id: account.account_id(),
         thread_id,
-        body: MessageBody::new(request.body)?,
+        content: send_message_content(request)?,
     };
 
     let sent = state
@@ -206,6 +213,7 @@ where
             SendMessageError::Invalid(error @ DomainError::ChatNotAllowed) => {
                 ApiError::forbidden_because("chat_not_entitled", message::domain_error(&error))
             }
+            // 本文とスタンプしか組み立てないので、送れない種類（MessageKindNotSendable）もここ
             SendMessageError::Invalid(error) => ApiError::internal(error),
             SendMessageError::Unavailable(error) => ApiError::internal(error),
         })?;
@@ -246,6 +254,19 @@ where
     Ok(Json(thread_json(&thread, account.account_id())?))
 }
 
+/// 送るメッセージの中身。本文とスタンプのどちらか 1 つで、両方・どちらもなしは 422。本文の不変条件の違反と知らない
+/// スタンプの ID も 422。
+fn send_message_content(request: SendMessageRequest) -> Result<MessageContent, ApiError> {
+    match (request.body, request.stamp_id) {
+        (Some(body), None) => Ok(MessageContent::Text(MessageBody::new(body)?)),
+        (None, Some(stamp_id)) => Ok(MessageContent::Stamp(stamp_from_contract(&stamp_id)?)),
+        (Some(_), Some(_)) => Err(ApiError::validation_failed(
+            "本文とスタンプはどちらか 1 つだけ送る",
+        )),
+        (None, None) => Err(ApiError::validation_failed("本文かスタンプを送る")),
+    }
+}
+
 /// 契約に 422 はない（パスの ID）ので、UUID でない ID はないスレッドとして扱う。
 fn parse_thread_id(text: &str) -> Result<MessageThreadId, ApiError> {
     message_thread_id_uuid::parse(text).map_err(|_| thread_not_found())
@@ -283,6 +304,7 @@ fn message_json(thread: &MessageThread, message: &Message) -> Result<MessageJson
         body: message::message_content_text(content),
         video_id: content.video_id().map(video_id_uuid::format),
         review_id: content.review_id().map(video_review_id_uuid::format),
+        stamp_id: content.stamp().map(stamp_to_contract),
         sent_at: date_time_to_contract(message.sent_at())?,
         read_at: message.read_at().map(date_time_to_contract).transpose()?,
     })
