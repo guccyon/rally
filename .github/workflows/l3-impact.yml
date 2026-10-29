@@ -1,0 +1,66 @@
+# L3（拡張性・結合度）: PR の差分がどのコンテキストに及んだかを数える（factory-engine の core-gates/l3_impact.py、設定は .factory-config/l3.yaml）。
+# 決定的（LLM を使わない）。発火条件（契約・スキーマの差分、新しいモジュール）に当たらない PR は skip と書くだけ。
+# P2 は shadow: 結果を Job Summary とアーティファクトに残すだけで、PR は落とさない（必須チェックにもしない）。
+# 手で走らせる（workflow_dispatch）と、過去の PR の base と head を測り直せる（再現性の確認と定期健診に使う）。
+name: l3-impact
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base: { description: "比べる元（コミット）", required: true }
+      head: { description: "比べる先（コミット）", required: true }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l3-impact-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 632c45063883b7ba0ff55383a77d7b751ee5fb73
+
+jobs:
+  l3:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: チェッカーを取る
+        run: |
+          python3 -m pip install --quiet pyyaml
+          curl -fsSL -o /tmp/l3_impact.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/core-gates/l3_impact.py"
+      - name: 比べる範囲
+        id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.base_ref }}
+          IN_BASE: ${{ inputs.base }}
+          IN_HEAD: ${{ inputs.head }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "base=origin/$PR_BASE" >> "$GITHUB_OUTPUT"
+            echo "head=HEAD" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=$IN_BASE" >> "$GITHUB_OUTPUT"
+            echo "head=$IN_HEAD" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 影響範囲（shadow）
+        env:
+          BASE: ${{ steps.range.outputs.base }}
+          HEAD_REF: ${{ steps.range.outputs.head }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+        run: |
+          # 同じ差分に 2 回かけて digest が一致することも確かめる（L3 の再現性）
+          python3 /tmp/l3_impact.py --base "$BASE" --head "$HEAD_REF" $FORCE --specs-ref HEAD --json l3.json --summary "$GITHUB_STEP_SUMMARY" || true
+          python3 /tmp/l3_impact.py --base "$BASE" --head "$HEAD_REF" $FORCE --specs-ref HEAD --json l3-again.json > /dev/null || true
+          python3 -c "import json,sys; a,b=(json.load(open(f))['digest'] for f in ('l3.json','l3-again.json')); print('再現性:', 'digest 一致' if a==b else 'digest 不一致', a); sys.exit(a!=b)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l3-impact
+          path: l3*.json
+          if-no-files-found: ignore
