@@ -56,4 +56,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
   });
+
+  testWidgets('最後のメッセージが知らない種類でも隠さず、本文（短い説明）を出す', (tester) async {
+    final thread = MessageThread(
+      threadId: Fixtures.threadId,
+      studentId: Fixtures.studentId,
+      coachId: Fixtures.coachId,
+      openedAt: Fixtures.now,
+      lastMessage: Message(
+        messageId: 'message-sticker',
+        threadId: Fixtures.threadId,
+        senderId: Fixtures.coachId,
+        senderRole: MessageSenderRole.coach,
+        kind: MessageKind.other,
+        body: 'スタンプを送りました',
+        sentAt: Fixtures.now,
+      ),
+      unreadCount: 1,
+    );
+    await pumpScreen(
+      tester,
+      const MessageThreadsScreen(),
+      api: FakeStudentApi(threads: [thread]),
+      initial: threadsOpened(threads: [thread]),
+    );
+
+    expect(find.text('コーチ: スタンプを送りました'), findsOneWidget);
+  });
 }

@@ -9,15 +9,15 @@ import '../ui/flow_scaffold.dart';
 class VideoSubmitScreen extends ConsumerStatefulWidget {
   const VideoSubmitScreen({super.key});
 
+  /// モックで選んだことにするファイル（チャットの添削の依頼でも使う）
+  static const mockFileName = 'swing.mp4';
+  static const mockContentType = VideoContentType.mp4;
+
   @override
   ConsumerState<VideoSubmitScreen> createState() => _VideoSubmitScreenState();
 }
 
 class _VideoSubmitScreenState extends ConsumerState<VideoSubmitScreen> {
-  /// モックで選んだことにするファイル
-  static const _mockFileName = 'swing.mp4';
-  static const _mockContentType = VideoContentType.mp4;
-
   final _note = TextEditingController();
   bool _fileSelected = false;
 
@@ -32,7 +32,7 @@ class _VideoSubmitScreenState extends ConsumerState<VideoSubmitScreen> {
     ref
         .read(studentFlowProvider.notifier)
         .submitVideo(
-          contentType: _mockContentType,
+          contentType: VideoSubmitScreen.mockContentType,
           note: note.isEmpty ? null : note,
         );
   }
@@ -47,7 +47,11 @@ class _VideoSubmitScreenState extends ConsumerState<VideoSubmitScreen> {
           onPressed: () => setState(() => _fileSelected = true),
           child: const Text('動画を選ぶ（モック）'),
         ),
-        Text(_fileSelected ? '選んだ動画: $_mockFileName' : '動画が選ばれていません'),
+        Text(
+          _fileSelected
+              ? '選んだ動画: ${VideoSubmitScreen.mockFileName}'
+              : '動画が選ばれていません',
+        ),
         TextField(
           controller: _note,
           decoration: const InputDecoration(labelText: 'コーチへの相談内容（任意）'),

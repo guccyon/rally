@@ -65,7 +65,10 @@ void main() {
     ),
     'MessageKind': (
       enumOf('MessageKind'),
-      MessageKind.values.map((e) => e.wire).toList(),
+      MessageKind.values
+          .where((e) => e != MessageKind.other)
+          .map((e) => e.wire)
+          .toList(),
     ),
     'ErrorCode': (
       enumOf('ErrorCode'),
@@ -229,7 +232,7 @@ void main() {
   });
 
   test('Message の項目が契約と一致し、種類ごとの中身は任意の項目である（listMessages・sendMessage）', () {
-    // Message.tryFromJson が読む項目
+    // Message.fromJson が読む項目
     expect(propertiesOf('Message'), [
       'message_id',
       'thread_id',
