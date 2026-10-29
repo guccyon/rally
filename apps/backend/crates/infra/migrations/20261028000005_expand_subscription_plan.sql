@@ -11,6 +11,7 @@ ALTER TABLE entitlement.subscriptions
 -- 暦月の枠の残回数は、上限がプランで変わる（plus は 4 から数える）ので、上の端を外して 0 以上だけを守る（許す値を広げるだけの
 -- 緩和。同じ名前で付け直す）。使い切った後の消費は今までどおり負になって入らない。プランごとの上限の判定は domain の
 -- LiveLessonQuota が行い、DB には上限の数を書かない。既定値の 2（standard の上限）も外す（アプリは残回数を必ず書く）。
+-- relax: 残回数の上の端（2）を外して 0 以上だけにする（値を広げるだけ。BETWEEN から >= への付け直しで、検査は値の増減を比べられない）
 ALTER TABLE entitlement.live_lesson_quotas
     DROP CONSTRAINT live_lesson_quotas_remaining_live_lessons_check,
     ADD CONSTRAINT live_lesson_quotas_remaining_live_lessons_check

@@ -38,6 +38,8 @@ ALTER TABLE live_lesson.lesson_completions
 -- 生徒・コーチがセッションの（開始した予約の）当事者、の複合外部キーも外す（グループレッスンの 2 人目以降の生徒は
 -- sessions.student_id にいない）。生徒が結び付いた予約の生徒であることは domain の LiveLessonSession::complete_for で判定し、
 -- コーチは上の lesson_completions_session_coach_fkey が守る。古い版のアプリはマンツーマンの完了だけを書き、
--- それは新しい制約も満たす（ADR 0004 の 2 の例外）。
+-- それは新しい制約も満たす（ADR 0004 の 2 の緩和）。
+-- relax: セッション 1 つにつき完了 1 回を、生徒ごとに 1 回（lesson_completions_session_student_key）に緩める
 ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT lesson_completions_session_id_key;
+-- relax: グループレッスンの 2 人目以降の生徒は sessions.student_id にいない（コーチは lesson_completions_session_coach_fkey が守る）
 ALTER TABLE live_lesson.lesson_completions DROP CONSTRAINT lesson_completions_session_fkey;
