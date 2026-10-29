@@ -1,8 +1,7 @@
 use std::time::SystemTime;
 
 use super::{
-    Message, MessageAuthor, MessageBody, MessageContent, MessageId, MessageKind, MessageSender,
-    MessageThreadId,
+    Message, MessageAuthor, MessageContent, MessageId, MessageKind, MessageSender, MessageThreadId,
 };
 use crate::{
     DomainError,
@@ -88,12 +87,15 @@ impl MessageThread {
         self.participant(account).map(|_| ())
     }
 
-    /// 当事者 `sender` が `now` にメッセージ `body` を送る（メッセージの ID は `message_id`）。送ったメッセージを返す。
+    /// 当事者 `sender` が `now` にメッセージ `content`（本文かスタンプ）を送る（メッセージの ID は `message_id`）。
+    /// 送ったメッセージを返す。
     ///
     /// `student_may_chat` は生徒がチャットを送ってよいかの答え（entitlement の送り放題。月額は `true`）。
     /// 次の不変条件を破れば [`DomainError`] を返し、スレッドを変えない。
     ///
     /// - 送れるのは当事者だけ（[`DomainError::NotAThreadParticipant`]）
+    /// - 送れるのはチャットの種類（本文・スタンプ。[`MessageKind::is_chat`]）だけ
+    ///   （[`DomainError::MessageKindNotSendable`]）
     /// - 生徒が送れるのは、チャットが送り放題の利用権を持つときだけ（[`DomainError::ChatNotAllowed`]。
     ///   コーチは問わない）
     /// - 送信はスレッドを開いた時刻と前のメッセージの送信時刻より前にならない（同じ時刻は許す。
@@ -102,20 +104,18 @@ impl MessageThread {
         &mut self,
         message_id: MessageId,
         sender: AccountId,
-        body: MessageBody,
+        content: MessageContent,
         student_may_chat: bool,
         now: SystemTime,
     ) -> Result<&Message, DomainError> {
         let sender = self.participant(sender)?;
+        if !content.kind().is_chat() {
+            return Err(DomainError::MessageKindNotSendable);
+        }
         if sender == MessageSender::Student && !student_may_chat {
             return Err(DomainError::ChatNotAllowed);
         }
-        self.push(
-            message_id,
-            MessageAuthor::Participant(sender),
-            MessageContent::Text(body),
-            now,
-        )
+        self.push(message_id, MessageAuthor::Participant(sender), content, now)
     }
 
     /// 生徒が動画 `video_id` を添削依頼として送ったことを、`now` にスレッドに足す（メッセージの ID は `message_id`。
@@ -278,6 +278,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::messaging::{MessageBody, Stamp};
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(2);
@@ -291,6 +292,10 @@ mod tests {
 
     fn body(text: &str) -> MessageBody {
         MessageBody::new(text).unwrap()
+    }
+
+    fn text(text: &str) -> MessageContent {
+        MessageContent::Text(body(text))
     }
 
     fn opened() -> MessageThread {
@@ -342,7 +347,7 @@ mod tests {
             .send(
                 message(1),
                 STUDENT,
-                body("フォームを見てください"),
+                text("フォームを見てください"),
                 true,
                 at(1),
             )
@@ -362,7 +367,7 @@ mod tests {
 
         // 同じ時刻の送信は許す
         thread
-            .send(message(2), COACH, body("了解です"), true, at(1))
+            .send(message(2), COACH, text("了解です"), true, at(1))
             .unwrap();
         assert_eq!(
             thread
@@ -381,7 +386,7 @@ mod tests {
         let mut thread = opened();
         for id in 1..=50 {
             thread
-                .send(message(id), STUDENT, body("質問です"), true, at(1))
+                .send(message(id), STUDENT, text("質問です"), true, at(1))
                 .unwrap();
         }
         assert_eq!(thread.messages().len(), 50);
@@ -394,7 +399,7 @@ mod tests {
             .send(
                 message(1),
                 COACH,
-                body("体験はいかがでしたか"),
+                text("体験はいかがでしたか"),
                 false,
                 at(1),
             )
@@ -406,7 +411,7 @@ mod tests {
     fn send_failures_change_nothing() {
         let mut later = opened();
         later
-            .send(message(1), COACH, body("こんにちは"), true, at(5))
+            .send(message(1), COACH, text("こんにちは"), true, at(5))
             .unwrap();
         for (mut thread, sender, may_chat, now, expected) in [
             (
@@ -435,7 +440,7 @@ mod tests {
             let before = thread.clone();
             assert_eq!(
                 thread
-                    .send(message(9), sender, body("送れない"), may_chat, now)
+                    .send(message(9), sender, text("送れない"), may_chat, now)
                     .map(|_| ()),
                 Err(expected)
             );
@@ -447,13 +452,13 @@ mod tests {
     fn conversation() -> MessageThread {
         let mut thread = opened();
         thread
-            .send(message(1), STUDENT, body("1"), true, at(1))
+            .send(message(1), STUDENT, text("1"), true, at(1))
             .unwrap();
         thread
-            .send(message(2), COACH, body("2"), true, at(2))
+            .send(message(2), COACH, text("2"), true, at(2))
             .unwrap();
         thread
-            .send(message(3), STUDENT, body("3"), true, at(3))
+            .send(message(3), STUDENT, text("3"), true, at(3))
             .unwrap();
         thread
     }
@@ -592,7 +597,7 @@ mod tests {
             .send(
                 message(2),
                 STUDENT,
-                body("よろしくお願いします"),
+                text("よろしくお願いします"),
                 true,
                 at(2),
             )
@@ -693,5 +698,105 @@ mod tests {
             ),
             Err(DomainError::MessageAuthorMismatchesKind)
         );
+    }
+
+    #[test]
+    fn the_participants_send_stamps_like_text() {
+        let mut thread = opened();
+        let sent = thread
+            .send(
+                message(1),
+                STUDENT,
+                MessageContent::Stamp(Stamp::Thanks),
+                true,
+                at(1),
+            )
+            .unwrap()
+            .clone();
+        assert_eq!(
+            sent.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
+        assert_eq!(sent.content(), &MessageContent::Stamp(Stamp::Thanks));
+        assert_eq!(sent.content().body(), None, "本文は持たない");
+        assert_eq!(thread.unread_count_for(COACH), 1, "コーチに届いたスタンプ");
+
+        // コーチは生徒の契約に左右されない
+        thread
+            .send(
+                message(2),
+                COACH,
+                MessageContent::Stamp(Stamp::NiceShot),
+                false,
+                at(2),
+            )
+            .unwrap();
+        assert_eq!(thread.unread_count_for(STUDENT), 1);
+        assert_eq!(
+            thread
+                .messages()
+                .iter()
+                .map(|m| m.content().stamp())
+                .collect::<Vec<_>>(),
+            [Some(Stamp::Thanks), Some(Stamp::NiceShot)]
+        );
+    }
+
+    #[test]
+    fn a_stamp_needs_the_same_entitlement_as_text() {
+        let mut thread = opened();
+        assert_eq!(
+            thread
+                .send(
+                    message(1),
+                    STUDENT,
+                    MessageContent::Stamp(Stamp::Good),
+                    false,
+                    at(1)
+                )
+                .map(|_| ()),
+            Err(DomainError::ChatNotAllowed)
+        );
+        assert!(thread.messages().is_empty());
+    }
+
+    #[test]
+    fn video_review_messages_are_not_sent_as_chat() {
+        let mut thread = opened();
+        let before = thread.clone();
+        for (sender, content) in [
+            (
+                STUDENT,
+                MessageContent::VideoReviewRequest { video_id: VIDEO },
+            ),
+            (
+                COACH,
+                MessageContent::VideoReviewReturn {
+                    video_id: VIDEO,
+                    review_id: REVIEW,
+                },
+            ),
+        ] {
+            assert_eq!(
+                thread
+                    .send(message(1), sender, content, true, at(1))
+                    .map(|_| ()),
+                Err(DomainError::MessageKindNotSendable)
+            );
+        }
+        // 当事者でなければ種類より先に断る（スレッドがあることを知らせない）
+        assert_eq!(
+            thread
+                .send(
+                    message(1),
+                    OTHER,
+                    MessageContent::VideoReviewRequest { video_id: VIDEO },
+                    true,
+                    at(1)
+                )
+                .map(|_| ()),
+            Err(DomainError::NotAThreadParticipant)
+        );
+        assert_eq!(thread, before);
     }
 }

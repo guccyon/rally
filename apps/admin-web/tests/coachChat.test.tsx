@@ -341,7 +341,7 @@ describe("コーチのチャット", () => {
       data: message({
         kind: "text",
         sender_role: "coach",
-        body: body.body,
+        body: body.body ?? "",
         thread_id: threadId,
         sent_at: "2026-11-01T02:00:00Z",
       }),

@@ -9,6 +9,8 @@
 //! 5. 生徒が動画を送り（添削依頼）、コーチが添削を返すと、同じスレッドに依頼と返却のメッセージが並ぶ
 //!    （async-lesson の `VideoReviewRequested` / `VideoReviewReturned` を messaging が購読する）。依頼は種類
 //!    `video_review_request` と動画の ID、返却は `video_review_returned` と動画の ID・添削の ID で返る
+//! 6. 生徒とコーチがスタンプを送る（`stamp_id`）。種類 `stamp` とスタンプの ID、古い版のクライアント向けの本文の説明
+//!    （「スタンプ: ありがとう」）で返り、保存先から読み直しても同じ。知らない ID は 422
 //!
 //! 保存先がインメモリの組み立て（`server::router_at`）と、Postgres の組み立て（`server::router_with_postgres`。
 //! `#[ignore]`、`DATABASE_URL` を設定して `--include-ignored` で走らせる）の両方で同じ一周を通す。
@@ -431,6 +433,60 @@ async fn chat_round_trip(
         .filter(|e| e.name() == "message.sent")
         .count();
     assert_eq!(sent, 5, "添削依頼・返却は当事者の送信ではない");
+
+    // 6. スタンプ
+    clock.set(oct5() + Duration::from_secs(7260));
+    for (token, stamp_id) in [(&student, "thanks"), (&coach, "nice_shot")] {
+        let stamp = call(
+            &router,
+            "POST",
+            &messages_path,
+            Some(token),
+            Some(json!({ "stamp_id": stamp_id })),
+            StatusCode::CREATED,
+        )
+        .await;
+        assert_eq!(stamp["kind"], "stamp");
+        assert_eq!(stamp["stamp_id"], stamp_id);
+    }
+    call(
+        &router,
+        "POST",
+        &messages_path,
+        Some(&student),
+        Some(json!({ "stamp_id": "heart" })),
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
+    let list = call(
+        &router,
+        "GET",
+        &messages_path,
+        Some(&coach),
+        None,
+        StatusCode::OK,
+    )
+    .await;
+    let messages = list["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 9);
+    let thanks = &messages[7];
+    assert_eq!(thanks["sender_role"], "student");
+    assert_eq!(thanks["sender_id"], student_id);
+    assert_eq!(thanks["kind"], "stamp");
+    assert_eq!(thanks["stamp_id"], "thanks");
+    assert_eq!(thanks["body"], "スタンプ: ありがとう");
+    assert_eq!(thanks["sent_at"], "2026-10-05T02:01:00Z");
+    assert_eq!(thanks.get("video_id"), None);
+    let nice_shot = &messages[8];
+    assert_eq!(nice_shot["sender_role"], "coach");
+    assert_eq!(nice_shot["stamp_id"], "nice_shot");
+    assert_eq!(nice_shot["body"], "スタンプ: ナイスショット");
+    let sent = analytics
+        .events()
+        .into_iter()
+        .filter(|e| e.name() == "message.sent")
+        .count();
+    assert_eq!(sent, 7, "スタンプは当事者の送信");
 }
 
 #[tokio::test]

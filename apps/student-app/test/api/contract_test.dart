@@ -70,6 +70,10 @@ void main() {
           .map((e) => e.wire)
           .toList(),
     ),
+    'StampId': (
+      enumOf('StampId'),
+      StampId.values.map((e) => e.wire).toList(),
+    ),
     'ErrorCode': (
       enumOf('ErrorCode'),
       ErrorCode.values
@@ -243,16 +247,40 @@ void main() {
       'body',
       'video_id',
       'review_id',
+      'stamp_id',
       'sent_at',
       'read_at',
     ]);
     expect(requiredOf('Message'), containsAll(['kind', 'body']));
     expect(requiredOf('Message'), isNot(contains('video_id')));
     expect(requiredOf('Message'), isNot(contains('review_id')));
-    final kind =
-        ((schemas['Message'] as YamlMap)['properties'] as YamlMap)['kind']
-            as YamlMap;
-    expect(refOf(kind), '#/components/schemas/MessageKind');
+    expect(requiredOf('Message'), isNot(contains('stamp_id')));
+    final properties =
+        (schemas['Message'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      refOf(properties['kind'] as YamlMap),
+      '#/components/schemas/MessageKind',
+    );
+    expect(
+      refOf(properties['stamp_id'] as YamlMap),
+      '#/components/schemas/StampId',
+    );
+  });
+
+  test('SendMessageRequest は本文かスタンプのどちらかで、どちらも任意の項目である（sendMessage）', () {
+    // SendMessageRequest.toJson が書く項目
+    expect(propertiesOf('SendMessageRequest'), ['body', 'stamp_id']);
+    expect((schemas['SendMessageRequest'] as YamlMap)['required'], isNull);
+    final properties =
+        (schemas['SendMessageRequest'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      (properties['body'] as YamlMap)['maxLength'],
+      SendMessageRequest.maxBodyLength,
+    );
+    expect(
+      refOf(properties['stamp_id'] as YamlMap),
+      '#/components/schemas/StampId',
+    );
   });
 
   test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {

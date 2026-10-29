@@ -104,7 +104,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
               review: state.chatReviews[message.videoId],
               failed: state.chatReviewFailures.contains(message.videoId),
             ),
+            // スタンプの絵柄は次のチケット。それまでは知らない種類と同じく body の説明を出す
             MessageKind.text ||
+            MessageKind.stamp ||
             MessageKind.other => _MessageTile(message: message),
           },
         const SizedBox(height: 8),

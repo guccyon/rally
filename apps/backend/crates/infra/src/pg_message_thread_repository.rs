@@ -15,7 +15,7 @@ use domain::{
     identity::AccountId,
     messaging::{
         Message, MessageBody, MessageContent, MessageId, MessageKind, MessageThread,
-        MessageThreadId,
+        MessageThreadId, Stamp,
     },
 };
 use sqlx::{
@@ -26,7 +26,7 @@ use sqlx::{
 use crate::{
     messaging_values::{
         message_author_from_value, message_author_value, message_kind_from_value,
-        message_kind_value,
+        message_kind_value, stamp_from_value, stamp_value,
     },
     pg_support::timestamp,
 };
@@ -35,8 +35,8 @@ use crate::{
 ///
 /// 同じ生徒とコーチのスレッドは 1 つ（`threads_student_id_coach_id_key`。開くときは `ON CONFLICT DO NOTHING`）。
 /// 送信・既読はスレッドの行のロック（`FOR UPDATE`）の中で読み取りから保存までを行う。メッセージは送った順
-/// （`seq`）に読む。メッセージの種類（`kind`）ごとの中身は、本文（`body`）と動画・添削の ID（`video_id` / `review_id`）の列に
-/// 分けて持つ（形は `messages_kind_shape`）。
+/// （`seq`）に読む。メッセージの種類（`kind`）ごとの中身は、本文（`body`）と動画・添削の ID（`video_id` / `review_id`）と
+/// スタンプの ID（`stamp`）の列に分けて持つ（形は `messages_kind_shape`）。
 #[derive(Debug, Clone)]
 pub struct PgMessageThreadRepository {
     pool: PgPool,
@@ -45,7 +45,7 @@ pub struct PgMessageThreadRepository {
 /// スレッドの列（thread_id, student_id, coach_id, opened_at）。
 type ThreadRow = (Uuid, Uuid, Uuid, OffsetDateTime);
 
-/// メッセージの列（thread_id, message_id, sender_role, kind, body, video_id, review_id, sent_at, read_at）。
+/// メッセージの列（thread_id, message_id, sender_role, kind, body, video_id, review_id, stamp, sent_at, read_at）。
 type MessageRow = (
     Uuid,
     Uuid,
@@ -54,12 +54,13 @@ type MessageRow = (
     Option<String>,
     Option<Uuid>,
     Option<Uuid>,
+    Option<String>,
     OffsetDateTime,
     Option<OffsetDateTime>,
 );
 
 const MESSAGES_OF: &str =
-    "SELECT thread_id, message_id, sender_role, kind, body, video_id, review_id,
+    "SELECT thread_id, message_id, sender_role, kind, body, video_id, review_id, stamp,
             sent_at, read_at
      FROM messaging.messages
      WHERE thread_id = ANY($1)
@@ -188,8 +189,8 @@ impl MessageThreadRepository for PgMessageThreadRepository {
                     sqlx::query(
                         "INSERT INTO messaging.messages
                              (message_id, thread_id, sender_role, kind, body, video_id, review_id,
-                              sent_at, read_at)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                              stamp, sent_at, read_at)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                     )
                     .bind(message_id_uuid::to_uuid(message.id()))
                     .bind(message_thread_id_uuid::to_uuid(thread.id()))
@@ -198,6 +199,7 @@ impl MessageThreadRepository for PgMessageThreadRepository {
                     .bind(content.body().map(MessageBody::as_str))
                     .bind(content.video_id().map(video_id_uuid::to_uuid))
                     .bind(content.review_id().map(video_review_id_uuid::to_uuid))
+                    .bind(content.stamp().map(stamp_value))
                     .bind(timestamp(message.sent_at()))
                     .bind(read_at)
                     .execute(&mut *tx)
@@ -237,7 +239,7 @@ fn assemble(
     messages: Vec<MessageRow>,
 ) -> Result<Vec<MessageThread>, Unavailable> {
     let mut by_thread: HashMap<Uuid, Vec<Message>> = HashMap::new();
-    for (thread_id, message_id, sender, kind, body, video_id, review_id, sent_at, read_at) in
+    for (thread_id, message_id, sender, kind, body, video_id, review_id, stamp, sent_at, read_at) in
         messages
     {
         let author = message_author_from_value(&sender)
@@ -245,7 +247,7 @@ fn assemble(
         let message = Message::restore(
             message_id_uuid::from_uuid(message_id),
             author,
-            content(&kind, body, video_id, review_id)?,
+            content(&kind, body, video_id, review_id, stamp)?,
             sent_at.into(),
             read_at.map(Into::into),
         )
@@ -273,6 +275,7 @@ fn content(
     body: Option<String>,
     video_id: Option<Uuid>,
     review_id: Option<Uuid>,
+    stamp: Option<String>,
 ) -> Result<MessageContent, Unavailable> {
     let kind = message_kind_from_value(kind)
         .ok_or_else(|| Unavailable::new(format!("未知の kind: {kind}")))?;
@@ -299,5 +302,11 @@ fn content(
                 .map(video_review_id_uuid::from_uuid)
                 .ok_or_else(|| missing("review_id"))?,
         }),
+        MessageKind::Stamp => {
+            let stamp = stamp.ok_or_else(|| missing("stamp"))?;
+            let stamp: Stamp = stamp_from_value(&stamp)
+                .ok_or_else(|| Unavailable::new(format!("未知の stamp: {stamp}")))?;
+            Ok(MessageContent::Stamp(stamp))
+        }
     }
 }

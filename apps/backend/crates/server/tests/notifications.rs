@@ -7,7 +7,7 @@
 //! 3. 予約のキャンセルでは送らない（キャンセルの通知はまだない）
 //!
 //! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
-//! `MessageSent`）では受け手（送り手でない側の当事者）に届く。
+//! `MessageSent`。本文でもスタンプでも）では受け手（送り手でない側の当事者）に届く。
 //!
 //! 受け取る人が通知の受け取り設定（`PUT /notification-settings/me`）でその種類をオフにしていれば送らない。受け取り設定が
 //! Postgres に保存されることは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
@@ -343,6 +343,20 @@ async fn a_sent_message_pushes_a_notification_to_the_other_party() {
         ]
     );
     assert_eq!(push.sent()[3].recipient(), coach_id);
+
+    // スタンプも本文と同じく相手に届く
+    let thanks = call(
+        &router,
+        "POST",
+        &messages_path,
+        Some(&coach),
+        json!({ "stamp_id": "lets_go" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(thanks["kind"], "stamp");
+    assert_eq!(push.sent()[4..], [received(&thanks, MessageSender::Coach)]);
+    assert_eq!(push.sent()[4].recipient(), student_id);
 }
 
 #[tokio::test]

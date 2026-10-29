@@ -126,8 +126,10 @@ pub enum DomainError {
     EmptyMessageBody,
     /// メッセージの本文が長すぎる（`max` は文字数）
     MessageBodyTooLong { max: usize },
-    /// メッセージの送り手がメッセージの種類に合わない（添削依頼は生徒、添削の返却はコーチだけが送り手になる）
+    /// メッセージの送り手がメッセージの種類に合わない（添削依頼は生徒、添削の返却はコーチ、スタンプは当事者だけが送り手になる）
     MessageAuthorMismatchesKind,
+    /// 当事者がチャットとして送れない種類のメッセージ（添削依頼・添削の返却は async-lesson の出来事から足すもの）
+    MessageKindNotSendable,
     /// 評価の点が `min`〜`max` の整数でない
     RatingOutOfRange { min: u8, max: u8 },
     /// 評価の一言が空（空白だけを含む）

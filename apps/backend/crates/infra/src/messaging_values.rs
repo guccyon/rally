@@ -1,9 +1,9 @@
 //! messaging の値と、DB に保存する文字列の対応表。
 //!
-//! `messaging.messages.sender_role` と `kind`（CHECK 制約の値）と、行動イベント `message.sent`・境界間イベント `MessageSent`
+//! `messaging.messages.sender_role` と `kind` と `stamp`（CHECK 制約の値）と、行動イベント `message.sent`・境界間イベント `MessageSent`
 //! の `sender_role` はこの表だけを通す。CHECK との一致は `tests/schema.rs` が確かめる。
 
-use domain::messaging::{MessageAuthor, MessageKind, MessageSender};
+use domain::messaging::{MessageAuthor, MessageKind, MessageSender, Stamp};
 
 /// 当事者の値（`messaging.messages.sender_role` の当事者の値。行動イベント・境界間イベントの `sender_role` も同じ値）。
 pub const fn message_sender_value(sender: MessageSender) -> &'static str {
@@ -39,6 +39,7 @@ pub const fn message_kind_value(kind: MessageKind) -> &'static str {
         MessageKind::Text => "text",
         MessageKind::VideoReviewRequest => "video_review_request",
         MessageKind::VideoReviewReturn => "video_review_return",
+        MessageKind::Stamp => "stamp",
     }
 }
 
@@ -46,6 +47,26 @@ pub fn message_kind_from_value(value: &str) -> Option<MessageKind> {
     MessageKind::ALL
         .into_iter()
         .find(|kind| message_kind_value(*kind) == value)
+}
+
+/// `messaging.messages.stamp` の値（スタンプの ID。契約の `StampId` と同じ綴りだが、対応は別に持つ）。
+pub const fn stamp_value(stamp: Stamp) -> &'static str {
+    match stamp {
+        Stamp::Thanks => "thanks",
+        Stamp::Good => "good",
+        Stamp::GotIt => "got_it",
+        Stamp::LetsGo => "lets_go",
+        Stamp::NiceShot => "nice_shot",
+        Stamp::Tired => "tired",
+        Stamp::Question => "question",
+        Stamp::Ok => "ok",
+    }
+}
+
+pub fn stamp_from_value(value: &str) -> Option<Stamp> {
+    Stamp::ALL
+        .into_iter()
+        .find(|stamp| stamp_value(*stamp) == value)
 }
 
 #[cfg(test)]
@@ -84,6 +105,15 @@ mod tests {
                 Some(kind)
             );
         }
-        assert_eq!(message_kind_from_value("stamp"), None);
+        assert_eq!(message_kind_value(MessageKind::Stamp), "stamp");
+        assert_eq!(message_kind_from_value("concierge"), None);
+    }
+
+    #[test]
+    fn round_trips_every_stamp() {
+        for stamp in Stamp::ALL {
+            assert_eq!(stamp_from_value(stamp_value(stamp)), Some(stamp));
+        }
+        assert_eq!(stamp_from_value("heart"), None);
     }
 }

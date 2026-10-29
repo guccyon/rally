@@ -1,7 +1,7 @@
 # ADR 0007: messaging の最小形（生徒と担当コーチのチャット）
 
-- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記。D48（Issue #208）で種類と送り手のシステムを契約に出すこと（決定 8）を追記
-- 関係: docs/adr/0009 の答え合わせ（チャットは会話でありレッスンのログ）、`specs/context-map.yaml`（messaging・async-lesson）、`specs/glossary.yaml`（message_thread / message / subscription）、`specs/contracts/events/asyncapi.yaml`（BookingConfirmed）、`specs/contracts/api/student-app/openapi.yaml`・`admin-web/openapi.yaml`（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）、`specs/analytics/events.yaml`（message.sent）、ADR 0004（スキーマ）、ADR 0005（境界間イベントの購読）
+- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記。D48（Issue #208）で種類と送り手のシステムを契約に出すこと（決定 8）を追記。D54（Issue #227）でスタンプ（決定 9）を追記
+- 関係: docs/adr/0009 の答え合わせ（チャットは会話でありレッスンのログ）、`specs/context-map.yaml`（messaging・async-lesson）、`specs/glossary.yaml`（message_thread / message / stamp / subscription）、`specs/contracts/events/asyncapi.yaml`（BookingConfirmed）、`specs/contracts/api/student-app/openapi.yaml`・`admin-web/openapi.yaml`（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）、`specs/analytics/events.yaml`（message.sent）、ADR 0004（スキーマ）、ADR 0005（境界間イベントの購読）
 
 ## 決定
 
@@ -24,6 +24,12 @@
    - `body` は必須のまま残し、本文以外の種類では D47 の短い説明を入れ続ける。互換ポリシー（N-2）で支える古い版は `kind` を知らず `body` を必ず読むので、外すと古い版の表示が空になる（必須の項目を任意にするのは契約の違反）。知っている種類は説明に頼らず `kind` と ID で表す
    - 送り手のシステムは `sender_role` の `system`（レスポンスの enum の追加）で表し、`sender_id` はどのアカウントでもない nil UUID（`00000000-0000-0000-0000-000000000000`）にする。`sender_id` は必須の `string`（uuid）で、null を許すのは型の変更として契約の違反になるため。これで送り手がシステムのメッセージも 500 にならずに返る
    - `sendMessage` で送れるのは本文だけ（応答の `kind` は `text`）。リクエストは変えない
+9. **スタンプを送れる（D54）。** オーナーの方向（2026-10-29: チャットには将来スタンプや AI コンシェルジュの発言も流せるよう、メッセージの種類をモデル化しておく）の 1 つ目。
+   - スタンプ（glossary の `stamp`。domain の `Stamp`）は決まった 8 種類（`thanks` / `good` / `got_it` / `lets_go` / `nice_shot` / `tired` / `question` / `ok`）のどれかで、本文は持たない。種類 `MessageContent::Stamp`（`MessageKind::Stamp`）として足し、送り手は当事者（生徒・コーチ）だけ（`MessageContent::allows`。DB は `messages_kind_sender`）。画像と表示の文言はクライアントが持つ
+   - 送信は本文と同じ `MessageThread::send` で、中身（`MessageContent`）を受け取る。チャットとして送れるのは本文とスタンプだけ（`MessageKind::is_chat`。添削依頼・返却は `DomainError::MessageKindNotSendable`）。チャットの送り放題の判定（`ChatGate`）・`MessageSent`（相手への通知）・行動イベント `message.sent` は本文と同じで、属性も変えない（本文を載せないので種類も載せない）
+   - 契約: `sendMessage` の `SendMessageRequest` に `stamp_id`（`StampId`）を足し、`body` を任意にした（リクエストの必須を外すのは互換）。本文とスタンプのどちらか 1 つで、両方・どちらもなし・知らない ID は 422。`Message` に `stamp_id`（スタンプのときだけ）を足し、`MessageKind` に `stamp` を足した（レスポンスの enum の追加。決定 8 で知らない種類は読み飛ばしてよいと書いてある）
+   - `body` には古い版のクライアント向けに「スタンプ: ありがとう」の形の短い説明を入れる（呼び名は interface の `message.rs`。契約の `StampId` の説明と同じ）
+   - DB は `messaging.messages` に `stamp` の列を足し、種類と形と送り手の CHECK を stamp の場合を OR で足すだけの付け直しにした（`20261029000002_expand_message_stamps.sql`）
 
 ## 選ばなかった案
 
@@ -33,5 +39,8 @@
 - 添削依頼を本文のメッセージに動画を添付する形にする（D47）: docs/adr/0009 の答え合わせ（チャットのメッセージの 1 つとして動画を上げるのではなく、添削依頼の形で上げさせる。添削したことや回数は管理したい）に合わない
 - 種類ごとの中身を `oneOf`（`kind` で判別する別々のスキーマ）にする（D48）: 型は締まるが、今の `Message` を置き換えることになり互換の検査と両クライアントの型の扱いが重くなる。中身は ID が 2 つだけなので、任意の項目を平らに並べた
 - 送り手がシステムのとき `sender_id` を null にする（D48）: 意味は素直だが、必須の uuid の項目に null を足すのはレスポンスの型の変更で、支えている古い版を壊す
+- スタンプを本文のメッセージ（絵文字や決まった文字列）として送る（D54）: 種類として区別できず、絵柄の差し替え・集計・AI コンシェルジュなど後の種類の足し方の前例にならない。決定 7 の「変種を足して表す」に従った
+- スタンプの送信を別の操作（`POST .../stamps`）にする（D54）: Issue の「`sendMessage` で本文の代わりにスタンプの ID を送る」に合わない。操作が増えると送り放題の判定・通知・行動イベントの経路が 2 つになる
+- `SendMessageRequest` を `oneOf`（本文のスキーマとスタンプのスキーマ）にする（D54）: 型は締まるが、既存のスキーマの置き換えになり、互換の検査と両クライアントの型の扱いが重くなる（決定 8 の `Message` と同じ理由）。どちらか 1 つは API が 422 で守る
 - 受講権のない生徒にも送らせる: Blueprint の「月額: 動画とチャットは送り放題」を、チャットは月額の利用権に含まれると読んだ。体験予約だけの生徒に送らせるかは、通知・matching と合わせて見直せる（`EntitlementChatGate` の 1 か所を変えればよい）
 - 既読をスレッドの当事者ごとの「最後に読んだ時刻」で持つ: 行が少なく済むが、メッセージごとの既読（相手が読んだか）を返すには時刻の比較が要り、同じ時刻のメッセージで曖昧になる

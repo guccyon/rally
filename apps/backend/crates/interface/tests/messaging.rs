@@ -1,8 +1,8 @@
 //! `/message-threads` の統合テスト。student-app（生徒）と admin-web（コーチ）の `listMessageThreads`・
 //! `listMessages`・`sendMessage`・`markMessageThreadRead` のレスポンスの形を OpenAPI のスキーマで検査し、
 //! 送信 → 一覧 → 既読の一連・行動イベント `message.sent`・月額の生徒が送り放題で受講権を消費しないこと・
-//! 受講権のない生徒の 403・当事者でないアカウントの 404・422 / 401 と、メッセージの種類（本文・添削依頼・添削の返却）と
-//! システムが流したメッセージの返し方を確かめる。
+//! 受講権のない生徒の 403・当事者でないアカウントの 404・422 / 401 と、メッセージの種類（本文・添削依頼・添削の返却・
+//! スタンプ）とシステムが流したメッセージの返し方を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -737,6 +737,110 @@ async fn others_see_no_thread() {
 }
 
 #[tokio::test]
+async fn the_participants_send_stamps_with_a_body_for_old_clients() {
+    let app = app();
+    let thread = thread_path(THREAD);
+    let (status, sent) = app
+        .send_message(Some(STUDENT), &thread, json!({ "stamp_id": "thanks" }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{sent}");
+    assert_eq!(sent["kind"], "stamp");
+    assert_eq!(sent["stamp_id"], "thanks");
+    assert_eq!(
+        sent["body"], "スタンプ: ありがとう",
+        "古い版のクライアント向けの説明"
+    );
+    assert_eq!(sent["sender_role"], "student");
+    assert!(sent.get("video_id").is_none() && sent.get("review_id").is_none());
+
+    let (status, reply) = app
+        .send_message(Some(COACH), &thread, json!({ "stamp_id": "nice_shot" }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{reply}");
+    assert_eq!(reply["sender_role"], "coach");
+
+    // 一覧にも種類とスタンプの ID が載る。本文のメッセージには stamp_id がない
+    let text = app.sent(STUDENT, THREAD, "次もよろしくお願いします").await;
+    assert!(text.get("stamp_id").is_none(), "{text}");
+    let (status, body) = app.list_messages(Some(COACH), &thread).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| (m["kind"].clone(), m["stamp_id"].clone(), m["body"].clone()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                json!("stamp"),
+                json!("thanks"),
+                json!("スタンプ: ありがとう")
+            ),
+            (
+                json!("stamp"),
+                json!("nice_shot"),
+                json!("スタンプ: ナイスショット")
+            ),
+            (
+                json!("text"),
+                Value::Null,
+                json!("次もよろしくお願いします")
+            ),
+        ]
+    );
+    let (_, threads) = app.list_threads(Some(STUDENT)).await;
+    let summary = threads["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["thread_id"] == thread)
+        .unwrap();
+    assert_eq!(summary["unread_count"], 1, "コーチのスタンプは未読");
+
+    // スタンプの送信も行動イベント message.sent を 1 回ずつ発火する
+    assert_eq!(app.message_events().len(), 3);
+    assert!(matches!(
+        app.message_events()[0],
+        AnalyticsEvent::MessageSent {
+            sender_role: domain::messaging::MessageSender::Student,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn stamps_need_the_same_entitlement_as_text() {
+    let app = app();
+    let (status, body) = app
+        .send_message(
+            Some(TRIAL_STUDENT),
+            &thread_path(TRIAL_THREAD),
+            json!({ "stamp_id": "question" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "chat_not_entitled");
+    let (status, body) = app
+        .send_message(
+            Some(COACH),
+            &thread_path(TRIAL_THREAD),
+            json!({ "stamp_id": "lets_go" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_message(
+            Some(OTHER_COACH),
+            &thread_path(THREAD),
+            json!({ "stamp_id": "ok" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert_eq!(app.message_events().len(), 1);
+}
+
+#[tokio::test]
 async fn invalid_bodies_are_422() {
     let app = app();
     let thread = thread_path(THREAD);
@@ -746,6 +850,12 @@ async fn invalid_bodies_are_422() {
         json!({ "body": "あ".repeat(2001) }),
         json!({}),
         json!({ "body": 1 }),
+        json!({ "body": null }),
+        // スタンプは知っている ID だけで、本文とはどちらか 1 つ
+        json!({ "stamp_id": "heart" }),
+        json!({ "stamp_id": "Thanks" }),
+        json!({ "stamp_id": 1 }),
+        json!({ "body": "ありがとう", "stamp_id": "thanks" }),
     ] {
         let (status, response) = app.send_message(Some(STUDENT), &thread, body.clone()).await;
         assert_eq!(

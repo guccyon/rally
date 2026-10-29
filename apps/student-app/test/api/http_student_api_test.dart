@@ -356,6 +356,19 @@ void main() {
     expect(jsonDecode(sent.single.body), {'body': 'よろしく'});
     expect(message.senderRole, MessageSenderRole.student);
 
+    final stamp = await apiReplying(201, {
+      ...coachMessage,
+      'sender_id': 's1',
+      'sender_role': 'student',
+      'kind': 'stamp',
+      'stamp_id': 'thanks',
+      'body': 'スタンプ: ありがとう',
+    }).sendMessage('t1', SendMessageRequest.stamp(StampId.thanks));
+    expect(sent.single.url.path, '/message-threads/t1/messages');
+    expect(jsonDecode(sent.single.body), {'stamp_id': 'thanks'});
+    expect(stamp.kind, MessageKind.stamp);
+    expect(stamp.stampId, StampId.thanks);
+
     final read = await apiReplying(200, {
       ...thread,
       'last_message': {...coachMessage, 'read_at': '2026-10-26T03:05:00Z'},

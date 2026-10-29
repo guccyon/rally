@@ -1673,7 +1673,7 @@ async fn messages_have_the_shape_and_the_sender_of_their_kind(pool: PgPool) {
     for (sender, kind, body, video, review, expected) in [
         (
             "student",
-            "stamp",
+            "concierge",
             Some("x"),
             None,
             None,
@@ -1767,6 +1767,101 @@ async fn messages_have_the_shape_and_the_sender_of_their_kind(pool: PgPool) {
             (code.as_str(), constraint.as_str()),
             expected,
             "{sender} {kind} {body:?} {video:?} {review:?}"
+        );
+    }
+}
+
+/// スレッド `thread_id` に、スタンプ `stamp` の種類 `kind` のメッセージの行を入れる（本文 `body`、送信 10:00）。
+async fn post_stamp(
+    pool: &PgPool,
+    thread_id: &str,
+    sender_role: &str,
+    kind: &str,
+    body: Option<&str>,
+    stamp: Option<&str>,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO messaging.messages (thread_id, sender_role, kind, body, stamp, sent_at)
+         VALUES ($1::uuid, $2, $3, $4, $5, '2026-10-26T10:00:00Z')
+         RETURNING message_id::text",
+    )
+    .bind(thread_id)
+    .bind(sender_role)
+    .bind(kind)
+    .bind(body)
+    .bind(stamp)
+    .fetch_one(pool)
+    .await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn stamps_are_known_ids_from_a_participant_without_a_body(pool: PgPool) {
+    use domain::messaging::Stamp;
+    use infra::messaging_values::stamp_value;
+
+    let stamps: Vec<&str> = Stamp::ALL.into_iter().map(stamp_value).collect();
+    assert_eq!(
+        check_values(&pool, "messaging.messages", "messages_stamp_check").await,
+        stamps
+    );
+
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let thread_id = open_thread(&pool, &student_id, &coach_id).await.unwrap();
+    for (sender, stamp) in [("student", "thanks"), ("coach", "nice_shot")] {
+        post_stamp(&pool, &thread_id, sender, "stamp", None, Some(stamp))
+            .await
+            .unwrap();
+    }
+    // 同じスタンプを何度送ってもよい（動画の 1 通ずつの索引は video_id のある行だけ）
+    post_stamp(&pool, &thread_id, "student", "stamp", None, Some("thanks"))
+        .await
+        .unwrap();
+
+    for (sender, kind, body, stamp, expected) in [
+        (
+            "student",
+            "stamp",
+            None,
+            Some("heart"),
+            (CHECK_VIOLATION, "messages_stamp_check"),
+        ),
+        (
+            "student",
+            "stamp",
+            None,
+            None,
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "student",
+            "stamp",
+            Some("ありがとう"),
+            Some("thanks"),
+            (CHECK_VIOLATION, "messages_kind_shape"),
+        ),
+        (
+            "student",
+            "text",
+            Some("ありがとう"),
+            Some("thanks"),
+            (CHECK_VIOLATION, "messages_stamp_only_for_stamp"),
+        ),
+        (
+            "system",
+            "stamp",
+            None,
+            Some("ok"),
+            (CHECK_VIOLATION, "messages_kind_sender"),
+        ),
+    ] {
+        let (code, constraint) =
+            violation(post_stamp(&pool, &thread_id, sender, kind, body, stamp).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            expected,
+            "{sender} {kind} {body:?} {stamp:?}"
         );
     }
 }

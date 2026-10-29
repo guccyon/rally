@@ -91,7 +91,7 @@ mod tests {
     use super::*;
     use crate::{
         async_lesson::{VideoId, VideoReviewId},
-        messaging::{MessageBody, MessageSender},
+        messaging::{MessageBody, MessageSender, Stamp},
     };
 
     const NOW: SystemTime = SystemTime::UNIX_EPOCH;
@@ -133,6 +133,13 @@ mod tests {
             (STUDENT, returned.clone(), false),
             (MessageAuthor::System, returned, false),
             (MessageAuthor::System, text(), true),
+            (STUDENT, MessageContent::Stamp(Stamp::Ok), true),
+            (COACH, MessageContent::Stamp(Stamp::Ok), true),
+            (
+                MessageAuthor::System,
+                MessageContent::Stamp(Stamp::Ok),
+                false,
+            ),
         ] {
             let result = Message::sent(MessageId::from_u128(1), author, content.clone(), NOW);
             if ok {

@@ -52,7 +52,7 @@ where
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use domain::messaging::{MessageBody, MessageId, MessageThreadId};
+    use domain::messaging::{MessageBody, MessageContent, MessageId, MessageThreadId};
 
     use super::*;
     use crate::in_memory::InMemoryMessageThreadRepository;
@@ -81,7 +81,7 @@ mod tests {
             .send(
                 MessageId::from_u128(1),
                 COACH,
-                MessageBody::new("こんにちは").unwrap(),
+                MessageContent::Text(MessageBody::new("こんにちは").unwrap()),
                 true,
                 at(30),
             )

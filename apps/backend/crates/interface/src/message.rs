@@ -5,7 +5,7 @@ use domain::{
     DomainError,
     entitlement::ContractType,
     identity::Role,
-    messaging::MessageContent,
+    messaging::{MessageContent, Stamp},
     scheduling::{BookingStatus, SlotStatus},
 };
 
@@ -121,6 +121,7 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::MessageAuthorMismatchesKind => {
             "メッセージの送り手が種類に合わない".to_string()
         }
+        DomainError::MessageKindNotSendable => "チャットで送れるのは本文かスタンプだけ".to_string(),
         DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
         DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
         DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
@@ -129,13 +130,28 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
     }
 }
 
-/// メッセージの本文（student-app・admin-web の `Message.body`）。本文の種類は本文そのもの、添削依頼・添削の返却は
-/// 種類（`Message.kind`）を知らない版のクライアントがそのまま表示できる短い説明。
+/// メッセージの本文（student-app・admin-web の `Message.body`）。本文の種類は本文そのもの、添削依頼・添削の返却・
+/// スタンプは種類（`Message.kind`）を知らない版のクライアントがそのまま表示できる短い説明（スタンプは「スタンプ: 呼び名」）。
 pub(crate) fn message_content_text(content: &MessageContent) -> String {
     match content {
         MessageContent::Text(body) => body.as_str().to_string(),
         MessageContent::VideoReviewRequest { .. } => "動画の添削を依頼しました".to_string(),
         MessageContent::VideoReviewReturn { .. } => "動画の添削を返しました".to_string(),
+        MessageContent::Stamp(stamp) => format!("スタンプ: {}", stamp_label(*stamp)),
+    }
+}
+
+/// スタンプの呼び名（契約の `StampId` の説明と同じ）。
+const fn stamp_label(stamp: Stamp) -> &'static str {
+    match stamp {
+        Stamp::Thanks => "ありがとう",
+        Stamp::Good => "いいね",
+        Stamp::GotIt => "了解",
+        Stamp::LetsGo => "がんばろう",
+        Stamp::NiceShot => "ナイスショット",
+        Stamp::Tired => "おつかれさま",
+        Stamp::Question => "質問",
+        Stamp::Ok => "OK",
     }
 }
 
@@ -387,6 +403,10 @@ mod tests {
             "メッセージの送り手が種類に合わない"
         );
         assert_eq!(
+            domain_error(&DomainError::MessageKindNotSendable),
+            "チャットで送れるのは本文かスタンプだけ"
+        );
+        assert_eq!(
             domain_error(&DomainError::RatingOutOfRange { min: 1, max: 5 }),
             "評価の点は 1〜5 の整数"
         );
@@ -431,6 +451,19 @@ mod tests {
                 review_id: VideoReviewId::from_u128(2)
             }),
             "動画の添削を返しました"
+        );
+        assert_eq!(
+            Stamp::ALL.map(|stamp| message_content_text(&MessageContent::Stamp(stamp))),
+            [
+                "スタンプ: ありがとう",
+                "スタンプ: いいね",
+                "スタンプ: 了解",
+                "スタンプ: がんばろう",
+                "スタンプ: ナイスショット",
+                "スタンプ: おつかれさま",
+                "スタンプ: 質問",
+                "スタンプ: OK",
+            ]
         );
     }
 }

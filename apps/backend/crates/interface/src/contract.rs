@@ -12,7 +12,7 @@ use domain::{
     identity::{Role, Sport},
     lesson::LessonType,
     live_lesson::SessionStatus,
-    messaging::{MessageAuthor, MessageKind, MessageSender},
+    messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
     scheduling::{BookingStatus, SlotStatus, SlotSupplyStatus},
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -164,7 +164,30 @@ pub(crate) const fn message_kind_to_contract(kind: MessageKind) -> &'static str 
         MessageKind::Text => "text",
         MessageKind::VideoReviewRequest => "video_review_request",
         MessageKind::VideoReviewReturn => "video_review_returned",
+        MessageKind::Stamp => "stamp",
     }
+}
+
+/// student-app・admin-web の `StampId` の値（`Message.stamp_id`・`SendMessageRequest.stamp_id`）。
+pub(crate) const fn stamp_to_contract(stamp: Stamp) -> &'static str {
+    match stamp {
+        Stamp::Thanks => "thanks",
+        Stamp::Good => "good",
+        Stamp::GotIt => "got_it",
+        Stamp::LetsGo => "lets_go",
+        Stamp::NiceShot => "nice_shot",
+        Stamp::Tired => "tired",
+        Stamp::Question => "question",
+        Stamp::Ok => "ok",
+    }
+}
+
+/// `stamp_id` を読む。契約の enum にない ID は 422。
+pub(crate) fn stamp_from_contract(value: &str) -> Result<Stamp, ApiError> {
+    Stamp::ALL
+        .into_iter()
+        .find(|stamp| stamp_to_contract(*stamp) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知のスタンプ: {value}")))
 }
 
 /// student-app の `SubscriptionStatus` の値。
@@ -354,11 +377,42 @@ mod tests {
     }
 
     #[test]
-    fn message_kinds_are_text_and_the_video_review_request_and_return() {
+    fn message_kinds_are_text_the_video_review_request_and_return_and_stamp() {
         assert_eq!(
             MessageKind::ALL.map(message_kind_to_contract),
-            ["text", "video_review_request", "video_review_returned"]
+            [
+                "text",
+                "video_review_request",
+                "video_review_returned",
+                "stamp"
+            ]
         );
+    }
+
+    #[test]
+    fn stamps_are_the_eight_ids_and_unknown_ids_are_422() {
+        assert_eq!(
+            Stamp::ALL.map(stamp_to_contract),
+            [
+                "thanks",
+                "good",
+                "got_it",
+                "lets_go",
+                "nice_shot",
+                "tired",
+                "question",
+                "ok"
+            ]
+        );
+        for stamp in Stamp::ALL {
+            assert_eq!(
+                stamp_from_contract(stamp_to_contract(stamp)).ok(),
+                Some(stamp)
+            );
+        }
+        for value in ["heart", "Thanks", ""] {
+            assert!(stamp_from_contract(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]

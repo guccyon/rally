@@ -246,7 +246,9 @@ class FakeStudentApi implements StudentApi {
           threadId: threadId,
           senderId: Fixtures.studentId,
           senderRole: MessageSenderRole.student,
-          body: body.body,
+          kind: body.stampId == null ? MessageKind.text : MessageKind.stamp,
+          body: body.body ?? 'スタンプ: ${body.stampId?.wire}',
+          stampId: body.stampId,
           sentAt: Fixtures.now.add(Duration(minutes: messages.length + 1)),
         );
         messages.add(message);
