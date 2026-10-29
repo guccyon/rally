@@ -183,6 +183,10 @@ describe("自己紹介", () => {
         ok: true,
         data: { bookings: [] },
       })),
+      listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({
+        ok: true,
+        data: { threads: [] },
+      })),
       getCoachReviewSummary: vi.fn<CoachApi["getCoachReviewSummary"]>(async (coachId) => ({
         ok: true,
         data: { coach_id: coachId, review_count: 0, average_rating: null },

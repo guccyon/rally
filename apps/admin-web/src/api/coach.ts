@@ -39,6 +39,26 @@ export function coachApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listMessageThreads: () => call(() => client.GET("/message-threads")),
+    listMessages: (threadId: string) =>
+      call(() =>
+        client.GET("/message-threads/{thread_id}/messages", {
+          params: { path: { thread_id: threadId } },
+        }),
+      ),
+    sendMessage: (threadId: string, body: Schemas["SendMessageRequest"]) =>
+      call(() =>
+        client.POST("/message-threads/{thread_id}/messages", {
+          params: { path: { thread_id: threadId } },
+          body,
+        }),
+      ),
+    markMessageThreadRead: (threadId: string) =>
+      call(() =>
+        client.POST("/message-threads/{thread_id}/read", {
+          params: { path: { thread_id: threadId } },
+        }),
+      ),
   };
 }
 
