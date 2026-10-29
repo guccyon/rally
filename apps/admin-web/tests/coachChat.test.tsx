@@ -388,7 +388,7 @@ describe("コーチのチャット", () => {
       body: "メンテナンスのお知らせ",
       sent_at: "2026-10-21T01:00:00Z",
     });
-    // 契約は種類が後方互換に増えるとしている（将来のスタンプなど）。
+    // 契約は種類が後方互換に増えるとしている（AI コンシェルジュの発言など）。
     const unknown = {
       ...message({
         kind: "text",
@@ -410,6 +410,164 @@ describe("コーチのチャット", () => {
     expect(items[0]).toHaveTextContent("メンテナンスのお知らせ");
     expect(items[1]).toHaveTextContent("佐藤さん");
     expect(items[1]).toHaveTextContent("スタンプを送りました");
+  });
+
+  test("スタンプは絵柄と言葉を大きめに、送り手と既読とともに出す。知らないスタンプは本文（短い説明）として出す", async () => {
+    const studentStamp = message({
+      kind: "stamp",
+      sender_role: "student",
+      body: "スタンプ: ありがとう",
+      stamp_id: "thanks",
+      sent_at: "2026-10-21T01:00:00Z",
+    });
+    const coachStamp = message({
+      kind: "stamp",
+      sender_role: "coach",
+      body: "スタンプ: ナイスショット",
+      stamp_id: "nice_shot",
+      sent_at: "2026-10-21T02:00:00Z",
+      read_at: "2026-10-21T03:00:00Z",
+    });
+    // 契約より新しい版で増えたスタンプ。
+    const unknownStamp = {
+      ...message({
+        kind: "stamp",
+        sender_role: "student",
+        body: "スタンプ: またね",
+        sent_at: "2026-10-21T04:00:00Z",
+      }),
+      stamp_id: "see_you",
+    } as unknown as Schemas["Message"];
+    const listMessages = vi.fn<CoachApi["listMessages"]>(async () => ({
+      ok: true,
+      data: {
+        thread_id: THREAD_ID,
+        messages: [studentStamp, coachStamp, unknownStamp],
+      },
+    }));
+    const { user } = setup({ listMessages });
+    const messages = await openThread(user, /佐藤さん/);
+
+    const items = within(messages).getAllByRole("listitem");
+    const thanks = within(items[0]!).getByRole("img", {
+      name: "スタンプ: ありがとう",
+    });
+    expect(thanks).toHaveTextContent("🙏");
+    expect(thanks).toHaveTextContent("ありがとう");
+    expect(within(thanks).getByText("🙏")).toHaveClass("text-5xl");
+    expect(items[0]).toHaveTextContent("佐藤さん");
+    expect(items[0]).not.toHaveTextContent("既読");
+    // 知っているスタンプは説明の文（body）に頼らない。
+    expect(screen.queryByText("スタンプ: ありがとう")).not.toBeInTheDocument();
+
+    expect(
+      within(items[1]!).getByRole("img", { name: "スタンプ: ナイスショット" }),
+    ).toHaveTextContent("🎯");
+    expect(items[1]).toHaveTextContent("あなた");
+    expect(items[1]).toHaveTextContent("既読");
+
+    expect(within(items[2]!).queryByRole("img")).not.toBeInTheDocument();
+    expect(items[2]).toHaveTextContent("佐藤さん");
+    expect(items[2]).toHaveTextContent("スタンプ: またね");
+  });
+
+  test("スレッドの一覧の最後のメッセージがスタンプなら、絵柄と言葉で出す", async () => {
+    const stamp = message({
+      kind: "stamp",
+      sender_role: "student",
+      body: "スタンプ: ありがとう",
+      stamp_id: "thanks",
+      sent_at: "2026-10-21T01:00:00Z",
+    });
+    setup({
+      listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({
+        ok: true,
+        data: { threads: [thread(THREAD_ID, STUDENT_ID, 1, stamp)] },
+      })),
+    });
+
+    const list = await screen.findByRole("list", { name: "生徒とのチャット" });
+    expect(within(list).getByRole("button", { name: /佐藤さん/ })).toHaveTextContent(
+      "スタンプ: 🙏 ありがとう",
+    );
+  });
+
+  test("「スタンプ」で 8 種類を出し、選んだスタンプを送ってスレッドに足し、選ぶ欄を閉じる", async () => {
+    const sendMessage = vi.fn<CoachApi["sendMessage"]>(async (threadId, request) => ({
+      ok: true,
+      data: message({
+        kind: "stamp",
+        sender_role: "coach",
+        body: "スタンプ: がんばろう",
+        stamp_id: request.stamp_id,
+        thread_id: threadId,
+        sent_at: "2026-11-01T02:00:00Z",
+      }),
+    }));
+    const { api, user } = setup({ sendMessage });
+    const messages = await openThread(user, /佐藤さん/);
+    await user.type(screen.getByLabelText("送るメッセージ"), "下書き");
+
+    const toggle = screen.getByRole("button", { name: "スタンプ" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const picker = screen.getByRole("group", {
+      name: "送るスタンプを選んでください",
+    });
+    expect(
+      within(picker)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual([
+      "🙏ありがとう",
+      "👍いいね",
+      "👌了解",
+      "💪がんばろう",
+      "🎯ナイスショット",
+      "🍵おつかれさま",
+      "❓質問",
+      "🙆OK",
+    ]);
+
+    await user.click(
+      within(picker).getByRole("button", {
+        name: "スタンプ「がんばろう」を送る",
+      }),
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith(THREAD_ID, {
+      stamp_id: "lets_go",
+    });
+    const items = await within(messages).findAllByRole("listitem");
+    expect(items).toHaveLength(6);
+    expect(within(items[5]!).getByRole("img", { name: "スタンプ: がんばろう" })).toHaveTextContent(
+      "💪",
+    );
+    expect(items[5]).toHaveTextContent("あなた");
+    expect(
+      screen.queryByRole("group", { name: "送るスタンプを選んでください" }),
+    ).not.toBeInTheDocument();
+    // 本文の下書きは残す。
+    expect(screen.getByLabelText("送るメッセージ")).toHaveValue("下書き");
+    expect(api.listMessageThreads).toHaveBeenCalledTimes(2);
+  });
+
+  test("スタンプを送れなければ文言を出し、選ぶ欄を残す", async () => {
+    const sendMessage = vi.fn<CoachApi["sendMessage"]>(async () => ({
+      ok: false,
+      message: "入力の内容が正しくありません。",
+    }));
+    const { user } = setup({ sendMessage });
+    const messages = await openThread(user, /佐藤さん/);
+
+    await user.click(screen.getByRole("button", { name: "スタンプ" }));
+    await user.click(screen.getByRole("button", { name: "スタンプ「了解」を送る" }));
+
+    expect(sendMessage).toHaveBeenCalledWith(THREAD_ID, { stamp_id: "got_it" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("入力の内容が正しくありません。");
+    expect(screen.getByRole("group", { name: "送るスタンプを選んでください" })).toBeInTheDocument();
+    expect(within(messages).getAllByRole("listitem")).toHaveLength(5);
   });
 
   test("メッセージがないスレッドはその旨を出す", async () => {

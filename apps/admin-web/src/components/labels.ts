@@ -33,6 +33,28 @@ export const SLOT_SUPPLY_STATUS_LABELS: Record<Schemas["SlotSupplyStatus"], stri
   insufficient: "足りていない",
 };
 
+/**
+ * スタンプの絵柄（絵文字）と添える短い言葉。契約の `StampId` の画像と文言はクライアントが持つ（言葉は契約の説明の呼び名、
+ * 絵文字は student-app と同じ）。選ぶ欄はこの順に並べる。
+ */
+export const STAMPS: Record<Schemas["StampId"], { emoji: string; label: string }> = {
+  thanks: { emoji: "🙏", label: "ありがとう" },
+  good: { emoji: "👍", label: "いいね" },
+  got_it: { emoji: "👌", label: "了解" },
+  lets_go: { emoji: "💪", label: "がんばろう" },
+  nice_shot: { emoji: "🎯", label: "ナイスショット" },
+  tired: { emoji: "🍵", label: "おつかれさま" },
+  question: { emoji: "❓", label: "質問" },
+  ok: { emoji: "🙆", label: "OK" },
+};
+
+/** このアプリが知っているスタンプの絵柄と言葉。ID がない・知らない ID（契約より新しい版のスタンプ）なら undefined。 */
+export function knownStamp(stampId: string | undefined) {
+  return stampId !== undefined && Object.hasOwn(STAMPS, stampId)
+    ? STAMPS[stampId as Schemas["StampId"]]
+    : undefined;
+}
+
 /** 契約の date-time を日本時間で表示する。 */
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
