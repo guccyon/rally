@@ -7,8 +7,8 @@ use domain::{
 };
 
 use super::{
-    MessageThreadRepository, OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
-    UpdateMessageThreadError,
+    MessageThreadRepository, MessageThreadSubscriberError, OpenMessageThread,
+    OpenMessageThreadCommand, OpenMessageThreadError, UpdateMessageThreadError,
 };
 use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 
@@ -26,6 +26,9 @@ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 ///
 /// 同じ生徒とコーチのスレッドは 1 つで、同じ動画の添削依頼・返却はスレッドに 1 通ずつなので、同じイベントが 2 回
 /// 届いても結果は変わらない。ほかのイベントは何もしない。
+///
+/// 失敗は型のあるエラーを包んで返す（不変条件の違反は `DomainError`、保存先の障害は [`crate::Unavailable`]、
+/// 開いたスレッドがメッセージを足すときになかったら [`MessageThreadSubscriberError::ThreadVanished`]）。
 pub struct MessageThreadSubscriber<T> {
     open: OpenMessageThread<T>,
 }
@@ -83,7 +86,9 @@ where
             .await
             .map(|_| ())
             .map_err(|error| match error {
-                UpdateMessageThreadError::NotFound => "開いたスレッドがない".into(),
+                UpdateMessageThreadError::NotFound => {
+                    MessageThreadSubscriberError::ThreadVanished.into()
+                }
                 UpdateMessageThreadError::Rejected(error) => error.into(),
                 UpdateMessageThreadError::Unavailable(error) => error.into(),
             })
@@ -339,5 +344,63 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(subscriber.threads().all().is_empty());
+    }
+
+    /// スレッドは開けるが、メッセージを足すときにはなくなっている保存先。
+    struct VanishingThreads(InMemoryMessageThreadRepository);
+
+    impl MessageThreadRepository for VanishingThreads {
+        fn next_thread_id(&self) -> domain::messaging::MessageThreadId {
+            self.0.next_thread_id()
+        }
+
+        fn next_message_id(&self) -> MessageId {
+            self.0.next_message_id()
+        }
+
+        async fn open(&self, thread: MessageThread) -> Result<MessageThread, crate::Unavailable> {
+            self.0.open(thread).await
+        }
+
+        async fn find(
+            &self,
+            thread_id: domain::messaging::MessageThreadId,
+        ) -> Result<Option<MessageThread>, crate::Unavailable> {
+            self.0.find(thread_id).await
+        }
+
+        async fn list_for(
+            &self,
+            account_id: AccountId,
+        ) -> Result<Vec<MessageThread>, crate::Unavailable> {
+            self.0.list_for(account_id).await
+        }
+
+        async fn update<F>(
+            &self,
+            _thread_id: domain::messaging::MessageThreadId,
+            _update: F,
+        ) -> Result<MessageThread, UpdateMessageThreadError>
+        where
+            F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send,
+        {
+            Err(UpdateMessageThreadError::NotFound)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_thread_that_vanishes_before_posting_is_a_typed_error() {
+        let subscriber = MessageThreadSubscriber::new(VanishingThreads(
+            InMemoryMessageThreadRepository::default(),
+        ));
+        let error = subscriber
+            .handle(&requested(Uuid::new_v4(), 1))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<MessageThreadSubscriberError>(),
+            Some(&MessageThreadSubscriberError::ThreadVanished),
+            "文言ではなく型で見分けられる"
+        );
     }
 }
