@@ -107,6 +107,7 @@ void main() {
         'getCoachReviewSummary',
         'listCoachReviews',
         'startSubscription',
+        'getMyEntitlement',
         'listMessageThreads',
         'listMessages',
         'sendMessage',

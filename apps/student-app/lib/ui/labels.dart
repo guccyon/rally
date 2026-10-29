@@ -48,6 +48,17 @@ String messageSenderLabel(MessageSenderRole role) => switch (role) {
   MessageSenderRole.system => 'お知らせ',
 };
 
+/// ホームのコーチとのやり取りの 1 行（スレッドの最後のメッセージ）。添削の依頼と返却は本文ではなく出来事で書く。
+/// 例: `コーチから添削が返ってきました（10/26 12:00）`・`コーチ: 体験レッスンでお待ちしています`
+String messageSummaryLabel(Message message) => switch (message.kind) {
+  MessageKind.videoReviewRequest =>
+    '添削を依頼しました（${formatDateTime(message.sentAt)}）',
+  MessageKind.videoReviewReturned =>
+    'コーチから添削が返ってきました（${formatDateTime(message.sentAt)}）',
+  MessageKind.text || MessageKind.other =>
+    '${messageSenderLabel(message.senderRole)}: ${message.body}',
+};
+
 /// 自分が送ったメッセージを相手が読んだか（相手から届いたものには出さない）
 String? readLabel(Message message) =>
     message.senderRole != MessageSenderRole.student

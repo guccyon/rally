@@ -7,9 +7,12 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）と自分の予約・チャット・通知の受け取り設定の画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
   register,
+
+  /// ホーム（登録後に最初に開く。これからの予約・今月のビデオ通話の残り・コーチとのやり取り・添削の依頼の入口）
+  home,
   slotSearch,
   bookingPending,
   liveLesson,
@@ -40,6 +43,18 @@ enum FlowStep {
       isChat || this == notificationSettings || this == myBookings;
 }
 
+/// ホームの欄（API ごとに読み、どれかが失敗しても他の欄は出す）
+enum HomeSection {
+  /// これからの予約（`listMyBookings`）
+  bookings,
+
+  /// 今月のビデオ通話の残り（`getMyEntitlement`）
+  entitlement,
+
+  /// コーチとのやり取り（`listMessageThreads`）
+  threads,
+}
+
 /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
 class StudentFlowState {
   const StudentFlowState({
@@ -64,6 +79,9 @@ class StudentFlowState {
     Set<String> reviewedLessonIds = const {},
     this.subscription,
     this.entitlement,
+    this.noEntitlement = false,
+    this.homeFailures = const {},
+    this.promptVideoReviewRequest = false,
     this.chatReturnStep,
     this.threads,
     this.thread,
@@ -133,6 +151,15 @@ class StudentFlowState {
   final Subscription? subscription;
   final Entitlement? entitlement;
 
+  /// `getMyEntitlement` が 404（受講権がまだない＝月額契約の前）を返したら true
+  final bool noEntitlement;
+
+  /// ホームで読めなかった欄（その欄にだけ旨を出す）。ホームを読むたびに読み直す
+  final Set<HomeSection> homeFailures;
+
+  /// スレッドを開いたら、すぐに添削の依頼（動画の選択）を出すか（ホームの「添削を依頼する」から開いたとき）
+  final bool promptVideoReviewRequest;
+
   /// チャットを閉じたときに戻る段（チャットを開いた段）
   final FlowStep? chatReturnStep;
 
@@ -187,6 +214,9 @@ class StudentFlowState {
     Set<String>? reviewedLessonIds,
     Subscription? subscription,
     Entitlement? entitlement,
+    bool? noEntitlement,
+    Set<HomeSection>? homeFailures,
+    bool? promptVideoReviewRequest,
     FlowStep? chatReturnStep,
     List<MessageThread>? threads,
     MessageThread? thread,
@@ -220,6 +250,10 @@ class StudentFlowState {
     reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
+    noEntitlement: noEntitlement ?? this.noEntitlement,
+    homeFailures: homeFailures ?? this.homeFailures,
+    promptVideoReviewRequest:
+        promptVideoReviewRequest ?? this.promptVideoReviewRequest,
     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
     threads: threads ?? this.threads,
     thread: thread ?? this.thread,
@@ -270,7 +304,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   StudentApi get _api => ref.read(studentApiProvider);
 
-  /// `registerAccount`。登録したらスロット検索へ（生徒のスポーツで絞って検索しておく）。
+  /// `registerAccount`。登録したらホームへ（ホームの欄を読んでおく）。
   Future<void> register({
     required String email,
     required String displayName,
@@ -286,10 +320,104 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(
       accessToken: response.accessToken,
       student: response.student,
-      step: FlowStep.slotSearch,
+      step: FlowStep.home,
     );
-    await _search(sport);
+    await _loadHome();
   });
+
+  /// ホームへ戻る（欄を読み直す）
+  Future<void> goHome() {
+    state = state.copyWith(step: FlowStep.home);
+    return _run(_loadHome);
+  }
+
+  /// ホームの欄を読み直す
+  Future<void> refreshHome() => _run(_loadHome);
+
+  /// ホームの欄（自分の予約・受講権・スレッド）を並べて読む。どれかが失敗しても他の欄は出す
+  /// （失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
+  /// 受講権の 404 は失敗ではなく、月額契約の前（[StudentFlowState.noEntitlement]）
+  Future<void> _loadHome() async {
+    final failures = <HomeSection>{};
+    Future<void> load(HomeSection section, Future<void> Function() read) async {
+      try {
+        await read();
+      } on StudentApiException {
+        failures.add(section);
+      }
+    }
+
+    await Future.wait([
+      load(HomeSection.bookings, _loadMyBookings),
+      load(HomeSection.entitlement, _loadEntitlement),
+      load(HomeSection.threads, _loadThreads),
+    ]);
+    if (!ref.mounted) return;
+    state = state.copyWith(homeFailures: Set.unmodifiable(failures));
+  }
+
+  Future<void> _loadEntitlement() async {
+    try {
+      final entitlement = await _api.getMyEntitlement();
+      state = state.copyWith(entitlement: entitlement, noEntitlement: false);
+    } on StudentApiException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      state = state.copyWith(noEntitlement: true);
+    }
+  }
+
+  /// これからの予約（キャンセル済みでなく、まだ始まっていないもの）を開始の近い順に [limit] 件まで
+  List<MyBooking> upcomingBookings({int limit = 3}) {
+    final upcoming = [
+      for (final item in state.myBookings ?? const <MyBooking>[])
+        if (canCancel(item.booking)) item,
+    ]..sort((a, b) => a.booking.startsAt.compareTo(b.booking.startsAt));
+    return upcoming.take(limit).toList();
+  }
+
+  /// ホームに出すコーチとのやり取り: 未読のあるスレッドと、最後のメッセージが添削の依頼か返却のスレッドを、最後のメッセージの新しい順に
+  List<MessageThread> recentThreads() {
+    bool notable(MessageThread thread) =>
+        thread.unreadCount > 0 ||
+        switch (thread.lastMessage?.kind) {
+          MessageKind.videoReviewRequest ||
+          MessageKind.videoReviewReturned => true,
+          _ => false,
+        };
+    DateTime lastAt(MessageThread thread) =>
+        thread.lastMessage?.sentAt ?? thread.openedAt;
+    return [
+      for (final thread in state.threads ?? const <MessageThread>[])
+        if (notable(thread)) thread,
+    ]..sort((a, b) => lastAt(b).compareTo(lastAt(a)));
+  }
+
+  /// ホームの「添削を依頼する」。スレッドが 1 つならそのスレッドを開いてすぐに添削の依頼を出し、
+  /// 2 つ以上ならスレッドの一覧を開いて担当コーチを選ばせる（スレッドがなければ呼ばない）
+  Future<void> startVideoReviewRequest() async {
+    final threads = state.threads ?? const <MessageThread>[];
+    if (threads.length != 1) return openChat();
+    state = state.copyWith(promptVideoReviewRequest: true);
+    await openThread(threads.single);
+    if (ref.mounted && state.step != FlowStep.messages) {
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        promptVideoReviewRequest: false,
+      );
+    }
+  }
+
+  /// スレッドを開いたときの添削の依頼を出したら、二度は出さない
+  void clearVideoReviewRequestPrompt() => state = state.copyWith(
+    errorMessage: state.errorMessage,
+    promptVideoReviewRequest: false,
+  );
+
+  /// スロット検索へ（生徒のスポーツで絞って検索しておく）
+  Future<void> goToSlotSearch() {
+    state = state.copyWith(step: FlowStep.slotSearch);
+    return _run(() => _search(state.searchSport ?? state.student!.sport));
+  }
 
   /// `searchSlots`。スポーツで絞る。
   Future<void> searchSlots(Sport sport) => _run(() => _search(sport));
@@ -483,6 +611,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(
       subscription: response.subscription,
       entitlement: response.entitlement,
+      noEntitlement: false,
     );
   });
 
@@ -504,10 +633,16 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
   /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
-  Future<void> openThread(MessageThread thread) => _run(() async {
-    await _loadMessages(thread.threadId);
-    state = state.copyWith(step: FlowStep.messages);
-  });
+  /// チャットの外（ホーム）から開いたら、チャットを閉じたときに開いた段に戻る。
+  Future<void> openThread(MessageThread thread) {
+    if (!state.step.isChat) {
+      state = state.copyWith(chatReturnStep: state.step);
+    }
+    return _run(() async {
+      await _loadMessages(thread.threadId);
+      state = state.copyWith(step: FlowStep.messages);
+    });
+  }
 
   /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
   Future<void> refreshMessages() =>

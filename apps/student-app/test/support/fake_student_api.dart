@@ -11,6 +11,7 @@ class FakeStudentApi implements StudentApi {
     List<Message>? messages,
     NotificationSettings? notificationSettings,
     List<MyBooking>? myBookings,
+    this.entitlement,
     this.coachReviewSummaries = const {},
     this.videoReviews = const {},
     this.failures = const {},
@@ -36,6 +37,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
   final List<MyBooking> myBookings;
+
+  /// 受講権（`getMyEntitlement` が返す。null なら月額契約の前として 404 `not_found`。`startSubscription` で開始の応答のものになる）
+  Entitlement? entitlement;
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
@@ -65,7 +69,20 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<RegisterAccountResponse> registerAccount(
     RegisterAccountRequest body,
-  ) => _answer('registerAccount', () => Fixtures.registered, body);
+  ) => _answer(
+    'registerAccount',
+    () => RegisterAccountResponse(
+      // 登録したスポーツの生徒にする（それ以外は見本のとおり）
+      student: Student(
+        studentId: Fixtures.student.studentId,
+        displayName: Fixtures.student.displayName,
+        sport: body.sport,
+        createdAt: Fixtures.student.createdAt,
+      ),
+      accessToken: Fixtures.registered.accessToken,
+    ),
+    body,
+  );
 
   @override
   Future<SlotPage> searchSlots({required Sport sport, String? cursor}) =>
@@ -194,12 +211,18 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
-  ) => _answer(
-    'startSubscription',
-    () => Fixtures.subscriptionStartedWith(
+  ) => _answer('startSubscription', () {
+    final response = Fixtures.subscriptionStartedWith(
       body.plan ?? SubscriptionPlan.standard,
-    ),
-    body,
+    );
+    entitlement = response.entitlement;
+    return response;
+  }, body);
+
+  @override
+  Future<Entitlement> getMyEntitlement() => _answer(
+    'getMyEntitlement',
+    () => entitlement ?? (throw Fixtures.entitlementNotFound),
   );
 
   @override
@@ -296,6 +319,12 @@ abstract final class Fixtures {
       code: ErrorCode.validationFailed,
       message: 'validation failed',
     ),
+  );
+
+  /// 受講権がまだない（月額契約の前）ときの `getMyEntitlement` の 404
+  static const entitlementNotFound = StudentApiException(
+    statusCode: 404,
+    error: ApiError(code: ErrorCode.notFound, message: 'not found'),
   );
 
   /// 通信の失敗（契約の `Error` なし）

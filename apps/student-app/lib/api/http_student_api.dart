@@ -115,6 +115,10 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<Entitlement> getMyEntitlement() async =>
+      Entitlement.fromJson(await _send('GET', '/entitlements/me'));
+
+  @override
   Future<MessageThreadList> listMessageThreads() async =>
       MessageThreadList.fromJson(await _send('GET', '/message-threads'));
 

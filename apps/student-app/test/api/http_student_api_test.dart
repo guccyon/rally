@@ -400,6 +400,39 @@ void main() {
     expect(updated.messageReceived, isTrue);
   });
 
+  test(
+    'getMyEntitlement は GET /entitlements/me で受講権を読み、受講権がなければ 404',
+    () async {
+      final entitlement = await apiReplying(200, {
+        'entitlement_id': 'e1',
+        'student_id': 's1',
+        'contract_type': 'subscription',
+        'sport': 'tennis',
+        'plan': 'plus',
+        'unlimited_video_and_chat': true,
+        'live_lesson_quota': {
+          'month': '2026-10',
+          'limit': 4,
+          'used': 1,
+          'remaining': 3,
+        },
+        'remaining_video_reviews': null,
+      }).getMyEntitlement();
+      expect(sent.single.method, 'GET');
+      expect(sent.single.url.path, '/entitlements/me');
+      expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+      expect(entitlement.plan, SubscriptionPlan.plus);
+      expect(entitlement.liveLessonQuota!.remaining, 3);
+
+      final error = await apiReplying(
+        404,
+        {'code': 'not_found', 'message': 'entitlement not found'},
+      ).getMyEntitlement().then<Object?>((_) => null, onError: (Object e) => e);
+      expect((error as StudentApiException).statusCode, 404);
+      expect(error.error!.code, ErrorCode.notFound);
+    },
+  );
+
   test('契約の Error を StudentApiException にし、画面の文言に変える', () async {
     final api = apiReplying(409, {
       'code': 'live_lesson_quota_exceeded',

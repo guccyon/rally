@@ -27,6 +27,9 @@ void main() {
     await tapText(tester, 'テニス');
     await tapText(tester, '登録する');
 
+    expect(find.text('ホーム'), findsOneWidget);
+    expect(find.text('まだこれからの予約はありません。'), findsOneWidget);
+    await tapText(tester, 'スロットを探して予約する');
     expect(find.text('スロットを探す'), findsOneWidget);
     await tapText(tester, '体験予約する');
 
@@ -69,6 +72,9 @@ void main() {
 
     expect(api.calls, [
       'registerAccount',
+      'listMyBookings',
+      'getMyEntitlement',
+      'listMessageThreads',
       'searchSlots',
       'getCoachReviewSummary',
       'createBooking',
@@ -104,6 +110,9 @@ void main() {
 
       expect(api.calls, [
         'registerAccount',
+        'listMyBookings',
+        'getMyEntitlement',
+        'listMessageThreads',
         'searchSlots',
         'getCoachReviewSummary',
         'createBooking',
