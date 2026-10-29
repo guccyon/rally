@@ -55,9 +55,33 @@ String messageSummaryLabel(Message message) => switch (message.kind) {
     '添削を依頼しました（${formatDateTime(message.sentAt)}）',
   MessageKind.videoReviewReturned =>
     'コーチから添削が返ってきました（${formatDateTime(message.sentAt)}）',
-  // スタンプは body の短い説明（「スタンプ: ありがとう」）をそのまま出す（絵柄は次のチケット）
+  // スタンプは body の短い説明（「スタンプ: ありがとう」）をそのまま出す（絵文字はチャットのスレッドの中だけで出す）
   MessageKind.text || MessageKind.stamp || MessageKind.other =>
     '${messageSenderLabel(message.senderRole)}: ${message.body}',
+};
+
+/// スタンプの絵柄（絵文字）。契約の `StampId` の画像はクライアントが持つ
+String stampEmoji(StampId stamp) => switch (stamp) {
+  StampId.thanks => '🙏',
+  StampId.good => '👍',
+  StampId.gotIt => '👌',
+  StampId.letsGo => '💪',
+  StampId.niceShot => '🎯',
+  StampId.tired => '🍵',
+  StampId.question => '❓',
+  StampId.ok => '🙆',
+};
+
+/// スタンプに添える短い言葉（契約の `StampId` の説明の呼び名）
+String stampLabel(StampId stamp) => switch (stamp) {
+  StampId.thanks => 'ありがとう',
+  StampId.good => 'いいね',
+  StampId.gotIt => '了解',
+  StampId.letsGo => 'がんばろう',
+  StampId.niceShot => 'ナイスショット',
+  StampId.tired => 'おつかれさま',
+  StampId.question => '質問',
+  StampId.ok => 'OK',
 };
 
 /// 自分が送ったメッセージを相手が読んだか（相手から届いたものには出さない）

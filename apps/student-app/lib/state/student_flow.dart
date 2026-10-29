@@ -684,13 +684,17 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
-  Future<bool> sendMessage(String body) async {
+  Future<bool> sendMessage(String body) =>
+      _sendMessage(SendMessageRequest(body: body));
+
+  /// 本文の代わりにスタンプを送る（`sendMessage` の `stamp_id`）。受講権の扱いは本文と同じ。送れたら true。
+  Future<bool> sendStamp(StampId stamp) =>
+      _sendMessage(SendMessageRequest.stamp(stamp));
+
+  Future<bool> _sendMessage(SendMessageRequest request) async {
     var sent = false;
     await _run(() async {
-      final message = await _api.sendMessage(
-        state.thread!.threadId,
-        SendMessageRequest(body: body),
-      );
+      final message = await _api.sendMessage(state.thread!.threadId, request);
       state = state.copyWith(messages: [...?state.messages, message]);
       sent = true;
     });

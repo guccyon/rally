@@ -165,7 +165,7 @@ enum MessageKind {
   );
 }
 
-/// `StampId`（スタンプの ID。決まった 8 種類）。画像と表示の文言はクライアントが持つ（画面は別のチケット）。
+/// `StampId`（スタンプの ID。決まった 8 種類）。画像と表示の文言はクライアントが持つ（`lib/ui/labels.dart` の `stampEmoji` / `stampLabel`）。
 /// 契約で後方互換に増えうるので、知らない値は [tryFromWire] が null にする（そのメッセージは `body` の説明を出す）。
 enum StampId {
   thanks('thanks'),
@@ -1107,10 +1107,7 @@ class SendMessageRequest {
   /// スタンプ。本文を送るときは null
   final StampId? stampId;
 
-  Map<String, dynamic> toJson() => {
-    'body': ?body,
-    'stamp_id': ?stampId?.wire,
-  };
+  Map<String, dynamic> toJson() => {'body': ?body, 'stamp_id': ?stampId?.wire};
 }
 
 /// `NotificationSettings`（glossary の notification_settings。種類ごとに受け取るか。既定はすべて true）

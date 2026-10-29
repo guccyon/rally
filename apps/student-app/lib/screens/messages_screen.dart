@@ -11,7 +11,8 @@ import 'video_submit_screen.dart';
 /// 担当コーチとのメッセージ（`listMessages` / `sendMessage`）。開いたら相手のメッセージは既読にする。
 /// 自分が送ったメッセージには、コーチが読んだか（既読・未読）を出す。
 /// 動画の添削の依頼（`submitVideo`）もここからでき、添削の依頼と返却は本文のメッセージと見分けられるカードで時間の順に並べる。
-/// 知らない種類のメッセージは隠さず、`body`（短い説明）を本文のメッセージとして出す。
+/// 入力欄のそばの「スタンプ」から 8 種類のスタンプを選んで送れ、スタンプは本文より大きな絵文字で吹き出しなしに出す。
+/// 知らない種類のメッセージ（と、このアプリの版が知らないスタンプ）は隠さず、`body`（短い説明）を本文のメッセージとして出す。
 class MessagesScreen extends ConsumerStatefulWidget {
   const MessagesScreen({super.key});
 
@@ -50,6 +51,16 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         .read(studentFlowProvider.notifier)
         .sendMessage(_body.text.trim());
     if (sent && mounted) _body.clear();
+  }
+
+  /// スタンプを選んで送る。選ばずに閉じたら何もしない
+  Future<void> _sendStamp() async {
+    final stamp = await showModalBottomSheet<StampId>(
+      context: context,
+      builder: (_) => const _StampPicker(),
+    );
+    if (stamp == null || !mounted) return;
+    await ref.read(studentFlowProvider.notifier).sendStamp(stamp);
   }
 
   /// 動画を選んで添削を依頼する（動画の選択はモック）。やめたら何もしない
@@ -104,7 +115,11 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
               review: state.chatReviews[message.videoId],
               failed: state.chatReviewFailures.contains(message.videoId),
             ),
-            // スタンプの絵柄は次のチケット。それまでは知らない種類と同じく body の説明を出す
+            // 知らない ID のスタンプは、知らない種類と同じく body の説明を出す
+            MessageKind.stamp when message.stampId != null => _StampTile(
+              message: message,
+              stamp: message.stampId!,
+            ),
             MessageKind.text ||
             MessageKind.stamp ||
             MessageKind.other => _MessageTile(message: message),
@@ -128,11 +143,66 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
+          onPressed: state.busy ? null : _sendStamp,
+          icon: const Icon(Icons.emoji_emotions_outlined),
+          label: const Text('スタンプ'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
           onPressed: state.busy ? null : _requestVideoReview,
           icon: const Icon(Icons.videocam_outlined),
           label: const Text('添削を依頼する'),
         ),
       ],
+    );
+  }
+}
+
+/// スタンプの選択（8 種類を絵文字と短い言葉で並べる）。押したスタンプを返す
+class _StampPicker extends StatelessWidget {
+  const _StampPicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('送るスタンプを選んでください', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final stamp in StampId.values)
+                  SizedBox(
+                    width: 96,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(stamp),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            stampEmoji(stamp),
+                            style: const TextStyle(fontSize: 28),
+                          ),
+                          Text(stampLabel(stamp), textAlign: TextAlign.center),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -350,6 +420,50 @@ class _MessageTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// スタンプ。本文のメッセージより大きな絵文字に短い言葉を添え、吹き出し（カード）なしで送り手の側に寄せる
+class _StampTile extends StatelessWidget {
+  const _StampTile({required this.message, required this.stamp});
+
+  final Message message;
+  final StampId stamp;
+
+  /// 絵文字の大きさ（本文の文字よりはっきり大きく）
+  static const emojiSize = 56.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final mine = message.senderRole == MessageSenderRole.student;
+    final read = readLabel(message);
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Column(
+          crossAxisAlignment: mine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Text(
+              stampEmoji(stamp),
+              style: const TextStyle(fontSize: emojiSize),
+            ),
+            Text(stampLabel(stamp)),
+            const SizedBox(height: 4),
+            Text(
+              [
+                messageSenderLabel(message.senderRole),
+                formatDateTime(message.sentAt),
+                ?read,
+              ].join(' ・ '),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ),
       ),
     );

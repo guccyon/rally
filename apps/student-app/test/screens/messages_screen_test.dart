@@ -18,6 +18,7 @@ void main() {
     required String body,
     String? videoId,
     String? reviewId,
+    StampId? stampId,
     required int minutes,
   }) => Message(
     messageId: id,
@@ -30,6 +31,7 @@ void main() {
     body: body,
     videoId: videoId,
     reviewId: reviewId,
+    stampId: stampId,
     sentAt: Fixtures.now.add(Duration(minutes: minutes)),
   );
 
@@ -341,6 +343,152 @@ void main() {
     });
     expect(find.text('1 回目の添削の依頼'), findsOneWidget);
     expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 未読$')), findsOneWidget);
+  });
+
+  testWidgets('「スタンプ」で 8 種類から選ぶと、そのスタンプを sendMessage で送り、スレッドに大きな絵文字で出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: api,
+      initial: threadOpened(),
+    );
+
+    await tapText(tester, 'スタンプ');
+    expect(find.text('送るスタンプを選んでください'), findsOneWidget);
+    for (final label in [
+      'ありがとう',
+      'いいね',
+      '了解',
+      'がんばろう',
+      'ナイスショット',
+      'おつかれさま',
+      '質問',
+      'OK',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(find.text('🙏'), findsOneWidget);
+
+    await tapText(tester, 'ナイスショット');
+
+    expect(find.text('送るスタンプを選んでください'), findsNothing);
+    expect(api.calls, ['sendMessage']);
+    expect((api.requests.single as SendMessageRequest).toJson(), {
+      'stamp_id': 'nice_shot',
+    });
+    expect(find.text('🎯'), findsOneWidget);
+    expect(find.text('ナイスショット'), findsOneWidget);
+    // 古い版向けの body の説明は出さない
+    expect(find.textContaining('スタンプ:'), findsNothing);
+    expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 未読$')), findsOneWidget);
+  });
+
+  testWidgets('スタンプを選ばずに閉じると何も送らない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: api,
+      initial: threadOpened(),
+    );
+
+    await tapText(tester, 'スタンプ');
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    expect(find.text('送るスタンプを選んでください'), findsNothing);
+    expect(api.calls, isEmpty);
+  });
+
+  testWidgets('月額契約の前の生徒がスタンプを送ると 403 chat_not_entitled の文言を出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      failures: {
+        'sendMessage': const StudentApiException(
+          statusCode: 403,
+          error: ApiError(
+            code: ErrorCode.chatNotEntitled,
+            message: 'not entitled',
+          ),
+        ),
+      },
+    );
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: api,
+      initial: threadOpened(),
+    );
+
+    await tapText(tester, 'スタンプ');
+    await tapText(tester, 'ありがとう');
+
+    expect(find.text('チャットは月額契約を始めると使えます。'), findsOneWidget);
+    expect(find.text('🙏'), findsNothing);
+  });
+
+  testWidgets('届いたスタンプは本文より大きな絵文字で吹き出しなしに出し、知らない ID のスタンプは body の説明を出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      messages: [
+        message(
+          'm1',
+          role: MessageSenderRole.coach,
+          body: 'がんばりましょう',
+          minutes: 0,
+        ),
+        message(
+          'm2',
+          role: MessageSenderRole.coach,
+          kind: MessageKind.stamp,
+          body: 'スタンプ: がんばろう',
+          stampId: StampId.letsGo,
+          minutes: 1,
+        ),
+        // このアプリの版が知らないスタンプ（stampId は null に読まれる）
+        message(
+          'm3',
+          role: MessageSenderRole.coach,
+          kind: MessageKind.stamp,
+          body: 'スタンプ: ハート',
+          minutes: 2,
+        ),
+      ],
+    );
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: api,
+      initial: threadOpened(),
+    );
+    await tapText(tester, '新しいメッセージを確かめる');
+
+    expect(find.text('💪'), findsOneWidget);
+    expect(find.text('がんばろう'), findsOneWidget);
+    expect(find.text('スタンプ: がんばろう'), findsNothing);
+    expect(find.text('スタンプ: ハート'), findsOneWidget);
+
+    // 絵文字は本文のメッセージより大きい
+    expect(
+      tester.getSize(find.text('💪')).height,
+      greaterThan(tester.getSize(find.text('がんばりましょう')).height * 2),
+    );
+    // スタンプは吹き出し（カード）に入れず、本文と知らない ID のスタンプは吹き出しに入れる
+    Finder cardsOf(String text) =>
+        find.ancestor(of: find.text(text), matching: find.byType(Card));
+    expect(cardsOf('💪'), findsNothing);
+    expect(cardsOf('がんばりましょう'), findsOneWidget);
+    expect(cardsOf('スタンプ: ハート'), findsOneWidget);
+    // コーチからのスタンプは左に寄せる
+    expect(
+      tester.getTopLeft(find.text('💪')).dx,
+      lessThan(tester.getSize(find.byType(MaterialApp)).width / 2),
+    );
   });
 
   testWidgets('添削の依頼をやめると何も送らない', (tester) async {

@@ -28,6 +28,22 @@ void main() {
     expect(() => ratingLabel(6), throwsRangeError);
   });
 
+  test('スタンプは 8 種類すべてに絵文字と、契約の呼び名の短い言葉を持つ', () {
+    expect(StampId.values.map(stampLabel), [
+      'ありがとう',
+      'いいね',
+      '了解',
+      'がんばろう',
+      'ナイスショット',
+      'おつかれさま',
+      '質問',
+      'OK',
+    ]);
+    expect(stampEmoji(StampId.thanks), '🙏');
+    // 絵文字は種類ごとに見分けられる
+    expect(StampId.values.map(stampEmoji).toSet(), hasLength(8));
+  });
+
   test('通知の種類は、いつ届く通知かで書く', () {
     expect(NotificationKind.values.map(notificationKindLabel), [
       '予約が確定したとき',
