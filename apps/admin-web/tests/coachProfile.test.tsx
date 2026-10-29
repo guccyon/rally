@@ -170,11 +170,7 @@ describe("自己紹介", () => {
   test("コーチの画面に「自己紹介」の欄があり、今の自己紹介文を出す", async () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
-      // 同じ画面の「予約枠」と「動画の添削」と「通話への参加」が開いたときに呼ぶ。
-      listMyCoachSlots: vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({
-        ok: true,
-        data: { slots: [] },
-      })),
+      // 開いたときに出す「対応待ち」が呼ぶ。
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
         data: { videos: [] },
@@ -197,6 +193,7 @@ describe("自己紹介", () => {
       })),
     });
     render(<CoachHome token="mock.coach.x" />);
+    await userEvent.click(screen.getByRole("tab", { name: "自己紹介" }));
     const region = screen.getByRole("region", { name: "自己紹介" });
 
     expect(await within(region).findByLabelText("自己紹介文")).toHaveValue("テニス歴 20 年です。");

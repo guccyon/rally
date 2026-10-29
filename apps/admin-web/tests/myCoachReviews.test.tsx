@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { CoachApi } from "@/api/coach";
@@ -155,11 +156,7 @@ describe("自分の評価", () => {
   test("コーチの画面の「自分の評価」は、開いたときから本人の評価を出す", async () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
-      // 同じ画面の「予約枠」と「動画の添削」と「通話への参加」が開いたときに呼ぶ。
-      listMyCoachSlots: vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({
-        ok: true,
-        data: { slots: [] },
-      })),
+      // 開いたときに出す「対応待ち」が呼ぶ。
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
         data: { videos: [] },
@@ -174,6 +171,7 @@ describe("自分の評価", () => {
       })),
     });
     render(<CoachHome token="mock.coach.x" />);
+    await userEvent.click(screen.getByRole("tab", { name: "自分の評価" }));
     const region = screen.getByRole("region", { name: "自分の評価" });
 
     expect(within(region).queryByLabelText("コーチ ID")).not.toBeInTheDocument();

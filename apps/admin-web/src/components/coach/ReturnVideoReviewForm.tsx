@@ -33,12 +33,14 @@ function studentName(video: CoachVideo) {
 /**
  * 添削の返却。開いたときに自分に届いた動画の一覧（listMyCoachVideos）を出し、添削待ちの行を選ぶと
  * 添削コメントの欄（VideoReviewCommentForm。AI の一次フィードバックも欄の上に出す）を開いて返却（returnVideoReview）する。
- * 返却したら一覧を取り直す。
+ * 返却したら一覧を取り直す。`initialVideoId`（対応待ちから移ったときの動画）が添削待ちにあれば、その欄を開いた状態で出す。
  */
 export function ReturnVideoReviewForm({
   api,
+  initialVideoId,
 }: {
   api: Pick<CoachApi, "listMyCoachVideos" | "returnVideoReview">;
+  initialVideoId?: string;
 }) {
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selected, setSelected] = useState<CoachVideo | null>(null);
@@ -54,12 +56,16 @@ export function ReturnVideoReviewForm({
   useEffect(() => {
     let active = true;
     void fetchVideos().then((next) => {
-      if (active) setList(next);
+      if (!active) return;
+      setList(next);
+      if (next.kind === "loaded") {
+        setSelected(next.waiting.find((video) => video.video_id === initialVideoId) ?? null);
+      }
     });
     return () => {
       active = false;
     };
-  }, [fetchVideos]);
+  }, [fetchVideos, initialVideoId]);
 
   function onSelect(video: CoachVideo) {
     setSelected(video);
