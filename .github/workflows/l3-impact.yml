@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: l3-impact-${{ github.ref }}-${{ github.event_name }}
+  group: l3-impact-${{ github.ref }}-${{ github.event_name }}-${{ inputs.head }}   # 手で続けて走らせた測り直しを取り消し合わない
   cancel-in-progress: true
 
 env:
