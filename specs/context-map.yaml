@@ -7,13 +7,14 @@ gen1_core: [identity, scheduling, entitlement]   # Gen1 で最初に実装した
 contexts:
   - { id: identity,     ja: "アカウント・権限",   subdomain: generic,    note: "生徒・コーチ・本部アカウント、認証、権限（プロフィールは profile）" }
   - { id: profile,      ja: "プロフィール",       subdomain: core,       note: "生徒・コーチの表示名、コーチの自己紹介・得意なスポーツなど、相手に見せる本人の情報（identity から切り出した。backend のコードは domain / application の profile。データは当面 identity の表）" }
-  - { id: catalog,      ja: "カタログ",           subdomain: core,       note: "スポーツ、レッスン種別、コーチの提供メニュー（レッスンの選択）" }
-  - { id: matching,     ja: "マッチング",         subdomain: core,       note: "検索・推薦・リクエスト・担当コーチの確定（レッスンの選択）" }
+  - { id: catalog,      ja: "カタログ",           subdomain: core,       note: "スポーツ、レッスン種別、コーチの提供メニュー。コーチとレッスン内容のセットが商品（商品の選択。事業成長の要）" }
+  - { id: matching,     ja: "マッチング",         subdomain: core,       note: "検索・推薦・リクエスト・担当コーチの確定（商品の選択）" }
   - { id: scheduling,   ja: "予約",               subdomain: core,       note: "コーチの予約枠、予約、リスケ、キャンセル規定" }
   - { id: live-lesson,  ja: "同期レッスン",       subdomain: core,       note: "通話セッション、接続品質、録画、月間の回数の消費（上限は entitlement の契約プラン）" }
-  - { id: async-lesson, ja: "非同期レッスン",     subdomain: core,       note: "動画アップロード、添削ワークフロー、納期、返却" }
-  - { id: messaging,    ja: "メッセージ",         subdomain: core,       note: "チャット、履歴、既読、通知の発火元" }
-  - { id: entitlement,  ja: "受講権",             subdomain: supporting, note: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）" }
+  - { id: async-lesson, ja: "非同期レッスン",     subdomain: core,       note: "添削依頼（動画）、添削ワークフロー、納期、返却、回数の管理。競合に対する優位性にしたい部分。結果は messaging のチャットにインラインで展開する" }
+  - { id: messaging,    ja: "メッセージ",         subdomain: core,       note: "チャット、履歴、既読、通知の発火元。チャットは会話であり、レッスンのログでもある（添削結果や「2 回前の添削で伝えた通り」を時間軸でたどる）" }
+  - { id: entitlement,  ja: "プラン（受講権）",   subdomain: supporting, note: "契約種別（月額 / ワンショット）、契約プラン、利用権（残回数・送り放題）、補講・期間集中など、このサービス固有の概念" }
+  - { id: license,      ja: "ライセンス",         subdomain: generic,    note: "契約に基づいてどのサービス・機能を使えるかを与える（Google One の契約のような横断の概念）。認可（identity）と強く連携し、将来はアカウントと同じく横断のサービスに切り出す。Gen1 はコンテキストとして境界だけ引き、実装は entitlement の中に小さく置く（docs/adr/0009）" }
   - { id: billing,      ja: "課金",               subdomain: supporting, note: "Stripe 連携、請求、コーチへの支払い・手数料" }
   - { id: review,       ja: "評価",               subdomain: supporting, note: "評価、レビュー、コーチ品質指標。コーチに付き、評価した生徒のものでもあり、レッスンの一部でもある中間の概念" }
   - { id: notification, ja: "通知",               subdomain: generic,    note: "プッシュ・メール配信（SNS / Pusher 相当）" }
