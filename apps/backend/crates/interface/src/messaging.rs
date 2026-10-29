@@ -4,6 +4,11 @@
 //! 役割では絞らず、スレッドの当事者（生徒・担当コーチ）かをユースケースが確かめる。当事者でないアカウントには
 //! スレッドがあることも知らせない（404）。生徒がチャットの送り放題（月額）を持たなければ送信は 403
 //! `chat_not_entitled`。
+//!
+//! 添削依頼・添削の返却のメッセージ（messaging が async-lesson の境界間イベントから足す）は、当面は本文に短い説明
+//! （[`message::message_content_text`]）を入れて本文のメッセージと同じ形で返す（種類を契約に出すのは次の段）。
+//! システムが流したメッセージは契約にまだ形がない（送り手のアカウントがない）ので、返すことになれば 500 にする
+//! （今は流す処理がない）。
 
 use std::sync::Arc;
 
@@ -27,7 +32,7 @@ use axum::{
 use domain::{
     DomainError,
     identity::AccountId,
-    messaging::{Message, MessageBody, MessageThread, MessageThreadId},
+    messaging::{Message, MessageAuthor, MessageBody, MessageThread, MessageThreadId},
 };
 use serde::{Deserialize, Serialize};
 
@@ -254,12 +259,18 @@ fn thread_json(thread: &MessageThread, reader: AccountId) -> Result<MessageThrea
 }
 
 fn message_json(thread: &MessageThread, message: &Message) -> Result<MessageJson, ApiError> {
+    let MessageAuthor::Participant(sender) = message.author() else {
+        return Err(ApiError::internal(format!(
+            "システムのメッセージ {} は契約にまだ形がない",
+            message_id_uuid::format(message.id())
+        )));
+    };
     Ok(MessageJson {
         message_id: message_id_uuid::format(message.id()),
         thread_id: message_thread_id_uuid::format(thread.id()),
-        sender_id: account_id_uuid::format(thread.account_of(message.sender())),
-        sender_role: message_sender_to_contract(message.sender()),
-        body: message.body().as_str().to_string(),
+        sender_id: account_id_uuid::format(thread.account_of(sender)),
+        sender_role: message_sender_to_contract(sender),
+        body: message::message_content_text(message.content()),
         sent_at: date_time_to_contract(message.sent_at())?,
         read_at: message.read_at().map(date_time_to_contract).transpose()?,
     })

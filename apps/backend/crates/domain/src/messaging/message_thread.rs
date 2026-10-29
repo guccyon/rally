@@ -1,7 +1,14 @@
 use std::time::SystemTime;
 
-use super::{Message, MessageBody, MessageId, MessageSender, MessageThreadId};
-use crate::{DomainError, identity::AccountId};
+use super::{
+    Message, MessageAuthor, MessageBody, MessageContent, MessageId, MessageKind, MessageSender,
+    MessageThreadId,
+};
+use crate::{
+    DomainError,
+    async_lesson::{VideoId, VideoReviewId},
+    identity::AccountId,
+};
 
 /// 生徒と担当コーチの 1 対 1 のチャットのスレッド（glossary の message_thread）。集約で、メッセージ
 /// （[`Message`]）を送った順に持つ。
@@ -10,6 +17,10 @@ use crate::{DomainError, identity::AccountId};
 ///
 /// 生徒が送ってよいか（月額は送り放題）は entitlement の利用権が決め、送信（[`Self::send`]）はその答えに従う。
 /// 送り放題なので送信の回数は数えない。コーチの送信は生徒の契約に左右されない。
+///
+/// 添削依頼・添削の返却（[`Self::post_video_review_request`] / [`Self::post_video_review_return`]）は、async-lesson の
+/// 出来事を messaging が写して足すメッセージで、チャットの送り放題の判定を通さない（会話ではなくレッスンのログ）。
+/// 同じ動画の添削依頼・添削の返却はスレッドに 1 通ずつ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageThread {
     id: MessageThreadId,
@@ -99,37 +110,124 @@ impl MessageThread {
         if sender == MessageSender::Student && !student_may_chat {
             return Err(DomainError::ChatNotAllowed);
         }
+        self.push(
+            message_id,
+            MessageAuthor::Participant(sender),
+            MessageContent::Text(body),
+            now,
+        )
+    }
+
+    /// 生徒が動画 `video_id` を添削依頼として送ったことを、`now` にスレッドに足す（メッセージの ID は `message_id`。
+    /// 送り手はスレッドの生徒）。足したメッセージを返す。同じ動画の添削依頼がすでにあれば何も変えず `None`
+    /// （同じ出来事が 2 回届いても 1 通）。
+    ///
+    /// 送信がスレッドを開いた時刻と前のメッセージの送信時刻より前なら [`DomainError::MessageSentBeforeLastActivity`]
+    /// で、スレッドを変えない。
+    pub fn post_video_review_request(
+        &mut self,
+        message_id: MessageId,
+        video_id: VideoId,
+        now: SystemTime,
+    ) -> Result<Option<&Message>, DomainError> {
+        if self.has(MessageKind::VideoReviewRequest, video_id) {
+            return Ok(None);
+        }
+        self.push(
+            message_id,
+            MessageAuthor::Participant(MessageSender::Student),
+            MessageContent::VideoReviewRequest { video_id },
+            now,
+        )
+        .map(Some)
+    }
+
+    /// コーチが動画 `video_id` に添削 `review_id` を返したことを、`now` にスレッドに足す（メッセージの ID は
+    /// `message_id`。送り手はスレッドの担当コーチ）。足したメッセージを返す。同じ動画の添削の返却がすでにあれば
+    /// 何も変えず `None`（返却は動画 1 本に 1 回。同じ出来事が 2 回届いても 1 通）。
+    ///
+    /// 添削依頼のメッセージがなくても足す（この機能より前に送られた動画の返却）。送信の時刻の不変条件は
+    /// [`Self::post_video_review_request`] と同じ。
+    pub fn post_video_review_return(
+        &mut self,
+        message_id: MessageId,
+        video_id: VideoId,
+        review_id: VideoReviewId,
+        now: SystemTime,
+    ) -> Result<Option<&Message>, DomainError> {
+        if self.has(MessageKind::VideoReviewReturn, video_id) {
+            return Ok(None);
+        }
+        self.push(
+            message_id,
+            MessageAuthor::Participant(MessageSender::Coach),
+            MessageContent::VideoReviewReturn {
+                video_id,
+                review_id,
+            },
+            now,
+        )
+        .map(Some)
+    }
+
+    /// 種類 `kind` で動画 `video_id` を指すメッセージがあるか。
+    fn has(&self, kind: MessageKind, video_id: VideoId) -> bool {
+        self.messages.iter().any(|message| {
+            message.content().kind() == kind && message.content().video_id() == Some(video_id)
+        })
+    }
+
+    /// メッセージを `now` に足す。送信がスレッドを開いた時刻と前のメッセージより前なら
+    /// [`DomainError::MessageSentBeforeLastActivity`]。
+    fn push(
+        &mut self,
+        message_id: MessageId,
+        author: MessageAuthor,
+        content: MessageContent,
+        now: SystemTime,
+    ) -> Result<&Message, DomainError> {
         if now < self.last_activity_at() {
             return Err(DomainError::MessageSentBeforeLastActivity);
         }
-        self.messages
-            .push(Message::sent(message_id, sender, body, now));
+        let message = Message::sent(message_id, author, content, now)?;
+        self.messages.push(message);
         Ok(self.messages.last().expect("いま足した"))
+    }
+
+    /// `message` が当事者 `reader` にとって相手から届いたものか（システムのものは当事者どちらのものでもない）。
+    fn is_from_the_other_party(message: &Message, reader: MessageSender) -> bool {
+        message
+            .author()
+            .participant()
+            .is_some_and(|sender| sender != reader)
     }
 
     /// 当事者 `reader` が `now` に、相手から届いたメッセージをすべて既読にする。既読にした数を返す。
     ///
-    /// 自分が送ったメッセージと既読のメッセージは変えない（最初に読んだ時刻のまま）。当事者でなければ
+    /// 自分が送ったメッセージと既読のメッセージ、システムのメッセージは変えない（既読は最初に読んだ時刻のまま）。当事者でなければ
     /// [`DomainError::NotAThreadParticipant`] で、何も変えない。
     pub fn mark_read(&mut self, reader: AccountId, now: SystemTime) -> Result<usize, DomainError> {
         let reader = self.participant(reader)?;
         Ok(self
             .messages
             .iter_mut()
-            .filter(|message| message.sender() != reader)
+            .filter(|message| Self::is_from_the_other_party(message, reader))
             .map(|message| message.read(now))
             .filter(|read| *read)
             .count())
     }
 
-    /// 当事者 `account` にとっての未読（相手から届いてまだ読んでいない）メッセージの数。当事者でなければ 0。
+    /// 当事者 `account` にとっての未読（相手から届いてまだ読んでいない）メッセージの数。システムのメッセージは数えない。
+    /// 当事者でなければ 0。
     pub fn unread_count_for(&self, account: AccountId) -> usize {
         let Ok(reader) = self.participant(account) else {
             return 0;
         };
         self.messages
             .iter()
-            .filter(|message| message.sender() != reader && message.read_at().is_none())
+            .filter(|message| {
+                Self::is_from_the_other_party(message, reader) && message.read_at().is_none()
+            })
             .count()
     }
 
@@ -251,8 +349,14 @@ mod tests {
             .unwrap()
             .clone();
         assert_eq!(sent.id(), message(1));
-        assert_eq!(sent.sender(), MessageSender::Student);
-        assert_eq!(sent.body(), &body("フォームを見てください"));
+        assert_eq!(
+            sent.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
+        assert_eq!(
+            sent.content(),
+            &MessageContent::Text(body("フォームを見てください"))
+        );
         assert_eq!(sent.sent_at(), at(1));
         assert_eq!(sent.read_at(), None);
 
@@ -412,8 +516,8 @@ mod tests {
         let sent = |id, minute| {
             Message::restore(
                 message(id),
-                MessageSender::Student,
-                body("x"),
+                MessageAuthor::Participant(MessageSender::Student),
+                MessageContent::Text(body("x")),
                 at(minute),
                 None,
             )
@@ -435,6 +539,159 @@ mod tests {
         assert!(
             MessageThread::restore(THREAD, STUDENT, COACH, at(1), vec![sent(1, 1), sent(2, 1)])
                 .is_ok()
+        );
+    }
+
+    const VIDEO: VideoId = VideoId::from_u128(40);
+    const OTHER_VIDEO: VideoId = VideoId::from_u128(41);
+    const REVIEW: VideoReviewId = VideoReviewId::from_u128(50);
+
+    #[test]
+    fn a_video_review_request_is_posted_by_the_student_once_per_video() {
+        let mut thread = opened();
+        let posted = thread
+            .post_video_review_request(message(1), VIDEO, at(1))
+            .unwrap()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            posted.author(),
+            MessageAuthor::Participant(MessageSender::Student)
+        );
+        assert_eq!(
+            posted.content(),
+            &MessageContent::VideoReviewRequest { video_id: VIDEO }
+        );
+        assert_eq!(posted.content().body(), None, "本文は持たない");
+        assert_eq!(posted.sent_at(), at(1));
+        assert_eq!(thread.unread_count_for(COACH), 1, "コーチに届いた依頼");
+        assert_eq!(thread.unread_count_for(STUDENT), 0);
+
+        // 同じ動画の依頼は 2 通目を足さない
+        let before = thread.clone();
+        assert_eq!(
+            thread.post_video_review_request(message(2), VIDEO, at(2)),
+            Ok(None)
+        );
+        assert_eq!(thread, before);
+        // 別の動画は足す
+        thread
+            .post_video_review_request(message(3), OTHER_VIDEO, at(2))
+            .unwrap()
+            .unwrap();
+        assert_eq!(thread.messages().len(), 2);
+    }
+
+    #[test]
+    fn a_video_review_return_is_posted_by_the_coach_once_per_video() {
+        let mut thread = opened();
+        thread
+            .post_video_review_request(message(1), VIDEO, at(1))
+            .unwrap();
+        thread
+            .send(
+                message(2),
+                STUDENT,
+                body("よろしくお願いします"),
+                true,
+                at(2),
+            )
+            .unwrap();
+        let posted = thread
+            .post_video_review_return(message(3), VIDEO, REVIEW, at(3))
+            .unwrap()
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            posted.author(),
+            MessageAuthor::Participant(MessageSender::Coach)
+        );
+        assert_eq!(
+            posted.content(),
+            &MessageContent::VideoReviewReturn {
+                video_id: VIDEO,
+                review_id: REVIEW
+            }
+        );
+        assert_eq!(thread.unread_count_for(STUDENT), 1, "生徒に届いた返却");
+        // 依頼・会話・返却が 1 つの時間軸に並ぶ
+        assert_eq!(
+            thread
+                .messages()
+                .iter()
+                .map(|m| m.content().kind())
+                .collect::<Vec<_>>(),
+            [
+                MessageKind::VideoReviewRequest,
+                MessageKind::Text,
+                MessageKind::VideoReviewReturn
+            ]
+        );
+
+        let before = thread.clone();
+        assert_eq!(
+            thread.post_video_review_return(message(4), VIDEO, REVIEW, at(4)),
+            Ok(None)
+        );
+        assert_eq!(thread, before);
+    }
+
+    #[test]
+    fn a_return_is_posted_without_a_request() {
+        let mut thread = opened();
+        assert!(
+            thread
+                .post_video_review_return(message(1), VIDEO, REVIEW, at(1))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn video_review_messages_keep_the_order_of_time() {
+        let mut thread = MessageThread::open(THREAD, STUDENT, COACH, at(5)).unwrap();
+        let before = thread.clone();
+        assert_eq!(
+            thread.post_video_review_request(message(1), VIDEO, at(4)),
+            Err(DomainError::MessageSentBeforeLastActivity)
+        );
+        assert_eq!(
+            thread.post_video_review_return(message(1), VIDEO, REVIEW, at(4)),
+            Err(DomainError::MessageSentBeforeLastActivity)
+        );
+        assert_eq!(thread, before);
+    }
+
+    #[test]
+    fn system_messages_are_unread_for_no_one_and_are_not_marked_read() {
+        let system = Message::restore(
+            message(1),
+            MessageAuthor::System,
+            MessageContent::Text(body("お知らせ")),
+            at(1),
+            None,
+        )
+        .unwrap();
+        let mut thread =
+            MessageThread::restore(THREAD, STUDENT, COACH, NOW, vec![system.clone()]).unwrap();
+        assert_eq!(thread.unread_count_for(STUDENT), 0);
+        assert_eq!(thread.unread_count_for(COACH), 0);
+        assert_eq!(thread.mark_read(STUDENT, at(2)), Ok(0));
+        assert_eq!(thread.mark_read(COACH, at(2)), Ok(0));
+        assert_eq!(thread.messages(), [system]);
+    }
+
+    #[test]
+    fn restore_rejects_a_kind_from_the_wrong_author() {
+        assert_eq!(
+            Message::restore(
+                message(1),
+                MessageAuthor::Participant(MessageSender::Coach),
+                MessageContent::VideoReviewRequest { video_id: VIDEO },
+                at(1),
+                None
+            ),
+            Err(DomainError::MessageAuthorMismatchesKind)
         );
     }
 }

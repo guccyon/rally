@@ -252,6 +252,7 @@ fn app() -> App {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(videos.clone()),

@@ -162,6 +162,7 @@ fn app() -> App {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

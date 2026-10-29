@@ -151,6 +151,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),
+            application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
         ),
         GetVideoReview::new(InMemoryVideoRepository::default()),

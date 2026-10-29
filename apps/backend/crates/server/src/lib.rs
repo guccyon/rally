@@ -70,7 +70,8 @@ pub fn router() -> Router {
 /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
 /// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）、notification の購読（`PushNotificationSubscriber`）につなぐ。予約の確定・キャンセルで
 /// ビデオ通話の暦月の枠が動き、予約の確定は entitlement に枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
-/// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。
+/// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。動画の送付（`VideoReviewRequested`）と添削の返却
+/// （`VideoReviewReturned`）では、そのスレッドに（なければ開いて）添削依頼・添削の返却のメッセージが足される。
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
 /// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。受け取り設定の保存先も当面インメモリ。
 ///
@@ -319,6 +320,7 @@ where
             MockVideoStorage,
             MockAiFeedbackGenerator,
             analytics.clone(),
+            events.clone(),
             clock.clone(),
         ),
         GetVideoReview::new(videos.clone()),

@@ -77,6 +77,19 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
             "student_id": account_id_uuid::format(*student_id),
             "subscription_id": subscription_id_uuid::format(*subscription_id),
         })),
+        DomainEvent::VideoReviewRequested {
+            event_id,
+            occurred_at,
+            student_id,
+            coach_id,
+            video_id,
+        } => Ok(json!({
+            "event_id": event_id.hyphenated().to_string(),
+            "occurred_at": date_time(*occurred_at)?,
+            "student_id": account_id_uuid::format(*student_id),
+            "coach_id": account_id_uuid::format(*coach_id),
+            "video_id": video_id_uuid::format(*video_id),
+        })),
         DomainEvent::VideoReviewReturned {
             event_id,
             occurred_at,

@@ -3,11 +3,14 @@ use domain::{
     identity::{AccountId, Sport},
 };
 
+use uuid::Uuid;
+
 use super::{AiFeedbackGenerator, AiFeedbackRequest, VideoRepository, VideoStorage, video_id_uuid};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
+    domain_event::{DomainEvent, DomainEventPublisher},
 };
 
 /// 動画の送付の入力。`student_id` は認証した生徒のアカウント（役割の確認は境界が行う）。
@@ -40,7 +43,9 @@ pub enum SubmitVideoError {
 /// 動画の送付のユースケース（student-app の `submitVideo`）。
 ///
 /// domain の [`Video::submit`] で送付し、動画の保存先に本体の PUT 先を発行させ（[`VideoStorage`]）、動画を
-/// 保存する。保存したら行動イベント `video.submitted` を 1 回発火する。送付の回数は数えない（月額は送り放題）。
+/// 保存する。保存したら境界間イベント `VideoReviewRequested` を発行し（messaging はこれを購読して、その生徒とコーチの
+/// スレッドに添削依頼のメッセージを足す。async-lesson は messaging を直接呼ばない）、行動イベント `video.submitted` を
+/// 1 回発火する。送付の回数は数えない（月額は送り放題）。添削の有無・回数・状態は async-lesson だけが持つ。
 ///
 /// 保存した直後に同じ処理の中で AI の一次フィードバックを作らせ（[`AiFeedbackGenerator`]）、動画に付けて保存する
 /// （作った時刻は [`Clock`] の今）。AI や保存先が失敗しても送付は成功させ、一次フィードバックは空のままにする
@@ -48,28 +53,31 @@ pub enum SubmitVideoError {
 ///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
 /// （[`super::ReturnVideoReview`]）。
-pub struct SubmitVideo<V, S, F, A, C> {
+pub struct SubmitVideo<V, S, F, A, P, C> {
     videos: V,
     storage: S,
     ai_feedback: F,
     analytics: A,
+    events: P,
     clock: C,
 }
 
-impl<V, S, F, A, C> SubmitVideo<V, S, F, A, C>
+impl<V, S, F, A, P, C> SubmitVideo<V, S, F, A, P, C>
 where
     V: VideoRepository,
     S: VideoStorage,
     F: AiFeedbackGenerator,
     A: AnalyticsSink,
+    P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(videos: V, storage: S, ai_feedback: F, analytics: A, clock: C) -> Self {
+    pub fn new(videos: V, storage: S, ai_feedback: F, analytics: A, events: P, clock: C) -> Self {
         Self {
             videos,
             storage,
             ai_feedback,
             analytics,
+            events,
             clock,
         }
     }
@@ -96,6 +104,15 @@ where
             .await
             .map_err(SubmitVideoError::Unavailable)?;
 
+        self.events
+            .publish(DomainEvent::VideoReviewRequested {
+                event_id: Uuid::new_v4(),
+                occurred_at: now,
+                student_id: video.student_id(),
+                coach_id: video.coach_id(),
+                video_id: video.id(),
+            })
+            .await;
         self.analytics
             .emit(AnalyticsEvent::VideoSubmitted {
                 student_id: video.student_id(),
@@ -161,6 +178,10 @@ where
     pub fn analytics(&self) -> &A {
         &self.analytics
     }
+
+    pub fn events(&self) -> &P {
+        &self.events
+    }
 }
 
 #[cfg(test)]
@@ -174,7 +195,7 @@ mod tests {
     use super::*;
     use crate::in_memory::{
         FixedAiFeedbackGenerator, FixedClock, FixedVideoStorage, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        RecordingAnalyticsSink, RecordingDomainEventPublisher,
     };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
@@ -189,6 +210,7 @@ mod tests {
         FixedVideoStorage,
         FixedAiFeedbackGenerator,
         RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
         FixedClock,
     > {
         use_case_with(FixedAiFeedbackGenerator)
@@ -201,6 +223,7 @@ mod tests {
         FixedVideoStorage,
         F,
         RecordingAnalyticsSink,
+        RecordingDomainEventPublisher,
         FixedClock,
     > {
         SubmitVideo::new(
@@ -208,6 +231,7 @@ mod tests {
             FixedVideoStorage,
             ai_feedback,
             RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
             FixedClock(now()),
         )
     }
@@ -283,6 +307,24 @@ mod tests {
             }]
         );
         assert_eq!(analytics[0].name(), "video.submitted");
+
+        // 境界間イベント（messaging はこれでスレッドに添削依頼のメッセージを足す）
+        let published = use_case.events().events();
+        assert_eq!(published.len(), 1);
+        assert!(
+            matches!(
+                published[0],
+                DomainEvent::VideoReviewRequested {
+                    occurred_at,
+                    student_id: STUDENT,
+                    coach_id: COACH,
+                    video_id,
+                    ..
+                } if occurred_at == now() && video_id == video.id()
+            ),
+            "{published:?}"
+        );
+        assert_eq!(published[0].name(), "VideoReviewRequested");
     }
 
     #[tokio::test]
@@ -293,6 +335,7 @@ mod tests {
         }
         assert_eq!(use_case.videos().all().len(), 5);
         assert_eq!(use_case.analytics().events().len(), 5);
+        assert_eq!(use_case.events().events().len(), 5);
     }
 
     #[tokio::test]

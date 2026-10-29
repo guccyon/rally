@@ -142,7 +142,8 @@ where
             }
             DomainEvent::BookingCancelled { .. }
             | DomainEvent::LessonCompleted { .. }
-            | DomainEvent::SubscriptionStarted { .. } => Ok(()),
+            | DomainEvent::SubscriptionStarted { .. }
+            | DomainEvent::VideoReviewRequested { .. } => Ok(()),
         }
     }
 }
