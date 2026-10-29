@@ -79,17 +79,27 @@ void main() {
 
     final unknown = {...message, 'message_id': 'm9', 'kind': 'sticker'};
 
-    test('知らない種類のメッセージは一覧で読み飛ばす', () {
+    test('知らない種類のメッセージは読み飛ばさず、種類「その他」として本文（短い説明）ごと読む', () {
       final list = MessageList.fromJson({
         'thread_id': 't1',
         'messages': [message, unknown],
       });
-      expect(list.messages.map((m) => m.messageId), ['m1']);
-      expect(Message.tryFromJson(unknown), isNull);
-      expect(() => Message.fromJson(unknown), throwsFormatException);
+      expect(list.messages.map((m) => m.messageId), ['m1', 'm9']);
+      final parsed = Message.fromJson(unknown);
+      expect(parsed.kind, MessageKind.other);
+      expect(parsed.body, 'こんにちは');
     });
 
-    test('最後のメッセージが知らない種類なら、ないものとして扱う', () {
+    test('契約にない種類だけが「その他」になる', () {
+      for (final kind in MessageKind.values.where(
+        (e) => e != MessageKind.other,
+      )) {
+        expect(MessageKind.fromWire(kind.wire), kind);
+      }
+      expect(MessageKind.fromWire(''), MessageKind.other);
+    });
+
+    test('最後のメッセージが知らない種類でも、種類「その他」として持つ', () {
       final thread = MessageThread.fromJson({
         'thread_id': 't1',
         'student_id': 's1',
@@ -98,7 +108,8 @@ void main() {
         'last_message': unknown,
         'unread_count': 1,
       });
-      expect(thread.lastMessage, isNull);
+      expect(thread.lastMessage?.kind, MessageKind.other);
+      expect(thread.lastMessage?.body, 'こんにちは');
       expect(thread.unreadCount, 1);
     });
   });

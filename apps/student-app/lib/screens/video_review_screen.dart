@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/student_flow.dart';
+import '../ui/ai_feedback_card.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
@@ -35,7 +36,7 @@ class VideoReviewScreen extends ConsumerWidget {
           ),
           if (aiComment.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _AiFeedbackCard(comment: aiComment),
+            AiFeedbackCard(comment: aiComment),
           ],
           const SizedBox(height: 16),
           FilledButton(
@@ -51,41 +52,10 @@ class VideoReviewScreen extends ConsumerWidget {
           ),
           if (aiComment.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _AiFeedbackCard(comment: aiComment),
+            AiFeedbackCard(comment: aiComment),
           ],
         ],
       ],
-    );
-  }
-}
-
-/// AI の一次フィードバックの枠。コーチの添削と見分けられるよう、見出しと AI が作った文である旨を添える。
-class _AiFeedbackCard extends StatelessWidget {
-  const _AiFeedbackCard({required this.comment});
-
-  final String comment;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('AI の一次フィードバック', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              'AI が自動で作った文です。コーチの添削ではありません。',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            Text(comment),
-          ],
-        ),
-      ),
     );
   }
 }

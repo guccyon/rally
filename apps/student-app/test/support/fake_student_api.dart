@@ -12,6 +12,7 @@ class FakeStudentApi implements StudentApi {
     NotificationSettings? notificationSettings,
     List<MyBooking>? myBookings,
     this.coachReviewSummaries = const {},
+    this.videoReviews = const {},
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
@@ -38,6 +39,12 @@ class FakeStudentApi implements StudentApi {
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
+
+  /// 動画の ID ごとの添削（`getVideoReview` はここにある動画ならこれを返し、ない動画は `reviews` を順に返す）
+  final Map<String, VideoReview> videoReviews;
+
+  /// `getVideoReview` だけを、動画の ID ごとに失敗させる
+  final Set<String> videoReviewFailures = {};
   final Map<String, StudentApiException> failures;
 
   final List<String> calls = [];
@@ -108,14 +115,35 @@ class FakeStudentApi implements StudentApi {
 
   @override
   Future<Video> submitVideo(SubmitVideoRequest body) =>
-      _answer('submitVideo', () => Fixtures.video, body);
+      _answer('submitVideo', () {
+        // サーバーと同じく、その生徒とコーチのスレッドに添削依頼のメッセージを足す
+        final index = threads.indexWhere((t) => t.coachId == body.coachId);
+        if (index >= 0) {
+          final threadId = threads[index].threadId;
+          messages.add(
+            Message(
+              messageId: 'message-${messages.length + 1}',
+              threadId: threadId,
+              senderId: Fixtures.studentId,
+              senderRole: MessageSenderRole.student,
+              kind: MessageKind.videoReviewRequest,
+              body: '動画の添削を依頼しました',
+              videoId: Fixtures.video.videoId,
+              sentAt: Fixtures.now.add(Duration(minutes: messages.length + 1)),
+            ),
+          );
+          _updateThread(threadId);
+        }
+        return Fixtures.video;
+      }, body);
 
   @override
-  Future<VideoReview> getVideoReview(String videoId) => _answer(
-    'getVideoReview',
-    () => _reviews.length > 1 ? _reviews.removeAt(0) : _reviews.first,
-    videoId,
-  );
+  Future<VideoReview> getVideoReview(String videoId) =>
+      _answer('getVideoReview', () {
+        if (videoReviewFailures.contains(videoId)) throw Fixtures.unreachable;
+        return videoReviews[videoId] ??
+            (_reviews.length > 1 ? _reviews.removeAt(0) : _reviews.first);
+      }, videoId);
 
   @override
   Future<Lesson> recordLessonCompletion(RecordLessonCompletionRequest body) =>

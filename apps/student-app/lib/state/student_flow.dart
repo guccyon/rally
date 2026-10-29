@@ -68,6 +68,8 @@ class StudentFlowState {
     this.threads,
     this.thread,
     this.messages,
+    this.chatReviews = const {},
+    this.chatReviewFailures = const {},
     this.settingsReturnStep,
     this.notificationSettings,
     this.bookingsReturnStep,
@@ -143,6 +145,12 @@ class StudentFlowState {
   /// 開いているスレッドのメッセージ（送った順）
   final List<Message>? messages;
 
+  /// スレッドに返却が流れた動画の添削（`getVideoReview`。動画の ID ごと）。返却された添削は変わらないので、読めたものは読み直さない
+  final Map<String, VideoReview> chatReviews;
+
+  /// スレッドに返却が流れたが添削を読めなかった動画の ID（その返却のカードにだけ読めなかった旨を出し、次に確かめたときに読み直す）
+  final Set<String> chatReviewFailures;
+
   /// 通知の受け取り設定を閉じたときに戻る段（設定を開いた段）
   final FlowStep? settingsReturnStep;
 
@@ -183,6 +191,8 @@ class StudentFlowState {
     List<MessageThread>? threads,
     MessageThread? thread,
     List<Message>? messages,
+    Map<String, VideoReview>? chatReviews,
+    Set<String>? chatReviewFailures,
     FlowStep? settingsReturnStep,
     NotificationSettings? notificationSettings,
     FlowStep? bookingsReturnStep,
@@ -214,6 +224,8 @@ class StudentFlowState {
     threads: threads ?? this.threads,
     thread: thread ?? this.thread,
     messages: messages ?? this.messages,
+    chatReviews: chatReviews ?? this.chatReviews,
+    chatReviewFailures: chatReviewFailures ?? this.chatReviewFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
@@ -493,22 +505,48 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
   /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
   Future<void> openThread(MessageThread thread) => _run(() async {
-    final read = await _api.markMessageThreadRead(thread.threadId);
-    final list = await _api.listMessages(thread.threadId);
-    state = state.copyWith(
-      thread: read,
-      messages: list.messages,
-      step: FlowStep.messages,
-    );
+    await _loadMessages(thread.threadId);
+    state = state.copyWith(step: FlowStep.messages);
   });
 
   /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
-  Future<void> refreshMessages() => _run(() async {
-    final threadId = state.thread!.threadId;
+  Future<void> refreshMessages() =>
+      _run(() => _loadMessages(state.thread!.threadId));
+
+  Future<void> _loadMessages(String threadId) async {
     final read = await _api.markMessageThreadRead(threadId);
     final list = await _api.listMessages(threadId);
     state = state.copyWith(thread: read, messages: list.messages);
-  });
+    await _loadChatReviews();
+  }
+
+  /// スレッドに返却が流れた動画の添削（`getVideoReview`）を、まだ読めていないものだけ読む。
+  /// 読めなくてもメッセージの一覧は出す（その動画を [StudentFlowState.chatReviewFailures] に入れるだけで、失敗の文言は出さない）
+  Future<void> _loadChatReviews() async {
+    final videoIds = {
+      for (final message in state.messages ?? const <Message>[])
+        if (message.kind == MessageKind.videoReviewReturned) ?message.videoId,
+    }.difference(state.chatReviews.keys.toSet());
+    if (videoIds.isEmpty) return;
+    final reviews = <String, VideoReview>{};
+    final failures = <String>{};
+    Future<void> load(String videoId) async {
+      try {
+        reviews[videoId] = await _api.getVideoReview(videoId);
+      } on StudentApiException {
+        failures.add(videoId);
+      }
+    }
+
+    await Future.wait(videoIds.map(load));
+    if (!ref.mounted) return;
+    state = state.copyWith(
+      chatReviews: Map.unmodifiable({...state.chatReviews, ...reviews}),
+      chatReviewFailures: Set.unmodifiable(
+        state.chatReviewFailures.difference(videoIds).union(failures),
+      ),
+    );
+  }
 
   /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
   Future<bool> sendMessage(String body) async {
@@ -520,6 +558,30 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       );
       state = state.copyWith(messages: [...?state.messages, message]);
       sent = true;
+    });
+    return sent;
+  }
+
+  /// チャットから動画の添削を依頼する（`submitVideo`。一周シナリオの動画の送付と同じ API）。送り先はスレッドの担当コーチで、
+  /// スポーツは生徒のもの。動画本体のアップロードは Gen1 ではモックなので行わない。添削依頼はサーバーがスレッドに流すので、
+  /// 送れたらスレッドを読み直す。送れたら true。
+  Future<bool> requestVideoReview({
+    required VideoContentType contentType,
+    String? note,
+  }) async {
+    var sent = false;
+    await _run(() async {
+      final thread = state.thread!;
+      await _api.submitVideo(
+        SubmitVideoRequest(
+          coachId: thread.coachId,
+          sport: state.student!.sport,
+          contentType: contentType,
+          note: note,
+        ),
+      );
+      sent = true;
+      await _loadMessages(thread.threadId);
     });
     return sent;
   }
