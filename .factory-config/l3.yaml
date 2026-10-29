@@ -1,0 +1,45 @@
+# L3（拡張性・結合度）の影響範囲の実測の設定。factory-engine の core-gates/l3_impact.py が読む。
+# 複数形の s は落として比べるので、単数形だけ書く。
+# 語彙の主は specs/context-map.yaml のコンテキスト id と specs/glossary.yaml の用語 id。ここには用語集にないコードの語だけを足す。
+schema_version: "0.1"
+max_contexts: 3          # シナリオのない PR で、これを超えたら flag（shadow）
+keywords:
+  account: identity
+  auth: identity
+  token: identity
+  me: identity
+  bio: profile
+  sport: catalog
+  coach_sports: catalog
+  matching: matching
+  slot_supply: scheduling
+  quota: entitlement
+  plan: entitlement
+  live_lesson_session: live-lesson
+  video_call: live-lesson
+  video_call_provider: live-lesson
+  alt_video_call_provider: live-lesson
+  video_call_backend: live-lesson
+  video: async-lesson
+  video_storage: async-lesson
+  ai_feedback_generator: async-lesson
+  chat: messaging
+  message_kinds: messaging
+  message_stamps: messaging
+  coach_review_summary: review
+  push: notification
+  push_sender: notification
+  analytics: analytics
+weak: [student, coach, lesson]   # 至る所に出る語。ほかの語が当たらないときだけ使う
+ignore:
+  - "CHANGELOG.md"
+  - "**/CHANGELOG.md"
+  - "**/package-lock.json"
+  - "**/pubspec.lock"
+  - "**/Cargo.lock"
+module_roots:
+  - apps/backend/crates/domain/src
+  - apps/backend/crates/application/src
+  - apps/backend/crates
+paths:                   # 名前から読めないファイル（glob → コンテキスト、または shared）
+  "apps/backend/crates/interface/src/message.rs": shared   # 利用者に見せる文言。全コンテキストの値から組み立てる
