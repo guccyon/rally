@@ -8,6 +8,7 @@ import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
 import { MessageThreadView } from "./MessageThreadView";
+import { UNKNOWN_NAME, studentNamesFromBookings } from "./studentNames";
 
 type MessageThread = Schemas["MessageThread"];
 
@@ -27,20 +28,10 @@ type ListState =
   | { kind: "loaded"; threads: MessageThread[]; names: Map<string, string> }
   | { kind: "failed"; message: string };
 
-const UNKNOWN_NAME = "（名前を表示できません）";
-
-/**
- * スレッドの生徒の表示名。スレッドは生徒の ID しか持たないので、コーチの自分の予約の一覧（listMyCoachBookings）の
- * 生徒の表示名から引く（スレッドは予約が確定したときに開くので、当事者の生徒は予約の一覧にいる）。
- */
+/** スレッドの生徒の表示名。予約の一覧（listMyCoachBookings）が読めなければ空（名前は引けない文言で出す）。 */
 async function fetchStudentNames(api: Pick<CoachApi, "listMyCoachBookings">) {
-  const names = new Map<string, string>();
   const response = await api.listMyCoachBookings();
-  if (!response.ok) return names;
-  for (const item of response.data.bookings) {
-    if (item.student_display_name) names.set(item.booking.student_id, item.student_display_name);
-  }
-  return names;
+  return response.ok ? studentNamesFromBookings(response.data.bookings) : new Map<string, string>();
 }
 
 /** スレッドの一覧に出す最後のメッセージの短い文。添削の依頼と返却は種類から言い換え、知らない種類は `body` のまま。 */
