@@ -168,6 +168,10 @@ describe("自分の評価", () => {
         ok: true,
         data: { bookings: [] },
       })),
+      listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({
+        ok: true,
+        data: { threads: [] },
+      })),
     });
     render(<CoachHome token="mock.coach.x" />);
     const region = screen.getByRole("region", { name: "自分の評価" });
