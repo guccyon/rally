@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { ResultMessage } from "@/components/ResultMessage";
-import { formatDateTime } from "@/components/labels";
+import { formatDateTime, knownStamp } from "@/components/labels";
 
 import { MessageThreadView } from "./MessageThreadView";
 import { UNKNOWN_NAME, studentNamesFromBookings } from "./studentNames";
@@ -34,8 +34,13 @@ async function fetchStudentNames(api: Pick<CoachApi, "listMyCoachBookings">) {
   return response.ok ? studentNamesFromBookings(response.data.bookings) : new Map<string, string>();
 }
 
-/** スレッドの一覧に出す最後のメッセージの短い文。添削の依頼と返却は種類から言い換え、知らない種類は `body` のまま。 */
+/**
+ * スレッドの一覧に出す最後のメッセージの短い文。添削の依頼と返却は種類から言い換え、スタンプは絵柄と言葉で出す。
+ * 知らない種類と知らないスタンプは `body` のまま。
+ */
 function lastMessagePreview(message: Schemas["Message"]) {
+  const stamp = message.kind === "stamp" ? knownStamp(message.stamp_id) : undefined;
+  if (stamp) return `スタンプ: ${stamp.emoji} ${stamp.label}`;
   switch (message.kind) {
     case "video_review_request":
       return "動画の添削の依頼が届きました";
