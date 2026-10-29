@@ -10,7 +10,7 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 | `crates/application/` | ユースケースとポート（`identity::RegisterAccount`・`GetAccount`・`AccountRepository`・`TokenIssuer`・`TokenVerifier`・`profile::ListCoaches`・`UpdateCoachProfile`・`ProfileStudentDisplayNameLookup`（scheduling・async-lesson に生徒の表示名を渡す）・`scheduling::PublishSlot`・`SearchSlots`・`SlotRepository`・`CoachIntroductionLookup`（スロットの検索に添えるコーチの紹介。実装は `profile::ProfileCoachIntroductionLookup`）・`CreateBooking`・`ConfirmBooking`・`CancelBooking`・`GetSlotSupply`・`ListMyBookings`（自分の予約の一覧）・`BookingRepository`・`QuotaGate`・`entitlement::GetEntitlement`・`StartSubscription`・`ConsumeLiveLessonQuota`・`ReleaseLiveLessonQuota`・`LiveLessonQuotaSubscriber`・`EntitlementQuotaGate`・`EntitlementRepository`・`live_lesson::StartLiveLessonSession`・`EndLiveLessonSession`・`LiveLessonSessionRepository`・`VideoCallProvider`・`BookingLookup`（実装は `scheduling::SchedulingBookingLookup`）・`async_lesson::SubmitVideo`・`GetVideoReview`・`ReturnVideoReview`・`VideoRepository`・`VideoStorage`・`AiFeedbackGenerator`（AI の一次フィードバック。材料は `AiFeedbackRequest`）・`ReviewGate`（実装は `entitlement::EntitlementReviewGate`）・`lesson::RecordLessonCompletion`・`LessonCompletionRepository`・`notification::PushNotificationSubscriber`・`PushSender`・`GetNotificationSettings`・`UpdateNotificationSettings`・`NotificationSettingsRepository`・`AnalyticsSink`・`DomainEventPublisher`・`DomainEventSubscriber`・`Clock`）。ポートのインメモリ実装（`in_memory`）。ID と UUID の変換（`identity::account_id_uuid`・`scheduling::slot_id_uuid`・`scheduling::booking_id_uuid`・`entitlement::entitlement_id_uuid`・`entitlement::subscription_id_uuid`・`live_lesson::session_id_uuid`・`async_lesson::video_id_uuid`・`async_lesson::video_review_id_uuid`・`lesson::lesson_id_uuid`）・時刻から暦月（`entitlement::calendar_month`）・障害の型（`Unavailable`） | domain |
 | `crates/infra/` | Postgres（`migrations/`・`PgSlotRepository`）・モックの外部連携（`MockTokenService`: アクセストークン、`LoggingDomainEventPublisher`: 境界間イベントを標準出力に書く、`InMemoryDomainEventBus`: 境界間イベントを同じプロセスの購読側に渡す、`MockVideoCallProvider`: 通話基盤（Twilio Video 相当）。終了時に接続品質の指標を乱数で生成する、`MockAltVideoCallProvider`: 別の通話基盤を想定したモック。生の値の単位が違い、アダプタの中でポートの単位に換算する、`MockVideoStorage`: 動画の保存先。固定の形のアップロード URL を返す、`MockAiFeedbackGenerator`: AI の一次フィードバック。スポーツごとの決まった文を返し、外に出ない、`MockPushSender`: プッシュ通知の送り先。送った通知を記録して標準出力に書く、`ObjectStoreAnalyticsSink`: 行動トラッキングの配信先。S3 API のオブジェクトストアに JSON Lines で書く）・DB とトークンと境界間イベント・行動イベントのペイロードの文字列の対応表（`identity_values`・`scheduling_values`・`domain_event_payload`・`analytics_event_payload`） | domain・application |
 | `crates/interface/` | axum の HTTP（`GET /healthz`、`POST /accounts`、`GET /slots`、`POST /slots`、`POST /bookings`、`GET /bookings/me`、`GET /coaches/me/bookings`、`GET /coaches/me/videos`、`POST /bookings/{booking_id}/confirm`、`POST /bookings/{booking_id}/cancel`、`GET /slot-supply`、`GET /coaches`、`GET /me`、`PUT /me/profile`、`POST /subscriptions`、`GET /entitlements/me`、`GET /notification-settings/me`、`PUT /notification-settings/me`、`POST /live-lesson-sessions`、`POST /live-lesson-sessions/{session_id}/end`、`POST /videos`、`GET /videos/{video_id}/review`、`POST /videos/{video_id}/review`、`POST /lessons/completions`）・認証（`AuthenticatedAccount`・`require_role`）・契約の文字列の対応表と API の文言 | domain・application（infra は不可） |
-| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先（`AnalyticsDestination`）と通話基盤（`VideoCallBackend`）を環境変数で選ぶ。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う） | domain・application・infra・interface |
+| `crates/server/` | 組み立て用（composition root）。interface に infra の実装を渡し、HTTP サーバーを起動する。行動イベントの配信先（`AnalyticsDestination`）と通話基盤（`VideoCallBackend`）を環境変数で選ぶ。保存先をすべて Postgres にした組み立ては `router_with_postgres`（一周シナリオの E2E が使う）と、通話基盤も選ぶ `router_with_postgres_and_video_call`（`DATABASE_URL` があるときの `main` が使う） | domain・application・infra・interface |
 | `crates/architecture/` | 依存方向の検査（テストだけ） | なし |
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
@@ -43,9 +43,18 @@ BIND_ADDR=0.0.0.0:3000 cargo run -p server
 curl -i http://127.0.0.1:8080/healthz   # 200 ok
 curl -i -X POST http://127.0.0.1:8080/accounts -H 'content-type: application/json' \
   -d '{"email":"taro@example.com","display_name":"たろう","sport":"tennis"}'   # 201
+DATABASE_URL=postgres://rally@127.0.0.1:5432/rally APP_VERSION=0.1.0 cargo run -p server   # 保存先を Postgres にする
+curl -i http://127.0.0.1:8080/version   # 200 {"app_version":"0.1.0"}
 ```
 
-ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。アカウント・スロット・予約・受講権・通話セッション・動画の保存先は当面 `application::in_memory` のインメモリ実装なので、登録したアカウントや公開した枠はプロセスを止めると消える。Postgres の実装は infra に置き、`server::router_with_postgres` で組み立てられる（`main` はまだ使わない）。
+ポートは組み立て用のクレート `server` で組み立てる（ADR 0003 の決定 5）。
+
+| 環境変数 | 意味 |
+|---|---|
+| `DATABASE_URL` | あれば保存先をすべて Postgres にし（`server::router_with_postgres_and_video_call`）、待ち受ける前に `infra::run_migrations` で `infra::MIGRATOR` を当てる。DB に当たっていて自分の知らないマイグレーション（新しい版が当てたもの）は飛ばして起動する（前の版のイメージに戻す Rollback のため。[ADR 0004](../../docs/adr/0004-schema-expand-contract.md) の 1）。DB につなげない・マイグレーションを当てられない（当て済みのものが書き換えられていたなど）ときは、原因を標準エラー出力に書いて 0 以外で終わる。なければ保存先は `application::in_memory` のインメモリ実装で、登録したアカウントや公開した枠はプロセスを止めると消える |
+| `APP_VERSION` | `GET /version`（認証なし）が `{"app_version": "..."}` で返す版。ないか空なら `"unknown"`。出荷した版を確かめる運用の口で、`/healthz` と同じく生徒・本部の API の契約（`specs/contracts`）には載せない |
+
+起動の試験（バイナリを起動して HTTP で確かめる）は `crates/server/tests/startup.rs`。Postgres を使うものは `DATABASE_URL` を設定して `cargo test -p server --test startup -- --include-ignored` で走らせる。
 行動イベントの配信先は環境変数 `ANALYTICS_SINK` で選ぶ（既定はインメモリ。下の「行動イベントの配信先」）。
 通話基盤は環境変数 `VIDEO_CALL_PROVIDER` で選ぶ（既定は `twilio`。下の「通話基盤の切り替え」）。
 

@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し。D57（Issue #235）で 1 にサーバーの起動時のマイグレーションと、知らない版を飛ばすことを追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -11,6 +11,7 @@
 - 前進だけ（sqlx の `.up.sql` / `.down.sql` の巻き戻しは使わない）。戻すときは新しいマイグレーションで前に進めて戻す
 - 適用済みのファイルは書き換えない（sqlx がチェックサムで検出して止まる）。D53 で、デプロイした環境がないうちに既存の 3 本（`20261028000005` / `000006` / `000007`）へ `-- relax:` のコメントだけを足した（SQL は同じ。チェックサムは変わるので、手元で当て済みの DB は作り直す）
 - ローカルは `apps/backend/compose.yaml` の Postgres 16。手順は `apps/backend/README.md`
+- サーバー（`apps/backend/crates/server` の `main`）は `DATABASE_URL` があれば、待ち受ける前に `infra::run_migrations` で `infra::MIGRATOR` を当てる。DB に当たっていて自分の知らないマイグレーション（新しい版が当てたもの）があっても止めない（sqlx の `set_ignore_missing(true)`。D57 / Issue #235 で追記）。Rollback は前の版のイメージに戻すだけで行い（factory-engine の ADR 0012）、前進だけなので新しい版が当てた expand・移行は DB に残る。expand・移行は古い版のアプリがそのまま動く変更に限っている（下の 2）ので、前の版はそれを飛ばして起動してよい。contract は古い版が使わなくなってから当てる（下の 2）ので、contract の後にそれを使っていた版へ戻すことは前提にしない。当て済みのマイグレーションの書き換え（チェックサムの不一致）は今までどおり止める
 
 ### 2. 破壊的な変更は expand → 移行 → contract の 3 段に分ける
 

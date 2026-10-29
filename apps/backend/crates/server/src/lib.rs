@@ -188,6 +188,22 @@ where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
 {
+    router_with_postgres_and_video_call(pool, clock, analytics, VideoCallBackend::default())
+}
+
+/// [`router_with_postgres`] の通話基盤を `video` に替えたルーター（`DATABASE_URL` があるときの `main` が
+/// [`VideoCallBackend`] で選んで使う）。
+pub fn router_with_postgres_and_video_call<C, A, V>(
+    pool: PgPool,
+    clock: C,
+    analytics: A,
+    video: V,
+) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+{
     compose(
         Repositories {
             accounts: PgAccountRepository::new(pool.clone()),
@@ -204,8 +220,17 @@ where
         clock,
         analytics,
         MockPushSender::new(),
-        VideoCallBackend::default(),
+        video,
     )
+}
+
+/// 版を読む環境変数の名前（`GET /version` が返す）。
+pub const APP_VERSION_VAR: &str = "APP_VERSION";
+
+/// `router` に、版を答える `GET /version`（認証なし。契約に載せない運用の口）を足す。版は `var`（環境変数の名前から
+/// 値）で [`APP_VERSION_VAR`] を読み、ないか空なら `"unknown"`。
+pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) -> Router {
+    router.merge(interface::version::router(var(APP_VERSION_VAR).as_deref()))
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。

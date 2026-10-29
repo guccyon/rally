@@ -24,6 +24,7 @@ mod reviews;
 mod slot_supply;
 mod slots;
 mod subscriptions;
+pub mod version;
 mod videos;
 
 use std::sync::Arc;
