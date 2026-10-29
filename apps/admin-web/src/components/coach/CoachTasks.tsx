@@ -7,8 +7,7 @@ import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
 import type { PendingTasks } from "./pendingTasks";
-
-const UNKNOWN_NAME = "（名前を表示できません）";
+import { UNKNOWN_NAME } from "./studentNames";
 
 const BUTTON = "rounded bg-blue-600 px-3 py-1 text-white";
 

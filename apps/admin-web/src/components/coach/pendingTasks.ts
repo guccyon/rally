@@ -2,6 +2,8 @@ import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 
+import { studentNamesFromBookings } from "./studentNames";
+
 type CoachVideo = Schemas["CoachVideo"];
 type CoachBooking = Schemas["CoachBooking"];
 type MessageThread = Schemas["MessageThread"];
@@ -42,12 +44,7 @@ export async function loadPendingTasks(api: PendingTasksApi, now: number): Promi
     api.listMyCoachBookings(),
     api.listMessageThreads(),
   ]);
-  const names = new Map<string, string>();
-  if (bookings.ok) {
-    for (const item of bookings.data.bookings) {
-      if (item.student_display_name) names.set(item.booking.student_id, item.student_display_name);
-    }
-  }
+  const names = bookings.ok ? studentNamesFromBookings(bookings.data.bookings) : new Map<string, string>();
   return {
     videos: select(
       videos,
