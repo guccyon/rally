@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/student_flow.dart';
 import 'booking_pending_screen.dart';
+import 'home_screen.dart';
 import 'lesson_completion_screen.dart';
 import 'lesson_review_screen.dart';
 import 'live_lesson_screen.dart';
@@ -25,6 +26,7 @@ class StudentFlowScreen extends ConsumerWidget {
     final step = ref.watch(studentFlowProvider.select((s) => s.step));
     return switch (step) {
       FlowStep.register => const RegisterScreen(),
+      FlowStep.home => const HomeScreen(),
       FlowStep.slotSearch => const SlotSearchScreen(),
       FlowStep.bookingPending => const BookingPendingScreen(),
       FlowStep.liveLesson => const LiveLessonScreen(),

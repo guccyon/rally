@@ -26,6 +26,14 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
   void initState() {
     super.initState();
     _body.addListener(() => setState(() {}));
+    // ホームの「添削を依頼する」から開いたら、すぐに添削の依頼（動画の選択）を出す
+    if (ref.read(studentFlowProvider).promptVideoReviewRequest) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(studentFlowProvider.notifier).clearVideoReviewRequestPrompt();
+        _requestVideoReview();
+      });
+    }
   }
 
   @override

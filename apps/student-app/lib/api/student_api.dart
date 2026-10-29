@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・レッスンの評価・コーチの評価・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・受講権の照会・レッスンの評価・コーチの評価・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -53,6 +53,9 @@ abstract interface class StudentApi {
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   );
+
+  /// `getMyEntitlement`（GET /entitlements/me）。受講権がまだない（月額契約の前）なら 404
+  Future<Entitlement> getMyEntitlement();
 
   /// `listMessageThreads`（GET /message-threads）
   Future<MessageThreadList> listMessageThreads();

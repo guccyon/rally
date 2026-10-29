@@ -18,7 +18,7 @@ void main() {
     await tapText(tester, 'テニス');
   }
 
-  testWidgets('登録すると registerAccount を呼び、スロット検索に進む', (tester) async {
+  testWidgets('登録すると registerAccount を呼び、ホームの欄を読んでホームに進む', (tester) async {
     final api = FakeStudentApi();
     final container = await pumpScreen(
       tester,
@@ -31,8 +31,9 @@ void main() {
 
     expect(api.calls, [
       'registerAccount',
-      'searchSlots',
-      'getCoachReviewSummary',
+      'listMyBookings',
+      'getMyEntitlement',
+      'listMessageThreads',
     ]);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson(), {
@@ -41,12 +42,12 @@ void main() {
       'sport': 'tennis',
     });
     final state = container.read(studentFlowProvider);
-    expect(state.step, FlowStep.slotSearch);
+    expect(state.step, FlowStep.home);
     expect(state.accessToken, Fixtures.registered.accessToken);
-    expect(state.searchSport, Sport.tennis);
+    expect(state.searchSport, isNull);
   });
 
-  testWidgets('水泳を選んで登録すると、水泳で登録してそのままスロットを探す', (tester) async {
+  testWidgets('水泳を選んで登録すると、水泳で登録し、ホームからスロットを探すと水泳で絞る', (tester) async {
     final api = FakeStudentApi();
     final container = await pumpScreen(
       tester,
@@ -62,9 +63,11 @@ void main() {
     await tapText(tester, '水泳');
     await tapText(tester, '登録する');
 
-    expect(api.calls, ['registerAccount', 'searchSlots']);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson()['sport'], 'swimming');
+    await container.read(studentFlowProvider.notifier).goToSlotSearch();
+    expect(api.calls.last, 'searchSlots');
+    expect(api.requests.last, Sport.swimming);
     expect(api.requests.whereType<Sport>().last, Sport.swimming);
     expect(container.read(studentFlowProvider).searchSport, Sport.swimming);
   });
