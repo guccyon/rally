@@ -7,6 +7,7 @@ mod mark_message_thread_read;
 pub mod message_id_uuid;
 pub mod message_thread_id_uuid;
 mod message_thread_subscriber;
+mod message_thread_subscriber_error;
 mod open_message_thread;
 mod repository;
 mod send_message;
@@ -21,6 +22,7 @@ pub use mark_message_thread_read::{
     MarkMessageThreadRead, MarkMessageThreadReadCommand, MarkMessageThreadReadError,
 };
 pub use message_thread_subscriber::MessageThreadSubscriber;
+pub use message_thread_subscriber_error::MessageThreadSubscriberError;
 pub use open_message_thread::{
     OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
 };
