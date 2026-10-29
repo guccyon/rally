@@ -1,6 +1,6 @@
 # ADR 0002: Gen1 の未決の Question 3 件への回答
 
-- 状態: 承認（2026-10-26。建設者の委任により Claude が案を決め、Tetsuro が否定しなければ採用。否定があれば後継の ADR で置き換える）
+- 状態: 承認（2026-10-26。建設者の委任により Claude が案を決め、オーナー が否定しなければ採用。否定があれば後継の ADR で置き換える）
 - 関係: Blueprint v0.4 `questions:`、`specs/product-context.md`「未決の Question」、`docs/plans/p1-walking-skeleton.md`（T09 / T12 / T16 の前提）
 
 ## Q1. 通話品質スコアの定義（モックが生成する指標のうち何を使うか）

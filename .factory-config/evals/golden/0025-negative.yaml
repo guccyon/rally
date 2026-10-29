@@ -12,6 +12,6 @@ reason: "負例は点の平均を整数に丸めて出すようにした（契�
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "丸めの正本（契約）と表示の食い違い"

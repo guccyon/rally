@@ -12,6 +12,6 @@ reason: "負例はgetMyAccount の x-context を messaging にした"
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「内部構造だけでユーザー影響はないが保守性でマイナス」
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「内部構造だけでユーザー影響はないが保守性でマイナス」
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "契約の x-context の誤り"

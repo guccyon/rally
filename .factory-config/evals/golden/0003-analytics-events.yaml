@@ -6,11 +6,11 @@ rubric_ids: [ARCH-002]
 pair:
   a: { ref: "github:guccyon/rally#12", job: 14, tier: tier-large, note: "claude-opus-5-5、8 ターン、201k tokens" }
   b: { ref: "github:guccyon/rally#15", job: 18, tier: tier-small, note: "claude-sonnet-5-5、3 ターン、67k tokens" }
-preferred: tie                    # Tetsuro の確認で引き分け（集計から除く）。builder の仮採点は a
+preferred: tie                    # オーナー の確認で引き分け（集計から除く）。builder の仮採点は a
 builder_candidate_preferred: a
 reason: "a の call.ended は Blueprint の通話品質（パケットロス・ジッタ相当）に合う属性（packet_loss_rate / jitter_ms / round_trip_ms / disconnect_count）を持ち、lesson.completed に is_first_lesson があって north star（初回レッスン後の継続率）を計算できる。b は avg_bitrate_kbps など Blueprint にない指標を推測し、booking.canceled の綴りが glossary の cancellation と揃わない。b の video_review.returned に submitted_at を持たせてリードタイムを計算できるようにした点は a より良い"
 polarity: both_acceptable
-scored_by: confirmed              # Tetsuro が 2026-10-27 に確認（「どちらもほとんど内容が同じで明らかな有意性は見られなかった」）
+scored_by: confirmed              # オーナー が 2026-10-27 に確認（「どちらもほとんど内容が同じで明らかな有意性は見られなかった」）
 scored_at: "2026-10-27"
 confirmed_by: builder
 review_note: "builder は細部の差を選好にしたが、人の目では有意差なし。L4 の判定器は細部の差を選好に化けさせないこと（tie を出せること）も見る"

@@ -12,5 +12,5 @@ reason: "負例は glossary の新しい語の id を lesson_record にした（
 polarity: one_flawed            # 負例は意図して作ったアンチパターン（evals/README の「負例には意図的なアンチパターンを含める」）
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28 0005・0007 以外への指摘なし（確認の依頼の形「違うものだけ挙げる」による）
+confirmed_by: オーナー   # 2026-10-28 0005・0007 以外への指摘なし（確認の依頼の形「違うものだけ挙げる」による）
 lesson: "用語の SSOT（glossary の id）と、それを参照する文書の食い違いを拾えるか"

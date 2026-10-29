@@ -11,7 +11,7 @@ confidence: high
 reason: "負例は月額契約の画面でプランを選ばせるが、契約を始めるときに選んだプランを送らない。プラスを選んでもスタンダードで契約される（同じ差分の README・CHANGELOG・試験は「選んだプランを plan で送る」）"
 polarity: one_flawed
 scored_by: confirmed
-confirmed_by: Tetsuro   # 2026-10-29「メジャー欠陥で良い」（選んだのと違うプランで契約される）
+confirmed_by: オーナー   # 2026-10-29「メジャー欠陥で良い」（選んだのと違うプランで契約される）
 scored_at: "2026-10-29"
 severity: major
 lesson: "画面で選ばせた値を送らない（入力の取りこぼし）"

@@ -12,6 +12,6 @@ reason: "負例はlistCoachReviews の x-context を identity にした（評価
 polarity: one_flawed
 scored_by: confirmed
 scored_at: "2026-10-28"
-confirmed_by: Tetsuro   # 2026-10-28「ドメイン境界を変えた欠陥。評価（review）のままであるべき（レビューは支援サブドメイン）」
-severity: minor            # Tetsuro の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
+confirmed_by: オーナー   # 2026-10-28「ドメイン境界を変えた欠陥。評価（review）のままであるべき（レビューは支援サブドメイン）」
+severity: minor            # オーナー の物差し（情報漏洩はクリティカル、ミスリードはメジャー）
 lesson: "契約の x-context と context-map の食い違い"

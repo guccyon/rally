@@ -1,6 +1,6 @@
 # ADR 0001: .factory-config の層と P0 の手置き
 
-- 状態: 提案（2026-10-25、Tetsuro の了承待ち）
+- 状態: 提案（2026-10-25、オーナー の了承待ち）
 - 関係: factory-engine ADR 0001、プロジェクト憲章 04 節、Blueprint v0.4 の autonomy
 
 ## 決定
