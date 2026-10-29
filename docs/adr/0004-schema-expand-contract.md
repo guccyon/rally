@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -9,7 +9,7 @@
 
 - sqlx のマイグレーションを `apps/backend/crates/infra/migrations/` に置く（Postgres は infra 層の持ち物。ADR 0003）。`infra::MIGRATOR`（`sqlx::migrate!()`）がコンパイル時に埋め込むので、アプリからも同じものを当てられる
 - 前進だけ（sqlx の `.up.sql` / `.down.sql` の巻き戻しは使わない）。戻すときは新しいマイグレーションで前に進めて戻す
-- 適用済みのファイルは書き換えない（sqlx がチェックサムで検出して止まる）
+- 適用済みのファイルは書き換えない（sqlx がチェックサムで検出して止まる）。D53 で、デプロイした環境がないうちに既存の 3 本（`20261028000005` / `000006` / `000007`）へ `-- relax:` のコメントだけを足した（SQL は同じ。チェックサムは変わるので、手元で当て済みの DB は作り直す）
 - ローカルは `apps/backend/compose.yaml` の Postgres 16。手順は `apps/backend/README.md`
 
 ### 2. 破壊的な変更は expand → 移行 → contract の 3 段に分ける
@@ -18,14 +18,19 @@
 
 | 段 | ファイル名 | 書けるもの | 古い版のアプリ |
 |---|---|---|---|
-| expand | `..._expand_...` | テーブル・列（NULL 可か既定値つき）・索引・制約の追加。`DROP NOT NULL` / `DROP DEFAULT` などの緩和。許す値を足すだけの CHECK 制約の付け直し（同じ名前で `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)` を 1 つの `ALTER TABLE` に書く） | そのまま動く |
+| expand | `..._expand_...` | テーブル・列（NULL 可か既定値つき）・索引・制約の追加。下の「緩和」 | そのまま動く |
 | 移行 | `..._migrate_...` | データの写し替え（`UPDATE` / `INSERT`）。アプリは新旧の両方に書く版を先に出す | そのまま動く |
 | contract | `..._contract_...` | 列・テーブル・索引・制約の削除、改名、型の変更、`SET NOT NULL`、データの削除（`DELETE` / `TRUNCATE`） | 古い版が使わなくなってから当てる |
 
 - 改名は「新しい列を expand → 両方に書いて写す → 古い列を contract」で行い、`RENAME` は使わない
 - **contract は人間承認**。contract のマイグレーションを含む PR は manifest の `always_human_approve` の `destructive_schema`（列・テーブルの削除、型の縮小）に当たり、変更種別に関わらず builder の承認なしにマージしない。contract は、それを待つ expand / 移行と別の PR に分ける
-- 許す値を減らす CHECK 制約の付け直しは、同じ書き方でも contract の段に分ける（古い版が書く値を拒む）。検査は値の増減までは見ないので、レビューで確かめる
-- expand / 移行の段に破壊的な文（`DROP`（`DROP NOT NULL` / `DROP DEFAULT` と、同じ名前の CHECK 制約の付け直しを除く）・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
+- **緩和**: データを消さず、古い版のアプリの読み書きもそのまま通る変更。expand（と移行）に書けるのは次の形だけで、`crates/infra/tests/migration_conventions.rs` が形で判定する（例外の表は持たない）
+  - `DROP NOT NULL` / `DROP DEFAULT`
+  - CHECK 制約の同じ名前の付け直し: `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)` を 1 つの `ALTER TABLE` に書く（間に制約のない瞬間を作らない）。前の定義と新しい定義がどちらも `<列> IN ('<値>', ...)` なら、検査が値を比べて、足すだけなら通し、1 つでも減らせば止める。それ以外の形（`BETWEEN` から `>=` など）は値の増減を比べられないので、文に `-- relax: 理由` があるときだけ通し、緩和かはレビューで確かめる
+  - 一意・外部キーの制約の削除（`ALTER TABLE <スキーマ>.<テーブル> DROP CONSTRAINT [IF EXISTS] x`）と、一意の索引の削除（`DROP INDEX [IF EXISTS] <スキーマ>.x`）: 一意性・参照の緩和。文に `-- relax: 理由` があるときだけ通す（何が代わりに守るか・なぜ古い版も動くかを書く）。制約・索引の種類は、前のマイグレーション（同じファイルの前の文を含む）で作ったときの定義から読む。名前のない列の制約は Postgres の既定の名前（`<テーブル>_<列>_check` / `_key` / `_fkey`）で数える
+- `-- relax: 理由` は、外す文の直前（前の `;` より後）か文の中に行コメントで書く。理由が空なら数えない
+- 緩和でないものは、理由があっても破壊的として止める: 許す値を減らす CHECK の付け直し（contract に分ける。古い版が書く値を拒む）、`CASCADE` の付いた削除（頼っている他の制約も消す）、CHECK・主キー・一意でない索引の削除、列・テーブル・スキーマの削除
+- expand / 移行の段に破壊的な文（緩和の形でない `DROP`・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
 
 ### 3. 初版のスキーマ（Gen1 のコア 3 コンテキスト）
 
@@ -92,4 +97,5 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 - **sqlx の巻き戻し（`.down.sql`）**: 本番で `DROP` を含む巻き戻しを走らせること自体が破壊的変更になる。前進だけにして、戻すときも expand/contract で進める
 - **スキーマを分けず public に全部置く**: 手軽だが、どのテーブルがどのコンテキストの持ち物かが名前から読めない。後でコンテキストを別 DB に切り出すときの境界も見えにくい
 - **キャンセル規定を DB のトリガーで判定する**: 判定が scheduling のアプリケーションと二重になる（ADR 0002）
+- **緩和を個別の例外の表（外してよい制約・索引の名前）で持つ**（D53 まで）: 緩和のたびに検査と ADR に例外を足すことになり、理由はマイグレーションの外に散る。形で判定し、理由は外す文の `-- relax:` に置くことにした
 - **月額の通話の残回数を entitlements の列に 1 つだけ持つ**: 暦月が変わるたびに戻す処理が要り、過去の月の消費が残らない。暦月ごとの行にした

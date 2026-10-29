@@ -15,5 +15,6 @@ CREATE UNIQUE INDEX bookings_one_active_per_slot_student
 
 -- 1 つの枠に有効な予約は 1 件まで、の一意の索引を外す（定員まで複数の予約を持てるようにする一意性の緩和。データは消えない）。
 -- 定員を超える予約の防止は domain の SlotSeats と、予約の作成でスロットの行を FOR UPDATE でロックしてから数える PgBookingRepository が守る。
--- 古い版のアプリも同じロックの中で 1 枠 1 予約を判定するので、この索引がなくても二重予約は入らない（ADR 0004 の 2 の例外）。
+-- 古い版のアプリも同じロックの中で 1 枠 1 予約を判定するので、この索引がなくても二重予約は入らない（ADR 0004 の 2 の緩和）。
+-- relax: 定員まで複数の予約を持てるようにする一意性の緩和（上の 1 生徒 1 予約の索引と、スロットの行のロックの中の数え上げが守る）
 DROP INDEX scheduling.bookings_one_active_per_slot;
