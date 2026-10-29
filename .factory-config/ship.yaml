@@ -1,0 +1,25 @@
+# 出荷の形（factory-engine の ADR 0012）。工場の shipper が読む。
+# イメージは部品ごとに <製品>-<部品>:<版> の名前で作り、compose には env の名前で渡す。
+# 環境は staging（自動で出す）と prod（承認ボタンで出す）。どちらも建設者の端末の Docker の別のプロジェクトで、DB を別に持つ。
+schema_version: "0.1"
+compose: deploy/compose.yaml
+images:
+  backend:
+    context: apps/backend
+    env: BACKEND_IMAGE
+    # この端末は Docker Hub からベースのイメージを取れないことがあるので、手元の同じ Debian bookworm のイメージで作る（2026-10-30）。
+    # 取れるようになったら build_args を消せば Dockerfile の既定（rust:1-bookworm・debian:bookworm-slim）に戻る
+    build_args: { BUILD_IMAGE: "factory-worker:rust", RUNTIME_IMAGE: "factory-worker:p0" }
+  admin-web:
+    context: apps/admin-web
+    env: ADMIN_WEB_IMAGE
+    build_args: { NODE_IMAGE: "factory-worker:p0" }
+environments:
+  staging:
+    env: { BACKEND_PORT: 18080, ADMIN_WEB_PORT: 13000, POSTGRES_IMAGE: "postgres:17-alpine" }
+  prod:
+    approval: true
+    env: { BACKEND_PORT: 28080, ADMIN_WEB_PORT: 23000, POSTGRES_IMAGE: "postgres:17-alpine" }
+verify:
+  service: backend
+  url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること
