@@ -1,0 +1,56 @@
+# 出荷用の環境の組み立て（factory-engine の ADR 0012）。工場の shipper が環境ごとに別のプロジェクトとして起動する。
+#   COMPOSE_PROJECT_NAME=rally-staging BACKEND_IMAGE=rally-backend:0.3.0 ADMIN_WEB_IMAGE=rally-admin-web:0.3.0 APP_VERSION=0.3.0 \
+#   BACKEND_PORT=18080 ADMIN_WEB_PORT=13000 docker compose -f deploy/compose.yaml up -d --wait
+# DB は環境ごとのボリュームに持ち、版を替えても（Rollback でも）残す。backend が起動時にマイグレーションを当てる（前進だけ）。
+# 手元からだけつながるよう 127.0.0.1 に限る（BIND_HOST で変えられる）。認証のない DB で、秘密情報は置かない。
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    environment:
+      POSTGRES_USER: rally
+      POSTGRES_DB: rally
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "rally", "-d", "rally"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE を指定する}
+    environment:
+      DATABASE_URL: postgres://rally@postgres:5432/rally
+      APP_VERSION: ${APP_VERSION:-unknown}
+      ANALYTICS_APP_VERSION: ${APP_VERSION:-}
+      ANALYTICS_RELEASE_ID: ${RELEASE_ID:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  admin-web:
+    image: ${ADMIN_WEB_IMAGE:?ADMIN_WEB_IMAGE を指定する}
+    environment:
+      RALLY_API_URL: http://backend:8080
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${ADMIN_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
