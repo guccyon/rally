@@ -12,7 +12,7 @@ use domain::{
     identity::{Role, Sport},
     lesson::LessonType,
     live_lesson::SessionStatus,
-    messaging::MessageSender,
+    messaging::{MessageAuthor, MessageKind, MessageSender},
     scheduling::{BookingStatus, SlotStatus, SlotSupplyStatus},
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -146,10 +146,24 @@ pub(crate) const fn video_review_status_to_contract(status: VideoStatus) -> &'st
 }
 
 /// student-app・admin-web の `MessageSenderRole` の値（`Message.sender_role`）。
-pub(crate) const fn message_sender_to_contract(sender: MessageSender) -> &'static str {
-    match sender {
-        MessageSender::Student => "student",
-        MessageSender::Coach => "coach",
+pub(crate) const fn message_author_to_contract(author: MessageAuthor) -> &'static str {
+    match author {
+        MessageAuthor::Participant(MessageSender::Student) => "student",
+        MessageAuthor::Participant(MessageSender::Coach) => "coach",
+        MessageAuthor::System => "system",
+    }
+}
+
+/// 送り手がシステム（`sender_role` が `system`）のメッセージの `Message.sender_id`。どのアカウントでもない
+/// nil UUID（契約の `Message.sender_id` の説明）。
+pub(crate) const SYSTEM_MESSAGE_SENDER_ID: &str = "00000000-0000-0000-0000-000000000000";
+
+/// student-app・admin-web の `MessageKind` の値（`Message.kind`）。
+pub(crate) const fn message_kind_to_contract(kind: MessageKind) -> &'static str {
+    match kind {
+        MessageKind::Text => "text",
+        MessageKind::VideoReviewRequest => "video_review_request",
+        MessageKind::VideoReviewReturn => "video_review_returned",
     }
 }
 
@@ -323,6 +337,27 @@ mod tests {
         assert_eq!(
             video_review_status_to_contract(VideoStatus::Reviewed),
             "returned"
+        );
+    }
+
+    #[test]
+    fn message_authors_are_student_coach_and_system() {
+        assert_eq!(
+            MessageAuthor::ALL.map(message_author_to_contract),
+            ["student", "coach", "system"]
+        );
+        assert_eq!(
+            application::identity::account_id_uuid::parse(SYSTEM_MESSAGE_SENDER_ID),
+            Ok(domain::identity::AccountId::from_u128(0)),
+            "システムの送り手は nil UUID"
+        );
+    }
+
+    #[test]
+    fn message_kinds_are_text_and_the_video_review_request_and_return() {
+        assert_eq!(
+            MessageKind::ALL.map(message_kind_to_contract),
+            ["text", "video_review_request", "video_review_returned"]
         );
     }
 

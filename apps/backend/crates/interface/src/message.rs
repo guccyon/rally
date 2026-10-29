@@ -130,7 +130,7 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
 }
 
 /// メッセージの本文（student-app・admin-web の `Message.body`）。本文の種類は本文そのもの、添削依頼・添削の返却は
-/// 短い説明（種類を契約に出すまでの当面の形）。
+/// 種類（`Message.kind`）を知らない版のクライアントがそのまま表示できる短い説明。
 pub(crate) fn message_content_text(content: &MessageContent) -> String {
     match content {
         MessageContent::Text(body) => body.as_str().to_string(),

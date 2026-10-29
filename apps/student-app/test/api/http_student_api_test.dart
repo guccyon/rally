@@ -306,6 +306,7 @@ void main() {
       'thread_id': 't1',
       'sender_id': 'c1',
       'sender_role': 'coach',
+      'kind': 'text',
       'body': 'こんにちは',
       'sent_at': '2026-10-26T03:00:00Z',
       'read_at': null,

@@ -1,6 +1,6 @@
 # ADR 0007: messaging の最小形（生徒と担当コーチのチャット）
 
-- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記
+- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記。D48（Issue #208）で種類と送り手のシステムを契約に出すこと（決定 8）を追記
 - 関係: docs/adr/0009 の答え合わせ（チャットは会話でありレッスンのログ）、`specs/context-map.yaml`（messaging・async-lesson）、`specs/glossary.yaml`（message_thread / message / subscription）、`specs/contracts/events/asyncapi.yaml`（BookingConfirmed）、`specs/contracts/api/student-app/openapi.yaml`・`admin-web/openapi.yaml`（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）、`specs/analytics/events.yaml`（message.sent）、ADR 0004（スキーマ）、ADR 0005（境界間イベントの購読）
 
 ## 決定
@@ -13,12 +13,17 @@
 6. **ページングは置かない。** スレッドの一覧・メッセージの一覧は全件を返す（Gen1 のデモの規模。件数が増えたら契約に `limit` / カーソルを足す。後方互換に足せる）
 7. **メッセージには種類があり、添削依頼と添削の返却がスレッドに流れる（D47）。** チャットは会話でありレッスンのログでもある（docs/adr/0009 の答え合わせ）。
    - 種類（domain の `MessageContent`。名前は `MessageKind`）は 3 つ: 本文（`Text`。本文を持つのは本文の種類だけ）、添削依頼（`VideoReviewRequest`。動画の ID）、添削の返却（`VideoReviewReturn`。動画の ID・添削の ID）。スタンプや AI コンシェルジュの発言は変種を足して表す
-   - 送り手（`MessageAuthor`）はスレッドの当事者（`MessageSender`: 生徒 / コーチ）かシステム（`System`）。添削依頼の送り手は生徒、添削の返却の送り手はコーチだけ（`MessageContent::allows`。DB は `messages_kind_sender`）。システムのメッセージはどちらの当事者のものでもないので未読に数えず、既読にもしない。今はシステムのメッセージを流す処理はなく、契約にも形がない（返すことになれば 500。形は次の段で決める）
+   - 送り手（`MessageAuthor`）はスレッドの当事者（`MessageSender`: 生徒 / コーチ）かシステム（`System`）。添削依頼の送り手は生徒、添削の返却の送り手はコーチだけ（`MessageContent::allows`。DB は `messages_kind_sender`）。システムのメッセージはどちらの当事者のものでもないので未読に数えず、既読にもしない。今はシステムのメッセージを流す処理はない（契約での返し方は決定 8）
    - async-lesson は動画の送付で境界間イベント `VideoReviewRequested` を、添削の返却で `VideoReviewReturned` を発行する。messaging の購読（`MessageThreadSubscriber`）がこの 2 つで、その生徒とコーチのスレッドに（なければイベントの `occurred_at` に開いて）メッセージを足す（送信時刻は `occurred_at`）。async-lesson は messaging を直接呼ばない
    - 同じ動画の添削依頼・添削の返却はスレッドに 1 通ずつ（`MessageThread::post_video_review_request` / `post_video_review_return`。DB は `messages_one_per_video_and_kind`）で、同じイベントが 2 回届いても 1 通。添削依頼のメッセージがない動画（この機能より前に送った動画）の返却も足す
    - メッセージは動画・添削を ID で指すだけで、添削の有無・回数・状態は async-lesson だけが持つ（messaging は写しを持たない）
    - 添削依頼・返却はチャットの送り放題の判定（`ChatGate`）を通さず、`MessageSent` と行動イベント `message.sent` も出さない（当事者がチャットで送ったものではない。返却の通知は notification が `VideoReviewReturned` から送る）
-   - API（`listMessages` / `listMessageThreads` の `last_message`）の形は変えず、当面は本文に短い説明（「動画の添削を依頼しました」「動画の添削を返しました」。文言は interface）を入れて、送り手の当事者を `sender_id` / `sender_role` で返す。種類を契約に出すのは次の段
+   - D47 の時点では API の形を変えず、本文に短い説明（「動画の添削を依頼しました」「動画の添削を返しました」。文言は interface）を入れて返した。種類は決定 8 で契約に出した
+8. **メッセージの種類と送り手のシステムを契約に出す（D48）。** student-app・admin-web の `Message`（`listMessages`・`sendMessage`・スレッドの `last_message`）に、必須の `kind`（`MessageKind`: `text` / `video_review_request` / `video_review_returned`）と、種類ごとの中身（`video_id`: 添削依頼・返却のときだけ、`review_id`: 返却のときだけ）を足した。対応は interface の `contract.rs` の 1 か所
+   - **知らない種類は読み飛ばしてよい**と契約（`MessageKind` と `listMessages`）に書いた。種類（スタンプなど）は後方互換に増やす。student-app は知らない種類のメッセージを一覧から除き、`last_message` なら null と同じに扱う
+   - `body` は必須のまま残し、本文以外の種類では D47 の短い説明を入れ続ける。互換ポリシー（N-2）で支える古い版は `kind` を知らず `body` を必ず読むので、外すと古い版の表示が空になる（必須の項目を任意にするのは契約の違反）。知っている種類は説明に頼らず `kind` と ID で表す
+   - 送り手のシステムは `sender_role` の `system`（レスポンスの enum の追加）で表し、`sender_id` はどのアカウントでもない nil UUID（`00000000-0000-0000-0000-000000000000`）にする。`sender_id` は必須の `string`（uuid）で、null を許すのは型の変更として契約の違反になるため。これで送り手がシステムのメッセージも 500 にならずに返る
+   - `sendMessage` で送れるのは本文だけ（応答の `kind` は `text`）。リクエストは変えない
 
 ## 選ばなかった案
 
@@ -26,5 +31,7 @@
 - 動画の送付（`POST /videos`）でもスレッドを開く: D01 では、動画は境界間イベントを発行しておらず、送り先のコーチの存在も確かめていないので選ばなかった（`apps/backend/README.md` の async-lesson）。D47 で添削依頼をチャットに流すことにしたので、添削依頼・返却のイベントでスレッドがなければ開く（決定 7）。担当コーチの判断は matching を実装するときにまとめて見直す
 - 添削依頼・返却の送り手をシステムにする（D47）: 契約の `sender_id` / `sender_role` に当てるアカウントがなく、今の応答の形を保てない。未読・既読もどちらの当事者のものか決まらない。依頼は生徒、返却はコーチの行為なので当事者を送り手にした
 - 添削依頼を本文のメッセージに動画を添付する形にする（D47）: docs/adr/0009 の答え合わせ（チャットのメッセージの 1 つとして動画を上げるのではなく、添削依頼の形で上げさせる。添削したことや回数は管理したい）に合わない
+- 種類ごとの中身を `oneOf`（`kind` で判別する別々のスキーマ）にする（D48）: 型は締まるが、今の `Message` を置き換えることになり互換の検査と両クライアントの型の扱いが重くなる。中身は ID が 2 つだけなので、任意の項目を平らに並べた
+- 送り手がシステムのとき `sender_id` を null にする（D48）: 意味は素直だが、必須の uuid の項目に null を足すのはレスポンスの型の変更で、支えている古い版を壊す
 - 受講権のない生徒にも送らせる: Blueprint の「月額: 動画とチャットは送り放題」を、チャットは月額の利用権に含まれると読んだ。体験予約だけの生徒に送らせるかは、通知・matching と合わせて見直せる（`EntitlementChatGate` の 1 か所を変えればよい）
 - 既読をスレッドの当事者ごとの「最後に読んだ時刻」で持つ: 行が少なく済むが、メッセージごとの既読（相手が読んだか）を返すには時刻の比較が要り、同じ時刻のメッセージで曖昧になる

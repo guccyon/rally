@@ -45,6 +45,7 @@ const _weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 String messageSenderLabel(MessageSenderRole role) => switch (role) {
   MessageSenderRole.student => '自分',
   MessageSenderRole.coach => 'コーチ',
+  MessageSenderRole.system => 'お知らせ',
 };
 
 /// 自分が送ったメッセージを相手が読んだか（相手から届いたものには出さない）

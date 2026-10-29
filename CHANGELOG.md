@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- チャットのメッセージの種類を API に出す: student-app・admin-web の `Message`（`listMessages`・`sendMessage`・`listMessageThreads` / `markMessageThreadRead` の `last_message`）に種類 `kind`（`text` / `video_review_request` / `video_review_returned`）と、添削依頼・返却の `video_id`、返却の `review_id` を足した。送り手 `sender_role` に `system`（`sender_id` は nil UUID）を足した。知らない種類は読み飛ばしてよい（契約に明記）。`body` は今までどおり必ず返し、添削依頼・返却では短い説明を入れる。admin-web の生成した型と student-app の型を合わせ、student-app は知らない種類を読み飛ばす。画面は変えない（#208）
 - 動画の添削依頼と返却がチャットに流れる（docs/adr/0009 の答え合わせ）: 生徒が動画を送ると、その生徒とコーチのスレッド（なければ開く）に生徒の添削依頼のメッセージが、コーチが添削を返すとコーチの添削の返却のメッセージが足され、会話と同じ時間軸に並ぶ。`listMessages` / `listMessageThreads` の応答の形は変えず、当面は本文に「動画の添削を依頼しました」「動画の添削を返しました」と入れて返す（種類は次の段で契約に出す）。境界間イベント `VideoReviewRequested` を足した。DB はメッセージの種類と参照の列の追加（expand）（#207）
 - student-app のスロットを探す画面で、各枠にそのコーチの評価の件数と平均（例「★ 4.2（12 件）」、0 件なら「評価はまだありません」）を出し、「評価を見る」でそのコーチの評価の一覧（新しい順。点・一言・送った時刻）を開く（`getCoachReviewSummary` / `listCoachReviews`）。評価を読めなくても検索結果と体験予約はそのまま使え、評価の欄にだけその旨を出す。API と契約の変更はない（#194）
 - 生徒がコーチの評価を読める API: student-app の契約に `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。件数と平均）と `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。送った時刻の新しい順の一覧）を足し、生徒の役割のトークンでどのコーチの分も読めるようにした（今までは 403）。形・数え方・並びは admin-web と同じで、一覧に評価した生徒は載せない。本部（すべて）とコーチ（自分の分だけ）の読める範囲は変えない。student-app は型と API の呼び出しを契約に合わせただけで、画面はまだない（#193）

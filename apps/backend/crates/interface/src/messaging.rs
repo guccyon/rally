@@ -5,15 +5,17 @@
 //! スレッドがあることも知らせない（404）。生徒がチャットの送り放題（月額）を持たなければ送信は 403
 //! `chat_not_entitled`。
 //!
-//! 添削依頼・添削の返却のメッセージ（messaging が async-lesson の境界間イベントから足す）は、当面は本文に短い説明
-//! （[`message::message_content_text`]）を入れて本文のメッセージと同じ形で返す（種類を契約に出すのは次の段）。
-//! システムが流したメッセージは契約にまだ形がない（送り手のアカウントがない）ので、返すことになれば 500 にする
-//! （今は流す処理がない）。
+//! メッセージは種類（`kind`）と種類ごとの中身を返す: 本文（`text`）、添削依頼（`video_review_request`。`video_id`）、
+//! 添削の返却（`video_review_returned`。`video_id`・`review_id`）。添削依頼・返却（messaging が async-lesson の
+//! 境界間イベントから足す）の `body` には、種類を知らない版のクライアント向けの短い説明
+//! （[`message::message_content_text`]）を入れる（契約の `body` は必須）。
+//! システムが流したメッセージ（今は流す処理がない）は `sender_role` を `system`、`sender_id` を nil UUID で返す。
 
 use std::sync::Arc;
 
 use application::{
     analytics::AnalyticsSink,
+    async_lesson::{video_id_uuid, video_review_id_uuid},
     clock::Clock,
     domain_event::DomainEventPublisher,
     identity::account_id_uuid,
@@ -32,13 +34,16 @@ use axum::{
 use domain::{
     DomainError,
     identity::AccountId,
-    messaging::{Message, MessageAuthor, MessageBody, MessageThread, MessageThreadId},
+    messaging::{Message, MessageBody, MessageThread, MessageThreadId},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::AuthenticatedAccount,
-    contract::{date_time_to_contract, message_sender_to_contract},
+    contract::{
+        SYSTEM_MESSAGE_SENDER_ID, date_time_to_contract, message_author_to_contract,
+        message_kind_to_contract,
+    },
     error::ApiError,
     message,
 };
@@ -61,13 +66,19 @@ pub struct SendMessageRequest {
 }
 
 /// student-app・admin-web の `Message`（domain の [`MessageBody`] と名前が重ならないよう `Json` を付ける）。
+/// `video_id`・`review_id` は種類（`kind`）が持つときだけ出す。
 #[derive(Serialize)]
 pub struct MessageJson {
     message_id: String,
     thread_id: String,
     sender_id: String,
     sender_role: &'static str,
+    kind: &'static str,
     body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    video_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    review_id: Option<String>,
     sent_at: String,
     read_at: Option<String>,
 }
@@ -259,18 +270,19 @@ fn thread_json(thread: &MessageThread, reader: AccountId) -> Result<MessageThrea
 }
 
 fn message_json(thread: &MessageThread, message: &Message) -> Result<MessageJson, ApiError> {
-    let MessageAuthor::Participant(sender) = message.author() else {
-        return Err(ApiError::internal(format!(
-            "システムのメッセージ {} は契約にまだ形がない",
-            message_id_uuid::format(message.id())
-        )));
-    };
+    let content = message.content();
     Ok(MessageJson {
         message_id: message_id_uuid::format(message.id()),
         thread_id: message_thread_id_uuid::format(thread.id()),
-        sender_id: account_id_uuid::format(thread.account_of(sender)),
-        sender_role: message_sender_to_contract(sender),
-        body: message::message_content_text(message.content()),
+        sender_id: match message.author().participant() {
+            Some(sender) => account_id_uuid::format(thread.account_of(sender)),
+            None => SYSTEM_MESSAGE_SENDER_ID.to_string(),
+        },
+        sender_role: message_author_to_contract(message.author()),
+        kind: message_kind_to_contract(content.kind()),
+        body: message::message_content_text(content),
+        video_id: content.video_id().map(video_id_uuid::format),
+        review_id: content.review_id().map(video_review_id_uuid::format),
         sent_at: date_time_to_contract(message.sent_at())?,
         read_at: message.read_at().map(date_time_to_contract).transpose()?,
     })

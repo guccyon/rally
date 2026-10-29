@@ -1,7 +1,8 @@
 //! `/message-threads` の統合テスト。student-app（生徒）と admin-web（コーチ）の `listMessageThreads`・
 //! `listMessages`・`sendMessage`・`markMessageThreadRead` のレスポンスの形を OpenAPI のスキーマで検査し、
 //! 送信 → 一覧 → 既読の一連・行動イベント `message.sent`・月額の生徒が送り放題で受講権を消費しないこと・
-//! 受講権のない生徒の 403・当事者でないアカウントの 404・422 / 401 を確かめる。
+//! 受講権のない生徒の 403・当事者でないアカウントの 404・422 / 401 と、メッセージの種類（本文・添削依頼・添削の返却）と
+//! システムが流したメッセージの返し方を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -40,11 +41,15 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    async_lesson::{VideoId, VideoReviewId},
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{AccountId, Role, Sport},
-    messaging::{MessageSender, MessageThread, MessageThreadId},
+    messaging::{
+        Message, MessageAuthor, MessageBody, MessageContent, MessageId, MessageSender,
+        MessageThread, MessageThreadId,
+    },
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -84,11 +89,18 @@ const TRIAL_STUDENT: &str = "student:2";
 const COACH: &str = "coach:9";
 const OTHER_COACH: &str = "coach:8";
 const HEADQUARTERS: &str = "headquarters:5";
+/// 添削依頼・添削の返却が流れたスレッドの生徒とコーチ
+const REVIEW_STUDENT: &str = "student:3";
+const REVIEW_COACH: &str = "coach:7";
 
 /// 生徒 1 とコーチ 9 のスレッド
 const THREAD: MessageThreadId = MessageThreadId::from_u128(100);
 /// 生徒 2 とコーチ 9 のスレッド
 const TRIAL_THREAD: MessageThreadId = MessageThreadId::from_u128(101);
+/// 生徒 3 とコーチ 7 のスレッド（添削依頼・システムのお知らせ・添削の返却が流れている）
+const REVIEW_THREAD: MessageThreadId = MessageThreadId::from_u128(102);
+const VIDEO: VideoId = VideoId::from_u128(50);
+const REVIEW: VideoReviewId = VideoReviewId::from_u128(60);
 
 fn account_id(token: &str) -> AccountId {
     AccountId::from_u128(token.split_once(':').unwrap().1.parse().unwrap())
@@ -103,6 +115,51 @@ fn minutes(n: u64) -> SystemTime {
     opened_at() + Duration::from_secs(n * 60)
 }
 
+/// 生徒 3 とコーチ 7 のスレッド。10:02 に生徒の添削依頼（動画 50）、10:03 にシステムのお知らせ（本文）、10:04 に
+/// コーチの添削の返却（動画 50・添削 60）が流れている（添削依頼・返却は messaging の購読が、お知らせはシステムが流す）。
+fn review_thread() -> MessageThread {
+    let message = |id, author, content, minute| {
+        Message::restore(
+            MessageId::from_u128(id),
+            author,
+            content,
+            minutes(minute),
+            None,
+        )
+        .unwrap()
+    };
+    MessageThread::restore(
+        REVIEW_THREAD,
+        account_id(REVIEW_STUDENT),
+        account_id(REVIEW_COACH),
+        opened_at(),
+        vec![
+            message(
+                201,
+                MessageAuthor::Participant(MessageSender::Student),
+                MessageContent::VideoReviewRequest { video_id: VIDEO },
+                2,
+            ),
+            message(
+                202,
+                MessageAuthor::System,
+                MessageContent::Text(MessageBody::new("年末年始はお休みです").unwrap()),
+                3,
+            ),
+            message(
+                203,
+                MessageAuthor::Participant(MessageSender::Coach),
+                MessageContent::VideoReviewReturn {
+                    video_id: VIDEO,
+                    review_id: REVIEW,
+                },
+                4,
+            ),
+        ],
+    )
+    .unwrap()
+}
+
 struct App {
     router: Router,
     clock: ManualClock,
@@ -110,8 +167,8 @@ struct App {
     entitlements: InMemoryEntitlementRepository,
 }
 
-/// 生徒 1（月額）とコーチ 9 のスレッド 100、生徒 2（受講権なし）とコーチ 9 のスレッド 101 を置く。
-/// 現在時刻はスレッドを開いた 2026-10-26 10:00 の 1 分後。
+/// 生徒 1（月額）とコーチ 9 のスレッド 100、生徒 2（受講権なし）とコーチ 9 のスレッド 101、生徒 3 とコーチ 7 の
+/// スレッド 102（[`review_thread`]）を置く。現在時刻はスレッドを開いた 2026-10-26 10:00 の 1 分後。
 fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
     let events = RecordingDomainEventPublisher::default();
@@ -139,6 +196,7 @@ fn app() -> App {
             opened_at(),
         )
         .unwrap(),
+        review_thread(),
     ]);
     let router = interface::router_with(
         RegisterAccount::new(
@@ -443,7 +501,12 @@ async fn the_student_and_the_coach_exchange_messages_and_read_them() {
         account_id_uuid::format(account_id(STUDENT))
     );
     assert_eq!(question["sender_role"], "student");
+    assert_eq!(question["kind"], "text");
     assert_eq!(question["body"], "サーブのトスが安定しません");
+    assert!(
+        question.get("video_id").is_none() && question.get("review_id").is_none(),
+        "本文の種類は動画・添削を指さない: {question}"
+    );
     assert_eq!(question["sent_at"], "2026-10-26T10:01:00Z");
     assert_eq!(question["read_at"], Value::Null);
 
@@ -521,6 +584,82 @@ async fn the_student_and_the_coach_exchange_messages_and_read_them() {
                 occurred_at: minutes(5),
             },
         ]
+    );
+}
+
+#[tokio::test]
+async fn the_video_review_request_and_return_are_listed_with_their_kinds() {
+    let app = app();
+    let thread = thread_path(REVIEW_THREAD);
+    let video_id = "00000000-0000-0000-0000-000000000032";
+    let review_id = "00000000-0000-0000-0000-00000000003c";
+
+    for token in [REVIEW_STUDENT, REVIEW_COACH] {
+        let (status, body) = app.list_messages(Some(token), &thread).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {body}");
+        assert_eq!(
+            body["messages"],
+            json!([
+                {
+                    "message_id": "00000000-0000-0000-0000-0000000000c9",
+                    "thread_id": thread,
+                    "sender_id": account_id_uuid::format(account_id(REVIEW_STUDENT)),
+                    "sender_role": "student",
+                    "kind": "video_review_request",
+                    "body": "動画の添削を依頼しました",
+                    "video_id": video_id,
+                    "sent_at": "2026-10-26T10:02:00Z",
+                    "read_at": null,
+                },
+                {
+                    "message_id": "00000000-0000-0000-0000-0000000000ca",
+                    "thread_id": thread,
+                    "sender_id": "00000000-0000-0000-0000-000000000000",
+                    "sender_role": "system",
+                    "kind": "text",
+                    "body": "年末年始はお休みです",
+                    "sent_at": "2026-10-26T10:03:00Z",
+                    "read_at": null,
+                },
+                {
+                    "message_id": "00000000-0000-0000-0000-0000000000cb",
+                    "thread_id": thread,
+                    "sender_id": account_id_uuid::format(account_id(REVIEW_COACH)),
+                    "sender_role": "coach",
+                    "kind": "video_review_returned",
+                    "body": "動画の添削を返しました",
+                    "video_id": video_id,
+                    "review_id": review_id,
+                    "sent_at": "2026-10-26T10:04:00Z",
+                    "read_at": null,
+                },
+            ]),
+            "{token}"
+        );
+    }
+
+    // スレッドの一覧の最後のメッセージにも種類と中身が載る。システムのお知らせは未読に数えない
+    for (token, unread) in [(REVIEW_STUDENT, 1), (REVIEW_COACH, 1)] {
+        let (status, body) = app.list_threads(Some(token)).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {body}");
+        let summary = &body["threads"][0];
+        assert_eq!(summary["thread_id"], thread);
+        assert_eq!(summary["last_message"]["kind"], "video_review_returned");
+        assert_eq!(summary["last_message"]["review_id"], review_id);
+        assert_eq!(summary["unread_count"], unread, "{token}");
+    }
+
+    // 既読にしても、システムのお知らせは既読にならない（どちらの当事者のものでもない）
+    app.clock.set(minutes(5));
+    let (status, read) = app.mark_read(Some(REVIEW_STUDENT), &thread).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["last_message"]["read_at"], "2026-10-26T10:05:00Z");
+    let (_, body) = app.list_messages(Some(REVIEW_STUDENT), &thread).await;
+    assert_eq!(body["messages"][1]["sender_role"], "system");
+    assert_eq!(body["messages"][1]["read_at"], Value::Null);
+    assert!(
+        app.message_events().is_empty(),
+        "流れたメッセージは送信ではない"
     );
 }
 
