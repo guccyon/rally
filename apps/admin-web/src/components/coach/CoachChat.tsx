@@ -58,10 +58,11 @@ function lastMessagePreview(message: Schemas["Message"]) {
 /**
  * コーチのチャット。開いたときに自分が当事者のスレッドの一覧（listMessageThreads。API の順＝最後の出来事の新しい順）を、
  * 生徒の名前と未読の数と最後のメッセージとともに出し、選んだスレッドのメッセージと送信の欄（MessageThreadView）を開く。
+ * `initialThreadId`（対応待ちから移ったときのスレッド）があれば、そのスレッドを選んだ状態で開く。
  */
-export function CoachChat({ api }: { api: ChatApi }) {
+export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThreadId?: string }) {
   const [list, setList] = useState<ListState>({ kind: "loading" });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialThreadId ?? null);
 
   const fetchThreads = useCallback(async (): Promise<ListState> => {
     const [threads, names] = await Promise.all([api.listMessageThreads(), fetchStudentNames(api)]);
