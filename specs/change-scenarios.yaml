@@ -15,7 +15,8 @@ scenarios:
     description: "現在ゴルフだけの契約種別であるワンショットを、ゴルフ以外のスポーツでも選べるようにする。"
     expected_contexts: [entitlement, billing, async-lesson]
     rationale: "契約種別は entitlement、都度課金の請求は billing が持ち、不変条件 2（ワンショット決済が確定した動画にしか添削に着手できない）の着手判定が async-lesson の添削ワークフローに及ぶ。"
-    status: candidate
+    status: rejected
+    decision: "2026-10-29 オーナー: ワンショットはゴルフ以外には不要。ゴルフはペルソナ（金銭的に余裕のある層）が違うので、単価とブランディングを分けた別アプリ（golf-app）にする想定。実測は流さない"
   - id: cs-003
     title: "ビデオ通話の月間回数を契約プランごとに可変にする"
     description: "月額契約のビデオ通話の上限（現在は暦月 2 回固定）を、契約プランごとに異なる回数にできるようにする。"
