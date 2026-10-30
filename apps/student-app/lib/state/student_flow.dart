@@ -69,6 +69,8 @@ class StudentFlowState {
     this.coachReviewSummaryFailures = const {},
     this.coachReviews = const {},
     this.coachReviewsFailures = const {},
+    this.coachLessonMenus = const {},
+    this.coachLessonMenusFailures = const {},
     this.bookedSlot,
     this.booking,
     this.session,
@@ -123,6 +125,13 @@ class StudentFlowState {
 
   /// 評価の一覧を読めなかったコーチの ID
   final Set<String> coachReviewsFailures;
+
+  /// 開いたコーチの公開中のレッスンメニューのうち、生徒のスポーツのもの（`listCoachLessonMenus`。コーチの ID ごと。
+  /// 作った時刻の古い順）。検索のたびに捨てる
+  final Map<String, List<LessonMenu>> coachLessonMenus;
+
+  /// レッスンメニューを読めなかったコーチの ID
+  final Set<String> coachLessonMenusFailures;
 
   /// 体験予約したスロット（動画の送付でスポーツを使う）
   final Slot? bookedSlot;
@@ -204,6 +213,8 @@ class StudentFlowState {
     Set<String>? coachReviewSummaryFailures,
     Map<String, List<CoachReview>>? coachReviews,
     Set<String>? coachReviewsFailures,
+    Map<String, List<LessonMenu>>? coachLessonMenus,
+    Set<String>? coachLessonMenusFailures,
     Slot? bookedSlot,
     Booking? booking,
     LiveLessonSession? session,
@@ -240,6 +251,9 @@ class StudentFlowState {
         coachReviewSummaryFailures ?? this.coachReviewSummaryFailures,
     coachReviews: coachReviews ?? this.coachReviews,
     coachReviewsFailures: coachReviewsFailures ?? this.coachReviewsFailures,
+    coachLessonMenus: coachLessonMenus ?? this.coachLessonMenus,
+    coachLessonMenusFailures:
+        coachLessonMenusFailures ?? this.coachLessonMenusFailures,
     bookedSlot: bookedSlot ?? this.bookedSlot,
     booking: booking ?? this.booking,
     session: session ?? this.session,
@@ -433,6 +447,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       coachReviewSummaryFailures: const {},
       coachReviews: const {},
       coachReviewsFailures: const {},
+      coachLessonMenus: const {},
+      coachLessonMenusFailures: const {},
     );
     final coachIds = {for (final slot in page.items) slot.coachId};
     final summaries = <String, CoachReviewSummary>{};
@@ -478,6 +494,41 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         errorMessage: state.errorMessage,
         coachReviewsFailures: Set.unmodifiable({
           ...state.coachReviewsFailures,
+          coachId,
+        }),
+      );
+    }
+  }
+
+  /// コーチの公開中のレッスンメニュー（`listCoachLessonMenus`）を、生徒のスポーツで絞って読む。[loadCoachReviews] と同じく
+  /// busy にせず失敗の文言も出さない（読めなければそのコーチを [StudentFlowState.coachLessonMenusFailures] に入れ、
+  /// メニューの欄にだけその旨を出す）。
+  Future<void> loadCoachLessonMenus(String coachId) async {
+    state = state.copyWith(
+      errorMessage: state.errorMessage,
+      coachLessonMenusFailures: Set.unmodifiable(
+        state.coachLessonMenusFailures.difference({coachId}),
+      ),
+    );
+    try {
+      final list = await _api.listCoachLessonMenus(
+        coachId,
+        sport: state.student!.sport,
+      );
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        coachLessonMenus: Map.unmodifiable({
+          ...state.coachLessonMenus,
+          coachId: list.lessonMenus,
+        }),
+      );
+    } on StudentApiException {
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        coachLessonMenusFailures: Set.unmodifiable({
+          ...state.coachLessonMenusFailures,
           coachId,
         }),
       );

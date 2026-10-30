@@ -1,0 +1,73 @@
+guccyon/rally#104（D05: student-app の評価の入力）の PR 本文を、検査の時点の形（後から追記された「## 背景」「## 問題」を除く）で PR_BODY.md の追加行として置いたもの。PR 本文は gh pr diff に出ないため。
+diff --git a/PR_BODY.md b/PR_BODY.md
+new file mode 100644
+--- /dev/null
++++ b/PR_BODY.md
+@@ -0,0 +1,67 @@
++Closes #94
++
++## 概要
++student-app に、レッスンの完了を記録したあとで評価（1〜5 の点と一言）を送る画面を足しました。評価済みかどうかは「この端末で送れたこと」と「送ったときに 409 `lesson_already_reviewed` が返ったこと」で判断し、評価済みなら入力できなくしています。backend と契約は変えていません。
++
++## 対応内容
++- API クライアント
++  - `lib/api/models.dart` に契約のスキーマ `LessonReview` と `SubmitLessonReviewRequest` を手で写して追加
++  - `StudentApi` と `HttpStudentApi` に `submitLessonReview`（`POST /lesson-reviews`）を追加
++- 状態（`lib/state/student_flow.dart`）
++  - `FlowStep.lessonReview` を追加
++  - `StudentFlowState` に `lessonReview`（この端末で送った評価）、`reviewedLessonIds`（評価済みと分かっているレッスンの ID）、`lessonReviewed` を追加
++  - `StudentFlowNotifier` に `goToReview` と `submitReview` を追加。送れたときと 409 `lesson_already_reviewed` のときに評価済みにする。409 の文言は既存の `errorMessageOf` で出す
++- 画面
++  - 新規 `lib/screens/lesson_review_screen.dart`: 1〜5 を選ぶボタン（`SegmentedButton`）と一言の入力欄（200 文字まで）を置く。点が選ばれていないときと、一言が空や空白だけのときは送れない。送ったあとは送った内容を出し、409 のあとは「評価済みのため入力できません」と出す。どちらからも「月額契約へ進む」で次へ進める
++  - `lesson_completion_screen.dart`: 完了を記録したあとに「レッスンを評価する」を主なボタンにし、「月額契約へ進む」は控えめなボタン（`OutlinedButton`）にして残した
++  - `student_flow_screen.dart` に新しい段への切り替えを追加
++- テスト
++  - 新規 `test/screens/lesson_review_screen_test.dart`: 次の 4 件
++    - 送るときの入力チェックと、送ったあと入力できないこと
++    - 409 のときの文言と、入力できなくなること
++    - 422 のときは評価済みにせず、送り直せること
++    - 評価済みのレッスンは開いた時点で入力できないこと
++  - `lesson_completion_screen_test.dart`: 完了の画面から評価の画面へ進むテストを追加
++  - `student_flow_test.dart`: 通話と動画の一周テストを「完了記録 → 評価 → 月額契約」の順に変更
++  - `http_student_api_test.dart`: `submitLessonReview` の送り先・送る内容・応答の変換と、409 の変換を確かめるテストを追加
++  - `contract_test.dart`: `submitLessonReview` が契約にあることを確かめる対象に追加
++  - テスト用の `FakeStudentApi` に `submitLessonReview` と、409 と 422 の応答の見本を追加
++- 文書: `apps/student-app/README.md` の画面の表、ルートの `README.md`、`CHANGELOG.md` の `[Unreleased]` を更新
++
++## 影響範囲・互換性
++- 変えたのは student-app の中だけで、backend・契約（`specs/`）・admin-web は変えていません
++- 一周の画面遷移で、完了記録のあとに評価の画面が入るようになりました。評価せずに月額契約へ進むこともできます
++
++## 動作確認
++- `apps/student-app` で `flutter analyze` を実行し、「No issues found!」でした
++- `flutter test` を実行し、新しく足したものを含め 48 件すべて通りました
++- `dart format --set-exit-if-changed lib test` で、整形のずれがないことを確かめました
++
++## 補足
++- 評価済みかどうかは、アプリを動かしている間だけ覚えています（登録状態と同じ扱い）。アプリを再起動すると忘れ、次に送ったときの 409 で評価済みと分かります。保存のためのパッケージは足していません
++- 評価を見直す・編集する画面は作っていません（契約上、評価は編集も削除もできないため）
++
++## 仮決め
++### design_choice d1: 「この端末で送った」をどう覚えるか
++- 選んだ: 状態の `reviewedLessonIds` に持ち、アプリを動かしている間だけ覚える
++- 他の案: `shared_preferences` などで端末に保存する
++- 根拠: Issue #94 の受け入れ条件、`apps/student-app/README.md` の「画面」（状態は `StudentFlowState` 1 つ）、`pubspec.yaml` の依存
++- 解釈: アクセストークンも同じくメモリにしか持たず、再起動すると登録からやり直しになります。保存の仕組みを足すのは「画面と API クライアントだけ」という範囲を超えると考えました。再起動したあとは 409 で評価済みと分かります
++- 確信度: 0.7
++- 影響: `lib/state/student_flow.dart`。端末に保存する必要があれば別のチケットで対応
++### design_choice d2: 評価は一周の必須の段にするか
++- 選んだ: 完了の画面の主なボタンを「レッスンを評価する」にし、評価の画面からも完了の画面からも月額契約へ進めるようにする（評価は任意）
++- 他の案: 評価を送らないと月額契約へ進めない必須の段にする
++- 根拠: `specs/glossary.yaml` の lesson_review、`specs/contracts/api/student-app/openapi.yaml` の `submitLessonReview`
++- 解釈: どちらにも評価が必須だとは書いていません。月額契約へ進むのを妨げない方が妥当だと判断しました
++- 確信度: 0.65
++- 影響: `lesson_completion_screen.dart`、`lesson_review_screen.dart`、`test/student_flow_test.dart`
++
++## 知見
++- student-app の新しい操作は `StudentApi`・`HttpStudentApi`・`FakeStudentApi` と、`contract_test.dart` で確かめる operationId の一覧の 4 か所を揃えて足す
++- 作業環境に python3 がないので、置換は `sed`・`perl` か Edit で行う
++
++## 工場の記録
++- job: 63（attempt は dispatcher の記録を参照）
++- model: claude-opus-5-5、turns: 52、cost(API 換算): $1.4635234
++- 権限: P0 は PR 作成まで。マージは人間の判断（manifest.yaml autonomy）

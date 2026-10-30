@@ -20,6 +20,9 @@ String lessonTypeLabel(LessonType type) => switch (type) {
   LessonType.asyncLesson => '非同期レッスン（動画添削）',
 };
 
+/// レッスンメニューの同期レッスン 1 回の時間（`LessonMenu.duration_minutes`）。例: `1 回 60 分`
+String lessonMenuDurationLabel(int minutes) => '1 回 $minutes 分';
+
 /// 端末のタイムゾーンで `M/d HH:mm`
 String formatDateTime(DateTime value) {
   final local = value.toLocal();

@@ -1,0 +1,42 @@
+guccyon/rally#109（差し戻し: D05 の CODE-001 の修正）の PR 本文を PR_BODY.md の追加行として置いたもの。PR 本文は gh pr diff に出ないため。
+diff --git a/PR_BODY.md b/PR_BODY.md
+new file mode 100644
+--- /dev/null
++++ b/PR_BODY.md
+@@ -0,0 +1,36 @@
++Closes #105
++
++## 概要
++student-app の `StudentFlowState.reviewedLessonIds` に変更できる Set が入っていたため、`add` で状態を直接変えられてしまい、Riverpod がその変更に気づけませんでした（CODE-001）。`copyWith` を通るときに `Set.unmodifiable` で包むよう直し、不変であることを確かめるテストを足しました。ただしこの環境には Flutter / Dart がないため、テストは一度も実行できていません。
++
++## 対応内容
++- `apps/student-app/lib/state/student_flow.dart`: `StudentFlowState.copyWith` で `reviewedLessonIds` が渡されたときに `Set.unmodifiable(...)` で包むようにしました。`submitReview` の 2 つの経路（送れたとき・409 `lesson_already_reviewed` のとき）はどちらも `copyWith` を通るので、包むのはこの 1 か所だけです。フィールドのコメントにもこのことを書きました。
++- `apps/student-app/test/screens/lesson_review_screen_test.dart`: 「送れたとき」と「409 が返ったとき」の両方のテストで、送ったあとの `reviewedLessonIds.add('other')` が `UnsupportedError` を投げることを確かめるようにしました。
++
++## 影響範囲・互換性
++- 変わるのは student-app の状態の中だけです。画面・API・契約は変わりません。利用者に見える変更はないので `CHANGELOG.md` は更新していません。
++- `reviewedLessonIds` を書き換えているコードは元からないため、ほかの挙動は変わりません。
++
++## 動作確認
++- 実行できていません。`flutter` も `dart` もこの環境にないため、`dart format`・`flutter analyze`・`flutter test` のどれも回せていません。CI か Flutter のある環境で確かめてください。
++- 確かめたのは `git diff --stat` で、変更が上の 2 ファイル（13 行追加・2 行削除）だけであることのみです。
++
++## 補足
++- コンストラクタで直接渡した Set（既定の `const {}` 以外）は包まれません。`const` コンストラクタの中では `Set.unmodifiable` を呼べないためです。アプリのコードで状態を直接作るのは初期値だけで、あとは `copyWith` を通ります。
++
++## 仮決め
++### design_choice CODE-001-wrap: 不変の Set にどこで包むか
++- 選んだ: `copyWith` の中で `Set.unmodifiable` に包む
++- 他の案: `submitReview` の 2 か所でそれぞれ `Set.unmodifiable({...})` を渡す／コンストラクタを `const` でなくして包む
++- 根拠: `CLAUDE.md`「バックエンド」の「変換は 1 か所で」、Issue #105「直し方の手がかり」
++- 解釈: 手がかりはどの案も認めているので、更新の経路をすべて 1 か所で押さえられる `copyWith` にしました。`const StudentFlowState()` が使えなくなるのを避けるため、コンストラクタは変えていません
++- 確信度: 0.8
++- 影響: `apps/student-app/lib/state/student_flow.dart`、`apps/student-app/test/screens/lesson_review_screen_test.dart`
++
++## 知見
++- このワーカー環境には Flutter / Dart の SDK がないため、student-app のテストはここでは実行できません。
++
++## 工場の記録
++- job: 77（attempt は dispatcher の記録を参照）
++- model: claude-opus-5-5、turns: 12、cost(API 換算): $0.29347359999999995
++- 権限: P0 は PR 作成まで。マージは人間の判断（manifest.yaml autonomy）

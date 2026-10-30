@@ -13,6 +13,7 @@ class FakeStudentApi implements StudentApi {
     List<MyBooking>? myBookings,
     this.entitlement,
     this.coachReviewSummaries = const {},
+    this.lessonMenus = const {},
     this.videoReviews = const {},
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
@@ -43,6 +44,9 @@ class FakeStudentApi implements StudentApi {
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
+
+  /// コーチの ID ごとの公開中のレッスンメニュー（`listCoachLessonMenus` が `sport` で絞って返す。ないコーチは空の一覧）
+  final Map<String, List<LessonMenu>> lessonMenus;
 
   /// 動画の ID ごとの添削（`getVideoReview` はここにある動画ならこれを返し、ない動画は `reviews` を順に返す）
   final Map<String, VideoReview> videoReviews;
@@ -212,8 +216,14 @@ class FakeStudentApi implements StudentApi {
   Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport}) =>
       _answer(
         'listCoachLessonMenus',
-        () => LessonMenuList(coachId: coachId, lessonMenus: const []),
-        coachId,
+        () => LessonMenuList(
+          coachId: coachId,
+          lessonMenus: [
+            for (final menu in lessonMenus[coachId] ?? const <LessonMenu>[])
+              if (sport == null || menu.sport == sport) menu,
+          ],
+        ),
+        (coachId: coachId, sport: sport),
       );
 
   @override
@@ -560,6 +570,42 @@ abstract final class Fixtures {
       rating: 4,
       comment: 'わかりやすかった',
       submittedAt: now.subtract(const Duration(days: 1)),
+    ),
+  ];
+
+  /// コーチの公開中のレッスンメニュー（作った時刻の古い順）。テニスの同期・非同期と、野球の同期
+  static final lessonMenus = [
+    LessonMenu(
+      lessonMenuId: '12121212-1212-4212-8212-121212121212',
+      coachId: coachId,
+      sport: Sport.tennis,
+      lessonType: LessonType.liveLesson,
+      name: 'フォアハンドの基礎',
+      description: '打点とスイングの軌道を見直します',
+      durationMinutes: 60,
+      isPublished: true,
+      createdAt: now.subtract(const Duration(days: 2)),
+    ),
+    LessonMenu(
+      lessonMenuId: '13131313-1313-4313-8313-131313131313',
+      coachId: coachId,
+      sport: Sport.tennis,
+      lessonType: LessonType.asyncLesson,
+      name: 'サーブの動画添削',
+      description: '',
+      isPublished: true,
+      createdAt: now.subtract(const Duration(days: 1)),
+    ),
+    LessonMenu(
+      lessonMenuId: '14141414-1414-4414-8414-141414141414',
+      coachId: coachId,
+      sport: Sport.baseball,
+      lessonType: LessonType.liveLesson,
+      name: 'バッティングの基礎',
+      description: '構えから見直します',
+      durationMinutes: 30,
+      isPublished: true,
+      createdAt: now,
     ),
   ];
 
