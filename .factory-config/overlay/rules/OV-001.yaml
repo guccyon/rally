@@ -1,0 +1,22 @@
+id: OV-001
+title: "PR の説明に「背景」「問題」を独立した見出しで書く（Closes だけに任せない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#97"
+  - "github:guccyon/rally#104"
+  - "github:guccyon/rally#108"
+  - "github:guccyon/rally#109"
+signature: "rubric:PR-002"
+check:
+  kind: rubric
+  text: >-
+    PR の説明（本文）に「## 背景」「## 問題」の見出しがなく、なぜこの変更が要るのか（元になった Issue や前の PR で何が入ったか、変更前に何ができない・何が壊れているか）が
+    `Closes #N` から読み取るしかないとき、または複数の不具合や差し戻しの経緯が「## 概要」に詰め込まれているときは欠陥とする。
+    テンプレートの見出しがひとつもない本文（Closes と注記と「## 工場の記録」だけ）も同じく欠陥。
+    欠陥 1 件だけを直す小さな差し戻しの PR で、「## 概要」の 1〜2 文が直す不具合とその検査の観点（CODE-001 など）を言い切っている場合は、背景・問題がなくても欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-001/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-001/negative-1.diff" }
