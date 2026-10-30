@@ -108,6 +108,18 @@ class HttpStudentApi implements StudentApi {
       );
 
   @override
+  Future<LessonMenuList> listCoachLessonMenus(
+    String coachId, {
+    Sport? sport,
+  }) async => LessonMenuList.fromJson(
+    await _send(
+      'GET',
+      '/coaches/${Uri.encodeComponent(coachId)}/lesson-menus',
+      query: {'sport': ?sport?.wire},
+    ),
+  );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) async => StartSubscriptionResponse.fromJson(

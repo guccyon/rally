@@ -49,6 +49,10 @@ abstract interface class StudentApi {
   /// `listCoachReviews`（GET /coaches/{coach_id}/reviews）。送った時刻の新しい順。評価がなければ空
   Future<CoachReviewList> listCoachReviews(String coachId);
 
+  /// `listCoachLessonMenus`（GET /coaches/{coach_id}/lesson-menus）。コーチの公開中のレッスンメニューだけを、作った時刻の
+  /// 古い順で返す。[sport] を渡せばそのスポーツに絞る。メニューがなければ空
+  Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport});
+
   /// `startSubscription`（POST /subscriptions）
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,

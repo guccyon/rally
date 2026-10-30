@@ -2001,3 +2001,186 @@ async fn notification_settings_are_one_per_account_and_known_kind(pool: PgPool) 
         )
     );
 }
+
+/// コーチ `coach_id` のレッスンメニューを入れる。
+async fn insert_lesson_menu(
+    pool: &PgPool,
+    coach_id: &str,
+    sport: &str,
+    lesson_type: &str,
+    name: &str,
+    description: &str,
+    duration_minutes: Option<i16>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO catalog.lesson_menus
+             (lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
+              is_published, created_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, $6, true, now())",
+    )
+    .bind(coach_id)
+    .bind(sport)
+    .bind(lesson_type)
+    .bind(name)
+    .bind(description)
+    .bind(duration_minutes)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn catalog_values_match_the_lesson_menus_checks(pool: PgPool) {
+    use domain::{identity::Sport, lesson::LessonType};
+    use infra::{catalog_values::lesson_type_value, identity_values::sport_value};
+
+    assert_eq!(
+        check_values(
+            &pool,
+            "catalog.lesson_menus",
+            "lesson_menus_lesson_type_check"
+        )
+        .await,
+        LessonType::ALL
+            .into_iter()
+            .map(lesson_type_value)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        check_values(&pool, "catalog.lesson_menus", "lesson_menus_sport_check").await,
+        Sport::ALL.into_iter().map(sport_value).collect::<Vec<_>>()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_sport_is_one_of_the_coach_sports(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
+        .bind(&coach_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    insert_lesson_menu(&pool, &coach_id, "tennis", "async_lesson", "添削", "", None)
+        .await
+        .unwrap();
+
+    // コーチが提供しないスポーツ、コーチでないアカウントのメニューは入らない
+    let (code, constraint) = violation(
+        insert_lesson_menu(&pool, &coach_id, "soccer", "async_lesson", "添削", "", None).await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_menus_coach_sport_fkey")
+    );
+    let student_id = student(&pool).await;
+    let (code, constraint) = violation(
+        insert_lesson_menu(
+            &pool,
+            &student_id,
+            "tennis",
+            "async_lesson",
+            "添削",
+            "",
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_menus_coach_sport_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_shape_follows_the_lesson_type(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
+        .bind(&coach_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for minutes in [15, 60, 120] {
+        insert_lesson_menu(
+            &pool,
+            &coach_id,
+            "tennis",
+            "live_lesson",
+            "通話",
+            "",
+            Some(minutes),
+        )
+        .await
+        .unwrap();
+    }
+    let long_name = "あ".repeat(40);
+    let long_description = "あ".repeat(400);
+    insert_lesson_menu(
+        &pool,
+        &coach_id,
+        "tennis",
+        "async_lesson",
+        &long_name,
+        &long_description,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 同期は 15〜120 分の 15 分刻みの時間が要り、非同期は時間を持てない
+    for (lesson_type, minutes) in [
+        ("live_lesson", None),
+        ("live_lesson", Some(0)),
+        ("live_lesson", Some(20)),
+        ("live_lesson", Some(135)),
+        ("async_lesson", Some(30)),
+    ] {
+        let (code, constraint) = violation(
+            insert_lesson_menu(
+                &pool,
+                &coach_id,
+                "tennis",
+                lesson_type,
+                "メニュー",
+                "",
+                minutes,
+            )
+            .await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "lesson_menus_duration_shape"),
+            "{lesson_type} {minutes:?}"
+        );
+    }
+    // 名前は 1〜40 文字、説明は 400 文字まで
+    for (name, description, constraint_name) in [
+        ("", "", "lesson_menus_name_check"),
+        (" ", "", "lesson_menus_name_check"),
+        (&*"あ".repeat(41), "", "lesson_menus_name_check"),
+        (
+            "メニュー",
+            &*"あ".repeat(401),
+            "lesson_menus_description_check",
+        ),
+    ] {
+        let (code, constraint) = violation(
+            insert_lesson_menu(
+                &pool,
+                &coach_id,
+                "tennis",
+                "async_lesson",
+                name,
+                description,
+                None,
+            )
+            .await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, constraint_name)
+        );
+    }
+}

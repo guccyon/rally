@@ -295,6 +295,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/lesson-menus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分のレッスンメニューの一覧（コーチ）
+         * @description トークンが示す本人（コーチ）のレッスンメニュー（glossary の lesson「レッスン種別」）を、公開中かを問わずすべて返す。
+         *     コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - 並べ方: 作った時刻 `created_at` の古い順。同じ時刻は `lesson_menu_id` の順
+         *     - 絞り込み・ページングはしない。メニューがなければ `lesson_menus` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listMyLessonMenus"];
+        put?: never;
+        /**
+         * レッスンメニューの作成（コーチ）
+         * @description トークンが示す本人（コーチ）のレッスンメニュー（glossary の lesson「レッスン種別」。スポーツごとにコーチが提供する
+         *     メニューで、同期と非同期の別を持つ）を作る。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *     作ったメニューの公開中のものは、student-app の `listCoachLessonMenus` で生徒に見える。
+         *
+         *     - `sport` は本人の提供スポーツのどれか（違えば 422 `validation_failed`）
+         *     - `lesson_type` が `live_lesson`（同期）なら `duration_minutes`（1 回の時間。15〜120 分の 15 分刻み）が要る。
+         *       `async_lesson`（非同期）なら `duration_minutes` を送らない（null か省く）。違えば 422
+         *     - `name` は 1〜40 文字（空白だけは不可）、`description` は 0〜400 文字（省けば空文字列）。文字数は Unicode の
+         *       コードポイントで数え、書いたとおりに保存する
+         *     - `is_published` を省けば公開中（`true`）
+         *     - 不正な入力では 422 で、何も保存しない。トークンが示すコーチのアカウントが存在しないときは、無効なトークンとして 401
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["createMyLessonMenu"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/me/lesson-menus/{lesson_menu_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * レッスンメニューの変更・非公開（コーチ）
+         * @description トークンが示す本人（コーチ）のレッスンメニューの中身と公開中かを丸ごと置き換え、置き換えたあとのメニューを返す。
+         *     非公開にするのも、公開し直すのもこれ（`is_published`）。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *
+         *     - 項目の規則は `createMyLessonMenu` と同じ。`description` と `is_published` も省けない
+         *     - メニューがないとき・他のコーチのメニューのとき・`lesson_menu_id` が UUID でないときは 404（他のコーチのメニューは
+         *       あることも知らせない）
+         *     - 不正な入力では 422 で、何も変えない。トークンが示すコーチのアカウントが存在しないときは、無効なトークンとして 401
+         *
+         *     行動イベントは発火しない。
+         */
+        put: operations["updateMyLessonMenu"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -652,6 +723,71 @@ export interface components {
             coach_id: string;
             /** @description 送った時刻の新しい順（同じ時刻は `review_id` の順） */
             reviews: components["schemas"]["CoachReview"][];
+        };
+        /**
+         * @description student-app の LessonType と同じ値。live_lesson: 同期レッスン（ビデオ通話）/ async_lesson: 非同期レッスン（動画添削）
+         * @enum {string}
+         */
+        LessonType: "live_lesson" | "async_lesson";
+        /**
+         * @description glossary の lesson（レッスン種別。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ）。
+         *     student-app の `Lesson`（完了したレッスン）と区別するため、スキーマ名は LessonMenu にした。student-app の `LessonMenu` と同じ形
+         */
+        LessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            /**
+             * Format: uuid
+             * @description メニューを提供するコーチ
+             */
+            coach_id: string;
+            sport: components["schemas"]["Sport"];
+            lesson_type: components["schemas"]["LessonType"];
+            name: string;
+            /** @description 説明（書いていなければ空文字列） */
+            description: string;
+            /** @description 同期レッスン 1 回の時間（分）。非同期レッスンなら null */
+            duration_minutes: number | null;
+            /** @description 公開中か（公開中のものだけが生徒に見える） */
+            is_published: boolean;
+            /**
+             * Format: date-time
+             * @description 作った時刻
+             */
+            created_at: string;
+        };
+        /** @description コーチ 1 人のレッスンメニューの一覧（並べ方は各操作の説明） */
+        LessonMenuList: {
+            /** Format: uuid */
+            coach_id: string;
+            /** @description 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順） */
+            lesson_menus: components["schemas"]["LessonMenu"][];
+        };
+        /** @description レッスンメニューの作成（`createMyLessonMenu`） */
+        CreateLessonMenuRequest: {
+            sport: components["schemas"]["Sport"];
+            lesson_type: components["schemas"]["LessonType"];
+            /** @description 名前（1〜40 文字。空白だけは不可） */
+            name: string;
+            /** @description 説明（0〜400 文字）。省けば空文字列 */
+            description?: string;
+            /** @description 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。同期なら必須、非同期なら null か省く */
+            duration_minutes?: number | null;
+            /** @description 公開中か。省けば true */
+            is_published?: boolean;
+        };
+        /** @description レッスンメニューの変更（`updateMyLessonMenu`）。今のメニューの中身と公開中かを丸ごと置き換える */
+        UpdateLessonMenuRequest: {
+            sport: components["schemas"]["Sport"];
+            lesson_type: components["schemas"]["LessonType"];
+            /** @description 名前（1〜40 文字。空白だけは不可） */
+            name: string;
+            /** @description 説明（0〜400 文字。空文字列で消す） */
+            description: string;
+            /** @description 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。同期なら必須、非同期なら null か省く */
+            duration_minutes?: number | null;
+            /** @description 公開中か（false で非公開にする） */
+            is_published: boolean;
         };
         /**
          * @description student-app の LiveLessonSessionStatus と同じ値
@@ -1171,6 +1307,85 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyLessonMenus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自分のレッスンメニューの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenuList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createMyLessonMenu: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLessonMenuRequest"];
+            };
+        };
+        responses: {
+            /** @description 作ったレッスンメニュー */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    updateMyLessonMenu: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLessonMenuRequest"];
+            };
+        };
+        responses: {
+            /** @description 置き換えたあとのレッスンメニュー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     startLiveLessonSession: {

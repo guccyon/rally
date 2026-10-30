@@ -59,6 +59,16 @@ export function coachApi(client: ApiClient) {
           params: { path: { thread_id: threadId } },
         }),
       ),
+    listMyLessonMenus: () => call(() => client.GET("/coaches/me/lesson-menus")),
+    createMyLessonMenu: (body: Schemas["CreateLessonMenuRequest"]) =>
+      call(() => client.POST("/coaches/me/lesson-menus", { body })),
+    updateMyLessonMenu: (lessonMenuId: string, body: Schemas["UpdateLessonMenuRequest"]) =>
+      call(() =>
+        client.PUT("/coaches/me/lesson-menus/{lesson_menu_id}", {
+          params: { path: { lesson_menu_id: lessonMenuId } },
+          body,
+        }),
+      ),
   };
 }
 

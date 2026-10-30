@@ -944,6 +944,75 @@ class CoachReviewList {
       );
 }
 
+/// `LessonMenu`（glossary の lesson「レッスン種別」。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ。
+/// 完了したレッスンの [Lesson] とは別のもの）
+class LessonMenu {
+  const LessonMenu({
+    required this.lessonMenuId,
+    required this.coachId,
+    required this.sport,
+    required this.lessonType,
+    required this.name,
+    required this.description,
+    required this.isPublished,
+    required this.createdAt,
+    this.durationMinutes,
+  });
+
+  final String lessonMenuId;
+
+  /// メニューを提供するコーチ
+  final String coachId;
+  final Sport sport;
+  final LessonType lessonType;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  /// 説明（0〜400 文字。書いていなければ空文字列）
+  final String description;
+
+  /// 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。非同期レッスンなら null
+  final int? durationMinutes;
+
+  /// 公開中か（`listCoachLessonMenus` が返すのは公開中のものだけ）
+  final bool isPublished;
+
+  /// 作った時刻
+  final DateTime createdAt;
+
+  factory LessonMenu.fromJson(Map<String, dynamic> json) => LessonMenu(
+    lessonMenuId: json['lesson_menu_id'] as String,
+    coachId: json['coach_id'] as String,
+    sport: Sport.fromWire(json['sport'] as String),
+    lessonType: LessonType.fromWire(json['lesson_type'] as String),
+    name: json['name'] as String,
+    description: json['description'] as String,
+    durationMinutes: json['duration_minutes'] as int?,
+    isPublished: json['is_published'] as bool,
+    createdAt: _dateTime(json['created_at']),
+  );
+}
+
+/// `LessonMenuList`
+class LessonMenuList {
+  const LessonMenuList({required this.coachId, required this.lessonMenus});
+
+  final String coachId;
+
+  /// 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順）
+  final List<LessonMenu> lessonMenus;
+
+  factory LessonMenuList.fromJson(Map<String, dynamic> json) => LessonMenuList(
+    coachId: json['coach_id'] as String,
+    lessonMenus: List.unmodifiable(
+      (json['lesson_menus'] as List<dynamic>).map(
+        (e) => LessonMenu.fromJson(e as Map<String, dynamic>),
+      ),
+    ),
+  );
+}
+
 /// `Message`（glossary の message。種類・送信時刻と既読を持つ）
 class Message {
   const Message({

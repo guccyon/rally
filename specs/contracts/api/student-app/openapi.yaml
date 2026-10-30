@@ -38,7 +38,7 @@ tags:
   - name: async-lesson
     description: 非同期レッスン（動画送付・添削）
   - name: catalog
-    description: レッスン（完了記録）
+    description: レッスン（完了記録）と、コーチのレッスンメニュー
   - name: review
     description: 評価（レッスンの評価と、コーチごとの評価の件数と平均・一覧）
   - name: messaging
@@ -612,6 +612,48 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /coaches/{coach_id}/lesson-menus:
+    get:
+      operationId: listCoachLessonMenus
+      summary: コーチのレッスンメニューの一覧
+      description: |
+        コーチ 1 人のレッスンメニュー（glossary の lesson「レッスン種別」。スポーツごとにコーチが提供するメニューで、同期と
+        非同期の別を持つ）のうち、公開中のものだけを返す。生徒の役割のトークンだけが呼べる（本部・コーチは 403。コーチは
+        admin-web の `listMyLessonMenus` で自分の分を読む）。コーチがメニューを作る・直す・非公開にするのは admin-web。
+
+        - `sport` を付ければそのスポーツのメニューだけに絞る。ゴルフ（golf-app の範囲）のメニューは載せない
+        - 並べ方: 作った時刻 `created_at` の古い順。同じ時刻は `lesson_menu_id` の順
+        - 公開中のメニューがなければ（コーチでないアカウントや、ない ID を含む）`lesson_menus` は空の配列
+        - `coach_id` が UUID でなければ 404。`sport` が student-app の `Sport` の値でなければ 422
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: []
+      parameters:
+        - $ref: "#/components/parameters/CoachId"
+        - name: sport
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Sport"
+      responses:
+        "200":
+          description: コーチの公開中のレッスンメニューの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonMenuList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /message-threads:
     get:
@@ -1478,6 +1520,60 @@ components:
           type: string
           format: uuid
       additionalProperties: false
+
+    LessonMenu:
+      type: object
+      description: |
+        glossary の lesson（レッスン種別。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ）。
+        既存の `Lesson`（完了したレッスン）と区別するため、スキーマ名は LessonMenu にした。admin-web の `LessonMenu` と同じ形
+      required: [lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes, is_published, created_at]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: メニューを提供するコーチ
+        sport:
+          $ref: "#/components/schemas/Sport"
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        description:
+          type: string
+          maxLength: 400
+          description: 説明（書いていなければ空文字列）
+        duration_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 120
+          multipleOf: 15
+          description: 同期レッスン 1 回の時間（分）。非同期レッスンなら null
+        is_published:
+          type: boolean
+          description: 公開中か（この API が返すのは公開中のものだけなので常に true）
+        created_at:
+          type: string
+          format: date-time
+          description: 作った時刻
+
+    LessonMenuList:
+      type: object
+      description: コーチ 1 人の公開中のレッスンメニューの一覧（並べ方は `listCoachLessonMenus` の説明）
+      required: [coach_id, lesson_menus]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        lesson_menus:
+          type: array
+          description: 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順）
+          items:
+            $ref: "#/components/schemas/LessonMenu"
 
     MessageSenderRole:
       type: string
