@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web のコーチのメニューに「レッスンメニュー」を足した: 自分のメニューの一覧（スポーツ・同期 / 非同期・名前・時間・公開中か）と、作成・編集のフォーム、行ごとの「非公開にする」/「公開する」（`listMyLessonMenus` / `createMyLessonMenu` / `updateMyLessonMenu`）。名前 1〜40 文字・説明 0〜400 文字・同期の時間 15〜120 分の 15 分刻みは画面で確かめ、守れていなければ送らずに理由を出す
 - コーチのレッスンメニュー（catalog の最小）の API: admin-web の契約に、コーチが自分のメニューを作る `POST /coaches/me/lesson-menus`（`createMyLessonMenu`）・直す／非公開にする `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（`updateMyLessonMenu`）・一覧する `GET /coaches/me/lesson-menus`（`listMyLessonMenus`）を、student-app の契約に、生徒がコーチの公開中のメニューを読む `GET /coaches/{coach_id}/lesson-menus`（`listCoachLessonMenus`。任意の `sport` で絞る）を足した。メニューはスポーツ（コーチの提供スポーツのどれか）・レッスンの種類（同期 / 非同期）・名前（1〜40 文字）・説明（0〜400 文字）・同期なら 1 回の時間（15〜120 分の 15 分刻み）・公開中かを持つ。作る・直すのはコーチだけ（生徒・本部は 403、他のコーチのメニューは 404）。DB は `catalog` スキーマと表の追加（expand）。admin-web の生成した型・呼び出しと student-app の型を合わせた。画面は次の段（#243）
 - backend を Postgres で起動できる: 環境変数 `DATABASE_URL` があれば保存先を Postgres にし、待ち受ける前に自分のマイグレーションを当てる（新しい版が当てた知らないマイグレーションは飛ばすので、前の版に戻しても起動する）。DB につなげない・マイグレーションを当てられないときは原因を標準エラー出力に書いて 0 以外で終わる。版を答える `GET /version`（認証なし。環境変数 `APP_VERSION`、なければ `"unknown"`）を足した。`/healthz` と同じ運用の口で、生徒・本部の API の契約には載せない（#235）
 - admin-web のコーチのチャットで、「送る」の隣の「スタンプ」から 8 種類（student-app と同じ絵文字と言葉）を選んで送れる（`sendMessage` の `stamp_id`）。スレッドではスタンプを本文より大きな絵文字で吹き出しなしに出し、スレッドの一覧の最後のメッセージでは「スタンプ: 🙏 ありがとう」の形で出す。このアプリが知らないスタンプは「スタンプ: …」の説明を出す。API と契約の変更はない（#229）
