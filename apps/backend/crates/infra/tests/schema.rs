@@ -307,6 +307,29 @@ async fn slot_capacity_defaults_to_one_and_is_one_to_six(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn slot_lesson_menu_is_null_unless_given_and_has_no_foreign_key(pool: PgPool) {
+    // 列を知らない（古い版の）INSERT の枠は NULL（メニューのない枠）
+    let slot_id = slot(&pool).await;
+    let lesson_menu_id: Option<sqlx::types::Uuid> =
+        sqlx::query_scalar("SELECT lesson_menu_id FROM scheduling.slots WHERE slot_id = $1::uuid")
+            .bind(&slot_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(lesson_menu_id, None);
+
+    // メニューは catalog の持ち物なので外部キーは張らない（結びつけられるかの判定は domain の Slot::with_lesson_menu）
+    sqlx::query(
+        "UPDATE scheduling.slots SET lesson_menu_id = gen_random_uuid() WHERE slot_id = $1::uuid",
+    )
+    .bind(&slot_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn only_students_can_book(pool: PgPool) {
     let slot_id = slot(&pool).await;
     let coach_id = coach(&pool).await;

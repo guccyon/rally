@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し。D57（Issue #235）で 1 にサーバーの起動時のマイグレーションと、知らない版を飛ばすことを追記。D58（Issue #243）で `catalog.lesson_menus` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し。D57（Issue #235）で 1 にサーバーの起動時のマイグレーションと、知らない版を飛ばすことを追記。D58（Issue #243）で `catalog.lesson_menus` を追記。D61（Issue #249）で `scheduling.slots.lesson_menu_id` を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -41,7 +41,7 @@
 |---|---|---|
 | `identity` | `accounts` | アカウント。`role` で生徒（`student`）・コーチ（`coach`）・本部（`headquarters`）を区別。生徒だけが `sport` を持つ。メールは大文字小文字を区別せず一意 |
 | | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる。自己紹介文 `bio`（D18 の expand で追加。既定は空文字列、`coaches_bio_length` で 400 文字まで） |
-| `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加） |
+| `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加）。任意で結びついたコーチのレッスンメニュー `lesson_menu_id`（D61 の expand で追加。NULL 可で、既存の枠とメニューを指定しない枠は NULL）。メニューは catalog の持ち物なので外部キーは張らない |
 | | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled` |
 | `entitlement` | `subscriptions` | 月額契約（ゴルフ以外）。契約プラン `plan`（D37 の expand で追加。変更シナリオ cs-003。`standard` / `plus`、既定は `standard` で既存の契約も standard） |
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
@@ -87,6 +87,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 - レッスンの完了記録の `is_first_lesson` の判定と、同期・非同期のテーブルをまたいだ「初回は 1 件」（T14）: 判定は domain の `LessonCompletion` の 1 か所。テーブルは元の集約のスキーマに分けた（ADR 0006）ので、DB はテーブルごとの部分一意索引までを守り、またぎは Postgres の実装が生徒ごとの advisory lock で直列にする（`PgSlotRepository` と同じ）。通話セッションが終了済みかも domain（`LiveLessonSession::complete`）で判定し、DB では守らない
 - 生徒がチャットを送ってよいか（月額の送り放題。D01）: 判定は domain の `Entitlement::unlimited_video_and_chat`（規則は `ContractType`）の 1 か所で、messaging は送信の前にポート `ChatGate` で問い合わせる（ADR 0007）。送り放題なので送信の回数は保存しない
 - 契約プランごとの暦月の上限の数（D37。standard 2 回・plus 4 回）: 判定は domain の `SubscriptionPlan::live_lessons_per_month` の 1 か所で、`LiveLessonQuota` がそこから上限を受け取る。プランは `subscriptions` に、残回数は `live_lesson_quotas` にあり、上限を CHECK にするとプランの数を SQL に写して 2 か所で持つことになるので、DB は残回数が 0 以上だけを守る（上の端の 2 も外した）
+- 枠に結びつけられるレッスンメニュー（D61。枠のコーチ自身の・公開中の・同期の・スポーツが枠と同じ・1 回の時間が枠の長さと同じ）: 判定は domain の `Slot::with_lesson_menu` の 1 か所で、scheduling は公開の前にポート `LessonMenuLookup` で catalog に問い合わせる。メニューは別のコンテキストの表なので外部キーも CHECK も置かない。結びつけた後にメニューを直す・非公開にすることは止めない（枠の一覧は今のメニューを添え、生徒の検索は公開中のものだけを添える）
 - コーチへの支払い（不変条件 4）: billing のテーブルとともに段 5 以降
 
 ### 5. 検査

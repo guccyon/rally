@@ -1,8 +1,9 @@
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use super::{SlotCapacity, SlotId, SlotSeats, SlotStatus};
 use crate::{
     DomainError,
+    catalog::{LessonFormat, LessonMenu, LessonMenuId},
     identity::{AccountId, Sport},
 };
 
@@ -14,6 +15,9 @@ use crate::{
 /// 定員（[`SlotCapacity`]。1〜6）までの有効な予約（未確定か確定）を受ける。確定した予約が定員に達すると
 /// [`SlotStatus::Booked`] になり、キャンセルで空きができると [`SlotStatus::Open`] に戻る。定員 1 の枠は
 /// マンツーマン（予約の確定で埋まり、確定した予約のキャンセルで公開中に戻る）。
+///
+/// 任意でコーチのレッスンメニュー（catalog の [`LessonMenu`]）に結びつく（[`Slot::with_lesson_menu`]）。持つのは
+/// メニューの ID だけで、メニューの中身（名前・時間）の持ち主は catalog。結びつけるのは公開のときだけ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Slot {
     id: SlotId,
@@ -23,6 +27,7 @@ pub struct Slot {
     ends_at: SystemTime,
     status: SlotStatus,
     seats: SlotSeats,
+    lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl Slot {
@@ -79,7 +84,47 @@ impl Slot {
             ends_at,
             status,
             seats,
+            lesson_menu_id: None,
         })
+    }
+
+    /// 公開する枠（[`Slot::publish`] で作った枠）をレッスンメニュー `menu` に結びつける。
+    ///
+    /// 結びつけられるのは、枠のコーチ自身の・公開中の・同期のメニューで、スポーツが枠と同じで、1 回の時間が枠の長さと
+    /// 同じもの。違えば順に [`DomainError::LessonMenuOfAnotherCoach`]・[`DomainError::LessonMenuNotPublished`]・
+    /// [`DomainError::LessonMenuNotLive`]・[`DomainError::LessonMenuSportMismatch`]・
+    /// [`DomainError::SlotLengthMismatchesLessonMenu`]。
+    pub fn with_lesson_menu(mut self, menu: &LessonMenu) -> Result<Self, DomainError> {
+        if menu.coach_id() != self.coach_id {
+            return Err(DomainError::LessonMenuOfAnotherCoach);
+        }
+        if !menu.is_published() {
+            return Err(DomainError::LessonMenuNotPublished);
+        }
+        let LessonFormat::Live(duration) = menu.format() else {
+            return Err(DomainError::LessonMenuNotLive);
+        };
+        if menu.sport() != self.sport {
+            return Err(DomainError::LessonMenuSportMismatch {
+                menu: menu.sport(),
+                slot: self.sport,
+            });
+        }
+        let minutes = Duration::from_secs(u64::from(duration.minutes()) * 60);
+        if self.ends_at.duration_since(self.starts_at).ok() != Some(minutes) {
+            return Err(DomainError::SlotLengthMismatchesLessonMenu {
+                minutes: duration.minutes(),
+            });
+        }
+        self.lesson_menu_id = Some(menu.id());
+        Ok(self)
+    }
+
+    /// 保存先から読んだ枠に、結びついていたレッスンメニューの ID を戻す（保存先の実装用。結びつけたときに
+    /// [`Slot::with_lesson_menu`] で確かめているので、ここでは確かめない）。
+    pub const fn with_restored_lesson_menu(mut self, lesson_menu_id: Option<LessonMenuId>) -> Self {
+        self.lesson_menu_id = lesson_menu_id;
+        self
     }
 
     pub const fn id(&self) -> SlotId {
@@ -108,6 +153,11 @@ impl Slot {
 
     pub const fn capacity(&self) -> SlotCapacity {
         self.seats.capacity()
+    }
+
+    /// 結びついたレッスンメニュー。なければ `None`。
+    pub const fn lesson_menu_id(&self) -> Option<LessonMenuId> {
+        self.lesson_menu_id
     }
 
     /// 定員と有効な予約の数。
@@ -383,6 +433,99 @@ mod tests {
                 "{status:?} {pending}/{confirmed}"
             );
         }
+    }
+
+    fn menu(coach: u128, sport: Sport, format: LessonFormat, is_published: bool) -> LessonMenu {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(50),
+            AccountId::from_u128(coach),
+            crate::catalog::LessonMenuContent {
+                sport,
+                format,
+                name: crate::catalog::LessonMenuName::new("フォア改善").unwrap(),
+                description: crate::catalog::LessonMenuDescription::default(),
+            },
+            is_published,
+            SystemTime::UNIX_EPOCH,
+        )
+    }
+
+    fn live(minutes: i64) -> LessonFormat {
+        LessonFormat::Live(crate::catalog::LessonDuration::from_minutes(minutes).unwrap())
+    }
+
+    #[test]
+    fn published_slot_has_no_lesson_menu() {
+        assert_eq!(slot(1, 10, 11).lesson_menu_id(), None);
+    }
+
+    #[test]
+    fn slot_is_bound_to_a_published_live_menu_of_its_coach_sport_and_length() {
+        let bound = slot(1, 10, 11)
+            .with_lesson_menu(&menu(1, Sport::Tennis, live(60), true))
+            .unwrap();
+        assert_eq!(bound.lesson_menu_id(), Some(LessonMenuId::from_u128(50)));
+        assert_eq!(bound.status(), SlotStatus::Open);
+        assert_eq!(bound.remaining_seats(), 1);
+
+        // 90 分の枠と 90 分のメニュー
+        let ninety = Slot::publish(
+            SlotId::from_u128(2),
+            AccountId::from_u128(1),
+            Sport::Tennis,
+            at(10),
+            at(10) + Duration::from_secs(90 * 60),
+            SlotCapacity::ONE,
+        )
+        .unwrap()
+        .with_lesson_menu(&menu(1, Sport::Tennis, live(90), true))
+        .unwrap();
+        assert_eq!(ninety.lesson_menu_id(), Some(LessonMenuId::from_u128(50)));
+    }
+
+    #[test]
+    fn menu_that_does_not_fit_the_slot_is_rejected() {
+        for (menu, expected) in [
+            (
+                menu(2, Sport::Tennis, live(60), true),
+                DomainError::LessonMenuOfAnotherCoach,
+            ),
+            (
+                menu(1, Sport::Tennis, live(60), false),
+                DomainError::LessonMenuNotPublished,
+            ),
+            (
+                menu(1, Sport::Tennis, LessonFormat::Async, true),
+                DomainError::LessonMenuNotLive,
+            ),
+            (
+                menu(1, Sport::Swimming, live(60), true),
+                DomainError::LessonMenuSportMismatch {
+                    menu: Sport::Swimming,
+                    slot: Sport::Tennis,
+                },
+            ),
+            (
+                menu(1, Sport::Tennis, live(45), true),
+                DomainError::SlotLengthMismatchesLessonMenu { minutes: 45 },
+            ),
+            (
+                menu(1, Sport::Tennis, live(120), true),
+                DomainError::SlotLengthMismatchesLessonMenu { minutes: 120 },
+            ),
+        ] {
+            assert_eq!(slot(1, 10, 11).with_lesson_menu(&menu), Err(expected));
+        }
+    }
+
+    #[test]
+    fn restored_lesson_menu_is_kept() {
+        let restored = slot(1, 10, 11).with_restored_lesson_menu(Some(LessonMenuId::from_u128(9)));
+        assert_eq!(restored.lesson_menu_id(), Some(LessonMenuId::from_u128(9)));
+        assert_eq!(
+            restored.with_restored_lesson_menu(None).lesson_menu_id(),
+            None
+        );
     }
 
     #[test]

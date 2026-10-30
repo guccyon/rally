@@ -1,7 +1,7 @@
 //! scheduling: 予約（specs/context-map.yaml）。
 //!
 //! コーチが公開する予約枠（glossary の slot。[`Slot`]。定員 [`SlotCapacity`] と有効な予約の数 [`SlotSeats`] を持つ）と、同じコーチの枠が重ならないことを
-//! 判定する集約（[`CoachCalendar`]）。生徒によるスロットの確保（glossary の booking。[`Booking`]）。
+//! 判定する集約（[`CoachCalendar`]）。枠に結びつけられるレッスンメニュー（catalog）の判定は [`Slot::with_lesson_menu`] の 1 か所。生徒によるスロットの確保（glossary の booking。[`Booking`]）。
 //! 体験予約も予約の 1 つ（`is_trial`）。キャンセルで回数を消費するかの判定（キャンセル規定）は
 //! [`CancellationPolicy`] の 1 か所だけに置く（docs/adr/0002 Q2）。スポーツごとの予約枠の需給
 //! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。

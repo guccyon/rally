@@ -88,9 +88,19 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         application::profile::ListCoaches::new(BrokenRepository),
         application::identity::GetAccount::new(BrokenRepository),
         application::profile::UpdateCoachProfile::new(BrokenRepository),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock,
+        ),
         SearchSlots::new(
             slots,
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             application::profile::ProfileCoachIntroductionLookup::new(BrokenRepository),
             clock,
         ),
@@ -122,6 +132,9 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         ),
         StartSubscription::new(

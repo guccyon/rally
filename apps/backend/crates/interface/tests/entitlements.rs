@@ -145,9 +145,19 @@ fn router(now: SystemTime) -> Router {
         application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock,
+        ),
         SearchSlots::new(
             slots,
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -185,6 +195,9 @@ fn router(now: SystemTime) -> Router {
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         ),
         StartSubscription::new(

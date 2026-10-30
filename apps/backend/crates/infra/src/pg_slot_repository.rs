@@ -2,6 +2,7 @@
 
 use application::{
     Unavailable,
+    catalog::lesson_menu_id_uuid,
     identity::account_id_uuid,
     scheduling::{AddToCalendarError, SlotCriteria, SlotRepository, slot_id_uuid},
 };
@@ -11,7 +12,8 @@ use domain::{
     scheduling::{CoachCalendar, Slot, SlotCapacity, SlotId, SlotSeats, SlotStatus},
 };
 use sqlx::{
-    PgPool, Postgres, Transaction,
+    PgPool, Postgres, Row, Transaction,
+    postgres::PgRow,
     types::{Uuid, time::OffsetDateTime},
 };
 
@@ -31,8 +33,8 @@ pub struct PgSlotRepository {
     pool: PgPool,
 }
 
-/// `scheduling.slots` の 1 行（slot_id, coach_id, sport, starts_at, ends_at, status, capacity）と、その枠の
-/// 未確定・確定の予約の数（[`slot_columns`]）。
+/// `scheduling.slots` の 1 行（slot_id, coach_id, sport, starts_at, ends_at, status, capacity, lesson_menu_id）と、
+/// その枠の未確定・確定の予約の数（[`slot_columns`]）。
 pub(crate) type SlotRow = (
     Uuid,
     Uuid,
@@ -41,6 +43,7 @@ pub(crate) type SlotRow = (
     OffsetDateTime,
     String,
     i16,
+    Option<Uuid>,
     i64,
     i64,
 );
@@ -49,12 +52,28 @@ pub(crate) type SlotRow = (
 /// 列に持たず、`scheduling.bookings` から状態ごとに数える。状態の値は [`crate::scheduling_values::booking_status_value`] と同じ（テストで確かめる）。
 macro_rules! slot_columns {
     () => {
-        "s.slot_id, s.coach_id, s.sport, s.starts_at, s.ends_at, s.status, s.capacity,
+        "s.slot_id, s.coach_id, s.sport, s.starts_at, s.ends_at, s.status, s.capacity, s.lesson_menu_id,
         (SELECT count(*) FROM scheduling.bookings sb WHERE sb.slot_id = s.slot_id AND sb.status = 'pending'),
         (SELECT count(*) FROM scheduling.bookings sb WHERE sb.slot_id = s.slot_id AND sb.status = 'confirmed')"
     };
 }
 pub(crate) use slot_columns;
+
+/// `row` の `offset` 列目から [`SlotRow`] を読む（[`slot_columns`] を他の列の後ろに並べた SELECT 用）。
+pub(crate) fn slot_row_at(row: &PgRow, offset: usize) -> Result<SlotRow, sqlx::Error> {
+    Ok((
+        row.try_get(offset)?,
+        row.try_get(offset + 1)?,
+        row.try_get(offset + 2)?,
+        row.try_get(offset + 3)?,
+        row.try_get(offset + 4)?,
+        row.try_get(offset + 5)?,
+        row.try_get(offset + 6)?,
+        row.try_get(offset + 7)?,
+        row.try_get(offset + 8)?,
+        row.try_get(offset + 9)?,
+    ))
+}
 
 impl PgSlotRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -108,8 +127,9 @@ impl SlotRepository for PgSlotRepository {
         add(&mut calendar, slot.clone()).map_err(AddToCalendarError::Rejected)?;
 
         sqlx::query(
-            "INSERT INTO scheduling.slots (slot_id, coach_id, sport, starts_at, ends_at, status, capacity)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO scheduling.slots
+                 (slot_id, coach_id, sport, starts_at, ends_at, status, capacity, lesson_menu_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(slot_id_uuid::to_uuid(slot.id()))
         .bind(coach_id)
@@ -118,6 +138,7 @@ impl SlotRepository for PgSlotRepository {
         .bind(timestamp(slot.ends_at()))
         .bind(slot_status_value(slot.status()))
         .bind(i16::from(slot.capacity().value()))
+        .bind(slot.lesson_menu_id().map(lesson_menu_id_uuid::to_uuid))
         .execute(&mut *tx)
         .await
         .map_err(unavailable)?;
@@ -176,7 +197,18 @@ fn unavailable(error: sqlx::Error) -> AddToCalendarError {
 }
 
 pub(crate) fn slot_from_row(
-    (slot_id, coach_id, sport, starts_at, ends_at, status, capacity, pending, confirmed): SlotRow,
+    (
+        slot_id,
+        coach_id,
+        sport,
+        starts_at,
+        ends_at,
+        status,
+        capacity,
+        lesson_menu_id,
+        pending,
+        confirmed,
+    ): SlotRow,
 ) -> Result<Slot, Unavailable> {
     let sport = sport_from_value(&sport)
         .ok_or_else(|| Unavailable::new(format!("未知の sport: {sport}")))?;
@@ -195,6 +227,7 @@ pub(crate) fn slot_from_row(
         status,
         seats,
     )
+    .map(|slot| slot.with_restored_lesson_menu(lesson_menu_id.map(lesson_menu_id_uuid::from_uuid)))
     .map_err(Unavailable::new)
 }
 

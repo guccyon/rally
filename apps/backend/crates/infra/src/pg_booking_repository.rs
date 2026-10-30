@@ -15,12 +15,13 @@ use domain::{
     scheduling::{Booking, BookingId, Slot, SlotId},
 };
 use sqlx::{
-    PgPool, Postgres, Transaction,
+    FromRow, PgPool, Postgres, Row, Transaction,
+    postgres::PgRow,
     types::{Uuid, time::OffsetDateTime},
 };
 
 use crate::{
-    pg_slot_repository::{SlotRow, slot_columns, slot_from_row},
+    pg_slot_repository::{SlotRow, slot_columns, slot_from_row, slot_row_at},
     pg_support::{lock, timestamp},
     scheduling_values::{booking_status_from_value, booking_status_value, slot_status_value},
 };
@@ -37,9 +38,8 @@ pub struct PgBookingRepository {
     pool: PgPool,
 }
 
-/// 予約の列（booking_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at）と、
-/// 予約したスロットの列（[`SlotRow`]）。
-type BookingRow = (
+/// 予約の列（booking_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at）。
+type BookingColumns = (
     Uuid,
     Uuid,
     bool,
@@ -47,16 +47,28 @@ type BookingRow = (
     OffsetDateTime,
     Option<OffsetDateTime>,
     Option<OffsetDateTime>,
-    Uuid,
-    Uuid,
-    String,
-    OffsetDateTime,
-    OffsetDateTime,
-    String,
-    i16,
-    i64,
-    i64,
 );
+
+/// 予約の列（[`BookingColumns`]）と、続く予約したスロットの列（[`SlotRow`]）。sqlx のタプルの `FromRow` は 16 列
+/// までなので、列の位置で読む（[`select_bookings`] の列の順）。
+struct BookingRow(BookingColumns, SlotRow);
+
+impl<'r> FromRow<'r, PgRow> for BookingRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self(
+            (
+                row.try_get(0)?,
+                row.try_get(1)?,
+                row.try_get(2)?,
+                row.try_get(3)?,
+                row.try_get(4)?,
+                row.try_get(5)?,
+                row.try_get(6)?,
+            ),
+            slot_row_at(row, 7)?,
+        ))
+    }
+}
 
 /// 予約と、予約したスロットを読む SELECT（`$where` は WHERE 句から後ろ）。
 macro_rules! select_bookings {
@@ -321,36 +333,12 @@ fn booking_from_row(row: BookingRow) -> Result<Booking, Unavailable> {
 
 /// 予約と、予約したスロット。
 fn booking_and_slot_from_row(
-    (
-        booking_id,
-        student_id,
-        is_trial,
-        status,
-        created_at,
-        confirmed_at,
-        cancelled_at,
-        slot_id,
-        coach_id,
-        sport,
-        starts_at,
-        ends_at,
-        slot_status,
-        capacity,
-        pending,
-        confirmed,
+    BookingRow(
+        (booking_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at),
+        slot,
     ): BookingRow,
 ) -> Result<(Booking, Slot), Unavailable> {
-    let slot = slot_from_row((
-        slot_id,
-        coach_id,
-        sport,
-        starts_at,
-        ends_at,
-        slot_status,
-        capacity,
-        pending,
-        confirmed,
-    ))?;
+    let slot = slot_from_row(slot)?;
     let status = booking_status_from_value(&status)
         .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
     let booking = Booking::restore(

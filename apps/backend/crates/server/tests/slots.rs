@@ -141,11 +141,15 @@ async fn coach_lists_own_slots_with_whether_a_booking_is_in() {
     // 予約した枠は、未確定の予約が席を押さえている（定員 1 なので残りは 0）
     let mut booked = slots[0].clone();
     booked["remaining_seats"] = json!(0);
+    // 一覧の枠には結びついたレッスンメニューを載せる（公開の応答には載せない）。メニューを指定せずに公開したので null
+    booked["lesson_menu"] = Value::Null;
+    let mut open = slots[1].clone();
+    open["lesson_menu"] = Value::Null;
     assert_eq!(
         body,
         json!({
             "slots": [
-                { "slot": slots[1], "has_active_booking": false },
+                { "slot": open, "has_active_booking": false },
                 { "slot": booked, "has_active_booking": true },
             ]
         }),

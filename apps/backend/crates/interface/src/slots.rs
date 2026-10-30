@@ -1,15 +1,17 @@
 //! `/slots`。student-app の `GET /slots`（`searchSlots`）と、admin-web のコーチ用の
 //! `POST /slots`（`publishSlot`）。
 
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc};
 
 use application::{
     analytics::AnalyticsSink,
+    catalog::lesson_menu_id_uuid,
     clock::Clock,
     identity::account_id_uuid,
     scheduling::{
-        CoachIntroduction, CoachIntroductionLookup, PublishSlot, PublishSlotCommand,
-        PublishSlotError, SearchSlots, SearchSlotsQuery, SlotRepository, slot_id_uuid,
+        CoachIntroduction, CoachIntroductionLookup, LessonMenuLookup, PublishSlot,
+        PublishSlotCommand, PublishSlotError, SearchSlots, SearchSlotsQuery, SlotRepository,
+        slot_id_uuid,
     },
 };
 use axum::{
@@ -22,6 +24,7 @@ use axum::{
 };
 use domain::{
     DomainError,
+    catalog::{LessonMenu, LessonMenuId},
     scheduling::{Slot, SlotCapacity},
 };
 use serde::{Deserialize, Serialize};
@@ -40,10 +43,13 @@ const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 
 /// `/slots` のハンドラーが使うユースケース。
-pub struct SlotsState<S, I, A, C> {
-    pub publish_slot: PublishSlot<S, A, C>,
-    pub search_slots: SearchSlots<S, I, C>,
+pub struct SlotsState<S, J, I, A, C> {
+    pub publish_slot: PublishSlot<S, J, A, C>,
+    pub search_slots: SearchSlots<S, J, I, C>,
 }
+
+/// ハンドラーが共有する [`SlotsState`]。
+type Shared<S, J, I, A, C> = Arc<SlotsState<S, J, I, A, C>>;
 
 /// student-app の `searchSlots` のクエリ。値の検証はハンドラーで行う。
 #[derive(Deserialize)]
@@ -78,6 +84,17 @@ pub struct StudentAppSlotBody {
     /// 自己紹介文を書いていない（空の）コーチは載せない
     #[serde(skip_serializing_if = "Option::is_none")]
     coach_bio: Option<String>,
+    /// 結びついたレッスンメニュー。外側の `None` は項目を載せない（メニューを添えない操作）、内側の `None` は null
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lesson_menu: Option<Option<SlotLessonMenuBody>>,
+}
+
+/// student-app・admin-web の `SlotLessonMenu`（枠に結びついたレッスンメニューの ID・名前・1 回の時間）。
+#[derive(Serialize)]
+pub struct SlotLessonMenuBody {
+    lesson_menu_id: String,
+    name: String,
+    duration_minutes: Option<u8>,
 }
 
 /// admin-web の `PublishSlotRequest`。`capacity` は任意（省けば定員 1。範囲の検証は domain の [`SlotCapacity`]）。
@@ -87,6 +104,7 @@ pub struct PublishSlotRequest {
     starts_at: String,
     ends_at: String,
     capacity: Option<i64>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `Slot`。
@@ -100,16 +118,20 @@ pub struct AdminWebSlotBody {
     status: &'static str,
     capacity: u8,
     remaining_seats: u32,
+    /// 結びついたレッスンメニュー（[`StudentAppSlotBody`] の `lesson_menu` と同じ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lesson_menu: Option<Option<SlotLessonMenuBody>>,
 }
 
 /// `GET /slots`。認証した利用者なら誰でも呼べる。
-pub async fn search_slots<S, I, A, C>(
-    State(state): State<Arc<SlotsState<S, I, A, C>>>,
+pub async fn search_slots<S, J, I, A, C>(
+    State(state): State<Shared<S, J, I, A, C>>,
     _account: AuthenticatedAccount,
     params: Result<Query<SearchSlotsParams>, QueryRejection>,
 ) -> Result<Json<SlotPageBody>, ApiError>
 where
     S: SlotRepository,
+    J: LessonMenuLookup,
     I: CoachIntroductionLookup,
     A: AnalyticsSink,
     C: Clock,
@@ -153,20 +175,27 @@ where
         items: page
             .items
             .iter()
-            .map(|slot| student_app_slot_body(slot, page.coaches.get(&slot.coach_id())))
+            .map(|slot| {
+                student_app_slot_body(
+                    slot,
+                    page.coaches.get(&slot.coach_id()),
+                    Some(&page.lesson_menus),
+                )
+            })
             .collect::<Result<_, _>>()?,
         next_cursor: page.next_cursor.map(slot_cursor_to_contract),
     }))
 }
 
 /// `POST /slots`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。
-pub async fn publish_slot<S, I, A, C>(
-    State(state): State<Arc<SlotsState<S, I, A, C>>>,
+pub async fn publish_slot<S, J, I, A, C>(
+    State(state): State<Shared<S, J, I, A, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<PublishSlotRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<AdminWebSlotBody>), ApiError>
 where
     S: SlotRepository,
+    J: LessonMenuLookup,
     I: CoachIntroductionLookup,
     A: AnalyticsSink,
     C: Clock,
@@ -183,6 +212,14 @@ where
             .map(SlotCapacity::new)
             .transpose()?
             .unwrap_or_default(),
+        lesson_menu_id: request
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| {
+                lesson_menu_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("lesson_menu_id が UUID でない"))
+            })
+            .transpose()?,
     };
 
     let slot = state
@@ -194,9 +231,13 @@ where
                 ApiError::conflict("slot_overlaps", crate::message::domain_error(&error))
             }
             PublishSlotError::Invalid(error) => ApiError::from(error),
+            PublishSlotError::LessonMenuNotFound => {
+                ApiError::validation_failed(crate::message::LESSON_MENU_NOT_FOUND)
+            }
             PublishSlotError::Unavailable(error) => ApiError::internal(error),
         })?;
-    Ok((StatusCode::CREATED, Json(admin_web_slot_body(&slot)?)))
+    // 公開の応答には結びついたメニュー（`lesson_menu`）を載せない（契約の publishSlot。名前と時間は listMyCoachSlots）
+    Ok((StatusCode::CREATED, Json(admin_web_slot_body(&slot, None)?)))
 }
 
 /// `limit`（1〜100、既定 20）。
@@ -212,9 +253,11 @@ fn limit(value: Option<&str>) -> Result<NonZeroUsize, ApiError> {
         .ok_or_else(|| ApiError::validation_failed(format!("limit は 1〜{MAX_LIMIT} の整数")))
 }
 
+/// `lesson_menus` は枠に結びついたメニュー（[`slot_lesson_menu_body`]）。`None` なら `lesson_menu` を載せない。
 pub(crate) fn student_app_slot_body(
     slot: &Slot,
     coach: Option<&CoachIntroduction>,
+    lesson_menus: Option<&BTreeMap<LessonMenuId, LessonMenu>>,
 ) -> Result<StudentAppSlotBody, ApiError> {
     Ok(StudentAppSlotBody {
         slot_id: slot_id_uuid::format(slot.id()),
@@ -229,10 +272,15 @@ pub(crate) fn student_app_slot_body(
             .map(|coach| coach.bio.as_str())
             .filter(|bio| !bio.is_empty())
             .map(str::to_string),
+        lesson_menu: lesson_menus.map(|menus| slot_lesson_menu_body(slot, menus)),
     })
 }
 
-pub(crate) fn admin_web_slot_body(slot: &Slot) -> Result<AdminWebSlotBody, ApiError> {
+/// `lesson_menus` は枠に結びついたメニュー（[`slot_lesson_menu_body`]）。`None` なら `lesson_menu` を載せない。
+pub(crate) fn admin_web_slot_body(
+    slot: &Slot,
+    lesson_menus: Option<&BTreeMap<LessonMenuId, LessonMenu>>,
+) -> Result<AdminWebSlotBody, ApiError> {
     Ok(AdminWebSlotBody {
         slot_id: slot_id_uuid::format(slot.id()),
         coach_id: account_id_uuid::format(slot.coach_id()),
@@ -242,5 +290,20 @@ pub(crate) fn admin_web_slot_body(slot: &Slot) -> Result<AdminWebSlotBody, ApiEr
         status: slot_status_to_contract(slot.status()),
         capacity: slot.capacity().value(),
         remaining_seats: slot.remaining_seats(),
+        lesson_menu: lesson_menus.map(|menus| slot_lesson_menu_body(slot, menus)),
+    })
+}
+
+/// 枠に結びついたメニューの `SlotLessonMenu`。枠にメニューがない、または `lesson_menus` にない（catalog にない・
+/// 見せないメニュー）なら `None`（null）。
+fn slot_lesson_menu_body(
+    slot: &Slot,
+    lesson_menus: &BTreeMap<LessonMenuId, LessonMenu>,
+) -> Option<SlotLessonMenuBody> {
+    let menu = lesson_menus.get(&slot.lesson_menu_id()?)?;
+    Some(SlotLessonMenuBody {
+        lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
+        name: menu.name().as_str().to_string(),
+        duration_minutes: menu.format().duration().map(|d| d.minutes()),
     })
 }

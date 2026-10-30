@@ -6,7 +6,8 @@
 //! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
 //! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
 //! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
-//! 有効な予約が入っているかを添えて返すことと、コーチ以外は 403 を確かめる。
+//! 有効な予約が入っているかと、結びついたレッスンメニュー（なければ null）を添えて返すことと、コーチ以外は 403 を確かめる。
+//! 予約の一覧（`listMyBookings`・`listMyCoachBookings`）の枠には `lesson_menu` を載せない。
 
 use std::time::{Duration, SystemTime};
 
@@ -115,6 +116,8 @@ fn slot_id(id: u128) -> String {
 struct App {
     router: Router,
     slots: InMemorySlotRepository,
+    /// 枠に結びついたレッスンメニューを引く保存先
+    lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
     accounts: InMemoryAccountRepository,
     analytics: RecordingAnalyticsSink,
     events: RecordingDomainEventPublisher,
@@ -150,6 +153,7 @@ fn app_with_entitlements(
     );
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let accounts = InMemoryAccountRepository::default();
+    let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -159,9 +163,15 @@ fn app_with_entitlements(
         application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock,
+        ),
         SearchSlots::new(
             slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -188,7 +198,11 @@ fn app_with_entitlements(
             bookings.clone(),
             application::profile::ProfileStudentDisplayNameLookup::new(accounts.clone()),
         ),
-        application::scheduling::ListCoachSlots::new(slots.clone(), bookings),
+        application::scheduling::ListCoachSlots::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            bookings,
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),
@@ -285,6 +299,7 @@ fn app_with_entitlements(
     App {
         router,
         slots,
+        lesson_menus,
         accounts,
         analytics,
         events,
@@ -1312,6 +1327,7 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
                 "status": "booked",
                 "capacity": 1,
                 "remaining_seats": 0,
+                "lesson_menu": null,
             },
             "has_active_booking": true,
         })
@@ -1319,6 +1335,77 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
     // 照会では何も発火しない
     assert_eq!(app.analytics.events().len(), analytics);
     assert_eq!(app.events.events().len(), events);
+}
+
+#[tokio::test]
+async fn coach_slots_carry_the_lesson_menu_bound_to_each_slot() {
+    use application::catalog::{LessonMenuRepository, lesson_menu_id_uuid};
+    use domain::catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+        LessonMenuId, LessonMenuName,
+    };
+
+    // スロット 30 は公開中でなくなったメニュー 50 に、31 は catalog にないメニュー 51 に結びついている
+    let bound = |id, menu| {
+        slot(id, SlotStatus::Open).with_restored_lesson_menu(Some(LessonMenuId::from_u128(menu)))
+    };
+    let app = app_with([bound(30, 50), bound(31, 51)]);
+    app.lesson_menus
+        .insert(LessonMenu::restore(
+            LessonMenuId::from_u128(50),
+            COACH,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+                name: LessonMenuName::new("フォア改善").unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            false,
+            nov1(0),
+        ))
+        .await
+        .unwrap();
+
+    let (status, body) = get_my_coach_slots(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_slot_list_contract(status, &body);
+    let menus: Vec<(&str, &Value)> = body["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["slot"]["slot_id"].as_str().unwrap(),
+                &item["slot"]["lesson_menu"],
+            )
+        })
+        .collect();
+    let menu = json!({
+        "lesson_menu_id": lesson_menu_id_uuid::format(LessonMenuId::from_u128(50)),
+        "name": "フォア改善",
+        "duration_minutes": 60,
+    });
+    assert_eq!(
+        menus,
+        [
+            (slot_id(10).as_str(), &Value::Null),
+            (slot_id(11).as_str(), &Value::Null),
+            (slot_id(12).as_str(), &Value::Null),
+            (slot_id(13).as_str(), &Value::Null),
+            (slot_id(30).as_str(), &menu),
+            (slot_id(31).as_str(), &Value::Null),
+        ],
+        "コーチには非公開のメニューも載せ、メニューのない枠と catalog にないメニューは null"
+    );
+
+    // 予約の一覧の枠には載せない
+    create(&app.router, STUDENT, 30, false).await;
+    let (status, body) = get_my_coach_bookings(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["bookings"][0]["slot"].get("lesson_menu").is_none(),
+        "{body}"
+    );
 }
 
 #[tokio::test]

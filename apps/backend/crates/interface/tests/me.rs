@@ -103,9 +103,19 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         application::profile::UpdateCoachProfile::new(accounts),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock,
+        ),
         SearchSlots::new(
             slots,
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -140,6 +150,9 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         ),
         StartSubscription::new(
