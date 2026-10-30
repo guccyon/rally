@@ -62,3 +62,16 @@ pub use video_call_backend::VideoCallBackend;
 ///
 /// 変更は expand → 移行 → contract の 3 段で行い、contract は人間承認（docs/adr/0004-schema-expand-contract.md）。
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
+
+/// 起動時に `pool` へ [`MIGRATOR`] のマイグレーションを当てる（当て済みのものは飛ばす）。
+///
+/// DB に当たっていて [`MIGRATOR`] が知らないマイグレーション（新しい版が当てたもの）があっても止めない
+/// （sqlx の `set_ignore_missing(true)`）。Rollback は前の版のイメージに戻すだけで行うので、新しい版が当てた
+/// expand・移行を DB に残したまま前の版が起動できなければならない。expand・移行は古い版がそのまま動く変更に
+/// 限っている（docs/adr/0004-schema-expand-contract.md の 2）ので、知らない版を飛ばしても前の版は動く。
+/// 当て済みのマイグレーションが書き換えられていれば（チェックサムの不一致）今までどおり止める。
+pub async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::migrate::MigrateError> {
+    let mut migrator = sqlx::migrate::Migrator::with_migrations(MIGRATOR.iter().cloned().collect());
+    migrator.set_ignore_missing(true);
+    migrator.run(pool).await
+}
