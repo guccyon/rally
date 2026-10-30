@@ -9,17 +9,19 @@ import { Section } from "@/components/Section";
 import { CoachChat } from "./CoachChat";
 import { CoachProfileForm } from "./CoachProfileForm";
 import { CoachTasks } from "./CoachTasks";
+import { LessonMenus } from "./LessonMenus";
 import { LiveSessionPanel } from "./LiveSessionPanel";
 import { MyCoachReviews } from "./MyCoachReviews";
 import { countPendingTasks, loadPendingTasks, type PendingTasks } from "./pendingTasks";
 import { PublishSlotForm } from "./PublishSlotForm";
 import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
 
-type Tab = "tasks" | "slots" | "videos" | "chat" | "live" | "reviews" | "profile";
+type Tab = "tasks" | "slots" | "menus" | "videos" | "chat" | "live" | "reviews" | "profile";
 
 const TABS: { id: Tab; title: string }[] = [
   { id: "tasks", title: "対応待ち" },
   { id: "slots", title: "予約枠" },
+  { id: "menus", title: "レッスンメニュー" },
   { id: "videos", title: "動画の添削" },
   { id: "chat", title: "チャット" },
   { id: "live", title: "通話への参加" },
@@ -31,8 +33,8 @@ const TABS: { id: Tab; title: string }[] = [
 type Focus = { videoId?: string; threadId?: string };
 
 /**
- * コーチの画面: メニュー（タブ）で、対応待ち・枠の公開・添削の返却・生徒とのチャット（添削の依頼をスレッドの中から返せる）・
- * 通話への参加（ADR 0002 Q3）・自分の評価・自己紹介の編集を切り替える。開いたときは対応待ち。
+ * コーチの画面: メニュー（タブ）で、対応待ち・枠の公開・レッスンメニューの登録と編集・添削の返却・
+ * 生徒とのチャット（添削の依頼をスレッドの中から返せる）・通話への参加（ADR 0002 Q3）・自分の評価・自己紹介の編集を切り替える。開いたときは対応待ち。
  * メニューの「対応待ち」には未対応の件数のバッジを出し（0 件なら出さない）、タブを切り替えるたびに数え直す。
  */
 export function CoachHome({ token }: { token: string }) {
@@ -100,6 +102,7 @@ export function CoachHome({ token }: { token: string }) {
             />
           )}
           {tab === "slots" && <PublishSlotForm api={api} />}
+          {tab === "menus" && <LessonMenus api={api} />}
           {tab === "videos" && <ReturnVideoReviewForm api={api} initialVideoId={focus.videoId} />}
           {tab === "chat" && <CoachChat api={api} initialThreadId={focus.threadId} />}
           {tab === "live" && <LiveSessionPanel api={api} />}

@@ -28,6 +28,12 @@ export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], s
   ended: "終了",
 };
 
+/** glossary の live_lesson（同期レッスン）と async_lesson（非同期レッスン）。 */
+export const LESSON_TYPE_LABELS: Record<Schemas["LessonType"], string> = {
+  live_lesson: "同期（ビデオ通話）",
+  async_lesson: "非同期（動画の添削）",
+};
+
 export const SLOT_SUPPLY_STATUS_LABELS: Record<Schemas["SlotSupplyStatus"], string> = {
   sufficient: "足りている",
   insufficient: "足りていない",
