@@ -1,0 +1,437 @@
+//! コーチのレッスンメニュー（catalog）の統合テスト。admin-web の `GET`・`POST /coaches/me/lesson-menus` と
+//! `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（コーチだけ）、student-app の `GET /coaches/{coach_id}/lesson-menus`
+//! （生徒だけ・公開中だけ）を、レスポンスの形をそれぞれの OpenAPI のスキーマで検査しながら通す。
+//! 生徒・本部がメニューを作る・直すことができないこと（403）、他のコーチのメニューを直せないこと（404）を確かめる。
+
+use std::time::{Duration, SystemTime};
+
+use application::{
+    catalog::{CreateLessonMenu, ListCoachLessonMenus, ListMyLessonMenus, UpdateLessonMenu},
+    identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
+    in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLessonMenuRepository},
+};
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
+};
+use domain::{
+    identity::{Account, AccountId, Email, Role, Sport},
+    profile::DisplayName,
+};
+use serde_json::{Value, json};
+use tower::ServiceExt;
+
+mod support;
+
+/// 2026-10-26T00:00:00Z（現在時刻）
+const NOW: Duration = Duration::from_secs(1_792_972_800);
+
+/// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
+struct FakeTokens;
+
+impl TokenVerifier for FakeTokens {
+    fn verify(&self, token: &str) -> Result<TokenClaims, InvalidToken> {
+        let (role, id) = token.split_once(':').ok_or(InvalidToken)?;
+        let role = match role {
+            "student" => Role::Student,
+            "coach" => Role::Coach,
+            "headquarters" => Role::Headquarters,
+            _ => return Err(InvalidToken),
+        };
+        let id = id.parse().map_err(|_| InvalidToken)?;
+        Ok(TokenClaims {
+            account_id: AccountId::from_u128(id),
+            role,
+        })
+    }
+}
+
+/// テニス・ゴルフのコーチ（ID 42 = 0x2a）
+const COACH: &str = "coach:42";
+const COACH_ID: &str = "00000000-0000-0000-0000-00000000002a";
+/// テニスのコーチ（ID 43）
+const OTHER_COACH: &str = "coach:43";
+const STUDENT: &str = "student:3";
+const HEADQUARTERS: &str = "headquarters:1";
+/// アカウントのないコーチのトークン
+const UNKNOWN_COACH: &str = "coach:99";
+
+fn now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + NOW
+}
+
+async fn accounts() -> InMemoryAccountRepository {
+    let accounts = InMemoryAccountRepository::default();
+    for (id, role, sports) in [
+        (1, Role::Headquarters, vec![]),
+        (3, Role::Student, vec![Sport::Tennis]),
+        (42, Role::Coach, vec![Sport::Tennis, Sport::Golf]),
+        (43, Role::Coach, vec![Sport::Tennis]),
+    ] {
+        accounts
+            .insert(
+                Account::new(
+                    AccountId::from_u128(id),
+                    Email::new(format!("user{id}@example.com")).unwrap(),
+                    DisplayName::new("テスト").unwrap(),
+                    role,
+                    sports,
+                    now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    accounts
+}
+
+async fn app() -> Router {
+    let menus = InMemoryLessonMenuRepository::default();
+    let accounts = accounts().await;
+    interface::catalog_router(
+        CreateLessonMenu::new(menus.clone(), accounts.clone(), FixedClock(now())),
+        UpdateLessonMenu::new(menus.clone(), accounts),
+        ListMyLessonMenus::new(menus.clone()),
+        ListCoachLessonMenus::new(menus),
+        FakeTokens,
+    )
+}
+
+async fn send(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    token: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap()
+    };
+    (status, body)
+}
+
+fn live_menu(sport: &str, name: &str) -> Value {
+    json!({
+        "sport": sport,
+        "lesson_type": "live_lesson",
+        "name": name,
+        "description": "初心者向け",
+        "duration_minutes": 60,
+        "is_published": true,
+    })
+}
+
+const ADMIN_MENUS: &str = "/coaches/me/lesson-menus";
+const ADMIN_MENU: &str = "/coaches/me/lesson-menus/{lesson_menu_id}";
+const STUDENT_MENUS: &str = "/coaches/{coach_id}/lesson-menus";
+
+#[tokio::test]
+async fn the_coach_creates_lists_and_unpublishes_its_menus() {
+    let admin = support::Contract::load("admin-web");
+    let student_app = support::Contract::load("student-app");
+    let app = app().await;
+
+    // 説明と公開中かを省くと空文字列と公開中
+    let (status, created) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": "フォームの添削" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    admin.assert_response("post", ADMIN_MENUS, status, &created);
+    assert_eq!(created["coach_id"], COACH_ID);
+    assert_eq!(created["description"], "");
+    assert_eq!(created["duration_minutes"], Value::Null);
+    assert_eq!(created["is_published"], true);
+
+    let (status, live) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("tennis", "フォア改善")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{live}");
+    assert_eq!(live["lesson_type"], "live_lesson");
+    assert_eq!(live["duration_minutes"], 60);
+
+    // ゴルフのメニューは admin-web では作れるが、student-app には載せない
+    let (status, golf) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("golf", "スイング")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{golf}");
+
+    // 非公開にする
+    let id = live["lesson_menu_id"].as_str().unwrap();
+    let mut hidden = live_menu("tennis", "フォア改善（準備中）");
+    hidden["is_published"] = json!(false);
+    let (status, updated) = send(
+        &app,
+        "PUT",
+        &format!("{ADMIN_MENUS}/{id}"),
+        COACH,
+        Some(hidden),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    admin.assert_response("put", ADMIN_MENU, status, &updated);
+    assert_eq!(updated["lesson_menu_id"], id);
+    assert_eq!(updated["is_published"], false);
+    assert_eq!(updated["name"], "フォア改善（準備中）");
+    assert_eq!(updated["created_at"], live["created_at"]);
+
+    // コーチの一覧には非公開も含めてすべて
+    let (status, mine) = send(&app, "GET", ADMIN_MENUS, COACH, None).await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    admin.assert_response("get", ADMIN_MENUS, status, &mine);
+    assert_eq!(mine["coach_id"], COACH_ID);
+    assert_eq!(mine["lesson_menus"].as_array().unwrap().len(), 3);
+
+    // 生徒には公開中で、ゴルフでないものだけ
+    let (status, listed) = send(
+        &app,
+        "GET",
+        &format!("/coaches/{COACH_ID}/lesson-menus"),
+        STUDENT,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    student_app.assert_response("get", STUDENT_MENUS, status, &listed);
+    assert_eq!(listed["lesson_menus"], json!([created]));
+
+    // スポーツで絞る
+    let (status, filtered) = send(
+        &app,
+        "GET",
+        &format!("/coaches/{COACH_ID}/lesson-menus?sport=swimming"),
+        STUDENT,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{filtered}");
+    assert_eq!(filtered["lesson_menus"], json!([]));
+    let (status, body) = send(
+        &app,
+        "GET",
+        &format!("/coaches/{COACH_ID}/lesson-menus?sport=golf"),
+        STUDENT,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    student_app.assert_response("get", STUDENT_MENUS, status, &body);
+}
+
+#[tokio::test]
+async fn students_and_headquarters_cannot_write_menus() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    let (_, menu) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("tennis", "フォア")),
+    )
+    .await;
+    let path = format!("{ADMIN_MENUS}/{}", menu["lesson_menu_id"].as_str().unwrap());
+
+    for token in [STUDENT, HEADQUARTERS] {
+        let (status, body) = send(
+            &app,
+            "POST",
+            ADMIN_MENUS,
+            token,
+            Some(live_menu("tennis", "乗っ取り")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        admin.assert_response("post", ADMIN_MENUS, status, &body);
+        let (status, body) = send(
+            &app,
+            "PUT",
+            &path,
+            token,
+            Some(live_menu("tennis", "乗っ取り")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        admin.assert_response("put", ADMIN_MENU, status, &body);
+        let (status, body) = send(&app, "GET", ADMIN_MENUS, token, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+    }
+    // 生徒向けの一覧はコーチ・本部には出さない
+    for token in [COACH, HEADQUARTERS] {
+        let (status, body) = send(
+            &app,
+            "GET",
+            &format!("/coaches/{COACH_ID}/lesson-menus"),
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+    }
+
+    let (_, mine) = send(&app, "GET", ADMIN_MENUS, COACH, None).await;
+    assert_eq!(mine["lesson_menus"], json!([menu]), "何も変わらない");
+}
+
+#[tokio::test]
+async fn another_coach_cannot_see_that_the_menu_exists() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    let (_, menu) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("tennis", "フォア")),
+    )
+    .await;
+    let path = format!("{ADMIN_MENUS}/{}", menu["lesson_menu_id"].as_str().unwrap());
+
+    let (status, body) = send(
+        &app,
+        "PUT",
+        &path,
+        OTHER_COACH,
+        Some(live_menu("tennis", "乗っ取り")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    admin.assert_response("put", ADMIN_MENU, status, &body);
+    for path in [
+        format!("{ADMIN_MENUS}/00000000-0000-0000-0000-000000000063"),
+        format!("{ADMIN_MENUS}/not-a-uuid"),
+    ] {
+        let (status, body) = send(&app, "PUT", &path, COACH, Some(live_menu("tennis", "x"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {body}");
+    }
+    let (_, others) = send(&app, "GET", ADMIN_MENUS, OTHER_COACH, None).await;
+    assert_eq!(others["lesson_menus"], json!([]));
+}
+
+#[tokio::test]
+async fn invalid_menus_are_422_and_nothing_is_saved() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    let cases = [
+        // コーチの提供スポーツでない
+        live_menu("soccer", "リフティング"),
+        json!({ "sport": "cricket", "lesson_type": "async_lesson", "name": "x" }),
+        json!({ "sport": "tennis", "lesson_type": "group_lesson", "name": "x" }),
+        // 同期なのに時間がない・非同期なのに時間がある・刻みに合わない
+        json!({ "sport": "tennis", "lesson_type": "live_lesson", "name": "x" }),
+        json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": "x", "duration_minutes": 30 }),
+        json!({ "sport": "tennis", "lesson_type": "live_lesson", "name": "x", "duration_minutes": 20 }),
+        json!({ "sport": "tennis", "lesson_type": "live_lesson", "name": "x", "duration_minutes": 135 }),
+        // 名前は 1〜40 文字、説明は 400 文字まで
+        json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": " " }),
+        json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": "あ".repeat(41) }),
+        json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": "x", "description": "あ".repeat(401) }),
+        json!({ "sport": "tennis", "lesson_type": "async_lesson" }),
+    ];
+    for body in cases {
+        let (status, response) = send(&app, "POST", ADMIN_MENUS, COACH, Some(body.clone())).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}: {response}"
+        );
+        assert_eq!(response["code"], "validation_failed", "{body}");
+        admin.assert_response("post", ADMIN_MENUS, status, &response);
+    }
+    // 上限ちょうどは通る
+    let (status, body) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(json!({
+            "sport": "tennis",
+            "lesson_type": "live_lesson",
+            "name": "あ".repeat(40),
+            "description": "あ".repeat(400),
+            "duration_minutes": 120,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // 変更でも同じ規則で、拒否すれば何も変えない
+    let path = format!("{ADMIN_MENUS}/{}", body["lesson_menu_id"].as_str().unwrap());
+    let (status, response) = send(
+        &app,
+        "PUT",
+        &path,
+        COACH,
+        Some(live_menu("soccer", "リフティング")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{response}");
+    admin.assert_response("put", ADMIN_MENU, status, &response);
+    let (_, mine) = send(&app, "GET", ADMIN_MENUS, COACH, None).await;
+    assert_eq!(mine["lesson_menus"], json!([body]));
+}
+
+#[tokio::test]
+async fn a_coach_without_an_account_is_401_and_unknown_coaches_have_no_menus() {
+    let app = app().await;
+    let (status, body) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        UNKNOWN_COACH,
+        Some(live_menu("tennis", "x")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert_eq!(body["code"], "unauthorized");
+
+    let (status, body) = send(
+        &app,
+        "GET",
+        "/coaches/00000000-0000-0000-0000-000000000063/lesson-menus",
+        STUDENT,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["lesson_menus"], json!([]));
+    let (status, _) = send(
+        &app,
+        "GET",
+        "/coaches/not-a-uuid/lesson-menus",
+        STUDENT,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = send(&app, "GET", ADMIN_MENUS, "nope", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

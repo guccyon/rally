@@ -4,6 +4,7 @@
 
 pub mod analytics;
 pub mod async_lesson;
+pub mod catalog;
 pub mod clock;
 pub mod domain_event;
 pub mod entitlement;

@@ -13,6 +13,7 @@ mod coaches;
 mod contract;
 mod entitlements;
 mod error;
+mod lesson_menus;
 mod lessons;
 mod live_lesson_sessions;
 mod me;
@@ -34,6 +35,10 @@ use application::{
     async_lesson::{
         AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate,
         SubmitVideo, VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
+    },
+    catalog::{
+        CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
+        UpdateLessonMenu,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -371,6 +376,54 @@ where
         .merge(messaging)
         .merge(reviews)
         .merge(notification_settings)
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// catalog（コーチのレッスンメニュー）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用の
+/// クレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `/coaches/me/lesson-menus`（admin-web の自分のメニューの一覧・作成）と `PUT /coaches/me/lesson-menus/{lesson_menu_id}`
+/// （変更・非公開）はコーチだけで、扱うのはトークンのコーチ自身のメニューだけ。
+/// `GET /coaches/{coach_id}/lesson-menus`（student-app のコーチの公開中のメニューの一覧）は生徒だけ。
+pub fn catalog_router<M, R, C, T>(
+    create_lesson_menu: CreateLessonMenu<M, R, C>,
+    update_lesson_menu: UpdateLessonMenu<M, R>,
+    list_my_lesson_menus: ListMyLessonMenus<M>,
+    list_coach_lesson_menus: ListCoachLessonMenus<M>,
+    tokens: T,
+) -> Router
+where
+    M: LessonMenuRepository + 'static,
+    R: AccountRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    let coach_routes = Router::new()
+        .route(
+            "/coaches/me/lesson-menus",
+            get(lesson_menus::list_my_lesson_menus::<M, R, C>)
+                .post(lesson_menus::create_my_lesson_menu::<M, R, C>),
+        )
+        .route(
+            "/coaches/me/lesson-menus/{lesson_menu_id}",
+            put(lesson_menus::update_my_lesson_menu::<M, R, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]));
+    let student_routes = Router::new()
+        .route(
+            "/coaches/{coach_id}/lesson-menus",
+            get(lesson_menus::list_coach_lesson_menus::<M, R, C>),
+        )
+        .route_layer(require_role(&[Role::Student]));
+    coach_routes
+        .merge(student_routes)
+        .with_state(Arc::new(lesson_menus::LessonMenusState {
+            create_lesson_menu,
+            update_lesson_menu,
+            list_my_lesson_menus,
+            list_coach_lesson_menus,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

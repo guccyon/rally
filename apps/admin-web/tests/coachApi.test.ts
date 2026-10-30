@@ -351,5 +351,71 @@ describe("coachApi", () => {
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe(`/api/message-threads/${THREAD_ID}/read`);
   });
-});
 
+  const LESSON_MENU = {
+    lesson_menu_id: "55555555-5555-4555-8555-555555555555",
+    coach_id: SLOT.coach_id,
+    sport: "tennis",
+    lesson_type: "live_lesson",
+    name: "フォア改善",
+    description: "初心者向け",
+    duration_minutes: 60,
+    is_published: true,
+    created_at: "2026-10-30T00:00:00Z",
+  };
+
+  test("listMyLessonMenus はトークンを付けて GET /api/coaches/me/lesson-menus を呼び、返った順のまま返す", async () => {
+    const list = { coach_id: SLOT.coach_id, lesson_menus: [LESSON_MENU] };
+    const { api, fetchMock } = setup(json(200, list));
+    expect(await api.listMyLessonMenus()).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/coaches/me/lesson-menus");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("createMyLessonMenu は POST /api/coaches/me/lesson-menus に送り、作ったメニューを返す", async () => {
+    const { api, fetchMock } = setup(json(201, LESSON_MENU));
+    const body = {
+      sport: "tennis" as const,
+      lesson_type: "live_lesson" as const,
+      name: "フォア改善",
+      description: "初心者向け",
+      duration_minutes: 60,
+    };
+    expect(await api.createMyLessonMenu(body)).toEqual({ ok: true, data: LESSON_MENU });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe("/api/coaches/me/lesson-menus");
+    expect(await request.json()).toEqual(body);
+  });
+
+  test("updateMyLessonMenu は PUT /api/coaches/me/lesson-menus/{lesson_menu_id} に送り、404 は見つからない旨の文言にする", async () => {
+    const hidden = { ...LESSON_MENU, is_published: false };
+    const { api, fetchMock } = setup(json(200, hidden));
+    const body = {
+      sport: "tennis" as const,
+      lesson_type: "live_lesson" as const,
+      name: "フォア改善",
+      description: "初心者向け",
+      duration_minutes: 60,
+      is_published: false,
+    };
+    expect(await api.updateMyLessonMenu(LESSON_MENU.lesson_menu_id, body)).toEqual({
+      ok: true,
+      data: hidden,
+    });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe(
+      `/api/coaches/me/lesson-menus/${LESSON_MENU.lesson_menu_id}`,
+    );
+    expect(await request.json()).toEqual(body);
+
+    const missing = setup(json(404, { code: "not_found", message: "not found" }));
+    expect(await missing.api.updateMyLessonMenu(LESSON_MENU.lesson_menu_id, body)).toEqual({
+      ok: false,
+      message: "対象が見つかりません（ID を確かめてください）。",
+    });
+  });
+});

@@ -209,6 +209,14 @@ class FakeStudentApi implements StudentApi {
   );
 
   @override
+  Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport}) =>
+      _answer(
+        'listCoachLessonMenus',
+        () => LessonMenuList(coachId: coachId, lessonMenus: const []),
+        coachId,
+      );
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) => _answer('startSubscription', () {

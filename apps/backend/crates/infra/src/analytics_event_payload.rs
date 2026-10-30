@@ -16,7 +16,6 @@ use application::{
     review::lesson_review_id_uuid,
     scheduling::{booking_id_uuid, slot_id_uuid},
 };
-use domain::lesson::LessonType;
 use serde_json::{Value, json};
 
 use crate::{
@@ -24,13 +23,9 @@ use crate::{
     messaging_values::message_sender_value,
 };
 
-/// `lesson.completed` の `lesson_type` の値（student-app の契約の `LessonType` と同じ）。
-pub const fn lesson_type_value(lesson_type: LessonType) -> &'static str {
-    match lesson_type {
-        LessonType::Live => "live_lesson",
-        LessonType::Async => "async_lesson",
-    }
-}
+/// `lesson.completed` の `lesson_type` の値（student-app の契約の `LessonType` と同じ）。DB の
+/// `catalog.lesson_menus.lesson_type` と同じ値で、対応表は [`crate::catalog_values`] に 1 つだけ置く。
+pub use crate::catalog_values::lesson_type_value;
 
 /// `event` の属性（JSON のオブジェクト）。時刻が RFC 3339 で書けない（0〜9999 年の外）ときは失敗する。
 pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> {

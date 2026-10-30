@@ -110,6 +110,7 @@ void main() {
         'submitLessonReview',
         'getCoachReviewSummary',
         'listCoachReviews',
+        'listCoachLessonMenus',
         'startSubscription',
         'getMyEntitlement',
         'listMessageThreads',
@@ -234,6 +235,53 @@ void main() {
               as YamlMap);
       expect(refOf(body), '#/components/schemas/$schema');
     }
+  });
+
+  test('レッスンメニューの項目が契約と一致する（listCoachLessonMenus）', () {
+    // LessonMenu.fromJson・LessonMenuList.fromJson が読む項目
+    expect(propertiesOf('LessonMenu'), [
+      'lesson_menu_id',
+      'coach_id',
+      'sport',
+      'lesson_type',
+      'name',
+      'description',
+      'duration_minutes',
+      'is_published',
+      'created_at',
+    ]);
+    expect(requiredOf('LessonMenu'), propertiesOf('LessonMenu'));
+    final properties =
+        (schemas['LessonMenu'] as YamlMap)['properties'] as YamlMap;
+    expect(refOf(properties['sport'] as YamlMap), '#/components/schemas/Sport');
+    expect(
+      refOf(properties['lesson_type'] as YamlMap),
+      '#/components/schemas/LessonType',
+    );
+    expect(
+      ((properties['duration_minutes'] as YamlMap)['type'] as YamlList)
+          .cast<String>(),
+      ['integer', 'null'],
+    );
+    expect(propertiesOf('LessonMenuList'), ['coach_id', 'lesson_menus']);
+    final items =
+        (((schemas['LessonMenuList'] as YamlMap)['properties']
+                    as YamlMap)['lesson_menus']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/LessonMenu');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/coaches/{coach_id}/lesson-menus']
+                as YamlMap)['get']
+            as YamlMap;
+    expect(operation['operationId'], 'listCoachLessonMenus');
+    final sport = (operation['parameters'] as YamlList)
+        .cast<YamlMap>()
+        .firstWhere((p) => p['name'] == 'sport');
+    expect(sport['in'], 'query');
+    expect(sport['required'], false);
+    expect(refOf(sport['schema'] as YamlMap), '#/components/schemas/Sport');
   });
 
   test('Message の項目が契約と一致し、種類ごとの中身は任意の項目である（listMessages・sendMessage）', () {

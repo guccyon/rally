@@ -300,6 +300,56 @@ void main() {
     expect(none.reviews, isEmpty);
   });
 
+  test('listCoachLessonMenus のパスとスポーツの絞り込み、レッスンメニューの変換', () async {
+    final live = {
+      'lesson_menu_id': 'm1',
+      'coach_id': 'c1',
+      'sport': 'tennis',
+      'lesson_type': 'live_lesson',
+      'name': 'フォア改善',
+      'description': '初心者向け',
+      'duration_minutes': 45,
+      'is_published': true,
+      'created_at': '2026-10-30T01:00:00Z',
+    };
+    final asyncMenu = {
+      ...live,
+      'lesson_menu_id': 'm2',
+      'lesson_type': 'async_lesson',
+      'name': 'フォームの添削',
+      'description': '',
+      'duration_minutes': null,
+    };
+    final list = await apiReplying(200, {
+      'coach_id': 'c1',
+      'lesson_menus': [live, asyncMenu],
+    }).listCoachLessonMenus('c1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/coaches/c1/lesson-menus');
+    expect(sent.single.url.queryParameters, isEmpty);
+    expect(list.coachId, 'c1');
+    // 返った順のまま
+    expect(list.lessonMenus.map((m) => m.lessonMenuId), ['m1', 'm2']);
+    final first = list.lessonMenus.first;
+    expect(first.sport, Sport.tennis);
+    expect(first.lessonType, LessonType.liveLesson);
+    expect(first.name, 'フォア改善');
+    expect(first.description, '初心者向け');
+    expect(first.durationMinutes, 45);
+    expect(first.isPublished, isTrue);
+    expect(first.createdAt, DateTime.utc(2026, 10, 30, 1));
+    expect(list.lessonMenus.last.lessonType, LessonType.asyncLesson);
+    expect(list.lessonMenus.last.durationMinutes, isNull);
+
+    final none = await apiReplying(200, {
+      'coach_id': 'c1',
+      'lesson_menus': <Object>[],
+    }).listCoachLessonMenus('c1', sport: Sport.swimming);
+    expect(sent.single.url.path, '/coaches/c1/lesson-menus');
+    expect(sent.single.url.queryParameters, {'sport': 'swimming'});
+    expect(none.lessonMenus, isEmpty);
+  });
+
   test('チャットの操作のパスと、メッセージ・スレッドの変換', () async {
     final coachMessage = {
       'message_id': 'm1',
