@@ -1,0 +1,59 @@
+# overlay のルールの検査（factory-engine の core-gates/rule_eval.py、ADR 0013）。決定的（LLM を使わない）。
+# 1. ルールの検査: overlay/rules の形と、正規表現のルールの eval ケースを全部走らせる（退行を見る）。
+#    PR が .factory-config/overlay/ か .factory-config/evals/ を変えたとき（change_type factory_rule）だけ、通らなければジョブを落とす。
+#    ほかの PR では結果を Job Summary に残すだけ。LLM が要る段の eval ケースは工場の検査ジョブが判定する
+# 2. 発火（shadow）: PR の差分に shadow と adopted の正規表現のルールを当て、当たった箇所を Job Summary とアーティファクトに残す。PR は落とさない
+name: rule-eval
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rule-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 599a710c79185fd91bbb9e265df43f46b29f6341
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: チェッカーを取る
+        run: |
+          python3 -m pip install --quiet pyyaml
+          curl -fsSL -o /tmp/rule_eval.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/core-gates/rule_eval.py"
+      - name: ルール変更の PR か
+        id: scope
+        env:
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^\.factory-config/(overlay|evals)/'; then
+            echo "factory_rule=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "factory_rule=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: ルールの検査
+        env:
+          FACTORY_RULE: ${{ steps.scope.outputs.factory_rule }}
+        run: |
+          rc=0
+          python3 /tmp/rule_eval.py --json rule-eval.json --summary "$GITHUB_STEP_SUMMARY" || rc=$?
+          if [ "$FACTORY_RULE" = "true" ]; then exit $rc; fi
+      - name: 発火（shadow）
+        env:
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          python3 /tmp/rule_eval.py --base "origin/$PR_BASE" --head HEAD --json rule-fires.json --summary "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rule-eval
+          path: rule-*.json
+          if-no-files-found: ignore
