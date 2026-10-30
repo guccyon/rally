@@ -20,6 +20,12 @@ environments:
   prod:
     approval: true
     env: { BACKEND_PORT: 28080, ADMIN_WEB_PORT: 23000, POSTGRES_IMAGE: "postgres:17-alpine" }
+# 合成シード（apps/backend/README の「合成シード」）。shipper が環境ごとに 1 回だけ、起動を確かめたあとに書く。
+# 種を固定するので同じデータになる。prod には書かない（本番相当の環境は空から始める）
+seed:
+  environments: [staging]
+  service: backend
+  command: ["seed", "--seed", "42"]
 verify:
   service: backend
   url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること
