@@ -140,8 +140,10 @@ class _CoachBioState extends State<_CoachBio> {
   }
 }
 
-/// コーチの評価の件数と平均。評価があれば押すとそのコーチの評価の一覧（新しい順。点・一言・送った時刻）を出す（もう一度押すと戻す）。
-/// 評価を読めなかったときは、この欄にだけその旨を出す（検索結果と体験予約はそのまま使える）
+/// コーチの評価の件数と平均と、押すと開くコーチの詳細。詳細には、そのコーチの公開中のレッスンメニューのうち生徒のスポーツのもの
+/// （作った時刻の古い順）と、評価があればそのコーチの評価の一覧（新しい順。点・一言・送った時刻）を出す（もう一度押すと戻す）。
+/// 評価が 0 件か件数と平均を読めなかったときは、押すとメニューだけを出す。
+/// 評価・メニューを読めなかったときは、その欄にだけその旨を出す（ほかの欄と検索結果と体験予約はそのまま使える）
 class _CoachReviews extends ConsumerStatefulWidget {
   const _CoachReviews({required this.coachId});
 
@@ -154,16 +156,22 @@ class _CoachReviews extends ConsumerStatefulWidget {
 class _CoachReviewsState extends ConsumerState<_CoachReviews> {
   bool _expanded = false;
 
-  void _toggle() {
+  void _toggle({required bool withReviews}) {
     setState(() => _expanded = !_expanded);
+    if (!_expanded) return;
     final state = ref.read(studentFlowProvider);
-    if (_expanded && !state.coachReviews.containsKey(widget.coachId)) {
+    if (!state.coachLessonMenus.containsKey(widget.coachId)) _loadMenus();
+    if (withReviews && !state.coachReviews.containsKey(widget.coachId)) {
       _load();
     }
   }
 
   void _load() =>
       ref.read(studentFlowProvider.notifier).loadCoachReviews(widget.coachId);
+
+  void _loadMenus() => ref
+      .read(studentFlowProvider.notifier)
+      .loadCoachLessonMenus(widget.coachId);
 
   @override
   Widget build(BuildContext context) {
@@ -176,26 +184,102 @@ class _CoachReviewsState extends ConsumerState<_CoachReviews> {
         (s) => s.coachReviewSummaryFailures.contains(coachId),
       ),
     );
-    if (summaryFailed) return const Text('評価を読み込めませんでした。');
-    if (summary == null) return const SizedBox.shrink();
-    final label = coachReviewSummaryLabel(summary);
-    if (summary.reviewCount == 0) return Text(label);
+    if (summary == null && !summaryFailed) return const SizedBox.shrink();
+    final withReviews = summary != null && summary.reviewCount > 0;
+    final label = summaryFailed
+        ? '評価を読み込めませんでした。'
+        : coachReviewSummaryLabel(summary!);
+    final toggle = withReviews
+        ? (_expanded ? '評価を閉じる' : '評価を見る')
+        : (_expanded ? 'メニューを閉じる' : 'メニューを見る');
     final link = TextStyle(color: Theme.of(context).colorScheme.primary);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: _toggle,
+          onTap: () => _toggle(withReviews: withReviews),
           child: Row(
             children: [
-              Text(label),
+              Flexible(child: Text(label)),
               const SizedBox(width: 8),
-              Text(_expanded ? '評価を閉じる' : '評価を見る', style: link),
+              Text(toggle, style: link),
             ],
           ),
         ),
-        if (_expanded) _list(),
+        if (_expanded) ...[
+          _menus(),
+          if (withReviews) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '受けた評価',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            _list(),
+          ],
+        ],
       ],
+    );
+  }
+
+  /// レッスンメニューの欄（スポーツ・同期 / 非同期・名前・説明・同期なら 1 回の時間）
+  Widget _menus() {
+    final coachId = widget.coachId;
+    final menus = ref.watch(
+      studentFlowProvider.select((s) => s.coachLessonMenus[coachId]),
+    );
+    final failed = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.coachLessonMenusFailures.contains(coachId),
+      ),
+    );
+    final textTheme = Theme.of(context).textTheme;
+    final Widget body;
+    if (failed) {
+      body = Row(
+        children: [
+          const Flexible(child: Text('レッスンメニューを読み込めませんでした。')),
+          TextButton(onPressed: _loadMenus, child: const Text('メニューを読み直す')),
+        ],
+      );
+    } else if (menus == null) {
+      body = const Text('レッスンメニューを読み込んでいます…');
+    } else if (menus.isEmpty) {
+      body = const Text('まだメニューがありません');
+    } else {
+      // 契約どおり作った時刻の古い順で返るので、返った順のまま出す
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final menu in menus)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(menu.name, style: textTheme.titleSmall),
+                  Text(
+                    '${sportLabel(menu.sport)}・${lessonTypeLabel(menu.lessonType)}',
+                  ),
+                  if (menu.durationMinutes case final minutes?)
+                    Text(lessonMenuDurationLabel(minutes)),
+                  if (menu.description.isNotEmpty) Text(menu.description),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('レッスンメニュー', style: textTheme.titleSmall),
+          body,
+        ],
+      ),
     );
   }
 

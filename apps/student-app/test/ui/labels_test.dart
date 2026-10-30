@@ -132,4 +132,9 @@ void main() {
   test('コーチが受けた評価の点は 5 点満点を添えて出す', () {
     expect(coachReviewRatingLabel(4), '4 点（5 点満点）');
   });
+
+  test('レッスンメニューの同期レッスン 1 回の時間を分で出す', () {
+    expect(lessonMenuDurationLabel(60), '1 回 60 分');
+    expect(lessonMenuDurationLabel(15), '1 回 15 分');
+  });
 }
