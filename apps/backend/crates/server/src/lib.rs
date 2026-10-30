@@ -12,18 +12,22 @@ use application::{
     async_lesson::{
         GetVideoReview, ListCoachVideos, ReturnVideoReview, SubmitVideo, VideoRepository,
     },
+    catalog::{
+        CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
+        UpdateLessonMenu,
+    },
     clock::{Clock, SystemClock},
     entitlement::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
         GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, RegisterAccount},
+    identity::{AccountRepository, GetAccount, IdentityCoachLookup, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
-        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
-        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
+        InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
+        InMemoryMessageThreadRepository, InMemoryNotificationSettingsRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
     lesson::{LessonCompletionLookup, LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
@@ -53,9 +57,9 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
     MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
-    PgMessageThreadRepository, PgNotificationSettingsRepository, PgSlotRepository,
-    PgVideoRepository,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationSettingsRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -101,6 +105,9 @@ pub fn router() -> Router {
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
 /// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。
+///
+/// コーチのレッスンメニュー（`/coaches/me/lesson-menus` と `GET /coaches/{coach_id}/lesson-menus`）の保存先も当面インメモリ。
+/// メニューの作成は、メニューのスポーツがコーチの提供スポーツかをアカウントの保存先から読んで確かめる（`IdentityCoachLookup`）。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -164,6 +171,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryMessageThreadRepository,
     InMemoryLessonReviewRepository,
     InMemoryNotificationSettingsRepository,
+    InMemoryLessonMenuRepository,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
@@ -177,6 +185,7 @@ fn in_memory_repositories() -> Repositories<
         threads: InMemoryMessageThreadRepository::default(),
         reviews: InMemoryLessonReviewRepository::default(),
         notification_settings: InMemoryNotificationSettingsRepository::default(),
+        lesson_menus: InMemoryLessonMenuRepository::default(),
     }
 }
 
@@ -215,7 +224,8 @@ where
             completions: PgLessonCompletionRepository::new(pool.clone()),
             threads: PgMessageThreadRepository::new(pool.clone()),
             reviews: PgLessonReviewRepository::new(pool.clone()),
-            notification_settings: PgNotificationSettingsRepository::new(pool),
+            notification_settings: PgNotificationSettingsRepository::new(pool.clone()),
+            lesson_menus: PgLessonMenuRepository::new(pool),
         },
         clock,
         analytics,
@@ -234,7 +244,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, G> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -245,11 +255,12 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z> {
     threads: X,
     reviews: N,
     notification_settings: Z,
+    lesson_menus: G,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, Z, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, G, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, G>,
     clock: C,
     analytics: A,
     push: P,
@@ -266,6 +277,7 @@ where
     X: MessageThreadRepository + Clone + 'static,
     N: LessonReviewRepository + Clone + 'static,
     Z: NotificationSettingsRepository + Clone + 'static,
+    G: LessonMenuRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + 'static,
@@ -282,6 +294,7 @@ where
         threads,
         reviews,
         notification_settings,
+        lesson_menus,
     } = repositories;
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
@@ -295,6 +308,14 @@ where
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         UpdateCoachProfile::new(accounts.clone()),
+        CreateLessonMenu::new(
+            lesson_menus.clone(),
+            IdentityCoachLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        UpdateLessonMenu::new(lesson_menus.clone(), clock.clone()),
+        ListMyLessonMenus::new(lesson_menus.clone()),
+        ListCoachLessonMenus::new(lesson_menus),
         PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         SearchSlots::new(
             slots.clone(),

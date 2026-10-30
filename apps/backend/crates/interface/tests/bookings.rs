@@ -159,6 +159,23 @@ fn app_with_entitlements(
         application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
+        application::catalog::CreateLessonMenu::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+            application::identity::IdentityCoachLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
+        application::catalog::UpdateLessonMenu::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+            clock,
+        ),
+        application::catalog::ListMyLessonMenus::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+        ),
+        application::catalog::ListCoachLessonMenus::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+        ),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots.clone(),

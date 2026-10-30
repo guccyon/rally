@@ -236,6 +236,49 @@ void main() {
     }
   });
 
+  test('LessonMenu・LessonMenuList の項目が契約と一致する（listCoachLessonMenus の応答）', () {
+    // LessonMenu.fromJson・LessonMenuList.fromJson が読む項目
+    expect(propertiesOf('LessonMenu'), [
+      'lesson_menu_id',
+      'coach_id',
+      'sport',
+      'lesson_type',
+      'name',
+      'description',
+      'duration_minutes',
+      'is_published',
+      'created_at',
+      'updated_at',
+    ]);
+    final properties =
+        (schemas['LessonMenu'] as YamlMap)['properties'] as YamlMap;
+    expect(refOf(properties['sport'] as YamlMap), '#/components/schemas/Sport');
+    expect(
+      refOf(properties['lesson_type'] as YamlMap),
+      '#/components/schemas/LessonType',
+    );
+    final duration = properties['duration_minutes'] as YamlMap;
+    expect((duration['type'] as YamlList).cast<String>(), ['integer', 'null']);
+    expect(propertiesOf('LessonMenuList'), ['coach_id', 'lesson_menus']);
+    final items =
+        (((schemas['LessonMenuList'] as YamlMap)['properties']
+                    as YamlMap)['lesson_menus']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/LessonMenu');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/coaches/{coach_id}/lesson-menus']
+                as YamlMap)['get']
+            as YamlMap;
+    expect(operation['operationId'], 'listCoachLessonMenus');
+    final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+    final schema =
+        (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+            as YamlMap);
+    expect(refOf(schema), '#/components/schemas/LessonMenuList');
+  });
+
   test('Message の項目が契約と一致し、種類ごとの中身は任意の項目である（listMessages・sendMessage）', () {
     // Message.fromJson が読む項目
     expect(propertiesOf('Message'), [

@@ -9,6 +9,7 @@ use std::{
 use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
+    catalog::{LessonMenu, LessonMenuId},
     entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId, Profile},
     lesson::{LessonCompletion, LessonId},
@@ -27,6 +28,7 @@ use crate::{
         AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
         video_id_uuid, video_review_id_uuid,
     },
+    catalog::{LessonMenuRepository, lesson_menu_id_uuid},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
     entitlement::{
@@ -961,6 +963,66 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
             .unwrap()
             .iter()
             .filter(|r| r.coach_id() == coach_id)
+            .cloned()
+            .collect())
+    }
+}
+
+/// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryLessonMenuRepository {
+    menus: Arc<Mutex<Vec<LessonMenu>>>,
+}
+
+impl InMemoryLessonMenuRepository {
+    /// 既存のメニューを入れて作る（テストの準備用）。
+    pub fn with_menus(menus: impl IntoIterator<Item = LessonMenu>) -> Self {
+        Self {
+            menus: Arc::new(Mutex::new(menus.into_iter().collect())),
+        }
+    }
+
+    /// 保存したメニュー（最初に保存した順）。
+    pub fn all(&self) -> Vec<LessonMenu> {
+        self.menus.lock().unwrap().clone()
+    }
+}
+
+impl LessonMenuRepository for InMemoryLessonMenuRepository {
+    fn next_id(&self) -> LessonMenuId {
+        lesson_menu_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, menu: LessonMenu) -> Result<(), Unavailable> {
+        self.menus.lock().unwrap().push(menu);
+        Ok(())
+    }
+
+    async fn find(&self, id: LessonMenuId) -> Result<Option<LessonMenu>, Unavailable> {
+        Ok(self
+            .menus
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|m| m.id() == id)
+            .cloned())
+    }
+
+    async fn update(&self, menu: LessonMenu) -> Result<(), Unavailable> {
+        let mut menus = self.menus.lock().unwrap();
+        if let Some(saved) = menus.iter_mut().find(|m| m.id() == menu.id()) {
+            *saved = menu;
+        }
+        Ok(())
+    }
+
+    async fn find_by_coach(&self, coach_id: AccountId) -> Result<Vec<LessonMenu>, Unavailable> {
+        Ok(self
+            .menus
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.coach_id() == coach_id)
             .cloned()
             .collect())
     }

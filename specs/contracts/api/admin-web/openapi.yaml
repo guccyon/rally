@@ -10,7 +10,8 @@ info:
     コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
     （`listMyCoachVideos`）から選ぶ。公開した枠は、コーチの自分の枠の一覧（`listMyCoachSlots`）で見る。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
-    student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
+    student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。コーチが提供するレッスンのメニューは
+    `createLessonMenu` / `updateLessonMenu` で作って直し、`listMyLessonMenus` で見る（生徒は student-app の `listCoachLessonMenus`）。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
     - 各操作の `x-context` は `specs/context-map.yaml` の context id
@@ -45,6 +46,8 @@ tags:
     description: プロフィール（コーチの自己紹介文・本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
+  - name: catalog
+    description: カタログ（コーチのレッスンメニュー）
 
 paths:
   /slots:
@@ -381,6 +384,120 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /coaches/me/lesson-menus:
+    get:
+      operationId: listMyLessonMenus
+      summary: 自分のレッスンメニューの一覧（コーチ）
+      description: |
+        トークンが示す本人（コーチ）のレッスンメニュー（glossary の lesson。レッスン種別）を、公開中も非公開もすべて返す。
+        コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+
+        - 並べ方: 作った時刻 `created_at` の古い順。同じ時刻は `lesson_menu_id` の順
+        - 期間で絞らず、ページングもしない。メニューがなければ `lesson_menus` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: []
+      responses:
+        "200":
+          description: コーチのレッスンメニューの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonMenuList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createLessonMenu
+      summary: レッスンメニューの作成（コーチ）
+      description: |
+        トークンが示す本人（コーチ）のレッスンメニュー（glossary の lesson。スポーツごとにコーチが提供するレッスンで、
+        同期レッスンと非同期レッスンの別を持つ）を作る。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+
+        - `sport` はそのコーチの提供スポーツのどれか（違えば 422）
+        - `lesson_type` が `live_lesson`（同期レッスン）なら `duration_minutes`（1 回の時間。15〜120 の 15 分刻み）が要る。
+          `async_lesson`（非同期レッスン）では `duration_minutes` を省く（null も同じ）。合わなければ 422
+        - `name` は 1〜40 文字（空白だけは不可）、`description` は 0〜400 文字（省けば空文字列）。文字数は Unicode のコードポイントで数え、
+          書いたとおりに保存する
+        - `is_published` を省けば true（公開中。student-app の `listCoachLessonMenus` に出る）
+        - 422 のときは何も保存しない。トークンが示すコーチのアカウントが存在しないときは、無効なトークンとして 401
+        - 作ったあとに `sport` と `lesson_type` は変えられない（`updateLessonMenu`）
+
+        料金・予約枠との結びつきは持たない。行動イベントは発火しない。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLessonMenuRequest"
+      responses:
+        "201":
+          description: 作ったレッスンメニュー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonMenu"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /coaches/me/lesson-menus/{lesson_menu_id}:
+    put:
+      operationId: updateLessonMenu
+      summary: レッスンメニューの変更・非公開（コーチ）
+      description: |
+        トークンが示す本人（コーチ）のレッスンメニューの名前・説明・1 回の時間・公開中かを丸ごと置き換え、置き換えたあとの
+        メニューを返す。非公開にするのは `is_published: false`、公開し直すのは `true`。コーチの役割のトークンだけが呼べる
+        （本部・生徒は 403）。
+
+        - `sport` と `lesson_type` は変えない（リクエストに持たない）。`duration_minutes` の規則は `createLessonMenu` と同じ
+          （同期レッスンは要り、非同期レッスンは省く）。`name` と `description` の規則も同じ
+        - メニューがないとき・別のコーチのメニューのとき・`lesson_menu_id` が UUID でないときは 404（別のコーチのメニューがあることは知らせない）
+        - 422・404 のときは何も変えない
+
+        行動イベントは発火しない。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: []
+      parameters:
+        - name: lesson_menu_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLessonMenuRequest"
+      responses:
+        "200":
+          description: 置き換えたあとのレッスンメニュー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonMenu"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /live-lesson-sessions:
     post:
@@ -977,6 +1094,121 @@ components:
           description: 送った時刻の新しい順（同じ時刻は `review_id` の順）
           items:
             $ref: "#/components/schemas/CoachReview"
+
+    LessonType:
+      type: string
+      description: 同期レッスン（live_lesson）または非同期レッスン（async_lesson）。student-app の LessonType と同じ値
+      enum: [live_lesson, async_lesson]
+
+    LessonMenu:
+      type: object
+      description: |
+        glossary の lesson（レッスン種別。スポーツごとにコーチが提供するレッスンのメニューで、同期レッスンと非同期レッスンの別を持つ）。
+        コーチとレッスン内容のセットが商品（specs/context-map.yaml の catalog）
+      required: [lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes, is_published, created_at, updated_at]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: メニューを提供するコーチ
+        sport:
+          $ref: "#/components/schemas/Sport"
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: メニューの名前
+        description:
+          type: string
+          maxLength: 400
+          description: メニューの説明（書いていなければ空文字列）
+        duration_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 120
+          multipleOf: 15
+          description: 同期レッスンの 1 回の時間（分。15〜120 の 15 分刻み）。非同期レッスンは null
+        is_published:
+          type: boolean
+          description: 公開中なら true（生徒の一覧に出る）。false は非公開
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: 最後に変えた時刻（変えていなければ `created_at` と同じ）
+
+    LessonMenuList:
+      type: object
+      description: コーチ 1 人のレッスンメニューの一覧（並べ方は各操作の説明）
+      required: [coach_id, lesson_menus]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        lesson_menus:
+          type: array
+          description: 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順）
+          items:
+            $ref: "#/components/schemas/LessonMenu"
+
+    CreateLessonMenuRequest:
+      type: object
+      description: レッスンメニューの作成（`createLessonMenu`）
+      required: [sport, lesson_type, name]
+      properties:
+        sport:
+          $ref: "#/components/schemas/Sport"
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: メニューの名前（1〜40 文字。空白だけは不可）
+        description:
+          type: string
+          maxLength: 400
+          description: メニューの説明（0〜400 文字）。省けば空文字列
+        duration_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 120
+          multipleOf: 15
+          description: 同期レッスン（`live_lesson`）の 1 回の時間（分。15〜120 の 15 分刻み）。同期レッスンでは要り、非同期レッスンでは省く（null も同じ）
+        is_published:
+          type: boolean
+          description: 公開中にするなら true。省けば true
+
+    UpdateLessonMenuRequest:
+      type: object
+      description: レッスンメニューの変更（`updateLessonMenu`）。名前・説明・1 回の時間・公開中かを丸ごと置き換える。スポーツとレッスンの種類は変えない
+      required: [name, description, is_published]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: メニューの名前（1〜40 文字。空白だけは不可）
+        description:
+          type: string
+          maxLength: 400
+          description: メニューの説明（0〜400 文字。空文字列で消す）
+        duration_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 120
+          multipleOf: 15
+          description: 同期レッスンの 1 回の時間（分。15〜120 の 15 分刻み）。同期レッスンでは要り、非同期レッスンでは省く（null も同じ）
+        is_published:
+          type: boolean
+          description: 公開中にするなら true、非公開にするなら false
 
     LiveLessonSessionStatus:
       type: string

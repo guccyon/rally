@@ -13,6 +13,7 @@ mod coaches;
 mod contract;
 mod entitlements;
 mod error;
+mod lesson_menus;
 mod lessons;
 mod live_lesson_sessions;
 mod me;
@@ -34,6 +35,10 @@ use application::{
     async_lesson::{
         AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate,
         SubmitVideo, VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
+    },
+    catalog::{
+        CoachLookup, CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus,
+        ListMyLessonMenus, UpdateLessonMenu,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -93,12 +98,46 @@ pub use error::ApiError;
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
+/// `/coaches/me/lesson-menus`（admin-web のコーチの自分のレッスンメニューの一覧・作成・変更）はコーチだけ。
+/// `GET /coaches/{coach_id}/lesson-menus`（student-app のコーチの公開中のレッスンメニューの一覧）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<
+    R,
+    LM,
+    CL,
+    S,
+    I,
+    D,
+    B,
+    G,
+    E,
+    L,
+    K,
+    V,
+    W,
+    U,
+    Y,
+    Q,
+    F,
+    M,
+    X,
+    H,
+    O,
+    N,
+    Z,
+    A,
+    P,
+    C,
+    T,
+>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
     update_coach_profile: UpdateCoachProfile<R>,
+    create_lesson_menu: CreateLessonMenu<LM, CL, C>,
+    update_lesson_menu: UpdateLessonMenu<LM, C>,
+    list_my_lesson_menus: ListMyLessonMenus<LM>,
+    list_coach_lesson_menus: ListCoachLessonMenus<LM>,
     publish_slot: PublishSlot<S, A, C>,
     search_slots: SearchSlots<S, I, C>,
     create_booking: CreateBooking<B, A, C>,
@@ -130,6 +169,8 @@ pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z
 ) -> Router
 where
     R: AccountRepository + 'static,
+    LM: LessonMenuRepository + 'static,
+    CL: CoachLookup + 'static,
     S: SlotRepository + 'static,
     I: CoachIntroductionLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
@@ -176,6 +217,31 @@ where
             get_account,
             update_coach_profile,
         }));
+    let lesson_menus_state = Arc::new(lesson_menus::LessonMenusState {
+        create_lesson_menu,
+        update_lesson_menu,
+        list_my_lesson_menus,
+        list_coach_lesson_menus,
+    });
+    let my_lesson_menus = Router::new()
+        .route(
+            "/coaches/me/lesson-menus",
+            get(lesson_menus::list_my_lesson_menus::<LM, CL, C>)
+                .post(lesson_menus::create_lesson_menu::<LM, CL, C>),
+        )
+        .route(
+            "/coaches/me/lesson-menus/{lesson_menu_id}",
+            put(lesson_menus::update_lesson_menu::<LM, CL, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(lesson_menus_state.clone());
+    let coach_lesson_menus = Router::new()
+        .route(
+            "/coaches/{coach_id}/lesson-menus",
+            get(lesson_menus::list_coach_lesson_menus::<LM, CL, C>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(lesson_menus_state);
     let slots = Router::new()
         .route(
             "/slots",
@@ -356,6 +422,8 @@ where
         .merge(accounts)
         .merge(coaches)
         .merge(me)
+        .merge(my_lesson_menus)
+        .merge(coach_lesson_menus)
         .merge(slots)
         .merge(bookings)
         .merge(my_bookings)

@@ -101,7 +101,8 @@ pub(crate) const fn session_status_to_contract(status: SessionStatus) -> &'stati
     }
 }
 
-/// student-app の `LessonType` の値（`RecordLessonCompletionRequest` の判別子と `Lesson.lesson_type`）。
+/// student-app・admin-web の `LessonType` の値（`RecordLessonCompletionRequest` の判別子と `Lesson.lesson_type`、
+/// `LessonMenu.lesson_type`・`CreateLessonMenuRequest.lesson_type`）。
 pub(crate) const fn lesson_type_to_contract(lesson_type: LessonType) -> &'static str {
     match lesson_type {
         LessonType::Live => "live_lesson",

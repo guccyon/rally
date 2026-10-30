@@ -140,6 +140,22 @@ pub enum DomainError {
     NotTheLessonStudent,
     /// そのレッスン（完了したレッスン）の評価はすでに付けてある（評価は 1 回）
     LessonAlreadyReviewed,
+    /// レッスンメニューの名前が空（空白だけを含む）
+    EmptyLessonMenuName,
+    /// レッスンメニューの名前が長すぎる（`max` は文字数）
+    LessonMenuNameTooLong { max: usize },
+    /// レッスンメニューの説明が長すぎる（`max` は文字数）
+    LessonMenuDescriptionTooLong { max: usize },
+    /// 同期レッスンの 1 回の時間が `min`〜`max` 分の `step` 分刻みでない
+    LessonDurationOutOfRange { min: u8, max: u8, step: u8 },
+    /// 同期レッスンのメニューに 1 回の時間がない
+    LessonDurationRequired,
+    /// 非同期レッスンのメニューに 1 回の時間を付けた（非同期レッスンは時間を持たない）
+    LessonDurationNotApplicable,
+    /// コーチの提供スポーツでないスポーツのメニューは作れない（`sport` は渡したスポーツ）
+    SportNotOfferedByCoach { sport: crate::identity::Sport },
+    /// レッスンメニューのコーチでないので、そのメニューを直せない
+    NotTheLessonMenuCoach,
 }
 
 impl fmt::Display for DomainError {

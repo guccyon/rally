@@ -944,6 +944,79 @@ class CoachReviewList {
       );
 }
 
+/// `LessonMenu`（glossary の lesson。レッスン種別。スポーツごとにコーチが提供するレッスンのメニューで、
+/// 同期レッスンと非同期レッスンの別を持つ）
+class LessonMenu {
+  const LessonMenu({
+    required this.lessonMenuId,
+    required this.coachId,
+    required this.sport,
+    required this.lessonType,
+    required this.name,
+    required this.description,
+    required this.isPublished,
+    required this.createdAt,
+    required this.updatedAt,
+    this.durationMinutes,
+  });
+
+  final String lessonMenuId;
+
+  /// メニューを提供するコーチ
+  final String coachId;
+  final Sport sport;
+  final LessonType lessonType;
+
+  /// メニューの名前（1〜40 文字）
+  final String name;
+
+  /// メニューの説明（0〜400 文字。書いていなければ空文字列）
+  final String description;
+
+  /// 同期レッスンの 1 回の時間（分。15〜120 の 15 分刻み）。非同期レッスンは null
+  final int? durationMinutes;
+
+  /// 公開中なら true（`listCoachLessonMenus` は公開中だけを返す）
+  final bool isPublished;
+  final DateTime createdAt;
+
+  /// 最後に変えた時刻
+  final DateTime updatedAt;
+
+  factory LessonMenu.fromJson(Map<String, dynamic> json) => LessonMenu(
+    lessonMenuId: json['lesson_menu_id'] as String,
+    coachId: json['coach_id'] as String,
+    sport: Sport.fromWire(json['sport'] as String),
+    lessonType: LessonType.fromWire(json['lesson_type'] as String),
+    name: json['name'] as String,
+    description: json['description'] as String,
+    durationMinutes: json['duration_minutes'] as int?,
+    isPublished: json['is_published'] as bool,
+    createdAt: _dateTime(json['created_at']),
+    updatedAt: _dateTime(json['updated_at']),
+  );
+}
+
+/// `LessonMenuList`
+class LessonMenuList {
+  const LessonMenuList({required this.coachId, required this.lessonMenus});
+
+  final String coachId;
+
+  /// 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順）
+  final List<LessonMenu> lessonMenus;
+
+  factory LessonMenuList.fromJson(Map<String, dynamic> json) =>
+      LessonMenuList(
+        coachId: json['coach_id'] as String,
+        lessonMenus: List.unmodifiable(
+          (json['lesson_menus'] as List<dynamic>).map(
+            (e) => LessonMenu.fromJson(e as Map<String, dynamic>),
+          ),
+        ),
+      );
+}
+
 /// `Message`（glossary の message。種類・送信時刻と既読を持つ）
 class Message {
   const Message({

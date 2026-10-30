@@ -125,6 +125,25 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
         DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
         DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
+        DomainError::EmptyLessonMenuName => "レッスンメニューの名前が空".to_string(),
+        DomainError::LessonMenuNameTooLong { max } => {
+            format!("レッスンメニューの名前は {max} 文字まで")
+        }
+        DomainError::LessonMenuDescriptionTooLong { max } => {
+            format!("レッスンメニューの説明は {max} 文字まで")
+        }
+        DomainError::LessonDurationOutOfRange { min, max, step } => {
+            format!("1 回の時間は {min}〜{max} 分の {step} 分刻み")
+        }
+        DomainError::LessonDurationRequired => "同期レッスンには 1 回の時間が要る".to_string(),
+        DomainError::LessonDurationNotApplicable => {
+            "非同期レッスンは 1 回の時間を持たない".to_string()
+        }
+        DomainError::SportNotOfferedByCoach { sport } => format!(
+            "コーチの提供スポーツでない（{}）",
+            sport_to_contract(*sport)
+        ),
+        DomainError::NotTheLessonMenuCoach => "レッスンメニューのコーチでない".to_string(),
         DomainError::NotTheLessonStudent => "完了したレッスンの生徒でない".to_string(),
         DomainError::LessonAlreadyReviewed => "このレッスンは評価済み".to_string(),
     }
@@ -425,6 +444,44 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonAlreadyReviewed),
             "このレッスンは評価済み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::EmptyLessonMenuName),
+            "レッスンメニューの名前が空"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonMenuNameTooLong { max: 40 }),
+            "レッスンメニューの名前は 40 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonMenuDescriptionTooLong { max: 400 }),
+            "レッスンメニューの説明は 400 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonDurationOutOfRange {
+                min: 15,
+                max: 120,
+                step: 15
+            }),
+            "1 回の時間は 15〜120 分の 15 分刻み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonDurationRequired),
+            "同期レッスンには 1 回の時間が要る"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonDurationNotApplicable),
+            "非同期レッスンは 1 回の時間を持たない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SportNotOfferedByCoach {
+                sport: domain::identity::Sport::Soccer
+            }),
+            "コーチの提供スポーツでない（soccer）"
+        );
+        assert_eq!(
+            domain_error(&DomainError::NotTheLessonMenuCoach),
+            "レッスンメニューのコーチでない"
         );
     }
     #[test]

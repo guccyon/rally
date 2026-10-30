@@ -38,7 +38,7 @@ tags:
   - name: async-lesson
     description: 非同期レッスン（動画送付・添削）
   - name: catalog
-    description: レッスン（完了記録）
+    description: カタログ（コーチのレッスンメニュー）とレッスン（完了記録）
   - name: review
     description: 評価（レッスンの評価と、コーチごとの評価の件数と平均・一覧）
   - name: messaging
@@ -612,6 +612,49 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /coaches/{coach_id}/lesson-menus:
+    get:
+      operationId: listCoachLessonMenus
+      summary: コーチのレッスンメニューの一覧
+      description: |
+        コーチ 1 人が提供するレッスンメニュー（glossary の lesson。スポーツごとにコーチが提供するレッスンで、同期レッスンと
+        非同期レッスンの別を持つ）のうち、公開中のもの（`is_published` が true）だけを返す。生徒がコーチを選ぶ手がかりにする。
+        生徒の役割のトークンだけが呼べる（コーチ・本部は 403。コーチは admin-web の `listMyLessonMenus` で自分のメニューを見る）。
+
+        - `sport` を渡すと、そのスポーツのメニューだけに絞る。省けば student-app が扱うスポーツ（ゴルフ以外）のメニューをすべて返す。
+          ゴルフのメニューは golf-app の範囲なので返さない（`sport` に `golf` を渡すと 422）
+        - 並べ方: 作った時刻 `created_at` の古い順。同じ時刻は `lesson_menu_id` の順
+        - 非公開のメニューは返さない。メニューがなければ（コーチでないアカウントや、ない ID を含む）`lesson_menus` は空の配列
+        - `coach_id` が UUID でなければ 404。ページングはしない
+
+        行動イベントは発火しない。
+      tags: [catalog]
+      x-context: catalog
+      x-analytics-events: []
+      parameters:
+        - $ref: "#/components/parameters/CoachId"
+        - name: sport
+          in: query
+          required: false
+          description: このスポーツのメニューに絞る（省けばすべて）
+          schema:
+            $ref: "#/components/schemas/Sport"
+      responses:
+        "200":
+          description: コーチの公開中のレッスンメニューの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonMenuList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /message-threads:
     get:
@@ -1465,6 +1508,64 @@ components:
           description: 送った時刻の新しい順（同じ時刻は `review_id` の順）
           items:
             $ref: "#/components/schemas/CoachReview"
+
+    LessonMenu:
+      type: object
+      description: |
+        glossary の lesson（レッスン種別。スポーツごとにコーチが提供するレッスンのメニューで、同期レッスンと非同期レッスンの別を持つ）。
+        コーチとレッスン内容のセットが商品（specs/context-map.yaml の catalog）
+      required: [lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes, is_published, created_at, updated_at]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: メニューを提供するコーチ
+        sport:
+          $ref: "#/components/schemas/Sport"
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: メニューの名前
+        description:
+          type: string
+          maxLength: 400
+          description: メニューの説明（書いていなければ空文字列）
+        duration_minutes:
+          type: [integer, "null"]
+          minimum: 15
+          maximum: 120
+          multipleOf: 15
+          description: 同期レッスンの 1 回の時間（分。15〜120 の 15 分刻み）。非同期レッスンは null
+        is_published:
+          type: boolean
+          description: 公開中なら true。`listCoachLessonMenus` は公開中のメニューだけを返すので、いつも true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: 最後に変えた時刻（変えていなければ `created_at` と同じ）
+
+    LessonMenuList:
+      type: object
+      description: コーチ 1 人のレッスンメニューの一覧（並べ方は `listCoachLessonMenus` の説明）
+      required: [coach_id, lesson_menus]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        lesson_menus:
+          type: array
+          description: 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順）
+          items:
+            $ref: "#/components/schemas/LessonMenu"
 
     AsyncLessonCompletion:
       type: object

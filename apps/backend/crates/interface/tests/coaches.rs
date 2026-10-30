@@ -104,6 +104,23 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         application::profile::UpdateCoachProfile::new(accounts),
+        application::catalog::CreateLessonMenu::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+            application::identity::IdentityCoachLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
+        application::catalog::UpdateLessonMenu::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+            clock,
+        ),
+        application::catalog::ListMyLessonMenus::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+        ),
+        application::catalog::ListCoachLessonMenus::new(
+            application::in_memory::InMemoryLessonMenuRepository::default(),
+        ),
         PublishSlot::new(slots.clone(), analytics.clone(), clock),
         SearchSlots::new(
             slots,

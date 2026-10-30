@@ -283,6 +283,59 @@ void main() {
     expect(() => list.bookings.clear(), throwsUnsupportedError);
   });
 
+  group('LessonMenuList.fromJson', () {
+    final live = {
+      'lesson_menu_id': '11111111-1111-4111-8111-111111111111',
+      'coach_id': '22222222-2222-4222-8222-222222222222',
+      'sport': 'tennis',
+      'lesson_type': 'live_lesson',
+      'name': 'フォーム改善',
+      'description': '通話でフォームを直す',
+      'duration_minutes': 60,
+      'is_published': true,
+      'created_at': '2026-11-01T00:00:00Z',
+      'updated_at': '2026-11-01T01:00:00Z',
+    };
+
+    test('同期レッスンのメニューは 1 回の時間を読み、非同期レッスンは null', () {
+      final list = LessonMenuList.fromJson({
+        'coach_id': '22222222-2222-4222-8222-222222222222',
+        'lesson_menus': [
+          live,
+          {
+            ...live,
+            'lesson_menu_id': '33333333-3333-4333-8333-333333333333',
+            'lesson_type': 'async_lesson',
+            'name': '動画添削',
+            'description': '',
+            'duration_minutes': null,
+          },
+        ],
+      });
+      expect(list.coachId, '22222222-2222-4222-8222-222222222222');
+      final [first, second] = list.lessonMenus;
+      expect(first.sport, Sport.tennis);
+      expect(first.lessonType, LessonType.liveLesson);
+      expect(first.name, 'フォーム改善');
+      expect(first.description, '通話でフォームを直す');
+      expect(first.durationMinutes, 60);
+      expect(first.isPublished, isTrue);
+      expect(first.createdAt, DateTime.utc(2026, 11, 1));
+      expect(first.updatedAt, DateTime.utc(2026, 11, 1, 1));
+      expect(second.lessonType, LessonType.asyncLesson);
+      expect(second.durationMinutes, isNull);
+      expect(second.description, isEmpty);
+    });
+
+    test('一覧は書き換えられない', () {
+      final list = LessonMenuList.fromJson({
+        'coach_id': '22222222-2222-4222-8222-222222222222',
+        'lesson_menus': [live],
+      });
+      expect(() => list.lessonMenus.clear(), throwsUnsupportedError);
+    });
+  });
+
   group('契約プラン', () {
     test('StartSubscriptionRequest は plan を選んだときだけ送る', () {
       expect(

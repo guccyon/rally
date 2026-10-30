@@ -2001,3 +2001,148 @@ async fn notification_settings_are_one_per_account_and_known_kind(pool: PgPool) 
         )
     );
 }
+
+async fn insert_lesson_menu(
+    pool: &PgPool,
+    coach_id: &str,
+    lesson_type: &str,
+    name: &str,
+    description: &str,
+    duration_minutes: Option<i16>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO catalog.lesson_menus
+             (coach_id, sport, lesson_type, name, description, duration_minutes, is_published,
+              created_at, updated_at)
+         VALUES ($1::uuid, 'tennis', $2, $3, $4, $5, true, now(), now())",
+    )
+    .bind(coach_id)
+    .bind(lesson_type)
+    .bind(name)
+    .bind(description)
+    .bind(duration_minutes)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menus_keep_the_catalog_invariants(pool: PgPool) {
+    use domain::{identity::Sport, lesson::LessonType};
+    use infra::{catalog_values::lesson_type_value, identity_values::sport_value};
+
+    let tables: Vec<String> = sqlx::query_scalar(
+        "SELECT table_schema || '.' || table_name FROM information_schema.tables
+         WHERE table_schema = 'catalog' ORDER BY 1",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(tables, ["catalog.lesson_menus"]);
+    assert_eq!(
+        check_values(&pool, "catalog.lesson_menus", "lesson_menus_sport_check").await,
+        Sport::ALL.into_iter().map(sport_value).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        check_values(
+            &pool,
+            "catalog.lesson_menus",
+            "lesson_menus_lesson_type_check"
+        )
+        .await,
+        LessonType::ALL
+            .into_iter()
+            .map(lesson_type_value)
+            .collect::<Vec<_>>()
+    );
+
+    let coach_id = coach(&pool).await;
+    // 同期レッスンは時間を持ち、非同期レッスンは持たない。名前は 40 文字・説明は 400 文字まで
+    insert_lesson_menu(&pool, &coach_id, "live_lesson", "通話", "", Some(60))
+        .await
+        .unwrap();
+    insert_lesson_menu(
+        &pool,
+        &coach_id,
+        "async_lesson",
+        &"あ".repeat(40),
+        &"あ".repeat(400),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let long_name = "あ".repeat(41);
+    let long_description = "あ".repeat(401);
+    for (lesson_type, name, description, duration, constraint) in [
+        (
+            "live_lesson",
+            "通話",
+            "",
+            None,
+            "lesson_menus_duration_shape",
+        ),
+        (
+            "async_lesson",
+            "添削",
+            "",
+            Some(30),
+            "lesson_menus_duration_shape",
+        ),
+        (
+            "live_lesson",
+            "通話",
+            "",
+            Some(50),
+            "lesson_menus_duration_minutes_check",
+        ),
+        (
+            "live_lesson",
+            "通話",
+            "",
+            Some(135),
+            "lesson_menus_duration_minutes_check",
+        ),
+        ("async_lesson", " ", "", None, "lesson_menus_name_check"),
+        (
+            "async_lesson",
+            long_name.as_str(),
+            "",
+            None,
+            "lesson_menus_name_check",
+        ),
+        (
+            "async_lesson",
+            "添削",
+            long_description.as_str(),
+            None,
+            "lesson_menus_description_check",
+        ),
+        (
+            "group_lesson",
+            "添削",
+            "",
+            None,
+            "lesson_menus_lesson_type_check",
+        ),
+    ] {
+        let (code, actual) = violation(
+            insert_lesson_menu(&pool, &coach_id, lesson_type, name, description, duration).await,
+        );
+        assert_eq!(
+            (code.as_str(), actual.as_str()),
+            (CHECK_VIOLATION, constraint),
+            "{lesson_type} {duration:?}"
+        );
+    }
+
+    // メニューを持てるのはコーチだけ
+    let student_id = student(&pool).await;
+    let (code, constraint) =
+        violation(insert_lesson_menu(&pool, &student_id, "async_lesson", "添削", "", None).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "lesson_menus_coach_id_fkey")
+    );
+}
