@@ -76,7 +76,7 @@ autonomy:
     code_change:          { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden }
     irreversible:         { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "運用開始時に human_approve へ" }
     untrusted_input_path: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
-    factory_rule:         { pr_create: shadow, merge: forbidden,   deploy_test: forbidden, deploy_prod: forbidden }   # P0 は自己進化を動かさない
+    factory_rule:         { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "採用まで自動（2026-10-30 オーナー、Engine ADR 0013）。CI の rule-eval と工場の eval 判定が緑のときだけ。adopted への昇格も条件を満たせば自動、カナリアで自動で shadow に戻し、日報で事後に知らせる" }
     constitution:         { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
   # 運用開始 ＝ プロダクトを利用者（合成でない人）に出した時点（2026-10-27 戦略会議 D4）。
   # 工場をサーバー（EC2 など）に移しただけでは発動しない。切り替えは builder が宣言し、この表の変更と同じく承認付き PR で行う

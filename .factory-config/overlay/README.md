@@ -8,7 +8,7 @@
 - 状態は candidate → shadow → adopted → retired。shadow は判定して記録するが差し戻さない。廃止したルールもファイルは消さず `state: retired` にする
 - eval ケース（当たるべき差分の正例と、当たってはいけない差分の負例を 1 件以上ずつ）を必ず同梱する。差分は `../evals/rules/<id>/` にファイルで置き、`diff_ref: "file:rules/<id>/positive-1.diff"` のように指す
 - 追加・昇格・廃止はルール変更 PR（change_type `factory_rule`）として工場自身のパイプラインを通す。CI の rule-eval（Engine の `core-gates/rule_eval.py`）が緑で、LLM が要る段の eval ケースは工場の検査ジョブが判定する
-- manifest.yaml の `factory_rule` の autonomy が `pr_create: shadow` の間は、工場はここに書き込まない
+- manifest.yaml の `factory_rule` は「採用まで自動」（2026-10-30 オーナー）。CI と工場の eval 判定が緑ならルール変更 PR は承認なしでマージし、adopted への昇格とカナリアでの差し戻しも自動。結果は日報で知らせる
 
 ## 例
 
