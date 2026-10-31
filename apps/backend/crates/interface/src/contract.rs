@@ -14,7 +14,7 @@ use domain::{
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
-    scheduling::{BookingStatus, SlotStatus, SlotSupplyStatus},
+    scheduling::{BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus},
 };
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -83,6 +83,16 @@ pub(crate) const fn slot_status_to_contract(status: SlotStatus) -> &'static str 
         SlotStatus::Open => "open",
         SlotStatus::Booked => "booked",
         SlotStatus::Closed => "closed",
+    }
+}
+
+/// admin-web の `CoachAcceptanceStatus` の値（コーチの受付の状態）。
+pub(crate) const fn coach_acceptance_status_to_contract(
+    status: CoachAcceptanceStatus,
+) -> &'static str {
+    match status {
+        CoachAcceptanceStatus::Accepting => "accepting",
+        CoachAcceptanceStatus::Suspended => "suspended",
     }
 }
 

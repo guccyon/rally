@@ -10,12 +10,14 @@ use application::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        InMemoryAccountRepository, InMemoryFavoriteCoachRepository, InMemoryLessonMenuRepository,
+        InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
+        InMemoryFavoriteCoachRepository, InMemoryLessonMenuRepository,
         InMemoryLessonReviewRepository,
     },
     matching::ListCoachesForStudent,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
     review::ReviewCoachReviewSummaryLookup,
+    scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
 };
 use axum::{
     Router,
@@ -32,6 +34,7 @@ use domain::{
     matching::FavoriteCoach,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+    scheduling::CoachAcceptance,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -125,6 +128,14 @@ fn menu(id: u128, coach_id: u128, sport: Sport, is_published: bool) -> LessonMen
 
 /// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。
 fn app(accounts: InMemoryAccountRepository) -> Router {
+    app_with(accounts, InMemoryCoachAcceptanceRepository::default())
+}
+
+/// [`app`] と同じで、コーチの受付の状態は `acceptances`。
+fn app_with(
+    accounts: InMemoryAccountRepository,
+    acceptances: InMemoryCoachAcceptanceRepository,
+) -> Router {
     let reviews = InMemoryLessonReviewRepository::with_reviews([
         review(1, 2, 4),
         review(2, 2, 3),
@@ -137,8 +148,9 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         menu(3, 5, Sport::Soccer, true),
         menu(4, 5, Sport::Golf, true),
     ]);
+    let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
     interface::coaches_router(
-        ListCoaches::new(accounts.clone()),
+        ListCoaches::new(accounts.clone(), acceptances.clone()),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
             ProfileCoachCandidateLookup::new(accounts),
@@ -156,6 +168,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
                     SystemTime::UNIX_EPOCH,
                 ),
             ]),
+            acceptances,
         ),
         FakeTokens,
     )
@@ -194,11 +207,69 @@ async fn headquarters_lists_only_coaches_in_display_name_order() {
         json!({
             "coaches": [
                 // 同じ表示名は ID の順
-                { "coach_id": "00000000-0000-0000-0000-000000000004", "display_name": "いとう" },
-                { "coach_id": "00000000-0000-0000-0000-000000000005", "display_name": "いとう" },
-                { "coach_id": "00000000-0000-0000-0000-000000000002", "display_name": "たなか" },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000004",
+                    "display_name": "いとう",
+                    "acceptance_status": "accepting",
+                },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000005",
+                    "display_name": "いとう",
+                    "acceptance_status": "accepting",
+                },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000002",
+                    "display_name": "たなか",
+                    "acceptance_status": "accepting",
+                },
             ],
         })
+    );
+}
+
+#[tokio::test]
+async fn suspended_coaches_are_listed_to_headquarters_with_their_status_but_not_to_students() {
+    let acceptances = InMemoryCoachAcceptanceRepository::default();
+    acceptances
+        .update(AccountId::from_u128(4), CoachAcceptance::suspend)
+        .await
+        .unwrap();
+    let router = app_with(accounts().await, acceptances);
+
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let statuses: Vec<(&str, &str)> = body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["coach_id"].as_str().unwrap(),
+                c["acceptance_status"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("00000000-0000-0000-0000-000000000004", "suspended"),
+            ("00000000-0000-0000-0000-000000000005", "accepting"),
+            ("00000000-0000-0000-0000-000000000002", "accepting"),
+        ]
+    );
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ids: Vec<&str> = body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["coach_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["00000000-0000-0000-0000-000000000002"],
+        "受付を止めたテニスのコーチ（4）は生徒の一覧に出ない"
     );
 }
 
