@@ -62,7 +62,7 @@ impl From<DomainError> for SubmitVideoError {
 ///
 /// domain の [`Video::submit`] で送付し、動画の保存先に本体の PUT 先を発行させ（[`VideoStorage`]）、動画を
 /// 保存する。保存したら境界間イベント `VideoReviewRequested` を発行し（messaging はこれを購読して、その生徒とコーチの
-/// スレッドに添削依頼のメッセージを足す。async-lesson は messaging を直接呼ばない）、行動イベント `video.submitted` を
+/// スレッドに添削依頼のメッセージを足し、notification はコーチに知らせる。async-lesson はどちらも直接呼ばない）、行動イベント `video.submitted` を
 /// 1 回発火する。送付の回数は数えない（月額は送り放題）。添削の有無・回数・状態は async-lesson だけが持つ。
 ///
 /// 保存した直後に同じ処理の中で AI の一次フィードバックを作らせ（[`AiFeedbackGenerator`]）、動画に付けて保存する

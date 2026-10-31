@@ -1,5 +1,6 @@
-//! `/notifications/me`。student-app の `GET /notifications/me`（`listMyNotifications`。自分のお知らせの一覧）と
-//! `POST /notifications/me/read`（`markMyNotificationsRead`。すべて既読）。生徒だけが呼べる。
+//! `/notifications/me`。student-app と admin-web の `GET /notifications/me`（`listMyNotifications`。自分のお知らせの一覧）と
+//! `POST /notifications/me/read`（`markMyNotificationsRead`。すべて既読）。生徒とコーチが呼べ（本部は呼べない）、
+//! どちらの契約も同じ形で、扱うのはトークンのアカウントが受け取るお知らせだけ。
 //!
 //! お知らせの種類（domain の `NotificationKind`）と契約の `NotificationKind` の値の対応と、プッシュ通知の中身から
 //! 本文（利用者に見せる文言）を決める対応はこのファイルだけに置く。
@@ -27,13 +28,13 @@ pub struct NotificationsState<N, C> {
     pub mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
 }
 
-/// student-app の `NotificationList`。
+/// student-app・admin-web の `NotificationList`。
 #[derive(Serialize)]
 pub struct NotificationListBody {
     notifications: Vec<NotificationBody>,
 }
 
-/// student-app の `Notification`。
+/// student-app・admin-web の `Notification`。
 #[derive(Serialize)]
 pub struct NotificationBody {
     notification_id: String,
@@ -43,7 +44,7 @@ pub struct NotificationBody {
     is_read: bool,
 }
 
-/// `GET /notifications/me`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
+/// `GET /notifications/me`。生徒とコーチが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
 /// アカウントが受け取るお知らせ。
 pub async fn list_my_notifications<N, C>(
     State(state): State<Arc<NotificationsState<N, C>>>,
@@ -61,7 +62,7 @@ where
     Ok(Json(notification_list_body(&notifications)?))
 }
 
-/// `POST /notifications/me/read`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。既読にするのはトークンの
+/// `POST /notifications/me/read`。生徒とコーチが呼べる（役割は `require_role` の層が確かめる）。既読にするのはトークンの
 /// アカウントが受け取るお知らせだけで、既読にしたあとの一覧を返す。
 pub async fn mark_my_notifications_read<N, C>(
     State(state): State<Arc<NotificationsState<N, C>>>,
@@ -100,10 +101,12 @@ fn notification_body(notification: &Notification) -> Result<NotificationBody, Ap
     })
 }
 
-/// student-app の `NotificationKind` の値（受け取り設定の項目名と同じ綴り）。
+/// student-app・admin-web の `NotificationKind` の値（student-app の受け取り設定の項目名と同じ綴り）。各契約の enum には
+/// その利用者が受け取る種類だけを載せる（添削の依頼はコーチだけ、添削の返却は生徒だけが受け取る）。
 const fn notification_kind_to_contract(kind: NotificationKind) -> &'static str {
     match kind {
         NotificationKind::BookingConfirmed => "booking_confirmed",
+        NotificationKind::VideoReviewRequested => "video_review_requested",
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",
     }
@@ -114,6 +117,7 @@ const fn notification_text(push: &PushNotification) -> &'static str {
     match push {
         PushNotification::BookingConfirmed { .. } => "予約が確定しました",
         PushNotification::BookingReceived { .. } => "新しい予約が入りました",
+        PushNotification::VideoReviewRequested { .. } => "生徒から動画の添削の依頼が届きました",
         PushNotification::VideoReviewReturned { .. } => "動画の添削が返ってきました",
         PushNotification::MessageReceived {
             sender: MessageSender::Coach,

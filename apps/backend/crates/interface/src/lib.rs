@@ -582,10 +582,11 @@ where
         .layer(auth::TokenVerification::layer(tokens))
 }
 
-/// 生徒のお知らせ（student-app の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。[`router_with`] と
-/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+/// 生徒とコーチのお知らせ（student-app・admin-web の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。
+/// [`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する
+/// （同じ検証器を渡す）。
 ///
-/// どちらも生徒だけで、扱うのはトークンの生徒自身が受け取るお知らせだけ。
+/// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
 pub fn notifications_router<N, C, T>(
     list_my_notifications: ListMyNotifications<N>,
     mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
@@ -606,7 +607,7 @@ where
             "/notifications/me/read",
             post(notifications::mark_my_notifications_read::<N, C>),
         )
-        .route_layer(require_role(&[Role::Student]))
+        .route_layer(require_role(&[Role::Student, Role::Coach]))
         .with_state(Arc::new(notifications::NotificationsState {
             list_my_notifications,
             mark_my_notifications_read,

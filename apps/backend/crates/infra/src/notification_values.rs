@@ -9,6 +9,7 @@ use domain::notification::{NotificationKind, PushNotification};
 pub const fn notification_kind_value(kind: NotificationKind) -> &'static str {
     match kind {
         NotificationKind::BookingConfirmed => "booking_confirmed",
+        NotificationKind::VideoReviewRequested => "video_review_requested",
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",
     }
@@ -23,13 +24,15 @@ pub fn notification_kind_from_value(value: &str) -> Option<NotificationKind> {
 /// `notification.notifications.kind` の値（[`push_notification_kind_value`]）。保存先の実装が読んだ行を変種に戻すのに使う。
 pub const BOOKING_CONFIRMED: &str = "booking_confirmed";
 pub const BOOKING_RECEIVED: &str = "booking_received";
+pub const VIDEO_REVIEW_REQUESTED: &str = "video_review_requested";
 pub const VIDEO_REVIEW_RETURNED: &str = "video_review_returned";
 pub const MESSAGE_RECEIVED: &str = "message_received";
 
 /// `notification.notifications.kind` のすべての値（CHECK 制約の値の順）。
-pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 4] = [
+pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 5] = [
     BOOKING_CONFIRMED,
     BOOKING_RECEIVED,
+    VIDEO_REVIEW_REQUESTED,
     VIDEO_REVIEW_RETURNED,
     MESSAGE_RECEIVED,
 ];
@@ -39,6 +42,7 @@ pub const fn push_notification_kind_value(notification: &PushNotification) -> &'
     match notification {
         PushNotification::BookingConfirmed { .. } => BOOKING_CONFIRMED,
         PushNotification::BookingReceived { .. } => BOOKING_RECEIVED,
+        PushNotification::VideoReviewRequested { .. } => VIDEO_REVIEW_REQUESTED,
         PushNotification::VideoReviewReturned { .. } => VIDEO_REVIEW_RETURNED,
         PushNotification::MessageReceived { .. } => MESSAGE_RECEIVED,
     }
