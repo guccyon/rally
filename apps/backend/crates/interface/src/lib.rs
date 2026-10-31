@@ -9,6 +9,7 @@ pub mod auth;
 mod bookings;
 mod coach_acceptances;
 mod coach_bookings;
+mod coach_overviews;
 mod coach_profiles;
 mod coach_slots;
 mod coach_videos;
@@ -94,7 +95,7 @@ use application::{
     },
     profile::{
         CoachAcceptanceLookup, CoachFavoriteLookup, CoachProfileRepository, GetCoachBio,
-        GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile,
+        GetCoachOverview, GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
@@ -798,6 +799,38 @@ where
         .with_state(Arc::new(coach_acceptances::CoachAcceptancesState {
             suspend_coach,
             resume_coach,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見るコーチ 1 人の様子（admin-web の `GET /coaches/{coach_id}/overview`）のルーター。[`router_with`] と同じく
+/// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// 本部だけ（コーチ・生徒は 403）。
+#[allow(clippy::type_complexity)]
+pub fn coach_overview_router<R, A, V, M, W, C, N, T>(
+    get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    A: CoachAcceptanceLookup + 'static,
+    V: LessonReviewRepository + 'static,
+    M: LessonCompletionRepository + 'static,
+    W: MonthlyReviewSummaryLookup + 'static,
+    C: Clock + 'static,
+    N: LessonMenuRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}/overview",
+            get(coach_overviews::get_coach_overview::<R, A, V, M, W, C, N>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(coach_overviews::CoachOverviewsState {
+            get_coach_overview,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }
