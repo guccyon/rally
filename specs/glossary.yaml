@@ -1,6 +1,7 @@
 # ドメイン用語（Blueprint v0.4 の domain_glossary の骨格）
 # 前提は product-context.md、context は context-map.yaml の id を使う。用語の網羅は後続の Issue で行う。
 # 各項目の context は 1 つ（context:）。複数のコンテキストが発行する語だけ contexts:（id の配列）で列挙する（docs/adr/0006）。
+# 任意で code:（その語を表すコード・契約・イベントの名前）と note:（定義を補う事実・ほかの語との関係・未定のこと）を持てる。
 schema_version: "0.1"
 status: draft
 terms:
@@ -84,3 +85,56 @@ terms:
     ja: "通知の受け取り設定"
     definition: "アカウントごとに、プッシュ通知の種類（予約の確定・添削の返却・メッセージの受信）ごとに受け取るかを決める設定で、既定はすべて受け取る。"
     context: notification
+  - id: lesson_menu
+    ja: "レッスンメニュー"
+    definition: "コーチが自分の提供スポーツのどれかについて作るレッスンのメニューで、スポーツ・同期 / 非同期の別（同期なら 1 回の時間。15〜120 分の 15 分刻み）・名前（1〜40 文字）・説明（0〜400 文字）・公開中かを持ち、作る・直す・非公開にするのはそのコーチだけで、公開中でないメニューは生徒に見せない。"
+    context: catalog
+    code: [LessonMenu, LessonMenuId, LessonMenuContent, LessonFormat, LessonDuration, catalog.lesson_menus]
+    note: >-
+      同期のメニューはコーチの枠に任意で結び付けられ（枠のコーチ自身の・公開中の・同期の・スポーツが枠と同じ・1 回の時間が枠の長さと同じもの。
+      docs/adr/0004 の D61）、非同期のメニューは生徒が動画を送るときに任意で選べる。
+      既存の用語 lesson（レッスン種別）との関係: コード（catalog の LessonMenu）と docs/adr/0004 の catalog.lesson_menus は、レッスンメニューを
+      lesson を実装したものとして扱い、lesson の定義の「スポーツごと・同期 / 非同期の別」はメニューも持つ。
+      lesson をレッスンメニューにまとめるか（lesson の id・ja・定義の書き換えを含む）、メニューより大きな「種別」の単位が別にあるのかは未定。
+      契約（student-app）の Lesson は完了したレッスン（lesson_completion）を表し、どちらとも別である。
+  - id: lesson_menu_snapshot
+    ja: "メニューの写し"
+    definition: "予約と、非同期レッスンで送った動画が、予約した・送った時点のレッスンメニューから写して持つメニューの ID と名前（予約は同期の 1 回の時間も）で、後でメニューが直されたり非公開になったりしても変わらない。"
+    contexts: [scheduling, async-lesson]
+    code: [BookingLessonMenu, VideoLessonMenu, ReviewLessonMenu]
+    note: >-
+      予約が写すのは、予約したスロットに結び付いたメニューが予約の時点で公開中のときだけで、そうでなければメニューなしの予約にする（予約は断らない。
+      Booking::with_lesson_menu）。動画が写すのは生徒が選んだメニューで、送り先のコーチの・公開中の・非同期の・動画と同じスポーツのものでなければ
+      送付を断る（Video::with_lesson_menu）。メニューを選ばない予約・動画もある。
+      評価（review）は写しを持たず、評価の一覧に添えるメニュー（ID・名前）は完了したレッスンの元（同期レッスンは予約、非同期レッスンは動画）が
+      持つ写しを読む。枠の一覧に添える枠のメニュー（契約の SlotLessonMenu）は写しではなく今のメニューである。
+  - id: slot_capacity
+    ja: "定員"
+    definition: "1 つのスロットに入れる有効な予約（未確定と確定。キャンセルした予約は数えない）の数の上限で、1〜6 の整数（公開で省いたときは 1）であり、1 はマンツーマン、2 以上はグループレッスンである（変更シナリオ cs-004）。"
+    context: scheduling
+    code: [SlotCapacity, SlotSeats, capacity, remaining_seats]
+    note: >-
+      残りの席は定員から有効な予約の数を引いた数（SlotSeats::remaining、契約の remaining_seats）。同じ生徒が同じ枠を 2 回は予約できない。
+  - id: live_lesson_session
+    ja: "通話セッション"
+    definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録する。"
+    context: live-lesson
+    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended]
+    note: >-
+      開始・終了できるのは参加者だけで、確定した予約にしか開始できず、同じ予約のセッションは 1 つ。グループレッスンの通話中のセッションには、
+      結び付いた予約の生徒が同じセッションに入る。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
+  - id: video_review_request
+    ja: "添削の依頼"
+    definition: "非同期レッスンで生徒がコーチに動画を送り添削を求めることで、送った動画は添削待ちになり、その生徒とコーチのスレッドに添削依頼のメッセージが流れる。"
+    context: async-lesson
+    code: [Video::submit, VideoStatus::Submitted, VideoReviewRequested, MessageKind::VideoReviewRequest, submitVideo, video.submitted]
+    note: >-
+      送付の回数は数えない（月額は送り放題）。送った時点のレッスンメニューの写し（lesson_menu_snapshot）を任意で持つ。
+      送付の直後に AI の一次フィードバック（ai_feedback）が付くことがある。
+  - id: video_review_return
+    ja: "添削の返却"
+    definition: "送り先のコーチが、添削の依頼で送られた動画に添削を返すことで、動画 1 本につき 1 回、送付の後にだけでき、着手できない動画（ゴルフでワンショット決済が確定していないもの）は返せず、返すとその生徒とコーチのスレッドに添削の返却のメッセージが流れる。"
+    context: async-lesson
+    code: [Video::return_review, VideoReview, VideoStatus::Reviewed, VideoReviewReturned, MessageKind::VideoReviewReturn, returnVideoReview, video_review.returned]
+    note: >-
+      返した添削そのものは動画添削（video_review）。非同期レッスンの完了したレッスンは、添削を返した動画にだけ記録できる。
