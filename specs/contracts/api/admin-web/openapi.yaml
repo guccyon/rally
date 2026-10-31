@@ -22,6 +22,8 @@ info:
     非公開にし（`unpublishLessonMenu`。理由を任意で残す）・公開に戻す（`republishLessonMenu`）。本部が非公開にしたメニューは、
     本部が公開に戻すまでコーチが自分で公開し直せない（`updateMyLessonMenu` の 409 `lesson_menu_unpublished_by_headquarters`）。
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
+    本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数）を
+    読む（`getStudentActivity`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。
     コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
@@ -61,7 +63,7 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧・本部が見る低い評価の一覧・コーチの評価への返信）
   - name: identity
-    description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧）
+    description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧と生徒 1 人の利用の様子）
   - name: profile
     description: プロフィール（コーチの自己紹介文・本部が見るコーチの一覧）
   - name: messaging
@@ -1101,6 +1103,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /students/{student_id}/activity:
+    get:
+      operationId: getStudentActivity
+      summary: 生徒 1 人の利用の様子（本部）
+      description: |
+        生徒（glossary の student）1 人の予約（glossary の booking）と受けたレッスン（glossary の lesson_completion）を 1 か所で返す。
+        本部が生徒からの問い合わせに答えるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+
+        - `upcoming_bookings`: これからの予約。予約の状態が未確定（`pending`）か確定（`confirmed`）で、予約したスロットの開始時刻が
+          サーバーの現在時刻より後のもの（始まった予約・キャンセル済みの予約は載せない）。開始時刻の古い順、同じ開始時刻は予約の
+          作成の古い順、それも同じなら `booking_id` の順。件数の上限はない（これからの予約は暦月の上限などで小さい前提）
+        - `recent_lessons`: 直近の受けたレッスン。生徒の完了したレッスン（同期レッスン（通話）・非同期レッスン（動画添削）の両方。
+          student-app の `listMyLessonCompletions` と同じもの）を、完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に
+          最大 20 件。21 件目より古いものは載せない
+        - `cancelled_booking_count`: 生徒がキャンセルした予約（状態が `cancelled`）の件数。期間で絞らず、これまでのすべて
+        - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
+        - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
+          （メールアドレス・スポーツ・受講権・課金の情報は返さない）
+        - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [identity, scheduling]
+      x-context: [identity, profile, scheduling, live-lesson, async-lesson]
+      x-analytics-events: []
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 生徒 1 人の利用の様子
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentActivity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /live-lesson-sessions:
     post:
       operationId: startLiveLessonSession
@@ -1984,6 +2032,78 @@ components:
           description: 登録した時刻の新しい順（同じ時刻は `student_id` の順）
           items:
             $ref: "#/components/schemas/Student"
+
+    StudentActivity:
+      type: object
+      description: |
+        本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
+        キャンセルの件数を添える。生徒を特定する情報は表示名と ID だけ
+      required: [student_id, display_name, upcoming_bookings, recent_lessons, cancelled_booking_count]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+          description: 生徒のアカウントの ID（`listStudents` の `student_id` と同じ値）
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 生徒の表示名
+        upcoming_bookings:
+          type: array
+          description: これからの予約（未確定・確定で、開始が現在時刻より後）。開始時刻の古い順（同じ開始時刻は予約の作成の古い順）
+          items:
+            $ref: "#/components/schemas/StudentActivityBooking"
+        recent_lessons:
+          type: array
+          maxItems: 20
+          description: 直近の受けたレッスン。完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に最大 20 件
+          items:
+            $ref: "#/components/schemas/StudentActivityLesson"
+        cancelled_booking_count:
+          type: integer
+          minimum: 0
+          description: 生徒がキャンセルした予約の件数（これまでのすべて）
+
+    StudentActivityBooking:
+      type: object
+      description: 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名
+      required: [booking]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+
+    StudentActivityLesson:
+      type: object
+      description: |
+        生徒 1 人の利用の様子の直近の受けたレッスンの 1 件。完了したレッスン（glossary の lesson_completion）の ID・種類・
+        完了した時刻と、そのコーチ
+      required: [lesson_id, coach_id, lesson_type, completed_at]
+      properties:
+        lesson_id:
+          type: string
+          format: uuid
+          description: 完了したレッスン（student-app の `MyLessonCompletion.lesson_id` と同じ値）
+        coach_id:
+          type: string
+          format: uuid
+          description: レッスンのコーチ
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: レッスンのコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        completed_at:
+          type: string
+          format: date-time
+          description: 完了を記録した時刻
 
     CoachReviewSummary:
       type: object

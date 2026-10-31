@@ -802,6 +802,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/students/{student_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生徒 1 人の利用の様子（本部）
+         * @description 生徒（glossary の student）1 人の予約（glossary の booking）と受けたレッスン（glossary の lesson_completion）を 1 か所で返す。
+         *     本部が生徒からの問い合わせに答えるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - `upcoming_bookings`: これからの予約。予約の状態が未確定（`pending`）か確定（`confirmed`）で、予約したスロットの開始時刻が
+         *       サーバーの現在時刻より後のもの（始まった予約・キャンセル済みの予約は載せない）。開始時刻の古い順、同じ開始時刻は予約の
+         *       作成の古い順、それも同じなら `booking_id` の順。件数の上限はない（これからの予約は暦月の上限などで小さい前提）
+         *     - `recent_lessons`: 直近の受けたレッスン。生徒の完了したレッスン（同期レッスン（通話）・非同期レッスン（動画添削）の両方。
+         *       student-app の `listMyLessonCompletions` と同じもの）を、完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に
+         *       最大 20 件。21 件目より古いものは載せない
+         *     - `cancelled_booking_count`: 生徒がキャンセルした予約（状態が `cancelled`）の件数。期間で絞らず、これまでのすべて
+         *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
+         *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
+         *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
+         *     - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getStudentActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -1358,6 +1394,55 @@ export interface components {
         StudentList: {
             /** @description 登録した時刻の新しい順（同じ時刻は `student_id` の順） */
             students: components["schemas"]["Student"][];
+        };
+        /**
+         * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
+         *     キャンセルの件数を添える。生徒を特定する情報は表示名と ID だけ
+         */
+        StudentActivity: {
+            /**
+             * Format: uuid
+             * @description 生徒のアカウントの ID（`listStudents` の `student_id` と同じ値）
+             */
+            student_id: string;
+            /** @description 生徒の表示名 */
+            display_name: string;
+            /** @description これからの予約（未確定・確定で、開始が現在時刻より後）。開始時刻の古い順（同じ開始時刻は予約の作成の古い順） */
+            upcoming_bookings: components["schemas"]["StudentActivityBooking"][];
+            /** @description 直近の受けたレッスン。完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に最大 20 件 */
+            recent_lessons: components["schemas"]["StudentActivityLesson"][];
+            /** @description 生徒がキャンセルした予約の件数（これまでのすべて） */
+            cancelled_booking_count: number;
+        };
+        /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
+        StudentActivityBooking: {
+            booking: components["schemas"]["Booking"];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+        };
+        /**
+         * @description 生徒 1 人の利用の様子の直近の受けたレッスンの 1 件。完了したレッスン（glossary の lesson_completion）の ID・種類・
+         *     完了した時刻と、そのコーチ
+         */
+        StudentActivityLesson: {
+            /**
+             * Format: uuid
+             * @description 完了したレッスン（student-app の `MyLessonCompletion.lesson_id` と同じ値）
+             */
+            lesson_id: string;
+            /**
+             * Format: uuid
+             * @description レッスンのコーチ
+             */
+            coach_id: string;
+            /** @description レッスンのコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            lesson_type: components["schemas"]["LessonType"];
+            /**
+             * Format: date-time
+             * @description 完了を記録した時刻
+             */
+            completed_at: string;
         };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
@@ -2613,6 +2698,31 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getStudentActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                student_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生徒 1 人の利用の様子 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentActivity"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     startLiveLessonSession: {
