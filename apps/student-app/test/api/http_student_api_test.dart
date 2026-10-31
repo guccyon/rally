@@ -124,6 +124,7 @@ void main() {
       'display_name': '佐藤',
       'bio': 'テニス歴 20 年',
       'sports': ['tennis', 'soccer'],
+      'is_favorite': true,
     }).getCoachProfile('c1');
     expect(sent.single.method, 'GET');
     expect(sent.single.url.path, '/coaches/c1');
@@ -132,6 +133,7 @@ void main() {
     expect(profile.displayName, '佐藤');
     expect(profile.bio, 'テニス歴 20 年');
     expect(profile.sports, [Sport.tennis, Sport.soccer]);
+    expect(profile.isFavorite, isTrue);
 
     final noBio = await apiReplying(200, {
       'coach_id': 'c2',
@@ -140,6 +142,8 @@ void main() {
       'sports': ['tennis'],
     }).getCoachProfile('c2');
     expect(noBio.bio, isNull);
+    // is_favorite のない応答（足す前のサーバー）は false で読む
+    expect(noBio.isFavorite, isFalse);
   });
 
   test('操作ごとのパス', () async {
@@ -431,6 +435,7 @@ void main() {
       'review_count': 12,
       'average_rating': 4,
       'published_lesson_menu_count': 2,
+      'is_favorite': true,
     };
     final unrated = {
       ...rated,
@@ -439,6 +444,7 @@ void main() {
       'review_count': 0,
       'average_rating': null,
       'published_lesson_menu_count': 0,
+      'is_favorite': false,
     };
     final list = await apiReplying(200, {
       'coaches': [rated, unrated],
@@ -448,6 +454,7 @@ void main() {
     expect(sent.single.url.queryParameters, isEmpty);
     // 返った順のまま
     expect(list.coaches.map((c) => c.coachId), ['c1', 'c2']);
+    expect(list.coaches.map((c) => c.isFavorite), [true, false]);
     final first = list.coaches.first;
     expect(first.displayName, '佐藤');
     expect(first.sport, Sport.tennis);

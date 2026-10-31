@@ -27,11 +27,12 @@ use application::{
     identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryAnnouncementRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
-        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
-        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
-        InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        InMemoryEntitlementRepository, InMemoryFavoriteCoachRepository,
+        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
+        InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
+        InMemoryMessageThreadRepository, InMemoryNotificationRepository,
+        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
@@ -41,7 +42,10 @@ use application::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
     },
-    matching::ListCoachesForStudent,
+    matching::{
+        AddFavoriteCoach, FavoriteCoachRepository, ListCoachesForStudent, ListFavoriteCoaches,
+        MatchingCoachFavoriteLookup, RemoveFavoriteCoach,
+    },
     messaging::{
         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         MessageThreadSubscriber, SendMessage,
@@ -73,10 +77,10 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
     MockVideoStorage, PgAccountRepository, PgAnnouncementRepository, PgBookingRepository,
-    PgEntitlementRepository, PgLessonCompletionRepository, PgLessonMenuRepository,
-    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
-    PgNotificationRepository, PgNotificationSettingsRepository, PgSlotRepository,
-    PgVideoRepository,
+    PgEntitlementRepository, PgFavoriteCoachRepository, PgLessonCompletionRepository,
+    PgLessonMenuRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+    PgMessageThreadRepository, PgNotificationRepository, PgNotificationSettingsRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -129,8 +133,11 @@ pub fn router() -> Router {
 /// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。生徒が送った動画の一覧（`GET /videos/me`）は、
 /// 送り先のコーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。本部が見るレッスンメニューの横断の一覧（`GET /lesson-menus`）も、作ったコーチの表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
 /// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
-/// 生徒が見るコーチの紹介（`GET /coaches/{coach_id}`）は、アカウントの保存先から表示名・自己紹介文・提供スポーツを読む
-/// （`GetCoachProfile`）。
+/// 生徒が見るコーチの紹介（`GET /coaches/{coach_id}`）は、アカウントの保存先から表示名・自己紹介文・提供スポーツを読み、
+/// お気に入りの保存先からその生徒のお気に入りかを読む（`GetCoachProfile`。`MatchingCoachFavoriteLookup`）。
+/// 生徒のお気に入りのコーチ（`GET /favorite-coaches`・`PUT`・`DELETE /favorite-coaches/{coach_id}`）は、お気に入りの保存先
+/// （当面インメモリ）に入れ・外し、一覧はコーチの表示名と提供スポーツをアカウントの保存先から、評価の件数と平均を評価の
+/// 保存先から読んで添える（`ListFavoriteCoaches`）。コーチを探す一覧（`GET /coaches`）にも、お気に入りかを添える。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -206,6 +213,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryNotificationSettingsRepository,
     InMemoryNotificationRepository,
     InMemoryLessonMenuRepository,
+    InMemoryFavoriteCoachRepository,
     InMemoryAnnouncementRepository,
 > {
     let slots = InMemorySlotRepository::default();
@@ -222,6 +230,7 @@ fn in_memory_repositories() -> Repositories<
         notification_settings: InMemoryNotificationSettingsRepository::default(),
         notifications: InMemoryNotificationRepository::default(),
         lesson_menus: InMemoryLessonMenuRepository::default(),
+        favorite_coaches: InMemoryFavoriteCoachRepository::default(),
         announcements: InMemoryAnnouncementRepository::default(),
     }
 }
@@ -264,6 +273,7 @@ where
             notification_settings: PgNotificationSettingsRepository::new(pool.clone()),
             notifications: PgNotificationRepository::new(pool.clone()),
             lesson_menus: PgLessonMenuRepository::new(pool.clone()),
+            favorite_coaches: PgFavoriteCoachRepository::new(pool.clone()),
             announcements: PgAnnouncementRepository::new(pool),
         },
         clock,
@@ -283,7 +293,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G, H> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -296,13 +306,14 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G> {
     notification_settings: Z,
     notifications: K,
     lesson_menus: J,
-    announcements: G,
+    favorite_coaches: G,
+    announcements: H,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, G, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, G, H, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G, H>,
     clock: C,
     analytics: A,
     push: P,
@@ -321,7 +332,8 @@ where
     Z: NotificationSettingsRepository + Clone + 'static,
     K: NotificationRepository + Clone + 'static,
     J: LessonMenuRepository + Clone + 'static,
-    G: AnnouncementRepository + Clone + 'static,
+    G: FavoriteCoachRepository + Clone + 'static,
+    H: AnnouncementRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + Clone + 'static,
@@ -340,6 +352,7 @@ where
         notification_settings,
         notifications,
         lesson_menus,
+        favorite_coaches,
         announcements,
     } = repositories;
     let catalog = interface::catalog_router(
@@ -378,13 +391,29 @@ where
             ProfileCoachCandidateLookup::new(accounts.clone()),
             ReviewCoachReviewSummaryLookup::new(reviews.clone()),
             CatalogPublishedLessonMenuCountLookup::new(lesson_menus.clone()),
+            favorite_coaches.clone(),
+        ),
+        MockTokenService,
+    );
+    let favorite_coaches_routes = interface::favorite_coaches_router(
+        AddFavoriteCoach::new(favorite_coaches.clone(), accounts.clone(), clock.clone()),
+        RemoveFavoriteCoach::new(favorite_coaches.clone()),
+        ListFavoriteCoaches::new(
+            favorite_coaches.clone(),
+            accounts.clone(),
+            ReviewCoachReviewSummaryLookup::new(reviews.clone()),
         ),
         MockTokenService,
     );
     let subscription_plans =
         interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
-    let coach_profile =
-        interface::coach_profile_router(GetCoachProfile::new(accounts.clone()), MockTokenService);
+    let coach_profile = interface::coach_profile_router(
+        GetCoachProfile::new(
+            accounts.clone(),
+            MatchingCoachFavoriteLookup::new(favorite_coaches),
+        ),
+        MockTokenService,
+    );
     let slot_withdrawal = interface::slot_withdrawal_router(
         WithdrawSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         MockTokenService,
@@ -575,6 +604,7 @@ where
     )
     .merge(catalog)
     .merge(coaches)
+    .merge(favorite_coaches_routes)
     .merge(my_videos)
     .merge(my_lesson_completions)
     .merge(subscription_plans)

@@ -3,7 +3,7 @@
 //! アカウント ID・スロット ID（`format: uuid`）のテキスト形式は `application::identity::account_id_uuid`
 //! と `application::scheduling::slot_id_uuid`。
 
-use std::time::SystemTime;
+use std::{collections::BTreeSet, time::SystemTime};
 
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
@@ -48,6 +48,24 @@ pub(crate) fn student_app_sport(value: &str) -> Result<Sport, ApiError> {
         Some(sport) => Ok(sport),
         None => Err(unknown_sport(value)),
     }
+}
+
+/// student-app が扱うスポーツ（ゴルフを除く 5 種類）。
+pub(crate) fn student_app_sports() -> BTreeSet<Sport> {
+    Sport::ALL
+        .into_iter()
+        .filter(|sport| *sport != Sport::Golf)
+        .collect()
+}
+
+/// コーチの提供スポーツを student-app の `Sport` の値の並びにする（`Sport` の enum の順。ゴルフは golf-app の範囲なので
+/// 載せない）。ゴルフだけのコーチは空。
+pub(crate) fn student_app_sports_to_contract(sports: &BTreeSet<Sport>) -> Vec<&'static str> {
+    sports
+        .iter()
+        .filter(|sport| **sport != Sport::Golf)
+        .map(|sport| sport_to_contract(*sport))
+        .collect()
 }
 
 /// admin-web の `Sport`（6 種類すべて）。
