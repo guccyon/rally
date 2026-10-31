@@ -191,6 +191,8 @@ paths:
         各項目には予約したスロット（日時・スポーツ）を添え、スロットにはそのコーチの表示名 `coach_display_name` と
         自己紹介文 `coach_bio` を `searchSlots` と同じく任意の項目として載せる。各項目の予約には、予約した時点のレッスンメニュー
         `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を載せる（メニューの今の中身ではない）。
+        各項目には、今キャンセルしたらビデオ通話の暦月の枠を使うか `cancel_consumes_quota` と、枠を使わずにキャンセルできる境目の
+        時刻 `free_cancel_until`（開始の 24 時間前）を載せる（キャンセル規定。キャンセルできない予約は null。`MyBooking`）。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: []
@@ -1361,13 +1363,28 @@ components:
 
     MyBooking:
       type: object
-      description: 自分の予約の一覧の 1 件。予約（glossary の booking）と、予約したスロット（glossary の slot）
-      required: [booking, slot]
+      description: |
+        自分の予約の一覧の 1 件。予約（glossary の booking）と、予約したスロット（glossary の slot）と、一覧を返した時刻に
+        キャンセルしたらビデオ通話の暦月の枠を使うかの見込み（キャンセル規定。glossary の cancellation_policy。判定は scheduling）
+      required: [booking, slot, cancel_consumes_quota, free_cancel_until]
       properties:
         booking:
           $ref: "#/components/schemas/Booking"
         slot:
           $ref: "#/components/schemas/Slot"
+        cancel_consumes_quota:
+          type: [boolean, "null"]
+          description: |
+            今（一覧を返した時刻に）`cancelBooking` したら、ビデオ通話の暦月の枠を使うか。開始の 24 時間前ちょうど以降なら true
+            （開始後も true）。月額の受講権のない生徒（月額契約の前の体験予約など・ワンショット）の予約は、いつキャンセルしても枠を
+            使わないので false。キャンセルできない予約（`status` が `cancelled`）は null。同じ時刻のキャンセルの判定
+            （`BookingCancelled` の `consumes_quota`）と同じ規則から出す
+        free_cancel_until:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            この時刻より前にキャンセルすれば枠を使わない境目（予約の開始の 24 時間前。この時刻ちょうど以降のキャンセルは枠を使う）。
+            境目のない予約（キャンセルできない予約と、月額の受講権のない生徒の予約。`cancel_consumes_quota` が null か、いつでも false）は null
 
     MyBookingList:
       type: object

@@ -124,6 +124,8 @@ fn app() -> App {
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            clock,
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

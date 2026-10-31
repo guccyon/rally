@@ -415,6 +415,8 @@ where
         ListMyBookings::new(
             bookings.clone(),
             ProfileCoachIntroductionLookup::new(accounts.clone()),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            clock.clone(),
         ),
         ListCoachBookings::new(
             bookings.clone(),
