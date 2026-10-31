@@ -1,6 +1,7 @@
 //! 本部が予約の一覧を日付で見る（admin-web の `listBookings`）ことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の予約を日本時間の日付で絞って
-//! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、本部以外は 403 になることを確かめる。
+//! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でそのコーチの予約だけに絞れること、
+//! 本部以外は 403 になることを確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_bookings.rs`、期間に開始する予約の読み取りは
 //! infra の `tests/pg_booking_repository.rs`。
 //!
@@ -180,6 +181,46 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["bookings"].as_array().unwrap().len(), 1, "{body}");
     assert_eq!(body["bookings"][0]["booking"], booked[2]);
+
+    // コーチで絞る。期間と組み合わせられ、いないコーチは空の一覧
+    let (status, body) = send(
+        &router,
+        get(
+            &format!(
+                "/bookings?from=2026-10-26&to=2026-11-02&coach_id={}",
+                account_id_uuid::format(tanaka)
+            ),
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| &row["booking"])
+            .collect::<Vec<_>>(),
+        [&booked[0], &booked[2]],
+        "{body}"
+    );
+    let (status, body) = send(
+        &router,
+        get(
+            &format!(
+                "/bookings?coach_id={}",
+                account_id_uuid::format(AccountId::from_u128(999))
+            ),
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["bookings"], json!([]));
+    let (status, body) = send(&router, get("/bookings?coach_id=tanaka", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 
     for token in [&tanaka_token, &taro_token] {
         let (status, _) = send(&router, get("/bookings", token)).await;

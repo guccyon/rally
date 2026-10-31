@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部の予約の一覧をコーチで絞る: admin-web の `GET /bookings`（`listBookings`）に任意の `coach_id` を足した。付ければそのコーチの枠への予約だけを返し、付けなければ今までどおりすべてのコーチ。期間の規則と並べ方は変わらない。コーチでない・ない ID は 404 にせず空の一覧、UUID でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えていない（#484）
 - 本部がコーチ 1 人の様子をまとめて見る API: admin-web の契約に `GET /coaches/{coach_id}/overview`（`getCoachOverview`）を足した。表示名・受付の状態（`accepting` / `suspended`）・評価の件数と平均（`getCoachReviewSummary` と同じ）・今月と先月の完了したレッスンの数と月ごとの評価（`getMyLessonStats` と同じ形）・公開中のレッスンメニューの数（スポーツを問わない）を 1 回で返す。照会だけで何も保存しない。コーチでない・ない ID は 404、本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#474）
 - コーチが受けた評価に返信する API: admin-web の契約に `PUT /lesson-reviews/{review_id}/reply`（`replyToLessonReview`）を足した。評価されたコーチだけが評価 1 件に 1 つ返信（200 文字まで）を付けられ、2 回目は上書きする（削除はない）。他のコーチ・本部・生徒は 403、ない評価は 404、空・長すぎる返信は 422。評価の一覧（admin-web・student-app の `listCoachReviews`、admin-web の `listLowRatedLessonReviews`）の各評価に返信 `reply`（文と時刻。なければ null）を足した。DB は `review.lesson_reviews` に返信の列を足す expand だけ。admin-web は型を生成し直し、student-app は手写しの型 `CoachReview` に `reply` を足しただけで、画面は次の段（#389）
 - student-app のコーチの紹介の「このコーチの空き枠を見る」から開いたスロット検索の見出しに、「〇〇 コーチの空き枠」と「絞り込みを外す」を出すようにした（今までの「〇〇 コーチの枠」「すべてのコーチの枠を見る」を置き換え）。そこから今までどおり体験予約できる。スロット検索は、探している間は前の結果を外して読み込み中の旨を、0 件ならその旨（コーチで絞っていれば「このコーチの、このスポーツの予約できる空き枠はありません。」）を、読めなければ検索の欄にその旨と「もう一度読み込む」（同じ絞り込みで探し直す）を出す。API と契約の変更はない（#387）
