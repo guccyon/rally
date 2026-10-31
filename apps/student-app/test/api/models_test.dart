@@ -272,6 +272,30 @@ void main() {
   });
 
 
+  group('CoachReview.fromJson', () {
+    final review = {
+      'review_id': 'r1',
+      'lesson_id': 'l1',
+      'rating': 5,
+      'comment': '分かりやすかった',
+      'submitted_at': '2026-10-26T03:00:00Z',
+    };
+
+    test('評価したレッスンのレッスンメニューを読み、null・項目がなければ null', () {
+      final parsed = CoachReview.fromJson({
+        ...review,
+        'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブ集中レッスン'},
+      });
+      expect(parsed.lessonMenu?.lessonMenuId, 'm1');
+      expect(parsed.lessonMenu?.name, 'サーブ集中レッスン');
+      expect(
+        CoachReview.fromJson({...review, 'lesson_menu': null}).lessonMenu,
+        isNull,
+      );
+      expect(CoachReview.fromJson(review).lessonMenu, isNull);
+    });
+  });
+
   group('Slot.fromJson', () {
     final slot = {
       'slot_id': 's1',
