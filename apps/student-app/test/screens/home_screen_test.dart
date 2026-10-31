@@ -106,6 +106,7 @@ void main() {
       'listMyBookings',
       'getMyEntitlement',
       'listMessageThreads',
+      'listMyVideos',
     ]);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('山田さん、こんにちは'), findsOneWidget);
@@ -264,6 +265,7 @@ void main() {
     'listMyBookings': '予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。',
     'getMyEntitlement': 'ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。',
     'listMessageThreads': 'コーチとのやり取りを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。',
+    'listMyVideos': '返ってきた添削を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。',
   };
   for (final MapEntry(key: operationId, value: text) in failureCases.entries) {
     testWidgets('$operationId が失敗しても他の欄は出し、その欄にだけ読めなかった旨を出す', (tester) async {
@@ -289,8 +291,150 @@ void main() {
         find.text('未読 1'),
         operationId == 'listMessageThreads' ? findsNothing : findsOneWidget,
       );
+      expect(
+        find.text('鈴木 コーチ'),
+        operationId == 'listMyVideos' ? findsNothing : findsOneWidget,
+      );
+      // 読めなかったときは欄を隠さず、見出しと旨を出す
+      expect(find.text('返ってきた添削'), findsOneWidget);
     });
   }
+
+  testWidgets('返ってきた添削は、返却済みの動画を返却の新しい順に 3 件まで、コーチの名前・返却の日時・メニューで出す', (
+    tester,
+  ) async {
+    MyVideo returned(
+      String id, {
+      required Duration returnedAgo,
+      String? coachDisplayName = '佐藤',
+      VideoLessonMenu? lessonMenu,
+    }) => MyVideo(
+      videoId: id,
+      coachId: Fixtures.coachId,
+      coachDisplayName: coachDisplayName,
+      sport: Sport.tennis,
+      submittedAt: Fixtures.now.subtract(const Duration(days: 30)),
+      reviewStatus: VideoReviewStatus.returned,
+      returnedAt: Fixtures.now.subtract(returnedAgo),
+      lessonMenu: lessonMenu,
+    );
+    final newest = returned(
+      'r-1h',
+      returnedAgo: const Duration(hours: 1),
+      lessonMenu: Fixtures.videoLessonMenu,
+    );
+    final second = returned(
+      'r-1d',
+      returnedAgo: const Duration(days: 1),
+      coachDisplayName: null,
+    );
+    final third = returned(
+      'r-2d',
+      returnedAgo: const Duration(days: 2),
+      coachDisplayName: '鈴木',
+    );
+    final fourth = returned('r-5d', returnedAgo: const Duration(days: 5));
+    final api = FakeStudentApi(
+      // 送った時刻の新しい順（契約の並び）。返却の順とは違う。添削待ちは出さない
+      myVideos: [
+        Fixtures.myVideo(
+          videoId: 'waiting',
+          submittedAgo: const Duration(minutes: 5),
+        ),
+        fourth,
+        third,
+        newest,
+        second,
+      ],
+    );
+    final container = await pumpHome(tester, api);
+
+    expect(
+      container
+          .read(studentFlowProvider.notifier)
+          .returnedVideos()
+          .map((v) => v.videoId),
+      ['r-1h', 'r-1d', 'r-2d'],
+    );
+    expect(find.text('返ってきた添削'), findsOneWidget);
+    Finder rowWith(String title, String subtitle) => find.ancestor(
+      of: find.text(subtitle),
+      matching: find.widgetWithText(ListTile, title),
+    );
+    final rows = [
+      rowWith(
+        '佐藤 コーチ',
+        '返却: ${formatDateTime(newest.returnedAt!)}・メニュー: サーブの動画添削',
+      ),
+      rowWith('担当コーチ', '返却: ${formatDateTime(second.returnedAt!)}'),
+      rowWith('鈴木 コーチ', '返却: ${formatDateTime(third.returnedAt!)}'),
+    ];
+    for (final row in rows) {
+      expect(row, findsOneWidget);
+    }
+    // 4 件目は出さない
+    expect(
+      find.text('返却: ${formatDateTime(fourth.returnedAt!)}'),
+      findsNothing,
+    );
+    // 返却の新しい順に上から並べる
+    final tops = [for (final row in rows) tester.getTopLeft(row).dy];
+    expect(tops, orderedEquals([...tops]..sort()));
+  });
+
+  testWidgets('返却済みの動画がなければ、返ってきた添削の欄を出さない', (tester) async {
+    final api = FakeStudentApi(
+      myVideos: [
+        Fixtures.myVideo(
+          videoId: 'waiting',
+          submittedAgo: const Duration(hours: 1),
+        ),
+      ],
+    );
+    await pumpHome(tester, api);
+
+    expect(find.text('返ってきた添削'), findsNothing);
+    expect(find.textContaining('返却:'), findsNothing);
+    expect(find.textContaining('読み込めませんでした'), findsNothing);
+  });
+
+  testWidgets('返ってきた添削の行から添削結果を開き（完了記録には進めない）、閉じるとホームに戻る', (tester) async {
+    final returned = Fixtures.myVideos.firstWhere(
+      (v) => v.videoId == 'video-returned',
+    );
+    final api = FakeStudentApi(
+      videoReviews: {returned.videoId: Fixtures.reviewReturnedWithAi},
+    );
+    final container = await pumpHome(tester, api);
+    api.calls.clear();
+
+    await tapText(tester, '鈴木 コーチ');
+
+    expect(api.calls, ['getVideoReview']);
+    expect(api.requests.last, returned.videoId);
+    var state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.myVideoReview);
+    expect(state.review, isNull);
+    expect(find.text('添削結果'), findsOneWidget);
+    expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
+    expect(find.text('完了の記録へ進む'), findsNothing);
+
+    await tester.tap(find.byTooltip('添削結果を閉じる'));
+    await tester.pumpAndSettle();
+    state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.home);
+    expect(find.text('返ってきた添削'), findsOneWidget);
+  });
+
+  testWidgets('返ってきた添削の添削結果を読めなければホームに留まり、失敗の文言を出す', (tester) async {
+    final api = FakeStudentApi()..videoReviewFailures.add('video-returned');
+    final container = await pumpHome(tester, api);
+
+    await tapText(tester, '鈴木 コーチ');
+
+    expect(container.read(studentFlowProvider).step, FlowStep.home);
+    expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsOneWidget);
+  });
 
   testWidgets('読み直して読めたら、読めなかった旨を消す', (tester) async {
     final api = FakeStudentApi(
@@ -425,6 +569,7 @@ void main() {
       'listMyBookings',
       'getMyEntitlement',
       'listMessageThreads',
+      'listMyVideos',
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);

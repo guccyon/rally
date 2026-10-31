@@ -11,7 +11,7 @@ import '../api/student_api.dart';
 enum FlowStep {
   register,
 
-  /// ホーム（登録後に最初に開く。これからの予約・今月のビデオ通話の残り・コーチとのやり取り・添削の依頼の入口）
+  /// ホーム（登録後に最初に開く。これからの予約・今月のビデオ通話の残り・コーチとのやり取り・返ってきた添削・添削の依頼の入口）
   home,
   slotSearch,
   bookingPending,
@@ -39,7 +39,7 @@ enum FlowStep {
   /// 自分が送った動画の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
   myVideos,
 
-  /// 自分の動画の一覧から開いた、返却済みの動画の添削結果（閉じると自分の動画の一覧に戻る）
+  /// 自分の動画の一覧かホームの「返ってきた添削」から開いた、返却済みの動画の添削結果（閉じると開いた段に戻る）
   myVideoReview;
 
   bool get isChat => this == messageThreads || this == messages;
@@ -63,6 +63,9 @@ enum HomeSection {
 
   /// コーチとのやり取り（`listMessageThreads`）
   threads,
+
+  /// 返ってきた添削（`listMyVideos`）
+  videos,
 }
 
 /// 添削の依頼（チャットの [StudentFlowNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
@@ -120,6 +123,7 @@ class StudentFlowState {
     this.videosReturnStep,
     List<MyVideo>? myVideos,
     this.myVideoReview,
+    this.videoReviewReturnStep,
     // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
     // ignore: prefer_initializing_formals
   }) : _reviewedLessonIds = reviewedLessonIds,
@@ -249,6 +253,9 @@ class StudentFlowState {
   /// 自分の動画の一覧から開いた動画の添削（`getVideoReview`）。一周シナリオの [review] とは別に持つ
   final VideoReview? myVideoReview;
 
+  /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧かホーム）
+  final FlowStep? videoReviewReturnStep;
+
   /// `errorMessage` は引き継がない（渡さなければ消える）。
   StudentFlowState copyWith({
     FlowStep? step,
@@ -290,6 +297,7 @@ class StudentFlowState {
     FlowStep? videosReturnStep,
     List<MyVideo>? myVideos,
     VideoReview? myVideoReview,
+    FlowStep? videoReviewReturnStep,
   }) => StudentFlowState(
     step: step ?? this.step,
     busy: busy ?? this.busy,
@@ -336,6 +344,7 @@ class StudentFlowState {
     videosReturnStep: videosReturnStep ?? this.videosReturnStep,
     myVideos: myVideos ?? this.myVideos,
     myVideoReview: myVideoReview ?? this.myVideoReview,
+    videoReviewReturnStep: videoReviewReturnStep ?? this.videoReviewReturnStep,
   );
 }
 
@@ -404,7 +413,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => _run(_loadHome);
 
-  /// ホームの欄（自分の予約・受講権・スレッド）を並べて読む。どれかが失敗しても他の欄は出す
+  /// ホームの欄（自分の予約・受講権・スレッド・自分の動画）を並べて読む。どれかが失敗しても他の欄は出す
   /// （失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
   /// 受講権の 404 は失敗ではなく、月額契約の前（[StudentFlowState.noEntitlement]）
   Future<void> _loadHome() async {
@@ -421,6 +430,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       load(HomeSection.bookings, _loadMyBookings),
       load(HomeSection.entitlement, _loadEntitlement),
       load(HomeSection.threads, _loadThreads),
+      load(HomeSection.videos, _loadMyVideos),
     ]);
     if (!ref.mounted) return;
     state = state.copyWith(homeFailures: Set.unmodifiable(failures));
@@ -460,6 +470,17 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       for (final thread in state.threads ?? const <MessageThread>[])
         if (notable(thread)) thread,
     ]..sort((a, b) => lastAt(b).compareTo(lastAt(a)));
+  }
+
+  /// ホームに出す返ってきた添削: 返却済みの動画を、返却の新しい順に [limit] 件まで
+  List<MyVideo> returnedVideos({int limit = 3}) {
+    DateTime returnedAt(MyVideo video) =>
+        video.returnedAt ?? video.submittedAt;
+    final returned = [
+      for (final video in state.myVideos ?? const <MyVideo>[])
+        if (video.reviewStatus == VideoReviewStatus.returned) video,
+    ]..sort((a, b) => returnedAt(b).compareTo(returnedAt(a)));
+    return returned.take(limit).toList();
   }
 
   /// ホームの「添削を依頼する」。スレッドが 1 つならそのスレッドを開いてすぐに添削の依頼を出し、
@@ -993,15 +1014,21 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void closeMyVideos() =>
       state = state.copyWith(step: state.videosReturnStep ?? FlowStep.home);
 
-  /// 自分の動画の一覧から、返却済みの動画の添削結果を開く（`getVideoReview`）。
-  /// 読めたら添削結果の画面へ移り、読めなければ一覧に留まって失敗の文言を出す
+  /// 自分の動画の一覧かホームの「返ってきた添削」から、返却済みの動画の添削結果を開く（`getVideoReview`）。
+  /// 読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
   Future<void> openMyVideoReview(MyVideo video) => _run(() async {
     final review = await _api.getVideoReview(video.videoId);
-    state = state.copyWith(myVideoReview: review, step: FlowStep.myVideoReview);
+    state = state.copyWith(
+      myVideoReview: review,
+      videoReviewReturnStep: state.step,
+      step: FlowStep.myVideoReview,
+    );
   });
 
-  /// 自分の動画の一覧から開いた添削結果を閉じて、一覧に戻る
-  void closeMyVideoReview() => state = state.copyWith(step: FlowStep.myVideos);
+  /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧かホーム）に戻る
+  void closeMyVideoReview() => state = state.copyWith(
+    step: state.videoReviewReturnStep ?? FlowStep.myVideos,
+  );
 
   Future<void> _loadMyVideos() async {
     final list = await _api.listMyVideos();
