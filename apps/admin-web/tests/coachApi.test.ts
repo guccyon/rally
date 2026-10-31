@@ -189,6 +189,30 @@ describe("coachApi", () => {
     expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
+  test("replyToLessonReview はトークンを付けて PUT /api/lesson-reviews/{review_id}/reply を呼び、付けたあとの返信を返す", async () => {
+    const reply = { comment: "ありがとうございます！", replied_at: "2026-10-26T03:00:00Z" };
+    const { api, fetchMock } = setup(json(200, reply));
+    const result = await api.replyToLessonReview("33333333-3333-4333-8333-333333333333", {
+      comment: "ありがとうございます！",
+    });
+    expect(result).toEqual({ ok: true, data: reply });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe(
+      "/api/lesson-reviews/33333333-3333-4333-8333-333333333333/reply",
+    );
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+    expect(await request.json()).toEqual({ comment: "ありがとうございます！" });
+  });
+
+  test("他のコーチの評価への返信（403）は権限の文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.replyToLessonReview("99999999-9999-4999-8999-999999999999", {
+      comment: "ありがとうございます",
+    });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
+  });
+
   test("listMyCoachBookings はトークンを付けて GET /api/coaches/me/bookings を呼び、返った順のまま返す", async () => {
     const list = {
       bookings: [

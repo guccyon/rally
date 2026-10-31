@@ -246,7 +246,10 @@ function review(n: number, rating: number, comment: string, hoursAgo: number, me
 const REVIEWS: Schemas["CoachReview"][] = [
   review(1, 5, "打点の説明がとてもわかりやすかったです。", 20),
   review(2, 4, "楽しく練習できました。", 24 * 5, false),
-  review(3, 5, "次回もお願いします！", 24 * 12),
+  {
+    ...review(3, 5, "次回もお願いします！", 24 * 12),
+    reply: { comment: "ありがとうございます。次回もお待ちしています！", replied_at: at(-24 * 11) },
+  },
 ];
 
 // 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
