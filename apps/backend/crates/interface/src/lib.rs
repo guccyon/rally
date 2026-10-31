@@ -6,6 +6,7 @@
 mod accounts;
 pub mod auth;
 mod bookings;
+mod coach_acceptances;
 mod coach_bookings;
 mod coach_profiles;
 mod coach_slots;
@@ -70,7 +71,7 @@ use application::{
     },
     matching::{
         CoachCandidateLookup, CoachReviewSummaryLookup, ListCoachesForStudent,
-        PublishedLessonMenuCountLookup, StudentSportLookup,
+        PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
     },
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
@@ -80,16 +81,19 @@ use application::{
         GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
         NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
     },
-    profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile},
+    profile::{
+        CoachAcceptanceLookup, GetCoachProfile, ListCoaches, UpdateCoachProfile,
+        UpdateStudentProfile,
+    },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         ReviewedLessonMenuLookup, SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
-        PublishSlot, QuotaGate, SearchSlots, SlotRepository, StudentDisplayNameLookup,
-        WithdrawSlot,
+        BookingRepository, CancelBooking, CoachAcceptanceRepository, CoachIntroductionLookup,
+        ConfirmBooking, CreateBooking, GetSlotSupply, LessonMenuLookup, ListCoachBookings,
+        ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate, ResumeCoach, SearchSlots,
+        SlotRepository, StudentDisplayNameLookup, SuspendCoach, WithdrawSlot,
     },
 };
 use axum::{
@@ -439,22 +443,27 @@ where
 ///
 /// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
 /// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
-pub fn coaches_router<R, S, C, V, M, T>(
-    list_coaches: ListCoaches<R>,
-    list_coaches_for_student: ListCoachesForStudent<S, C, V, M>,
+pub fn coaches_router<R, A, S, C, V, M, U, T>(
+    list_coaches: ListCoaches<R, A>,
+    list_coaches_for_student: ListCoachesForStudent<S, C, V, M, U>,
     tokens: T,
 ) -> Router
 where
     R: AccountRepository + 'static,
+    A: CoachAcceptanceLookup + 'static,
     S: StudentSportLookup + 'static,
     C: CoachCandidateLookup + 'static,
     V: CoachReviewSummaryLookup + 'static,
     M: PublishedLessonMenuCountLookup + 'static,
+    U: SuspendedCoachLookup + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/coaches", get(coaches::list_coaches::<R, S, C, V, M>))
+        .route(
+            "/coaches",
+            get(coaches::list_coaches::<R, A, S, C, V, M, U>),
+        )
         .route_layer(require_role(&[Role::Headquarters, Role::Student]))
         .with_state(Arc::new(coaches::CoachesState {
             list_coaches,
@@ -699,6 +708,39 @@ where
         .route_layer(require_role(&[Role::Coach]))
         .with_state(Arc::new(slot_withdrawals::SlotWithdrawalsState {
             withdraw_slot,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部によるコーチの受付の停止・再開（admin-web の `POST /coaches/{coach_id}/suspend`・`POST /coaches/{coach_id}/resume`）
+/// のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに
+/// `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。
+pub fn coach_acceptance_router<R, I, T>(
+    suspend_coach: SuspendCoach<R, I>,
+    resume_coach: ResumeCoach<R, I>,
+    tokens: T,
+) -> Router
+where
+    R: CoachAcceptanceRepository + 'static,
+    I: CoachIntroductionLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}/suspend",
+            post(coach_acceptances::suspend_coach::<R, I>),
+        )
+        .route(
+            "/coaches/{coach_id}/resume",
+            post(coach_acceptances::resume_coach::<R, I>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(coach_acceptances::CoachAcceptancesState {
+            suspend_coach,
+            resume_coach,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

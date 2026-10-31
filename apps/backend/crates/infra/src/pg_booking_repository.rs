@@ -13,7 +13,9 @@ use application::{
 use domain::{
     catalog::{LessonDuration, LessonMenuName},
     identity::AccountId,
-    scheduling::{Booking, BookingId, BookingLessonMenu, SchedulingError, Slot, SlotId},
+    scheduling::{
+        Booking, BookingId, BookingLessonMenu, CoachAcceptance, SchedulingError, Slot, SlotId,
+    },
 };
 use sqlx::{
     FromRow, PgPool, Postgres, Row, Transaction,
@@ -22,6 +24,7 @@ use sqlx::{
 };
 
 use crate::{
+    pg_coach_acceptance_repository::find_coach_acceptance,
     pg_slot_repository::{SlotRow, lock_slot, slot_columns, slot_from_row, slot_row_at},
     pg_support::{lock, timestamp},
     scheduling_values::{booking_status_from_value, booking_status_value, slot_status_value},
@@ -122,6 +125,13 @@ impl PgBookingRepository {
 impl BookingRepository for PgBookingRepository {
     fn next_id(&self) -> BookingId {
         booking_id_uuid::from_uuid(Uuid::new_v4())
+    }
+
+    async fn find_coach_acceptance(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<CoachAcceptance, Unavailable> {
+        find_coach_acceptance(&self.pool, coach_id).await
     }
 
     async fn find_slot(&self, slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {

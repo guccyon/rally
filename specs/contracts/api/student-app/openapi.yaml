@@ -83,6 +83,8 @@ paths:
       summary: スロットの検索
       description: |
         コーチが公開している予約枠のうち、公開中（`open`。確定した予約が定員に達していない）のものを返す。
+        受付を止めているコーチ（admin-web の `suspendCoach`。glossary の coach_acceptance が停止中）の枠は返さない
+        （`coach_id` でそのコーチを指定しても返さない。`limit` は除いた後の件数）。
         各枠には定員 `capacity`（1 はマンツーマン、2 以上はグループレッスン）と残りの席 `remaining_seats` を載せる。
         未確定の予約で席が埋まった枠（`remaining_seats` が 0）も、確定するまでは返す（定員 1 の枠の今までの振る舞いと同じ）。
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
@@ -150,7 +152,10 @@ paths:
         予約できるのは公開中のスロットだけ（閉じたスロットはないスロットと同じく 404）で、1 つのスロットに有効な
         （キャンセルされていない）予約はスロットの定員 `capacity` まで（満席は 409 `slot_already_booked`。定員 1 なら 1 件まで）。
         同じ生徒が同じスロットに持てる有効な予約は 1 件まで（409 `slot_already_booked`）。体験予約はその生徒の初回の予約だけ
-        （キャンセルされていない予約があれば 409 `trial_already_used`）。生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
+        （キャンセルされていない予約があれば 409 `trial_already_used`）。スロットのコーチが受付を止めていれば（admin-web の
+        `suspendCoach`。glossary の coach_acceptance が停止中）409 `coach_not_accepting_bookings`（スロットの状態の判定の後。
+        閉じたスロットは 404、満席は 409 `slot_already_booked` のまま）。受付を止める前に入った予約の確定・キャンセルは止めない。
+        生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
         月額契約の生徒のビデオ通話の暦月の枠（上限は契約プランで決まる。不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
         スロットにレッスンメニューが結びついていれば、予約した時点のメニューの ID・名前・1 回の時間を予約に写して残す（`lesson_menu`）。
         メニューが予約の時点で公開中でなければ、メニューなしの予約にする（予約は断らない。`lesson_menu` は null）。
@@ -686,6 +691,7 @@ paths:
         - ゴルフは golf-app の範囲なので扱わない。`sport` に `golf` を付けたら（student-app の `Sport` の値でないので）422。
           `sport` を省いて、生徒自身のスポーツがゴルフのとき（student-app からは登録できない）は `coaches` を空の配列にする
         - `sport` を省いて、トークンが示す生徒のアカウントがなければ 401
+        - 受付を止めているコーチ（admin-web の `suspendCoach`。glossary の coach_acceptance が停止中）は載せない
         - 照会だけで、何も保存しない
 
         行動イベントは発火しない（読み取りだけ）。
@@ -1196,7 +1202,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（予約済みのスロット、ビデオ通話の暦月の枠の超過など）
+      description: 現在の状態では実行できない（予約済みのスロット、ビデオ通話の暦月の枠の超過、受付を止めているコーチの枠など）
       content:
         application/json:
           schema:
@@ -2469,6 +2475,7 @@ components:
         - lesson_already_completed
         - chat_not_entitled
         - lesson_already_reviewed
+        - coach_not_accepting_bookings
 
     Error:
       type: object

@@ -25,12 +25,12 @@ use application::{
     },
     identity::{AccountRepository, GetAccount, RegisterAccount},
     in_memory::{
-        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
-        InMemoryMessageThreadRepository, InMemoryNotificationRepository,
-        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryCoachAcceptanceRepository,
+        InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
+        InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
@@ -61,18 +61,20 @@ use application::{
         ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
-        SearchSlots, SlotRepository, WithdrawSlot,
+        BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
+        GetSlotSupply, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, ResumeCoach,
+        SchedulingBookingLookup, SchedulingCoachAcceptanceLookup, SearchSlots, SlotRepository,
+        SuspendCoach, WithdrawSlot,
     },
 };
 use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
-    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
-    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
-    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
+    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgCoachAcceptanceRepository,
+    PgEntitlementRepository, PgLessonCompletionRepository, PgLessonMenuRepository,
+    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
+    PgNotificationRepository, PgNotificationSettingsRepository, PgSlotRepository,
+    PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -129,6 +131,11 @@ pub fn router() -> Router {
 /// 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は完了記録の保存先から生徒の完了したレッスンを読み、
 /// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
 /// 付けたかは評価の保存先から（`ReviewLessonCompletionReviewLookup`）読む（完了記録は profile・review を直接読まない）。
+///
+/// 本部によるコーチの受付の停止・再開（`POST /coaches/{coach_id}/suspend`・`/resume`）は、コーチがいるかをアカウントの
+/// 保存先に問い合わせ（`ProfileCoachIntroductionLookup`）、コーチの受付の保存先に書く（`SuspendCoach`・`ResumeCoach`）。
+/// 受付の状態はスロットの検索と予約の作成が同じ中身を読み、コーチの一覧（`GET /coaches`）は scheduling に問い合わせて
+/// 添える・除く（`SchedulingCoachAcceptanceLookup`）。インメモリの組み立てではスロットの保存先と中身を共有する。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -194,9 +201,11 @@ fn in_memory_repositories() -> Repositories<
     InMemoryNotificationSettingsRepository,
     InMemoryNotificationRepository,
     InMemoryLessonMenuRepository,
+    InMemoryCoachAcceptanceRepository,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
+        coach_acceptances: slots.coach_acceptances(),
         accounts: InMemoryAccountRepository::default(),
         bookings: InMemoryBookingRepository::new(slots.clone()),
         slots,
@@ -249,6 +258,7 @@ where
             reviews: PgLessonReviewRepository::new(pool.clone()),
             notification_settings: PgNotificationSettingsRepository::new(pool.clone()),
             notifications: PgNotificationRepository::new(pool.clone()),
+            coach_acceptances: PgCoachAcceptanceRepository::new(pool.clone()),
             lesson_menus: PgLessonMenuRepository::new(pool),
         },
         clock,
@@ -267,8 +277,9 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
     router.merge(interface::version::router(var(APP_VERSION_VAR).as_deref()))
 }
 
-/// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J> {
+/// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。コーチの受付の保存先も、スロットの検索と
+/// 予約の作成が読むのと同じ中身を読み書きする。
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -281,11 +292,13 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J> {
     notification_settings: Z,
     notifications: K,
     lesson_menus: J,
+    coach_acceptances: Q,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J>,
+#[allow(clippy::type_complexity)]
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q>,
     clock: C,
     analytics: A,
     push: P,
@@ -304,6 +317,7 @@ where
     Z: NotificationSettingsRepository + Clone + 'static,
     K: NotificationRepository + Clone + 'static,
     J: LessonMenuRepository + Clone + 'static,
+    Q: CoachAcceptanceRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + 'static,
@@ -322,6 +336,7 @@ where
         notification_settings,
         notifications,
         lesson_menus,
+        coach_acceptances,
     } = repositories;
     let catalog = interface::catalog_router(
         CreateLessonMenu::new(lesson_menus.clone(), accounts.clone(), clock.clone()),
@@ -353,12 +368,27 @@ where
         MockTokenService,
     );
     let coaches = interface::coaches_router(
-        ListCoaches::new(accounts.clone()),
+        ListCoaches::new(
+            accounts.clone(),
+            SchedulingCoachAcceptanceLookup::new(coach_acceptances.clone()),
+        ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
             ProfileCoachCandidateLookup::new(accounts.clone()),
             ReviewCoachReviewSummaryLookup::new(reviews.clone()),
             CatalogPublishedLessonMenuCountLookup::new(lesson_menus.clone()),
+            SchedulingCoachAcceptanceLookup::new(coach_acceptances.clone()),
+        ),
+        MockTokenService,
+    );
+    let coach_acceptance = interface::coach_acceptance_router(
+        SuspendCoach::new(
+            coach_acceptances.clone(),
+            ProfileCoachIntroductionLookup::new(accounts.clone()),
+        ),
+        ResumeCoach::new(
+            coach_acceptances,
+            ProfileCoachIntroductionLookup::new(accounts.clone()),
         ),
         MockTokenService,
     );
@@ -535,4 +565,5 @@ where
     .merge(my_notifications)
     .merge(slot_withdrawal)
     .merge(lesson_stats)
+    .merge(coach_acceptance)
 }

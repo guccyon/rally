@@ -68,7 +68,13 @@ describe("headquartersApi", () => {
 
   test("listCoaches は GET /api/coaches を呼び、コーチの一覧を返す", async () => {
     const list = {
-      coaches: [{ coach_id: "22222222-2222-4222-8222-222222222222", display_name: "山田コーチ" }],
+      coaches: [
+        {
+          coach_id: "22222222-2222-4222-8222-222222222222",
+          display_name: "山田コーチ",
+          acceptance_status: "accepting",
+        },
+      ],
     };
     const { api, fetchMock } = setup(json(200, list));
     const result = await api.listCoaches();
