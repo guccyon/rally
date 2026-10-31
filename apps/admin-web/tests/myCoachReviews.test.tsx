@@ -8,6 +8,7 @@ import { MyCoachReviews } from "@/components/coach/MyCoachReviews";
 import { formatDateTime } from "@/components/labels";
 
 import { EMPTY_LESSON_STATS } from "./lessonStatsFixtures";
+import { noNotifications } from "./notificationFixtures";
 
 // 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
 const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
@@ -164,6 +165,7 @@ describe("自分の評価", () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
       // 開いたときに出す「対応待ち」と、その上の実績が呼ぶ。
+      listMyNotifications: noNotifications(),
       getMyLessonStats: vi.fn<CoachApi["getMyLessonStats"]>(async () => ({
         ok: true,
         data: EMPTY_LESSON_STATS,

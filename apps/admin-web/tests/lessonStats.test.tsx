@@ -8,6 +8,7 @@ import { LessonStats } from "@/components/coach/LessonStats";
 import { formatMonth } from "@/components/labels";
 
 import { EMPTY_LESSON_STATS, monthlyStats } from "./lessonStatsFixtures";
+import { noNotifications } from "./notificationFixtures";
 
 // 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
 const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
@@ -113,6 +114,7 @@ describe("コーチの今月と先月の実績", () => {
 
   test("コーチのホーム（開いたときの「対応待ち」）の上に出し、ほかのメニューでは出さない", async () => {
     const api = {
+      listMyNotifications: noNotifications(),
       getMyLessonStats: vi.fn<CoachApi["getMyLessonStats"]>(async () => ({ ok: true, data: STATS })),
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
