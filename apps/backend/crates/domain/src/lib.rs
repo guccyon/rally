@@ -10,6 +10,7 @@ mod error;
 pub mod identity;
 pub mod lesson;
 pub mod live_lesson;
+pub mod matching;
 pub mod messaging;
 pub mod notification;
 pub mod profile;
