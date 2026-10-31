@@ -76,6 +76,18 @@ String formatTimeRange(DateTime start, DateTime end) {
 
 const _weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 
+/// 枠を使わずにキャンセルできる境目の案内（端末のタイムゾーンで）。
+/// 例: `10月28日 3時までなら、ビデオ通話の枠を使わずにキャンセルできます。`（分があれば `3時30分`）
+String freeCancelUntilLabel(DateTime until) {
+  final local = until.toLocal();
+  final minute = local.minute == 0 ? '' : '${local.minute}分';
+  return '${local.month}月${local.day}日 ${local.hour}時$minuteまでなら、'
+      'ビデオ通話の枠を使わずにキャンセルできます。';
+}
+
+/// 今キャンセルすると枠を使う予約の案内（自分の予約の行とキャンセルの確認で同じ文）
+const cancelConsumesQuotaNotice = '今キャンセルすると、今月のビデオ通話の枠を 1 回使います。';
+
 /// 生徒から見た送り手
 String messageSenderLabel(MessageSenderRole role) => switch (role) {
   MessageSenderRole.student => '自分',

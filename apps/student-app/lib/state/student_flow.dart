@@ -762,15 +762,14 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       booking.status != BookingStatus.cancelled &&
       booking.startsAt.isAfter(_now());
 
-  /// 今キャンセルすると今月のビデオ通話の回数を使うか（確認の文言を添えるかの目安）。
-  /// 回数を使うかを決めるのはサーバー（scheduling のキャンセル規定。開始 24 時間前ちょうどからを含む）で、
-  /// ここは確認に添える文言のためだけに同じ境界で見る。回数の制約があるのは月額契約の生徒だけ（docs/adr/0005 の 6）
-  bool cancellationUsesQuota(Booking booking) =>
-      ref.read(subscriptionProvider).entitlement?.contractType ==
-          ContractType.subscription &&
-      !_now().add(_quotaConsumingNotice).isBefore(booking.startsAt);
-
-  static const _quotaConsumingNotice = Duration(hours: 24);
+  /// 今キャンセルすると今月のビデオ通話の枠を使うか（行の案内と確認の文言を添えるかの目安）。
+  /// 決めるのはサーバー（scheduling のキャンセル規定）で、ここは `listMyBookings` の見込みを読むだけ。
+  /// 境目 `free_cancel_until` があれば今の時刻と比べ（一覧を読んだあとで境目を過ぎても合うように。境目ちょうどからを含む）、
+  /// なければ `cancel_consumes_quota` のまま（null は使わないとみなす）
+  bool cancellationUsesQuota(MyBooking item) => switch (item.freeCancelUntil) {
+    final until? => !_now().isBefore(until),
+    null => item.cancelConsumesQuota ?? false,
+  };
 
   /// `cancelBooking`。キャンセルできたら一覧のその予約を応答で置き換える。
   Future<void> cancelBooking(Booking booking) => run(() async {

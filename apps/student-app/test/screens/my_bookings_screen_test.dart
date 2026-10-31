@@ -28,7 +28,7 @@ void main() {
     student: Fixtures.student,
   );
 
-  const quotaNotice = '今キャンセルすると、今月のビデオ通話の回数を 1 回使います。';
+  const quotaNotice = cancelConsumesQuotaNotice;
   const cancelLabel = 'この予約をキャンセルする';
 
   MyBooking bookingOf(String bookingId) =>
@@ -39,6 +39,14 @@ void main() {
 
   /// 一覧の 1 件（日時の行で探す）
   Finder cardOf(MyBooking item) => find.widgetWithText(Card, timeOf(item));
+
+  /// キャンセルの確認の中の文
+  Finder inDialog(String text) =>
+      find.descendant(of: find.byType(AlertDialog), matching: find.text(text));
+
+  /// 行の中の文
+  Finder inCard(MyBooking item, String text) =>
+      find.descendant(of: cardOf(item), matching: find.text(text));
 
   Future<void> openBookings(WidgetTester tester) async {
     await tester.tap(find.byTooltip('自分の予約'));
@@ -213,7 +221,7 @@ void main() {
 
     expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
     expect(find.text('${timeOf(later)} のテニスの予約をキャンセルします。'), findsOneWidget);
-    expect(find.text(quotaNotice), findsNothing);
+    expect(inDialog(quotaNotice), findsNothing);
     expect(api.calls, ['listMyBookings']);
 
     await tapText(tester, 'キャンセルする');
@@ -260,7 +268,7 @@ void main() {
     await tapCancelOf(tester, soon);
 
     expect(find.text('${timeOf(soon)} のサッカーの予約をキャンセルします。'), findsOneWidget);
-    expect(find.text(quotaNotice), findsOneWidget);
+    expect(inDialog(quotaNotice), findsOneWidget);
 
     await tapText(tester, 'やめる');
 
@@ -300,24 +308,137 @@ void main() {
       await tapCancelOf(tester, later);
 
       expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
-      expect(find.text(quotaNotice), notice ? findsOneWidget : findsNothing);
+      expect(inDialog(quotaNotice), notice ? findsOneWidget : findsNothing);
     });
   }
 
-  testWidgets('月額契約の前は、24 時間を切っていても回数のことは添えない', (tester) async {
-    final api = FakeStudentApi();
+  testWidgets(
+    '月額の受講権のない生徒の予約（cancel_consumes_quota が false・free_cancel_until が null）は、24 時間を切っていても行にも確認にも枠のことを出さない',
+    (tester) async {
+      final soon = Fixtures.myBooking(
+        bookingId: 'booking-trial-soon',
+        startsIn: const Duration(hours: 1),
+        subscribed: false,
+      );
+      await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: FakeStudentApi(myBookings: [soon]),
+        initial: beforeSubscription,
+      );
+      await openBookings(tester);
+
+      expect(find.text(cancelLabel), findsOneWidget);
+      expect(find.text(quotaNotice), findsNothing);
+      expect(find.textContaining('枠を使わずに'), findsNothing);
+
+      await tapCancelOf(tester, soon);
+
+      expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
+      expect(find.text(quotaNotice), findsNothing);
+    },
+  );
+
+  testWidgets('境目の前の予約の行には、枠を使わずにキャンセルできる日時を出し、確認には枠のことを添えない', (tester) async {
+    final later = bookingOf('booking-later');
     await pumpScreen(
       tester,
       const StudentFlowScreen(),
-      api: api,
-      initial: beforeSubscription,
+      api: FakeStudentApi(),
+      initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
 
-    await tapCancelOf(tester, bookingOf('booking-soon'));
+    final until = later.freeCancelUntil!.toLocal();
+    final label =
+        '${until.month}月${until.day}日 ${until.hour}時までなら、'
+        'ビデオ通話の枠を使わずにキャンセルできます。';
+    expect(freeCancelUntilLabel(later.freeCancelUntil!), label);
+    expect(inCard(later, label), findsOneWidget);
+    expect(inCard(later, quotaNotice), findsNothing);
 
-    expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
-    expect(find.text(quotaNotice), findsNothing);
+    await tapCancelOf(tester, later);
+    expect(inDialog(quotaNotice), findsNothing);
+  });
+
+  testWidgets('境目を過ぎた予約の行には、今キャンセルすると今月の枠を 1 回使うことを出し、確認にも添える', (tester) async {
+    final soon = bookingOf('booking-soon');
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: FakeStudentApi(),
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+
+    expect(inCard(soon, quotaNotice), findsOneWidget);
+    expect(
+      find.descendant(
+        of: cardOf(soon),
+        matching: find.textContaining('枠を使わずに'),
+      ),
+      findsNothing,
+    );
+
+    await tapCancelOf(tester, soon);
+    expect(inDialog(quotaNotice), findsOneWidget);
+  });
+
+  testWidgets('一覧を読んだあとで境目を過ぎたら、今の時刻で枠を使う側の案内にする', (tester) async {
+    // 一覧は Fixtures.now の見込み（境目の前で cancel_consumes_quota が false）のまま、今は境目ちょうど
+    final later = bookingOf('booking-later');
+    expect(later.cancelConsumesQuota, isFalse);
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: FakeStudentApi(),
+      initial: afterSubscription,
+      subscription: subscribed,
+      now: later.freeCancelUntil,
+    );
+    await openBookings(tester);
+
+    expect(inCard(later, quotaNotice), findsOneWidget);
+    expect(
+      find.descendant(
+        of: cardOf(later),
+        matching: find.textContaining('枠を使わずに'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('境目が null の予約（キャンセル済み・始まった予約）には枠の案内を出さない', (tester) async {
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: FakeStudentApi(),
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+
+    final cancelled = bookingOf('booking-cancelled');
+    expect(cancelled.cancelConsumesQuota, isNull);
+    expect(cancelled.freeCancelUntil, isNull);
+    for (final id in ['booking-cancelled', 'booking-past']) {
+      final card = cardOf(bookingOf(id));
+      expect(
+        find.descendant(of: card, matching: find.textContaining('枠を')),
+        findsNothing,
+        reason: id,
+      );
+    }
+  });
+
+  test('境目の案内は分があれば分まで出す', () {
+    final until = DateTime(2026, 10, 28, 15, 30);
+    expect(
+      freeCancelUntilLabel(until),
+      '10月28日 15時30分までなら、ビデオ通話の枠を使わずにキャンセルできます。',
+    );
   });
 
   testWidgets('キャンセルに失敗したら状態を変えずに知らせ、やり直せる', (tester) async {
