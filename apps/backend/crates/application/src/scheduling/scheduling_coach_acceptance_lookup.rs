@@ -52,10 +52,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use domain::scheduling::CoachAcceptance;
+    use std::time::SystemTime;
 
     use super::*;
     use crate::in_memory::InMemoryCoachAcceptanceRepository;
+
+    /// 受付を止める・再開する本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
     const SUSPENDED: AccountId = AccountId::from_u128(7);
     const ACCEPTING: AccountId = AccountId::from_u128(8);
@@ -63,7 +66,9 @@ mod tests {
     async fn lookup() -> SchedulingCoachAcceptanceLookup<InMemoryCoachAcceptanceRepository> {
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
-            .update(SUSPENDED, CoachAcceptance::suspend)
+            .update(SUSPENDED, |a| {
+                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            })
             .await
             .unwrap();
         SchedulingCoachAcceptanceLookup::new(acceptances)
