@@ -34,8 +34,15 @@ export async function loadCoachReviews(
   return { ok: true, data: { summary: summaryResponse.data, reviews: listResponse.data.reviews } };
 }
 
-/** 評価の件数と平均と、その下に評価の一覧。コーチの「自分の評価」と本部の画面で共通。 */
-export function CoachReviewSummaryView({ summary, reviews }: CoachReviews) {
+/**
+ * 評価の件数と平均と、その下に評価の一覧。コーチの「自分の評価」と本部の画面で共通。
+ * `showLessonMenu` は一覧の各行にレッスンのメニューを出すか（CoachReviewList）。
+ */
+export function CoachReviewSummaryView({
+  summary,
+  reviews,
+  showLessonMenu = false,
+}: CoachReviews & { showLessonMenu?: boolean }) {
   return (
     <>
       <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
@@ -48,7 +55,7 @@ export function CoachReviewSummaryView({ summary, reviews }: CoachReviews) {
       </dl>
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
-        <CoachReviewList reviews={reviews} />
+        <CoachReviewList reviews={reviews} showLessonMenu={showLessonMenu} />
       </div>
     </>
   );
