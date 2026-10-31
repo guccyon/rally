@@ -16,13 +16,19 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
 
 const UNKNOWN = "エラーが発生しました。時間をおいてやり直してください。";
 
-/** API のエラー本文（契約の Error）を画面の文言にする。未知のコード（契約は値を追加しうる）は汎用の文言。 */
-export function errorMessage(error: unknown): string {
+/** API のエラー本文（契約の Error）から既知の ErrorCode を取り出す。未知のコード（契約は値を追加しうる）や本文がなければ undefined。 */
+export function errorCode(error: unknown): Schemas["ErrorCode"] | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code: unknown }).code;
     if (typeof code === "string" && Object.hasOwn(MESSAGES, code)) {
-      return MESSAGES[code as Schemas["ErrorCode"]];
+      return code as Schemas["ErrorCode"];
     }
   }
-  return UNKNOWN;
+  return undefined;
+}
+
+/** API のエラー本文（契約の Error）を画面の文言にする。未知のコードは汎用の文言。 */
+export function errorMessage(error: unknown): string {
+  const code = errorCode(error);
+  return code === undefined ? UNKNOWN : MESSAGES[code];
 }

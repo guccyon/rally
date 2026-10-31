@@ -61,7 +61,7 @@ describe("coachApi", () => {
       starts_at: SLOT.starts_at,
       ends_at: SLOT.ends_at,
     });
-    expect(result).toEqual({ ok: false, message: "公開済みの枠と時間が重なっています。" });
+    expect(result).toEqual({ ok: false, code: "slot_overlaps", message: "公開済みの枠と時間が重なっています。" });
   });
 
   test("未知の ErrorCode は汎用の文言にする", async () => {
@@ -116,6 +116,7 @@ describe("coachApi", () => {
     const result = await api.getMyAccount();
     expect(result).toEqual({
       ok: false,
+      code: "unauthorized",
       message: "トークンがないか無効です。ログインし直してください。",
     });
   });
@@ -140,7 +141,7 @@ describe("coachApi", () => {
   test("updateMyCoachProfile の 422 は入力の文言にする", async () => {
     const { api } = setup(json(422, { code: "validation_failed", message: "too long" }));
     const result = await api.updateMyCoachProfile({ bio: "あ".repeat(401) });
-    expect(result).toEqual({ ok: false, message: "入力の内容が正しくありません。" });
+    expect(result).toEqual({ ok: false, code: "validation_failed", message: "入力の内容が正しくありません。" });
   });
 
   test("getCoachReviewSummary はトークンを付けて GET /api/coaches/{coach_id}/review-summary を呼ぶ", async () => {
@@ -157,7 +158,7 @@ describe("coachApi", () => {
   test("他のコーチの評価（403）はロールの文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.getCoachReviewSummary("99999999-9999-4999-8999-999999999999");
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("listCoachReviews はトークンを付けて GET /api/coaches/{coach_id}/reviews を呼び、返った順のまま返す", async () => {
@@ -185,7 +186,7 @@ describe("coachApi", () => {
   test("他のコーチの評価の一覧（403）は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listCoachReviews("99999999-9999-4999-8999-999999999999");
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("listMyCoachBookings はトークンを付けて GET /api/coaches/me/bookings を呼び、返った順のまま返す", async () => {
@@ -221,7 +222,7 @@ describe("coachApi", () => {
   test("listMyCoachBookings の 403 は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listMyCoachBookings();
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("listMyCoachSlots はトークンを付けて GET /api/coaches/me/slots を呼び、返った順のまま返す", async () => {
@@ -246,7 +247,7 @@ describe("coachApi", () => {
   test("listMyCoachSlots の 403 は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listMyCoachSlots();
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("listMyCoachVideos はトークンを付けて GET /api/coaches/me/videos を呼び、返った順のまま返す", async () => {
@@ -278,7 +279,7 @@ describe("coachApi", () => {
   test("listMyCoachVideos の 403 は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listMyCoachVideos();
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
   const THREAD_ID = "88888888-8888-4888-8888-888888888888";
   const MESSAGE = {
@@ -328,6 +329,7 @@ describe("coachApi", () => {
     const missing = setup(json(404, { code: "not_found", message: "not found" }));
     expect(await missing.api.listMessages(THREAD_ID)).toEqual({
       ok: false,
+      code: "not_found",
       message: "対象が見つかりません（ID を確かめてください）。",
     });
   });
@@ -415,6 +417,7 @@ describe("coachApi", () => {
     const missing = setup(json(404, { code: "not_found", message: "not found" }));
     expect(await missing.api.updateMyLessonMenu(LESSON_MENU.lesson_menu_id, body)).toEqual({
       ok: false,
+      code: "not_found",
       message: "対象が見つかりません（ID を確かめてください）。",
     });
   });
