@@ -606,6 +606,7 @@ void main() {
       'booking_confirmed': true,
       'video_review_returned': true,
       'message_received': true,
+      'announcement': true,
     };
 
     final read = await apiReplying(200, settings).getMyNotificationSettings();

@@ -26,13 +26,13 @@ use application::{
     },
     identity::{AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount},
     in_memory::{
-        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryCoachAcceptanceRepository,
-        InMemoryEntitlementRepository, InMemoryFavoriteCoachRepository,
-        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
-        InMemoryMessageThreadRepository, InMemoryNotificationRepository,
-        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryAccountRepository, InMemoryAnnouncementRepository, InMemoryBookingRepository,
+        InMemoryCoachAcceptanceRepository, InMemoryEntitlementRepository,
+        InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
+        InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
@@ -52,13 +52,14 @@ use application::{
         MessageThreadSubscriber, SendMessage,
     },
     notification::{
-        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
-        NotificationRepository, NotificationSettingsRepository, PushNotificationSubscriber,
-        PushSender, UpdateNotificationSettings,
+        AnnouncementRepository, GetNotificationSettings, ListAnnouncements, ListMyNotifications,
+        MarkMyNotificationsRead, NotificationRepository, NotificationSettingsRepository,
+        PushNotificationSubscriber, PushSender, SendAnnouncement, UpdateNotificationSettings,
     },
     profile::{
         CoachProfileRepository, GetCoachBio, GetCoachOverview, GetCoachProfile, ListCoaches,
-        ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
+        ProfileAnnouncementRecipientLookup, ProfileCoachCandidateLookup,
+        ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
         ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
         UpdateStudentProfile,
     },
@@ -78,11 +79,11 @@ use application::{
 use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
-    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgCoachAcceptanceRepository,
-    PgEntitlementRepository, PgFavoriteCoachRepository, PgLessonCompletionRepository,
-    PgLessonMenuRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
-    PgMessageThreadRepository, PgNotificationRepository, PgNotificationSettingsRepository,
-    PgSlotRepository, PgVideoRepository,
+    MockVideoStorage, PgAccountRepository, PgAnnouncementRepository, PgBookingRepository,
+    PgCoachAcceptanceRepository, PgEntitlementRepository, PgFavoriteCoachRepository,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
+    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -102,7 +103,10 @@ pub fn router() -> Router {
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
 /// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。送る通知はオフの種類も含めてお知らせとして残し、
 /// 生徒とコーチは自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
-/// お知らせの保存先も当面インメモリ。
+/// お知らせの保存先も当面インメモリ。本部は生徒全員か、あるスポーツの生徒全員にお知らせを送り（`POST /announcements`）、
+/// 送った記録を一覧で見る（`GET /announcements`）。受け取る生徒はアカウントの保存先から読み
+/// （`ProfileAnnouncementRecipientLookup`）、生徒ごとにお知らせを残して、受け取り設定に従って同じ送り先にプッシュ通知を送る。
+/// 送った記録の保存先も当面インメモリ。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
@@ -198,7 +202,7 @@ pub fn router_with_push_sender<C, A, P>(clock: C, analytics: A, push: P) -> Rout
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
-    P: PushSender + 'static,
+    P: PushSender + Clone + 'static,
 {
     compose(
         in_memory_repositories(),
@@ -226,6 +230,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryLessonMenuRepository,
     InMemoryCoachAcceptanceRepository,
     InMemoryFavoriteCoachRepository,
+    InMemoryAnnouncementRepository,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
@@ -243,6 +248,7 @@ fn in_memory_repositories() -> Repositories<
         notifications: InMemoryNotificationRepository::default(),
         lesson_menus: InMemoryLessonMenuRepository::default(),
         favorite_coaches: InMemoryFavoriteCoachRepository::default(),
+        announcements: InMemoryAnnouncementRepository::default(),
     }
 }
 
@@ -285,7 +291,8 @@ where
             notifications: PgNotificationRepository::new(pool.clone()),
             coach_acceptances: PgCoachAcceptanceRepository::new(pool.clone()),
             lesson_menus: PgLessonMenuRepository::new(pool.clone()),
-            favorite_coaches: PgFavoriteCoachRepository::new(pool),
+            favorite_coaches: PgFavoriteCoachRepository::new(pool.clone()),
+            announcements: PgAnnouncementRepository::new(pool),
         },
         clock,
         analytics,
@@ -305,7 +312,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。コーチの受付の保存先も、スロットの検索と
 /// 予約の作成が読むのと同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -320,12 +327,13 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G> {
     lesson_menus: J,
     coach_acceptances: Q,
     favorite_coaches: G,
+    announcements: H,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H>,
     clock: C,
     analytics: A,
     push: P,
@@ -346,9 +354,10 @@ where
     J: LessonMenuRepository + Clone + 'static,
     Q: CoachAcceptanceRepository + Clone + 'static,
     G: FavoriteCoachRepository + Clone + 'static,
+    H: AnnouncementRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
-    P: PushSender + 'static,
+    P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
     let Repositories {
@@ -366,6 +375,7 @@ where
         lesson_menus,
         coach_acceptances,
         favorite_coaches,
+        announcements,
     } = repositories;
     let catalog = interface::catalog_router(
         CreateLessonMenu::new(lesson_menus.clone(), accounts.clone(), clock.clone()),
@@ -530,8 +540,20 @@ where
         MockTokenService,
     );
     let my_notifications = interface::notifications_router(
-        ListMyNotifications::new(notifications.clone()),
-        MarkMyNotificationsRead::new(notifications.clone(), clock.clone()),
+        ListMyNotifications::new(notifications.clone(), announcements.clone()),
+        MarkMyNotificationsRead::new(notifications.clone(), announcements.clone(), clock.clone()),
+        MockTokenService,
+    );
+    let announcements = interface::announcements_router(
+        SendAnnouncement::new(
+            announcements.clone(),
+            ProfileAnnouncementRecipientLookup::new(accounts.clone()),
+            notifications.clone(),
+            notification_settings.clone(),
+            push.clone(),
+            clock.clone(),
+        ),
+        ListAnnouncements::new(announcements),
         MockTokenService,
     );
     let events = InMemoryDomainEventBus::new((
@@ -686,6 +708,7 @@ where
     .merge(lesson_stats)
     .merge(headquarters_bookings)
     .merge(students)
+    .merge(announcements)
     .merge(student_activity)
     .merge(coach_acceptance)
     .merge(coach_overview)
