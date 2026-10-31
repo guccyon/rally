@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app のチャットの「添削を依頼する」で、担当コーチの公開中の非同期のレッスンメニューのうち生徒のスポーツのもの（名前と説明）と「指定しない」（既定）から選んで送れる（`listCoachLessonMenus`・`submitVideo` の `lesson_menu_id`）。メニューがなければ選択の欄を出さず今までどおり送れる。メニューを付けて断られたら、メニューが変わった可能性を伝えて読み直し、選んだ動画はそのままで選び直させる。添削結果の画面とチャットの返却のカードに、選んだメニューがあれば「メニュー: 〇〇」を出す。API と契約の変更はない（#269）
 - 添削の依頼で非同期のレッスンメニューを選べる API: student-app の `submitVideo` のリクエストに任意の `lesson_menu_id` を足した。選べるのは送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー（満たさないか、メニューがなければ 422 `validation_failed`。省けば今までどおりメニューなし）。受け付けたときにメニューの ID・名前を動画に写して残す（後でメニューを直しても動画の表示は送った時点のまま）。student-app の `Video`（`submitVideo`）・`VideoReview`（`getVideoReview`）と admin-web の `CoachVideo`（`listMyCoachVideos`）・`VideoReview`（`returnVideoReview`）に `lesson_menu`（`VideoLessonMenu`。なければ null）を足した。既存の動画は null。DB は動画の列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面は変えない（#268）
 - admin-web のコーチの「通話への参加」の予約の一覧に、生徒が予約したときのレッスンメニューの名前と 1 回の時間（例: 「サーブ特訓（90 分）」。時間がなければ名前だけ）の列を足した（`listMyCoachBookings` の `lesson_menu`）。メニューのない予約は「—」。API と契約の変更はない（#263）
 - 予約が枠のレッスンメニューを引き継ぐ: 予約の作成（student-app の `createBooking`）で、枠に結びついたメニューの ID・名前・1 回の時間を予約に写して残す（後でメニューを直しても予約の表示は予約した時点のまま。予約の時点で公開中でないメニューはメニューなしの予約にし、予約は断らない）。両アプリの `Booking`（`listMyBookings`・`listMyCoachBookings` と、作成・確定・キャンセルの応答）に `lesson_menu`（`BookingLessonMenu`。なければ null）を足した。既存の予約は null。DB は予約の列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面は変えない（#261）

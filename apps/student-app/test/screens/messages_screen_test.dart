@@ -222,6 +222,8 @@ void main() {
       expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
       expect(find.text('AI の一次フィードバック'), findsOneWidget);
       expect(find.text('フォームの全体の流れは安定しています'), findsOneWidget);
+      // メニューを選ばずに送った動画の返却には、メニューを出さない
+      expect(find.textContaining('メニュー: '), findsNothing);
       // 種類を知らない版向けの短い説明は、知っている種類では出さない
       expect(find.text('動画の添削を依頼しました'), findsNothing);
       expect(find.text('動画の添削を返しました'), findsNothing);
@@ -331,11 +333,18 @@ void main() {
       ),
       '  バックハンドを見てください  ',
     );
+    expect(find.text('指定しない'), findsNothing);
     await tapText(tester, '依頼する');
 
     expect(find.byType(AlertDialog), findsNothing);
-    expect(api.calls, ['submitVideo', 'markMessageThreadRead', 'listMessages']);
-    expect((api.requests.first as SubmitVideoRequest).toJson(), {
+    // 担当コーチにメニューがなければ選択の欄は出さず、メニューなしで送る
+    expect(api.calls, [
+      'listCoachLessonMenus',
+      'submitVideo',
+      'markMessageThreadRead',
+      'listMessages',
+    ]);
+    expect(api.requests.whereType<SubmitVideoRequest>().single.toJson(), {
       'coach_id': Fixtures.coachId,
       'sport': 'tennis',
       'content_type': 'video/mp4',
@@ -505,6 +514,209 @@ void main() {
     await tapText(tester, 'やめる');
 
     expect(find.byType(AlertDialog), findsNothing);
-    expect(api.calls, isEmpty);
+    expect(api.calls, ['listCoachLessonMenus']);
+  });
+
+  group('添削の依頼のレッスンメニュー', () {
+    /// 担当コーチのテニスの非同期のメニュー（説明あり）
+    final swingMenu = LessonMenu(
+      lessonMenuId: '15151515-1515-4515-8515-151515151515',
+      coachId: Fixtures.coachId,
+      sport: Sport.tennis,
+      lessonType: LessonType.asyncLesson,
+      name: 'スイングの動画添削',
+      description: 'フォームを動画で見直します',
+      isPublished: true,
+      createdAt: Fixtures.now,
+    );
+
+    /// 担当コーチの野球の非同期のメニュー（生徒のスポーツではないので出さない）
+    final baseballMenu = LessonMenu(
+      lessonMenuId: '16161616-1616-4616-8616-161616161616',
+      coachId: Fixtures.coachId,
+      sport: Sport.baseball,
+      lessonType: LessonType.asyncLesson,
+      name: 'バッティングの動画添削',
+      description: '',
+      isPublished: true,
+      createdAt: Fixtures.now,
+    );
+
+    FakeStudentApi apiWithMenus({Map<String, StudentApiException>? failures}) =>
+        FakeStudentApi(
+          lessonMenus: {
+            Fixtures.coachId: [
+              ...Fixtures.lessonMenus,
+              swingMenu,
+              baseballMenu,
+            ],
+          },
+          failures: failures ?? {},
+        );
+
+    SubmitVideoRequest lastRequest(FakeStudentApi api) =>
+        api.requests.whereType<SubmitVideoRequest>().last;
+
+    Future<void> openDialog(WidgetTester tester, FakeStudentApi api) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpScreen(
+        tester,
+        const MessagesScreen(),
+        api: api,
+        initial: threadOpened(),
+      );
+      await tapText(tester, '添削を依頼する');
+      await tapText(tester, '動画を選ぶ（モック）');
+    }
+
+    testWidgets('担当コーチの非同期のメニューのうち生徒のスポーツのものを名前と説明で出し、既定は「指定しない」でメニューなしで送る', (
+      tester,
+    ) async {
+      final api = apiWithMenus();
+      await openDialog(tester, api);
+
+      expect(api.requests.first, (
+        coachId: Fixtures.coachId,
+        sport: Sport.tennis,
+      ));
+      expect(find.text('指定しない'), findsOneWidget);
+      expect(find.text('サーブの動画添削'), findsOneWidget);
+      expect(find.text('スイングの動画添削'), findsOneWidget);
+      expect(find.text('フォームを動画で見直します'), findsOneWidget);
+      // 同期のメニューと、生徒のスポーツでないメニューは出さない
+      expect(find.text('フォアハンドの基礎'), findsNothing);
+      expect(find.text('バッティングの動画添削'), findsNothing);
+      // 作った時刻の古い順
+      expect(topOf(tester, 'サーブの動画添削'), lessThan(topOf(tester, 'スイングの動画添削')));
+
+      await tapText(tester, '依頼する');
+
+      expect(lastRequest(api).toJson(), isNot(contains('lesson_menu_id')));
+      expect(find.text('1 回目の添削の依頼'), findsOneWidget);
+    });
+
+    testWidgets('メニューを選んで送ると lesson_menu_id を付けて submitVideo する', (
+      tester,
+    ) async {
+      final api = apiWithMenus();
+      await openDialog(tester, api);
+
+      await tapText(tester, 'スイングの動画添削');
+      await tapText(tester, '依頼する');
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(lastRequest(api).toJson(), {
+        'coach_id': Fixtures.coachId,
+        'sport': 'tennis',
+        'content_type': 'video/mp4',
+        'lesson_menu_id': swingMenu.lessonMenuId,
+      });
+      expect(find.text('1 回目の添削の依頼'), findsOneWidget);
+    });
+
+    testWidgets('メニューを付けて 422 で断られたら、メニューが変わった可能性を伝えて読み直し、動画と相談内容はそのまま選び直させる', (
+      tester,
+    ) async {
+      final failures = <String, StudentApiException>{
+        'submitVideo': Fixtures.validationFailed,
+      };
+      final api = apiWithMenus(failures: failures);
+      await openDialog(tester, api);
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'サーブを見てください',
+      );
+      await tapText(tester, 'スイングの動画添削');
+
+      // 選んだ後にコーチがメニューを非公開にした
+      api.lessonMenus[Fixtures.coachId]!.remove(swingMenu);
+      await tapText(tester, '依頼する');
+
+      expect(api.calls, [
+        'listCoachLessonMenus',
+        'submitVideo',
+        'listCoachLessonMenus',
+      ]);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.textContaining('メニューが非公開になったか'), findsOneWidget);
+      // 画面の失敗の文言（入力内容を確かめてください）は出さない
+      expect(find.text('入力内容を確かめてください。'), findsNothing);
+      expect(find.text('選んだ動画: swing.mp4'), findsOneWidget);
+      expect(find.text('サーブを見てください'), findsOneWidget);
+      expect(find.text('スイングの動画添削'), findsNothing);
+      final submit = find.widgetWithText(FilledButton, '依頼する');
+      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+
+      failures.clear();
+      await tapText(tester, '依頼する');
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(lastRequest(api).toJson(), {
+        'coach_id': Fixtures.coachId,
+        'sport': 'tennis',
+        'content_type': 'video/mp4',
+        'note': 'サーブを見てください',
+      });
+      expect(find.text('1 回目の添削の依頼'), findsOneWidget);
+    });
+
+    testWidgets('メニューを付けずに断られたら、今までどおり画面に失敗の文言を出す', (tester) async {
+      final api = apiWithMenus(
+        failures: {'submitVideo': Fixtures.validationFailed},
+      );
+      await openDialog(tester, api);
+      await tapText(tester, '依頼する');
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('入力内容を確かめてください。'), findsOneWidget);
+      expect(api.calls, ['listCoachLessonMenus', 'submitVideo']);
+    });
+
+    testWidgets('メニューを読めなければその旨を出し、メニューなしで送れる', (tester) async {
+      final api = apiWithMenus(
+        failures: {'listCoachLessonMenus': Fixtures.unreachable},
+      );
+      await openDialog(tester, api);
+
+      expect(
+        find.text('レッスンメニューを読み込めませんでした。メニューを指定せずに依頼できます。'),
+        findsOneWidget,
+      );
+      expect(find.text('指定しない'), findsNothing);
+      await tapText(tester, '依頼する');
+
+      expect(lastRequest(api).toJson(), isNot(contains('lesson_menu_id')));
+      expect(find.text('1 回目の添削の依頼'), findsOneWidget);
+    });
+
+    testWidgets('返却のカードに、依頼で選んだメニューの名前を出す', (tester) async {
+      final api = FakeStudentApi(
+        messages: reviewThread,
+        videoReviews: {Fixtures.videoId: Fixtures.reviewReturnedWithMenu},
+      );
+      await pumpScreen(
+        tester,
+        const MessagesScreen(),
+        api: api,
+        initial: threadOpened(),
+      );
+      await tapText(tester, '新しいメッセージを確かめる');
+
+      expect(find.text('メニュー: サーブの動画添削'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('コーチの添削（1 回目の依頼）'),
+            matching: find.byType(Card),
+          ),
+          matching: find.text('メニュー: サーブの動画添削'),
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

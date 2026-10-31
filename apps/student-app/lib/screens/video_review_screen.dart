@@ -9,6 +9,7 @@ import '../ui/labels.dart';
 
 /// 添削結果の表示（`getVideoReview`）。コーチが返却するまでは確かめ直す。
 /// AI の一次フィードバック（glossary の ai_feedback）があれば、コーチの添削とは別の枠に出す。
+/// 動画を送ったときにレッスンメニューを選んでいれば、その名前（送った時点の写し）を出す。
 class VideoReviewScreen extends ConsumerWidget {
   const VideoReviewScreen({super.key});
 
@@ -23,6 +24,8 @@ class VideoReviewScreen extends ConsumerWidget {
       title: '添削結果',
       children: [
         const Text('動画を送りました。'),
+        if (review?.lessonMenu case final menu?)
+          Text(videoLessonMenuLabel(menu)),
         const SizedBox(height: 8),
         if (returned) ...[
           Text('コーチの添削', style: Theme.of(context).textTheme.titleMedium),

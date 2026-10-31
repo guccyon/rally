@@ -32,6 +32,9 @@ String slotLessonMenuLabel(SlotLessonMenu menu) =>
       null => 'メニュー: ${menu.name}',
     };
 
+/// 動画を送った時点で選んだレッスンメニュー（`Video.lesson_menu` / `VideoReview.lesson_menu`）。例: `メニュー: サーブの動画添削`
+String videoLessonMenuLabel(VideoLessonMenu menu) => 'メニュー: ${menu.name}';
+
 /// 端末のタイムゾーンで `M/d HH:mm`
 String formatDateTime(DateTime value) {
   final local = value.toLocal();
