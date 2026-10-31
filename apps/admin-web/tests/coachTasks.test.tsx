@@ -8,6 +8,7 @@ import { CoachHome } from "@/components/coach/CoachHome";
 import { formatDateTime } from "@/components/labels";
 
 import { EMPTY_LESSON_STATS } from "./lessonStatsFixtures";
+import { noNotifications } from "./notificationFixtures";
 
 // CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
 const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
@@ -104,6 +105,7 @@ const THREADS = [thread(THREAD_A, STUDENT_A, 2), thread(THREAD_B, STUDENT_B, 0)]
 function mockApi(overrides: Partial<CoachApi> = {}) {
   const api = {
     // 対応待ちの上に出す実績が呼ぶ（中身は lessonStats.test.tsx で確かめる）。
+    listMyNotifications: noNotifications(),
     getMyLessonStats: vi.fn<CoachApi["getMyLessonStats"]>(async () => ({
       ok: true,
       data: EMPTY_LESSON_STATS,
