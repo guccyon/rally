@@ -7,6 +7,7 @@ import type { CoachApi } from "@/api/coach";
 import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
+import { videoLessonMenuLabel } from "./videoLessonMenu";
 import { VideoReviewCommentForm } from "./VideoReviewCommentForm";
 
 type CoachVideo = Schemas["CoachVideo"];
@@ -30,9 +31,21 @@ function studentName(video: CoachVideo) {
   return video.student_display_name ?? "（名前を表示できません）";
 }
 
+/** 生徒の欄。動画を送った時点のレッスンメニューがあれば、名前の下に「メニュー: 〇〇」を出す。 */
+function StudentCell({ video }: { video: CoachVideo }) {
+  const menu = videoLessonMenuLabel(video.lesson_menu);
+  return (
+    <td className="py-1">
+      {studentName(video)}
+      {menu && <span className="block text-gray-600">{menu}</span>}
+    </td>
+  );
+}
+
 /**
  * 添削の返却。開いたときに自分に届いた動画の一覧（listMyCoachVideos）を出し、添削待ちの行を選ぶと
  * 添削コメントの欄（VideoReviewCommentForm。AI の一次フィードバックも欄の上に出す）を開いて返却（returnVideoReview）する。
+ * 添削待ち・返却済みの行には、動画を送った時点のレッスンメニューがあれば「メニュー: 〇〇」を出す。
  * 返却したら一覧を取り直す。`initialVideoId`（対応待ちから移ったときの動画）が添削待ちにあれば、その欄を開いた状態で出す。
  */
 export function ReturnVideoReviewForm({
@@ -113,7 +126,7 @@ export function ReturnVideoReviewForm({
                 <tbody>
                   {list.waiting.map((video) => (
                     <tr key={video.video_id} className="border-t">
-                      <td className="py-1">{studentName(video)}</td>
+                      <StudentCell video={video} />
                       <td className="py-1">{formatDateTime(video.submitted_at)}</td>
                       <td className="py-1">
                         {selected?.video_id === video.video_id ? (
@@ -160,7 +173,7 @@ export function ReturnVideoReviewForm({
                 <tbody>
                   {list.returned.map((video) => (
                     <tr key={video.video_id} className="border-t">
-                      <td className="py-1">{studentName(video)}</td>
+                      <StudentCell video={video} />
                       <td className="py-1">{formatDateTime(video.submitted_at)}</td>
                       <td className="py-1">
                         {video.returned_at ? formatDateTime(video.returned_at) : ""}
