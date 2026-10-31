@@ -303,7 +303,7 @@ Walking Skeleton の完了条件（段 7 の T19）。`crates/server/tests/walki
 1. 生徒の登録 → コーチが枠を公開 → 生徒が検索して体験予約 → 確定
 2. 通話の開始 → 終了 → 完了記録（`is_first_lesson=true`）
 3. 同じ生徒が月額契約 → 動画を送付 → コーチが添削を返す → 完了記録（`is_first_lesson=false`）
-4. 同じ暦月に 3 回目の通話予約の確定が 409 `live_lesson_quota_exceeded`（月額契約の前に確定した体験予約は枠を使わないので、契約後の 2 回を確定してからの 3 回目）
+4. 同じ暦月に上限を超える通話予約の確定が 409 `live_lesson_quota_exceeded`（上限は契約プランの `live_lessons_per_month`。この一周はプランを選ばない standard の契約なので、月額契約の前に確定した体験予約は枠を使わず、契約後の 2 回を確定してからの 3 回目）
 
 最後に、発火した行動イベントの名前の並びが期待した列（events.yaml の `name`）と一致することを確かめる。コーチの登録は契約に HTTP の操作がない（`POST /accounts` は生徒だけ）ので、同じ DB に `RegisterAccount` で登録してモックのトークンを発行する。
 

@@ -165,6 +165,12 @@ int subscriptionPlanLiveLessonLimit(SubscriptionPlan plan) => switch (plan) {
 String subscriptionPlanChoiceLabel(SubscriptionPlan plan) =>
     '${subscriptionPlanLabel(plan)}　ビデオ通話 月 ${subscriptionPlanLiveLessonLimit(plan)} 回';
 
+/// 月額契約の前に添える、プランごとのビデオ通話の暦月の上限。例: `月 2 回（スタンダード）・月 4 回（プラス）`
+String subscriptionPlanLiveLessonLimitsLabel() => [
+  for (final plan in SubscriptionPlan.values)
+    '月 ${subscriptionPlanLiveLessonLimit(plan)} 回（${subscriptionPlanLabel(plan)}）',
+].join('・');
+
 /// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
 String liveLessonQuotaLabel(LiveLessonQuota quota) =>
     '月 ${quota.limit} 回のうち残り ${quota.remaining} 回';

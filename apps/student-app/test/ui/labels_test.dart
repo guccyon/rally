@@ -87,6 +87,13 @@ void main() {
     ]);
   });
 
+  test('月額契約の前の案内には、プランごとのビデオ通話の暦月の上限を並べる', () {
+    expect(
+      subscriptionPlanLiveLessonLimitsLabel(),
+      '月 2 回（スタンダード）・月 4 回（プラス）',
+    );
+  });
+
   test('今月のビデオ通話の残り回数は、プランの上限と合わせて出す', () {
     expect(
       liveLessonQuotaLabel(

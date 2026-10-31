@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/booking_pending_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
@@ -34,6 +35,38 @@ void main() {
     expect(find.text('予約が確定しました'), findsOneWidget);
     expect(find.text('ビデオ通話で受ける'), findsOneWidget);
     expect(find.text('動画を送って添削を受ける'), findsOneWidget);
+  });
+
+  testWidgets('plus（上限 4 回）の枠を使い切って確定を断られたら、固定の回数を出さずに枠を使い切ったと出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      failures: {
+        'confirmBooking': const StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.liveLessonQuotaExceeded,
+            message: 'quota exceeded',
+          ),
+        ),
+      },
+    );
+    final container = await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: api,
+      initial: pending().copyWith(
+        entitlement: Fixtures.subscriptionStartedWith(
+          SubscriptionPlan.plus,
+        ).entitlement,
+      ),
+    );
+
+    await tapText(tester, '予約を確定する');
+
+    expect(find.text('今月のビデオ通話の枠を使い切っています。'), findsOneWidget);
+    expect(find.textContaining('2 回'), findsNothing);
+    expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
   });
 
   testWidgets('予約した時点のメニューの写しがあれば、確定の前後にメニューの名前と 1 回の時間を出す', (tester) async {
