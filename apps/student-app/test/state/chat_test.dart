@@ -281,4 +281,55 @@ void main() {
       HomeSection.threads,
     });
   });
+
+  test('スレッドの一覧とメッセージは、コンストラクタで直接渡しても copyWith で渡しても写して持ち、外から書き換えられない', () {
+    // コンストラクタで直接渡した元のリストを後で変えても、状態は変わらない
+    final threads = [Fixtures.thread];
+    final messages = [...Fixtures.messages];
+    final constructed = ChatState(threads: threads, messages: messages);
+    threads.clear();
+    messages.clear();
+    expect(constructed.threads, [Fixtures.thread]);
+    expect(constructed.messages, Fixtures.messages);
+    expect(() => constructed.threads!.clear(), throwsUnsupportedError);
+    expect(
+      () => constructed.messages!.add(Fixtures.messages.first),
+      throwsUnsupportedError,
+    );
+
+    // copyWith で渡した元のリストを後で変えても、状態は変わらない
+    final threadsSource = [Fixtures.thread];
+    final messagesSource = [...Fixtures.messages];
+    final copied = ChatState().copyWith(
+      threads: threadsSource,
+      messages: messagesSource,
+    );
+    threadsSource.clear();
+    messagesSource.clear();
+    expect(copied.threads, [Fixtures.thread]);
+    expect(copied.messages, Fixtures.messages);
+    expect(() => copied.threads!.add(Fixtures.thread), throwsUnsupportedError);
+    expect(() => copied.messages!.clear(), throwsUnsupportedError);
+    // 渡さなければ未取得のまま
+    expect(ChatState().threads, isNull);
+    expect(ChatState().messages, isNull);
+  });
+
+  test('メッセージを送ると、送ったメッセージを足した一覧も書き換えられない', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      chat: ChatState(thread: Fixtures.thread, messages: Fixtures.messages),
+    );
+
+    final sent = await container
+        .read(chatProvider.notifier)
+        .sendMessage('こんにちは');
+
+    expect(sent, isTrue);
+
+    final messages = container.read(chatProvider).messages!;
+    expect(messages, hasLength(Fixtures.messages.length + 1));
+    expect(() => messages.clear(), throwsUnsupportedError);
+  });
 }

@@ -7,16 +7,19 @@ import 'student_flow.dart';
 /// 担当コーチとのチャットの状態（スレッドの一覧・開いているスレッドのメッセージ・スレッドに返却が流れた添削）。
 /// 画面の段（[FlowStep]）と、API を呼んでいる間の印・直前の操作の失敗の文言はアプリ全体で 1 つなので、
 /// [StudentFlowState] の `step` / `busy` / `errorMessage` を使う。
+/// 一覧をコンストラクタで写して持つので const では作らない。
 class ChatState {
-  const ChatState({
+  ChatState({
     this.returnStep,
     this.promptVideoReviewRequest = false,
-    this.threads,
+    List<MessageThread>? threads,
     this.thread,
-    this.messages,
+    List<Message>? messages,
     this.reviews = const {},
     this.reviewFailures = const {},
-  });
+    // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
+  }) : threads = threads == null ? null : List.unmodifiable(threads),
+       messages = messages == null ? null : List.unmodifiable(messages);
 
   /// チャットを閉じたときに戻る段（チャットを開いた段）
   final FlowStep? returnStep;
@@ -67,7 +70,7 @@ final chatProvider = NotifierProvider<ChatNotifier, ChatState>(
 /// （[StudentFlowNotifier.run] で 1 つずつ走らせる）。
 class ChatNotifier extends Notifier<ChatState> {
   /// [initial] はテストで途中の画面から始めるときに渡す。
-  ChatNotifier([ChatState? initial]) : _initial = initial ?? const ChatState();
+  ChatNotifier([ChatState? initial]) : _initial = initial ?? ChatState();
 
   final ChatState _initial;
 
