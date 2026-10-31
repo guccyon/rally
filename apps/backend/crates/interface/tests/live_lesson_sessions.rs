@@ -120,7 +120,6 @@ fn app() -> App {
             analytics.clone(),
             clock.clone(),
         ),
-        application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(

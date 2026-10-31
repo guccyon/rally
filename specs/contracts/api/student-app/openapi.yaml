@@ -39,6 +39,8 @@ tags:
     description: 非同期レッスン（動画送付・添削）
   - name: catalog
     description: レッスン（完了記録）と、コーチのレッスンメニュー
+  - name: matching
+    description: マッチング（コーチを探す）
   - name: review
     description: 評価（レッスンの評価と、コーチごとの評価の件数と平均・一覧）
   - name: messaging
@@ -623,6 +625,51 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /coaches:
+    get:
+      operationId: listCoachesForStudent
+      summary: スポーツでコーチを探す
+      description: |
+        スポーツ `sport`（省略したら生徒自身のスポーツ。`Student.sport`）を提供するコーチを、コーチを選ぶ手がかりとともに返す。
+        マッチング（matching）の入口で、選んだコーチの評価の一覧は `listCoachReviews`、メニューは `listCoachLessonMenus`、
+        予約枠は `searchSlots`（`coach_id`）で読む。生徒の役割のトークンだけが呼べる（コーチは 403）。本部の役割のトークンには
+        admin-web の `listCoaches` の形で返す（同じパス。admin-web の契約）。
+
+        - 各項目: `coach_id`・表示名・探したスポーツ・評価の件数と平均（数え方と丸めは `getCoachReviewSummary` と同じ）・
+          そのスポーツの公開中のレッスンメニューの数
+        - 並べ方: 評価の平均 `average_rating` の高い順。評価のないコーチ（`average_rating` が null）は最後。同じ平均（評価のない
+          コーチどうしを含む）は表示名の Unicode のコードポイントの順（言語ごとの照合はしない）、同じ表示名は `coach_id` の順
+        - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
+        - ゴルフは golf-app の範囲なので扱わない。`sport` に `golf` を付けたら（student-app の `Sport` の値でないので）422。
+          `sport` を省いて、生徒自身のスポーツがゴルフのとき（student-app からは登録できない）は `coaches` を空の配列にする
+        - `sport` を省いて、トークンが示す生徒のアカウントがなければ 401
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない（読み取りだけ）。
+      tags: [matching]
+      x-context: matching
+      x-analytics-events: []
+      parameters:
+        - name: sport
+          in: query
+          required: false
+          description: 探すスポーツ（省略時は生徒自身のスポーツ）
+          schema:
+            $ref: "#/components/schemas/Sport"
+      responses:
+        "200":
+          description: スポーツでコーチを探した一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachListingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
@@ -1793,6 +1840,44 @@ components:
           minLength: 1
           maxLength: 50
           description: 新しい表示名（空白だけは不可）
+
+    CoachListing:
+      type: object
+      description: |
+        コーチを探す一覧（`listCoachesForStudent`）の 1 件。表示名は profile、評価の件数と平均は review、メニューの数は catalog の
+        持ち物を読んだもの
+      required: [coach_id, display_name, sport, review_count, average_rating, published_lesson_menu_count]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          description: コーチの表示名
+        sport:
+          $ref: "#/components/schemas/Sport"
+        review_count:
+          type: integer
+          minimum: 0
+          description: 評価の件数（`CoachReviewSummary.review_count` と同じ。スポーツで分けない）
+        average_rating:
+          type: [number, "null"]
+          minimum: 1
+          maximum: 5
+          description: 点（1〜5）の平均（`CoachReviewSummary.average_rating` と同じ。スポーツで分けない）。評価が 0 件なら null
+        published_lesson_menu_count:
+          type: integer
+          minimum: 0
+          description: '`sport` の公開中のレッスンメニューの数'
+
+    CoachListingList:
+      type: object
+      required: [coaches]
+      properties:
+        coaches:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachListing"
 
     CoachProfile:
       type: object

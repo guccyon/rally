@@ -93,7 +93,6 @@ async fn storage_failure_is_500_internal_without_the_reason() {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let router = interface::router_with(
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
-        application::profile::ListCoaches::new(BrokenRepository),
         application::identity::GetAccount::new(BrokenRepository),
         application::profile::UpdateCoachProfile::new(BrokenRepository),
         PublishSlot::new(

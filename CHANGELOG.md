@@ -6,6 +6,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 
 ### 追加
 - 生徒が自分の表示名を見て変える API: student-app の契約に `GET /me/profile`（`getMyStudentProfile`）と `PATCH /me/profile`（`updateMyStudentProfile`。`display_name` だけ）を足した。応答は登録の応答の `student` と同じ `Student`。表示名は登録と同じ規則（空・空白だけ・50 文字を超えると 422）。生徒以外は 403。admin-web の `PUT /me/profile` は変えない。DB の変更はない。生徒アプリの画面は次の段（#340）
+- 生徒がスポーツでコーチを探す API: student-app の契約に `GET /coaches`（`listCoachesForStudent`）を足した。任意の `sport` で絞り（省いたら生徒自身のスポーツ）、各行は `coach_id`・表示名・スポーツ・評価の件数と平均・そのスポーツの公開中のレッスンメニューの数で、評価の平均の高い順（評価のないコーチは最後）→ 表示名の順に並べる。ページングはしない。`sport=golf` は 422（golf-app の範囲）。コーチは 403。同じパスの admin-web の `listCoaches`（本部）は変わらない。DB の変更はない。生徒アプリの画面は次の段（#336）
 - 生徒がコーチの紹介を見る API: student-app の契約に `GET /coaches/{coach_id}`（`getCoachProfile`）を足した。応答は `coach_id`・`display_name`・`bio`（自己紹介文。書いていなければ null）・`sports`（提供スポーツ。ゴルフは載せない）。コーチでない ID・ない ID・ゴルフだけのコーチは 404、生徒以外は 403。DB の変更はない。生徒アプリの画面は次の段（#338）
 - student-app の月額契約の画面のプランの案内（「プラス　ビデオ通話 月 4 回」）を、開いたときに読む `listSubscriptionPlans` の応答の回数から組み立てるようにし、アプリに書き写していた上限の数字を無くした。読み込めなければ回数を出さずにプランの名前だけで選べ、その旨をプランの欄に出す。レッスンの完了の画面の案内は回数を出さない書き方にした。API と契約の変更はない（#308）
 - 契約プランの一覧の API: student-app の契約に `GET /subscription-plans`（`listSubscriptionPlans`）を足した。応答は `plans: [{ plan, live_lessons_per_month }]` で、standard（暦月 2 回）・plus（暦月 4 回）の順。受講権がなくても（契約の前でも）呼べ、スポーツで変わらない。生徒以外は 403。上限は backend の domain の 1 か所から返す。DB の変更はない。生徒アプリの画面は次の段（#307）

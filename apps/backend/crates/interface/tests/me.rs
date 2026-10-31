@@ -20,7 +20,6 @@ use application::{
     },
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
-    profile::ListCoaches,
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
         SchedulingBookingLookup, SearchSlots,
@@ -101,7 +100,6 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
-        ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         application::profile::UpdateCoachProfile::new(accounts),
         PublishSlot::new(
