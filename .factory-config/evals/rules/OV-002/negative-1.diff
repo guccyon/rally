@@ -1,0 +1,62 @@
+guccyon/rally#108（#102 の差し戻しの修正）の apps/student-app/lib/api/models.dart の差分。gh pr diff から切り出したもの。
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index 9dd501ce..36e542bf 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -787,9 +787,11 @@ class MessageThreadList {
+ 
+   factory MessageThreadList.fromJson(Map<String, dynamic> json) =>
+       MessageThreadList(
+-        threads: (json['threads'] as List<dynamic>)
+-            .map((e) => MessageThread.fromJson(e as Map<String, dynamic>))
+-            .toList(),
++        threads: List.unmodifiable(
++          (json['threads'] as List<dynamic>).map(
++            (e) => MessageThread.fromJson(e as Map<String, dynamic>),
++          ),
++        ),
+       );
+ }
+ 
+@@ -804,15 +806,37 @@ class MessageList {
+ 
+   factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
+     threadId: json['thread_id'] as String,
+-    messages: (json['messages'] as List<dynamic>)
+-        .map((e) => Message.fromJson(e as Map<String, dynamic>))
+-        .toList(),
++    messages: List.unmodifiable(
++      (json['messages'] as List<dynamic>).map(
++        (e) => Message.fromJson(e as Map<String, dynamic>),
++      ),
++    ),
+   );
+ }
+ 
+ /// `SendMessageRequest`
+ class SendMessageRequest {
+-  const SendMessageRequest({required this.body});
++  /// 本文が空白だけ、または [maxBodyLength] 文字を超えるときは [ArgumentError]
++  factory SendMessageRequest({required String body}) {
++    if (!isValidBody(body)) {
++      throw ArgumentError.value(
++        body,
++        'body',
++        '空白だけの本文と、$maxBodyLength 文字を超える本文は送れません',
++      );
++    }
++    return SendMessageRequest._(body);
++  }
++
++  /// 契約の `SendMessageRequest.body` に収まるか（空白だけでなく、[maxBodyLength] 文字以内）。
++  /// 契約の maxLength（JSON Schema）は Unicode のコードポイントで数える。画面の送信可否もこれを使う
++  static bool isValidBody(String body) =>
++      body.trim().isNotEmpty && body.runes.length <= maxBodyLength;
++
++  const SendMessageRequest._(this.body);
++
++  /// 契約の `SendMessageRequest.body` の maxLength
++  static const maxBodyLength = 2000;
+ 
+   /// 本文（2000 文字まで。空白だけは不可）
+   final String body;
