@@ -67,7 +67,7 @@ autonomy:
       source: "2026-10-26 オーナー。開発中は回してよく、運用開始（利用者に出した時点。D4）で承認制へ"
 
   # 開発中（P0〜運用開始前）の表。merge の値は builder（人間の手元の Claude）が PR をマージするときの権限。
-  # 工場（ヘッドレスワーカー）の merge は phase_grants の P0（human_approve）が優先し、P0b 完了まで shadow 判定の記録だけ行う。
+  # 工場（ヘッドレスワーカー）の merge も、2026-10-31 からこの表のとおり（phase_grants の P0 を auto に）。表で human_approve・constitution のものは人へ。
   matrix:
     docs_only:            { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden }
     design_decision:      { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "事後報告（要点をチャットに）" }
@@ -87,12 +87,12 @@ autonomy:
 
   # 次の Phase への解放（Blueprint autonomy.phase_grants と同じ。実績で次へ進む）
   phase_grants:
-    P0:  { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
+    P0:  { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "2026-10-31 オーナー: 自動マージでよい基準のものは工場が自分でマージする。マージ待ちでラインを止めない" }
     P1:  { pr_create: auto, merge: shadow,        deploy_test: auto,      deploy_prod: forbidden }
     P2:  { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: canary_human_approve }
     P3+: { pr_create: auto, merge: auto,          deploy_test: auto,      deploy_prod: auto_with_rollback }
   release_conditions:
-    merge_auto: "工場（ヘッドレス）の自動マージは P0b 完了（直近 20 PR の結果紐付け・健康レポート 4 週・Golden Set 30 件）かつ shadow 判定と人間判断の一致の実績。builder の手元のマージは上の matrix のとおり開発中は auto"
+    merge_auto: "2026-10-31 に P0 から解放（夜間に工場の PR がマージ待ちで 5 時間 40 分止まった）。開発中は matrix のとおり、工場も builder も同じ基準でマージする。プロダクトのマージ基準はこの表を rally の実装を通して育てる"
     first_candidates: [docs_only, dependency_update]   # 人間の手元ではすでに自動マージしている種別から解放する
 
   # 運用開始後は環境・Phase を問わず常に人間承認（変更種別より優先）。
