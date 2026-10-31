@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/screens/booking_pending_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
@@ -35,22 +36,33 @@ void main() {
     expect(find.text('動画を送って添削を受ける'), findsOneWidget);
   });
 
-  testWidgets('予約した枠にメニューが結びついていれば、確定の前後にメニューの名前と 1 回の時間を出す', (tester) async {
+  testWidgets('予約した時点のメニューの写しがあれば、確定の前後にメニューの名前と 1 回の時間を出す', (tester) async {
+    // 予約した後に枠のメニューが直されても、出すのは予約の写し
     final initial = StudentFlowState(
       step: FlowStep.bookingPending,
       student: Fixtures.student,
-      bookedSlot: Fixtures.slotWithCoach(lessonMenu: Fixtures.slotLessonMenu),
-      booking: Fixtures.bookingPending,
+      bookedSlot: Fixtures.slotWithCoach(
+        lessonMenu: SlotLessonMenu(
+          lessonMenuId: Fixtures.slotLessonMenu.lessonMenuId,
+          name: 'フォアハンドの応用',
+          durationMinutes: 90,
+        ),
+      ),
+      booking: Fixtures.withLessonMenu(
+        Fixtures.bookingPending,
+        Fixtures.bookingLessonMenu,
+      ),
     );
     await pumpScreen(
       tester,
       const BookingPendingScreen(),
-      api: FakeStudentApi(),
+      api: FakeStudentApi(bookingLessonMenu: Fixtures.bookingLessonMenu),
       initial: initial,
     );
 
     const label = 'メニュー: フォアハンドの基礎（1 回 60 分）';
     expect(find.text(label), findsOneWidget);
+    expect(find.textContaining('フォアハンドの応用'), findsNothing);
     expect(
       tester.getTopLeft(find.text(label)).dy,
       greaterThan(tester.getTopLeft(find.textContaining('開始: ')).dy),
@@ -60,6 +72,24 @@ void main() {
 
     expect(find.text('予約が確定しました'), findsOneWidget);
     expect(find.text(label), findsOneWidget);
+  });
+
+  testWidgets('予約にメニューの写しがなければ、枠にメニューがあっても出さない', (tester) async {
+    await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: FakeStudentApi(),
+      initial: pending().copyWith(
+        bookedSlot: Fixtures.slotWithCoach(lessonMenu: Fixtures.slotLessonMenu),
+      ),
+    );
+
+    expect(find.textContaining('メニュー'), findsNothing);
+
+    await tapText(tester, '予約を確定する');
+
+    expect(find.text('予約が確定しました'), findsOneWidget);
+    expect(find.textContaining('メニュー'), findsNothing);
   });
 
   testWidgets('メニューのない枠の予約には、今までどおりメニューを出さない', (tester) async {

@@ -15,6 +15,7 @@ class FakeStudentApi implements StudentApi {
     this.coachReviewSummaries = const {},
     this.lessonMenus = const {},
     this.videoReviews = const {},
+    this.bookingLessonMenu,
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
@@ -50,6 +51,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 動画の ID ごとの添削（`getVideoReview` はここにある動画ならこれを返し、ない動画は `reviews` を順に返す）
   final Map<String, VideoReview> videoReviews;
+
+  /// `createBooking` / `confirmBooking` が返す予約に載せる、予約した時点のレッスンメニューの写し（null ならメニューなし）
+  final BookingLessonMenu? bookingLessonMenu;
 
   /// `getVideoReview` だけを、動画の ID ごとに失敗させる
   final Set<String> videoReviewFailures = {};
@@ -97,12 +101,18 @@ class FakeStudentApi implements StudentApi {
       );
 
   @override
-  Future<Booking> createBooking(CreateBookingRequest body) =>
-      _answer('createBooking', () => Fixtures.bookingPending, body);
+  Future<Booking> createBooking(CreateBookingRequest body) => _answer(
+    'createBooking',
+    () => Fixtures.withLessonMenu(Fixtures.bookingPending, bookingLessonMenu),
+    body,
+  );
 
   @override
-  Future<Booking> confirmBooking(String bookingId) =>
-      _answer('confirmBooking', () => Fixtures.bookingConfirmed, bookingId);
+  Future<Booking> confirmBooking(String bookingId) => _answer(
+    'confirmBooking',
+    () => Fixtures.withLessonMenu(Fixtures.bookingConfirmed, bookingLessonMenu),
+    bookingId,
+  );
 
   @override
   Future<MyBookingList> listMyBookings() =>
@@ -450,6 +460,24 @@ abstract final class Fixtures {
     confirmedAt: booking.confirmedAt,
     cancelledAt: cancelledAt ?? booking.cancelledAt,
     lessonMenu: booking.lessonMenu,
+  );
+
+  /// [booking] に予約した時点のレッスンメニューの写しを載せたもの（[lessonMenu] が null ならメニューなし）
+  static Booking withLessonMenu(
+    Booking booking,
+    BookingLessonMenu? lessonMenu,
+  ) => Booking(
+    bookingId: booking.bookingId,
+    slotId: booking.slotId,
+    studentId: booking.studentId,
+    coachId: booking.coachId,
+    isTrial: booking.isTrial,
+    status: booking.status,
+    startsAt: booking.startsAt,
+    createdAt: booking.createdAt,
+    confirmedAt: booking.confirmedAt,
+    cancelledAt: booking.cancelledAt,
+    lessonMenu: lessonMenu,
   );
 
   /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）
