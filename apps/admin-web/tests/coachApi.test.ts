@@ -475,4 +475,37 @@ describe("coachApi", () => {
     const result = await api.getMyLessonStats();
     expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
+
+  const NOTIFICATIONS = {
+    notifications: [
+      {
+        notification_id: "99999999-9999-4999-8999-999999999991",
+        kind: "video_review_requested",
+        body: "生徒から動画の添削の依頼が届きました",
+        created_at: "2026-10-26T02:00:00Z",
+        is_read: false,
+      },
+    ],
+  };
+
+  test("listMyNotifications は GET /api/notifications/me を呼び、お知らせの一覧を返す", async () => {
+    const { api, fetchMock } = setup(json(200, NOTIFICATIONS));
+    const result = await api.listMyNotifications();
+    expect(result).toEqual({ ok: true, data: NOTIFICATIONS });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/notifications/me");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("markMyNotificationsRead は本文なしで POST /api/notifications/me/read を呼び、既読にした一覧を返す", async () => {
+    const read = { notifications: [{ ...NOTIFICATIONS.notifications[0]!, is_read: true }] };
+    const { api, fetchMock } = setup(json(200, read));
+    const result = await api.markMyNotificationsRead();
+    expect(result).toEqual({ ok: true, data: read });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe("/api/notifications/me/read");
+    expect(await request.text()).toBe("");
+  });
 });

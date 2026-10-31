@@ -44,6 +44,15 @@ export const SCREENS: Screen[] = [
   { id: "coach-live", title: "コーチ: 通話への参加", role: "coach", path: "/coach", open: coachTab("通話への参加") },
   { id: "coach-reviews", title: "コーチ: 自分の評価", role: "coach", path: "/coach", open: coachTab("自分の評価") },
   { id: "coach-profile", title: "コーチ: 自己紹介", role: "coach", path: "/coach", open: coachTab("自己紹介") },
+  {
+    id: "coach-notifications",
+    title: "コーチ: お知らせ",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^お知らせ/ }).click();
+    },
+  },
   { id: "hq-home", title: "本部: ホーム", role: "headquarters", path: "/headquarters" },
   { id: "hq-slot-supply", title: "本部: 予約枠の需給", role: "headquarters", path: "/headquarters/slot-supply" },
   {
