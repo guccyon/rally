@@ -642,6 +642,11 @@ export interface paths {
          * @description トークンが示す本人（コーチ）のレッスンメニューの中身と公開中かを丸ごと置き換え、置き換えたあとのメニューを返す。
          *     非公開にするのも、公開し直すのもこれ（`is_published`）。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
          *
+         *     - 本部が非公開にしたメニュー（`headquarters_unpublish` があるもの。`unpublishLessonMenu`）は、本部が公開に戻す
+         *       （`republishLessonMenu`）まで公開し直せない。`is_published: true` は 409 `lesson_menu_unpublished_by_headquarters`
+         *       （何も変えない）。`is_published: false` のままなら中身は直せ、本部が非公開にしたことと理由はそのまま残る
+         *       （コーチの受付の停止をコーチが自分で解けないのと同じく、本部の運営の操作は本部だけが解く）
+         *
          *     - 項目の規則は `createMyLessonMenu` と同じ。`description` と `is_published` も省けない
          *     - メニューがないとき・他のコーチのメニューのとき・`lesson_menu_id` が UUID でないときは 404（他のコーチのメニューは
          *       あることも知らせない）
@@ -676,6 +681,8 @@ export interface paths {
          *       同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
          *     - 各行には作ったコーチの表示名 `coach_display_name` を載せる。コーチのアカウントが引けないときは載せない
          *       （その行は同じスポーツの中で最後に、`coach_id` の順で並べる）
+         *     - 本部が非公開にしたメニュー（`unpublishLessonMenu`）の行には、非公開にした時刻と理由 `headquarters_unpublish` を載せる
+         *       （`published=false` の絞り込みには、コーチが自分で非公開にしたものと本部が非公開にしたものの両方が入る）
          *     - 集計（件数の表）・ページングはしない。メニューがなければ `lesson_menus` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -684,6 +691,72 @@ export interface paths {
         get: operations["listLessonMenus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-menus/{lesson_menu_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * レッスンメニューの非公開（本部）
+         * @description 不適切な内容や誤ったレッスンメニュー（glossary の lesson_menu）を、本部がコーチに代わって非公開にし、非公開にしたメニューを
+         *     返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。メニューは本部の横断の一覧（`listLessonMenus`）から選ぶ。
+         *
+         *     - 本文は省いてよい。`reason`（非公開にする理由。0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに保存する）
+         *       を任意で書け、省けば空文字列（理由なし）。201 文字以上・JSON でない本文は 422 `validation_failed`（何も変えない）
+         *     - 非公開にした時刻と理由を `headquarters_unpublish` に残し、`is_published` を `false` にする。中身（名前・説明など）は変えない
+         *     - コーチが自分で非公開にしていたメニューも非公開にできる（以後はコーチが自分で公開し直せなくなる）
+         *     - 本部が非公開にしたメニューは、本部が公開に戻す（`republishLessonMenu`）までコーチが公開し直せない（コーチの
+         *       `updateMyLessonMenu` の `is_published: true` は 409 `lesson_menu_unpublished_by_headquarters`。非公開のまま中身は直せる）
+         *     - 非公開になったメニューは、生徒の一覧（student-app の `listCoachLessonMenus`）に出ず、動画の送付で選べない（`submitVideo` は
+         *       422）。枠への結びつけと予約がメニューを写すかは、コーチが非公開にしたときと同じ（予約・動画がすでに持つ写しは変えない）
+         *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
+         *     - すでに本部が非公開にしているメニューは 409 `lesson_menu_already_unpublished_by_headquarters`（何も変えない。最初の時刻と
+         *       理由を残す）
+         *
+         *     メニューは catalog の持ち物で、他のコンテキストはポートで読むだけなので境界間イベントは発行しない。本部の運営の操作で、
+         *     KPI の入力でもないので行動イベントも発火しない（`suspendCoach` と同じ）。コーチへの通知はしない。
+         */
+        post: operations["unpublishLessonMenu"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-menus/{lesson_menu_id}/republish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 本部が非公開にしたレッスンメニューを公開に戻す（本部）
+         * @description `unpublishLessonMenu` で本部が非公開にしたレッスンメニューを公開中（`is_published: true`）に戻し、戻したメニューを返す。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。リクエストの本文は読まない。
+         *
+         *     - 本部が非公開にした時刻と理由（`headquarters_unpublish`）は消す（履歴は残さない）。以後はコーチがまた
+         *       `updateMyLessonMenu` で公開・非公開を決められる
+         *     - 公開中に戻ったメニューは、また生徒の一覧（`listCoachLessonMenus`）に出る
+         *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
+         *     - 本部が非公開にしたメニューでない（公開中のもの・コーチが自分で非公開にしたもの）は 409
+         *       `lesson_menu_not_unpublished_by_headquarters`（何も変えない。コーチが自分で非公開にしたメニューを本部が公開しない）
+         *
+         *     境界間イベント・行動イベントは発火しない（`unpublishLessonMenu` と同じ）。
+         */
+        post: operations["republishLessonMenu"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1394,6 +1467,7 @@ export interface components {
         /**
          * @description glossary の lesson（レッスン種別。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ）。
          *     student-app の `Lesson`（完了したレッスン）と区別するため、スキーマ名は LessonMenu にした。student-app の `LessonMenu` と同じ形
+         *     （admin-web だけの任意の項目 `headquarters_unpublish` を除く。student-app は公開中のメニューしか返さないので載らない）
          */
         LessonMenu: {
             /** Format: uuid */
@@ -1417,6 +1491,21 @@ export interface components {
              * @description 作った時刻
              */
             created_at: string;
+            headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
+        };
+        /**
+         * @description 本部がレッスンメニューを非公開にしたこと（glossary の lesson_menu_headquarters_unpublish。`unpublishLessonMenu`）。
+         *     本部が非公開にしたメニューにだけ載せ、本部が非公開にしていなければ項目ごと省く。これがあるあいだ、コーチは
+         *     メニューを公開し直せない（本部が `republishLessonMenu` で公開に戻すと消える）
+         */
+        HeadquartersUnpublish: {
+            /**
+             * Format: date-time
+             * @description 本部が非公開にした時刻
+             */
+            unpublished_at: string;
+            /** @description 本部が非公開にしたときに書いた理由（書かなければ空文字列） */
+            reason: string;
         };
         /** @description コーチ 1 人のレッスンメニューの一覧（並べ方は各操作の説明） */
         LessonMenuList: {
@@ -1448,6 +1537,7 @@ export interface components {
              * @description 作った時刻
              */
             created_at: string;
+            headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
         };
         /** @description コーチのレッスンメニューの横断の一覧（並べ方は `listLessonMenus` の説明） */
         CoachLessonMenuList: {
@@ -1465,6 +1555,11 @@ export interface components {
             duration_minutes?: number | null;
             /** @description 公開中か。省けば true */
             is_published?: boolean;
+        };
+        /** @description 本部によるレッスンメニューの非公開（`unpublishLessonMenu`）。本文ごと省いてよい */
+        UnpublishLessonMenuRequest: {
+            /** @description 非公開にする理由（0〜200 文字）。省けば空文字列 */
+            reason?: string;
         };
         /** @description レッスンメニューの変更（`updateMyLessonMenu`）。今のメニューの中身と公開中かを丸ごと置き換える */
         UpdateLessonMenuRequest: {
@@ -1742,7 +1837,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -1777,7 +1872,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していないなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -2322,6 +2417,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -2350,6 +2446,63 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    unpublishLessonMenu: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UnpublishLessonMenuRequest"];
+            };
+        };
+        responses: {
+            /** @description 本部が非公開にしたレッスンメニュー（`headquarters_unpublish` を載せる） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    republishLessonMenu: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公開中に戻したレッスンメニュー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listStudents: {
