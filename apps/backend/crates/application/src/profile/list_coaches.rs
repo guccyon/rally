@@ -56,7 +56,6 @@ mod tests {
         catalog::Sport,
         identity::{Account, Email, Role},
         profile::DisplayName,
-        scheduling::CoachAcceptance,
     };
 
     use super::*;
@@ -64,6 +63,9 @@ mod tests {
         in_memory::{InMemoryAccountRepository, InMemoryCoachAcceptanceRepository},
         scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
     };
+
+    /// 受付を止める・再開する本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
     type Acceptances = SchedulingCoachAcceptanceLookup<InMemoryCoachAcceptanceRepository>;
 
@@ -138,7 +140,9 @@ mod tests {
         }
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
-            .update(AccountId::from_u128(1), CoachAcceptance::suspend)
+            .update(AccountId::from_u128(1), |a| {
+                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            })
             .await
             .unwrap();
 

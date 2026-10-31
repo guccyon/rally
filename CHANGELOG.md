@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部がコーチの受付を止めた・再開した記録を見る API: admin-web の契約に `GET /coaches/{coach_id}/acceptance-changes`（`listCoachAcceptanceChanges`）を足した。コーチ 1 人の受付を止めた（`suspendCoach`）・再開した（`resumeCoach`）記録を新しい順に、変えた後の状態 `acceptance_status`・操作した本部のアカウントの ID `changed_by`・時刻 `changed_at` で返す。本部以外は 403、コーチでない・ない ID は 404。記録はこの版から残し、それより前の停止・再開は載らない。DB は `scheduling.coach_acceptance_changes` の追加だけ（expand）。admin-web は型を足しただけで、画面は変えない
 - 本部が生徒にお知らせを送る API: admin-web の契約に `POST /announcements`（`sendAnnouncement`。題 1〜50 文字・本文 1〜2000 文字・任意の `sport`。省けば生徒全員）と `GET /announcements`（`listAnnouncements`。送った記録を新しい順に、受け取った生徒の数つきで）を足した。対象の生徒ごとにお知らせ（種類 `announcement`。本文は題と本文を改行でつないだもの）を残し、student-app の通知の受け取り設定に足した `announcement` が true の生徒にだけプッシュ通知（モック）を送る。対象の生徒がいなければ 404、題・本文・スポーツの規則違反は 422、本部以外は 403。DB は `notification.announcements` の追加と `notification.notifications` の列・種類の追加の expand だけ。admin-web は型を生成し直し、student-app は型に種類と設定の項目を足しただけで、管理画面の画面は次の段（#382）
 - 本部が生徒 1 人の利用の様子を見る API: admin-web の契約に `GET /students/{student_id}/activity`（`getStudentActivity`）を足した。生徒の ID・表示名と、これからの予約（未確定・確定で開始前のもの。開始の古い順）・直近の受けたレッスン（完了の新しい順に最大 20 件）・キャンセルした予約の件数を返し、予約とレッスンにはコーチの表示名を添える。メールアドレスなど表示名と ID のほかの個人の情報は返さない。本部以外は 403、ない ID・生徒でない ID は 404。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#471）
 - admin-web の本部の「レッスンメニュー」（`/headquarters/lesson-menus`）の各行に「非公開にする」（理由は任意で 200 文字まで）/「公開に戻す」を足した: 行の中で確かめてから `unpublishLessonMenu` / `republishLessonMenu` を送り、結果を行に反映する。本部が非公開にした行は「非公開（本部）」と日時・理由を出す。断られたら（409 など）文言を出して一覧を取り直す

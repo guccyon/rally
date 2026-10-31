@@ -159,14 +159,15 @@ terms:
     ja: "コーチの受付"
     definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"
     context: scheduling
-    code: [CoachAcceptance, CoachAcceptanceStatus, suspendCoach, resumeCoach, scheduling.coach_acceptances]
+    code: [CoachAcceptance, CoachAcceptanceStatus, CoachAcceptanceChange, suspendCoach, resumeCoach, listCoachAcceptanceChanges, scheduling.coach_acceptances, scheduling.coach_acceptance_changes]
     states:
       accepting: "受付中"
       suspended: "停止中"
     note: >-
       一度も止めていないコーチは受付中。止めても予約のキャンセルやコーチへの通知はせず、コーチは枠の公開・取り下げも今までどおりできる
       （公開した枠は再開するまで検索に出ない）。止める・再開する規則は domain の CoachAcceptance の 1 か所。matching（コーチを探す一覧）と
-      profile（本部のコーチの一覧）はポートで読むだけ。
+      profile（本部のコーチの一覧）はポートで読むだけ。止めた・再開したときは、いつ・どの本部のアカウントが変えたかの記録
+      （CoachAcceptanceChange。変えた後の状態を持つ）を 1 件残し、本部が listCoachAcceptanceChanges で新しい順にたどる。
   - id: slot_capacity
     ja: "定員"
     definition: "1 つのスロットに入れる有効な予約（未確定と確定。キャンセルした予約は数えない）の数の上限で、1〜6 の整数（公開で省いたときは 1）であり、1 はマンツーマン、2 以上はグループレッスンである（変更シナリオ cs-004）。"

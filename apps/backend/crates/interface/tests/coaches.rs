@@ -34,12 +34,14 @@ use domain::{
     matching::FavoriteCoach,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
-    scheduling::CoachAcceptance,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 mod support;
+
+/// 受付を止める・再開する本部のアカウント。
+const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
 /// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
 struct FakeTokens;
@@ -231,7 +233,9 @@ async fn headquarters_lists_only_coaches_in_display_name_order() {
 async fn suspended_coaches_are_listed_to_headquarters_with_their_status_but_not_to_students() {
     let acceptances = InMemoryCoachAcceptanceRepository::default();
     acceptances
-        .update(AccountId::from_u128(4), CoachAcceptance::suspend)
+        .update(AccountId::from_u128(4), |a| {
+            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+        })
         .await
         .unwrap();
     let router = app_with(accounts().await, acceptances);
