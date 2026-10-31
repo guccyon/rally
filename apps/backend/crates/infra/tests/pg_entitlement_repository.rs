@@ -18,9 +18,8 @@ use application::{
     scheduling::booking_id_uuid,
 };
 use domain::{
-    DomainError,
     catalog::Sport,
-    entitlement::{ContractType, SubscriptionPlan, YearMonth},
+    entitlement::{ContractType, EntitlementError, SubscriptionPlan, YearMonth},
     identity::AccountId,
     scheduling::BookingId,
 };
@@ -152,7 +151,7 @@ async fn quota_is_two_per_calendar_month_and_released_bookings_free_it(pool: PgP
         matches!(
             result,
             Err(ConsumeLiveLessonQuotaError::Invalid(
-                DomainError::LiveLessonQuotaExceeded
+                EntitlementError::LiveLessonQuotaExceeded
             ))
         ),
         "{result:?}"
@@ -220,7 +219,7 @@ async fn plus_quota_is_four_per_calendar_month(pool: PgPool) {
         matches!(
             result,
             Err(ConsumeLiveLessonQuotaError::Invalid(
-                DomainError::LiveLessonQuotaExceeded
+                EntitlementError::LiveLessonQuotaExceeded
             ))
         ),
         "{result:?}"

@@ -1,4 +1,5 @@
-use crate::{DomainError, catalog::Sport};
+use super::EntitlementError;
+use crate::catalog::Sport;
 
 /// 契約種別（specs/product-context.md の課金の 2 種類）。
 ///
@@ -20,12 +21,12 @@ impl ContractType {
         }
     }
 
-    /// [`Self::covers`] でなければ [`DomainError::SportNotCoveredByContract`]。
-    pub(crate) const fn ensure_covers(self, sport: Sport) -> Result<(), DomainError> {
+    /// [`Self::covers`] でなければ [`EntitlementError::SportNotCoveredByContract`]。
+    pub(crate) const fn ensure_covers(self, sport: Sport) -> Result<(), EntitlementError> {
         if self.covers(sport) {
             Ok(())
         } else {
-            Err(DomainError::SportNotCoveredByContract {
+            Err(EntitlementError::SportNotCoveredByContract {
                 contract_type: self,
                 sport,
             })

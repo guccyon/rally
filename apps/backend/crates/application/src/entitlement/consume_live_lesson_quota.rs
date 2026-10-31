@@ -1,6 +1,10 @@
 use std::time::SystemTime;
 
-use domain::{DomainError, entitlement::Entitlement, identity::AccountId, scheduling::BookingId};
+use domain::{
+    entitlement::{Entitlement, EntitlementError},
+    identity::AccountId,
+    scheduling::BookingId,
+};
 
 use super::{EntitlementRepository, UpdateEntitlementError, calendar_month};
 use crate::Unavailable;
@@ -18,8 +22,8 @@ pub struct ConsumeLiveLessonQuotaCommand {
 pub enum ConsumeLiveLessonQuotaError {
     /// 生徒の受講権がない（月額契約を開始していない）
     NotFound,
-    /// 消費がドメインの不変条件を満たさない（枠が残っていない）
-    Invalid(DomainError),
+    /// 消費が受講権の不変条件を満たさない（枠が残っていない [`EntitlementError::LiveLessonQuotaExceeded`]）
+    Invalid(EntitlementError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -131,7 +135,7 @@ mod tests {
             matches!(
                 result,
                 Err(ConsumeLiveLessonQuotaError::Invalid(
-                    DomainError::LiveLessonQuotaExceeded
+                    EntitlementError::LiveLessonQuotaExceeded
                 ))
             ),
             "{result:?}"

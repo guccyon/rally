@@ -1,8 +1,8 @@
 use domain::{
-    DomainError,
     catalog::Sport,
     entitlement::{
-        Entitlement, LiveLessonQuota, Subscription, SubscriptionPlan, SubscriptionStatus,
+        Entitlement, EntitlementError, LiveLessonQuota, Subscription, SubscriptionPlan,
+        SubscriptionStatus,
     },
     identity::AccountId,
 };
@@ -29,8 +29,8 @@ pub struct StartSubscriptionCommand {
 
 #[derive(Debug)]
 pub enum StartSubscriptionError {
-    /// 開始がドメインの不変条件を満たさない（月額はゴルフ以外）
-    Invalid(DomainError),
+    /// 開始が受講権と契約の不変条件を満たさない（月額はゴルフ以外 [`EntitlementError::SportNotCoveredByContract`]）
+    Invalid(EntitlementError),
     /// 生徒の受講権がすでにある（Gen1 の受講権は生徒ごとに 1 つ）
     AlreadySubscribed,
     /// 保存先の障害
@@ -277,7 +277,7 @@ mod tests {
             matches!(
                 result,
                 Err(StartSubscriptionError::Invalid(
-                    DomainError::SportNotCoveredByContract { .. }
+                    EntitlementError::SportNotCoveredByContract { .. }
                 ))
             ),
             "{result:?}"
