@@ -16,7 +16,7 @@ use application::{
     catalog::{
         CatalogLessonMenuLookup, CatalogPublishedLessonMenuCountLookup, CreateLessonMenu,
         LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        UpdateLessonMenu,
+        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
     },
     clock::{Clock, SystemClock},
     entitlement::{
@@ -382,6 +382,11 @@ where
         ),
         MockTokenService,
     );
+    let lesson_menu_publication = interface::lesson_menu_publication_router(
+        UnpublishLessonMenu::new(lesson_menus.clone(), clock.clone()),
+        RepublishLessonMenu::new(lesson_menus.clone()),
+        MockTokenService,
+    );
     let my_videos = interface::my_videos_router(
         ListMyVideos::new(
             videos.clone(),
@@ -668,6 +673,7 @@ where
         MockTokenService,
     )
     .merge(catalog)
+    .merge(lesson_menu_publication)
     .merge(coaches)
     .merge(favorite_coaches_routes)
     .merge(my_videos)
