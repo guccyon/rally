@@ -10,7 +10,7 @@ use application::{
 use domain::{
     catalog::Sport,
     identity::{Account, AccountId, Coach, Email, Role, RoleAttributes},
-    profile::{CoachBio, DisplayName},
+    profile::{CoachBio, DisplayName, DisplayNameQuery},
 };
 use sqlx::{
     PgPool,
@@ -21,6 +21,10 @@ use crate::{
     identity_values::{role_from_value, role_value, sport_from_value, sport_value},
     pg_support::{is_unique_violation, timestamp},
 };
+
+/// 表示名の検索で小文字にそろえる ASCII の大文字と、対応する小文字（`translate` の引数）。
+const ASCII_UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const ASCII_LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
 
 /// [`AccountRepository`] と [`CoachProfileRepository`] の Postgres 実装。
 ///
@@ -141,15 +145,24 @@ impl AccountRepository for PgAccountRepository {
         rows.into_iter().map(coach_from_row).collect()
     }
 
-    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
-        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）
+    async fn list_students(
+        &self,
+        name: Option<&DisplayNameQuery>,
+    ) -> Result<Vec<Account>, Unavailable> {
+        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名の一致は DisplayNameQuery と
+        // 同じ規則で、ASCII の英字だけを小文字にそろえて（照合順序・ロケールに左右されない translate）、検索語の折りたたんだ
+        // 形を部分文字列として探す（strpos なので % や _ も文字のまま）
         let rows: Vec<StudentRow> = sqlx::query_as(
             "SELECT account_id, email, display_name, created_at, sport
              FROM identity.accounts
              WHERE role = $1
+               AND ($2::text IS NULL OR strpos(translate(display_name, $3, $4), $2) > 0)
              ORDER BY created_at DESC, account_id",
         )
         .bind(role_value(Role::Student))
+        .bind(name.map(DisplayNameQuery::folded))
+        .bind(ASCII_UPPERCASE)
+        .bind(ASCII_LOWERCASE)
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;

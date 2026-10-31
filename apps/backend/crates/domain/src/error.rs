@@ -9,6 +9,8 @@ pub enum DomainError {
     EmptyDisplayName,
     /// 表示名が長すぎる（`max` は文字数）
     DisplayNameTooLong { max: usize },
+    /// 表示名の検索語が長すぎる（`max` は前後の空白を除いた文字数）
+    DisplayNameQueryTooLong { max: usize },
     /// メールアドレスの形が不正
     InvalidEmail,
     /// 役割とスポーツの組み合わせが不正（生徒は 1 つ、コーチは 1 つ以上、本部はなし）
