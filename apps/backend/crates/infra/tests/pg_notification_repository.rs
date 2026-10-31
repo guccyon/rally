@@ -1,21 +1,23 @@
 //! `PgNotificationRepository`（`notification.notifications`）の検証。プッシュ通知の変種ごとの往復・受け取る人ごとの
 //! 新しい順・同じプッシュ通知（同じ動画の添削の依頼を含む）を 2 件にしないこと・すべて既読（最初に読んだ時刻のまま、
-//! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）。
+//! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
-use application::notification::NotificationRepository;
+use application::notification::{AnnouncementRepository, NotificationRepository};
 use domain::{
     async_lesson::{VideoId, VideoReviewId},
-    identity::AccountId,
+    identity::{AccountId, Role},
     messaging::{MessageId, MessageSender, MessageThreadId},
-    notification::{Notification, PushNotification},
+    notification::{
+        Announcement, AnnouncementBody, AnnouncementTitle, Notification, PushNotification,
+    },
     scheduling::BookingId,
 };
-use infra::PgNotificationRepository;
+use infra::{PgAnnouncementRepository, PgNotificationRepository};
 use sqlx::PgPool;
 use support::at;
 
@@ -224,4 +226,60 @@ async fn marking_all_read_keeps_the_first_time_and_skips_later_ones(pool: PgPool
         ],
         "読んだものは最初に読んだ時刻のまま"
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn an_announcement_round_trips_once_per_student(pool: PgPool) {
+    let notifications = PgNotificationRepository::new(pool.clone());
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let (student, other, coach) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::coach(&pool).await,
+    );
+    let sent = Announcement::new(
+        announcements.next_id(),
+        headquarters,
+        AnnouncementTitle::new("メンテナンスのお知らせ").unwrap(),
+        AnnouncementBody::new("11/3 は使えません").unwrap(),
+        None,
+        2,
+        at(3),
+    )
+    .unwrap();
+    announcements.insert(sent.clone()).await.unwrap();
+
+    let [confirmed, ..] = pushes(student, coach);
+    let first = Notification::new(notifications.next_id(), confirmed, at(1));
+    let to_student = Notification::new(notifications.next_id(), sent.push_to(student), at(3));
+    let to_other = Notification::new(notifications.next_id(), sent.push_to(other), at(3));
+    for notification in [first, to_student, to_other] {
+        notifications.insert(notification).await.unwrap();
+    }
+    // 同じお知らせは同じ生徒に 1 件（障害にもしない）
+    notifications
+        .insert(Notification::new(
+            notifications.next_id(),
+            sent.push_to(student),
+            at(4),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        notifications.find_by_recipient(student).await.unwrap(),
+        [to_student, first],
+        "本部からのお知らせも新しい順に並ぶ"
+    );
+    assert_eq!(
+        notifications.find_by_recipient(other).await.unwrap(),
+        [to_other]
+    );
+
+    notifications.mark_all_read(student, at(5)).await.unwrap();
+    let read = notifications.find_by_recipient(student).await.unwrap();
+    assert_eq!(read[0].push(), sent.push_to(student));
+    assert_eq!(read[0].read_at(), Some(at(5)));
 }

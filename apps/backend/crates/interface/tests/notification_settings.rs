@@ -299,6 +299,7 @@ async fn a_student_who_has_not_changed_anything_gets_every_kind_on() {
             "booking_confirmed": true,
             "video_review_returned": true,
             "message_received": true,
+            "announcement": true,
         })
     );
     assert!(settings.all().is_empty(), "照会では保存しない");
@@ -313,7 +314,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
         &router,
         "PUT",
         Some(STUDENT),
-        Some(r#"{ "message_received": false }"#),
+        Some(r#"{ "message_received": false, "announcement": false }"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -324,10 +325,11 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
             "booking_confirmed": true,
             "video_review_returned": true,
             "message_received": false,
+            "announcement": false,
         })
     );
 
-    // 書かなかった種類（メッセージ）は今の設定のまま。空のオブジェクトは何も変えない
+    // 書かなかった種類（メッセージ・本部からのお知らせ）は今の設定のまま。空のオブジェクトは何も変えない
     let (status, body) = call(
         &router,
         "PUT",
@@ -346,6 +348,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
                 "booking_confirmed": false,
                 "video_review_returned": true,
                 "message_received": false,
+                "announcement": false,
             })
         );
     }
@@ -355,7 +358,8 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
             AccountId::from_u128(1),
             [
                 NotificationKind::BookingConfirmed,
-                NotificationKind::MessageReceived
+                NotificationKind::MessageReceived,
+                NotificationKind::Announcement
             ]
         )]
     );
