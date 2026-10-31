@@ -124,6 +124,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_student_reads_the_messages_of_the_coach() {
+        let threads = threads();
+        let before = threads.all();
+        assert_eq!(before[0].unread_count_for(STUDENT), 1);
+        let thread = MarkMessageThreadRead::new(threads.clone(), FixedClock(at(10)))
+            .execute(command(STUDENT, THREAD))
+            .await
+            .unwrap();
+        let read_at: Vec<_> = thread.messages().iter().map(Message::read_at).collect();
+        assert_eq!(read_at, [None, None, Some(at(10))]);
+        assert_eq!(thread.unread_count_for(STUDENT), 0);
+        assert_eq!(thread.unread_count_for(COACH), 2, "コーチの未読は変えない");
+        assert_eq!(threads.all(), vec![thread]);
+    }
+
+    #[tokio::test]
     async fn others_and_unknown_threads_are_errors() {
         let threads = threads();
         let use_case = MarkMessageThreadRead::new(threads.clone(), FixedClock(at(10)));
