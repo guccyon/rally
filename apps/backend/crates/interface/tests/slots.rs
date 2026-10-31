@@ -103,6 +103,7 @@ fn app() -> App {
             clock,
         ),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
+        application::profile::GetCoachBio::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(
             slots.clone(),
@@ -858,10 +859,13 @@ async fn register_coach(app: &App, token: &str, display_name: &str, bio: &str) {
     )
     .unwrap();
     app.accounts.insert(account).await.unwrap();
-    app.accounts
-        .update_coach_bio(id, CoachBio::new(bio).unwrap())
-        .await
-        .unwrap();
+    application::profile::CoachProfileRepository::update_coach_bio(
+        &app.accounts,
+        id,
+        CoachBio::new(bio).unwrap(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

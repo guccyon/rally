@@ -5,10 +5,12 @@ use domain::identity::AccountId;
 use crate::{
     Unavailable,
     identity::AccountRepository,
+    profile::CoachProfileRepository,
     scheduling::{CoachIntroduction, CoachIntroductionLookup},
 };
 
-/// scheduling の [`CoachIntroductionLookup`] の profile による実装。アカウントの保存先（データは当面 identity の表）から
+/// scheduling の [`CoachIntroductionLookup`] の profile による実装。表示名はアカウントの保存先（[`AccountRepository`]）
+/// から、自己紹介文は profile の保存先（[`CoachProfileRepository`]）から読む（データはどちらも当面 identity の表）。
 /// 読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
@@ -25,7 +27,7 @@ impl<R> ProfileCoachIntroductionLookup<R> {
 
 impl<R> CoachIntroductionLookup for ProfileCoachIntroductionLookup<R>
 where
-    R: AccountRepository,
+    R: AccountRepository + CoachProfileRepository,
 {
     async fn find_coach_introductions(
         &self,
@@ -36,14 +38,14 @@ where
             let Some(account) = self.accounts.find(coach_id).await? else {
                 continue;
             };
-            let Some(coach) = account.as_coach() else {
+            let Some(bio) = self.accounts.find_coach_bio(coach_id).await? else {
                 continue;
             };
             introductions.insert(
                 coach_id,
                 CoachIntroduction {
                     display_name: account.display_name().clone(),
-                    bio: coach.bio().clone(),
+                    bio,
                 },
             );
         }

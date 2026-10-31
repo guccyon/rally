@@ -90,8 +90,8 @@ use application::{
         NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
     },
     profile::{
-        CoachAcceptanceLookup, CoachFavoriteLookup, GetCoachProfile, ListCoaches,
-        UpdateCoachProfile, UpdateStudentProfile,
+        CoachAcceptanceLookup, CoachFavoriteLookup, CoachProfileRepository, GetCoachBio,
+        GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
@@ -169,6 +169,7 @@ pub fn router_with<
 >(
     register_account: RegisterAccount<R, A, C>,
     get_account: GetAccount<R>,
+    get_coach_bio: GetCoachBio<R>,
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, J, A, C>,
     search_slots: SearchSlots<S, J, I, C>,
@@ -200,7 +201,7 @@ pub fn router_with<
     tokens: T,
 ) -> Router
 where
-    R: AccountRepository + 'static,
+    R: AccountRepository + CoachProfileRepository + 'static,
     S: SlotRepository + 'static,
     J: LessonMenuLookup + VideoLessonMenuLookup + 'static,
     I: CoachIntroductionLookup + 'static,
@@ -243,6 +244,7 @@ where
         )
         .with_state(Arc::new(me::MeState {
             get_account,
+            get_coach_bio,
             update_coach_profile,
         }));
     let slots = Router::new()
@@ -548,7 +550,7 @@ where
 /// `GET /coaches/{coach_id}` は生徒だけ。
 pub fn coach_profile_router<R, F, T>(get_coach_profile: GetCoachProfile<R, F>, tokens: T) -> Router
 where
-    R: AccountRepository + 'static,
+    R: AccountRepository + CoachProfileRepository + 'static,
     F: CoachFavoriteLookup + 'static,
     T: TokenVerifier + 'static,
 {
