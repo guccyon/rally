@@ -371,6 +371,88 @@ async fn search_filters_open_slots_and_pages_in_start_order(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn search_by_coach_combines_with_the_sport_period_and_paging(pool: PgPool) {
+    let coach_a = coach(&pool).await;
+    let coach_b = coach(&pool).await;
+    let use_case = publish_slot(&pool);
+    let publish = async |coach_id, sport, hour| {
+        use_case
+            .execute(command(coach_id, sport, hour, hour + 1))
+            .await
+            .unwrap()
+    };
+    let a11 = publish(coach_a, Sport::Tennis, 11).await;
+    let a13 = publish(coach_a, Sport::Tennis, 13).await;
+    let a15 = publish(coach_a, Sport::Tennis, 15).await;
+    let a_soccer = publish(coach_a, Sport::Soccer, 17).await;
+    publish(coach_b, Sport::Tennis, 12).await;
+    publish(coach_b, Sport::Tennis, 14).await;
+
+    let search = SearchSlots::new(
+        PgSlotRepository::new(pool.clone()),
+        lesson_menus(&pool),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(10)),
+    );
+    let ids = |slots: &[Slot]| slots.iter().map(Slot::id).collect::<Vec<_>>();
+    let by_coach = |limit| SearchSlotsQuery {
+        coach_id: Some(coach_a),
+        ..query(limit)
+    };
+
+    let page = search
+        .execute(SearchSlotsQuery {
+            starts_after: Some(at(12)),
+            starts_before: Some(at(15)),
+            ..by_coach(20)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids(&page.items), [a13.id()], "コーチと期間の両方で絞る");
+    assert_eq!(
+        page.coaches.keys().copied().collect::<Vec<_>>(),
+        [coach_a],
+        "紹介はそのコーチの分だけ"
+    );
+
+    let page = search
+        .execute(SearchSlotsQuery {
+            sport: Sport::Soccer,
+            ..by_coach(20)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        ids(&page.items),
+        [a_soccer.id()],
+        "コーチとスポーツの両方で絞る"
+    );
+
+    let first = search.execute(by_coach(2)).await.unwrap();
+    assert_eq!(ids(&first.items), [a11.id(), a13.id()]);
+    let second = search
+        .execute(SearchSlotsQuery {
+            cursor: first.next_cursor,
+            ..by_coach(2)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids(&second.items), [a15.id()]);
+    assert_eq!(second.next_cursor, None);
+
+    // 枠のない ID は空の一覧
+    let none = search
+        .execute(SearchSlotsQuery {
+            coach_id: Some(AccountId::from_u128(99)),
+            ..query(20)
+        })
+        .await
+        .unwrap();
+    assert!(none.items.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn search_of_the_repository_respects_the_limit(pool: PgPool) {
     let coach_id = coach(&pool).await;
     let use_case = publish_slot(&pool);

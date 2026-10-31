@@ -281,6 +281,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn coach_filter_combines_with_the_sport_period_and_paging() {
+        let use_case = use_case();
+        let by_coach = |limit| SearchSlotsQuery {
+            coach_id: Some(COACH),
+            ..query(limit)
+        };
+        let page = use_case
+            .execute(SearchSlotsQuery {
+                starts_after: Some(at(9)),
+                starts_before: Some(at(13)),
+                ..by_coach(20)
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&page), [1, 3, 5], "コーチと期間の両方で絞る");
+
+        let page = use_case
+            .execute(SearchSlotsQuery {
+                sport: Sport::Soccer,
+                ..by_coach(20)
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&page), [4], "コーチとスポーツの両方で絞る");
+
+        let first = use_case.execute(by_coach(2)).await.unwrap();
+        assert_eq!(ids(&first), [3, 5]);
+        let second = use_case
+            .execute(SearchSlotsQuery {
+                cursor: first.next_cursor,
+                ..by_coach(2)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&second),
+            [2],
+            "別のコーチの 14 時の枠はページをまたいでも出ない"
+        );
+        assert_eq!(second.next_cursor, None);
+    }
+
+    #[tokio::test]
+    async fn unknown_coach_is_an_empty_page_without_asking_for_introductions() {
+        let use_case = use_case();
+        let page = use_case
+            .execute(SearchSlotsQuery {
+                coach_id: Some(AccountId::from_u128(99)),
+                ..query(20)
+            })
+            .await
+            .unwrap();
+        assert!(page.items.is_empty());
+        assert_eq!(page.next_cursor, None);
+        assert!(use_case.coaches.asked().is_empty());
+    }
+
+    #[tokio::test]
     async fn pages_through_results_with_the_cursor() {
         let use_case = use_case();
         let mut cursor = None;
