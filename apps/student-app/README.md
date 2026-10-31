@@ -13,7 +13,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 
 ## 画面
 
-画面遷移は状態（`lib/state/student_flow.dart` の `FlowStep`）だけで決まる。API を呼ぶのは `lib/state/` の Notifier だけで、画面は状態を表示してそのメソッドを呼ぶ。チャット（スレッドの一覧・メッセージ・添削の依頼と返却）の状態と操作は `lib/state/chat.dart` の `ChatState` / `ChatNotifier`（`chatProvider`）、それ以外は `StudentFlowState` / `StudentFlowNotifier`（`studentFlowProvider`）に置く。段（`FlowStep`）と、API を呼んでいる間の印（`busy`）・直前の操作の失敗の文言（`errorMessage`）はアプリで 1 つなので `StudentFlowState` に持ち、`ChatNotifier` も段の移動は `StudentFlowNotifier.moveTo`、API の呼び出しは `StudentFlowNotifier.run` を通す。
+画面遷移は状態（`lib/state/student_flow.dart` の `FlowStep`）だけで決まる。API を呼ぶのは `lib/state/` の Notifier だけで、画面は状態を表示してそのメソッドを呼ぶ。チャット（スレッドの一覧・メッセージ・添削の依頼と返却）の状態と操作は `lib/state/chat.dart` の `ChatState` / `ChatNotifier`（`chatProvider`）、完了したレッスンの評価（この端末で送った評価・評価済みと分かっているレッスン）の状態と操作は `lib/state/lesson_review.dart` の `LessonReviewState` / `LessonReviewNotifier`（`lessonReviewProvider`）、それ以外は `StudentFlowState` / `StudentFlowNotifier`（`studentFlowProvider`）に置く。段（`FlowStep`）と、API を呼んでいる間の印（`busy`）・直前の操作の失敗の文言（`errorMessage`）はアプリで 1 つなので `StudentFlowState` に持ち、`ChatNotifier` と `LessonReviewNotifier` も段の移動は `StudentFlowNotifier.moveTo`、API の呼び出しは `StudentFlowNotifier.run` を通す。評価する完了したレッスン（`lesson`）は完了記録の結果なので `StudentFlowState` に残す。
 
 | 画面（`lib/screens/`） | 呼ぶ操作 |
 |---|---|
