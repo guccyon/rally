@@ -124,6 +124,16 @@ impl Contract {
                         .is_ok(),
                         "{at}: date-time（RFC 3339）でない {s}"
                     ),
+                    // RFC 3339 の full-date（`YYYY-MM-DD`）
+                    Some("date") => assert!(
+                        s.len() == 10
+                            && time::Date::parse(
+                                s,
+                                &time::format_description::well_known::Iso8601::DATE
+                            )
+                            .is_ok(),
+                        "{at}: date（YYYY-MM-DD）でない {s}"
+                    ),
                     // スキームと `://` のあとに何かがある最小の形（絶対 URI）
                     Some("uri") => assert!(
                         s.split_once("://").is_some_and(|(scheme, rest)| {
