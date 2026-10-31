@@ -2,13 +2,18 @@
 //! `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（コーチだけ）、student-app の `GET /coaches/{coach_id}/lesson-menus`
 //! （生徒だけ・公開中だけ）を、レスポンスの形をそれぞれの OpenAPI のスキーマで検査しながら通す。
 //! 生徒・本部がメニューを作る・直すことができないこと（403）、他のコーチのメニューを直せないこと（404）を確かめる。
+//! admin-web の `GET /lesson-menus`（本部だけ・すべてのコーチの横断）の絞り込みと並べ方、コーチ・生徒が読めないこと（403）も確かめる。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
-    catalog::{CreateLessonMenu, ListCoachLessonMenus, ListMyLessonMenus, UpdateLessonMenu},
+    catalog::{
+        CreateLessonMenu, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
+        UpdateLessonMenu,
+    },
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
     in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLessonMenuRepository},
+    profile::ProfileCoachDisplayNameLookup,
 };
 use axum::{
     Router,
@@ -16,6 +21,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    catalog::{LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName},
     identity::{Account, AccountId, Email, Role, Sport},
     profile::DisplayName,
 };
@@ -47,11 +53,12 @@ impl TokenVerifier for FakeTokens {
     }
 }
 
-/// テニス・ゴルフのコーチ（ID 42 = 0x2a）
+/// テニス・ゴルフのコーチ「たなか」（ID 42 = 0x2a）
 const COACH: &str = "coach:42";
 const COACH_ID: &str = "00000000-0000-0000-0000-00000000002a";
-/// テニスのコーチ（ID 43）
+/// テニスのコーチ「いとう」（ID 43 = 0x2b）
 const OTHER_COACH: &str = "coach:43";
+const OTHER_COACH_ID: &str = "00000000-0000-0000-0000-00000000002b";
 const STUDENT: &str = "student:3";
 const HEADQUARTERS: &str = "headquarters:1";
 /// アカウントのないコーチのトークン
@@ -63,18 +70,18 @@ fn now() -> SystemTime {
 
 async fn accounts() -> InMemoryAccountRepository {
     let accounts = InMemoryAccountRepository::default();
-    for (id, role, sports) in [
-        (1, Role::Headquarters, vec![]),
-        (3, Role::Student, vec![Sport::Tennis]),
-        (42, Role::Coach, vec![Sport::Tennis, Sport::Golf]),
-        (43, Role::Coach, vec![Sport::Tennis]),
+    for (id, name, role, sports) in [
+        (1, "テスト", Role::Headquarters, vec![]),
+        (3, "テスト", Role::Student, vec![Sport::Tennis]),
+        (42, "たなか", Role::Coach, vec![Sport::Tennis, Sport::Golf]),
+        (43, "いとう", Role::Coach, vec![Sport::Tennis]),
     ] {
         accounts
             .insert(
                 Account::new(
                     AccountId::from_u128(id),
                     Email::new(format!("user{id}@example.com")).unwrap(),
-                    DisplayName::new("テスト").unwrap(),
+                    DisplayName::new(name).unwrap(),
                     role,
                     sports,
                     now(),
@@ -88,13 +95,17 @@ async fn accounts() -> InMemoryAccountRepository {
 }
 
 async fn app() -> Router {
-    let menus = InMemoryLessonMenuRepository::default();
+    app_with(InMemoryLessonMenuRepository::default()).await
+}
+
+async fn app_with(menus: InMemoryLessonMenuRepository) -> Router {
     let accounts = accounts().await;
     interface::catalog_router(
         CreateLessonMenu::new(menus.clone(), accounts.clone(), FixedClock(now())),
-        UpdateLessonMenu::new(menus.clone(), accounts),
+        UpdateLessonMenu::new(menus.clone(), accounts.clone()),
         ListMyLessonMenus::new(menus.clone()),
-        ListCoachLessonMenus::new(menus),
+        ListCoachLessonMenus::new(menus.clone()),
+        ListLessonMenus::new(menus, ProfileCoachDisplayNameLookup::new(accounts)),
         FakeTokens,
     )
 }
@@ -138,6 +149,7 @@ fn live_menu(sport: &str, name: &str) -> Value {
 const ADMIN_MENUS: &str = "/coaches/me/lesson-menus";
 const ADMIN_MENU: &str = "/coaches/me/lesson-menus/{lesson_menu_id}";
 const STUDENT_MENUS: &str = "/coaches/{coach_id}/lesson-menus";
+const HEADQUARTERS_MENUS: &str = "/lesson-menus";
 
 #[tokio::test]
 async fn the_coach_creates_lists_and_unpublishes_its_menus() {
@@ -434,4 +446,180 @@ async fn a_coach_without_an_account_is_401_and_unknown_coaches_have_no_menus() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = send(&app, "GET", ADMIN_MENUS, "nope", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    let (_, forehand) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("tennis", "フォア")),
+    )
+    .await;
+    let (_, swing) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("golf", "スイング")),
+    )
+    .await;
+    let (_, review) = send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        OTHER_COACH,
+        Some(json!({
+            "sport": "tennis",
+            "lesson_type": "async_lesson",
+            "name": "フォームの添削",
+            "is_published": false,
+        })),
+    )
+    .await;
+
+    let (status, listed) = send(&app, "GET", HEADQUARTERS_MENUS, HEADQUARTERS, None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    admin.assert_response("get", HEADQUARTERS_MENUS, status, &listed);
+    // テニス（いとう → たなか）→ ゴルフ。ゴルフも載せる
+    assert_eq!(
+        listed["lesson_menus"],
+        json!([
+            {
+                "lesson_menu_id": review["lesson_menu_id"],
+                "name": "フォームの添削",
+                "sport": "tennis",
+                "lesson_type": "async_lesson",
+                "duration_minutes": null,
+                "is_published": false,
+                "coach_id": OTHER_COACH_ID,
+                "coach_display_name": "いとう",
+                "created_at": review["created_at"],
+            },
+            {
+                "lesson_menu_id": forehand["lesson_menu_id"],
+                "name": "フォア",
+                "sport": "tennis",
+                "lesson_type": "live_lesson",
+                "duration_minutes": 60,
+                "is_published": true,
+                "coach_id": COACH_ID,
+                "coach_display_name": "たなか",
+                "created_at": forehand["created_at"],
+            },
+            {
+                "lesson_menu_id": swing["lesson_menu_id"],
+                "name": "スイング",
+                "sport": "golf",
+                "lesson_type": "live_lesson",
+                "duration_minutes": 60,
+                "is_published": true,
+                "coach_id": COACH_ID,
+                "coach_display_name": "たなか",
+                "created_at": swing["created_at"],
+            },
+        ])
+    );
+
+    let names = |body: &Value| -> Vec<String> {
+        body["lesson_menus"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|menu| menu["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for (query, expected) in [
+        ("?sport=golf", vec!["スイング"]),
+        ("?published=false", vec!["フォームの添削"]),
+        ("?published=true", vec!["フォア", "スイング"]),
+        ("?sport=tennis&published=true", vec!["フォア"]),
+        ("?sport=swimming", vec![]),
+    ] {
+        let (status, body) = send(
+            &app,
+            "GET",
+            &format!("{HEADQUARTERS_MENUS}{query}"),
+            HEADQUARTERS,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    for query in ["?sport=cricket", "?published=yes"] {
+        let (status, body) = send(
+            &app,
+            "GET",
+            &format!("{HEADQUARTERS_MENUS}{query}"),
+            HEADQUARTERS,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+    }
+}
+
+#[tokio::test]
+async fn only_headquarters_lists_menus_of_every_coach() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for token in [COACH, STUDENT] {
+        let (status, body) = send(&app, "GET", HEADQUARTERS_MENUS, token, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+    }
+    let (status, body) = send(&app, "GET", HEADQUARTERS_MENUS, "nope", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+
+    let (status, body) = send(&app, "GET", HEADQUARTERS_MENUS, HEADQUARTERS, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["lesson_menus"], json!([]));
+}
+
+#[tokio::test]
+async fn a_menu_whose_coach_cannot_be_found_has_no_display_name_and_comes_last() {
+    let admin = support::Contract::load("admin-web");
+    let orphan = LessonMenu::restore(
+        domain::catalog::LessonMenuId::from_u128(7),
+        AccountId::from_u128(99),
+        LessonMenuContent {
+            sport: Sport::Tennis,
+            format: LessonFormat::Async,
+            name: LessonMenuName::new("持ち主のいないメニュー").unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        true,
+        now(),
+    );
+    let app = app_with(InMemoryLessonMenuRepository::with_menus([orphan])).await;
+    send(
+        &app,
+        "POST",
+        ADMIN_MENUS,
+        COACH,
+        Some(live_menu("tennis", "フォア")),
+    )
+    .await;
+
+    let (status, body) = send(&app, "GET", HEADQUARTERS_MENUS, HEADQUARTERS, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+    let menus = body["lesson_menus"].as_array().unwrap();
+    assert_eq!(menus.len(), 2, "{body}");
+    assert_eq!(menus[0]["coach_display_name"], "たなか");
+    assert_eq!(menus[1]["name"], "持ち主のいないメニュー");
+    assert!(
+        menus[1].get("coach_display_name").is_none(),
+        "表示名が引けなければ載せない: {body}"
+    );
 }

@@ -379,6 +379,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lesson-menus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチのレッスンメニューの横断の一覧（本部）
+         * @description すべてのコーチのレッスンメニュー（glossary の lesson「レッスン種別」。`createMyLessonMenu` で作ったもの）を横断で返す。
+         *     本部が、どのスポーツにどんなメニューがどれだけあるかを把握するのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
+         *       非公開（`false`）のメニューだけ。両方付ければ両方を満たすもの。付けなければすべて（ゴルフも含む）
+         *     - `sport` が `Sport` の値でない・`published` が `true` / `false` でないときは 422 `validation_failed`
+         *     - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
+         *       同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
+         *     - 各行には作ったコーチの表示名 `coach_display_name` を載せる。コーチのアカウントが引けないときは載せない
+         *       （その行は同じスポーツの中で最後に、`coach_id` の順で並べる）
+         *     - 集計（件数の表）・ページングはしない。メニューがなければ `lesson_menus` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listLessonMenus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -821,6 +854,34 @@ export interface components {
             coach_id: string;
             /** @description 作った時刻の古い順（同じ時刻は `lesson_menu_id` の順） */
             lesson_menus: components["schemas"]["LessonMenu"][];
+        };
+        /** @description 本部が横断で見るレッスンメニューの 1 行（`listLessonMenus`）。`LessonMenu` の項目のうち説明を除き、作ったコーチの表示名を添える */
+        CoachLessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            name: string;
+            sport: components["schemas"]["Sport"];
+            lesson_type: components["schemas"]["LessonType"];
+            /** @description 同期レッスン 1 回の時間（分）。非同期レッスンなら null */
+            duration_minutes: number | null;
+            /** @description 公開中か（公開中のものだけが生徒に見える） */
+            is_published: boolean;
+            /**
+             * Format: uuid
+             * @description メニューを作ったコーチ
+             */
+            coach_id: string;
+            /** @description メニューを作ったコーチの表示名（コーチのアカウントが引けないときは載せない） */
+            coach_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 作った時刻
+             */
+            created_at: string;
+        };
+        /** @description コーチのレッスンメニューの横断の一覧（並べ方は `listLessonMenus` の説明） */
+        CoachLessonMenuList: {
+            lesson_menus: components["schemas"]["CoachLessonMenu"][];
         };
         /** @description レッスンメニューの作成（`createMyLessonMenu`） */
         CreateLessonMenuRequest: {
@@ -1460,6 +1521,33 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listLessonMenus: {
+        parameters: {
+            query?: {
+                sport?: components["schemas"]["Sport"];
+                /** @description 公開中か（`true` なら公開中だけ、`false` なら非公開だけ） */
+                published?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチのレッスンメニューの横断の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachLessonMenuList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };

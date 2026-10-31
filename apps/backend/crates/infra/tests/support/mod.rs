@@ -28,6 +28,16 @@ pub fn at(hour: u64) -> SystemTime {
 }
 
 pub async fn register(pool: &PgPool, role: Role, sports: Vec<Sport>) -> AccountId {
+    register_named(pool, role, sports, "テスト").await
+}
+
+/// 表示名 `display_name` のアカウント。
+pub async fn register_named(
+    pool: &PgPool,
+    role: Role,
+    sports: Vec<Sport>,
+    display_name: &str,
+) -> AccountId {
     RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -35,7 +45,7 @@ pub async fn register(pool: &PgPool, role: Role, sports: Vec<Sport>) -> AccountI
     )
     .execute(RegisterAccountCommand {
         email: format!("{}@example.com", uuid::Uuid::new_v4()),
-        display_name: "テスト".to_string(),
+        display_name: display_name.to_string(),
         role,
         sports,
     })
