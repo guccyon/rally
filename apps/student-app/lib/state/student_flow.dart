@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/error_message.dart';
@@ -7,6 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 import 'chat.dart';
+import 'lesson_review.dart';
 
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
@@ -81,7 +80,7 @@ enum VideoReviewRequestResult {
   failed,
 }
 
-/// 生徒アプリの状態（チャットの状態は [ChatState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
+/// 生徒アプリの状態（チャットの状態は [ChatState]、完了したレッスンの評価の状態は [LessonReviewState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
 /// 一覧をコンストラクタで写して持つので const では作らない。
 class StudentFlowState {
   StudentFlowState({
@@ -104,8 +103,6 @@ class StudentFlowState {
     this.video,
     this.review,
     this.lesson,
-    this.lessonReview,
-    Set<String> reviewedLessonIds = const {},
     this.subscriptionPlans,
     this.subscriptionPlansFailed = false,
     this.subscription,
@@ -120,11 +117,8 @@ class StudentFlowState {
     List<MyVideo>? myVideos,
     this.myVideoReview,
     this.videoReviewReturnStep,
-    // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
-    // ignore: prefer_initializing_formals
-  }) : _reviewedLessonIds = reviewedLessonIds,
-       // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
-       myVideos = myVideos == null ? null : List.unmodifiable(myVideos);
+    // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
+  }) : myVideos = myVideos == null ? null : List.unmodifiable(myVideos);
 
   final FlowStep step;
 
@@ -181,20 +175,8 @@ class StudentFlowState {
   final Video? video;
   final VideoReview? review;
 
-  /// 完了を記録したレッスン
+  /// 完了を記録したレッスン（評価する対象。評価の状態は [LessonReviewState]）
   final Lesson? lesson;
-
-  /// この端末で送った評価（`submitLessonReview` の応答）
-  final LessonReview? lessonReview;
-
-  /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
-  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す。
-  /// 読み出しは変更できないビューで返す（どの経路で作っても、`add` などで Riverpod を通さずに状態を変えさせない）
-  Set<String> get reviewedLessonIds => UnmodifiableSetView(_reviewedLessonIds);
-  final Set<String> _reviewedLessonIds;
-
-  /// 完了を記録したレッスンを評価済みと分かっているか
-  bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
 
   /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`。契約の画面を開いたときに読む。未取得なら null）
   final List<SubscriptionPlanDetail>? subscriptionPlans;
@@ -258,8 +240,6 @@ class StudentFlowState {
     Video? video,
     VideoReview? review,
     Lesson? lesson,
-    LessonReview? lessonReview,
-    Set<String>? reviewedLessonIds,
     List<SubscriptionPlanDetail>? subscriptionPlans,
     bool? subscriptionPlansFailed,
     Subscription? subscription,
@@ -296,8 +276,6 @@ class StudentFlowState {
     video: video ?? this.video,
     review: review ?? this.review,
     lesson: lesson ?? this.lesson,
-    lessonReview: lessonReview ?? this.lessonReview,
-    reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
     subscriptionPlans: subscriptionPlans ?? this.subscriptionPlans,
     subscriptionPlansFailed:
         subscriptionPlansFailed ?? this.subscriptionPlansFailed,
@@ -341,8 +319,9 @@ final studentFlowProvider =
       StudentFlowNotifier.new,
     );
 
-/// 画面の操作。チャットのほかの API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ
-/// （チャットの操作は [ChatNotifier]。段の移動と busy・失敗の文言はここの [moveTo] と [run] を使う）。
+/// 画面の操作。チャットと評価のほかの API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ
+/// （チャットの操作は [ChatNotifier]、完了したレッスンの評価の操作は [LessonReviewNotifier]。
+/// 段の移動と busy・失敗の文言はここの [moveTo] と [run] を使う）。
 class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// [initial] はテストで途中の画面から始めるときに渡す。
   StudentFlowNotifier([StudentFlowState? initial])
@@ -653,35 +632,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(lesson: lesson);
   });
 
-  /// 完了したレッスンを評価する画面へ
+  /// 完了したレッスンを評価する画面へ（評価の操作は [LessonReviewNotifier]）
   void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
-
-  /// `submitLessonReview`。評価は完了したレッスン 1 件につき 1 回なので、送れたときも
-  /// 409 `lesson_already_reviewed` が返ったときも評価済みにする（以後は入力させない）。
-  Future<void> submitReview({required int rating, required String comment}) =>
-      run(() async {
-        final lessonId = state.lesson!.lessonId;
-        try {
-          final review = await _api.submitLessonReview(
-            SubmitLessonReviewRequest(
-              lessonId: lessonId,
-              rating: rating,
-              comment: comment,
-            ),
-          );
-          state = state.copyWith(
-            lessonReview: review,
-            reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
-          );
-        } on StudentApiException catch (e) {
-          if (e.error?.code == ErrorCode.lessonAlreadyReviewed) {
-            state = state.copyWith(
-              reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
-            );
-          }
-          rethrow;
-        }
-      });
 
   /// 月額契約の画面へ
   void goToSubscription() =>
@@ -869,7 +821,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void moveTo(FlowStep step) => state = state.copyWith(step: step);
 
   /// [action] を busy にして走らせ、API の失敗を [StudentFlowState.errorMessage] にする。busy の間は何もしない。
-  /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）の操作もここを通す
+  /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）と評価（[LessonReviewNotifier]）の操作もここを通す
   Future<void> run(Future<void> Function() action) async {
     if (state.busy) return;
     state = state.copyWith(busy: true);

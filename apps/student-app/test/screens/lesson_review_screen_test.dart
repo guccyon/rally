@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/screens/lesson_review_screen.dart';
+import 'package:rally_student_app/state/lesson_review.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
 import '../support/fake_student_api.dart';
@@ -52,11 +53,11 @@ void main() {
     expect(find.text('一言: 丁寧でした'), findsOneWidget);
     expect(sendButton(), findsNothing);
     expect(find.byType(TextField), findsNothing);
-    expect(container.read(studentFlowProvider).reviewedLessonIds, {
+    expect(container.read(lessonReviewProvider).reviewedLessonIds, {
       Fixtures.liveLesson.lessonId,
     });
     expect(
-      () => container.read(studentFlowProvider).reviewedLessonIds.add('other'),
+      () => container.read(lessonReviewProvider).reviewedLessonIds.add('other'),
       throwsUnsupportedError,
     );
 
@@ -145,9 +146,14 @@ void main() {
     expect(find.text('このレッスンは評価済みのため、入力できません。'), findsOneWidget);
     expect(sendButton(), findsNothing);
     expect(find.byType(TextField), findsNothing);
-    expect(container.read(studentFlowProvider).lessonReviewed, isTrue);
     expect(
-      () => container.read(studentFlowProvider).reviewedLessonIds.add('other'),
+      container
+          .read(lessonReviewProvider)
+          .isReviewed(Fixtures.liveLesson.lessonId),
+      isTrue,
+    );
+    expect(
+      () => container.read(lessonReviewProvider).reviewedLessonIds.add('other'),
       throwsUnsupportedError,
     );
   });
@@ -169,7 +175,12 @@ void main() {
     await tapText(tester, '評価を送る');
 
     expect(find.text('入力内容を確かめてください。'), findsOneWidget);
-    expect(container.read(studentFlowProvider).lessonReviewed, isFalse);
+    expect(
+      container
+          .read(lessonReviewProvider)
+          .isReviewed(Fixtures.liveLesson.lessonId),
+      isFalse,
+    );
     expect(tester.widget<FilledButton>(sendButton()).onPressed, isNotNull);
   });
 
@@ -178,7 +189,8 @@ void main() {
       tester,
       const LessonReviewScreen(),
       api: FakeStudentApi(),
-      initial: afterCompletion.copyWith(
+      initial: afterCompletion,
+      review: LessonReviewState(
         reviewedLessonIds: {Fixtures.liveLesson.lessonId},
       ),
     );
