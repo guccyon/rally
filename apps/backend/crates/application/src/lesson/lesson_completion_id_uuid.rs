@@ -1,31 +1,33 @@
-//! [`LessonId`] と UUID の変換。境界のアダプタ（HTTP の契約の `format: uuid`・保存先・境界間イベントのペイロード）は
+//! [`LessonCompletionId`] と UUID の変換。境界のアダプタ（HTTP の契約の `format: uuid`・保存先・境界間イベントのペイロード）は
 //! ここだけを通し、テキスト形式の読み書きは `uuid` クレートに任せる。
 
-use domain::lesson::LessonId;
+use domain::lesson::LessonCompletionId;
 use uuid::Uuid;
 
 use crate::uuid_text::parse_hyphenated;
 
 /// テキストが UUID のハイフン区切りの形でない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidLessonId;
+pub struct InvalidLessonCompletionId;
 
-pub const fn to_uuid(id: LessonId) -> Uuid {
+pub const fn to_uuid(id: LessonCompletionId) -> Uuid {
     Uuid::from_u128(id.as_u128())
 }
 
-pub const fn from_uuid(uuid: Uuid) -> LessonId {
-    LessonId::from_u128(uuid.as_u128())
+pub const fn from_uuid(uuid: Uuid) -> LessonCompletionId {
+    LessonCompletionId::from_u128(uuid.as_u128())
 }
 
 /// 小文字・ハイフン区切り（`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`）。
-pub fn format(id: LessonId) -> String {
+pub fn format(id: LessonCompletionId) -> String {
     to_uuid(id).hyphenated().to_string()
 }
 
 /// ハイフン区切りの UUID を読む（大文字小文字は問わない）。
-pub fn parse(text: &str) -> Result<LessonId, InvalidLessonId> {
-    parse_hyphenated(text).map(from_uuid).ok_or(InvalidLessonId)
+pub fn parse(text: &str) -> Result<LessonCompletionId, InvalidLessonCompletionId> {
+    parse_hyphenated(text)
+        .map(from_uuid)
+        .ok_or(InvalidLessonCompletionId)
 }
 
 #[cfg(test)]
@@ -34,7 +36,7 @@ mod tests {
 
     #[test]
     fn formats_and_parses_as_hyphenated_uuid() {
-        let id = LessonId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
+        let id = LessonCompletionId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef);
         assert_eq!(format(id), "01234567-89ab-4def-8123-456789abcdef");
         assert_eq!(parse("01234567-89AB-4DEF-8123-456789ABCDEF"), Ok(id));
     }
@@ -42,7 +44,7 @@ mod tests {
     #[test]
     fn rejects_malformed_ids() {
         for text in ["", "0123456789ab4def8123456789abcdef", "not-a-uuid"] {
-            assert_eq!(parse(text), Err(InvalidLessonId), "{text:?}");
+            assert_eq!(parse(text), Err(InvalidLessonCompletionId), "{text:?}");
         }
     }
 }

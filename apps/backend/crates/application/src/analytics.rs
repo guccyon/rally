@@ -9,7 +9,7 @@ use domain::{
     catalog::Sport,
     entitlement::SubscriptionId,
     identity::AccountId,
-    lesson::{LessonId, LessonType},
+    lesson::{LessonCompletionId, LessonType},
     live_lesson::SessionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
     review::{LessonReviewId, Rating},
@@ -111,7 +111,7 @@ pub enum AnalyticsEvent {
     LessonCompleted {
         student_id: AccountId,
         coach_id: AccountId,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         lesson_type: LessonType,
         /// その生徒にとって初回のレッスンか（domain の `LessonCompletion` が判定する）
         is_first_lesson: bool,
@@ -138,7 +138,7 @@ pub enum AnalyticsEvent {
     ReviewSubmitted {
         student_id: AccountId,
         coach_id: AccountId,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         review_id: LessonReviewId,
         rating: Rating,
         occurred_at: SystemTime,

@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use super::{LessonId, LessonSource, LessonType};
+use super::{LessonCompletionId, LessonSource, LessonType};
 use crate::{DomainError, identity::AccountId};
 
 /// レッスンの完了記録（glossary の lesson が終わったこと）。通話セッションに結び付いた予約（生徒）・動画 1 つにつき 1 つ。
@@ -11,7 +11,7 @@ use crate::{DomainError, identity::AccountId};
 /// true にする。判定はこの型の 1 か所だけに置き、同期・非同期を区別せずに数える。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LessonCompletion {
-    id: LessonId,
+    id: LessonCompletionId,
     student_id: AccountId,
     coach_id: AccountId,
     source: LessonSource,
@@ -25,7 +25,7 @@ impl LessonCompletion {
     /// `history` は既存の完了記録（少なくともその生徒のもの。他の生徒の記録は数えない）。同じ元の同じ生徒の記録が
     /// すでにあれば [`DomainError::LessonAlreadyCompleted`]（グループレッスンの通話セッションは生徒ごとに 1 つ）。
     pub(crate) fn record(
-        id: LessonId,
+        id: LessonCompletionId,
         student_id: AccountId,
         coach_id: AccountId,
         source: LessonSource,
@@ -54,7 +54,7 @@ impl LessonCompletion {
     /// 保存先から読んだ完了記録を組み立てる（保存先の実装用）。`is_first_lesson` は記録した時点の判定
     /// （[`LessonCompletion::record`]）をそのまま持つ。
     pub const fn restore(
-        id: LessonId,
+        id: LessonCompletionId,
         student_id: AccountId,
         coach_id: AccountId,
         source: LessonSource,
@@ -71,7 +71,7 @@ impl LessonCompletion {
         }
     }
 
-    pub const fn id(&self) -> LessonId {
+    pub const fn id(&self) -> LessonCompletionId {
         self.id
     }
 
@@ -120,7 +120,7 @@ mod tests {
         history: &[LessonCompletion],
     ) -> Result<LessonCompletion, DomainError> {
         LessonCompletion::record(
-            LessonId::from_u128(id),
+            LessonCompletionId::from_u128(id),
             student_id,
             COACH,
             source,
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn the_first_completion_of_a_student_is_the_first_lesson() {
         let first = record(1, STUDENT, LIVE, &[]).unwrap();
-        assert_eq!(first.id(), LessonId::from_u128(1));
+        assert_eq!(first.id(), LessonCompletionId::from_u128(1));
         assert_eq!((first.student_id(), first.coach_id()), (STUDENT, COACH));
         assert_eq!(first.source(), LIVE);
         assert_eq!(first.lesson_type(), LessonType::Live);

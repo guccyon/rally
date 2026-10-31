@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use domain::{lesson::LessonId, review::ReviewLessonMenu};
+use domain::{lesson::LessonCompletionId, review::ReviewLessonMenu};
 
 use crate::Unavailable;
 
@@ -14,6 +14,6 @@ pub trait ReviewedLessonMenuLookup: Send + Sync {
     /// 持たなければ `None`。
     fn find_lesson_menu(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<ReviewLessonMenu>, Unavailable>> + Send;
 }

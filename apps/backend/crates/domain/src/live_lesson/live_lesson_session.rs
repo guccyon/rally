@@ -4,7 +4,7 @@ use super::{ConnectionQuality, SessionBooking, SessionId, SessionStatus};
 use crate::{
     DomainError,
     identity::AccountId,
-    lesson::{LessonCompletion, LessonId, LessonSource},
+    lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     scheduling::{Booking, BookingId, BookingStatus},
 };
 
@@ -176,7 +176,7 @@ impl LiveLessonSession {
     /// （マンツーマンのセッションの生徒）。生徒を選ぶときは [`LiveLessonSession::complete_for`]。
     pub fn complete(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         participant: AccountId,
         history: &[LessonCompletion],
         now: SystemTime,
@@ -202,7 +202,7 @@ impl LiveLessonSession {
     /// - 同じセッションの同じ生徒の完了は 1 回（[`DomainError::LessonAlreadyCompleted`]）
     pub fn complete_for(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         participant: AccountId,
         student: AccountId,
         history: &[LessonCompletion],
@@ -504,7 +504,7 @@ mod tests {
         }
     }
 
-    const LESSON: LessonId = LessonId::from_u128(70);
+    const LESSON: LessonCompletionId = LessonCompletionId::from_u128(70);
 
     fn ended() -> LiveLessonSession {
         let mut session =
@@ -568,7 +568,12 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                session.complete(LessonId::from_u128(71), participant, &history, now),
+                session.complete(
+                    LessonCompletionId::from_u128(71),
+                    participant,
+                    &history,
+                    now
+                ),
                 Err(expected)
             );
         }
@@ -774,7 +779,7 @@ mod tests {
         for (i, student) in GROUP.into_iter().enumerate() {
             let completion = session
                 .complete_for(
-                    LessonId::from_u128(80 + i as u128),
+                    LessonCompletionId::from_u128(80 + i as u128),
                     COACH,
                     student,
                     &history,

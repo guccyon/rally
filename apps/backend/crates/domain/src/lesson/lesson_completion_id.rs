@@ -2,9 +2,9 @@
 ///
 /// テキスト形式の読み書きは境界のアダプタが行う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LessonId(u128);
+pub struct LessonCompletionId(u128);
 
-impl LessonId {
+impl LessonCompletionId {
     pub const fn from_u128(value: u128) -> Self {
         Self(value)
     }
@@ -21,6 +21,6 @@ mod tests {
     #[test]
     fn round_trips_the_value() {
         let value = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
-        assert_eq!(LessonId::from_u128(value).as_u128(), value);
+        assert_eq!(LessonCompletionId::from_u128(value).as_u128(), value);
     }
 }

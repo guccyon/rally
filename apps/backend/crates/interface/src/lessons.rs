@@ -14,7 +14,7 @@ use application::{
     identity::account_id_uuid,
     lesson::{
         LessonCompletionRepository, RecordLessonCompletion, RecordLessonCompletionCommand,
-        RecordLessonCompletionError, lesson_id_uuid,
+        RecordLessonCompletionError, lesson_completion_id_uuid,
     },
     live_lesson::{LiveLessonSessionRepository, session_id_uuid},
 };
@@ -141,7 +141,7 @@ fn lesson_body(completion: &LessonCompletion) -> Result<LessonBody, ApiError> {
         LessonSource::Async(video_id) => (None, Some(video_id_uuid::format(video_id))),
     };
     Ok(LessonBody {
-        lesson_id: lesson_id_uuid::format(completion.id()),
+        lesson_id: lesson_completion_id_uuid::format(completion.id()),
         student_id: account_id_uuid::format(completion.student_id()),
         coach_id: account_id_uuid::format(completion.coach_id()),
         lesson_type: lesson_type_to_contract(completion.lesson_type()),

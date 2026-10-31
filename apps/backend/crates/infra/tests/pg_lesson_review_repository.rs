@@ -15,7 +15,7 @@ use application::{
     },
 };
 use domain::{
-    lesson::{LessonCompletion, LessonId},
+    lesson::{LessonCompletion, LessonCompletionId},
     review::{LessonReview, LessonReviewComment, Rating, ReviewError},
 };
 use infra::{PgLessonCompletionRepository, PgLessonReviewRepository};
@@ -103,12 +103,15 @@ async fn reviews_a_completed_lesson_once_and_reads_it_back(pool: PgPool) {
 async fn an_unknown_lesson_is_not_found(pool: PgPool) {
     let completions = PgLessonCompletionRepository::new(pool.clone());
     assert_eq!(
-        completions.find(LessonId::from_u128(99)).await.unwrap(),
+        completions
+            .find(LessonCompletionId::from_u128(99))
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
         PgLessonReviewRepository::new(pool)
-            .find_by_lesson(LessonId::from_u128(99))
+            .find_by_lesson(LessonCompletionId::from_u128(99))
             .await
             .unwrap(),
         None

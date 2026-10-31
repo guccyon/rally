@@ -27,7 +27,7 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, Rating},
 };
 use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository};
@@ -88,7 +88,7 @@ async fn review(
     reviews
         .insert(LessonReview::restore(
             id,
-            LessonId::from_u128(lesson),
+            LessonCompletionId::from_u128(lesson),
             student,
             coach,
             Rating::new(rating).unwrap(),

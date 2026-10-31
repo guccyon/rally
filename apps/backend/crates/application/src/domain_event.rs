@@ -10,7 +10,7 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     entitlement::SubscriptionId,
     identity::AccountId,
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
     scheduling::BookingId,
 };
@@ -52,7 +52,7 @@ pub enum DomainEvent {
         occurred_at: SystemTime,
         student_id: AccountId,
         coach_id: AccountId,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     },
     /// `SubscriptionStarted`（entitlement が発行し、billing・analytics が購読する）
     SubscriptionStarted {

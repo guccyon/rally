@@ -10,7 +10,7 @@ use application::{
     domain_event::DomainEvent,
     entitlement::subscription_id_uuid,
     identity::account_id_uuid,
-    lesson::lesson_id_uuid,
+    lesson::lesson_completion_id_uuid,
     messaging::{message_id_uuid, message_thread_id_uuid},
     scheduling::booking_id_uuid,
 };
@@ -18,7 +18,7 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     entitlement::SubscriptionId,
     identity::AccountId,
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
     scheduling::BookingId,
 };
@@ -234,7 +234,7 @@ fn lesson_completed() -> DomainEvent {
         occurred_at: oct26(),
         student_id: AccountId::from_u128(1),
         coach_id: AccountId::from_u128(2),
-        lesson_id: LessonId::from_u128(5),
+        lesson_id: LessonCompletionId::from_u128(5),
     }
 }
 
@@ -255,7 +255,7 @@ fn lesson_completed_payload_has_exactly_the_required_attributes_of_the_asyncapi(
     );
     assert_eq!(
         body["lesson_id"],
-        lesson_id_uuid::format(LessonId::from_u128(5))
+        lesson_completion_id_uuid::format(LessonCompletionId::from_u128(5))
     );
     // 完了記録は live-lesson・async-lesson のそれぞれの集約が発行する（docs/adr/0006）
     assert_eq!(
