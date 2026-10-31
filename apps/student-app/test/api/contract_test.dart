@@ -102,6 +102,7 @@ void main() {
         'confirmBooking',
         'listMyBookings',
         'cancelBooking',
+        'listMyVideos',
         'startLiveLessonSession',
         'endLiveLessonSession',
         'submitVideo',
@@ -484,5 +485,45 @@ void main() {
         (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
             as YamlMap);
     expect(refOf(schema), '#/components/schemas/MyBookingList');
+  });
+
+  test('MyVideo・MyVideoList の項目が契約と一致する（listMyVideos の応答）', () {
+    // MyVideo.fromJson・MyVideoList.fromJson が読む項目
+    expect(propertiesOf('MyVideo'), [
+      'video_id',
+      'coach_id',
+      'coach_display_name',
+      'sport',
+      'submitted_at',
+      'review_status',
+      'returned_at',
+      'lesson_menu',
+    ]);
+    // コーチの表示名だけが任意の項目
+    expect(
+      ((schemas['MyVideo'] as YamlMap)['required'] as YamlList).toSet(),
+      propertiesOf('MyVideo').toSet().difference({'coach_display_name'}),
+    );
+    final myVideo = (schemas['MyVideo'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      refOf(myVideo['review_status'] as YamlMap),
+      '#/components/schemas/VideoReviewStatus',
+    );
+    expect(propertiesOf('MyVideoList'), ['videos']);
+    final items =
+        (((schemas['MyVideoList'] as YamlMap)['properties']
+                    as YamlMap)['videos']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/MyVideo');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/videos/me'] as YamlMap)['get'] as YamlMap;
+    expect(operation['operationId'], 'listMyVideos');
+    final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+    final schema =
+        (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+            as YamlMap);
+    expect(refOf(schema), '#/components/schemas/MyVideoList');
   });
 }

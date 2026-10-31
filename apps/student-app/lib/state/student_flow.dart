@@ -7,7 +7,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・チャット・通知の受け取り設定の画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
   register,
 
@@ -34,13 +34,23 @@ enum FlowStep {
   notificationSettings,
 
   /// 自分の予約の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
-  myBookings;
+  myBookings,
+
+  /// 自分が送った動画の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
+  myVideos,
+
+  /// 自分の動画の一覧から開いた、返却済みの動画の添削結果（閉じると自分の動画の一覧に戻る）
+  myVideoReview;
 
   bool get isChat => this == messageThreads || this == messages;
 
-  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・自分の予約）。ここからはほかの脇の画面を開かない
+  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・自分の予約・自分の動画）。ここからはほかの脇の画面を開かない
   bool get isAside =>
-      isChat || this == notificationSettings || this == myBookings;
+      isChat ||
+      this == notificationSettings ||
+      this == myBookings ||
+      this == myVideos ||
+      this == myVideoReview;
 }
 
 /// ホームの欄（API ごとに読み、どれかが失敗しても他の欄は出す）
@@ -106,6 +116,9 @@ class StudentFlowState {
     this.notificationSettings,
     this.bookingsReturnStep,
     this.myBookings,
+    this.videosReturnStep,
+    this.myVideos,
+    this.myVideoReview,
     // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
     // ignore: prefer_initializing_formals
   }) : _reviewedLessonIds = reviewedLessonIds;
@@ -223,6 +236,15 @@ class StudentFlowState {
   /// 自分の予約（`listMyBookings`。未取得なら null）。キャンセルしたらその予約を応答で置き換える
   final List<MyBooking>? myBookings;
 
+  /// 自分の動画の一覧を閉じたときに戻る段（一覧を開いた段）
+  final FlowStep? videosReturnStep;
+
+  /// 自分が送った動画（`listMyVideos`。未取得なら null。送った時刻の新しい順）
+  final List<MyVideo>? myVideos;
+
+  /// 自分の動画の一覧から開いた動画の添削（`getVideoReview`）。一周シナリオの [review] とは別に持つ
+  final VideoReview? myVideoReview;
+
   /// `errorMessage` は引き継がない（渡さなければ消える）。
   StudentFlowState copyWith({
     FlowStep? step,
@@ -261,6 +283,9 @@ class StudentFlowState {
     NotificationSettings? notificationSettings,
     FlowStep? bookingsReturnStep,
     List<MyBooking>? myBookings,
+    FlowStep? videosReturnStep,
+    List<MyVideo>? myVideos,
+    VideoReview? myVideoReview,
   }) => StudentFlowState(
     step: step ?? this.step,
     busy: busy ?? this.busy,
@@ -304,6 +329,9 @@ class StudentFlowState {
     myBookings: myBookings != null
         ? List.unmodifiable(myBookings)
         : this.myBookings,
+    videosReturnStep: videosReturnStep ?? this.videosReturnStep,
+    myVideos: myVideos != null ? List.unmodifiable(myVideos) : this.myVideos,
+    myVideoReview: myVideoReview ?? this.myVideoReview,
   );
 }
 
@@ -940,6 +968,39 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   Future<void> _loadMyBookings() async {
     final list = await _api.listMyBookings();
     state = state.copyWith(myBookings: list.bookings);
+  }
+
+  /// 自分の動画の一覧を開く（`listMyVideos`）。閉じたら今の段に戻る。
+  Future<void> openMyVideos() {
+    if (state.step != FlowStep.myVideos) {
+      state = state.copyWith(
+        videosReturnStep: state.step,
+        step: FlowStep.myVideos,
+      );
+    }
+    return _run(_loadMyVideos);
+  }
+
+  /// 自分の動画の一覧を読み直す
+  Future<void> refreshMyVideos() => _run(_loadMyVideos);
+
+  /// 自分の動画の一覧を閉じて、開いた段に戻る
+  void closeMyVideos() =>
+      state = state.copyWith(step: state.videosReturnStep ?? FlowStep.home);
+
+  /// 自分の動画の一覧から、返却済みの動画の添削結果を開く（`getVideoReview`）。
+  /// 読めたら添削結果の画面へ移り、読めなければ一覧に留まって失敗の文言を出す
+  Future<void> openMyVideoReview(MyVideo video) => _run(() async {
+    final review = await _api.getVideoReview(video.videoId);
+    state = state.copyWith(myVideoReview: review, step: FlowStep.myVideoReview);
+  });
+
+  /// 自分の動画の一覧から開いた添削結果を閉じて、一覧に戻る
+  void closeMyVideoReview() => state = state.copyWith(step: FlowStep.myVideos);
+
+  Future<void> _loadMyVideos() async {
+    final list = await _api.listMyVideos();
+    state = state.copyWith(myVideos: list.videos);
   }
 
   DateTime _now() => ref.read(clockProvider)();

@@ -204,6 +204,25 @@ void main() {
     );
     expect(sent.single.url.path, '/live-lesson-sessions/ls1/end');
 
+    final myVideos = await apiReplying(200, {
+      'videos': [
+        {
+          'video_id': 'v1',
+          'coach_id': 'c1',
+          'coach_display_name': '佐藤',
+          'sport': 'tennis',
+          'submitted_at': '2026-10-28T03:00:00Z',
+          'review_status': 'returned',
+          'returned_at': '2026-10-29T03:00:00Z',
+          'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブの動画添削'},
+        },
+      ],
+    }).listMyVideos();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/videos/me');
+    expect(myVideos.videos.single.coachDisplayName, '佐藤');
+    expect(myVideos.videos.single.lessonMenu?.name, 'サーブの動画添削');
+
     final review = {
       'review_id': null,
       'video_id': 'v1',

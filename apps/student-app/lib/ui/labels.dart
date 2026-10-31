@@ -15,6 +15,12 @@ String bookingStatusLabel(BookingStatus status) => switch (status) {
   BookingStatus.cancelled => 'キャンセル済み',
 };
 
+/// 添削の状態（自分の動画の一覧の行）
+String videoReviewStatusLabel(VideoReviewStatus status) => switch (status) {
+  VideoReviewStatus.inProgress => '添削待ち',
+  VideoReviewStatus.returned => '返却済み',
+};
+
 String lessonTypeLabel(LessonType type) => switch (type) {
   LessonType.liveLesson => '同期レッスン（ビデオ通話）',
   LessonType.asyncLesson => '非同期レッスン（動画添削）',

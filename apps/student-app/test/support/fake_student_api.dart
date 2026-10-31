@@ -11,6 +11,7 @@ class FakeStudentApi implements StudentApi {
     List<Message>? messages,
     NotificationSettings? notificationSettings,
     List<MyBooking>? myBookings,
+    List<MyVideo>? myVideos,
     this.entitlement,
     this.coachReviewSummaries = const {},
     this.lessonMenus = const {},
@@ -19,6 +20,7 @@ class FakeStudentApi implements StudentApi {
     this.failures = const {},
   }) : slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
+       myVideos = List.of(myVideos ?? Fixtures.myVideos),
        _reviews = reviews ?? [Fixtures.reviewReturned],
        threads = List.of(threads ?? [Fixtures.thread]),
        messages = List.of(messages ?? Fixtures.messages),
@@ -39,6 +41,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
   final List<MyBooking> myBookings;
+
+  /// 自分が送った動画（`listMyVideos` が返す）
+  final List<MyVideo> myVideos;
 
   /// 受講権（`getMyEntitlement` が返す。null なら月額契約の前として 404 `not_found`。`startSubscription` で開始の応答のものになる）
   Entitlement? entitlement;
@@ -167,6 +172,10 @@ class FakeStudentApi implements StudentApi {
         }
         return Fixtures.video;
       }, body);
+
+  @override
+  Future<MyVideoList> listMyVideos() =>
+      _answer('listMyVideos', () => MyVideoList(videos: [...myVideos]));
 
   @override
   Future<VideoReview> getVideoReview(String videoId) =>
@@ -531,6 +540,41 @@ abstract final class Fixtures {
       status: BookingStatus.cancelled,
     ),
     myBooking(bookingId: 'booking-past', startsIn: const Duration(days: -2)),
+  ];
+
+  /// 自分の動画の一覧の 1 件。[now] から [submittedAgo] 前に送った動画
+  static MyVideo myVideo({
+    required String videoId,
+    required Duration submittedAgo,
+    VideoReviewStatus reviewStatus = VideoReviewStatus.inProgress,
+    Sport sport = Sport.tennis,
+    String? coachDisplayName = '佐藤',
+    VideoLessonMenu? lessonMenu,
+  }) => MyVideo(
+    videoId: videoId,
+    coachId: coachId,
+    coachDisplayName: coachDisplayName,
+    sport: sport,
+    submittedAt: now.subtract(submittedAgo),
+    reviewStatus: reviewStatus,
+    returnedAt: reviewStatus == VideoReviewStatus.returned ? now : null,
+    lessonMenu: lessonMenu,
+  );
+
+  /// 1 時間前（添削待ち・メニューあり）・2 日前（返却済み・サッカー・コーチ鈴木）の 2 件（送った時刻の新しい順）
+  static final myVideos = [
+    myVideo(
+      videoId: 'video-waiting',
+      submittedAgo: const Duration(hours: 1),
+      lessonMenu: videoLessonMenu,
+    ),
+    myVideo(
+      videoId: 'video-returned',
+      submittedAgo: const Duration(days: 2),
+      reviewStatus: VideoReviewStatus.returned,
+      sport: Sport.soccer,
+      coachDisplayName: '鈴木',
+    ),
   ];
 
   static final sessionInProgress = LiveLessonSession(
