@@ -66,6 +66,8 @@ export function coachApi(client: ApiClient) {
           params: { path: { thread_id: threadId } },
         }),
       ),
+    listMyNotifications: () => call(() => client.GET("/notifications/me")),
+    markMyNotificationsRead: () => call(() => client.POST("/notifications/me/read")),
     listMyLessonMenus: () => call(() => client.GET("/coaches/me/lesson-menus")),
     createMyLessonMenu: (body: Schemas["CreateLessonMenuRequest"]) =>
       call(() => client.POST("/coaches/me/lesson-menus", { body })),

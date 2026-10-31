@@ -9,7 +9,8 @@ use application::{
 use domain::{
     identity::AccountId,
     scheduling::{
-        CoachCalendar, SchedulingError, Slot, SlotCapacity, SlotId, SlotSeats, SlotStatus,
+        CoachAcceptanceStatus, CoachCalendar, SchedulingError, Slot, SlotCapacity, SlotId,
+        SlotSeats, SlotStatus,
     },
 };
 use sqlx::{
@@ -21,7 +22,7 @@ use sqlx::{
 use crate::{
     identity_values::{sport_from_value, sport_value},
     pg_support::{lock, timestamp},
-    scheduling_values::{slot_status_from_value, slot_status_value},
+    scheduling_values::{coach_acceptance_status_value, slot_status_from_value, slot_status_value},
 };
 
 /// [`SlotRepository`] の Postgres 実装。
@@ -31,6 +32,7 @@ use crate::{
 /// はトランザクションの中でコーチごとの advisory lock を取ってから、カレンダーの読み取りと保存を行う。
 /// 枠の変更（[`SlotRepository::update`]）は、予約の保存先（[`crate::PgBookingRepository`]）と同じくスロットの行を
 /// `FOR UPDATE` でロックしてから席を数えるので、同じ枠への予約の作成・確定・キャンセルと直列になる。
+/// 検索（[`SlotRepository::search`]）は、受付を止めているコーチ（`scheduling.coach_acceptances` が停止中）の枠を除く。
 #[derive(Debug, Clone)]
 pub struct PgSlotRepository {
     pool: PgPool,
@@ -221,6 +223,10 @@ impl SlotRepository for PgSlotRepository {
                AND s.starts_at >= $4
                AND ($5::timestamptz IS NULL OR s.starts_at < $5)
                AND ($6::timestamptz IS NULL OR (s.starts_at, s.slot_id) > ($6, $7::uuid))
+               AND NOT EXISTS (
+                   SELECT 1 FROM scheduling.coach_acceptances ca
+                   WHERE ca.coach_id = s.coach_id AND ca.status = $9
+               )
              ORDER BY s.starts_at, s.slot_id
              LIMIT $8"
         ))
@@ -232,6 +238,9 @@ impl SlotRepository for PgSlotRepository {
         .bind(after_starts_at)
         .bind(after_slot_id)
         .bind(limit)
+        .bind(coach_acceptance_status_value(
+            CoachAcceptanceStatus::Suspended,
+        ))
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;

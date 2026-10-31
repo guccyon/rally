@@ -1,6 +1,7 @@
-//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチをすべて返す。student-app の
+//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチをすべて受付の状態を添えて返す。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
-//! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので載せない）。
+//! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
+//! 載せない。受付を止めているコーチも載せない）。
 //! 同じパスなので、どちらの形で返すかはトークンの役割で決める。
 
 use std::sync::Arc;
@@ -10,35 +11,32 @@ use application::{
     matching::{
         CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, FavoriteCoachRepository,
         ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
-        PublishedLessonMenuCountLookup, StudentSportLookup,
+        PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
     },
-    profile::ListCoaches,
+    profile::{CoachAcceptanceLookup, ListCoaches, ListedCoach},
 };
 use axum::{
     Json,
     extract::{Query, State, rejection::QueryRejection},
     response::{IntoResponse, Response},
 };
-use domain::{
-    catalog::Sport,
-    identity::{Account, Role},
-};
+use domain::{catalog::Sport, identity::Role};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{self, AuthenticatedAccount},
-    contract::{sport_to_contract, student_app_sport},
+    contract::{coach_acceptance_status_to_contract, sport_to_contract, student_app_sport},
     error::ApiError,
 };
 
 /// `/coaches` のハンドラーが使うユースケース。
-pub struct CoachesState<R, S, C, V, M, F> {
-    pub list_coaches: ListCoaches<R>,
-    pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F>,
+pub struct CoachesState<R, A, S, C, V, M, F, U> {
+    pub list_coaches: ListCoaches<R, A>,
+    pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
 }
 
 /// ハンドラーが共有する [`CoachesState`]。
-type Shared<R, S, C, V, M, F> = Arc<CoachesState<R, S, C, V, M, F>>;
+type Shared<R, A, S, C, V, M, F, U> = Arc<CoachesState<R, A, S, C, V, M, F, U>>;
 
 /// admin-web の `CoachList`。
 #[derive(Serialize)]
@@ -51,6 +49,7 @@ pub struct CoachListBody {
 pub struct CoachBody {
     coach_id: String,
     display_name: String,
+    acceptance_status: &'static str,
 }
 
 /// student-app の `listCoachesForStudent` のクエリ。
@@ -79,18 +78,21 @@ pub struct CoachListingBody {
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
 /// （役割は `require_role` の層が確かめる。コーチは 403）。
-pub async fn list_coaches<R, S, C, V, M, F>(
-    State(state): State<Shared<R, S, C, V, M, F>>,
+#[allow(clippy::type_complexity)]
+pub async fn list_coaches<R, A, S, C, V, M, F, U>(
+    State(state): State<Shared<R, A, S, C, V, M, F, U>>,
     account: AuthenticatedAccount,
     params: Result<Query<ListCoachesForStudentParams>, QueryRejection>,
 ) -> Result<Response, ApiError>
 where
     R: AccountRepository,
+    A: CoachAcceptanceLookup,
     S: StudentSportLookup,
     C: CoachCandidateLookup,
     V: CoachReviewSummaryLookup,
     M: PublishedLessonMenuCountLookup,
     F: FavoriteCoachRepository,
+    U: SuspendedCoachLookup,
 {
     match account.role() {
         Role::Headquarters => {
@@ -135,10 +137,11 @@ where
     }
 }
 
-fn coach_body(account: &Account) -> CoachBody {
+fn coach_body(coach: &ListedCoach) -> CoachBody {
     CoachBody {
-        coach_id: account_id_uuid::format(account.id()),
-        display_name: account.display_name().as_str().to_string(),
+        coach_id: account_id_uuid::format(coach.account.id()),
+        display_name: coach.account.display_name().as_str().to_string(),
+        acceptance_status: coach_acceptance_status_to_contract(coach.acceptance),
     }
 }
 

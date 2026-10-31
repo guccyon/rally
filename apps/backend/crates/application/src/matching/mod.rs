@@ -7,9 +7,11 @@
 //! [`crate::profile::ProfileCoachCandidateLookup`]・[`crate::profile::ProfileStudentSportLookup`]）、評価の件数と平均は
 //! review（[`CoachReviewSummaryLookup`]。実装は [`crate::review::ReviewCoachReviewSummaryLookup`]）、公開中の
 //! レッスンメニューの数は catalog（[`PublishedLessonMenuCountLookup`]。実装は
-//! [`crate::catalog::CatalogPublishedLessonMenuCountLookup`]）。お気に入りに入れる・一覧で添えるコーチの表示名と
-//! 提供スポーツは、catalog の `CreateLessonMenu` と同じくアカウントの保存先（[`crate::identity::AccountRepository`]）から
-//! 読む。profile のコーチの紹介には、お気に入りかを [`MatchingCoachFavoriteLookup`] で渡す。誰が呼べるか（生徒だけ）は
+//! [`crate::catalog::CatalogPublishedLessonMenuCountLookup`]）、受付を止めているコーチ（一覧に出さない）は scheduling
+//! （[`SuspendedCoachLookup`]。実装は [`crate::scheduling::SchedulingCoachAcceptanceLookup`]）。お気に入りに入れる・一覧で
+//! 添えるコーチの表示名と提供スポーツは、catalog の `CreateLessonMenu` と同じくアカウントの保存先
+//! （[`crate::identity::AccountRepository`]）から読む。profile のコーチの紹介には、お気に入りかを
+//! [`MatchingCoachFavoriteLookup`] で渡す。誰が呼べるか（生徒だけ）は
 //! 境界（interface）が確かめる。
 
 mod add_favorite_coach;
@@ -25,6 +27,7 @@ mod matching_coach_favorite_lookup;
 mod published_lesson_menu_count_lookup;
 mod remove_favorite_coach;
 mod student_sport_lookup;
+mod suspended_coach_lookup;
 
 pub use add_favorite_coach::{AddFavoriteCoach, AddFavoriteCoachCommand, AddFavoriteCoachError};
 pub use coach_candidate::CoachCandidate;
@@ -41,3 +44,4 @@ pub use matching_coach_favorite_lookup::MatchingCoachFavoriteLookup;
 pub use published_lesson_menu_count_lookup::PublishedLessonMenuCountLookup;
 pub use remove_favorite_coach::RemoveFavoriteCoach;
 pub use student_sport_lookup::StudentSportLookup;
+pub use suspended_coach_lookup::SuspendedCoachLookup;
