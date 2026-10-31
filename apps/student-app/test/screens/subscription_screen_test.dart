@@ -1,6 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:rally_student_app/api/http_student_api.dart';
 import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/subscription_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
@@ -11,8 +18,9 @@ void main() {
   Future<FakeStudentApi> pumpSubscription(
     WidgetTester tester, {
     StudentFlowState? initial,
+    FakeStudentApi? api,
   }) async {
-    final api = FakeStudentApi();
+    api ??= FakeStudentApi();
     await pumpScreen(
       tester,
       const SubscriptionScreen(),
@@ -24,6 +32,8 @@ void main() {
             student: Fixtures.student,
           ),
     );
+    // 開いた直後に読むプランの一覧を待つ
+    await tester.pumpAndSettle();
     return api;
   }
 
@@ -48,6 +58,7 @@ void main() {
 
     await tapText(tester, '月額契約を始める');
 
+    expect(api.calls, ['listSubscriptionPlans', 'startSubscription']);
     final request = api.requests.single as StartSubscriptionRequest;
     expect(request.toJson(), {
       'sport': 'tennis',
@@ -75,6 +86,111 @@ void main() {
     expect(request.toJson()['plan'], 'plus');
     expect(find.text('プラン: プラス'), findsOneWidget);
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
+  });
+
+  testWidgets('プランに添える回数は、アプリに持たず listSubscriptionPlans の応答の値を出す', (
+    tester,
+  ) async {
+    await pumpSubscription(
+      tester,
+      api: FakeStudentApi(
+        subscriptionPlans: const [
+          SubscriptionPlanDetail(
+            plan: SubscriptionPlan.standard,
+            liveLessonsPerMonth: 3,
+          ),
+          SubscriptionPlanDetail(
+            plan: SubscriptionPlan.plus,
+            liveLessonsPerMonth: 6,
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('スタンダード　ビデオ通話 月 3 回'), findsOneWidget);
+    expect(find.text('プラス　ビデオ通話 月 6 回'), findsOneWidget);
+    expect(find.text('スタンダード　ビデオ通話 月 2 回'), findsNothing);
+  });
+
+  testWidgets('プランの一覧を読めなければ、回数を出さずに名前だけで選べて、その旨をプランの欄に出す', (tester) async {
+    final api = await pumpSubscription(
+      tester,
+      api: FakeStudentApi(
+        failures: {
+          'listSubscriptionPlans': const StudentApiException(statusCode: 500),
+        },
+      ),
+    );
+
+    expect(find.text('スタンダード'), findsOneWidget);
+    expect(find.text('プラス'), findsOneWidget);
+    expect(find.textContaining('ビデオ通話 月'), findsNothing);
+    expect(
+      find.text('プランごとのビデオ通話の回数を読み込めませんでした。プランの名前で選んで始められます。'),
+      findsOneWidget,
+    );
+
+    await tapText(tester, 'プラス');
+    expect(planTile(tester, 'プラス').value, SubscriptionPlan.plus);
+    await tapText(tester, '月額契約を始める');
+
+    final request = api.requests.single as StartSubscriptionRequest;
+    expect(request.plan, SubscriptionPlan.plus);
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+    expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
+  });
+
+  testWidgets('プランの一覧の応答が契約に反していても（上限が 0）、名前だけで選べて、読み込めなかった旨を出す', (
+    tester,
+  ) async {
+    // 応答の検査はクライアントの境界（HttpStudentApi）でするので、モックの API ではなく本物のクライアントで通す
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          studentApiProvider.overrideWithValue(
+            HttpStudentApi(
+              baseUrl: Uri.parse('http://api.test'),
+              accessToken: () => 'mock.student.x',
+              client: MockClient(
+                (request) async => http.Response.bytes(
+                  utf8.encode(
+                    jsonEncode({
+                      'plans': [
+                        {'plan': 'standard', 'live_lessons_per_month': 0},
+                        {'plan': 'plus', 'live_lessons_per_month': 4},
+                      ],
+                    }),
+                  ),
+                  200,
+                  headers: {'content-type': 'application/json'},
+                ),
+              ),
+            ),
+          ),
+          studentFlowProvider.overrideWith(
+            () => StudentFlowNotifier(
+              StudentFlowState(
+                step: FlowStep.subscription,
+                student: Fixtures.student,
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: SubscriptionScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('スタンダード'), findsOneWidget);
+    expect(find.text('プラス'), findsOneWidget);
+    expect(find.textContaining('ビデオ通話 月'), findsNothing);
+    expect(
+      find.text('プランごとのビデオ通話の回数を読み込めませんでした。プランの名前で選んで始められます。'),
+      findsOneWidget,
+    );
+    await tapText(tester, 'プラス');
+    expect(planTile(tester, 'プラス').value, SubscriptionPlan.plus);
   });
 
   testWidgets('今月の残り回数は、受講権のプランの上限と合わせて出す', (tester) async {
@@ -105,5 +221,21 @@ void main() {
 
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 3 回'), findsOneWidget);
     expect(find.text('月額契約を始める'), findsNothing);
+  });
+
+  testWidgets('契約の後に開いたときは、プランの一覧を読まない', (tester) async {
+    final started = Fixtures.subscriptionStarted;
+    final api = await pumpSubscription(
+      tester,
+      initial: StudentFlowState(
+        step: FlowStep.subscription,
+        student: Fixtures.student,
+        subscription: started.subscription,
+        entitlement: started.entitlement,
+      ),
+    );
+
+    expect(api.calls, isEmpty);
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
   });
 }

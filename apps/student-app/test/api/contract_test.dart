@@ -112,6 +112,7 @@ void main() {
         'getCoachReviewSummary',
         'listCoachReviews',
         'listCoachLessonMenus',
+        'listSubscriptionPlans',
         'startSubscription',
         'getMyEntitlement',
         'listMessageThreads',
@@ -302,6 +303,43 @@ void main() {
       'used',
       'remaining',
     ]);
+  });
+
+  test('契約プランの一覧の項目が契約と一致する（listSubscriptionPlans）', () {
+    // SubscriptionPlanDetail.fromJson・SubscriptionPlanList.fromJson が読む項目
+    expect(propertiesOf('SubscriptionPlanDetail'), [
+      'plan',
+      'live_lessons_per_month',
+    ]);
+    expect(
+      requiredOf('SubscriptionPlanDetail'),
+      propertiesOf('SubscriptionPlanDetail'),
+    );
+    final detail =
+        (schemas['SubscriptionPlanDetail'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      refOf(detail['plan'] as YamlMap),
+      '#/components/schemas/SubscriptionPlan',
+    );
+    expect((detail['live_lessons_per_month'] as YamlMap)['type'], 'integer');
+    expect(propertiesOf('SubscriptionPlanList'), ['plans']);
+    expect(requiredOf('SubscriptionPlanList'), ['plans']);
+    final items =
+        (((schemas['SubscriptionPlanList'] as YamlMap)['properties']
+                    as YamlMap)['plans']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/SubscriptionPlanDetail');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/subscription-plans'] as YamlMap)['get']
+            as YamlMap;
+    expect(operation['operationId'], 'listSubscriptionPlans');
+    final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+    final body =
+        (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+            as YamlMap);
+    expect(refOf(body), '#/components/schemas/SubscriptionPlanList');
   });
 
   test('コーチの評価の項目が契約と一致し、評価した生徒を載せない（getCoachReviewSummary・listCoachReviews）', () {

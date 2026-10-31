@@ -105,6 +105,8 @@ class StudentFlowState {
     this.lesson,
     this.lessonReview,
     Set<String> reviewedLessonIds = const {},
+    this.subscriptionPlans,
+    this.subscriptionPlansFailed = false,
     this.subscription,
     this.entitlement,
     this.noEntitlement = false,
@@ -200,6 +202,12 @@ class StudentFlowState {
   /// 完了を記録したレッスンを評価済みと分かっているか
   bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
 
+  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`。契約の画面を開いたときに読む。未取得なら null）
+  final List<SubscriptionPlanDetail>? subscriptionPlans;
+
+  /// 契約プランの一覧を読めなかったら true（契約の画面はプランの名前だけで選ばせ、プランの欄にだけその旨を出す）
+  final bool subscriptionPlansFailed;
+
   final Subscription? subscription;
   final Entitlement? entitlement;
 
@@ -279,6 +287,8 @@ class StudentFlowState {
     Lesson? lesson,
     LessonReview? lessonReview,
     Set<String>? reviewedLessonIds,
+    List<SubscriptionPlanDetail>? subscriptionPlans,
+    bool? subscriptionPlansFailed,
     Subscription? subscription,
     Entitlement? entitlement,
     bool? noEntitlement,
@@ -322,6 +332,9 @@ class StudentFlowState {
     lesson: lesson ?? this.lesson,
     lessonReview: lessonReview ?? this.lessonReview,
     reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
+    subscriptionPlans: subscriptionPlans ?? this.subscriptionPlans,
+    subscriptionPlansFailed:
+        subscriptionPlansFailed ?? this.subscriptionPlansFailed,
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
     noEntitlement: noEntitlement ?? this.noEntitlement,
@@ -751,6 +764,30 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 月額契約の画面へ
   void goToSubscription() =>
       state = state.copyWith(step: FlowStep.subscription);
+
+  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`）を読む。契約の画面を開いたときに呼ぶ。
+  /// 読めなくてもプランは名前だけで選べるので、busy にせず失敗の文言も出さない
+  /// （[StudentFlowState.subscriptionPlansFailed] を立て、プランの欄にだけその旨を出す）。
+  Future<void> loadSubscriptionPlans() async {
+    state = state.copyWith(
+      errorMessage: state.errorMessage,
+      subscriptionPlansFailed: false,
+    );
+    try {
+      final list = await _api.listSubscriptionPlans();
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        subscriptionPlans: list.plans,
+      );
+    } on StudentApiException {
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errorMessage: state.errorMessage,
+        subscriptionPlansFailed: true,
+      );
+    }
+  }
 
   /// `startSubscription`。[plan] は選んだ契約プラン（既定は standard）。
   /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。

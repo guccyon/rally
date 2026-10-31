@@ -55,7 +55,7 @@ enum SubscriptionStatus {
 }
 
 /// `SubscriptionPlan`（glossary の subscription_plan）。ビデオ通話の暦月の上限を決める（standard 2 回・plus 4 回）。
-/// 上限の数はサーバーが `LiveLessonQuota.limit` で返すので、ここには持たない。
+/// 上限の数はサーバーが返す（契約の前は `SubscriptionPlanDetail.live_lessons_per_month`、契約の後は `LiveLessonQuota.limit`）ので、ここには持たない。
 enum SubscriptionPlan {
   standard('standard'),
   plus('plus');
@@ -596,6 +596,50 @@ class Subscription {
     status: SubscriptionStatus.fromWire(json['status'] as String),
     startedAt: _dateTime(json['started_at']),
   );
+}
+
+/// `SubscriptionPlanDetail`。契約プランと、そのプランのビデオ通話の暦月の上限
+class SubscriptionPlanDetail {
+  /// [liveLessonsPerMonth] は契約の `minimum: 1` に合わせて 1 以上
+  const SubscriptionPlanDetail({
+    required this.plan,
+    required this.liveLessonsPerMonth,
+  }) : assert(liveLessonsPerMonth >= 1, 'live_lessons_per_month は 1 以上');
+
+  final SubscriptionPlan plan;
+
+  /// ビデオ通話の暦月の上限（`LiveLessonQuota.limit` と同じ値。1 以上）
+  final int liveLessonsPerMonth;
+
+  /// `live_lessons_per_month` が 1 未満なら [FormatException]（契約にない値として、enum の値と同じく扱う）
+  factory SubscriptionPlanDetail.fromJson(Map<String, dynamic> json) {
+    final liveLessonsPerMonth = json['live_lessons_per_month'] as int;
+    if (liveLessonsPerMonth < 1) {
+      throw FormatException('契約にない値です: $liveLessonsPerMonth');
+    }
+    return SubscriptionPlanDetail(
+      plan: SubscriptionPlan.fromWire(json['plan'] as String),
+      liveLessonsPerMonth: liveLessonsPerMonth,
+    );
+  }
+}
+
+/// `SubscriptionPlanList`（`listSubscriptionPlans` の応答）
+class SubscriptionPlanList {
+  /// [plans] は書き換えられない写しにして持つ（`fromJson` でもコンストラクタで直接作っても、作った後に一覧を変えさせない）
+  SubscriptionPlanList({required List<SubscriptionPlanDetail> plans})
+    : plans = List.unmodifiable(plans);
+
+  /// standard・plus の順
+  final List<SubscriptionPlanDetail> plans;
+
+  factory SubscriptionPlanList.fromJson(Map<String, dynamic> json) =>
+      SubscriptionPlanList(
+        plans: [
+          for (final e in json['plans'] as List<dynamic>)
+            SubscriptionPlanDetail.fromJson(e as Map<String, dynamic>),
+        ],
+      );
 }
 
 /// `StartSubscriptionRequest`
