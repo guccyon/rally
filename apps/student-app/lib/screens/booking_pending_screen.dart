@@ -7,7 +7,7 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// 予約の確定待ち（`confirmBooking`）。確定したら初回レッスンの受け方を選ぶ。
-/// 予約したスロットにレッスンメニューが結びついていれば、その名前と 1 回の時間も出す。
+/// 予約した時点のレッスンメニューの写し（`Booking.lesson_menu`）があれば、その名前と 1 回の時間も出す。
 class BookingPendingScreen extends ConsumerWidget {
   const BookingPendingScreen({super.key});
 
@@ -17,13 +17,13 @@ class BookingPendingScreen extends ConsumerWidget {
     final notifier = ref.read(studentFlowProvider.notifier);
     final booking = state.booking!;
     final confirmed = booking.status == BookingStatus.confirmed;
-    final menu = state.bookedSlot?.lessonMenu;
+    final menu = booking.lessonMenu;
     return FlowScaffold(
       title: confirmed ? '予約が確定しました' : '予約の確定待ち',
       children: [
         Text(booking.isTrial ? '体験予約' : '予約'),
         Text('開始: ${formatDateTime(booking.startsAt)}'),
-        if (menu != null) Text(slotLessonMenuLabel(menu)),
+        if (menu != null) Text(bookingLessonMenuLabel(menu)),
         Text('状態: ${bookingStatusLabel(booking.status)}'),
         const SizedBox(height: 16),
         if (!confirmed) ...[
