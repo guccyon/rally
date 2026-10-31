@@ -626,7 +626,9 @@ abstract final class Fixtures {
     lessonMenu: lessonMenu,
   );
 
-  /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）
+  /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）。
+  /// キャンセル規定の見込みはサーバーと同じ規則で [now] から出す（キャンセル済みは null と null、
+  /// 月額の受講権のない生徒（[subscribed] が false）は false と null、ほかは開始の 24 時間前を境目に）
   static MyBooking myBooking({
     required String bookingId,
     required Duration startsIn,
@@ -634,9 +636,18 @@ abstract final class Fixtures {
     Sport sport = Sport.tennis,
     String? coachDisplayName = '佐藤',
     BookingLessonMenu? lessonMenu,
+    bool subscribed = true,
   }) {
     final startsAt = now.add(startsIn);
+    final cancelled = status == BookingStatus.cancelled;
+    final freeCancelUntil = cancelled || !subscribed
+        ? null
+        : startsAt.subtract(const Duration(hours: 24));
     return MyBooking(
+      cancelConsumesQuota: cancelled
+          ? null
+          : freeCancelUntil != null && !now.isBefore(freeCancelUntil),
+      freeCancelUntil: freeCancelUntil,
       booking: Booking(
         bookingId: bookingId,
         slotId: 'slot-$bookingId',

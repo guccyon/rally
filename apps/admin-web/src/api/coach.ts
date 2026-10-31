@@ -45,6 +45,7 @@ export function coachApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    getMyLessonStats: () => call(() => client.GET("/coaches/me/lesson-stats")),
     listMessageThreads: () => call(() => client.GET("/message-threads")),
     listMessages: (threadId: string) =>
       call(() =>

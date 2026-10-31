@@ -4,8 +4,8 @@ import '../api/models.dart';
 import '../api/student_api.dart';
 import 'student_flow.dart';
 
-/// 月額契約と受講権の状態。契約の画面とホームの「今月のビデオ通話」の欄、キャンセルの確認
-/// （[StudentFlowNotifier.cancellationUsesQuota]）が読む。契約するスポーツ（[StudentFlowState.student]）と、画面の段（[FlowStep]）・
+/// 月額契約と受講権の状態。契約の画面とホームの「今月のビデオ通話」の欄が読む。
+/// 契約するスポーツ（[StudentFlowState.student]）と、画面の段（[FlowStep]）・
 /// API を呼んでいる間の印・直前の操作の失敗の文言・ホームで読めなかった欄はアプリ全体で 1 つなので、
 /// [StudentFlowState] の `student` / `step` / `busy` / `errorMessage` / `homeFailures` を使う。
 /// 一覧をコンストラクタで写して持つので const では作らない。
