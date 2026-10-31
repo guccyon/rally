@@ -186,7 +186,7 @@ impl Slot {
 
     /// 未確定の予約で席を 1 つ押さえる（状態は変えない）。受けられなければ [`Slot::ensure_seat_available`] の
     /// エラーで、何も変えない。予約の作成（[`super::Booking::reserve`]）から呼ぶ。
-    pub fn hold(&mut self) -> Result<(), DomainError> {
+    pub(super) fn hold(&mut self) -> Result<(), DomainError> {
         self.ensure_seat_available()?;
         self.seats.hold();
         Ok(())
@@ -194,7 +194,7 @@ impl Slot {
 
     /// 予約の確定で席を確定に移す。確定した予約が定員に達したら [`SlotStatus::Open`] → [`SlotStatus::Booked`]。
     /// 公開中でなければ [`DomainError::SlotNotOpen`] で、何も変えない。予約の確定（[`super::Booking::confirm`]）から呼ぶ。
-    pub fn book(&mut self) -> Result<(), DomainError> {
+    pub(super) fn book(&mut self) -> Result<(), DomainError> {
         if self.status != SlotStatus::Open {
             return Err(DomainError::SlotNotOpen {
                 status: self.status,
@@ -209,14 +209,14 @@ impl Slot {
 
     /// 未確定の予約のキャンセルで押さえた席を空ける（状態は変えない）。予約のキャンセル
     /// （[`super::Booking::cancel`]）から呼ぶ。
-    pub fn release_hold(&mut self) {
+    pub(super) fn release_hold(&mut self) {
         self.seats.release_pending();
     }
 
     /// 確定した予約のキャンセルで席を空ける。予約済み（[`SlotStatus::Booked`]）なら公開中に戻す。
     /// 確定した予約が入っていない（または閉じた枠）なら [`DomainError::SlotNotBooked`] で、何も変えない。
     /// 予約のキャンセル（[`super::Booking::cancel`]）から呼ぶ。
-    pub fn release(&mut self) -> Result<(), DomainError> {
+    pub(super) fn release(&mut self) -> Result<(), DomainError> {
         if self.seats.confirmed() == 0 || self.status == SlotStatus::Closed {
             return Err(DomainError::SlotNotBooked {
                 status: self.status,
