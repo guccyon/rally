@@ -48,7 +48,7 @@ tags:
   - name: notification
     description: 通知（プッシュ通知の受け取り設定）
   - name: profile
-    description: プロフィール（コーチの表示名・自己紹介・提供スポーツ）
+    description: プロフィール（生徒の表示名と、コーチの表示名・自己紹介・提供スポーツ）
 
 paths:
   /accounts:
@@ -929,6 +929,71 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /me/profile:
+    get:
+      operationId: getMyStudentProfile
+      summary: 自分のプロフィールの照会（生徒）
+      description: |
+        トークンが示す本人（生徒）のアカウント（`registerAccount` の応答の `student` と同じ形。表示名・スポーツ・登録日時）を返す。
+        生徒の役割のトークンだけが呼べる（それ以外の役割は 403。コーチ・本部は admin-web の `getMyAccount` で自分の分を読む）。
+        メールアドレスは返さない。
+
+        - トークンがない・無効なら 401。トークンが示す生徒のアカウントが存在しないときも、無効なトークンとして 401
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [profile]
+      x-context: profile
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 本人（生徒）のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      operationId: updateMyStudentProfile
+      summary: 自分の表示名の変更（生徒）
+      description: |
+        トークンが示す本人（生徒）の表示名を `display_name` に置き換え、置き換えたあとの本人のアカウント（`getMyStudentProfile` と
+        同じ形）を返す。生徒の役割のトークンだけが呼べる（それ以外の役割は 403）。変えられるのは表示名だけで、
+        メールアドレス・スポーツは変えない。
+
+        - `display_name` は登録（`registerAccount`）と同じ規則: 1〜50 文字（Unicode のコードポイントで数える）で、
+          空白だけは不可。書いたとおりに保存する（前後の空白も削らない）
+        - `display_name` がない・文字列でない・空（空白だけを含む）・50 文字を超えるときは 422 `validation_failed`。そのときは何も変えない
+        - トークンがない・無効なら 401。トークンが示す生徒のアカウントが存在しないときも、無効なトークンとして 401
+        - 変えた表示名は、コーチが見る生徒の表示名（admin-web の `listMyCoachBookings`・`listMyCoachVideos`）にもそのまま出る
+
+        行動イベントは発火しない。
+      tags: [profile]
+      x-context: profile
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStudentProfileRequest"
+      responses:
+        "200":
+          description: 表示名を置き換えたあとの本人（生徒）のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
   /notification-settings/me:
     get:
       operationId: getMyNotificationSettings
@@ -1764,6 +1829,17 @@ components:
           minLength: 1
           maxLength: 200
           description: 一言（空白だけは不可）
+
+    UpdateStudentProfileRequest:
+      type: object
+      description: 生徒の自分のプロフィールの変更。今は表示名だけ
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 新しい表示名（空白だけは不可）
 
     CoachListing:
       type: object

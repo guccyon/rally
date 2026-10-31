@@ -23,6 +23,7 @@ mod message;
 mod messaging;
 mod messaging_error;
 mod my_bookings;
+mod my_profile;
 mod my_videos;
 mod notification_settings;
 mod review_error;
@@ -70,7 +71,7 @@ use application::{
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
     },
-    profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile},
+    profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile},
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         ReviewedLessonMenuLookup, SubmitLessonReview,
@@ -110,7 +111,7 @@ pub use error::ApiError;
 /// `GET /coaches/me/bookings`（admin-web のコーチの自分の予約の一覧）と `GET /coaches/me/slots`（コーチの自分の枠の
 /// 一覧）と `GET /coaches/me/videos`（コーチに届いた動画の一覧）はコーチだけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
-/// 自己紹介文の変更）はコーチだけ。
+/// 自己紹介文の変更）はコーチだけ。同じパスの student-app の生徒の分（`GET`・`PATCH /me/profile`）は [`my_profile_router`]。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
 pub fn router_with<
@@ -526,6 +527,35 @@ where
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(coach_profiles::CoachProfilesState {
             get_coach_profile,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 生徒の自分のプロフィール（student-app の `GET /me/profile`・`PATCH /me/profile`）のルーター。[`router_with`] と同じく
+/// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+/// 同じパスの `PUT /me/profile`（admin-web のコーチの自己紹介文）は [`router_with`] にあり、`merge` で 1 つのパスにまとまる。
+///
+/// `GET`・`PATCH /me/profile` は生徒だけで、扱うのはトークンの生徒自身のアカウントだけ。
+pub fn my_profile_router<R, T>(
+    get_account: GetAccount<R>,
+    update_student_profile: UpdateStudentProfile<R>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/me/profile",
+            get(my_profile::get_my_student_profile::<R>)
+                .patch(my_profile::update_my_student_profile::<R>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(my_profile::MyProfileState {
+            get_account,
+            update_student_profile,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

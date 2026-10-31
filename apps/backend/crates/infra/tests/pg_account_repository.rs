@@ -1,4 +1,5 @@
-//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証（コーチの自己紹介文 `coaches.bio` を含む）。
+//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証（コーチの自己紹介文 `coaches.bio` と
+//! 生徒の表示名の書き換えを含む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,7 +10,11 @@ use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
     in_memory::{FixedClock, RecordingAnalyticsSink},
 };
-use domain::{catalog::Sport, identity::Role, profile::CoachBio};
+use domain::{
+    catalog::Sport,
+    identity::Role,
+    profile::{CoachBio, DisplayName},
+};
 use infra::PgAccountRepository;
 use sqlx::{PgPool, types::Uuid};
 
@@ -289,6 +294,71 @@ async fn bio_of_non_coach_or_unknown_account_is_not_updated(pool: PgPool) {
         assert_eq!(updated, None, "{id:?}");
     }
     assert_eq!(accounts.find(student.id()).await.unwrap(), Some(student));
+    assert_eq!(
+        accounts.find(headquarters.id()).await.unwrap(),
+        Some(headquarters)
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn student_display_name_is_replaced_by_update(pool: PgPool) {
+    let student = register_account(&pool)
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Soccer],
+        ))
+        .await
+        .unwrap();
+    let accounts = PgAccountRepository::new(pool);
+
+    // 上限ちょうど（50 文字）まで書け、読み直しても同じ。メールアドレス・スポーツ・登録日時はそのまま
+    for text in ["じろう", &"あ".repeat(DisplayName::MAX_CHARS)] {
+        let display_name = DisplayName::new(text).unwrap();
+        let updated = accounts
+            .update_student_display_name(student.id(), display_name.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.display_name(), &display_name);
+        assert_eq!(updated.email(), student.email());
+        assert_eq!(updated.as_student(), student.as_student());
+        assert_eq!(updated.registered_at(), student.registered_at());
+        assert_eq!(accounts.find(student.id()).await.unwrap(), Some(updated));
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn display_name_of_non_student_or_unknown_account_is_not_updated(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let coach = use_case
+        .execute(command(
+            "coach@example.com",
+            Role::Coach,
+            vec![Sport::Tennis],
+        ))
+        .await
+        .unwrap();
+    let headquarters = use_case
+        .execute(command("hq@example.com", Role::Headquarters, vec![]))
+        .await
+        .unwrap();
+    let accounts = PgAccountRepository::new(pool);
+
+    for id in [
+        coach.id(),
+        headquarters.id(),
+        domain::identity::AccountId::from_u128(42),
+    ] {
+        let updated = accounts
+            .update_student_display_name(id, DisplayName::new("じろう").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(updated, None, "{id:?}");
+    }
+    assert_eq!(accounts.find(coach.id()).await.unwrap(), Some(coach));
     assert_eq!(
         accounts.find(headquarters.id()).await.unwrap(),
         Some(headquarters)

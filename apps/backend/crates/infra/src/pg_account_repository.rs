@@ -1,5 +1,5 @@
 //! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID でのアカウントとコーチの一覧も読み、
-//! コーチの自己紹介文（`coaches.bio`）を書き換える。
+//! コーチの自己紹介文（`coaches.bio`）と生徒の表示名（`accounts.display_name`）を書き換える。
 
 use application::{
     Unavailable,
@@ -157,6 +157,26 @@ impl AccountRepository for PgAccountRepository {
             return Ok(None);
         }
         self.find(coach_id).await
+    }
+
+    async fn update_student_display_name(
+        &self,
+        student_id: AccountId,
+        display_name: DisplayName,
+    ) -> Result<Option<Account>, Unavailable> {
+        let updated = sqlx::query(
+            "UPDATE identity.accounts SET display_name = $2 WHERE account_id = $1 AND role = $3",
+        )
+        .bind(account_id_uuid::to_uuid(student_id))
+        .bind(display_name.as_str())
+        .bind(role_value(Role::Student))
+        .execute(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        if updated.rows_affected() == 0 {
+            return Ok(None);
+        }
+        self.find(student_id).await
     }
 }
 

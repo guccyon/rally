@@ -14,6 +14,7 @@ mod profile_coach_introduction_lookup;
 mod profile_student_display_name_lookup;
 mod profile_student_sport_lookup;
 mod update_coach_profile;
+mod update_student_profile;
 
 pub use coach_profile::CoachProfile;
 pub use get_coach_profile::GetCoachProfile;
@@ -25,4 +26,7 @@ pub use profile_student_display_name_lookup::ProfileStudentDisplayNameLookup;
 pub use profile_student_sport_lookup::ProfileStudentSportLookup;
 pub use update_coach_profile::{
     UpdateCoachProfile, UpdateCoachProfileCommand, UpdateCoachProfileError,
+};
+pub use update_student_profile::{
+    UpdateStudentProfile, UpdateStudentProfileCommand, UpdateStudentProfileError,
 };

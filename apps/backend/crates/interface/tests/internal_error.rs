@@ -61,6 +61,14 @@ impl AccountRepository for BrokenRepository {
     ) -> Result<Option<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
+
+    async fn update_student_display_name(
+        &self,
+        _student_id: AccountId,
+        _display_name: domain::profile::DisplayName,
+    ) -> Result<Option<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
 }
 
 struct NoTokens;
