@@ -2,7 +2,7 @@ use std::future::Future;
 
 use domain::{
     identity::AccountId,
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewId},
 };
 
@@ -21,7 +21,7 @@ pub trait LessonReviewRepository: Send + Sync {
     /// `lesson_id` のレッスンの評価。なければ `None`。
     fn find_by_lesson(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<LessonReview>, Unavailable>> + Send;
 
     /// 新しい評価を保存する。同じレッスンの評価がすでにあれば [`InsertReviewError::LessonAlreadyReviewed`]。

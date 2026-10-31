@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use super::{LessonReviewComment, LessonReviewId, Rating, ReviewError};
 use crate::{
     identity::AccountId,
-    lesson::{LessonCompletion, LessonId},
+    lesson::{LessonCompletion, LessonCompletionId},
 };
 
 /// レッスンの評価（glossary の lesson_review）。完了したレッスン 1 件につき 1 つで、付けるのはそのレッスンの生徒。
@@ -12,7 +12,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LessonReview {
     id: LessonReviewId,
-    lesson_id: LessonId,
+    lesson_id: LessonCompletionId,
     student_id: AccountId,
     coach_id: AccountId,
     rating: Rating,
@@ -54,7 +54,7 @@ impl LessonReview {
     /// 保存先から読んだ評価を組み立てる（保存先の実装用）。
     pub const fn restore(
         id: LessonReviewId,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         student_id: AccountId,
         coach_id: AccountId,
         rating: Rating,
@@ -76,7 +76,7 @@ impl LessonReview {
         self.id
     }
 
-    pub const fn lesson_id(&self) -> LessonId {
+    pub const fn lesson_id(&self) -> LessonCompletionId {
         self.lesson_id
     }
 
@@ -132,7 +132,7 @@ mod tests {
             )
             .unwrap();
         video
-            .complete(LessonId::from_u128(id), STUDENT, &[], at(2))
+            .complete(LessonCompletionId::from_u128(id), STUDENT, &[], at(2))
             .unwrap()
     }
 

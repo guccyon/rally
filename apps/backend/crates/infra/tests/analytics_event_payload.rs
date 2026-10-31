@@ -11,7 +11,7 @@ use domain::{
     catalog::Sport,
     entitlement::SubscriptionId,
     identity::AccountId,
-    lesson::{LessonId, LessonType},
+    lesson::{LessonCompletionId, LessonType},
     live_lesson::SessionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
     review::{LessonReviewId, Rating},
@@ -140,7 +140,7 @@ fn samples() -> Vec<AnalyticsEvent> {
         AnalyticsEvent::LessonCompleted {
             student_id: student(),
             coach_id: coach(),
-            lesson_id: LessonId::from_u128(8),
+            lesson_id: LessonCompletionId::from_u128(8),
             lesson_type: LessonType::Live,
             is_first_lesson: true,
             occurred_at: oct26(),
@@ -162,7 +162,7 @@ fn samples() -> Vec<AnalyticsEvent> {
         AnalyticsEvent::ReviewSubmitted {
             student_id: student(),
             coach_id: coach(),
-            lesson_id: LessonId::from_u128(8),
+            lesson_id: LessonCompletionId::from_u128(8),
             review_id: LessonReviewId::from_u128(10),
             rating: Rating::new(4).unwrap(),
             occurred_at: oct26(),

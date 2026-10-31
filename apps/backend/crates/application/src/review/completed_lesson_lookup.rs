@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use domain::lesson::{LessonCompletion, LessonId};
+use domain::lesson::{LessonCompletion, LessonCompletionId};
 
 use crate::Unavailable;
 
@@ -13,6 +13,6 @@ pub trait CompletedLessonLookup: Send + Sync {
     /// `lesson_id` の完了したレッスン。なければ `None`。
     fn find_completion(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
 }

@@ -10,7 +10,7 @@ use application::{
     async_lesson::{video_id_uuid, video_review_id_uuid},
     entitlement::subscription_id_uuid,
     identity::account_id_uuid,
-    lesson::lesson_id_uuid,
+    lesson::lesson_completion_id_uuid,
     live_lesson::session_id_uuid,
     messaging::{message_id_uuid, message_thread_id_uuid},
     review::lesson_review_id_uuid,
@@ -167,7 +167,7 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
         } => json!({
             "student_id": account_id_uuid::format(*student_id),
             "coach_id": account_id_uuid::format(*coach_id),
-            "lesson_id": lesson_id_uuid::format(*lesson_id),
+            "lesson_id": lesson_completion_id_uuid::format(*lesson_id),
             "lesson_type": lesson_type_value(*lesson_type),
             "is_first_lesson": is_first_lesson,
             "occurred_at": date_time(*occurred_at)?,
@@ -208,7 +208,7 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
         } => json!({
             "student_id": account_id_uuid::format(*student_id),
             "coach_id": account_id_uuid::format(*coach_id),
-            "lesson_id": lesson_id_uuid::format(*lesson_id),
+            "lesson_id": lesson_completion_id_uuid::format(*lesson_id),
             "review_id": lesson_review_id_uuid::format(*review_id),
             "rating": rating.value(),
             "occurred_at": date_time(*occurred_at)?,

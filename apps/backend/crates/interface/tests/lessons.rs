@@ -21,7 +21,7 @@ use application::{
         InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
     },
-    lesson::{RecordLessonCompletion, lesson_id_uuid},
+    lesson::{RecordLessonCompletion, lesson_completion_id_uuid},
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession, session_id_uuid},
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
@@ -437,7 +437,8 @@ async fn a_live_lesson_is_completed_from_an_ended_session() {
     assert_eq!(lesson["is_first_lesson"], true);
     assert_eq!(lesson["completed_at"], "2026-11-01T12:00:00Z");
 
-    let lesson_id = lesson_id_uuid::parse(lesson["lesson_id"].as_str().unwrap()).unwrap();
+    let lesson_id =
+        lesson_completion_id_uuid::parse(lesson["lesson_id"].as_str().unwrap()).unwrap();
     assert_eq!(
         app.analytics.events(),
         vec![AnalyticsEvent::LessonCompleted {

@@ -3,12 +3,12 @@
 use application::{
     Unavailable,
     identity::account_id_uuid,
-    lesson::lesson_id_uuid,
+    lesson::lesson_completion_id_uuid,
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
 };
 use domain::{
     identity::AccountId,
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
 use sqlx::{
@@ -43,13 +43,13 @@ impl LessonReviewRepository for PgLessonReviewRepository {
 
     async fn find_by_lesson(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> Result<Option<LessonReview>, Unavailable> {
         let row: Option<ReviewRow> = sqlx::query_as(
             "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at
              FROM review.lesson_reviews WHERE lesson_id = $1",
         )
-        .bind(lesson_id_uuid::to_uuid(lesson_id))
+        .bind(lesson_completion_id_uuid::to_uuid(lesson_id))
         .fetch_optional(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -63,7 +63,7 @@ impl LessonReviewRepository for PgLessonReviewRepository {
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(lesson_review_id_uuid::to_uuid(review.id()))
-        .bind(lesson_id_uuid::to_uuid(review.lesson_id()))
+        .bind(lesson_completion_id_uuid::to_uuid(review.lesson_id()))
         .bind(account_id_uuid::to_uuid(review.student_id()))
         .bind(account_id_uuid::to_uuid(review.coach_id()))
         .bind(i16::from(review.rating().value()))
@@ -99,7 +99,7 @@ fn review_from_row(
 ) -> Result<LessonReview, Unavailable> {
     Ok(LessonReview::restore(
         lesson_review_id_uuid::from_uuid(review_id),
-        lesson_id_uuid::from_uuid(lesson_id),
+        lesson_completion_id_uuid::from_uuid(lesson_id),
         account_id_uuid::from_uuid(student_id),
         account_id_uuid::from_uuid(coach_id),
         Rating::new(i64::from(rating)).map_err(Unavailable::new)?,

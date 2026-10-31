@@ -8,7 +8,7 @@ use crate::{
     catalog::Sport,
     catalog::{LessonFormat, LessonMenu},
     identity::AccountId,
-    lesson::{LessonCompletion, LessonId, LessonSource},
+    lesson::{LessonCompletion, LessonCompletionId, LessonSource},
 };
 
 /// 非同期レッスン（glossary の async_lesson）で生徒がコーチに送る動画。
@@ -194,7 +194,7 @@ impl Video {
     /// - 同じ動画の完了は 1 回（[`DomainError::LessonAlreadyCompleted`]）
     pub fn complete(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         account: AccountId,
         history: &[LessonCompletion],
         now: SystemTime,
@@ -467,7 +467,7 @@ mod tests {
         }
     }
 
-    const LESSON: LessonId = LessonId::from_u128(70);
+    const LESSON: LessonCompletionId = LessonCompletionId::from_u128(70);
 
     fn reviewed() -> Video {
         let mut video = submitted();
@@ -530,7 +530,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                video.complete(LessonId::from_u128(71), account, &history, now),
+                video.complete(LessonCompletionId::from_u128(71), account, &history, now),
                 Err(expected)
             );
         }

@@ -1,6 +1,6 @@
 use domain::{
     identity::AccountId,
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, Rating, ReviewError},
 };
 
@@ -15,7 +15,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubmitLessonReviewCommand {
     pub account_id: AccountId,
-    pub lesson_id: LessonId,
+    pub lesson_id: LessonCompletionId,
     pub rating: Rating,
     pub comment: LessonReviewComment,
 }
@@ -195,7 +195,7 @@ mod tests {
 
     fn command(
         account_id: AccountId,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
         rating: i64,
     ) -> SubmitLessonReviewCommand {
         SubmitLessonReviewCommand {
@@ -308,7 +308,7 @@ mod tests {
             );
         }
         let result = use_case
-            .execute(command(STUDENT, LessonId::from_u128(99), 4))
+            .execute(command(STUDENT, LessonCompletionId::from_u128(99), 4))
             .await;
         assert!(
             matches!(result, Err(SubmitLessonReviewError::LessonNotFound)),

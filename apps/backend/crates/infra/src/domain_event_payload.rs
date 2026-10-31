@@ -11,7 +11,7 @@ use application::{
     domain_event::DomainEvent,
     entitlement::subscription_id_uuid,
     identity::account_id_uuid,
-    lesson::lesson_id_uuid,
+    lesson::lesson_completion_id_uuid,
     messaging::{message_id_uuid, message_thread_id_uuid},
     scheduling::booking_id_uuid,
 };
@@ -64,7 +64,7 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
             "occurred_at": date_time(*occurred_at)?,
             "student_id": account_id_uuid::format(*student_id),
             "coach_id": account_id_uuid::format(*coach_id),
-            "lesson_id": lesson_id_uuid::format(*lesson_id),
+            "lesson_id": lesson_completion_id_uuid::format(*lesson_id),
         })),
         DomainEvent::SubscriptionStarted {
             event_id,

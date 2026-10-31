@@ -38,7 +38,7 @@ use axum::{
 use domain::{
     catalog::{LessonMenuId, LessonMenuName},
     identity::{AccountId, Role},
-    lesson::LessonId,
+    lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
 };
 use serde_json::{Value, json};
@@ -82,9 +82,9 @@ struct FixedLessonMenus;
 impl ReviewedLessonMenuLookup for FixedLessonMenus {
     async fn find_lesson_menu(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
-        Ok((lesson_id == LessonId::from_u128(12)).then(|| {
+        Ok((lesson_id == LessonCompletionId::from_u128(12)).then(|| {
             ReviewLessonMenu::new(
                 LessonMenuId::from_u128(0x5a),
                 LessonMenuName::new("フォア改善").unwrap(),
@@ -110,7 +110,7 @@ fn now() -> SystemTime {
 fn review(id: u128, coach: u128, rating: i64, comment: &str, hours_ago: u32) -> LessonReview {
     LessonReview::restore(
         LessonReviewId::from_u128(id),
-        LessonId::from_u128(10 + id),
+        LessonCompletionId::from_u128(10 + id),
         AccountId::from_u128(100 + id),
         AccountId::from_u128(coach),
         Rating::new(rating).unwrap(),

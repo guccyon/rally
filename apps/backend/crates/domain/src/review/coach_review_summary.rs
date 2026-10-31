@@ -55,7 +55,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        lesson::LessonId,
+        lesson::LessonCompletionId,
         review::{LessonReviewComment, LessonReviewId, Rating},
     };
 
@@ -65,7 +65,7 @@ mod tests {
     fn review(id: u128, coach_id: AccountId, rating: i64) -> LessonReview {
         LessonReview::restore(
             LessonReviewId::from_u128(id),
-            LessonId::from_u128(id),
+            LessonCompletionId::from_u128(id),
             AccountId::from_u128(100 + id),
             coach_id,
             Rating::new(rating).unwrap(),

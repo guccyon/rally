@@ -99,7 +99,7 @@ async fn record(
     pool: &PgPool,
     student: AccountId,
     complete: impl FnOnce(
-        domain::lesson::LessonId,
+        domain::lesson::LessonCompletionId,
         &[LessonCompletion],
     ) -> Result<LessonCompletion, domain::DomainError>
     + Send,

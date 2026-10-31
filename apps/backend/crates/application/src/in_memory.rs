@@ -12,7 +12,7 @@ use domain::{
     catalog::{LessonMenu, LessonMenuId},
     entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId, RoleAttributes},
-    lesson::{LessonCompletion, LessonId},
+    lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{NotificationSettings, PushNotification},
@@ -36,7 +36,7 @@ use crate::{
         subscription_id_uuid,
     },
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
-    lesson::{LessonCompletionRepository, RecordCompletionError, lesson_id_uuid},
+    lesson::{LessonCompletionRepository, RecordCompletionError, lesson_completion_id_uuid},
     live_lesson::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
         session_id_uuid,
@@ -809,11 +809,14 @@ impl InMemoryLessonCompletionRepository {
 }
 
 impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
-    fn next_id(&self) -> LessonId {
-        lesson_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    fn next_id(&self) -> LessonCompletionId {
+        lesson_completion_id_uuid::from_uuid(uuid::Uuid::new_v4())
     }
 
-    async fn find(&self, lesson_id: LessonId) -> Result<Option<LessonCompletion>, Unavailable> {
+    async fn find(
+        &self,
+        lesson_id: LessonCompletionId,
+    ) -> Result<Option<LessonCompletion>, Unavailable> {
         Ok(self
             .completions
             .lock()
@@ -958,7 +961,7 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
 
     async fn find_by_lesson(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> Result<Option<LessonReview>, Unavailable> {
         Ok(self
             .reviews

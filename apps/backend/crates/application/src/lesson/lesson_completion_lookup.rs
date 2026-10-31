@@ -1,4 +1,4 @@
-use domain::lesson::{LessonCompletion, LessonId};
+use domain::lesson::{LessonCompletion, LessonCompletionId};
 
 use super::LessonCompletionRepository;
 use crate::{Unavailable, review::CompletedLessonLookup};
@@ -21,7 +21,7 @@ where
 {
     async fn find_completion(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> Result<Option<LessonCompletion>, Unavailable> {
         self.completions.find(lesson_id).await
     }

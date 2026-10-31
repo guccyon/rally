@@ -1,5 +1,5 @@
 use domain::{
-    lesson::{LessonId, LessonSource},
+    lesson::{LessonCompletionId, LessonSource},
     review::ReviewLessonMenu,
 };
 
@@ -44,7 +44,7 @@ where
 {
     async fn find_lesson_menu(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
         let Some(completion) = self.completions.find(lesson_id).await? else {
             return Ok(None);
@@ -310,7 +310,7 @@ mod tests {
         let (lookup, _) = lookup().await;
         assert_eq!(
             lookup
-                .find_lesson_menu(LessonId::from_u128(99))
+                .find_lesson_menu(LessonCompletionId::from_u128(99))
                 .await
                 .unwrap(),
             None

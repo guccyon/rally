@@ -22,6 +22,7 @@ terms:
     ja: "完了したレッスン"
     definition: "生徒が同期レッスンの通話セッションまたは非同期レッスンの動画添削を受け終えた事実で、元の通話セッション・動画の集約が発行する（docs/adr/0006）。"
     contexts: [live-lesson, async-lesson]
+    code: [LessonCompletion, LessonCompletionId]
   - id: live_lesson
     ja: "同期レッスン"
     definition: "ビデオ通話によるマンツーマンのレッスンで、月額契約では契約プランで決まる暦月の上限までの枠を消費する。"

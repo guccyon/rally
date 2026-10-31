@@ -6,11 +6,11 @@
 //! live-lesson と async-lesson の両方。docs/adr/0006）。
 
 mod lesson_completion;
-mod lesson_id;
+mod lesson_completion_id;
 mod lesson_source;
 mod lesson_type;
 
 pub use lesson_completion::LessonCompletion;
-pub use lesson_id::LessonId;
+pub use lesson_completion_id::LessonCompletionId;
 pub use lesson_source::LessonSource;
 pub use lesson_type::LessonType;

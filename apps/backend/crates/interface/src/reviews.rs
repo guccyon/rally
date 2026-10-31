@@ -12,7 +12,7 @@ use application::{
     catalog::lesson_menu_id_uuid,
     clock::Clock,
     identity::account_id_uuid,
-    lesson::lesson_id_uuid,
+    lesson::lesson_completion_id_uuid,
     review::{
         CoachReviewList, CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository,
         ListCoachReviews, ReviewedLessonMenuLookup, SubmitLessonReview, SubmitLessonReviewCommand,
@@ -114,7 +114,7 @@ where
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let command = SubmitLessonReviewCommand {
         account_id: account.account_id(),
-        lesson_id: lesson_id_uuid::parse(&request.lesson_id)
+        lesson_id: lesson_completion_id_uuid::parse(&request.lesson_id)
             .map_err(|_| ApiError::validation_failed("lesson_id が UUID でない"))?,
         rating: Rating::new(request.rating)?,
         comment: LessonReviewComment::new(request.comment)?,
@@ -202,7 +202,7 @@ where
 fn lesson_review_body(review: &LessonReview) -> Result<LessonReviewBody, ApiError> {
     Ok(LessonReviewBody {
         review_id: lesson_review_id_uuid::format(review.id()),
-        lesson_id: lesson_id_uuid::format(review.lesson_id()),
+        lesson_id: lesson_completion_id_uuid::format(review.lesson_id()),
         student_id: account_id_uuid::format(review.student_id()),
         coach_id: account_id_uuid::format(review.coach_id()),
         rating: review.rating().value(),
@@ -226,7 +226,7 @@ fn coach_review_body(
 ) -> Result<CoachReviewBody, ApiError> {
     Ok(CoachReviewBody {
         review_id: lesson_review_id_uuid::format(review.id()),
-        lesson_id: lesson_id_uuid::format(review.lesson_id()),
+        lesson_id: lesson_completion_id_uuid::format(review.lesson_id()),
         rating: review.rating().value(),
         comment: review.comment().as_str().to_string(),
         submitted_at: date_time_to_contract(review.submitted_at())?,

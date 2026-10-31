@@ -4,13 +4,13 @@ use application::{
     Unavailable,
     async_lesson::video_id_uuid,
     identity::account_id_uuid,
-    lesson::{LessonCompletionRepository, RecordCompletionError, lesson_id_uuid},
+    lesson::{LessonCompletionRepository, RecordCompletionError, lesson_completion_id_uuid},
     live_lesson::session_id_uuid,
 };
 use domain::{
     DomainError,
     identity::AccountId,
-    lesson::{LessonCompletion, LessonId, LessonSource},
+    lesson::{LessonCompletion, LessonCompletionId, LessonSource},
 };
 use sqlx::{
     PgPool,
@@ -40,11 +40,14 @@ impl PgLessonCompletionRepository {
 }
 
 impl LessonCompletionRepository for PgLessonCompletionRepository {
-    fn next_id(&self) -> LessonId {
-        lesson_id_uuid::from_uuid(Uuid::new_v4())
+    fn next_id(&self) -> LessonCompletionId {
+        lesson_completion_id_uuid::from_uuid(Uuid::new_v4())
     }
 
-    async fn find(&self, lesson_id: LessonId) -> Result<Option<LessonCompletion>, Unavailable> {
+    async fn find(
+        &self,
+        lesson_id: LessonCompletionId,
+    ) -> Result<Option<LessonCompletion>, Unavailable> {
         let row: Option<(Uuid, Uuid, Uuid, Uuid, bool, OffsetDateTime, bool)> = sqlx::query_as(
             "SELECT student_id, lesson_id, session_id, coach_id, is_first_lesson, completed_at, true
              FROM live_lesson.lesson_completions WHERE lesson_id = $1
@@ -52,7 +55,7 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
              SELECT student_id, lesson_id, video_id, coach_id, is_first_lesson, completed_at, false
              FROM async_lesson.lesson_completions WHERE lesson_id = $1",
         )
-        .bind(lesson_id_uuid::to_uuid(lesson_id))
+        .bind(lesson_completion_id_uuid::to_uuid(lesson_id))
         .fetch_optional(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -103,14 +106,14 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
                      (lesson_id, session_id, student_id, coach_id, is_first_lesson, completed_at)
                  VALUES ($1, $2, $3, $4, $5, $6)",
             )
-            .bind(lesson_id_uuid::to_uuid(completion.id()))
+            .bind(lesson_completion_id_uuid::to_uuid(completion.id()))
             .bind(session_id_uuid::to_uuid(session_id)),
             LessonSource::Async(video_id) => sqlx::query(
                 "INSERT INTO async_lesson.lesson_completions
                      (lesson_id, video_id, student_id, coach_id, is_first_lesson, completed_at)
                  VALUES ($1, $2, $3, $4, $5, $6)",
             )
-            .bind(lesson_id_uuid::to_uuid(completion.id()))
+            .bind(lesson_completion_id_uuid::to_uuid(completion.id()))
             .bind(video_id_uuid::to_uuid(video_id)),
         };
         insert
@@ -137,7 +140,7 @@ fn completion_from_row(
         LessonSource::Async(video_id_uuid::from_uuid(source_id))
     };
     LessonCompletion::restore(
-        lesson_id_uuid::from_uuid(lesson_id),
+        lesson_completion_id_uuid::from_uuid(lesson_id),
         student_id,
         account_id_uuid::from_uuid(coach_id),
         source,

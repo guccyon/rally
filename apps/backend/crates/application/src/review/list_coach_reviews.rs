@@ -57,7 +57,7 @@ mod tests {
 
     use domain::{
         catalog::{LessonMenuId, LessonMenuName},
-        lesson::LessonId,
+        lesson::LessonCompletionId,
         review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
     };
 
@@ -74,7 +74,7 @@ mod tests {
     impl ReviewedLessonMenuLookup for FixedLessonMenus {
         async fn find_lesson_menu(
             &self,
-            lesson_id: LessonId,
+            lesson_id: LessonCompletionId,
         ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
             Ok([1, 2]
                 .contains(&lesson_id.as_u128())
@@ -92,7 +92,7 @@ mod tests {
     fn review(id: u128, coach_id: AccountId, submitted_secs: u64) -> LessonReview {
         LessonReview::restore(
             LessonReviewId::from_u128(id),
-            LessonId::from_u128(id),
+            LessonCompletionId::from_u128(id),
             AccountId::from_u128(100 + id),
             coach_id,
             Rating::new(4).unwrap(),
@@ -139,8 +139,8 @@ mod tests {
         assert_eq!(
             list.lesson_menus,
             BTreeMap::from([
-                (LessonId::from_u128(1), menu(1)),
-                (LessonId::from_u128(2), menu(2)),
+                (LessonCompletionId::from_u128(1), menu(1)),
+                (LessonCompletionId::from_u128(2), menu(2)),
             ])
         );
     }

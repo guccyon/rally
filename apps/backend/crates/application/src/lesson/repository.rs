@@ -3,7 +3,7 @@ use std::future::Future;
 use domain::{
     DomainError,
     identity::AccountId,
-    lesson::{LessonCompletion, LessonId},
+    lesson::{LessonCompletion, LessonCompletionId},
 };
 
 use super::RecordCompletionError;
@@ -21,12 +21,12 @@ use crate::Unavailable;
 /// 両方とも初回になることがないように）。
 pub trait LessonCompletionRepository: Send + Sync {
     /// 新しい完了記録の ID を払い出す。
-    fn next_id(&self) -> LessonId;
+    fn next_id(&self) -> LessonCompletionId;
 
     /// `lesson_id` の完了記録（同期・非同期のどちらでも）。なければ `None`。
     fn find(
         &self,
-        lesson_id: LessonId,
+        lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
 
     /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読み、`record` に渡す。`record` が `Ok` なら
