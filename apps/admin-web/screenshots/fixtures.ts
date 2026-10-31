@@ -318,4 +318,39 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["CoachLessonMenuList"],
   },
+  {
+    method: "GET",
+    path: "/students",
+    body: {
+      students: [
+        {
+          student_id: STUDENT_ID,
+          display_name: YAMADA.name,
+          sport: "tennis",
+          contract_type: "subscription",
+          plan: "standard",
+          last_booked_at: at(-24),
+          registered_at: at(-24 * 5),
+        },
+        {
+          student_id: STUDENT_ID_2,
+          display_name: SATO.name,
+          sport: "golf",
+          contract_type: "one_shot",
+          plan: null,
+          last_booked_at: at(-24 * 3),
+          registered_at: at(-24 * 12),
+        },
+        {
+          student_id: "11111111-1111-4111-8111-111111111113",
+          display_name: "田中 美咲",
+          sport: "swimming",
+          contract_type: null,
+          plan: null,
+          last_booked_at: null,
+          registered_at: at(-24 * 20),
+        },
+      ],
+    } satisfies Schemas["StudentList"],
+  },
 ];

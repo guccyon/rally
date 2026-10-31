@@ -115,4 +115,27 @@ describe("headquartersApi", () => {
     await api.listLessonMenus({});
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
+
+  test("listStudents は GET /api/students を呼び、生徒の一覧を返す", async () => {
+    const list = {
+      students: [
+        {
+          student_id: "11111111-1111-4111-8111-111111111111",
+          display_name: "山田 花子",
+          sport: "tennis",
+          contract_type: null,
+          plan: null,
+          last_booked_at: null,
+          registered_at: "2026-10-20T00:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listStudents();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/students");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
 });
