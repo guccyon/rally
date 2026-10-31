@@ -11,7 +11,7 @@ evidence:
   - case: C-0001
   - pr: "372"
   - event: "case.analyzed:39249"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 confidentiality: product
@@ -24,3 +24,4 @@ proposal:
     実装役への指示に、PR テンプレートの必須の見出しと、それぞれに書くこと（背景は前のチケットの経緯、問題は利用者から見て足りないこと）を明記する。
   recurring: true
 related: [K-0001]
+decided_by: committee:D-0001

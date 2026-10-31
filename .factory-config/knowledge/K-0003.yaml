@@ -15,7 +15,7 @@ evidence:
   - issue: "352"
   - issue: "353"
   - event: "case.analyzed:39249"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 confidentiality: product
@@ -28,3 +28,4 @@ proposal:
     チケットが変える場所（apps/student-app など）から worker のイメージを選ぶ規則を Engine に足し、Flutter の SDK を入れたイメージを用意する。
     あわせて、契約を先に決めるチケットでは、次の段の受け入れ条件に要る項目（行き先の ID など）を確かめる手順を設ける。
   recurring: true
+decided_by: committee:D-0001

@@ -11,7 +11,7 @@ evidence:
   - case: C-0001
   - pr: "372"
   - event: "case.analyzed:39249"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 confidentiality: product
@@ -25,3 +25,4 @@ proposal:
     冒頭が欠けていたら、その場で最後の文から作り直すか、警告のイベントを出す。summary の取り出し方の不具合を調べる改善のチケットも起こす。
   recurring: true
 related: [K-0002]
+decided_by: committee:D-0001
