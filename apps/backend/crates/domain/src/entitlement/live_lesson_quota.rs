@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use super::{SubscriptionPlan, YearMonth};
-use crate::{DomainError, scheduling::BookingId};
+use super::{EntitlementError, SubscriptionPlan, YearMonth};
+use crate::scheduling::BookingId;
 
 /// ビデオ通話の暦月の枠（月額のみ）。月額契約の生徒のビデオ通話は、契約プランで決まる暦月の上限まで（不変条件 1）。
 ///
@@ -26,16 +26,16 @@ impl LiveLessonQuota {
     }
 
     /// 保存してある `plan` の契約の枠（`month` に枠を使った予約）を戻す。予約の数がプランの上限を超えるなら
-    /// [`DomainError::LiveLessonsUsedOverLimit`]。
+    /// [`EntitlementError::LiveLessonsUsedOverLimit`]。
     pub fn restore(
         plan: SubscriptionPlan,
         month: YearMonth,
         bookings: impl IntoIterator<Item = BookingId>,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, EntitlementError> {
         let bookings: BTreeSet<BookingId> = bookings.into_iter().collect();
         let limit = plan.live_lessons_per_month();
         if bookings.len() > usize::from(limit) {
-            return Err(DomainError::LiveLessonsUsedOverLimit {
+            return Err(EntitlementError::LiveLessonsUsedOverLimit {
                 used: u8::try_from(bookings.len()).unwrap_or(u8::MAX),
                 limit,
             });
@@ -62,15 +62,15 @@ impl LiveLessonQuota {
     }
 
     /// `booking` の予約で枠を 1 回使う。すでにその予約で使っていれば何も変えない（同じ予約で 2 回は使わない）。
-    /// 枠が残っていなければ [`DomainError::LiveLessonQuotaExceeded`]。
+    /// 枠が残っていなければ [`EntitlementError::LiveLessonQuotaExceeded`]。
     ///
     /// 月をまたぐなら先に [`Self::in_month`] を通す。
-    pub fn consume(mut self, booking: BookingId) -> Result<Self, DomainError> {
+    pub fn consume(mut self, booking: BookingId) -> Result<Self, EntitlementError> {
         if self.bookings.contains(&booking) {
             return Ok(self);
         }
         if self.used() >= self.limit() {
-            return Err(DomainError::LiveLessonQuotaExceeded);
+            return Err(EntitlementError::LiveLessonQuotaExceeded);
         }
         self.bookings.insert(booking);
         Ok(self)
@@ -143,7 +143,7 @@ mod tests {
                     consumed += 1;
                 }
                 Err(error) => {
-                    assert_eq!(error, DomainError::LiveLessonQuotaExceeded);
+                    assert_eq!(error, EntitlementError::LiveLessonQuotaExceeded);
                     break;
                 }
             }
@@ -178,7 +178,7 @@ mod tests {
                     ym(2026, 10),
                     (1..=u128::from(limit) + 1).map(booking)
                 ),
-                Err(DomainError::LiveLessonsUsedOverLimit {
+                Err(EntitlementError::LiveLessonsUsedOverLimit {
                     used: limit + 1,
                     limit
                 }),
@@ -214,7 +214,7 @@ mod tests {
         assert!(!quota.has_remaining_in(ym(2026, 10)));
         assert_eq!(
             quota.consume(booking(5)),
-            Err(DomainError::LiveLessonQuotaExceeded)
+            Err(EntitlementError::LiveLessonQuotaExceeded)
         );
     }
 

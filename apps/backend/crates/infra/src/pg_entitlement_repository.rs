@@ -10,10 +10,9 @@ use application::{
     scheduling::booking_id_uuid,
 };
 use domain::{
-    DomainError,
     entitlement::{
-        ContractType, Entitlement, EntitlementId, LiveLessonQuota, Subscription, SubscriptionId,
-        SubscriptionPlan,
+        ContractType, Entitlement, EntitlementError, EntitlementId, LiveLessonQuota, Subscription,
+        SubscriptionId, SubscriptionPlan,
     },
     identity::AccountId,
 };
@@ -295,7 +294,7 @@ impl EntitlementRepository for PgEntitlementRepository {
         update: F,
     ) -> Result<Entitlement, UpdateEntitlementError>
     where
-        F: FnOnce(&mut Entitlement) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut Entitlement) -> Result<(), EntitlementError> + Send,
     {
         let unavailable = |e: sqlx::Error| UpdateEntitlementError::Unavailable(Unavailable::new(e));
         let mut tx = self.pool.begin().await.map_err(unavailable)?;

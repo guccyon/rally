@@ -1,4 +1,4 @@
-use crate::DomainError;
+use super::EntitlementError;
 
 /// 暦月（年と月）。ビデオ通話の枠を区切る単位。
 ///
@@ -11,10 +11,10 @@ pub struct YearMonth {
 }
 
 impl YearMonth {
-    /// `month` は 1〜12。範囲外なら [`DomainError::InvalidMonth`]。
-    pub const fn new(year: i32, month: u8) -> Result<Self, DomainError> {
+    /// `month` は 1〜12。範囲外なら [`EntitlementError::InvalidMonth`]。
+    pub const fn new(year: i32, month: u8) -> Result<Self, EntitlementError> {
         if month < 1 || month > 12 {
-            return Err(DomainError::InvalidMonth { month });
+            return Err(EntitlementError::InvalidMonth { month });
         }
         Ok(Self { year, month })
     }
@@ -46,7 +46,7 @@ mod tests {
         for month in [0, 13] {
             assert_eq!(
                 YearMonth::new(2026, month),
-                Err(DomainError::InvalidMonth { month })
+                Err(EntitlementError::InvalidMonth { month })
             );
         }
     }

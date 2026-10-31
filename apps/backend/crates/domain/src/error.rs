@@ -58,16 +58,8 @@ pub enum DomainError {
     BookingOfAnotherStudent,
     /// 予約したスロットと別のスロットを渡した
     BookingOfAnotherSlot,
-    /// その契約種別ではそのスポーツの契約を結べない（月額はゴルフ以外、ワンショットはゴルフだけ）
-    SportNotCoveredByContract {
-        contract_type: crate::entitlement::ContractType,
-        sport: crate::catalog::Sport,
-    },
-    /// 暦月の月が 1〜12 でない
-    InvalidMonth { month: u8 },
-    /// ビデオ通話の暦月の枠で使った回数が契約プランの上限を超える
-    LiveLessonsUsedOverLimit { used: u8, limit: u8 },
-    /// ビデオ通話の暦月の枠が残っていない（月額で契約プランの上限を超える回。不変条件 1）
+    /// 予約の確定で、entitlement がビデオ通話の暦月の枠が残っていないと答えた（scheduling の拒否。不変条件 1）。
+    /// 受講権の枠を使うときの違反は [`crate::entitlement::EntitlementError::LiveLessonQuotaExceeded`]
     LiveLessonQuotaExceeded,
     /// 予約の参加者（生徒・コーチ）でないので、その通話セッションを扱えない
     NotASessionParticipant,

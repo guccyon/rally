@@ -27,6 +27,7 @@ use crate::{
         subscription_plan_from_contract, subscription_plan_to_contract,
         subscription_status_to_contract,
     },
+    entitlement_error,
     entitlements::{EntitlementBody, entitlement_body},
     error::ApiError,
 };
@@ -93,10 +94,9 @@ where
             .await
             .map_err(|error| match error {
                 StartSubscriptionError::Invalid(error) => ApiError::from(error),
-                StartSubscriptionError::AlreadySubscribed => ApiError::conflict(
-                    "subscription_already_active",
-                    "受講権がすでにある（月額契約は生徒ごとに 1 つ）",
-                ),
+                StartSubscriptionError::AlreadySubscribed => {
+                    entitlement_error::already_subscribed()
+                }
                 StartSubscriptionError::Unavailable(error) => ApiError::internal(error),
             })?;
     Ok((
