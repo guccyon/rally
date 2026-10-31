@@ -111,6 +111,56 @@ void main() {
     },
   );
 
+  testWidgets('予約した時点のレッスンメニューの名前と 1 回の時間を、スポーツとコーチの間に出す。メニューのない予約には出さない', (
+    tester,
+  ) async {
+    final withMenu = Fixtures.myBooking(
+      bookingId: 'booking-menu',
+      startsIn: const Duration(days: 3),
+      lessonMenu: Fixtures.bookingLessonMenu,
+    );
+    final asyncMenu = Fixtures.myBooking(
+      bookingId: 'booking-async-menu',
+      startsIn: const Duration(days: 2),
+      lessonMenu: const BookingLessonMenu(
+        lessonMenuId: '13131313-1313-4313-8313-131313131313',
+        name: 'サーブの動画添削',
+      ),
+    );
+    final noMenu = Fixtures.myBooking(
+      bookingId: 'booking-no-menu',
+      startsIn: const Duration(days: 1),
+    );
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: FakeStudentApi(myBookings: [withMenu, asyncMenu, noMenu]),
+      initial: afterSubscription,
+    );
+
+    await openBookings(tester);
+
+    Finder inCard(MyBooking item, String text) =>
+        find.descendant(of: cardOf(item), matching: find.text(text));
+    final menu = inCard(withMenu, 'メニュー: フォアハンドの基礎（1 回 60 分）');
+    expect(menu, findsOneWidget);
+    final order = [
+      inCard(withMenu, 'テニス'),
+      menu,
+      inCard(withMenu, 'コーチ: 佐藤'),
+    ].map((f) => tester.getTopLeft(f).dy).toList();
+    expect(order, [...order]..sort());
+    // 予約した時点で非同期に直されていたメニューは名前だけ
+    expect(inCard(asyncMenu, 'メニュー: サーブの動画添削'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: cardOf(noMenu),
+        matching: find.textContaining('メニュー:'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('コーチの名前がない予約は名前の行を出さず、予約がなければそう伝える', (tester) async {
     final api = FakeStudentApi(
       myBookings: [
