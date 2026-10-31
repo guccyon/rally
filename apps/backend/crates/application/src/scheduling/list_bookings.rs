@@ -1,0 +1,409 @@
+use std::{cmp::Reverse, collections::BTreeSet};
+
+use domain::{
+    identity::AccountId,
+    scheduling::{BookingPeriod, SchedulingError},
+};
+use time::{Date, Duration};
+
+use super::{
+    BookingCoachDisplayNameLookup, BookingList, BookingRepository, StudentDisplayNameLookup,
+    calendar_day,
+};
+use crate::{Unavailable, clock::Clock};
+
+/// 本部が見る予約の一覧のユースケース（admin-web の `listBookings`。本部だけが呼ぶ）。
+///
+/// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始する予約を、状態を問わず読み、開始時刻の古い順に並べる
+/// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
+/// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
+/// domain の [`BookingPeriod`]。一覧に出るコーチと生徒の表示名は profile に問い合わせて添える。読むだけで何も変えない。
+pub struct ListBookings<B, K, D, C> {
+    bookings: B,
+    coaches: K,
+    students: D,
+    clock: C,
+}
+
+/// 本部が見る予約の一覧の条件。どちらも省ける。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListBookingsQuery {
+    /// 期間の始まりの日付（日本時間。含む）
+    pub from: Option<Date>,
+    /// 期間の終わりの日付（日本時間。含む）
+    pub to: Option<Date>,
+}
+
+#[derive(Debug)]
+pub enum ListBookingsError {
+    /// 期間が規則を満たさない（[`BookingPeriod::new`] の違反）
+    Invalid(SchedulingError),
+    /// 保存先の障害
+    Unavailable(Unavailable),
+}
+
+impl From<SchedulingError> for ListBookingsError {
+    fn from(error: SchedulingError) -> Self {
+        Self::Invalid(error)
+    }
+}
+
+impl From<Unavailable> for ListBookingsError {
+    fn from(error: Unavailable) -> Self {
+        Self::Unavailable(error)
+    }
+}
+
+impl<B, K, D, C> ListBookings<B, K, D, C>
+where
+    B: BookingRepository,
+    K: BookingCoachDisplayNameLookup,
+    D: StudentDisplayNameLookup,
+    C: Clock,
+{
+    pub fn new(bookings: B, coaches: K, students: D, clock: C) -> Self {
+        Self {
+            bookings,
+            coaches,
+            students,
+            clock,
+        }
+    }
+
+    pub async fn execute(
+        &self,
+        query: ListBookingsQuery,
+    ) -> Result<BookingList, ListBookingsError> {
+        let from = query
+            .from
+            .unwrap_or_else(|| calendar_day::of(self.clock.now()));
+        let to = query.to.unwrap_or_else(|| {
+            from.saturating_add(Duration::days(i64::from(BookingPeriod::DEFAULT_DAYS) - 1))
+        });
+        let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
+
+        let (_, mut bookings) = self
+            .bookings
+            .slots_starting_between(period.starts_at(), period.ends_at())
+            .await?;
+        bookings.retain(|booking| period.includes(booking.starts_at()));
+        bookings.sort_by_key(|booking| {
+            (
+                booking.starts_at(),
+                Reverse(booking.created_at()),
+                booking.id(),
+            )
+        });
+
+        let coach_ids: BTreeSet<AccountId> = bookings.iter().map(|b| b.coach_id()).collect();
+        let student_ids: BTreeSet<AccountId> = bookings.iter().map(|b| b.student_id()).collect();
+        let (coaches, students) = if bookings.is_empty() {
+            Default::default()
+        } else {
+            (
+                self.coaches.find_coach_display_names(&coach_ids).await?,
+                self.students
+                    .find_student_display_names(&student_ids)
+                    .await?,
+            )
+        };
+        Ok(BookingList {
+            from,
+            to,
+            bookings,
+            coaches,
+            students,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
+
+    use domain::{
+        catalog::Sport,
+        profile::DisplayName,
+        scheduling::{Booking, BookingStatus, Slot, SlotId, SlotSeats, SlotStatus},
+    };
+    use time::Month;
+
+    use super::*;
+    use crate::in_memory::{FixedClock, InMemoryBookingRepository, InMemorySlotRepository};
+
+    const STUDENT: AccountId = AccountId::from_u128(1);
+    const OTHER_STUDENT: AccountId = AccountId::from_u128(2);
+    const COACH: AccountId = AccountId::from_u128(7);
+    const OTHER_COACH: AccountId = AccountId::from_u128(8);
+
+    fn date(day: u8) -> Date {
+        Date::from_calendar_date(2026, Month::November, day).unwrap()
+    }
+
+    /// 2026 年 11 月 `day` 日の日本時間 `hour` 時
+    fn at(day: u8, hour: u8) -> SystemTime {
+        calendar_day::start(date(day)) + std::time::Duration::from_secs(u64::from(hour) * 3600)
+    }
+
+    fn slot(id: u128, coach: AccountId, starts_at: SystemTime) -> Slot {
+        Slot::restore(
+            SlotId::from_u128(id),
+            coach,
+            Sport::Tennis,
+            starts_at,
+            starts_at + std::time::Duration::from_secs(3600),
+            SlotStatus::Open,
+            SlotSeats::default(),
+        )
+        .unwrap()
+    }
+
+    fn name(value: &str) -> DisplayName {
+        DisplayName::new(value).unwrap()
+    }
+
+    /// `COACH` と `STUDENT` の表示名だけを知っていて、問い合わせた ID を記録する。
+    #[derive(Clone, Default)]
+    struct RecordingLookup {
+        coaches_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
+        students_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
+    }
+
+    impl BookingCoachDisplayNameLookup for RecordingLookup {
+        async fn find_coach_display_names(
+            &self,
+            coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+            self.coaches_asked.lock().unwrap().push(coach_ids.clone());
+            Ok(coach_ids
+                .iter()
+                .filter(|id| **id == COACH)
+                .map(|id| (*id, name("たなか")))
+                .collect())
+        }
+    }
+
+    impl StudentDisplayNameLookup for RecordingLookup {
+        async fn find_student_display_names(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+            self.students_asked
+                .lock()
+                .unwrap()
+                .push(student_ids.clone());
+            Ok(student_ids
+                .iter()
+                .filter(|id| **id == STUDENT)
+                .map(|id| (*id, name("あおき")))
+                .collect())
+        }
+    }
+
+    async fn book(
+        bookings: &InMemoryBookingRepository,
+        student: AccountId,
+        slot: u128,
+        created_at: SystemTime,
+    ) -> Booking {
+        bookings
+            .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+                Booking::reserve(
+                    bookings.next_id(),
+                    student,
+                    false,
+                    slot,
+                    existing,
+                    created_at,
+                )
+            })
+            .await
+            .unwrap()
+    }
+
+    fn list_bookings(
+        bookings: InMemoryBookingRepository,
+        lookup: RecordingLookup,
+        now: SystemTime,
+    ) -> ListBookings<InMemoryBookingRepository, RecordingLookup, RecordingLookup, FixedClock> {
+        ListBookings::new(bookings, lookup.clone(), lookup, FixedClock(now))
+    }
+
+    fn rows(list: &BookingList) -> Vec<(u128, BookingStatus)> {
+        list.bookings
+            .iter()
+            .map(|booking| (booking.slot_id().as_u128(), booking.status()))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn lists_bookings_of_every_coach_starting_in_the_days_oldest_first() {
+        let slots = InMemorySlotRepository::with_slots([
+            // 期間（11 月 2 日〜3 日）の前後の境目
+            slot(1, COACH, at(2, 0) - std::time::Duration::from_secs(1)),
+            slot(2, COACH, at(2, 0)),
+            slot(3, OTHER_COACH, at(3, 10)),
+            slot(4, COACH, at(2, 18)),
+            slot(5, COACH, at(4, 0)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        let created = at(1, 0);
+        book(&bookings, STUDENT, 1, created).await;
+        book(&bookings, STUDENT, 2, created).await;
+        let cancelled = book(&bookings, OTHER_STUDENT, 4, created).await;
+        bookings
+            .update(cancelled.id(), |booking, slot| {
+                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+            })
+            .await
+            .unwrap();
+        // キャンセルされた枠を取り直した予約は、キャンセル済みより前に出る
+        book(&bookings, STUDENT, 4, at(1, 2)).await;
+        book(&bookings, OTHER_STUDENT, 3, created).await;
+        book(&bookings, STUDENT, 5, created).await;
+
+        let lookup = RecordingLookup::default();
+        let list = list_bookings(bookings, lookup.clone(), at(1, 0))
+            .execute(ListBookingsQuery {
+                from: Some(date(2)),
+                to: Some(date(3)),
+            })
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(
+            rows(&list),
+            [
+                (2, BookingStatus::Pending),
+                (4, BookingStatus::Pending),
+                (4, BookingStatus::Cancelled),
+                (3, BookingStatus::Pending),
+            ]
+        );
+        assert_eq!(list.coaches, BTreeMap::from([(COACH, name("たなか"))]));
+        assert_eq!(list.students, BTreeMap::from([(STUDENT, name("あおき"))]));
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "一覧のコーチを重ねずに 1 回で問い合わせる"
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])]
+        );
+    }
+
+    #[tokio::test]
+    async fn without_dates_lists_seven_days_from_today_in_japan() {
+        let slots = InMemorySlotRepository::with_slots([
+            slot(1, COACH, at(1, 0) - std::time::Duration::from_secs(1)),
+            slot(2, COACH, at(1, 0)),
+            slot(3, COACH, at(7, 23)),
+            slot(4, COACH, at(8, 0)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        for slot in 1..=4 {
+            book(&bookings, STUDENT, slot, at(1, 0)).await;
+        }
+        // 日本時間の 11 月 1 日 23 時（UTC ではまだ 11 月 1 日 14 時）
+        let list = list_bookings(bookings, RecordingLookup::default(), at(1, 23))
+            .execute(ListBookingsQuery::default())
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(1), date(7)));
+        assert_eq!(
+            rows(&list),
+            [(2, BookingStatus::Pending), (3, BookingStatus::Pending)]
+        );
+    }
+
+    #[tokio::test]
+    async fn without_to_lists_seven_days_from_the_given_day() {
+        let list = list_bookings(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            RecordingLookup::default(),
+            at(1, 0),
+        )
+        .execute(ListBookingsQuery {
+            from: Some(date(10)),
+            to: None,
+        })
+        .await
+        .unwrap();
+        assert_eq!((list.from, list.to), (date(10), date(16)));
+    }
+
+    #[tokio::test]
+    async fn rejects_days_that_end_before_they_start_or_are_too_long() {
+        let lookup = RecordingLookup::default();
+        let use_case = list_bookings(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            lookup.clone(),
+            at(10, 0),
+        );
+        for (query, expected) in [
+            (
+                ListBookingsQuery {
+                    from: Some(date(3)),
+                    to: Some(date(2)),
+                },
+                SchedulingError::BookingPeriodEndsBeforeItStarts,
+            ),
+            // 省いた from は今日（11 月 10 日）
+            (
+                ListBookingsQuery {
+                    from: None,
+                    to: Some(date(9)),
+                },
+                SchedulingError::BookingPeriodEndsBeforeItStarts,
+            ),
+            // 11 月 1 日〜12 月 2 日は 32 日
+            (
+                ListBookingsQuery {
+                    from: Some(date(1)),
+                    to: Some(Date::from_calendar_date(2026, Month::December, 2).unwrap()),
+                },
+                SchedulingError::BookingPeriodTooLong { max_days: 31 },
+            ),
+        ] {
+            let error = use_case.execute(query).await.unwrap_err();
+            assert!(
+                matches!(&error, ListBookingsError::Invalid(e) if *e == expected),
+                "{query:?}: {error:?}"
+            );
+        }
+        // 11 月 1 日〜12 月 1 日の 31 日は読める
+        assert!(
+            use_case
+                .execute(ListBookingsQuery {
+                    from: Some(date(1)),
+                    to: Some(Date::from_calendar_date(2026, Month::December, 1).unwrap()),
+                })
+                .await
+                .is_ok()
+        );
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn no_bookings_is_an_empty_list_without_asking_for_display_names() {
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([slot(
+            1,
+            COACH,
+            at(2, 10),
+        )]));
+        let lookup = RecordingLookup::default();
+        let list = list_bookings(bookings, lookup.clone(), at(1, 0))
+            .execute(ListBookingsQuery::default())
+            .await
+            .unwrap();
+        assert!(list.bookings.is_empty());
+        assert!(list.coaches.is_empty() && list.students.is_empty());
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
+        assert!(lookup.students_asked.lock().unwrap().is_empty());
+    }
+}

@@ -9,8 +9,8 @@ use std::time::SystemTime;
 use domain::entitlement::YearMonth;
 use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
 
-/// 暦月を区切るタイムゾーン（日本時間）。
-const OFFSET: UtcOffset = match UtcOffset::from_hms(9, 0, 0) {
+/// 暦月を区切るタイムゾーン（日本時間）。本部が見る予約の一覧の日付（[`crate::scheduling::calendar_day`]）も同じものを使う。
+pub(crate) const OFFSET: UtcOffset = match UtcOffset::from_hms(9, 0, 0) {
     Ok(offset) => offset,
     Err(_) => panic!("UTC+9 は有効なオフセット"),
 };

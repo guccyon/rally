@@ -62,8 +62,8 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
-        ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
-        SearchSlots, SlotRepository, WithdrawSlot,
+        ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot,
+        SchedulingBookingLookup, SearchSlots, SlotRepository, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -110,6 +110,8 @@ pub fn router() -> Router {
 /// （billing・review の購読はまだない）。
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+/// 本部が見る予約の一覧（`GET /bookings`）も同じく予約の保存先から期間に開始する予約を読み、コーチと生徒の表示名を
+/// アカウントの保存先から読んで添える（`ListBookings`。`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
@@ -378,6 +380,15 @@ where
         ),
         MockTokenService,
     );
+    let headquarters_bookings = interface::headquarters_bookings_router(
+        ListBookings::new(
+            bookings.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            ProfileStudentDisplayNameLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -535,4 +546,5 @@ where
     .merge(my_notifications)
     .merge(slot_withdrawal)
     .merge(lesson_stats)
+    .merge(headquarters_bookings)
 }

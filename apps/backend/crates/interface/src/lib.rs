@@ -15,6 +15,7 @@ mod contract;
 mod entitlement_error;
 mod entitlements;
 mod error;
+mod headquarters_bookings;
 mod lesson_menus;
 mod lesson_stats;
 mod lessons;
@@ -86,10 +87,10 @@ use application::{
         ReviewedLessonMenuLookup, SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
-        PublishSlot, QuotaGate, SearchSlots, SlotRepository, StudentDisplayNameLookup,
-        WithdrawSlot,
+        BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachIntroductionLookup,
+        ConfirmBooking, CreateBooking, GetSlotSupply, LessonMenuLookup, ListBookings,
+        ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate, SearchSlots,
+        SlotRepository, StudentDisplayNameLookup, WithdrawSlot,
     },
 };
 use axum::{
@@ -726,6 +727,35 @@ where
         .route_layer(require_role(&[Role::Coach]))
         .with_state(Arc::new(lesson_stats::LessonStatsState {
             get_my_lesson_stats,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る予約の一覧（admin-web の `GET /bookings`）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、
+/// 組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。同じパスの `POST /bookings`
+/// （student-app の予約の作成。生徒だけ）は [`router_with`] にあり、`merge` で 1 つのパスにまとまる。
+///
+/// `GET /bookings` は本部だけ（コーチ・生徒は 403）。
+pub fn headquarters_bookings_router<B, K, D, C, T>(
+    list_bookings: ListBookings<B, K, D, C>,
+    tokens: T,
+) -> Router
+where
+    B: BookingRepository + 'static,
+    K: BookingCoachDisplayNameLookup + 'static,
+    D: StudentDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/bookings",
+            get(headquarters_bookings::list_bookings::<B, K, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(headquarters_bookings::HeadquartersBookingsState {
+            list_bookings,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

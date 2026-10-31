@@ -76,7 +76,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | messaging の失敗（`domain::messaging::MessagingError`）の API の `message`・HTTP の状態・`code` | `interface` の `messaging_error.rs`（`From<MessagingError> for ApiError`。ハンドラーは変種を個別に拾わない） |
 | review の失敗（`domain::review::ReviewError`）の API の `message`・HTTP の状態・`code` | `interface` の `review_error.rs`（`From<ReviewError> for ApiError`。ハンドラーは変種を個別に拾わない） |
 | entitlement の失敗（`domain::entitlement::EntitlementError` と、受講権がない 404・すでにある 409）の API の `message`・HTTP の状態・`code` | `interface` の `entitlement_error.rs`（`From<EntitlementError> for ApiError` と `entitlement_not_found`・`already_subscribed`・`live_lesson_quota_exceeded`。予約の確定の 409 `live_lesson_quota_exceeded` の応答もここ。ハンドラーは変種を個別に拾わない） |
-| scheduling の失敗（`domain::scheduling::SchedulingError` と、予約の作成・確定・キャンセルと枠の公開のユースケースの失敗）の API の `message`・HTTP の状態・`code` | `interface` の `scheduling_error.rs`（`From<SchedulingError>`・`From<CreateBookingError>`・`From<ConfirmBookingError>`・`From<CancelBookingError>`・`From<PublishSlotError>` for `ApiError`。同じ変種でも操作で応答が違うのでユースケースの失敗ごとに写し、どれも変種を漏れなく並べる。ハンドラーは変種を個別に拾わない） |
+| scheduling の失敗（`domain::scheduling::SchedulingError` と、予約の作成・確定・キャンセルと枠の公開のユースケースの失敗）の API の `message`・HTTP の状態・`code` | `interface` の `scheduling_error.rs`（`From<SchedulingError>`・`From<CreateBookingError>`・`From<ConfirmBookingError>`・`From<CancelBookingError>`・`From<PublishSlotError>`・`From<ListBookingsError>` for `ApiError`。同じ変種でも操作で応答が違うのでユースケースの失敗ごとに写し、どれも変種を漏れなく並べる。ハンドラーは変種を個別に拾わない） |
 | DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
 | アカウント ID の UUID のテキスト形式（契約の `format: uuid`・トークン） | `application::identity::account_id_uuid`（`uuid` クレートに任せる。interface と infra の両方から使うので application に置く） |
 
@@ -176,6 +176,13 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 期間は現在時刻の 30 日前（含む）から現在時刻（含まない）に開始する枠。`published_slots` は `open` / `booked` の枠、`booking_students` は（閉じた枠を含む）その枠に予約を作った生徒（予約の状態を問わず、同じ生徒は 1 人）。生徒が 1 人以上で、`booking_students >= published_slots × 0.6` なら `insufficient`
 - スロットの検索は記録していない（行動イベントにも DB にもない）ので、需要は予約の作成だけから数える
 - テスト: `domain::scheduling::slot_supply`（閾値の境界・0 の扱い・数え方）、`application::scheduling::get_slot_supply`（期間の端）、`crates/interface/tests/slot_supply.rs`（契約の形・期間の外を数えないこと・403 / 401）、`crates/server/tests/slot_supply.rs`（モックのトークンで通す）、`crates/infra/tests/pg_booking_repository.rs`（Postgres。期間の枠と予約の読み取り。`--include-ignored`）、`crates/seed/tests/slot_supply.rs`（合成シードの種 42 で `insufficient` のスポーツがあり、すべてではないこと。Postgres。`cargo test -p seed -- --include-ignored`）
+
+## scheduling: 本部が見る予約の一覧（D120）
+
+- `GET /bookings`（admin-web の `listBookings`）: 本部だけが呼べる（`interface::headquarters_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じパスの `POST /bookings`（student-app の予約の作成。生徒だけ）とは `merge` で 1 つのパスにまとまる。すべてのコーチの枠への予約を、状態を問わず開始の古い順（同じ開始は予約の作成の新しい順、次に `booking_id`）に返し、各行に予約（`Booking`。体験予約か・予約した時点のレッスンメニューを含む）とコーチ・生徒の表示名（profile から。引けなければ載せない）を載せる。行動イベントは発火しない
+- 期間は日付（日本時間）の `from` から `to` まで（両端を含む）。省いた `from` は今日、省いた `to` は `from` から 7 日目。期間の規則（1 日以上 31 日まで）は `domain::scheduling::BookingPeriod` の 1 か所、日付と時刻の変換は `application::scheduling::calendar_day`（タイムゾーンは暦月と同じ `entitlement::calendar_month` の日本時間）。違反と `YYYY-MM-DD` でない値は 422 `validation_failed`。予約がなければ空の配列（404 はない）
+- 保存先は予約枠の需給と同じ `BookingRepository::slots_starting_between` を読むだけで、DB の変更はない
+- テスト: `domain::scheduling::booking_period`（1 日・31 日・逆転・超過・端）、`application::scheduling::list_bookings`（日本時間の日付の境目・既定の 7 日・並べ方・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/headquarters_bookings.rs`（契約の形・既定の期間・403 / 401・422）、`crates/server/tests/bookings.rs`（`POST /bookings` と同じパスで通す）、`crates/server/tests/headquarters_bookings.rs`（Postgres の組み立て。`--include-ignored`）
 
 ## entitlement: 契約種別と利用権の型
 
