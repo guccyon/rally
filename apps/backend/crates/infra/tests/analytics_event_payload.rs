@@ -80,6 +80,12 @@ fn samples() -> Vec<AnalyticsEvent> {
             starts_at: oct26() + Duration::from_secs(86_400),
             occurred_at: oct26(),
         },
+        AnalyticsEvent::SlotWithdrawn {
+            coach_id: coach(),
+            slot_id,
+            starts_at: oct26() + Duration::from_secs(86_400),
+            occurred_at: oct26(),
+        },
         AnalyticsEvent::BookingCreated {
             student_id: student(),
             coach_id: coach(),
@@ -176,6 +182,7 @@ fn exhaustive(event: &AnalyticsEvent) {
     match event {
         AnalyticsEvent::AccountRegistered { .. }
         | AnalyticsEvent::SlotPublished { .. }
+        | AnalyticsEvent::SlotWithdrawn { .. }
         | AnalyticsEvent::BookingCreated { .. }
         | AnalyticsEvent::BookingConfirmed { .. }
         | AnalyticsEvent::BookingCancelled { .. }
@@ -263,6 +270,10 @@ fn values_follow_the_comments_of_events_yaml() {
     );
     assert_eq!(
         by_name("slot.published")["starts_at"],
+        "2026-10-27T00:00:00Z"
+    );
+    assert_eq!(
+        by_name("slot.withdrawn")["starts_at"],
         "2026-10-27T00:00:00Z"
     );
     assert_eq!(by_name("booking.cancelled")["hours_before_start"], -2);

@@ -5,7 +5,7 @@ use domain::{
     scheduling::{CoachCalendar, SchedulingError, Slot, SlotId},
 };
 
-use super::SlotCriteria;
+use super::{SlotCriteria, UpdateSlotError};
 use crate::Unavailable;
 
 /// スロットの保存先のポート。実装は infra（Postgres の `scheduling.slots`）と、
@@ -27,6 +27,20 @@ pub trait SlotRepository: Send + Sync {
     ) -> impl Future<Output = Result<(), AddToCalendarError>> + Send
     where
         F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), SchedulingError> + Send;
+
+    /// `slot_id` のスロット（状態を問わない。席は予約から数える）を読み、`update` に渡す。`update` が `Ok` なら
+    /// スロットの状態を保存し、保存したスロットを返す。席の数は保存しない（予約から数える）。
+    ///
+    /// 不変条件の判定は `update`（domain の [`Slot`]）だけが行い、保存先は判定しない。その代わり、同じスロットへの
+    /// 予約の作成・確定・キャンセル（[`super::BookingRepository`]）と読み取りから保存までを直列にする（取り下げと
+    /// 並行な予約が互いを見落として、予約の入った枠を閉じることがないように）。
+    fn update<F>(
+        &self,
+        slot_id: SlotId,
+        update: F,
+    ) -> impl Future<Output = Result<Slot, UpdateSlotError>> + Send
+    where
+        F: FnOnce(&mut Slot) -> Result<(), SchedulingError> + Send;
 
     /// 条件に合う枠（[`SlotCriteria`] の順で最大 `limit` 件）。
     fn search(

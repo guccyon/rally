@@ -1,6 +1,6 @@
 //! scheduling（予約と枠）の失敗を、OpenAPI の `Error` の応答に写す。
 //!
-//! 不変条件の違反（[`SchedulingError`]）の文言と、ユースケースの失敗（予約の作成・確定・キャンセルと枠の公開）の
+//! 不変条件の違反（[`SchedulingError`]）の文言と、ユースケースの失敗（予約の作成・確定・キャンセルと枠の公開・取り下げ）の
 //! HTTP の状態・`code` はここだけで決める（`/bookings`・`/slots` のハンドラーは変種を個別に拾わない）。同じ変種でも
 //! 操作で応答が違うので、ユースケースの失敗ごとに写す。どの写しも変種を漏れなく並べる（変種を足したらここで決める）。
 //!
@@ -17,12 +17,17 @@
 //!   （`BookingAlreadyCancelled`）は 409 `invalid_booking_state`、それ以外は 500
 //! - 枠の公開（`publishSlot`）: 同じコーチの枠と重なる（`SlotOverlaps`）は 409 `slot_overlaps`、結びつけるメニューが
 //!   ないのと、それ以外の違反は 422 `validation_failed`
+//! - 枠の取り下げ（`withdrawMySlot`）: ない枠と別のコーチの枠（`SlotOfAnotherCoach`。あることも知らせない）は 404
+//!   `not_found`、有効な予約が入っている（`SlotHasActiveBookings`）は 409 `slot_has_active_booking`、始まった
+//!   （`SlotAlreadyStarted`）は 409 `slot_already_started`、すでに閉じた（`SlotNotOpen` の `closed`）は 409
+//!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
 //! - 境界で値を作るとき（定員の検証など。`From<SchedulingError>`）は、どの変種も 422 `validation_failed`
 //!
 //! 403 に当たる失敗はない（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
 
 use application::scheduling::{
-    CancelBookingError, ConfirmBookingError, CreateBookingError, PublishSlotError, slot_id_uuid,
+    CancelBookingError, ConfirmBookingError, CreateBookingError, PublishSlotError,
+    WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -41,6 +46,11 @@ pub(crate) fn slot_not_found() -> ApiError {
 /// 予約がない 404（別の生徒の予約も同じ）。
 pub(crate) fn booking_not_found() -> ApiError {
     ApiError::not_found("予約がない")
+}
+
+/// 取り下げる枠がない 404（別のコーチの枠も同じ）。
+pub(crate) fn coach_slot_not_found() -> ApiError {
+    ApiError::not_found("スロットがない")
 }
 
 /// 境界で作った値（定員など）が不変条件を満たさない 422。
@@ -87,7 +97,9 @@ impl From<CreateBookingError> for ApiError {
             | SchedulingError::LessonMenuNotPublished
             | SchedulingError::LessonMenuNotLive
             | SchedulingError::LessonMenuSportMismatch { .. }
-            | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => Self::from(error),
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted => Self::from(error),
         }
     }
 }
@@ -124,7 +136,9 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::LessonMenuNotPublished
             | SchedulingError::LessonMenuNotLive
             | SchedulingError::LessonMenuSportMismatch { .. }
-            | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => Self::internal(error),
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted => Self::internal(error),
         }
     }
 }
@@ -160,7 +174,9 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::LessonMenuNotPublished
             | SchedulingError::LessonMenuNotLive
             | SchedulingError::LessonMenuSportMismatch { .. }
-            | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => Self::internal(error),
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted => Self::internal(error),
         }
     }
 }
@@ -197,7 +213,52 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::LessonMenuNotPublished
             | SchedulingError::LessonMenuNotLive
             | SchedulingError::LessonMenuSportMismatch { .. }
-            | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => Self::from(error),
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted => Self::from(error),
+        }
+    }
+}
+
+impl From<WithdrawSlotError> for ApiError {
+    fn from(error: WithdrawSlotError) -> Self {
+        let error = match error {
+            WithdrawSlotError::SlotNotFound => return coach_slot_not_found(),
+            WithdrawSlotError::Invalid(error) => error,
+            WithdrawSlotError::Unavailable(error) => return Self::internal(error),
+        };
+        match error {
+            // 別のコーチの枠は、あることも知らせない
+            SchedulingError::SlotOfAnotherCoach => coach_slot_not_found(),
+            SchedulingError::SlotHasActiveBookings { .. } => {
+                Self::conflict("slot_has_active_booking", describe(&error))
+            }
+            SchedulingError::SlotAlreadyStarted => {
+                Self::conflict("slot_already_started", describe(&error))
+            }
+            SchedulingError::SlotNotOpen {
+                status: SlotStatus::Closed,
+            } => Self::conflict("slot_already_closed", describe(&error)),
+            SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotOverlaps { .. }
+            | SchedulingError::SlotNotOpen { .. }
+            | SchedulingError::SlotCapacityOutOfRange { .. }
+            | SchedulingError::SlotNotBooked { .. }
+            | SchedulingError::SlotAlreadyBooked
+            | SchedulingError::SlotSeatsOverCapacity { .. }
+            | SchedulingError::SlotStatusMismatchesSeats { .. }
+            | SchedulingError::SlotAlreadyBookedByStudent
+            | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::BookingNotPending { .. }
+            | SchedulingError::BookingAlreadyCancelled
+            | SchedulingError::BookingOfAnotherStudent
+            | SchedulingError::BookingOfAnotherSlot
+            | SchedulingError::LiveLessonQuotaExceeded
+            | SchedulingError::LessonMenuOfAnotherCoach
+            | SchedulingError::LessonMenuNotPublished
+            | SchedulingError::LessonMenuNotLive
+            | SchedulingError::LessonMenuSportMismatch { .. }
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => Self::internal(error),
         }
     }
 }
@@ -259,6 +320,10 @@ fn describe(error: &SchedulingError) -> String {
         SchedulingError::SlotLengthMismatchesLessonMenu { minutes } => {
             format!("枠の長さがレッスンメニューの 1 回の時間（{minutes} 分）と違う")
         }
+        SchedulingError::SlotHasActiveBookings { active } => {
+            format!("予約が入っている枠は取り下げられない（有効な予約 {active} 件）")
+        }
+        SchedulingError::SlotAlreadyStarted => "始まった枠は取り下げられない".to_string(),
     }
 }
 
@@ -391,6 +456,14 @@ mod tests {
                 SchedulingError::SlotLengthMismatchesLessonMenu { minutes: 60 },
                 "枠の長さがレッスンメニューの 1 回の時間（60 分）と違う",
             ),
+            (
+                SchedulingError::SlotHasActiveBookings { active: 2 },
+                "予約が入っている枠は取り下げられない（有効な予約 2 件）",
+            ),
+            (
+                SchedulingError::SlotAlreadyStarted,
+                "始まった枠は取り下げられない",
+            ),
         ];
         // 変種を足したらここで止まる（上の一覧にも足す）
         for (error, _) in &all {
@@ -415,7 +488,9 @@ mod tests {
                 | SchedulingError::LessonMenuNotPublished
                 | SchedulingError::LessonMenuNotLive
                 | SchedulingError::LessonMenuSportMismatch { .. }
-                | SchedulingError::SlotLengthMismatchesLessonMenu { .. } => {}
+                | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+                | SchedulingError::SlotHasActiveBookings { .. }
+                | SchedulingError::SlotAlreadyStarted => {}
             }
         }
         all
@@ -652,6 +727,62 @@ mod tests {
             ),
             (
                 PublishSlotError::Unavailable(Unavailable::new("db")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "サーバー内部のエラー",
+            ),
+        ] {
+            let api_error = ApiError::from(error);
+            assert_eq!(
+                (api_error.status(), api_error.code(), api_error.message()),
+                (status, code, message)
+            );
+        }
+    }
+
+    #[test]
+    fn maps_each_withdraw_slot_error_to_a_status_and_code() {
+        assert_maps(
+            |error| ApiError::from(WithdrawSlotError::Invalid(error)),
+            &[
+                (
+                    SchedulingError::SlotOfAnotherCoach,
+                    StatusCode::NOT_FOUND,
+                    "not_found",
+                    "スロットがない",
+                ),
+                (
+                    SchedulingError::SlotHasActiveBookings { active: 2 },
+                    StatusCode::CONFLICT,
+                    "slot_has_active_booking",
+                    "予約が入っている枠は取り下げられない（有効な予約 2 件）",
+                ),
+                (
+                    SchedulingError::SlotAlreadyStarted,
+                    StatusCode::CONFLICT,
+                    "slot_already_started",
+                    "始まった枠は取り下げられない",
+                ),
+                (
+                    SchedulingError::SlotNotOpen {
+                        status: SlotStatus::Closed,
+                    },
+                    StatusCode::CONFLICT,
+                    "slot_already_closed",
+                    "スロットが公開中でない（終了）",
+                ),
+            ],
+            INTERNAL,
+        );
+        for (error, status, code, message) in [
+            (
+                WithdrawSlotError::SlotNotFound,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "スロットがない",
+            ),
+            (
+                WithdrawSlotError::Unavailable(Unavailable::new("db")),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
                 "サーバー内部のエラー",

@@ -275,6 +275,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/slots/{slot_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 公開した枠の取り下げ（コーチ）
+         * @description トークンが示す本人（コーチ）が公開した予約枠（`publishSlot`）を取り下げ、閉じた枠（`status` が `closed`）を返す。
+         *     予定が変わったときや、間違えて公開したときに戻すのに使う。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+         *     リクエストの本文は読まない。
+         *
+         *     - 取り下げられるのは、自分の・公開中（`open`）の・有効な予約（未確定 `pending` か確定 `confirmed`）が 1 件もない・
+         *       まだ始まっていない（開始時刻 `starts_at` より前の）枠だけ。キャンセル済みの予約しかない枠は取り下げられる
+         *     - 枠がないとき・他のコーチの枠のとき・`slot_id` が UUID でないときは 404 `not_found`（他のコーチの枠はあることも知らせない）
+         *     - 有効な予約が入っている枠（予約済み `booked` の枠も）は 409 `slot_has_active_booking`。予約の入った枠のキャンセルはこの操作ではできない
+         *     - 開始時刻を過ぎた枠（開始時刻ちょうどを含む）は 409 `slot_already_started`
+         *     - すでに閉じた枠（`closed`）は 409 `slot_already_closed`
+         *     - 判定は上の順（他のコーチの枠 → 閉じた枠 → 予約 → 開始）。失敗したときは何も変えない
+         *     - 閉じた枠は生徒の検索（student-app の `searchSlots`）に出ず、予約できない。時間を占めないので、同じ時間に新しい枠を
+         *       公開できる（`publishSlot`）。自分の枠の一覧（`listMyCoachSlots`）には `closed` のまま残る。閉じた枠を公開中に戻す操作はない
+         *     - 応答の `Slot` には `lesson_menu` を載せない（`publishSlot` と同じ）
+         *
+         *     取り下げると行動イベント `slot.withdrawn`（KPI「コーチの予約枠充足率」の入力。取り下げた枠を分母から除く）を発火する。
+         *     予約の入っていない枠だけを閉じるので、境界間イベントは発行しない。
+         */
+        post: operations["withdrawMySlot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/videos": {
         parameters: {
             query?: never;
@@ -608,7 +644,7 @@ export interface components {
             remaining_seats: number;
             /**
              * @description 枠に結びついたレッスンメニュー。メニューのない枠は null。載せるのは `listMyCoachSlots` だけで、
-             *     それ以外の操作（`publishSlot`・`listMyCoachBookings`）では載らない（予約した時点のメニューは `Booking` の `lesson_menu`）
+             *     それ以外の操作（`publishSlot`・`withdrawMySlot`・`listMyCoachBookings`）では載らない（予約した時点のメニューは `Booking` の `lesson_menu`）
              */
             lesson_menu?: components["schemas"]["SlotLessonMenu"] | null;
         };
@@ -1147,7 +1183,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -1182,7 +1218,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、添削が返却済み、予約が未確定など） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定など） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -1422,6 +1458,32 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    withdrawMySlot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取り下げた（閉じた）スロット */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Slot"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listMyCoachVideos: {
