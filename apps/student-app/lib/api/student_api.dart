@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの紹介・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定・お知らせで使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの紹介・コーチの評価・お気に入りのコーチ・契約プランの一覧・チャット・通知の受け取り設定・お知らせで使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -69,6 +69,16 @@ abstract interface class StudentApi {
   /// `listCoachLessonMenus`（GET /coaches/{coach_id}/lesson-menus）。コーチの公開中のレッスンメニューだけを、作った時刻の
   /// 古い順で返す。[sport] を渡せばそのスポーツに絞る。メニューがなければ空
   Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport});
+
+  /// `listFavoriteCoaches`（GET /favorite-coaches）。お気に入りに入れた時刻の新しい順。なければ空
+  Future<FavoriteCoachList> listFavoriteCoaches();
+
+  /// `addFavoriteCoach`（PUT /favorite-coaches/{coach_id}）。何度入れても 1 件で、入れたあとの一覧を返す。
+  /// `getCoachProfile` が 404 を返すコーチは 404
+  Future<FavoriteCoachList> addFavoriteCoach(String coachId);
+
+  /// `removeFavoriteCoach`（DELETE /favorite-coaches/{coach_id}）。入っていなくても 200 で、外したあとの一覧を返す
+  Future<FavoriteCoachList> removeFavoriteCoach(String coachId);
 
   /// `listSubscriptionPlans`（GET /subscription-plans）。契約プランとビデオ通話の暦月の上限を standard・plus の順で返す。
   /// 受講権がなくても（月額契約の前でも）呼べる

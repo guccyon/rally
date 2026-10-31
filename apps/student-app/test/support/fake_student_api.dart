@@ -21,6 +21,7 @@ class FakeStudentApi implements StudentApi {
     this.coachProfiles = const {},
     List<CoachReview>? coachReviews,
     List<CoachListing>? coachListings,
+    List<FavoriteCoach>? favoriteCoaches,
     this.lessonMenus = const {},
     this.videoReviews = const {},
     List<MyLessonCompletion>? lessonCompletions,
@@ -42,6 +43,7 @@ class FakeStudentApi implements StudentApi {
        notifications = List.of(notifications ?? const []),
        subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans,
        coachListings = coachListings ?? Fixtures.coachListings,
+       favoriteCoaches = List.of(favoriteCoaches ?? const []),
        coachReviews = coachReviews ?? Fixtures.coachReviews;
 
   final List<Slot> slots;
@@ -106,6 +108,16 @@ class FakeStudentApi implements StudentApi {
 
   /// 入れておくと、`listCoachesForStudent` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
   Completer<void>? coachListingsGate;
+
+  /// お気に入りのコーチ（`listFavoriteCoaches` が並びのまま返す。既定は 0 件。`addFavoriteCoach` で先頭に足し、
+  /// `removeFavoriteCoach` で外す）。ここにいるコーチは `listCoachesForStudent` と既定の `getCoachProfile` の `is_favorite` も true
+  final List<FavoriteCoach> favoriteCoaches;
+
+  /// 入れておくと、`listFavoriteCoaches` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? favoriteCoachesGate;
+
+  bool _isFavorite(String coachId) =>
+      favoriteCoaches.any((c) => c.coachId == coachId);
 
   /// コーチの ID ごとの公開中のレッスンメニュー（`listCoachLessonMenus` が `sport` で絞って返す。ないコーチは空の一覧）
   final Map<String, List<LessonMenu>> lessonMenus;
@@ -296,7 +308,12 @@ class FakeStudentApi implements StudentApi {
     await coachListingsGate?.future;
     return _answer(
       'listCoachesForStudent',
-      () => CoachListingList(coaches: [...coachListings]),
+      () => CoachListingList(
+        coaches: [
+          for (final coach in coachListings)
+            _isFavorite(coach.coachId) ? coach.withFavorite(true) : coach,
+        ],
+      ),
       sport,
     );
   }
@@ -316,9 +333,49 @@ class FakeStudentApi implements StudentApi {
               .displayName,
           bio: Fixtures.coachBio,
           sports: const [Sport.tennis],
+          isFavorite: _isFavorite(coachId),
         ),
     coachId,
   );
+
+  @override
+  Future<FavoriteCoachList> listFavoriteCoaches() async {
+    await favoriteCoachesGate?.future;
+    return _answer(
+      'listFavoriteCoaches',
+      () => FavoriteCoachList(favoriteCoaches: favoriteCoaches),
+    );
+  }
+
+  @override
+  Future<FavoriteCoachList> addFavoriteCoach(String coachId) =>
+      _answer('addFavoriteCoach', () {
+        if (!_isFavorite(coachId)) {
+          final listing = coachListings.firstWhere(
+            (c) => c.coachId == coachId,
+            orElse: () => Fixtures.coachListings.first,
+          );
+          favoriteCoaches.insert(
+            0,
+            FavoriteCoach(
+              coachId: coachId,
+              displayName: listing.displayName,
+              sports: [listing.sport],
+              reviewCount: listing.reviewCount,
+              averageRating: listing.averageRating,
+              favoritedAt: Fixtures.now,
+            ),
+          );
+        }
+        return FavoriteCoachList(favoriteCoaches: favoriteCoaches);
+      }, coachId);
+
+  @override
+  Future<FavoriteCoachList> removeFavoriteCoach(String coachId) =>
+      _answer('removeFavoriteCoach', () {
+        favoriteCoaches.removeWhere((c) => c.coachId == coachId);
+        return FavoriteCoachList(favoriteCoaches: favoriteCoaches);
+      }, coachId);
 
   @override
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId) => _answer(
@@ -865,6 +922,23 @@ abstract final class Fixtures {
       publishedLessonMenuCount: 0,
     ),
   ];
+
+  /// お気に入りのコーチ（`listFavoriteCoaches` の 1 件）。既定は鈴木（[coachListings] の 2 人目）でテニスと野球
+  static FavoriteCoach favoriteCoach({
+    String? coachId,
+    String displayName = '鈴木',
+    List<Sport> sports = const [Sport.tennis, Sport.baseball],
+    int reviewCount = 3,
+    double? averageRating = 3.67,
+    Duration favoritedAgo = const Duration(days: 1),
+  }) => FavoriteCoach(
+    coachId: coachId ?? coachListings[1].coachId,
+    displayName: displayName,
+    sports: sports,
+    reviewCount: reviewCount,
+    averageRating: averageRating,
+    favoritedAt: now.subtract(favoritedAgo),
+  );
 
   /// 評価したレッスンのレッスンメニューの写し（`CoachReview.lesson_menu`）
   static final reviewLessonMenu = ReviewLessonMenu(

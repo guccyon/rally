@@ -213,6 +213,33 @@ void main() {
     expect(coachListingLessonMenuCountLabel(coach(0, null, 0)), 'レッスンメニュー 0 件');
   });
 
+  test('お気に入りのコーチの行は提供スポーツを「、」でつなぎ、評価を同じ書き方で出す（0 件なら「評価なし」）', () {
+    FavoriteCoach coach(List<Sport> sports, int count, double? average) =>
+        FavoriteCoach(
+          coachId: 'c1',
+          displayName: '佐藤',
+          sports: sports,
+          reviewCount: count,
+          averageRating: average,
+          favoritedAt: DateTime.utc(2026, 10, 26),
+        );
+    expect(
+      favoriteCoachSummaryLabel(
+        coach([Sport.tennis, Sport.baseball], 12, 4.25),
+      ),
+      'テニス、野球・★ 4.3（12 件）',
+    );
+    expect(
+      favoriteCoachSummaryLabel(coach([Sport.swimming], 0, null)),
+      '水泳・評価なし',
+    );
+  });
+
+  test('お気に入りの切り替えのボタンは押すとどうなるかで書く', () {
+    expect(favoriteToggleLabel(false), 'お気に入りに入れる');
+    expect(favoriteToggleLabel(true), 'お気に入りから外す');
+  });
+
   test('コーチが受けた評価の点は 5 点満点を添えて出す', () {
     expect(coachReviewRatingLabel(4), '4 点（5 点満点）');
   });
