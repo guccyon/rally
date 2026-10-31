@@ -7,8 +7,8 @@ use application::{
 };
 use domain::{
     catalog::{
-        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
-        LessonMenuId, LessonMenuName,
+        HeadquartersUnpublish, HeadquartersUnpublishReason, LessonDuration, LessonFormat,
+        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
     },
     identity::AccountId,
 };
@@ -26,14 +26,15 @@ use crate::{
 /// [`LessonMenuRepository`] の Postgres 実装。
 ///
 /// スポーツがコーチの提供スポーツであることは DB でも `lesson_menus_coach_sport_fkey` で守る（判定は domain）。
-/// 変更は行の置き換えで、並行な変更は後から保存した方が残る。
+/// 変更は行の置き換えで、並行な変更は後から保存した方が残る。本部が非公開にしたこと（時刻と理由）も同じ行に持つ
+/// （どちらも NULL なら本部は非公開にしていない）。
 #[derive(Debug, Clone)]
 pub struct PgLessonMenuRepository {
     pool: PgPool,
 }
 
 /// メニューの列（lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes, is_published,
-/// created_at）。
+/// created_at, headquarters_unpublished_at, headquarters_unpublish_reason）。
 type MenuRow = (
     Uuid,
     Uuid,
@@ -44,6 +45,8 @@ type MenuRow = (
     Option<i16>,
     bool,
     OffsetDateTime,
+    Option<OffsetDateTime>,
+    Option<String>,
 );
 
 impl PgLessonMenuRepository {
@@ -61,8 +64,8 @@ impl LessonMenuRepository for PgLessonMenuRepository {
         sqlx::query(
             "INSERT INTO catalog.lesson_menus
                  (lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
-                  is_published, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                  is_published, created_at, headquarters_unpublished_at, headquarters_unpublish_reason)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(lesson_menu_id_uuid::to_uuid(menu.id()))
         .bind(account_id_uuid::to_uuid(menu.coach_id()))
@@ -73,6 +76,8 @@ impl LessonMenuRepository for PgLessonMenuRepository {
         .bind(duration_minutes(&menu))
         .bind(menu.is_published())
         .bind(timestamp(menu.created_at()))
+        .bind(headquarters_unpublished_at(&menu))
+        .bind(headquarters_unpublish_reason(&menu))
         .execute(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -80,16 +85,15 @@ impl LessonMenuRepository for PgLessonMenuRepository {
     }
 
     async fn find(&self, id: LessonMenuId) -> Result<Option<LessonMenu>, Unavailable> {
-        let row: Option<MenuRow> =
-            sqlx::query_as(
+        let row: Option<MenuRow> = sqlx::query_as(
             "SELECT lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
-                    is_published, created_at
+                    is_published, created_at, headquarters_unpublished_at, headquarters_unpublish_reason
              FROM catalog.lesson_menus WHERE lesson_menu_id = $1",
         )
-                .bind(lesson_menu_id_uuid::to_uuid(id))
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(Unavailable::new)?;
+        .bind(lesson_menu_id_uuid::to_uuid(id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
         row.map(menu_from_row).transpose()
     }
 
@@ -97,7 +101,7 @@ impl LessonMenuRepository for PgLessonMenuRepository {
         sqlx::query(
             "UPDATE catalog.lesson_menus
              SET sport = $2, lesson_type = $3, name = $4, description = $5, duration_minutes = $6,
-                 is_published = $7
+                 is_published = $7, headquarters_unpublished_at = $8, headquarters_unpublish_reason = $9
              WHERE lesson_menu_id = $1",
         )
         .bind(lesson_menu_id_uuid::to_uuid(menu.id()))
@@ -107,6 +111,8 @@ impl LessonMenuRepository for PgLessonMenuRepository {
         .bind(menu.description().as_str())
         .bind(duration_minutes(&menu))
         .bind(menu.is_published())
+        .bind(headquarters_unpublished_at(&menu))
+        .bind(headquarters_unpublish_reason(&menu))
         .execute(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -116,7 +122,7 @@ impl LessonMenuRepository for PgLessonMenuRepository {
     async fn find_by_coach(&self, coach_id: AccountId) -> Result<Vec<LessonMenu>, Unavailable> {
         let rows: Vec<MenuRow> = sqlx::query_as(
             "SELECT lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
-                    is_published, created_at
+                    is_published, created_at, headquarters_unpublished_at, headquarters_unpublish_reason
              FROM catalog.lesson_menus WHERE coach_id = $1 ORDER BY created_at",
         )
         .bind(account_id_uuid::to_uuid(coach_id))
@@ -127,14 +133,15 @@ impl LessonMenuRepository for PgLessonMenuRepository {
     }
 
     async fn find_all(&self) -> Result<Vec<LessonMenu>, Unavailable> {
-        let rows: Vec<MenuRow> = sqlx::query_as(
+        let rows: Vec<MenuRow> =
+            sqlx::query_as(
             "SELECT lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
-                    is_published, created_at
+                    is_published, created_at, headquarters_unpublished_at, headquarters_unpublish_reason
              FROM catalog.lesson_menus",
         )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Unavailable::new)?;
+                .fetch_all(&self.pool)
+                .await
+                .map_err(Unavailable::new)?;
         rows.into_iter().map(menu_from_row).collect()
     }
 }
@@ -143,6 +150,16 @@ fn duration_minutes(menu: &LessonMenu) -> Option<i16> {
     menu.format()
         .duration()
         .map(|duration| i16::from(duration.minutes()))
+}
+
+fn headquarters_unpublished_at(menu: &LessonMenu) -> Option<OffsetDateTime> {
+    menu.headquarters_unpublish()
+        .map(|unpublish| timestamp(unpublish.unpublished_at()))
+}
+
+fn headquarters_unpublish_reason(menu: &LessonMenu) -> Option<&str> {
+    menu.headquarters_unpublish()
+        .map(|unpublish| unpublish.reason().as_str())
 }
 
 fn menu_from_row(
@@ -156,6 +173,8 @@ fn menu_from_row(
         duration_minutes,
         is_published,
         created_at,
+        headquarters_unpublished_at,
+        headquarters_unpublish_reason,
     ): MenuRow,
 ) -> Result<LessonMenu, Unavailable> {
     let sport = sport_from_value(&sport)
@@ -177,5 +196,27 @@ fn menu_from_row(
         },
         is_published,
         created_at.into(),
-    ))
+    )
+    .with_headquarters_unpublish(headquarters_unpublish(
+        headquarters_unpublished_at,
+        headquarters_unpublish_reason,
+    )?))
+}
+
+/// 本部が非公開にした時刻と理由の列から組み立てる。両方 NULL なら本部は非公開にしていない
+/// （片方だけ NULL の行は `lesson_menus_headquarters_unpublish_shape` で入らない）。
+fn headquarters_unpublish(
+    unpublished_at: Option<OffsetDateTime>,
+    reason: Option<String>,
+) -> Result<Option<HeadquartersUnpublish>, Unavailable> {
+    match (unpublished_at, reason) {
+        (None, None) => Ok(None),
+        (Some(unpublished_at), Some(reason)) => Ok(Some(HeadquartersUnpublish::new(
+            HeadquartersUnpublishReason::new(reason).map_err(Unavailable::new)?,
+            unpublished_at.into(),
+        ))),
+        _ => Err(Unavailable::new(
+            "本部が非公開にした時刻と理由の片方だけがある",
+        )),
+    }
 }
