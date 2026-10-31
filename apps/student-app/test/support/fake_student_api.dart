@@ -403,6 +403,13 @@ abstract final class Fixtures {
     durationMinutes: lessonMenus.first.durationMinutes,
   );
 
+  /// 予約した時点の [slotLessonMenu] の写し（`Booking.lesson_menu`）
+  static final bookingLessonMenu = BookingLessonMenu(
+    lessonMenuId: slotLessonMenu.lessonMenuId,
+    name: slotLessonMenu.name,
+    durationMinutes: slotLessonMenu.durationMinutes,
+  );
+
   static final bookingPending = Booking(
     bookingId: bookingId,
     slotId: slotId,
@@ -442,6 +449,7 @@ abstract final class Fixtures {
     createdAt: booking.createdAt,
     confirmedAt: booking.confirmedAt,
     cancelledAt: cancelledAt ?? booking.cancelledAt,
+    lessonMenu: booking.lessonMenu,
   );
 
   /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）
@@ -451,6 +459,7 @@ abstract final class Fixtures {
     BookingStatus status = BookingStatus.confirmed,
     Sport sport = Sport.tennis,
     String? coachDisplayName = '佐藤',
+    BookingLessonMenu? lessonMenu,
   }) {
     final startsAt = now.add(startsIn);
     return MyBooking(
@@ -465,6 +474,7 @@ abstract final class Fixtures {
         createdAt: now.subtract(const Duration(days: 7)),
         confirmedAt: status == BookingStatus.pending ? null : now,
         cancelledAt: status == BookingStatus.cancelled ? now : null,
+        lessonMenu: lessonMenu,
       ),
       slot: Slot(
         slotId: 'slot-$bookingId',

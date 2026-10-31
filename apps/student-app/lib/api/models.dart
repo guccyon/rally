@@ -400,6 +400,7 @@ class Booking {
     required this.createdAt,
     this.confirmedAt,
     this.cancelledAt,
+    this.lessonMenu,
   });
 
   final String bookingId;
@@ -413,6 +414,10 @@ class Booking {
   final DateTime? confirmedAt;
   final DateTime? cancelledAt;
 
+  /// 予約した時点でスロットに結びついていたレッスンメニューの写し（予約した後にメニューが直されても変わらない）。
+  /// メニューのない予約は null
+  final BookingLessonMenu? lessonMenu;
+
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
     bookingId: json['booking_id'] as String,
     slotId: json['slot_id'] as String,
@@ -424,7 +429,36 @@ class Booking {
     createdAt: _dateTime(json['created_at']),
     confirmedAt: _dateTimeOrNull(json['confirmed_at']),
     cancelledAt: _dateTimeOrNull(json['cancelled_at']),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : BookingLessonMenu.fromJson(
+            json['lesson_menu'] as Map<String, dynamic>,
+          ),
   );
+}
+
+/// `BookingLessonMenu`（予約した時点のコーチのレッスンメニューの ID・名前・1 回の時間。[SlotLessonMenu] と同じ形だが、今の中身ではなく写し）
+class BookingLessonMenu {
+  const BookingLessonMenu({
+    required this.lessonMenuId,
+    required this.name,
+    this.durationMinutes,
+  });
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  /// 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。予約した時点でメニューが非同期に直されていたら null
+  final int? durationMinutes;
+
+  factory BookingLessonMenu.fromJson(Map<String, dynamic> json) =>
+      BookingLessonMenu(
+        lessonMenuId: json['lesson_menu_id'] as String,
+        name: json['name'] as String,
+        durationMinutes: json['duration_minutes'] as int?,
+      );
 }
 
 /// `MyBooking`（自分の予約の一覧の 1 件。予約と、予約したスロット）

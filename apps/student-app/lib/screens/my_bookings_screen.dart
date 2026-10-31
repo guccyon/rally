@@ -38,6 +38,8 @@ class MyBookingsScreen extends ConsumerWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(sportLabel(item.slot.sport)),
+                  if (item.booking.lessonMenu case final menu?)
+                    Text(bookingLessonMenuLabel(menu)),
                   if (item.slot.coachDisplayName case final name?)
                     Text('コーチ: $name'),
                   Text('状態: ${bookingStatusLabel(item.booking.status)}'),

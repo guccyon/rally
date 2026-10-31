@@ -113,6 +113,25 @@ void main() {
     );
   });
 
+  test('予約した時点のレッスンメニューは枠と同じ書き方で、時間がなければ名前だけを出す', () {
+    expect(
+      bookingLessonMenuLabel(
+        const BookingLessonMenu(
+          lessonMenuId: 'm1',
+          name: 'フォアハンドの基礎',
+          durationMinutes: 60,
+        ),
+      ),
+      'メニュー: フォアハンドの基礎（1 回 60 分）',
+    );
+    expect(
+      bookingLessonMenuLabel(
+        const BookingLessonMenu(lessonMenuId: 'm2', name: 'サーブの動画添削'),
+      ),
+      'メニュー: サーブの動画添削',
+    );
+  });
+
   test('定員 2 以上の枠はグループとして定員と残りの席を出し、定員 1 の枠には出さない', () {
     Slot slot({required int capacity, required int remainingSeats}) => Slot(
       slotId: 'slot-1',

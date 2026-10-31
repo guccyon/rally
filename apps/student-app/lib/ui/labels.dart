@@ -26,10 +26,17 @@ String lessonMenuDurationLabel(int minutes) => '1 回 $minutes 分';
 /// 枠に結びついたレッスンメニュー（`Slot.lesson_menu`）の名前と 1 回の時間。例: `メニュー: フォアハンドの基礎（1 回 60 分）`。
 /// 時間が null（結びつけた後に非同期に直されたメニュー）なら名前だけ
 String slotLessonMenuLabel(SlotLessonMenu menu) =>
-    switch (menu.durationMinutes) {
-      final minutes? =>
-        'メニュー: ${menu.name}（${lessonMenuDurationLabel(minutes)}）',
-      null => 'メニュー: ${menu.name}',
+    _lessonMenuLabel(menu.name, menu.durationMinutes);
+
+/// 予約した時点のレッスンメニュー（`Booking.lesson_menu`）の名前と 1 回の時間。書き方は [slotLessonMenuLabel] と同じ。
+/// 時間が null（予約した時点で非同期に直されていたメニュー）なら名前だけ
+String bookingLessonMenuLabel(BookingLessonMenu menu) =>
+    _lessonMenuLabel(menu.name, menu.durationMinutes);
+
+String _lessonMenuLabel(String name, int? durationMinutes) =>
+    switch (durationMinutes) {
+      final minutes? => 'メニュー: $name（${lessonMenuDurationLabel(minutes)}）',
+      null => 'メニュー: $name',
     };
 
 /// 動画を送った時点で選んだレッスンメニュー（`Video.lesson_menu` / `VideoReview.lesson_menu`）。例: `メニュー: サーブの動画添削`
