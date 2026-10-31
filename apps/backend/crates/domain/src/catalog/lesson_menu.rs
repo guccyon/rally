@@ -1,6 +1,9 @@
 use std::time::SystemTime;
 
-use super::{LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName};
+use super::{
+    HeadquartersUnpublish, HeadquartersUnpublishReason, LessonFormat, LessonMenuContent,
+    LessonMenuDescription, LessonMenuId, LessonMenuName,
+};
 use crate::{
     DomainError,
     catalog::Sport,
@@ -10,8 +13,12 @@ use crate::{
 /// コーチのレッスンメニュー（glossary の lesson「レッスン種別」）。集約。
 ///
 /// コーチ・スポーツ（そのコーチの提供スポーツのどれか）・形式（同期なら 1 回の時間、非同期）・名前・説明・
-/// 公開中かを持つ。作る・直す・非公開にするのはそのコーチだけで、コーチは作ったあと変わらない。
+/// 公開中かを持つ。作る・直す・非公開にするのはそのコーチで、コーチは作ったあと変わらない。
 /// 公開中でないメニューは生徒に見せない（どこに見せるかは application と境界が決める）。
+///
+/// 本部はコーチに代わって非公開にでき（[`Self::unpublish_by_headquarters`]。時刻と理由を [`HeadquartersUnpublish`] で残す）、
+/// そのあいだコーチは中身を直せても公開し直せない。公開に戻すのは本部だけ（[`Self::republish_by_headquarters`]）。
+/// 誰が本部か（役割）は境界が確かめる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LessonMenu {
     id: LessonMenuId,
@@ -19,6 +26,7 @@ pub struct LessonMenu {
     content: LessonMenuContent,
     is_published: bool,
     created_at: SystemTime,
+    headquarters_unpublish: Option<HeadquartersUnpublish>,
 }
 
 impl LessonMenu {
@@ -39,13 +47,16 @@ impl LessonMenu {
             content,
             is_published,
             created_at: now,
+            headquarters_unpublish: None,
         })
     }
 
     /// コーチ `coach_id`（属性は `coach`）がメニューの中身と公開中かを丸ごと置き換える（非公開にするのもこれ）。
     ///
-    /// メニューのコーチでなければ [`DomainError::NotTheLessonMenuCoach`]、スポーツがコーチの提供スポーツでなければ
-    /// [`DomainError::SportNotOfferedByCoach`] で、どちらも何も変えない。
+    /// メニューのコーチでなければ [`DomainError::NotTheLessonMenuCoach`]、本部が非公開にしたメニューを公開中にしようと
+    /// すれば [`DomainError::LessonMenuUnpublishedByHeadquarters`]、スポーツがコーチの提供スポーツでなければ
+    /// [`DomainError::SportNotOfferedByCoach`] で、どれも何も変えない。本部が非公開にしたメニューでも、非公開のままなら
+    /// 中身は直せる（本部が非公開にしたことと理由はそのまま）。
     pub fn revise(
         &mut self,
         coach_id: AccountId,
@@ -56,13 +67,49 @@ impl LessonMenu {
         if coach_id != self.coach_id {
             return Err(DomainError::NotTheLessonMenuCoach);
         }
+        if is_published && self.headquarters_unpublish.is_some() {
+            return Err(DomainError::LessonMenuUnpublishedByHeadquarters);
+        }
         ensure_offered(coach, content.sport)?;
         self.content = content;
         self.is_published = is_published;
         Ok(())
     }
 
-    /// 保存先から読んだメニューを組み立てる（保存先の実装用）。
+    /// 本部がメニューを非公開にする（公開中かを問わない。コーチが非公開にしていたメニューも、コーチが公開し直せなくなる）。
+    /// 理由 `reason`（空なら書かなかった）と時刻 `now` を残す。
+    ///
+    /// すでに本部が非公開にしていれば [`DomainError::LessonMenuAlreadyUnpublishedByHeadquarters`] で、何も変えない
+    /// （最初の時刻と理由を残す）。
+    pub fn unpublish_by_headquarters(
+        &mut self,
+        reason: HeadquartersUnpublishReason,
+        now: SystemTime,
+    ) -> Result<(), DomainError> {
+        if self.headquarters_unpublish.is_some() {
+            return Err(DomainError::LessonMenuAlreadyUnpublishedByHeadquarters);
+        }
+        self.is_published = false;
+        self.headquarters_unpublish = Some(HeadquartersUnpublish::new(reason, now));
+        Ok(())
+    }
+
+    /// 本部が非公開にしたメニューを公開に戻す（公開中にし、本部が非公開にしたことと理由を消す）。以後はコーチがまた
+    /// 公開・非公開を決められる。
+    ///
+    /// 本部が非公開にしたメニューでなければ（コーチが自分で非公開にしたメニューも）
+    /// [`DomainError::LessonMenuNotUnpublishedByHeadquarters`] で、何も変えない。
+    pub fn republish_by_headquarters(&mut self) -> Result<(), DomainError> {
+        if self.headquarters_unpublish.is_none() {
+            return Err(DomainError::LessonMenuNotUnpublishedByHeadquarters);
+        }
+        self.is_published = true;
+        self.headquarters_unpublish = None;
+        Ok(())
+    }
+
+    /// 保存先から読んだメニューを組み立てる（保存先の実装用）。本部が非公開にしたことは
+    /// [`Self::with_headquarters_unpublish`] で添える（既定はなし）。
     pub const fn restore(
         id: LessonMenuId,
         coach_id: AccountId,
@@ -76,6 +123,18 @@ impl LessonMenu {
             content,
             is_published,
             created_at,
+            headquarters_unpublish: None,
+        }
+    }
+
+    /// 保存先から読んだ、本部が非公開にしたこと `headquarters_unpublish` を添える（保存先の実装用。[`Self::restore`] の続き）。
+    pub fn with_headquarters_unpublish(
+        self,
+        headquarters_unpublish: Option<HeadquartersUnpublish>,
+    ) -> Self {
+        Self {
+            headquarters_unpublish,
+            ..self
         }
     }
 
@@ -113,6 +172,11 @@ impl LessonMenu {
 
     pub const fn created_at(&self) -> SystemTime {
         self.created_at
+    }
+
+    /// 本部が非公開にしたこと（時刻と理由）。本部が非公開にしていなければ `None`。
+    pub const fn headquarters_unpublish(&self) -> Option<&HeadquartersUnpublish> {
+        self.headquarters_unpublish.as_ref()
     }
 }
 
@@ -251,7 +315,7 @@ mod tests {
 
     #[test]
     fn restore_keeps_every_field() {
-        let menu = menu();
+        let mut menu = menu();
         let restored = LessonMenu::restore(
             menu.id(),
             menu.coach_id(),
@@ -260,5 +324,137 @@ mod tests {
             menu.created_at(),
         );
         assert_eq!(restored, menu);
+        assert_eq!(menu.headquarters_unpublish(), None);
+
+        menu.unpublish_by_headquarters(reason("誤った記載"), at(20))
+            .unwrap();
+        let restored = LessonMenu::restore(
+            menu.id(),
+            menu.coach_id(),
+            menu.content().clone(),
+            menu.is_published(),
+            menu.created_at(),
+        )
+        .with_headquarters_unpublish(menu.headquarters_unpublish().cloned());
+        assert_eq!(restored, menu);
+    }
+
+    fn reason(text: &str) -> HeadquartersUnpublishReason {
+        HeadquartersUnpublishReason::new(text).unwrap()
+    }
+
+    #[test]
+    fn headquarters_unpublishes_a_menu_with_the_time_and_reason() {
+        let mut menu = menu();
+        let before = menu.clone();
+        menu.unpublish_by_headquarters(reason("不適切な表現"), at(20))
+            .unwrap();
+        assert!(!menu.is_published());
+        assert_eq!(
+            menu.headquarters_unpublish(),
+            Some(&HeadquartersUnpublish::new(reason("不適切な表現"), at(20)))
+        );
+        assert_eq!(menu.content(), before.content(), "中身は変えない");
+        assert_eq!(menu.coach_id(), COACH);
+    }
+
+    #[test]
+    fn headquarters_can_unpublish_a_menu_the_coach_already_unpublished() {
+        let mut menu = menu();
+        let current = menu.content().clone();
+        menu.revise(COACH, &coach(), current, false).unwrap();
+        menu.unpublish_by_headquarters(HeadquartersUnpublishReason::default(), at(20))
+            .unwrap();
+        assert!(!menu.is_published());
+        assert_eq!(
+            menu.headquarters_unpublish().map(|u| u.reason().as_str()),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn unpublishing_twice_by_headquarters_keeps_the_first_record() {
+        let mut menu = menu();
+        menu.unpublish_by_headquarters(reason("最初"), at(20))
+            .unwrap();
+        let before = menu.clone();
+        assert_eq!(
+            menu.unpublish_by_headquarters(reason("二度目"), at(30)),
+            Err(DomainError::LessonMenuAlreadyUnpublishedByHeadquarters)
+        );
+        assert_eq!(menu, before);
+    }
+
+    #[test]
+    fn the_coach_cannot_republish_a_menu_headquarters_unpublished() {
+        let mut menu = menu();
+        menu.unpublish_by_headquarters(reason("誤った記載"), at(20))
+            .unwrap();
+        let before = menu.clone();
+        assert_eq!(
+            menu.revise(
+                COACH,
+                &coach(),
+                content(Sport::Tennis, live(30), "直した"),
+                true
+            ),
+            Err(DomainError::LessonMenuUnpublishedByHeadquarters)
+        );
+        assert_eq!(menu, before, "何も変えない");
+    }
+
+    #[test]
+    fn the_coach_can_fix_the_content_while_unpublished_by_headquarters() {
+        let mut menu = menu();
+        menu.unpublish_by_headquarters(reason("誤った記載"), at(20))
+            .unwrap();
+        let fixed = content(Sport::Tennis, live(30), "直した");
+        menu.revise(COACH, &coach(), fixed.clone(), false).unwrap();
+        assert_eq!(menu.content(), &fixed);
+        assert!(!menu.is_published());
+        assert_eq!(
+            menu.headquarters_unpublish(),
+            Some(&HeadquartersUnpublish::new(reason("誤った記載"), at(20))),
+            "本部が非公開にしたことは残る"
+        );
+    }
+
+    #[test]
+    fn headquarters_republishes_and_the_coach_decides_again() {
+        let mut menu = menu();
+        menu.unpublish_by_headquarters(reason("誤った記載"), at(20))
+            .unwrap();
+        menu.republish_by_headquarters().unwrap();
+        assert!(menu.is_published());
+        assert_eq!(menu.headquarters_unpublish(), None);
+        let current = menu.content().clone();
+        menu.revise(COACH, &coach(), current.clone(), false)
+            .unwrap();
+        menu.revise(COACH, &coach(), current, true).unwrap();
+        assert!(menu.is_published());
+    }
+
+    #[test]
+    fn republishing_a_menu_headquarters_did_not_unpublish_is_rejected() {
+        let mut published = menu();
+        let before = published.clone();
+        assert_eq!(
+            published.republish_by_headquarters(),
+            Err(DomainError::LessonMenuNotUnpublishedByHeadquarters)
+        );
+        assert_eq!(published, before);
+
+        let mut unpublished_by_coach = menu();
+        let current = unpublished_by_coach.content().clone();
+        unpublished_by_coach
+            .revise(COACH, &coach(), current, false)
+            .unwrap();
+        let before = unpublished_by_coach.clone();
+        assert_eq!(
+            unpublished_by_coach.republish_by_headquarters(),
+            Err(DomainError::LessonMenuNotUnpublishedByHeadquarters),
+            "コーチが自分で非公開にしたメニューは本部が公開に戻さない"
+        );
+        assert_eq!(unpublished_by_coach, before);
     }
 }
