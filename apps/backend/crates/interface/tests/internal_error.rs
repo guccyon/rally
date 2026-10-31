@@ -54,7 +54,10 @@ impl AccountRepository for BrokenRepository {
         Err(Unavailable::new(REASON))
     }
 
-    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+    async fn list_students(
+        &self,
+        _name: Option<&domain::profile::DisplayNameQuery>,
+    ) -> Result<Vec<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
 

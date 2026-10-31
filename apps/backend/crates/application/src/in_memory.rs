@@ -21,7 +21,7 @@ use domain::{
         Announcement, AnnouncementId, Notification, NotificationId, NotificationSettings,
         PushNotification,
     },
-    profile::{CoachBio, DisplayName},
+    profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply},
     scheduling::{
         Booking, BookingId, CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus,
@@ -130,13 +130,17 @@ impl AccountRepository for InMemoryAccountRepository {
         Ok(coaches)
     }
 
-    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+    async fn list_students(
+        &self,
+        name: Option<&DisplayNameQuery>,
+    ) -> Result<Vec<Account>, Unavailable> {
         let mut students: Vec<Account> = self
             .accounts
             .lock()
             .unwrap()
             .iter()
             .filter(|a| a.as_student().is_some())
+            .filter(|a| name.is_none_or(|name| name.matches(a.display_name())))
             .cloned()
             .collect();
         students.sort_by(|a, b| {

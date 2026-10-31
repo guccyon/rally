@@ -24,7 +24,7 @@ where
     async fn find_students(&self, sport: Option<Sport>) -> Result<Vec<AccountId>, Unavailable> {
         Ok(self
             .accounts
-            .list_students()
+            .list_students(None)
             .await?
             .into_iter()
             .filter(|account| {

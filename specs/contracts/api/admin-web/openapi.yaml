@@ -1138,14 +1138,27 @@ paths:
         - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
           キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
         - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
-        - 絞り込み・ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で足す）。生徒がいなければ
-          `students` は空の配列
+        - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含む生徒だけを返す
+          （並べ方は上と同じ）。`q` の前後の空白（全角の空白を含む）は除いて比べ、途中の空白はそのまま比べる。大文字・小文字は
+          ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる
+          （同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。一致する生徒がいなければ `students` は空の配列
+        - `q` を付けない・空・空白だけのときは絞り込まない（今までどおりすべての生徒）
+        - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
+        - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
+          足す）。生徒がいなければ `students` は空の配列
         - 照会だけで、何も保存しない
 
         行動イベントは発火しない。
       tags: [identity, entitlement, scheduling]
       x-context: [identity, profile, entitlement, scheduling]
       x-analytics-events: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: 表示名の検索語。表示名に部分一致する生徒だけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない）
+          schema:
+            type: string
       responses:
         "200":
           description: 生徒の一覧
@@ -1157,6 +1170,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /students/{student_id}/activity:
     get:

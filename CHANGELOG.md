@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部が生徒を表示名で探す API: admin-web の契約の `GET /students`（`listStudents`）に任意の検索語 `q` を足した。表示名に `q` を含む生徒だけを今までと同じ並びで返す（前後の空白は除き、大文字・小文字は ASCII の英字だけ区別しない）。`q` がない・空白だけなら今までどおりすべて、前後の空白を除いて 50 文字を超える `q` は 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#485）
 - 本部の予約の一覧をコーチで絞る: admin-web の `GET /bookings`（`listBookings`）に任意の `coach_id` を足した。付ければそのコーチの枠への予約だけを返し、付けなければ今までどおりすべてのコーチ。期間の規則と並べ方は変わらない。コーチでない・ない ID は 404 にせず空の一覧、UUID でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えていない（#484）
 - 本部がコーチの受付を止めた・再開した記録を見る API: admin-web の契約に `GET /coaches/{coach_id}/acceptance-changes`（`listCoachAcceptanceChanges`）を足した。コーチ 1 人の受付を止めた（`suspendCoach`）・再開した（`resumeCoach`）記録を新しい順に、変えた後の状態 `acceptance_status`・操作した本部のアカウントの ID `changed_by`・時刻 `changed_at` で返す。本部以外は 403、コーチでない・ない ID は 404。記録はこの版から残し、それより前の停止・再開は載らない。DB は `scheduling.coach_acceptance_changes` の追加だけ（expand）。admin-web は型を足しただけで、画面は変えない
 - 本部が生徒にお知らせを送る API: admin-web の契約に `POST /announcements`（`sendAnnouncement`。題 1〜50 文字・本文 1〜2000 文字・任意の `sport`。省けば生徒全員）と `GET /announcements`（`listAnnouncements`。送った記録を新しい順に、受け取った生徒の数つきで）を足した。対象の生徒ごとにお知らせ（種類 `announcement`。本文は題と本文を改行でつないだもの）を残し、student-app の通知の受け取り設定に足した `announcement` が true の生徒にだけプッシュ通知（モック）を送る。対象の生徒がいなければ 404、題・本文・スポーツの規則違反は 422、本部以外は 403。DB は `notification.announcements` の追加と `notification.notifications` の列・種類の追加の expand だけ。admin-web は型を生成し直し、student-app は型に種類と設定の項目を足しただけで、管理画面の画面は次の段（#382）
