@@ -26,6 +26,8 @@ info:
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
     本部のコーチの一覧（`listCoaches`）の 1 件ごとに載る。停止中のコーチは student-app の `searchSlots`・
     `listCoachesForStudent` に出ず、`createBooking` は 409 `coach_not_accepting_bookings`（入っている予約はそのまま）。
+    本部はコーチ 1 人の表示名・受付の状態・評価の件数と平均・今月と先月のレッスンの実績・公開中のレッスンメニューの数を
+    1 回で読む（`getCoachOverview`）。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
     - 各操作の `x-context` は `specs/context-map.yaml` の context id。複数のコンテキストの事実を扱う操作だけ id の配列にする（student-app と同じ規約）
@@ -547,6 +549,51 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /coaches/{coach_id}/overview:
+    get:
+      operationId: getCoachOverview
+      summary: コーチ 1 人の様子（本部）
+      description: |
+        コーチ 1 人について、表示名・受付の状態・評価の件数と平均・今月と先月の完了したレッスンの数・公開中のレッスンメニューの
+        数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+        照会だけで、何も保存しない。
+
+        各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
+
+        - `acceptance_status`: `listCoaches` の 1 件と同じ受付の状態（一度も止めていないコーチは `accepting`）
+        - `review_count` / `average_rating`: `getCoachReviewSummary` と同じ（期間で絞らない、これまでのすべての評価。0 件なら
+          `average_rating` は null）
+        - `current_month` / `previous_month`: `getMyLessonStats` の同じ名前の項目と同じ（日本時間の暦月。月ごとの評価の件数と
+          平均も載る）。金額は返さない
+        - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
+          メニューの数。スポーツで絞らず、ゴルフのメニューも数える）
+        - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+
+        行動イベントは発火しない。
+      tags: [profile]
+      x-context: [profile, scheduling, review, live-lesson, async-lesson, catalog]
+      x-analytics-events: []
+      parameters:
+        - name: coach_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: コーチ 1 人の様子
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /coaches/me/bookings:
     get:
@@ -1640,6 +1687,50 @@ components:
           description: 表示名のコードポイントの順（同じ表示名は `coach_id` の順）
           items:
             $ref: "#/components/schemas/Coach"
+
+    CoachOverview:
+      type: object
+      description: |
+        本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・今月と先月の
+        レッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+      required:
+        - coach_id
+        - display_name
+        - acceptance_status
+        - review_count
+        - average_rating
+        - current_month
+        - previous_month
+        - published_lesson_menu_count
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+          description: コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: アカウントの表示名
+        acceptance_status:
+          $ref: "#/components/schemas/CoachAcceptanceStatus"
+        review_count:
+          type: integer
+          minimum: 0
+          description: これまでに受けた評価の件数（`getCoachReviewSummary` の `review_count` と同じ）
+        average_rating:
+          type: [number, "null"]
+          minimum: 1
+          maximum: 5
+          description: 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null
+        current_month:
+          $ref: "#/components/schemas/MonthlyLessonStats"
+        previous_month:
+          $ref: "#/components/schemas/MonthlyLessonStats"
+        published_lesson_menu_count:
+          type: integer
+          minimum: 0
+          description: 公開中のレッスンメニューの数（スポーツを問わない）
 
     ContractType:
       type: string
