@@ -16,4 +16,12 @@ pub trait QuotaGate: Send + Sync {
         student_id: AccountId,
         at: SystemTime,
     ) -> impl Future<Output = Result<bool, Unavailable>> + Send;
+
+    /// `student_id` の生徒がビデオ通話の暦月の枠を持つか（月額の受講権があるか）。持たない生徒（受講権がない・
+    /// ワンショット）の予約は、キャンセルしても回数を数えない（docs/adr/0005 の 6）。本人の予約の一覧
+    /// （[`super::ListMyBookings`]）が、キャンセルの見込みを出すときに呼ぶ。
+    fn has_live_lesson_quota(
+        &self,
+        student_id: AccountId,
+    ) -> impl Future<Output = Result<bool, Unavailable>> + Send;
 }

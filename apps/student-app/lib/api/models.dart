@@ -471,18 +471,31 @@ class BookingLessonMenu {
       );
 }
 
-/// `MyBooking`（自分の予約の一覧の 1 件。予約と、予約したスロット）
+/// `MyBooking`（自分の予約の一覧の 1 件。予約と、予約したスロットと、今キャンセルしたら枠を使うかの見込み）
 class MyBooking {
-  const MyBooking({required this.booking, required this.slot});
+  const MyBooking({
+    required this.booking,
+    required this.slot,
+    this.cancelConsumesQuota,
+    this.freeCancelUntil,
+  });
 
   final Booking booking;
 
   /// 予約したスロット（日時・スポーツ。コーチの表示名と自己紹介文は任意）
   final Slot slot;
 
+  /// 今キャンセルしたらビデオ通話の暦月の枠を使うか。キャンセルできない予約（キャンセル済み）は null
+  final bool? cancelConsumesQuota;
+
+  /// この時刻より前のキャンセルなら枠を使わない境目（開始の 24 時間前）。境目のない予約は null
+  final DateTime? freeCancelUntil;
+
   factory MyBooking.fromJson(Map<String, dynamic> json) => MyBooking(
     booking: Booking.fromJson(json['booking'] as Map<String, dynamic>),
     slot: Slot.fromJson(json['slot'] as Map<String, dynamic>),
+    cancelConsumesQuota: json['cancel_consumes_quota'] as bool?,
+    freeCancelUntil: _dateTimeOrNull(json['free_cancel_until']),
   );
 }
 
