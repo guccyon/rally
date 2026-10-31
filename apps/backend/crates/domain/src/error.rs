@@ -112,16 +112,6 @@ pub enum DomainError {
     CompletionBeforeLessonEnded,
     /// そのレッスン（通話セッション・動画）の完了はすでに記録してある
     LessonAlreadyCompleted,
-    /// 評価の点が `min`〜`max` の整数でない
-    RatingOutOfRange { min: u8, max: u8 },
-    /// 評価の一言が空（空白だけを含む）
-    EmptyLessonReviewComment,
-    /// 評価の一言が長すぎる（`max` は文字数）
-    LessonReviewCommentTooLong { max: usize },
-    /// 完了したレッスンの生徒でないので、そのレッスンを評価できない
-    NotTheLessonStudent,
-    /// そのレッスン（完了したレッスン）の評価はすでに付けてある（評価は 1 回）
-    LessonAlreadyReviewed,
     /// レッスンメニューの名前が空（空白だけを含む）
     EmptyLessonMenuName,
     /// レッスンメニューの名前が長すぎる（`max` は文字数）

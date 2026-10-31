@@ -15,9 +15,8 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     lesson::{LessonCompletion, LessonId},
-    review::{LessonReview, LessonReviewComment, Rating},
+    review::{LessonReview, LessonReviewComment, Rating, ReviewError},
 };
 use infra::{PgLessonCompletionRepository, PgLessonReviewRepository};
 use sqlx::PgPool;
@@ -74,7 +73,7 @@ async fn reviews_a_completed_lesson_once_and_reads_it_back(pool: PgPool) {
         matches!(
             result,
             Err(SubmitLessonReviewError::Invalid(
-                DomainError::LessonAlreadyReviewed
+                ReviewError::LessonAlreadyReviewed
             ))
         ),
         "{result:?}"

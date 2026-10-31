@@ -1,8 +1,7 @@
 use std::time::SystemTime;
 
-use super::{LessonReviewComment, LessonReviewId, Rating};
+use super::{LessonReviewComment, LessonReviewId, Rating, ReviewError};
 use crate::{
-    DomainError,
     identity::AccountId,
     lesson::{LessonCompletion, LessonId},
 };
@@ -25,7 +24,7 @@ impl LessonReview {
     /// アカウント `account_id` が完了したレッスン `lesson` に評価を付ける。
     ///
     /// `existing` はそのレッスンの既存の評価。付けられるのはレッスンの生徒だけ（それ以外は
-    /// [`DomainError::NotTheLessonStudent`]）で、評価がすでにあれば [`DomainError::LessonAlreadyReviewed`]。
+    /// [`ReviewError::NotTheLessonStudent`]）で、評価がすでにあれば [`ReviewError::LessonAlreadyReviewed`]。
     pub fn submit(
         id: LessonReviewId,
         account_id: AccountId,
@@ -34,12 +33,12 @@ impl LessonReview {
         rating: Rating,
         comment: LessonReviewComment,
         now: SystemTime,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, ReviewError> {
         if account_id != lesson.student_id() {
-            return Err(DomainError::NotTheLessonStudent);
+            return Err(ReviewError::NotTheLessonStudent);
         }
         if existing.is_some_and(|review| review.lesson_id == lesson.id()) {
-            return Err(DomainError::LessonAlreadyReviewed);
+            return Err(ReviewError::LessonAlreadyReviewed);
         }
         Ok(Self {
             id,
@@ -141,7 +140,7 @@ mod tests {
         account_id: AccountId,
         lesson: &LessonCompletion,
         existing: Option<&LessonReview>,
-    ) -> Result<LessonReview, DomainError> {
+    ) -> Result<LessonReview, ReviewError> {
         LessonReview::submit(
             LessonReviewId::from_u128(9),
             account_id,
@@ -171,7 +170,7 @@ mod tests {
         for account in [OTHER_STUDENT, COACH] {
             assert_eq!(
                 submit(account, &lesson, None),
-                Err(DomainError::NotTheLessonStudent)
+                Err(ReviewError::NotTheLessonStudent)
             );
         }
     }
@@ -182,12 +181,12 @@ mod tests {
         let first = submit(STUDENT, &lesson, None).unwrap();
         assert_eq!(
             submit(STUDENT, &lesson, Some(&first)),
-            Err(DomainError::LessonAlreadyReviewed)
+            Err(ReviewError::LessonAlreadyReviewed)
         );
         // 当事者でなければ、評価があることも知らせない
         assert_eq!(
             submit(OTHER_STUDENT, &lesson, Some(&first)),
-            Err(DomainError::NotTheLessonStudent)
+            Err(ReviewError::NotTheLessonStudent)
         );
         // 別のレッスンの評価は数えない
         assert!(

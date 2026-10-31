@@ -23,6 +23,7 @@ mod messaging_error;
 mod my_bookings;
 mod my_videos;
 mod notification_settings;
+mod review_error;
 mod reviews;
 mod slot_supply;
 mod slots;

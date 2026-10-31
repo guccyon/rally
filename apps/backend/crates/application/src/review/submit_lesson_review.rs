@@ -1,8 +1,7 @@
 use domain::{
-    DomainError,
     identity::AccountId,
     lesson::LessonId,
-    review::{LessonReview, LessonReviewComment, Rating},
+    review::{LessonReview, LessonReviewComment, Rating, ReviewError},
 };
 
 use super::{CompletedLessonLookup, InsertReviewError, LessonReviewRepository};
@@ -25,8 +24,9 @@ pub struct SubmitLessonReviewCommand {
 pub enum SubmitLessonReviewError {
     /// 完了したレッスンがない
     LessonNotFound,
-    /// 評価がドメインの不変条件を満たさない（レッスンの生徒でない、評価済み）
-    Invalid(DomainError),
+    /// 評価が評価の不変条件を満たさない（レッスンの生徒でない [`ReviewError::NotTheLessonStudent`]、評価済み
+    /// [`ReviewError::LessonAlreadyReviewed`]）
+    Invalid(ReviewError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -92,7 +92,7 @@ where
             .await
             .map_err(|error| match error {
                 InsertReviewError::LessonAlreadyReviewed => {
-                    SubmitLessonReviewError::Invalid(DomainError::LessonAlreadyReviewed)
+                    SubmitLessonReviewError::Invalid(ReviewError::LessonAlreadyReviewed)
                 }
                 InsertReviewError::Unavailable(error) => {
                     SubmitLessonReviewError::Unavailable(error)
@@ -250,7 +250,7 @@ mod tests {
             matches!(
                 result,
                 Err(SubmitLessonReviewError::Invalid(
-                    DomainError::LessonAlreadyReviewed
+                    ReviewError::LessonAlreadyReviewed
                 ))
             ),
             "{result:?}"
@@ -301,7 +301,7 @@ mod tests {
                 matches!(
                     result,
                     Err(SubmitLessonReviewError::Invalid(
-                        DomainError::NotTheLessonStudent
+                        ReviewError::NotTheLessonStudent
                     ))
                 ),
                 "{result:?}"
