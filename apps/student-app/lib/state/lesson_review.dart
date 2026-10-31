@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
@@ -13,29 +11,27 @@ class LessonReviewState {
   LessonReviewState({
     this.lessonReview,
     Set<String> reviewedLessonIds = const {},
-  })
-    // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
-    // ignore: prefer_initializing_formals
-    : _reviewedLessonIds = reviewedLessonIds;
+  }) // 渡した元の Set を後で変えても状態が変わらないよう、読み取り専用の写しを持つ
+  : reviewedLessonIds = Set.unmodifiable(reviewedLessonIds);
 
   /// この端末で送った評価（`submitLessonReview` の応答）
   final LessonReview? lessonReview;
 
   /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
   /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す。
-  /// 読み出しは変更できないビューで返す（どの経路で作っても、`add` などで Riverpod を通さずに状態を変えさせない）
-  Set<String> get reviewedLessonIds => UnmodifiableSetView(_reviewedLessonIds);
-  final Set<String> _reviewedLessonIds;
+  /// コンストラクタでも copyWith でも、渡した Set の読み取り専用の写しを持つ（どの経路で作っても、
+  /// `add` などで Riverpod を通さずに状態を変えさせない）
+  final Set<String> reviewedLessonIds;
 
   /// [lessonId] の完了したレッスンを評価済みと分かっているか
-  bool isReviewed(String? lessonId) => _reviewedLessonIds.contains(lessonId);
+  bool isReviewed(String? lessonId) => reviewedLessonIds.contains(lessonId);
 
   LessonReviewState copyWith({
     LessonReview? lessonReview,
     Set<String>? reviewedLessonIds,
   }) => LessonReviewState(
     lessonReview: lessonReview ?? this.lessonReview,
-    reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
+    reviewedLessonIds: reviewedLessonIds ?? this.reviewedLessonIds,
   );
 }
 

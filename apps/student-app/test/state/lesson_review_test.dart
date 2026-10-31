@@ -128,4 +128,18 @@ void main() {
     expect(() => state.reviewedLessonIds.add('other'), throwsUnsupportedError);
     expect(state.copyWith().reviewedLessonIds, state.reviewedLessonIds);
   });
+
+  test('渡した元の Set を後から変えても、状態の評価済みのレッスンは変わらない', () {
+    final source = {Fixtures.asyncLesson.lessonId};
+    final state = LessonReviewState(reviewedLessonIds: source);
+    final copied = state.copyWith(reviewedLessonIds: source);
+
+    source.add(lessonId);
+
+    expect(state.reviewedLessonIds, {Fixtures.asyncLesson.lessonId});
+    expect(state.isReviewed(lessonId), isFalse);
+    expect(copied.reviewedLessonIds, {Fixtures.asyncLesson.lessonId});
+    expect(() => state.reviewedLessonIds.add('other'), throwsUnsupportedError);
+    expect(() => copied.reviewedLessonIds.add('other'), throwsUnsupportedError);
+  });
 }
