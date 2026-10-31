@@ -1,5 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:rally_student_app/api/http_student_api.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/subscription_screen.dart';
@@ -132,6 +138,59 @@ void main() {
     expect(request.plan, SubscriptionPlan.plus);
     expect(find.text('月額契約を開始しました'), findsOneWidget);
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
+  });
+
+  testWidgets('プランの一覧の応答が契約に反していても（上限が 0）、名前だけで選べて、読み込めなかった旨を出す', (
+    tester,
+  ) async {
+    // 応答の検査はクライアントの境界（HttpStudentApi）でするので、モックの API ではなく本物のクライアントで通す
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          studentApiProvider.overrideWithValue(
+            HttpStudentApi(
+              baseUrl: Uri.parse('http://api.test'),
+              accessToken: () => 'mock.student.x',
+              client: MockClient(
+                (request) async => http.Response.bytes(
+                  utf8.encode(
+                    jsonEncode({
+                      'plans': [
+                        {'plan': 'standard', 'live_lessons_per_month': 0},
+                        {'plan': 'plus', 'live_lessons_per_month': 4},
+                      ],
+                    }),
+                  ),
+                  200,
+                  headers: {'content-type': 'application/json'},
+                ),
+              ),
+            ),
+          ),
+          studentFlowProvider.overrideWith(
+            () => StudentFlowNotifier(
+              StudentFlowState(
+                step: FlowStep.subscription,
+                student: Fixtures.student,
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: SubscriptionScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('スタンダード'), findsOneWidget);
+    expect(find.text('プラス'), findsOneWidget);
+    expect(find.textContaining('ビデオ通話 月'), findsNothing);
+    expect(
+      find.text('プランごとのビデオ通話の回数を読み込めませんでした。プランの名前で選んで始められます。'),
+      findsOneWidget,
+    );
+    await tapText(tester, 'プラス');
+    expect(planTile(tester, 'プラス').value, SubscriptionPlan.plus);
   });
 
   testWidgets('今月の残り回数は、受講権のプランの上限と合わせて出す', (tester) async {

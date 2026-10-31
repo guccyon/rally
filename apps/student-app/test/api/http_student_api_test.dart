@@ -550,6 +550,24 @@ void main() {
     },
   );
 
+  test('listSubscriptionPlans は契約に反する応答を StudentApiException にする', () async {
+    for (final plan in [
+      {'plan': 'plus', 'live_lessons_per_month': 0},
+      {'plan': 'premium', 'live_lessons_per_month': 4},
+    ]) {
+      final error =
+          await apiReplying(200, {
+            'plans': [plan],
+          }).listSubscriptionPlans().then<Object?>(
+            (_) => null,
+            onError: (Object e) => e,
+          );
+      expect(error, isA<StudentApiException>());
+      expect((error as StudentApiException).statusCode, 200);
+      expect(error.error, isNull);
+    }
+  });
+
   test(
     'getMyEntitlement は GET /entitlements/me で受講権を読み、受講権がなければ 404',
     () async {

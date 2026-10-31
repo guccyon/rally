@@ -123,9 +123,17 @@ class HttpStudentApi implements StudentApi {
     ),
   );
 
+  /// 契約に反する応答（`live_lessons_per_month` が 1 未満・契約にないプランなど、[FormatException] になるもの）は、
+  /// 呼び出し側が失敗として受け止められるよう [StudentApiException] に包み直す
   @override
-  Future<SubscriptionPlanList> listSubscriptionPlans() async =>
-      SubscriptionPlanList.fromJson(await _send('GET', '/subscription-plans'));
+  Future<SubscriptionPlanList> listSubscriptionPlans() async {
+    final json = await _send('GET', '/subscription-plans');
+    try {
+      return SubscriptionPlanList.fromJson(json);
+    } on FormatException {
+      throw const StudentApiException(statusCode: 200);
+    }
+  }
 
   @override
   Future<StartSubscriptionResponse> startSubscription(
