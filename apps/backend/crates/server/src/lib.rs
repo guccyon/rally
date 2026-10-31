@@ -36,7 +36,8 @@ use application::{
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
-        LessonCompletionRepository, ListMyLessonCompletions, RecordLessonCompletion,
+        LessonCompletionRepository, LessonCompletionSportLookup, ListMyLessonCompletions,
+        RecordLessonCompletion,
     },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -147,7 +148,8 @@ pub fn router() -> Router {
 /// 完了記録の元（通話セッションに結び付いた予約・動画）が持つ写しを読む（`LessonCompletionMenuLookup`。予約は
 /// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。本部が見る低い評価の一覧
 /// （`GET /lesson-reviews/low`）も同じ保存先から読み、同じメニューの写しと、コーチ・生徒の表示名をアカウントの保存先から
-/// （`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）読んで添える。
+/// （`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）読んで添える。スポーツで絞るときは、評価した
+/// レッスンのスポーツを完了記録の元（予約の枠・動画）から読む（`LessonCompletionSportLookup`）。
 ///
 /// 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は完了記録の保存先から生徒の完了したレッスンを読み、
 /// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
@@ -497,6 +499,12 @@ where
         ListLowRatedReviews::new(
             reviews.clone(),
             LessonCompletionMenuLookup::new(
+                completions.clone(),
+                sessions.clone(),
+                SchedulingBookingLookup::new(bookings.clone()),
+                videos.clone(),
+            ),
+            LessonCompletionSportLookup::new(
                 completions.clone(),
                 sessions.clone(),
                 SchedulingBookingLookup::new(bookings.clone()),
