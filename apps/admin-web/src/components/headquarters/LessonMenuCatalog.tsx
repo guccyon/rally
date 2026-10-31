@@ -5,7 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
-import { LESSON_TYPE_LABELS, SPORT_LABELS } from "@/components/labels";
+import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
+
+import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
 
 type Sport = Schemas["Sport"];
 type LessonMenu = Schemas["CoachLessonMenu"];
@@ -23,13 +25,34 @@ function durationLabel(menu: LessonMenu): string {
   return menu.duration_minutes === null ? "—" : `${menu.duration_minutes} 分`;
 }
 
+function PublicationCell({ menu }: { menu: LessonMenu }) {
+  const unpublish = menu.headquarters_unpublish;
+  if (menu.is_published) return <>公開中</>;
+  if (unpublish === undefined) return <>非公開</>;
+  return (
+    <>
+      非公開（本部）
+      <span className="block text-xs text-gray-500">
+        {formatDateTime(unpublish.unpublished_at)}
+        {unpublish.reason === "" ? "" : `・理由: ${unpublish.reason}`}
+      </span>
+    </>
+  );
+}
+
 /**
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
  * 絞り込み（スポーツ・公開中だけ）は API の `sport` / `published` に渡し、並びは契約の正本どおり返った順のまま出す。
+ * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
  */
-export function LessonMenuCatalog({ api }: { api: Pick<HeadquartersApi, "listLessonMenus"> }) {
+export function LessonMenuCatalog({
+  api,
+}: {
+  api: Pick<HeadquartersApi, "listLessonMenus" | "unpublishLessonMenu" | "republishLessonMenu">;
+}) {
   const [filter, setFilter] = useState<Filter>({ sport: "", publishedOnly: false });
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
 
@@ -58,12 +81,49 @@ export function LessonMenuCatalog({ api }: { api: Pick<HeadquartersApi, "listLes
     };
   }, [fetchMenus]);
 
-  async function changeFilter(next: Filter) {
-    setFilter(next);
+  async function reload(next: Filter) {
     const request = ++latestRequest.current;
     setState({ kind: "loading" });
-    const result = await fetchMenus(next);
-    if (request === latestRequest.current) setState(result);
+    const loaded = await fetchMenus(next);
+    if (request === latestRequest.current) setState(loaded);
+  }
+
+  async function changeFilter(next: Filter) {
+    setFilter(next);
+    setResult(null);
+    await reload(next);
+  }
+
+  async function changePublication(
+    menu: LessonMenu,
+    response: Awaited<ReturnType<HeadquartersApi["unpublishLessonMenu"]>>,
+    done: string,
+  ) {
+    if (response.ok) {
+      setResult({ ok: true, message: `「${menu.name}」を${done}。` });
+      // 応答は LessonMenu（説明つき・表示名なし）なので、行の公開中かと本部の非公開だけを応答で置き換える。
+      const { is_published, headquarters_unpublish } = response.data;
+      setState((current) =>
+        current.kind === "loaded"
+          ? {
+              ...current,
+              menus: current.menus.map((row) => {
+                if (row.lesson_menu_id !== menu.lesson_menu_id) return row;
+                const next: LessonMenu = { ...row, is_published };
+                delete next.headquarters_unpublish;
+                if (headquarters_unpublish !== undefined) {
+                  next.headquarters_unpublish = headquarters_unpublish;
+                }
+                return next;
+              }),
+            }
+          : current,
+      );
+      return;
+    }
+    // 409（すでに本部が非公開にした・本部が非公開にしたものでない）などは ErrorCode の文言を出し、一覧を今の状態に取り直す。
+    setResult(response);
+    if (response.code !== undefined) await reload(filter);
   }
 
   return (
@@ -98,6 +158,7 @@ export function LessonMenuCatalog({ api }: { api: Pick<HeadquartersApi, "listLes
           公開中だけ
         </label>
       </div>
+      <ResultMessage result={result} />
       {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.menus.length === 0 && (
@@ -113,6 +174,7 @@ export function LessonMenuCatalog({ api }: { api: Pick<HeadquartersApi, "listLes
               <th className="py-1">種類</th>
               <th className="py-1">時間</th>
               <th className="py-1">公開</th>
+              <th className="py-1">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -123,7 +185,31 @@ export function LessonMenuCatalog({ api }: { api: Pick<HeadquartersApi, "listLes
                 <td className="py-1">{menu.name}</td>
                 <td className="py-1">{LESSON_TYPE_LABELS[menu.lesson_type]}</td>
                 <td className="py-1">{durationLabel(menu)}</td>
-                <td className="py-1">{menu.is_published ? "公開中" : "非公開"}</td>
+                <td className="py-1">
+                  <PublicationCell menu={menu} />
+                </td>
+                <td className="py-1">
+                  <LessonMenuPublicationAction
+                    menu={menu}
+                    onUnpublish={async (reason) =>
+                      changePublication(
+                        menu,
+                        await api.unpublishLessonMenu(
+                          menu.lesson_menu_id,
+                          reason === "" ? {} : { reason },
+                        ),
+                        "非公開にしました",
+                      )
+                    }
+                    onRepublish={async () =>
+                      changePublication(
+                        menu,
+                        await api.republishLessonMenu(menu.lesson_menu_id),
+                        "公開に戻しました",
+                      )
+                    }
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
