@@ -606,6 +606,52 @@ void main() {
     expect(updated.messageReceived, isTrue);
   });
 
+  test('お知らせの一覧と既読にする操作のパスと、知らない種類のお知らせ', () async {
+    final listed = {
+      'notifications': [
+        {
+          'notification_id': 'n1',
+          'kind': 'booking_confirmed',
+          'body': '予約が確定しました',
+          'created_at': '2026-10-26T03:00:00Z',
+          'is_read': false,
+        },
+        {
+          'notification_id': 'n2',
+          'kind': 'something_new',
+          'body': '新しいお知らせ',
+          'created_at': '2026-10-26T02:00:00Z',
+          'is_read': true,
+        },
+      ],
+    };
+
+    final list = await apiReplying(200, listed).listMyNotifications();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/notifications/me');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(list.notifications.map((n) => n.notificationId), ['n1', 'n2']);
+    final first = list.notifications.first;
+    expect(first.kind, NotificationKind.bookingConfirmed);
+    expect(first.body, '予約が確定しました');
+    expect(first.createdAt, DateTime.utc(2026, 10, 26, 3));
+    expect(first.isRead, isFalse);
+    // 契約で増えうる種類は読み飛ばさず、種類だけを null にする
+    expect(list.notifications.last.kind, isNull);
+    expect(list.notifications.last.body, '新しいお知らせ');
+    expect(() => list.notifications.clear(), throwsUnsupportedError);
+
+    final read = await apiReplying(200, {
+      'notifications': [
+        {...(listed['notifications']!.first), 'is_read': true},
+      ],
+    }).markMyNotificationsRead();
+    expect(sent.single.method, 'POST');
+    expect(sent.single.url.path, '/notifications/me/read');
+    expect(sent.single.body, isEmpty);
+    expect(read.notifications.single.isRead, isTrue);
+  });
+
   test('自分のプロフィールの照会と表示名の変更のパスと、書いたとおりに送る表示名', () async {
     final student = {
       'student_id': 's1',
