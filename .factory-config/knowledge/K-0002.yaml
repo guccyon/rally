@@ -13,10 +13,11 @@ evidence:
   - event: "case.analyzed:39242"
   - pr: "#327"
   - issue: "#400"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 confidentiality: product
 invalidate_when:
   - "apps/student-app の変更に、Flutter SDK（arm64 対応）と unzip の入った worker image が割り当てられるようになった"
   - "Flutter SDK をジョブの間で残る場所（ticket volume など）に置くようになった"
+decided_by: committee:D-0001

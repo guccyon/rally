@@ -13,10 +13,11 @@ evidence:
   - event: "case.analyzed:39242"
   - pr: "#327"
   - issue: "#400"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 confidentiality: product
 invalidate_when:
   - "supervisor のマージ判定が、同じ PR の review_fix のジョブが動いている間はマージしないようになった"
   - "採用した指摘は review_fix を起こさず、はじめから差し戻しに回す決まりになった"
+decided_by: committee:D-0001
