@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use domain::{
     catalog::LessonMenu,
     identity::AccountId,
-    scheduling::{Booking, SchedulingError, SlotId},
+    scheduling::{Booking, SchedulingError, Slot, SlotId},
 };
 
 use super::{BookingRepository, LessonMenuLookup, ReserveSlotError};
@@ -26,7 +26,8 @@ pub struct CreateBookingCommand {
 pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
-    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約）
+    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約、コーチが受付を
+    /// 止めている）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -40,7 +41,9 @@ pub enum CreateBookingError {
 /// [`super::ConfirmBooking`]）。受講権も消費しない（ビデオ通話の暦月の枠は生徒ごとの予約の確定で数える）。
 /// 予約には、スロットに結びついたレッスンメニューを catalog に問い合わせて（[`LessonMenuLookup`]）、予約した時点の
 /// ID・名前・1 回の時間を写して残す（[`Booking::with_lesson_menu`]。公開中でないメニューはメニューなしの予約にし、
-/// 予約は断らない）。
+/// 予約は断らない）。枠のコーチが受付を止めていれば（domain の [`domain::scheduling::CoachAcceptance`]）、枠の状態の
+/// 判定の後で断る（[`SchedulingError::CoachNotAcceptingBookings`]。入っている予約の確定・キャンセルは止めない）。受付の
+/// 状態は予約を保存するトランザクションの前に読むので、止めた直後の並行な予約が 1 件通ることはある。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
 pub struct CreateBooking<B, M, A, C> {
     bookings: B,
@@ -77,15 +80,28 @@ where
             is_trial,
         } = command;
 
+        let slot = self
+            .bookings
+            .find_slot(slot_id)
+            .await
+            .map_err(CreateBookingError::Unavailable)?
+            .ok_or(CreateBookingError::SlotNotFound)?;
         let lesson_menu = self
-            .slot_lesson_menu(slot_id)
+            .slot_lesson_menu(&slot)
+            .await
+            .map_err(CreateBookingError::Unavailable)?;
+        let acceptance = self
+            .bookings
+            .find_coach_acceptance(slot.coach_id())
             .await
             .map_err(CreateBookingError::Unavailable)?;
         let booking = self
             .bookings
             .reserve(slot_id, student_id, |slot, existing| {
-                Booking::reserve(id, student_id, is_trial, slot, existing, now)
-                    .map(|booking| booking.with_lesson_menu(slot, lesson_menu.as_ref()))
+                let booking = Booking::reserve(id, student_id, is_trial, slot, existing, now)?;
+                // 枠の状態の判定（閉じた枠はない枠と同じに扱う）の後で、コーチが受付を止めていないかを確かめる
+                acceptance.ensure_accepting_bookings()?;
+                Ok(booking.with_lesson_menu(slot, lesson_menu.as_ref()))
             })
             .await
             .map_err(|error| match error {
@@ -108,15 +124,10 @@ where
         Ok(booking)
     }
 
-    /// スロットに結びついたレッスンメニュー（公開中かを問わない。写すかの判定は domain）。スロットがない・メニューが
-    /// ない・catalog に引けないなら `None`（ないスロットは続く予約で [`CreateBookingError::SlotNotFound`] になる）。
-    async fn slot_lesson_menu(&self, slot_id: SlotId) -> Result<Option<LessonMenu>, Unavailable> {
-        let Some(lesson_menu_id) = self
-            .bookings
-            .find_slot(slot_id)
-            .await?
-            .and_then(|slot| slot.lesson_menu_id())
-        else {
+    /// スロットに結びついたレッスンメニュー（公開中かを問わない。写すかの判定は domain）。メニューがない・catalog に
+    /// 引けないなら `None`。
+    async fn slot_lesson_menu(&self, slot: &Slot) -> Result<Option<LessonMenu>, Unavailable> {
+        let Some(lesson_menu_id) = slot.lesson_menu_id() else {
             return Ok(None);
         };
         Ok(self
@@ -146,7 +157,8 @@ mod tests {
             LessonMenuName,
         },
         scheduling::{
-            BookingId, BookingLessonMenu, BookingStatus, Slot, SlotCapacity, SlotSeats, SlotStatus,
+            BookingId, BookingLessonMenu, BookingStatus, CoachAcceptance, SlotCapacity, SlotSeats,
+            SlotStatus,
         },
     };
 
@@ -157,7 +169,7 @@ mod tests {
             FixedClock, InMemoryBookingRepository, InMemoryLessonMenuRepository,
             InMemorySlotRepository, RecordingAnalyticsSink,
         },
-        scheduling::UpdateBookingError,
+        scheduling::{CoachAcceptanceRepository, UpdateBookingError},
     };
 
     type UseCase = CreateBooking<
@@ -438,6 +450,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_suspended_coach_takes_no_new_booking_until_resumed() {
+        let use_case = use_case();
+        let acceptances = use_case.bookings().slots().coach_acceptances();
+        acceptances
+            .update(COACH, CoachAcceptance::suspend)
+            .await
+            .unwrap();
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, false)).await,
+            SchedulingError::CoachNotAcceptingBookings,
+        );
+        assert!(use_case.bookings().all().is_empty());
+        assert!(use_case.analytics().events().is_empty());
+        // 枠の状態の判定が先（閉じた枠はない枠と同じ、埋まった枠は満席）
+        assert_invalid(
+            use_case.execute(command(STUDENT, 13, false)).await,
+            SchedulingError::SlotNotOpen {
+                status: SlotStatus::Closed,
+            },
+        );
+        assert_invalid(
+            use_case.execute(command(STUDENT, 12, false)).await,
+            SchedulingError::SlotNotOpen {
+                status: SlotStatus::Booked,
+            },
+        );
+
+        acceptances
+            .update(COACH, CoachAcceptance::resume)
+            .await
+            .unwrap();
+        use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn slot_that_is_not_open_or_missing_is_rejected() {
         let use_case = use_case();
         for (slot, status) in [(12, SlotStatus::Booked), (13, SlotStatus::Closed)] {
@@ -468,6 +516,13 @@ mod tests {
         }
 
         async fn find(&self, _booking_id: BookingId) -> Result<Option<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
+        async fn find_coach_acceptance(
+            &self,
+            _coach_id: AccountId,
+        ) -> Result<CoachAcceptance, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
 

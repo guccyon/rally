@@ -7,7 +7,8 @@
 //! - 予約の作成（`createBooking`）: ないスロットと閉じた枠（`SlotNotOpen` の `closed`）は 404 `not_found`、満席・
 //!   同じ生徒の 2 回目・公開中でない枠（`SlotAlreadyBooked`・`SlotAlreadyBookedByStudent`・`SlotNotOpen`）は 409
 //!   `slot_already_booked`（文言で分ける）、2 回目の体験予約（`TrialAlreadyUsed`）は 409 `trial_already_used`、
-//!   それ以外は 422 `validation_failed`
+//!   受付を止めているコーチの枠（`CoachNotAcceptingBookings`）は 409 `coach_not_accepting_bookings`、それ以外は 422
+//!   `validation_failed`
 //! - 予約の確定（`confirmBooking`）: ない予約と別の生徒の予約（`BookingOfAnotherStudent`。あることも知らせない）は
 //!   404 `not_found`、確定前でない予約・公開中でない枠（`BookingNotPending`・`SlotNotOpen`）は 409
 //!   `invalid_booking_state`、ビデオ通話の暦月の枠が残っていない（`LiveLessonQuotaExceeded`）は 409
@@ -23,13 +24,16 @@
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
 //! - 本部が見る予約の一覧（`listBookings`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
 //!   422 `validation_failed`、それ以外は一覧では起きないので 500
+//! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
+//!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開
+//!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500
 //! - 境界で値を作るとき（定員の検証など。`From<SchedulingError>`）は、どの変種も 422 `validation_failed`
 //!
 //! 403 に当たる失敗はない（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
 
 use application::scheduling::{
-    CancelBookingError, ConfirmBookingError, CreateBookingError, ListBookingsError,
-    PublishSlotError, WithdrawSlotError, slot_id_uuid,
+    CancelBookingError, ChangeCoachAcceptanceError, ConfirmBookingError, CreateBookingError,
+    ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -53,6 +57,11 @@ pub(crate) fn booking_not_found() -> ApiError {
 /// 取り下げる枠がない 404（別のコーチの枠も同じ）。
 pub(crate) fn coach_slot_not_found() -> ApiError {
     ApiError::not_found("スロットがない")
+}
+
+/// 受付を止める・再開するコーチがいない 404（コーチでないアカウントも同じ）。
+pub(crate) fn coach_not_found() -> ApiError {
+    ApiError::not_found("コーチがいない")
 }
 
 /// 境界で作った値（定員など）が不変条件を満たさない 422。
@@ -83,6 +92,9 @@ impl From<CreateBookingError> for ApiError {
             SchedulingError::TrialAlreadyUsed => {
                 Self::conflict("trial_already_used", describe(&error))
             }
+            SchedulingError::CoachNotAcceptingBookings => {
+                Self::conflict("coach_not_accepting_bookings", describe(&error))
+            }
             SchedulingError::SlotEndsBeforeItStarts
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
@@ -103,7 +115,9 @@ impl From<CreateBookingError> for ApiError {
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
-            | SchedulingError::BookingPeriodTooLong { .. } => Self::from(error),
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended => Self::from(error),
         }
     }
 }
@@ -144,7 +158,10 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
-            | SchedulingError::BookingPeriodTooLong { .. } => Self::internal(error),
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
         }
     }
 }
@@ -184,7 +201,10 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
-            | SchedulingError::BookingPeriodTooLong { .. } => Self::internal(error),
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
         }
     }
 }
@@ -225,7 +245,10 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
-            | SchedulingError::BookingPeriodTooLong { .. } => Self::from(error),
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::from(error),
         }
     }
 }
@@ -270,7 +293,10 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::LessonMenuSportMismatch { .. }
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::BookingPeriodEndsBeforeItStarts
-            | SchedulingError::BookingPeriodTooLong { .. } => Self::internal(error),
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
         }
     }
 }
@@ -306,7 +332,54 @@ impl From<ListBookingsError> for ApiError {
             | SchedulingError::LessonMenuSportMismatch { .. }
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
-            | SchedulingError::SlotAlreadyStarted => Self::internal(error),
+            | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+        }
+    }
+}
+
+impl From<ChangeCoachAcceptanceError> for ApiError {
+    fn from(error: ChangeCoachAcceptanceError) -> Self {
+        let error = match error {
+            ChangeCoachAcceptanceError::CoachNotFound => return coach_not_found(),
+            ChangeCoachAcceptanceError::Invalid(error) => error,
+            ChangeCoachAcceptanceError::Unavailable(error) => return Self::internal(error),
+        };
+        match error {
+            SchedulingError::CoachAlreadySuspended => {
+                Self::conflict("coach_already_suspended", describe(&error))
+            }
+            SchedulingError::CoachNotSuspended => {
+                Self::conflict("coach_not_suspended", describe(&error))
+            }
+            SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotOverlaps { .. }
+            | SchedulingError::SlotOfAnotherCoach
+            | SchedulingError::SlotNotOpen { .. }
+            | SchedulingError::SlotCapacityOutOfRange { .. }
+            | SchedulingError::SlotNotBooked { .. }
+            | SchedulingError::SlotAlreadyBooked
+            | SchedulingError::SlotSeatsOverCapacity { .. }
+            | SchedulingError::SlotStatusMismatchesSeats { .. }
+            | SchedulingError::SlotAlreadyBookedByStudent
+            | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::BookingNotPending { .. }
+            | SchedulingError::BookingAlreadyCancelled
+            | SchedulingError::BookingOfAnotherStudent
+            | SchedulingError::BookingOfAnotherSlot
+            | SchedulingError::LiveLessonQuotaExceeded
+            | SchedulingError::LessonMenuOfAnotherCoach
+            | SchedulingError::LessonMenuNotPublished
+            | SchedulingError::LessonMenuNotLive
+            | SchedulingError::LessonMenuSportMismatch { .. }
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
         }
     }
 }
@@ -377,6 +450,11 @@ fn describe(error: &SchedulingError) -> String {
         }
         SchedulingError::BookingPeriodTooLong { max_days } => {
             format!("from から to までは {max_days} 日まで")
+        }
+        SchedulingError::CoachAlreadySuspended => "コーチの受付はすでに止めてある".to_string(),
+        SchedulingError::CoachNotSuspended => "コーチの受付は止めていない".to_string(),
+        SchedulingError::CoachNotAcceptingBookings => {
+            "このコーチは今、新しい予約を受け付けていない".to_string()
         }
     }
 }
@@ -526,6 +604,18 @@ mod tests {
                 SchedulingError::BookingPeriodTooLong { max_days: 31 },
                 "from から to までは 31 日まで",
             ),
+            (
+                SchedulingError::CoachAlreadySuspended,
+                "コーチの受付はすでに止めてある",
+            ),
+            (
+                SchedulingError::CoachNotSuspended,
+                "コーチの受付は止めていない",
+            ),
+            (
+                SchedulingError::CoachNotAcceptingBookings,
+                "このコーチは今、新しい予約を受け付けていない",
+            ),
         ];
         // 変種を足したらここで止まる（上の一覧にも足す）
         for (error, _) in &all {
@@ -554,7 +644,10 @@ mod tests {
                 | SchedulingError::SlotHasActiveBookings { .. }
                 | SchedulingError::SlotAlreadyStarted
                 | SchedulingError::BookingPeriodEndsBeforeItStarts
-                | SchedulingError::BookingPeriodTooLong { .. } => {}
+                | SchedulingError::BookingPeriodTooLong { .. }
+                | SchedulingError::CoachAlreadySuspended
+                | SchedulingError::CoachNotSuspended
+                | SchedulingError::CoachNotAcceptingBookings => {}
             }
         }
         all
@@ -634,6 +727,12 @@ mod tests {
                     StatusCode::CONFLICT,
                     "trial_already_used",
                     "体験予約は初回の予約だけ",
+                ),
+                (
+                    SchedulingError::CoachNotAcceptingBookings,
+                    StatusCode::CONFLICT,
+                    "coach_not_accepting_bookings",
+                    "このコーチは今、新しい予約を受け付けていない",
                 ),
             ],
             VALIDATION_FAILED,
@@ -889,5 +988,47 @@ mod tests {
                 "サーバー内部のエラー"
             )
         );
+    }
+
+    #[test]
+    fn maps_each_change_coach_acceptance_error_to_a_status_and_code() {
+        assert_maps(
+            |error| ApiError::from(ChangeCoachAcceptanceError::Invalid(error)),
+            &[
+                (
+                    SchedulingError::CoachAlreadySuspended,
+                    StatusCode::CONFLICT,
+                    "coach_already_suspended",
+                    "コーチの受付はすでに止めてある",
+                ),
+                (
+                    SchedulingError::CoachNotSuspended,
+                    StatusCode::CONFLICT,
+                    "coach_not_suspended",
+                    "コーチの受付は止めていない",
+                ),
+            ],
+            INTERNAL,
+        );
+        for (error, status, code, message) in [
+            (
+                ChangeCoachAcceptanceError::CoachNotFound,
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "コーチがいない",
+            ),
+            (
+                ChangeCoachAcceptanceError::Unavailable(Unavailable::new("db")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "サーバー内部のエラー",
+            ),
+        ] {
+            let api_error = ApiError::from(error);
+            assert_eq!(
+                (api_error.status(), api_error.code(), api_error.message()),
+                (status, code, message)
+            );
+        }
     }
 }

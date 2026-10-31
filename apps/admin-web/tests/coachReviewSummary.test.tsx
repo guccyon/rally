@@ -27,8 +27,8 @@ const OTHER_COACH_ID = "77777777-7777-4777-8777-777777777777";
 
 // API が返す並び（表示名の順）。
 const COACHES = [
-  { coach_id: OTHER_COACH_ID, display_name: "佐藤コーチ" },
-  { coach_id: COACH_ID, display_name: "山田コーチ" },
+  { coach_id: OTHER_COACH_ID, display_name: "佐藤コーチ", acceptance_status: "accepting" as const },
+  { coach_id: COACH_ID, display_name: "山田コーチ", acceptance_status: "accepting" as const },
 ];
 
 const REVIEW = {

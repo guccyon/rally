@@ -25,7 +25,7 @@ pub struct SearchSlotsQuery {
 
 /// スロットの検索のユースケース（student-app の `searchSlots`）。
 ///
-/// 公開中でまだ予約されていない枠を、スポーツ・コーチ・開始時刻の期間で絞り、
+/// 公開中でまだ予約されていない枠（受付を止めているコーチの枠は除く）を、スポーツ・コーチ・開始時刻の期間で絞り、
 /// （開始時刻, スロット ID）の昇順でページに分けて返す。ページに出るコーチの紹介（表示名と自己紹介文）は
 /// profile に問い合わせて（[`CoachIntroductionLookup`]）添える。ページの枠に結びついたレッスンメニュー（名前と時間）は
 /// catalog に問い合わせて（[`LessonMenuLookup`]）、公開中のものだけを添える。
@@ -115,14 +115,14 @@ mod tests {
             LessonMenuName,
         },
         profile::{CoachBio, DisplayName},
-        scheduling::{Slot, SlotId, SlotStatus},
+        scheduling::{CoachAcceptance, Slot, SlotId, SlotStatus},
     };
 
     use super::*;
     use crate::{
         catalog::CatalogLessonMenuLookup,
         in_memory::{FixedClock, InMemoryLessonMenuRepository, InMemorySlotRepository},
-        scheduling::CoachIntroduction,
+        scheduling::{CoachAcceptanceRepository, CoachIntroduction},
     };
 
     type Menus = CatalogLessonMenuLookup<InMemoryLessonMenuRepository>;
@@ -246,6 +246,35 @@ mod tests {
         let page = use_case().execute(query(20)).await.unwrap();
         assert_eq!(ids(&page), [3, 5, 2, 8]);
         assert_eq!(page.next_cursor, None);
+    }
+
+    #[tokio::test]
+    async fn slots_of_a_suspended_coach_are_left_out_until_resumed() {
+        let use_case = use_case();
+        let acceptances = use_case.slots.coach_acceptances();
+        acceptances
+            .update(COACH, CoachAcceptance::suspend)
+            .await
+            .unwrap();
+
+        let page = use_case.execute(query(1)).await.unwrap();
+        assert_eq!(ids(&page), [8], "除いた後で件数を数える");
+        assert_eq!(page.next_cursor, None);
+        let page = use_case
+            .execute(SearchSlotsQuery {
+                coach_id: Some(COACH),
+                ..query(20)
+            })
+            .await
+            .unwrap();
+        assert!(page.items.is_empty());
+
+        acceptances
+            .update(COACH, CoachAcceptance::resume)
+            .await
+            .unwrap();
+        let page = use_case.execute(query(20)).await.unwrap();
+        assert_eq!(ids(&page), [3, 5, 2, 8]);
     }
 
     #[tokio::test]

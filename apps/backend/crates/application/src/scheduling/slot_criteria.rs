@@ -5,7 +5,8 @@ use domain::{catalog::Sport, identity::AccountId};
 use super::SlotCursor;
 
 /// 保存先に渡す検索条件。公開中（[`domain::scheduling::SlotStatus::Open`]）の枠のうち、
-/// 次の条件をすべて満たすものを（開始時刻, スロット ID）の昇順で最大 `limit` 件。
+/// 次の条件をすべて満たすものを（開始時刻, スロット ID）の昇順で最大 `limit` 件。受付を止めているコーチ
+/// （[`domain::scheduling::CoachAcceptance`] が停止中）の枠は条件によらず除く（除くのは保存先。[`Self::matches`] は見ない）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotCriteria {
     pub sport: Sport,

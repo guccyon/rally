@@ -173,13 +173,15 @@ export interface paths {
         };
         /**
          * コーチの一覧（本部）
-         * @description コーチの役割のアカウントをすべて、アカウントの ID と表示名で返す。本部がコーチを選ぶ（評価の件数と平均・一覧を
-         *     見るなど）のに使う。本部の役割のトークンが呼べる（コーチは 403）。生徒の役割のトークンには、同じパスで
+         * @description コーチの役割のアカウントをすべて、アカウントの ID と表示名と受付の状態 `acceptance_status`（受付中 `accepting` /
+         *     停止中 `suspended`。`suspendCoach`・`resumeCoach`）で返す。受付を止めているコーチも載せる。本部がコーチを選ぶ
+         *     （評価の件数と平均・一覧を見る、受付を止める・再開するなど）のに使う。本部の役割のトークンが呼べる（コーチは 403）。生徒の役割のトークンには、同じパスで
          *     student-app の `listCoachesForStudent`（スポーツでコーチを探す）の形で返す（student-app の契約）。
          *
          *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
          *     - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
          *
+         *     受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える（`x-context` が 2 つなのはそのため）。
          *     行動イベントは発火しない。
          */
         get: operations["listCoaches"];
@@ -279,6 +281,68 @@ export interface paths {
         get: operations["listLowRatedLessonReviews"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * コーチの受付の停止（本部）
+         * @description コーチ 1 人の受付（glossary の coach_acceptance。新しい予約を受け付けるか）を止め、停止中（`suspended`）にした受付を返す。
+         *     問題のあるコーチや休業中のコーチの新しい予約を止めるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     リクエストの本文は読まない。
+         *
+         *     - 停止中のコーチの枠は生徒の検索（student-app の `searchSlots`）に出ず、コーチは生徒のコーチを探す一覧
+         *       （student-app の `listCoachesForStudent`）に出ない。そのコーチの枠への予約の作成（student-app の `createBooking`）は
+         *       409 `coach_not_accepting_bookings`
+         *     - 入っている予約（未確定・確定）と枠はそのまま（確定・キャンセル・通話は今までどおり。予約のキャンセルやコーチへの
+         *       通知はしない）。コーチは枠の公開・取り下げも今までどおりできる（公開した枠は再開するまで検索に出ない）
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *     - すでに停止中のコーチは 409 `coach_already_suspended`（何も変えない）
+         *     - 本部のコーチの一覧（`listCoaches`）の `acceptance_status` が `suspended` になる。一度も止めていないコーチは受付中
+         *
+         *     受付の状態は scheduling の持ち物で、matching・profile はそれを読むだけなので境界間イベントは発行しない。
+         *     本部の運営の操作で、KPI の入力でもないので行動イベントも発火しない。
+         */
+        post: operations["suspendCoach"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * コーチの受付の再開（本部）
+         * @description `suspendCoach` で止めたコーチの受付を再開し、受付中（`accepting`）に戻した受付を返す。本部の役割のトークンだけが
+         *     呼べる（コーチ・生徒は 403）。リクエストの本文は読まない。
+         *
+         *     - 再開したコーチの公開中の枠は、また生徒の検索（`searchSlots`）に出て予約できる。コーチを探す一覧
+         *       （`listCoachesForStudent`）にも戻る
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *     - 停止中でない（受付中の）コーチは 409 `coach_not_suspended`（何も変えない）
+         *
+         *     境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
+         */
+        post: operations["resumeCoach"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1060,6 +1124,23 @@ export interface components {
             coach_id: string;
             /** @description アカウントの表示名 */
             display_name: string;
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+        };
+        /**
+         * @description glossary の coach_acceptance（コーチの受付）の状態。accepting: 受付中（新しい予約を受け付ける。一度も止めていない
+         *     コーチもこれ）/ suspended: 停止中（本部が止めている。枠は生徒の検索とコーチを探す一覧に出ず、新しい予約を受けない。
+         *     入っている予約はそのまま）。
+         * @enum {string}
+         */
+        CoachAcceptanceStatus: "accepting" | "suspended";
+        /** @description コーチ 1 人の受付（`suspendCoach`・`resumeCoach` の応答） */
+        CoachAcceptance: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID
+             */
+            coach_id: string;
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
         };
         /** @description コーチの一覧（並べ方は `listCoaches` の説明） */
         CoachList: {
@@ -1623,7 +1704,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -1658,7 +1739,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定など） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でないなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -1904,6 +1985,58 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    suspendCoach: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 停止中にしたコーチの受付 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachAcceptance"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    resumeCoach: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 受付中に戻したコーチの受付 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachAcceptance"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listMyCoachBookings: {

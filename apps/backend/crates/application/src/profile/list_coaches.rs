@@ -1,25 +1,50 @@
-use domain::identity::Account;
+use std::collections::BTreeSet;
 
+use domain::{identity::AccountId, scheduling::CoachAcceptanceStatus};
+
+use super::{CoachAcceptanceLookup, ListedCoach};
 use crate::{Unavailable, identity::AccountRepository};
 
 /// コーチの一覧のユースケース（admin-web の `listCoaches`。本部だけが呼ぶ）。
 ///
-/// コーチのアカウントを表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
+/// コーチのアカウントを表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で、1 件ごとに受付の状態
+/// （scheduling に問い合わせる。[`CoachAcceptanceLookup`]）を添えて返す。受付を止めているコーチも載せる。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListCoaches<R> {
+pub struct ListCoaches<R, A> {
     accounts: R,
+    acceptances: A,
 }
 
-impl<R> ListCoaches<R>
+impl<R, A> ListCoaches<R, A>
 where
     R: AccountRepository,
+    A: CoachAcceptanceLookup,
 {
-    pub fn new(accounts: R) -> Self {
-        Self { accounts }
+    pub fn new(accounts: R, acceptances: A) -> Self {
+        Self {
+            accounts,
+            acceptances,
+        }
     }
 
-    pub async fn execute(&self) -> Result<Vec<Account>, Unavailable> {
-        self.accounts.list_coaches().await
+    pub async fn execute(&self) -> Result<Vec<ListedCoach>, Unavailable> {
+        let coaches = self.accounts.list_coaches().await?;
+        let coach_ids: BTreeSet<AccountId> = coaches.iter().map(|account| account.id()).collect();
+        let acceptances = if coach_ids.is_empty() {
+            Default::default()
+        } else {
+            self.acceptances.find_coach_acceptances(&coach_ids).await?
+        };
+        Ok(coaches
+            .into_iter()
+            .map(|account| ListedCoach {
+                acceptance: acceptances
+                    .get(&account.id())
+                    .copied()
+                    .unwrap_or(CoachAcceptanceStatus::Accepting),
+                account,
+            })
+            .collect())
     }
 }
 
@@ -29,12 +54,22 @@ mod tests {
 
     use domain::{
         catalog::Sport,
-        identity::{AccountId, Email, Role},
+        identity::{Account, Email, Role},
         profile::DisplayName,
+        scheduling::CoachAcceptance,
     };
 
     use super::*;
-    use crate::in_memory::InMemoryAccountRepository;
+    use crate::{
+        in_memory::{InMemoryAccountRepository, InMemoryCoachAcceptanceRepository},
+        scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
+    };
+
+    type Acceptances = SchedulingCoachAcceptanceLookup<InMemoryCoachAcceptanceRepository>;
+
+    fn no_suspension() -> Acceptances {
+        SchedulingCoachAcceptanceLookup::new(InMemoryCoachAcceptanceRepository::default())
+    }
 
     fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Account {
         Account::new(
@@ -63,10 +98,13 @@ mod tests {
             accounts.insert(account).await.unwrap();
         }
 
-        let coaches = ListCoaches::new(accounts).execute().await.unwrap();
+        let coaches = ListCoaches::new(accounts, no_suspension())
+            .execute()
+            .await
+            .unwrap();
         let listed: Vec<_> = coaches
             .iter()
-            .map(|a| (a.id().as_u128(), a.display_name().as_str()))
+            .map(|c| (c.account.id().as_u128(), c.account.display_name().as_str()))
             .collect();
         assert_eq!(
             listed,
@@ -82,7 +120,42 @@ mod tests {
             .await
             .unwrap();
 
-        let coaches = ListCoaches::new(accounts).execute().await.unwrap();
+        let coaches = ListCoaches::new(accounts, no_suspension())
+            .execute()
+            .await
+            .unwrap();
         assert!(coaches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn each_coach_has_its_acceptance_status_and_suspended_coaches_are_listed() {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
+            account(2, "いとう", Role::Coach, &[Sport::Soccer]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        acceptances
+            .update(AccountId::from_u128(1), CoachAcceptance::suspend)
+            .await
+            .unwrap();
+
+        let coaches = ListCoaches::new(accounts, SchedulingCoachAcceptanceLookup::new(acceptances))
+            .execute()
+            .await
+            .unwrap();
+        let listed: Vec<_> = coaches
+            .iter()
+            .map(|c| (c.account.id().as_u128(), c.acceptance))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                (2, CoachAcceptanceStatus::Accepting),
+                (1, CoachAcceptanceStatus::Suspended)
+            ]
+        );
     }
 }

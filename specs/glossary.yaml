@@ -138,6 +138,18 @@ terms:
       送付を断る（Video::submit_with_lesson_menu）。メニューを選ばない予約・動画もある。
       評価（review）は写しを持たず、評価の一覧に添えるメニュー（ID・名前）は完了したレッスンの元（同期レッスンは予約、非同期レッスンは動画）が
       持つ写しを読む。枠の一覧に添える枠のメニュー（契約の SlotLessonMenu）は写しではなく今のメニューである。
+  - id: coach_acceptance
+    ja: "コーチの受付"
+    definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"
+    context: scheduling
+    code: [CoachAcceptance, CoachAcceptanceStatus, suspendCoach, resumeCoach, scheduling.coach_acceptances]
+    states:
+      accepting: "受付中"
+      suspended: "停止中"
+    note: >-
+      一度も止めていないコーチは受付中。止めても予約のキャンセルやコーチへの通知はせず、コーチは枠の公開・取り下げも今までどおりできる
+      （公開した枠は再開するまで検索に出ない）。止める・再開する規則は domain の CoachAcceptance の 1 か所。matching（コーチを探す一覧）と
+      profile（本部のコーチの一覧）はポートで読むだけ。
   - id: slot_capacity
     ja: "定員"
     definition: "1 つのスロットに入れる有効な予約（未確定と確定。キャンセルした予約は数えない）の数の上限で、1〜6 の整数（公開で省いたときは 1）であり、1 はマンツーマン、2 以上はグループレッスンである（変更シナリオ cs-004）。"
