@@ -6,14 +6,17 @@ use std::sync::Arc;
 
 use application::{
     identity::{AccountRepository, GetAccount, account_id_uuid},
-    profile::{UpdateCoachProfile, UpdateCoachProfileCommand, UpdateCoachProfileError},
+    profile::{
+        CoachProfileRepository, GetCoachBio, UpdateCoachProfile, UpdateCoachProfileCommand,
+        UpdateCoachProfileError,
+    },
 };
 use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
     response::{IntoResponse, Response},
 };
-use domain::identity::Account;
+use domain::{identity::Account, profile::CoachBio};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -22,9 +25,11 @@ use crate::{
     error::ApiError,
 };
 
-/// `/me` のハンドラーが使うユースケース。
+/// `/me` のハンドラーが使うユースケース。アカウントは identity、コーチの自己紹介文は profile のユースケースで扱う
+/// （保存先は当面どちらも identity の表なので、同じ型 `R` を渡す）。
 pub struct MeState<R> {
     pub get_account: GetAccount<R>,
+    pub get_coach_bio: GetCoachBio<R>,
     pub update_coach_profile: UpdateCoachProfile<R>,
 }
 
@@ -45,32 +50,41 @@ pub struct UpdateCoachProfileRequest {
 }
 
 /// `GET /me`。照会するのはトークンのアカウントで、存在しないか役割がトークンと合わなければ
-/// 無効なトークンとして 401。
+/// 無効なトークンとして 401。コーチなら自己紹介文を profile から読んで添える。
 pub async fn get_my_account<R>(
     State(state): State<Arc<MeState<R>>>,
     account: AuthenticatedAccount,
 ) -> Response
 where
-    R: AccountRepository,
+    R: AccountRepository + CoachProfileRepository,
 {
-    match state.get_account.execute(account.account_id()).await {
-        Ok(Some(found)) if found.role() == account.role() => {
-            Json(account_body(&found)).into_response()
+    let found = match state.get_account.execute(account.account_id()).await {
+        Ok(Some(found)) if found.role() == account.role() => found,
+        Ok(_) => {
+            return auth::unauthorized("トークンが示すアカウントが存在しないか、役割が合わない");
         }
-        Ok(_) => auth::unauthorized("トークンが示すアカウントが存在しないか、役割が合わない"),
+        Err(error) => return ApiError::internal(error).into_response(),
+    };
+    if found.as_coach().is_none() {
+        return Json(account_body(&found, None)).into_response();
+    }
+    match state.get_coach_bio.execute(found.id()).await {
+        Ok(Some(bio)) => Json(account_body(&found, Some(&bio))).into_response(),
+        Ok(None) => auth::unauthorized("トークンが示すコーチのアカウントが存在しない"),
         Err(error) => ApiError::internal(error).into_response(),
     }
 }
 
 /// `PUT /me/profile`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。書き換えるのはトークンのアカウントの
-/// 自己紹介文で、そのコーチのアカウントがなければ `GET /me` と同じく無効なトークンとして 401。
+/// 自己紹介文で、そのコーチのアカウントがなければ `GET /me` と同じく無効なトークンとして 401。応答は `GET /me` と同じ形で、
+/// 自己紹介文を書き換えたあとにアカウントを identity から読んで組み立てる。
 pub async fn update_my_coach_profile<R>(
     State(state): State<Arc<MeState<R>>>,
     account: AuthenticatedAccount,
     request: Result<Json<UpdateCoachProfileRequest>, JsonRejection>,
 ) -> Response
 where
-    R: AccountRepository,
+    R: AccountRepository + CoachProfileRepository,
 {
     let Json(request) = match request {
         Ok(request) => request,
@@ -82,25 +96,31 @@ where
         coach_id: account.account_id(),
         bio: request.bio,
     };
-    match state.update_coach_profile.execute(command).await {
-        Ok(updated) => Json(account_body(&updated)).into_response(),
-        Err(UpdateCoachProfileError::Invalid(error)) => ApiError::from(error).into_response(),
+    let bio = match state.update_coach_profile.execute(command).await {
+        Ok(bio) => bio,
+        Err(UpdateCoachProfileError::Invalid(error)) => {
+            return ApiError::from(error).into_response();
+        }
         Err(UpdateCoachProfileError::CoachNotFound) => {
-            auth::unauthorized("トークンが示すコーチのアカウントが存在しない")
+            return auth::unauthorized("トークンが示すコーチのアカウントが存在しない");
         }
         Err(UpdateCoachProfileError::Unavailable(error)) => {
-            ApiError::internal(error).into_response()
+            return ApiError::internal(error).into_response();
         }
+    };
+    match state.get_account.execute(account.account_id()).await {
+        Ok(Some(updated)) => Json(account_body(&updated, Some(&bio))).into_response(),
+        Ok(None) => auth::unauthorized("トークンが示すコーチのアカウントが存在しない"),
+        Err(error) => ApiError::internal(error).into_response(),
     }
 }
 
-fn account_body(account: &Account) -> AccountBody {
+/// `bio` はコーチのときだけ渡す（コーチでなければ `None`）。
+fn account_body(account: &Account, bio: Option<&CoachBio>) -> AccountBody {
     AccountBody {
         account_id: account_id_uuid::format(account.id()),
         role: role_to_contract(account.role()),
         display_name: account.display_name().as_str().to_string(),
-        bio: account
-            .as_coach()
-            .map(|coach| coach.bio().as_str().to_string()),
+        bio: bio.map(|bio| bio.as_str().to_string()),
     }
 }

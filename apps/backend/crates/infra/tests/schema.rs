@@ -2150,6 +2150,82 @@ async fn a_lesson_is_reviewed_once_by_a_student_with_one_to_five(pool: PgPool) {
     );
 }
 
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_review_reply_has_a_short_non_empty_comment_and_a_time_after_submission(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let review_id = review_lesson(
+        &pool,
+        "00000000-0000-4000-8000-000000000001",
+        &student_id,
+        &coach_id,
+        4,
+        "よい",
+    )
+    .await
+    .unwrap();
+    // 既存の評価（返信の列を足す前の書き方）は返信なしの NULL
+    let (comment, replied_at): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT reply_comment, replied_at::text FROM review.lesson_reviews WHERE review_id = $1::uuid",
+    )
+    .bind(&review_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((comment, replied_at), (None, None));
+
+    // 評価は '2026-10-27T16:00:00Z'
+    let set = |comment: Option<String>, replied_at: Option<&'static str>| {
+        sqlx::query(
+            "UPDATE review.lesson_reviews SET reply_comment = $2, replied_at = $3::timestamptz
+             WHERE review_id = $1::uuid",
+        )
+        .bind(review_id.clone())
+        .bind(comment)
+        .bind(replied_at)
+        .execute(&pool)
+    };
+    for (comment, replied_at, expected) in [
+        (
+            Some("  ".to_string()),
+            Some("2026-10-27T16:00:00Z"),
+            "lesson_reviews_reply_comment_check",
+        ),
+        (
+            Some("あ".repeat(201)),
+            Some("2026-10-27T16:00:00Z"),
+            "lesson_reviews_reply_comment_check",
+        ),
+        (
+            Some("ありがとう".to_string()),
+            None,
+            "lesson_reviews_reply_shape",
+        ),
+        (
+            None,
+            Some("2026-10-27T16:00:00Z"),
+            "lesson_reviews_reply_shape",
+        ),
+        (
+            Some("ありがとう".to_string()),
+            Some("2026-10-27T15:59:59Z"),
+            "lesson_reviews_replied_after_submission",
+        ),
+    ] {
+        let (code, constraint) = violation(set(comment.clone(), replied_at).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected),
+            "{comment:?} {replied_at:?}"
+        );
+    }
+    // 評価と同じ時刻の 200 文字の返信は入る
+    set(Some("あ".repeat(200)), Some("2026-10-27T16:00:00Z"))
+        .await
+        .unwrap();
+}
+
 /// アカウント `account_id` の通知の種類 `kind` の受け取り設定の行を入れる。
 async fn set_notification(
     pool: &PgPool,

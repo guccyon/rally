@@ -1,10 +1,6 @@
-use domain::{
-    DomainError,
-    identity::{Account, AccountId},
-    profile::CoachBio,
-};
+use domain::{DomainError, identity::AccountId, profile::CoachBio};
 
-use crate::{Unavailable, identity::AccountRepository};
+use crate::{Unavailable, profile::CoachProfileRepository};
 
 /// コーチの自己紹介の変更の入力（検証前の値）。`coach_id` は認証したアカウント（役割の確認は境界が行う）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,26 +31,27 @@ impl From<Unavailable> for UpdateCoachProfileError {
     }
 }
 
-/// 自分の自己紹介の変更のユースケース（admin-web の `updateMyCoachProfile`）。自己紹介文を置き換え、変えたあとの
-/// アカウントを返す。空にもできる。行動イベントも境界間イベントも発火しない。
-pub struct UpdateCoachProfile<R> {
-    accounts: R,
+/// 自分の自己紹介の変更のユースケース（admin-web の `updateMyCoachProfile`）。自己紹介文を profile の保存先
+/// （[`CoachProfileRepository`]）で置き換え、変えたあとの自己紹介文を返す。空にもできる。行動イベントも境界間イベントも
+/// 発火しない。
+pub struct UpdateCoachProfile<P> {
+    profiles: P,
 }
 
-impl<R> UpdateCoachProfile<R>
+impl<P> UpdateCoachProfile<P>
 where
-    R: AccountRepository,
+    P: CoachProfileRepository,
 {
-    pub fn new(accounts: R) -> Self {
-        Self { accounts }
+    pub fn new(profiles: P) -> Self {
+        Self { profiles }
     }
 
     pub async fn execute(
         &self,
         command: UpdateCoachProfileCommand,
-    ) -> Result<Account, UpdateCoachProfileError> {
+    ) -> Result<CoachBio, UpdateCoachProfileError> {
         let bio = CoachBio::new(command.bio)?;
-        self.accounts
+        self.profiles
             .update_coach_bio(command.coach_id, bio)
             .await?
             .ok_or(UpdateCoachProfileError::CoachNotFound)
@@ -67,12 +64,12 @@ mod tests {
 
     use domain::{
         catalog::Sport,
-        identity::{Email, Role},
+        identity::{Account, Email, Role},
         profile::DisplayName,
     };
 
     use super::*;
-    use crate::in_memory::InMemoryAccountRepository;
+    use crate::{identity::AccountRepository, in_memory::InMemoryAccountRepository};
 
     const HEADQUARTERS: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(2);
@@ -109,30 +106,33 @@ mod tests {
         }
     }
 
-    fn bio_of(accounts: &InMemoryAccountRepository, id: AccountId) -> Option<String> {
+    async fn bio_of(accounts: &InMemoryAccountRepository, id: AccountId) -> Option<String> {
         accounts
-            .all()
-            .into_iter()
-            .find(|a| a.id() == id)
-            .and_then(|a| a.as_coach().map(|c| c.bio().as_str().to_string()))
+            .find_coach_bio(id)
+            .await
+            .unwrap()
+            .map(|bio| bio.as_str().to_string())
     }
 
     #[tokio::test]
-    async fn replaces_the_bio_and_returns_the_updated_account() {
+    async fn replaces_the_bio_and_returns_the_updated_bio() {
         let accounts = accounts().await;
+        let before = accounts.all();
         let use_case = UpdateCoachProfile::new(accounts.clone());
 
         let updated = use_case
             .execute(command(COACH, "テニス歴 20 年。初心者歓迎"))
             .await
             .unwrap();
-        assert_eq!(updated.id(), COACH);
-        let coach = updated.as_coach().unwrap();
-        assert_eq!(coach.bio().as_str(), "テニス歴 20 年。初心者歓迎");
-        assert_eq!(coach.sports().len(), 2, "提供スポーツはそのまま");
+        assert_eq!(updated.as_str(), "テニス歴 20 年。初心者歓迎");
         assert_eq!(
-            bio_of(&accounts, COACH).as_deref(),
+            bio_of(&accounts, COACH).await.as_deref(),
             Some("テニス歴 20 年。初心者歓迎")
+        );
+        assert_eq!(
+            accounts.all(),
+            before,
+            "アカウント（提供スポーツなど）はそのまま"
         );
 
         // 上限ちょうどまで書け、空に戻せる
@@ -141,10 +141,10 @@ mod tests {
             .execute(command(COACH, full.clone()))
             .await
             .unwrap();
-        assert_eq!(bio_of(&accounts, COACH), Some(full));
+        assert_eq!(bio_of(&accounts, COACH).await, Some(full));
         let cleared = use_case.execute(command(COACH, "")).await.unwrap();
-        assert_eq!(cleared.as_coach().unwrap().bio(), &CoachBio::default());
-        assert_eq!(bio_of(&accounts, COACH).as_deref(), Some(""));
+        assert_eq!(cleared, CoachBio::default());
+        assert_eq!(bio_of(&accounts, COACH).await.as_deref(), Some(""));
     }
 
     #[tokio::test]
@@ -165,7 +165,7 @@ mod tests {
             ),
             "{result:?}"
         );
-        assert_eq!(bio_of(&accounts, COACH).as_deref(), Some("前の文"));
+        assert_eq!(bio_of(&accounts, COACH).await.as_deref(), Some("前の文"));
     }
 
     #[tokio::test]
@@ -182,5 +182,6 @@ mod tests {
             );
         }
         assert_eq!(accounts.all(), before, "何も変えない");
+        assert_eq!(bio_of(&accounts, COACH).await.as_deref(), Some(""));
     }
 }

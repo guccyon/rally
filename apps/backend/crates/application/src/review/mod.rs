@@ -1,4 +1,5 @@
-//! review のユースケースとポート。レッスンの評価（glossary の lesson_review）と、コーチごとの評価の集計と一覧。
+//! review のユースケースとポート。レッスンの評価（glossary の lesson_review）と、評価へのコーチの返信
+//! （glossary の lesson_review_reply。[`ReplyToLessonReview`]）と、コーチごとの評価の集計と一覧。
 //!
 //! 評価の対象の完了したレッスンは live-lesson / async-lesson が発行した事実で、review は
 //! [`CompletedLessonLookup`] で読むだけ（実装は [`crate::lesson::LessonCompletionLookup`]）。評価の一覧に添える
@@ -17,6 +18,7 @@ pub mod lesson_review_id_uuid;
 mod list_coach_reviews;
 mod list_low_rated_reviews;
 mod low_rated_review_list;
+mod reply_to_lesson_review;
 mod repository;
 mod review_coach_review_summary_lookup;
 mod review_lesson_completion_review_lookup;
@@ -33,6 +35,9 @@ pub use insert_review_error::InsertReviewError;
 pub use list_coach_reviews::ListCoachReviews;
 pub use list_low_rated_reviews::ListLowRatedReviews;
 pub use low_rated_review_list::LowRatedReviewList;
+pub use reply_to_lesson_review::{
+    ReplyToLessonReview, ReplyToLessonReviewCommand, ReplyToLessonReviewError,
+};
 pub use repository::LessonReviewRepository;
 pub use review_coach_review_summary_lookup::ReviewCoachReviewSummaryLookup;
 pub use review_lesson_completion_review_lookup::ReviewLessonCompletionReviewLookup;
