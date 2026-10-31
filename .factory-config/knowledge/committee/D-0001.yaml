@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/477
+decided_at: '2026-11-01'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+- K-0003
+votes:
+- role: consistency
+  vote: sendback
+  reasons:
+  - knowledge/ にも committee/ にもまだ知見や議決がなく、specs/ の glossary.yaml や context-map.yaml
+    とも食い違う箇所はないため、既存の知見の扱いを添える必要はありません。
+  - K-0003 は「worker のイメージが変更の対象に合っていない」と「契約を先に決める段で次の段の受け入れ条件を確かめない」という別の原因を 1 件にまとめており、README
+    の「1 件 1 主張・1 ファイル」に反するので、後者を K-0004 として分けてください。
+  - 分けた後者の知見は C-0001 で仕様（spec）の観点から出た真因なので、テーマ 6 のままでよいかを見直し、scope と invalidate_when
+    と proposal もそれぞれの主張に合わせて分けてください。
+  - K-0001 の proposal は target を role_line_engine にしながら改善のチケットを起こすことも書いているので、作用先を
+    1 つに絞るか、チケットの部分を別に書いてください。
+  - K-0001 と K-0002 はどちらも「PR を出す前に機械で確かめる段がない」と述べて重なっているので、各 statement の主張は欠けの原因に絞り、検査の段がないことは
+    related で結ぶ形にすると重複が減ります。
+  - K-0003 を分けたら、INDEX.md は knowledge_check.py --index で作り直してください。
+  personal_data: false
+- role: evidence
+  vote: human
+  reasons:
+  - K-0001・K-0002・K-0003 はどれも evidence に C-0001、PR 372、event case.analyzed:39249 があり、C-0001
+    には session.txt と summary.md の突き合わせ、body_fix ジョブ 527 が書かれているので、一次記録まで辿れます。
+  - 'C-0001 では原因の仕組みの多くが「推測」と書かれていて事例も 1 件だけなので、3 件とも confidence: hypothesis のままが妥当で、上げる理由はありません。'
+  - K-0003 の後半（契約を先に決める段での確かめ漏れ）は C-0001 の学びの表になく、なぜなぜでも推測にとどまるので、別の知見に分けて根拠を分けて持つことを勧めます。
+  - K-0003 の「検証の環境も CI とずれる」は、C-0001 の「同じとは限らなくなる」より強く言い切っているので、「ずれうる」に弱めるのが記録に合います。
+  - 利用者の氏名・連絡先・利用者 ID・本文の引用は見当たらず、booking_id などは項目の名前だけで値はないため、個人情報は抽象化で切れています。
+  - 3 件の proposal は role_line_engine や Engine（実装役への指示・worker のイメージの選び方）に作用するので、根拠の面では問題ありませんが、採るかどうかは人の判断に回します。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0002 で落ちた「## 概要」「## 背景」「## 問題」「## 対応内容」は見出しがあるかないかで決まるので、指示を足すより PR を出す前の機械の検査で確実に止められ、作る費用も小さいです。
+  - K-0001 の冒頭の欠けは、handoff.saved の時点で最後の文と summary.md の見出しや先頭の行を比べれば決定論で見つけられますが、Engine
+    に手を入れるので作る前に人の承認が要ります。
+  - K-0003 の前半にあるイメージの取り違えは、チケットが変えるパス（apps/student-app）から worker のイメージを引く設定の表で防げますが、後半の契約の項目の確認は機械で線を引きにくいので、文脈として残すのが妥当です。
+  - C-0001 で CI の checks は PR 本文を見ておらず、L4 の rubric も shadow でした。機械で判定できる項目を LLM の検査に任せていたことがこの事例の真因なので、K-0001
+    と K-0002 は担保の強さを context で止めずに deterministic にすべきです。
+  - 確かさは事例 1 件（PR 372）だけが根拠なので hypothesis のままでよく、決定論の検査を入れたあとは、その検査がまた同じ欠けを見つけるかどうかで再確認できます。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0003 は「worker のイメージが変更の対象に合わない」と「契約を先に決める段で次の段の受け入れ条件を確かめない」という別々の主張を 1 件にまとめていて、README
+    の 1 件 1 主張に反するので、2 件の知見に分けてください。
+  - K-0003 の契約の部分は計画や契約を決める役の話なのに scope.roles が [implement] だけで、paths も apps/student-app
+    に絞られているため、分けたあとでそれぞれの範囲を付け直してください。
+  - C-0001 は K-0003 の 2 つの点を「今回の差し戻しの直接の原因ではない」としていて、根拠は 1 件の事例で推測も含むので、K-0003 は hypothesis
+    のままにし、主張の言い方も因果を言い切らない形に弱めてください。
+  - K-0001 は切り方が記録から分からない（推測）1 件だけの観察なので、「欠けることがある」の範囲にとどめ、scope.roles から判定に関わらない
+    judge を外すか理由を書くとよいです。
+  - K-0002 も「指示に見出しが渡っていない」と「PR を出す前に機械で確かめる段がない」の 2 つの因果を含んでいるので、後者を K-0001 と共通の検査の知見に寄せるかどうかを見直してください。
+  - K-0001 と K-0002 は今回の範囲では大きな反例が見当たらないので、K-0003 を分けて出し直せば採ってよいと考えます。
+  personal_data: false
+enforcement:
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: ci_check
+  proposal: PR を作る前（handoff.saved のとき）と CI の両方で、summary.md／PR 本文に PR テンプレートの必須の見出し（##
+    概要・## 背景・## 問題・## 対応内容）がすべてあり、それぞれの下が空でないかを確かめる検査を足し、欠けていたら PR を出さずに実装役へ戻す。必須の見出しの一覧はテンプレートから読み取り、二重に持たない。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: handoff.saved のとき、実装役の最後の文に出てくる見出しの並びと最初の箇条書きが summary.md にもあるか（summary.md
+    が最後の文の途中から始まっていないか）を比べ、合わなければ警告のイベントを出して最後の文から作り直す。summary を取り出す処理には、見出しで始まる長い本文でも冒頭が欠けないことを確かめる回帰テストを足す。Engine
+    への変更なので人の承認を経て入れる。
+- knowledge: K-0003
+  level: deterministic
+  solution_kind: config
+  proposal: 'チケットが変えるパスと worker のイメージを対応させる表をライン設定に置き（例: apps/student-app → Flutter
+    SDK 入りのイメージ）、表に合わない組み合わせで worker を起こそうとしたら止めるか警告する。契約の段で次の段の受け入れ条件を確かめる部分は機械で線を引きにくいので、context
+    のまま残す。'
