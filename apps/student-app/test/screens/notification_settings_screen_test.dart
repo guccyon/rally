@@ -19,7 +19,12 @@ void main() {
     entitlement: Fixtures.subscriptionStarted.entitlement,
   );
 
-  const labels = ['予約が確定したとき', '動画の添削が返ってきたとき', '担当コーチからメッセージが届いたとき'];
+  const labels = [
+    '予約が確定したとき',
+    '動画の添削が返ってきたとき',
+    '担当コーチからメッセージが届いたとき',
+    '本部からのお知らせが届いたとき',
+  ];
 
   Future<void> openSettings(WidgetTester tester) async {
     await tester.tap(find.byTooltip('通知の設定'));
@@ -168,7 +173,7 @@ void main() {
       'getMyNotificationSettings',
       'getMyNotificationSettings',
     ]);
-    expect(find.byType(SwitchListTile), findsNWidgets(3));
+    expect(find.byType(SwitchListTile), findsNWidgets(labels.length));
     expect(find.text('設定を読み込み直す'), findsNothing);
   });
 }

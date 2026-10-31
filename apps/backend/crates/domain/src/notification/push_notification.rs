@@ -1,4 +1,4 @@
-use super::NotificationKind;
+use super::{AnnouncementId, NotificationKind};
 use crate::{
     async_lesson::{VideoId, VideoReviewId},
     identity::AccountId,
@@ -6,7 +6,7 @@ use crate::{
     scheduling::BookingId,
 };
 
-/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベント）と受け取る側ごとで、受け取る人は
+/// 1 件のプッシュ通知。変種は通知のきっかけ（境界間イベントか、本部からのお知らせ）と受け取る側ごとで、受け取る人は
 /// [`PushNotification::recipient`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PushNotification {
@@ -44,6 +44,11 @@ pub enum PushNotification {
         /// 送り手がスレッドのどちらの当事者か
         sender: MessageSender,
     },
+    /// 本部からのお知らせ（[`super::Announcement`]）を、対象の生徒に知らせる
+    Announcement {
+        student_id: AccountId,
+        announcement_id: AnnouncementId,
+    },
 }
 
 impl PushNotification {
@@ -51,7 +56,8 @@ impl PushNotification {
     pub const fn recipient(&self) -> AccountId {
         match *self {
             PushNotification::BookingConfirmed { student_id, .. }
-            | PushNotification::VideoReviewReturned { student_id, .. } => student_id,
+            | PushNotification::VideoReviewReturned { student_id, .. }
+            | PushNotification::Announcement { student_id, .. } => student_id,
             PushNotification::BookingReceived { coach_id, .. }
             | PushNotification::VideoReviewRequested { coach_id, .. } => coach_id,
             PushNotification::MessageReceived {
@@ -74,6 +80,17 @@ impl PushNotification {
             PushNotification::VideoReviewRequested { .. } => NotificationKind::VideoReviewRequested,
             PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
             PushNotification::MessageReceived { .. } => NotificationKind::MessageReceived,
+            PushNotification::Announcement { .. } => NotificationKind::Announcement,
+        }
+    }
+
+    /// 本部からのお知らせの通知なら、そのお知らせの ID。
+    pub const fn announcement_id(&self) -> Option<AnnouncementId> {
+        match *self {
+            PushNotification::Announcement {
+                announcement_id, ..
+            } => Some(announcement_id),
+            _ => None,
         }
     }
 }
@@ -149,5 +166,29 @@ mod tests {
             received(MessageSender::Coach).kind(),
             NotificationKind::MessageReceived
         );
+    }
+
+    #[test]
+    fn an_announcement_goes_to_the_student() {
+        let notification = PushNotification::Announcement {
+            student_id: STUDENT,
+            announcement_id: AnnouncementId::from_u128(3),
+        };
+        assert_eq!(notification.recipient(), STUDENT);
+        assert_eq!(notification.kind(), NotificationKind::Announcement);
+        assert_eq!(
+            notification.announcement_id(),
+            Some(AnnouncementId::from_u128(3))
+        );
+    }
+
+    #[test]
+    fn only_an_announcement_has_an_announcement_id() {
+        let confirmed = PushNotification::BookingConfirmed {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+        };
+        assert_eq!(confirmed.announcement_id(), None);
     }
 }

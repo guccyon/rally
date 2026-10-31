@@ -5,6 +5,7 @@ use domain::{
     identity::Role,
     lesson::LessonType,
     messaging::{MessageContent, Stamp},
+    notification::NotificationError,
     scheduling::BookingStatus,
 };
 
@@ -111,6 +112,26 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*menu),
             sport_to_contract(*video)
         ),
+    }
+}
+
+/// notification の不変条件の違反の説明。
+pub(crate) fn notification_error(error: &NotificationError) -> String {
+    match error {
+        NotificationError::NotificationReadBeforeCreated => {
+            "お知らせの既読が作った時刻より前".to_string()
+        }
+        NotificationError::EmptyAnnouncementTitle => "お知らせの題が空".to_string(),
+        NotificationError::AnnouncementTitleTooLong { max } => {
+            format!("お知らせの題は {max} 文字まで")
+        }
+        NotificationError::EmptyAnnouncementBody => "お知らせの本文が空".to_string(),
+        NotificationError::AnnouncementBodyTooLong { max } => {
+            format!("お知らせの本文は {max} 文字まで")
+        }
+        NotificationError::AnnouncementWithoutRecipients => {
+            "お知らせを受け取る生徒がいない".to_string()
+        }
     }
 }
 

@@ -34,6 +34,7 @@ pub struct NotificationSettingsBody {
     booking_confirmed: bool,
     video_review_returned: bool,
     message_received: bool,
+    announcement: bool,
 }
 
 /// student-app の `UpdateNotificationSettingsRequest`。書かなかった種類は `None`（今の設定のまま）。
@@ -42,6 +43,7 @@ pub struct UpdateNotificationSettingsRequest {
     booking_confirmed: Option<bool>,
     video_review_returned: Option<bool>,
     message_received: Option<bool>,
+    announcement: Option<bool>,
 }
 
 /// `GET /notification-settings/me`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
@@ -83,6 +85,7 @@ where
             request.video_review_returned,
         ),
         (NotificationKind::MessageReceived, request.message_received),
+        (NotificationKind::Announcement, request.announcement),
     ]
     .into_iter()
     .filter_map(|(kind, enabled)| enabled.map(|enabled| (kind, enabled)))
@@ -104,5 +107,6 @@ fn notification_settings_body(settings: &NotificationSettings) -> NotificationSe
         booking_confirmed: settings.is_enabled(NotificationKind::BookingConfirmed),
         video_review_returned: settings.is_enabled(NotificationKind::VideoReviewReturned),
         message_received: settings.is_enabled(NotificationKind::MessageReceived),
+        announcement: settings.is_enabled(NotificationKind::Announcement),
     }
 }

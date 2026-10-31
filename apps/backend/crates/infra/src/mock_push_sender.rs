@@ -3,14 +3,18 @@
 use std::sync::{Arc, Mutex};
 
 use application::{
-    Unavailable, async_lesson::video_id_uuid, identity::account_id_uuid,
-    messaging::message_thread_id_uuid, notification::PushSender, scheduling::booking_id_uuid,
+    Unavailable,
+    async_lesson::video_id_uuid,
+    identity::account_id_uuid,
+    messaging::message_thread_id_uuid,
+    notification::{PushSender, announcement_id_uuid},
+    scheduling::booking_id_uuid,
 };
 use domain::notification::PushNotification;
 
 /// [`PushSender`] のモック。実際の端末には届けず、送った通知を記録して（[`MockPushSender::sent`]）、
 /// `push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く（対象は予約・動画・
-/// スレッド）。
+/// スレッド・本部からのお知らせ）。
 /// 記録はプロセスのメモリにだけ持ち、複製は同じ記録を共有する。
 #[derive(Debug, Clone, Default)]
 pub struct MockPushSender {
@@ -50,6 +54,12 @@ impl MockPushSender {
             PushNotification::MessageReceived { thread_id, .. } => format!(
                 "push_notification {recipient} message_received {}",
                 message_thread_id_uuid::format(thread_id)
+            ),
+            PushNotification::Announcement {
+                announcement_id, ..
+            } => format!(
+                "push_notification {recipient} announcement {}",
+                announcement_id_uuid::format(announcement_id)
             ),
         }
     }
