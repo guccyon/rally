@@ -8,12 +8,14 @@
 
 #[allow(clippy::module_inception)]
 mod notification;
+mod notification_error;
 mod notification_id;
 mod notification_kind;
 mod notification_settings;
 mod push_notification;
 
 pub use notification::Notification;
+pub use notification_error::NotificationError;
 pub use notification_id::NotificationId;
 pub use notification_kind::NotificationKind;
 pub use notification_settings::NotificationSettings;

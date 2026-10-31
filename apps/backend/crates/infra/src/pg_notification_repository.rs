@@ -225,12 +225,13 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
         },
         _ => return Err(Unavailable::new(format!("未知の kind: {kind}"))),
     };
-    Ok(Notification::restore(
+    Notification::restore(
         notification_id_uuid::from_uuid(id),
         push,
         SystemTime::from(created_at),
         read_at.map(SystemTime::from),
-    ))
+    )
+    .map_err(Unavailable::new)
 }
 
 /// プッシュ通知の当事者（生徒, コーチ）。

@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use super::{NotificationId, NotificationKind, PushNotification};
+use super::{NotificationError, NotificationId, NotificationKind, PushNotification};
 use crate::identity::AccountId;
 
 /// お知らせ（glossary の notification）。送ったプッシュ通知（[`PushNotification`]）を、受け取る人があとで一覧で
@@ -19,22 +19,31 @@ pub struct Notification {
 impl Notification {
     /// 時刻 `created_at` に作った、まだ読んでいないお知らせ。
     pub fn new(id: NotificationId, push: PushNotification, created_at: SystemTime) -> Self {
-        Self::restore(id, push, created_at, None)
+        Self {
+            id,
+            push,
+            created_at,
+            read_at: None,
+        }
     }
 
-    /// 保存先から読んだお知らせを組み立てる（保存先の実装用）。
+    /// 保存先から読んだお知らせを組み立てる（保存先の実装用）。既読が作った時刻より前なら
+    /// [`NotificationError::NotificationReadBeforeCreated`]（作った時刻と同じなら組み立てる）。
     pub fn restore(
         id: NotificationId,
         push: PushNotification,
         created_at: SystemTime,
         read_at: Option<SystemTime>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, NotificationError> {
+        if read_at.is_some_and(|read_at| read_at < created_at) {
+            return Err(NotificationError::NotificationReadBeforeCreated);
+        }
+        Ok(Self {
             id,
             push,
             created_at,
             read_at,
-        }
+        })
     }
 
     pub fn id(&self) -> NotificationId {
@@ -139,5 +148,23 @@ mod tests {
             Some(at(10)),
             "作った時刻と同じなら読める"
         );
+    }
+
+    #[test]
+    fn restore_rejects_a_read_before_creation_and_accepts_the_same_time() {
+        let push = confirmed().push();
+        let id = NotificationId::from_u128(5);
+        assert_eq!(
+            Notification::restore(id, push, at(10), Some(at(9))),
+            Err(NotificationError::NotificationReadBeforeCreated)
+        );
+        let same = Notification::restore(id, push, at(10), Some(at(10))).unwrap();
+        assert_eq!(
+            same.read_at(),
+            Some(at(10)),
+            "作った時刻と同じなら組み立てる"
+        );
+        let unread = Notification::restore(id, push, at(10), None).unwrap();
+        assert_eq!(unread, confirmed(), "既読でなければ new と同じ");
     }
 }
