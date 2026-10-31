@@ -8,6 +8,7 @@ mod entitlement_quota_gate;
 mod entitlement_review_gate;
 mod get_entitlement;
 mod insert_entitlement_error;
+mod list_subscription_plans;
 mod live_lesson_quota_subscriber;
 mod release_live_lesson_quota;
 mod repository;
@@ -23,6 +24,7 @@ pub use entitlement_quota_gate::EntitlementQuotaGate;
 pub use entitlement_review_gate::EntitlementReviewGate;
 pub use get_entitlement::{GetEntitlement, GetEntitlementError, GetEntitlementQuery};
 pub use insert_entitlement_error::InsertEntitlementError;
+pub use list_subscription_plans::ListSubscriptionPlans;
 pub use live_lesson_quota_subscriber::LiveLessonQuotaSubscriber;
 pub use release_live_lesson_quota::{
     ReleaseLiveLessonQuota, ReleaseLiveLessonQuotaCommand, ReleaseLiveLessonQuotaError,

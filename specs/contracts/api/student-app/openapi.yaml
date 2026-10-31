@@ -308,6 +308,36 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /subscription-plans:
+    get:
+      operationId: listSubscriptionPlans
+      summary: 契約プランの一覧
+      description: |
+        月額契約のプラン（`SubscriptionPlan`）の一覧と、各プランのビデオ通話の暦月の上限 `live_lessons_per_month` を返す。
+        生徒が契約の前（`startSubscription` の前）にプランごとの上限を知るための読み取りで、受講権がなくても呼べる。
+        生徒だけが呼べる（それ以外の役割は 403）。
+
+        - 並べ方: standard・plus の順
+        - 上限は不変条件 1 の値（契約プランで決まる。standard 2 回・plus 4 回）で、スポーツ（ゴルフかどうか）でも変わらない
+        - 料金と決済は載せない（billing は Gen1 の範囲外）
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [entitlement]
+      x-context: entitlement
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 契約プランの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionPlanList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /entitlements/me:
     get:
       operationId: getMyEntitlement
@@ -1275,6 +1305,28 @@ components:
           $ref: "#/components/schemas/Subscription"
         entitlement:
           $ref: "#/components/schemas/Entitlement"
+
+    SubscriptionPlanDetail:
+      type: object
+      description: 契約プランと、そのプランのビデオ通話の暦月の上限
+      required: [plan, live_lessons_per_month]
+      properties:
+        plan:
+          $ref: "#/components/schemas/SubscriptionPlan"
+        live_lessons_per_month:
+          type: integer
+          minimum: 1
+          description: ビデオ通話の暦月の上限（不変条件 1。standard 2・plus 4）。`LiveLessonQuota.limit` と同じ値
+
+    SubscriptionPlanList:
+      type: object
+      required: [plans]
+      properties:
+        plans:
+          type: array
+          description: 契約プラン。standard・plus の順
+          items:
+            $ref: "#/components/schemas/SubscriptionPlanDetail"
 
     LiveLessonSessionStatus:
       type: string

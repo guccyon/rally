@@ -20,7 +20,7 @@ use application::{
     clock::{Clock, SystemClock},
     entitlement::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
-        GetEntitlement, LiveLessonQuotaSubscriber, StartSubscription,
+        GetEntitlement, ListSubscriptionPlans, LiveLessonQuotaSubscriber, StartSubscription,
     },
     identity::{AccountRepository, GetAccount, RegisterAccount},
     in_memory::{
@@ -318,6 +318,8 @@ where
         ),
         MockTokenService,
     );
+    let subscription_plans =
+        interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
         (
@@ -451,4 +453,5 @@ where
     )
     .merge(catalog)
     .merge(my_videos)
+    .merge(subscription_plans)
 }

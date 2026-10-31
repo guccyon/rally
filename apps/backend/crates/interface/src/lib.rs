@@ -25,6 +25,7 @@ mod notification_settings;
 mod reviews;
 mod slot_supply;
 mod slots;
+mod subscription_plans;
 mod subscriptions;
 pub mod version;
 mod videos;
@@ -44,7 +45,9 @@ use application::{
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
-    entitlement::{EntitlementRepository, GetEntitlement, StartSubscription},
+    entitlement::{
+        EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
+    },
     identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
     lesson::{LessonCompletionRepository, RecordLessonCompletion},
     live_lesson::{
@@ -488,6 +491,30 @@ where
         .route("/videos/me", get(my_videos::list_my_videos::<V, D>))
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(my_videos::MyVideosState { list_my_videos }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 契約プランの一覧（student-app の `GET /subscription-plans`）のルーター。[`router_with`] と同じくトークンの検証の層を
+/// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /subscription-plans` は生徒だけ。
+pub fn subscription_plans_router<T>(
+    list_subscription_plans: ListSubscriptionPlans,
+    tokens: T,
+) -> Router
+where
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/subscription-plans",
+            get(subscription_plans::list_subscription_plans),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(subscription_plans::SubscriptionPlansState {
+            list_subscription_plans,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 
