@@ -38,6 +38,12 @@ class ChatState {
   /// 開いているスレッドのメッセージ（送った順）
   final List<Message>? messages;
 
+  /// 読んだスレッドの未読の数の合計（ホームのアプリバーの「チャット」のしるし。未取得なら 0）
+  int get unreadCount => (threads ?? const <MessageThread>[]).fold(
+    0,
+    (sum, thread) => sum + thread.unreadCount,
+  );
+
   /// スレッドに返却が流れた動画の添削（`getVideoReview`。動画の ID ごと）。返却された添削は変わらないので、読めたものは読み直さない
   final Map<String, VideoReview> reviews;
 
@@ -102,13 +108,14 @@ class ChatNotifier extends Notifier<ChatState> {
   /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
   /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
+  /// 既読にできなくてもメッセージを読めれば開く（未読の数は残し、次に確かめたときにもう一度既読にする）。
   /// チャットの外（ホーム）から開いたら、チャットを閉じたときに開いた段に戻る。
   Future<void> openThread(MessageThread thread) {
     if (!_step.isChat) {
       state = state.copyWith(returnStep: _step);
     }
     return _run(() async {
-      await _loadMessages(thread.threadId);
+      await _loadMessages(thread);
       _flow.moveTo(FlowStep.messages);
     });
   }
@@ -147,15 +154,31 @@ class ChatNotifier extends Notifier<ChatState> {
       state = state.copyWith(promptVideoReviewRequest: false);
 
   /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
-  Future<void> refreshMessages() =>
-      _run(() => _loadMessages(state.thread!.threadId));
+  Future<void> refreshMessages() => _run(() => _loadMessages(state.thread!));
 
-  Future<void> _loadMessages(String threadId) async {
-    final read = await _api.markMessageThreadRead(threadId);
-    final list = await _api.listMessages(threadId);
-    state = state.copyWith(thread: read, messages: list.messages);
+  /// [thread] を既読にしてからメッセージを読む。既読にできたら、読んだスレッドの一覧のそのスレッドも既読の後のものに置き換える
+  /// （一覧に戻ったときに読み直せなくても未読の数が消える）。既読の失敗は投げずに飲み込み、失敗の文言も出さない
+  /// （メッセージは読めているので画面を開いたままにする）。メッセージを読めなければ投げる
+  Future<void> _loadMessages(MessageThread thread) async {
+    MessageThread? read;
+    try {
+      read = await _api.markMessageThreadRead(thread.threadId);
+    } on StudentApiException {
+      // 既読にできなくても開く（未読のまま残し、次に確かめたときにもう一度既読にする）
+    }
+    final list = await _api.listMessages(thread.threadId);
+    state = state.copyWith(
+      thread: read ?? thread,
+      messages: list.messages,
+      threads: read == null ? null : _replaced(read),
+    );
     await _loadReviews();
   }
+
+  /// 読んだスレッドの一覧の [thread] と同じスレッドを置き換えた一覧（未取得なら null で、一覧は変えない）
+  List<MessageThread>? _replaced(MessageThread thread) => state.threads
+      ?.map((t) => t.threadId == thread.threadId ? thread : t)
+      .toList();
 
   /// スレッドに返却が流れた動画の添削（`getVideoReview`）を、まだ読めていないものだけ読む。
   /// 読めなくてもメッセージの一覧は出す（その動画を [ChatState.reviewFailures] に入れるだけで、失敗の文言は出さない）
@@ -228,7 +251,7 @@ class ChatNotifier extends Notifier<ChatState> {
         return;
       }
       result = VideoReviewRequestResult.sent;
-      await _loadMessages(thread.threadId);
+      await _loadMessages(thread);
     });
     return result;
   }

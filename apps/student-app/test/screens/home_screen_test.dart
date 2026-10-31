@@ -476,6 +476,55 @@ void main() {
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
 
+  testWidgets('アプリバーの「チャット」に未読の数の合計のしるしを付け、スレッドを開いて既読にしてホームに戻ると消える', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      entitlement: entitlement,
+      threads: [
+        Fixtures.thread,
+        thread('other', unreadCount: 2, coachId: 'coach-b'),
+      ],
+    );
+    await pumpHome(tester, api);
+
+    Finder chatMark(String count) =>
+        find.descendant(of: find.byTooltip('チャット'), matching: find.text(count));
+    expect(chatMark('3'), findsOneWidget);
+
+    await tapText(tester, '佐藤 コーチ');
+    await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('チャットを閉じる'));
+    await tester.pumpAndSettle();
+    expect(chatMark('2'), findsOneWidget);
+    expect(chatMark('3'), findsNothing);
+  });
+
+  testWidgets('未読がなければアプリバーの「チャット」にしるしを付けず、ホームの外では付けない', (tester) async {
+    final api = FakeStudentApi(
+      entitlement: entitlement,
+      threads: [thread('read', unreadCount: 0)],
+    );
+    final container = await pumpHome(tester, api);
+    Finder badge() => find.descendant(
+      of: find.byTooltip('チャット'),
+      matching: find.byWidgetPredicate((w) => w is Badge && w.isLabelVisible),
+    );
+    expect(badge(), findsNothing);
+
+    api.threads[0] = thread('read', unreadCount: 1);
+    await container.read(studentFlowProvider.notifier).refreshHome();
+    await tester.pumpAndSettle();
+    expect(badge(), findsOneWidget);
+
+    // ほかの画面ではスレッドを読み直さないので出さない
+    await tapText(tester, 'スロットを探して予約する');
+    expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+    expect(find.byTooltip('チャット'), findsOneWidget);
+    expect(badge(), findsNothing);
+  });
+
   testWidgets('やり取りのスレッドを押すとそのチャットを開き（既読にする）、チャットを閉じるとホームに戻る', (tester) async {
     final api = FakeStudentApi(entitlement: entitlement);
     final container = await pumpHome(tester, api);
