@@ -85,6 +85,10 @@ impl BookingLookup for FixedBookings {
             .cloned()
             .collect())
     }
+
+    async fn find_slot(&self, _slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+        unreachable!("受けたレッスンの一覧では枠を読まない")
+    }
 }
 
 const STUDENT: &str = "student:1";
