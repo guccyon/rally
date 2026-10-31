@@ -4,15 +4,18 @@
 //! live-lesson の [`crate::live_lesson::LiveLessonSession::complete`] と async-lesson の
 //! [`crate::async_lesson::Video::complete`] がそれぞれの集約から発行する（glossary の `contexts` は
 //! live-lesson と async-lesson の両方。docs/adr/0006）。コーチごとの完了したレッスンの数え方（[`CoachLessonCount`]）もここ。
+//! 完了したレッスンのメニュー（[`LessonCompletionMenu`]）は、完了記録の元（予約・動画）が持つ写しを生徒の履歴に添えるための値。
 
 mod coach_lesson_count;
 mod lesson_completion;
 mod lesson_completion_id;
+mod lesson_completion_menu;
 mod lesson_source;
 mod lesson_type;
 
 pub use coach_lesson_count::CoachLessonCount;
 pub use lesson_completion::LessonCompletion;
 pub use lesson_completion_id::LessonCompletionId;
+pub use lesson_completion_menu::LessonCompletionMenu;
 pub use lesson_source::LessonSource;
 pub use lesson_type::LessonType;

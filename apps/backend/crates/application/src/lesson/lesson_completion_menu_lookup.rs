@@ -1,9 +1,6 @@
-use domain::{
-    lesson::{LessonCompletionId, LessonSource},
-    review::ReviewLessonMenu,
-};
+use domain::{lesson::LessonCompletionId, review::ReviewLessonMenu};
 
-use super::LessonCompletionRepository;
+use super::{LessonCompletionRepository, lesson_completion_menus::LessonCompletionMenus};
 use crate::{
     Unavailable,
     async_lesson::VideoRepository,
@@ -13,24 +10,20 @@ use crate::{
 
 /// review の [`ReviewedLessonMenuLookup`] の、完了したレッスンの元による実装。読むだけで、何も変えない。
 ///
-/// 完了記録の元（[`LessonSource`]）をたどり、同期レッスンは通話セッションに結び付いたその生徒の予約
-/// （scheduling の予約は live-lesson の [`BookingLookup`] で読む）、非同期レッスンは動画が持つメニューの写しを、
-/// review の [`ReviewLessonMenu`] に写す（予約・動画の写しから評価のメニューへの変換はここだけ）。
+/// 完了記録の元が持つメニューの写し（読み方は [`LessonCompletionMenus`]。同期レッスンは通話セッションに結び付いた
+/// その生徒の予約、非同期レッスンは動画）を、review の [`ReviewLessonMenu`] に写す（完了したレッスンのメニューから
+/// 評価のメニューへの変換はここだけ）。
 #[derive(Debug, Clone)]
 pub struct LessonCompletionMenuLookup<M, L, B, W> {
     completions: M,
-    sessions: L,
-    bookings: B,
-    videos: W,
+    menus: LessonCompletionMenus<L, B, W>,
 }
 
 impl<M, L, B, W> LessonCompletionMenuLookup<M, L, B, W> {
     pub fn new(completions: M, sessions: L, bookings: B, videos: W) -> Self {
         Self {
             completions,
-            sessions,
-            bookings,
-            videos,
+            menus: LessonCompletionMenus::new(sessions, bookings, videos),
         }
     }
 }
@@ -49,34 +42,11 @@ where
         let Some(completion) = self.completions.find(lesson_id).await? else {
             return Ok(None);
         };
-        match completion.source() {
-            LessonSource::Live(session_id) => {
-                let Some(booking_id) = self
-                    .sessions
-                    .find(session_id)
-                    .await?
-                    .and_then(|session| session.booking_of(completion.student_id()))
-                else {
-                    return Ok(None);
-                };
-                Ok(self
-                    .bookings
-                    .find_booking(booking_id)
-                    .await?
-                    .and_then(|booking| {
-                        booking
-                            .lesson_menu()
-                            .map(|menu| ReviewLessonMenu::new(menu.id(), menu.name().clone()))
-                    }))
-            }
-            LessonSource::Async(video_id) => {
-                Ok(self.videos.find(video_id).await?.and_then(|video| {
-                    video
-                        .lesson_menu()
-                        .map(|menu| ReviewLessonMenu::new(menu.id(), menu.name().clone()))
-                }))
-            }
-        }
+        Ok(self
+            .menus
+            .find(&completion)
+            .await?
+            .map(|menu| ReviewLessonMenu::new(menu.id(), menu.name().clone())))
     }
 }
 
