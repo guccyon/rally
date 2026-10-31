@@ -1,0 +1,125 @@
+guccyon/rally#102（D04: student-app のチャット画面）の apps/student-app/lib/api/models.dart のうち、指摘の箇所（SendMessageRequest / MessageThreadList / MessageList）の hunk だけを gh pr diff から切り出したもの。
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index 5cf575ad..9be9c360 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -632,6 +644,119 @@ class AsyncLessonCompletion extends RecordLessonCompletionRequest {
+   };
+ }
+ 
++/// `Message`（glossary の message。送信時刻と既読を持つ）
++class Message {
++  const Message({
++    required this.messageId,
++    required this.threadId,
++    required this.senderId,
++    required this.senderRole,
++    required this.body,
++    required this.sentAt,
++    this.readAt,
++  });
++
++  final String messageId;
++  final String threadId;
++
++  /// 送ったアカウント（スレッドの生徒か担当コーチ）
++  final String senderId;
++  final MessageSenderRole senderRole;
++  final String body;
++  final DateTime sentAt;
++
++  /// 受け取った側が読んだ時刻（既読）。読むまでは null
++  final DateTime? readAt;
++
++  factory Message.fromJson(Map<String, dynamic> json) => Message(
++    messageId: json['message_id'] as String,
++    threadId: json['thread_id'] as String,
++    senderId: json['sender_id'] as String,
++    senderRole: MessageSenderRole.fromWire(json['sender_role'] as String),
++    body: json['body'] as String,
++    sentAt: _dateTime(json['sent_at']),
++    readAt: _dateTimeOrNull(json['read_at']),
++  );
++}
++
++/// `MessageThread`（glossary の message_thread。生徒と担当コーチの組に 1 つ）
++class MessageThread {
++  const MessageThread({
++    required this.threadId,
++    required this.studentId,
++    required this.coachId,
++    required this.openedAt,
++    required this.unreadCount,
++    this.lastMessage,
++  });
++
++  final String threadId;
++  final String studentId;
++  final String coachId;
++
++  /// スレッドを開いた時刻（その生徒とコーチの最初の予約が確定した時刻）
++  final DateTime openedAt;
++
++  /// 最後のメッセージ。まだなければ null
++  final Message? lastMessage;
++
++  /// 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）の数
++  final int unreadCount;
++
++  factory MessageThread.fromJson(Map<String, dynamic> json) => MessageThread(
++    threadId: json['thread_id'] as String,
++    studentId: json['student_id'] as String,
++    coachId: json['coach_id'] as String,
++    openedAt: _dateTime(json['opened_at']),
++    lastMessage: json['last_message'] == null
++        ? null
++        : Message.fromJson(json['last_message'] as Map<String, dynamic>),
++    unreadCount: json['unread_count'] as int,
++  );
++}
++
++/// `MessageThreadList`
++class MessageThreadList {
++  const MessageThreadList({required this.threads});
++
++  /// 最後の出来事の新しい順
++  final List<MessageThread> threads;
++
++  factory MessageThreadList.fromJson(Map<String, dynamic> json) =>
++      MessageThreadList(
++        threads: (json['threads'] as List<dynamic>)
++            .map((e) => MessageThread.fromJson(e as Map<String, dynamic>))
++            .toList(),
++      );
++}
++
++/// `MessageList`
++class MessageList {
++  const MessageList({required this.threadId, required this.messages});
++
++  final String threadId;
++
++  /// 送った順
++  final List<Message> messages;
++
++  factory MessageList.fromJson(Map<String, dynamic> json) => MessageList(
++    threadId: json['thread_id'] as String,
++    messages: (json['messages'] as List<dynamic>)
++        .map((e) => Message.fromJson(e as Map<String, dynamic>))
++        .toList(),
++  );
++}
++
++/// `SendMessageRequest`
++class SendMessageRequest {
++  const SendMessageRequest({required this.body});
++
++  /// 本文（2000 文字まで。空白だけは不可）
++  final String body;
++
++  Map<String, dynamic> toJson() => {'body': body};
++}
++
+ /// `Error`
+ class ApiError {
+   const ApiError({required this.code, required this.message});
