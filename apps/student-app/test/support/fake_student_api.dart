@@ -17,6 +17,8 @@ class FakeStudentApi implements StudentApi {
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
     this.coachReviewSummaries = const {},
+    this.coachProfiles = const {},
+    List<CoachReview>? coachReviews,
     List<CoachListing>? coachListings,
     this.lessonMenus = const {},
     this.videoReviews = const {},
@@ -33,7 +35,8 @@ class FakeStudentApi implements StudentApi {
        notificationSettings =
            notificationSettings ?? Fixtures.notificationSettings,
        subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans,
-       coachListings = coachListings ?? Fixtures.coachListings;
+       coachListings = coachListings ?? Fixtures.coachListings,
+       coachReviews = coachReviews ?? Fixtures.coachReviews;
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
@@ -67,6 +70,15 @@ class FakeStudentApi implements StudentApi {
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
+
+  /// コーチの ID ごとの紹介（`getCoachProfile` が返す。ないコーチは一覧の表示名と [Fixtures.coachBio] でテニス）
+  final Map<String, CoachProfile> coachProfiles;
+
+  /// コーチが受けた評価（`listCoachReviews` がどのコーチにも返す。新しい順）
+  final List<CoachReview> coachReviews;
+
+  /// `searchSlots` をコーチで絞って呼んだときの、絞ったコーチの ID（呼んだ順）
+  final List<String> slotSearchCoachIds = [];
 
   /// 生徒のスポーツのコーチ（`listCoachesForStudent` が並びのまま返す）
   final List<CoachListing> coachListings;
@@ -121,12 +133,26 @@ class FakeStudentApi implements StudentApi {
   );
 
   @override
-  Future<SlotPage> searchSlots({required Sport sport, String? cursor}) =>
-      _answer(
-        'searchSlots',
-        () => SlotPage(items: slots.where((s) => s.sport == sport).toList()),
-        sport,
-      );
+  Future<SlotPage> searchSlots({
+    required Sport sport,
+    String? coachId,
+    String? cursor,
+  }) {
+    // コーチで絞ったときは、絞ったコーチの ID も残す（スポーツは今までどおり [requests] に Sport で残す）
+    if (coachId != null) slotSearchCoachIds.add(coachId);
+    return _answer(
+      'searchSlots',
+      () => SlotPage(
+        items: [
+          for (final slot in slots)
+            if (slot.sport == sport &&
+                (coachId == null || slot.coachId == coachId))
+              slot,
+        ],
+      ),
+      sport,
+    );
+  }
 
   @override
   Future<Booking> createBooking(CreateBookingRequest body) => _answer(
@@ -245,6 +271,25 @@ class FakeStudentApi implements StudentApi {
   }
 
   @override
+  Future<CoachProfile> getCoachProfile(String coachId) => _answer(
+    'getCoachProfile',
+    () =>
+        coachProfiles[coachId] ??
+        CoachProfile(
+          coachId: coachId,
+          displayName: Fixtures.coachListings
+              .firstWhere(
+                (c) => c.coachId == coachId,
+                orElse: () => Fixtures.coachListings.first,
+              )
+              .displayName,
+          bio: Fixtures.coachBio,
+          sports: const [Sport.tennis],
+        ),
+    coachId,
+  );
+
+  @override
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId) => _answer(
     'getCoachReviewSummary',
     () =>
@@ -260,7 +305,7 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<CoachReviewList> listCoachReviews(String coachId) => _answer(
     'listCoachReviews',
-    () => CoachReviewList(coachId: coachId, reviews: Fixtures.coachReviews),
+    () => CoachReviewList(coachId: coachId, reviews: coachReviews),
     coachId,
   );
 
@@ -779,6 +824,9 @@ abstract final class Fixtures {
       submittedAt: now.subtract(const Duration(days: 1)),
     ),
   ];
+
+  /// コーチの自己紹介文（`getCoachProfile` の既定）
+  static const coachBio = 'テニス歴 20 年。初心者の基礎づくりが得意です。';
 
   /// コーチの公開中のレッスンメニュー（作った時刻の古い順）。テニスの同期・非同期と、野球の同期
   static final lessonMenus = [

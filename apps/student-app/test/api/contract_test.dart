@@ -110,6 +110,7 @@ void main() {
         'recordLessonCompletion',
         'submitLessonReview',
         'listCoachesForStudent',
+        'getCoachProfile',
         'getCoachReviewSummary',
         'listCoachReviews',
         'listCoachLessonMenus',
@@ -140,6 +141,20 @@ void main() {
       propertiesOf('NotificationSettings').where((p) => p != 'student_id'),
     );
     expect(kinds, propertiesOf('UpdateNotificationSettingsRequest'));
+  });
+
+  test('CoachProfile の項目が契約と一致する（getCoachProfile）', () {
+    // CoachProfile.fromJson が読む項目
+    expect(propertiesOf('CoachProfile'), [
+      'coach_id',
+      'display_name',
+      'bio',
+      'sports',
+    ]);
+    final bio =
+        ((schemas['CoachProfile'] as YamlMap)['properties'] as YamlMap)['bio']
+            as YamlMap;
+    expect((bio['type'] as YamlList).cast<String>(), ['string', 'null']);
   });
 
   test('Slot の項目が契約と一致し、コーチの紹介は任意の項目である', () {

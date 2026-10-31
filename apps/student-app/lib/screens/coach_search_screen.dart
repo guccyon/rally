@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../state/coach_profile.dart';
 import '../state/coach_search.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
@@ -8,7 +9,7 @@ import '../ui/labels.dart';
 
 /// コーチを探す（`listCoachesForStudent`。生徒のスポーツのコーチをサーバーの並びのまま出す）。
 /// 各行は表示名と、評価の平均と件数（0 件なら「評価なし」）・レッスンメニューの数を「・」でつなぐ。
-/// 行を押すと、コーチの紹介を足すまでは生徒のスポーツの予約枠の検索へ移る
+/// 行を押すと、そのコーチの紹介（[CoachProfileState]）を開く
 class CoachSearchScreen extends ConsumerWidget {
   const CoachSearchScreen({super.key});
 

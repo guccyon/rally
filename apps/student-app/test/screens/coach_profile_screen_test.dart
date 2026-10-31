@@ -1,0 +1,251 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
+import 'package:rally_student_app/screens/student_flow_screen.dart';
+import 'package:rally_student_app/state/coach_profile.dart';
+import 'package:rally_student_app/state/student_flow.dart';
+
+import '../support/fake_student_api.dart';
+import '../support/pump.dart';
+
+void main() {
+  final home = StudentFlowState(
+    step: FlowStep.home,
+    accessToken: Fixtures.registered.accessToken,
+    student: Fixtures.student,
+  );
+
+  /// コーチを探す一覧の先頭（佐藤。[Fixtures.slot] のコーチ）
+  final sato = Fixtures.coachListings.first;
+
+  /// ホームから「コーチを探す」を開き、[name] の行を押してコーチの紹介を開く
+  Future<ProviderContainer> openCoachProfile(
+    WidgetTester tester,
+    FakeStudentApi api, {
+    String name = '佐藤',
+  }) async {
+    // 紹介の欄をすべて一度に描く（ListView は画面の外の行を作らない）
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: home,
+    );
+    await tapText(tester, 'コーチを探す');
+    await tapText(tester, name);
+    return container;
+  }
+
+  /// 評価が 0 件のコーチ
+  CoachReviewSummary noReviews(String coachId) =>
+      CoachReviewSummary(coachId: coachId, reviewCount: 0, averageRating: null);
+
+  testWidgets('一覧の行から開くと、表示名・自己紹介・評価の平均と件数・最近の評価・公開中のレッスンメニューがそろう', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      lessonMenus: {Fixtures.coachId: Fixtures.lessonMenus},
+    );
+    final container = await openCoachProfile(tester, api);
+
+    expect(container.read(studentFlowProvider).step, FlowStep.coachProfile);
+    expect(
+      api.calls,
+      containsAll([
+        'getCoachProfile',
+        'getCoachReviewSummary',
+        'listCoachReviews',
+        'listCoachLessonMenus',
+      ]),
+    );
+    expect(api.requests, contains(Fixtures.coachId));
+    // メニューはコーチを探したスポーツ（生徒のスポーツ）で絞る
+    expect(
+      api.requests,
+      contains((coachId: Fixtures.coachId, sport: Sport.tennis)),
+    );
+
+    expect(find.text('佐藤'), findsOneWidget);
+    expect(find.text(Fixtures.coachBio), findsOneWidget);
+    expect(find.text('★ 4.5（2 件）'), findsOneWidget);
+    expect(find.text('最近の評価'), findsOneWidget);
+    expect(find.text('5 点（5 点満点）'), findsOneWidget);
+    expect(find.text('メニュー: フォアハンドの基礎'), findsOneWidget);
+    expect(find.text('丁寧でした'), findsOneWidget);
+    expect(find.text('わかりやすかった'), findsOneWidget);
+    expect(find.text('フォアハンドの基礎'), findsOneWidget);
+    expect(find.text('テニス・同期レッスン（ビデオ通話）'), findsOneWidget);
+    expect(find.text('1 回 60 分'), findsOneWidget);
+    expect(find.text('サーブの動画添削'), findsOneWidget);
+    // ほかのスポーツのメニューは出さない
+    expect(find.text('バッティングの基礎'), findsNothing);
+    expect(find.textContaining('読み込めませんでした'), findsNothing);
+    expect(find.text('このコーチの空き枠を見る'), findsOneWidget);
+  });
+
+  testWidgets('最近の評価は新しい順に 3 件まで出す', (tester) async {
+    final reviews = [
+      for (var i = 0; i < 4; i++)
+        CoachReview(
+          reviewId: 'review-$i',
+          lessonId: 'lesson-$i',
+          rating: 5 - i,
+          comment: '一言 $i',
+          submittedAt: Fixtures.now.subtract(Duration(days: i)),
+        ),
+    ];
+    final api = FakeStudentApi(coachReviews: reviews);
+    await openCoachProfile(tester, api);
+
+    expect(find.text('一言 0'), findsOneWidget);
+    expect(find.text('一言 1'), findsOneWidget);
+    expect(find.text('一言 2'), findsOneWidget);
+    expect(find.text('一言 3'), findsNothing);
+  });
+
+  testWidgets('自己紹介を書いていないコーチは、自己紹介がまだない旨を出す', (tester) async {
+    final api = FakeStudentApi(
+      coachProfiles: {
+        sato.coachId: CoachProfile(
+          coachId: sato.coachId,
+          displayName: sato.displayName,
+          bio: null,
+          sports: const [Sport.tennis],
+        ),
+      },
+    );
+    await openCoachProfile(tester, api);
+
+    expect(find.text('まだ自己紹介はありません。'), findsOneWidget);
+    expect(find.text(Fixtures.coachBio), findsNothing);
+    // ほかの欄はそのまま
+    expect(find.text('★ 4.5（2 件）'), findsOneWidget);
+  });
+
+  testWidgets('評価が 0 件のコーチは「評価はまだありません」で、最近の評価の欄を出さない', (tester) async {
+    final takahashi = Fixtures.coachListings.last;
+    final api = FakeStudentApi(
+      coachReviewSummaries: {takahashi.coachId: noReviews(takahashi.coachId)},
+      coachReviews: const [],
+    );
+    await openCoachProfile(tester, api, name: '高橋');
+
+    expect(find.text('高橋'), findsOneWidget);
+    expect(find.text('評価はまだありません'), findsOneWidget);
+    expect(find.text('最近の評価'), findsNothing);
+    expect(find.text('まだ公開中のレッスンメニューはありません。'), findsOneWidget);
+  });
+
+  testWidgets('自己紹介を読めなくても、ほかの欄と空き枠への移動はそのままで、その欄だけ読み直せる', (tester) async {
+    final failures = {
+      'getCoachProfile': const StudentApiException(statusCode: 500),
+    };
+    final api = FakeStudentApi(
+      failures: failures,
+      lessonMenus: {Fixtures.coachId: Fixtures.lessonMenus},
+    );
+    final container = await openCoachProfile(tester, api);
+
+    expect(find.text('自己紹介を読み込めませんでした。'), findsOneWidget);
+    // 表示名は一覧で選んだコーチのものを出す
+    expect(find.text('佐藤'), findsOneWidget);
+    expect(find.text('★ 4.5（2 件）'), findsOneWidget);
+    expect(find.text('丁寧でした'), findsOneWidget);
+    expect(find.text('フォアハンドの基礎'), findsOneWidget);
+    // 欄にだけ旨を出し、直前の操作の失敗の文言にはしない
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+    expect(
+      container.read(coachProfileProvider).failures,
+      {CoachProfileSection.profile},
+    );
+
+    failures.clear();
+    api.calls.clear();
+    await tapText(tester, 'もう一度読み込む');
+
+    // 読み直すのは失敗した欄だけ
+    expect(api.calls, ['getCoachProfile']);
+    expect(find.text('自己紹介を読み込めませんでした。'), findsNothing);
+    expect(find.text(Fixtures.coachBio), findsOneWidget);
+  });
+
+  testWidgets('評価・最近の評価・メニューを読めなければ、その欄ごとに旨を出し、自己紹介はそのまま出す', (
+    tester,
+  ) async {
+    const error = StudentApiException(statusCode: 500);
+    final api = FakeStudentApi(
+      failures: {
+        'getCoachReviewSummary': error,
+        'listCoachReviews': error,
+        'listCoachLessonMenus': error,
+      },
+    );
+    final container = await openCoachProfile(tester, api);
+
+    expect(find.text(Fixtures.coachBio), findsOneWidget);
+    expect(find.text('評価の平均と件数を読み込めませんでした。'), findsOneWidget);
+    expect(find.text('最近の評価を読み込めませんでした。'), findsOneWidget);
+    expect(find.text('レッスンメニューを読み込めませんでした。'), findsOneWidget);
+    expect(find.text('もう一度読み込む'), findsNWidgets(3));
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+
+    // 空き枠への移動は使える
+    await tapText(tester, 'このコーチの空き枠を見る');
+    expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+  });
+
+  testWidgets('「このコーチの空き枠を見る」でそのコーチに絞った予約枠の検索へ移り、絞り込みを外せる', (tester) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    api.calls.clear();
+
+    await tapText(tester, 'このコーチの空き枠を見る');
+
+    final state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.slotSearch);
+    expect(state.searchCoach?.coachId, sato.coachId);
+    expect(api.calls.first, 'searchSlots');
+    expect(api.slotSearchCoachIds, [sato.coachId]);
+    expect(api.requests.whereType<Sport>().last, Sport.tennis);
+    expect(find.text('佐藤 コーチの枠'), findsOneWidget);
+    expect(find.text('体験予約する'), findsOneWidget);
+
+    await tapText(tester, 'すべてのコーチの枠を見る');
+
+    expect(container.read(studentFlowProvider).searchCoach, isNull);
+    expect(api.calls.where((c) => c == 'searchSlots'), hasLength(2));
+    // 2 回目はコーチで絞らない
+    expect(api.slotSearchCoachIds, [sato.coachId]);
+    expect(find.text('佐藤 コーチの枠'), findsNothing);
+  });
+
+  testWidgets('ホームの「スロットを探して予約する」ではコーチで絞らない', (tester) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    await tapText(tester, 'このコーチの空き枠を見る');
+
+    await tester.tap(find.byTooltip('ホーム'));
+    await tester.pumpAndSettle();
+    await tapText(tester, 'スロットを探して予約する');
+
+    expect(container.read(studentFlowProvider).searchCoach, isNull);
+    expect(api.slotSearchCoachIds, [sato.coachId]);
+  });
+
+  testWidgets('アプリバーの戻るでコーチの一覧に戻る（一覧は読み直さない）', (tester) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    api.calls.clear();
+
+    await tester.tap(find.byTooltip('コーチの一覧に戻る'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(studentFlowProvider).step, FlowStep.coachSearch);
+    expect(api.calls, isEmpty);
+    expect(find.text('鈴木'), findsOneWidget);
+  });
+}

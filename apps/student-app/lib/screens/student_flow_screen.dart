@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/student_flow.dart';
 import 'booking_pending_screen.dart';
+import 'coach_profile_screen.dart';
 import 'coach_search_screen.dart';
 import 'home_screen.dart';
 import 'lesson_completion_screen.dart';
@@ -31,6 +32,7 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.register => const RegisterScreen(),
       FlowStep.home => const HomeScreen(),
       FlowStep.coachSearch => const CoachSearchScreen(),
+      FlowStep.coachProfile => const CoachProfileScreen(),
       FlowStep.slotSearch => const SlotSearchScreen(),
       FlowStep.bookingPending => const BookingPendingScreen(),
       FlowStep.liveLesson => const LiveLessonScreen(),

@@ -5,6 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 import 'chat.dart';
+import 'coach_profile.dart';
 import 'coach_search.dart';
 import 'lesson_review.dart';
 import 'subscription.dart';
@@ -18,6 +19,9 @@ enum FlowStep {
 
   /// 生徒のスポーツのコーチの一覧（ホームから開く。状態は [CoachSearchState]）
   coachSearch,
+
+  /// コーチの紹介（コーチの一覧の行から開く。状態は [CoachProfileState]）
+  coachProfile,
   slotSearch,
   bookingPending,
   liveLesson,
@@ -90,7 +94,8 @@ enum VideoReviewRequestResult {
 }
 
 /// 生徒アプリの状態（チャットの状態は [ChatState]、完了したレッスンの評価の状態は [LessonReviewState]、
-/// 月額契約と受講権の状態は [SubscriptionState]、コーチを探す画面の状態は [CoachSearchState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
+/// 月額契約と受講権の状態は [SubscriptionState]、コーチを探す画面の状態は [CoachSearchState]、コーチの紹介の状態は
+/// [CoachProfileState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
 /// 一覧をコンストラクタで写して持つので const では作らない。
 class StudentFlowState {
   StudentFlowState({
@@ -100,6 +105,7 @@ class StudentFlowState {
     this.accessToken,
     this.student,
     this.searchSport,
+    this.searchCoach,
     this.slots,
     this.coachReviewSummaries = const {},
     this.coachReviewSummaryFailures = const {},
@@ -143,6 +149,9 @@ class StudentFlowState {
 
   /// スロットを絞ったスポーツ（未検索なら null）
   final Sport? searchSport;
+
+  /// スロットを絞ったコーチ（コーチの紹介の「このコーチの空き枠を見る」から来たとき。絞っていなければ null）
+  final CoachListing? searchCoach;
   final List<Slot>? slots;
 
   /// 検索結果のコーチの評価の件数と平均（`getCoachReviewSummary`。コーチの ID ごと）。検索のたびに読み直す
@@ -219,7 +228,7 @@ class StudentFlowState {
   /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧かホーム）
   final FlowStep? videoReviewReturnStep;
 
-  /// `errorMessage` は引き継がない（渡さなければ消える）。
+  /// `errorMessage` は引き継がない（渡さなければ消える）。[searchCoach] は [clearSearchCoach] で外す。
   StudentFlowState copyWith({
     FlowStep? step,
     bool? busy,
@@ -227,6 +236,8 @@ class StudentFlowState {
     String? accessToken,
     Student? student,
     Sport? searchSport,
+    CoachListing? searchCoach,
+    bool clearSearchCoach = false,
     List<Slot>? slots,
     Map<String, CoachReviewSummary>? coachReviewSummaries,
     Set<String>? coachReviewSummaryFailures,
@@ -257,6 +268,7 @@ class StudentFlowState {
     accessToken: accessToken ?? this.accessToken,
     student: student ?? this.student,
     searchSport: searchSport ?? this.searchSport,
+    searchCoach: clearSearchCoach ? null : searchCoach ?? this.searchCoach,
     slots: slots ?? this.slots,
     coachReviewSummaries: coachReviewSummaries ?? this.coachReviewSummaries,
     coachReviewSummaryFailures:
@@ -400,19 +412,35 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return returned.take(limit).toList();
   }
 
-  /// スロット検索へ（生徒のスポーツで絞って検索しておく）
-  Future<void> goToSlotSearch() {
-    state = state.copyWith(step: FlowStep.slotSearch);
-    return run(() => _search(state.searchSport ?? state.student!.sport));
+  /// スロット検索へ（生徒のスポーツで絞って検索しておく）。[coach] を渡せばそのコーチの枠に絞り、
+  /// スポーツはコーチを探したスポーツ（[CoachListing.sport]）にする。渡さなければコーチの絞り込みを外す
+  Future<void> goToSlotSearch({CoachListing? coach}) {
+    state = state.copyWith(
+      step: FlowStep.slotSearch,
+      searchCoach: coach,
+      clearSearchCoach: coach == null,
+    );
+    return run(
+      () => _search(coach?.sport ?? state.searchSport ?? state.student!.sport),
+    );
   }
 
-  /// `searchSlots`。スポーツで絞る。
+  /// `searchSlots`。スポーツで絞る（コーチで絞っていればそのまま絞る）。
   Future<void> searchSlots(Sport sport) => run(() => _search(sport));
+
+  /// コーチの絞り込みを外して、今のスポーツで探し直す
+  Future<void> clearSearchCoach() {
+    state = state.copyWith(clearSearchCoach: true);
+    return run(() => _search(state.searchSport ?? state.student!.sport));
+  }
 
   /// スロットを探し、出てきたコーチの評価の件数と平均（`getCoachReviewSummary`）を読む。
   /// 評価を読めなくても検索結果は出す（そのコーチを [StudentFlowState.coachReviewSummaryFailures] に入れるだけで、失敗の文言は出さない）
   Future<void> _search(Sport sport) async {
-    final page = await _api.searchSlots(sport: sport);
+    final page = await _api.searchSlots(
+      sport: sport,
+      coachId: state.searchCoach?.coachId,
+    );
     state = state.copyWith(
       searchSport: sport,
       slots: page.items,

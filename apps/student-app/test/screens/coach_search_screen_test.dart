@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
+import 'package:rally_student_app/state/coach_profile.dart';
 import 'package:rally_student_app/state/coach_search.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
@@ -111,16 +112,18 @@ void main() {
     expect(rowNames(tester), ['佐藤', '鈴木', '高橋']);
   });
 
-  testWidgets('行を押すと生徒のスポーツの予約枠の検索へ移る', (tester) async {
+  testWidgets('行を押すとそのコーチの紹介を開く', (tester) async {
     final api = FakeStudentApi();
     final container = await openCoachSearch(tester, api);
     api.calls.clear();
+    api.requests.clear();
 
     await tapText(tester, '鈴木');
 
-    expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
-    expect(api.calls.first, 'searchSlots');
-    expect(api.requests.whereType<Sport>().last, Sport.tennis);
+    expect(container.read(studentFlowProvider).step, FlowStep.coachProfile);
+    expect(container.read(coachProfileProvider).coach?.displayName, '鈴木');
+    expect(api.calls, contains('getCoachProfile'));
+    expect(api.requests, contains(Fixtures.coachListings[1].coachId));
   });
 
   testWidgets('アプリバーの「ホーム」でホームに戻る', (tester) async {
