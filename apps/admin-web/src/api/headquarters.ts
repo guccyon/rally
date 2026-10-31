@@ -20,6 +20,19 @@ export function headquartersApi(client: ApiClient) {
       ),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
+    unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
+      call(() =>
+        client.POST("/lesson-menus/{lesson_menu_id}/unpublish", {
+          params: { path: { lesson_menu_id: lessonMenuId } },
+          body,
+        }),
+      ),
+    republishLessonMenu: (lessonMenuId: string) =>
+      call(() =>
+        client.POST("/lesson-menus/{lesson_menu_id}/republish", {
+          params: { path: { lesson_menu_id: lessonMenuId } },
+        }),
+      ),
     listStudents: () => call(() => client.GET("/students")),
     listBookings: (period: { from?: string; to?: string }) =>
       call(() => client.GET("/bookings", { params: { query: period } })),
