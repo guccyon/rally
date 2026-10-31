@@ -92,6 +92,8 @@ class _BookingsSection extends ConsumerWidget {
                 subtitle: Text(
                   [
                     sportLabel(item.slot.sport),
+                    if (item.booking.lessonMenu case final menu?)
+                      bookingLessonMenuLabel(menu),
                     if (item.slot.coachDisplayName case final name?)
                       'コーチ: $name',
                     bookingStatusLabel(item.booking.status),

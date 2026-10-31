@@ -157,6 +157,35 @@ void main() {
     expect(sent.single.method, 'GET');
     expect(sent.single.url.path, '/bookings/me');
     expect(myBookings.bookings.single.slot.coachDisplayName, '佐藤');
+    expect(myBookings.bookings.single.booking.lessonMenu, isNull);
+
+    final withMenu = await apiReplying(200, {
+      'bookings': [
+        {
+          'booking': {
+            ...booking,
+            'lesson_menu': {
+              'lesson_menu_id': 'm1',
+              'name': 'フォアハンドの基礎',
+              'duration_minutes': 60,
+            },
+          },
+          'slot': {
+            'slot_id': 'sl1',
+            'coach_id': 'c1',
+            'sport': 'tennis',
+            'starts_at': '2026-10-28T03:00:00Z',
+            'ends_at': '2026-10-28T04:00:00Z',
+            'capacity': 1,
+            'remaining_seats': 1,
+            'lesson_menu': null,
+          },
+        },
+      ],
+    }).listMyBookings();
+    final menu = withMenu.bookings.single.booking.lessonMenu!;
+    expect(menu.name, 'フォアハンドの基礎');
+    expect(menu.durationMinutes, 60);
 
     final session = {
       'session_id': 'ls1',
