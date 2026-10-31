@@ -405,7 +405,7 @@ void main() {
   });
 
   test('コーチの評価の項目が契約と一致し、評価した生徒を載せない（getCoachReviewSummary・listCoachReviews）', () {
-    // CoachReviewSummary.fromJson・CoachReview.fromJson・CoachReviewList.fromJson が読む項目
+    // CoachReviewSummary.fromJson・CoachReview.fromJson・LessonReviewReply.fromJson・CoachReviewList.fromJson が読む項目
     expect(propertiesOf('CoachReviewSummary'), [
       'coach_id',
       'review_count',
@@ -423,9 +423,20 @@ void main() {
       'comment',
       'submitted_at',
       'lesson_menu',
+      'reply',
     ]);
     expect(propertiesOf('CoachReview'), isNot(contains('student_id')));
     expect(requiredOf('CoachReview'), isNot(contains('lesson_menu')));
+    expect(requiredOf('CoachReview'), isNot(contains('reply')));
+    final reply =
+        ((schemas['CoachReview'] as YamlMap)['properties'] as YamlMap)['reply']
+            as YamlMap;
+    final replyOneOf = (reply['oneOf'] as YamlList).cast<YamlMap>().toList();
+    expect(replyOneOf, hasLength(2));
+    expect(refOf(replyOneOf.first), '#/components/schemas/LessonReviewReply');
+    expect(replyOneOf.last['type'], 'null');
+    expect(propertiesOf('LessonReviewReply'), ['comment', 'replied_at']);
+    expect(requiredOf('LessonReviewReply'), propertiesOf('LessonReviewReply'));
     final lessonMenu =
         ((schemas['CoachReview'] as YamlMap)['properties']
                 as YamlMap)['lesson_menu']

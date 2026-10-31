@@ -1,5 +1,5 @@
 //! `GET /lesson-reviews/low`（admin-web の `listLowRatedLessonReviews`）の統合テスト。本部には直近 30 日の★2 以下の評価を
-//! コーチを問わず新しい順に、コーチ・生徒の表示名とレッスンメニューとともに返すことを OpenAPI のスキーマで検査する。
+//! コーチを問わず新しい順に、コーチ・生徒の表示名とレッスンメニューと評価されたコーチの返信とともに返すことを OpenAPI のスキーマで検査する。
 //! コーチ・生徒は 403、トークンがなければ 401。この操作はパスパラメータもクエリも受けないので、404（見つからない）と
 //! 422（規則違反）の応答はない（しきい値・期間の規則の境目は domain の `LowRatedReviewCriteria` のテストと、ここの
 //! 一覧に載らない評価で確かめる）。
@@ -25,7 +25,10 @@ use domain::{
     identity::{Account, AccountId, Email, Role},
     lesson::LessonCompletionId,
     profile::DisplayName,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
+    review::{
+        LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
+        LessonReviewReplyComment, Rating, ReviewLessonMenu,
+    },
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -97,6 +100,13 @@ impl LessonReviewRepository for BrokenReviews {
         LessonReviewId::from_u128(0)
     }
 
+    async fn find_by_id(
+        &self,
+        _review_id: LessonReviewId,
+    ) -> Result<Option<LessonReview>, Unavailable> {
+        unreachable!("一覧では読まない")
+    }
+
     async fn find_by_lesson(
         &self,
         _lesson_id: LessonCompletionId,
@@ -108,6 +118,14 @@ impl LessonReviewRepository for BrokenReviews {
         &self,
         _review: LessonReview,
     ) -> Result<(), application::review::InsertReviewError> {
+        unreachable!("一覧では保存しない")
+    }
+
+    async fn save_reply(
+        &self,
+        _review_id: LessonReviewId,
+        _reply: &LessonReviewReply,
+    ) -> Result<(), Unavailable> {
         unreachable!("一覧では保存しない")
     }
 
@@ -188,7 +206,13 @@ async fn app() -> Router {
     router(
         accounts,
         InMemoryLessonReviewRepository::with_reviews([
-            review(10, COACH, STUDENT, 1, now() - 3 * DAY),
+            // 評価されたコーチの返信があるものは載せる
+            review(10, COACH, STUDENT, 1, now() - 3 * DAY).with_reply(Some(
+                LessonReviewReply::new(
+                    LessonReviewReplyComment::new("ご意見ありがとうございます").unwrap(),
+                    now() - 2 * DAY,
+                ),
+            )),
             review(11, OTHER_COACH, UNKNOWN_STUDENT, 2, now() - DAY),
             // ★3 は低い評価でない
             review(12, COACH, STUDENT, 3, now()),
@@ -252,6 +276,7 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                     "comment": "コメント11",
                     "submitted_at": "2026-10-30T00:00:00Z",
                     "lesson_menu": null,
+                    "reply": null,
                 },
                 {
                     "review_id": "00000000-0000-0000-0000-00000000000a",
@@ -267,6 +292,10 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                         "lesson_menu_id": "00000000-0000-0000-0000-000000000014",
                         "name": "フォア改善",
                     },
+                    "reply": {
+                        "comment": "ご意見ありがとうございます",
+                        "replied_at": "2026-10-29T00:00:00Z",
+                    },
                 },
                 {
                     "review_id": "00000000-0000-0000-0000-00000000000e",
@@ -279,6 +308,7 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                     "comment": "コメント14",
                     "submitted_at": "2026-10-01T00:00:00Z",
                     "lesson_menu": null,
+                    "reply": null,
                 },
             ],
         }),

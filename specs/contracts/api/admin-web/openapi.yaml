@@ -21,6 +21,8 @@ info:
     本部はすべてのコーチのメニューを横断で読む（`listLessonMenus`）。
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。
+    コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
+    評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
     本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る）。
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
@@ -53,7 +55,7 @@ tags:
   - name: async-lesson
     description: 非同期レッスン（コーチに届いた動画の一覧と、動画添削の返却）
   - name: review
-    description: 評価（コーチごとの評価の集計と一覧・本部が見る低い評価の一覧）
+    description: 評価（コーチごとの評価の集計と一覧・本部が見る低い評価の一覧・コーチの評価への返信）
   - name: identity
     description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧）
   - name: profile
@@ -347,7 +349,8 @@ paths:
         生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
         各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
         `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
-        メニューの写しで、元にメニューがなければ null。
+        メニューの写しで、元にメニューがなければ null。評価されたコーチの返信 `reply`（`LessonReviewReply`。
+        `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
 
         `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
         `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -392,6 +395,7 @@ paths:
         - 各評価には、評価されたコーチと評価した生徒の ID と表示名、評価した完了したレッスンのレッスンメニュー
           `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
           表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+        - 各評価には、評価されたコーチの返信 `reply`（`LessonReviewReply`。`replyToLessonReview`）も載せる。返信がなければ null
         - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
         - 照会だけで、何も保存しない（評価の非表示・削除はしない）
 
@@ -410,6 +414,55 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /lesson-reviews/{review_id}/reply:
+    put:
+      operationId: replyToLessonReview
+      summary: 評価への返信（コーチ）
+      description: |
+        コーチが自分の受けたレッスンの評価（glossary の lesson_review）1 件に、感謝やフォローの短い返信（glossary の
+        lesson_review_reply）を付け、付けたあとの返信を返す。評価 1 件に返信は 1 つで、2 回目からは文と時刻を丸ごと
+        置き換える（上書き。前の返信は残さない）。返信の削除はない。点と一言は変えない。
+
+        - コーチの役割のトークンだけが呼べる（本部・生徒は 403）。返信できるのは評価されたコーチ（評価したレッスンの
+          コーチ）だけで、他のコーチの評価は 403（評価は `listCoachReviews` で誰でも読めるので、あることは隠さない）
+        - 評価がないとき・`review_id` が UUID でないときは 404
+        - `comment` は空（空白だけを含む）でなく、200 文字まで。不正な入力では 422 で、何も変えない
+        - `replied_at` は返信を付けた（付け直したなら最後に付け直した）時刻
+
+        付けた返信は評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`、student-app の `listCoachReviews`）の
+        評価ごとの `reply` に載る。行動イベントは発火しない。
+      tags: [review]
+      x-context: review
+      x-analytics-events: []
+      parameters:
+        - name: review_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplyToLessonReviewRequest"
+      responses:
+        "200":
+          description: 付けた（置き換えた）あとの返信
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonReviewReply"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /coaches/{coach_id}/suspend:
     post:
@@ -1810,6 +1863,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ReviewLessonMenu"
             - type: "null"
+        reply:
+          description: |
+            評価されたコーチの返信（`replyToLessonReview`）。付け直していれば最後の返信だけ。返信がなければ null。
+            評価の一覧では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/LessonReviewReply"
+            - type: "null"
 
     ReviewLessonMenu:
       type: object
@@ -1823,6 +1883,33 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+
+    LessonReviewReply:
+      type: object
+      description: |
+        glossary の lesson_review_reply（評価へのコーチの返信）。評価 1 件に 1 つで、付けるのは評価されたコーチ。
+        student-app の `LessonReviewReply` と同じ形
+      required: [comment, replied_at]
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 返信の文
+        replied_at:
+          type: string
+          format: date-time
+          description: 返信を付けた（付け直したなら最後に付け直した）時刻
+
+    ReplyToLessonReviewRequest:
+      type: object
+      required: [comment]
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 返信の文。空白だけは不可（422）
 
     CoachReviewList:
       type: object
@@ -1888,6 +1975,13 @@ components:
             レッスンの元が持つメニューの写し。元にメニューがなければ null
           oneOf:
             - $ref: "#/components/schemas/ReviewLessonMenu"
+            - type: "null"
+        reply:
+          description: |
+            評価されたコーチの返信（`replyToLessonReview`）。付け直していれば最後の返信だけ。返信がなければ null。
+            評価の一覧では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/LessonReviewReply"
             - type: "null"
 
     LowRatedLessonReviewList:

@@ -58,19 +58,28 @@ impl AccountRepository for BrokenRepository {
         Err(Unavailable::new(REASON))
     }
 
-    async fn update_coach_bio(
-        &self,
-        _coach_id: AccountId,
-        _bio: domain::profile::CoachBio,
-    ) -> Result<Option<Account>, Unavailable> {
-        Err(Unavailable::new(REASON))
-    }
-
     async fn update_student_display_name(
         &self,
         _student_id: AccountId,
         _display_name: domain::profile::DisplayName,
     ) -> Result<Option<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
+}
+
+impl application::profile::CoachProfileRepository for BrokenRepository {
+    async fn find_coach_bio(
+        &self,
+        _coach_id: AccountId,
+    ) -> Result<Option<domain::profile::CoachBio>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
+
+    async fn update_coach_bio(
+        &self,
+        _coach_id: AccountId,
+        _bio: domain::profile::CoachBio,
+    ) -> Result<Option<domain::profile::CoachBio>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
 }
@@ -98,6 +107,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
     let router = interface::router_with(
         RegisterAccount::new(BrokenRepository, analytics.clone(), clock),
         application::identity::GetAccount::new(BrokenRepository),
+        application::profile::GetCoachBio::new(BrokenRepository),
         application::profile::UpdateCoachProfile::new(BrokenRepository),
         PublishSlot::new(
             slots.clone(),

@@ -1,6 +1,7 @@
 //! `PgLessonReviewRepository`（`review.lesson_reviews`）の検証。完了したレッスンを `PgLessonCompletionRepository::find`
 //! で読んで評価を保存・読み取りできること、同じレッスンの 2 回目の保存の拒否、コーチごとの読み取り、送った時刻での
-//! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む）。
+//! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む）。評価へのコーチの返信の
+//! 保存と上書き、評価の ID での読み取り。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -15,13 +16,17 @@ use application::{
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::{
         GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, ListLowRatedReviews,
+        ReplyToLessonReview, ReplyToLessonReviewCommand, ReplyToLessonReviewError,
         SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
     },
     scheduling::SchedulingBookingLookup,
 };
 use domain::{
     lesson::{LessonCompletion, LessonCompletionId},
-    review::{LessonReview, LessonReviewComment, Rating, ReviewError},
+    review::{
+        LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
+        LessonReviewReplyComment, Rating, ReviewError,
+    },
 };
 use infra::{
     PgAccountRepository, PgBookingRepository, PgLessonCompletionRepository,
@@ -226,4 +231,94 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
             "テスト"
         );
     }
+}
+
+fn reply_command(
+    review: &LessonReview,
+    account: domain::identity::AccountId,
+    text: &str,
+) -> ReplyToLessonReviewCommand {
+    ReplyToLessonReviewCommand {
+        account_id: account,
+        review_id: review.id(),
+        comment: LessonReviewReplyComment::new(text).unwrap(),
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn the_reviewed_coach_replies_and_a_second_reply_overwrites_it(pool: PgPool) {
+    let lesson = completed_lesson(&pool).await;
+    let review = review_at(&pool, &lesson, 4, at(13)).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    assert_eq!(
+        reviews.find_by_id(review.id()).await.unwrap(),
+        Some(review.clone()),
+        "返信のない評価"
+    );
+
+    ReplyToLessonReview::new(reviews.clone(), FixedClock(at(14)))
+        .execute(reply_command(&review, lesson.coach_id(), "ありがとう"))
+        .await
+        .unwrap();
+    let replied = ReplyToLessonReview::new(reviews.clone(), FixedClock(at(15)))
+        .execute(reply_command(
+            &review,
+            lesson.coach_id(),
+            "次回はサーブも見ます",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        replied.reply(),
+        Some(&LessonReviewReply::new(
+            LessonReviewReplyComment::new("次回はサーブも見ます").unwrap(),
+            at(15)
+        ))
+    );
+    // どの読み取りも返信を含めて読み、点と一言は変わらない
+    assert_eq!(
+        reviews.find_by_id(review.id()).await.unwrap(),
+        Some(replied.clone())
+    );
+    assert_eq!(
+        reviews.find_by_lesson(lesson.id()).await.unwrap(),
+        Some(replied.clone())
+    );
+    assert_eq!(
+        reviews.find_by_coach(lesson.coach_id()).await.unwrap(),
+        std::slice::from_ref(&replied)
+    );
+    assert_eq!(
+        reviews.find_submitted_since(at(13)).await.unwrap(),
+        std::slice::from_ref(&replied)
+    );
+    assert_eq!(replied.comment(), review.comment());
+
+    // 生徒・ない評価は拒み、何も変えない
+    let result = ReplyToLessonReview::new(reviews.clone(), FixedClock(at(16)))
+        .execute(reply_command(&review, lesson.student_id(), "横取り"))
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ReplyToLessonReviewError::Invalid(
+                ReviewError::NotTheReviewedCoach
+            ))
+        ),
+        "{result:?}"
+    );
+    let mut unknown = reply_command(&review, lesson.coach_id(), "ありがとう");
+    unknown.review_id = LessonReviewId::from_u128(99);
+    let result = ReplyToLessonReview::new(reviews.clone(), FixedClock(at(16)))
+        .execute(unknown)
+        .await;
+    assert!(
+        matches!(result, Err(ReplyToLessonReviewError::ReviewNotFound)),
+        "{result:?}"
+    );
+    assert_eq!(
+        reviews.find_by_id(review.id()).await.unwrap(),
+        Some(replied)
+    );
 }

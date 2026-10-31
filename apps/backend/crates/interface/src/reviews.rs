@@ -2,7 +2,8 @@
 //! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部と生徒はどのコーチの分も、コーチは自分の分だけ）と、
 //! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。コーチが受けた評価の一覧。読める範囲は件数と平均と同じ）。
 //! 評価の一覧には、評価した生徒を特定できる項目を載せない（[`CoachReviewBody`] に `student_id` がない）。各評価には、
-//! 評価した完了したレッスンの元（予約・動画）が持つレッスンメニューの写しを載せる（なければ null）。
+//! 評価した完了したレッスンの元（予約・動画）が持つレッスンメニューの写しを載せる（なければ null）。評価されたコーチの返信も
+//! 載せる（なければ null）。返信を付ける `PUT /lesson-reviews/{review_id}/reply` は [`crate::review_replies`]。
 //! 自分が生徒でないレッスンには、レッスンがあることも知らせない（404）。
 
 use std::sync::Arc;
@@ -26,7 +27,10 @@ use axum::{
 };
 use domain::{
     identity::Role,
-    review::{CoachReviewSummary, LessonReview, LessonReviewComment, Rating, ReviewLessonMenu},
+    review::{
+        CoachReviewSummary, LessonReview, LessonReviewComment, LessonReviewReply, Rating,
+        ReviewLessonMenu,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -81,6 +85,14 @@ pub struct CoachReviewBody {
     comment: String,
     submitted_at: String,
     lesson_menu: Option<ReviewLessonMenuBody>,
+    reply: Option<LessonReviewReplyBody>,
+}
+
+/// admin-web・student-app の `LessonReviewReply`（評価されたコーチの返信）。
+#[derive(Serialize)]
+pub struct LessonReviewReplyBody {
+    comment: String,
+    replied_at: String,
 }
 
 /// admin-web・student-app の `ReviewLessonMenu`（評価した完了したレッスンのレッスンメニューの ID・名前）。
@@ -234,6 +246,7 @@ fn coach_review_body(
             .lesson_menus
             .get(&review.lesson_id())
             .map(review_lesson_menu_body),
+        reply: review.reply().map(lesson_review_reply_body).transpose()?,
     })
 }
 
@@ -242,4 +255,13 @@ pub(crate) fn review_lesson_menu_body(menu: &ReviewLessonMenu) -> ReviewLessonMe
         lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
         name: menu.name().as_str().to_string(),
     }
+}
+
+pub(crate) fn lesson_review_reply_body(
+    reply: &LessonReviewReply,
+) -> Result<LessonReviewReplyBody, ApiError> {
+    Ok(LessonReviewReplyBody {
+        comment: reply.comment().as_str().to_string(),
+        replied_at: date_time_to_contract(reply.replied_at())?,
+    })
 }

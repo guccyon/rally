@@ -165,6 +165,7 @@ fn app_with_entitlements(
             clock,
         ),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
+        application::profile::GetCoachBio::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(
             slots.clone(),

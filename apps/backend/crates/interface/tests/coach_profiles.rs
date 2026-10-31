@@ -13,7 +13,7 @@ use application::{
     },
     in_memory::{InMemoryAccountRepository, InMemoryFavoriteCoachRepository},
     matching::MatchingCoachFavoriteLookup,
-    profile::GetCoachProfile,
+    profile::{CoachProfileRepository, GetCoachProfile},
 };
 use axum::{
     Router,

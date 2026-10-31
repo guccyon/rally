@@ -79,6 +79,14 @@ terms:
     ja: "レッスンの評価"
     definition: "生徒が完了したレッスン（lesson_completion）1 件につき 1 回だけ付ける 1〜5 の点と一言で、評価されるのはそのレッスンのコーチであり、コーチごとの件数と平均がコーチ品質の指標になる。"
     context: review
+  - id: lesson_review_reply
+    ja: "評価への返信"
+    definition: "コーチが受けたレッスンの評価（lesson_review）に付ける感謝やフォローの短い文で、付けられるのは評価されたコーチだけ、評価 1 件に 1 つであり、付け直すと前の返信を上書きする。"
+    context: review
+    code: [LessonReviewReply, LessonReviewReplyComment, LessonReview::write_reply, replyToLessonReview]
+    note: >-
+      文は空でなく 200 文字まで。削除はない。返信は評価の点と一言を変えない。評価の一覧（listCoachReviews・
+      listLowRatedLessonReviews）の評価ごとの reply に載る（なければ null）。
   - id: message_thread
     ja: "スレッド"
     definition: "生徒と担当コーチの 1 対 1 のチャットで、生徒とコーチの組に 1 つあり、Gen1 では予約が確定したときか、添削依頼・添削の返却をスレッドに流すときにまだなければ開く。"

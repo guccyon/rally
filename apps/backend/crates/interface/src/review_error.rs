@@ -1,11 +1,15 @@
 //! review（評価）の不変条件の違反（[`ReviewError`]）を、OpenAPI の `Error` の応答に写す。
 //!
-//! 文言と HTTP の状態・`code` はここだけで決める（`/lesson-reviews` のハンドラーは変種を個別に拾わない）。
+//! 文言と HTTP の状態・`code` はここだけで決める（`/lesson-reviews` と `/lesson-reviews/{review_id}/reply` のハンドラーは
+//! 変種を個別に拾わない）。
 //!
 //! - 評価済み（`LessonAlreadyReviewed`）は 409 `lesson_already_reviewed`
 //! - レッスンの生徒でない（`NotTheLessonStudent`）は、レッスンがあることも知らせない 404 `not_found`（ないレッスンと同じ）
 //! - 点・一言の違反（`RatingOutOfRange`・`EmptyLessonReviewComment`・`LessonReviewCommentTooLong`）は 422
 //!   `validation_failed`
+//! - 評価されたコーチでない（`NotTheReviewedCoach`）は 403 `forbidden`（評価はコーチが受けた評価の一覧で誰でも読めるので、
+//!   あることは隠さない）
+//! - 返信の文の違反（`EmptyLessonReviewReply`・`LessonReviewReplyTooLong`）は 422 `validation_failed`
 
 use domain::review::ReviewError;
 
@@ -29,6 +33,13 @@ impl From<ReviewError> for ApiError {
             ReviewError::EmptyLessonReviewComment => Self::validation_failed("評価の一言が空"),
             ReviewError::LessonReviewCommentTooLong { max } => {
                 Self::validation_failed(format!("評価の一言は {max} 文字まで"))
+            }
+            ReviewError::NotTheReviewedCoach => {
+                Self::forbidden("評価されたコーチだけが評価に返信できる")
+            }
+            ReviewError::EmptyLessonReviewReply => Self::validation_failed("評価への返信が空"),
+            ReviewError::LessonReviewReplyTooLong { max } => {
+                Self::validation_failed(format!("評価への返信は {max} 文字まで"))
             }
         }
     }
@@ -72,6 +83,24 @@ mod tests {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "validation_failed",
                 "評価の一言は 200 文字まで",
+            ),
+            (
+                ReviewError::NotTheReviewedCoach,
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "評価されたコーチだけが評価に返信できる",
+            ),
+            (
+                ReviewError::EmptyLessonReviewReply,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "validation_failed",
+                "評価への返信が空",
+            ),
+            (
+                ReviewError::LessonReviewReplyTooLong { max: 200 },
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "validation_failed",
+                "評価への返信は 200 文字まで",
             ),
         ] {
             let api_error = ApiError::from(error.clone());

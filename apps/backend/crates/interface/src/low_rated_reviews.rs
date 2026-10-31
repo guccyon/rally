@@ -1,5 +1,5 @@
 //! `/lesson-reviews/low`。admin-web の `GET /lesson-reviews/low`（`listLowRatedLessonReviews`。本部が横断で見る
-//! 直近の低い評価の一覧）。本部だけが呼べる。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
+//! 直近の低い評価の一覧）。本部だけが呼べる。各評価には評価されたコーチの返信を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
 
@@ -20,7 +20,10 @@ use serde::Serialize;
 use crate::{
     contract::date_time_to_contract,
     error::ApiError,
-    reviews::{ReviewLessonMenuBody, review_lesson_menu_body},
+    reviews::{
+        LessonReviewReplyBody, ReviewLessonMenuBody, lesson_review_reply_body,
+        review_lesson_menu_body,
+    },
 };
 
 /// `/lesson-reviews/low` のハンドラーが使うユースケース。
@@ -54,6 +57,7 @@ pub struct LowRatedLessonReviewBody {
     comment: String,
     submitted_at: String,
     lesson_menu: Option<ReviewLessonMenuBody>,
+    reply: Option<LessonReviewReplyBody>,
 }
 
 /// `GET /lesson-reviews/low`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
@@ -108,5 +112,6 @@ fn low_rated_review_body(
             .lesson_menus
             .get(&review.lesson_id())
             .map(review_lesson_menu_body),
+        reply: review.reply().map(lesson_review_reply_body).transpose()?,
     })
 }

@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use application::{
     identity::{AccountRepository, account_id_uuid},
-    profile::{CoachFavoriteLookup, GetCoachProfile, GetCoachProfileCommand},
+    profile::{
+        CoachFavoriteLookup, CoachProfileRepository, GetCoachProfile, GetCoachProfileCommand,
+    },
 };
 use axum::{
     Json,
@@ -40,7 +42,7 @@ pub async fn get_coach_profile<R, F>(
     Path(coach_id): Path<String>,
 ) -> Result<Json<CoachProfileBody>, ApiError>
 where
-    R: AccountRepository,
+    R: AccountRepository + CoachProfileRepository,
     F: CoachFavoriteLookup,
 {
     // 契約の getCoachProfile では、UUID でない ID はないものとして 404
