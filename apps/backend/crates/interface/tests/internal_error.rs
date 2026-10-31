@@ -139,6 +139,8 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(BrokenRepository),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            clock,
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

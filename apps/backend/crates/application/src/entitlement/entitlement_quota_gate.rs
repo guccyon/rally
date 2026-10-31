@@ -9,6 +9,7 @@ use crate::{Unavailable, scheduling::QuotaGate};
 /// [`domain::entitlement::Entitlement::may_book_live_lesson`] で `at` の暦月に枠が残っているかを答える。
 ///
 /// 受講権のない生徒（月額契約を開始する前の体験予約など）は、暦月の回数の制約を受けないので `true`。
+/// 通話の枠を持つか（[`QuotaGate::has_live_lesson_quota`]）は、月額の受講権（通話の枠がある）のときだけ `true`。
 #[derive(Debug, Clone)]
 pub struct EntitlementQuotaGate<E> {
     entitlements: E,
@@ -35,6 +36,14 @@ where
             .find_by_student(student_id)
             .await?
             .is_none_or(|entitlement| entitlement.may_book_live_lesson(month)))
+    }
+
+    async fn has_live_lesson_quota(&self, student_id: AccountId) -> Result<bool, Unavailable> {
+        Ok(self
+            .entitlements
+            .find_by_student(student_id)
+            .await?
+            .is_some_and(|entitlement| entitlement.live_lesson_quota().is_some()))
     }
 }
 
@@ -98,6 +107,28 @@ mod tests {
         assert!(
             may(3, oct26()).await.unwrap(),
             "受講権のない生徒は暦月の回数の制約を受けない"
+        );
+    }
+
+    #[tokio::test]
+    async fn only_monthly_entitlements_have_the_live_lesson_quota() {
+        let one_shot = Entitlement::one_shot(
+            EntitlementId::from_u128(103),
+            AccountId::from_u128(3),
+            Sport::Golf,
+            1,
+        )
+        .unwrap();
+        let gate = EntitlementQuotaGate::new(InMemoryEntitlementRepository::with_entitlements([
+            monthly(1, 0),
+            one_shot,
+        ]));
+        let has = |student: u128| gate.has_live_lesson_quota(AccountId::from_u128(student));
+        assert!(has(1).await.unwrap(), "月額は通話の枠を持つ");
+        assert!(!has(3).await.unwrap(), "ワンショットは通話の枠を持たない");
+        assert!(
+            !has(4).await.unwrap(),
+            "受講権のない生徒は通話の枠を持たない"
         );
     }
 }

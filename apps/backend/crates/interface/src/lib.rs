@@ -160,7 +160,7 @@ pub fn router_with<
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     get_slot_supply: GetSlotSupply<B, C>,
-    list_my_bookings: ListMyBookings<B, I>,
+    list_my_bookings: ListMyBookings<B, I, G, C>,
     list_coach_bookings: ListCoachBookings<B, D>,
     list_coach_slots: ListCoachSlots<S, J, B>,
     start_subscription: StartSubscription<E, A, P, C>,
@@ -261,7 +261,10 @@ where
             cancel_booking,
         }));
     let my_bookings = Router::new()
-        .route("/bookings/me", get(my_bookings::list_my_bookings::<B, I>))
+        .route(
+            "/bookings/me",
+            get(my_bookings::list_my_bookings::<B, I, G, C>),
+        )
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(my_bookings::MyBookingsState { list_my_bookings }));
     let coach_bookings = Router::new()
