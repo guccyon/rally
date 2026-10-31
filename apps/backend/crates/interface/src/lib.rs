@@ -22,6 +22,7 @@ mod lesson_menus;
 mod lesson_stats;
 mod lessons;
 mod live_lesson_sessions;
+mod low_rated_reviews;
 mod me;
 mod message;
 mod messaging;
@@ -94,7 +95,8 @@ use application::{
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
-        ReviewedLessonMenuLookup, SubmitLessonReview,
+        ListLowRatedReviews, ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup,
+        ReviewerDisplayNameLookup, SubmitLessonReview,
     },
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachIntroductionLookup,
@@ -860,6 +862,36 @@ where
         .with_state(Arc::new(announcements::AnnouncementsState {
             send_announcement,
             list_announcements,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る低い評価の一覧（admin-web の `GET /lesson-reviews/low`）のルーター。[`router_with`] と同じくトークンの
+/// 検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
+/// [`router_with`] で、生徒だけ。
+pub fn low_rated_reviews_router<R, M, D, S, C, T>(
+    list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+    tokens: T,
+) -> Router
+where
+    R: LessonReviewRepository + 'static,
+    M: ReviewedLessonMenuLookup + 'static,
+    D: ReviewedCoachDisplayNameLookup + 'static,
+    S: ReviewerDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-reviews/low",
+            get(low_rated_reviews::list_low_rated_reviews::<R, M, D, S, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(low_rated_reviews::LowRatedReviewsState {
+            list_low_rated_reviews,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }
