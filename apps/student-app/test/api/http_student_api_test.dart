@@ -646,14 +646,27 @@ void main() {
   );
 
   test('listSubscriptionPlans は契約に反する応答を StudentApiException にする', () async {
-    for (final plan in [
-      {'plan': 'plus', 'live_lessons_per_month': 0},
-      {'plan': 'premium', 'live_lessons_per_month': 4},
+    for (final body in <Map<String, dynamic>>[
+      for (final plan in <Object?>[
+        {'plan': 'plus', 'live_lessons_per_month': 0},
+        {'plan': 'premium', 'live_lessons_per_month': 4},
+        // 項目の欠落・型違い
+        {'plan': 'plus'},
+        {'live_lessons_per_month': 4},
+        {'plan': 'plus', 'live_lessons_per_month': '4'},
+        {'plan': 1, 'live_lessons_per_month': 4},
+        'plus',
+        null,
+      ])
+        {
+          'plans': [plan],
+        },
+      <String, dynamic>{},
+      {'plans': null},
+      {'plans': 'standard'},
     ]) {
       final error =
-          await apiReplying(200, {
-            'plans': [plan],
-          }).listSubscriptionPlans().then<Object?>(
+          await apiReplying(200, body).listSubscriptionPlans().then<Object?>(
             (_) => null,
             onError: (Object e) => e,
           );

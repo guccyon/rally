@@ -621,14 +621,21 @@ class SubscriptionPlanDetail {
   /// ビデオ通話の暦月の上限（`LiveLessonQuota.limit` と同じ値。1 以上）
   final int liveLessonsPerMonth;
 
-  /// `live_lessons_per_month` が 1 未満なら [FormatException]（契約にない値として、enum の値と同じく扱う）
+  /// 必須の項目が欠けている・型が違う・`live_lessons_per_month` が 1 未満なら [FormatException]
+  /// （契約に反する応答として、enum の値と同じく扱う。境界で [TypeError] を捕まえずに済むよう、ここで確かめる）
   factory SubscriptionPlanDetail.fromJson(Map<String, dynamic> json) {
-    final liveLessonsPerMonth = json['live_lessons_per_month'] as int;
-    if (liveLessonsPerMonth < 1) {
-      throw FormatException('契約にない値です: $liveLessonsPerMonth');
+    final plan = json['plan'];
+    final liveLessonsPerMonth = json['live_lessons_per_month'];
+    if (plan is! String) {
+      throw FormatException('契約にない値です: plan=$plan');
+    }
+    if (liveLessonsPerMonth is! int || liveLessonsPerMonth < 1) {
+      throw FormatException(
+        '契約にない値です: live_lessons_per_month=$liveLessonsPerMonth',
+      );
     }
     return SubscriptionPlanDetail(
-      plan: SubscriptionPlan.fromWire(json['plan'] as String),
+      plan: SubscriptionPlan.fromWire(plan),
       liveLessonsPerMonth: liveLessonsPerMonth,
     );
   }
@@ -643,13 +650,22 @@ class SubscriptionPlanList {
   /// standard・plus の順
   final List<SubscriptionPlanDetail> plans;
 
-  factory SubscriptionPlanList.fromJson(Map<String, dynamic> json) =>
-      SubscriptionPlanList(
-        plans: [
-          for (final e in json['plans'] as List<dynamic>)
-            SubscriptionPlanDetail.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  /// `plans` が欠けている・一覧でない・要素が object でないなら [FormatException]
+  factory SubscriptionPlanList.fromJson(Map<String, dynamic> json) {
+    final plans = json['plans'];
+    if (plans is! List<dynamic>) {
+      throw FormatException('契約にない値です: plans=$plans');
+    }
+    return SubscriptionPlanList(
+      plans: [
+        for (final e in plans)
+          if (e is Map<String, dynamic>)
+            SubscriptionPlanDetail.fromJson(e)
+          else
+            throw FormatException('契約にない値です: plans の要素=$e'),
+      ],
+    );
+  }
 }
 
 /// `StartSubscriptionRequest`
