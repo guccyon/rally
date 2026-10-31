@@ -367,6 +367,46 @@ void main() {
     expect(none.reviews, isEmpty);
   });
 
+  test('listCoachesForStudent のパスとスポーツの絞り込み、コーチの行の変換', () async {
+    final rated = {
+      'coach_id': 'c1',
+      'display_name': '佐藤',
+      'sport': 'tennis',
+      'review_count': 12,
+      'average_rating': 4,
+      'published_lesson_menu_count': 2,
+    };
+    final unrated = {
+      ...rated,
+      'coach_id': 'c2',
+      'display_name': '高橋',
+      'review_count': 0,
+      'average_rating': null,
+      'published_lesson_menu_count': 0,
+    };
+    final list = await apiReplying(200, {
+      'coaches': [rated, unrated],
+    }).listCoachesForStudent();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/coaches');
+    expect(sent.single.url.queryParameters, isEmpty);
+    // 返った順のまま
+    expect(list.coaches.map((c) => c.coachId), ['c1', 'c2']);
+    final first = list.coaches.first;
+    expect(first.displayName, '佐藤');
+    expect(first.sport, Sport.tennis);
+    expect(first.reviewCount, 12);
+    expect(first.averageRating, 4.0);
+    expect(first.publishedLessonMenuCount, 2);
+    expect(list.coaches.last.averageRating, isNull);
+
+    final none = await apiReplying(200, {
+      'coaches': <Object>[],
+    }).listCoachesForStudent(sport: Sport.swimming);
+    expect(sent.single.url.queryParameters, {'sport': 'swimming'});
+    expect(none.coaches, isEmpty);
+  });
+
   test('listCoachLessonMenus のパスとスポーツの絞り込み、レッスンメニューの変換', () async {
     final live = {
       'lesson_menu_id': 'm1',

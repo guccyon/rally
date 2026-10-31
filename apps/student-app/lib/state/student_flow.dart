@@ -5,6 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
 import 'chat.dart';
+import 'coach_search.dart';
 import 'lesson_review.dart';
 import 'subscription.dart';
 
@@ -14,6 +15,9 @@ enum FlowStep {
 
   /// ホーム（登録後に最初に開く。これからの予約・今月のビデオ通話の残り・コーチとのやり取り・返ってきた添削・添削の依頼の入口）
   home,
+
+  /// 生徒のスポーツのコーチの一覧（ホームから開く。状態は [CoachSearchState]）
+  coachSearch,
   slotSearch,
   bookingPending,
   liveLesson,
@@ -86,7 +90,7 @@ enum VideoReviewRequestResult {
 }
 
 /// 生徒アプリの状態（チャットの状態は [ChatState]、完了したレッスンの評価の状態は [LessonReviewState]、
-/// 月額契約と受講権の状態は [SubscriptionState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
+/// 月額契約と受講権の状態は [SubscriptionState]、コーチを探す画面の状態は [CoachSearchState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
 /// 一覧をコンストラクタで写して持つので const では作らない。
 class StudentFlowState {
   StudentFlowState({

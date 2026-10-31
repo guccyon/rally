@@ -193,6 +193,22 @@ void main() {
     expect(coachReviewSummaryLabel(summary(0, null)), '評価はまだありません');
   });
 
+  test('コーチを探す一覧の行は評価を同じ書き方で出し、0 件なら「評価なし」、メニューは件数で出す', () {
+    CoachListing coach(int count, double? average, int menus) => CoachListing(
+      coachId: 'c1',
+      displayName: '佐藤',
+      sport: Sport.tennis,
+      reviewCount: count,
+      averageRating: average,
+      publishedLessonMenuCount: menus,
+    );
+    expect(coachListingRatingLabel(coach(12, 4.25, 2)), '★ 4.3（12 件）');
+    expect(coachListingRatingLabel(coach(1, 5, 0)), '★ 5.0（1 件）');
+    expect(coachListingRatingLabel(coach(0, null, 0)), '評価なし');
+    expect(coachListingLessonMenuCountLabel(coach(0, null, 3)), 'レッスンメニュー 3 件');
+    expect(coachListingLessonMenuCountLabel(coach(0, null, 0)), 'レッスンメニュー 0 件');
+  });
+
   test('コーチが受けた評価の点は 5 点満点を添えて出す', () {
     expect(coachReviewRatingLabel(4), '4 点（5 点満点）');
   });
