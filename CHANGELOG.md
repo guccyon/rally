@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web のコーチの「対応待ち」の確定待ちの予約の行に、生徒が予約したときのレッスンメニューを「メニュー: サーブ特訓（90 分）」の形（「通話への参加」の一覧と同じ表示。時間がなければ名前だけ）で出す（`listMyCoachBookings` の `lesson_menu`）。メニューのない予約はこれまでどおり。「通話への参加」の予約の行は #263 のメニューの列のまま。API と契約の変更はない（#279）
 - admin-web のコーチの「動画の添削」の添削待ち・返却済みの行と、「対応待ち」の添削待ちの動画の行に、生徒が動画を送った時点で選んだレッスンメニューを「メニュー: 〇〇」の形で出す（`listMyCoachVideos` の `lesson_menu`）。メニューのない動画はこれまでどおり。API と契約の変更はない（#270）
 - 添削の依頼で非同期のレッスンメニューを選べる API: student-app の `submitVideo` のリクエストに任意の `lesson_menu_id` を足した。選べるのは送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー（満たさないか、メニューがなければ 422 `validation_failed`。省けば今までどおりメニューなし）。受け付けたときにメニューの ID・名前を動画に写して残す（後でメニューを直しても動画の表示は送った時点のまま）。student-app の `Video`（`submitVideo`）・`VideoReview`（`getVideoReview`）と admin-web の `CoachVideo`（`listMyCoachVideos`）・`VideoReview`（`returnVideoReview`）に `lesson_menu`（`VideoLessonMenu`。なければ null）を足した。既存の動画は null。DB は動画の列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面は変えない（#268）
 - admin-web のコーチの「通話への参加」の予約の一覧に、生徒が予約したときのレッスンメニューの名前と 1 回の時間（例: 「サーブ特訓（90 分）」。時間がなければ名前だけ）の列を足した（`listMyCoachBookings` の `lesson_menu`）。メニューのない予約は「—」。API と契約の変更はない（#263）
