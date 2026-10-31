@@ -667,7 +667,13 @@ abstract final class Fixtures {
     lessonMenu: videoLessonMenu,
   );
 
-  /// コーチが受けた評価（送った時刻の新しい順）
+  /// 評価したレッスンのレッスンメニューの写し（`CoachReview.lesson_menu`）
+  static final reviewLessonMenu = ReviewLessonMenu(
+    lessonMenuId: lessonMenus.first.lessonMenuId,
+    name: lessonMenus.first.name,
+  );
+
+  /// コーチが受けた評価（送った時刻の新しい順）。新しい方はメニューのあるレッスン、古い方はメニューのないレッスンへの評価
   static final coachReviews = [
     CoachReview(
       reviewId: reviewId,
@@ -675,6 +681,7 @@ abstract final class Fixtures {
       rating: 5,
       comment: '丁寧でした',
       submittedAt: now,
+      lessonMenu: reviewLessonMenu,
     ),
     CoachReview(
       reviewId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',

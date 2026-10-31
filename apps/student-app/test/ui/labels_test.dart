@@ -178,6 +178,15 @@ void main() {
     expect(coachReviewRatingLabel(4), '4 点（5 点満点）');
   });
 
+  test('評価したレッスンのメニューは名前だけを出す', () {
+    expect(
+      reviewLessonMenuLabel(
+        const ReviewLessonMenu(lessonMenuId: 'm1', name: 'フォアハンドの基礎'),
+      ),
+      'メニュー: フォアハンドの基礎',
+    );
+  });
+
   test('レッスンメニューの同期レッスン 1 回の時間を分で出す', () {
     expect(lessonMenuDurationLabel(60), '1 回 60 分');
     expect(lessonMenuDurationLabel(15), '1 回 15 分');
