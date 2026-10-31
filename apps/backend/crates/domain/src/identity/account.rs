@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use super::{AccountId, Coach, Email, Profile, Role, Student};
+use super::{AccountId, Coach, Email, Role, RoleAttributes, Student};
 use crate::catalog::Sport;
 use crate::{DomainError, profile::DisplayName};
 
@@ -10,7 +10,7 @@ pub struct Account {
     id: AccountId,
     email: Email,
     display_name: DisplayName,
-    profile: Profile,
+    role_attributes: RoleAttributes,
     registered_at: SystemTime,
 }
 
@@ -33,37 +33,37 @@ impl Account {
             role,
             sports: sports.len(),
         };
-        let profile = match role {
+        let role_attributes = match role {
             Role::Student => match sports.as_slice() {
-                [sport] => Profile::Student(Student::new(*sport)),
+                [sport] => RoleAttributes::Student(Student::new(*sport)),
                 _ => return Err(mismatch()),
             },
-            Role::Coach => Profile::Coach(Coach::new(sports.iter().copied())?),
-            Role::Headquarters if sports.is_empty() => Profile::Headquarters,
+            Role::Coach => RoleAttributes::Coach(Coach::new(sports.iter().copied())?),
+            Role::Headquarters if sports.is_empty() => RoleAttributes::Headquarters,
             Role::Headquarters => return Err(mismatch()),
         };
-        Ok(Self::with_profile(
+        Ok(Self::with_role_attributes(
             id,
             email,
             display_name,
-            profile,
+            role_attributes,
             registered_at,
         ))
     }
 
     /// 検証済みの属性から作る（属性の型が組み合わせを保証する）。
-    pub fn with_profile(
+    pub fn with_role_attributes(
         id: AccountId,
         email: Email,
         display_name: DisplayName,
-        profile: Profile,
+        role_attributes: RoleAttributes,
         registered_at: SystemTime,
     ) -> Self {
         Self {
             id,
             email,
             display_name,
-            profile,
+            role_attributes,
             registered_at,
         }
     }
@@ -73,7 +73,7 @@ impl Account {
     }
 
     pub const fn role(&self) -> Role {
-        self.profile.role()
+        self.role_attributes.role()
     }
 
     pub fn email(&self) -> &Email {
@@ -84,8 +84,8 @@ impl Account {
         &self.display_name
     }
 
-    pub fn profile(&self) -> &Profile {
-        &self.profile
+    pub fn role_attributes(&self) -> &RoleAttributes {
+        &self.role_attributes
     }
 
     pub const fn registered_at(&self) -> SystemTime {
@@ -94,16 +94,16 @@ impl Account {
 
     /// 役割が生徒なら、その属性。
     pub fn as_student(&self) -> Option<&Student> {
-        match &self.profile {
-            Profile::Student(student) => Some(student),
+        match &self.role_attributes {
+            RoleAttributes::Student(student) => Some(student),
             _ => None,
         }
     }
 
     /// 役割がコーチなら、その属性。
     pub fn as_coach(&self) -> Option<&Coach> {
-        match &self.profile {
-            Profile::Coach(coach) => Some(coach),
+        match &self.role_attributes {
+            RoleAttributes::Coach(coach) => Some(coach),
             _ => None,
         }
     }

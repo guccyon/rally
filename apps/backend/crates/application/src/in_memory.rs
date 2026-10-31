@@ -11,7 +11,7 @@ use domain::{
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     catalog::{LessonMenu, LessonMenuId},
     entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
-    identity::{Account, AccountId, Profile},
+    identity::{Account, AccountId, RoleAttributes},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
@@ -117,11 +117,11 @@ impl AccountRepository for InMemoryAccountRepository {
         let Some(coach) = account.as_coach() else {
             return Ok(None);
         };
-        *account = Account::with_profile(
+        *account = Account::with_role_attributes(
             account.id(),
             account.email().clone(),
             account.display_name().clone(),
-            Profile::Coach(coach.clone().with_bio(bio)),
+            RoleAttributes::Coach(coach.clone().with_bio(bio)),
             account.registered_at(),
         );
         Ok(Some(account.clone()))

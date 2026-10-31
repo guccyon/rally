@@ -1,7 +1,7 @@
 use domain::{
     DomainError,
     catalog::Sport,
-    identity::{Account, Email, Profile, Role},
+    identity::{Account, Email, Role, RoleAttributes},
     profile::DisplayName,
 };
 
@@ -89,7 +89,7 @@ where
                 }
             })?;
 
-        if let Profile::Student(student) = account.profile() {
+        if let RoleAttributes::Student(student) = account.role_attributes() {
             self.analytics
                 .emit(AnalyticsEvent::AccountRegistered {
                     student_id: account.id(),

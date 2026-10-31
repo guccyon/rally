@@ -7,7 +7,7 @@ use application::{
 };
 use domain::{
     catalog::Sport,
-    identity::{Account, AccountId, Coach, Email, Profile, Role},
+    identity::{Account, AccountId, Coach, Email, Role, RoleAttributes},
     profile::{CoachBio, DisplayName},
 };
 use sqlx::{
@@ -82,7 +82,7 @@ impl AccountRepository for PgAccountRepository {
             }
         })?;
 
-        if let Profile::Coach(coach) = account.profile() {
+        if let RoleAttributes::Coach(coach) = account.role_attributes() {
             sqlx::query("INSERT INTO identity.coaches (coach_id, created_at) VALUES ($1, $2)")
                 .bind(account_id)
                 .bind(registered_at)
@@ -196,11 +196,11 @@ fn coach_from_row(
     let coach = Coach::new(sports)
         .map_err(Unavailable::new)?
         .with_bio(CoachBio::new(bio).map_err(Unavailable::new)?);
-    Ok(Account::with_profile(
+    Ok(Account::with_role_attributes(
         account_id_uuid::from_uuid(account_id),
         Email::new(email).map_err(Unavailable::new)?,
         DisplayName::new(display_name).map_err(Unavailable::new)?,
-        Profile::Coach(coach),
+        RoleAttributes::Coach(coach),
         created_at.into(),
     ))
 }
