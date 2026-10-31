@@ -6,6 +6,7 @@ mod entitlement_chat_gate;
 pub mod entitlement_id_uuid;
 mod entitlement_quota_gate;
 mod entitlement_review_gate;
+mod entitlement_student_contract_lookup;
 mod get_entitlement;
 mod insert_entitlement_error;
 mod list_subscription_plans;
@@ -22,6 +23,7 @@ pub use consume_live_lesson_quota::{
 pub use entitlement_chat_gate::EntitlementChatGate;
 pub use entitlement_quota_gate::EntitlementQuotaGate;
 pub use entitlement_review_gate::EntitlementReviewGate;
+pub use entitlement_student_contract_lookup::EntitlementStudentContractLookup;
 pub use get_entitlement::{GetEntitlement, GetEntitlementError, GetEntitlementQuery};
 pub use insert_entitlement_error::InsertEntitlementError;
 pub use list_subscription_plans::ListSubscriptionPlans;

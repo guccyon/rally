@@ -21,9 +21,10 @@ use application::{
     clock::{Clock, SystemClock},
     entitlement::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
-        GetEntitlement, ListSubscriptionPlans, LiveLessonQuotaSubscriber, StartSubscription,
+        EntitlementStudentContractLookup, GetEntitlement, ListSubscriptionPlans,
+        LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, RegisterAccount},
+    identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
@@ -63,7 +64,7 @@ use application::{
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
-        SearchSlots, SlotRepository, WithdrawSlot,
+        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -110,6 +111,9 @@ pub fn router() -> Router {
 /// （billing・review の購読はまだない）。
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+/// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の
+/// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）
+/// 読んで添える（identity は entitlement・scheduling の表を直接読まない）。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
@@ -378,6 +382,14 @@ where
         ),
         MockTokenService,
     );
+    let students = interface::students_router(
+        ListStudents::new(
+            accounts.clone(),
+            EntitlementStudentContractLookup::new(entitlements.clone()),
+            SchedulingStudentLastBookingLookup::new(bookings.clone()),
+        ),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -535,4 +547,5 @@ where
     .merge(my_notifications)
     .merge(slot_withdrawal)
     .merge(lesson_stats)
+    .merge(students)
 }

@@ -54,6 +54,10 @@ impl AccountRepository for BrokenRepository {
         Err(Unavailable::new(REASON))
     }
 
+    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
+
     async fn update_coach_bio(
         &self,
         _coach_id: AccountId,

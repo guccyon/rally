@@ -15,6 +15,7 @@ info:
     コーチのレッスンメニュー（catalog）は、コーチが自分の分を作り（`createMyLessonMenu`）・直し・非公開にし
     （`updateMyLessonMenu`）・一覧する（`listMyLessonMenus`）。生徒は student-app の `listCoachLessonMenus` で公開中のものを読む。
     本部はすべてのコーチのメニューを横断で読む（`listLessonMenus`）。
+    本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
@@ -45,13 +46,15 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧）
   - name: identity
-    description: アカウント（ログイン中の本人のアカウント）
+    description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧）
   - name: profile
     description: プロフィール（コーチの自己紹介文・本部が見るコーチの一覧）
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
   - name: catalog
     description: カタログ（コーチのレッスンメニュー）
+  - name: entitlement
+    description: プラン（受講権。本部が見る生徒の一覧に添える契約種別と契約プラン）
 
 paths:
   /slots:
@@ -648,6 +651,41 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /students:
+    get:
+      operationId: listStudents
+      summary: 生徒の一覧（本部）
+      description: |
+        生徒（glossary の student）の役割のアカウントをすべて、本部が生徒の様子を見るのに要る項目とともに返す。
+        どのスポーツか・受講権（glossary の entitlement）があるならその契約種別と契約プラン・最近予約しているか
+        （最後に予約した時刻）・いつ登録したかを並べる。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+
+        - 並べ方: 登録した時刻 `registered_at` の新しい順。同じ時刻は `student_id` の順
+        - `contract_type` / `plan`: 生徒の受講権の契約種別と、元の月額契約のプラン（glossary の subscription_plan）。
+          受講権がない（まだ契約していない）生徒はどちらも null。ワンショットの受講権は `plan` が null
+        - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
+          キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
+        - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
+        - 絞り込み・ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で足す）。生徒がいなければ
+          `students` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [identity, entitlement, scheduling]
+      x-context: [identity, profile, entitlement, scheduling]
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /live-lesson-sessions:
     post:
       operationId: startLiveLessonSession
@@ -1243,6 +1281,66 @@ components:
           description: 表示名のコードポイントの順（同じ表示名は `coach_id` の順）
           items:
             $ref: "#/components/schemas/Coach"
+
+    ContractType:
+      type: string
+      description: 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
+      enum: [subscription, one_shot]
+
+    SubscriptionPlan:
+      type: string
+      description: |
+        glossary の subscription_plan（月額契約のプラン。student-app の `SubscriptionPlan` と同じ）。standard は暦月 2 回（既定）、
+        plus は暦月 4 回のビデオ通話の上限
+      enum: [standard, plus]
+
+    Student:
+      type: object
+      description: |
+        本部が見る生徒 1 人の様子（`listStudents`）。glossary の student の役割のアカウントに、受講権の契約種別と契約プラン、
+        最後に予約した時刻を添える。メールアドレスは持たない
+      required: [student_id, display_name, sport, contract_type, plan, last_booked_at, registered_at]
+      properties:
+        student_id:
+          type: string
+          format: uuid
+          description: 生徒のアカウントの ID（他の操作の `student_id` と同じ値）
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 生徒の表示名
+        sport:
+          $ref: "#/components/schemas/Sport"
+        contract_type:
+          oneOf:
+            - $ref: "#/components/schemas/ContractType"
+            - type: "null"
+          description: 受講権の契約種別。受講権がなければ null
+        plan:
+          oneOf:
+            - $ref: "#/components/schemas/SubscriptionPlan"
+            - type: "null"
+          description: 元の月額契約のプラン。受講権がない・ワンショットなら null
+        last_booked_at:
+          type: [string, "null"]
+          format: date-time
+          description: 最後に予約を作った時刻（予約の状態を問わない）。予約がなければ null
+        registered_at:
+          type: string
+          format: date-time
+          description: アカウントを登録した時刻
+
+    StudentList:
+      type: object
+      description: 生徒の一覧（並べ方は `listStudents` の説明）
+      required: [students]
+      properties:
+        students:
+          type: array
+          description: 登録した時刻の新しい順（同じ時刻は `student_id` の順）
+          items:
+            $ref: "#/components/schemas/Student"
 
     CoachReviewSummary:
       type: object

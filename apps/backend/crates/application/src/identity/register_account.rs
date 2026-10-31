@@ -272,6 +272,10 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn update_coach_bio(
             &self,
             _coach_id: domain::identity::AccountId,

@@ -416,6 +416,58 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn last_booked_at_of_students_reads_the_latest_creation_of_any_status(pool: PgPool) {
+    let (student, other, no_booking, not_asked) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+    );
+    let coach = support::coach(&pool).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    let book = |student: AccountId, slot: Slot, created_hour: u64| {
+        let bookings = bookings.clone();
+        async move {
+            let id = bookings.next_id();
+            bookings
+                .reserve(slot.id(), student, |slot, existing| {
+                    Booking::reserve(id, student, false, slot, existing, at(created_hour))
+                })
+                .await
+                .unwrap()
+        }
+    };
+    book(student, support::open_slot(&pool, coach, 30, 31).await, 1).await;
+    // 後で作った予約は、開始が早い枠でも新しい。キャンセルしても数える
+    let latest = book(student, support::open_slot(&pool, coach, 20, 21).await, 5).await;
+    bookings
+        .update(latest.id(), |booking, slot| {
+            booking.cancel(student, slot, at(6)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    book(other, support::open_slot(&pool, coach, 40, 41).await, 3).await;
+    book(not_asked, support::open_slot(&pool, coach, 50, 51).await, 9).await;
+
+    let found = bookings
+        .last_booked_at_of_students(&[student, other, no_booking].into())
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        std::collections::BTreeMap::from([(student, at(5)), (other, at(3))])
+    );
+    assert!(
+        bookings
+            .last_booked_at_of_students(&Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPool) {
     let bookings = PgBookingRepository::new(pool.clone());
     let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
