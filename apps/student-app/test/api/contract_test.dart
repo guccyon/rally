@@ -188,6 +188,94 @@ void main() {
     expect((duration['type'] as YamlList).cast<String>(), ['integer', 'null']);
   });
 
+  test('動画を送った時点のレッスンメニューの項目が契約と一致し、メニューを選ばない動画は null である（submitVideo・getVideoReview）', () {
+    // Video.fromJson・VideoReview.fromJson が読む項目
+    expect(propertiesOf('Video'), [
+      'video_id',
+      'student_id',
+      'coach_id',
+      'sport',
+      'status',
+      'upload_url',
+      'created_at',
+      'lesson_menu',
+    ]);
+    expect(propertiesOf('VideoReview'), [
+      'review_id',
+      'video_id',
+      'student_id',
+      'coach_id',
+      'status',
+      'comment',
+      'returned_at',
+      'ai_feedback',
+      'lesson_menu',
+    ]);
+    for (final schema in ['Video', 'VideoReview']) {
+      expect(requiredOf(schema), isNot(contains('lesson_menu')));
+      final lessonMenu =
+          ((schemas[schema] as YamlMap)['properties'] as YamlMap)['lesson_menu']
+              as YamlMap;
+      final oneOf = (lessonMenu['oneOf'] as YamlList).cast<YamlMap>().toList();
+      expect(oneOf, hasLength(2));
+      expect(refOf(oneOf.first), '#/components/schemas/VideoLessonMenu');
+      expect(oneOf.last['type'], 'null');
+    }
+
+    // VideoLessonMenu.fromJson が読む項目
+    expect(propertiesOf('VideoLessonMenu'), ['lesson_menu_id', 'name']);
+    expect(requiredOf('VideoLessonMenu'), propertiesOf('VideoLessonMenu'));
+
+    // SubmitVideoRequest.toJson が書く項目。lesson_menu_id は任意（省けばメニューなし）
+    expect(propertiesOf('SubmitVideoRequest'), [
+      'coach_id',
+      'sport',
+      'content_type',
+      'note',
+      'lesson_menu_id',
+    ]);
+    expect(requiredOf('SubmitVideoRequest'), isNot(contains('lesson_menu_id')));
+    expect(requiredOf('SubmitVideoRequest'), isNot(contains('note')));
+  });
+
+  test('予約のレッスンメニューの項目が契約と一致し、メニューのない予約は null である（listMyBookings）', () {
+    // Booking.fromJson が読む項目
+    expect(propertiesOf('Booking'), [
+      'booking_id',
+      'slot_id',
+      'student_id',
+      'coach_id',
+      'is_trial',
+      'status',
+      'starts_at',
+      'created_at',
+      'confirmed_at',
+      'cancelled_at',
+      'lesson_menu',
+    ]);
+    final lessonMenu =
+        ((schemas['Booking'] as YamlMap)['properties']
+                as YamlMap)['lesson_menu']
+            as YamlMap;
+    final oneOf = (lessonMenu['oneOf'] as YamlList).cast<YamlMap>().toList();
+    expect(oneOf, hasLength(2));
+    expect(refOf(oneOf.first), '#/components/schemas/BookingLessonMenu');
+    expect(oneOf.last['type'], 'null');
+
+    // BookingLessonMenu.fromJson が読む項目
+    expect(propertiesOf('BookingLessonMenu'), [
+      'lesson_menu_id',
+      'name',
+      'duration_minutes',
+    ]);
+    expect(requiredOf('BookingLessonMenu'), propertiesOf('BookingLessonMenu'));
+    final duration =
+        ((schemas['BookingLessonMenu'] as YamlMap)['properties']
+                as YamlMap)['duration_minutes']
+            as YamlMap;
+    expect((duration['type'] as YamlList).cast<String>(), ['integer', 'null']);
+  });
+
   test('契約プランの項目が契約と一致する（startSubscription・getMyEntitlement）', () {
     // StartSubscriptionRequest.toJson が書く項目。plan は任意（省けば standard）
     expect(propertiesOf('StartSubscriptionRequest'), [

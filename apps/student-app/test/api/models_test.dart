@@ -211,7 +211,66 @@ void main() {
       );
       expect(VideoReview.fromJson(review).aiFeedback, isNull);
     });
+
+    test('動画を送った時点のレッスンメニューを読み、null・項目がなければ null', () {
+      final parsed = VideoReview.fromJson({
+        ...review,
+        'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブの動画添削'},
+      });
+      expect(parsed.lessonMenu?.lessonMenuId, 'm1');
+      expect(parsed.lessonMenu?.name, 'サーブの動画添削');
+      expect(
+        VideoReview.fromJson({...review, 'lesson_menu': null}).lessonMenu,
+        isNull,
+      );
+      expect(VideoReview.fromJson(review).lessonMenu, isNull);
+    });
   });
+
+  group('Video.fromJson', () {
+    final video = {
+      'video_id': 'v1',
+      'student_id': 's1',
+      'coach_id': 'c1',
+      'sport': 'tennis',
+      'status': 'awaiting_upload',
+      'upload_url': 'https://objectstore.invalid/upload',
+      'created_at': '2026-10-26T03:00:00Z',
+    };
+
+    test('動画を送った時点のレッスンメニューを読み、null・項目がなければ null', () {
+      final parsed = Video.fromJson({
+        ...video,
+        'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブの動画添削'},
+      });
+      expect(parsed.lessonMenu?.lessonMenuId, 'm1');
+      expect(parsed.lessonMenu?.name, 'サーブの動画添削');
+      expect(
+        Video.fromJson({...video, 'lesson_menu': null}).lessonMenu,
+        isNull,
+      );
+      expect(Video.fromJson(video).lessonMenu, isNull);
+    });
+  });
+
+  test('SubmitVideoRequest はメニューを選んだときだけ lesson_menu_id を書く', () {
+    const request = SubmitVideoRequest(
+      coachId: 'c1',
+      sport: Sport.tennis,
+      contentType: VideoContentType.mp4,
+    );
+    expect(request.toJson(), isNot(contains('lesson_menu_id')));
+    expect(
+      const SubmitVideoRequest(
+        coachId: 'c1',
+        sport: Sport.tennis,
+        contentType: VideoContentType.mp4,
+        lessonMenuId: 'm1',
+      ).toJson()['lesson_menu_id'],
+      'm1',
+    );
+  });
+
 
   group('Slot.fromJson', () {
     final slot = {
@@ -313,7 +372,58 @@ void main() {
     expect(item.slot.endsAt, DateTime.utc(2026, 11, 1, 11));
     expect(item.slot.coachDisplayName, 'たなか');
     expect(item.slot.coachBio, isNull);
+    expect(item.booking.lessonMenu, isNull);
     expect(() => list.bookings.clear(), throwsUnsupportedError);
+  });
+
+  group('Booking のレッスンメニュー', () {
+    final booking = {
+      'booking_id': 'b1',
+      'slot_id': 's1',
+      'student_id': 'st1',
+      'coach_id': 'c1',
+      'is_trial': false,
+      'status': 'confirmed',
+      'starts_at': '2026-11-01T10:00:00Z',
+      'created_at': '2026-10-26T00:00:00Z',
+      'confirmed_at': '2026-10-26T00:01:00Z',
+      'cancelled_at': null,
+    };
+
+    test('予約した時点のメニューの ID・名前・1 回の時間を読む', () {
+      final menu = Booking.fromJson({
+        ...booking,
+        'lesson_menu': {
+          'lesson_menu_id': 'm1',
+          'name': 'フォアハンドの基礎',
+          'duration_minutes': 60,
+        },
+      }).lessonMenu!;
+      expect(menu.lessonMenuId, 'm1');
+      expect(menu.name, 'フォアハンドの基礎');
+      expect(menu.durationMinutes, 60);
+    });
+
+    test('予約した時点で非同期に直されていたメニューは 1 回の時間が null', () {
+      final menu = Booking.fromJson({
+        ...booking,
+        'lesson_menu': {
+          'lesson_menu_id': 'm1',
+          'name': 'サーブの動画添削',
+          'duration_minutes': null,
+        },
+      }).lessonMenu!;
+      expect(menu.name, 'サーブの動画添削');
+      expect(menu.durationMinutes, isNull);
+    });
+
+    test('メニューが null か載っていなければ null', () {
+      expect(
+        Booking.fromJson({...booking, 'lesson_menu': null}).lessonMenu,
+        isNull,
+      );
+      expect(Booking.fromJson(booking).lessonMenu, isNull);
+    });
   });
 
   group('契約プラン', () {

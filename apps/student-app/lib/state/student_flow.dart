@@ -55,6 +55,18 @@ enum HomeSection {
   threads,
 }
 
+/// チャットからの添削の依頼（[StudentFlowNotifier.requestVideoReview]）の結果
+enum VideoReviewRequestResult {
+  /// 受け付けられた
+  sent,
+
+  /// 選んだレッスンメニューを付けて 422 で断られた（選んだ後にメニューが変わったものと読み、メニューを読み直してある）
+  menuRejected,
+
+  /// それ以外の失敗（文言は [StudentFlowState.errorMessage]）
+  failed,
+}
+
 /// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
 class StudentFlowState {
   const StudentFlowState({
@@ -132,6 +144,13 @@ class StudentFlowState {
 
   /// レッスンメニューを読めなかったコーチの ID
   final Set<String> coachLessonMenusFailures;
+
+  /// 添削の依頼で選べる、コーチの公開中の非同期レッスンのメニューのうち生徒のスポーツのもの（[coachLessonMenus] を
+  /// 非同期で絞る。作った時刻の古い順）。まだ読んでいなければ null
+  List<LessonMenu>? asyncLessonMenusOf(String coachId) =>
+      coachLessonMenus[coachId]
+          ?.where((menu) => menu.lessonType == LessonType.asyncLesson)
+          .toList(growable: false);
 
   /// 体験予約したスロット（動画の送付でスポーツを使う）
   final Slot? bookedSlot;
@@ -754,26 +773,40 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// チャットから動画の添削を依頼する（`submitVideo`。一周シナリオの動画の送付と同じ API）。送り先はスレッドの担当コーチで、
   /// スポーツは生徒のもの。動画本体のアップロードは Gen1 ではモックなので行わない。添削依頼はサーバーがスレッドに流すので、
-  /// 送れたらスレッドを読み直す。送れたら true。
-  Future<bool> requestVideoReview({
+  /// 送れたらスレッドを読み直す。[lessonMenuId] は担当コーチの非同期のメニュー（[StudentFlowState.asyncLessonMenusOf]）で、
+  /// 省けばメニューなし。選択肢はコーチ・公開中・非同期・生徒のスポーツで絞ってあるので、メニューを付けて 422 が返ったら
+  /// 読んだ後にメニューが変わった（非公開にした・直した）ものと読み、失敗の文言は出さずにメニューを読み直す。
+  Future<VideoReviewRequestResult> requestVideoReview({
     required VideoContentType contentType,
     String? note,
+    String? lessonMenuId,
   }) async {
-    var sent = false;
+    var result = VideoReviewRequestResult.failed;
     await _run(() async {
       final thread = state.thread!;
-      await _api.submitVideo(
-        SubmitVideoRequest(
-          coachId: thread.coachId,
-          sport: state.student!.sport,
-          contentType: contentType,
-          note: note,
-        ),
-      );
-      sent = true;
+      try {
+        await _api.submitVideo(
+          SubmitVideoRequest(
+            coachId: thread.coachId,
+            sport: state.student!.sport,
+            contentType: contentType,
+            note: note,
+            lessonMenuId: lessonMenuId,
+          ),
+        );
+      } on StudentApiException catch (e) {
+        if (lessonMenuId == null ||
+            e.error?.code != ErrorCode.validationFailed) {
+          rethrow;
+        }
+        result = VideoReviewRequestResult.menuRejected;
+        await loadCoachLessonMenus(thread.coachId);
+        return;
+      }
+      result = VideoReviewRequestResult.sent;
       await _loadMessages(thread.threadId);
     });
-    return sent;
+    return result;
   }
 
   /// スレッドの一覧を読み直す

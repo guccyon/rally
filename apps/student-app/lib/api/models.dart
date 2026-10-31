@@ -400,6 +400,7 @@ class Booking {
     required this.createdAt,
     this.confirmedAt,
     this.cancelledAt,
+    this.lessonMenu,
   });
 
   final String bookingId;
@@ -413,6 +414,10 @@ class Booking {
   final DateTime? confirmedAt;
   final DateTime? cancelledAt;
 
+  /// 予約した時点でスロットに結びついていたレッスンメニューの写し（予約した後にメニューが直されても変わらない）。
+  /// メニューのない予約は null
+  final BookingLessonMenu? lessonMenu;
+
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
     bookingId: json['booking_id'] as String,
     slotId: json['slot_id'] as String,
@@ -424,7 +429,36 @@ class Booking {
     createdAt: _dateTime(json['created_at']),
     confirmedAt: _dateTimeOrNull(json['confirmed_at']),
     cancelledAt: _dateTimeOrNull(json['cancelled_at']),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : BookingLessonMenu.fromJson(
+            json['lesson_menu'] as Map<String, dynamic>,
+          ),
   );
+}
+
+/// `BookingLessonMenu`（予約した時点のコーチのレッスンメニューの ID・名前・1 回の時間。[SlotLessonMenu] と同じ形だが、今の中身ではなく写し）
+class BookingLessonMenu {
+  const BookingLessonMenu({
+    required this.lessonMenuId,
+    required this.name,
+    this.durationMinutes,
+  });
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  /// 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。予約した時点でメニューが非同期に直されていたら null
+  final int? durationMinutes;
+
+  factory BookingLessonMenu.fromJson(Map<String, dynamic> json) =>
+      BookingLessonMenu(
+        lessonMenuId: json['lesson_menu_id'] as String,
+        name: json['name'] as String,
+        durationMinutes: json['duration_minutes'] as int?,
+      );
 }
 
 /// `MyBooking`（自分の予約の一覧の 1 件。予約と、予約したスロット）
@@ -667,6 +701,7 @@ class Video {
     required this.status,
     required this.createdAt,
     this.uploadUrl,
+    this.lessonMenu,
   });
 
   final String videoId;
@@ -679,6 +714,9 @@ class Video {
   final String? uploadUrl;
   final DateTime createdAt;
 
+  /// 動画を送った時点で選んだレッスンメニューの写し（選ばずに送った動画は null）
+  final VideoLessonMenu? lessonMenu;
+
   factory Video.fromJson(Map<String, dynamic> json) => Video(
     videoId: json['video_id'] as String,
     studentId: json['student_id'] as String,
@@ -687,7 +725,26 @@ class Video {
     status: VideoStatus.fromWire(json['status'] as String),
     uploadUrl: json['upload_url'] as String?,
     createdAt: _dateTime(json['created_at']),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : VideoLessonMenu.fromJson(json['lesson_menu'] as Map<String, dynamic>),
   );
+}
+
+/// `VideoLessonMenu`（動画を送った時点のコーチの非同期レッスンのレッスンメニューの ID・名前。メニューの今の中身ではなく送った時点の写し）
+class VideoLessonMenu {
+  const VideoLessonMenu({required this.lessonMenuId, required this.name});
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  factory VideoLessonMenu.fromJson(Map<String, dynamic> json) =>
+      VideoLessonMenu(
+        lessonMenuId: json['lesson_menu_id'] as String,
+        name: json['name'] as String,
+      );
 }
 
 /// `SubmitVideoRequest`
@@ -697,6 +754,7 @@ class SubmitVideoRequest {
     required this.sport,
     required this.contentType,
     this.note,
+    this.lessonMenuId,
   });
 
   final String coachId;
@@ -706,11 +764,16 @@ class SubmitVideoRequest {
   /// コーチへの相談内容（1000 文字まで）
   final String? note;
 
+  /// 添削を頼むコーチの非同期レッスンのレッスンメニュー（任意。省けばメニューなし。送り先のコーチの・公開中の・
+  /// 非同期の・[sport] と同じスポーツのメニューでなければ 422 `validation_failed`）
+  final String? lessonMenuId;
+
   Map<String, dynamic> toJson() => {
     'coach_id': coachId,
     'sport': sport.wire,
     'content_type': contentType.wire,
     if (note != null) 'note': note,
+    if (lessonMenuId != null) 'lesson_menu_id': lessonMenuId,
   };
 }
 
@@ -738,6 +801,7 @@ class VideoReview {
     this.comment,
     this.returnedAt,
     this.aiFeedback,
+    this.lessonMenu,
   });
 
   final String? reviewId;
@@ -751,6 +815,9 @@ class VideoReview {
   /// AI の一次フィードバック。AI が作れなかったとき（項目がない・null）は null。返却で上書きされない
   final AiFeedback? aiFeedback;
 
+  /// 動画を送った時点で選んだレッスンメニューの写し（選ばずに送った動画は null）
+  final VideoLessonMenu? lessonMenu;
+
   factory VideoReview.fromJson(Map<String, dynamic> json) => VideoReview(
     reviewId: json['review_id'] as String?,
     videoId: json['video_id'] as String,
@@ -762,6 +829,9 @@ class VideoReview {
     aiFeedback: json['ai_feedback'] == null
         ? null
         : AiFeedback.fromJson(json['ai_feedback'] as Map<String, dynamic>),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : VideoLessonMenu.fromJson(json['lesson_menu'] as Map<String, dynamic>),
   );
 }
 

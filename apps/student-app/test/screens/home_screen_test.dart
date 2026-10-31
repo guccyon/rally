@@ -147,6 +147,41 @@ void main() {
     expect(find.text('未読 1'), findsOneWidget);
   });
 
+  testWidgets('これからの予約には、予約した時点のレッスンメニューの名前と 1 回の時間を出す。メニューのない予約は今までどおり', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      myBookings: [
+        Fixtures.myBooking(
+          bookingId: 'booking-menu',
+          startsIn: const Duration(days: 3),
+          lessonMenu: Fixtures.bookingLessonMenu,
+        ),
+        Fixtures.myBooking(
+          bookingId: 'booking-async-menu',
+          startsIn: const Duration(days: 2),
+          coachDisplayName: null,
+          lessonMenu: const BookingLessonMenu(
+            lessonMenuId: '13131313-1313-4313-8313-131313131313',
+            name: 'サーブの動画添削',
+          ),
+        ),
+        Fixtures.myBooking(
+          bookingId: 'booking-no-menu',
+          startsIn: const Duration(days: 1),
+        ),
+      ],
+    );
+    await pumpHome(tester, api);
+
+    expect(
+      find.text('テニス・メニュー: フォアハンドの基礎（1 回 60 分）・コーチ: 佐藤・確定済み'),
+      findsOneWidget,
+    );
+    expect(find.text('テニス・メニュー: サーブの動画添削・確定済み'), findsOneWidget);
+    expect(find.text('テニス・コーチ: 佐藤・確定済み'), findsOneWidget);
+  });
+
   testWidgets('コーチとのやり取りは、未読のあるスレッドと最後が添削の依頼・返却のスレッドを新しい順に出す', (tester) async {
     final api = FakeStudentApi(
       myBookings: const [],
@@ -337,6 +372,7 @@ void main() {
     expect(api.calls, [
       'markMessageThreadRead',
       'listMessages',
+      'listCoachLessonMenus',
       'submitVideo',
       'markMessageThreadRead',
       'listMessages',
