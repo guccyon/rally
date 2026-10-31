@@ -6,6 +6,7 @@
 mod accounts;
 pub mod auth;
 mod bookings;
+mod catalog_error;
 mod coach_acceptance_changes;
 mod coach_acceptances;
 mod coach_bookings;
@@ -20,6 +21,7 @@ mod entitlements;
 mod error;
 mod favorite_coaches;
 mod headquarters_bookings;
+mod lesson_menu_publications;
 mod lesson_menus;
 mod lesson_stats;
 mod lessons;
@@ -59,7 +61,8 @@ use application::{
     },
     catalog::{
         CreateLessonMenu, LessonMenuCoachDisplayNameLookup, LessonMenuRepository,
-        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
+        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, RepublishLessonMenu,
+        UnpublishLessonMenu, UpdateLessonMenu,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -805,6 +808,41 @@ where
             resume_coach,
             list_coach_acceptance_changes,
         }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部によるレッスンメニューの非公開・公開に戻す操作（admin-web の `POST /lesson-menus/{lesson_menu_id}/unpublish`・
+/// `POST /lesson-menus/{lesson_menu_id}/republish`）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、
+/// 組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。
+pub fn lesson_menu_publication_router<M, C, T>(
+    unpublish_lesson_menu: UnpublishLessonMenu<M, C>,
+    republish_lesson_menu: RepublishLessonMenu<M>,
+    tokens: T,
+) -> Router
+where
+    M: LessonMenuRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-menus/{lesson_menu_id}/unpublish",
+            post(lesson_menu_publications::unpublish_lesson_menu::<M, C>),
+        )
+        .route(
+            "/lesson-menus/{lesson_menu_id}/republish",
+            post(lesson_menu_publications::republish_lesson_menu::<M, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(
+            lesson_menu_publications::LessonMenuPublicationsState {
+                unpublish_lesson_menu,
+                republish_lesson_menu,
+            },
+        ))
         .layer(auth::TokenVerification::layer(tokens))
 }
 
