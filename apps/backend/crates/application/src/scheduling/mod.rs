@@ -17,6 +17,7 @@ mod create_booking;
 mod get_slot_supply;
 mod lesson_menu_lookup;
 mod list_bookings;
+mod list_coach_acceptance_changes;
 mod list_coach_bookings;
 mod list_coach_slots;
 mod list_my_bookings;
@@ -57,6 +58,7 @@ pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError
 pub use get_slot_supply::GetSlotSupply;
 pub use lesson_menu_lookup::LessonMenuLookup;
 pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
+pub use list_coach_acceptance_changes::ListCoachAcceptanceChanges;
 pub use list_coach_bookings::ListCoachBookings;
 pub use list_coach_slots::ListCoachSlots;
 pub use list_my_bookings::ListMyBookings;

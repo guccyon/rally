@@ -21,8 +21,8 @@ use domain::{
     profile::{CoachBio, DisplayName},
     review::{LessonReview, LessonReviewId, LessonReviewReply},
     scheduling::{
-        Booking, BookingId, CoachAcceptance, CoachAcceptanceStatus, CoachCalendar, SchedulingError,
-        Slot, SlotId,
+        Booking, BookingId, CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus,
+        CoachCalendar, SchedulingError, Slot, SlotId,
     },
 };
 
@@ -512,12 +512,13 @@ impl BookingRepository for InMemoryBookingRepository {
     }
 }
 
-/// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID だけを持つ（ないコーチは受付中）。
-/// 複製は同じ中身を共有する。枠の検索と予約の作成が読めるよう、[`InMemorySlotRepository::coach_acceptances`] から
+/// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID（ないコーチは受付中）と、止めた・再開した
+/// 記録を保存した順に持つ。複製は同じ中身を共有する。枠の検索と予約の作成が読めるよう、[`InMemorySlotRepository::coach_acceptances`] から
 /// 取り出して使う（単独で作ると、どの枠の保存先とも共有しない）。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryCoachAcceptanceRepository {
     suspended: Arc<Mutex<BTreeSet<AccountId>>>,
+    changes: Arc<Mutex<Vec<CoachAcceptanceChange>>>,
 }
 
 impl InMemoryCoachAcceptanceRepository {
@@ -547,20 +548,39 @@ impl CoachAcceptanceRepository for InMemoryCoachAcceptanceRepository {
         update: F,
     ) -> Result<CoachAcceptance, UpdateCoachAcceptanceError>
     where
-        F: FnOnce(&mut CoachAcceptance) -> Result<(), SchedulingError> + Send,
+        F: FnOnce(&mut CoachAcceptance) -> Result<CoachAcceptanceChange, SchedulingError> + Send,
     {
         let mut suspended = self.suspended.lock().unwrap();
         let mut acceptance = restore_acceptance(&suspended, coach_id);
-        update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
+        let change = update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
         match acceptance.status() {
             CoachAcceptanceStatus::Suspended => suspended.insert(coach_id),
             CoachAcceptanceStatus::Accepting => suspended.remove(&coach_id),
         };
+        self.changes.lock().unwrap().push(change);
         Ok(acceptance)
     }
 
     async fn suspended_coaches(&self) -> Result<BTreeSet<AccountId>, Unavailable> {
         Ok(self.suspended())
+    }
+
+    async fn changes(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        // 保存した順の逆にしてから時刻で安定に並べるので、同じ時刻は後に保存した方が先
+        let mut changes: Vec<_> = self
+            .changes
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .filter(|change| change.coach_id() == coach_id)
+            .cloned()
+            .collect();
+        changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
+        Ok(changes)
     }
 }
 

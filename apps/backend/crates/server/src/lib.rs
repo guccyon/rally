@@ -68,10 +68,10 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
-        GetSlotSupply, ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings,
-        PublishSlot, ResumeCoach, SchedulingBookingLookup, SchedulingCoachAcceptanceLookup,
-        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, SuspendCoach,
-        WithdrawSlot,
+        GetSlotSupply, ListBookings, ListCoachAcceptanceChanges, ListCoachBookings, ListCoachSlots,
+        ListMyBookings, PublishSlot, ResumeCoach, SchedulingBookingLookup,
+        SchedulingCoachAcceptanceLookup, SchedulingStudentLastBookingLookup, SearchSlots,
+        SlotRepository, SuspendCoach, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -409,8 +409,14 @@ where
         SuspendCoach::new(
             coach_acceptances.clone(),
             ProfileCoachIntroductionLookup::new(accounts.clone()),
+            clock.clone(),
         ),
         ResumeCoach::new(
+            coach_acceptances.clone(),
+            ProfileCoachIntroductionLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        ListCoachAcceptanceChanges::new(
             coach_acceptances.clone(),
             ProfileCoachIntroductionLookup::new(accounts.clone()),
         ),

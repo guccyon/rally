@@ -99,7 +99,6 @@ mod tests {
         live_lesson::SessionId,
         profile::DisplayName,
         review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
-        scheduling::CoachAcceptance,
     };
 
     use super::*;
@@ -216,7 +215,7 @@ mod tests {
         }
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
-            .update(COACH, CoachAcceptance::suspend)
+            .update(COACH, |a| a.suspend(HEADQUARTERS, SystemTime::UNIX_EPOCH))
             .await
             .unwrap();
         let second = Duration::from_secs(1);

@@ -1,11 +1,14 @@
-use super::{CoachAcceptanceStatus, SchedulingError};
+use std::time::SystemTime;
+
+use super::{CoachAcceptanceChange, CoachAcceptanceStatus, SchedulingError};
 use crate::identity::AccountId;
 
 /// コーチの受付（glossary の coach_acceptance）。コーチが新しい予約を受け付けるか（受付中・停止中）を持つ集約。
 ///
 /// 止める・再開するのは本部（誰が呼べるかは境界が確かめる）。受付を止めても入っている予約（未確定・確定）と枠は
 /// そのままで、変わるのは新しい予約を受けるか（[`Self::ensure_accepting_bookings`]）と、枠が生徒の検索とコーチを
-/// 探す一覧に出るかだけ。一度も止めていないコーチは受付中（[`Self::accepting`]）。
+/// 探す一覧に出るかだけ。一度も止めていないコーチは受付中（[`Self::accepting`]）。止めた・再開したときは、誰がいつ
+/// 変えたかの記録（[`CoachAcceptanceChange`]）を返す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoachAcceptance {
     coach_id: AccountId,
@@ -34,22 +37,40 @@ impl CoachAcceptance {
         self.status
     }
 
-    /// 受付を止める（受付中 → 停止中）。すでに停止中なら [`SchedulingError::CoachAlreadySuspended`] で、何も変えない。
-    pub fn suspend(&mut self) -> Result<(), SchedulingError> {
+    /// 受付を止める（受付中 → 停止中）。止めた本部のアカウント `changed_by` と時刻 `changed_at` の記録を返す。
+    /// すでに停止中なら [`SchedulingError::CoachAlreadySuspended`] で、何も変えず記録も作らない。
+    pub fn suspend(
+        &mut self,
+        changed_by: AccountId,
+        changed_at: SystemTime,
+    ) -> Result<CoachAcceptanceChange, SchedulingError> {
         if self.status == CoachAcceptanceStatus::Suspended {
             return Err(SchedulingError::CoachAlreadySuspended);
         }
-        self.status = CoachAcceptanceStatus::Suspended;
-        Ok(())
+        Ok(self.change_to(CoachAcceptanceStatus::Suspended, changed_by, changed_at))
     }
 
-    /// 受付を再開する（停止中 → 受付中）。停止中でなければ [`SchedulingError::CoachNotSuspended`] で、何も変えない。
-    pub fn resume(&mut self) -> Result<(), SchedulingError> {
+    /// 受付を再開する（停止中 → 受付中）。再開した本部のアカウント `changed_by` と時刻 `changed_at` の記録を返す。
+    /// 停止中でなければ [`SchedulingError::CoachNotSuspended`] で、何も変えず記録も作らない。
+    pub fn resume(
+        &mut self,
+        changed_by: AccountId,
+        changed_at: SystemTime,
+    ) -> Result<CoachAcceptanceChange, SchedulingError> {
         if self.status != CoachAcceptanceStatus::Suspended {
             return Err(SchedulingError::CoachNotSuspended);
         }
-        self.status = CoachAcceptanceStatus::Accepting;
-        Ok(())
+        Ok(self.change_to(CoachAcceptanceStatus::Accepting, changed_by, changed_at))
+    }
+
+    fn change_to(
+        &mut self,
+        status: CoachAcceptanceStatus,
+        changed_by: AccountId,
+        changed_at: SystemTime,
+    ) -> CoachAcceptanceChange {
+        self.status = status;
+        CoachAcceptanceChange::restore(self.coach_id, status, changed_by, changed_at)
     }
 
     /// 新しい予約を受けられるか。停止中なら [`SchedulingError::CoachNotAcceptingBookings`]。
@@ -66,6 +87,11 @@ mod tests {
     use super::*;
 
     const COACH: AccountId = AccountId::from_u128(7);
+    const HEADQUARTERS: AccountId = AccountId::from_u128(1);
+
+    fn at(secs: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs)
+    }
 
     #[test]
     fn a_coach_accepts_bookings_until_suspended() {
@@ -78,7 +104,15 @@ mod tests {
     #[test]
     fn suspending_stops_new_bookings() {
         let mut acceptance = CoachAcceptance::accepting(COACH);
-        assert_eq!(acceptance.suspend(), Ok(()));
+        assert_eq!(
+            acceptance.suspend(HEADQUARTERS, at(10)),
+            Ok(CoachAcceptanceChange::restore(
+                COACH,
+                CoachAcceptanceStatus::Suspended,
+                HEADQUARTERS,
+                at(10)
+            ))
+        );
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Suspended);
         assert_eq!(
             acceptance.ensure_accepting_bookings(),
@@ -90,7 +124,7 @@ mod tests {
     fn suspending_a_suspended_coach_is_rejected_without_change() {
         let mut acceptance = CoachAcceptance::restore(COACH, CoachAcceptanceStatus::Suspended);
         assert_eq!(
-            acceptance.suspend(),
+            acceptance.suspend(HEADQUARTERS, at(10)),
             Err(SchedulingError::CoachAlreadySuspended)
         );
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Suspended);
@@ -99,7 +133,11 @@ mod tests {
     #[test]
     fn resuming_accepts_new_bookings_again() {
         let mut acceptance = CoachAcceptance::restore(COACH, CoachAcceptanceStatus::Suspended);
-        assert_eq!(acceptance.resume(), Ok(()));
+        let change = acceptance.resume(HEADQUARTERS, at(20)).unwrap();
+        assert_eq!(change.coach_id(), COACH);
+        assert_eq!(change.status(), CoachAcceptanceStatus::Accepting);
+        assert_eq!(change.changed_by(), HEADQUARTERS);
+        assert_eq!(change.changed_at(), at(20));
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Accepting);
         assert_eq!(acceptance.ensure_accepting_bookings(), Ok(()));
     }
@@ -107,7 +145,10 @@ mod tests {
     #[test]
     fn resuming_an_accepting_coach_is_rejected_without_change() {
         let mut acceptance = CoachAcceptance::accepting(COACH);
-        assert_eq!(acceptance.resume(), Err(SchedulingError::CoachNotSuspended));
+        assert_eq!(
+            acceptance.resume(HEADQUARTERS, at(20)),
+            Err(SchedulingError::CoachNotSuspended)
+        );
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Accepting);
     }
 }

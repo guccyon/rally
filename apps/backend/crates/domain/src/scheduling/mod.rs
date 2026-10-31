@@ -5,7 +5,8 @@
 //! 体験予約も予約の 1 つ（`is_trial`）。予約は予約した時点の枠のレッスンメニューの写し（[`BookingLessonMenu`]）を持つ。キャンセルで回数を消費するかの判定（キャンセル規定）と、
 //! キャンセルする前の見込み（[`CancellationPreview`]）は [`CancellationPolicy`] の 1 か所だけに置く（docs/adr/0002 Q2）。スポーツごとの予約枠の需給
 //! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧の期間の規則は [`BookingPeriod`]。
-//! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]。不変条件の違反は
+//! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
+//! [`CoachAcceptanceChange`]。不変条件の違反は
 //! [`SchedulingError`]。
 
 mod booking;
@@ -17,6 +18,7 @@ mod cancellation_decision;
 mod cancellation_policy;
 mod cancellation_preview;
 mod coach_acceptance;
+mod coach_acceptance_change;
 mod coach_acceptance_status;
 mod coach_calendar;
 mod scheduling_error;
@@ -37,6 +39,7 @@ pub use cancellation_decision::CancellationDecision;
 pub use cancellation_policy::CancellationPolicy;
 pub use cancellation_preview::CancellationPreview;
 pub use coach_acceptance::CoachAcceptance;
+pub use coach_acceptance_change::CoachAcceptanceChange;
 pub use coach_acceptance_status::CoachAcceptanceStatus;
 pub use coach_calendar::CoachCalendar;
 pub use scheduling_error::SchedulingError;
