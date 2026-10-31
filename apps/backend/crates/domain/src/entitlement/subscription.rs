@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
-use super::{ContractType, SubscriptionId, SubscriptionPlan, SubscriptionStatus};
-use crate::{DomainError, catalog::Sport, identity::AccountId};
+use super::{ContractType, EntitlementError, SubscriptionId, SubscriptionPlan, SubscriptionStatus};
+use crate::{catalog::Sport, identity::AccountId};
 
 /// 月額の契約（glossary の subscription）。ゴルフ以外のスポーツで結ぶ。
 ///
@@ -18,7 +18,7 @@ pub struct Subscription {
 }
 
 impl Subscription {
-    /// `sport` がゴルフなら [`DomainError::SportNotCoveredByContract`]（月額はゴルフ以外）。
+    /// `sport` がゴルフなら [`EntitlementError::SportNotCoveredByContract`]（月額はゴルフ以外）。
     pub fn new(
         id: SubscriptionId,
         student_id: AccountId,
@@ -26,7 +26,7 @@ impl Subscription {
         plan: SubscriptionPlan,
         status: SubscriptionStatus,
         started_at: SystemTime,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, EntitlementError> {
         ContractType::Monthly.ensure_covers(sport)?;
         Ok(Self {
             id,
@@ -67,7 +67,7 @@ impl Subscription {
 mod tests {
     use super::*;
 
-    fn subscription(sport: Sport) -> Result<Subscription, DomainError> {
+    fn subscription(sport: Sport) -> Result<Subscription, EntitlementError> {
         Subscription::new(
             SubscriptionId::from_u128(1),
             AccountId::from_u128(2),
@@ -91,7 +91,7 @@ mod tests {
     fn rejects_golf() {
         assert_eq!(
             subscription(Sport::Golf),
-            Err(DomainError::SportNotCoveredByContract {
+            Err(EntitlementError::SportNotCoveredByContract {
                 contract_type: ContractType::Monthly,
                 sport: Sport::Golf,
             })

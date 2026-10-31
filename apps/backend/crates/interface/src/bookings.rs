@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::AuthenticatedAccount,
     contract::{booking_status_to_contract, date_time_to_contract},
+    entitlement_error,
     error::ApiError,
     message,
 };
@@ -158,8 +159,8 @@ where
             ConfirmBookingError::Invalid(
                 error @ (DomainError::BookingNotPending { .. } | DomainError::SlotNotOpen { .. }),
             ) => ApiError::conflict("invalid_booking_state", message::domain_error(&error)),
-            ConfirmBookingError::Invalid(error @ DomainError::LiveLessonQuotaExceeded) => {
-                ApiError::conflict("live_lesson_quota_exceeded", message::domain_error(&error))
+            ConfirmBookingError::Invalid(DomainError::LiveLessonQuotaExceeded) => {
+                entitlement_error::live_lesson_quota_exceeded()
             }
             ConfirmBookingError::Invalid(error) => ApiError::internal(error),
             ConfirmBookingError::Unavailable(error) => ApiError::internal(error),

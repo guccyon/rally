@@ -20,6 +20,7 @@ use crate::{
         contract_type_to_contract, sport_to_contract, subscription_plan_to_contract,
         year_month_to_contract,
     },
+    entitlement_error,
     error::ApiError,
 };
 
@@ -66,7 +67,7 @@ where
         })
         .await
         .map_err(|error| match error {
-            GetEntitlementError::NotFound => ApiError::not_found("受講権がない"),
+            GetEntitlementError::NotFound => entitlement_error::entitlement_not_found(),
             GetEntitlementError::Unavailable(error) => ApiError::internal(error),
         })?;
     Ok(Json(entitlement_body(&entitlement)))

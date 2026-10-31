@@ -1,7 +1,8 @@
 use super::{
-    ContractType, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
+    ContractType, EntitlementError, EntitlementId, LiveLessonQuota, SubscriptionId,
+    SubscriptionPlan, YearMonth,
 };
-use crate::{DomainError, catalog::Sport, identity::AccountId, scheduling::BookingId};
+use crate::{catalog::Sport, identity::AccountId, scheduling::BookingId};
 
 /// 受講権（glossary の entitlement）。契約種別と利用権の総称。
 ///
@@ -25,14 +26,14 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    /// 月額の受講権。`sport` がゴルフなら [`DomainError::SportNotCoveredByContract`]。
+    /// 月額の受講権。`sport` がゴルフなら [`EntitlementError::SportNotCoveredByContract`]。
     pub fn monthly(
         id: EntitlementId,
         student_id: AccountId,
         sport: Sport,
         subscription_id: SubscriptionId,
         live_lesson_quota: LiveLessonQuota,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, EntitlementError> {
         ContractType::Monthly.ensure_covers(sport)?;
         Ok(Self {
             id,
@@ -45,13 +46,13 @@ impl Entitlement {
         })
     }
 
-    /// ワンショットの受講権。`sport` がゴルフ以外なら [`DomainError::SportNotCoveredByContract`]。
+    /// ワンショットの受講権。`sport` がゴルフ以外なら [`EntitlementError::SportNotCoveredByContract`]。
     pub fn one_shot(
         id: EntitlementId,
         student_id: AccountId,
         sport: Sport,
         remaining_video_reviews: u32,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, EntitlementError> {
         ContractType::OneShot.ensure_covers(sport)?;
         Ok(Self {
             id,
@@ -81,13 +82,13 @@ impl Entitlement {
     }
 
     /// `booking` の予約で `month` の通話の枠を 1 回使う（月をまたいでいれば `month` の枠を 0 から数えてから）。
-    /// すでにその予約で使っていれば何も変えない。枠が残っていなければ [`DomainError::LiveLessonQuotaExceeded`]
+    /// すでにその予約で使っていれば何も変えない。枠が残っていなければ [`EntitlementError::LiveLessonQuotaExceeded`]
     /// で、何も変えない。通話の枠を持たない契約種別（ワンショット）では何もしない。
     pub fn consume_live_lesson(
         &mut self,
         booking: BookingId,
         month: YearMonth,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), EntitlementError> {
         if let Some(quota) = &self.live_lesson_quota {
             self.live_lesson_quota = Some(quota.clone().in_month(month).consume(booking)?);
         }
@@ -155,7 +156,7 @@ mod tests {
         YearMonth::new(year, month).unwrap()
     }
 
-    fn monthly(sport: Sport, quota: LiveLessonQuota) -> Result<Entitlement, DomainError> {
+    fn monthly(sport: Sport, quota: LiveLessonQuota) -> Result<Entitlement, EntitlementError> {
         Entitlement::monthly(
             EntitlementId::from_u128(10),
             STUDENT,
@@ -169,7 +170,7 @@ mod tests {
         BookingId::from_u128(id)
     }
 
-    fn one_shot(sport: Sport) -> Result<Entitlement, DomainError> {
+    fn one_shot(sport: Sport) -> Result<Entitlement, EntitlementError> {
         Entitlement::one_shot(EntitlementId::from_u128(11), STUDENT, sport, 1)
     }
 
@@ -195,7 +196,7 @@ mod tests {
                 Sport::Golf,
                 LiveLessonQuota::fresh(SubscriptionPlan::Standard, ym(2026, 10))
             ),
-            Err(DomainError::SportNotCoveredByContract {
+            Err(EntitlementError::SportNotCoveredByContract {
                 contract_type: ContractType::Monthly,
                 sport: Sport::Golf,
             })
@@ -218,7 +219,7 @@ mod tests {
         for sport in Sport::ALL.into_iter().filter(|s| *s != Sport::Golf) {
             assert_eq!(
                 one_shot(sport),
-                Err(DomainError::SportNotCoveredByContract {
+                Err(EntitlementError::SportNotCoveredByContract {
                     contract_type: ContractType::OneShot,
                     sport,
                 }),
@@ -281,7 +282,7 @@ mod tests {
         let before = entitlement.clone();
         assert_eq!(
             entitlement.consume_live_lesson(booking(3), october),
-            Err(DomainError::LiveLessonQuotaExceeded)
+            Err(EntitlementError::LiveLessonQuotaExceeded)
         );
         assert_eq!(entitlement, before, "拒否しても何も変えない");
 
@@ -316,7 +317,7 @@ mod tests {
         );
         assert_eq!(
             entitlement.consume_live_lesson(booking(5), october),
-            Err(DomainError::LiveLessonQuotaExceeded)
+            Err(EntitlementError::LiveLessonQuotaExceeded)
         );
 
         // 翌月はプランのまま 0 から数える

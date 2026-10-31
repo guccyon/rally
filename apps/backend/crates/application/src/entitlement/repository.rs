@@ -1,8 +1,7 @@
 use std::future::Future;
 
 use domain::{
-    DomainError,
-    entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
+    entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
     identity::AccountId,
 };
 
@@ -46,5 +45,5 @@ pub trait EntitlementRepository: Send + Sync {
         update: F,
     ) -> impl Future<Output = Result<Entitlement, UpdateEntitlementError>> + Send
     where
-        F: FnOnce(&mut Entitlement) -> Result<(), DomainError> + Send;
+        F: FnOnce(&mut Entitlement) -> Result<(), EntitlementError> + Send;
 }

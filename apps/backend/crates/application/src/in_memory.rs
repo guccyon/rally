@@ -10,7 +10,7 @@ use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     catalog::{LessonMenu, LessonMenuId},
-    entitlement::{Entitlement, EntitlementId, Subscription, SubscriptionId},
+    entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId, Profile},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
@@ -495,7 +495,7 @@ impl EntitlementRepository for InMemoryEntitlementRepository {
         update: F,
     ) -> Result<Entitlement, UpdateEntitlementError>
     where
-        F: FnOnce(&mut Entitlement) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut Entitlement) -> Result<(), EntitlementError> + Send,
     {
         let mut entitlements = self.entitlements.lock().unwrap();
         let entitlement = entitlements

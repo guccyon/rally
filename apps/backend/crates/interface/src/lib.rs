@@ -11,6 +11,7 @@ mod coach_slots;
 mod coach_videos;
 mod coaches;
 mod contract;
+mod entitlement_error;
 mod entitlements;
 mod error;
 mod lesson_menus;
