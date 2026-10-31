@@ -23,6 +23,7 @@ const REVIEWS = [
     rating: 5,
     comment: "フォームがよく分かりました",
     submitted_at: "2026-10-20T03:00:00Z",
+    lesson_menu: { lesson_menu_id: "77777777-7777-4777-8777-777777777777", name: "サーブ特訓" },
   },
   {
     review_id: "55555555-5555-4555-8555-555555555555",
@@ -30,6 +31,7 @@ const REVIEWS = [
     rating: 3,
     comment: "もう少し時間がほしかった",
     submitted_at: "2026-10-01T09:30:00Z",
+    lesson_menu: null,
   },
 ];
 
@@ -84,6 +86,9 @@ describe("自分の評価", () => {
     expect(items[0]).toHaveTextContent("5 点");
     expect(items[0]).toHaveTextContent("フォームがよく分かりました");
     expect(items[0]).toHaveTextContent(formatDateTime("2026-10-20T03:00:00Z"));
+    // 評価したレッスンのメニューがあれば出し、なければこれまでどおり。
+    expect(items[0]).toHaveTextContent("メニュー: サーブ特訓");
+    expect(items[1]).not.toHaveTextContent("メニュー:");
     expect(screen.queryByLabelText("コーチ ID")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "評価を見る" })).not.toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();

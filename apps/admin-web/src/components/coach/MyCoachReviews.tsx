@@ -19,7 +19,8 @@ const NOT_COACH = "コーチのアカウントでログインしたときだけ�
 
 /**
  * コーチの「自分の評価」。開いたときに、ログイン中の本人のアカウント（getMyAccount）の ID で
- * 評価の件数と平均（getCoachReviewSummary）と一覧（listCoachReviews）を出す。
+ * 評価の件数と平均（getCoachReviewSummary）と一覧（listCoachReviews）を出す。一覧の各行には、評価したレッスンの
+ * メニュー（`lesson_menu`）があれば「メニュー: 〇〇」も出す。
  * トークンは不透明なもの（中身を読まない）なので、本人の ID は API に聞く。
  */
 export function MyCoachReviews({
@@ -58,7 +59,11 @@ export function MyCoachReviews({
       {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
-        <CoachReviewSummaryView summary={state.reviews.summary} reviews={state.reviews.reviews} />
+        <CoachReviewSummaryView
+          summary={state.reviews.summary}
+          reviews={state.reviews.reviews}
+          showLessonMenu
+        />
       )}
     </div>
   );

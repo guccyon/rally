@@ -25,6 +25,15 @@ const REVIEWS = [
   },
 ];
 
+// 1 件目だけ評価したレッスンのメニューがある。
+const WITH_MENU = REVIEWS.map((review, index) => ({
+  ...review,
+  lesson_menu:
+    index === 0
+      ? { lesson_menu_id: "77777777-7777-4777-8777-777777777777", name: "サーブ特訓" }
+      : null,
+}));
+
 describe("コーチの評価の一覧", () => {
   test("点・一言・送った時刻を API の順（新しい順）に出す", () => {
     render(<CoachReviewList reviews={REVIEWS} />);
@@ -37,6 +46,21 @@ describe("コーチの評価の一覧", () => {
     expect(items[1]).toHaveTextContent("3 点");
     expect(items[1]).toHaveTextContent("もう少し時間がほしかった");
     expect(items[1]).toHaveTextContent(formatDateTime("2026-10-01T09:30:00Z"));
+  });
+
+  test("showLessonMenu のときは、メニューのある評価にだけ「メニュー: 〇〇」を出す", () => {
+    render(<CoachReviewList reviews={WITH_MENU} showLessonMenu />);
+
+    const items = within(screen.getByRole("list", { name: "評価の一覧" })).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("メニュー: サーブ特訓");
+    expect(items[1]).not.toHaveTextContent("メニュー:");
+    expect(items[1]).toHaveTextContent("もう少し時間がほしかった");
+  });
+
+  test("showLessonMenu を付けなければ（本部の画面）、メニューがあっても出さない", () => {
+    render(<CoachReviewList reviews={WITH_MENU} />);
+
+    expect(screen.queryByText(/メニュー:/)).not.toBeInTheDocument();
   });
 
   test("評価が 0 件なら「まだ評価はありません」と出す", () => {
