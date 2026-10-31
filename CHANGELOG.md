@@ -6,6 +6,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 
 ### 追加
 - 本部が生徒の一覧を見る API: admin-web の契約に `GET /students`（`listStudents`）を足した。各行は `student_id`・表示名・スポーツ・受講権の契約種別 `contract_type` と契約プラン `plan`（受講権がなければ null）・最後に予約を作った時刻 `last_booked_at`（予約の状態を問わない。なければ null）・登録した時刻 `registered_at` で、登録の新しい順に並べる。メールアドレスは返さない。ページング・件数の上限はない。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#376）
+- 生徒が受けたレッスンを振り返る API: student-app の契約に `GET /lessons/completions/me`（`listMyLessonCompletions`）を足した。生徒本人の完了したレッスンを通話・動画添削の両方とも完了した時刻の新しい順に返し、各行は `lesson_id`・完了した時刻・コーチの ID と表示名・`lesson_type`（`live_lesson` / `async_lesson`）・元の `session_id` / `video_id`・レッスンメニューの写し（`LessonCompletionMenu`。なければ null）・自分が評価を付けたか `is_reviewed`。ページングはしない。生徒以外は 403。DB の変更はない。生徒アプリの画面は次の段（#348）
 - student-app の「自分の予約」で、キャンセルできる予約の行に、枠を使わずにキャンセルできる境目の前なら「〇月〇日 〇時までなら、ビデオ通話の枠を使わずにキャンセルできます。」、過ぎていれば「今キャンセルすると、今月のビデオ通話の枠を 1 回使います。」を出す。キャンセルの確認の文も同じ見込みで枠のことを添える。見込みはアプリの受講権と 24 時間の計算ではなく `listMyBookings` の `free_cancel_until` / `cancel_consumes_quota` から出すようにした。API と契約の変更はない（#364）
 - admin-web のコーチのホーム（開いたときの「対応待ち」）の上に、今月と先月の実績を足した: 月ごとの列で、完了した通話と動画添削の回数、その月に受けた評価の件数と点の平均（0 件なら「評価はまだありません」）を並べる（`getMyLessonStats`）。両方の月がすべて 0 ならまだない旨を添え、読み込めなかったときはその文言を出す。金額は出さない。API と契約の変更はない（#366）
 - コーチが今月と先月のレッスンの実績を見る API: admin-web の契約に `GET /coaches/me/lesson-stats`（`getMyLessonStats`）を足した。日本時間の暦月で今月と先月のそれぞれについて、完了したレッスンの数を通話（`live_lesson_count`）と動画添削（`async_lesson_count`）に分けて返し、その月に受けた評価の件数と平均（`review_count`・`average_rating`。0 件なら null）を添える。金額は返さない。コーチ以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#365）
