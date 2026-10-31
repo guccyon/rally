@@ -1,0 +1,30 @@
+id: K-0003
+theme: 6
+kind: causal
+statement: >-
+  worker のイメージがチケットの変更の対象に合っていない（Flutter のアプリの変更に rust のイメージ）と、
+  実装役が SDK の取得など環境づくりに時間を使い、検証の環境も CI とずれる。
+  あわせて、契約を先に決める段で次の段の受け入れ条件に要る項目を確かめないと、次の段で契約が足りず別のチケットが要る形になる。
+scope:
+  roles: [implement]
+  paths: [apps/student-app]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "372"
+  - issue: "352"
+  - issue: "353"
+  - event: "case.analyzed:39249"
+status: draft
+verified_at: 2026-10-31
+review_by: 2026-11-30
+confidentiality: product
+invalidate_when:
+  - "チケットが変える場所から worker のイメージを選ぶ規則が Engine に入り、Flutter の SDK を入れたイメージができた"
+  - "契約を先に決めるチケットで、次の段の受け入れ条件に要る項目を確かめる手順ができた"
+proposal:
+  target: improvement_ticket
+  text: >-
+    チケットが変える場所（apps/student-app など）から worker のイメージを選ぶ規則を Engine に足し、Flutter の SDK を入れたイメージを用意する。
+    あわせて、契約を先に決めるチケットでは、次の段の受け入れ条件に要る項目（行き先の ID など）を確かめる手順を設ける。
+  recurring: true
