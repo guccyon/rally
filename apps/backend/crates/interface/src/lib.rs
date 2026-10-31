@@ -35,6 +35,7 @@ mod scheduling_error;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
+mod students;
 mod subscription_plans;
 mod subscriptions;
 pub mod version;
@@ -58,7 +59,10 @@ use application::{
     entitlement::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, GetAccount, ListStudents, RegisterAccount, StudentContractLookup,
+        StudentLastBookingLookup, TokenIssuer, TokenVerifier,
+    },
     lesson::{
         GetMyLessonStats, LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
         LessonCompletionReviewLookup, ListMyLessonCompletions, MonthlyReviewSummaryLookup,
@@ -728,6 +732,25 @@ where
         .with_state(Arc::new(lesson_stats::LessonStatsState {
             get_my_lesson_stats,
         }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る生徒の一覧（admin-web の `GET /students`）のルーター。[`router_with`] と同じくトークンの検証の層を
+/// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students` は本部だけ（コーチ・生徒は 403）。
+pub fn students_router<R, C, B, T>(list_students: ListStudents<R, C, B>, tokens: T) -> Router
+where
+    R: AccountRepository + 'static,
+    C: StudentContractLookup + 'static,
+    B: StudentLastBookingLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/students", get(students::list_students::<R, C, B>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(students::StudentsState { list_students }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

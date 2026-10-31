@@ -30,6 +30,9 @@ pub trait AccountRepository: Send + Sync {
     /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
     fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
 
+    /// 生徒のアカウントをすべて、登録の新しい順（同じ登録時刻は ID の順）で返す。
+    fn list_students(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
+
     /// コーチ `coach_id` の自己紹介文を `bio` に置き換え、置き換えたあとのアカウントを返す。コーチのアカウントが
     /// なければ（ID のアカウントがないか、コーチでなければ）何も変えずに `None`。
     fn update_coach_bio(

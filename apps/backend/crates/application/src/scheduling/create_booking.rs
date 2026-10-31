@@ -513,6 +513,13 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn last_booked_at_of_students(
+            &self,
+            _student_ids: &std::collections::BTreeSet<AccountId>,
+        ) -> Result<std::collections::BTreeMap<AccountId, SystemTime>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn bookings_of_coach(
             &self,
             _coach_id: AccountId,
