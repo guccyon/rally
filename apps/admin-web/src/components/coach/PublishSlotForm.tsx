@@ -4,8 +4,11 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { errorMessage } from "@/api/errorMessage";
 import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
+
+import { addMinutesToLocal, selectableMenus } from "./slotLessonMenu";
 
 const SPORTS = Object.keys(SPORT_LABELS) as Schemas["Sport"][];
 
@@ -17,6 +20,19 @@ const CAPACITIES = [1, 2, 3, 4, 5, 6] as const;
 function capacityLabel(capacity: number): string {
   return capacity === 1 ? "1 人（マンツーマン）" : `${capacity} 人`;
 }
+
+type LessonMenu = Schemas["LessonMenu"];
+
+type MenuState =
+  | { kind: "loading" }
+  | { kind: "loaded"; menus: LessonMenu[] }
+  | { kind: "failed"; message: string };
+
+// 画面ではスポーツ・公開中・同期で選択肢を絞り、終了をメニューの時間で決めてから送るので、メニューを付けて
+// 送ったあとの 422 は、読み込んだ後にメニューが変わった（非公開にした・直した）ものと読む。
+const VALIDATION_FAILED = errorMessage({ code: "validation_failed" });
+const MENU_CHANGED =
+  "選んだレッスンメニューは、この枠に結びつけられませんでした。メニューが非公開になったか、スポーツや時間が変わった可能性があります。メニューを読み込み直したので、選び直してください。";
 
 type ListState =
   | { kind: "loading" }
@@ -39,6 +55,7 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
       <thead>
         <tr>
           <th className="py-1">スポーツ</th>
+          <th className="py-1">メニュー</th>
           <th className="py-1">日時</th>
           <th className="py-1">状態</th>
           <th className="py-1">予約</th>
@@ -48,6 +65,7 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
         {slots.map((item) => (
           <tr key={item.slot.slot_id} className="border-t">
             <td className="py-1">{SPORT_LABELS[item.slot.sport]}</td>
+            <td className="py-1">{item.slot.lesson_menu?.name ?? "—"}</td>
             <td className="py-1">
               {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
             </td>
@@ -68,16 +86,23 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
   );
 }
 
-/** 枠の公開（publishSlot）と、開いたときから出す自分の枠の一覧（listMyCoachSlots）。公開したら一覧を取り直す。 */
+/**
+ * 枠の公開（publishSlot）と、開いたときから出す自分の枠の一覧（listMyCoachSlots）。公開したら一覧を取り直す。
+ * 枠には自分のレッスンメニュー（listMyLessonMenus）のうち、公開中の同期の、枠と同じスポーツのものを結びつけられる。
+ * メニューを選んだら終了は開始＋メニューの時間で決まり、手では変えられない。
+ */
 export function PublishSlotForm({
   api,
 }: {
-  api: Pick<CoachApi, "publishSlot" | "listMyCoachSlots">;
+  api: Pick<CoachApi, "publishSlot" | "listMyCoachSlots" | "listMyLessonMenus">;
 }) {
   const [sport, setSport] = useState<Schemas["Sport"]>("tennis");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [capacity, setCapacity] = useState<number>(1);
+  // 結びつけるメニューの ID。空文字列は「指定しない」。
+  const [lessonMenuId, setLessonMenuId] = useState("");
+  const [menus, setMenus] = useState<MenuState>({ kind: "loading" });
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,26 +113,55 @@ export function PublishSlotForm({
     return { kind: "loaded", ...splitSlots(response.data.slots, Date.now()) };
   }, [api]);
 
+  const fetchMenus = useCallback(async (): Promise<MenuState> => {
+    const response = await api.listMyLessonMenus();
+    if (!response.ok) return { kind: "failed", message: response.message };
+    return { kind: "loaded", menus: response.data.lesson_menus };
+  }, [api]);
+
   // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     void fetchSlots().then((next) => {
       if (active) setList(next);
     });
+    void fetchMenus().then((next) => {
+      if (active) setMenus(next);
+    });
     return () => {
       active = false;
     };
-  }, [fetchSlots]);
+  }, [fetchSlots, fetchMenus]);
+
+  const options = menus.kind === "loaded" ? selectableMenus(menus.menus, sport) : [];
+  const selectedMenu = options.find((menu) => menu.lesson_menu_id === lessonMenuId);
+  // メニューを選んでいれば、終了は開始＋メニューの時間（契約: メニューの時間と枠の長さが同じこと）。
+  const effectiveEndsAt = selectedMenu
+    ? addMinutesToLocal(startsAt, selectedMenu.duration_minutes)
+    : endsAt;
+
+  function changeSport(next: Schemas["Sport"]) {
+    setSport(next);
+    // メニューはスポーツが 1 つなので、スポーツを変えたら選び直してもらう。
+    setLessonMenuId("");
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (startsAt === "" || endsAt === "") {
-      setResult({ ok: false, message: "開始と終了の日時を入力してください。" });
+    if (lessonMenuId !== "" && !selectedMenu) {
+      setResult({ ok: false, message: "選んだレッスンメニューはこの枠に結びつけられません。選び直してください。" });
+      return;
+    }
+    if (startsAt === "" || effectiveEndsAt === "") {
+      setResult({
+        ok: false,
+        message: selectedMenu ? "開始の日時を入力してください。" : "開始と終了の日時を入力してください。",
+      });
       return;
     }
     // datetime-local はブラウザのタイムゾーンの時刻。契約の date-time（RFC 3339）にする。
     const starts = new Date(startsAt);
-    const ends = new Date(endsAt);
+    const ends = new Date(effectiveEndsAt);
     if (starts >= ends) {
       setResult({ ok: false, message: "終了は開始より後にしてください。" });
       return;
@@ -118,10 +172,21 @@ export function PublishSlotForm({
       starts_at: starts.toISOString(),
       ends_at: ends.toISOString(),
       capacity,
+      ...(selectedMenu ? { lesson_menu_id: selectedMenu.lesson_menu_id } : {}),
     });
     if (response.ok) {
       setResult({ ok: true, message: "枠を公開しました。" });
       setList(await fetchSlots());
+    } else if (selectedMenu && response.message === VALIDATION_FAILED) {
+      setResult({ ok: false, message: MENU_CHANGED });
+      const next = await fetchMenus();
+      setMenus(next);
+      const stillSelectable =
+        next.kind === "loaded" &&
+        selectableMenus(next.menus, sport).some(
+          (menu) => menu.lesson_menu_id === selectedMenu.lesson_menu_id,
+        );
+      if (!stillSelectable) setLessonMenuId("");
     } else {
       setResult(response);
     }
@@ -136,11 +201,28 @@ export function PublishSlotForm({
           <select
             className="rounded border px-2 py-1"
             value={sport}
-            onChange={(event) => setSport(event.target.value as Schemas["Sport"])}
+            onChange={(event) => changeSport(event.target.value as Schemas["Sport"])}
           >
             {SPORTS.map((value) => (
               <option key={value} value={value}>
                 {SPORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col">
+          レッスンメニュー
+          <select
+            className="rounded border px-2 py-1"
+            value={selectedMenu ? lessonMenuId : ""}
+            disabled={menus.kind !== "loaded" || options.length === 0}
+            aria-describedby="slot-lesson-menu-note"
+            onChange={(event) => setLessonMenuId(event.target.value)}
+          >
+            <option value="">指定しない</option>
+            {options.map((menu) => (
+              <option key={menu.lesson_menu_id} value={menu.lesson_menu_id}>
+                {menu.name}（{menu.duration_minutes} 分）
               </option>
             ))}
           </select>
@@ -159,7 +241,8 @@ export function PublishSlotForm({
           <input
             type="datetime-local"
             className="rounded border px-2 py-1"
-            value={endsAt}
+            value={effectiveEndsAt}
+            readOnly={selectedMenu !== undefined}
             onChange={(event) => setEndsAt(event.target.value)}
           />
         </label>
@@ -185,6 +268,17 @@ export function PublishSlotForm({
           枠を公開
         </button>
       </form>
+      <p id="slot-lesson-menu-note" className="text-sm text-gray-600">
+        {menus.kind === "loading" && "レッスンメニューを読み込み中…"}
+        {menus.kind === "failed" &&
+          `レッスンメニューを読み込めませんでした（${menus.message}）。メニューを指定せずに公開できます。`}
+        {menus.kind === "loaded" &&
+          (selectedMenu
+            ? `終了は開始からメニューの時間（${selectedMenu.duration_minutes} 分）で決まります。`
+            : options.length === 0
+              ? `${SPORT_LABELS[sport]}の公開中の同期のレッスンメニューはありません。メニューを指定せずに公開できます。`
+              : "レッスンメニューを選ぶと、終了はメニューの時間で決まります。")}
+      </p>
       <ResultMessage result={result} />
       {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
