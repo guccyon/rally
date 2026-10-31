@@ -168,6 +168,9 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),

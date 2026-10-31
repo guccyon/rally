@@ -1,7 +1,8 @@
 //! catalog のユースケースとポート。コーチのレッスンメニュー（glossary の lesson「レッスン種別」）の作成・変更と一覧。
 //!
 //! メニューを作る・直すコーチの提供スポーツは identity のアカウントの保存先（[`AccountRepository`]）から読む。
-//! scheduling がメニューを問い合わせるポート（[`crate::scheduling::LessonMenuLookup`]）の実装 [`CatalogLessonMenuLookup`] も置く。
+//! scheduling と async-lesson がメニューを問い合わせるポート（[`crate::scheduling::LessonMenuLookup`]・
+//! [`crate::async_lesson::VideoLessonMenuLookup`]）の実装 [`CatalogLessonMenuLookup`] も置く。
 //! 誰が呼べるか（作成・変更・自分の一覧はコーチだけ、公開中の一覧は生徒）は境界（interface）が確かめる。
 //!
 //! [`AccountRepository`]: crate::identity::AccountRepository

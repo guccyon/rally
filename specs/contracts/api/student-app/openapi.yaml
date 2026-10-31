@@ -415,6 +415,11 @@ paths:
         生徒の役割のトークンだけが呼べる（それ以外は 403）。送る生徒はトークンのアカウント。
         `sport` がゴルフ（golf-app の範囲）・`coach_id` が UUID でない・`content_type` が enum にない・`note` が長すぎる場合は 422。
         Gen1 は動画本体のアップロードの完了を受け取らないので、レスポンスの `status` は `awaiting_upload`。`note` は Gen1 では保存しない。
+        任意の `lesson_menu_id` で、添削を頼むコーチの非同期レッスンのレッスンメニュー（`listCoachLessonMenus` の `lesson_type` が
+        `async_lesson` のもの）を選べる（省けばメニューなしの動画で、今までと同じ）。選べるのは送り先のコーチ（`coach_id`）の・
+        公開中の・非同期の・`sport` と同じスポーツのメニューだけで、満たさない・メニューがない・`lesson_menu_id` が UUID でない
+        場合は 422 `validation_failed`（`message` に理由）で、動画は受け付けない。受け付けたら選んだ時点のメニューの ID・名前を
+        動画に写して残す（`lesson_menu`。後でメニューが直されても変わらない）。
       tags: [async-lesson]
       x-context: async-lesson
       x-analytics-events: [video.submitted]
@@ -448,6 +453,7 @@ paths:
         コーチがまだ返却していなければ `status` は `in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null。
         `ai_feedback` は動画の送付の直後に AI（Gen1 はモック）が返した一次フィードバックで、コーチの添削とは別の項目
         （返却で上書きされない）。AI が作れなかったときは null（送付は成功している）。
+        `lesson_menu` は動画を送った時点で選んだレッスンメニュー（ID・名前の写し。`VideoLessonMenu`）で、選ばなかった動画は null。
         呼べるのは動画の当事者（送った生徒・送り先のコーチ）だけで、それ以外のアカウントと UUID でない ID には 404
         （動画があることも知らせない）。返却は admin-web の `returnVideoReview`（コーチ）。
       tags: [async-lesson]
@@ -1327,6 +1333,26 @@ components:
         created_at:
           type: string
           format: date-time
+        lesson_menu:
+          description: |
+            動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+            直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/VideoLessonMenu"
+            - type: "null"
+
+    VideoLessonMenu:
+      type: object
+      description: 動画を送った時点のコーチの非同期レッスンのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく送った時点の写し。admin-web の `VideoLessonMenu` と同じ形
+      required: [lesson_menu_id, name]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
 
     SubmitVideoRequest:
       type: object
@@ -1344,6 +1370,10 @@ components:
           type: string
           maxLength: 1000
           description: コーチへの相談内容
+        lesson_menu_id:
+          type: string
+          format: uuid
+          description: 添削を頼むコーチの非同期レッスンのレッスンメニュー（任意。省けばメニューなし）。条件は `submitVideo` の説明
 
     VideoReviewStatus:
       type: string
@@ -1395,6 +1425,13 @@ components:
           description: AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目
           oneOf:
             - $ref: "#/components/schemas/AiFeedback"
+            - type: "null"
+        lesson_menu:
+          description: |
+            動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+            直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/VideoLessonMenu"
             - type: "null"
 
     LessonType:

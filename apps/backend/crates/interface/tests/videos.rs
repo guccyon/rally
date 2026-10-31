@@ -6,6 +6,9 @@
 //! 送られた動画だけを添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返し、コーチ以外は 403 になることを確かめる。
 //! AI の一次フィードバック（`ai_feedback`）は送付の直後に付き、添削とは別の項目として返却の後も変わらないこと、
 //! AI が作れなかった動画は null になることを `getVideoReview` と `listMyCoachVideos` で確かめる。
+//! 送付で選んだ非同期のレッスンメニュー（`lesson_menu_id`）は送った時点の ID・名前の写し（`lesson_menu`）として
+//! `submitVideo`・`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` に載り、後でメニューを直しても変わらないこと、
+//! 選ばなければ null・選べないメニューなら 422 で何も受け付けないことを確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -14,6 +17,7 @@ use application::{
     async_lesson::{
         GetVideoReview, ReturnVideoReview, SubmitVideo, video_id_uuid, video_review_id_uuid,
     },
+    catalog::{LessonMenuRepository, lesson_menu_id_uuid},
     domain_event::DomainEvent,
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
@@ -23,9 +27,9 @@ use application::{
     in_memory::{
         FixedAiFeedbackGenerator, FixedVideoCallProvider, FixedVideoStorage,
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, ManualClock, RecordingAnalyticsSink,
-        RecordingDomainEventPublisher,
+        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
+        InMemoryLiveLessonSessionRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        ManualClock, RecordingAnalyticsSink, RecordingDomainEventPublisher,
     },
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
@@ -41,6 +45,10 @@ use axum::{
 };
 use domain::{
     async_lesson::{Video, VideoId},
+    catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+        LessonMenuId, LessonMenuName,
+    },
     identity::{Account, AccountId, Email, Role, Sport},
     profile::DisplayName,
 };
@@ -96,8 +104,81 @@ fn submitted_at() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_792_972_800 + 10 * 3600)
 }
 
+/// `COACH` のテニスの公開中の非同期のメニュー
+const MENU: LessonMenuId = LessonMenuId::from_u128(50);
+/// `COACH` のテニスの非公開の非同期のメニュー
+const UNPUBLISHED_MENU: LessonMenuId = LessonMenuId::from_u128(51);
+/// `COACH` のテニスの公開中の 60 分の同期のメニュー
+const LIVE_MENU: LessonMenuId = LessonMenuId::from_u128(52);
+/// `OTHER_COACH` のテニスの公開中の非同期のメニュー
+const OTHER_COACH_MENU: LessonMenuId = LessonMenuId::from_u128(53);
+/// `COACH` のサッカーの公開中の非同期のメニュー
+const SOCCER_MENU: LessonMenuId = LessonMenuId::from_u128(54);
+
+fn menu(
+    id: LessonMenuId,
+    coach: &str,
+    sport: Sport,
+    format: LessonFormat,
+    name: &str,
+    is_published: bool,
+) -> LessonMenu {
+    LessonMenu::restore(
+        id,
+        account_id(coach),
+        LessonMenuContent {
+            sport,
+            format,
+            name: LessonMenuName::new(name).unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        is_published,
+        SystemTime::UNIX_EPOCH,
+    )
+}
+
+fn lesson_menus() -> InMemoryLessonMenuRepository {
+    let sixty = LessonFormat::Live(LessonDuration::from_minutes(60).unwrap());
+    InMemoryLessonMenuRepository::with_menus([
+        menu(
+            MENU,
+            COACH,
+            Sport::Tennis,
+            LessonFormat::Async,
+            "フォーム添削",
+            true,
+        ),
+        menu(
+            UNPUBLISHED_MENU,
+            COACH,
+            Sport::Tennis,
+            LessonFormat::Async,
+            "休止中の添削",
+            false,
+        ),
+        menu(LIVE_MENU, COACH, Sport::Tennis, sixty, "フォア改善", true),
+        menu(
+            OTHER_COACH_MENU,
+            OTHER_COACH,
+            Sport::Tennis,
+            LessonFormat::Async,
+            "別のコーチの添削",
+            true,
+        ),
+        menu(
+            SOCCER_MENU,
+            COACH,
+            Sport::Soccer,
+            LessonFormat::Async,
+            "シュート添削",
+            true,
+        ),
+    ])
+}
+
 struct App {
     accounts: InMemoryAccountRepository,
+    lesson_menus: InMemoryLessonMenuRepository,
     router: Router,
     clock: ManualClock,
     analytics: RecordingAnalyticsSink,
@@ -114,6 +195,7 @@ fn app() -> App {
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let entitlements = InMemoryEntitlementRepository::default();
     let accounts = InMemoryAccountRepository::default();
+    let lesson_menus = lesson_menus();
     let videos = InMemoryVideoRepository::with_videos([
         Video::submit(
             GOLF_VIDEO,
@@ -223,6 +305,7 @@ fn app() -> App {
         ),
         SubmitVideo::new(
             videos.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
@@ -292,6 +375,7 @@ fn app() -> App {
     );
     App {
         accounts,
+        lesson_menus,
         router,
         clock,
         analytics,
@@ -731,13 +815,16 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
                     "submitted_at": "2026-10-26T10:00:00Z",
                     "review_status": "in_progress",
                     // 一次フィードバックなしで保存された動画（AI が作れなかった）は null
-                    "ai_feedback": null
+                    "ai_feedback": null,
+                    // メニューを選ばずに送られた動画は null
+                    "lesson_menu": null
                 },
                 {
                     "video_id": second,
                     "submitted_at": "2026-10-26T12:00:00Z",
                     "review_status": "in_progress",
-                    "ai_feedback": fixed_ai_feedback("2026-10-26T12:00:00Z")
+                    "ai_feedback": fixed_ai_feedback("2026-10-26T12:00:00Z"),
+                    "lesson_menu": null
                 },
                 {
                     "video_id": first,
@@ -746,7 +833,8 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
                     "review_status": "returned",
                     "returned_at": "2026-10-26T13:00:00Z",
                     // 返却の後も、送付の直後に作った一次フィードバックのまま
-                    "ai_feedback": fixed_ai_feedback("2026-10-26T11:00:00Z")
+                    "ai_feedback": fixed_ai_feedback("2026-10-26T11:00:00Z"),
+                    "lesson_menu": null
                 }
             ]
         })
@@ -781,4 +869,128 @@ async fn only_coaches_list_their_videos() {
         app.list_coach_videos(None).await.0,
         StatusCode::UNAUTHORIZED
     );
+}
+
+fn tennis_video_with_menu(lesson_menu_id: &str) -> Value {
+    let mut body = tennis_video();
+    body["lesson_menu_id"] = json!(lesson_menu_id);
+    body
+}
+
+#[tokio::test]
+async fn the_chosen_lesson_menu_is_copied_to_the_video_as_of_submission() {
+    let app = app();
+
+    let menu_id = lesson_menu_id_uuid::format(MENU);
+    let (status, video) = app
+        .submit(Some(STUDENT), tennis_video_with_menu(&menu_id))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{video}");
+    let expected = json!({ "lesson_menu_id": menu_id, "name": "フォーム添削" });
+    assert_eq!(video["lesson_menu"], expected);
+    let video_id = video["video_id"].as_str().unwrap().to_string();
+
+    // 送った後にコーチがメニューの名前を直し、非公開にしても、動画の表示は送った時点のまま
+    app.lesson_menus
+        .update(menu(
+            MENU,
+            COACH,
+            Sport::Tennis,
+            LessonFormat::Async,
+            "スイング添削",
+            false,
+        ))
+        .await
+        .unwrap();
+
+    for token in [STUDENT, COACH] {
+        let (status, body) = app.get_review(Some(token), &video_id).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["lesson_menu"], expected);
+    }
+    let (status, listed) = app.list_coach_videos(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let listed = listed["videos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["video_id"] == video_id.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(listed["lesson_menu"], expected);
+
+    let (status, returned) = app
+        .return_review(Some(COACH), &video_id, review("トスを体の前に上げる"))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{returned}");
+    assert_eq!(returned["lesson_menu"], expected, "返却で変わらない");
+}
+
+#[tokio::test]
+async fn a_video_sent_without_a_lesson_menu_has_a_null_lesson_menu() {
+    let app = app();
+
+    let (status, video) = app.submit(Some(STUDENT), tennis_video()).await;
+    assert_eq!(status, StatusCode::CREATED, "{video}");
+    assert_eq!(video["lesson_menu"], Value::Null);
+    let video_id = video["video_id"].as_str().unwrap().to_string();
+
+    let (_, body) = app.get_review(Some(STUDENT), &video_id).await;
+    assert_eq!(body["lesson_menu"], Value::Null);
+    let (_, listed) = app.list_coach_videos(Some(COACH)).await;
+    for video in listed["videos"].as_array().unwrap() {
+        assert_eq!(video["lesson_menu"], Value::Null, "{video}");
+    }
+    let (_, returned) = app
+        .return_review(Some(COACH), &video_id, review("トスを体の前に上げる"))
+        .await;
+    assert_eq!(returned["lesson_menu"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_lesson_menu_that_cannot_be_chosen_is_rejected_with_422_and_nothing_is_accepted() {
+    for (lesson_menu_id, message) in [
+        (
+            lesson_menu_id_uuid::format(OTHER_COACH_MENU),
+            "動画で選べるのは送り先のコーチのレッスンメニューだけ",
+        ),
+        (
+            lesson_menu_id_uuid::format(UNPUBLISHED_MENU),
+            "公開中でないレッスンメニューは動画で選べない",
+        ),
+        (
+            lesson_menu_id_uuid::format(LIVE_MENU),
+            "同期レッスンのメニューは動画で選べない（非同期レッスンのメニューだけ）",
+        ),
+        (
+            lesson_menu_id_uuid::format(SOCCER_MENU),
+            "レッスンメニューのスポーツ（soccer）が動画のスポーツ（tennis）と違う",
+        ),
+        (
+            lesson_menu_id_uuid::format(LessonMenuId::from_u128(99)),
+            "指定したレッスンメニューがない",
+        ),
+        ("menu-50".to_string(), "lesson_menu_id が UUID でない"),
+    ] {
+        let app = app();
+
+        let (status, body) = app
+            .submit(Some(STUDENT), tennis_video_with_menu(&lesson_menu_id))
+            .await;
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "validation_failed");
+        assert_eq!(body["message"], message);
+        assert!(
+            app.video_events().is_empty(),
+            "video.submitted は発火しない"
+        );
+        assert!(app.events.events().is_empty(), "添削依頼は流さない");
+        let (_, listed) = app.list_coach_videos(Some(COACH)).await;
+        assert_eq!(
+            listed["videos"].as_array().unwrap().len(),
+            1,
+            "先に置いたゴルフの動画だけ（受け付けていない）"
+        );
+    }
 }

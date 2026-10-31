@@ -13,7 +13,7 @@ use crate::{
     auth::AuthenticatedAccount,
     contract::{date_time_to_contract, video_review_status_to_contract},
     error::ApiError,
-    videos::{AiFeedbackBody, ai_feedback_body},
+    videos::{AiFeedbackBody, VideoLessonMenuBody, ai_feedback_body, video_lesson_menu_body},
 };
 
 /// `/coaches/me/videos` のハンドラーが使うユースケース。
@@ -28,7 +28,7 @@ pub struct CoachVideoListBody {
 }
 
 /// admin-web の `CoachVideo`。生徒の表示名は引けなければ、返却した時刻は添削待ちなら載せない。AI の一次フィードバックは
-/// まだなければ null。
+/// まだなければ null。送った時点のレッスンメニューはメニューを選ばずに送った動画なら null。
 #[derive(Serialize)]
 pub struct CoachVideoBody {
     video_id: String,
@@ -39,6 +39,7 @@ pub struct CoachVideoBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     returned_at: Option<String>,
     ai_feedback: Option<AiFeedbackBody>,
+    lesson_menu: Option<VideoLessonMenuBody>,
 }
 
 /// `GET /coaches/me/videos`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
@@ -74,6 +75,7 @@ where
                         .map(|review| date_time_to_contract(review.returned_at()))
                         .transpose()?,
                     ai_feedback: ai_feedback_body(video)?,
+                    lesson_menu: video_lesson_menu_body(video),
                 })
             })
             .collect::<Result<_, ApiError>>()?,

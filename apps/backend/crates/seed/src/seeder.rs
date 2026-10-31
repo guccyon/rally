@@ -139,6 +139,7 @@ where
         );
         let submit = SubmitVideo::new(
             videos.clone(),
+            CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
             MockVideoStorage,
             MockAiFeedbackGenerator,
             analytics.clone(),
@@ -307,6 +308,8 @@ where
                                 sport,
                                 content_type: VideoContentType::Mp4,
                                 note: None,
+                                // 合成シードの動画はメニューを選ばない（今までどおり）
+                                lesson_menu_id: None,
                             })
                             .await
                             .map_err(|e| failed(&who, "動画の送付", e))?;
