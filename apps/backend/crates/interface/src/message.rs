@@ -60,7 +60,7 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         ),
         DomainError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
         DomainError::BookingNotPending { status } => {
-            format!("確定前の予約でない（{}）", booking_status_label(*status))
+            format!("確定待ちの予約でない（{}）", booking_status_label(*status))
         }
         DomainError::BookingAlreadyCancelled => "予約はキャンセル済み".to_string(),
         DomainError::BookingOfAnotherStudent => "別の生徒の予約は扱えない".to_string(),
@@ -218,19 +218,19 @@ const fn contract_type_label(contract_type: ContractType) -> &'static str {
     }
 }
 
-/// スロットの状態の呼び名。
+/// スロットの状態の呼び名（`specs/glossary.yaml` の `slot` の `states`。admin-web の画面と同じ）。
 const fn slot_status_label(status: SlotStatus) -> &'static str {
     match status {
         SlotStatus::Open => "公開中",
         SlotStatus::Booked => "予約済み",
-        SlotStatus::Closed => "閉じている",
+        SlotStatus::Closed => "終了",
     }
 }
 
-/// 予約の状態の呼び名。
+/// 予約の状態の呼び名（`specs/glossary.yaml` の `booking` の `states`。両アプリの画面と同じ）。
 const fn booking_status_label(status: BookingStatus) -> &'static str {
     match status {
-        BookingStatus::Pending => "確定前",
+        BookingStatus::Pending => "確定待ち",
         BookingStatus::Confirmed => "確定済み",
         BookingStatus::Cancelled => "キャンセル済み",
     }
@@ -284,6 +284,12 @@ mod tests {
             "スロットが公開中でない（予約済み）"
         );
         assert_eq!(
+            domain_error(&DomainError::SlotNotOpen {
+                status: SlotStatus::Closed
+            }),
+            "スロットが公開中でない（終了）"
+        );
+        assert_eq!(
             domain_error(&DomainError::SlotAlreadyBooked),
             "スロットはすでに予約されている"
         );
@@ -316,7 +322,7 @@ mod tests {
             domain_error(&DomainError::BookingNotPending {
                 status: BookingStatus::Confirmed
             }),
-            "確定前の予約でない（確定済み）"
+            "確定待ちの予約でない（確定済み）"
         );
         assert_eq!(
             domain_error(&DomainError::SlotNotBooked {
@@ -363,7 +369,7 @@ mod tests {
             domain_error(&DomainError::BookingNotConfirmed {
                 status: BookingStatus::Pending
             }),
-            "確定した予約でない（確定前）"
+            "確定した予約でない（確定待ち）"
         );
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionAlreadyStarted),
