@@ -6,6 +6,7 @@ import '../state/student_flow.dart';
 
 /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
 /// 登録後はアプリバーにホーム（ホームの画面では出さない）・自分の予約・自分の動画・チャット・通知の受け取り設定・プロフィールの入口を出す（それらの画面では [leading] で戻り先を出す）。
+/// ホームの画面では、読んだスレッドに未読があればチャットの入口に未読の数の合計のしるしを付ける（ホームは開くたびにスレッドを読み直す）。
 class FlowScaffold extends ConsumerWidget {
   const FlowScaffold({
     super.key,
@@ -24,6 +25,8 @@ class FlowScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
     final notifier = ref.read(studentFlowProvider.notifier);
+    final threadsUnread = ref.watch(chatProvider.select((s) => s.unreadCount));
+    final unreadCount = state.step == FlowStep.home ? threadsUnread : 0;
     return Scaffold(
       appBar: AppBar(
         leading: leading,
@@ -48,7 +51,11 @@ class FlowScaffold extends ConsumerWidget {
             ),
             IconButton(
               tooltip: 'チャット',
-              icon: const Icon(Icons.chat_bubble_outline),
+              icon: Badge.count(
+                count: unreadCount,
+                isLabelVisible: unreadCount > 0,
+                child: const Icon(Icons.chat_bubble_outline),
+              ),
               onPressed: state.busy
                   ? null
                   : ref.read(chatProvider.notifier).openChat,

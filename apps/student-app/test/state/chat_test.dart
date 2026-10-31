@@ -83,9 +83,53 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.messages);
   });
 
-  test('スレッドを読めなければ開いた段に留まり、失敗の文言は全体の状態に出す', () async {
+  test('既読にすると、読んだスレッドの一覧のそのスレッドも未読 0 にする（一覧を読み直さなくても数が消える）', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      chat: ChatState(threads: [Fixtures.thread]),
+    );
+    expect(container.read(chatProvider).unreadCount, 1);
+
+    await container.read(chatProvider.notifier).openThread(Fixtures.thread);
+
+    final state = container.read(chatProvider);
+    expect(state.threads!.single.unreadCount, 0);
+    expect(state.unreadCount, 0);
+  });
+
+  test('既読にできなくても、メッセージを読めればメッセージの段へ移り、未読の数は残して失敗の文言は出さない', () async {
     final api = FakeStudentApi(
       failures: {'markMessageThreadRead': Fixtures.unreachable},
+    );
+    final container = containerOf(
+      api,
+      chat: ChatState(threads: [Fixtures.thread]),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    await chat.openThread(Fixtures.thread);
+
+    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
+    final flow = container.read(studentFlowProvider);
+    expect(flow.step, FlowStep.messages);
+    expect(flow.busy, isFalse);
+    expect(flow.errorMessage, isNull);
+    final state = container.read(chatProvider);
+    expect(state.thread, Fixtures.thread);
+    expect(state.messages, hasLength(Fixtures.messages.length));
+    expect(state.unreadCount, 1);
+
+    // 確かめ直したときにもう一度既読にする
+    api.failures.remove('markMessageThreadRead');
+    await chat.refreshMessages();
+    expect(container.read(chatProvider).thread!.unreadCount, 0);
+    expect(container.read(chatProvider).unreadCount, 0);
+  });
+
+  test('メッセージを読めなければ開いた段に留まり、失敗の文言は全体の状態に出す', () async {
+    final api = FakeStudentApi(
+      failures: {'listMessages': Fixtures.unreachable},
     );
     final container = containerOf(api);
 
