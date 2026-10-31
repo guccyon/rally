@@ -62,7 +62,7 @@ void main() {
     expect(response.student.displayName, '山田');
   });
 
-  test('searchSlots は sport で絞り、Bearer トークンを付ける', () async {
+  test('searchSlots は sport で絞り、Bearer トークンを付け、枠のレッスンメニューを読む', () async {
     final api = apiReplying(200, {
       'items': [
         {
@@ -73,6 +73,21 @@ void main() {
           'ends_at': '2026-10-28T04:00:00Z',
           'capacity': 1,
           'remaining_seats': 1,
+          'lesson_menu': {
+            'lesson_menu_id': 'm1',
+            'name': 'シュートの基礎',
+            'duration_minutes': 60,
+          },
+        },
+        {
+          'slot_id': 'sl2',
+          'coach_id': 'c1',
+          'sport': 'soccer',
+          'starts_at': '2026-10-29T03:00:00Z',
+          'ends_at': '2026-10-29T04:00:00Z',
+          'capacity': 1,
+          'remaining_seats': 1,
+          'lesson_menu': null,
         },
       ],
       'next_cursor': null,
@@ -83,7 +98,11 @@ void main() {
     expect(sent.single.method, 'GET');
     expect(sent.single.url.toString(), 'http://api.test/slots?sport=soccer');
     expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
-    expect(page.items.single.sport, Sport.soccer);
+    expect(page.items.map((s) => s.sport), [Sport.soccer, Sport.soccer]);
+    expect(page.items.first.lessonMenu!.lessonMenuId, 'm1');
+    expect(page.items.first.lessonMenu!.name, 'シュートの基礎');
+    expect(page.items.first.lessonMenu!.durationMinutes, 60);
+    expect(page.items.last.lessonMenu, isNull);
     expect(page.nextCursor, isNull);
   });
 
