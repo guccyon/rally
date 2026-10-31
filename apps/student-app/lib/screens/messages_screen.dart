@@ -8,6 +8,7 @@ import '../state/student_flow.dart';
 import '../ui/ai_feedback_card.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/lesson_menu_picker.dart';
 import 'video_submit_screen.dart';
 
 /// 担当コーチとのメッセージ（`listMessages` / `sendMessage`）。開いたら相手のメッセージは既読にする。
@@ -227,12 +228,6 @@ class _StampPicker extends StatelessWidget {
   }
 }
 
-// 選択肢はコーチ・公開中・非同期・生徒のスポーツで絞ってあるので、メニューを付けて送ったあとの 422 は、
-// 読み込んだ後にメニューが変わった（非公開にした・直した）ものと読む（admin-web の枠の公開と同じ読み方）。
-const _menuRejectedMessage =
-    '選んだレッスンメニューでは依頼できませんでした。メニューが非公開になったか、内容が変わった可能性があります。'
-    'メニューを読み込み直したので、選び直してください（選んだ動画はそのままです）。';
-
 /// 添削の依頼の中身（相談内容は空なら null、メニューは「指定しない」なら null）
 typedef _VideoReviewRequest = ({String? note, String? lessonMenuId});
 
@@ -278,13 +273,13 @@ class _VideoReviewRequestDialogState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentFlowProvider);
-    final menusFailed = state.coachLessonMenusFailures.contains(widget.coachId);
-    final menus = menusFailed ? null : state.asyncLessonMenusOf(widget.coachId);
-    // 読み直したメニューから選んでいたものが消えたら「指定しない」に戻す
-    final lessonMenuId =
-        menus?.any((menu) => menu.lessonMenuId == _lessonMenuId) ?? false
-        ? _lessonMenuId
-        : null;
+    final sport = state.student!.sport;
+    final lessonMenuId = LessonMenuPicker.selectionOf(
+      state,
+      coachId: widget.coachId,
+      sport: sport,
+      selected: _lessonMenuId,
+    );
     return AlertDialog(
       title: const Text('動画の添削を依頼する'),
       content: SingleChildScrollView(
@@ -305,41 +300,14 @@ class _VideoReviewRequestDialogState
             ),
             if (widget.menuRejected) ...[
               const SizedBox(height: 8),
-              Text(
-                _menuRejectedMessage,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              const LessonMenuRejectedNotice(),
             ],
-            if (menusFailed)
-              const Text('レッスンメニューを読み込めませんでした。メニューを指定せずに依頼できます。')
-            else if (menus == null)
-              const Text('レッスンメニューを読み込んでいます。')
-            else if (menus.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              const Text('レッスンメニュー'),
-              RadioGroup<String?>(
-                groupValue: lessonMenuId,
-                onChanged: (id) => setState(() => _lessonMenuId = id),
-                child: Column(
-                  children: [
-                    const RadioListTile<String?>(
-                      value: null,
-                      title: Text('指定しない'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    for (final menu in menus)
-                      RadioListTile<String?>(
-                        value: menu.lessonMenuId,
-                        title: Text(menu.name),
-                        subtitle: menu.description.isEmpty
-                            ? null
-                            : Text(menu.description),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                  ],
-                ),
-              ),
-            ],
+            LessonMenuPicker(
+              coachId: widget.coachId,
+              sport: sport,
+              selected: lessonMenuId,
+              onChanged: (id) => setState(() => _lessonMenuId = id),
+            ),
             TextField(
               controller: _note,
               decoration: const InputDecoration(labelText: 'コーチへの相談内容（任意）'),

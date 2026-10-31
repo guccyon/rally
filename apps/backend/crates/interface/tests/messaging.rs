@@ -342,6 +342,16 @@ fn app() -> App {
         ),
         application::review::ListCoachReviews::new(
             application::in_memory::InMemoryLessonReviewRepository::default(),
+            application::lesson::LessonCompletionMenuLookup::new(
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryLiveLessonSessionRepository::default(),
+                application::scheduling::SchedulingBookingLookup::new(
+                    application::in_memory::InMemoryBookingRepository::new(
+                        application::in_memory::InMemorySlotRepository::default(),
+                    ),
+                ),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
         ),
         application::notification::GetNotificationSettings::new(
             application::in_memory::InMemoryNotificationSettingsRepository::default(),

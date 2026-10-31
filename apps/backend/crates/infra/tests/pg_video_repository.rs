@@ -1,5 +1,5 @@
 //! `PgVideoRepository`（`async_lesson.videos`・`video_reviews`）の検証。送付・返却の往復と、2 回目の返却の拒否と、
-//! コーチに送られた動画の列挙と、AI の一次フィードバックの往復（添削の返却で変わらないこと）と、送った時点の
+//! コーチに送られた動画の列挙と、生徒が送った動画の列挙と、AI の一次フィードバックの往復（添削の返却で変わらないこと）と、送った時点の
 //! レッスンメニューの写しの往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -129,6 +129,73 @@ async fn videos_of_coach_reads_videos_sent_to_the_coach_with_their_reviews(pool:
 
     let nobody = support::coach(&pool).await;
     assert!(videos.videos_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn videos_of_student_reads_videos_the_student_sent_with_their_reviews(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, other_student) = (support::student(&pool).await, support::student(&pool).await);
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let submit = |student, coach, hour| {
+        Video::submit(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            at(hour),
+        )
+    };
+    let (older, newer, returned, others) = (
+        submit(student, coach, 2),
+        submit(student, other_coach, 3),
+        submit(student, coach, 1),
+        submit(other_student, coach, 4),
+    );
+    for video in [&older, &newer, &returned, &others] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    let returned = videos
+        .update(returned.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+
+    let mut found = videos.videos_of_student(student).await.unwrap();
+    found.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        found,
+        [returned.clone(), older.clone(), newer.clone()],
+        "返却された添削も読み、別の生徒が送った動画は読まない"
+    );
+
+    // ユースケースを通すと、返却済みも含めて送った時刻の新しい順で、送り先のコーチの表示名が添わる
+    let list = application::async_lesson::ListMyVideos::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(infra::PgAccountRepository::new(
+            pool.clone(),
+        )),
+    )
+    .execute(student)
+    .await
+    .unwrap();
+    assert_eq!(list.videos, [newer, older, returned]);
+    for coach in [coach, other_coach] {
+        assert_eq!(
+            list.coaches.get(&coach).map(|name| name.as_str()),
+            Some("テスト")
+        );
+    }
+
+    let nobody = support::student(&pool).await;
+    assert!(videos.videos_of_student(nobody).await.unwrap().is_empty());
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

@@ -445,6 +445,42 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /videos/me:
+    get:
+      operationId: listMyVideos
+      summary: 自分が送った動画の一覧
+      description: |
+        トークンが示す本人（生徒）が送った動画（`submitVideo`）を、添削待ちも返却済みも含めてすべて返す。添削が返ってきたかを
+        生徒が自分で確かめるのに使う（添削の中身は 1 本ずつ `getVideoReview` で読む）。生徒の役割のトークンだけが呼べる（コーチ・本部は 403）。
+        返すのは本人が送った動画だけ。
+
+        - 並べ方: 送った時刻 `submitted_at` の新しい順。同じ時刻は動画 ID の順
+        - 各項目には動画の ID と、送り先のコーチの ID `coach_id` と表示名 `coach_display_name` と、スポーツと、送った時刻と、
+          添削の状態 `review_status`（`in_progress`: 添削待ち / `returned`: 返却済み）と、返却された時刻 `returned_at` を載せる。
+          コーチのアカウントが引けないときは `coach_display_name` を載せない。添削待ちの動画の `returned_at` は null
+        - 各項目の `lesson_menu` は、動画を送った時点で選んだレッスンメニュー（ID・名前の写し。`VideoLessonMenu`）。
+          メニューの今の中身ではない。メニューを選ばずに送った動画は null
+        - 添削のコメントと AI の一次フィードバックは載せない（`getVideoReview` で読む）
+        - ゴルフの動画（golf-app の範囲）は載せない
+        - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [async-lesson]
+      x-context: async-lesson
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 自分が送った動画の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyVideoList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /videos/{video_id}/review:
     get:
       operationId: getVideoReview
@@ -601,7 +637,9 @@ paths:
         送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す（ページングはしない）。
         生徒の役割のトークンなら、どのコーチの分も読める（本部とコーチが読める範囲は admin-web の同じ操作。コーチは
         自分の分だけで、他のコーチの分は 403）。admin-web の `listCoachReviews` と同じ操作・同じ形。
-        各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。
+        各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
+        `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
+        メニューの写しで、元にメニューがなければ null。
 
         `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
         `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -1434,6 +1472,54 @@ components:
             - $ref: "#/components/schemas/VideoLessonMenu"
             - type: "null"
 
+    MyVideo:
+      type: object
+      description: 生徒が送った動画の一覧の 1 件。生徒が送った動画（glossary の async_lesson）と、その添削（glossary の video_review）の状態
+      required: [video_id, coach_id, sport, submitted_at, review_status, returned_at, lesson_menu]
+      properties:
+        video_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: 動画の送り先のコーチ
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 送り先のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+        sport:
+          $ref: "#/components/schemas/Sport"
+        submitted_at:
+          type: string
+          format: date-time
+          description: 生徒が動画を送った時刻
+        review_status:
+          $ref: "#/components/schemas/VideoReviewStatus"
+        returned_at:
+          type: [string, "null"]
+          format: date-time
+          description: コーチが添削を返した時刻。添削待ち（`in_progress`）のときは null
+        lesson_menu:
+          description: |
+            動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+            直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/VideoLessonMenu"
+            - type: "null"
+
+    MyVideoList:
+      type: object
+      description: 生徒が送った動画の一覧（並べ方は `listMyVideos` の説明）
+      required: [videos]
+      properties:
+        videos:
+          type: array
+          description: 送った時刻の新しい順（同じ時刻は動画 ID の順）
+          items:
+            $ref: "#/components/schemas/MyVideo"
+
     LessonType:
       type: string
       description: 同期レッスン（live_lesson）または非同期レッスン（async_lesson）
@@ -1588,6 +1674,28 @@ components:
           type: string
           format: date-time
           description: 評価を送った時刻
+        lesson_menu:
+          description: |
+            評価した完了したレッスンのレッスンメニュー（ID・名前）。中身は、完了したレッスンの元（同期レッスンは予約、
+            非同期レッスンは動画）が持つ、予約した・動画を送った時点のメニューの写しで、その後にメニューが直されても変わらない。
+            元にメニューがない（メニューのない枠の予約・メニューを選ばずに送った動画、この項目を足す前の予約・動画を含む）なら
+            null。評価の一覧では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/ReviewLessonMenu"
+            - type: "null"
+
+    ReviewLessonMenu:
+      type: object
+      description: 評価した完了したレッスンのコーチのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく、レッスンの元（予約・動画）が持つ写し。admin-web の `ReviewLessonMenu` と同じ形
+      required: [lesson_menu_id, name]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
 
     CoachReviewList:
       type: object

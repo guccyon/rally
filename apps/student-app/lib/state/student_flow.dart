@@ -55,7 +55,7 @@ enum HomeSection {
   threads,
 }
 
-/// チャットからの添削の依頼（[StudentFlowNotifier.requestVideoReview]）の結果
+/// 添削の依頼（チャットの [StudentFlowNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
 enum VideoReviewRequestResult {
   /// 受け付けられた
   sent,
@@ -146,10 +146,14 @@ class StudentFlowState {
   final Set<String> coachLessonMenusFailures;
 
   /// 添削の依頼で選べる、コーチの公開中の非同期レッスンのメニューのうち生徒のスポーツのもの（[coachLessonMenus] を
-  /// 非同期で絞る。作った時刻の古い順）。まだ読んでいなければ null
-  List<LessonMenu>? asyncLessonMenusOf(String coachId) =>
+  /// 非同期で絞る。[sport] を渡せばそのスポーツでも絞る。作った時刻の古い順）。まだ読んでいなければ null
+  List<LessonMenu>? asyncLessonMenusOf(String coachId, {Sport? sport}) =>
       coachLessonMenus[coachId]
-          ?.where((menu) => menu.lessonType == LessonType.asyncLesson)
+          ?.where(
+            (menu) =>
+                menu.lessonType == LessonType.asyncLesson &&
+                (sport == null || menu.sport == sport),
+          )
           .toList(growable: false);
 
   /// 体験予約したスロット（動画の送付でスポーツを使う）
@@ -593,23 +597,51 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   });
 
   /// `submitVideo`。送り先は体験予約のコーチで、スポーツはそのスロットのもの。動画本体のアップロードは Gen1 ではモックなので行わない。
-  Future<void> submitVideo({
+  /// [lessonMenuId] は体験予約のコーチの非同期のメニューで、省けばメニューなし。メニューを付けて 422 が返ったときの扱いは
+  /// [requestVideoReview] と同じ（失敗の文言は出さずにメニューを読み直し、この段に留まる）。
+  Future<VideoReviewRequestResult> submitVideo({
     required VideoContentType contentType,
     String? note,
-  }) => _run(() async {
-    final booking = state.booking!;
-    final video = await _api.submitVideo(
-      SubmitVideoRequest(
-        coachId: booking.coachId,
-        sport: state.bookedSlot!.sport,
-        contentType: contentType,
-        note: note,
-      ),
-    );
-    state = state.copyWith(video: video, step: FlowStep.videoReview);
-    final review = await _api.getVideoReview(video.videoId);
-    state = state.copyWith(review: review);
-  });
+    String? lessonMenuId,
+  }) async {
+    var result = VideoReviewRequestResult.failed;
+    await _run(() async {
+      final booking = state.booking!;
+      final video = await _submitVideoForReview(
+        SubmitVideoRequest(
+          coachId: booking.coachId,
+          sport: state.bookedSlot!.sport,
+          contentType: contentType,
+          note: note,
+          lessonMenuId: lessonMenuId,
+        ),
+      );
+      if (video == null) {
+        result = VideoReviewRequestResult.menuRejected;
+        return;
+      }
+      result = VideoReviewRequestResult.sent;
+      state = state.copyWith(video: video, step: FlowStep.videoReview);
+      final review = await _api.getVideoReview(video.videoId);
+      state = state.copyWith(review: review);
+    });
+    return result;
+  }
+
+  /// 添削の依頼の `submitVideo`。選択肢はコーチ・公開中・非同期・動画のスポーツで絞ってあるので、メニューを付けて 422 が
+  /// 返ったら読んだ後にメニューが変わった（非公開にした・直した）ものと読み、送り先のコーチのメニューを読み直して null を返す。
+  Future<Video?> _submitVideoForReview(SubmitVideoRequest request) async {
+    try {
+      return await _api.submitVideo(request);
+    } on StudentApiException catch (e) {
+      if (request.lessonMenuId == null ||
+          e.error?.code != ErrorCode.validationFailed) {
+        rethrow;
+      }
+      await loadCoachLessonMenus(request.coachId);
+      return null;
+    }
+  }
 
   /// `getVideoReview`（コーチが返却したかを確かめ直す）
   Future<void> refreshReview() => _run(() async {
@@ -774,8 +806,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// チャットから動画の添削を依頼する（`submitVideo`。一周シナリオの動画の送付と同じ API）。送り先はスレッドの担当コーチで、
   /// スポーツは生徒のもの。動画本体のアップロードは Gen1 ではモックなので行わない。添削依頼はサーバーがスレッドに流すので、
   /// 送れたらスレッドを読み直す。[lessonMenuId] は担当コーチの非同期のメニュー（[StudentFlowState.asyncLessonMenusOf]）で、
-  /// 省けばメニューなし。選択肢はコーチ・公開中・非同期・生徒のスポーツで絞ってあるので、メニューを付けて 422 が返ったら
-  /// 読んだ後にメニューが変わった（非公開にした・直した）ものと読み、失敗の文言は出さずにメニューを読み直す。
+  /// 省けばメニューなし。メニューを付けて 422 が返ったら、失敗の文言は出さずにメニューを読み直す（[_submitVideoForReview]）。
   Future<VideoReviewRequestResult> requestVideoReview({
     required VideoContentType contentType,
     String? note,
@@ -784,23 +815,17 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     var result = VideoReviewRequestResult.failed;
     await _run(() async {
       final thread = state.thread!;
-      try {
-        await _api.submitVideo(
-          SubmitVideoRequest(
-            coachId: thread.coachId,
-            sport: state.student!.sport,
-            contentType: contentType,
-            note: note,
-            lessonMenuId: lessonMenuId,
-          ),
-        );
-      } on StudentApiException catch (e) {
-        if (lessonMenuId == null ||
-            e.error?.code != ErrorCode.validationFailed) {
-          rethrow;
-        }
+      final video = await _submitVideoForReview(
+        SubmitVideoRequest(
+          coachId: thread.coachId,
+          sport: state.student!.sport,
+          contentType: contentType,
+          note: note,
+          lessonMenuId: lessonMenuId,
+        ),
+      );
+      if (video == null) {
         result = VideoReviewRequestResult.menuRejected;
-        await loadCoachLessonMenus(thread.coachId);
         return;
       }
       result = VideoReviewRequestResult.sent;
