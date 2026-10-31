@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -199,7 +201,9 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
   });
 
-  testWidgets('「このコーチの空き枠を見る」でそのコーチに絞った予約枠の検索へ移り、絞り込みを外せる', (tester) async {
+  testWidgets('「このコーチの空き枠を見る」でそのコーチに絞った予約枠の検索へ移り、見出しの「絞り込みを外す」で外せる', (
+    tester,
+  ) async {
     final api = FakeStudentApi();
     final container = await openCoachProfile(tester, api);
     api.calls.clear();
@@ -212,16 +216,93 @@ void main() {
     expect(api.calls.first, 'searchSlots');
     expect(api.slotSearchCoachIds, [sato.coachId]);
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
-    expect(find.text('佐藤 コーチの枠'), findsOneWidget);
+    expect(find.text('佐藤 コーチの空き枠'), findsOneWidget);
+    expect(find.text('絞り込みを外す'), findsOneWidget);
     expect(find.text('体験予約する'), findsOneWidget);
 
-    await tapText(tester, 'すべてのコーチの枠を見る');
+    await tapText(tester, '絞り込みを外す');
 
     expect(container.read(studentFlowProvider).searchCoach, isNull);
     expect(api.calls.where((c) => c == 'searchSlots'), hasLength(2));
     // 2 回目はコーチで絞らない
     expect(api.slotSearchCoachIds, [sato.coachId]);
-    expect(find.text('佐藤 コーチの枠'), findsNothing);
+    expect(find.text('佐藤 コーチの空き枠'), findsNothing);
+    expect(find.text('絞り込みを外す'), findsNothing);
+  });
+
+  testWidgets('コーチで絞った検索から、今までどおり体験予約して確定待ちに進む', (tester) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    await tapText(tester, 'このコーチの空き枠を見る');
+
+    await tapText(tester, '体験予約する');
+
+    final request = api.requests.last as CreateBookingRequest;
+    expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': true});
+    final state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.bookingPending);
+    expect(state.bookedSlot?.coachId, sato.coachId);
+  });
+
+  testWidgets('コーチで絞った検索の読み込みの間は、読み込み中の旨を出し、前の検索結果を出さない', (tester) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    // 先に絞らずに探した結果がある状態にしておく
+    await container
+        .read(studentFlowProvider.notifier)
+        .searchSlots(Sport.tennis);
+    final gate = Completer<void>();
+    api.slotsGate = gate;
+
+    await tester.tap(find.text('このコーチの空き枠を見る'));
+    await tester.pump();
+
+    expect(find.text('佐藤 コーチの空き枠'), findsOneWidget);
+    expect(find.text('予約できるスロットを読み込んでいます…'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('体験予約する'), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('予約できるスロットを読み込んでいます…'), findsNothing);
+    expect(find.text('体験予約する'), findsOneWidget);
+  });
+
+  testWidgets('そのコーチの空き枠がなければ、その旨を出し、絞り込みを外せる', (tester) async {
+    final api = FakeStudentApi(slots: const []);
+    await openCoachProfile(tester, api);
+
+    await tapText(tester, 'このコーチの空き枠を見る');
+
+    expect(find.text('佐藤 コーチの空き枠'), findsOneWidget);
+    expect(find.text('このコーチの、このスポーツの予約できる空き枠はありません。'), findsOneWidget);
+    expect(find.text('体験予約する'), findsNothing);
+
+    await tapText(tester, '絞り込みを外す');
+    expect(find.text('予約できるスロットはありません。'), findsOneWidget);
+  });
+
+  testWidgets('そのコーチの空き枠を読めなければ、その旨と読み直しのボタンを出し、同じ絞り込みで読み直せる', (tester) async {
+    final failures = {'searchSlots': Fixtures.unreachable};
+    final api = FakeStudentApi(failures: failures);
+    final container = await openCoachProfile(tester, api);
+
+    await tapText(tester, 'このコーチの空き枠を見る');
+
+    expect(find.text('佐藤 コーチの空き枠'), findsOneWidget);
+    expect(find.text('予約できるスロットを読み込めませんでした。'), findsOneWidget);
+    expect(find.text('体験予約する'), findsNothing);
+    // 失敗の文言は出さず、検索の欄にだけ出す
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+
+    failures.clear();
+    await tapText(tester, 'もう一度読み込む');
+
+    expect(api.slotSearchCoachIds, [sato.coachId, sato.coachId]);
+    expect(api.requests.whereType<Sport>().last, Sport.tennis);
+    expect(find.text('予約できるスロットを読み込めませんでした。'), findsNothing);
+    expect(find.text('体験予約する'), findsOneWidget);
+    expect(container.read(studentFlowProvider).slotsFailed, isFalse);
   });
 
   testWidgets('ホームの「スロットを探して予約する」ではコーチで絞らない', (tester) async {

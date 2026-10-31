@@ -126,6 +126,7 @@ class StudentFlowState {
     this.searchSport,
     this.searchCoach,
     this.slots,
+    this.slotsFailed = false,
     this.coachReviewSummaries = const {},
     this.coachReviewSummaryFailures = const {},
     this.coachReviews = const {},
@@ -171,7 +172,12 @@ class StudentFlowState {
 
   /// スロットを絞ったコーチ（コーチの紹介の「このコーチの空き枠を見る」から来たとき。絞っていなければ null）
   final SelectedCoach? searchCoach;
+
+  /// 検索結果（`searchSlots`）。未検索・検索中・読めなかったときは null
   final List<Slot>? slots;
+
+  /// 直前の検索（`searchSlots`）を読めなかった（検索の欄にその旨と読み直しのボタンを出す。失敗の文言は出さない）
+  final bool slotsFailed;
 
   /// 検索結果のコーチの評価の件数と平均（`getCoachReviewSummary`。コーチの ID ごと）。検索のたびに読み直す
   final Map<String, CoachReviewSummary> coachReviewSummaries;
@@ -247,7 +253,7 @@ class StudentFlowState {
   /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧・ホーム・受けたレッスン）
   final FlowStep? videoReviewReturnStep;
 
-  /// `errorMessage` は引き継がない（渡さなければ消える）。[searchCoach] は [clearSearchCoach] で外す。
+  /// `errorMessage` は引き継がない（渡さなければ消える）。[searchCoach] は [clearSearchCoach]、[slots] は [clearSlots] で外す。
   StudentFlowState copyWith({
     FlowStep? step,
     bool? busy,
@@ -258,6 +264,8 @@ class StudentFlowState {
     SelectedCoach? searchCoach,
     bool clearSearchCoach = false,
     List<Slot>? slots,
+    bool clearSlots = false,
+    bool? slotsFailed,
     Map<String, CoachReviewSummary>? coachReviewSummaries,
     Set<String>? coachReviewSummaryFailures,
     Map<String, List<CoachReview>>? coachReviews,
@@ -288,7 +296,8 @@ class StudentFlowState {
     student: student ?? this.student,
     searchSport: searchSport ?? this.searchSport,
     searchCoach: clearSearchCoach ? null : searchCoach ?? this.searchCoach,
-    slots: slots ?? this.slots,
+    slots: clearSlots ? null : slots ?? this.slots,
+    slotsFailed: slotsFailed ?? this.slotsFailed,
     coachReviewSummaries: coachReviewSummaries ?? this.coachReviewSummaries,
     coachReviewSummaryFailures:
         coachReviewSummaryFailures ?? this.coachReviewSummaryFailures,
@@ -460,15 +469,32 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return run(() => _search(state.searchSport ?? state.student!.sport));
   }
 
+  /// 読めなかった検索を、同じスポーツとコーチの絞り込みで探し直す
+  Future<void> retrySlotSearch() =>
+      run(() => _search(state.searchSport ?? state.student!.sport));
+
   /// スロットを探し、出てきたコーチの評価の件数と平均（`getCoachReviewSummary`）を読む。
+  /// 探している間は前の検索結果を外す（別のスポーツ・コーチの枠を出したままにしない）。検索を読めなければ
+  /// [StudentFlowState.slotsFailed] にするだけで、失敗の文言は出さない。
   /// 評価を読めなくても検索結果は出す（そのコーチを [StudentFlowState.coachReviewSummaryFailures] に入れるだけで、失敗の文言は出さない）
   Future<void> _search(Sport sport) async {
-    final page = await _api.searchSlots(
-      sport: sport,
-      coachId: state.searchCoach?.coachId,
-    );
     state = state.copyWith(
       searchSport: sport,
+      clearSlots: true,
+      slotsFailed: false,
+    );
+    final SlotPage page;
+    try {
+      page = await _api.searchSlots(
+        sport: sport,
+        coachId: state.searchCoach?.coachId,
+      );
+    } on StudentApiException {
+      if (ref.mounted) state = state.copyWith(slotsFailed: true);
+      return;
+    }
+    if (!ref.mounted) return;
+    state = state.copyWith(
       slots: page.items,
       coachReviewSummaries: const {},
       coachReviewSummaryFailures: const {},

@@ -9,7 +9,8 @@ import '../ui/labels.dart';
 import '../ui/lesson_menu_entry.dart';
 import '../ui/sport_selector.dart';
 
-/// スロットの検索（`searchSlots`。スポーツで絞り、コーチの紹介から来たときはそのコーチでも絞る）と体験予約（`createBooking`）
+/// スロットの検索（`searchSlots`。スポーツで絞り、コーチの紹介から来たときはそのコーチでも絞って、見出しにコーチの名前と
+/// 「絞り込みを外す」を出す）と体験予約（`createBooking`）。検索の読み込み中・0 件・読めなかったとき（「もう一度読み込む」）を出し分ける
 class SlotSearchScreen extends ConsumerWidget {
   const SlotSearchScreen({super.key});
 
@@ -18,35 +19,77 @@ class SlotSearchScreen extends ConsumerWidget {
     final state = ref.watch(studentFlowProvider);
     final notifier = ref.read(studentFlowProvider.notifier);
     final slots = state.slots;
+    final coach = state.searchCoach;
+    final List<Widget> results;
+    if (state.slotsFailed) {
+      results = [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('予約できるスロットを読み込めませんでした。'),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: state.busy ? null : notifier.retrySlotSearch,
+                child: const Text('もう一度読み込む'),
+              ),
+            ),
+          ],
+        ),
+      ];
+    } else if (slots == null) {
+      results = [
+        Text(state.busy ? '予約できるスロットを読み込んでいます…' : 'スポーツを選ぶと、予約できるスロットを表示します。'),
+      ];
+    } else if (slots.isEmpty) {
+      results = [
+        Text(
+          coach == null ? '予約できるスロットはありません。' : 'このコーチの、このスポーツの予約できる空き枠はありません。',
+        ),
+      ];
+    } else {
+      results = [
+        for (final slot in slots)
+          _SlotCard(
+            slot: slot,
+            onBook: state.busy ? null : () => notifier.bookTrial(slot),
+          ),
+      ];
+    }
     return FlowScaffold(
       title: 'スロットを探す',
       children: [
+        // コーチの紹介の「このコーチの空き枠を見る」から来たときの見出し（外すとすべてのコーチの枠を探し直す）
+        if (coach != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  coachSlotsHeadingLabel(coach.displayName),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              TextButton(
+                onPressed: state.busy ? null : notifier.clearSearchCoach,
+                child: const Text('絞り込みを外す'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         const Text('スポーツで絞る'),
         SportSelector(
           selected: state.searchSport,
           onSelected: state.busy ? (_) {} : notifier.searchSlots,
         ),
-        if (state.searchCoach case final coach?)
-          Row(
-            children: [
-              Flexible(child: Text('${coach.displayName} コーチの枠')),
-              TextButton(
-                onPressed: state.busy ? null : notifier.clearSearchCoach,
-                child: const Text('すべてのコーチの枠を見る'),
-              ),
-            ],
-          ),
         const SizedBox(height: 16),
-        if (slots == null)
-          const Text('スポーツを選ぶと、予約できるスロットを表示します。')
-        else if (slots.isEmpty)
-          const Text('予約できるスロットはありません。')
-        else
-          for (final slot in slots)
-            _SlotCard(
-              slot: slot,
-              onBook: state.busy ? null : () => notifier.bookTrial(slot),
-            ),
+        ...results,
       ],
     );
   }
