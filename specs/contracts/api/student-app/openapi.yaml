@@ -2369,6 +2369,7 @@ components:
       description: |
         glossary の lesson（レッスン種別。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ）。
         既存の `Lesson`（完了したレッスン）と区別するため、スキーマ名は LessonMenu にした。admin-web の `LessonMenu` と同じ形
+        （admin-web だけの任意の項目 `headquarters_unpublish`（本部による非公開）を除く。ここは公開中のメニューしか返さないので載らない）
       required: [lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes, is_published, created_at]
       properties:
         lesson_menu_id:

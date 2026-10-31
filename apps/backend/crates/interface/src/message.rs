@@ -85,6 +85,18 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*sport)
         ),
         DomainError::NotTheLessonMenuCoach => "レッスンメニューのコーチでない".to_string(),
+        DomainError::HeadquartersUnpublishReasonTooLong { max } => {
+            format!("非公開にする理由は {max} 文字まで")
+        }
+        DomainError::LessonMenuUnpublishedByHeadquarters => {
+            "本部が非公開にしたレッスンメニューは、本部が公開に戻すまで公開できない".to_string()
+        }
+        DomainError::LessonMenuAlreadyUnpublishedByHeadquarters => {
+            "レッスンメニューはすでに本部が非公開にしている".to_string()
+        }
+        DomainError::LessonMenuNotUnpublishedByHeadquarters => {
+            "本部が非公開にしたレッスンメニューでない".to_string()
+        }
         DomainError::VideoLessonMenuOfAnotherCoach => {
             "動画で選べるのは送り先のコーチのレッスンメニューだけ".to_string()
         }
