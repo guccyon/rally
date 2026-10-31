@@ -1,5 +1,5 @@
-//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証（コーチの自己紹介文 `coaches.bio` と
-//! 生徒の表示名の書き換えを含む）。
+//! `PgAccountRepository`（`identity.accounts`・`coaches`・`coach_sports`）の検証（生徒の表示名の書き換えと、profile の
+//! `CoachProfileRepository` としてのコーチの自己紹介文 `coaches.bio` の読み書きを含む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,6 +9,7 @@ mod support;
 use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
     in_memory::{FixedClock, RecordingAnalyticsSink},
+    profile::CoachProfileRepository,
 };
 use domain::{
     catalog::Sport,
@@ -291,8 +292,10 @@ async fn coach_bio_is_empty_at_first_and_replaced_by_update(pool: PgPool) {
     let accounts = PgAccountRepository::new(pool.clone());
 
     // 登録したばかりのコーチの自己紹介文は空
-    let found = accounts.find(coach.id()).await.unwrap().unwrap();
-    assert_eq!(found.as_coach().unwrap().bio(), &CoachBio::default());
+    assert_eq!(
+        accounts.find_coach_bio(coach.id()).await.unwrap(),
+        Some(CoachBio::default())
+    );
 
     // 上限ちょうど（400 文字。DB の char_length も文字で数える）まで書け、読み直しても同じ
     for text in [
@@ -304,25 +307,27 @@ async fn coach_bio_is_empty_at_first_and_replaced_by_update(pool: PgPool) {
         let updated = accounts
             .update_coach_bio(coach.id(), bio.clone())
             .await
-            .unwrap()
             .unwrap();
-        assert_eq!(updated.as_coach().unwrap().bio(), &bio);
+        assert_eq!(updated, Some(bio.clone()));
         assert_eq!(
-            updated.as_coach().unwrap().sports(),
-            coach.as_coach().unwrap().sports(),
-            "提供スポーツはそのまま"
+            accounts.find_coach_bio(coach.id()).await.unwrap(),
+            Some(bio)
         );
         assert_eq!(
             accounts.find(coach.id()).await.unwrap(),
-            Some(updated.clone())
+            Some(coach.clone()),
+            "アカウント（提供スポーツなど）はそのまま"
         );
-        assert_eq!(accounts.list_coaches().await.unwrap(), [updated]);
+        assert_eq!(
+            accounts.list_coaches().await.unwrap(),
+            std::slice::from_ref(&coach)
+        );
     }
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn bio_of_non_coach_or_unknown_account_is_not_updated(pool: PgPool) {
+async fn bio_of_non_coach_or_unknown_account_is_neither_read_nor_updated(pool: PgPool) {
     let use_case = register_account(&pool);
     let student = use_case
         .execute(command(
@@ -348,6 +353,7 @@ async fn bio_of_non_coach_or_unknown_account_is_not_updated(pool: PgPool) {
             .await
             .unwrap();
         assert_eq!(updated, None, "{id:?}");
+        assert_eq!(accounts.find_coach_bio(id).await.unwrap(), None, "{id:?}");
     }
     assert_eq!(accounts.find(student.id()).await.unwrap(), Some(student));
     assert_eq!(

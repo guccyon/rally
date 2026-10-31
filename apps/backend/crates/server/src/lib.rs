@@ -56,9 +56,10 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        GetCoachProfile, ListCoaches, ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup,
-        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, ProfileStudentSportLookup,
-        UpdateCoachProfile, UpdateStudentProfile,
+        CoachProfileRepository, GetCoachBio, GetCoachProfile, ListCoaches,
+        ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
+        ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
+        UpdateStudentProfile,
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, ListLowRatedReviews,
@@ -325,7 +326,7 @@ fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, P, V>(
     video: V,
 ) -> Router
 where
-    R: AccountRepository + Clone + 'static,
+    R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
     B: BookingRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
@@ -503,6 +504,7 @@ where
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
         GetAccount::new(accounts.clone()),
+        GetCoachBio::new(accounts.clone()),
         UpdateCoachProfile::new(accounts.clone()),
         PublishSlot::new(
             slots.clone(),

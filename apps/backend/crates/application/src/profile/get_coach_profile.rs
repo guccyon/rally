@@ -3,7 +3,7 @@ use domain::identity::AccountId;
 use crate::{
     Unavailable,
     identity::AccountRepository,
-    profile::{CoachFavoriteLookup, CoachProfile},
+    profile::{CoachFavoriteLookup, CoachProfile, CoachProfileRepository},
 };
 
 /// コーチの紹介の照会の入力。`student_id` は認証したアカウント（役割の確認は境界が行う）。
@@ -13,8 +13,10 @@ pub struct GetCoachProfileCommand {
     pub coach_id: AccountId,
 }
 
-/// コーチの紹介の照会のユースケース（student-app の `getCoachProfile`）。アカウントの保存先（データは当面 identity の表）
-/// から読み、見た生徒のお気に入りに入っているかを matching に問い合わせて（[`CoachFavoriteLookup`]）添える。何も変えない。
+/// コーチの紹介の照会のユースケース（student-app の `getCoachProfile`）。表示名・提供スポーツはアカウントの保存先
+/// （[`AccountRepository`]）から、自己紹介文は profile の保存先（[`CoachProfileRepository`]）から読み（データはどちらも
+/// 当面 identity の表）、見た生徒のお気に入りに入っているかを matching に問い合わせて（[`CoachFavoriteLookup`]）添える。
+/// 何も変えない。
 ///
 /// `coach_id` がコーチのアカウントでなければ（生徒・本部のアカウントや、ないアカウント）`None`。誰が呼べるか（生徒だけ）と、
 /// どのスポーツを見せるかは境界（interface）が決める。
@@ -25,7 +27,7 @@ pub struct GetCoachProfile<R, F> {
 
 impl<R, F> GetCoachProfile<R, F>
 where
-    R: AccountRepository,
+    R: AccountRepository + CoachProfileRepository,
     F: CoachFavoriteLookup,
 {
     pub fn new(accounts: R, favorites: F) -> Self {
@@ -45,13 +47,16 @@ where
         let Some(coach) = account.as_coach() else {
             return Ok(None);
         };
+        let Some(bio) = self.accounts.find_coach_bio(command.coach_id).await? else {
+            return Ok(None);
+        };
         let is_favorite = self
             .favorites
             .is_favorite_coach(command.student_id, command.coach_id)
             .await?;
         Ok(Some(CoachProfile {
             display_name: account.display_name().clone(),
-            bio: coach.bio().clone(),
+            bio,
             sports: coach.sports().clone(),
             is_favorite,
         }))

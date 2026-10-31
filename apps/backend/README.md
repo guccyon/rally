@@ -86,8 +86,8 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## profile: プロフィールの置き場所
 
-- プロフィール（profile。docs/adr/0009）は domain の `profile`（`DisplayName`・`CoachBio`）と application の `profile`（`ListCoaches`・`GetCoachProfile`・`UpdateCoachProfile`・`ProfileStudentDisplayNameLookup`・`ProfileCoachIntroductionLookup`）に置く。identity に残るのは登録・本人のアカウントの照会・認証で、`Account` は表示名を、`Coach` は自己紹介文を profile の型として持つ
-- **profile のデータは当面 identity の表にある**（`identity.accounts.display_name`・`identity.coaches.bio`）。profile のユースケースも identity のポート `AccountRepository`（実装は `PgAccountRepository`）を通して読み書きする。表を分けるのは別の段
+- プロフィール（profile。docs/adr/0009）は domain の `profile`（`DisplayName`・`CoachBio`）と application の `profile`（`ListCoaches`・`GetCoachProfile`・`GetCoachBio`・`UpdateCoachProfile`・`ProfileStudentDisplayNameLookup`・`ProfileCoachIntroductionLookup` と、ポート `CoachProfileRepository`）に置く。identity に残るのは登録・本人のアカウントの照会・認証で、`Account` は表示名を profile の型として持つ。`Coach` は提供スポーツだけを持ち、自己紹介文は持たない（D130）
+- **profile のデータは当面 identity の表にある**（`identity.accounts.display_name`・`identity.coaches.bio`）。自己紹介文は profile のポート `CoachProfileRepository` で読み書きし、表示名・提供スポーツは identity のポート `AccountRepository` から読む（実装はどちらも `PgAccountRepository`。インメモリは `InMemoryAccountRepository`）。表を分けるのは別の段
 
 ## profile: 本部向けのコーチの一覧
 
@@ -113,8 +113,8 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - `PUT /me/profile`（admin-web の `updateMyCoachProfile`）: コーチだけが呼べる（`require_role(&[Role::Coach])`。本部・生徒は 403）。トークンのコーチの自己紹介文を `bio` で丸ごと置き換え、`GET /me` と同じ形の `Account` を返す。`bio` がない・文字列でない・400 文字を超えると 422（何も変えない）。トークンのコーチのアカウントがなければ `GET /me` と同じく 401。行動イベントは発火しない
 - `GET /me`（`getMyAccount`）はコーチのときだけ `bio` を返す（書いていなければ空文字列）。本部・生徒の応答には載らない
-- 自己紹介文は domain の `Coach` の属性（`profile::CoachBio`）で、ユースケースは `application::profile::UpdateCoachProfile`。保存先はポート `AccountRepository::update_coach_bio`（コーチのアカウントがなければ何も変えずに `None`）。Postgres は `identity.coaches.bio`（マイグレーション `20261028000002_expand_coach_bio.sql`。既定は空、`coaches_bio_length` で 400 文字まで）
-- テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・コーチ以外は変えない）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
+- 自己紹介文は `profile::CoachBio` で、ユースケースは `application::profile::UpdateCoachProfile`（書き換え）と `GetCoachBio`（`GET /me` に添える）。保存先は profile のポート `CoachProfileRepository`（`find_coach_bio`・`update_coach_bio`。コーチのアカウントがなければ読み書きとも `None`）。`/me` のハンドラーは identity の `GetAccount` で読んだアカウントに自己紹介文を添えて応答を組み立てる。Postgres は `identity.coaches.bio`（マイグレーション `20261028000002_expand_coach_bio.sql`。既定は空、`coaches_bio_length` で 400 文字まで）
+- テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）・`get_coach_bio`（書いた文・空・コーチ以外）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・コーチ以外は読み書きとも `None`）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
 
 ## matching: 生徒がスポーツでコーチを探す（D96）
 

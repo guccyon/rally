@@ -12,7 +12,7 @@ use domain::{
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     catalog::{LessonMenu, LessonMenuId},
     entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
-    identity::{Account, AccountId, RoleAttributes},
+    identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     matching::FavoriteCoach,
@@ -53,6 +53,7 @@ use crate::{
     notification::{
         NotificationRepository, NotificationSettingsRepository, PushSender, notification_id_uuid,
     },
+    profile::CoachProfileRepository,
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, CoachAcceptanceRepository, ReserveSlotError,
@@ -61,16 +62,27 @@ use crate::{
     },
 };
 
-/// [`AccountRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+/// [`AccountRepository`] と profile の [`CoachProfileRepository`] のインメモリ実装（Postgres の実装と同じく、
+/// コーチの自己紹介文もアカウントと同じ保存先に持つ）。ID は UUID v4。複製は同じ中身を共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryAccountRepository {
     accounts: Arc<Mutex<Vec<Account>>>,
+    /// コーチの自己紹介文。書いていないコーチは持たない（空として読む）
+    coach_bios: Arc<Mutex<BTreeMap<AccountId, CoachBio>>>,
 }
 
 impl InMemoryAccountRepository {
     /// 保存したアカウント（保存した順）。
     pub fn all(&self) -> Vec<Account> {
         self.accounts.lock().unwrap().clone()
+    }
+
+    fn is_coach(&self, id: AccountId) -> bool {
+        self.accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|a| a.id() == id && a.as_coach().is_some())
     }
 }
 
@@ -130,28 +142,6 @@ impl AccountRepository for InMemoryAccountRepository {
         Ok(students)
     }
 
-    async fn update_coach_bio(
-        &self,
-        coach_id: AccountId,
-        bio: CoachBio,
-    ) -> Result<Option<Account>, Unavailable> {
-        let mut accounts = self.accounts.lock().unwrap();
-        let Some(account) = accounts.iter_mut().find(|a| a.id() == coach_id) else {
-            return Ok(None);
-        };
-        let Some(coach) = account.as_coach() else {
-            return Ok(None);
-        };
-        *account = Account::with_role_attributes(
-            account.id(),
-            account.email().clone(),
-            account.display_name().clone(),
-            RoleAttributes::Coach(coach.clone().with_bio(bio)),
-            account.registered_at(),
-        );
-        Ok(Some(account.clone()))
-    }
-
     async fn update_student_display_name(
         &self,
         student_id: AccountId,
@@ -172,6 +162,31 @@ impl AccountRepository for InMemoryAccountRepository {
             account.registered_at(),
         );
         Ok(Some(account.clone()))
+    }
+}
+
+impl CoachProfileRepository for InMemoryAccountRepository {
+    async fn find_coach_bio(&self, coach_id: AccountId) -> Result<Option<CoachBio>, Unavailable> {
+        if !self.is_coach(coach_id) {
+            return Ok(None);
+        }
+        let bios = self.coach_bios.lock().unwrap();
+        Ok(Some(bios.get(&coach_id).cloned().unwrap_or_default()))
+    }
+
+    async fn update_coach_bio(
+        &self,
+        coach_id: AccountId,
+        bio: CoachBio,
+    ) -> Result<Option<CoachBio>, Unavailable> {
+        if !self.is_coach(coach_id) {
+            return Ok(None);
+        }
+        self.coach_bios
+            .lock()
+            .unwrap()
+            .insert(coach_id, bio.clone());
+        Ok(Some(bio))
     }
 }
 
