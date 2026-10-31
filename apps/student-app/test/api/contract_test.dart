@@ -121,6 +121,8 @@ void main() {
         'markMessageThreadRead',
         'getMyNotificationSettings',
         'updateMyNotificationSettings',
+        'getMyStudentProfile',
+        'updateMyStudentProfile',
       ]),
     );
   });

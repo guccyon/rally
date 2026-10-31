@@ -278,6 +278,16 @@ class RegisterAccountRequest {
   };
 }
 
+/// `UpdateStudentProfileRequest`（自分の表示名の変更。今は表示名だけ）。
+/// 表示名の規則（1〜50 文字・空白だけは不可）はサーバーが判定し、ここでは確かめない（書いたとおりに送る）
+class UpdateStudentProfileRequest {
+  const UpdateStudentProfileRequest({required this.displayName});
+
+  final String displayName;
+
+  Map<String, dynamic> toJson() => {'display_name': displayName};
+}
+
 /// `RegisterAccountResponse`
 class RegisterAccountResponse {
   const RegisterAccountResponse({
@@ -1503,7 +1513,7 @@ class ApiError {
 
   final ErrorCode code;
 
-  /// 人間向けの説明（表示用ではない。画面の文言は error_message.dart）
+  /// 人間向けの説明（表示用ではない。画面の文言は error_message.dart。表示名の変更の 422 だけはこれを出す）
   final String message;
 
   factory ApiError.fromJson(Map<String, dynamic> json) => ApiError(

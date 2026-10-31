@@ -87,6 +87,12 @@ abstract interface class StudentApi {
   Future<NotificationSettings> updateMyNotificationSettings(
     UpdateNotificationSettingsRequest body,
   );
+
+  /// `getMyStudentProfile`（GET /me/profile）。トークンが示す本人（生徒）のアカウント
+  Future<Student> getMyStudentProfile();
+
+  /// `updateMyStudentProfile`（PATCH /me/profile）。表示名を置き換え、置き換えたあとの本人のアカウントを返す
+  Future<Student> updateMyStudentProfile(UpdateStudentProfileRequest body);
 }
 
 /// API の失敗。契約の `Error` を返したときは [error] を持ち、通信の失敗などでは null。

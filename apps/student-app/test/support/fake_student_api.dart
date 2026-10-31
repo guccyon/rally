@@ -19,7 +19,9 @@ class FakeStudentApi implements StudentApi {
     this.videoReviews = const {},
     this.bookingLessonMenu,
     this.failures = const {},
-  }) : slots = slots ?? [Fixtures.slot],
+    Student? student,
+  }) : student = student ?? Fixtures.student,
+       slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
        myVideos = List.of(myVideos ?? Fixtures.myVideos),
        _reviews = reviews ?? [Fixtures.reviewReturned],
@@ -31,6 +33,12 @@ class FakeStudentApi implements StudentApi {
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
+
+  /// 本人（生徒）のアカウント（`getMyStudentProfile` が返す。`updateMyStudentProfile` で表示名を変える）
+  Student student;
+
+  /// 入れると、`updateMyStudentProfile` はこれが終わるまで応答しない（保存中の表示を見る）
+  Future<void>? profileSaveGate;
 
   /// 担当コーチとのスレッド（`listMessageThreads` が返す）
   final List<MessageThread> threads;
@@ -326,6 +334,27 @@ class FakeStudentApi implements StudentApi {
     }
     return notificationSettings;
   }, body);
+
+  @override
+  Future<Student> getMyStudentProfile() =>
+      _answer('getMyStudentProfile', () => student);
+
+  @override
+  Future<Student> updateMyStudentProfile(
+    UpdateStudentProfileRequest body,
+  ) async {
+    await profileSaveGate;
+    return _answer(
+      'updateMyStudentProfile',
+      () => student = Student(
+        studentId: student.studentId,
+        displayName: body.displayName,
+        sport: student.sport,
+        createdAt: student.createdAt,
+      ),
+      body,
+    );
+  }
 
   /// スレッドの最後のメッセージ（と未読の数）を今のメッセージに合わせる
   MessageThread _updateThread(String threadId, {int? unreadCount}) {
