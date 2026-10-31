@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの紹介・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの紹介・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定・お知らせで使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -98,6 +98,12 @@ abstract interface class StudentApi {
   Future<NotificationSettings> updateMyNotificationSettings(
     UpdateNotificationSettingsRequest body,
   );
+
+  /// `listMyNotifications`（GET /notifications/me）。作った時刻の新しい順。読むだけでは既読にならない
+  Future<NotificationList> listMyNotifications();
+
+  /// `markMyNotificationsRead`（POST /notifications/me/read）。すべて既読にし、既読にしたあとの一覧を返す
+  Future<NotificationList> markMyNotificationsRead();
 
   /// `getMyStudentProfile`（GET /me/profile）。トークンが示す本人（生徒）のアカウント
   Future<Student> getMyStudentProfile();

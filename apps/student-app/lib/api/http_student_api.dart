@@ -207,6 +207,14 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<NotificationList> listMyNotifications() async =>
+      NotificationList.fromJson(await _send('GET', '/notifications/me'));
+
+  @override
+  Future<NotificationList> markMyNotificationsRead() async =>
+      NotificationList.fromJson(await _send('POST', '/notifications/me/read'));
+
+  @override
   Future<Student> getMyStudentProfile() async =>
       Student.fromJson(await _send('GET', '/me/profile'));
 

@@ -185,8 +185,9 @@ enum StampId {
       values.where((e) => e.wire == value).firstOrNull;
 }
 
-/// 通知の種類。`NotificationSettings` と `UpdateNotificationSettingsRequest` の、受け取るかを持つ項目で、[wire] は項目名。
-/// 契約に種類が増えたら test/api/contract_test.dart が検出するので、ここに足す。
+/// 通知の種類（`NotificationKind`）。`NotificationSettings` と `UpdateNotificationSettingsRequest` の、受け取るかを持つ項目でもあり、
+/// [wire] は項目名。契約に種類が増えたら test/api/contract_test.dart が検出するので、ここに足す。
+/// お知らせ（[ApiNotification]）の種類は後方互換に増えうるので、知らない値は [tryFromWire] が null にする。
 enum NotificationKind {
   bookingConfirmed('booking_confirmed'),
   videoReviewReturned('video_review_returned'),
@@ -194,6 +195,10 @@ enum NotificationKind {
 
   const NotificationKind(this.wire);
   final String wire;
+
+  /// 契約にない（このアプリの版が知らない）値は null。
+  static NotificationKind? tryFromWire(String value) =>
+      values.where((e) => e.wire == value).firstOrNull;
 }
 
 /// `ErrorCode`。値は追加されうるので、知らない値は [ErrorCode.unknown] として扱う（契約の注記どおり）。
@@ -1623,6 +1628,58 @@ class UpdateNotificationSettingsRequest {
     'video_review_returned': ?videoReviewReturned,
     'message_received': ?messageReceived,
   };
+}
+
+/// `Notification`（glossary の notification。お知らせ）。Flutter の `Notification` と衝突するので [ApiNotification]
+class ApiNotification {
+  const ApiNotification({
+    required this.notificationId,
+    required this.kind,
+    required this.body,
+    required this.createdAt,
+    required this.isRead,
+  });
+
+  final String notificationId;
+
+  /// 種類。このアプリの版が知らない種類は null（汎用のお知らせとして本文だけを出す）
+  final NotificationKind? kind;
+
+  /// 表示用の本文（サーバーが種類と中身から決める）
+  final String body;
+
+  /// お知らせを作った時刻
+  final DateTime createdAt;
+
+  /// 既読か（`markMyNotificationsRead` で既読にする）
+  final bool isRead;
+
+  factory ApiNotification.fromJson(Map<String, dynamic> json) =>
+      ApiNotification(
+        notificationId: json['notification_id'] as String,
+        kind: NotificationKind.tryFromWire(json['kind'] as String),
+        body: json['body'] as String,
+        createdAt: _dateTime(json['created_at']),
+        isRead: json['is_read'] as bool,
+      );
+}
+
+/// `NotificationList`
+class NotificationList {
+  /// [notifications] は書き換えられない写しにして持つ
+  NotificationList({required List<ApiNotification> notifications})
+    : notifications = List.unmodifiable(notifications);
+
+  /// 作った時刻の新しい順
+  final List<ApiNotification> notifications;
+
+  factory NotificationList.fromJson(Map<String, dynamic> json) =>
+      NotificationList(
+        notifications: [
+          for (final e in json['notifications'] as List<dynamic>)
+            ApiNotification.fromJson(e as Map<String, dynamic>),
+        ],
+      );
 }
 
 /// `Error`
