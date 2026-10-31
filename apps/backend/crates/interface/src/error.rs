@@ -84,6 +84,21 @@ impl ApiError {
             message: INTERNAL_MESSAGE.to_string(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) const fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn code(&self) -> &'static str {
+        self.code
+    }
+
+    #[cfg(test)]
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 /// 500 の `message`。原因はクライアントに出さない。

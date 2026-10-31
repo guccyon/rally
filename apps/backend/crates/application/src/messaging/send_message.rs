@@ -1,7 +1,6 @@
 use domain::{
-    DomainError,
     identity::AccountId,
-    messaging::{Message, MessageContent, MessageThread, MessageThreadId},
+    messaging::{Message, MessageContent, MessageThread, MessageThreadId, MessagingError},
 };
 use uuid::Uuid;
 
@@ -33,9 +32,10 @@ pub struct SentMessage {
 pub enum SendMessageError {
     /// スレッドがない
     ThreadNotFound,
-    /// 送信がドメインの不変条件を満たさない（当事者でない、チャットとして送れない種類、生徒がチャットの送り放題を
-    /// 持たない、前のメッセージより前の送信）
-    Invalid(DomainError),
+    /// 送信がメッセージの不変条件を満たさない（当事者でない [`MessagingError::NotAThreadParticipant`]、チャットとして
+    /// 送れない種類 [`MessagingError::MessageKindNotSendable`]、生徒がチャットの送り放題を持たない
+    /// [`MessagingError::ChatNotAllowed`]、前のメッセージより前の送信 [`MessagingError::MessageSentBeforeLastActivity`]）
+    Invalid(MessagingError),
     /// 保存先・問い合わせ先の障害
     Unavailable(Unavailable),
 }
@@ -349,11 +349,11 @@ mod tests {
         for (command, expected) in [
             (
                 command(TRIAL_STUDENT, TRIAL_THREAD),
-                DomainError::ChatNotAllowed,
+                MessagingError::ChatNotAllowed,
             ),
             (
                 command(OTHER_COACH, MONTHLY_THREAD),
-                DomainError::NotAThreadParticipant,
+                MessagingError::NotAThreadParticipant,
             ),
         ] {
             let result = use_case.execute(command).await;
@@ -438,7 +438,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(SendMessageError::Invalid(DomainError::ChatNotAllowed))
+                Err(SendMessageError::Invalid(MessagingError::ChatNotAllowed))
             ),
             "{result:?}"
         );
@@ -456,7 +456,7 @@ mod tests {
             matches!(
                 result,
                 Err(SendMessageError::Invalid(
-                    DomainError::MessageKindNotSendable
+                    MessagingError::MessageKindNotSendable
                 ))
             ),
             "{result:?}"

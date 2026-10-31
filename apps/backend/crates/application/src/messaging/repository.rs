@@ -1,9 +1,8 @@
 use std::future::Future;
 
 use domain::{
-    DomainError,
     identity::AccountId,
-    messaging::{MessageId, MessageThread, MessageThreadId},
+    messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
 };
 
 use super::UpdateMessageThreadError;
@@ -48,5 +47,5 @@ pub trait MessageThreadRepository: Send + Sync {
         update: F,
     ) -> impl Future<Output = Result<MessageThread, UpdateMessageThreadError>> + Send
     where
-        F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send;
+        F: FnOnce(&mut MessageThread) -> Result<(), MessagingError> + Send;
 }

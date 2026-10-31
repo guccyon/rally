@@ -35,7 +35,6 @@ use axum::{
     http::StatusCode,
 };
 use domain::{
-    DomainError,
     identity::AccountId,
     messaging::{Message, MessageBody, MessageContent, MessageThread, MessageThreadId},
 };
@@ -49,6 +48,7 @@ use crate::{
     },
     error::ApiError,
     message,
+    messaging_error::thread_not_found,
 };
 
 /// `/message-threads` のハンドラーが使うユースケース。
@@ -163,10 +163,9 @@ where
         })
         .await
         .map_err(|error| match error {
-            // 当事者でないスレッドは、あることも知らせない
-            ListMessagesError::ThreadNotFound
-            | ListMessagesError::Invalid(DomainError::NotAThreadParticipant) => thread_not_found(),
-            ListMessagesError::Invalid(error) => ApiError::internal(error),
+            ListMessagesError::ThreadNotFound => thread_not_found(),
+            // 当事者でないスレッドは、あることも知らせない（crate::messaging_error）
+            ListMessagesError::Invalid(error) => error.into(),
             ListMessagesError::Unavailable(error) => ApiError::internal(error),
         })?;
     Ok(Json(MessageListJson {
@@ -208,13 +207,9 @@ where
         .execute(command)
         .await
         .map_err(|error| match error {
-            SendMessageError::ThreadNotFound
-            | SendMessageError::Invalid(DomainError::NotAThreadParticipant) => thread_not_found(),
-            SendMessageError::Invalid(error @ DomainError::ChatNotAllowed) => {
-                ApiError::forbidden_because("chat_not_entitled", message::domain_error(&error))
-            }
-            // 本文とスタンプしか組み立てないので、送れない種類（MessageKindNotSendable）もここ
-            SendMessageError::Invalid(error) => ApiError::internal(error),
+            SendMessageError::ThreadNotFound => thread_not_found(),
+            // 状態と code は crate::messaging_error が決める
+            SendMessageError::Invalid(error) => error.into(),
             SendMessageError::Unavailable(error) => ApiError::internal(error),
         })?;
     Ok((
@@ -244,11 +239,8 @@ where
         })
         .await
         .map_err(|error| match error {
-            MarkMessageThreadReadError::ThreadNotFound
-            | MarkMessageThreadReadError::Invalid(DomainError::NotAThreadParticipant) => {
-                thread_not_found()
-            }
-            MarkMessageThreadReadError::Invalid(error) => ApiError::internal(error),
+            MarkMessageThreadReadError::ThreadNotFound => thread_not_found(),
+            MarkMessageThreadReadError::Invalid(error) => error.into(),
             MarkMessageThreadReadError::Unavailable(error) => ApiError::internal(error),
         })?;
     Ok(Json(thread_json(&thread, account.account_id())?))
@@ -270,10 +262,6 @@ fn send_message_content(request: SendMessageRequest) -> Result<MessageContent, A
 /// 契約に 422 はない（パスの ID）ので、UUID でない ID はないスレッドとして扱う。
 fn parse_thread_id(text: &str) -> Result<MessageThreadId, ApiError> {
     message_thread_id_uuid::parse(text).map_err(|_| thread_not_found())
-}
-
-fn thread_not_found() -> ApiError {
-    ApiError::not_found("スレッドがない")
 }
 
 fn thread_json(thread: &MessageThread, reader: AccountId) -> Result<MessageThreadJson, ApiError> {

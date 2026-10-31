@@ -7,6 +7,7 @@
 //! 添削の有無・回数・状態は async-lesson の持ち物で、メッセージは動画・添削を ID で指すだけ。
 //! 生徒が送ってよいか（月額はチャットが送り放題）の規則は
 //! [`crate::entitlement::ContractType::unlimited_video_and_chat`] の 1 か所に置き、スレッドは答えに従う。
+//! 不変条件の違反は [`MessagingError`] で返す（表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`]）。
 //! 通知（notification）と添付ファイルは扱わない。
 
 mod message;
@@ -18,6 +19,7 @@ mod message_kind;
 mod message_sender;
 mod message_thread;
 mod message_thread_id;
+mod messaging_error;
 mod stamp;
 
 pub use message::Message;
@@ -29,4 +31,5 @@ pub use message_kind::MessageKind;
 pub use message_sender::MessageSender;
 pub use message_thread::MessageThread;
 pub use message_thread_id::MessageThreadId;
+pub use messaging_error::MessagingError;
 pub use stamp::Stamp;

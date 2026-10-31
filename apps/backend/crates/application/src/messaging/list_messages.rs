@@ -1,7 +1,6 @@
 use domain::{
-    DomainError,
     identity::AccountId,
-    messaging::{MessageThread, MessageThreadId},
+    messaging::{MessageThread, MessageThreadId, MessagingError},
 };
 
 use super::MessageThreadRepository;
@@ -18,8 +17,8 @@ pub struct ListMessagesQuery {
 pub enum ListMessagesError {
     /// スレッドがない
     ThreadNotFound,
-    /// スレッドの当事者でない（[`DomainError::NotAThreadParticipant`]）
-    Invalid(DomainError),
+    /// スレッドの当事者でない（[`MessagingError::NotAThreadParticipant`]）
+    Invalid(MessagingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -100,7 +99,7 @@ mod tests {
             matches!(
                 result,
                 Err(ListMessagesError::Invalid(
-                    DomainError::NotAThreadParticipant
+                    MessagingError::NotAThreadParticipant
                 ))
             ),
             "{result:?}"

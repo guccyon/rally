@@ -11,11 +11,10 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     identity::AccountId,
     messaging::{
         Message, MessageBody, MessageContent, MessageId, MessageKind, MessageThread,
-        MessageThreadId, Stamp,
+        MessageThreadId, MessagingError, Stamp,
     },
 };
 use sqlx::{
@@ -152,7 +151,7 @@ impl MessageThreadRepository for PgMessageThreadRepository {
         update: F,
     ) -> Result<MessageThread, UpdateMessageThreadError>
     where
-        F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut MessageThread) -> Result<(), MessagingError> + Send,
     {
         let unavailable =
             |e: sqlx::Error| UpdateMessageThreadError::Unavailable(Unavailable::new(e));

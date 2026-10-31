@@ -109,23 +109,6 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             "レッスンの完了の記録がレッスンの終わりより前".to_string()
         }
         DomainError::LessonAlreadyCompleted => "このレッスンの完了は記録済み".to_string(),
-        DomainError::MessageThreadWithOneself => {
-            "スレッドの生徒とコーチが同じアカウント".to_string()
-        }
-        DomainError::NotAThreadParticipant => "スレッドの当事者でない".to_string(),
-        DomainError::ChatNotAllowed => {
-            "チャットを送れるのは月額契約（送り放題）の生徒だけ".to_string()
-        }
-        DomainError::MessageSentBeforeLastActivity => {
-            "メッセージの送信が前のメッセージより前".to_string()
-        }
-        DomainError::MessageReadBeforeSent => "メッセージの既読が送信より前".to_string(),
-        DomainError::EmptyMessageBody => "メッセージの本文が空".to_string(),
-        DomainError::MessageBodyTooLong { max } => format!("メッセージの本文は {max} 文字まで"),
-        DomainError::MessageAuthorMismatchesKind => {
-            "メッセージの送り手が種類に合わない".to_string()
-        }
-        DomainError::MessageKindNotSendable => "チャットで送れるのは本文かスタンプだけ".to_string(),
         DomainError::RatingOutOfRange { min, max } => format!("評価の点は {min}〜{max} の整数"),
         DomainError::EmptyLessonReviewComment => "評価の一言が空".to_string(),
         DomainError::LessonReviewCommentTooLong { max } => format!("評価の一言は {max} 文字まで"),
@@ -430,42 +413,6 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonAlreadyCompleted),
             "このレッスンの完了は記録済み"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageThreadWithOneself),
-            "スレッドの生徒とコーチが同じアカウント"
-        );
-        assert_eq!(
-            domain_error(&DomainError::NotAThreadParticipant),
-            "スレッドの当事者でない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::ChatNotAllowed),
-            "チャットを送れるのは月額契約（送り放題）の生徒だけ"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageSentBeforeLastActivity),
-            "メッセージの送信が前のメッセージより前"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageReadBeforeSent),
-            "メッセージの既読が送信より前"
-        );
-        assert_eq!(
-            domain_error(&DomainError::EmptyMessageBody),
-            "メッセージの本文が空"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageBodyTooLong { max: 2000 }),
-            "メッセージの本文は 2000 文字まで"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageAuthorMismatchesKind),
-            "メッセージの送り手が種類に合わない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::MessageKindNotSendable),
-            "チャットで送れるのは本文かスタンプだけ"
         );
         assert_eq!(
             domain_error(&DomainError::RatingOutOfRange { min: 1, max: 5 }),
