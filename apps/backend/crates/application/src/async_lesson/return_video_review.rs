@@ -211,6 +211,9 @@ mod tests {
         let clock = ManualClock::new(submitted_at());
         let submit = SubmitVideo::new(
             videos.clone(),
+            crate::catalog::CatalogLessonMenuLookup::new(
+                crate::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
@@ -234,6 +237,7 @@ mod tests {
                 sport: Sport::Tennis,
                 content_type: VideoContentType::QuickTime,
                 note: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap()

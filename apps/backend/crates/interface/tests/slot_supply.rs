@@ -217,6 +217,9 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
         ),
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),

@@ -9,9 +9,10 @@ use application::{
     async_lesson::{
         AiFeedbackGenerator, GetVideoReview, GetVideoReviewError, GetVideoReviewQuery,
         ReturnVideoReview, ReturnVideoReviewCommand, ReturnVideoReviewError, ReviewGate,
-        SubmitVideo, SubmitVideoCommand, SubmitVideoError, VideoRepository, VideoStorage,
-        video_id_uuid, video_review_id_uuid,
+        SubmitVideo, SubmitVideoCommand, SubmitVideoError, VideoLessonMenuLookup, VideoRepository,
+        VideoStorage, video_id_uuid, video_review_id_uuid,
     },
+    catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
     identity::account_id_uuid,
@@ -41,14 +42,14 @@ use crate::{
 const NOTE_MAX_CHARS: usize = 1000;
 
 /// `/videos` のハンドラーが使うユースケース。
-pub struct VideosState<V, S, F, G, A, P, C> {
-    pub submit_video: SubmitVideo<V, S, F, A, P, C>,
+pub struct VideosState<V, M, S, F, G, A, P, C> {
+    pub submit_video: SubmitVideo<V, M, S, F, A, P, C>,
     pub get_video_review: GetVideoReview<V>,
     pub return_video_review: ReturnVideoReview<V, G, A, P, C>,
 }
 
-/// ハンドラーが共有する [`VideosState`]。
-type Shared<V, S, F, G, A, P, C> = Arc<VideosState<V, S, F, G, A, P, C>>;
+/// ハンドラーが共有する [`VideosState`]（axum の `State` で受け取る）。
+type Shared<V, M, S, F, G, A, P, C> = State<Arc<VideosState<V, M, S, F, G, A, P, C>>>;
 
 /// student-app の `SubmitVideoRequest`。
 #[derive(Deserialize)]
@@ -57,6 +58,7 @@ pub struct SubmitVideoRequest {
     sport: String,
     content_type: String,
     note: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// student-app の `Video`。
@@ -69,6 +71,7 @@ pub struct VideoBody {
     status: &'static str,
     upload_url: Option<String>,
     created_at: String,
+    lesson_menu: Option<VideoLessonMenuBody>,
 }
 
 /// admin-web の `ReturnVideoReviewRequest`。
@@ -88,6 +91,23 @@ pub struct VideoReviewBody {
     comment: Option<String>,
     returned_at: Option<String>,
     ai_feedback: Option<AiFeedbackBody>,
+    lesson_menu: Option<VideoLessonMenuBody>,
+}
+
+/// student-app・admin-web の `VideoLessonMenu`（動画を送った時点のレッスンメニューの ID・名前）。admin-web の
+/// `CoachVideo` でも使う。
+#[derive(Serialize)]
+pub struct VideoLessonMenuBody {
+    lesson_menu_id: String,
+    name: String,
+}
+
+/// 動画を送った時点のレッスンメニューの写し。メニューを選ばずに送った動画は `None`（契約の null）。
+pub(crate) fn video_lesson_menu_body(video: &Video) -> Option<VideoLessonMenuBody> {
+    video.lesson_menu().map(|menu| VideoLessonMenuBody {
+        lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
+        name: menu.name().as_str().to_string(),
+    })
 }
 
 /// student-app・admin-web の `AiFeedback`（AI の一次フィードバック）。admin-web の `CoachVideo` でも使う。
@@ -113,13 +133,15 @@ pub(crate) fn ai_feedback_body(video: &Video) -> Result<Option<AiFeedbackBody>, 
 /// `POST /videos`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。送る生徒はトークンのアカウント。
 ///
 /// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない（AI の一次フィードバックの材料に渡すだけ）。
-pub async fn submit_video<V, S, F, G, A, P, C>(
-    State(state): State<Shared<V, S, F, G, A, P, C>>,
+/// `lesson_menu_id`（任意）が UUID でない・メニューがない・動画で選べないメニューなら 422。
+pub async fn submit_video<V, M, S, F, G, A, P, C>(
+    State(state): Shared<V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     request: Result<Json<SubmitVideoRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<VideoBody>), ApiError>
 where
     V: VideoRepository,
+    M: VideoLessonMenuLookup,
     S: VideoStorage,
     F: AiFeedbackGenerator,
     G: ReviewGate,
@@ -145,6 +167,14 @@ where
         sport: student_app_sport(&request.sport)?,
         content_type: video_content_type_from_contract(&request.content_type)?,
         note: request.note,
+        lesson_menu_id: request
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| {
+                lesson_menu_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("lesson_menu_id が UUID でない"))
+            })
+            .transpose()?,
     };
 
     let submitted = state
@@ -152,6 +182,10 @@ where
         .execute(command)
         .await
         .map_err(|error| match error {
+            SubmitVideoError::Invalid(error) => ApiError::from(error),
+            SubmitVideoError::LessonMenuNotFound => {
+                ApiError::validation_failed(message::LESSON_MENU_NOT_FOUND)
+            }
             SubmitVideoError::Unavailable(error) => ApiError::internal(error),
         })?;
     if let Some(reason) = &submitted.ai_feedback_failure {
@@ -168,19 +202,21 @@ where
             status: VIDEO_STATUS_AWAITING_UPLOAD,
             upload_url: Some(submitted.upload_url),
             created_at: date_time_to_contract(video.submitted_at())?,
+            lesson_menu: video_lesson_menu_body(video),
         }),
     ))
 }
 
 /// `GET /videos/{video_id}/review`。動画の当事者（送った生徒・送り先のコーチ）が添削を読む。コーチがまだ返して
 /// いなければ `in_progress`（未返却）。
-pub async fn get_video_review<V, S, F, G, A, P, C>(
-    State(state): State<Shared<V, S, F, G, A, P, C>>,
+pub async fn get_video_review<V, M, S, F, G, A, P, C>(
+    State(state): Shared<V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
 where
     V: VideoRepository,
+    M: VideoLessonMenuLookup,
     S: VideoStorage,
     F: AiFeedbackGenerator,
     G: ReviewGate,
@@ -210,14 +246,15 @@ where
 
 /// `POST /videos/{video_id}/review`（admin-web）。コーチだけが呼べ（役割は `require_role` の層が確かめる）、
 /// 返せるのは自分に送られた動画だけ。
-pub async fn return_video_review<V, S, F, G, A, P, C>(
-    State(state): State<Shared<V, S, F, G, A, P, C>>,
+pub async fn return_video_review<V, M, S, F, G, A, P, C>(
+    State(state): Shared<V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
     request: Result<Json<ReturnVideoReviewRequest>, JsonRejection>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
 where
     V: VideoRepository,
+    M: VideoLessonMenuLookup,
     S: VideoStorage,
     F: AiFeedbackGenerator,
     G: ReviewGate,
@@ -274,5 +311,6 @@ fn review_body(video: &Video) -> Result<VideoReviewBody, ApiError> {
             .map(|review| date_time_to_contract(review.returned_at()))
             .transpose()?,
         ai_feedback: ai_feedback_body(video)?,
+        lesson_menu: video_lesson_menu_body(video),
     })
 }

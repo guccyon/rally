@@ -169,6 +169,17 @@ pub enum DomainError {
     },
     /// 枠の長さがレッスンメニューの 1 回の時間（`minutes` 分）と違う
     SlotLengthMismatchesLessonMenu { minutes: u8 },
+    /// 動画で選べるのは送り先のコーチのレッスンメニューだけ（別のコーチのメニューは選べない）
+    VideoLessonMenuOfAnotherCoach,
+    /// 公開中でないレッスンメニューは動画で選べない
+    VideoLessonMenuNotPublished,
+    /// 非同期レッスンでない（同期の）レッスンメニューは動画で選べない
+    LessonMenuNotAsync,
+    /// レッスンメニューのスポーツ（`menu`）が動画のスポーツ（`video`）と違う
+    VideoLessonMenuSportMismatch {
+        menu: crate::identity::Sport,
+        video: crate::identity::Sport,
+    },
 }
 
 impl fmt::Display for DomainError {

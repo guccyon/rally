@@ -374,6 +374,7 @@ where
         EndLiveLessonSession::new(sessions.clone(), video, analytics.clone(), clock.clone()),
         SubmitVideo::new(
             videos.clone(),
+            CatalogLessonMenuLookup::new(lesson_menus.clone()),
             MockVideoStorage,
             MockAiFeedbackGenerator,
             analytics.clone(),

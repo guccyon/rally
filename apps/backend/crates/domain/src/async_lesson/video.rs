@@ -1,8 +1,11 @@
 use std::time::SystemTime;
 
-use super::{AiFeedback, ReviewComment, VideoId, VideoReview, VideoReviewId, VideoStatus};
+use super::{
+    AiFeedback, ReviewComment, VideoId, VideoLessonMenu, VideoReview, VideoReviewId, VideoStatus,
+};
 use crate::{
     DomainError,
+    catalog::{LessonFormat, LessonMenu},
     identity::{AccountId, Sport},
     lesson::{LessonCompletion, LessonId, LessonSource},
 };
@@ -17,6 +20,9 @@ use crate::{
 /// 一次フィードバックは添削とは別の項目で、状態（[`VideoStatus`]）にも添削の着手条件にも関わらず、添削の返却で
 /// 変わらない。
 ///
+/// 送った時点で生徒が選んだ非同期レッスンのレッスンメニュー（[`VideoLessonMenu`]）の写しを任意で持つ
+/// （[`Video::with_lesson_menu`]）。送った後にメニューが直されても写しは変わらない。
+///
 /// 送付の回数は数えない（月額は送り放題）。添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ。
 /// 不変条件 2）は [`crate::entitlement::ContractType::may_start_review`] が決め、返却はその答えに従う。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +34,7 @@ pub struct Video {
     submitted_at: SystemTime,
     review: Option<VideoReview>,
     ai_feedback: Option<AiFeedback>,
+    lesson_menu: Option<VideoLessonMenu>,
 }
 
 impl Video {
@@ -47,7 +54,42 @@ impl Video {
             submitted_at: now,
             review: None,
             ai_feedback: None,
+            lesson_menu: None,
         }
+    }
+
+    /// 送ったばかりの動画（[`Video::submit`] の結果）に、生徒が選んだレッスンメニュー `menu`（catalog から引いた今の
+    /// メニュー）の写しを残す。
+    ///
+    /// 選べるのは、送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー。違えば順に
+    /// [`DomainError::VideoLessonMenuOfAnotherCoach`]・[`DomainError::VideoLessonMenuNotPublished`]・
+    /// [`DomainError::LessonMenuNotAsync`]・[`DomainError::VideoLessonMenuSportMismatch`]。送った後のメニューの変更は
+    /// 写しに映さないので、呼ぶのは送付のときだけ。
+    pub fn with_lesson_menu(mut self, menu: &LessonMenu) -> Result<Self, DomainError> {
+        if menu.coach_id() != self.coach_id {
+            return Err(DomainError::VideoLessonMenuOfAnotherCoach);
+        }
+        if !menu.is_published() {
+            return Err(DomainError::VideoLessonMenuNotPublished);
+        }
+        if menu.format() != LessonFormat::Async {
+            return Err(DomainError::LessonMenuNotAsync);
+        }
+        if menu.sport() != self.sport {
+            return Err(DomainError::VideoLessonMenuSportMismatch {
+                menu: menu.sport(),
+                video: self.sport,
+            });
+        }
+        self.lesson_menu = Some(VideoLessonMenu::copy_of(menu));
+        Ok(self)
+    }
+
+    /// 保存先から読んだ動画に、送った時点のレッスンメニューの写しを戻す（保存先の実装用。写したときに
+    /// [`Video::with_lesson_menu`] で確かめているので、ここでは確かめない）。
+    pub fn with_restored_lesson_menu(mut self, lesson_menu: Option<VideoLessonMenu>) -> Self {
+        self.lesson_menu = lesson_menu;
+        self
     }
 
     /// 保存先から読んだ動画を組み立てる（保存先の実装用）。`review` は返却した添削の ID・コメント・返却した時刻
@@ -76,6 +118,7 @@ impl Video {
                 VideoReview::new(review_id, id, comment, returned_at)
             }),
             ai_feedback: None,
+            lesson_menu: None,
         })
     }
 
@@ -209,6 +252,11 @@ impl Video {
     pub const fn ai_feedback(&self) -> Option<&AiFeedback> {
         self.ai_feedback.as_ref()
     }
+
+    /// 送った時点のレッスンメニューの写し。メニューを選ばずに送った動画は `None`。
+    pub const fn lesson_menu(&self) -> Option<&VideoLessonMenu> {
+        self.lesson_menu.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -247,6 +295,80 @@ mod tests {
         assert_eq!(video.submitted_at(), NOW);
         assert_eq!(video.status(), VideoStatus::Submitted);
         assert_eq!(video.review(), None);
+    }
+
+    fn menu(
+        coach: AccountId,
+        sport: Sport,
+        format: LessonFormat,
+        is_published: bool,
+    ) -> LessonMenu {
+        LessonMenu::restore(
+            crate::catalog::LessonMenuId::from_u128(50),
+            coach,
+            crate::catalog::LessonMenuContent {
+                sport,
+                format,
+                name: crate::catalog::LessonMenuName::new("フォーム添削").unwrap(),
+                description: crate::catalog::LessonMenuDescription::default(),
+            },
+            is_published,
+            NOW,
+        )
+    }
+
+    #[test]
+    fn a_submitted_video_has_no_lesson_menu_unless_one_is_chosen() {
+        assert_eq!(submitted().lesson_menu(), None);
+
+        let chosen = menu(COACH, Sport::Tennis, LessonFormat::Async, true);
+        let video = submitted().with_lesson_menu(&chosen).unwrap();
+        assert_eq!(
+            video.lesson_menu(),
+            Some(&VideoLessonMenu::copy_of(&chosen))
+        );
+        assert_eq!(video.status(), VideoStatus::Submitted);
+    }
+
+    #[test]
+    fn only_a_published_async_menu_of_the_video_coach_and_sport_can_be_chosen() {
+        let sixty = LessonFormat::Live(crate::catalog::LessonDuration::from_minutes(60).unwrap());
+        for (menu, expected) in [
+            (
+                menu(OTHER_COACH, Sport::Tennis, LessonFormat::Async, true),
+                DomainError::VideoLessonMenuOfAnotherCoach,
+            ),
+            (
+                menu(COACH, Sport::Tennis, LessonFormat::Async, false),
+                DomainError::VideoLessonMenuNotPublished,
+            ),
+            (
+                menu(COACH, Sport::Tennis, sixty, true),
+                DomainError::LessonMenuNotAsync,
+            ),
+            (
+                menu(COACH, Sport::Soccer, LessonFormat::Async, true),
+                DomainError::VideoLessonMenuSportMismatch {
+                    menu: Sport::Soccer,
+                    video: Sport::Tennis,
+                },
+            ),
+        ] {
+            assert_eq!(submitted().with_lesson_menu(&menu), Err(expected));
+        }
+    }
+
+    #[test]
+    fn a_restored_lesson_menu_is_kept_through_the_review() {
+        let copy = VideoLessonMenu::restore(
+            crate::catalog::LessonMenuId::from_u128(9),
+            crate::catalog::LessonMenuName::new("フォーム添削").unwrap(),
+        );
+        let mut video = submitted().with_restored_lesson_menu(Some(copy.clone()));
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(1))
+            .unwrap();
+        assert_eq!(video.lesson_menu(), Some(&copy));
     }
 
     #[test]

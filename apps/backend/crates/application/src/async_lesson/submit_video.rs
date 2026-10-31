@@ -1,11 +1,16 @@
 use domain::{
+    DomainError,
     async_lesson::{AiFeedback, Video, VideoContentType},
+    catalog::LessonMenuId,
     identity::{AccountId, Sport},
 };
 
 use uuid::Uuid;
 
-use super::{AiFeedbackGenerator, AiFeedbackRequest, VideoRepository, VideoStorage, video_id_uuid};
+use super::{
+    AiFeedbackGenerator, AiFeedbackRequest, VideoLessonMenuLookup, VideoRepository, VideoStorage,
+    video_id_uuid,
+};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -22,6 +27,8 @@ pub struct SubmitVideoCommand {
     pub content_type: VideoContentType,
     /// 送った生徒の一言（コーチへの相談内容）。AI の一次フィードバックの材料に渡すだけで、保存しない
     pub note: Option<String>,
+    /// 添削を頼むコーチの非同期レッスンのレッスンメニュー（任意。なければメニューなしの動画）
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 /// 送付した動画と、動画本体を PUT する URL（保存先が発行する）。
@@ -36,8 +43,18 @@ pub struct SubmittedVideo {
 
 #[derive(Debug)]
 pub enum SubmitVideoError {
+    /// 選んだレッスンメニューが動画に合わない（送り先のコーチの・公開中の・非同期の・同じスポーツのメニューでない）
+    Invalid(DomainError),
+    /// 選んだレッスンメニューがない
+    LessonMenuNotFound,
     /// 保存先・動画の保存先の障害
     Unavailable(Unavailable),
+}
+
+impl From<DomainError> for SubmitVideoError {
+    fn from(error: DomainError) -> Self {
+        Self::Invalid(error)
+    }
 }
 
 /// 動画の送付のユースケース（student-app の `submitVideo`）。
@@ -51,10 +68,15 @@ pub enum SubmitVideoError {
 /// （作った時刻は [`Clock`] の今）。AI や保存先が失敗しても送付は成功させ、一次フィードバックは空のままにする
 /// （失敗の理由は [`SubmittedVideo::ai_feedback_failure`] で返し、書くのは外の層）。添削の着手条件・返却の流れには関わらない。
 ///
+/// レッスンメニューの指定があれば、catalog に問い合わせて（[`VideoLessonMenuLookup`]）動画で選べるか
+/// （[`Video::with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
+/// イベントも発火しない。
+///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
 /// （[`super::ReturnVideoReview`]）。
-pub struct SubmitVideo<V, S, F, A, P, C> {
+pub struct SubmitVideo<V, M, S, F, A, P, C> {
     videos: V,
+    lesson_menus: M,
     storage: S,
     ai_feedback: F,
     analytics: A,
@@ -62,18 +84,28 @@ pub struct SubmitVideo<V, S, F, A, P, C> {
     clock: C,
 }
 
-impl<V, S, F, A, P, C> SubmitVideo<V, S, F, A, P, C>
+impl<V, M, S, F, A, P, C> SubmitVideo<V, M, S, F, A, P, C>
 where
     V: VideoRepository,
+    M: VideoLessonMenuLookup,
     S: VideoStorage,
     F: AiFeedbackGenerator,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(videos: V, storage: S, ai_feedback: F, analytics: A, events: P, clock: C) -> Self {
+    pub fn new(
+        videos: V,
+        lesson_menus: M,
+        storage: S,
+        ai_feedback: F,
+        analytics: A,
+        events: P,
+        clock: C,
+    ) -> Self {
         Self {
             videos,
+            lesson_menus,
             storage,
             ai_feedback,
             analytics,
@@ -94,6 +126,18 @@ where
             command.sport,
             now,
         );
+        let video = match command.lesson_menu_id {
+            None => video,
+            Some(id) => {
+                let menu = self
+                    .lesson_menus
+                    .find_lesson_menu(id)
+                    .await
+                    .map_err(SubmitVideoError::Unavailable)?
+                    .ok_or(SubmitVideoError::LessonMenuNotFound)?;
+                video.with_lesson_menu(&menu)?
+            }
+        };
         let upload_url = self
             .storage
             .issue_upload_url(video.id(), command.content_type)
@@ -190,13 +234,24 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
 
-    use domain::async_lesson::VideoStatus;
+    use domain::{
+        async_lesson::{VideoLessonMenu, VideoStatus},
+        catalog::{
+            LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+            LessonMenuName,
+        },
+    };
 
     use super::*;
-    use crate::in_memory::{
-        FixedAiFeedbackGenerator, FixedClock, FixedVideoStorage, InMemoryVideoRepository,
-        RecordingAnalyticsSink, RecordingDomainEventPublisher,
+    use crate::{
+        catalog::CatalogLessonMenuLookup,
+        in_memory::{
+            FixedAiFeedbackGenerator, FixedClock, FixedVideoStorage, InMemoryLessonMenuRepository,
+            InMemoryVideoRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+        },
     };
+
+    type Menus = CatalogLessonMenuLookup<InMemoryLessonMenuRepository>;
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(7);
@@ -207,6 +262,7 @@ mod tests {
 
     fn use_case() -> SubmitVideo<
         InMemoryVideoRepository,
+        Menus,
         FixedVideoStorage,
         FixedAiFeedbackGenerator,
         RecordingAnalyticsSink,
@@ -220,6 +276,7 @@ mod tests {
         ai_feedback: F,
     ) -> SubmitVideo<
         InMemoryVideoRepository,
+        Menus,
         FixedVideoStorage,
         F,
         RecordingAnalyticsSink,
@@ -228,6 +285,7 @@ mod tests {
     > {
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
+            menus(),
             FixedVideoStorage,
             ai_feedback,
             RecordingAnalyticsSink::default(),
@@ -266,6 +324,69 @@ mod tests {
             sport: Sport::Tennis,
             content_type: VideoContentType::Mp4,
             note: Some("フォアハンドを見てほしい".to_string()),
+            lesson_menu_id: None,
+        }
+    }
+
+    /// `COACH` のテニスの公開中の非同期のメニュー
+    const MENU: LessonMenuId = LessonMenuId::from_u128(50);
+    /// `COACH` のテニスの非公開の非同期のメニュー
+    const UNPUBLISHED_MENU: LessonMenuId = LessonMenuId::from_u128(51);
+    /// `COACH` のテニスの公開中の 60 分の同期のメニュー
+    const LIVE_MENU: LessonMenuId = LessonMenuId::from_u128(52);
+    /// 別のコーチのテニスの公開中の非同期のメニュー
+    const OTHER_COACH_MENU: LessonMenuId = LessonMenuId::from_u128(53);
+    /// `COACH` のサッカーの公開中の非同期のメニュー
+    const SOCCER_MENU: LessonMenuId = LessonMenuId::from_u128(54);
+
+    fn menu(
+        id: LessonMenuId,
+        coach_id: AccountId,
+        sport: Sport,
+        format: LessonFormat,
+        is_published: bool,
+    ) -> LessonMenu {
+        LessonMenu::restore(
+            id,
+            coach_id,
+            LessonMenuContent {
+                sport,
+                format,
+                name: LessonMenuName::new("フォーム添削").unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            is_published,
+            now(),
+        )
+    }
+
+    fn menus() -> Menus {
+        let sixty = LessonFormat::Live(LessonDuration::from_minutes(60).unwrap());
+        CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::with_menus([
+            menu(MENU, COACH, Sport::Tennis, LessonFormat::Async, true),
+            menu(
+                UNPUBLISHED_MENU,
+                COACH,
+                Sport::Tennis,
+                LessonFormat::Async,
+                false,
+            ),
+            menu(LIVE_MENU, COACH, Sport::Tennis, sixty, true),
+            menu(
+                OTHER_COACH_MENU,
+                AccountId::from_u128(8),
+                Sport::Tennis,
+                LessonFormat::Async,
+                true,
+            ),
+            menu(SOCCER_MENU, COACH, Sport::Soccer, LessonFormat::Async, true),
+        ]))
+    }
+
+    fn command_with_menu(lesson_menu_id: LessonMenuId) -> SubmitVideoCommand {
+        SubmitVideoCommand {
+            lesson_menu_id: Some(lesson_menu_id),
+            ..command()
         }
     }
 
@@ -282,6 +403,11 @@ mod tests {
         );
         assert_eq!(video.status(), VideoStatus::Submitted);
         assert_eq!(video.submitted_at(), now());
+        assert_eq!(
+            video.lesson_menu(),
+            None,
+            "メニューを選ばなければメニューなし"
+        );
         assert_eq!(
             video.ai_feedback(),
             Some(&AiFeedback::new(FixedAiFeedbackGenerator::COMMENT, now()).unwrap())
@@ -388,6 +514,63 @@ mod tests {
                 1,
                 "video.submitted は発火する"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_chosen_async_menu_of_the_coach_is_copied_to_the_video() {
+        let use_case = use_case();
+
+        let submitted = use_case.execute(command_with_menu(MENU)).await.unwrap();
+
+        let copy =
+            VideoLessonMenu::copy_of(&menu(MENU, COACH, Sport::Tennis, LessonFormat::Async, true));
+        assert_eq!(submitted.video.lesson_menu(), Some(&copy));
+        assert_eq!(
+            use_case.videos().all()[0].lesson_menu(),
+            Some(&copy),
+            "保存した動画にも写しがある"
+        );
+        assert_eq!(use_case.analytics().events().len(), 1);
+        assert_eq!(use_case.events().events().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_menu_that_cannot_be_chosen_rejects_the_submission_and_saves_nothing() {
+        for (lesson_menu_id, expected) in [
+            (
+                OTHER_COACH_MENU,
+                Some(DomainError::VideoLessonMenuOfAnotherCoach),
+            ),
+            (
+                UNPUBLISHED_MENU,
+                Some(DomainError::VideoLessonMenuNotPublished),
+            ),
+            (LIVE_MENU, Some(DomainError::LessonMenuNotAsync)),
+            (
+                SOCCER_MENU,
+                Some(DomainError::VideoLessonMenuSportMismatch {
+                    menu: Sport::Soccer,
+                    video: Sport::Tennis,
+                }),
+            ),
+            (LessonMenuId::from_u128(99), None),
+        ] {
+            let use_case = use_case();
+
+            let error = use_case
+                .execute(command_with_menu(lesson_menu_id))
+                .await
+                .unwrap_err();
+
+            match (error, expected) {
+                (SubmitVideoError::Invalid(error), Some(expected)) => assert_eq!(error, expected),
+                (SubmitVideoError::LessonMenuNotFound, None) => {}
+                (error, expected) => panic!("{error:?} / {expected:?}"),
+            }
+            assert!(use_case.videos().all().is_empty(), "動画は保存しない");
+            assert!(use_case.analytics().events().is_empty());
+            assert!(use_case.events().events().is_empty());
         }
     }
 }

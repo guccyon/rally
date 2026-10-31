@@ -11,6 +11,7 @@ mod review_gate;
 mod submit_video;
 mod update_video_error;
 pub mod video_id_uuid;
+mod video_lesson_menu_lookup;
 pub mod video_review_id_uuid;
 mod video_storage;
 mod video_student_display_name_lookup;
@@ -27,5 +28,6 @@ pub use return_video_review::{
 pub use review_gate::ReviewGate;
 pub use submit_video::{SubmitVideo, SubmitVideoCommand, SubmitVideoError, SubmittedVideo};
 pub use update_video_error::UpdateVideoError;
+pub use video_lesson_menu_lookup::VideoLessonMenuLookup;
 pub use video_storage::VideoStorage;
 pub use video_student_display_name_lookup::VideoStudentDisplayNameLookup;

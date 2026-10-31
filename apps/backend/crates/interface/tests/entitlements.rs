@@ -231,6 +231,9 @@ fn router(now: SystemTime) -> Router {
         ),
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             RecordingAnalyticsSink::default(),

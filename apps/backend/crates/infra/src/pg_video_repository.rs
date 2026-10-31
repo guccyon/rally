@@ -1,13 +1,16 @@
-//! 動画と添削の保存先（Postgres の `async_lesson.videos`・`video_reviews`）。AI の一次フィードバックは `videos` の列。
+//! 動画と添削の保存先（Postgres の `async_lesson.videos`・`video_reviews`）。AI の一次フィードバックと、送った時点の
+//! レッスンメニューの写しは `videos` の列。
 
 use application::{
     Unavailable,
     async_lesson::{UpdateVideoError, VideoRepository, video_id_uuid, video_review_id_uuid},
+    catalog::lesson_menu_id_uuid,
     identity::account_id_uuid,
 };
 use domain::{
     DomainError,
-    async_lesson::{AiFeedback, ReviewComment, Video, VideoId, VideoReviewId},
+    async_lesson::{AiFeedback, ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+    catalog::LessonMenuName,
     identity::AccountId,
 };
 use sqlx::{
@@ -31,7 +34,8 @@ pub struct PgVideoRepository {
 }
 
 /// 動画の列（video_id, student_id, coach_id, sport, submitted_at）と、添削の列（review_id, comment, returned_at）と、
-/// AI の一次フィードバックの列（ai_feedback_comment, ai_feedback_created_at）。
+/// AI の一次フィードバックの列（ai_feedback_comment, ai_feedback_created_at）と、送った時点のレッスンメニューの写しの列
+/// （lesson_menu_id, lesson_menu_name。写しのない動画はどちらも NULL。DB の `videos_lesson_menu_shape`）。
 type VideoRow = (
     Uuid,
     Uuid,
@@ -43,6 +47,8 @@ type VideoRow = (
     Option<OffsetDateTime>,
     Option<String>,
     Option<OffsetDateTime>,
+    Option<Uuid>,
+    Option<String>,
 );
 
 impl PgVideoRepository {
@@ -64,7 +70,8 @@ impl VideoRepository for PgVideoRepository {
         let row: Option<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
                     r.review_id, r.comment, r.returned_at,
-                    v.ai_feedback_comment, v.ai_feedback_created_at
+                    v.ai_feedback_comment, v.ai_feedback_created_at,
+                    v.lesson_menu_id, v.lesson_menu_name
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.video_id = $1",
@@ -80,7 +87,8 @@ impl VideoRepository for PgVideoRepository {
         let rows: Vec<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
                     r.review_id, r.comment, r.returned_at,
-                    v.ai_feedback_comment, v.ai_feedback_created_at
+                    v.ai_feedback_comment, v.ai_feedback_created_at,
+                    v.lesson_menu_id, v.lesson_menu_name
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.coach_id = $1",
@@ -94,14 +102,21 @@ impl VideoRepository for PgVideoRepository {
 
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {
         sqlx::query(
-            "INSERT INTO async_lesson.videos (video_id, student_id, coach_id, sport, submitted_at)
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO async_lesson.videos
+                 (video_id, student_id, coach_id, sport, submitted_at, lesson_menu_id, lesson_menu_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(video_id_uuid::to_uuid(video.id()))
         .bind(account_id_uuid::to_uuid(video.student_id()))
         .bind(account_id_uuid::to_uuid(video.coach_id()))
         .bind(sport_value(video.sport()))
         .bind(timestamp(video.submitted_at()))
+        .bind(
+            video
+                .lesson_menu()
+                .map(|menu| lesson_menu_id_uuid::to_uuid(menu.id())),
+        )
+        .bind(video.lesson_menu().map(|menu| menu.name().as_str()))
         .execute(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -117,7 +132,8 @@ impl VideoRepository for PgVideoRepository {
         let row: Option<VideoRow> = sqlx::query_as(
             "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
                     r.review_id, r.comment, r.returned_at,
-                    v.ai_feedback_comment, v.ai_feedback_created_at
+                    v.ai_feedback_comment, v.ai_feedback_created_at,
+                    v.lesson_menu_id, v.lesson_menu_name
              FROM async_lesson.videos v
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE v.video_id = $1
@@ -134,7 +150,8 @@ impl VideoRepository for PgVideoRepository {
         let had_ai_feedback = video.ai_feedback().is_some();
         update(&mut video).map_err(UpdateVideoError::Rejected)?;
 
-        // 動画が変わるのは添削の返却と AI の一次フィードバックを付けることだけ（どちらも付けた後は変わらない）
+        // 動画が変わるのは添削の返却と AI の一次フィードバックを付けることだけ（どちらも付けた後は変わらない。
+        // レッスンメニューの写しは送付のときに書いたまま変わらない）
         if let (false, Some(review)) = (had_review, video.review()) {
             sqlx::query(
                 "INSERT INTO async_lesson.video_reviews (review_id, video_id, comment, returned_at)
@@ -178,6 +195,8 @@ fn video_from_row(
         returned_at,
         ai_feedback_comment,
         ai_feedback_created_at,
+        lesson_menu_id,
+        lesson_menu_name,
     ): VideoRow,
 ) -> Result<Video, Unavailable> {
     let sport = sport_from_value(&sport)
@@ -198,7 +217,8 @@ fn video_from_row(
         submitted_at.into(),
         review,
     )
-    .map_err(Unavailable::new)?;
+    .map_err(Unavailable::new)?
+    .with_restored_lesson_menu(lesson_menu_from_columns(lesson_menu_id, lesson_menu_name)?);
     if let (Some(comment), Some(created_at)) = (ai_feedback_comment, ai_feedback_created_at) {
         video
             .record_ai_feedback(
@@ -207,4 +227,18 @@ fn video_from_row(
             .map_err(Unavailable::new)?;
     }
     Ok(video)
+}
+
+/// 送った時点のレッスンメニューの写し。写しのない動画は `None`。
+fn lesson_menu_from_columns(
+    lesson_menu_id: Option<Uuid>,
+    name: Option<String>,
+) -> Result<Option<VideoLessonMenu>, Unavailable> {
+    let (Some(lesson_menu_id), Some(name)) = (lesson_menu_id, name) else {
+        return Ok(None);
+    };
+    Ok(Some(VideoLessonMenu::restore(
+        lesson_menu_id_uuid::from_uuid(lesson_menu_id),
+        LessonMenuName::new(name).map_err(Unavailable::new)?,
+    )))
 }

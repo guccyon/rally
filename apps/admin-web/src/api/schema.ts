@@ -290,6 +290,8 @@ export interface paths {
          *       生徒のアカウントが引けないときは `student_display_name` を載せない。添削待ちの動画には `returned_at` を載せない
          *     - 各項目の `ai_feedback` は、動画の送付の直後に AI（Gen1 はモック）が返した一次フィードバック（文と作った時刻）。
          *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
+         *     - 各項目の `lesson_menu` は、生徒が動画を送った時点で選んだ自分の非同期レッスンのレッスンメニュー（ID・名前の写し。
+         *       `VideoLessonMenu`）。メニューの今の中身ではない。メニューを選ばずに送られた動画は null
          *     - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -445,6 +447,7 @@ export interface paths {
          *     実装しないので、ゴルフの動画には常に 409 `review_payment_not_confirmed`。月額（ゴルフ以外）の動画は常に返せる。
          *     `comment` が空（空白だけ）か長すぎれば 422。返却すると行動イベント `video_review.returned`（KPI「添削の返却
          *     リードタイム」の入力。動画の送付の時刻 `submitted_at` も載せる）を発火する。
+         *     応答の `lesson_menu` は生徒が動画を送った時点で選んだレッスンメニュー（ID・名前の写し）で、選ばなかった動画は null。
          *     生徒は student-app の `getVideoReview` で同じ形の `VideoReview` を読む。
          */
         post: operations["returnVideoReview"];
@@ -913,6 +916,17 @@ export interface components {
             returned_at?: string | null;
             /** @description AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目 */
             ai_feedback?: components["schemas"]["AiFeedback"] | null;
+            /**
+             * @description 動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+             *     直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+             */
+            lesson_menu?: components["schemas"]["VideoLessonMenu"] | null;
+        };
+        /** @description 動画を送った時点のコーチの非同期レッスンのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく送った時点の写し。student-app の `VideoLessonMenu` と同じ形 */
+        VideoLessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            name: string;
         };
         ReturnVideoReviewRequest: {
             /** @description コーチの添削コメント（空白だけは不可） */
@@ -937,6 +951,11 @@ export interface components {
             returned_at?: string;
             /** @description AI の一次フィードバック。まだない（AI が作れなかった）ときは null。コーチの添削とは別の項目で、返却で上書きされない */
             ai_feedback?: components["schemas"]["AiFeedback"] | null;
+            /**
+             * @description 動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+             *     直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+             */
+            lesson_menu?: components["schemas"]["VideoLessonMenu"] | null;
         };
         /** @description コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明） */
         CoachVideoList: {

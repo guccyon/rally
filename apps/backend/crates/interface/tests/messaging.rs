@@ -288,6 +288,9 @@ fn app() -> App {
         ),
         SubmitVideo::new(
             videos.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),
