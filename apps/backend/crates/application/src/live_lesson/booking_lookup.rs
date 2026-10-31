@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use domain::scheduling::{Booking, BookingId};
+use domain::scheduling::{Booking, BookingId, Slot, SlotId};
 
 use crate::Unavailable;
 
@@ -23,4 +23,11 @@ pub trait BookingLookup: Send + Sync {
         &self,
         booking: &Booking,
     ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
+
+    /// `slot_id` の枠（状態を問わない）。なければ `None`。完了したレッスンのスポーツ（枠のスポーツ）を引くのに使う
+    /// （[`crate::lesson::LessonCompletionSportLookup`]）。
+    fn find_slot(
+        &self,
+        slot_id: SlotId,
+    ) -> impl Future<Output = Result<Option<Slot>, Unavailable>> + Send;
 }

@@ -1,6 +1,7 @@
 //! `PgLessonReviewRepository`（`review.lesson_reviews`）の検証。完了したレッスンを `PgLessonCompletionRepository::find`
 //! で読んで評価を保存・読み取りできること、同じレッスンの 2 回目の保存の拒否、コーチごとの読み取り、送った時刻での
-//! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む）。評価へのコーチの返信の
+//! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む。スポーツで絞るときは
+//! レッスンのスポーツを予約の枠から読む）。評価へのコーチの返信の
 //! 保存と上書き、評価の ID での読み取り。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -12,7 +13,10 @@ use std::time::Duration;
 
 use application::{
     in_memory::{FixedClock, RecordingAnalyticsSink},
-    lesson::{LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository},
+    lesson::{
+        LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository,
+        LessonCompletionSportLookup,
+    },
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::{
         GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, ListLowRatedReviews,
@@ -22,6 +26,7 @@ use application::{
     scheduling::SchedulingBookingLookup,
 };
 use domain::{
+    catalog::Sport,
     lesson::{LessonCompletion, LessonCompletionId},
     review::{
         LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
@@ -200,9 +205,15 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
     );
 
     let accounts = PgAccountRepository::new(pool.clone());
-    let list = ListLowRatedReviews::new(
+    let use_case = ListLowRatedReviews::new(
         reviews,
         LessonCompletionMenuLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        LessonCompletionSportLookup::new(
             PgLessonCompletionRepository::new(pool.clone()),
             PgLiveLessonSessionRepository::new(pool.clone()),
             SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
@@ -211,10 +222,8 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         ProfileCoachDisplayNameLookup::new(accounts.clone()),
         ProfileStudentDisplayNameLookup::new(accounts),
         FixedClock(now),
-    )
-    .execute()
-    .await
-    .unwrap();
+    );
+    let list = use_case.execute(None).await.unwrap();
     assert_eq!(
         list.reviews,
         [latest.clone(), edge.clone()],
@@ -231,6 +240,12 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
             "テスト"
         );
     }
+
+    // 予約の枠はテニス
+    let tennis = use_case.execute(Some(Sport::Tennis)).await.unwrap();
+    assert_eq!(tennis.reviews, [latest, edge], "テニスのレッスンの評価");
+    let golf = use_case.execute(Some(Sport::Golf)).await.unwrap();
+    assert!(golf.reviews.is_empty(), "ゴルフのレッスンの評価はない");
 }
 
 fn reply_command(

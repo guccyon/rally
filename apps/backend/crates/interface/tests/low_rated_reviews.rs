@@ -1,8 +1,8 @@
 //! `GET /lesson-reviews/low`（admin-web の `listLowRatedLessonReviews`）の統合テスト。本部には直近 30 日の★2 以下の評価を
 //! コーチを問わず新しい順に、コーチ・生徒の表示名とレッスンメニューと評価されたコーチの返信とともに返すことを OpenAPI のスキーマで検査する。
-//! コーチ・生徒は 403、トークンがなければ 401。この操作はパスパラメータもクエリも受けないので、404（見つからない）と
-//! 422（規則違反）の応答はない（しきい値・期間の規則の境目は domain の `LowRatedReviewCriteria` のテストと、ここの
-//! 一覧に載らない評価で確かめる）。
+//! クエリの `sport` を付ければそのスポーツのレッスンの評価だけを返し、`Sport` の値でなければ 422 `validation_failed`。
+//! コーチ・生徒は 403、トークンがなければ 401。この操作はパスパラメータを受けないので、404（見つからない）の応答はない
+//! （しきい値・期間の規則の境目は domain の `LowRatedReviewCriteria` のテストと、ここの一覧に載らない評価で確かめる）。
 
 use std::time::{Duration, SystemTime};
 
@@ -13,7 +13,10 @@ use application::{
     },
     in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLessonReviewRepository},
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
-    review::{LessonReviewRepository, ListLowRatedReviews, ReviewedLessonMenuLookup},
+    review::{
+        LessonReviewRepository, ListLowRatedReviews, ReviewedLessonMenuLookup,
+        ReviewedLessonSportLookup,
+    },
 };
 use axum::{
     Router,
@@ -88,6 +91,23 @@ impl ReviewedLessonMenuLookup for FixedLessonMenus {
                 LessonMenuName::new("フォア改善").unwrap(),
             )
         }))
+    }
+}
+
+/// レッスン 10・12・13 はテニス、11 はゴルフ、14 は水泳。他はスポーツが引けない。
+struct FixedLessonSports;
+
+impl ReviewedLessonSportLookup for FixedLessonSports {
+    async fn find_lesson_sport(
+        &self,
+        lesson_id: LessonCompletionId,
+    ) -> Result<Option<Sport>, Unavailable> {
+        Ok(match lesson_id.as_u128() {
+            10 | 12 | 13 => Some(Sport::Tennis),
+            11 => Some(Sport::Golf),
+            14 => Some(Sport::Swimming),
+            _ => None,
+        })
     }
 }
 
@@ -185,6 +205,7 @@ where
         ListLowRatedReviews::new(
             reviews,
             FixedLessonMenus,
+            FixedLessonSports,
             ProfileCoachDisplayNameLookup::new(accounts.clone()),
             ProfileStudentDisplayNameLookup::new(accounts),
             FixedClock(now()),
@@ -232,7 +253,12 @@ async fn app() -> Router {
 
 /// `GET /lesson-reviews/low`。レスポンスを admin-web の契約で検査する。
 async fn list(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/lesson-reviews/low");
+    list_with_query(router, token, "").await
+}
+
+/// `GET /lesson-reviews/low` にクエリ `query`（`?` から。なければ空）を付ける。レスポンスを admin-web の契約で検査する。
+async fn list_with_query(router: &Router, token: Option<&str>, query: &str) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/lesson-reviews/low{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -314,6 +340,50 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
         }),
         "★3 以上（12）と 30 日より前（13）は載らない"
     );
+}
+
+#[tokio::test]
+async fn sport_keeps_only_low_reviews_of_lessons_of_that_sport() {
+    let router = app().await;
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?sport=tennis").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        ["00000000-0000-0000-0000-00000000000a"],
+        "テニスの低い評価（10）だけ。★3（12）と 30 日より前（13）は載らない"
+    );
+    assert_eq!(
+        (body["max_rating"].clone(), body["period_days"].clone()),
+        (2.into(), 30.into())
+    );
+
+    // ゴルフも絞れる（admin-web の Sport）
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?sport=golf").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), ["00000000-0000-0000-0000-00000000000b"]);
+
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?sport=soccer").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"], json!([]), "そのスポーツの評価がなければ空");
+}
+
+#[tokio::test]
+async fn sport_that_is_not_a_sport_is_422_validation_failed() {
+    let router = app().await;
+    for query in ["?sport=pingpong", "?sport=", "?sport=Tennis"] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
 }
 
 #[tokio::test]
