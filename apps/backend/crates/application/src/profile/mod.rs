@@ -1,4 +1,4 @@
-//! profile のユースケースと、他のコンテキストに表示名・紹介を渡すアダプタ。
+//! profile のユースケースと、他のコンテキストに表示名・紹介（と、本部からのお知らせを受け取る生徒）を渡すアダプタ。
 //!
 //! コーチの自己紹介文は profile のポート（[`CoachProfileRepository`]）で読み書きする。表示名・提供スポーツは当面
 //! identity のアカウントの保存先（[`AccountRepository`]）から読み、生徒の表示名もそこに書く。どちらのデータも当面は
@@ -16,6 +16,7 @@ mod get_coach_overview;
 mod get_coach_profile;
 mod list_coaches;
 mod listed_coach;
+mod profile_announcement_recipient_lookup;
 mod profile_coach_candidate_lookup;
 mod profile_coach_display_name_lookup;
 mod profile_coach_introduction_lookup;
@@ -34,6 +35,7 @@ pub use get_coach_overview::GetCoachOverview;
 pub use get_coach_profile::{GetCoachProfile, GetCoachProfileCommand};
 pub use list_coaches::ListCoaches;
 pub use listed_coach::ListedCoach;
+pub use profile_announcement_recipient_lookup::ProfileAnnouncementRecipientLookup;
 pub use profile_coach_candidate_lookup::ProfileCoachCandidateLookup;
 pub use profile_coach_display_name_lookup::ProfileCoachDisplayNameLookup;
 pub use profile_coach_introduction_lookup::ProfileCoachIntroductionLookup;

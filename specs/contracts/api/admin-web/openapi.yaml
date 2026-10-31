@@ -14,6 +14,8 @@ info:
     student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
     コーチへのお知らせ（新しい予約・添削の依頼・生徒からのメッセージのプッシュ通知を残したもの）の一覧と既読
     （`listMyNotifications` / `markMyNotificationsRead`）も student-app と同じ操作・同じ形で、コーチが自分の分を呼ぶ。
+    本部は生徒全員か、あるスポーツの生徒全員にお知らせ（メンテナンスやキャンペーンの知らせ）を送り（`sendAnnouncement`）、
+    送ったお知らせを一覧で見る（`listAnnouncements`）。生徒は student-app の `listMyNotifications` で受け取る。
     コーチのレッスンメニュー（catalog）は、コーチが自分の分を作り（`createMyLessonMenu`）・直し・非公開にし
     （`updateMyLessonMenu`）・一覧する（`listMyLessonMenus`）。生徒は student-app の `listCoachLessonMenus` で公開中のものを読む。
     本部はすべてのコーチのメニューを横断で読む（`listLessonMenus`）。不適切な内容や誤ったメニューは、本部がコーチに代わって
@@ -70,7 +72,7 @@ tags:
   - name: catalog
     description: カタログ（コーチのレッスンメニュー）
   - name: notification
-    description: 通知（コーチへのお知らせ）
+    description: 通知（コーチへのお知らせ・本部から生徒へのお知らせ）
   - name: entitlement
     description: プラン（受講権。本部が見る生徒の一覧に添える契約種別と契約プラン）
 
@@ -1448,6 +1450,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /announcements:
+    post:
+      operationId: sendAnnouncement
+      summary: 生徒へのお知らせの送信（本部）
+      description: |
+        本部が、生徒全員か、あるスポーツの生徒全員にお知らせ（glossary の announcement。メンテナンスやキャンペーンの知らせ）を
+        送り、送った記録を返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。送ったのはトークンの本部のアカウント。
+
+        - `title` は 1〜50 文字、`body` は 1〜2000 文字（どちらも空白だけは不可。文字数は Unicode のコードポイントで数え、
+          改行を含めて書いたとおりに保存する）。違えば 422 `validation_failed`
+        - `sport` を付ければそのスポーツの生徒だけ、省くか null なら生徒全員（ゴルフの生徒も含む）。`Sport` の値でなければ
+          422 `validation_failed`
+        - 対象の生徒が 1 人もいなければ 404 `not_found` で、何も残さない
+        - 対象の生徒ごとにお知らせ（glossary の notification。種類は `announcement`）を作る。生徒は student-app の
+          `listMyNotifications` で読む（本文は題と本文を改行でつないだもの）
+        - プッシュ通知（Gen1 はモック）は、生徒の通知の受け取り設定（student-app の `NotificationSettings.announcement`）が
+          true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
+        - 予約送信・取り消しはない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: [notification, profile]
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendAnnouncementRequest"
+      responses:
+        "201":
+          description: 送ったお知らせの記録
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    get:
+      operationId: listAnnouncements
+      summary: 送ったお知らせの一覧（本部）
+      description: |
+        本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
+        どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
+        空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 送ったお知らせの一覧（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnouncementList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2912,6 +2982,74 @@ components:
           description: 作った時刻の新しい順
           items:
             $ref: "#/components/schemas/Notification"
+
+    SendAnnouncementRequest:
+      type: object
+      description: 生徒へのお知らせの送信（`sendAnnouncement`）
+      required: [title, body]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 題（1〜50 文字。空白だけは不可）
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 本文（1〜2000 文字。空白だけは不可。改行を含めてよい）
+        sport:
+          oneOf:
+            - $ref: "#/components/schemas/Sport"
+            - type: "null"
+          description: 対象のスポーツ。省くか null なら生徒全員
+
+    Announcement:
+      type: object
+      description: glossary の announcement（本部が生徒に送ったお知らせの記録）
+      required: [announcement_id, sender_id, title, body, sport, recipient_count, sent_at]
+      properties:
+        announcement_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+          description: 送った本部のアカウントの ID
+        title:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 題
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 本文
+        sport:
+          oneOf:
+            - $ref: "#/components/schemas/Sport"
+            - type: "null"
+          description: 対象のスポーツ。生徒全員に送ったなら null
+        recipient_count:
+          type: integer
+          minimum: 1
+          description: お知らせを受け取った生徒の数（送った時点の対象の生徒の数。プッシュ通知を送らなかった生徒も数える）
+        sent_at:
+          type: string
+          format: date-time
+          description: 送った時刻
+
+    AnnouncementList:
+      type: object
+      description: 送ったお知らせの一覧（並べ方は `listAnnouncements` の説明）
+      required: [announcements]
+      properties:
+        announcements:
+          type: array
+          description: 送った時刻の新しい順（同じ時刻なら後に送ったものが先）
+          items:
+            $ref: "#/components/schemas/Announcement"
 
     ErrorCode:
       type: string
