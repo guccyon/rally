@@ -117,6 +117,7 @@ void main() {
         'getCoachReviewSummary',
         'createBooking',
         'confirmBooking',
+        'listCoachLessonMenus',
         'submitVideo',
         'getVideoReview',
         'getVideoReview',
