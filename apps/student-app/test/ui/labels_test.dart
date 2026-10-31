@@ -14,6 +14,13 @@ void main() {
     expect(sportLabel(Sport.swimming), '水泳');
   });
 
+  test('添削の状態は、添削待ちと返却済みで出す', () {
+    expect(VideoReviewStatus.values.map(videoReviewStatusLabel), [
+      '添削待ち',
+      '返却済み',
+    ]);
+  });
+
   test('評価の各点に言葉の目安を添える', () {
     expect(
       [for (var rating = 1; rating <= 5; rating++) ratingLabel(rating)],

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/student_flow.dart';
 
 /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
-/// 登録後はアプリバーにホーム（ホームの画面では出さない）・自分の予約・チャット・通知の受け取り設定の入口を出す（それらの画面では [leading] で戻り先を出す）。
+/// 登録後はアプリバーにホーム（ホームの画面では出さない）・自分の予約・自分の動画・チャット・通知の受け取り設定の入口を出す（それらの画面では [leading] で戻り先を出す）。
 class FlowScaffold extends ConsumerWidget {
   const FlowScaffold({
     super.key,
@@ -39,6 +39,11 @@ class FlowScaffold extends ConsumerWidget {
               tooltip: '自分の予約',
               icon: const Icon(Icons.event_note_outlined),
               onPressed: state.busy ? null : notifier.openMyBookings,
+            ),
+            IconButton(
+              tooltip: '自分の動画',
+              icon: const Icon(Icons.video_library_outlined),
+              onPressed: state.busy ? null : notifier.openMyVideos,
             ),
             IconButton(
               tooltip: 'チャット',

@@ -400,6 +400,65 @@ void main() {
     expect(() => list.bookings.clear(), throwsUnsupportedError);
   });
 
+  test('MyVideoList をコンストラクタで直接作っても、渡した元を変えても一覧は変わらず、書き換えられない', () {
+    final video = MyVideo(
+      videoId: 'v1',
+      coachId: 'c1',
+      sport: Sport.tennis,
+      submittedAt: DateTime.utc(2026, 10, 26),
+      reviewStatus: VideoReviewStatus.inProgress,
+    );
+    final source = [video];
+    final list = MyVideoList(videos: source);
+    source.clear();
+    expect(list.videos, [video]);
+    expect(() => list.videos.clear(), throwsUnsupportedError);
+    expect(() => list.videos.add(video), throwsUnsupportedError);
+  });
+
+  test('MyVideoList.fromJson は添削の状態と任意の項目を読み、一覧は書き換えられない', () {
+    final list = MyVideoList.fromJson({
+      'videos': [
+        {
+          'video_id': 'v1',
+          'coach_id': 'c1',
+          'coach_display_name': 'たなか',
+          'sport': 'tennis',
+          'submitted_at': '2026-10-26T00:00:00Z',
+          'review_status': 'in_progress',
+          'returned_at': null,
+          'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブの動画添削'},
+        },
+        {
+          'video_id': 'v2',
+          'coach_id': 'c2',
+          'sport': 'soccer',
+          'submitted_at': '2026-10-25T00:00:00Z',
+          'review_status': 'returned',
+          'returned_at': '2026-10-25T12:00:00Z',
+          'lesson_menu': null,
+        },
+      ],
+    });
+
+    expect(list.videos, hasLength(2));
+    final waiting = list.videos[0];
+    expect(waiting.videoId, 'v1');
+    expect(waiting.coachDisplayName, 'たなか');
+    expect(waiting.sport, Sport.tennis);
+    expect(waiting.submittedAt, DateTime.utc(2026, 10, 26));
+    expect(waiting.reviewStatus, VideoReviewStatus.inProgress);
+    expect(waiting.returnedAt, isNull);
+    expect(waiting.lessonMenu?.name, 'サーブの動画添削');
+    final returned = list.videos[1];
+    // コーチのアカウントが引けないときは表示名が載らない
+    expect(returned.coachDisplayName, isNull);
+    expect(returned.reviewStatus, VideoReviewStatus.returned);
+    expect(returned.returnedAt, DateTime.utc(2026, 10, 25, 12));
+    expect(returned.lessonMenu, isNull);
+    expect(() => list.videos.clear(), throwsUnsupportedError);
+  });
+
   group('Booking のレッスンメニュー', () {
     final booking = {
       'booking_id': 'b1',

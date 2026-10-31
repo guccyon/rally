@@ -11,14 +11,16 @@ Future<ProviderContainer> pumpScreen(
   WidgetTester tester,
   Widget screen, {
   required FakeStudentApi api,
-  StudentFlowState initial = const StudentFlowState(),
+  StudentFlowState? initial,
   DateTime? now,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         studentApiProvider.overrideWithValue(api),
-        studentFlowProvider.overrideWith(() => StudentFlowNotifier(initial)),
+        studentFlowProvider.overrideWith(
+          () => StudentFlowNotifier(initial ?? StudentFlowState()),
+        ),
         clockProvider.overrideWithValue(() => now ?? Fixtures.now),
       ],
       child: MaterialApp(home: screen),
