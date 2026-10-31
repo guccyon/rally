@@ -1033,6 +1033,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 送ったお知らせの一覧（本部）
+         * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
+         *     どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
+         *     空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listAnnouncements"];
+        put?: never;
+        /**
+         * 生徒へのお知らせの送信（本部）
+         * @description 本部が、生徒全員か、あるスポーツの生徒全員にお知らせ（glossary の announcement。メンテナンスやキャンペーンの知らせ）を
+         *     送り、送った記録を返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。送ったのはトークンの本部のアカウント。
+         *
+         *     - `title` は 1〜50 文字、`body` は 1〜2000 文字（どちらも空白だけは不可。文字数は Unicode のコードポイントで数え、
+         *       改行を含めて書いたとおりに保存する）。違えば 422 `validation_failed`
+         *     - `sport` を付ければそのスポーツの生徒だけ、省くか null なら生徒全員（ゴルフの生徒も含む）。`Sport` の値でなければ
+         *       422 `validation_failed`
+         *     - 対象の生徒が 1 人もいなければ 404 `not_found` で、何も残さない
+         *     - 対象の生徒ごとにお知らせ（glossary の notification。種類は `announcement`）を作る。生徒は student-app の
+         *       `listMyNotifications` で読む（本文は題と本文を改行でつないだもの）
+         *     - プッシュ通知（Gen1 はモック）は、生徒の通知の受け取り設定（student-app の `NotificationSettings.announcement`）が
+         *       true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
+         *     - 予約送信・取り消しはない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["sendAnnouncement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications/me/read": {
         parameters: {
             query?: never;
@@ -1925,6 +1967,43 @@ export interface components {
         NotificationList: {
             /** @description 作った時刻の新しい順 */
             notifications: components["schemas"]["Notification"][];
+        };
+        /** @description 生徒へのお知らせの送信（`sendAnnouncement`） */
+        SendAnnouncementRequest: {
+            /** @description 題（1〜50 文字。空白だけは不可） */
+            title: string;
+            /** @description 本文（1〜2000 文字。空白だけは不可。改行を含めてよい） */
+            body: string;
+            /** @description 対象のスポーツ。省くか null なら生徒全員 */
+            sport?: components["schemas"]["Sport"] | null;
+        };
+        /** @description glossary の announcement（本部が生徒に送ったお知らせの記録） */
+        Announcement: {
+            /** Format: uuid */
+            announcement_id: string;
+            /**
+             * Format: uuid
+             * @description 送った本部のアカウントの ID
+             */
+            sender_id: string;
+            /** @description 題 */
+            title: string;
+            /** @description 本文 */
+            body: string;
+            /** @description 対象のスポーツ。生徒全員に送ったなら null */
+            sport: components["schemas"]["Sport"] | null;
+            /** @description お知らせを受け取った生徒の数（送った時点の対象の生徒の数。プッシュ通知を送らなかった生徒も数える） */
+            recipient_count: number;
+            /**
+             * Format: date-time
+             * @description 送った時刻
+             */
+            sent_at: string;
+        };
+        /** @description 送ったお知らせの一覧（並べ方は `listAnnouncements` の説明） */
+        AnnouncementList: {
+            /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先） */
+            announcements: components["schemas"]["Announcement"][];
         };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
@@ -2857,6 +2936,56 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 送ったお知らせの一覧（新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    sendAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description 送ったお知らせの記録 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     markMyNotificationsRead: {

@@ -1,27 +1,33 @@
-use domain::{identity::AccountId, notification::Notification};
+use domain::identity::AccountId;
 
-use super::NotificationRepository;
+use super::{AnnouncementRepository, MyNotification, NotificationRepository};
 use crate::Unavailable;
 
 /// 自分のお知らせの一覧のユースケース（student-app と admin-web の `listMyNotifications`。生徒もコーチも、自分が受け取る
 /// お知らせだけ）。照会だけで、何も保存しない。
-/// 作った時刻の新しい順で、受け取り設定でオフの種類のお知らせも含む。誰が呼べるか（役割）は境界（interface）が確かめる。
-/// 行動イベントは発火しない。
-pub struct ListMyNotifications<N> {
+/// 作った時刻の新しい順で、受け取り設定でオフの種類のお知らせも含む。本部からのお知らせには送った記録を添える
+/// （[`MyNotification`]）。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
+pub struct ListMyNotifications<N, A> {
     notifications: N,
+    announcements: A,
 }
 
-impl<N> ListMyNotifications<N>
+impl<N, A> ListMyNotifications<N, A>
 where
     N: NotificationRepository,
+    A: AnnouncementRepository,
 {
-    pub fn new(notifications: N) -> Self {
-        Self { notifications }
+    pub fn new(notifications: N, announcements: A) -> Self {
+        Self {
+            notifications,
+            announcements,
+        }
     }
 
     /// `recipient` は認証したアカウント。
-    pub async fn execute(&self, recipient: AccountId) -> Result<Vec<Notification>, Unavailable> {
-        self.notifications.find_by_recipient(recipient).await
+    pub async fn execute(&self, recipient: AccountId) -> Result<Vec<MyNotification>, Unavailable> {
+        let notifications = self.notifications.find_by_recipient(recipient).await?;
+        MyNotification::attach(notifications, &self.announcements).await
     }
 }
 
@@ -32,12 +38,32 @@ mod tests {
     use domain::{
         async_lesson::VideoId,
         messaging::{MessageId, MessageSender, MessageThreadId},
-        notification::{NotificationId, PushNotification},
+        notification::{
+            Announcement, AnnouncementBody, AnnouncementId, AnnouncementTitle, Notification,
+            NotificationId, PushNotification,
+        },
         scheduling::BookingId,
     };
 
     use super::*;
-    use crate::in_memory::InMemoryNotificationRepository;
+    use crate::in_memory::{InMemoryAnnouncementRepository, InMemoryNotificationRepository};
+
+    /// 生徒・コーチの `recipient` のお知らせ（本部からのお知らせはない）の中身だけ
+    async fn listed_of(
+        notifications: InMemoryNotificationRepository,
+        recipient: AccountId,
+    ) -> Vec<Notification> {
+        ListMyNotifications::new(notifications, InMemoryAnnouncementRepository::default())
+            .execute(recipient)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|mine| {
+                assert_eq!(mine.announcement, None);
+                mine.notification
+            })
+            .collect()
+    }
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const OTHER: AccountId = AccountId::from_u128(2);
@@ -69,10 +95,7 @@ mod tests {
         );
         let notifications =
             InMemoryNotificationRepository::with_notifications([old, new, same_time, others]);
-        let listed = ListMyNotifications::new(notifications.clone())
-            .execute(STUDENT)
-            .await
-            .unwrap();
+        let listed = listed_of(notifications.clone(), STUDENT).await;
         assert_eq!(
             listed,
             [same_time, new, old],
@@ -125,10 +148,7 @@ mod tests {
             from_student,
             message(5, MessageSender::Coach, 40),
         ]);
-        let listed = ListMyNotifications::new(notifications)
-            .execute(COACH)
-            .await
-            .unwrap();
+        let listed = listed_of(notifications, COACH).await;
         assert_eq!(
             listed,
             [from_student, requested, received],
@@ -138,10 +158,66 @@ mod tests {
 
     #[tokio::test]
     async fn no_notifications_is_an_empty_list() {
-        let listed = ListMyNotifications::new(InMemoryNotificationRepository::default())
+        let listed = listed_of(InMemoryNotificationRepository::default(), STUDENT).await;
+        assert!(listed.is_empty());
+    }
+
+    fn announcement(id: u128) -> Announcement {
+        Announcement::new(
+            AnnouncementId::from_u128(id),
+            AccountId::from_u128(5),
+            AnnouncementTitle::new("メンテナンスのお知らせ").unwrap(),
+            AnnouncementBody::new("11/3 は使えません").unwrap(),
+            None,
+            2,
+            at(30),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_announcement_comes_with_what_headquarters_sent() {
+        let sent = announcement(7);
+        let to_student =
+            Notification::new(NotificationId::from_u128(2), sent.push_to(STUDENT), at(30));
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            confirmed(1, STUDENT, 10),
+            to_student,
+            Notification::new(NotificationId::from_u128(3), sent.push_to(OTHER), at(30)),
+        ]);
+        let announcements =
+            InMemoryAnnouncementRepository::with_announcements([announcement(8), sent.clone()]);
+        let listed = ListMyNotifications::new(notifications, announcements)
             .execute(STUDENT)
             .await
             .unwrap();
-        assert!(listed.is_empty());
+        assert_eq!(
+            listed,
+            [
+                MyNotification {
+                    notification: to_student,
+                    announcement: Some(sent),
+                },
+                MyNotification {
+                    notification: confirmed(1, STUDENT, 10),
+                    announcement: None,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_announcement_is_unavailable() {
+        let notifications =
+            InMemoryNotificationRepository::with_notifications([Notification::new(
+                NotificationId::from_u128(2),
+                announcement(7).push_to(STUDENT),
+                at(30),
+            )]);
+        let result =
+            ListMyNotifications::new(notifications, InMemoryAnnouncementRepository::default())
+                .execute(STUDENT)
+                .await;
+        assert!(result.is_err(), "送った記録のないお知らせは保存先の破損");
     }
 }
