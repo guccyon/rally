@@ -57,7 +57,7 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        CoachProfileRepository, GetCoachBio, GetCoachProfile, ListCoaches,
+        CoachProfileRepository, GetCoachBio, GetCoachOverview, GetCoachProfile, ListCoaches,
         ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
         ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
         UpdateStudentProfile,
@@ -416,8 +416,22 @@ where
             ProfileCoachIntroductionLookup::new(accounts.clone()),
         ),
         ResumeCoach::new(
-            coach_acceptances,
+            coach_acceptances.clone(),
             ProfileCoachIntroductionLookup::new(accounts.clone()),
+        ),
+        MockTokenService,
+    );
+    let coach_overview = interface::coach_overview_router(
+        GetCoachOverview::new(
+            accounts.clone(),
+            SchedulingCoachAcceptanceLookup::new(coach_acceptances),
+            GetCoachReviewSummary::new(reviews.clone()),
+            GetMyLessonStats::new(
+                completions.clone(),
+                ReviewMonthlyReviewSummaryLookup::new(reviews.clone()),
+                clock.clone(),
+            ),
+            ListCoachLessonMenus::new(lesson_menus.clone()),
         ),
         MockTokenService,
     );
@@ -661,6 +675,7 @@ where
     .merge(students)
     .merge(student_activity)
     .merge(coach_acceptance)
+    .merge(coach_overview)
     .merge(low_rated_reviews)
     .merge(review_replies)
 }

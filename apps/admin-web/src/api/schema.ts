@@ -382,6 +382,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/{coach_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチ 1 人の様子（本部）
+         * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・今月と先月の完了したレッスンの数・公開中のレッスンメニューの
+         *     数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     照会だけで、何も保存しない。
+         *
+         *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
+         *
+         *     - `acceptance_status`: `listCoaches` の 1 件と同じ受付の状態（一度も止めていないコーチは `accepting`）
+         *     - `review_count` / `average_rating`: `getCoachReviewSummary` と同じ（期間で絞らない、これまでのすべての評価。0 件なら
+         *       `average_rating` は null）
+         *     - `current_month` / `previous_month`: `getMyLessonStats` の同じ名前の項目と同じ（日本時間の暦月。月ごとの評価の件数と
+         *       平均も載る）。金額は返さない
+         *     - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
+         *       メニューの数。スポーツで絞らず、ゴルフのメニューも数える）
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getCoachOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/bookings": {
         parameters: {
             query?: never;
@@ -1173,6 +1208,28 @@ export interface components {
         CoachList: {
             /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
             coaches: components["schemas"]["Coach"][];
+        };
+        /**
+         * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・今月と先月の
+         *     レッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+         */
+        CoachOverview: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+             */
+            coach_id: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+            /** @description これまでに受けた評価の件数（`getCoachReviewSummary` の `review_count` と同じ） */
+            review_count: number;
+            /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
+            average_rating: number | null;
+            current_month: components["schemas"]["MonthlyLessonStats"];
+            previous_month: components["schemas"]["MonthlyLessonStats"];
+            /** @description 公開中のレッスンメニューの数（スポーツを問わない） */
+            published_lesson_menu_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -2133,6 +2190,31 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getCoachOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチ 1 人の様子 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listMyCoachBookings: {
