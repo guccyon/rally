@@ -129,6 +129,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "notification.notification_settings",
             "notification.notifications",
             "scheduling.bookings",
+            "scheduling.coach_acceptances",
             "scheduling.slots",
         ]
     );
@@ -803,6 +804,63 @@ async fn scheduling_values_match_the_slots_checks(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (CHECK_VIOLATION, "slots_status_check")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_acceptances_are_for_coaches_and_match_the_scheduling_values(pool: PgPool) {
+    use domain::scheduling::CoachAcceptanceStatus;
+    use infra::scheduling_values::coach_acceptance_status_value;
+
+    let statuses: Vec<&str> = CoachAcceptanceStatus::ALL
+        .into_iter()
+        .map(coach_acceptance_status_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "scheduling.coach_acceptances",
+            "coach_acceptances_status_check"
+        )
+        .await,
+        statuses
+    );
+
+    let coach_id = coach(&pool).await;
+    sqlx::query(
+        "INSERT INTO scheduling.coach_acceptances (coach_id, status) VALUES ($1::uuid, 'suspended')",
+    )
+    .bind(&coach_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (code, constraint) = violation(
+        sqlx::query(
+            "UPDATE scheduling.coach_acceptances SET status = 'closed' WHERE coach_id = $1::uuid",
+        )
+        .bind(&coach_id)
+        .execute(&pool)
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "coach_acceptances_status_check")
+    );
+
+    // コーチでないアカウントの受付は入らない
+    let student_id = student(&pool).await;
+    let (code, constraint) = violation(
+        sqlx::query(
+            "INSERT INTO scheduling.coach_acceptances (coach_id, status) VALUES ($1::uuid, 'suspended')",
+        )
+        .bind(&student_id)
+        .execute(&pool)
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        ("23503", "coach_acceptances_coach_id_fkey")
     );
 }
 

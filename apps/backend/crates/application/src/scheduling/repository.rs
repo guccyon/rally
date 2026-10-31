@@ -42,7 +42,7 @@ pub trait SlotRepository: Send + Sync {
     where
         F: FnOnce(&mut Slot) -> Result<(), SchedulingError> + Send;
 
-    /// 条件に合う枠（[`SlotCriteria`] の順で最大 `limit` 件）。
+    /// 条件に合う枠（[`SlotCriteria`] の順で最大 `limit` 件）。受付を止めているコーチの枠は除く（除いた後で `limit` 件）。
     fn search(
         &self,
         criteria: &SlotCriteria,

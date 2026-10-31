@@ -5,10 +5,12 @@
 //!
 //! [`AccountRepository`]: crate::identity::AccountRepository
 
+mod coach_acceptance_lookup;
 mod coach_favorite_lookup;
 mod coach_profile;
 mod get_coach_profile;
 mod list_coaches;
+mod listed_coach;
 mod profile_coach_candidate_lookup;
 mod profile_coach_display_name_lookup;
 mod profile_coach_introduction_lookup;
@@ -17,10 +19,12 @@ mod profile_student_sport_lookup;
 mod update_coach_profile;
 mod update_student_profile;
 
+pub use coach_acceptance_lookup::CoachAcceptanceLookup;
 pub use coach_favorite_lookup::CoachFavoriteLookup;
 pub use coach_profile::CoachProfile;
 pub use get_coach_profile::{GetCoachProfile, GetCoachProfileCommand};
 pub use list_coaches::ListCoaches;
+pub use listed_coach::ListedCoach;
 pub use profile_coach_candidate_lookup::ProfileCoachCandidateLookup;
 pub use profile_coach_display_name_lookup::ProfileCoachDisplayNameLookup;
 pub use profile_coach_introduction_lookup::ProfileCoachIntroductionLookup;

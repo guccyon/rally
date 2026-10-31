@@ -33,9 +33,9 @@ use application::{
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
     scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, ListCoachBookings,
-        ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots, booking_id_uuid,
-        slot_id_uuid,
+        CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking, GetSlotSupply,
+        ListCoachBookings, ListMyBookings, PublishSlot, SchedulingBookingLookup, SearchSlots,
+        booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -49,7 +49,7 @@ use domain::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{AccountId, Role},
-    scheduling::{BookingId, Slot, SlotId, SlotStatus},
+    scheduling::{BookingId, CoachAcceptance, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -491,6 +491,35 @@ async fn trial_booking_is_only_once_per_student() {
         })
         .collect();
     assert_eq!(trials, [true, false, true]);
+}
+
+#[tokio::test]
+async fn booking_a_slot_of_a_suspended_coach_is_409_until_resumed_and_keeps_existing_bookings() {
+    let app = app();
+    let existing = create(&app.router, STUDENT, 10, false).await;
+    let acceptances = app.slots.coach_acceptances();
+    acceptances
+        .update(COACH, CoachAcceptance::suspend)
+        .await
+        .unwrap();
+
+    let (status, body) = post_bookings(&app.router, Some(OTHER_STUDENT), booking(11, false)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["code"], "coach_not_accepting_bookings");
+    assert_eq!(app.analytics.events().len(), 1, "断った予約では発火しない");
+    // 閉じた枠はない枠と同じ 404 のまま
+    let (status, body) = post_bookings(&app.router, Some(OTHER_STUDENT), booking(13, false)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    // 止める前に入った予約は確定できる
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &existing).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    acceptances
+        .update(COACH, CoachAcceptance::resume)
+        .await
+        .unwrap();
+    create(&app.router, OTHER_STUDENT, 11, false).await;
 }
 
 #[tokio::test]
