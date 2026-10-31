@@ -85,17 +85,24 @@ void main() {
     );
   });
 
-  test('月額契約のプランは名前とビデオ通話の暦月の上限で出す', () {
-    expect(SubscriptionPlan.values.map(subscriptionPlanChoiceLabel), [
-      'スタンダード　ビデオ通話 月 2 回',
-      'プラス　ビデオ通話 月 4 回',
-    ]);
-  });
-
-  test('月額契約の前の案内には、プランごとのビデオ通話の暦月の上限を並べる', () {
+  test('月額契約のプランの選択肢は、名前と応答のビデオ通話の暦月の上限で出す', () {
     expect(
-      subscriptionPlanLiveLessonLimitsLabel(),
-      '月 2 回（スタンダード）・月 4 回（プラス）',
+      subscriptionPlanChoiceLabel(
+        const SubscriptionPlanDetail(
+          plan: SubscriptionPlan.standard,
+          liveLessonsPerMonth: 2,
+        ),
+      ),
+      'スタンダード　ビデオ通話 月 2 回',
+    );
+    expect(
+      subscriptionPlanChoiceLabel(
+        const SubscriptionPlanDetail(
+          plan: SubscriptionPlan.plus,
+          liveLessonsPerMonth: 4,
+        ),
+      ),
+      'プラス　ビデオ通話 月 4 回',
     );
   });
 

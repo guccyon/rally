@@ -37,9 +37,7 @@ void main() {
     expect(find.text('同期レッスン（ビデオ通話）'), findsOneWidget);
 
     expect(
-      find.text(
-        '月額契約で、動画とチャットは送り放題、ビデオ通話は月 2 回（スタンダード）・月 4 回（プラス）まで受けられます。',
-      ),
+      find.text('月額契約で、動画とチャットは送り放題、ビデオ通話は選んだプランの回数まで毎月受けられます。'),
       findsOneWidget,
     );
     await tapText(tester, '月額契約へ進む');

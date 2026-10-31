@@ -531,6 +531,26 @@ void main() {
   });
 
   test(
+    'listSubscriptionPlans は GET /subscription-plans でプランと暦月の上限を返った順のまま読む',
+    () async {
+      final list = await apiReplying(200, {
+        'plans': [
+          {'plan': 'standard', 'live_lessons_per_month': 2},
+          {'plan': 'plus', 'live_lessons_per_month': 4},
+        ],
+      }).listSubscriptionPlans();
+      expect(sent.single.method, 'GET');
+      expect(sent.single.url.path, '/subscription-plans');
+      expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+      expect(list.plans.map((p) => p.plan), [
+        SubscriptionPlan.standard,
+        SubscriptionPlan.plus,
+      ]);
+      expect(list.plans.map((p) => p.liveLessonsPerMonth), [2, 4]);
+    },
+  );
+
+  test(
     'getMyEntitlement は GET /entitlements/me で受講権を読み、受講権がなければ 404',
     () async {
       final entitlement = await apiReplying(200, {

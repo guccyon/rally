@@ -157,23 +157,10 @@ String subscriptionPlanLabel(SubscriptionPlan plan) => switch (plan) {
   SubscriptionPlan.plus => 'プラス',
 };
 
-/// プランを選ぶときに添える、ビデオ通話の暦月の上限（不変条件 1。standard 2 回・plus 4 回）。
-/// 契約の前は受講権がなく上限をサーバーから受け取れないので、選ぶ前の案内のためだけにここに持つ。
-/// 契約したあとの上限と残り回数は、サーバーが返す `LiveLessonQuota` を出す
-int subscriptionPlanLiveLessonLimit(SubscriptionPlan plan) => switch (plan) {
-  SubscriptionPlan.standard => 2,
-  SubscriptionPlan.plus => 4,
-};
-
-/// プランの選択肢の 1 行（名前と回数を全角の空白で並べる）。例: `プラス　ビデオ通話 月 4 回`
-String subscriptionPlanChoiceLabel(SubscriptionPlan plan) =>
-    '${subscriptionPlanLabel(plan)}　ビデオ通話 月 ${subscriptionPlanLiveLessonLimit(plan)} 回';
-
-/// 月額契約の前に添える、プランごとのビデオ通話の暦月の上限。例: `月 2 回（スタンダード）・月 4 回（プラス）`
-String subscriptionPlanLiveLessonLimitsLabel() => [
-  for (final plan in SubscriptionPlan.values)
-    '月 ${subscriptionPlanLiveLessonLimit(plan)} 回（${subscriptionPlanLabel(plan)}）',
-].join('・');
+/// プランの選択肢の 1 行（名前と、`listSubscriptionPlans` が返したビデオ通話の暦月の上限を全角の空白で並べる）。
+/// 例: `プラス　ビデオ通話 月 4 回`。上限を読めなかったときは [subscriptionPlanLabel] だけを出す
+String subscriptionPlanChoiceLabel(SubscriptionPlanDetail detail) =>
+    '${subscriptionPlanLabel(detail.plan)}　ビデオ通話 月 ${detail.liveLessonsPerMonth} 回';
 
 /// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
 String liveLessonQuotaLabel(LiveLessonQuota quota) =>

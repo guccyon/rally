@@ -84,6 +84,7 @@ void main() {
       'endLiveLessonSession',
       'recordLessonCompletion',
       'submitLessonReview',
+      'listSubscriptionPlans',
       'startSubscription',
     ]);
   });
@@ -125,6 +126,7 @@ void main() {
         'getVideoReview',
         'recordLessonCompletion',
         'submitLessonReview',
+        'listSubscriptionPlans',
         'startSubscription',
       ]);
     },

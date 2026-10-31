@@ -124,6 +124,10 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<SubscriptionPlanList> listSubscriptionPlans() async =>
+      SubscriptionPlanList.fromJson(await _send('GET', '/subscription-plans'));
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) async => StartSubscriptionResponse.fromJson(

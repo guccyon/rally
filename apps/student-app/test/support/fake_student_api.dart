@@ -13,6 +13,7 @@ class FakeStudentApi implements StudentApi {
     List<MyBooking>? myBookings,
     List<MyVideo>? myVideos,
     this.entitlement,
+    List<SubscriptionPlanDetail>? subscriptionPlans,
     this.coachReviewSummaries = const {},
     this.lessonMenus = const {},
     this.videoReviews = const {},
@@ -25,7 +26,8 @@ class FakeStudentApi implements StudentApi {
        threads = List.of(threads ?? [Fixtures.thread]),
        messages = List.of(messages ?? Fixtures.messages),
        notificationSettings =
-           notificationSettings ?? Fixtures.notificationSettings;
+           notificationSettings ?? Fixtures.notificationSettings,
+       subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans;
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
@@ -47,6 +49,9 @@ class FakeStudentApi implements StudentApi {
 
   /// 受講権（`getMyEntitlement` が返す。null なら月額契約の前として 404 `not_found`。`startSubscription` で開始の応答のものになる）
   Entitlement? entitlement;
+
+  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans` が返す）
+  final List<SubscriptionPlanDetail> subscriptionPlans;
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
@@ -244,6 +249,12 @@ class FakeStudentApi implements StudentApi {
         ),
         (coachId: coachId, sport: sport),
       );
+
+  @override
+  Future<SubscriptionPlanList> listSubscriptionPlans() => _answer(
+    'listSubscriptionPlans',
+    () => SubscriptionPlanList(plans: [...subscriptionPlans]),
+  );
 
   @override
   Future<StartSubscriptionResponse> startSubscription(
@@ -747,6 +758,15 @@ abstract final class Fixtures {
     isFirstLesson: true,
     completedAt: now,
   );
+
+  /// サーバーが返す契約プランの一覧（不変条件 1。standard 2 回・plus 4 回）
+  static const subscriptionPlans = [
+    SubscriptionPlanDetail(
+      plan: SubscriptionPlan.standard,
+      liveLessonsPerMonth: 2,
+    ),
+    SubscriptionPlanDetail(plan: SubscriptionPlan.plus, liveLessonsPerMonth: 4),
+  ];
 
   static final subscriptionStarted = subscriptionStartedWith(
     SubscriptionPlan.standard,

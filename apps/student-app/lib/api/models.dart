@@ -55,7 +55,7 @@ enum SubscriptionStatus {
 }
 
 /// `SubscriptionPlan`（glossary の subscription_plan）。ビデオ通話の暦月の上限を決める（standard 2 回・plus 4 回）。
-/// 上限の数はサーバーが `LiveLessonQuota.limit` で返すので、ここには持たない。
+/// 上限の数はサーバーが返す（契約の前は `SubscriptionPlanDetail.live_lessons_per_month`、契約の後は `LiveLessonQuota.limit`）ので、ここには持たない。
 enum SubscriptionPlan {
   standard('standard'),
   plus('plus');
@@ -596,6 +596,42 @@ class Subscription {
     status: SubscriptionStatus.fromWire(json['status'] as String),
     startedAt: _dateTime(json['started_at']),
   );
+}
+
+/// `SubscriptionPlanDetail`。契約プランと、そのプランのビデオ通話の暦月の上限
+class SubscriptionPlanDetail {
+  const SubscriptionPlanDetail({
+    required this.plan,
+    required this.liveLessonsPerMonth,
+  });
+
+  final SubscriptionPlan plan;
+
+  /// ビデオ通話の暦月の上限（`LiveLessonQuota.limit` と同じ値）
+  final int liveLessonsPerMonth;
+
+  factory SubscriptionPlanDetail.fromJson(Map<String, dynamic> json) =>
+      SubscriptionPlanDetail(
+        plan: SubscriptionPlan.fromWire(json['plan'] as String),
+        liveLessonsPerMonth: json['live_lessons_per_month'] as int,
+      );
+}
+
+/// `SubscriptionPlanList`（`listSubscriptionPlans` の応答）
+class SubscriptionPlanList {
+  const SubscriptionPlanList({required this.plans});
+
+  /// standard・plus の順
+  final List<SubscriptionPlanDetail> plans;
+
+  factory SubscriptionPlanList.fromJson(Map<String, dynamic> json) =>
+      SubscriptionPlanList(
+        plans: List.unmodifiable(
+          (json['plans'] as List<dynamic>).map(
+            (e) => SubscriptionPlanDetail.fromJson(e as Map<String, dynamic>),
+          ),
+        ),
+      );
 }
 
 /// `StartSubscriptionRequest`

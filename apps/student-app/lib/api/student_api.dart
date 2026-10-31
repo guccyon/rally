@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチの評価・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -55,6 +55,10 @@ abstract interface class StudentApi {
   /// `listCoachLessonMenus`（GET /coaches/{coach_id}/lesson-menus）。コーチの公開中のレッスンメニューだけを、作った時刻の
   /// 古い順で返す。[sport] を渡せばそのスポーツに絞る。メニューがなければ空
   Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport});
+
+  /// `listSubscriptionPlans`（GET /subscription-plans）。契約プランとビデオ通話の暦月の上限を standard・plus の順で返す。
+  /// 受講権がなくても（月額契約の前でも）呼べる
+  Future<SubscriptionPlanList> listSubscriptionPlans();
 
   /// `startSubscription`（POST /subscriptions）
   Future<StartSubscriptionResponse> startSubscription(
