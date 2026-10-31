@@ -2634,6 +2634,66 @@ async fn lesson_menu_sport_is_one_of_the_coach_sports(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_headquarters_unpublish_has_both_time_and_reason_or_neither(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
+        .bind(&coach_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    insert_lesson_menu(&pool, &coach_id, "tennis", "async_lesson", "添削", "", None)
+        .await
+        .unwrap();
+    let set = |at: Option<&'static str>, reason: Option<String>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "UPDATE catalog.lesson_menus
+                 SET headquarters_unpublished_at = $1::timestamptz, headquarters_unpublish_reason = $2",
+            )
+            .bind(at)
+            .bind(reason)
+            .execute(&pool)
+            .await
+            .map(|_| ())
+        }
+    };
+
+    // 揃って値を持つ（理由は空でも 200 文字でもよい）か、揃って NULL
+    for reason in [String::new(), "あ".repeat(200)] {
+        set(Some("2026-11-01T00:00:00Z"), Some(reason))
+            .await
+            .unwrap();
+    }
+    set(None, None).await.unwrap();
+
+    for (at, reason, constraint_name) in [
+        (
+            Some("2026-11-01T00:00:00Z"),
+            None,
+            "lesson_menus_headquarters_unpublish_shape",
+        ),
+        (
+            None,
+            Some("理由".to_string()),
+            "lesson_menus_headquarters_unpublish_shape",
+        ),
+        (
+            Some("2026-11-01T00:00:00Z"),
+            Some("あ".repeat(201)),
+            "lesson_menus_headquarters_unpublish_reason_check",
+        ),
+    ] {
+        let (code, constraint) = violation(set(at, reason).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, constraint_name)
+        );
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn lesson_menu_shape_follows_the_lesson_type(pool: PgPool) {
     let coach_id = coach(&pool).await;
     sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
