@@ -74,7 +74,8 @@ pub trait BookingRepository: Send + Sync {
     ) -> impl Future<Output = Result<(Vec<Slot>, Vec<Booking>), Unavailable>> + Send;
 
     /// `student_id` の生徒の予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
-    /// 読むだけで何も変えない。本人の予約の一覧（[`super::ListMyBookings`]）が読む。
+    /// 読むだけで何も変えない。本人の予約の一覧（[`super::ListMyBookings`]）と、本部が見る生徒 1 人の利用の様子
+    /// （[`super::SchedulingStudentBookingActivityLookup`]）が読む。
     fn bookings_of_student(
         &self,
         student_id: AccountId,
