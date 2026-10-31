@@ -213,6 +213,31 @@ const REVIEWS: Schemas["CoachReview"][] = [
   review(3, 5, "次回もお願いします！", 24 * 12),
 ];
 
+// 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
+const NOTIFICATIONS: Schemas["Notification"][] = [
+  {
+    notification_id: id("9999", 3),
+    kind: "message_received",
+    body: "生徒から新しいメッセージが届きました",
+    created_at: at(-1),
+    is_read: false,
+  },
+  {
+    notification_id: id("9999", 2),
+    kind: "video_review_requested",
+    body: "生徒から動画の添削の依頼が届きました",
+    created_at: at(-5),
+    is_read: false,
+  },
+  {
+    notification_id: id("9999", 1),
+    kind: "booking_confirmed",
+    body: "新しい予約が入りました",
+    created_at: at(-24 * 2),
+    is_read: true,
+  },
+];
+
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
 export type Fixture = { method: "GET" | "POST" | "PUT"; path: string; status?: number; body: unknown };
 
@@ -263,6 +288,18 @@ export const FIXTURES: Fixture[] = [
     body: { thread_id: THREAD_ID, messages: MESSAGES } satisfies Schemas["MessageList"],
   },
   { method: "POST", path: "/message-threads/{thread_id}/read", status: 204, body: null },
+  {
+    method: "GET",
+    path: "/notifications/me",
+    body: { notifications: NOTIFICATIONS } satisfies Schemas["NotificationList"],
+  },
+  {
+    method: "POST",
+    path: "/notifications/me/read",
+    body: {
+      notifications: NOTIFICATIONS.map((notification) => ({ ...notification, is_read: true })),
+    } satisfies Schemas["NotificationList"],
+  },
   {
     method: "GET",
     path: "/coaches/{coach_id}/review-summary",
