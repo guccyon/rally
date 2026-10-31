@@ -10,8 +10,8 @@ import '../ui/labels.dart';
 /// 添削結果の表示（`getVideoReview`）。コーチが返却するまでは確かめ直す。
 /// AI の一次フィードバック（glossary の ai_feedback）があれば、コーチの添削とは別の枠に出す。
 /// 動画を送ったときにレッスンメニューを選んでいれば、その名前（送った時点の写し）を出す。
-/// 自分の動画の一覧から開いたとき（[FlowStep.myVideoReview]）は、その動画の添削を読むだけの画面にする
-/// （一周シナリオの完了記録には進まず、閉じると一覧に戻る）。
+/// 自分の動画の一覧かホームの「返ってきた添削」から開いたとき（[FlowStep.myVideoReview]）は、その動画の添削を読むだけの画面にする
+/// （一周シナリオの完了記録には進まず、閉じると開いた画面に戻る）。
 class VideoReviewScreen extends ConsumerWidget {
   const VideoReviewScreen({super.key});
 

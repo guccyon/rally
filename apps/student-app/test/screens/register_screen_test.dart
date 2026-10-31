@@ -34,6 +34,7 @@ void main() {
       'listMyBookings',
       'getMyEntitlement',
       'listMessageThreads',
+      'listMyVideos',
     ]);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson(), {

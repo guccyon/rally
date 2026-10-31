@@ -7,7 +7,7 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
-/// コーチとのやり取り（`listMessageThreads`）と、添削の依頼の入口を 1 画面に並べる。
+/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、添削の依頼の入口を 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -28,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: 24),
         const _ThreadsSection(),
         const SizedBox(height: 24),
+        const _ReturnedReviewsSection(),
         const _VideoReviewRequestSection(),
         const SizedBox(height: 24),
         OutlinedButton(
@@ -201,6 +202,55 @@ class _ThreadsSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 返ってきた添削（返却済みの動画を返却の新しい順に 3 件まで。押すとその添削結果を開く）。
+/// 返却済みが 0 件なら欄ごと出さない（読めなかったときは旨を出す）
+class _ReturnedReviewsSection extends ConsumerWidget {
+  const _ReturnedReviewsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(studentFlowProvider);
+    final notifier = ref.read(studentFlowProvider.notifier);
+    final failed = state.homeFailures.contains(HomeSection.videos);
+    final videos = notifier.returnedVideos();
+    if (!failed && videos.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionTitle('返ってきた添削'),
+          if (failed)
+            const _SectionFailure('返ってきた添削を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
+          else
+            for (final video in videos)
+              Card(
+                child: ListTile(
+                  title: Text(
+                    video.coachDisplayName == null
+                        ? '担当コーチ'
+                        : '${video.coachDisplayName} コーチ',
+                  ),
+                  subtitle: Text(
+                    [
+                      if (video.returnedAt case final at?)
+                        '返却: ${formatDateTime(at)}',
+                      if (video.lessonMenu case final menu?)
+                        videoLessonMenuLabel(menu),
+                    ].join('・'),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: state.busy
+                      ? null
+                      : () => notifier.openMyVideoReview(video),
+                ),
+              ),
+        ],
+      ),
     );
   }
 }
