@@ -44,6 +44,7 @@ mod scheduling_error;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
+mod student_activity;
 mod students;
 mod subscription_plans;
 mod subscriptions;
@@ -70,8 +71,9 @@ use application::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
     identity::{
-        AccountRepository, GetAccount, ListStudents, RegisterAccount, StudentContractLookup,
-        StudentLastBookingLookup, TokenIssuer, TokenVerifier,
+        AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount,
+        StudentActivityCoachDisplayNameLookup, StudentBookingActivityLookup, StudentContractLookup,
+        StudentLastBookingLookup, StudentLessonHistoryLookup, TokenIssuer, TokenVerifier,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
@@ -951,6 +953,35 @@ where
         .route("/students", get(students::list_students::<R, C, B>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(students::StudentsState { list_students }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る生徒 1 人の利用の様子（admin-web の `GET /students/{student_id}/activity`）のルーター。[`router_with`] と
+/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students/{student_id}/activity` は本部だけ（コーチ・生徒は 403）。
+pub fn student_activity_router<R, B, L, D, C, T>(
+    get_student_activity: GetStudentActivity<R, B, L, D, C>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    B: StudentBookingActivityLookup + 'static,
+    L: StudentLessonHistoryLookup + 'static,
+    D: StudentActivityCoachDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/students/{student_id}/activity",
+            get(student_activity::get_student_activity::<R, B, L, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(student_activity::StudentActivityState {
+            get_student_activity,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 
