@@ -1,8 +1,9 @@
 //! 本部によるコーチの受付の停止・再開（admin-web の `POST /coaches/{coach_id}/suspend`・`/resume`）を、保存先を Postgres に
 //! した組み立て（`server::router_with_postgres`）で通す。止めたコーチの枠が生徒の検索（`GET /slots`）とコーチを探す一覧
 //! （`GET /coaches`）に出ず、予約の作成（`POST /bookings`）が 409 `coach_not_accepting_bookings` になること、止める前に
-//! 入った予約は確定できること、本部のコーチの一覧に受付の状態が出ること、再開すると戻ることを確かめる。契約の形の細かい
-//! 検査は interface の `tests/coach_acceptances.rs`・`tests/coaches.rs`・`tests/bookings.rs`。
+//! 入った予約は確定できること、本部のコーチの一覧に受付の状態が出ること、再開すると戻ることを確かめる。止めた・再開した記録
+//! （`GET /coaches/{coach_id}/acceptance-changes`）が操作した本部のアカウントとともに Postgres に残り、新しい順に読めることも
+//! 確かめる。契約の形の細かい検査は interface の `tests/coach_acceptances.rs`・`tests/coaches.rs`・`tests/bookings.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coach_acceptance -- --include-ignored` で走らせる。
@@ -211,4 +212,62 @@ async fn suspended_coach_is_hidden_from_students_and_takes_no_new_booking_until_
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_reads_who_suspended_and_resumed_a_coach_newest_first(pool: PgPool) {
+    let (coach_id, coach) =
+        register(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let (hq_id, headquarters) = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let (other_hq_id, other_headquarters) =
+        register(&pool, "hq2@example.com", Role::Headquarters, vec![]).await;
+    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+    let path = format!("/coaches/{coach_id}/acceptance-changes");
+
+    let (status, body) = send(&router, "GET", &path, &headquarters, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coach_id": coach_id, "changes": [] }));
+
+    for (action, token) in [("suspend", &headquarters), ("resume", &other_headquarters)] {
+        let (status, body) = send(
+            &router,
+            "POST",
+            &format!("/coaches/{coach_id}/{action}"),
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{action}: {body}");
+    }
+
+    let (status, body) = send(&router, "GET", &path, &other_headquarters, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let changes = body["changes"].as_array().unwrap();
+    let summary: Vec<_> = changes
+        .iter()
+        .map(|c| (c["acceptance_status"].clone(), c["changed_by"].clone()))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (json!("accepting"), json!(other_hq_id)),
+            (json!("suspended"), json!(hq_id)),
+        ]
+    );
+    // RFC 3339 の UTC で揃うので、文字列の順が時刻の順
+    assert!(changes[0]["changed_at"].as_str() >= changes[1]["changed_at"].as_str());
+
+    // 本部だけ。コーチでない ID は 404
+    let (status, _) = send(&router, "GET", &path, &coach, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = send(
+        &router,
+        "GET",
+        &format!("/coaches/{hq_id}/acceptance-changes"),
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 }

@@ -154,7 +154,6 @@ mod tests {
         matching::FavoriteCoach,
         profile::DisplayName,
         review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
-        scheduling::CoachAcceptance,
     };
 
     use super::*;
@@ -170,6 +169,9 @@ mod tests {
         review::ReviewCoachReviewSummaryLookup,
         scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
     };
+
+    /// 受付を止める・再開する本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
     const STUDENT: AccountId = AccountId::from_u128(1);
 
@@ -285,7 +287,9 @@ mod tests {
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         for coach in [3, 5] {
             acceptances
-                .update(AccountId::from_u128(coach), CoachAcceptance::suspend)
+                .update(AccountId::from_u128(coach), |a| {
+                    a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                })
                 .await
                 .unwrap();
         }
