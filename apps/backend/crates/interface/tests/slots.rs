@@ -684,6 +684,81 @@ async fn search_filters_by_coach_and_period() {
 }
 
 #[tokio::test]
+async fn search_by_coach_combines_with_the_sport_period_and_paging() {
+    let app = app();
+    let a10 = publish(&app.router, COACH_A, "tennis", 10).await;
+    let a12 = publish(&app.router, COACH_A, "tennis", 12).await;
+    let a14 = publish(&app.router, COACH_A, "tennis", 14).await;
+    let a_soccer = publish(&app.router, COACH_A, "soccer", 16).await;
+    publish(&app.router, COACH_B, "tennis", 11).await;
+    publish(&app.router, COACH_B, "tennis", 13).await;
+    let coach_a = coach_id(COACH_A);
+
+    let (status, body) = get_slots(
+        &app.router,
+        Some(STUDENT),
+        &format!(
+            "sport=tennis&coach_id={coach_a}&starts_after={}&starts_before={}",
+            nov1(11),
+            nov1(14)
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_student_app(status, &body);
+    assert_eq!(
+        item_ids(&body),
+        std::slice::from_ref(&a12),
+        "コーチと期間の両方で絞る"
+    );
+    assert_eq!(body["items"][0]["coach_id"], coach_a);
+
+    let (_, body) = get_slots(
+        &app.router,
+        Some(STUDENT),
+        &format!("sport=soccer&coach_id={coach_a}"),
+    )
+    .await;
+    assert_eq!(item_ids(&body), [a_soccer], "コーチとスポーツの両方で絞る");
+
+    // コーチで絞ったままページを送る（別のコーチの枠は混ざらない）
+    let mut seen = Vec::new();
+    let mut query = format!("sport=tennis&coach_id={coach_a}&limit=2");
+    loop {
+        let (status, body) = get_slots(&app.router, Some(STUDENT), &query).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_student_app(status, &body);
+        seen.extend(item_ids(&body));
+        match body["next_cursor"].as_str() {
+            Some(cursor) => {
+                query = format!("sport=tennis&coach_id={coach_a}&limit=2&cursor={cursor}")
+            }
+            None => break,
+        }
+    }
+    assert_eq!(seen, [a10, a12, a14]);
+}
+
+#[tokio::test]
+async fn search_by_a_coach_without_slots_is_an_empty_page_not_404() {
+    let app = app();
+    publish(&app.router, COACH_A, "tennis", 10).await;
+    // 生徒の ID・ない ID・枠を公開していないコーチ
+    for id in [coach_id(STUDENT), coach_id("coach:99"), coach_id(COACH_B)] {
+        let (status, body) = get_slots(
+            &app.router,
+            Some(STUDENT),
+            &format!("sport=tennis&coach_id={id}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{id}: {body}");
+        assert_student_app(status, &body);
+        assert!(item_ids(&body).is_empty(), "{id}");
+        assert_eq!(body["next_cursor"], Value::Null);
+    }
+}
+
+#[tokio::test]
 async fn search_starts_from_now_by_default() {
     let app = app();
     // 現在時刻（2026-10-26T00:00:00Z）より前の枠は既定では出ない

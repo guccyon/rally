@@ -22,8 +22,8 @@ use sqlx::{
 use crate::{
     messaging_values::{message_sender_from_value, message_sender_value},
     notification_values::{
-        BOOKING_CONFIRMED, BOOKING_RECEIVED, MESSAGE_RECEIVED, VIDEO_REVIEW_RETURNED,
-        push_notification_kind_value,
+        BOOKING_CONFIRMED, BOOKING_RECEIVED, MESSAGE_RECEIVED, VIDEO_REVIEW_REQUESTED,
+        VIDEO_REVIEW_RETURNED, push_notification_kind_value,
     },
     pg_support::timestamp,
 };
@@ -31,7 +31,8 @@ use crate::{
 /// [`NotificationRepository`] の Postgres 実装。
 ///
 /// お知らせ 1 件で 1 行。プッシュ通知の中身は種類（`kind`）ごとの列に分けて持つ（形は `notifications_kind_shape`）。
-/// 同じプッシュ通知のお知らせは 1 件（`notifications_one_per_push`。残すときは `ON CONFLICT DO NOTHING`）。新しい順は
+/// 同じプッシュ通知のお知らせは 1 件（`notifications_one_per_push` と、添削の依頼は `notifications_one_per_video_review_request`。
+/// 残すときは `ON CONFLICT DO NOTHING`）。新しい順は
 /// 作った時刻（`created_at`）と残した順（`seq`）で並べる。既読は、受け取る人のまだ読んでいない行をロック（`FOR UPDATE`）
 /// して domain の [`Notification::mark_read`] に通してから書く。
 #[derive(Debug, Clone)]
@@ -207,6 +208,11 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
             coach_id,
             booking_id: booking_id_uuid::from_uuid(booking_id.ok_or_else(broken)?),
         },
+        VIDEO_REVIEW_REQUESTED => PushNotification::VideoReviewRequested {
+            student_id,
+            coach_id,
+            video_id: video_id_uuid::from_uuid(video_id.ok_or_else(broken)?),
+        },
         VIDEO_REVIEW_RETURNED => PushNotification::VideoReviewReturned {
             student_id,
             coach_id,
@@ -247,6 +253,11 @@ fn parties(push: &PushNotification) -> (AccountId, AccountId) {
             coach_id,
             ..
         }
+        | PushNotification::VideoReviewRequested {
+            student_id,
+            coach_id,
+            ..
+        }
         | PushNotification::VideoReviewReturned {
             student_id,
             coach_id,
@@ -266,6 +277,14 @@ fn push_columns(push: &PushNotification) -> PushColumns {
         | PushNotification::BookingReceived { booking_id, .. } => (
             Some(booking_id_uuid::to_uuid(booking_id)),
             None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        PushNotification::VideoReviewRequested { video_id, .. } => (
+            None,
+            Some(video_id_uuid::to_uuid(video_id)),
             None,
             None,
             None,

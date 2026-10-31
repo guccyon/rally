@@ -52,12 +52,13 @@ channels:
   VideoReviewRequested:
     address: VideoReviewRequested
     description: |
-      生徒が動画を添削依頼として送った（動画の送付）。messaging はこれを購読し、その生徒とコーチのチャットのスレッドに
+      生徒が動画を添削依頼として送った（動画の送付）。notification はこれを購読し、依頼を受けたコーチにプッシュ通知を送る
+      （お知らせとしても残す。同じ動画の依頼のお知らせは 1 件）。messaging はこれを購読し、その生徒とコーチのチャットのスレッドに
       （なければ開いて）添削依頼のメッセージを足す（チャットは会話でありレッスンのログでもある。docs/adr/0009 の答え合わせ）。
       同じ動画の添削依頼はスレッドに 1 通。添削の有無・回数・状態は async-lesson だけが持ち、ここには載せない。
       送付の計測は行動イベント video.submitted が担う。
     x-publisher: [async-lesson]
-    x-subscribers: [messaging]
+    x-subscribers: [notification, messaging]
     messages:
       VideoReviewRequested:
         $ref: '#/components/messages/VideoReviewRequested'
