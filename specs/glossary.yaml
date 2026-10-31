@@ -2,6 +2,7 @@
 # 前提は product-context.md、context は context-map.yaml の id を使う。用語の網羅は後続の Issue で行う。
 # 各項目の context は 1 つ（context:）。複数のコンテキストが発行する語だけ contexts:（id の配列）で列挙する（docs/adr/0006）。
 # 任意で code:（その語を表すコード・契約・イベントの名前）と note:（定義を補う事実・ほかの語との関係・未定のこと）を持てる。
+# 状態を持つ語は任意で states:（契約の enum の値 → 画面とエラー文言で使う呼び名）を持てる。両アプリと backend の文言はこれに揃える。
 schema_version: "0.1"
 status: draft
 terms:
@@ -33,10 +34,18 @@ terms:
     ja: "予約"
     definition: "生徒がコーチのスロットを確保することで、体験予約もこれに含む。"
     context: scheduling
+    states:
+      pending: "確定待ち"
+      confirmed: "確定済み"
+      cancelled: "キャンセル済み"
   - id: slot
     ja: "スロット"
     definition: "コーチが公開する予約枠。"
     context: scheduling
+    states:
+      open: "公開中"
+      booked: "予約済み"
+      closed: "終了"
   - id: entitlement
     ja: "受講権"
     definition: "契約種別（月額 / ワンショット）と利用権（残回数・送り放題）の総称で、月額では予約のたびに消費されず、消費されるのはビデオ通話の暦月の枠（上限は契約プランで決まる）だけである。"
