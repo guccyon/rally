@@ -45,7 +45,7 @@ describe("headquartersApi", () => {
   test("本部以外のトークン（403）はロールの文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.getSlotSupply();
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("getCoachReviewSummary は指定したコーチの件数と平均を返す（評価が 0 件なら平均は null）", async () => {
@@ -63,7 +63,7 @@ describe("headquartersApi", () => {
   test("UUID でないコーチ ID（404）は ID を確かめる文言にする", async () => {
     const { api } = setup(json(404, { code: "not_found", message: "not found" }));
     const result = await api.getCoachReviewSummary("not-a-uuid");
-    expect(result).toEqual({ ok: false, message: "対象が見つかりません（ID を確かめてください）。" });
+    expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
   });
 
   test("listCoaches は GET /api/coaches を呼び、コーチの一覧を返す", async () => {
@@ -82,7 +82,7 @@ describe("headquartersApi", () => {
   test("listCoaches の 403 は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listCoaches();
-    expect(result).toEqual({ ok: false, message: "権限がないためアクセスできません。" });
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
   test("listCoachReviews は指定したコーチの評価の一覧を返す", async () => {

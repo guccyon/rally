@@ -13,7 +13,12 @@ const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
 vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
 
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
-const VALIDATION_FAILED = "入力の内容が正しくありません。";
+// 422 の失敗。画面は `code` で見分ける（文言は API クライアントのものとわざと変え、文言で判定していないことを見る）。
+const VALIDATION_FAILED = {
+  ok: false,
+  code: "validation_failed",
+  message: "入力の内容が正しくありません（テスト）。",
+} as const;
 
 function menu(id: string, overrides: Partial<Schemas["LessonMenu"]> = {}): Schemas["LessonMenu"] {
   return {
@@ -210,7 +215,7 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
 
   test("メニューを付けてサーバーが断った（422）ら、変わった可能性を伝えてメニューを読み直し、選べなくなったものは外す", async () => {
     const api = mockApi({
-      publishSlot: vi.fn<CoachApi["publishSlot"]>(async () => ({ ok: false, message: VALIDATION_FAILED })),
+      publishSlot: vi.fn<CoachApi["publishSlot"]>(async () => VALIDATION_FAILED),
       // 読み込んだ後に「サーブ特訓」が非公開にされた。
       listMyLessonMenus: menusOf(MENUS, [FORM, { ...SERVE, is_published: false }]),
     });
@@ -232,9 +237,31 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     expect(api.listMyCoachSlots).toHaveBeenCalledTimes(1);
   });
 
+  test("メニューを付けても 422 以外の失敗（枠の重なり）なら、その文言だけを出してメニューは読み直さない", async () => {
+    const api = mockApi({
+      publishSlot: vi.fn<CoachApi["publishSlot"]>(async () => ({
+        ok: false,
+        code: "slot_overlaps",
+        message: "公開済みの枠と時間が重なっています。",
+      })),
+    });
+    const user = userEvent.setup();
+    render(<PublishSlotForm api={api} />);
+
+    const menuSelect = screen.getByLabelText("レッスンメニュー");
+    await within(menuSelect).findByRole("option", { name: "フォーム改善（60 分）" });
+    await user.selectOptions(menuSelect, "フォーム改善（60 分）");
+    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.click(screen.getByRole("button", { name: "枠を公開" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^公開済みの枠と時間が重なっています。$/);
+    expect(api.listMyLessonMenus).toHaveBeenCalledTimes(1);
+    expect(menuSelect).toHaveDisplayValue("フォーム改善（60 分）");
+  });
+
   test("メニューを付けずにサーバーが断ったら、今までどおりその文言だけを出す", async () => {
     const api = mockApi({
-      publishSlot: vi.fn<CoachApi["publishSlot"]>(async () => ({ ok: false, message: VALIDATION_FAILED })),
+      publishSlot: vi.fn<CoachApi["publishSlot"]>(async () => VALIDATION_FAILED),
     });
     const user = userEvent.setup();
     render(<PublishSlotForm api={api} />);
@@ -246,7 +273,7 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/^入力の内容が正しくありません。$/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^入力の内容が正しくありません（テスト）。$/);
     expect(api.listMyLessonMenus).toHaveBeenCalledTimes(1);
   });
 

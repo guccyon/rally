@@ -4,7 +4,6 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { errorMessage } from "@/api/errorMessage";
 import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
@@ -29,8 +28,7 @@ type MenuState =
   | { kind: "failed"; message: string };
 
 // 画面ではスポーツ・公開中・同期で選択肢を絞り、終了をメニューの時間で決めてから送るので、メニューを付けて
-// 送ったあとの 422 は、読み込んだ後にメニューが変わった（非公開にした・直した）ものと読む。
-const VALIDATION_FAILED = errorMessage({ code: "validation_failed" });
+// 送ったあとの 422（`validation_failed`）は、読み込んだ後にメニューが変わった（非公開にした・直した）ものと読む。
 const MENU_CHANGED =
   "選んだレッスンメニューは、この枠に結びつけられませんでした。メニューが非公開になったか、スポーツや時間が変わった可能性があります。メニューを読み込み直したので、選び直してください。";
 
@@ -177,7 +175,7 @@ export function PublishSlotForm({
     if (response.ok) {
       setResult({ ok: true, message: "枠を公開しました。" });
       setList(await fetchSlots());
-    } else if (selectedMenu && response.message === VALIDATION_FAILED) {
+    } else if (selectedMenu && response.code === "validation_failed") {
       setResult({ ok: false, message: MENU_CHANGED });
       const next = await fetchMenus();
       setMenus(next);
