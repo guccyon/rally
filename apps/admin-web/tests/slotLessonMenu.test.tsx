@@ -8,6 +8,8 @@ import { CoachHome } from "@/components/coach/CoachHome";
 import { PublishSlotForm } from "@/components/coach/PublishSlotForm";
 import { addMinutesToLocal, selectableMenus } from "@/components/coach/slotLessonMenu";
 
+import { EMPTY_LESSON_STATS } from "./lessonStatsFixtures";
+
 // 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
 const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
 vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
@@ -337,7 +339,11 @@ describe("コーチの画面の「予約枠」", () => {
     const api = mockApi({ listMyCoachSlots: slotsOf([], [published]) });
     coachApiMock.mockReturnValue({
       ...api,
-      // 開いたときに出す「対応待ち」が呼ぶ。
+      // 開いたときに出す「対応待ち」と、その上の実績が呼ぶ。
+      getMyLessonStats: vi.fn<CoachApi["getMyLessonStats"]>(async () => ({
+        ok: true,
+        data: EMPTY_LESSON_STATS,
+      })),
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
         data: { videos: [] },
