@@ -203,6 +203,26 @@ describe("本部のコーチの評価", () => {
     expect(summaryOf(screen.getByLabelText("評価の件数と平均"))).toContainEqual(["評価の件数", "1 件"]);
   });
 
+  test("initialCoachId がコーチの一覧にあれば、そのコーチを選んだ状態で評価を読む", async () => {
+    const api = mockApi();
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} />);
+
+    const summary = await screen.findByLabelText("評価の件数と平均");
+    expect(summaryOf(summary)).toContainEqual(["コーチ ID", COACH_ID]);
+    expect(screen.getByLabelText("コーチ")).toHaveValue(COACH_ID);
+    expect(api.getCoachReviewSummary).toHaveBeenCalledTimes(1);
+    expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID);
+  });
+
+  test("initialCoachId がコーチの一覧になければ「選んでください」のままにし、評価は読まない", async () => {
+    const api = mockApi();
+    render(<CoachReviewPicker api={api} initialCoachId="99999999-9999-4999-8999-999999999999" />);
+
+    expect(await screen.findByLabelText("コーチ")).toHaveValue("");
+    expect(api.getCoachReviewSummary).not.toHaveBeenCalled();
+    expect(api.listCoachReviews).not.toHaveBeenCalled();
+  });
+
   test("平均は API が丸めた値を小数第 2 位まで揃えて出す", () => {
     expect(formatAverageRating(4)).toBe("4.00");
     expect(formatAverageRating(3.67)).toBe("3.67");

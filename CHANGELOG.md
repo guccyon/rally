@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部に「低い評価」（`/headquarters/low-reviews`）を足した: 本部の画面の「コーチの評価」の下の「低い評価の一覧を見る」から開き、直近 30 日の★2 以下の評価をコーチを問わず送った時刻の新しい順に、点・コーチの名前・レッスンメニュー（あれば）・一言・送った日時で 1 件ずつ出す（`listLowRatedLessonReviews`）。コーチの名前から、そのコーチを選んだ状態の「コーチの評価」（`?coach_id=` で開けるようにした）へ移れる。0 件なら「低い評価はまだありません」、読み込めなければその文言を出す。API と契約の変更はない（#381）
 - 本部が低い評価を横断で見る API: admin-web の契約に `GET /lesson-reviews/low`（`listLowRatedLessonReviews`）を足した。直近 30 日（照会した時刻の 30 × 24 時間前から）に付いた★2 以下の評価を、コーチを問わず送った時刻の新しい順に返す。各行は評価の ID・完了したレッスンの ID・コーチと生徒の ID と表示名・点・一言・送った時刻・レッスンメニューの写し（なければ null）で、一覧にしきい値 `max_rating`（2）と期間 `period_days`（30）を添える。ページング・件数の上限はない。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#380）
 - 生徒がコーチをお気に入りにする API: student-app の契約に `PUT /favorite-coaches/{coach_id}`（`addFavoriteCoach`）・`DELETE /favorite-coaches/{coach_id}`（`removeFavoriteCoach`）・`GET /favorite-coaches`（`listFavoriteCoaches`）を足した。一覧は入れた時刻の新しい順に、表示名・提供スポーツ（ゴルフを除く）・評価の件数と平均・入れた時刻を返し、入れる・外すは変えたあとの一覧を返す。同じコーチを 2 回入れても 1 件（時刻は最初のまま）、外すのは何度でもよい。コーチでない ID・ゴルフだけのコーチは 404、生徒以外は 403。`listCoachesForStudent` の各項目と `getCoachProfile` に、その生徒のお気に入りか `is_favorite` を足した。DB は `matching.favorite_coaches` の追加だけ（expand）。生徒アプリの画面は次の段（#384）
 - スロットの検索をコーチで絞る: student-app の `searchSlots` の任意の `coach_id` の意味を契約に書いた（そのコーチの枠だけ。`sport`・期間・ページングと組み合わせられ、枠のない ID・コーチでない ID は 404 にせず空の一覧。UUID でなければ 422）。API の振る舞いは変わらず（生徒アプリの「コーチの紹介」→「このコーチの空き枠を見る」が #339 から使っている）、組み合わせのテストを足した。DB の変更はない（#386）

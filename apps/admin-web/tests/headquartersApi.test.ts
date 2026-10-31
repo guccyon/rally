@@ -138,4 +138,31 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe("/api/students");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
+
+  test("listLowRatedLessonReviews は GET /api/lesson-reviews/low を呼び、低い評価の一覧を返す", async () => {
+    const list = {
+      max_rating: 2,
+      period_days: 30,
+      reviews: [
+        {
+          review_id: "33333333-3333-4333-8333-333333333333",
+          lesson_id: "44444444-4444-4444-8444-444444444444",
+          coach_id: "22222222-2222-4222-8222-222222222222",
+          coach_display_name: "鈴木 コーチ",
+          student_id: "11111111-1111-4111-8111-111111111111",
+          rating: 1,
+          comment: "通話が途中で切れました",
+          submitted_at: "2026-10-20T03:00:00Z",
+          lesson_menu: null,
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLowRatedLessonReviews();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/lesson-reviews/low");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
 });

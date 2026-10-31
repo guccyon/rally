@@ -213,6 +213,35 @@ const REVIEWS: Schemas["CoachReview"][] = [
   review(3, 5, "次回もお願いします！", 24 * 12),
 ];
 
+function lowReview(
+  n: number,
+  rating: number,
+  comment: string,
+  hoursAgo: number,
+  coach: { id: string; name: string },
+  student: { id: string; name: string },
+  menu = true,
+): Schemas["LowRatedLessonReview"] {
+  const base = review(n, rating, comment, hoursAgo, menu);
+  return {
+    ...base,
+    coach_id: coach.id,
+    coach_display_name: coach.name,
+    student_id: student.id,
+    student_display_name: student.name,
+    lesson_menu: base.lesson_menu ?? null,
+  };
+}
+
+const SUZUKI_COACH = { id: COACH_ID, name: "鈴木 コーチ" };
+const TAKAHASHI_COACH = { id: COACH_ID_2, name: "高橋 コーチ" };
+
+const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
+  lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
+  lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
+  lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+];
+
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
 export type Fixture = { method: "GET" | "POST" | "PUT"; path: string; status?: number; body: unknown };
 
@@ -272,6 +301,11 @@ export const FIXTURES: Fixture[] = [
     method: "GET",
     path: "/coaches/{coach_id}/reviews",
     body: { coach_id: COACH_ID, reviews: REVIEWS } satisfies Schemas["CoachReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-reviews/low",
+    body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],
   },
   {
     method: "GET",
