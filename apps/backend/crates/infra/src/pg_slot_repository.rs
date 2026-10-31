@@ -4,7 +4,7 @@ use application::{
     Unavailable,
     catalog::lesson_menu_id_uuid,
     identity::account_id_uuid,
-    scheduling::{AddToCalendarError, SlotCriteria, SlotRepository, slot_id_uuid},
+    scheduling::{AddToCalendarError, SlotCriteria, SlotRepository, UpdateSlotError, slot_id_uuid},
 };
 use domain::{
     identity::AccountId,
@@ -29,6 +29,8 @@ use crate::{
 /// 同じコーチの枠が重ならないことは domain の [`CoachCalendar`] だけで判定し、DB の排他制約は
 /// 置かない（ADR 0004 の 4）。並行な公開が互いを見落とさないよう、[`SlotRepository::add_to_calendar`]
 /// はトランザクションの中でコーチごとの advisory lock を取ってから、カレンダーの読み取りと保存を行う。
+/// 枠の変更（[`SlotRepository::update`]）は、予約の保存先（[`crate::PgBookingRepository`]）と同じくスロットの行を
+/// `FOR UPDATE` でロックしてから席を数えるので、同じ枠への予約の作成・確定・キャンセルと直列になる。
 #[derive(Debug, Clone)]
 pub struct PgSlotRepository {
     pool: PgPool,
@@ -74,6 +76,35 @@ pub(crate) fn slot_row_at(row: &PgRow, offset: usize) -> Result<SlotRow, sqlx::E
         row.try_get(offset + 8)?,
         row.try_get(offset + 9)?,
     ))
+}
+
+/// スロットの行をロックして読む。なければ `None`。予約の保存先と枠の変更が共有する（同じ枠への操作を直列にする）。
+///
+/// 席の数はロックを取った後の別の文で数える（READ COMMITTED では文ごとにスナップショットを取るので、ロックを
+/// 待っている間に確定した他の予約も数に入る。ロックと同じ文で数えると、待つ前のスナップショットで数えてしまう）。
+pub(crate) async fn lock_slot(
+    tx: &mut Transaction<'_, Postgres>,
+    slot_id: Uuid,
+) -> Result<Option<Slot>, Unavailable> {
+    let locked: Option<Uuid> =
+        sqlx::query_scalar("SELECT slot_id FROM scheduling.slots WHERE slot_id = $1 FOR UPDATE")
+            .bind(slot_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(Unavailable::new)?;
+    if locked.is_none() {
+        return Ok(None);
+    }
+    let row: SlotRow = sqlx::query_as(concat!(
+        "SELECT ",
+        slot_columns!(),
+        " FROM scheduling.slots s WHERE s.slot_id = $1"
+    ))
+    .bind(slot_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(Unavailable::new)?;
+    slot_from_row(row).map(Some)
 }
 
 impl PgSlotRepository {
@@ -144,6 +175,34 @@ impl SlotRepository for PgSlotRepository {
         .await
         .map_err(unavailable)?;
         tx.commit().await.map_err(unavailable)
+    }
+
+    async fn update<F>(&self, slot_id: SlotId, update: F) -> Result<Slot, UpdateSlotError>
+    where
+        F: FnOnce(&mut Slot) -> Result<(), SchedulingError> + Send,
+    {
+        let unavailable = |e: Unavailable| UpdateSlotError::Unavailable(e);
+        let slot_uuid = slot_id_uuid::to_uuid(slot_id);
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| unavailable(Unavailable::new(e)))?;
+        let mut slot = lock_slot(&mut tx, slot_uuid)
+            .await
+            .map_err(unavailable)?
+            .ok_or(UpdateSlotError::SlotNotFound)?;
+        update(&mut slot).map_err(UpdateSlotError::Rejected)?;
+        sqlx::query("UPDATE scheduling.slots SET status = $2 WHERE slot_id = $1")
+            .bind(slot_uuid)
+            .bind(slot_status_value(slot.status()))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| unavailable(Unavailable::new(e)))?;
+        tx.commit()
+            .await
+            .map_err(|e| unavailable(Unavailable::new(e)))?;
+        Ok(slot)
     }
 
     async fn search(&self, criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {

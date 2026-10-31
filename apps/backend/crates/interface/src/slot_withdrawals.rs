@@ -1,0 +1,53 @@
+//! `POST /coaches/me/slots/{slot_id}/withdraw`。admin-web の `withdrawMySlot`（コーチが公開した枠の取り下げ）。
+//! コーチだけが呼べる。
+
+use std::sync::Arc;
+
+use application::{
+    analytics::AnalyticsSink,
+    clock::Clock,
+    scheduling::{SlotRepository, WithdrawSlot, WithdrawSlotCommand, slot_id_uuid},
+};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
+
+use crate::{
+    auth::AuthenticatedAccount,
+    error::ApiError,
+    scheduling_error::coach_slot_not_found,
+    slots::{AdminWebSlotBody, admin_web_slot_body},
+};
+
+/// `/coaches/me/slots/{slot_id}/withdraw` のハンドラーが使うユースケース。
+pub struct SlotWithdrawalsState<S, A, C> {
+    pub withdraw_slot: WithdrawSlot<S, A, C>,
+}
+
+/// `POST /coaches/me/slots/{slot_id}/withdraw`。コーチだけが呼べ（役割は `require_role` の層が確かめる）、取り下げられる
+/// のはトークンのコーチ自身の枠だけ。取り下げた枠（`closed`）を返す。応答の `Slot` には `lesson_menu` を載せない
+/// （`publishSlot` と同じ）。失敗の応答は [`crate::scheduling_error`] が決める。
+pub async fn withdraw_my_slot<S, A, C>(
+    State(state): State<Arc<SlotWithdrawalsState<S, A, C>>>,
+    account: AuthenticatedAccount,
+    Path(slot_id): Path<String>,
+) -> Result<Json<AdminWebSlotBody>, ApiError>
+where
+    S: SlotRepository,
+    A: AnalyticsSink,
+    C: Clock,
+{
+    // 契約の withdrawMySlot に 422 はないので、UUID でない ID はない枠として扱う
+    let slot_id = slot_id_uuid::parse(&slot_id).map_err(|_| coach_slot_not_found())?;
+
+    let slot = state
+        .withdraw_slot
+        .execute(WithdrawSlotCommand {
+            coach_id: account.account_id(),
+            slot_id,
+        })
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(admin_web_slot_body(&slot, None)?))
+}

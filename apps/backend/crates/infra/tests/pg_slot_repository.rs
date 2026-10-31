@@ -1,6 +1,7 @@
 //! `PgSlotRepository`（`scheduling.slots`）の検証。重なる枠の拒否（並行な公開を含む）と、
 //! 検索の絞り込み・ページング。コーチの枠の読み取り（`slots_of_coach`）と、それを読むコーチの自分の枠の一覧。
 //! 枠に結びつけたレッスンメニュー（`lesson_menu_id`）の読み書きと、検索・一覧に添えるメニュー。
+//! 枠の変更（`update`）と、それを使うコーチの枠の取り下げ（並行な予約との直列化を含む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -17,7 +18,8 @@ use application::{
     profile::ProfileCoachIntroductionLookup,
     scheduling::{
         BookingRepository, ListCoachSlots, PublishSlot, PublishSlotCommand, PublishSlotError,
-        SearchSlots, SearchSlotsQuery, SlotRepository,
+        ReserveSlotError, SearchSlots, SearchSlotsQuery, SlotRepository, WithdrawSlot,
+        WithdrawSlotCommand, WithdrawSlotError,
     },
 };
 use domain::{
@@ -27,7 +29,7 @@ use domain::{
         LessonMenuName,
     },
     identity::AccountId,
-    scheduling::{Booking, SchedulingError, Slot, SlotCapacity, SlotStatus},
+    scheduling::{Booking, SchedulingError, Slot, SlotCapacity, SlotId, SlotStatus},
 };
 use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};
 use sqlx::PgPool;
@@ -598,4 +600,148 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
     assert!(page.lesson_menus.is_empty());
     let list = list_coach_slots.execute(coach_id).await.unwrap();
     assert_eq!(list.lesson_menus[&sixty.id()], unpublished);
+}
+
+fn withdraw_slot(
+    pool: &PgPool,
+    now: u64,
+) -> WithdrawSlot<PgSlotRepository, RecordingAnalyticsSink, FixedClock> {
+    WithdrawSlot::new(
+        PgSlotRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        FixedClock(at(now)),
+    )
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn withdrawn_slot_is_closed_and_frees_the_time(pool: PgPool) {
+    let slots = PgSlotRepository::new(pool.clone());
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach_id = coach(&pool).await;
+    let student = support::student(&pool).await;
+    let publish = publish_slot(&pool);
+    let open = publish
+        .execute(command(coach_id, Sport::Tennis, 10, 11))
+        .await
+        .unwrap();
+    let pending = publish
+        .execute(command(coach_id, Sport::Tennis, 20, 21))
+        .await
+        .unwrap();
+    let id = bookings.next_id();
+    bookings
+        .reserve(pending.id(), student, move |slot, existing| {
+            Booking::reserve(id, student, false, slot, existing, at(0))
+        })
+        .await
+        .unwrap();
+
+    let withdrawn = withdraw_slot(&pool, 1)
+        .execute(WithdrawSlotCommand {
+            coach_id,
+            slot_id: open.id(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(withdrawn.status(), SlotStatus::Closed);
+
+    // 予約の入った枠・始まった枠・ない枠は取り下げられず、何も変えない
+    for (slot_id, now, expected) in [
+        (
+            pending.id(),
+            1,
+            Some(SchedulingError::SlotHasActiveBookings { active: 1 }),
+        ),
+        (
+            open.id(),
+            1,
+            Some(SchedulingError::SlotNotOpen {
+                status: SlotStatus::Closed,
+            }),
+        ),
+        (SlotId::from_u128(99), 1, None),
+    ] {
+        let error = withdraw_slot(&pool, now)
+            .execute(WithdrawSlotCommand { coach_id, slot_id })
+            .await
+            .unwrap_err();
+        match (error, expected) {
+            (WithdrawSlotError::Invalid(error), Some(expected)) => assert_eq!(error, expected),
+            (WithdrawSlotError::SlotNotFound, None) => {}
+            (error, expected) => panic!("{error:?} / {expected:?}"),
+        }
+    }
+
+    let mut found = slots.slots_of_coach(coach_id).await.unwrap();
+    found.sort_by_key(|slot| slot.starts_at());
+    let statuses: Vec<_> = found
+        .iter()
+        .map(|slot| (slot.id(), slot.status(), slot.seats().active()))
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            (open.id(), SlotStatus::Closed, 0),
+            (pending.id(), SlotStatus::Open, 1),
+        ]
+    );
+    // 閉じた枠は生徒の検索に出ず、同じ時間に新しい枠を公開できる
+    let searched = SearchSlots::new(
+        slots.clone(),
+        lesson_menus(&pool),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(0)),
+    )
+    .execute(query(20))
+    .await
+    .unwrap();
+    assert_eq!(
+        searched.items.iter().map(Slot::id).collect::<Vec<_>>(),
+        [pending.id()]
+    );
+    publish
+        .execute(command(coach_id, Sport::Tennis, 10, 11))
+        .await
+        .unwrap();
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn withdrawal_and_a_concurrent_reservation_do_not_both_succeed(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    for round in 0..10 {
+        let student = support::student(&pool).await;
+        let slot = publish_slot(&pool)
+            .execute(command(coach_id, Sport::Tennis, 10 + round, 11 + round))
+            .await
+            .unwrap();
+        let id = bookings.next_id();
+        let withdraw = withdraw_slot(&pool, 1);
+        let (reserved, withdrawn) = tokio::join!(
+            bookings.reserve(slot.id(), student, move |slot, existing| {
+                Booking::reserve(id, student, false, slot, existing, at(0))
+            }),
+            withdraw.execute(WithdrawSlotCommand {
+                coach_id,
+                slot_id: slot.id(),
+            }),
+        );
+        match (reserved, withdrawn) {
+            (Ok(_), Err(WithdrawSlotError::Invalid(error))) => {
+                assert_eq!(error, SchedulingError::SlotHasActiveBookings { active: 1 })
+            }
+            (Err(ReserveSlotError::Rejected(error)), Ok(withdrawn)) => {
+                assert_eq!(
+                    error,
+                    SchedulingError::SlotNotOpen {
+                        status: SlotStatus::Closed
+                    }
+                );
+                assert_eq!(withdrawn.status(), SlotStatus::Closed);
+            }
+            (reserved, withdrawn) => panic!("{reserved:?} / {withdrawn:?}"),
+        }
+    }
 }

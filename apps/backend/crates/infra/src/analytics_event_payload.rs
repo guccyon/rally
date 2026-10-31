@@ -50,6 +50,17 @@ pub fn attributes(event: &AnalyticsEvent) -> Result<Value, time::error::Format> 
             "starts_at": date_time(*starts_at)?,
             "occurred_at": date_time(*occurred_at)?,
         }),
+        AnalyticsEvent::SlotWithdrawn {
+            coach_id,
+            slot_id,
+            starts_at,
+            occurred_at,
+        } => json!({
+            "coach_id": account_id_uuid::format(*coach_id),
+            "slot_id": slot_id_uuid::format(*slot_id),
+            "starts_at": date_time(*starts_at)?,
+            "occurred_at": date_time(*occurred_at)?,
+        }),
         AnalyticsEvent::BookingCreated {
             student_id,
             coach_id,

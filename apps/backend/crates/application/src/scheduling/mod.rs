@@ -28,6 +28,8 @@ mod slot_page;
 mod slot_supply_report;
 mod student_display_name_lookup;
 mod update_booking_error;
+mod update_slot_error;
+mod withdraw_slot;
 
 pub use booking_repository::BookingRepository;
 pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError};
@@ -55,3 +57,5 @@ pub use slot_page::SlotPage;
 pub use slot_supply_report::SlotSupplyReport;
 pub use student_display_name_lookup::StudentDisplayNameLookup;
 pub use update_booking_error::UpdateBookingError;
+pub use update_slot_error::UpdateSlotError;
+pub use withdraw_slot::{WithdrawSlot, WithdrawSlotCommand, WithdrawSlotError};

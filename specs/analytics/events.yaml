@@ -29,6 +29,13 @@ events:
     actor: coach
     required: [coach_id, slot_id, starts_at, occurred_at]
     kpi: "コーチの予約枠充足率"
+  # コーチが予約の入っていない・まだ始まっていない公開中の枠を取り下げた（枠は closed になる）。取り下げた枠を充足率の分母から除くために置く
+  - name: slot.withdrawn
+    ja: "スロットの取り下げ"
+    context: scheduling
+    actor: coach
+    required: [coach_id, slot_id, starts_at, occurred_at]
+    kpi: "コーチの予約枠充足率"
   - name: booking.created
     ja: "体験予約の作成"
     context: scheduling

@@ -29,6 +29,12 @@ const EMITTERS: &[(&str, &str, &str, &str)] = &[
         "scheduling/publish_slot.rs",
     ),
     (
+        "slot.withdrawn",
+        "SlotWithdrawn",
+        "WithdrawSlot",
+        "scheduling/withdraw_slot.rs",
+    ),
+    (
         "booking.created",
         "BookingCreated",
         "CreateBooking",
