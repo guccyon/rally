@@ -7,18 +7,20 @@ use application::{
     clock::Clock,
     identity::{
         AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError,
-        TokenClaims, TokenIssuer, account_id_uuid,
+        TokenClaims, TokenIssuer, TokenVerifier, account_id_uuid,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
     http::StatusCode,
+    routing::post,
 };
 use domain::identity::{Account, Role};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::TokenVerification,
     contract::{date_time_to_contract, sport_to_contract, student_app_sport},
     error::ApiError,
 };
@@ -111,4 +113,23 @@ pub(crate) fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
         sport: sport_to_contract(student.sport()),
         created_at: date_time_to_contract(account.registered_at())?,
     })
+}
+
+/// 生徒の登録（student-app の `POST /accounts`）のルーター。認証なしで呼べ、登録した生徒のアクセストークンを `tokens` で
+/// 発行する。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+pub fn accounts_router<R, A, C, T>(register_account: RegisterAccount<R, A, C>, tokens: T) -> Router
+where
+    R: AccountRepository + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenIssuer + TokenVerifier + 'static,
+{
+    let tokens = Arc::new(tokens);
+    Router::new()
+        .route("/accounts", post(self::register_account::<R, A, C>))
+        .with_state(Arc::new(AccountsState {
+            register_account,
+            tokens: tokens.clone(),
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

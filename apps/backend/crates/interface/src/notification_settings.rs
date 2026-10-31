@@ -6,20 +6,27 @@
 use std::sync::Arc;
 
 use application::{
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
         UpdateNotificationSettingsCommand,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
+    routing::get,
 };
-use domain::notification::{NotificationKind, NotificationSettings};
+use domain::{
+    identity::Role,
+    notification::{NotificationKind, NotificationSettings},
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{auth::AuthenticatedAccount, error::ApiError};
+use crate::{
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
+    error::ApiError,
+};
 
 /// `/notification-settings` のハンドラーが使うユースケース。
 pub struct NotificationSettingsState<S> {
@@ -105,4 +112,31 @@ fn notification_settings_body(settings: &NotificationSettings) -> NotificationSe
         video_review_returned: settings.is_enabled(NotificationKind::VideoReviewReturned),
         message_received: settings.is_enabled(NotificationKind::MessageReceived),
     }
+}
+
+/// 自分の通知の受け取り設定（student-app の `GET`・`PUT /notification-settings/me`）のルーター。組み立て用のクレートは
+/// 他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どちらも生徒だけ。
+pub fn notification_settings_router<S, T>(
+    get_notification_settings: GetNotificationSettings<S>,
+    update_notification_settings: UpdateNotificationSettings<S>,
+    tokens: T,
+) -> Router
+where
+    S: NotificationSettingsRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/notification-settings/me",
+            get(get_my_notification_settings::<S>).put(update_my_notification_settings::<S>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(NotificationSettingsState {
+            get_notification_settings,
+            update_notification_settings,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

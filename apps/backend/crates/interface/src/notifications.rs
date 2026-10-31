@@ -9,18 +9,28 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    identity::TokenVerifier,
     notification::{
         ListMyNotifications, MarkMyNotificationsRead, NotificationRepository, notification_id_uuid,
     },
 };
-use axum::{Json, extract::State};
+use axum::{
+    Json, Router,
+    extract::State,
+    routing::{get, post},
+};
 use domain::{
+    identity::Role,
     messaging::MessageSender,
     notification::{Notification, NotificationKind, PushNotification},
 };
 use serde::Serialize;
 
-use crate::{auth::AuthenticatedAccount, contract::date_time_to_contract, error::ApiError};
+use crate::{
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
+    contract::date_time_to_contract,
+    error::ApiError,
+};
 
 /// `/notifications/me` のハンドラーが使うユースケース。
 pub struct NotificationsState<N, C> {
@@ -128,4 +138,36 @@ const fn notification_text(push: &PushNotification) -> &'static str {
             ..
         } => "生徒からメッセージが届きました",
     }
+}
+
+/// 生徒とコーチのお知らせ（student-app・admin-web の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
+pub fn notifications_router<N, C, T>(
+    list_my_notifications: ListMyNotifications<N>,
+    mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
+    tokens: T,
+) -> Router
+where
+    N: NotificationRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/notifications/me",
+            get(self::list_my_notifications::<N, C>),
+        )
+        .route(
+            "/notifications/me/read",
+            post(self::mark_my_notifications_read::<N, C>),
+        )
+        .route_layer(require_role(&[Role::Student, Role::Coach]))
+        .with_state(Arc::new(NotificationsState {
+            list_my_notifications,
+            mark_my_notifications_read,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

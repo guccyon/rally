@@ -7,28 +7,30 @@ use application::{
     analytics::AnalyticsSink,
     catalog::lesson_menu_id_uuid,
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         CoachIntroduction, CoachIntroductionLookup, LessonMenuLookup, PublishSlot,
         PublishSlotCommand, SearchSlots, SearchSlotsQuery, SlotRepository, slot_id_uuid,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{
         Query, State,
         rejection::{JsonRejection, QueryRejection},
     },
     http::StatusCode,
+    routing::{get, post},
 };
 use domain::{
     catalog::{LessonMenu, LessonMenuId},
+    identity::Role,
     scheduling::{Slot, SlotCapacity},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         admin_web_sport, date_time_from_contract, date_time_to_contract, slot_cursor_from_contract,
         slot_cursor_to_contract, slot_status_to_contract, sport_to_contract, student_app_sport,
@@ -295,4 +297,35 @@ fn slot_lesson_menu_body(
         name: menu.name().as_str().to_string(),
         duration_minutes: menu.format().duration().map(|d| d.minutes()),
     })
+}
+
+/// スロット（`/slots`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `POST /slots`（admin-web）はコーチだけ、`GET /slots`（student-app）は認証した利用者なら誰でも呼べる。
+pub fn slots_router<S, J, I, A, C, T>(
+    publish_slot: PublishSlot<S, J, A, C>,
+    search_slots: SearchSlots<S, J, I, C>,
+    tokens: T,
+) -> Router
+where
+    S: SlotRepository + 'static,
+    J: LessonMenuLookup + 'static,
+    I: CoachIntroductionLookup + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/slots",
+            get(self::search_slots::<S, J, I, A, C>).merge(
+                post(self::publish_slot::<S, J, I, A, C>).route_layer(require_role(&[Role::Coach])),
+            ),
+        )
+        .with_state(Arc::new(SlotsState {
+            publish_slot,
+            search_slots,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

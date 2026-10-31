@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    identity::TokenVerifier,
     scheduling::{BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate},
 };
-use axum::{Json, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
     contract::date_time_to_contract,
     error::ApiError,
@@ -73,4 +75,27 @@ where
             })
             .collect::<Result<_, ApiError>>()?,
     }))
+}
+
+/// 生徒の自分の予約の一覧（student-app の `GET /bookings/me`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /bookings/me` は生徒だけ。
+pub fn my_bookings_router<B, I, G, C, T>(
+    list_my_bookings: ListMyBookings<B, I, G, C>,
+    tokens: T,
+) -> Router
+where
+    B: BookingRepository + 'static,
+    I: CoachIntroductionLookup + 'static,
+    G: QuotaGate + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/bookings/me", get(self::list_my_bookings::<B, I, G, C>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(MyBookingsState { list_my_bookings }))
+        .layer(TokenVerification::layer(tokens))
 }

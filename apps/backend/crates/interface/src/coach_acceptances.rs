@@ -4,18 +4,24 @@
 use std::sync::Arc;
 
 use application::{
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     scheduling::{CoachAcceptanceRepository, CoachIntroductionLookup, ResumeCoach, SuspendCoach},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::post,
 };
-use domain::{identity::AccountId, scheduling::CoachAcceptance};
+use domain::{
+    identity::{AccountId, Role},
+    scheduling::CoachAcceptance,
+};
 use serde::Serialize;
 
 use crate::{
-    contract::coach_acceptance_status_to_contract, error::ApiError,
+    auth::{TokenVerification, require_role},
+    contract::coach_acceptance_status_to_contract,
+    error::ApiError,
     scheduling_error::coach_not_found,
 };
 
@@ -71,4 +77,37 @@ fn coach_acceptance_body(acceptance: &CoachAcceptance) -> CoachAcceptanceBody {
         coach_id: account_id_uuid::format(acceptance.coach_id()),
         acceptance_status: coach_acceptance_status_to_contract(acceptance.status()),
     }
+}
+
+/// 本部によるコーチの受付の停止・再開（admin-web の
+/// `POST /coaches/{coach_id}/suspend`・`POST /coaches/{coach_id}/resume`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。
+pub fn coach_acceptance_router<R, I, T>(
+    suspend_coach: SuspendCoach<R, I>,
+    resume_coach: ResumeCoach<R, I>,
+    tokens: T,
+) -> Router
+where
+    R: CoachAcceptanceRepository + 'static,
+    I: CoachIntroductionLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}/suspend",
+            post(self::suspend_coach::<R, I>),
+        )
+        .route(
+            "/coaches/{coach_id}/resume",
+            post(self::resume_coach::<R, I>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(CoachAcceptancesState {
+            suspend_coach,
+            resume_coach,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

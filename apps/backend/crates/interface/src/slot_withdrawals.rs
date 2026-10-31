@@ -6,15 +6,18 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     clock::Clock,
+    identity::TokenVerifier,
     scheduling::{SlotRepository, WithdrawSlot, WithdrawSlotCommand, slot_id_uuid},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::post,
 };
+use domain::identity::Role;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     error::ApiError,
     scheduling_error::coach_slot_not_found,
     slots::{AdminWebSlotBody, admin_web_slot_body},
@@ -50,4 +53,26 @@ where
         .await
         .map_err(ApiError::from)?;
     Ok(Json(admin_web_slot_body(&slot, None)?))
+}
+
+/// コーチが公開した枠の取り下げ（admin-web の `POST /coaches/me/slots/{slot_id}/withdraw`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `POST /coaches/me/slots/{slot_id}/withdraw` はコーチだけで、取り下げられるのはトークンのコーチ自身の枠だけ。
+pub fn slot_withdrawal_router<S, A, C, T>(withdraw_slot: WithdrawSlot<S, A, C>, tokens: T) -> Router
+where
+    S: SlotRepository + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/me/slots/{slot_id}/withdraw",
+            post(self::withdraw_my_slot::<S, A, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(SlotWithdrawalsState { withdraw_slot }))
+        .layer(TokenVerification::layer(tokens))
 }

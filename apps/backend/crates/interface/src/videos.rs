@@ -15,21 +15,23 @@ use application::{
     catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
+    routing::{get, post},
 };
 use domain::{
     DomainError,
     async_lesson::{ReviewComment, Video},
+    identity::Role,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         VIDEO_STATUS_AWAITING_UPLOAD, date_time_to_contract, sport_to_contract, student_app_sport,
         video_content_type_from_contract, video_review_status_to_contract,
@@ -313,4 +315,48 @@ fn review_body(video: &Video) -> Result<VideoReviewBody, ApiError> {
         ai_feedback: ai_feedback_body(video)?,
         lesson_menu: video_lesson_menu_body(video),
     })
+}
+
+/// 動画の送付と添削（`POST /videos`・`GET`・`POST /videos/{video_id}/review`）のルーター。組み立て用のクレートは他の機能の
+/// ルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
+/// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
+pub fn videos_router<W, J, U, Y, Q, A, P, C, T>(
+    submit_video: SubmitVideo<W, J, U, Y, A, P, C>,
+    get_video_review: GetVideoReview<W>,
+    return_video_review: ReturnVideoReview<W, Q, A, P, C>,
+    tokens: T,
+) -> Router
+where
+    W: VideoRepository + 'static,
+    J: VideoLessonMenuLookup + 'static,
+    U: VideoStorage + 'static,
+    Y: AiFeedbackGenerator + 'static,
+    Q: ReviewGate + 'static,
+    A: AnalyticsSink + 'static,
+    P: DomainEventPublisher + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/videos",
+            post(self::submit_video::<W, J, U, Y, Q, A, P, C>)
+                .route_layer(require_role(&[Role::Student])),
+        )
+        .route(
+            "/videos/{video_id}/review",
+            get(self::get_video_review::<W, J, U, Y, Q, A, P, C>).merge(
+                post(self::return_video_review::<W, J, U, Y, Q, A, P, C>)
+                    .route_layer(require_role(&[Role::Coach])),
+            ),
+        )
+        .with_state(Arc::new(VideosState {
+            submit_video,
+            get_video_review,
+            return_video_review,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

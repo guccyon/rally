@@ -3,14 +3,16 @@
 
 use std::sync::Arc;
 
-use application::scheduling::{
-    BookingRepository, LessonMenuLookup, ListCoachSlots, SlotRepository,
+use application::{
+    identity::TokenVerifier,
+    scheduling::{BookingRepository, LessonMenuLookup, ListCoachSlots, SlotRepository},
 };
-use axum::{Json, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     error::ApiError,
     slots::{AdminWebSlotBody, admin_web_slot_body},
 };
@@ -61,4 +63,26 @@ where
             })
             .collect::<Result<_, ApiError>>()?,
     }))
+}
+
+/// コーチの自分の枠の一覧（admin-web の `GET /coaches/me/slots`）のルーター。組み立て用のクレートは他の機能の
+/// ルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /coaches/me/slots` はコーチだけ。
+pub fn coach_slots_router<S, J, B, T>(
+    list_coach_slots: ListCoachSlots<S, J, B>,
+    tokens: T,
+) -> Router
+where
+    S: SlotRepository + 'static,
+    J: LessonMenuLookup + 'static,
+    B: BookingRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/coaches/me/slots", get(list_my_coach_slots::<S, J, B>))
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(CoachSlotsState { list_coach_slots }))
+        .layer(TokenVerification::layer(tokens))
 }

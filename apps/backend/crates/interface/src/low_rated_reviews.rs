@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     lesson::lesson_completion_id_uuid,
     review::{
         LessonReviewRepository, ListLowRatedReviews, LowRatedReviewList,
@@ -13,11 +13,15 @@ use application::{
         lesson_review_id_uuid,
     },
 };
-use axum::{Json, extract::State};
-use domain::review::{LessonReview, LowRatedReviewCriteria};
+use axum::{Json, Router, extract::State, routing::get};
+use domain::{
+    identity::Role,
+    review::{LessonReview, LowRatedReviewCriteria},
+};
 use serde::Serialize;
 
 use crate::{
+    auth::{TokenVerification, require_role},
     contract::date_time_to_contract,
     error::ApiError,
     reviews::{
@@ -114,4 +118,34 @@ fn low_rated_review_body(
             .map(review_lesson_menu_body),
         reply: review.reply().map(lesson_review_reply_body).transpose()?,
     })
+}
+
+/// 本部が見る低い評価の一覧（admin-web の `GET /lesson-reviews/low`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
+/// [`crate::reviews_router`] で、生徒だけ。
+pub fn low_rated_reviews_router<R, M, D, S, C, T>(
+    list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+    tokens: T,
+) -> Router
+where
+    R: LessonReviewRepository + 'static,
+    M: ReviewedLessonMenuLookup + 'static,
+    D: ReviewedCoachDisplayNameLookup + 'static,
+    S: ReviewerDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-reviews/low",
+            get(self::list_low_rated_reviews::<R, M, D, S, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(LowRatedReviewsState {
+            list_low_rated_reviews,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

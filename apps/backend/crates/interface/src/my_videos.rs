@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use application::{
     async_lesson::{ListMyVideos, VideoCoachDisplayNameLookup, VideoRepository, video_id_uuid},
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
 };
-use axum::{Json, extract::State};
-use domain::catalog::Sport;
+use axum::{Json, Router, extract::State, routing::get};
+use domain::{catalog::Sport, identity::Role};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{date_time_to_contract, sport_to_contract, video_review_status_to_contract},
     error::ApiError,
     videos::{VideoLessonMenuBody, video_lesson_menu_body},
@@ -83,4 +83,22 @@ where
             })
             .collect::<Result<_, ApiError>>()?,
     }))
+}
+
+/// 生徒が送った動画の一覧（student-app の `GET /videos/me`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /videos/me` は生徒だけで、照会するのはトークンの生徒自身が送った動画だけ。
+pub fn my_videos_router<V, D, T>(list_my_videos: ListMyVideos<V, D>, tokens: T) -> Router
+where
+    V: VideoRepository + 'static,
+    D: VideoCoachDisplayNameLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/videos/me", get(self::list_my_videos::<V, D>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(MyVideosState { list_my_videos }))
+        .layer(TokenVerification::layer(tokens))
 }
