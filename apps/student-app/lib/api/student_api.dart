@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・受講権の照会・レッスンの評価・コーチの評価・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチの評価・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -33,6 +33,9 @@ abstract interface class StudentApi {
 
   /// `submitVideo`（POST /videos）
   Future<Video> submitVideo(SubmitVideoRequest body);
+
+  /// `listMyVideos`（GET /videos/me）。添削待ちも返却済みも含み、送った時刻の新しい順
+  Future<MyVideoList> listMyVideos();
 
   /// `getVideoReview`（GET /videos/{video_id}/review）
   Future<VideoReview> getVideoReview(String videoId);

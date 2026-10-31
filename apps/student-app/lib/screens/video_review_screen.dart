@@ -10,6 +10,8 @@ import '../ui/labels.dart';
 /// 添削結果の表示（`getVideoReview`）。コーチが返却するまでは確かめ直す。
 /// AI の一次フィードバック（glossary の ai_feedback）があれば、コーチの添削とは別の枠に出す。
 /// 動画を送ったときにレッスンメニューを選んでいれば、その名前（送った時点の写し）を出す。
+/// 自分の動画の一覧から開いたとき（[FlowStep.myVideoReview]）は、その動画の添削を読むだけの画面にする
+/// （一周シナリオの完了記録には進まず、閉じると一覧に戻る）。
 class VideoReviewScreen extends ConsumerWidget {
   const VideoReviewScreen({super.key});
 
@@ -17,13 +19,21 @@ class VideoReviewScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
     final notifier = ref.read(studentFlowProvider.notifier);
-    final review = state.review;
+    final fromMyVideos = state.step == FlowStep.myVideoReview;
+    final review = fromMyVideos ? state.myVideoReview : state.review;
     final returned = review?.status == VideoReviewStatus.returned;
     final aiComment = review?.aiFeedback?.comment.trim() ?? '';
     return FlowScaffold(
       title: '添削結果',
+      leading: fromMyVideos
+          ? IconButton(
+              tooltip: '添削結果を閉じる',
+              icon: const Icon(Icons.close),
+              onPressed: state.busy ? null : notifier.closeMyVideoReview,
+            )
+          : null,
       children: [
-        const Text('動画を送りました。'),
+        if (!fromMyVideos) const Text('動画を送りました。'),
         if (review?.lessonMenu case final menu?)
           Text(videoLessonMenuLabel(menu)),
         const SizedBox(height: 8),
@@ -41,18 +51,22 @@ class VideoReviewScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             AiFeedbackCard(comment: aiComment),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: state.busy ? null : notifier.goToCompletion,
-            child: const Text('完了の記録へ進む'),
-          ),
+          if (!fromMyVideos) ...[
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: state.busy ? null : notifier.goToCompletion,
+              child: const Text('完了の記録へ進む'),
+            ),
+          ],
         ] else ...[
           const Text('コーチが添削しています。返却されるまでお待ちください。'),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: state.busy ? null : notifier.refreshReview,
-            child: const Text('添削結果を確かめる'),
-          ),
+          if (!fromMyVideos) ...[
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: state.busy ? null : notifier.refreshReview,
+              child: const Text('添削結果を確かめる'),
+            ),
+          ],
           if (aiComment.isNotEmpty) ...[
             const SizedBox(height: 16),
             AiFeedbackCard(comment: aiComment),

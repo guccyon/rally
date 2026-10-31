@@ -835,6 +835,69 @@ class VideoReview {
   );
 }
 
+/// `MyVideo`（生徒が送った動画の一覧の 1 件。送った動画（glossary の async_lesson）と、その添削（glossary の video_review）の状態）
+class MyVideo {
+  const MyVideo({
+    required this.videoId,
+    required this.coachId,
+    required this.sport,
+    required this.submittedAt,
+    required this.reviewStatus,
+    this.coachDisplayName,
+    this.returnedAt,
+    this.lessonMenu,
+  });
+
+  final String videoId;
+
+  /// 動画の送り先のコーチ
+  final String coachId;
+
+  /// 送り先のコーチの表示名。コーチのアカウントが引けないときは null
+  final String? coachDisplayName;
+  final Sport sport;
+
+  /// 生徒が動画を送った時刻
+  final DateTime submittedAt;
+  final VideoReviewStatus reviewStatus;
+
+  /// コーチが添削を返した時刻（添削待ちなら null）
+  final DateTime? returnedAt;
+
+  /// 動画を送った時点で選んだレッスンメニューの写し（選ばずに送った動画は null）
+  final VideoLessonMenu? lessonMenu;
+
+  factory MyVideo.fromJson(Map<String, dynamic> json) => MyVideo(
+    videoId: json['video_id'] as String,
+    coachId: json['coach_id'] as String,
+    coachDisplayName: json['coach_display_name'] as String?,
+    sport: Sport.fromWire(json['sport'] as String),
+    submittedAt: _dateTime(json['submitted_at']),
+    reviewStatus: VideoReviewStatus.fromWire(json['review_status'] as String),
+    returnedAt: _dateTimeOrNull(json['returned_at']),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : VideoLessonMenu.fromJson(json['lesson_menu'] as Map<String, dynamic>),
+  );
+}
+
+/// `MyVideoList`
+class MyVideoList {
+  /// [videos] は書き換えられない写しにして持つ（`fromJson` でもコンストラクタで直接作っても、作った後に一覧を変えさせない）
+  MyVideoList({required List<MyVideo> videos})
+    : videos = List.unmodifiable(videos);
+
+  /// 送った時刻の新しい順（同じ時刻は動画 ID の順）。添削待ちも返却済みも含む
+  final List<MyVideo> videos;
+
+  factory MyVideoList.fromJson(Map<String, dynamic> json) => MyVideoList(
+    videos: [
+      for (final e in json['videos'] as List<dynamic>)
+        MyVideo.fromJson(e as Map<String, dynamic>),
+    ],
+  );
+}
+
 /// `Lesson`（完了を記録したレッスン。glossary の lesson_completion）
 class Lesson {
   const Lesson({

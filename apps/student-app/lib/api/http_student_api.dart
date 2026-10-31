@@ -73,6 +73,10 @@ class HttpStudentApi implements StudentApi {
       Video.fromJson(await _send('POST', '/videos', body: body.toJson()));
 
   @override
+  Future<MyVideoList> listMyVideos() async =>
+      MyVideoList.fromJson(await _send('GET', '/videos/me'));
+
+  @override
   Future<VideoReview> getVideoReview(String videoId) async =>
       VideoReview.fromJson(
         await _send('GET', '/videos/${Uri.encodeComponent(videoId)}/review'),

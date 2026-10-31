@@ -176,7 +176,7 @@ void main() {
 
   test('自分の予約は copyWith で読み取り専用にして持ち、外から書き換えられない', () {
     final source = [...Fixtures.myBookings];
-    final state = const StudentFlowState(step: FlowStep.myBookings)
+    final state = StudentFlowState(step: FlowStep.myBookings)
         .copyWith(myBookings: source);
     source.clear();
     expect(state.myBookings, hasLength(Fixtures.myBookings.length));
@@ -184,5 +184,35 @@ void main() {
       () => state.myBookings!.add(Fixtures.myBookings.first),
       throwsUnsupportedError,
     );
+  });
+
+  test('自分の動画は、コンストラクタで直接渡しても copyWith で渡しても写して持ち、外から書き換えられない', () {
+    // コンストラクタで直接渡した元のリストを後で変えても、状態は変わらない
+    final direct = [...Fixtures.myVideos];
+    final constructed = StudentFlowState(
+      step: FlowStep.myVideos,
+      myVideos: direct,
+    );
+    direct.clear();
+    expect(constructed.myVideos, Fixtures.myVideos);
+    expect(
+      () => constructed.myVideos!.add(Fixtures.myVideos.first),
+      throwsUnsupportedError,
+    );
+    expect(() => constructed.myVideos!.clear(), throwsUnsupportedError);
+    // myVideos を渡さない copyWith でも、元のリストとのつながりは次の状態に残らない
+    final next = constructed.copyWith(busy: true);
+    direct.addAll(Fixtures.myVideos);
+    expect(next.myVideos, Fixtures.myVideos);
+
+    // copyWith で渡した元のリストを後で変えても、状態は変わらない
+    final source = [...Fixtures.myVideos];
+    final copied = StudentFlowState(step: FlowStep.myVideos)
+        .copyWith(myVideos: source);
+    source.clear();
+    expect(copied.myVideos, Fixtures.myVideos);
+    expect(() => copied.myVideos!.clear(), throwsUnsupportedError);
+    // 渡さなければ未取得のまま
+    expect(StudentFlowState().myVideos, isNull);
   });
 }
