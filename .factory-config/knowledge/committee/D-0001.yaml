@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/478
+decided_at: '2026-11-01'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+votes:
+- role: consistency
+  vote: human
+  reasons:
+  - knowledge/ には既存の K-*.yaml も committee/ の議決もないため、K-0001 と K-0002 は過去の知見と矛盾も重複もなく、既存の知見の扱いを添える必要もありません。
+  - specs/ の glossary.yaml・context-map.yaml・change-scenarios.yaml はプロダクトの業務用語と境界だけを扱っており、工場の工程についての
+    K-0001・K-0002 とぶつかる記述はありません。
+  - 'K-0001 と K-0002 はどちらも C-0001 の別々の真因（伝達と工程）から 1 件 1 主張で切り出されていて重複はありません。ただし K-0002
+    には related: [K-0001] があるのに K-0001 には related: [K-0002] がないので、双方向にそろえることを勧めます。'
+  - K-0002 の主張の末尾にある「PR 本文の乱れが増える」は K-0001 の範囲と重なります。K-0002 は衝突のジョブが繰り返されて費用が増える点に絞り、本文の乱れは
+    K-0001 に任せると整合がはっきりします。
+  - K-0001 は「ジョブの報告」と「PR 本文」を言葉で分けることと「## 工場の記録」という置き場を前提にし、scope.roles の implementer・body_fix
+    への指示と Engine による本文の組み直し（作用先 role_line_engine）に作用するため、ここで決めるのではなく人の承認が要ります。
+  - 確かさは事例が C-0001 の 1 件だけなので hypothesis のままが妥当で、上げる理由も下げる理由もありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0001 と K-0002 はどちらも C-0001、guccyon/rally#362、case.analyzed:40354 に辿れ、事例の記録にもジョブ番号・時刻・回数が具体的に残っているので、一次記録まで遡れます。
+  - どちらも根拠が 1 件の事例だけなので、confidence を hypothesis にとどめるのは妥当です。
+  - K-0001 は C-0001 の communication の観点（確からしさ mid）が元で、推測と明記された「handoff で先頭が切れた」話を主張から外しているのは適切です。
+  - K-0002 で「衝突したのが CHANGELOG.md と apps/backend/README.md だった」という点は、事例記録にジョブ 485〜575
+    の衝突ファイルの記録が引かれていないので、confirmed に上げる前にジョブの記録で確かめてください。
+  - 事例記録と知見には氏名・連絡先・利用者 ID・本文の引用がありません。「生徒が受けたレッスンの一覧 API」は機能の名前なので、個人は特定できません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0001 の「PR 本文に同じ見出し（## 概要〜## 補足）が重なる」は、本文の見出しを数えるだけで機械的に判定でき、線が明確で誤検出も少ないので、context
+    で渡すより CI の検査で止める方が確かです。
+  - C-0001 では同じ PR で PR-002 が 7 回 adopt され、continue ジョブも 8 回走っており、繰り返しが多く、外したときに崩れた本文のまま
+    merge されるので痛さも大きいです。
+  - K-0002 の衝突の常連ファイルは、CHANGELOG.md の [Unreleased] を PR が直接書き換えたら落とす検査（断片ファイル changelog.d/
+    に誘導）で担保でき、作る費用も小さいです。
+  - どちらの検査も作用先が Engine・CI・製品の改善チケットなので、導入そのものは人の承認を通す前提で、知見の確かさは hypothesis のまま据え置くのが妥当です。
+  - 'C-0001 にあるジョブ 474 の summary.md の先頭が切れた件も「本文が ## 概要 で始まるか」の同じ検査で拾えるので、K-0001 の担保に含めると費用対効果が上がります。'
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0001 の statement は「同じ見出しで足すと重なって読めなくなる」と「本文を作り直す責任をどの役割も持たない」の 2 つの主張を 1 件にまとめていて、README
+    の 1 件 1 主張の決まりに反するので、2 件に分けるか片方に絞ってください。
+  - C-0001 を見ると、見出しを変えても 8 回の追記は積み重なったはずなので、本当の原因は見出しが同じことではなく本文を組み直さずに追記する流れだという反例が立つため、K-0001
+    は「追記だけで組み直さない」を中心に書き直してください。
+  - K-0001 の scope.roles には implementer と body_fix が入っていますが、PR 本文へ追記しているのは Engine
+    の流れなので、エージェントへの指示だけでは防げず、範囲の当て先がずれているため作用先と scope を合わせてください。
+  - K-0002 の「main が進むたびに衝突が起きる」は言い過ぎで、8 回の衝突がすべて CHANGELOG.md と apps/backend/README.md
+    によるものかは C-0001 でジョブごとに示されていないので、「繰り返し衝突しやすい」に弱めるか、ジョブごとの衝突ファイルを根拠に足してください。
+  - K-0002 の「PR 本文の乱れが増える」は K-0001 の仕組みがあって初めて起きる結果なので、K-0002 の主張からは外して衝突と費用の話に絞ってください。
+  - どちらも根拠は 1 件の事例だけなので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'PR 本文の検査を足す: 本文が「## 概要」で始まること、テンプレートの各見出し（## 概要〜## 補足）がそれぞれちょうど 1 回だけ出ることを確かめ、外れたら
+    merge を止める。handoff に summary を保存した時点でも同じ検査を走らせ、先頭の切れも検出する。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: overlay_rule
+  proposal: continue ジョブの報告は「## 工場の記録」の下の小節にだけ書けるようにし、トップレベルの見出し（## で始まる行）を出したら Engine
+    の組み立てで弾く。PR 本文は追記せず、毎回テンプレートから組み直す（作用先 role_line_engine のため人の承認が要る）。
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: ci_check
+  proposal: CHANGELOG を changelog.d/ の PR ごとの断片に分けたうえで、PR の差分が CHANGELOG.md の [Unreleased]
+    を直接書き換えていたら CI を落とす。apps/backend/README.md の構成の表は 1 項目 1 行の形にして、表の行の長さの上限を lint
+    で確かめる。

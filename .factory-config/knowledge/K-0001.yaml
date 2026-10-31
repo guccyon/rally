@@ -1,0 +1,23 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: >-
+  続きのジョブ（既定ブランチとの衝突の解消など）の報告を PR 本文と同じ見出し（## 概要〜## 補足）で書いて
+  PR 本文に足すと、ジョブごとの報告が本文に重なって読めなくなる。ジョブの報告と PR 本文を言葉でも置き場所でも
+  分けていないと、本文を作り直す責任をどの役割も持たず、追記だけが重なる
+scope:
+  roles: [implementer, body_fix]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "guccyon/rally#362"
+  - issue: "guccyon/rally#348"
+  - event: "case.analyzed:40354"
+status: active
+verified_at: 2026-10-31
+review_by: 2026-11-30
+confidentiality: product
+# 提案（未実装。作用先 role_line_engine は人の承認）:
+#   continue ジョブの報告は「## 工場の記録」の下に 1 つの小節（衝突したファイル・解き方・走らせた検査）として書くよう
+#   実装役への指示を変える。PR 本文は Engine が毎回テンプレートどおりに組み直し、追記はしない
+decided_by: committee:D-0001
