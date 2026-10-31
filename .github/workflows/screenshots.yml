@@ -24,7 +24,7 @@ jobs:
   admin-web:
     runs-on: ubuntu-latest
     env:
-      SHOTS: ${{ github.workspace }}/../shots
+      SHOTS: ${{ runner.temp }}/shots
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           fi
       - name: ベースの版を取り出す
         if: steps.changed.outputs.yes == 'true'
-        run: git worktree add "$GITHUB_WORKSPACE/../base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+        run: git worktree add "$RUNNER_TEMP/base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
       - uses: actions/setup-node@v4
         if: steps.changed.outputs.yes == 'true'
         with:
@@ -58,7 +58,7 @@ jobs:
           SCREENSHOT_DIR="$SHOTS/head" npm run screenshots || echo "撮れなかった画面がある（成果物の一覧に出す）"
       - name: 前（ベース）を撮る
         if: steps.changed.outputs.yes == 'true'
-        working-directory: ../base/apps/admin-web
+        working-directory: ${{ runner.temp }}/base/apps/admin-web
         run: |
           if [ ! -f screenshots/playwright.config.ts ]; then echo "ベースに撮影がない。全画面を新しい画面として扱う"; exit 0; fi
           npm ci --no-audit --no-fund
@@ -101,7 +101,7 @@ jobs:
   student-app:
     runs-on: ubuntu-latest
     env:
-      SHOTS: ${{ github.workspace }}/../shots
+      SHOTS: ${{ runner.temp }}/shots
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,7 +116,7 @@ jobs:
           fi
       - name: ベースの版を取り出す
         if: steps.changed.outputs.yes == 'true'
-        run: git worktree add "$GITHUB_WORKSPACE/../base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+        run: git worktree add "$RUNNER_TEMP/base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
       - name: 日本語のフォント
         if: steps.changed.outputs.yes == 'true'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-ipafont-gothic
@@ -139,7 +139,7 @@ jobs:
           SCREENSHOT_DIR="$SHOTS/head" flutter test screenshots/ || echo "撮れなかった画面がある（成果物の一覧に出す）"
       - name: 前（ベース）を撮る
         if: steps.changed.outputs.yes == 'true'
-        working-directory: ../base/apps/student-app
+        working-directory: ${{ runner.temp }}/base/apps/student-app
         run: |
           if [ ! -d screenshots ]; then echo "ベースに撮影がない。全画面を新しい画面として扱う"; exit 0; fi
           flutter pub get
