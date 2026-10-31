@@ -1,5 +1,4 @@
-use super::SlotCapacity;
-use crate::DomainError;
+use super::{SchedulingError, SlotCapacity};
 
 /// スロットの席（定員と、有効な予約の数）。有効な予約は未確定（`Pending`）か確定（`Confirmed`）の予約で、
 /// キャンセルした予約は数えない。
@@ -24,15 +23,15 @@ impl SlotSeats {
     }
 
     /// 保存先から数えた席を組み立てる（保存先の実装用）。有効な予約（未確定と確定）の数が定員を超えたら
-    /// [`DomainError::SlotSeatsOverCapacity`]。
+    /// [`SchedulingError::SlotSeatsOverCapacity`]。
     pub const fn restore(
         capacity: SlotCapacity,
         pending: u32,
         confirmed: u32,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, SchedulingError> {
         let active = pending.saturating_add(confirmed);
         if active > capacity.value() as u32 {
-            return Err(DomainError::SlotSeatsOverCapacity {
+            return Err(SchedulingError::SlotSeatsOverCapacity {
                 capacity: capacity.value(),
                 active,
             });
@@ -126,7 +125,7 @@ mod tests {
         for (pending, confirmed) in [(2, 0), (1, 1), (0, 2), (u32::MAX, 1)] {
             assert_eq!(
                 SlotSeats::restore(capacity(1), pending, confirmed),
-                Err(DomainError::SlotSeatsOverCapacity {
+                Err(SchedulingError::SlotSeatsOverCapacity {
                     capacity: 1,
                     active: pending.saturating_add(confirmed),
                 }),

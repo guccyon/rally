@@ -11,10 +11,9 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     catalog::{LessonDuration, LessonMenuName},
     identity::AccountId,
-    scheduling::{Booking, BookingId, BookingLessonMenu, Slot, SlotId},
+    scheduling::{Booking, BookingId, BookingLessonMenu, SchedulingError, Slot, SlotId},
 };
 use sqlx::{
     FromRow, PgPool, Postgres, Row, Transaction,
@@ -184,7 +183,7 @@ impl BookingRepository for PgBookingRepository {
         reserve: F,
     ) -> Result<Booking, ReserveSlotError>
     where
-        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, SchedulingError> + Send,
     {
         let student = account_id_uuid::to_uuid(student_id);
         let mut tx = self.pool.begin().await.map_err(reserve_unavailable)?;
@@ -247,7 +246,7 @@ impl BookingRepository for PgBookingRepository {
         update: F,
     ) -> Result<Booking, UpdateBookingError>
     where
-        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), SchedulingError> + Send,
     {
         let booking_id = booking_id_uuid::to_uuid(booking_id);
         let mut tx = self.pool.begin().await.map_err(update_unavailable)?;

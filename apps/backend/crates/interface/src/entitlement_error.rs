@@ -14,7 +14,7 @@ use domain::entitlement::{ContractType, EntitlementError};
 
 use crate::{contract::sport_to_contract, error::ApiError};
 
-/// ビデオ通話の暦月の枠が残っていないときの `message`（[`crate::message::domain_error`] も使う）。
+/// ビデオ通話の暦月の枠が残っていないときの `message`（[`crate::scheduling_error`] も使う）。
 pub(crate) const LIVE_LESSON_QUOTA_EXCEEDED: &str = "今月のビデオ通話の枠を使い切っている";
 
 /// ビデオ通話の暦月の枠が残っていない 409（受講権の枠の消費と、scheduling の予約の確定の拒否で同じ）。

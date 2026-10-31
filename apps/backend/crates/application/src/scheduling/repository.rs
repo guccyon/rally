@@ -1,9 +1,8 @@
 use std::future::Future;
 
 use domain::{
-    DomainError,
     identity::AccountId,
-    scheduling::{CoachCalendar, Slot, SlotId},
+    scheduling::{CoachCalendar, SchedulingError, Slot, SlotId},
 };
 
 use super::SlotCriteria;
@@ -27,7 +26,7 @@ pub trait SlotRepository: Send + Sync {
         add: F,
     ) -> impl Future<Output = Result<(), AddToCalendarError>> + Send
     where
-        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), DomainError> + Send;
+        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), SchedulingError> + Send;
 
     /// 条件に合う枠（[`SlotCriteria`] の順で最大 `limit` 件）。
     fn search(
@@ -46,7 +45,7 @@ pub trait SlotRepository: Send + Sync {
 #[derive(Debug)]
 pub enum AddToCalendarError {
     /// カレンダーが枠を受け付けない（`add` が返した不変条件の違反）
-    Rejected(DomainError),
+    Rejected(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }

@@ -75,7 +75,8 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | API の `message`（`DomainError` の変種・役割の呼び名から組み立てる） | `interface` の `message.rs` |
 | messaging の失敗（`domain::messaging::MessagingError`）の API の `message`・HTTP の状態・`code` | `interface` の `messaging_error.rs`（`From<MessagingError> for ApiError`。ハンドラーは変種を個別に拾わない） |
 | review の失敗（`domain::review::ReviewError`）の API の `message`・HTTP の状態・`code` | `interface` の `review_error.rs`（`From<ReviewError> for ApiError`。ハンドラーは変種を個別に拾わない） |
-| entitlement の失敗（`domain::entitlement::EntitlementError` と、受講権がない 404・すでにある 409）の API の `message`・HTTP の状態・`code` | `interface` の `entitlement_error.rs`（`From<EntitlementError> for ApiError` と `entitlement_not_found`・`already_subscribed`・`live_lesson_quota_exceeded`。予約の確定の 409 `live_lesson_quota_exceeded` もここ。ハンドラーは変種を個別に拾わない） |
+| entitlement の失敗（`domain::entitlement::EntitlementError` と、受講権がない 404・すでにある 409）の API の `message`・HTTP の状態・`code` | `interface` の `entitlement_error.rs`（`From<EntitlementError> for ApiError` と `entitlement_not_found`・`already_subscribed`・`live_lesson_quota_exceeded`。予約の確定の 409 `live_lesson_quota_exceeded` の応答もここ。ハンドラーは変種を個別に拾わない） |
+| scheduling の失敗（`domain::scheduling::SchedulingError` と、予約の作成・確定・キャンセルと枠の公開のユースケースの失敗）の API の `message`・HTTP の状態・`code` | `interface` の `scheduling_error.rs`（`From<SchedulingError>`・`From<CreateBookingError>`・`From<ConfirmBookingError>`・`From<CancelBookingError>`・`From<PublishSlotError>` for `ApiError`。同じ変種でも操作で応答が違うのでユースケースの失敗ごとに写し、どれも変種を漏れなく並べる。ハンドラーは変種を個別に拾わない） |
 | DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
 | アカウント ID の UUID のテキスト形式（契約の `format: uuid`・トークン） | `application::identity::account_id_uuid`（`uuid` クレートに任せる。interface と infra の両方から使うので application に置く） |
 
@@ -112,7 +113,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - `POST /slots`（admin-web の `publishSlot`。`specs/contracts/api/admin-web/openapi.yaml`）: コーチだけが呼べる（`require_role(&[Role::Coach])`。生徒・本部は 403）。枠のコーチはトークンのアカウント。公開すると行動イベント `slot.published` を 1 回発火する
 - `GET /slots`（student-app の `searchSlots`）: 認証した利用者なら誰でも呼べる。公開中（`open`）の枠をスポーツ（必須。ゴルフは 422）・コーチ・開始時刻の期間（`starts_after` 以上 `starts_before` 未満。`starts_after` の既定は現在時刻）で絞り、（開始時刻, スロット ID）の昇順で返す。`limit` は 1〜100（既定 20）、`next_cursor` は次のページの位置（クライアントには不透明。形は `interface` の `contract.rs`）
-- 不変条件は `domain::scheduling` が持つ: 開始 < 終了（期間は終了を含まない）、Gen1 の定員は 1、同じコーチの時間を占める枠（`open` / `booked`）は重ならない（集約 `CoachCalendar`。`closed` は時間を占めない）。重なりは 409 `slot_overlaps`
+- 不変条件は `domain::scheduling` が持ち、破れば `domain::scheduling::SchedulingError` を返す（枠・定員・席・カレンダー・予約・枠へのメニューの結びつけ。集約・値オブジェクトと、ユースケースの `PublishSlotError::Invalid`・`CreateBookingError::Invalid`・`ConfirmBookingError::Invalid`・`CancelBookingError::Invalid`、保存先のクロージャもこれ）: 開始 < 終了（期間は終了を含まない）、Gen1 の定員は 1、同じコーチの時間を占める枠（`open` / `booked`）は重ならない（集約 `CoachCalendar`。`closed` は時間を占めない）。重なりは 409 `slot_overlaps`
 - 重なりの判定は domain だけに置き、DB の排他制約は置かない。Postgres の実装（`infra::PgSlotRepository`）はコーチごとの advisory lock で並行な公開を直列にする（ADR 0004 の 4）
 - `server` はスロットの保存先も当面インメモリ（`InMemorySlotRepository`）。`scheduling.slots.coach_id` が `identity.coaches` を指すので、アカウントの保存先を Postgres にするときに一緒に差し替える
 - 統合テスト: `crates/interface/tests/slots.rs`（契約の形・403・絞り込み・ページング）、`crates/server/tests/slots.rs`（モックのトークンで通す）、`crates/infra/tests/pg_slot_repository.rs`（Postgres。重なりの拒否と並行な公開・検索。`--include-ignored`）
@@ -156,7 +157,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## entitlement: 契約種別と利用権の型
 
-- 契約種別は `domain::entitlement::ContractType`（`Monthly` / `OneShot`）。Gen1 で実装するのは月額だけだが、ワンショットも型として持つ。どの契約種別でどのスポーツを結べるか（月額はゴルフ以外、ワンショットはゴルフだけ）は `ContractType::covers` の 1 か所に置き、`Entitlement::monthly` / `Entitlement::one_shot`・`Subscription::new` は破れば `EntitlementError::SportNotCoveredByContract` を返す。受講権と契約の不変条件の違反は `domain::entitlement::EntitlementError`（契約種別とスポーツ・暦月・通話の枠）で、集約・値オブジェクト・ユースケース（`StartSubscriptionError::Invalid`・`ConsumeLiveLessonQuotaError::Invalid`・`EntitlementRepository::update_by_student` のクロージャ）はこれを返す。予約の確定で `QuotaGate` が否と答えたときの拒否は scheduling の失敗として `DomainError::LiveLessonQuotaExceeded` のまま（応答は同じ 409 `live_lesson_quota_exceeded`）
+- 契約種別は `domain::entitlement::ContractType`（`Monthly` / `OneShot`）。Gen1 で実装するのは月額だけだが、ワンショットも型として持つ。どの契約種別でどのスポーツを結べるか（月額はゴルフ以外、ワンショットはゴルフだけ）は `ContractType::covers` の 1 か所に置き、`Entitlement::monthly` / `Entitlement::one_shot`・`Subscription::new` は破れば `EntitlementError::SportNotCoveredByContract` を返す。受講権と契約の不変条件の違反は `domain::entitlement::EntitlementError`（契約種別とスポーツ・暦月・通話の枠）で、集約・値オブジェクト・ユースケース（`StartSubscriptionError::Invalid`・`ConsumeLiveLessonQuotaError::Invalid`・`EntitlementRepository::update_by_student` のクロージャ）はこれを返す。予約の確定で `QuotaGate` が否と答えたときの拒否は scheduling の失敗として `SchedulingError::LiveLessonQuotaExceeded`（応答は同じ 409 `live_lesson_quota_exceeded`）
 - 受講権 `Entitlement`: 月額は元の契約（`SubscriptionId`）・動画とチャットの送り放題・ビデオ通話の暦月の枠 `LiveLessonQuota`（契約プランと `month` と、その月に枠を使った予約の集合。`used` はその数）を持つ。ワンショットは残りの動画添削回数を持ち、通話の枠はない
 - 契約プラン `SubscriptionPlan`（変更シナリオ cs-003。glossary の `subscription_plan`）: 月額契約 `Subscription` と通話の枠 `LiveLessonQuota` が持つ。`Standard`（既定）と `Plus`。暦月の上限（standard 2 回・plus 4 回。不変条件 1）は `SubscriptionPlan::live_lessons_per_month` の 1 か所だけで、`LiveLessonQuota::limit` はそこから受け取る。月をまたいでもプランは変わらない。料金・決済・契約の途中でのプランの変更は扱わない
 - 月をまたいだら `used` は 0 から数える（`LiveLessonQuota::in_month` / `Entitlement::in_month`）。時刻がどの暦月かは `application::entitlement::calendar_month` の 1 か所で決める。暦月は日本時間（UTC+9）で区切る（ADR 0005）

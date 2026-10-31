@@ -26,6 +26,7 @@ mod my_videos;
 mod notification_settings;
 mod review_error;
 mod reviews;
+mod scheduling_error;
 mod slot_supply;
 mod slots;
 mod subscription_plans;

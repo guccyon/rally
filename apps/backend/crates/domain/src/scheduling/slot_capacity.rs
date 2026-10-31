@@ -1,4 +1,4 @@
-use crate::DomainError;
+use super::SchedulingError;
 
 /// スロットの定員（1 つの枠に入れる有効な予約の数。[`SlotCapacity::MIN`]〜[`SlotCapacity::MAX`] の整数）。
 ///
@@ -15,13 +15,13 @@ impl SlotCapacity {
     /// マンツーマン（定員 1）
     pub const ONE: Self = Self(1);
 
-    /// `value` が 1〜6 でなければ [`DomainError::SlotCapacityOutOfRange`]。
-    pub fn new(value: i64) -> Result<Self, DomainError> {
+    /// `value` が 1〜6 でなければ [`SchedulingError::SlotCapacityOutOfRange`]。
+    pub fn new(value: i64) -> Result<Self, SchedulingError> {
         u8::try_from(value)
             .ok()
             .filter(|value| (Self::MIN..=Self::MAX).contains(value))
             .map(Self)
-            .ok_or(DomainError::SlotCapacityOutOfRange {
+            .ok_or(SchedulingError::SlotCapacityOutOfRange {
                 min: Self::MIN,
                 max: Self::MAX,
             })
@@ -57,7 +57,7 @@ mod tests {
         for value in [0, 7, -1, 256, 257, i64::MAX, i64::MIN] {
             assert_eq!(
                 SlotCapacity::new(value),
-                Err(DomainError::SlotCapacityOutOfRange { min: 1, max: 6 }),
+                Err(SchedulingError::SlotCapacityOutOfRange { min: 1, max: 6 }),
                 "{value}"
             );
         }

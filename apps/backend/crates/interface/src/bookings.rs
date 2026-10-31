@@ -11,9 +11,9 @@ use application::{
     domain_event::DomainEventPublisher,
     identity::account_id_uuid,
     scheduling::{
-        BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError, ConfirmBooking,
-        ConfirmBookingCommand, ConfirmBookingError, CreateBooking, CreateBookingCommand,
-        CreateBookingError, LessonMenuLookup, QuotaGate, booking_id_uuid, slot_id_uuid,
+        BookingRepository, CancelBooking, CancelBookingCommand, ConfirmBooking,
+        ConfirmBookingCommand, CreateBooking, CreateBookingCommand, LessonMenuLookup, QuotaGate,
+        booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -21,18 +21,14 @@ use axum::{
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
 };
-use domain::{
-    DomainError,
-    scheduling::{Booking, BookingLessonMenu, SlotStatus},
-};
+use domain::scheduling::{Booking, BookingLessonMenu};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::AuthenticatedAccount,
     contract::{booking_status_to_contract, date_time_to_contract},
-    entitlement_error,
     error::ApiError,
-    message,
+    scheduling_error::booking_not_found,
 };
 
 /// `/bookings` のハンドラーが使うユースケース。
@@ -104,29 +100,13 @@ where
         .create_booking
         .execute(command)
         .await
-        .map_err(|error| match error {
-            CreateBookingError::SlotNotFound => slot_not_found(),
-            // 閉じた枠は生徒の検索に出ないので、ない枠と同じに扱う
-            CreateBookingError::Invalid(DomainError::SlotNotOpen {
-                status: SlotStatus::Closed,
-            }) => slot_not_found(),
-            // 満席と、同じ生徒の同じ枠への 2 回目は、どちらも 409 slot_already_booked（文言で分ける）
-            CreateBookingError::Invalid(
-                error @ (DomainError::SlotAlreadyBooked
-                | DomainError::SlotAlreadyBookedByStudent
-                | DomainError::SlotNotOpen { .. }),
-            ) => ApiError::conflict("slot_already_booked", message::domain_error(&error)),
-            CreateBookingError::Invalid(error @ DomainError::TrialAlreadyUsed) => {
-                ApiError::conflict("trial_already_used", message::domain_error(&error))
-            }
-            CreateBookingError::Invalid(error) => ApiError::from(error),
-            CreateBookingError::Unavailable(error) => ApiError::internal(error),
-        })?;
+        .map_err(ApiError::from)?;
     Ok((StatusCode::CREATED, Json(booking_body(&booking)?)))
 }
 
 /// `POST /bookings/{booking_id}/confirm`。生徒だけが呼べ、確定できるのは自分の予約だけ。
-/// 月額の生徒のビデオ通話の暦月の枠が残っていなければ 409 `live_lesson_quota_exceeded`（不変条件 1）。
+/// 月額の生徒のビデオ通話の暦月の枠が残っていなければ 409 `live_lesson_quota_exceeded`（不変条件 1）。失敗の応答は
+/// [`crate::scheduling_error`] が決める。
 pub async fn confirm_booking<B, J, G, A, P, C>(
     State(state): State<Shared<B, J, G, A, P, C>>,
     account: AuthenticatedAccount,
@@ -150,21 +130,7 @@ where
             booking_id,
         })
         .await
-        .map_err(|error| match error {
-            // 別の生徒の予約は、あることも知らせない
-            ConfirmBookingError::BookingNotFound
-            | ConfirmBookingError::Invalid(DomainError::BookingOfAnotherStudent) => {
-                booking_not_found()
-            }
-            ConfirmBookingError::Invalid(
-                error @ (DomainError::BookingNotPending { .. } | DomainError::SlotNotOpen { .. }),
-            ) => ApiError::conflict("invalid_booking_state", message::domain_error(&error)),
-            ConfirmBookingError::Invalid(DomainError::LiveLessonQuotaExceeded) => {
-                entitlement_error::live_lesson_quota_exceeded()
-            }
-            ConfirmBookingError::Invalid(error) => ApiError::internal(error),
-            ConfirmBookingError::Unavailable(error) => ApiError::internal(error),
-        })?;
+        .map_err(ApiError::from)?;
     Ok(Json(booking_body(&booking)?))
 }
 
@@ -195,27 +161,8 @@ where
             booking_id,
         })
         .await
-        .map_err(|error| match error {
-            // 別の生徒の予約は、あることも知らせない
-            CancelBookingError::BookingNotFound
-            | CancelBookingError::Invalid(DomainError::BookingOfAnotherStudent) => {
-                booking_not_found()
-            }
-            CancelBookingError::Invalid(error @ DomainError::BookingAlreadyCancelled) => {
-                ApiError::conflict("invalid_booking_state", message::domain_error(&error))
-            }
-            CancelBookingError::Invalid(error) => ApiError::internal(error),
-            CancelBookingError::Unavailable(error) => ApiError::internal(error),
-        })?;
+        .map_err(ApiError::from)?;
     Ok(Json(booking_body(&booking)?))
-}
-
-fn slot_not_found() -> ApiError {
-    ApiError::not_found("予約できるスロットがない")
-}
-
-fn booking_not_found() -> ApiError {
-    ApiError::not_found("予約がない")
 }
 
 pub(crate) fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {

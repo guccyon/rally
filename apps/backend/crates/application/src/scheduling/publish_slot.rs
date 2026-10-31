@@ -1,11 +1,10 @@
 use std::{collections::BTreeSet, time::SystemTime};
 
 use domain::{
-    DomainError,
     catalog::LessonMenuId,
     catalog::Sport,
     identity::AccountId,
-    scheduling::{Slot, SlotCapacity},
+    scheduling::{SchedulingError, Slot, SlotCapacity},
 };
 
 use super::{AddToCalendarError, LessonMenuLookup, SlotRepository};
@@ -32,15 +31,15 @@ pub struct PublishSlotCommand {
 pub enum PublishSlotError {
     /// 入力がドメインの不変条件を満たさない（開始が終了より前でない、同じコーチの枠と重なる、結びつけるメニューが
     /// 枠に合わない）
-    Invalid(DomainError),
+    Invalid(SchedulingError),
     /// 結びつけるレッスンメニューがない
     LessonMenuNotFound,
     /// 保存先の障害
     Unavailable(Unavailable),
 }
 
-impl From<DomainError> for PublishSlotError {
-    fn from(error: DomainError) -> Self {
+impl From<SchedulingError> for PublishSlotError {
+    fn from(error: SchedulingError) -> Self {
         Self::Invalid(error)
     }
 }
@@ -268,7 +267,7 @@ mod tests {
             assert!(
                 matches!(
                     &result,
-                    Err(PublishSlotError::Invalid(DomainError::SlotOverlaps { existing }))
+                    Err(PublishSlotError::Invalid(SchedulingError::SlotOverlaps { existing }))
                         if *existing == first.id()
                 ),
                 "{from}-{to}: {result:?}"
@@ -294,7 +293,7 @@ mod tests {
             matches!(
                 result,
                 Err(PublishSlotError::Invalid(
-                    DomainError::SlotEndsBeforeItStarts
+                    SchedulingError::SlotEndsBeforeItStarts
                 ))
             ),
             "{result:?}"
@@ -325,13 +324,21 @@ mod tests {
         let use_case = use_case();
 
         for (lesson_menu_id, to, expected) in [
-            (OTHER_COACH_MENU, 11, DomainError::LessonMenuOfAnotherCoach),
-            (UNPUBLISHED_MENU, 11, DomainError::LessonMenuNotPublished),
-            (ASYNC_MENU, 11, DomainError::LessonMenuNotLive),
+            (
+                OTHER_COACH_MENU,
+                11,
+                SchedulingError::LessonMenuOfAnotherCoach,
+            ),
+            (
+                UNPUBLISHED_MENU,
+                11,
+                SchedulingError::LessonMenuNotPublished,
+            ),
+            (ASYNC_MENU, 11, SchedulingError::LessonMenuNotLive),
             (
                 MENU,
                 12,
-                DomainError::SlotLengthMismatchesLessonMenu { minutes: 60 },
+                SchedulingError::SlotLengthMismatchesLessonMenu { minutes: 60 },
             ),
         ] {
             let result = use_case
@@ -356,7 +363,7 @@ mod tests {
             matches!(
                 result,
                 Err(PublishSlotError::Invalid(
-                    DomainError::LessonMenuSportMismatch {
+                    SchedulingError::LessonMenuSportMismatch {
                         menu: Sport::Tennis,
                         slot: Sport::Soccer
                     }
@@ -388,7 +395,7 @@ mod tests {
 
         async fn add_to_calendar<F>(&self, _slot: Slot, _add: F) -> Result<(), AddToCalendarError>
         where
-            F: FnOnce(&mut domain::scheduling::CoachCalendar, Slot) -> Result<(), DomainError>
+            F: FnOnce(&mut domain::scheduling::CoachCalendar, Slot) -> Result<(), SchedulingError>
                 + Send,
         {
             Err(AddToCalendarError::Unavailable(Unavailable::new(

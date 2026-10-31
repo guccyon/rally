@@ -7,9 +7,10 @@ use application::{
     scheduling::{AddToCalendarError, SlotCriteria, SlotRepository, slot_id_uuid},
 };
 use domain::{
-    DomainError,
     identity::AccountId,
-    scheduling::{CoachCalendar, Slot, SlotCapacity, SlotId, SlotSeats, SlotStatus},
+    scheduling::{
+        CoachCalendar, SchedulingError, Slot, SlotCapacity, SlotId, SlotSeats, SlotStatus,
+    },
 };
 use sqlx::{
     PgPool, Postgres, Row, Transaction,
@@ -96,7 +97,7 @@ impl SlotRepository for PgSlotRepository {
 
     async fn add_to_calendar<F>(&self, slot: Slot, add: F) -> Result<(), AddToCalendarError>
     where
-        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), SchedulingError> + Send,
     {
         let coach_id = account_id_uuid::to_uuid(slot.coach_id());
         let mut tx = self.pool.begin().await.map_err(unavailable)?;

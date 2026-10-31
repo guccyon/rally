@@ -7,7 +7,7 @@ use crate::catalog::Sport;
 /// 返す。
 ///
 /// 表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`] に置く。scheduling が予約の確定で
-/// 「枠が残っていない」と断るのは scheduling の失敗（[`crate::DomainError::LiveLessonQuotaExceeded`]）で、ここの
+/// 「枠が残っていない」と断るのは scheduling の失敗（[`crate::scheduling::SchedulingError::LiveLessonQuotaExceeded`]）で、ここの
 /// [`Self::LiveLessonQuotaExceeded`] は受講権の枠を使うときの違反。利用者に見せる文言と HTTP の状態は境界
 /// （interface）が変種から決める。[`fmt::Display`] はデバッグ用。
 #[derive(Debug, Clone, PartialEq, Eq)]
