@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
@@ -45,6 +45,9 @@ abstract interface class StudentApi {
 
   /// `submitLessonReview`（POST /lesson-reviews）。2 回目は 409 `lesson_already_reviewed`
   Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body);
+
+  /// `listCoachesForStudent`（GET /coaches）。[sport] を省けば生徒自身のスポーツのコーチ。並びはサーバーが決め、ページングはしない
+  Future<CoachListingList> listCoachesForStudent({Sport? sport});
 
   /// `getCoachReviewSummary`（GET /coaches/{coach_id}/review-summary）。どのコーチの分も読める。評価がなければ 0 件で平均は null
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId);

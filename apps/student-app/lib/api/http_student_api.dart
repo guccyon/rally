@@ -97,6 +97,12 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<CoachListingList> listCoachesForStudent({Sport? sport}) async =>
+      CoachListingList.fromJson(
+        await _send('GET', '/coaches', query: {'sport': ?sport?.wire}),
+      );
+
+  @override
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId) async =>
       CoachReviewSummary.fromJson(
         await _send(

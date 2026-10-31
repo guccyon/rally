@@ -174,12 +174,24 @@ String? slotSeatsLabel(Slot slot) => slot.capacity < 2
 
 /// コーチの評価の件数と平均（コーチを選ぶ手がかり）。例: `★ 4.2（12 件）`。平均はサーバーが小数第 2 位まで丸めた値を、
 /// 小数第 1 位に四捨五入して出す。評価が 0 件なら `評価はまだありません`
-String coachReviewSummaryLabel(CoachReviewSummary summary) {
-  final average = summary.averageRating;
-  if (summary.reviewCount == 0 || average == null) return '評価はまだありません';
+String coachReviewSummaryLabel(CoachReviewSummary summary) =>
+    _ratingLabel(summary.reviewCount, summary.averageRating) ?? '評価はまだありません';
+
+/// コーチを探す一覧の行の評価の件数と平均。書き方は [coachReviewSummaryLabel] と同じ（例: `★ 4.2（12 件）`）で、
+/// 評価が 0 件なら `評価なし`
+String coachListingRatingLabel(CoachListing coach) =>
+    _ratingLabel(coach.reviewCount, coach.averageRating) ?? '評価なし';
+
+/// 評価の件数と平均（平均は小数第 1 位に四捨五入）。評価が 0 件なら null
+String? _ratingLabel(int count, double? average) {
+  if (count == 0 || average == null) return null;
   final rounded = (average * 10).round() / 10;
-  return '★ ${rounded.toStringAsFixed(1)}（${summary.reviewCount} 件）';
+  return '★ ${rounded.toStringAsFixed(1)}（$count 件）';
 }
+
+/// コーチを探す一覧の行の、そのスポーツの公開中のレッスンメニューの数。例: `レッスンメニュー 3 件`
+String coachListingLessonMenuCountLabel(CoachListing coach) =>
+    'レッスンメニュー ${coach.publishedLessonMenuCount} 件';
 
 /// コーチが受けた評価 1 件の点（admin-web の評価の一覧と同じ書き方）。例: `4 点（5 点満点）`
 String coachReviewRatingLabel(int rating) => '$rating 点（5 点満点）';
