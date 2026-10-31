@@ -101,10 +101,10 @@ where
     ))
 }
 
-fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
+pub(crate) fn student_body(account: &Account) -> Result<StudentBody, ApiError> {
     let student = account
         .as_student()
-        .ok_or_else(|| ApiError::internal("生徒として登録したアカウントが生徒でない"))?;
+        .ok_or_else(|| ApiError::internal("生徒のアカウントが生徒でない"))?;
     Ok(StudentBody {
         student_id: account_id_uuid::format(account.id()),
         display_name: account.display_name().as_str().to_string(),

@@ -16,7 +16,7 @@ use domain::{
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{NotificationSettings, PushNotification},
-    profile::CoachBio,
+    profile::{CoachBio, DisplayName},
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, SchedulingError, Slot, SlotId},
 };
@@ -122,6 +122,28 @@ impl AccountRepository for InMemoryAccountRepository {
             account.email().clone(),
             account.display_name().clone(),
             RoleAttributes::Coach(coach.clone().with_bio(bio)),
+            account.registered_at(),
+        );
+        Ok(Some(account.clone()))
+    }
+
+    async fn update_student_display_name(
+        &self,
+        student_id: AccountId,
+        display_name: DisplayName,
+    ) -> Result<Option<Account>, Unavailable> {
+        let mut accounts = self.accounts.lock().unwrap();
+        let Some(account) = accounts.iter_mut().find(|a| a.id() == student_id) else {
+            return Ok(None);
+        };
+        if account.as_student().is_none() {
+            return Ok(None);
+        }
+        *account = Account::with_role_attributes(
+            account.id(),
+            account.email().clone(),
+            display_name,
+            account.role_attributes().clone(),
             account.registered_at(),
         );
         Ok(Some(account.clone()))

@@ -49,6 +49,7 @@ use application::{
     profile::{
         GetCoachProfile, ListCoaches, ProfileCoachDisplayNameLookup,
         ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, UpdateCoachProfile,
+        UpdateStudentProfile,
     },
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
@@ -324,6 +325,11 @@ where
         interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
     let coach_profile =
         interface::coach_profile_router(GetCoachProfile::new(accounts.clone()), MockTokenService);
+    let my_profile = interface::my_profile_router(
+        GetAccount::new(accounts.clone()),
+        UpdateStudentProfile::new(accounts.clone()),
+        MockTokenService,
+    );
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
         (
@@ -459,4 +465,5 @@ where
     .merge(my_videos)
     .merge(subscription_plans)
     .merge(coach_profile)
+    .merge(my_profile)
 }
