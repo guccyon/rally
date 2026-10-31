@@ -147,6 +147,25 @@ class HttpStudentApi implements StudentApi {
   /// 契約に反する応答（`live_lessons_per_month` が 1 未満・契約にないプランなど、[FormatException] になるもの）は、
   /// 呼び出し側が失敗として受け止められるよう [StudentApiException] に包み直す
   @override
+  Future<FavoriteCoachList> listFavoriteCoaches() async =>
+      FavoriteCoachList.fromJson(await _send('GET', '/favorite-coaches'));
+
+  @override
+  Future<FavoriteCoachList> addFavoriteCoach(String coachId) async =>
+      FavoriteCoachList.fromJson(
+        await _send('PUT', '/favorite-coaches/${Uri.encodeComponent(coachId)}'),
+      );
+
+  @override
+  Future<FavoriteCoachList> removeFavoriteCoach(String coachId) async =>
+      FavoriteCoachList.fromJson(
+        await _send(
+          'DELETE',
+          '/favorite-coaches/${Uri.encodeComponent(coachId)}',
+        ),
+      );
+
+  @override
   Future<SubscriptionPlanList> listSubscriptionPlans() async {
     final json = await _send('GET', '/subscription-plans');
     try {

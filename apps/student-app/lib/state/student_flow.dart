@@ -7,6 +7,7 @@ import '../api/student_api.dart';
 import 'chat.dart';
 import 'coach_profile.dart';
 import 'coach_search.dart';
+import 'favorite_coaches.dart';
 import 'lesson_completions.dart';
 import 'lesson_review.dart';
 import 'notifications.dart';
@@ -94,6 +95,9 @@ enum HomeSection {
 
   /// 返ってきた添削（`listMyVideos`）
   videos,
+
+  /// お気に入りのコーチ（`listFavoriteCoaches`）
+  favoriteCoaches,
 }
 
 /// 添削の依頼（チャットの [ChatNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
@@ -166,7 +170,7 @@ class StudentFlowState {
   final Sport? searchSport;
 
   /// スロットを絞ったコーチ（コーチの紹介の「このコーチの空き枠を見る」から来たとき。絞っていなければ null）
-  final CoachListing? searchCoach;
+  final SelectedCoach? searchCoach;
   final List<Slot>? slots;
 
   /// 検索結果のコーチの評価の件数と平均（`getCoachReviewSummary`。コーチの ID ごと）。検索のたびに読み直す
@@ -251,7 +255,7 @@ class StudentFlowState {
     String? accessToken,
     Student? student,
     Sport? searchSport,
-    CoachListing? searchCoach,
+    SelectedCoach? searchCoach,
     bool clearSearchCoach = false,
     List<Slot>? slots,
     Map<String, CoachReviewSummary>? coachReviewSummaries,
@@ -382,7 +386,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
-  /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画）と、
+  /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画・
+  /// お気に入りのコーチ（[FavoriteCoachesNotifier.loadForHome]））と、
   /// アプリバーのお知らせのしるし（[NotificationsNotifier.loadForHome]。読めなければしるしを出さないだけ）を
   /// 並べて読む。どれかが失敗しても他の欄は出す（失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
   /// 受講権の 404 は失敗ではなく、月額契約の前（[SubscriptionState.noEntitlement]）
@@ -404,6 +409,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       ),
       load(HomeSection.threads, ref.read(chatProvider.notifier).loadThreads),
       load(HomeSection.videos, _loadMyVideos),
+      load(
+        HomeSection.favoriteCoaches,
+        ref.read(favoriteCoachesProvider.notifier).loadForHome,
+      ),
       ref.read(notificationsProvider.notifier).loadForHome(),
     ]);
     if (!ref.mounted) return;
@@ -430,8 +439,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// スロット検索へ（生徒のスポーツで絞って検索しておく）。[coach] を渡せばそのコーチの枠に絞り、
-  /// スポーツはコーチを探したスポーツ（[CoachListing.sport]）にする。渡さなければコーチの絞り込みを外す
-  Future<void> goToSlotSearch({CoachListing? coach}) {
+  /// スポーツはコーチの紹介を開いたスポーツ（[SelectedCoach.sport]）にする。渡さなければコーチの絞り込みを外す
+  Future<void> goToSlotSearch({SelectedCoach? coach}) {
     state = state.copyWith(
       step: FlowStep.slotSearch,
       searchCoach: coach,

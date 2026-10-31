@@ -427,6 +427,57 @@ void main() {
     expect(none.reviews, isEmpty);
   });
 
+  test('お気に入りのコーチの一覧・入れる・外すのパスと、行の変換', () async {
+    final rated = {
+      'coach_id': 'c1',
+      'display_name': '佐藤',
+      'sports': ['tennis', 'soccer'],
+      'review_count': 12,
+      'average_rating': 4,
+      'favorited_at': '2026-10-26T03:00:00Z',
+    };
+    final unrated = {
+      ...rated,
+      'coach_id': 'c2',
+      'display_name': '高橋',
+      'sports': ['tennis'],
+      'review_count': 0,
+      'average_rating': null,
+    };
+    final body = {
+      'favorite_coaches': [rated, unrated],
+    };
+
+    final list = await apiReplying(200, body).listFavoriteCoaches();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/favorite-coaches');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    // 返った順のまま
+    expect(list.favoriteCoaches.map((c) => c.coachId), ['c1', 'c2']);
+    final first = list.favoriteCoaches.first;
+    expect(first.displayName, '佐藤');
+    expect(first.sports, [Sport.tennis, Sport.soccer]);
+    expect(first.reviewCount, 12);
+    expect(first.averageRating, 4.0);
+    expect(first.favoritedAt, DateTime.utc(2026, 10, 26, 3));
+    expect(list.favoriteCoaches.last.averageRating, isNull);
+
+    final added = await apiReplying(200, body).addFavoriteCoach('c1');
+    expect(sent.single.method, 'PUT');
+    expect(sent.single.url.path, '/favorite-coaches/c1');
+    // 本文は送らない
+    expect(sent.single.body, isEmpty);
+    expect(added.favoriteCoaches, hasLength(2));
+
+    final removed = await apiReplying(200, {
+      'favorite_coaches': <Object>[],
+    }).removeFavoriteCoach('c1');
+    expect(sent.single.method, 'DELETE');
+    expect(sent.single.url.path, '/favorite-coaches/c1');
+    expect(sent.single.body, isEmpty);
+    expect(removed.favoriteCoaches, isEmpty);
+  });
+
   test('listCoachesForStudent のパスとスポーツの絞り込み、コーチの行の変換', () async {
     final rated = {
       'coach_id': 'c1',

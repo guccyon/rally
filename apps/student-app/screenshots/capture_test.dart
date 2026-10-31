@@ -132,9 +132,10 @@ final screens = <Screen>[
   }),
 ];
 
-/// キャプチャ用の API のモック。既定の見本に、受講権とお知らせを足して画面を埋める。
+/// キャプチャ用の API のモック。既定の見本に、受講権とお知らせとお気に入りのコーチを足して画面を埋める。
 FakeStudentApi _api() => FakeStudentApi(
   entitlement: Fixtures.subscriptionStarted.entitlement,
+  favoriteCoaches: [Fixtures.favoriteCoach()],
   notifications: [
     ApiNotification(
       notificationId: '99999999-9999-4999-8999-999999999991',

@@ -119,6 +119,9 @@ void main() {
         'getCoachReviewSummary',
         'listCoachReviews',
         'listCoachLessonMenus',
+        'listFavoriteCoaches',
+        'addFavoriteCoach',
+        'removeFavoriteCoach',
         'listSubscriptionPlans',
         'startSubscription',
         'getMyEntitlement',
@@ -461,6 +464,54 @@ void main() {
           (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
               as YamlMap);
       expect(refOf(body), '#/components/schemas/$schema');
+    }
+  });
+
+  test('お気に入りのコーチの項目が契約と一致する（listFavoriteCoaches / addFavoriteCoach / removeFavoriteCoach）', () {
+    // FavoriteCoach.fromJson・FavoriteCoachList.fromJson が読む項目
+    expect(propertiesOf('FavoriteCoach'), [
+      'coach_id',
+      'display_name',
+      'sports',
+      'review_count',
+      'average_rating',
+      'favorited_at',
+    ]);
+    expect(requiredOf('FavoriteCoach'), propertiesOf('FavoriteCoach'));
+    final favorite =
+        (schemas['FavoriteCoach'] as YamlMap)['properties'] as YamlMap;
+    expect(
+      refOf((favorite['sports'] as YamlMap)['items'] as YamlMap),
+      '#/components/schemas/Sport',
+    );
+    expect(
+      ((favorite['average_rating'] as YamlMap)['type'] as YamlList)
+          .cast<String>(),
+      ['number', 'null'],
+    );
+    expect(propertiesOf('FavoriteCoachList'), ['favorite_coaches']);
+    final items =
+        (((schemas['FavoriteCoachList'] as YamlMap)['properties']
+                    as YamlMap)['favorite_coaches']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/FavoriteCoach');
+
+    for (final (path, method, operationId) in [
+      ('/favorite-coaches', 'get', 'listFavoriteCoaches'),
+      ('/favorite-coaches/{coach_id}', 'put', 'addFavoriteCoach'),
+      ('/favorite-coaches/{coach_id}', 'delete', 'removeFavoriteCoach'),
+    ]) {
+      final operation =
+          ((spec['paths'] as YamlMap)[path] as YamlMap)[method] as YamlMap;
+      expect(operation['operationId'], operationId);
+      // 本文は送らない
+      expect(operation['requestBody'], isNull);
+      final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+      final body =
+          (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+              as YamlMap);
+      expect(refOf(body), '#/components/schemas/FavoriteCoachList');
     }
   });
 
