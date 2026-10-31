@@ -17,6 +17,10 @@
 - コミット前に `cargo fmt --all -- --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` が通ること。DB が要るテストは環境変数 `DATABASE_URL` の Postgres に向ける（ワーカーにはジョブ専用の空の DB が渡される。自前で Postgres を立てない）
 - DB の変更は expand → 移行 → contract（`docs/adr/0004-schema-expand-contract.md`）。contract は人間の承認
 
+## 画面のキャプチャ
+
+- PR ごとに CI が前後の画面を撮って比べ、変わった画面を成果物にする（`.github/workflows/screenshots.yml`、`tools/screenshots/`）。画面を足した・押す文言を変えたら、`apps/admin-web/screenshots/screens.ts` / `apps/student-app/screenshots/capture_test.dart` の一覧も同じ PR で直す（直さないと「撮れなかった画面」になる）
+
 ## 用語と境界
 
 - 用語は `specs/glossary.yaml`、コンテキストは `specs/context-map.yaml` の id を使う。推測で定義を作らない

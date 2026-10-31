@@ -1,0 +1,15 @@
+{
+  "name": "rally-screenshot-compare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PR の前（ベース）と後の画面のキャプチャを比べ、変わった画面の一覧と見比べるページを作る",
+  "scripts": {
+    "compare": "node compare.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0"
+  }
+}

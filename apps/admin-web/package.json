@@ -10,7 +10,8 @@
     "gen:api": "openapi-typescript ../../specs/contracts/api/admin-web/openapi.yaml -o src/api/schema.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "screenshots": "playwright test -c screenshots/playwright.config.ts"
   },
   "dependencies": {
     "next": "^16.4.3",
@@ -19,6 +20,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

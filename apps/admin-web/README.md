@@ -13,6 +13,20 @@ npm run dev         # http://localhost:3000
 npm run gen:api     # 契約から API の型 src/api/schema.ts を作り直す
 ```
 
+## 画面のキャプチャ
+
+PR ごとに CI（`.github/workflows/screenshots.yml`）が前（ベース）と後の画面を撮って比べ、変わった画面を成果物 `screenshots-admin-web` にする（PR のチェック「画面のキャプチャ / admin-web」の詳細から開ける）。
+
+```sh
+npm run build
+npx playwright install chromium   # 初回だけ
+npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
+```
+
+- 撮る画面とたどり方は `screenshots/screens.ts`、API の決まった応答は `screenshots/fixtures.ts`（型は契約の Schemas）。時刻は 2026-10-26 12:00（日本時間）に固定
+- 画面を足した・タブや押す文言を変えたら `screens.ts` を直す。応答の要る API を足したら `fixtures.ts` に足す（ないと 404 の表示のまま撮られる）
+- id は前後の突き合わせに使うので変えない
+
 ## API
 
 - 型は契約 `specs/contracts/api/admin-web/openapi.yaml` から `openapi-typescript` で生成した `src/api/schema.ts` だけを使う（手書きの型を置かない）。契約を変えたら `npm run gen:api`。生成物が契約とずれていれば `tests/apiSchema.test.ts` が落ちる
