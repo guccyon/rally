@@ -173,7 +173,7 @@ void main() {
       'getMyNotificationSettings',
       'getMyNotificationSettings',
     ]);
-    expect(find.byType(SwitchListTile), findsNWidgets(3));
+    expect(find.byType(SwitchListTile), findsNWidgets(labels.length));
     expect(find.text('設定を読み込み直す'), findsNothing);
   });
 }
