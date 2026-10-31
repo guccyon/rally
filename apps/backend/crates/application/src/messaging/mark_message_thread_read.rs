@@ -1,7 +1,6 @@
 use domain::{
-    DomainError,
     identity::AccountId,
-    messaging::{MessageThread, MessageThreadId},
+    messaging::{MessageThread, MessageThreadId, MessagingError},
 };
 
 use super::{MessageThreadRepository, UpdateMessageThreadError};
@@ -18,8 +17,8 @@ pub struct MarkMessageThreadReadCommand {
 pub enum MarkMessageThreadReadError {
     /// スレッドがない
     ThreadNotFound,
-    /// スレッドの当事者でない（[`DomainError::NotAThreadParticipant`]）
-    Invalid(DomainError),
+    /// スレッドの当事者でない（[`MessagingError::NotAThreadParticipant`]）
+    Invalid(MessagingError),
     /// 保存先の障害
     Unavailable(crate::Unavailable),
 }
@@ -136,7 +135,7 @@ mod tests {
             matches!(
                 result,
                 Err(MarkMessageThreadReadError::Invalid(
-                    DomainError::NotAThreadParticipant
+                    MessagingError::NotAThreadParticipant
                 ))
             ),
             "{result:?}"

@@ -1,6 +1,9 @@
 use std::time::SystemTime;
 
-use domain::{DomainError, identity::AccountId, messaging::MessageThread};
+use domain::{
+    identity::AccountId,
+    messaging::{MessageThread, MessagingError},
+};
 
 use super::MessageThreadRepository;
 use crate::Unavailable;
@@ -15,8 +18,8 @@ pub struct OpenMessageThreadCommand {
 
 #[derive(Debug)]
 pub enum OpenMessageThreadError {
-    /// スレッドを開けない（生徒とコーチが同じアカウント）
-    Invalid(DomainError),
+    /// スレッドを開けない（生徒とコーチが同じアカウント。[`MessagingError::MessageThreadWithOneself`]）
+    Invalid(MessagingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -112,7 +115,7 @@ mod tests {
             matches!(
                 result,
                 Err(OpenMessageThreadError::Invalid(
-                    DomainError::MessageThreadWithOneself
+                    MessagingError::MessageThreadWithOneself
                 ))
             ),
             "{result:?}"

@@ -1,4 +1,4 @@
-use domain::DomainError;
+use domain::messaging::MessagingError;
 
 use crate::Unavailable;
 
@@ -8,7 +8,7 @@ pub enum UpdateMessageThreadError {
     /// スレッドがない
     NotFound,
     /// 変更が不変条件を満たさない（クロージャが返した違反）
-    Rejected(DomainError),
+    Rejected(MessagingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }

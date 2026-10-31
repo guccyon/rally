@@ -2,9 +2,9 @@ use std::time::SystemTime;
 
 use super::{
     Message, MessageAuthor, MessageContent, MessageId, MessageKind, MessageSender, MessageThreadId,
+    MessagingError,
 };
 use crate::{
-    DomainError,
     async_lesson::{VideoId, VideoReviewId},
     identity::AccountId,
 };
@@ -31,34 +31,34 @@ pub struct MessageThread {
 
 impl MessageThread {
     /// 生徒 `student_id` と担当コーチ `coach_id` のスレッドを `now` に開く。生徒とコーチが同じアカウントなら
-    /// [`DomainError::MessageThreadWithOneself`]。
+    /// [`MessagingError::MessageThreadWithOneself`]。
     pub fn open(
         id: MessageThreadId,
         student_id: AccountId,
         coach_id: AccountId,
         now: SystemTime,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, MessagingError> {
         Self::restore(id, student_id, coach_id, now, Vec::new())
     }
 
     /// 保存先から読んだスレッドを組み立てる（保存先の実装用）。`messages` は送った順。
     ///
-    /// 生徒とコーチが同じアカウント（[`DomainError::MessageThreadWithOneself`]）、メッセージがスレッドを開く前か
-    /// 前のメッセージより前に送られている（[`DomainError::MessageSentBeforeLastActivity`]）なら失敗する。
+    /// 生徒とコーチが同じアカウント（[`MessagingError::MessageThreadWithOneself`]）、メッセージがスレッドを開く前か
+    /// 前のメッセージより前に送られている（[`MessagingError::MessageSentBeforeLastActivity`]）なら失敗する。
     pub fn restore(
         id: MessageThreadId,
         student_id: AccountId,
         coach_id: AccountId,
         opened_at: SystemTime,
         messages: Vec<Message>,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, MessagingError> {
         if student_id == coach_id {
-            return Err(DomainError::MessageThreadWithOneself);
+            return Err(MessagingError::MessageThreadWithOneself);
         }
         let mut last_activity_at = opened_at;
         for message in &messages {
             if message.sent_at() < last_activity_at {
-                return Err(DomainError::MessageSentBeforeLastActivity);
+                return Err(MessagingError::MessageSentBeforeLastActivity);
             }
             last_activity_at = message.sent_at();
         }
@@ -71,19 +71,19 @@ impl MessageThread {
         })
     }
 
-    /// `account` がスレッドのどちらの当事者か。当事者でなければ [`DomainError::NotAThreadParticipant`]。
-    pub fn participant(&self, account: AccountId) -> Result<MessageSender, DomainError> {
+    /// `account` がスレッドのどちらの当事者か。当事者でなければ [`MessagingError::NotAThreadParticipant`]。
+    pub fn participant(&self, account: AccountId) -> Result<MessageSender, MessagingError> {
         if account == self.student_id {
             Ok(MessageSender::Student)
         } else if account == self.coach_id {
             Ok(MessageSender::Coach)
         } else {
-            Err(DomainError::NotAThreadParticipant)
+            Err(MessagingError::NotAThreadParticipant)
         }
     }
 
-    /// `account` が当事者でなければ [`DomainError::NotAThreadParticipant`]。
-    pub fn ensure_visible_to(&self, account: AccountId) -> Result<(), DomainError> {
+    /// `account` が当事者でなければ [`MessagingError::NotAThreadParticipant`]。
+    pub fn ensure_visible_to(&self, account: AccountId) -> Result<(), MessagingError> {
         self.participant(account).map(|_| ())
     }
 
@@ -91,15 +91,15 @@ impl MessageThread {
     /// 送ったメッセージを返す。
     ///
     /// `student_may_chat` は生徒がチャットを送ってよいかの答え（entitlement の送り放題。月額は `true`）。
-    /// 次の不変条件を破れば [`DomainError`] を返し、スレッドを変えない。
+    /// 次の不変条件を破れば [`MessagingError`] を返し、スレッドを変えない。
     ///
-    /// - 送れるのは当事者だけ（[`DomainError::NotAThreadParticipant`]）
+    /// - 送れるのは当事者だけ（[`MessagingError::NotAThreadParticipant`]）
     /// - 送れるのはチャットの種類（本文・スタンプ。[`MessageKind::is_chat`]）だけ
-    ///   （[`DomainError::MessageKindNotSendable`]）
-    /// - 生徒が送れるのは、チャットが送り放題の利用権を持つときだけ（[`DomainError::ChatNotAllowed`]。
+    ///   （[`MessagingError::MessageKindNotSendable`]）
+    /// - 生徒が送れるのは、チャットが送り放題の利用権を持つときだけ（[`MessagingError::ChatNotAllowed`]。
     ///   コーチは問わない）
     /// - 送信はスレッドを開いた時刻と前のメッセージの送信時刻より前にならない（同じ時刻は許す。
-    ///   [`DomainError::MessageSentBeforeLastActivity`]）
+    ///   [`MessagingError::MessageSentBeforeLastActivity`]）
     pub fn send(
         &mut self,
         message_id: MessageId,
@@ -107,13 +107,13 @@ impl MessageThread {
         content: MessageContent,
         student_may_chat: bool,
         now: SystemTime,
-    ) -> Result<&Message, DomainError> {
+    ) -> Result<&Message, MessagingError> {
         let sender = self.participant(sender)?;
         if !content.kind().is_chat() {
-            return Err(DomainError::MessageKindNotSendable);
+            return Err(MessagingError::MessageKindNotSendable);
         }
         if sender == MessageSender::Student && !student_may_chat {
-            return Err(DomainError::ChatNotAllowed);
+            return Err(MessagingError::ChatNotAllowed);
         }
         self.push(message_id, MessageAuthor::Participant(sender), content, now)
     }
@@ -122,14 +122,14 @@ impl MessageThread {
     /// 送り手はスレッドの生徒）。足したメッセージを返す。同じ動画の添削依頼がすでにあれば何も変えず `None`
     /// （同じ出来事が 2 回届いても 1 通）。
     ///
-    /// 送信がスレッドを開いた時刻と前のメッセージの送信時刻より前なら [`DomainError::MessageSentBeforeLastActivity`]
+    /// 送信がスレッドを開いた時刻と前のメッセージの送信時刻より前なら [`MessagingError::MessageSentBeforeLastActivity`]
     /// で、スレッドを変えない。
     pub fn post_video_review_request(
         &mut self,
         message_id: MessageId,
         video_id: VideoId,
         now: SystemTime,
-    ) -> Result<Option<&Message>, DomainError> {
+    ) -> Result<Option<&Message>, MessagingError> {
         if self.has(MessageKind::VideoReviewRequest, video_id) {
             return Ok(None);
         }
@@ -154,7 +154,7 @@ impl MessageThread {
         video_id: VideoId,
         review_id: VideoReviewId,
         now: SystemTime,
-    ) -> Result<Option<&Message>, DomainError> {
+    ) -> Result<Option<&Message>, MessagingError> {
         if self.has(MessageKind::VideoReviewReturn, video_id) {
             return Ok(None);
         }
@@ -178,16 +178,16 @@ impl MessageThread {
     }
 
     /// メッセージを `now` に足す。送信がスレッドを開いた時刻と前のメッセージより前なら
-    /// [`DomainError::MessageSentBeforeLastActivity`]。
+    /// [`MessagingError::MessageSentBeforeLastActivity`]。
     fn push(
         &mut self,
         message_id: MessageId,
         author: MessageAuthor,
         content: MessageContent,
         now: SystemTime,
-    ) -> Result<&Message, DomainError> {
+    ) -> Result<&Message, MessagingError> {
         if now < self.last_activity_at() {
-            return Err(DomainError::MessageSentBeforeLastActivity);
+            return Err(MessagingError::MessageSentBeforeLastActivity);
         }
         let message = Message::sent(message_id, author, content, now)?;
         self.messages.push(message);
@@ -205,8 +205,12 @@ impl MessageThread {
     /// 当事者 `reader` が `now` に、相手から届いたメッセージをすべて既読にする。既読にした数を返す。
     ///
     /// 自分が送ったメッセージと既読のメッセージ、システムのメッセージは変えない（既読は最初に読んだ時刻のまま）。当事者でなければ
-    /// [`DomainError::NotAThreadParticipant`] で、何も変えない。
-    pub fn mark_read(&mut self, reader: AccountId, now: SystemTime) -> Result<usize, DomainError> {
+    /// [`MessagingError::NotAThreadParticipant`] で、何も変えない。
+    pub fn mark_read(
+        &mut self,
+        reader: AccountId,
+        now: SystemTime,
+    ) -> Result<usize, MessagingError> {
         let reader = self.participant(reader)?;
         Ok(self
             .messages
@@ -322,7 +326,7 @@ mod tests {
     fn a_student_cannot_open_a_thread_with_oneself() {
         assert_eq!(
             MessageThread::open(THREAD, STUDENT, STUDENT, NOW),
-            Err(DomainError::MessageThreadWithOneself)
+            Err(MessagingError::MessageThreadWithOneself)
         );
     }
 
@@ -334,7 +338,7 @@ mod tests {
         assert_eq!(thread.ensure_visible_to(STUDENT), Ok(()));
         assert_eq!(
             thread.ensure_visible_to(OTHER),
-            Err(DomainError::NotAThreadParticipant)
+            Err(MessagingError::NotAThreadParticipant)
         );
         assert_eq!(thread.account_of(MessageSender::Student), STUDENT);
         assert_eq!(thread.account_of(MessageSender::Coach), COACH);
@@ -419,22 +423,28 @@ mod tests {
                 OTHER,
                 true,
                 at(1),
-                DomainError::NotAThreadParticipant,
+                MessagingError::NotAThreadParticipant,
             ),
-            (opened(), STUDENT, false, at(1), DomainError::ChatNotAllowed),
+            (
+                opened(),
+                STUDENT,
+                false,
+                at(1),
+                MessagingError::ChatNotAllowed,
+            ),
             (
                 later,
                 STUDENT,
                 true,
                 at(4),
-                DomainError::MessageSentBeforeLastActivity,
+                MessagingError::MessageSentBeforeLastActivity,
             ),
             (
                 MessageThread::open(THREAD, STUDENT, COACH, at(2)).unwrap(),
                 COACH,
                 true,
                 at(1),
-                DomainError::MessageSentBeforeLastActivity,
+                MessagingError::MessageSentBeforeLastActivity,
             ),
         ] {
             let before = thread.clone();
@@ -501,7 +511,7 @@ mod tests {
         let before = thread.clone();
         assert_eq!(
             thread.mark_read(OTHER, at(10)),
-            Err(DomainError::NotAThreadParticipant)
+            Err(MessagingError::NotAThreadParticipant)
         );
         assert_eq!(thread, before);
     }
@@ -530,15 +540,15 @@ mod tests {
         };
         assert_eq!(
             MessageThread::restore(THREAD, STUDENT, COACH, NOW, vec![sent(1, 2), sent(2, 1)]),
-            Err(DomainError::MessageSentBeforeLastActivity)
+            Err(MessagingError::MessageSentBeforeLastActivity)
         );
         assert_eq!(
             MessageThread::restore(THREAD, STUDENT, COACH, at(5), vec![sent(1, 4)]),
-            Err(DomainError::MessageSentBeforeLastActivity)
+            Err(MessagingError::MessageSentBeforeLastActivity)
         );
         assert_eq!(
             MessageThread::restore(THREAD, COACH, COACH, NOW, vec![]),
-            Err(DomainError::MessageThreadWithOneself)
+            Err(MessagingError::MessageThreadWithOneself)
         );
         // 開いた時刻と同じ・同じ時刻が並ぶのは読める
         assert!(
@@ -658,11 +668,11 @@ mod tests {
         let before = thread.clone();
         assert_eq!(
             thread.post_video_review_request(message(1), VIDEO, at(4)),
-            Err(DomainError::MessageSentBeforeLastActivity)
+            Err(MessagingError::MessageSentBeforeLastActivity)
         );
         assert_eq!(
             thread.post_video_review_return(message(1), VIDEO, REVIEW, at(4)),
-            Err(DomainError::MessageSentBeforeLastActivity)
+            Err(MessagingError::MessageSentBeforeLastActivity)
         );
         assert_eq!(thread, before);
     }
@@ -696,7 +706,7 @@ mod tests {
                 at(1),
                 None
             ),
-            Err(DomainError::MessageAuthorMismatchesKind)
+            Err(MessagingError::MessageAuthorMismatchesKind)
         );
     }
 
@@ -755,7 +765,7 @@ mod tests {
                     at(1)
                 )
                 .map(|_| ()),
-            Err(DomainError::ChatNotAllowed)
+            Err(MessagingError::ChatNotAllowed)
         );
         assert!(thread.messages().is_empty());
     }
@@ -781,7 +791,7 @@ mod tests {
                 thread
                     .send(message(1), sender, content, true, at(1))
                     .map(|_| ()),
-                Err(DomainError::MessageKindNotSendable)
+                Err(MessagingError::MessageKindNotSendable)
             );
         }
         // 当事者でなければ種類より先に断る（スレッドがあることを知らせない）
@@ -795,7 +805,7 @@ mod tests {
                     at(1)
                 )
                 .map(|_| ()),
-            Err(DomainError::NotAThreadParticipant)
+            Err(MessagingError::NotAThreadParticipant)
         );
         assert_eq!(thread, before);
     }

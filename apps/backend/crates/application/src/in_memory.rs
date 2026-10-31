@@ -14,7 +14,7 @@ use domain::{
     identity::{Account, AccountId, Profile},
     lesson::{LessonCompletion, LessonId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
-    messaging::{MessageId, MessageThread, MessageThreadId},
+    messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{NotificationSettings, PushNotification},
     profile::CoachBio,
     review::{LessonReview, LessonReviewId},
@@ -914,7 +914,7 @@ impl MessageThreadRepository for InMemoryMessageThreadRepository {
         update: F,
     ) -> Result<MessageThread, UpdateMessageThreadError>
     where
-        F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut MessageThread) -> Result<(), MessagingError> + Send,
     {
         let mut threads = self.threads.lock().unwrap();
         let thread = threads

@@ -1,9 +1,8 @@
 use std::{error::Error, time::SystemTime};
 
 use domain::{
-    DomainError,
     identity::AccountId,
-    messaging::{MessageId, MessageThread},
+    messaging::{MessageId, MessageThread, MessagingError},
 };
 
 use super::{
@@ -27,7 +26,7 @@ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
 /// 同じ生徒とコーチのスレッドは 1 つで、同じ動画の添削依頼・返却はスレッドに 1 通ずつなので、同じイベントが 2 回
 /// 届いても結果は変わらない。ほかのイベントは何もしない。
 ///
-/// 失敗は型のあるエラーを包んで返す（不変条件の違反は `DomainError`、保存先の障害は [`crate::Unavailable`]、
+/// 失敗は型のあるエラーを包んで返す（不変条件の違反は `MessagingError`、保存先の障害は [`crate::Unavailable`]、
 /// 開いたスレッドがメッセージを足すときになかったら [`MessageThreadSubscriberError::ThreadVanished`]）。
 pub struct MessageThreadSubscriber<T> {
     open: OpenMessageThread<T>,
@@ -77,7 +76,7 @@ where
         post: F,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
-        F: FnOnce(&mut MessageThread, MessageId) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut MessageThread, MessageId) -> Result<(), MessagingError> + Send,
     {
         let thread = self.open(student_id, coach_id, at).await?;
         let message_id = self.threads().next_message_id();
@@ -382,7 +381,7 @@ mod tests {
             _update: F,
         ) -> Result<MessageThread, UpdateMessageThreadError>
         where
-            F: FnOnce(&mut MessageThread) -> Result<(), DomainError> + Send,
+            F: FnOnce(&mut MessageThread) -> Result<(), MessagingError> + Send,
         {
             Err(UpdateMessageThreadError::NotFound)
         }

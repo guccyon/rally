@@ -1,7 +1,6 @@
 use std::time::SystemTime;
 
-use super::{MessageAuthor, MessageContent, MessageId};
-use crate::DomainError;
+use super::{MessageAuthor, MessageContent, MessageId, MessagingError};
 
 /// スレッド（[`super::MessageThread`]）の中の 1 通のメッセージ（glossary の message）。
 ///
@@ -18,30 +17,30 @@ pub struct Message {
 }
 
 impl Message {
-    /// 送り手が中身の種類に合わなければ [`DomainError::MessageAuthorMismatchesKind`]。
+    /// 送り手が中身の種類に合わなければ [`MessagingError::MessageAuthorMismatchesKind`]。
     pub(super) fn sent(
         id: MessageId,
         author: MessageAuthor,
         content: MessageContent,
         sent_at: SystemTime,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, MessagingError> {
         Self::restore(id, author, content, sent_at, None)
     }
 
     /// 保存先から読んだメッセージを組み立てる（保存先の実装用）。送り手が中身の種類に合わなければ
-    /// [`DomainError::MessageAuthorMismatchesKind`]、既読が送信より前なら [`DomainError::MessageReadBeforeSent`]。
+    /// [`MessagingError::MessageAuthorMismatchesKind`]、既読が送信より前なら [`MessagingError::MessageReadBeforeSent`]。
     pub fn restore(
         id: MessageId,
         author: MessageAuthor,
         content: MessageContent,
         sent_at: SystemTime,
         read_at: Option<SystemTime>,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, MessagingError> {
         if !content.allows(author) {
-            return Err(DomainError::MessageAuthorMismatchesKind);
+            return Err(MessagingError::MessageAuthorMismatchesKind);
         }
         if read_at.is_some_and(|read_at| read_at < sent_at) {
-            return Err(DomainError::MessageReadBeforeSent);
+            return Err(MessagingError::MessageReadBeforeSent);
         }
         Ok(Self {
             id,
@@ -107,7 +106,7 @@ mod tests {
         let later = NOW + Duration::from_secs(1);
         assert_eq!(
             Message::restore(MessageId::from_u128(1), STUDENT, text(), later, Some(NOW)),
-            Err(DomainError::MessageReadBeforeSent)
+            Err(MessagingError::MessageReadBeforeSent)
         );
         for read_at in [None, Some(later), Some(later + Duration::from_secs(1))] {
             let message =
@@ -148,7 +147,7 @@ mod tests {
             } else {
                 assert_eq!(
                     result,
-                    Err(DomainError::MessageAuthorMismatchesKind),
+                    Err(MessagingError::MessageAuthorMismatchesKind),
                     "{author:?} {content:?}"
                 );
             }

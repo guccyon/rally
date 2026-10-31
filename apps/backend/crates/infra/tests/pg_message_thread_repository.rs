@@ -16,11 +16,10 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     async_lesson::{VideoId, VideoReviewId},
     messaging::{
         Message, MessageAuthor, MessageBody, MessageContent, MessageKind, MessageSender,
-        MessageThread, Stamp,
+        MessageThread, MessagingError, Stamp,
     },
 };
 use infra::PgMessageThreadRepository;
@@ -116,7 +115,7 @@ async fn messages_and_reads_round_trip(pool: PgPool) {
         matches!(
             result,
             Err(UpdateMessageThreadError::Rejected(
-                DomainError::ChatNotAllowed
+                MessagingError::ChatNotAllowed
             ))
         ),
         "{result:?}"

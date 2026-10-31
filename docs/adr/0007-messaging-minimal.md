@@ -26,7 +26,7 @@
    - `sendMessage` で送れるのは本文だけ（応答の `kind` は `text`）。リクエストは変えない
 9. **スタンプを送れる（D54）。** オーナーの方向（2026-10-29: チャットには将来スタンプや AI コンシェルジュの発言も流せるよう、メッセージの種類をモデル化しておく）の 1 つ目。
    - スタンプ（glossary の `stamp`。domain の `Stamp`）は決まった 8 種類（`thanks` / `good` / `got_it` / `lets_go` / `nice_shot` / `tired` / `question` / `ok`）のどれかで、本文は持たない。種類 `MessageContent::Stamp`（`MessageKind::Stamp`）として足し、送り手は当事者（生徒・コーチ）だけ（`MessageContent::allows`。DB は `messages_kind_sender`）。画像と表示の文言はクライアントが持つ
-   - 送信は本文と同じ `MessageThread::send` で、中身（`MessageContent`）を受け取る。チャットとして送れるのは本文とスタンプだけ（`MessageKind::is_chat`。添削依頼・返却は `DomainError::MessageKindNotSendable`）。チャットの送り放題の判定（`ChatGate`）・`MessageSent`（相手への通知）・行動イベント `message.sent` は本文と同じで、属性も変えない（本文を載せないので種類も載せない）
+   - 送信は本文と同じ `MessageThread::send` で、中身（`MessageContent`）を受け取る。チャットとして送れるのは本文とスタンプだけ（`MessageKind::is_chat`。添削依頼・返却は `MessagingError::MessageKindNotSendable`）。チャットの送り放題の判定（`ChatGate`）・`MessageSent`（相手への通知）・行動イベント `message.sent` は本文と同じで、属性も変えない（本文を載せないので種類も載せない）
    - 契約: `sendMessage` の `SendMessageRequest` に `stamp_id`（`StampId`）を足し、`body` を任意にした（リクエストの必須を外すのは互換）。本文とスタンプのどちらか 1 つで、両方・どちらもなし・知らない ID は 422。`Message` に `stamp_id`（スタンプのときだけ）を足し、`MessageKind` に `stamp` を足した（レスポンスの enum の追加。決定 8 で知らない種類は読み飛ばしてよいと書いてある）
    - `body` には古い版のクライアント向けに「スタンプ: ありがとう」の形の短い説明を入れる（呼び名は interface の `message.rs`。契約の `StampId` の説明と同じ）
    - DB は `messaging.messages` に `stamp` の列を足し、種類と形と送り手の CHECK を stamp の場合を OR で足すだけの付け直しにした（`20261029000002_expand_message_stamps.sql`）

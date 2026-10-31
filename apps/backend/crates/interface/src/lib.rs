@@ -19,6 +19,7 @@ mod live_lesson_sessions;
 mod me;
 mod message;
 mod messaging;
+mod messaging_error;
 mod my_bookings;
 mod my_videos;
 mod notification_settings;
