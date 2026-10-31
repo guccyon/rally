@@ -61,6 +61,7 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/coach-review-summary",
   },
+  { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },

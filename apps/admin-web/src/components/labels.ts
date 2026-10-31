@@ -28,6 +28,12 @@ export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], s
   ended: "終了",
 };
 
+/** glossary の coach_acceptance（コーチの受付）の `states`。 */
+export const COACH_ACCEPTANCE_STATUS_LABELS: Record<Schemas["CoachAcceptanceStatus"], string> = {
+  accepting: "受付中",
+  suspended: "停止中",
+};
+
 /** glossary の live_lesson（同期レッスン）と async_lesson（非同期レッスン）。 */
 export const LESSON_TYPE_LABELS: Record<Schemas["LessonType"], string> = {
   live_lesson: "同期（ビデオ通話）",
