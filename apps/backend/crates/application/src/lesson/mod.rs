@@ -4,7 +4,11 @@
 //! 発行し、ここはそれを保存して行動イベントと境界間イベントを出すだけ。review には完了記録と、その元（予約・動画）が
 //! 持つレッスンメニューの写しを読ませる（[`LessonCompletionLookup`]・[`LessonCompletionMenuLookup`]）。生徒が受けた
 //! レッスンの一覧（[`ListMyLessonCompletions`]）は、コーチの表示名を profile に、評価済みかを review にポートで問い合わせる。
+//! コーチの今月と先月のレッスンの実績（[`GetMyLessonStats`]）は完了記録を数え、評価の件数と平均は review に
+//! [`MonthlyReviewSummaryLookup`] で問い合わせる。
 
+mod coach_lesson_stats;
+mod get_my_lesson_stats;
 mod lesson_completion_coach_display_name_lookup;
 pub mod lesson_completion_id_uuid;
 mod lesson_completion_lookup;
@@ -12,17 +16,23 @@ mod lesson_completion_menu_lookup;
 mod lesson_completion_menus;
 mod lesson_completion_review_lookup;
 mod list_my_lesson_completions;
+mod monthly_lesson_stats;
+mod monthly_review_summary_lookup;
 mod my_lesson_completion;
 mod my_lesson_completion_list;
 mod record_completion_error;
 mod record_lesson_completion;
 mod repository;
 
+pub use coach_lesson_stats::CoachLessonStats;
+pub use get_my_lesson_stats::GetMyLessonStats;
 pub use lesson_completion_coach_display_name_lookup::LessonCompletionCoachDisplayNameLookup;
 pub use lesson_completion_lookup::LessonCompletionLookup;
 pub use lesson_completion_menu_lookup::LessonCompletionMenuLookup;
 pub use lesson_completion_review_lookup::LessonCompletionReviewLookup;
 pub use list_my_lesson_completions::ListMyLessonCompletions;
+pub use monthly_lesson_stats::MonthlyLessonStats;
+pub use monthly_review_summary_lookup::MonthlyReviewSummaryLookup;
 pub use my_lesson_completion::MyLessonCompletion;
 pub use my_lesson_completion_list::MyLessonCompletionList;
 pub use record_completion_error::RecordCompletionError;

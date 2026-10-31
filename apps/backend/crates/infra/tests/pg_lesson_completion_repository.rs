@@ -261,3 +261,49 @@ async fn a_group_session_is_completed_once_per_linked_student(pool: PgPool) {
         "{result:?}"
     );
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn finds_completions_of_a_coach_since_a_time(pool: PgPool) {
+    let completions = PgLessonCompletionRepository::new(pool.clone());
+    let session = support::ended_session(&pool, 11).await;
+    let (student, coach) = (session.student_id(), session.coach_id());
+    let id = completions.next_id();
+    let live = completions
+        .record(student, |history| {
+            session.complete(id, student, history, at(12))
+        })
+        .await
+        .unwrap();
+    let video = reviewed_video(&pool, student, coach).await;
+    let id = completions.next_id();
+    let async_lesson = completions
+        .record(student, |history| {
+            video.complete(id, student, history, at(13))
+        })
+        .await
+        .unwrap();
+    // 別のコーチの完了したレッスン
+    let others = support::ended_session(&pool, 11).await;
+    let other_student = others.student_id();
+    let id = completions.next_id();
+    completions
+        .record(other_student, |history| {
+            others.complete(id, other_student, history, at(12))
+        })
+        .await
+        .unwrap();
+
+    let mut found = completions.find_by_coach(coach, at(12)).await.unwrap();
+    found.sort_by_key(|c| c.completed_at());
+    assert_eq!(
+        found,
+        [live, async_lesson.clone()],
+        "境目の時刻ちょうどを含む"
+    );
+    assert_eq!(
+        completions.find_by_coach(coach, at(13)).await.unwrap(),
+        [async_lesson]
+    );
+    assert_eq!(completions.find_by_coach(coach, at(14)).await.unwrap(), []);
+}

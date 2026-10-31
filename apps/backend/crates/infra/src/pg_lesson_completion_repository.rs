@@ -12,6 +12,8 @@ use domain::{
     identity::AccountId,
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
 };
+use std::time::SystemTime;
+
 use sqlx::{
     PgPool,
     types::{Uuid, time::OffsetDateTime},
@@ -89,6 +91,36 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         Ok(rows
             .into_iter()
             .map(|row| completion_from_row(student_id, row))
+            .collect())
+    }
+
+    async fn find_by_coach(
+        &self,
+        coach_id: AccountId,
+        completed_since: SystemTime,
+    ) -> Result<Vec<LessonCompletion>, Unavailable> {
+        let rows: Vec<(Uuid, Uuid, Uuid, Uuid, bool, OffsetDateTime, bool)> = sqlx::query_as(
+            "SELECT student_id, lesson_id, session_id, coach_id, is_first_lesson, completed_at, true
+             FROM live_lesson.lesson_completions WHERE coach_id = $1 AND completed_at >= $2
+             UNION ALL
+             SELECT student_id, lesson_id, video_id, coach_id, is_first_lesson, completed_at, false
+             FROM async_lesson.lesson_completions WHERE coach_id = $1 AND completed_at >= $2",
+        )
+        .bind(account_id_uuid::to_uuid(coach_id))
+        .bind(timestamp(completed_since))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(student_id, lesson_id, source_id, coach_id, is_first, completed_at, live)| {
+                    completion_from_row(
+                        account_id_uuid::from_uuid(student_id),
+                        (lesson_id, source_id, coach_id, is_first, completed_at, live),
+                    )
+                },
+            )
             .collect())
     }
 
