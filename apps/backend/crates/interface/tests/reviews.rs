@@ -1,11 +1,13 @@
 //! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）と `GET /coaches/{coach_id}/review-summary`
 //! （`getCoachReviewSummary`）の統合テスト。どちらも admin-web と student-app の契約にある同じ操作なので、レスポンスの形を
 //! 両方の OpenAPI のスキーマで検査する。本部と生徒はどのコーチの分も、コーチは自分の分だけを読めること（他のコーチの分は
-//! 403）と、送った時刻の新しい順に並ぶこと、評価がなければ 0 件になることを確かめる。
+//! 403）と、送った時刻の新しい順に並ぶこと、評価がなければ 0 件になること、評価したレッスンのメニューがあれば
+//! `lesson_menu` に載り、なければ null になることを確かめる。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    Unavailable,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
@@ -20,7 +22,9 @@ use application::{
     },
     lesson::RecordLessonCompletion,
     live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
-    review::{GetCoachReviewSummary, ListCoachReviews, SubmitLessonReview},
+    review::{
+        GetCoachReviewSummary, ListCoachReviews, ReviewedLessonMenuLookup, SubmitLessonReview,
+    },
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
         SchedulingBookingLookup, SearchSlots,
@@ -32,9 +36,10 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    catalog::{LessonMenuId, LessonMenuName},
     identity::{AccountId, Role},
     lesson::LessonId,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -68,6 +73,23 @@ impl TokenVerifier for FakeTokens {
             account_id: AccountId::from_u128(id),
             role,
         })
+    }
+}
+
+/// 評価したレッスンのメニューの代わり。レッスン 12（review 2 のレッスン）だけがメニューを持つ。
+struct FixedLessonMenus;
+
+impl ReviewedLessonMenuLookup for FixedLessonMenus {
+    async fn find_lesson_menu(
+        &self,
+        lesson_id: LessonId,
+    ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
+        Ok((lesson_id == LessonId::from_u128(12)).then(|| {
+            ReviewLessonMenu::new(
+                LessonMenuId::from_u128(0x5a),
+                LessonMenuName::new("フォア改善").unwrap(),
+            )
+        }))
     }
 }
 
@@ -263,7 +285,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             clock,
         ),
         GetCoachReviewSummary::new(reviews.clone()),
-        ListCoachReviews::new(reviews),
+        ListCoachReviews::new(reviews, FixedLessonMenus),
         application::notification::GetNotificationSettings::new(
             application::in_memory::InMemoryNotificationSettingsRepository::default(),
         ),
@@ -345,6 +367,11 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                         "rating": 5,
                         "comment": "とてもよい",
                         "submitted_at": "2026-10-25T23:00:00Z",
+                        // 評価したレッスンの元が持つメニューの写し
+                        "lesson_menu": {
+                            "lesson_menu_id": "00000000-0000-0000-0000-00000000005a",
+                            "name": "フォア改善",
+                        },
                     },
                     {
                         "review_id": "00000000-0000-0000-0000-000000000004",
@@ -352,6 +379,8 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                         "rating": 4,
                         "comment": "よい",
                         "submitted_at": "2026-10-25T00:00:00Z",
+                        // メニューのないレッスンは null
+                        "lesson_menu": null,
                     },
                     {
                         "review_id": "00000000-0000-0000-0000-000000000001",
@@ -359,6 +388,7 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                         "rating": 3,
                         "comment": "ふつう",
                         "submitted_at": "2026-10-24T00:00:00Z",
+                        "lesson_menu": null,
                     },
                 ],
             }),
@@ -383,6 +413,7 @@ async fn a_student_reads_the_reviews_of_any_coach() {
                 "rating": 1,
                 "comment": "別のコーチ",
                 "submitted_at": "2026-10-25T22:00:00Z",
+                "lesson_menu": null,
             }],
         })
     );
