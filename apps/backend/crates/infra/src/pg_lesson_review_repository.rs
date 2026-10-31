@@ -1,5 +1,7 @@
 //! レッスンの評価の保存先（Postgres の `review.lesson_reviews`）。
 
+use std::time::SystemTime;
+
 use application::{
     Unavailable,
     identity::account_id_uuid,
@@ -87,6 +89,21 @@ impl LessonReviewRepository for PgLessonReviewRepository {
              FROM review.lesson_reviews WHERE coach_id = $1 ORDER BY submitted_at",
         )
         .bind(account_id_uuid::to_uuid(coach_id))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(review_from_row).collect()
+    }
+
+    async fn find_submitted_since(
+        &self,
+        since: SystemTime,
+    ) -> Result<Vec<LessonReview>, Unavailable> {
+        let rows: Vec<ReviewRow> = sqlx::query_as(
+            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at
+             FROM review.lesson_reviews WHERE submitted_at >= $1 ORDER BY submitted_at",
+        )
+        .bind(timestamp(since))
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;
