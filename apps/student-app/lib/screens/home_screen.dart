@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/chat.dart';
 import '../state/coach_search.dart';
+import '../state/lesson_completions.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
-/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼の入口を 1 画面に並べる。
+/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口を
+/// 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -34,6 +36,14 @@ class HomeScreen extends ConsumerWidget {
         const _ReturnedReviewsSection(),
         const _VideoReviewRequestSection(),
         const SizedBox(height: 24),
+        OutlinedButton.icon(
+          onPressed: state.busy
+              ? null
+              : ref.read(lessonCompletionsProvider.notifier).open,
+          icon: const Icon(Icons.history),
+          label: const Text('受けたレッスン'),
+        ),
+        const SizedBox(height: 8),
         OutlinedButton(
           onPressed: state.busy ? null : notifier.refreshHome,
           child: const Text('ホームを更新する'),
@@ -253,7 +263,7 @@ class _ReturnedReviewsSection extends ConsumerWidget {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: state.busy
                       ? null
-                      : () => notifier.openMyVideoReview(video),
+                      : () => notifier.openMyVideoReview(video.videoId),
                 ),
               ),
         ],

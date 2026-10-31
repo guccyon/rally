@@ -222,6 +222,15 @@ void main() {
     );
   });
 
+  test('受けたレッスンのメニューは名前だけを出す', () {
+    expect(
+      lessonCompletionMenuLabel(
+        const LessonCompletionMenu(lessonMenuId: 'm1', name: 'サーブの動画添削'),
+      ),
+      'メニュー: サーブの動画添削',
+    );
+  });
+
   test('レッスンメニューの同期レッスン 1 回の時間を分で出す', () {
     expect(lessonMenuDurationLabel(60), '1 回 60 分');
     expect(lessonMenuDurationLabel(15), '1 回 15 分');

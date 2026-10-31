@@ -51,6 +51,10 @@ String videoLessonMenuLabel(VideoLessonMenu menu) => 'メニュー: ${menu.name}
 /// 評価したレッスンのレッスンメニュー（`CoachReview.lesson_menu`。admin-web の評価の一覧と同じ書き方）。例: `メニュー: フォアハンドの基礎`
 String reviewLessonMenuLabel(ReviewLessonMenu menu) => 'メニュー: ${menu.name}';
 
+/// 完了したレッスンの元が持つレッスンメニュー（`MyLessonCompletion.lesson_menu`）。例: `メニュー: フォアハンドの基礎`
+String lessonCompletionMenuLabel(LessonCompletionMenu menu) =>
+    'メニュー: ${menu.name}';
+
 /// ホームの行の見出しのコーチの名前。例: `佐藤 コーチ`。名前がわからなければ `担当コーチ`
 String coachNameLabel(String? displayName) =>
     displayName == null ? '担当コーチ' : '$displayName コーチ';
