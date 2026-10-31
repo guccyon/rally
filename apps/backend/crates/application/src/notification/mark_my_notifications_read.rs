@@ -1,34 +1,38 @@
-use domain::{identity::AccountId, notification::Notification};
+use domain::identity::AccountId;
 
-use super::NotificationRepository;
+use super::{AnnouncementRepository, MyNotification, NotificationRepository};
 use crate::{Unavailable, clock::Clock};
 
 /// 自分のお知らせをすべて既読にするユースケース（student-app と admin-web の `markMyNotificationsRead`）。今の時刻で既読にし
 /// （すでに読んだものは最初に読んだ時刻のまま。何度呼んでもよい）、既読にしたあとの一覧（[`super::ListMyNotifications`]
 /// と同じ並び）を返す。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
-pub struct MarkMyNotificationsRead<N, C> {
+pub struct MarkMyNotificationsRead<N, A, C> {
     notifications: N,
+    announcements: A,
     clock: C,
 }
 
-impl<N, C> MarkMyNotificationsRead<N, C>
+impl<N, A, C> MarkMyNotificationsRead<N, A, C>
 where
     N: NotificationRepository,
+    A: AnnouncementRepository,
     C: Clock,
 {
-    pub fn new(notifications: N, clock: C) -> Self {
+    pub fn new(notifications: N, announcements: A, clock: C) -> Self {
         Self {
             notifications,
+            announcements,
             clock,
         }
     }
 
     /// `recipient` は認証したアカウント。
-    pub async fn execute(&self, recipient: AccountId) -> Result<Vec<Notification>, Unavailable> {
+    pub async fn execute(&self, recipient: AccountId) -> Result<Vec<MyNotification>, Unavailable> {
         self.notifications
             .mark_all_read(recipient, self.clock.now())
             .await?;
-        self.notifications.find_by_recipient(recipient).await
+        let notifications = self.notifications.find_by_recipient(recipient).await?;
+        MyNotification::attach(notifications, &self.announcements).await
     }
 }
 
@@ -38,12 +42,14 @@ mod tests {
 
     use domain::{
         async_lesson::VideoId,
-        notification::{NotificationId, PushNotification},
+        notification::{Notification, NotificationId, PushNotification},
         scheduling::BookingId,
     };
 
     use super::*;
-    use crate::in_memory::{FixedClock, InMemoryNotificationRepository};
+    use crate::in_memory::{
+        FixedClock, InMemoryAnnouncementRepository, InMemoryNotificationRepository,
+    };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const OTHER: AccountId = AccountId::from_u128(2);
@@ -51,6 +57,11 @@ mod tests {
 
     fn at(minute: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(minute * 60)
+    }
+
+    /// 本部からのお知らせはない（添える記録がない）
+    fn no_announcements() -> InMemoryAnnouncementRepository {
+        InMemoryAnnouncementRepository::default()
     }
 
     fn confirmed(id: u128, student_id: AccountId, minute: u64) -> Notification {
@@ -75,10 +86,17 @@ mod tests {
             confirmed(3, OTHER, 20),
         ]);
 
-        let listed = MarkMyNotificationsRead::new(notifications.clone(), FixedClock(at(30)))
-            .execute(STUDENT)
-            .await
-            .unwrap();
+        let listed: Vec<Notification> = MarkMyNotificationsRead::new(
+            notifications.clone(),
+            no_announcements(),
+            FixedClock(at(30)),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|mine| mine.notification)
+        .collect();
         let read_at: Vec<_> = listed.iter().map(Notification::read_at).collect();
         assert_eq!(
             read_at,
@@ -100,10 +118,14 @@ mod tests {
         );
 
         // 何度呼んでもよい
-        let again = MarkMyNotificationsRead::new(notifications, FixedClock(at(40)))
-            .execute(STUDENT)
-            .await
-            .unwrap();
+        let again: Vec<Notification> =
+            MarkMyNotificationsRead::new(notifications, no_announcements(), FixedClock(at(40)))
+                .execute(STUDENT)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|mine| mine.notification)
+                .collect();
         assert_eq!(again, listed);
     }
 
@@ -123,13 +145,18 @@ mod tests {
             requested,
         ]);
 
-        let listed = MarkMyNotificationsRead::new(notifications.clone(), FixedClock(at(30)))
-            .execute(COACH)
-            .await
-            .unwrap();
+        let listed = MarkMyNotificationsRead::new(
+            notifications.clone(),
+            no_announcements(),
+            FixedClock(at(30)),
+        )
+        .execute(COACH)
+        .await
+        .unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id(), requested.id());
-        assert_eq!(listed[0].read_at(), Some(at(30)));
+        assert_eq!(listed[0].notification.id(), requested.id());
+        assert_eq!(listed[0].notification.read_at(), Some(at(30)));
+        assert_eq!(listed[0].announcement, None);
         assert_eq!(
             notifications.all()[0].read_at(),
             None,
@@ -141,6 +168,7 @@ mod tests {
     async fn no_notifications_is_an_empty_list() {
         let listed = MarkMyNotificationsRead::new(
             InMemoryNotificationRepository::default(),
+            no_announcements(),
             FixedClock(at(30)),
         )
         .execute(STUDENT)

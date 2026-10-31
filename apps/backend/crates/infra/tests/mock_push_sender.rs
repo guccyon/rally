@@ -6,7 +6,7 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     identity::AccountId,
     messaging::{MessageId, MessageSender, MessageThreadId},
-    notification::PushNotification,
+    notification::{AnnouncementId, PushNotification},
     scheduling::BookingId,
 };
 use infra::MockPushSender;
@@ -90,5 +90,17 @@ fn writes_the_coach_and_the_video_for_a_requested_review() {
         }),
         "push_notification 00000000-0000-0000-0000-000000000009 video_review_requested \
          00000000-0000-0000-0000-000000000002"
+    );
+}
+
+#[test]
+fn writes_the_student_and_the_announcement_for_an_announcement() {
+    assert_eq!(
+        MockPushSender::line(&PushNotification::Announcement {
+            student_id: AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+            announcement_id: AnnouncementId::from_u128(3),
+        }),
+        "push_notification 01234567-89ab-4def-8123-456789abcdef announcement \
+         00000000-0000-0000-0000-000000000003"
     );
 }
