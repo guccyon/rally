@@ -315,6 +315,39 @@ void main() {
     expect(ChatState().messages, isNull);
   });
 
+  test('添削と読めなかった動画は、コンストラクタで直接渡しても copyWith で渡しても写して持ち、外から書き換えられない', () {
+    // コンストラクタで直接渡した元の一覧を後で変えても、状態は変わらない
+    final reviews = {Fixtures.videoId: Fixtures.reviewReturned};
+    final failures = {'video-failed'};
+    final constructed = ChatState(reviews: reviews, reviewFailures: failures);
+    reviews.clear();
+    failures.clear();
+    expect(constructed.reviews, {Fixtures.videoId: Fixtures.reviewReturned});
+    expect(constructed.reviewFailures, {'video-failed'});
+    expect(() => constructed.reviews.clear(), throwsUnsupportedError);
+    expect(
+      () => constructed.reviewFailures.add('video-other'),
+      throwsUnsupportedError,
+    );
+
+    // copyWith で渡した元の一覧を後で変えても、状態は変わらない
+    final reviewsSource = {Fixtures.videoId: Fixtures.reviewReturned};
+    final failuresSource = {'video-failed'};
+    final copied = ChatState().copyWith(
+      reviews: reviewsSource,
+      reviewFailures: failuresSource,
+    );
+    reviewsSource.clear();
+    failuresSource.clear();
+    expect(copied.reviews, {Fixtures.videoId: Fixtures.reviewReturned});
+    expect(copied.reviewFailures, {'video-failed'});
+    expect(() => copied.reviews.clear(), throwsUnsupportedError);
+    expect(() => copied.reviewFailures.clear(), throwsUnsupportedError);
+    // 渡さなければ空
+    expect(ChatState().reviews, isEmpty);
+    expect(ChatState().reviewFailures, isEmpty);
+  });
+
   test('メッセージを送ると、送ったメッセージを足した一覧も書き換えられない', () async {
     final api = FakeStudentApi();
     final container = containerOf(

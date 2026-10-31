@@ -15,11 +15,13 @@ class ChatState {
     List<MessageThread>? threads,
     this.thread,
     List<Message>? messages,
-    this.reviews = const {},
-    this.reviewFailures = const {},
-    // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
+    Map<String, VideoReview> reviews = const {},
+    Set<String> reviewFailures = const {},
+    // 渡した元の一覧を後で変えても状態が変わらないよう、読み取り専用の写しを持つ
   }) : threads = threads == null ? null : List.unmodifiable(threads),
-       messages = messages == null ? null : List.unmodifiable(messages);
+       messages = messages == null ? null : List.unmodifiable(messages),
+       reviews = Map.unmodifiable(reviews),
+       reviewFailures = Set.unmodifiable(reviewFailures);
 
   /// チャットを閉じたときに戻る段（チャットを開いた段）
   final FlowStep? returnStep;
@@ -176,10 +178,8 @@ class ChatNotifier extends Notifier<ChatState> {
     await Future.wait(videoIds.map(load));
     if (!ref.mounted) return;
     state = state.copyWith(
-      reviews: Map.unmodifiable({...state.reviews, ...reviews}),
-      reviewFailures: Set.unmodifiable(
-        state.reviewFailures.difference(videoIds).union(failures),
-      ),
+      reviews: {...state.reviews, ...reviews},
+      reviewFailures: state.reviewFailures.difference(videoIds).union(failures),
     );
   }
 
