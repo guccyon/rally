@@ -4,6 +4,7 @@
 //! - 送付するとモックの保存先の URL が返り、返却前の取得は未返却（`in_progress`）
 //! - 送付の直後に AI の一次フィードバックのモック（`MockAiFeedbackGenerator`）の文が付く
 //! - コーチが返却すると、生徒が読む添削が `returned` になり、一次フィードバックはそのまま
+//! - 生徒が送った動画の一覧（`GET /videos/me`）で、返却されたことと返却された時刻を確かめられる
 
 use std::time::{Duration, SystemTime};
 
@@ -124,4 +125,14 @@ async fn a_submitted_video_is_reviewed_and_returned() {
     assert_eq!(body["comment"], "フォロースルーを大きく");
     assert_eq!(body["returned_at"], "2026-10-27T10:00:00Z");
     assert_eq!(body["ai_feedback"], ai_feedback);
+
+    // 生徒は自分が送った動画の一覧で返却を確かめられる（コーチは呼べない）
+    let (status, list) = send(&router, get("/videos/me", &student)).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["videos"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["videos"][0]["video_id"], video_id);
+    assert_eq!(list["videos"][0]["review_status"], "returned");
+    assert_eq!(list["videos"][0]["returned_at"], "2026-10-27T10:00:00Z");
+    let (status, _) = send(&router, get("/videos/me", &coach)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

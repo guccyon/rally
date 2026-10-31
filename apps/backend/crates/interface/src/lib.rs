@@ -20,6 +20,7 @@ mod me;
 mod message;
 mod messaging;
 mod my_bookings;
+mod my_videos;
 mod notification_settings;
 mod reviews;
 mod slot_supply;
@@ -33,9 +34,9 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     async_lesson::{
-        AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate,
-        SubmitVideo, VideoLessonMenuLookup, VideoRepository, VideoStorage,
-        VideoStudentDisplayNameLookup,
+        AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ListMyVideos, ReturnVideoReview,
+        ReviewGate, SubmitVideo, VideoCoachDisplayNameLookup, VideoLessonMenuLookup,
+        VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
     },
     catalog::{
         CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
@@ -430,6 +431,24 @@ where
             list_my_lesson_menus,
             list_coach_lesson_menus,
         }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 生徒が送った動画の一覧（student-app の `GET /videos/me`）のルーター。[`router_with`] と同じくトークンの検証の層を
+/// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /videos/me` は生徒だけで、照会するのはトークンの生徒自身が送った動画だけ。
+pub fn my_videos_router<V, D, T>(list_my_videos: ListMyVideos<V, D>, tokens: T) -> Router
+where
+    V: VideoRepository + 'static,
+    D: VideoCoachDisplayNameLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/videos/me", get(my_videos::list_my_videos::<V, D>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(my_videos::MyVideosState { list_my_videos }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 
