@@ -126,6 +126,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "messaging.messages",
             "messaging.threads",
             "notification.notification_settings",
+            "notification.notifications",
             "scheduling.bookings",
             "scheduling.slots",
         ]
@@ -2171,6 +2172,199 @@ async fn notification_settings_are_one_per_account_and_known_kind(pool: PgPool) 
             "notification_settings_account_id_fkey"
         )
     );
+}
+
+/// お知らせの行を入れる。`push` は（booking_id, video_id, review_id, thread_id, message_id, sender_role）、`read_at` は時刻の文字列。
+#[allow(clippy::type_complexity)]
+async fn insert_notification(
+    pool: &PgPool,
+    recipient_id: &str,
+    kind: &str,
+    (student_id, coach_id): (&str, &str),
+    push: (
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+    ),
+    read_at: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let (booking_id, video_id, review_id, thread_id, message_id, sender_role) = push;
+    sqlx::query(
+        "INSERT INTO notification.notifications
+             (notification_id, recipient_id, kind, student_id, coach_id, booking_id, video_id, review_id,
+              thread_id, message_id, sender_role, created_at, read_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7::uuid,
+                 $8::uuid, $9::uuid, $10, '2026-11-01T10:00:00Z', $11::timestamptz)",
+    )
+    .bind(recipient_id)
+    .bind(kind)
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(booking_id)
+    .bind(video_id)
+    .bind(review_id)
+    .bind(thread_id)
+    .bind(message_id)
+    .bind(sender_role)
+    .bind(read_at)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: PgPool) {
+    use infra::notification_values::PUSH_NOTIFICATION_KIND_VALUES;
+
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.notifications",
+            "notifications_kind_check"
+        )
+        .await,
+        PUSH_NOTIFICATION_KIND_VALUES
+    );
+
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let parties = (student_id.as_str(), coach_id.as_str());
+    const A: &str = "00000000-0000-4000-8000-00000000000a";
+    const B: &str = "00000000-0000-4000-8000-00000000000b";
+    const C: &str = "00000000-0000-4000-8000-00000000000c";
+    let booking = (Some(A), None, None, None, None, None);
+    let review = (None, Some(A), Some(B), None, None, None);
+    let message = (None, None, None, Some(A), Some(C), Some("coach"));
+
+    // 変種ごとの形で入る
+    insert_notification(
+        &pool,
+        &student_id,
+        "booking_confirmed",
+        parties,
+        booking,
+        None,
+    )
+    .await
+    .unwrap();
+    insert_notification(&pool, &coach_id, "booking_received", parties, booking, None)
+        .await
+        .unwrap();
+    insert_notification(
+        &pool,
+        &student_id,
+        "video_review_returned",
+        parties,
+        review,
+        None,
+    )
+    .await
+    .unwrap();
+    insert_notification(
+        &pool,
+        &student_id,
+        "message_received",
+        parties,
+        message,
+        Some("2026-11-01T10:00:00Z"),
+    )
+    .await
+    .unwrap();
+
+    // 同じプッシュ通知は 1 件
+    let (code, constraint) = violation(
+        insert_notification(
+            &pool,
+            &student_id,
+            "booking_confirmed",
+            parties,
+            booking,
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "notifications_one_per_push")
+    );
+
+    // 種類に合わない中身は入らない
+    for (kind, push) in [
+        ("booking_confirmed", review),
+        (
+            "video_review_returned",
+            (None, Some(B), None, None, None, None),
+        ),
+        (
+            "message_received",
+            (None, None, None, Some(B), Some(B), None),
+        ),
+        (
+            "message_received",
+            (Some(B), None, None, Some(B), Some(B), Some("coach")),
+        ),
+    ] {
+        let (code, constraint) =
+            violation(insert_notification(&pool, &student_id, kind, parties, push, None).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "notifications_kind_shape"),
+            "{kind} {push:?}"
+        );
+    }
+
+    // 受け取る人は当事者のどちらか
+    let other = student(&pool).await;
+    let (code, constraint) = violation(
+        insert_notification(
+            &pool,
+            &other,
+            "booking_confirmed",
+            parties,
+            (Some(B), None, None, None, None, None),
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "notifications_recipient_is_a_party")
+    );
+
+    // 既読は作った後
+    let (code, constraint) = violation(
+        insert_notification(
+            &pool,
+            &student_id,
+            "booking_confirmed",
+            parties,
+            (Some(C), None, None, None, None, None),
+            Some("2026-11-01T09:59:59Z"),
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "notifications_read_after_created")
+    );
+
+    // ないアカウントには残せない
+    let (code, constraint) = violation(
+        insert_notification(
+            &pool,
+            "00000000-0000-4000-8000-000000000001",
+            "booking_confirmed",
+            ("00000000-0000-4000-8000-000000000001", &coach_id),
+            (Some(C), None, None, None, None, None),
+            None,
+        )
+        .await,
+    );
+    assert_eq!(code, FOREIGN_KEY_VIOLATION, "{constraint}");
 }
 
 /// コーチ `coach_id` のレッスンメニューを入れる。

@@ -26,6 +26,7 @@ mod my_bookings;
 mod my_profile;
 mod my_videos;
 mod notification_settings;
+mod notifications;
 mod review_error;
 mod reviews;
 mod scheduling_error;
@@ -70,7 +71,8 @@ use application::{
         SendMessage,
     },
     notification::{
-        GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
+        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
+        NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
     },
     profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile},
     review::{
@@ -577,6 +579,38 @@ where
         .route("/videos/me", get(my_videos::list_my_videos::<V, D>))
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(my_videos::MyVideosState { list_my_videos }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 生徒のお知らせ（student-app の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。[`router_with`] と
+/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// どちらも生徒だけで、扱うのはトークンの生徒自身が受け取るお知らせだけ。
+pub fn notifications_router<N, C, T>(
+    list_my_notifications: ListMyNotifications<N>,
+    mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
+    tokens: T,
+) -> Router
+where
+    N: NotificationRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/notifications/me",
+            get(notifications::list_my_notifications::<N, C>),
+        )
+        .route(
+            "/notifications/me/read",
+            post(notifications::mark_my_notifications_read::<N, C>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(notifications::NotificationsState {
+            list_my_notifications,
+            mark_my_notifications_read,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 
