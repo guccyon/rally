@@ -390,6 +390,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/{coach_id}/acceptance-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチの受付を止めた・再開した記録（本部）
+         * @description コーチ 1 人の受付（glossary の coach_acceptance）を止めた（`suspendCoach`）・再開した（`resumeCoach`）記録を、
+         *     新しい順に返す。どのコーチの受付を、いつ、どの本部のアカウントが止めて・再開したかを、本部が後からたどるのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     - 記録は `suspendCoach`・`resumeCoach` が受付を変えたとき 1 回につき 1 件で、書き換えない。409 で断られた操作は残らない
+         *     - 各記録の `acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）。`changed_by` は
+         *       操作した本部のアカウントの ID、`changed_at` は変えた時刻
+         *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
+         *     - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
+         *     - 絞り込み・ページング・件数の上限はない
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *
+         *     境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
+         */
+        get: operations["listCoachAcceptanceChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/{coach_id}/overview": {
         parameters: {
             query?: never;
@@ -1326,6 +1358,33 @@ export interface components {
              */
             coach_id: string;
             acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+        };
+        /**
+         * @description コーチの受付を止めた・再開した記録 1 件（`listCoachAcceptanceChanges`）。`suspendCoach`・`resumeCoach` が受付を
+         *     変えたときに残り、書き換えない。`acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）
+         */
+        CoachAcceptanceChange: {
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+            /**
+             * Format: uuid
+             * @description 止めた・再開した本部のアカウントの ID
+             */
+            changed_by: string;
+            /**
+             * Format: date-time
+             * @description 止めた・再開した時刻
+             */
+            changed_at: string;
+        };
+        /** @description コーチ 1 人の受付を止めた・再開した記録の一覧（並べ方は `listCoachAcceptanceChanges` の説明） */
+        CoachAcceptanceChangeList: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID
+             */
+            coach_id: string;
+            /** @description 変えた時刻の新しい順（同じ時刻は後に記録した方が先）。記録がなければ空の配列 */
+            changes: components["schemas"]["CoachAcceptanceChange"][];
         };
         /** @description コーチの一覧（並べ方は `listCoaches` の説明） */
         CoachList: {
@@ -2381,6 +2440,31 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listCoachAcceptanceChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの受付を止めた・再開した記録 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachAcceptanceChangeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getCoachOverview: {
