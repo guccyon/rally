@@ -27,6 +27,21 @@ impl YearMonth {
     pub const fn month(self) -> u8 {
         self.month
     }
+
+    /// 前の暦月（1 月なら前の年の 12 月）。
+    pub const fn previous(self) -> Self {
+        if self.month == 1 {
+            Self {
+                year: self.year - 1,
+                month: 12,
+            }
+        } else {
+            Self {
+                year: self.year,
+                month: self.month - 1,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -49,6 +64,13 @@ mod tests {
                 Err(EntitlementError::InvalidMonth { month })
             );
         }
+    }
+
+    #[test]
+    fn previous_month_wraps_to_december_of_the_last_year() {
+        let ym = |year, month| YearMonth::new(year, month).unwrap();
+        assert_eq!(ym(2026, 11).previous(), ym(2026, 10));
+        assert_eq!(ym(2027, 1).previous(), ym(2026, 12));
     }
 
     #[test]

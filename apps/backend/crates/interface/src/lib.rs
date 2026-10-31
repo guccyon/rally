@@ -16,6 +16,7 @@ mod entitlement_error;
 mod entitlements;
 mod error;
 mod lesson_menus;
+mod lesson_stats;
 mod lessons;
 mod live_lesson_sessions;
 mod me;
@@ -57,7 +58,10 @@ use application::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
     identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
-    lesson::{LessonCompletionRepository, RecordLessonCompletion},
+    lesson::{
+        GetMyLessonStats, LessonCompletionRepository, MonthlyReviewSummaryLookup,
+        RecordLessonCompletion,
+    },
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
@@ -659,6 +663,33 @@ where
         .route_layer(require_role(&[Role::Coach]))
         .with_state(Arc::new(slot_withdrawals::SlotWithdrawalsState {
             withdraw_slot,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// コーチの今月と先月のレッスンの実績（admin-web の `GET /coaches/me/lesson-stats`）のルーター。[`router_with`] と
+/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /coaches/me/lesson-stats` はコーチだけで（本部・生徒は 403）、照会するのはトークンのコーチ自身の実績だけ。
+pub fn lesson_stats_router<M, R, C, T>(
+    get_my_lesson_stats: GetMyLessonStats<M, R, C>,
+    tokens: T,
+) -> Router
+where
+    M: LessonCompletionRepository + 'static,
+    R: MonthlyReviewSummaryLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/me/lesson-stats",
+            get(lesson_stats::get_my_lesson_stats::<M, R, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(lesson_stats::LessonStatsState {
+            get_my_lesson_stats,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

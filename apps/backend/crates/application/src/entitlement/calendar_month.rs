@@ -1,4 +1,5 @@
-//! 時刻がどの暦月か（[`YearMonth`]）。ビデオ通話の枠を区切る暦月は、ユースケースがここだけを通して決める。
+//! 時刻がどの暦月か（[`YearMonth`]）と、暦月の始まりの時刻。ビデオ通話の枠と、コーチの月ごとのレッスンの実績
+//! （`lesson::GetMyLessonStats`）を区切る暦月は、ユースケースがここだけを通して決める。
 //!
 //! 暦月は日本時間（UTC+9。夏時間はない）で区切る（docs/adr/0005-live-lesson-quota-consumption.md）。
 //! 変えるときはこの 1 か所を変える。
@@ -6,7 +7,7 @@
 use std::time::SystemTime;
 
 use domain::entitlement::YearMonth;
-use time::{OffsetDateTime, UtcOffset};
+use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
 
 /// 暦月を区切るタイムゾーン（日本時間）。
 const OFFSET: UtcOffset = match UtcOffset::from_hms(9, 0, 0) {
@@ -18,6 +19,14 @@ const OFFSET: UtcOffset = match UtcOffset::from_hms(9, 0, 0) {
 pub fn of(at: SystemTime) -> YearMonth {
     let at = OffsetDateTime::from(at).to_offset(OFFSET);
     YearMonth::new(at.year(), u8::from(at.month())).expect("time の月は 1〜12")
+}
+
+/// 暦月 `month` の始まり（日本時間の 1 日 0 時）。
+pub fn start(month: YearMonth) -> SystemTime {
+    let month_of_year = Month::try_from(month.month()).expect("YearMonth の月は 1〜12");
+    let first =
+        Date::from_calendar_date(month.year(), month_of_year, 1).expect("どの暦月にも 1 日はある");
+    first.with_time(Time::MIDNIGHT).assume_offset(OFFSET).into()
 }
 
 #[cfg(test)]
@@ -36,6 +45,16 @@ mod tests {
         assert_eq!(
             of(nov1 - Duration::from_nanos(1)),
             YearMonth::new(2026, 10).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_month_starts_at_midnight_on_the_first_in_japan() {
+        let nov1 = SystemTime::UNIX_EPOCH + NOV1_JST;
+        assert_eq!(start(YearMonth::new(2026, 11).unwrap()), nov1);
+        assert_eq!(
+            of(start(YearMonth::new(2027, 1).unwrap())),
+            YearMonth::new(2027, 1).unwrap()
         );
     }
 

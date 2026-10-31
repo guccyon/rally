@@ -345,6 +345,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/lesson-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分の今月と先月のレッスンの実績（コーチ）
+         * @description トークンが示す本人（コーチ）の、今月と先月の完了したレッスン（glossary の lesson_completion）の数を同期レッスン（通話）と
+         *     非同期レッスン（動画添削）に分けて返し、同じ月に受けた評価（glossary の lesson_review）の件数と平均を添える。
+         *     コーチの役割のトークンだけが呼べる（本部・生徒は 403）。金額（支払い額・手数料）は返さない（billing の持ち物）。
+         *
+         *     数え方はここが正本（実装は backend の domain `CoachLessonCount`・`CoachReviewSummary` と、暦月を区切る
+         *     `application::entitlement::calendar_month` の 1 か所）。
+         *
+         *     - 暦月は日本時間（UTC+9）で区切る。今月は呼んだ時刻を含む暦月、先月はその前の暦月（1 月の先月は前の年の 12 月）
+         *     - `live_lesson_count` / `async_lesson_count`: その月に完了したレッスンの数（完了を記録した時刻の暦月で数える）。
+         *       グループレッスンの通話は、完了したレッスン（結び付いた予約の生徒ごとに 1 つ）の数だけ数える
+         *     - `review_count` / `average_rating`: その月に受けた評価の件数と平均（評価を送った時刻の暦月で数える。評価した
+         *       レッスンが完了した月ではない）。平均の丸めは `getCoachReviewSummary` と同じ（小数第 3 位で四捨五入）。0 件なら null
+         *     - 完了したレッスンも評価もない月は、数がすべて 0 で `average_rating` は null
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getMyLessonStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/lesson-menus": {
         parameters: {
             query?: never;
@@ -810,6 +845,26 @@ export interface components {
             /** @description 評価の件数 */
             review_count: number;
             /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
+            average_rating: number | null;
+        };
+        /** @description コーチ 1 人の今月と先月のレッスンの実績（数え方は `getMyLessonStats` の説明）。金額は持たない */
+        CoachLessonStats: {
+            /** Format: uuid */
+            coach_id: string;
+            current_month: components["schemas"]["MonthlyLessonStats"];
+            previous_month: components["schemas"]["MonthlyLessonStats"];
+        };
+        /** @description 1 つの暦月（日本時間）の、完了したレッスンの数（同期・非同期の別）と、受けた評価の件数と平均 */
+        MonthlyLessonStats: {
+            /** @description 暦月（YYYY-MM。日本時間） */
+            month: string;
+            /** @description その月に完了した同期レッスン（通話）の数 */
+            live_lesson_count: number;
+            /** @description その月に完了した非同期レッスン（動画添削）の数 */
+            async_lesson_count: number;
+            /** @description その月に受けた評価の件数 */
+            review_count: number;
+            /** @description その月に受けた評価の点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。0 件なら null */
             average_rating: number | null;
         };
         /**
@@ -1502,6 +1557,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoachVideoList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getMyLessonStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの今月と先月のレッスンの実績 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachLessonStats"];
                 };
             };
             401: components["responses"]["Unauthorized"];
