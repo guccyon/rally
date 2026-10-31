@@ -25,14 +25,13 @@ use axum::{
     http::StatusCode,
 };
 use domain::{
-    DomainError,
     identity::Role,
     review::{CoachReviewSummary, LessonReview, LessonReviewComment, Rating, ReviewLessonMenu},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount, contract::date_time_to_contract, error::ApiError, message,
+    auth::AuthenticatedAccount, contract::date_time_to_contract, error::ApiError, review_error,
 };
 
 /// レッスンの評価のハンドラーが使うユースケース。
@@ -127,15 +126,9 @@ where
             .execute(command)
             .await
             .map_err(|error| match error {
-                // 自分が生徒でないレッスンは、あることも知らせない
-                SubmitLessonReviewError::LessonNotFound
-                | SubmitLessonReviewError::Invalid(DomainError::NotTheLessonStudent) => {
-                    ApiError::not_found("完了したレッスンがない")
-                }
-                SubmitLessonReviewError::Invalid(error @ DomainError::LessonAlreadyReviewed) => {
-                    ApiError::conflict("lesson_already_reviewed", message::domain_error(&error))
-                }
-                SubmitLessonReviewError::Invalid(error) => ApiError::internal(error),
+                // 自分が生徒でないレッスン（`ReviewError::NotTheLessonStudent`）と同じく、あることも知らせない
+                SubmitLessonReviewError::LessonNotFound => review_error::lesson_not_found(),
+                SubmitLessonReviewError::Invalid(error) => ApiError::from(error),
                 SubmitLessonReviewError::Unavailable(error) => ApiError::internal(error),
             })?;
     Ok((StatusCode::CREATED, Json(lesson_review_body(&review)?)))

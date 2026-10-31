@@ -74,6 +74,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | 契約（OpenAPI）の `Sport` の値 | `interface` の `contract.rs` |
 | API の `message`（`DomainError` の変種・役割の呼び名から組み立てる） | `interface` の `message.rs` |
 | messaging の失敗（`domain::messaging::MessagingError`）の API の `message`・HTTP の状態・`code` | `interface` の `messaging_error.rs`（`From<MessagingError> for ApiError`。ハンドラーは変種を個別に拾わない） |
+| review の失敗（`domain::review::ReviewError`）の API の `message`・HTTP の状態・`code` | `interface` の `review_error.rs`（`From<ReviewError> for ApiError`。ハンドラーは変種を個別に拾わない） |
 | DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
 | アカウント ID の UUID のテキスト形式（契約の `format: uuid`・トークン） | `application::identity::account_id_uuid`（`uuid` クレートに任せる。interface と infra の両方から使うので application に置く） |
 

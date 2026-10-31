@@ -9,6 +9,7 @@ mod lesson_review;
 mod lesson_review_comment;
 mod lesson_review_id;
 mod rating;
+mod review_error;
 mod review_lesson_menu;
 
 pub use coach_review_summary::CoachReviewSummary;
@@ -16,4 +17,5 @@ pub use lesson_review::LessonReview;
 pub use lesson_review_comment::LessonReviewComment;
 pub use lesson_review_id::LessonReviewId;
 pub use rating::Rating;
+pub use review_error::ReviewError;
 pub use review_lesson_menu::ReviewLessonMenu;
