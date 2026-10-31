@@ -14,8 +14,9 @@ use application::{
         VideoRepository,
     },
     catalog::{
-        CatalogLessonMenuLookup, CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus,
-        ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
+        CatalogLessonMenuLookup, CatalogPublishedLessonMenuCountLookup, CreateLessonMenu,
+        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
+        UpdateLessonMenu,
     },
     clock::{Clock, SystemClock},
     entitlement::{
@@ -38,6 +39,7 @@ use application::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
     },
+    matching::ListCoachesForStudent,
     messaging::{
         ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         MessageThreadSubscriber, SendMessage,
@@ -47,10 +49,14 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        GetCoachProfile, ListCoaches, ProfileCoachDisplayNameLookup,
-        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, UpdateCoachProfile,
+        GetCoachProfile, ListCoaches, ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup,
+        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, ProfileStudentSportLookup,
+        UpdateCoachProfile,
     },
-    review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
+    review::{
+        GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
+        ReviewCoachReviewSummaryLookup, SubmitLessonReview,
+    },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
@@ -320,6 +326,16 @@ where
         ),
         MockTokenService,
     );
+    let coaches = interface::coaches_router(
+        ListCoaches::new(accounts.clone()),
+        ListCoachesForStudent::new(
+            ProfileStudentSportLookup::new(accounts.clone()),
+            ProfileCoachCandidateLookup::new(accounts.clone()),
+            ReviewCoachReviewSummaryLookup::new(reviews.clone()),
+            CatalogPublishedLessonMenuCountLookup::new(lesson_menus.clone()),
+        ),
+        MockTokenService,
+    );
     let subscription_plans =
         interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
     let coach_profile =
@@ -333,7 +349,6 @@ where
     ));
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
-        ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         UpdateCoachProfile::new(accounts.clone()),
         PublishSlot::new(
@@ -456,6 +471,7 @@ where
         MockTokenService,
     )
     .merge(catalog)
+    .merge(coaches)
     .merge(my_videos)
     .merge(subscription_plans)
     .merge(coach_profile)
