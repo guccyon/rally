@@ -39,6 +39,18 @@ export const SLOT_SUPPLY_STATUS_LABELS: Record<Schemas["SlotSupplyStatus"], stri
   insufficient: "足りていない",
 };
 
+/** 契約種別（受講権）。subscription は月額、one_shot はワンショット（ゴルフだけ）。 */
+export const CONTRACT_TYPE_LABELS: Record<Schemas["ContractType"], string> = {
+  subscription: "月額",
+  one_shot: "ワンショット",
+};
+
+/** glossary の subscription_plan（月額契約のプラン。呼び名は student-app と同じ）。 */
+export const SUBSCRIPTION_PLAN_LABELS: Record<Schemas["SubscriptionPlan"], string> = {
+  standard: "スタンダード",
+  plus: "プラス",
+};
+
 /**
  * スタンプの絵柄（絵文字）と添える短い言葉。契約の `StampId` の画像と文言はクライアントが持つ（言葉は契約の説明の呼び名、
  * 絵文字は student-app と同じ）。選ぶ欄はこの順に並べる。
@@ -64,6 +76,11 @@ export function knownStamp(stampId: string | undefined) {
 /** 契約の date-time を日本時間で表示する。 */
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+}
+
+/** 契約の date-time の日付だけを日本時間で表示する（例: 2026/10/26）。 */
+export function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
 }
 
 /** 契約の暦月（YYYY-MM。日本時間）を「2026年10月」の形で表示する。形が違えばそのまま出す。 */
