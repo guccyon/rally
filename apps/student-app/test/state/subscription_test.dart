@@ -70,7 +70,7 @@ void main() {
     final api = FakeStudentApi();
     final container = containerOf(
       api,
-      subscription: const SubscriptionState(subscriptionPlansFailed: true),
+      subscription: SubscriptionState(subscriptionPlansFailed: true),
     );
 
     await container.read(subscriptionProvider.notifier).loadSubscriptionPlans();
@@ -80,11 +80,46 @@ void main() {
     expect(state.subscriptionPlans, Fixtures.subscriptionPlans);
   });
 
+  test('読んだプランの一覧は読み取り専用の写しで持ち、外から変えられない', () async {
+    final container = containerOf(FakeStudentApi());
+
+    await container.read(subscriptionProvider.notifier).loadSubscriptionPlans();
+
+    final state = container.read(subscriptionProvider);
+    expect(
+      () => state.subscriptionPlans!.add(Fixtures.subscriptionPlans.first),
+      throwsUnsupportedError,
+    );
+    expect(
+      () => state.copyWith().subscriptionPlans!.clear(),
+      throwsUnsupportedError,
+    );
+  });
+
+  test('渡した元のリストを後から変えても、状態のプランの一覧は変わらない', () {
+    final source = [Fixtures.subscriptionPlans.first];
+    final state = SubscriptionState(subscriptionPlans: source);
+    final copied = state.copyWith(subscriptionPlans: source);
+
+    source.add(Fixtures.subscriptionPlans.last);
+
+    expect(state.subscriptionPlans, [Fixtures.subscriptionPlans.first]);
+    expect(copied.subscriptionPlans, [Fixtures.subscriptionPlans.first]);
+    expect(
+      () => state.subscriptionPlans!.add(Fixtures.subscriptionPlans.last),
+      throwsUnsupportedError,
+    );
+    expect(
+      () => copied.subscriptionPlans!.add(Fixtures.subscriptionPlans.last),
+      throwsUnsupportedError,
+    );
+  });
+
   test('月額契約を始めると生徒のスポーツと選んだプランで startSubscription を呼び、契約と受講権を持つ', () async {
     final api = FakeStudentApi();
     final container = containerOf(
       api,
-      subscription: const SubscriptionState(noEntitlement: true),
+      subscription: SubscriptionState(noEntitlement: true),
     );
 
     await container
@@ -157,7 +192,7 @@ void main() {
     final api = FakeStudentApi(entitlement: entitlement);
     final container = containerOf(
       api,
-      subscription: const SubscriptionState(noEntitlement: true),
+      subscription: SubscriptionState(noEntitlement: true),
     );
 
     await container.read(subscriptionProvider.notifier).loadEntitlement();

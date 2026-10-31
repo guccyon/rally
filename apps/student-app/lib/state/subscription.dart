@@ -8,16 +8,21 @@ import 'student_flow.dart';
 /// （[StudentFlowNotifier.cancellationUsesQuota]）が読む。契約するスポーツ（[StudentFlowState.student]）と、画面の段（[FlowStep]）・
 /// API を呼んでいる間の印・直前の操作の失敗の文言・ホームで読めなかった欄はアプリ全体で 1 つなので、
 /// [StudentFlowState] の `student` / `step` / `busy` / `errorMessage` / `homeFailures` を使う。
+/// 一覧をコンストラクタで写して持つので const では作らない。
 class SubscriptionState {
-  const SubscriptionState({
-    this.subscriptionPlans,
+  SubscriptionState({
+    List<SubscriptionPlanDetail>? subscriptionPlans,
     this.subscriptionPlansFailed = false,
     this.subscription,
     this.entitlement,
     this.noEntitlement = false,
-  });
+    // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
+  }) : subscriptionPlans = subscriptionPlans == null
+           ? null
+           : List.unmodifiable(subscriptionPlans);
 
-  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`。契約の画面を開いたときに読む。未取得なら null）
+  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`。契約の画面を開いたときに読む。未取得なら null）。
+  /// コンストラクタでも copyWith でも、渡したリストの読み取り専用の写しを持つ（Riverpod を通さずに状態を変えさせない）
   final List<SubscriptionPlanDetail>? subscriptionPlans;
 
   /// 契約プランの一覧を読めなかったら true（契約の画面はプランの名前だけで選ばせ、プランの欄にだけその旨を出す）
@@ -58,7 +63,7 @@ final subscriptionProvider =
 class SubscriptionNotifier extends Notifier<SubscriptionState> {
   /// [initial] はテストで途中の画面から始めるときに渡す。
   SubscriptionNotifier([SubscriptionState? initial])
-    : _initial = initial ?? const SubscriptionState();
+    : _initial = initial ?? SubscriptionState();
 
   final SubscriptionState _initial;
 
