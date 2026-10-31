@@ -85,6 +85,12 @@ final screens = <Screen>[
     await _register(t);
     await tapText(t, 'スロットを探して予約する');
   }),
+  Screen('slot-search-coach', 'スロットを探す: コーチで絞る', (t) async {
+    await _register(t);
+    await tapText(t, 'コーチを探す');
+    await tapText(t, Fixtures.coachListings.first.displayName);
+    await tapText(t, 'このコーチの空き枠を見る');
+  }),
   Screen('booking-pending', '予約の確定待ち', _toBooking),
   Screen('booking-confirmed', '予約の確定', _toConfirmed),
   Screen('live-lesson', 'ビデオ通話', (t) async {
