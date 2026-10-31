@@ -9,6 +9,8 @@ import { LessonMenuForm } from "@/components/coach/LessonMenuForm";
 import { LessonMenus } from "@/components/coach/LessonMenus";
 import { emptyInput, toRequest, validateInput } from "@/components/coach/lessonMenuInput";
 
+import { EMPTY_LESSON_STATS } from "./lessonStatsFixtures";
+
 // 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
 const { coachApiMock } = vi.hoisted(() => ({ coachApiMock: vi.fn() }));
 vi.mock("@/api/coach", () => ({ coachApi: coachApiMock }));
@@ -459,7 +461,11 @@ describe("レッスンメニュー", () => {
   test("コーチの画面に「レッスンメニュー」のタブがあり、自分のメニューを出す", async () => {
     coachApiMock.mockReturnValue({
       ...mockApi(),
-      // 開いたときに出す「対応待ち」が呼ぶ。
+      // 開いたときに出す「対応待ち」と、その上の実績が呼ぶ。
+      getMyLessonStats: vi.fn<CoachApi["getMyLessonStats"]>(async () => ({
+        ok: true,
+        data: EMPTY_LESSON_STATS,
+      })),
       listMyCoachVideos: vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
         ok: true,
         data: { videos: [] },

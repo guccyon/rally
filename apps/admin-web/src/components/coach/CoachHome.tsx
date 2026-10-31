@@ -10,6 +10,7 @@ import { CoachChat } from "./CoachChat";
 import { CoachProfileForm } from "./CoachProfileForm";
 import { CoachTasks } from "./CoachTasks";
 import { LessonMenus } from "./LessonMenus";
+import { LessonStats } from "./LessonStats";
 import { LiveSessionPanel } from "./LiveSessionPanel";
 import { MyCoachReviews } from "./MyCoachReviews";
 import { countPendingTasks, loadPendingTasks, type PendingTasks } from "./pendingTasks";
@@ -35,6 +36,7 @@ type Focus = { videoId?: string; threadId?: string };
 /**
  * コーチの画面: メニュー（タブ）で、対応待ち・枠の公開・レッスンメニューの登録と編集・添削の返却・
  * 生徒とのチャット（添削の依頼をスレッドの中から返せる）・通話への参加（ADR 0002 Q3）・自分の評価・自己紹介の編集を切り替える。開いたときは対応待ち。
+ * 対応待ちの上には、今月と先月のレッスンの実績（LessonStats）を出す。
  * メニューの「対応待ち」には未対応の件数のバッジを出し（0 件なら出さない）、タブを切り替えるたびに数え直す。
  */
 export function CoachHome({ token }: { token: string }) {
@@ -94,12 +96,15 @@ export function CoachHome({ token }: { token: string }) {
       <div role="tabpanel" id="coach-tab-panel" aria-labelledby={`coach-tab-${tab}`}>
         <Section title={current.title}>
           {tab === "tasks" && (
-            <CoachTasks
-              tasks={tasks}
-              onOpenVideo={(videoId) => open("videos", { videoId })}
-              onOpenBookings={() => open("live")}
-              onOpenThread={(threadId) => open("chat", { threadId })}
-            />
+            <div className="space-y-6">
+              <LessonStats api={api} />
+              <CoachTasks
+                tasks={tasks}
+                onOpenVideo={(videoId) => open("videos", { videoId })}
+                onOpenBookings={() => open("live")}
+                onOpenThread={(threadId) => open("chat", { threadId })}
+              />
+            </div>
           )}
           {tab === "slots" && <PublishSlotForm api={api} />}
           {tab === "menus" && <LessonMenus api={api} />}

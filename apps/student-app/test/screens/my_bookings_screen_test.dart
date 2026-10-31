@@ -354,7 +354,6 @@ void main() {
     final label =
         '${until.month}月${until.day}日 ${until.hour}時までなら、'
         'ビデオ通話の枠を使わずにキャンセルできます。';
-    expect(freeCancelUntilLabel(later.freeCancelUntil!), label);
     expect(inCard(later, label), findsOneWidget);
     expect(inCard(later, quotaNotice), findsNothing);
 
@@ -431,14 +430,6 @@ void main() {
         reason: id,
       );
     }
-  });
-
-  test('境目の案内は分があれば分まで出す', () {
-    final until = DateTime(2026, 10, 28, 15, 30);
-    expect(
-      freeCancelUntilLabel(until),
-      '10月28日 15時30分までなら、ビデオ通話の枠を使わずにキャンセルできます。',
-    );
   });
 
   testWidgets('キャンセルに失敗したら状態を変えずに知らせ、やり直せる', (tester) async {

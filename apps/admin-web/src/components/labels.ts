@@ -65,3 +65,9 @@ export function knownStamp(stampId: string | undefined) {
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 }
+
+/** 契約の暦月（YYYY-MM。日本時間）を「2026年10月」の形で表示する。形が違えばそのまま出す。 */
+export function formatMonth(value: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  return match ? `${match[1]}年${Number(match[2])}月` : value;
+}

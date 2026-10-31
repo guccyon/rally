@@ -442,4 +442,37 @@ describe("coachApi", () => {
       message: "対象が見つかりません（ID を確かめてください）。",
     });
   });
+
+  test("getMyLessonStats はトークンを付けて GET /api/coaches/me/lesson-stats を呼び、今月と先月の実績を返す", async () => {
+    const stats = {
+      coach_id: SLOT.coach_id,
+      current_month: {
+        month: "2026-10",
+        live_lesson_count: 3,
+        async_lesson_count: 1,
+        review_count: 2,
+        average_rating: 4.5,
+      },
+      previous_month: {
+        month: "2026-09",
+        live_lesson_count: 0,
+        async_lesson_count: 0,
+        review_count: 0,
+        average_rating: null,
+      },
+    };
+    const { api, fetchMock } = setup(json(200, stats));
+    const result = await api.getMyLessonStats();
+    expect(result).toEqual({ ok: true, data: stats });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/coaches/me/lesson-stats");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("getMyLessonStats の 403 は権限の文言にする", async () => {
+    const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
+    const result = await api.getMyLessonStats();
+    expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
+  });
 });
