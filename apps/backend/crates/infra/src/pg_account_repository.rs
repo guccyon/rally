@@ -1,4 +1,4 @@
-//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID でのアカウントとコーチの一覧も読み、
+//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID でのアカウントとコーチ・生徒の一覧も読み、
 //! コーチの自己紹介文（`coaches.bio`）と生徒の表示名（`accounts.display_name`）を書き換える。
 
 use application::{
@@ -31,6 +31,9 @@ pub struct PgAccountRepository {
 
 /// コーチの列（account_id, email, display_name, created_at, 提供スポーツ, 自己紹介文）。
 type CoachRow = (Uuid, String, String, OffsetDateTime, Vec<String>, String);
+
+/// 生徒の列（account_id, email, display_name, created_at, 生徒のスポーツ）。
+type StudentRow = (Uuid, String, String, OffsetDateTime, Option<String>);
 
 /// アカウントの列（account_id, role, email, display_name, created_at, 生徒のスポーツ, コーチの提供スポーツ,
 /// コーチの自己紹介文）。
@@ -141,6 +144,21 @@ impl AccountRepository for PgAccountRepository {
         rows.into_iter().map(coach_from_row).collect()
     }
 
+    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）
+        let rows: Vec<StudentRow> = sqlx::query_as(
+            "SELECT account_id, email, display_name, created_at, sport
+             FROM identity.accounts
+             WHERE role = $1
+             ORDER BY created_at DESC, account_id",
+        )
+        .bind(role_value(Role::Student))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(student_from_row).collect()
+    }
+
     async fn update_coach_bio(
         &self,
         coach_id: AccountId,
@@ -223,6 +241,20 @@ fn coach_from_row(
         RoleAttributes::Coach(coach),
         created_at.into(),
     ))
+}
+
+fn student_from_row(
+    (account_id, email, display_name, created_at, sport): StudentRow,
+) -> Result<Account, Unavailable> {
+    Account::new(
+        account_id_uuid::from_uuid(account_id),
+        Email::new(email).map_err(Unavailable::new)?,
+        DisplayName::new(display_name).map_err(Unavailable::new)?,
+        Role::Student,
+        sports_from_values(&sport)?,
+        created_at.into(),
+    )
+    .map_err(Unavailable::new)
 }
 
 fn sports_from_values<'a>(

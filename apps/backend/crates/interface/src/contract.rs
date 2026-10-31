@@ -199,7 +199,7 @@ pub(crate) const fn subscription_status_to_contract(status: SubscriptionStatus) 
     }
 }
 
-/// student-app の `SubscriptionPlan` の値。
+/// student-app・admin-web の `SubscriptionPlan` の値。
 pub(crate) const fn subscription_plan_to_contract(plan: SubscriptionPlan) -> &'static str {
     match plan {
         SubscriptionPlan::Standard => "standard",
@@ -220,7 +220,7 @@ pub(crate) fn subscription_plan_from_contract(
         .ok_or_else(|| ApiError::validation_failed(format!("未知の契約プラン: {value}")))
 }
 
-/// student-app の `ContractType` の値。月額は `subscription`。
+/// student-app・admin-web の `ContractType` の値。月額は `subscription`。
 pub(crate) const fn contract_type_to_contract(contract_type: ContractType) -> &'static str {
     match contract_type {
         ContractType::Monthly => "subscription",
