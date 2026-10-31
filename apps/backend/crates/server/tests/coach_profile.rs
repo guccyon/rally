@@ -131,7 +131,8 @@ async fn coach_bio_is_saved_in_postgres_and_only_coaches_can_write_it(pool: PgPo
             "coach_id": coach_id,
             "display_name": "テスト",
             "bio": "テニス歴 20 年。初心者歓迎",
-            "sports": ["tennis"]
+            "sports": ["tennis"],
+            "is_favorite": false
         })
     );
 

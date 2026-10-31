@@ -3,8 +3,8 @@ use std::{cmp::Ordering, collections::BTreeSet};
 use domain::{catalog::Sport, identity::AccountId, review::CoachReviewSummary};
 
 use super::{
-    CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, PublishedLessonMenuCountLookup,
-    StudentSportLookup,
+    CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, FavoriteCoachRepository,
+    PublishedLessonMenuCountLookup, StudentSportLookup,
 };
 use crate::Unavailable;
 
@@ -34,29 +34,32 @@ impl From<Unavailable> for ListCoachesForStudentError {
 /// 照会だけで、何も保存しない。行動イベントも境界間イベントも発火しない。
 ///
 /// スポーツ（省いたら生徒自身のスポーツ）を提供するコーチをすべて、評価の件数と平均と、そのスポーツの公開中の
-/// レッスンメニューの数を添えて返す。並べ方は評価の平均の高い順（評価のないコーチは最後）、同じなら表示名の
+/// レッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す。並べ方は評価の平均の高い順（評価のないコーチは最後）、同じなら表示名の
 /// Unicode のコードポイントの順、それも同じなら ID の順。どのスポーツをどのクライアントに見せるか（student-app は
 /// ゴルフを扱わない）は境界が決める。
-pub struct ListCoachesForStudent<S, C, R, M> {
+pub struct ListCoachesForStudent<S, C, R, M, F> {
     students: S,
     coaches: C,
     reviews: R,
     menus: M,
+    favorites: F,
 }
 
-impl<S, C, R, M> ListCoachesForStudent<S, C, R, M>
+impl<S, C, R, M, F> ListCoachesForStudent<S, C, R, M, F>
 where
     S: StudentSportLookup,
     C: CoachCandidateLookup,
     R: CoachReviewSummaryLookup,
     M: PublishedLessonMenuCountLookup,
+    F: FavoriteCoachRepository,
 {
-    pub fn new(students: S, coaches: C, reviews: R, menus: M) -> Self {
+    pub fn new(students: S, coaches: C, reviews: R, menus: M, favorites: F) -> Self {
         Self {
             students,
             coaches,
             reviews,
             menus,
+            favorites,
         }
     }
 
@@ -79,6 +82,13 @@ where
             .menus
             .count_published_lesson_menus(&coach_ids, sport)
             .await?;
+        let favorites: BTreeSet<AccountId> = self
+            .favorites
+            .find_by_student(command.student_id)
+            .await?
+            .iter()
+            .map(|favorite| favorite.coach_id())
+            .collect();
 
         let mut listings: Vec<CoachListing> = candidates
             .into_iter()
@@ -90,6 +100,7 @@ where
                     .get(&candidate.coach_id)
                     .copied()
                     .unwrap_or(0),
+                is_favorite: favorites.contains(&candidate.coach_id),
                 coach_id: candidate.coach_id,
                 display_name: candidate.display_name,
                 sport,
@@ -127,6 +138,7 @@ mod tests {
         },
         identity::{Account, Email, Role},
         lesson::LessonCompletionId,
+        matching::FavoriteCoach,
         profile::DisplayName,
         review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
     };
@@ -136,7 +148,8 @@ mod tests {
         catalog::CatalogPublishedLessonMenuCountLookup,
         identity::AccountRepository,
         in_memory::{
-            InMemoryAccountRepository, InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+            InMemoryAccountRepository, InMemoryFavoriteCoachRepository,
+            InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
         },
         profile::{ProfileCoachCandidateLookup, ProfileStudentSportLookup},
         review::ReviewCoachReviewSummaryLookup,
@@ -188,9 +201,10 @@ mod tests {
         ProfileCoachCandidateLookup<InMemoryAccountRepository>,
         ReviewCoachReviewSummaryLookup<InMemoryLessonReviewRepository>,
         CatalogPublishedLessonMenuCountLookup<InMemoryLessonMenuRepository>,
+        InMemoryFavoriteCoachRepository,
     >;
 
-    /// テニスの生徒 1 人と、コーチ 6 人（テニス 5 人・サッカー 1 人）。
+    /// テニスの生徒 1 人と、コーチ 6 人（テニス 5 人・サッカー 1 人）。生徒のお気に入りはコーチ 2 と 4。
     async fn use_case() -> UseCase {
         let accounts = InMemoryAccountRepository::default();
         for account in [
@@ -229,6 +243,16 @@ mod tests {
             ProfileCoachCandidateLookup::new(accounts),
             ReviewCoachReviewSummaryLookup::new(reviews),
             CatalogPublishedLessonMenuCountLookup::new(menus),
+            InMemoryFavoriteCoachRepository::with_favorites([
+                FavoriteCoach::restore(STUDENT, AccountId::from_u128(2), SystemTime::UNIX_EPOCH),
+                FavoriteCoach::restore(STUDENT, AccountId::from_u128(4), SystemTime::UNIX_EPOCH),
+                // ほかの生徒のお気に入りは数えない
+                FavoriteCoach::restore(
+                    AccountId::from_u128(99),
+                    AccountId::from_u128(3),
+                    SystemTime::UNIX_EPOCH,
+                ),
+            ]),
         )
     }
 
@@ -253,6 +277,14 @@ mod tests {
             .collect()
     }
 
+    fn favorite_ids(listings: &[CoachListing]) -> Vec<u128> {
+        listings
+            .iter()
+            .filter(|l| l.is_favorite)
+            .map(|l| l.coach_id.as_u128())
+            .collect()
+    }
+
     #[tokio::test]
     async fn lists_coaches_of_the_students_sport_by_average_rating_then_display_name() {
         let listings = use_case().await.execute(command(None)).await.unwrap();
@@ -271,6 +303,7 @@ mod tests {
         );
         assert_eq!(listings[1].display_name.as_str(), "えもと");
         assert_eq!(listings[3].display_name.as_str(), "たなか");
+        assert_eq!(favorite_ids(&listings), [2], "生徒のお気に入りだけ");
     }
 
     #[tokio::test]
@@ -286,6 +319,7 @@ mod tests {
             [(3, Some(5.0), 1, 1), (4, Some(5.0), 1, 1)],
             "評価は件数と平均をスポーツで分けない。同じ平均なら表示名の順（いとう → うえの）"
         );
+        assert_eq!(favorite_ids(&listings), [4]);
 
         let none = use_case()
             .await
