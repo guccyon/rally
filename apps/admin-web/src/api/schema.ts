@@ -224,6 +224,8 @@ export interface paths {
          *       予約の作成の新しい順（キャンセルされた枠を取り直した予約が、キャンセル済みの予約より上）
          *     - 各項目には予約（`Booking`。student-app の `Booking` と同じ形）と、予約されたスロット（日時・スポーツ・状態）と、
          *       予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
+         *     - 各項目の予約には、予約した時点のレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を
+         *       載せる。生徒が予約したときに枠に結びついていた公開中のメニューの写しで、その後にメニューを直しても変わらない
          *     - 期間で絞らず、ページングもしない。予約がなければ `bookings` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -567,7 +569,7 @@ export interface components {
             remaining_seats: number;
             /**
              * @description 枠に結びついたレッスンメニュー。メニューのない枠は null。載せるのは `listMyCoachSlots` だけで、
-             *     それ以外の操作（`publishSlot`・`listMyCoachBookings`）では載らない
+             *     それ以外の操作（`publishSlot`・`listMyCoachBookings`）では載らない（予約した時点のメニューは `Booking` の `lesson_menu`）
              */
             lesson_menu?: components["schemas"]["SlotLessonMenu"] | null;
         };
@@ -622,6 +624,20 @@ export interface components {
             confirmed_at?: string | null;
             /** Format: date-time */
             cancelled_at?: string | null;
+            /**
+             * @description 予約した時点で、予約したスロットに結びついていたコーチのレッスンメニュー（ID・名前・1 回の時間の写し）。予約した後に
+             *     メニューが直されても、予約した時点のまま。スロットにメニューがない、または予約の時点でメニューが公開中でなかった
+             *     予約（この項目を足す前の予約を含む）は null。予約を返す操作では必ず載せる
+             */
+            lesson_menu?: components["schemas"]["BookingLessonMenu"] | null;
+        };
+        /** @description 予約した時点のコーチのレッスンメニュー（glossary の lesson）の ID・名前・1 回の時間。`SlotLessonMenu` と同じ形だが、メニューの今の中身ではなく予約した時点の写し。student-app の `BookingLessonMenu` と同じ形 */
+        BookingLessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            name: string;
+            /** @description 同期レッスン 1 回の時間（分）。予約した時点でメニューが非同期に直されていたら null */
+            duration_minutes: number | null;
         };
         /** @description コーチの自分の予約の一覧の 1 件。予約（glossary の booking）と、予約されたスロット（glossary の slot）と、予約した生徒の表示名 */
         CoachBooking: {

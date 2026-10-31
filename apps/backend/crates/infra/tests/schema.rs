@@ -330,6 +330,96 @@ async fn slot_lesson_menu_is_null_unless_given_and_has_no_foreign_key(pool: PgPo
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn booking_lesson_menu_is_null_unless_copied_and_has_the_shape_of_a_copy(pool: PgPool) {
+    // 列を知らない（古い版の）INSERT の予約は NULL（メニューなしの予約）
+    let booking_id = book(&pool, &slot(&pool).await, &student(&pool).await)
+        .await
+        .unwrap();
+    let copy: (Option<Uuid>, Option<String>, Option<i16>) = sqlx::query_as(
+        "SELECT lesson_menu_id, lesson_menu_name, lesson_menu_duration_minutes
+         FROM scheduling.bookings WHERE booking_id = $1::uuid",
+    )
+    .bind(&booking_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(copy, (None, None, None));
+
+    let set_copy = |id: Option<Uuid>, name: Option<&'static str>, minutes: Option<i16>| {
+        sqlx::query(
+            "UPDATE scheduling.bookings
+             SET lesson_menu_id = $2, lesson_menu_name = $3, lesson_menu_duration_minutes = $4
+             WHERE booking_id = $1::uuid",
+        )
+        .bind(&booking_id)
+        .bind(id)
+        .bind(name)
+        .bind(minutes)
+        .execute(&pool)
+    };
+    // メニューは catalog の持ち物なので外部キーは張らない（ない ID も入る）。時間は非同期だったメニューなら NULL
+    let id = Some(Uuid::new_v4());
+    for (name, minutes) in [
+        ("フォア改善", Some(15)),
+        ("フォア改善", Some(120)),
+        ("フォア改善", None),
+        (
+            "あいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあいうえおかきくけこ",
+            Some(60),
+        ),
+    ] {
+        set_copy(id, Some(name), minutes).await.unwrap();
+    }
+    set_copy(None, None, None).await.unwrap();
+
+    for (id, name, minutes, expected) in [
+        (id, None, Some(60), "bookings_lesson_menu_shape"),
+        (
+            None,
+            Some("フォア改善"),
+            Some(60),
+            "bookings_lesson_menu_shape",
+        ),
+        (None, None, Some(60), "bookings_lesson_menu_shape"),
+        (id, Some(" "), Some(60), "bookings_lesson_menu_name_check"),
+        (
+            id,
+            Some(
+                "あいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあ",
+            ),
+            Some(60),
+            "bookings_lesson_menu_name_check",
+        ),
+        (
+            id,
+            Some("フォア改善"),
+            Some(0),
+            "bookings_lesson_menu_duration_check",
+        ),
+        (
+            id,
+            Some("フォア改善"),
+            Some(50),
+            "bookings_lesson_menu_duration_check",
+        ),
+        (
+            id,
+            Some("フォア改善"),
+            Some(135),
+            "bookings_lesson_menu_duration_check",
+        ),
+    ] {
+        let (code, constraint) = violation(set_copy(id, name, minutes).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected),
+            "{name:?} {minutes:?}"
+        );
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn only_students_can_book(pool: PgPool) {
     let slot_id = slot(&pool).await;
     let coach_id = coach(&pool).await;

@@ -116,7 +116,12 @@ fn app() -> App {
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock,
         ),
-        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+        CreateBooking::new(
+            bookings.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock,
+        ),
         ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),

@@ -1,7 +1,10 @@
 use std::time::SystemTime;
 
-use super::{BookingId, BookingStatus, CancellationDecision, CancellationPolicy, Slot, SlotId};
-use crate::{DomainError, identity::AccountId};
+use super::{
+    BookingId, BookingLessonMenu, BookingStatus, CancellationDecision, CancellationPolicy, Slot,
+    SlotId,
+};
+use crate::{DomainError, catalog::LessonMenu, identity::AccountId};
 
 /// 予約（glossary の booking）。生徒によるスロットの確保で、体験予約（`is_trial`）もこれ。
 ///
@@ -9,6 +12,9 @@ use crate::{DomainError, identity::AccountId};
 /// その席が確定になる（確定した予約が定員に達したスロットは [`SlotStatus::Booked`](super::SlotStatus::Booked)）。キャンセル
 /// （[`Booking::cancel`]）すると [`BookingStatus::Cancelled`] になり、席が空いてスロットは公開中に戻る。コーチと開始時刻は予約したスロットのもの。
 /// 予約しても受講権は消費しない（product-context の用語の注意）。
+///
+/// 予約した時点でスロットに結びついていたレッスンメニュー（[`BookingLessonMenu`]）の写しを任意で持つ
+/// （[`Booking::with_lesson_menu`]）。予約した後にメニューが直されても写しは変わらない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Booking {
     id: BookingId,
@@ -21,6 +27,7 @@ pub struct Booking {
     created_at: SystemTime,
     confirmed_at: Option<SystemTime>,
     cancelled_at: Option<SystemTime>,
+    lesson_menu: Option<BookingLessonMenu>,
 }
 
 impl Booking {
@@ -63,7 +70,32 @@ impl Booking {
             created_at: now,
             confirmed_at: None,
             cancelled_at: None,
+            lesson_menu: None,
         })
+    }
+
+    /// 作ったばかりの予約（[`Booking::reserve`] の結果）に、予約したスロット `slot` に結びついたレッスンメニュー
+    /// `menu`（catalog から引いた今のメニュー。引けなければ `None`）の写しを残す。
+    ///
+    /// 写すのは、`slot` がこの予約のスロットで、`menu` がそのスロットに結びついたメニュー（同じ ID）で、公開中の
+    /// ときだけ。それ以外（スロットにメニューがない・メニューが引けない・公開中でない）はメニューなしの予約にする
+    /// （予約は断らない）。予約した後のメニューの変更は写しに映さないので、呼ぶのは予約の作成のときだけ。
+    pub fn with_lesson_menu(mut self, slot: &Slot, menu: Option<&LessonMenu>) -> Self {
+        self.lesson_menu = menu
+            .filter(|menu| {
+                slot.id() == self.slot_id
+                    && slot.lesson_menu_id() == Some(menu.id())
+                    && menu.is_published()
+            })
+            .map(BookingLessonMenu::copy_of);
+        self
+    }
+
+    /// 保存先から読んだ予約に、予約した時点のレッスンメニューの写しを戻す（保存先の実装用。写したときに
+    /// [`Booking::with_lesson_menu`] で確かめているので、ここでは確かめない）。
+    pub fn with_restored_lesson_menu(mut self, lesson_menu: Option<BookingLessonMenu>) -> Self {
+        self.lesson_menu = lesson_menu;
+        self
     }
 
     /// 保存先から読んだ予約を組み立てる（保存先の実装用）。コーチと開始時刻は予約したスロット `slot` のもの。
@@ -92,6 +124,7 @@ impl Booking {
             created_at,
             confirmed_at,
             cancelled_at,
+            lesson_menu: None,
         }
     }
 
@@ -201,6 +234,11 @@ impl Booking {
     /// キャンセルした時刻。キャンセルするまでは `None`。
     pub const fn cancelled_at(&self) -> Option<SystemTime> {
         self.cancelled_at
+    }
+
+    /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
+    pub const fn lesson_menu(&self) -> Option<&BookingLessonMenu> {
+        self.lesson_menu.as_ref()
     }
 }
 
@@ -609,5 +647,118 @@ mod tests {
         );
 
         assert_eq!(restored, booking);
+    }
+
+    fn lesson_menu(id: u128, coach: AccountId, is_published: bool) -> LessonMenu {
+        use crate::catalog::{
+            LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuName,
+        };
+        LessonMenu::restore(
+            crate::catalog::LessonMenuId::from_u128(id),
+            coach,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+                name: LessonMenuName::new("フォア改善").unwrap(),
+                description: LessonMenuDescription::new("").unwrap(),
+            },
+            is_published,
+            NOW,
+        )
+    }
+
+    /// 公開中のメニュー 50 に結びついた、開始 10 時・1 時間の公開中の枠。
+    fn slot_with_menu() -> Slot {
+        let open = slot(10, SlotStatus::Open);
+        Slot::publish(
+            open.id(),
+            COACH,
+            Sport::Tennis,
+            open.starts_at(),
+            open.ends_at(),
+            SlotCapacity::ONE,
+        )
+        .unwrap()
+        .with_lesson_menu(&lesson_menu(50, COACH, true))
+        .unwrap()
+    }
+
+    #[test]
+    fn reserved_booking_has_no_lesson_menu() {
+        let mut slot = slot_with_menu();
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert_eq!(booking.lesson_menu(), None);
+    }
+
+    #[test]
+    fn booking_copies_the_published_lesson_menu_of_its_slot() {
+        let mut slot = slot_with_menu();
+        let menu = lesson_menu(50, COACH, true);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[])
+            .unwrap()
+            .with_lesson_menu(&slot, Some(&menu));
+        assert_eq!(
+            booking.lesson_menu(),
+            Some(&BookingLessonMenu::copy_of(&menu))
+        );
+        assert_eq!(booking.status(), BookingStatus::Pending);
+
+        // 予約した後にメニューが直されても、写しは変わらない（確定・キャンセルでも残る）
+        let mut confirmed = booking.clone();
+        confirmed.confirm(STUDENT, &mut slot, at(1)).unwrap();
+        assert_eq!(confirmed.lesson_menu(), booking.lesson_menu());
+        confirmed.cancel(STUDENT, &mut slot, at(2)).unwrap();
+        assert_eq!(confirmed.lesson_menu(), booking.lesson_menu());
+    }
+
+    #[test]
+    fn booking_without_a_copyable_menu_has_no_lesson_menu() {
+        let with_menu = slot_with_menu();
+        let without_menu = slot(10, SlotStatus::Open);
+        for (slot, menu) in [
+            // 公開中でない（予約は断らず、メニューなしの予約）
+            (with_menu.clone(), Some(lesson_menu(50, COACH, false))),
+            // 枠に結びついたメニューでない
+            (with_menu.clone(), Some(lesson_menu(51, COACH, true))),
+            // catalog から引けない
+            (with_menu.clone(), None),
+            // 枠にメニューがない
+            (without_menu, Some(lesson_menu(50, COACH, true))),
+        ] {
+            let mut reserved_slot = slot.clone();
+            let booking = reserve(1, STUDENT, false, &mut reserved_slot, &[])
+                .unwrap()
+                .with_lesson_menu(&slot, menu.as_ref());
+            assert_eq!(booking.lesson_menu(), None, "{menu:?}");
+        }
+
+        // 別のスロット
+        let mut slot = with_menu;
+        let other = Slot::publish(
+            SlotId::from_u128(11),
+            COACH,
+            Sport::Tennis,
+            at(11),
+            at(12),
+            SlotCapacity::ONE,
+        )
+        .unwrap()
+        .with_lesson_menu(&lesson_menu(50, COACH, true))
+        .unwrap();
+        let booking = reserve(1, STUDENT, false, &mut slot, &[])
+            .unwrap()
+            .with_lesson_menu(&other, Some(&lesson_menu(50, COACH, true)));
+        assert_eq!(booking.lesson_menu(), None);
+    }
+
+    #[test]
+    fn restored_lesson_menu_is_kept() {
+        let mut slot = slot_with_menu();
+        let copy = BookingLessonMenu::copy_of(&lesson_menu(50, COACH, true));
+        let booking = reserve(1, STUDENT, false, &mut slot, &[])
+            .unwrap()
+            .with_restored_lesson_menu(Some(copy.clone()));
+        assert_eq!(booking.lesson_menu(), Some(&copy));
+        assert_eq!(booking.with_restored_lesson_menu(None).lesson_menu(), None);
     }
 }

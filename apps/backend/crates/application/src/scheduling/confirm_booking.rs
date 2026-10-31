@@ -145,10 +145,12 @@ mod tests {
 
     use super::*;
     use crate::{
+        catalog::CatalogLessonMenuLookup,
         entitlement::{EntitlementQuotaGate, calendar_month},
         in_memory::{
             FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
-            InMemorySlotRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+            InMemoryLessonMenuRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+            RecordingDomainEventPublisher,
         },
         scheduling::{CreateBooking, CreateBookingCommand},
     };
@@ -191,6 +193,7 @@ mod tests {
         let bookings = InMemoryBookingRepository::new(slots);
         let booking = CreateBooking::new(
             bookings.clone(),
+            CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         )

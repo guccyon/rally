@@ -99,7 +99,12 @@ where
             analytics.clone(),
             clock.clone(),
         );
-        let create = CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone());
+        let create = CreateBooking::new(
+            bookings.clone(),
+            CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
+            analytics.clone(),
+            clock.clone(),
+        );
         let confirm = ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(entitlements.clone()),

@@ -1,10 +1,13 @@
+use std::collections::BTreeSet;
+
 use domain::{
     DomainError,
+    catalog::LessonMenu,
     identity::AccountId,
     scheduling::{Booking, SlotId},
 };
 
-use super::{BookingRepository, ReserveSlotError};
+use super::{BookingRepository, LessonMenuLookup, ReserveSlotError};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -36,22 +39,28 @@ pub enum CreateBookingError {
 /// だけ、有効な予約はスロットの定員まで、同じ生徒は同じスロットに 1 つ、体験予約は初回だけ）を確かめて、
 /// 確定前（`pending`）の予約を保存する。スロットはまだ埋めない（確定した予約が定員に達すると埋まる。
 /// [`super::ConfirmBooking`]）。受講権も消費しない（ビデオ通話の暦月の枠は生徒ごとの予約の確定で数える）。
+/// 予約には、スロットに結びついたレッスンメニューを catalog に問い合わせて（[`LessonMenuLookup`]）、予約した時点の
+/// ID・名前・1 回の時間を写して残す（[`Booking::with_lesson_menu`]。公開中でないメニューはメニューなしの予約にし、
+/// 予約は断らない）。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
-pub struct CreateBooking<B, A, C> {
+pub struct CreateBooking<B, M, A, C> {
     bookings: B,
+    lesson_menus: M,
     analytics: A,
     clock: C,
 }
 
-impl<B, A, C> CreateBooking<B, A, C>
+impl<B, M, A, C> CreateBooking<B, M, A, C>
 where
     B: BookingRepository,
+    M: LessonMenuLookup,
     A: AnalyticsSink,
     C: Clock,
 {
-    pub fn new(bookings: B, analytics: A, clock: C) -> Self {
+    pub fn new(bookings: B, lesson_menus: M, analytics: A, clock: C) -> Self {
         Self {
             bookings,
+            lesson_menus,
             analytics,
             clock,
         }
@@ -69,10 +78,15 @@ where
             is_trial,
         } = command;
 
+        let lesson_menu = self
+            .slot_lesson_menu(slot_id)
+            .await
+            .map_err(CreateBookingError::Unavailable)?;
         let booking = self
             .bookings
             .reserve(slot_id, student_id, |slot, existing| {
                 Booking::reserve(id, student_id, is_trial, slot, existing, now)
+                    .map(|booking| booking.with_lesson_menu(slot, lesson_menu.as_ref()))
             })
             .await
             .map_err(|error| match error {
@@ -95,6 +109,24 @@ where
         Ok(booking)
     }
 
+    /// スロットに結びついたレッスンメニュー（公開中かを問わない。写すかの判定は domain）。スロットがない・メニューが
+    /// ない・catalog に引けないなら `None`（ないスロットは続く予約で [`CreateBookingError::SlotNotFound`] になる）。
+    async fn slot_lesson_menu(&self, slot_id: SlotId) -> Result<Option<LessonMenu>, Unavailable> {
+        let Some(lesson_menu_id) = self
+            .bookings
+            .find_slot(slot_id)
+            .await?
+            .and_then(|slot| slot.lesson_menu_id())
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .lesson_menus
+            .find_lesson_menus(&BTreeSet::from([lesson_menu_id]))
+            .await?
+            .remove(&lesson_menu_id))
+    }
+
     pub fn bookings(&self) -> &B {
         &self.bookings
     }
@@ -109,19 +141,32 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::{
+            LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+            LessonMenuName,
+        },
         identity::Sport,
-        scheduling::{BookingId, BookingStatus, Slot, SlotCapacity, SlotSeats, SlotStatus},
+        scheduling::{
+            BookingId, BookingLessonMenu, BookingStatus, Slot, SlotCapacity, SlotSeats, SlotStatus,
+        },
     };
 
     use super::*;
     use crate::{
+        catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
         in_memory::{
-            FixedClock, InMemoryBookingRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+            FixedClock, InMemoryBookingRepository, InMemoryLessonMenuRepository,
+            InMemorySlotRepository, RecordingAnalyticsSink,
         },
         scheduling::UpdateBookingError,
     };
 
-    type UseCase = CreateBooking<InMemoryBookingRepository, RecordingAnalyticsSink, FixedClock>;
+    type UseCase = CreateBooking<
+        InMemoryBookingRepository,
+        CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
+        RecordingAnalyticsSink,
+        FixedClock,
+    >;
 
     const NOW: SystemTime = SystemTime::UNIX_EPOCH;
     const COACH: AccountId = AccountId::from_u128(7);
@@ -163,8 +208,47 @@ mod tests {
         .unwrap()
     }
 
+    /// 1 回 60 分の同期のレッスンメニュー（コーチ 7・テニス）。
+    fn lesson_menu(id: u128, name: &str, is_published: bool) -> LessonMenu {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            COACH,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+                name: LessonMenuName::new(name).unwrap(),
+                description: LessonMenuDescription::new("").unwrap(),
+            },
+            is_published,
+            NOW,
+        )
+    }
+
+    /// 公開中の枠 `id` を、公開した時点のメニュー `menu` に結びつける（結びつけた後にメニューが直されたことは
+    /// 保存先のメニューで表す）。
+    fn slot_with_menu(id: u128, menu: u128) -> Slot {
+        let open = slot(id, SlotStatus::Open);
+        Slot::publish(
+            open.id(),
+            COACH,
+            Sport::Tennis,
+            open.starts_at(),
+            open.ends_at(),
+            SlotCapacity::ONE,
+        )
+        .unwrap()
+        .with_lesson_menu(&lesson_menu(menu, "公開した時点", true))
+        .unwrap()
+    }
+
     /// スロット 10・11・14 は公開中、12 は予約で埋まり、13 は閉じている。15 は定員 3 の公開中の枠。
+    /// 16 は公開中のメニュー 50、17 は非公開に直したメニュー 51、18 は catalog にないメニュー 52 に結びついた公開中の枠。
     fn use_case() -> UseCase {
+        use_case_and_menus().0
+    }
+
+    /// [`use_case`] と、その catalog のメニューの保存先（複製は同じ中身を共有する）。
+    fn use_case_and_menus() -> (UseCase, InMemoryLessonMenuRepository) {
         let slots = InMemorySlotRepository::with_slots([
             slot(10, SlotStatus::Open),
             slot(11, SlotStatus::Open),
@@ -172,12 +256,21 @@ mod tests {
             slot(13, SlotStatus::Closed),
             slot(14, SlotStatus::Open),
             group_slot(15, 3),
+            slot_with_menu(16, 50),
+            slot_with_menu(17, 51),
+            slot_with_menu(18, 52),
         ]);
-        CreateBooking::new(
+        let menus = InMemoryLessonMenuRepository::with_menus([
+            lesson_menu(50, "フォア改善", true),
+            lesson_menu(51, "非公開に直した", false),
+        ]);
+        let use_case = CreateBooking::new(
             InMemoryBookingRepository::new(slots),
+            CatalogLessonMenuLookup::new(menus.clone()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
-        )
+        );
+        (use_case, menus)
     }
 
     fn command(student_id: AccountId, slot: u128, is_trial: bool) -> CreateBookingCommand {
@@ -203,6 +296,7 @@ mod tests {
 
         assert_eq!(booking.status(), BookingStatus::Pending);
         assert_eq!(booking.coach_id(), COACH);
+        assert_eq!(booking.lesson_menu(), None, "メニューのない枠");
         assert_eq!(use_case.bookings().all(), vec![booking.clone()]);
         assert_eq!(
             use_case.bookings().slots().all()[0].status(),
@@ -222,6 +316,41 @@ mod tests {
             }]
         );
         assert_eq!(events[0].name(), "booking.created");
+    }
+
+    #[tokio::test]
+    async fn booking_copies_the_published_lesson_menu_of_the_slot_at_the_time_of_booking() {
+        let (use_case, menus) = use_case_and_menus();
+
+        let booking = use_case.execute(command(STUDENT, 16, false)).await.unwrap();
+
+        let expected = BookingLessonMenu::copy_of(&lesson_menu(50, "フォア改善", true));
+        assert_eq!(booking.lesson_menu(), Some(&expected), "今のメニューを写す");
+        assert_eq!(use_case.bookings().all(), vec![booking.clone()]);
+
+        // 予約した後にメニューを直しても、予約の写しは予約した時点のまま
+        menus
+            .update(lesson_menu(50, "直した名前", true))
+            .await
+            .unwrap();
+        let stored = use_case.bookings().find(booking.id()).await.unwrap();
+        assert_eq!(stored.unwrap().lesson_menu(), Some(&expected));
+        assert_eq!(use_case.analytics().events().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lesson_menu_that_is_not_published_or_missing_is_not_copied_but_booking_is_accepted() {
+        let use_case = use_case();
+        for (student, slot) in [(STUDENT, 17), (OTHER_STUDENT, 18)] {
+            let booking = use_case
+                .execute(command(student, slot, false))
+                .await
+                .unwrap();
+            assert_eq!(booking.status(), BookingStatus::Pending);
+            assert_eq!(booking.lesson_menu(), None, "スロット {slot}");
+        }
+        assert_eq!(use_case.bookings().all().len(), 2);
+        assert_eq!(use_case.analytics().events().len(), 2);
     }
 
     #[tokio::test]
@@ -335,6 +464,10 @@ mod tests {
             BookingId::from_u128(1)
         }
 
+        async fn find_slot(&self, _slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn find(&self, _booking_id: BookingId) -> Result<Option<Booking>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
@@ -393,6 +526,7 @@ mod tests {
     async fn storage_failure_is_unavailable_and_nothing_is_emitted() {
         let use_case = CreateBooking::new(
             BrokenRepository,
+            CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );

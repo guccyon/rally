@@ -543,7 +543,7 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
     assert_eq!(found, vec![bound.clone(), plain.clone()]);
     assert_eq!(found[1].lesson_menu_id(), None);
 
-    // 予約の保存先が読むスロットにも戻る（予約はメニューを引き継がない）
+    // 予約の保存先が読むスロットにも戻る（予約が写すメニューは tests/pg_booking_repository.rs）
     let bookings = PgBookingRepository::new(pool.clone());
     let id = bookings.next_id();
     bookings
