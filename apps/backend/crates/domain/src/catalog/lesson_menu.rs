@@ -3,7 +3,8 @@ use std::time::SystemTime;
 use super::{LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName};
 use crate::{
     DomainError,
-    identity::{AccountId, Coach, Sport},
+    catalog::Sport,
+    identity::{AccountId, Coach},
 };
 
 /// コーチのレッスンメニュー（glossary の lesson「レッスン種別」）。集約。

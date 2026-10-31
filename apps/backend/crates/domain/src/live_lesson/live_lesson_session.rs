@@ -332,7 +332,7 @@ fn linked(
 mod tests {
     use super::*;
     use crate::{
-        identity::Sport,
+        catalog::Sport,
         scheduling::{Slot, SlotId, SlotStatus},
     };
 

@@ -74,7 +74,7 @@ mod tests {
     };
 
     use domain::{
-        identity::Sport,
+        catalog::Sport,
         scheduling::{Booking, Slot, SlotStatus},
     };
 

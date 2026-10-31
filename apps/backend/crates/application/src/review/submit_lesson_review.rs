@@ -128,7 +128,7 @@ mod tests {
 
     use domain::{
         async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
-        identity::Sport,
+        catalog::Sport,
         lesson::LessonCompletion,
     };
 

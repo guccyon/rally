@@ -12,10 +12,7 @@ use axum::{
     http::{HeaderMap, Method, StatusCode, Uri},
     response::IntoResponse,
 };
-use domain::{
-    identity::{AccountId, Sport},
-    scheduling::SlotId,
-};
+use domain::{catalog::Sport, identity::AccountId, scheduling::SlotId};
 use infra::{AnalyticsCommonAttributes, ObjectStoreAnalyticsSink, analytics_event_payload::line};
 use object_store::{ObjectStore, memory::InMemory, path::Path};
 use uuid::Uuid;

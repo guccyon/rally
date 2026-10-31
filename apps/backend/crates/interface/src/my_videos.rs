@@ -7,7 +7,7 @@ use application::{
     identity::account_id_uuid,
 };
 use axum::{Json, extract::State};
-use domain::identity::Sport;
+use domain::catalog::Sport;
 use serde::Serialize;
 
 use crate::{

@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use domain::identity::{AccountId, Sport};
+use domain::{catalog::Sport, identity::AccountId};
 
 use super::SlotCursor;
 

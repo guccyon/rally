@@ -1,11 +1,7 @@
 use super::{
     ContractType, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
 };
-use crate::{
-    DomainError,
-    identity::{AccountId, Sport},
-    scheduling::BookingId,
-};
+use crate::{DomainError, catalog::Sport, identity::AccountId, scheduling::BookingId};
 
 /// 受講権（glossary の entitlement）。契約種別と利用権の総称。
 ///

@@ -9,10 +9,7 @@ use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
     in_memory::{FixedClock, RecordingAnalyticsSink},
 };
-use domain::{
-    identity::{Role, Sport},
-    profile::CoachBio,
-};
+use domain::{catalog::Sport, identity::Role, profile::CoachBio};
 use infra::PgAccountRepository;
 use sqlx::{PgPool, types::Uuid};
 

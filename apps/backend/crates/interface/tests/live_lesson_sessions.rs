@@ -33,7 +33,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    identity::{AccountId, Role, Sport},
+    catalog::Sport,
+    identity::{AccountId, Role},
     live_lesson::{ConnectionQuality, SessionId},
     scheduling::{BookingId, Slot, SlotId, SlotStatus},
 };

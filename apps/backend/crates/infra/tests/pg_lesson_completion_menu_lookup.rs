@@ -16,11 +16,12 @@ use application::{
 };
 use domain::{
     async_lesson::{ReviewComment, Video},
+    catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuId, LessonMenuName,
     },
-    identity::{AccountId, Sport},
+    identity::AccountId,
     lesson::LessonCompletion,
     live_lesson::LiveLessonSession,
     review::ReviewLessonMenu,

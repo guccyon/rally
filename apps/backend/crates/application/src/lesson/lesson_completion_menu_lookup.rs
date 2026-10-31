@@ -86,8 +86,9 @@ mod tests {
 
     use domain::{
         async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+        catalog::Sport,
         catalog::{LessonDuration, LessonMenuId, LessonMenuName},
-        identity::{AccountId, Sport},
+        identity::AccountId,
         lesson::LessonCompletion,
         live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
         scheduling::{Booking, BookingId, BookingLessonMenu, Slot, SlotCapacity, SlotId},

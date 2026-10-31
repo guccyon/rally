@@ -9,7 +9,6 @@ mod coach;
 mod email;
 mod profile;
 mod role;
-mod sport;
 mod student;
 
 pub use account::Account;
@@ -18,5 +17,4 @@ pub use coach::Coach;
 pub use email::Email;
 pub use profile::Profile;
 pub use role::Role;
-pub use sport::Sport;
 pub use student::Student;

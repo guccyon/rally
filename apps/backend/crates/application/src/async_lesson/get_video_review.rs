@@ -58,7 +58,7 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::{async_lesson::VideoStatus, identity::Sport};
+    use domain::{async_lesson::VideoStatus, catalog::Sport};
 
     use super::*;
     use crate::in_memory::InMemoryVideoRepository;

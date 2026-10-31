@@ -21,8 +21,9 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    catalog::Sport,
     catalog::{LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName},
-    identity::{Account, AccountId, Email, Role, Sport},
+    identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
 };
 use serde_json::{Value, json};

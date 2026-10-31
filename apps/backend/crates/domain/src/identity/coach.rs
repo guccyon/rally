@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
-use super::{Role, Sport};
+use super::Role;
+use crate::catalog::Sport;
 use crate::{DomainError, profile::CoachBio};
 
 /// コーチの値オブジェクト。提供スポーツの集合（空ではない）と自己紹介文を持つ。

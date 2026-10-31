@@ -42,10 +42,11 @@ use axum::{
 };
 use domain::{
     async_lesson::{VideoId, VideoReviewId},
+    catalog::Sport,
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
-    identity::{AccountId, Role, Sport},
+    identity::{AccountId, Role},
     messaging::{
         Message, MessageAuthor, MessageBody, MessageContent, MessageId, MessageSender,
         MessageThread, MessageThreadId,

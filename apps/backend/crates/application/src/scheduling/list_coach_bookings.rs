@@ -57,7 +57,7 @@ mod tests {
     };
 
     use domain::{
-        identity::Sport,
+        catalog::Sport,
         profile::DisplayName,
         scheduling::{Booking, BookingStatus, Slot, SlotId, SlotStatus},
     };

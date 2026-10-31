@@ -130,7 +130,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        identity::Sport,
+        catalog::Sport,
         live_lesson::{ConnectionQuality, SessionStatus},
         scheduling::{Booking, BookingId, Slot, SlotId, SlotStatus},
     };

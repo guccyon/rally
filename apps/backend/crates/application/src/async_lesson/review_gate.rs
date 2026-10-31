@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use domain::{async_lesson::VideoId, identity::Sport};
+use domain::{async_lesson::VideoId, catalog::Sport};
 
 use crate::Unavailable;
 

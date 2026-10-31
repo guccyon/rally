@@ -45,11 +45,12 @@ use axum::{
 };
 use domain::{
     async_lesson::{Video, VideoId},
+    catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuId, LessonMenuName,
     },
-    identity::{Account, AccountId, Email, Role, Sport},
+    identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
 };
 use serde_json::{Value, json};

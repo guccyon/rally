@@ -239,7 +239,7 @@ const fn booking_status_label(status: BookingStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::identity::Sport;
+    use domain::catalog::Sport;
 
     #[test]
     fn describes_each_domain_error() {
@@ -521,7 +521,7 @@ mod tests {
         );
         assert_eq!(
             domain_error(&DomainError::SportNotOfferedByCoach {
-                sport: domain::identity::Sport::Golf
+                sport: domain::catalog::Sport::Golf
             }),
             "コーチの提供スポーツでない（golf）"
         );

@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use domain::identity::Sport;
+use domain::catalog::Sport;
 use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
 
 use crate::{CoachPlan, Retention, SlotPlan, Step, StudentPlan};

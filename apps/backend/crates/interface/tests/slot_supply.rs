@@ -30,7 +30,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    identity::{AccountId, Role, Sport},
+    catalog::Sport,
+    identity::{AccountId, Role},
     scheduling::{Booking, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};

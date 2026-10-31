@@ -6,7 +6,8 @@ use application::{
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
 };
 use domain::{
-    identity::{Account, AccountId, Coach, Email, Profile, Role, Sport},
+    catalog::Sport,
+    identity::{Account, AccountId, Coach, Email, Profile, Role},
     profile::{CoachBio, DisplayName},
 };
 use sqlx::{

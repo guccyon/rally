@@ -91,8 +91,9 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::Sport,
         catalog::{LessonFormat, LessonMenuDescription, LessonMenuName},
-        identity::{Account, Email, Role, Sport},
+        identity::{Account, Email, Role},
         profile::DisplayName,
     };
 

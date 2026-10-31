@@ -19,8 +19,9 @@ use application::{
 };
 use domain::{
     DomainError,
+    catalog::Sport,
     entitlement::{ContractType, SubscriptionPlan, YearMonth},
-    identity::{AccountId, Sport},
+    identity::AccountId,
     scheduling::BookingId,
 };
 use infra::PgEntitlementRepository;

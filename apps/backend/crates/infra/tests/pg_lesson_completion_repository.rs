@@ -14,7 +14,8 @@ use application::{
 use domain::{
     DomainError,
     async_lesson::{ReviewComment, Video},
-    identity::{AccountId, Sport},
+    catalog::Sport,
+    identity::AccountId,
     lesson::LessonType,
 };
 use infra::{PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgVideoRepository};

@@ -28,7 +28,8 @@ mod tests {
     use std::time::SystemTime;
 
     use domain::{
-        identity::{AccountId, Email, Role, Sport},
+        catalog::Sport,
+        identity::{AccountId, Email, Role},
         profile::DisplayName,
     };
 

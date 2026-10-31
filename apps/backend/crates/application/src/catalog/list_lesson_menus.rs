@@ -1,9 +1,6 @@
 use std::collections::BTreeSet;
 
-use domain::{
-    catalog::LessonMenu,
-    identity::{AccountId, Sport},
-};
+use domain::{catalog::LessonMenu, catalog::Sport, identity::AccountId};
 
 use super::{CoachLessonMenuList, LessonMenuCoachDisplayNameLookup, LessonMenuRepository};
 use crate::Unavailable;

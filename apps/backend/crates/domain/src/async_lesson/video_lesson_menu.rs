@@ -39,8 +39,9 @@ mod tests {
 
     use super::*;
     use crate::{
+        catalog::Sport,
         catalog::{LessonFormat, LessonMenuContent, LessonMenuDescription},
-        identity::{AccountId, Sport},
+        identity::AccountId,
     };
 
     fn menu(name: &str) -> LessonMenu {

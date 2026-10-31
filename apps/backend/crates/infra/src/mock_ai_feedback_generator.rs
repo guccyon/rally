@@ -4,7 +4,7 @@ use application::{
     Unavailable,
     async_lesson::{AiFeedbackGenerator, AiFeedbackRequest},
 };
-use domain::identity::Sport;
+use domain::catalog::Sport;
 
 /// [`AiFeedbackGenerator`] のモック。本物の AI は呼ばず（外に出ない）、動画のスポーツごとの決まった文
 /// （[`MockAiFeedbackGenerator::comment_for`]）を返す。動画の ID・形式・生徒の一言は読まない。

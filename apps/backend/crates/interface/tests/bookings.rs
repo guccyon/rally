@@ -42,10 +42,11 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    catalog::Sport,
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
-    identity::{AccountId, Role, Sport},
+    identity::{AccountId, Role},
     scheduling::{BookingId, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};

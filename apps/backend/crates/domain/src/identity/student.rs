@@ -1,4 +1,4 @@
-use super::Sport;
+use crate::catalog::Sport;
 
 /// 生徒の値オブジェクト。レッスンを受けるスポーツを 1 つ持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]

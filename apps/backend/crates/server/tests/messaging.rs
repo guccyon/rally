@@ -29,7 +29,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{AccountId, Role, Sport};
+use domain::{
+    catalog::Sport,
+    identity::{AccountId, Role},
+};
 use infra::{MockTokenService, PgAccountRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;

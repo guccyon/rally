@@ -31,10 +31,10 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::Sport,
         catalog::{
             LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
         },
-        identity::Sport,
     };
 
     use super::*;

@@ -25,7 +25,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    identity::{AccountId, Role, Sport},
+    catalog::Sport,
+    identity::{AccountId, Role},
     lesson::LessonId,
     review::{LessonReview, LessonReviewComment, Rating},
 };
