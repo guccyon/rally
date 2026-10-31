@@ -35,6 +35,44 @@ void main() {
     expect(find.text('動画を送って添削を受ける'), findsOneWidget);
   });
 
+  testWidgets('予約した枠にメニューが結びついていれば、確定の前後にメニューの名前と 1 回の時間を出す', (tester) async {
+    final initial = StudentFlowState(
+      step: FlowStep.bookingPending,
+      student: Fixtures.student,
+      bookedSlot: Fixtures.slotWithCoach(lessonMenu: Fixtures.slotLessonMenu),
+      booking: Fixtures.bookingPending,
+    );
+    await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: FakeStudentApi(),
+      initial: initial,
+    );
+
+    const label = 'メニュー: フォアハンドの基礎（1 回 60 分）';
+    expect(find.text(label), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(label)).dy,
+      greaterThan(tester.getTopLeft(find.textContaining('開始: ')).dy),
+    );
+
+    await tapText(tester, '予約を確定する');
+
+    expect(find.text('予約が確定しました'), findsOneWidget);
+    expect(find.text(label), findsOneWidget);
+  });
+
+  testWidgets('メニューのない枠の予約には、今までどおりメニューを出さない', (tester) async {
+    await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: FakeStudentApi(),
+      initial: pending(),
+    );
+
+    expect(find.textContaining('メニュー'), findsNothing);
+  });
+
   testWidgets('通話か動画の送付を選ぶと、それぞれの画面に進む', (tester) async {
     final confirmed = pending().copyWith(booking: Fixtures.bookingConfirmed);
 

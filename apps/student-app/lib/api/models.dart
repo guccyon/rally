@@ -309,6 +309,7 @@ class Slot {
     this.remainingSeats = 1,
     this.coachDisplayName,
     this.coachBio,
+    this.lessonMenu,
   });
 
   final String slotId;
@@ -329,6 +330,9 @@ class Slot {
   /// コーチの自己紹介文（任意。自己紹介文を書いていないコーチはない）
   final String? coachBio;
 
+  /// 枠に結びついたコーチのレッスンメニュー（`searchSlots` だけが載せる。メニューのない枠と、メニューが公開中でない枠は null）
+  final SlotLessonMenu? lessonMenu;
+
   factory Slot.fromJson(Map<String, dynamic> json) => Slot(
     slotId: json['slot_id'] as String,
     coachId: json['coach_id'] as String,
@@ -339,6 +343,32 @@ class Slot {
     remainingSeats: json['remaining_seats'] as int,
     coachDisplayName: json['coach_display_name'] as String?,
     coachBio: json['coach_bio'] as String?,
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : SlotLessonMenu.fromJson(json['lesson_menu'] as Map<String, dynamic>),
+  );
+}
+
+/// `SlotLessonMenu`（枠に結びついたコーチのレッスンメニューの ID・名前・1 回の時間。中身の詳しくは [LessonMenu]）
+class SlotLessonMenu {
+  const SlotLessonMenu({
+    required this.lessonMenuId,
+    required this.name,
+    this.durationMinutes,
+  });
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  /// 同期レッスン 1 回の時間（分。15〜120 の 15 分刻み）。結びつけた後にメニューが非同期に直されたら null
+  final int? durationMinutes;
+
+  factory SlotLessonMenu.fromJson(Map<String, dynamic> json) => SlotLessonMenu(
+    lessonMenuId: json['lesson_menu_id'] as String,
+    name: json['name'] as String,
+    durationMinutes: json['duration_minutes'] as int?,
   );
 }
 

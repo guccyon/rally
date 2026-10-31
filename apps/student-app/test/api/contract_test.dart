@@ -149,7 +149,6 @@ void main() {
       'remaining_seats',
       'coach_display_name',
       'coach_bio',
-      // 枠に結びついたレッスンメニュー（#249）。Slot.fromJson で読むのは #251
       'lesson_menu',
     ]);
     final required = ((schemas['Slot'] as YamlMap)['required'] as YamlList)
@@ -165,6 +164,29 @@ void main() {
       ((schemas[schema] as YamlMap)['required'] as YamlList)
           .cast<String>()
           .toList();
+
+  test('枠のレッスンメニューの項目が契約と一致し、メニューのない枠は null である（searchSlots）', () {
+    final lessonMenu =
+        ((schemas['Slot'] as YamlMap)['properties'] as YamlMap)['lesson_menu']
+            as YamlMap;
+    final oneOf = (lessonMenu['oneOf'] as YamlList).cast<YamlMap>().toList();
+    expect(oneOf, hasLength(2));
+    expect(refOf(oneOf.first), '#/components/schemas/SlotLessonMenu');
+    expect(oneOf.last['type'], 'null');
+
+    // SlotLessonMenu.fromJson が読む項目
+    expect(propertiesOf('SlotLessonMenu'), [
+      'lesson_menu_id',
+      'name',
+      'duration_minutes',
+    ]);
+    expect(requiredOf('SlotLessonMenu'), propertiesOf('SlotLessonMenu'));
+    final duration =
+        ((schemas['SlotLessonMenu'] as YamlMap)['properties']
+                as YamlMap)['duration_minutes']
+            as YamlMap;
+    expect((duration['type'] as YamlList).cast<String>(), ['integer', 'null']);
+  });
 
   test('契約プランの項目が契約と一致する（startSubscription・getMyEntitlement）', () {
     // StartSubscriptionRequest.toJson が書く項目。plan は任意（省けば standard）
