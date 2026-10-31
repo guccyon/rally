@@ -22,6 +22,8 @@ export function headquartersApi(client: ApiClient) {
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     listStudents: () => call(() => client.GET("/students")),
+    listBookings: (period: { from?: string; to?: string }) =>
+      call(() => client.GET("/bookings", { params: { query: period } })),
   };
 }
 

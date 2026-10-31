@@ -70,4 +70,5 @@ export const SCREENS: Screen[] = [
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
+  { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
 ];

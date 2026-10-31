@@ -171,4 +171,28 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe("/api/lesson-reviews/low");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
+
+  test("listBookings は期間をクエリにして GET /api/bookings を呼ぶ", async () => {
+    const list = { from: "2026-10-26", to: "2026-11-01", bookings: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listBookings({ from: "2026-10-26", to: "2026-11-01" });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/bookings");
+    expect(url.searchParams.get("from")).toBe("2026-10-26");
+    expect(url.searchParams.get("to")).toBe("2026-11-01");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listBookings の 422 は入力の誤りの文言にする", async () => {
+    const { api } = setup(json(422, { code: "validation_failed", message: "to is before from" }));
+    const result = await api.listBookings({ from: "2026-10-26", to: "2026-10-25" });
+    expect(result).toEqual({
+      ok: false,
+      message: "入力の内容が正しくありません。",
+      code: "validation_failed",
+    });
+  });
 });
