@@ -30,7 +30,8 @@ info:
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
     本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る）。
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
-    本部のコーチの一覧（`listCoaches`）の 1 件ごとに載る。停止中のコーチは student-app の `searchSlots`・
+    本部のコーチの一覧（`listCoaches`）の 1 件ごとに載る。止めた・再開した記録（いつ・どの本部のアカウントが）は
+    コーチごとに新しい順に読む（`listCoachAcceptanceChanges`）。停止中のコーチは student-app の `searchSlots`・
     `listCoachesForStudent` に出ず、`createBooking` は 409 `coach_not_accepting_bookings`（入っている予約はそのまま）。
     本部はコーチ 1 人の表示名・受付の状態・評価の件数と平均・今月と先月のレッスンの実績・公開中のレッスンメニューの数を
     1 回で読む（`getCoachOverview`）。
@@ -569,6 +570,48 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /coaches/{coach_id}/acceptance-changes:
+    get:
+      operationId: listCoachAcceptanceChanges
+      summary: コーチの受付を止めた・再開した記録（本部）
+      description: |
+        コーチ 1 人の受付（glossary の coach_acceptance）を止めた（`suspendCoach`）・再開した（`resumeCoach`）記録を、
+        新しい順に返す。どのコーチの受付を、いつ、どの本部のアカウントが止めて・再開したかを、本部が後からたどるのに使う。
+        本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+
+        - 記録は `suspendCoach`・`resumeCoach` が受付を変えたとき 1 回につき 1 件で、書き換えない。409 で断られた操作は残らない
+        - 各記録の `acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）。`changed_by` は
+          操作した本部のアカウントの ID、`changed_at` は変えた時刻
+        - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
+        - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
+        - 絞り込み・ページング・件数の上限はない
+        - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+
+        境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: []
+      parameters:
+        - name: coach_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: コーチの受付を止めた・再開した記録
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachAcceptanceChangeList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /coaches/{coach_id}/overview:
     get:
@@ -1932,6 +1975,39 @@ components:
           description: コーチのアカウントの ID
         acceptance_status:
           $ref: "#/components/schemas/CoachAcceptanceStatus"
+
+    CoachAcceptanceChange:
+      type: object
+      description: |
+        コーチの受付を止めた・再開した記録 1 件（`listCoachAcceptanceChanges`）。`suspendCoach`・`resumeCoach` が受付を
+        変えたときに残り、書き換えない。`acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）
+      required: [acceptance_status, changed_by, changed_at]
+      properties:
+        acceptance_status:
+          $ref: "#/components/schemas/CoachAcceptanceStatus"
+        changed_by:
+          type: string
+          format: uuid
+          description: 止めた・再開した本部のアカウントの ID
+        changed_at:
+          type: string
+          format: date-time
+          description: 止めた・再開した時刻
+
+    CoachAcceptanceChangeList:
+      type: object
+      description: コーチ 1 人の受付を止めた・再開した記録の一覧（並べ方は `listCoachAcceptanceChanges` の説明）
+      required: [coach_id, changes]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+          description: コーチのアカウントの ID
+        changes:
+          type: array
+          description: 変えた時刻の新しい順（同じ時刻は後に記録した方が先）。記録がなければ空の配列
+          items:
+            $ref: "#/components/schemas/CoachAcceptanceChange"
 
     CoachList:
       type: object

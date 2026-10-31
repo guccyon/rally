@@ -130,6 +130,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "notification.notification_settings",
             "notification.notifications",
             "scheduling.bookings",
+            "scheduling.coach_acceptance_changes",
             "scheduling.coach_acceptances",
             "scheduling.slots",
         ]
@@ -862,6 +863,91 @@ async fn coach_acceptances_are_for_coaches_and_match_the_scheduling_values(pool:
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         ("23503", "coach_acceptances_coach_id_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_acceptance_changes_are_by_headquarters_for_coaches_and_match_the_scheduling_values(
+    pool: PgPool,
+) {
+    use domain::scheduling::CoachAcceptanceStatus;
+    use infra::scheduling_values::coach_acceptance_status_value;
+
+    let statuses: Vec<&str> = CoachAcceptanceStatus::ALL
+        .into_iter()
+        .map(coach_acceptance_status_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "scheduling.coach_acceptance_changes",
+            "coach_acceptance_changes_status_check"
+        )
+        .await,
+        statuses
+    );
+
+    let insert =
+        "INSERT INTO scheduling.coach_acceptance_changes (coach_id, status, changed_by, changed_at)
+                  VALUES ($1::uuid, $2, $3::uuid, now())";
+    let coach_id = coach(&pool).await;
+    let headquarters_id = account(&pool, "headquarters", None).await;
+    sqlx::query(insert)
+        .bind(&coach_id)
+        .bind("suspended")
+        .bind(&headquarters_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (code, constraint) = violation(
+        sqlx::query(insert)
+            .bind(&coach_id)
+            .bind("closed")
+            .bind(&headquarters_id)
+            .execute(&pool)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "coach_acceptance_changes_status_check")
+    );
+
+    // 操作したのは本部のアカウントだけ
+    let other_coach = coach(&pool).await;
+    let (code, constraint) = violation(
+        sqlx::query(insert)
+            .bind(&coach_id)
+            .bind("accepting")
+            .bind(&other_coach)
+            .execute(&pool)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "coach_acceptance_changes_changed_by_fkey"
+        )
+    );
+
+    // コーチでないアカウントの記録は入らない
+    let student_id = student(&pool).await;
+    let (code, constraint) = violation(
+        sqlx::query(insert)
+            .bind(&student_id)
+            .bind("suspended")
+            .bind(&headquarters_id)
+            .execute(&pool)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "coach_acceptance_changes_coach_id_fkey"
+        )
     );
 }
 

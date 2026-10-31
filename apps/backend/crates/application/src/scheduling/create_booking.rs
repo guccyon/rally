@@ -172,6 +172,9 @@ mod tests {
         scheduling::{CoachAcceptanceRepository, UpdateBookingError},
     };
 
+    /// 受付を止める・再開する本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
+
     type UseCase = CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
@@ -454,7 +457,9 @@ mod tests {
         let use_case = use_case();
         let acceptances = use_case.bookings().slots().coach_acceptances();
         acceptances
-            .update(COACH, CoachAcceptance::suspend)
+            .update(COACH, |a| {
+                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            })
             .await
             .unwrap();
 
@@ -479,7 +484,7 @@ mod tests {
         );
 
         acceptances
-            .update(COACH, CoachAcceptance::resume)
+            .update(COACH, |a| a.resume(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH))
             .await
             .unwrap();
         use_case.execute(command(STUDENT, 10, false)).await.unwrap();
