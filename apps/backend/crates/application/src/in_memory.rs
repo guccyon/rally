@@ -2,6 +2,7 @@
 //! 組み立てるまでのローカル起動に使う。プロセスが終われば消える。
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
     time::SystemTime,
 };
@@ -105,6 +106,22 @@ impl AccountRepository for InMemoryAccountRepository {
             (a.display_name().as_str(), a.id()).cmp(&(b.display_name().as_str(), b.id()))
         });
         Ok(coaches)
+    }
+
+    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+        let mut students: Vec<Account> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.as_student().is_some())
+            .cloned()
+            .collect();
+        students.sort_by(|a, b| {
+            (std::cmp::Reverse(a.registered_at()), a.id())
+                .cmp(&(std::cmp::Reverse(b.registered_at()), b.id()))
+        });
+        Ok(students)
     }
 
     async fn update_coach_bio(
@@ -419,6 +436,22 @@ impl BookingRepository for InMemoryBookingRepository {
                 Ok((b.clone(), slot.clone()))
             })
             .collect()
+    }
+
+    async fn last_booked_at_of_students(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, SystemTime>, Unavailable> {
+        let mut last = BTreeMap::new();
+        for booking in self.bookings.lock().unwrap().iter() {
+            if !student_ids.contains(&booking.student_id()) {
+                continue;
+            }
+            last.entry(booking.student_id())
+                .and_modify(|at: &mut SystemTime| *at = (*at).max(booking.created_at()))
+                .or_insert(booking.created_at());
+        }
+        Ok(last)
     }
 
     async fn bookings_of_coach(

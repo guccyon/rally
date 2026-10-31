@@ -484,6 +484,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/students": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生徒の一覧（本部）
+         * @description 生徒（glossary の student）の役割のアカウントをすべて、本部が生徒の様子を見るのに要る項目とともに返す。
+         *     どのスポーツか・受講権（glossary の entitlement）があるならその契約種別と契約プラン・最近予約しているか
+         *     （最後に予約した時刻）・いつ登録したかを並べる。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 並べ方: 登録した時刻 `registered_at` の新しい順。同じ時刻は `student_id` の順
+         *     - `contract_type` / `plan`: 生徒の受講権の契約種別と、元の月額契約のプラン（glossary の subscription_plan）。
+         *       受講権がない（まだ契約していない）生徒はどちらも null。ワンショットの受講権は `plan` が null
+         *     - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
+         *       キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
+         *     - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
+         *     - 絞り込み・ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で足す）。生徒がいなければ
+         *       `students` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listStudents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -837,6 +871,50 @@ export interface components {
         CoachList: {
             /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
             coaches: components["schemas"]["Coach"][];
+        };
+        /**
+         * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
+         * @enum {string}
+         */
+        ContractType: "subscription" | "one_shot";
+        /**
+         * @description glossary の subscription_plan（月額契約のプラン。student-app の `SubscriptionPlan` と同じ）。standard は暦月 2 回（既定）、
+         *     plus は暦月 4 回のビデオ通話の上限
+         * @enum {string}
+         */
+        SubscriptionPlan: "standard" | "plus";
+        /**
+         * @description 本部が見る生徒 1 人の様子（`listStudents`）。glossary の student の役割のアカウントに、受講権の契約種別と契約プラン、
+         *     最後に予約した時刻を添える。メールアドレスは持たない
+         */
+        Student: {
+            /**
+             * Format: uuid
+             * @description 生徒のアカウントの ID（他の操作の `student_id` と同じ値）
+             */
+            student_id: string;
+            /** @description 生徒の表示名 */
+            display_name: string;
+            sport: components["schemas"]["Sport"];
+            /** @description 受講権の契約種別。受講権がなければ null */
+            contract_type: components["schemas"]["ContractType"] | null;
+            /** @description 元の月額契約のプラン。受講権がない・ワンショットなら null */
+            plan: components["schemas"]["SubscriptionPlan"] | null;
+            /**
+             * Format: date-time
+             * @description 最後に予約を作った時刻（予約の状態を問わない）。予約がなければ null
+             */
+            last_booked_at: string | null;
+            /**
+             * Format: date-time
+             * @description アカウントを登録した時刻
+             */
+            registered_at: string;
+        };
+        /** @description 生徒の一覧（並べ方は `listStudents` の説明） */
+        StudentList: {
+            /** @description 登録した時刻の新しい順（同じ時刻は `student_id` の順） */
+            students: components["schemas"]["Student"][];
         };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
@@ -1689,6 +1767,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listStudents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生徒の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     startLiveLessonSession: {
