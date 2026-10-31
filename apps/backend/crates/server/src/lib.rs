@@ -33,8 +33,8 @@ use application::{
         RecordingAnalyticsSink,
     },
     lesson::{
-        LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository,
-        RecordLessonCompletion,
+        GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
+        LessonCompletionRepository, RecordLessonCompletion,
     },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -57,7 +57,7 @@ use application::{
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
-        ReviewCoachReviewSummaryLookup, SubmitLessonReview,
+        ReviewCoachReviewSummaryLookup, ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
@@ -354,6 +354,14 @@ where
         WithdrawSlot::new(slots.clone(), analytics.clone(), clock.clone()),
         MockTokenService,
     );
+    let lesson_stats = interface::lesson_stats_router(
+        GetMyLessonStats::new(
+            completions.clone(),
+            ReviewMonthlyReviewSummaryLookup::new(reviews.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -509,4 +517,5 @@ where
     .merge(my_profile)
     .merge(my_notifications)
     .merge(slot_withdrawal)
+    .merge(lesson_stats)
 }
