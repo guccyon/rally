@@ -8,9 +8,11 @@
 
 mod coach_acceptance_lookup;
 mod coach_favorite_lookup;
+mod coach_overview;
 mod coach_profile;
 mod coach_profile_repository;
 mod get_coach_bio;
+mod get_coach_overview;
 mod get_coach_profile;
 mod list_coaches;
 mod listed_coach;
@@ -24,9 +26,11 @@ mod update_student_profile;
 
 pub use coach_acceptance_lookup::CoachAcceptanceLookup;
 pub use coach_favorite_lookup::CoachFavoriteLookup;
+pub use coach_overview::CoachOverview;
 pub use coach_profile::CoachProfile;
 pub use coach_profile_repository::CoachProfileRepository;
 pub use get_coach_bio::GetCoachBio;
+pub use get_coach_overview::GetCoachOverview;
 pub use get_coach_profile::{GetCoachProfile, GetCoachProfileCommand};
 pub use list_coaches::ListCoaches;
 pub use listed_coach::ListedCoach;
