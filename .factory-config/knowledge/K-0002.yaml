@@ -1,0 +1,20 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  どの PR も書き足すファイル（CHANGELOG.md の [Unreleased]、apps/backend/README.md の構成の表の長い行）があると、
+  main が進むたびに既定ブランチとの衝突が起き、衝突を解く続きのジョブが繰り返されて、費用と PR 本文の乱れが増える
+scope:
+  paths: ["CHANGELOG.md", "apps/backend/README.md"]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "guccyon/rally#362"
+  - event: "case.analyzed:40354"
+status: draft
+verified_at: 2026-10-31
+review_by: 2026-11-30
+confidentiality: product
+related: [K-0001]
+# 提案（未実装。作用先 improvement_ticket）:
+#   CHANGELOG を PR ごとの断片ファイル（changelog.d/ など）に分け、README の構成の表は 1 項目 1 行の形に直す改善のチケットを起こす
