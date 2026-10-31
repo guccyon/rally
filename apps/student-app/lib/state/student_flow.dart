@@ -7,6 +7,7 @@ import '../api/student_api.dart';
 import 'chat.dart';
 import 'coach_profile.dart';
 import 'coach_search.dart';
+import 'lesson_completions.dart';
 import 'lesson_review.dart';
 import 'notifications.dart';
 import 'subscription.dart';
@@ -56,8 +57,15 @@ enum FlowStep {
   /// 自分が送った動画の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
   myVideos,
 
-  /// 自分の動画の一覧かホームの「返ってきた添削」から開いた、返却済みの動画の添削結果（閉じると開いた段に戻る）
-  myVideoReview;
+  /// 自分の動画の一覧かホームの「返ってきた添削」か受けたレッスンの動画添削の行から開いた、動画の添削結果（閉じると開いた段に戻る）
+  myVideoReview,
+
+  /// 受けたレッスン（完了したレッスンの一覧。ホームから開く。状態は [LessonCompletionsState]）。
+  /// 行からはまだ評価していないレッスンの評価と、動画添削の添削結果を開く
+  lessonCompletions,
+
+  /// 受けたレッスンのまだ評価していない行から開いた、そのレッスンの評価（評価するレッスンは [LessonCompletionsState.reviewing]）
+  lessonCompletionReview;
 
   bool get isChat => this == messageThreads || this == messages;
 
@@ -232,7 +240,7 @@ class StudentFlowState {
   /// 自分の動画の一覧から開いた動画の添削（`getVideoReview`）。一周シナリオの [review] とは別に持つ
   final VideoReview? myVideoReview;
 
-  /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧かホーム）
+  /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧・ホーム・受けたレッスン）
   final FlowStep? videoReviewReturnStep;
 
   /// `errorMessage` は引き継がない（渡さなければ消える）。[searchCoach] は [clearSearchCoach] で外す。
@@ -807,10 +815,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void closeMyVideos() =>
       state = state.copyWith(step: state.videosReturnStep ?? FlowStep.home);
 
-  /// 自分の動画の一覧かホームの「返ってきた添削」から、返却済みの動画の添削結果を開く（`getVideoReview`）。
-  /// 読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
-  Future<void> openMyVideoReview(MyVideo video) => run(() async {
-    final review = await _api.getVideoReview(video.videoId);
+  /// 自分の動画の一覧かホームの「返ってきた添削」か受けたレッスンの動画添削の行から、[videoId] の動画の添削結果を開く
+  /// （`getVideoReview`）。読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
+  Future<void> openMyVideoReview(String videoId) => run(() async {
+    final review = await _api.getVideoReview(videoId);
     state = state.copyWith(
       myVideoReview: review,
       videoReviewReturnStep: state.step,
@@ -818,7 +826,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧かホーム）に戻る
+  /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧・ホーム・受けたレッスン）に戻る
   void closeMyVideoReview() => state = state.copyWith(
     step: state.videoReviewReturnStep ?? FlowStep.myVideos,
   );

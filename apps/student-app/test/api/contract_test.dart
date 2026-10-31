@@ -112,6 +112,7 @@ void main() {
         'submitVideo',
         'getVideoReview',
         'recordLessonCompletion',
+        'listMyLessonCompletions',
         'submitLessonReview',
         'listCoachesForStudent',
         'getCoachProfile',
@@ -159,6 +160,30 @@ void main() {
       'is_read',
     ]);
     expect(propertiesOf('NotificationList'), ['notifications']);
+  });
+
+  test('受けたレッスンの項目が契約と一致し、コーチの表示名だけが任意の項目である（listMyLessonCompletions）', () {
+    // MyLessonCompletion.fromJson / LessonCompletionMenu.fromJson / MyLessonCompletionList.fromJson が読む項目
+    expect(propertiesOf('MyLessonCompletion'), [
+      'lesson_id',
+      'coach_id',
+      'coach_display_name',
+      'lesson_type',
+      'session_id',
+      'video_id',
+      'completed_at',
+      'lesson_menu',
+      'is_reviewed',
+    ]);
+    final required =
+        ((schemas['MyLessonCompletion'] as YamlMap)['required'] as YamlList)
+            .cast<String>();
+    expect(
+      propertiesOf('MyLessonCompletion').where((p) => !required.contains(p)),
+      ['coach_display_name'],
+    );
+    expect(propertiesOf('LessonCompletionMenu'), ['lesson_menu_id', 'name']);
+    expect(propertiesOf('MyLessonCompletionList'), ['lesson_completions']);
   });
 
   test('CoachProfile の項目が契約と一致する（getCoachProfile）', () {
