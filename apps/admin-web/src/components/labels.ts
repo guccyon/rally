@@ -78,6 +78,29 @@ export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 }
 
+const JST_DATE_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Tokyo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** 時刻（契約の date-time か epoch ミリ秒）の日本時間の日付を、契約の date の形（YYYY-MM-DD）にする。 */
+export function toJstDate(value: string | number): string {
+  const parts = JST_DATE_PARTS.formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+/** 契約の date-time の時刻だけを日本時間で表示する（例: 10:30）。 */
+export function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** 契約の date-time の日付だけを日本時間で表示する（例: 2026/10/26）。 */
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
@@ -87,4 +110,15 @@ export function formatDate(value: string): string {
 export function formatMonth(value: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   return match ? `${match[1]}年${Number(match[2])}月` : value;
+}
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 契約の日付（YYYY-MM-DD）を「2026年10月26日（月）」の形で表示する。形が違えばそのまま出す。 */
+export function formatDay(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${year}年${month}月${day}日（${weekday}）`;
 }

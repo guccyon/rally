@@ -117,6 +117,42 @@ const BOOKINGS: Schemas["CoachBooking"][] = [
   booking(3, SLOTS[3]!.slot, "confirmed", YAMADA),
 ];
 
+// 本部の予約の一覧（今日から 7 日）。確定待ちのまま 24 時間以内に始まる予約・確定済み・確定待ち・キャンセル済みを混ぜる。
+const HQ_BOOKINGS: Schemas["HeadquartersBooking"][] = [
+  {
+    booking: {
+      ...BOOKINGS[0]!.booking,
+      booking_id: id("4444", 9),
+      slot_id: id("3333", 9),
+      coach_id: COACH_ID_2,
+      student_id: STUDENT_ID_2,
+      status: "pending",
+      starts_at: at(5),
+      confirmed_at: null,
+      lesson_menu: null,
+    },
+    coach_display_name: "高橋 コーチ",
+    student_display_name: SATO.name,
+  },
+  ...BOOKINGS.slice(0, 2).map((item) => ({
+    booking: item.booking,
+    coach_display_name: "鈴木 コーチ",
+    student_display_name: item.student_display_name,
+  })),
+  {
+    booking: {
+      ...BOOKINGS[1]!.booking,
+      booking_id: id("4444", 10),
+      student_id: STUDENT_ID,
+      status: "cancelled",
+      starts_at: at(48),
+      cancelled_at: at(-2),
+    },
+    coach_display_name: "鈴木 コーチ",
+    student_display_name: YAMADA.name,
+  },
+];
+
 const VIDEOS: Schemas["CoachVideo"][] = [
   {
     video_id: id("6666", 1),
@@ -389,5 +425,14 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["StudentList"],
+  },
+  {
+    method: "GET",
+    path: "/bookings",
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS,
+    } satisfies Schemas["HeadquartersBookingList"],
   },
 ];

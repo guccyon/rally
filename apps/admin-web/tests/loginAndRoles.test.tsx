@@ -63,10 +63,10 @@ describe("ロールでの出し分け", () => {
     expect(replace).toHaveBeenCalledWith("/");
   });
 
-  test("本部の一覧は API がないので未実装と出す", () => {
+  test("本部の完了記録の一覧は API がないので未実装と出す", () => {
     render(<HeadquartersHome />);
 
-    expect(screen.getByRole("region", { name: "予約の一覧" })).toHaveTextContent("未実装");
+    expect(screen.getByRole("region", { name: "予約" })).not.toHaveTextContent("未実装");
     expect(screen.getByRole("region", { name: "完了記録の一覧" })).toHaveTextContent("未実装");
   });
 
