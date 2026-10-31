@@ -98,6 +98,13 @@ impl Contract {
                 let items = value
                     .as_array()
                     .unwrap_or_else(|| panic!("{at}: array でない: {value}"));
+                if let Some(max) = schema["maxItems"].as_u64() {
+                    assert!(
+                        items.len() as u64 <= max,
+                        "{at}: {} 件 > maxItems {max}",
+                        items.len()
+                    );
+                }
                 for (i, item) in items.iter().enumerate() {
                     self.assert_matches(&schema["items"], item, &format!("{at}[{i}]"));
                 }
