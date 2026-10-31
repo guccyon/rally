@@ -59,6 +59,10 @@ String lessonCompletionMenuLabel(LessonCompletionMenu menu) =>
 String coachNameLabel(String? displayName) =>
     displayName == null ? '担当コーチ' : '$displayName コーチ';
 
+/// コーチで絞ったスロット検索の見出し（`searchSlots` の `coach_id`）。例: `佐藤 コーチの空き枠`
+String coachSlotsHeadingLabel(String displayName) =>
+    '${coachNameLabel(displayName)}の空き枠';
+
 /// 端末のタイムゾーンで `M/d HH:mm`
 String formatDateTime(DateTime value) {
   final local = value.toLocal();
