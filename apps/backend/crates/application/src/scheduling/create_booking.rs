@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 
 use domain::{
-    DomainError,
     catalog::LessonMenu,
     identity::AccountId,
-    scheduling::{Booking, SlotId},
+    scheduling::{Booking, SchedulingError, SlotId},
 };
 
 use super::{BookingRepository, LessonMenuLookup, ReserveSlotError};
@@ -28,7 +27,7 @@ pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
     /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約）
-    Invalid(DomainError),
+    Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -281,7 +280,7 @@ mod tests {
         }
     }
 
-    fn assert_invalid(result: Result<Booking, CreateBookingError>, expected: DomainError) {
+    fn assert_invalid(result: Result<Booking, CreateBookingError>, expected: SchedulingError) {
         assert!(
             matches!(&result, Err(CreateBookingError::Invalid(error)) if *error == expected),
             "{result:?}"
@@ -361,7 +360,7 @@ mod tests {
         for student in [STUDENT, OTHER_STUDENT] {
             assert_invalid(
                 use_case.execute(command(student, 10, false)).await,
-                DomainError::SlotAlreadyBooked,
+                SchedulingError::SlotAlreadyBooked,
             );
         }
         assert_eq!(use_case.bookings().all().len(), 1);
@@ -396,7 +395,7 @@ mod tests {
             use_case
                 .execute(command(AccountId::from_u128(4), 15, false))
                 .await,
-            DomainError::SlotAlreadyBooked,
+            SchedulingError::SlotAlreadyBooked,
         );
         assert_eq!(use_case.bookings().all().len(), 3);
         assert_eq!(use_case.analytics().events().len(), 3);
@@ -409,7 +408,7 @@ mod tests {
 
         assert_invalid(
             use_case.execute(command(STUDENT, 15, false)).await,
-            DomainError::SlotAlreadyBookedByStudent,
+            SchedulingError::SlotAlreadyBookedByStudent,
         );
         // 別の生徒は予約できる
         use_case
@@ -427,7 +426,7 @@ mod tests {
 
         assert_invalid(
             use_case.execute(command(STUDENT, 11, true)).await,
-            DomainError::TrialAlreadyUsed,
+            SchedulingError::TrialAlreadyUsed,
         );
         // 通常の予約と、別の生徒の体験予約はできる
         use_case.execute(command(STUDENT, 11, false)).await.unwrap();
@@ -444,7 +443,7 @@ mod tests {
         for (slot, status) in [(12, SlotStatus::Booked), (13, SlotStatus::Closed)] {
             assert_invalid(
                 use_case.execute(command(STUDENT, slot, false)).await,
-                DomainError::SlotNotOpen { status },
+                SchedulingError::SlotNotOpen { status },
             );
         }
         let result = use_case.execute(command(STUDENT, 99, false)).await;
@@ -479,7 +478,7 @@ mod tests {
             _reserve: F,
         ) -> Result<Booking, ReserveSlotError>
         where
-            F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+            F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, SchedulingError> + Send,
         {
             Err(ReserveSlotError::Unavailable(Unavailable::new(
                 "connection refused",
@@ -492,7 +491,7 @@ mod tests {
             _update: F,
         ) -> Result<Booking, UpdateBookingError>
         where
-            F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send,
+            F: FnOnce(&mut Booking, &mut Slot) -> Result<(), SchedulingError> + Send,
         {
             Err(UpdateBookingError::Unavailable(Unavailable::new(
                 "connection refused",

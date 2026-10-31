@@ -1,7 +1,6 @@
 use domain::{
-    DomainError,
     identity::AccountId,
-    scheduling::{Booking, BookingId},
+    scheduling::{Booking, BookingId, SchedulingError},
 };
 use uuid::Uuid;
 
@@ -25,8 +24,8 @@ pub enum ConfirmBookingError {
     /// 予約がない
     BookingNotFound,
     /// 確定がドメインの不変条件を満たさない（別の生徒の予約、確定前でない、スロットが公開中でない、
-    /// ビデオ通話の暦月の枠が残っていない（[`DomainError::LiveLessonQuotaExceeded`]））
-    Invalid(DomainError),
+    /// ビデオ通話の暦月の枠が残っていない（[`SchedulingError::LiveLessonQuotaExceeded`]））
+    Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -86,7 +85,7 @@ where
                 if may_book {
                     Ok(())
                 } else {
-                    Err(DomainError::LiveLessonQuotaExceeded)
+                    Err(SchedulingError::LiveLessonQuotaExceeded)
                 }
             })
             .await
@@ -281,7 +280,7 @@ mod tests {
             matches!(
                 result,
                 Err(ConfirmBookingError::Invalid(
-                    DomainError::BookingOfAnotherStudent
+                    SchedulingError::BookingOfAnotherStudent
                 ))
             ),
             "{result:?}"
@@ -311,7 +310,7 @@ mod tests {
             matches!(
                 result,
                 Err(ConfirmBookingError::Invalid(
-                    DomainError::BookingNotPending {
+                    SchedulingError::BookingNotPending {
                         status: BookingStatus::Confirmed
                     }
                 ))
@@ -346,7 +345,7 @@ mod tests {
             matches!(
                 result,
                 Err(ConfirmBookingError::Invalid(
-                    DomainError::LiveLessonQuotaExceeded
+                    SchedulingError::LiveLessonQuotaExceeded
                 ))
             ),
             "{result:?}"
@@ -365,7 +364,7 @@ mod tests {
             matches!(
                 result,
                 Err(ConfirmBookingError::Invalid(
-                    DomainError::BookingOfAnotherStudent
+                    SchedulingError::BookingOfAnotherStudent
                 ))
             ),
             "{result:?}"

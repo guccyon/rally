@@ -18,7 +18,7 @@ use domain::{
     notification::{NotificationSettings, PushNotification},
     profile::CoachBio,
     review::{LessonReview, LessonReviewId},
-    scheduling::{Booking, BookingId, CoachCalendar, Slot, SlotId},
+    scheduling::{Booking, BookingId, CoachCalendar, SchedulingError, Slot, SlotId},
 };
 
 use crate::{
@@ -186,7 +186,7 @@ impl SlotRepository for InMemorySlotRepository {
 
     async fn add_to_calendar<F>(&self, slot: Slot, add: F) -> Result<(), AddToCalendarError>
     where
-        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut CoachCalendar, Slot) -> Result<(), SchedulingError> + Send,
     {
         let mut slots = self.slots.lock().unwrap();
         let mut calendar = CoachCalendar::new(
@@ -290,7 +290,7 @@ impl BookingRepository for InMemoryBookingRepository {
         reserve: F,
     ) -> Result<Booking, ReserveSlotError>
     where
-        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send,
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, SchedulingError> + Send,
     {
         let mut slots = self.slots.slots.lock().unwrap();
         let mut bookings = self.bookings.lock().unwrap();
@@ -317,7 +317,7 @@ impl BookingRepository for InMemoryBookingRepository {
         update: F,
     ) -> Result<Booking, UpdateBookingError>
     where
-        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send,
+        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), SchedulingError> + Send,
     {
         let mut slots = self.slots.slots.lock().unwrap();
         let mut bookings = self.bookings.lock().unwrap();

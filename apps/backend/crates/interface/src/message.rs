@@ -1,15 +1,14 @@
 //! 利用者に見せる文言（API の `message`）。domain の値やエラーの変種から組み立てる。
 
-use application::scheduling::slot_id_uuid;
 use domain::{
     DomainError,
     identity::Role,
     lesson::LessonType,
     messaging::{MessageContent, Stamp},
-    scheduling::{BookingStatus, SlotStatus},
+    scheduling::BookingStatus,
 };
 
-use crate::{contract::sport_to_contract, entitlement_error};
+use crate::contract::sport_to_contract;
 
 /// 役割の呼び名。
 pub(crate) const fn role_label(role: Role) -> &'static str {
@@ -32,40 +31,6 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::CoachBioTooLong { max } => format!("自己紹介文は {max} 文字まで"),
         DomainError::RoleAttributeMismatch { role, sports } => {
             format!("{}にスポーツ {sports} 個は持てない", role_label(*role))
-        }
-        DomainError::SlotEndsBeforeItStarts => "スロットの開始が終了より前でない".to_string(),
-        DomainError::SlotOverlaps { existing } => format!(
-            "同じコーチの枠（{}）と期間が重なる",
-            slot_id_uuid::format(*existing)
-        ),
-        DomainError::SlotOfAnotherCoach => "別のコーチの枠は扱えない".to_string(),
-        DomainError::SlotNotOpen { status } => {
-            format!("スロットが公開中でない（{}）", slot_status_label(*status))
-        }
-        DomainError::SlotCapacityOutOfRange { min, max } => {
-            format!("スロットの定員は {min}〜{max} の整数")
-        }
-        DomainError::SlotNotBooked { status } => {
-            format!("スロットが予約済みでない（{}）", slot_status_label(*status))
-        }
-        DomainError::SlotAlreadyBooked => "スロットはすでに予約されている".to_string(),
-        DomainError::SlotAlreadyBookedByStudent => "このスロットはすでに予約している".to_string(),
-        DomainError::SlotSeatsOverCapacity { capacity, active } => {
-            format!("スロットの有効な予約は定員 {capacity} まで（{active} 件）")
-        }
-        DomainError::SlotStatusMismatchesSeats { status } => format!(
-            "スロットの状態と予約の数が合わない（{}）",
-            slot_status_label(*status)
-        ),
-        DomainError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
-        DomainError::BookingNotPending { status } => {
-            format!("確定待ちの予約でない（{}）", booking_status_label(*status))
-        }
-        DomainError::BookingAlreadyCancelled => "予約はキャンセル済み".to_string(),
-        DomainError::BookingOfAnotherStudent => "別の生徒の予約は扱えない".to_string(),
-        DomainError::BookingOfAnotherSlot => "予約と別のスロットは扱えない".to_string(),
-        DomainError::LiveLessonQuotaExceeded => {
-            entitlement_error::LIVE_LESSON_QUOTA_EXCEEDED.to_string()
         }
         DomainError::NotASessionParticipant => "予約の参加者でない".to_string(),
         DomainError::BookingNotConfirmed { status } => {
@@ -117,24 +82,6 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*sport)
         ),
         DomainError::NotTheLessonMenuCoach => "レッスンメニューのコーチでない".to_string(),
-        DomainError::LessonMenuOfAnotherCoach => {
-            "枠に結びつけられるのは自分のレッスンメニューだけ".to_string()
-        }
-        DomainError::LessonMenuNotPublished => {
-            "公開中でないレッスンメニューは枠に結びつけられない".to_string()
-        }
-        DomainError::LessonMenuNotLive => {
-            "非同期レッスンのメニューは枠に結びつけられない（同期レッスンのメニューだけ）"
-                .to_string()
-        }
-        DomainError::LessonMenuSportMismatch { menu, slot } => format!(
-            "レッスンメニューのスポーツ（{}）が枠のスポーツ（{}）と違う",
-            sport_to_contract(*menu),
-            sport_to_contract(*slot)
-        ),
-        DomainError::SlotLengthMismatchesLessonMenu { minutes } => {
-            format!("枠の長さがレッスンメニューの 1 回の時間（{minutes} 分）と違う")
-        }
         DomainError::VideoLessonMenuOfAnotherCoach => {
             "動画で選べるのは送り先のコーチのレッスンメニューだけ".to_string()
         }
@@ -177,17 +124,8 @@ const fn stamp_label(stamp: Stamp) -> &'static str {
     }
 }
 
-/// スロットの状態の呼び名（`specs/glossary.yaml` の `slot` の `states`。admin-web の画面と同じ）。
-const fn slot_status_label(status: SlotStatus) -> &'static str {
-    match status {
-        SlotStatus::Open => "公開中",
-        SlotStatus::Booked => "予約済み",
-        SlotStatus::Closed => "終了",
-    }
-}
-
 /// 予約の状態の呼び名（`specs/glossary.yaml` の `booking` の `states`。両アプリの画面と同じ）。
-const fn booking_status_label(status: BookingStatus) -> &'static str {
+pub(crate) const fn booking_status_label(status: BookingStatus) -> &'static str {
     match status {
         BookingStatus::Pending => "確定待ち",
         BookingStatus::Confirmed => "確定済み",
@@ -221,89 +159,6 @@ mod tests {
                 sports: 2
             }),
             "生徒にスポーツ 2 個は持てない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotEndsBeforeItStarts),
-            "スロットの開始が終了より前でない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotOverlaps {
-                existing: domain::scheduling::SlotId::from_u128(1)
-            }),
-            "同じコーチの枠（00000000-0000-0000-0000-000000000001）と期間が重なる"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotOfAnotherCoach),
-            "別のコーチの枠は扱えない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotNotOpen {
-                status: SlotStatus::Booked
-            }),
-            "スロットが公開中でない（予約済み）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotNotOpen {
-                status: SlotStatus::Closed
-            }),
-            "スロットが公開中でない（終了）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotAlreadyBooked),
-            "スロットはすでに予約されている"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotAlreadyBookedByStudent),
-            "このスロットはすでに予約している"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotCapacityOutOfRange { min: 1, max: 6 }),
-            "スロットの定員は 1〜6 の整数"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotSeatsOverCapacity {
-                capacity: 1,
-                active: 2
-            }),
-            "スロットの有効な予約は定員 1 まで（2 件）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotStatusMismatchesSeats {
-                status: SlotStatus::Booked
-            }),
-            "スロットの状態と予約の数が合わない（予約済み）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::TrialAlreadyUsed),
-            "体験予約は初回の予約だけ"
-        );
-        assert_eq!(
-            domain_error(&DomainError::BookingNotPending {
-                status: BookingStatus::Confirmed
-            }),
-            "確定待ちの予約でない（確定済み）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::SlotNotBooked {
-                status: SlotStatus::Open
-            }),
-            "スロットが予約済みでない（公開中）"
-        );
-        assert_eq!(
-            domain_error(&DomainError::BookingAlreadyCancelled),
-            "予約はキャンセル済み"
-        );
-        assert_eq!(
-            domain_error(&DomainError::BookingOfAnotherStudent),
-            "別の生徒の予約は扱えない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::BookingOfAnotherSlot),
-            "予約と別のスロットは扱えない"
-        );
-        assert_eq!(
-            domain_error(&DomainError::LiveLessonQuotaExceeded),
-            "今月のビデオ通話の枠を使い切っている"
         );
         assert_eq!(
             domain_error(&DomainError::NotASessionParticipant),

@@ -1,8 +1,7 @@
 use std::time::{Duration, SystemTime};
 
-use super::{SlotCapacity, SlotId, SlotSeats, SlotStatus};
+use super::{SchedulingError, SlotCapacity, SlotId, SlotSeats, SlotStatus};
 use crate::{
-    DomainError,
     catalog::Sport,
     catalog::{LessonFormat, LessonMenu, LessonMenuId},
     identity::AccountId,
@@ -33,7 +32,7 @@ pub struct Slot {
 
 impl Slot {
     /// 公開する枠を作る（状態は [`SlotStatus::Open`]、予約はない）。開始が終了より前でなければ
-    /// [`DomainError::SlotEndsBeforeItStarts`]。同じコーチの枠との重なりは [`super::CoachCalendar`] が判定する。
+    /// [`SchedulingError::SlotEndsBeforeItStarts`]。同じコーチの枠との重なりは [`super::CoachCalendar`] が判定する。
     pub fn publish(
         id: SlotId,
         coach_id: AccountId,
@@ -41,7 +40,7 @@ impl Slot {
         starts_at: SystemTime,
         ends_at: SystemTime,
         capacity: SlotCapacity,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, SchedulingError> {
         Self::restore(
             id,
             coach_id,
@@ -55,7 +54,7 @@ impl Slot {
 
     /// 保存した枠を読み戻す（状態を問わない）。開始と終了の検証は [`Slot::publish`] と同じ。
     /// `seats` は保存先が予約の行から数えた席（[`SlotSeats::restore`]）。状態と席が合わなければ
-    /// [`DomainError::SlotStatusMismatchesSeats`]（予約済みなら確定した予約が定員ちょうど、公開中なら定員未満。
+    /// [`SchedulingError::SlotStatusMismatchesSeats`]（予約済みなら確定した予約が定員ちょうど、公開中なら定員未満。
     /// 閉じた枠は問わない）。
     pub fn restore(
         id: SlotId,
@@ -65,9 +64,9 @@ impl Slot {
         ends_at: SystemTime,
         status: SlotStatus,
         seats: SlotSeats,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, SchedulingError> {
         if starts_at >= ends_at {
-            return Err(DomainError::SlotEndsBeforeItStarts);
+            return Err(SchedulingError::SlotEndsBeforeItStarts);
         }
         let consistent = match status {
             SlotStatus::Open => !seats.is_fully_confirmed(),
@@ -75,7 +74,7 @@ impl Slot {
             SlotStatus::Closed => true,
         };
         if !consistent {
-            return Err(DomainError::SlotStatusMismatchesSeats { status });
+            return Err(SchedulingError::SlotStatusMismatchesSeats { status });
         }
         Ok(Self {
             id,
@@ -92,28 +91,28 @@ impl Slot {
     /// 公開する枠（[`Slot::publish`] で作った枠）をレッスンメニュー `menu` に結びつける。
     ///
     /// 結びつけられるのは、枠のコーチ自身の・公開中の・同期のメニューで、スポーツが枠と同じで、1 回の時間が枠の長さと
-    /// 同じもの。違えば順に [`DomainError::LessonMenuOfAnotherCoach`]・[`DomainError::LessonMenuNotPublished`]・
-    /// [`DomainError::LessonMenuNotLive`]・[`DomainError::LessonMenuSportMismatch`]・
-    /// [`DomainError::SlotLengthMismatchesLessonMenu`]。
-    pub fn with_lesson_menu(mut self, menu: &LessonMenu) -> Result<Self, DomainError> {
+    /// 同じもの。違えば順に [`SchedulingError::LessonMenuOfAnotherCoach`]・[`SchedulingError::LessonMenuNotPublished`]・
+    /// [`SchedulingError::LessonMenuNotLive`]・[`SchedulingError::LessonMenuSportMismatch`]・
+    /// [`SchedulingError::SlotLengthMismatchesLessonMenu`]。
+    pub fn with_lesson_menu(mut self, menu: &LessonMenu) -> Result<Self, SchedulingError> {
         if menu.coach_id() != self.coach_id {
-            return Err(DomainError::LessonMenuOfAnotherCoach);
+            return Err(SchedulingError::LessonMenuOfAnotherCoach);
         }
         if !menu.is_published() {
-            return Err(DomainError::LessonMenuNotPublished);
+            return Err(SchedulingError::LessonMenuNotPublished);
         }
         let LessonFormat::Live(duration) = menu.format() else {
-            return Err(DomainError::LessonMenuNotLive);
+            return Err(SchedulingError::LessonMenuNotLive);
         };
         if menu.sport() != self.sport {
-            return Err(DomainError::LessonMenuSportMismatch {
+            return Err(SchedulingError::LessonMenuSportMismatch {
                 menu: menu.sport(),
                 slot: self.sport,
             });
         }
         let minutes = Duration::from_secs(u64::from(duration.minutes()) * 60);
         if self.ends_at.duration_since(self.starts_at).ok() != Some(minutes) {
-            return Err(DomainError::SlotLengthMismatchesLessonMenu {
+            return Err(SchedulingError::SlotLengthMismatchesLessonMenu {
                 minutes: duration.minutes(),
             });
         }
@@ -171,33 +170,33 @@ impl Slot {
         self.seats.remaining()
     }
 
-    /// 予約を受けられるか。公開中でなければ [`DomainError::SlotNotOpen`]、残りの席がなければ
-    /// [`DomainError::SlotAlreadyBooked`]（満席）。何も変えない。
-    pub fn ensure_seat_available(&self) -> Result<(), DomainError> {
+    /// 予約を受けられるか。公開中でなければ [`SchedulingError::SlotNotOpen`]、残りの席がなければ
+    /// [`SchedulingError::SlotAlreadyBooked`]（満席）。何も変えない。
+    pub fn ensure_seat_available(&self) -> Result<(), SchedulingError> {
         if self.status != SlotStatus::Open {
-            return Err(DomainError::SlotNotOpen {
+            return Err(SchedulingError::SlotNotOpen {
                 status: self.status,
             });
         }
         if self.remaining_seats() == 0 {
-            return Err(DomainError::SlotAlreadyBooked);
+            return Err(SchedulingError::SlotAlreadyBooked);
         }
         Ok(())
     }
 
     /// 未確定の予約で席を 1 つ押さえる（状態は変えない）。受けられなければ [`Slot::ensure_seat_available`] の
     /// エラーで、何も変えない。予約の作成（[`super::Booking::reserve`]）から呼ぶ。
-    pub(super) fn hold(&mut self) -> Result<(), DomainError> {
+    pub(super) fn hold(&mut self) -> Result<(), SchedulingError> {
         self.ensure_seat_available()?;
         self.seats.hold();
         Ok(())
     }
 
     /// 予約の確定で席を確定に移す。確定した予約が定員に達したら [`SlotStatus::Open`] → [`SlotStatus::Booked`]。
-    /// 公開中でなければ [`DomainError::SlotNotOpen`] で、何も変えない。予約の確定（[`super::Booking::confirm`]）から呼ぶ。
-    pub(super) fn book(&mut self) -> Result<(), DomainError> {
+    /// 公開中でなければ [`SchedulingError::SlotNotOpen`] で、何も変えない。予約の確定（[`super::Booking::confirm`]）から呼ぶ。
+    pub(super) fn book(&mut self) -> Result<(), SchedulingError> {
         if self.status != SlotStatus::Open {
-            return Err(DomainError::SlotNotOpen {
+            return Err(SchedulingError::SlotNotOpen {
                 status: self.status,
             });
         }
@@ -215,11 +214,11 @@ impl Slot {
     }
 
     /// 確定した予約のキャンセルで席を空ける。予約済み（[`SlotStatus::Booked`]）なら公開中に戻す。
-    /// 確定した予約が入っていない（または閉じた枠）なら [`DomainError::SlotNotBooked`] で、何も変えない。
+    /// 確定した予約が入っていない（または閉じた枠）なら [`SchedulingError::SlotNotBooked`] で、何も変えない。
     /// 予約のキャンセル（[`super::Booking::cancel`]）から呼ぶ。
-    pub(super) fn release(&mut self) -> Result<(), DomainError> {
+    pub(super) fn release(&mut self) -> Result<(), SchedulingError> {
         if self.seats.confirmed() == 0 || self.status == SlotStatus::Closed {
-            return Err(DomainError::SlotNotBooked {
+            return Err(SchedulingError::SlotNotBooked {
                 status: self.status,
             });
         }
@@ -285,7 +284,7 @@ mod tests {
                     at(to),
                     SlotCapacity::ONE,
                 ),
-                Err(DomainError::SlotEndsBeforeItStarts)
+                Err(SchedulingError::SlotEndsBeforeItStarts)
             );
         }
     }
@@ -298,7 +297,7 @@ mod tests {
         assert_eq!(slot.status(), SlotStatus::Booked);
         assert_eq!(
             slot.book(),
-            Err(DomainError::SlotNotOpen {
+            Err(SchedulingError::SlotNotOpen {
                 status: SlotStatus::Booked
             })
         );
@@ -311,7 +310,7 @@ mod tests {
         let mut slot = slot(1, 10, 11);
         assert_eq!(
             slot.release(),
-            Err(DomainError::SlotNotBooked {
+            Err(SchedulingError::SlotNotBooked {
                 status: SlotStatus::Open
             })
         );
@@ -332,7 +331,7 @@ mod tests {
         // 未確定の予約で席が埋まっても、確定するまでは公開中
         assert_eq!(slot.status(), SlotStatus::Open);
         let before = slot.clone();
-        assert_eq!(slot.hold(), Err(DomainError::SlotAlreadyBooked));
+        assert_eq!(slot.hold(), Err(SchedulingError::SlotAlreadyBooked));
         assert_eq!(slot, before);
     }
 
@@ -386,13 +385,13 @@ mod tests {
         let before = closed.clone();
         assert_eq!(
             closed.hold(),
-            Err(DomainError::SlotNotOpen {
+            Err(SchedulingError::SlotNotOpen {
                 status: SlotStatus::Closed
             })
         );
         assert_eq!(
             closed.release(),
-            Err(DomainError::SlotNotBooked {
+            Err(SchedulingError::SlotNotBooked {
                 status: SlotStatus::Closed
             })
         );
@@ -430,7 +429,7 @@ mod tests {
         ] {
             assert_eq!(
                 restore(status, pending, confirmed),
-                Err(DomainError::SlotStatusMismatchesSeats { status }),
+                Err(SchedulingError::SlotStatusMismatchesSeats { status }),
                 "{status:?} {pending}/{confirmed}"
             );
         }
@@ -489,30 +488,30 @@ mod tests {
         for (menu, expected) in [
             (
                 menu(2, Sport::Tennis, live(60), true),
-                DomainError::LessonMenuOfAnotherCoach,
+                SchedulingError::LessonMenuOfAnotherCoach,
             ),
             (
                 menu(1, Sport::Tennis, live(60), false),
-                DomainError::LessonMenuNotPublished,
+                SchedulingError::LessonMenuNotPublished,
             ),
             (
                 menu(1, Sport::Tennis, LessonFormat::Async, true),
-                DomainError::LessonMenuNotLive,
+                SchedulingError::LessonMenuNotLive,
             ),
             (
                 menu(1, Sport::Swimming, live(60), true),
-                DomainError::LessonMenuSportMismatch {
+                SchedulingError::LessonMenuSportMismatch {
                     menu: Sport::Swimming,
                     slot: Sport::Tennis,
                 },
             ),
             (
                 menu(1, Sport::Tennis, live(45), true),
-                DomainError::SlotLengthMismatchesLessonMenu { minutes: 45 },
+                SchedulingError::SlotLengthMismatchesLessonMenu { minutes: 45 },
             ),
             (
                 menu(1, Sport::Tennis, live(120), true),
-                DomainError::SlotLengthMismatchesLessonMenu { minutes: 120 },
+                SchedulingError::SlotLengthMismatchesLessonMenu { minutes: 120 },
             ),
         ] {
             assert_eq!(slot(1, 10, 11).with_lesson_menu(&menu), Err(expected));

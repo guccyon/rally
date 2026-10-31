@@ -21,14 +21,13 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuName,
     },
     identity::AccountId,
-    scheduling::{Booking, Slot, SlotCapacity, SlotStatus},
+    scheduling::{Booking, SchedulingError, Slot, SlotCapacity, SlotStatus},
 };
 use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};
 use sqlx::PgPool;
@@ -222,7 +221,7 @@ async fn overlapping_slot_of_the_same_coach_is_rejected(pool: PgPool) {
         assert!(
             matches!(
                 &result,
-                Err(PublishSlotError::Invalid(DomainError::SlotOverlaps { existing }))
+                Err(PublishSlotError::Invalid(SchedulingError::SlotOverlaps { existing }))
                     if *existing == first.id()
             ),
             "{from}-{to}: {result:?}"
@@ -245,7 +244,7 @@ async fn overlapping_slot_of_the_same_coach_is_rejected(pool: PgPool) {
     assert!(
         matches!(
             &result,
-            Err(PublishSlotError::Invalid(DomainError::SlotOverlaps { existing }))
+            Err(PublishSlotError::Invalid(SchedulingError::SlotOverlaps { existing }))
                 if *existing == first.id()
         ),
         "{result:?}"
@@ -531,7 +530,7 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
         matches!(
             result,
             Err(PublishSlotError::Invalid(
-                DomainError::SlotLengthMismatchesLessonMenu { minutes: 45 }
+                SchedulingError::SlotLengthMismatchesLessonMenu { minutes: 45 }
             ))
         ),
         "{result:?}"

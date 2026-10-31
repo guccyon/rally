@@ -1,5 +1,5 @@
-use super::Slot;
-use crate::{DomainError, identity::AccountId};
+use super::{SchedulingError, Slot};
+use crate::identity::AccountId;
 
 /// 1 人のコーチの枠の集まり（集約）。同じコーチの枠が重ならないことをここで判定する。
 ///
@@ -12,14 +12,14 @@ pub struct CoachCalendar {
 }
 
 impl CoachCalendar {
-    /// コーチの既存の枠から作る。別のコーチの枠が混ざっていれば [`DomainError::SlotOfAnotherCoach`]。
+    /// コーチの既存の枠から作る。別のコーチの枠が混ざっていれば [`SchedulingError::SlotOfAnotherCoach`]。
     pub fn new(
         coach_id: AccountId,
         slots: impl IntoIterator<Item = Slot>,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, SchedulingError> {
         let slots: Vec<Slot> = slots.into_iter().collect();
         if slots.iter().any(|slot| slot.coach_id() != coach_id) {
-            return Err(DomainError::SlotOfAnotherCoach);
+            return Err(SchedulingError::SlotOfAnotherCoach);
         }
         Ok(Self { coach_id, slots })
     }
@@ -32,11 +32,11 @@ impl CoachCalendar {
         &self.slots
     }
 
-    /// 枠を加える。別のコーチの枠なら [`DomainError::SlotOfAnotherCoach`]、時間を占める既存の枠と
-    /// 重なれば [`DomainError::SlotOverlaps`]（重なった枠の ID を載せる）。
-    pub fn publish(&mut self, slot: Slot) -> Result<(), DomainError> {
+    /// 枠を加える。別のコーチの枠なら [`SchedulingError::SlotOfAnotherCoach`]、時間を占める既存の枠と
+    /// 重なれば [`SchedulingError::SlotOverlaps`]（重なった枠の ID を載せる）。
+    pub fn publish(&mut self, slot: Slot) -> Result<(), SchedulingError> {
         if slot.coach_id() != self.coach_id {
-            return Err(DomainError::SlotOfAnotherCoach);
+            return Err(SchedulingError::SlotOfAnotherCoach);
         }
         if let Some(existing) = self
             .slots
@@ -44,7 +44,7 @@ impl CoachCalendar {
             .filter(|existing| existing.status().occupies_time() && slot.status().occupies_time())
             .find(|existing| existing.overlaps(&slot))
         {
-            return Err(DomainError::SlotOverlaps {
+            return Err(SchedulingError::SlotOverlaps {
                 existing: existing.id(),
             });
         }
@@ -115,7 +115,7 @@ mod tests {
         for (id, from, to, existing) in [(3, 10, 11, 1), (4, 9, 12, 1), (5, 13, 15, 2)] {
             assert_eq!(
                 calendar.publish(slot(id, COACH, from, to, SlotStatus::Open)),
-                Err(DomainError::SlotOverlaps {
+                Err(SchedulingError::SlotOverlaps {
                     existing: SlotId::from_u128(existing)
                 })
             );
@@ -137,12 +137,12 @@ mod tests {
         let other = AccountId::from_u128(2);
         assert_eq!(
             CoachCalendar::new(COACH, [slot(1, other, 10, 11, SlotStatus::Open)]),
-            Err(DomainError::SlotOfAnotherCoach)
+            Err(SchedulingError::SlotOfAnotherCoach)
         );
         let mut calendar = CoachCalendar::new(COACH, []).unwrap();
         assert_eq!(
             calendar.publish(slot(1, other, 10, 11, SlotStatus::Open)),
-            Err(DomainError::SlotOfAnotherCoach)
+            Err(SchedulingError::SlotOfAnotherCoach)
         );
     }
 }

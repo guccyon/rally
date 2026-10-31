@@ -1,9 +1,8 @@
 use std::time::SystemTime;
 
 use domain::{
-    DomainError,
     identity::AccountId,
-    scheduling::{Booking, BookingId, CancellationDecision},
+    scheduling::{Booking, BookingId, CancellationDecision, SchedulingError},
 };
 use uuid::Uuid;
 
@@ -27,7 +26,7 @@ pub enum CancelBookingError {
     /// 予約がない
     BookingNotFound,
     /// キャンセルがドメインの不変条件を満たさない（別の生徒の予約、キャンセル済み）
-    Invalid(DomainError),
+    Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -422,7 +421,7 @@ mod tests {
             matches!(
                 result,
                 Err(CancelBookingError::Invalid(
-                    DomainError::BookingOfAnotherStudent
+                    SchedulingError::BookingOfAnotherStudent
                 ))
             ),
             "{result:?}"
@@ -452,7 +451,7 @@ mod tests {
             matches!(
                 result,
                 Err(CancelBookingError::Invalid(
-                    DomainError::BookingAlreadyCancelled
+                    SchedulingError::BookingAlreadyCancelled
                 ))
             ),
             "{result:?}"

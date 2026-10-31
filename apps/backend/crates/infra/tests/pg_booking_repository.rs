@@ -17,14 +17,15 @@ use application::{
     },
 };
 use domain::{
-    DomainError,
     catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuId, LessonMenuName,
     },
     identity::{AccountId, Coach},
-    scheduling::{Booking, BookingLessonMenu, BookingStatus, Slot, SlotCapacity, SlotStatus},
+    scheduling::{
+        Booking, BookingLessonMenu, BookingStatus, SchedulingError, Slot, SlotCapacity, SlotStatus,
+    },
 };
 use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};
 use sqlx::PgPool;
@@ -122,7 +123,9 @@ async fn double_booking_and_second_trial_are_rejected(pool: PgPool) {
     assert!(
         matches!(
             result,
-            Err(ReserveSlotError::Rejected(DomainError::SlotAlreadyBooked))
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::SlotAlreadyBooked
+            ))
         ),
         "{result:?}"
     );
@@ -131,7 +134,9 @@ async fn double_booking_and_second_trial_are_rejected(pool: PgPool) {
     assert!(
         matches!(
             result,
-            Err(ReserveSlotError::Rejected(DomainError::TrialAlreadyUsed))
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::TrialAlreadyUsed
+            ))
         ),
         "{result:?}"
     );
@@ -209,7 +214,9 @@ async fn concurrent_reservations_of_a_group_slot_save_up_to_the_capacity(pool: P
     assert!(
         results.iter().filter(|r| r.is_err()).all(|r| matches!(
             r,
-            Err(ReserveSlotError::Rejected(DomainError::SlotAlreadyBooked))
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::SlotAlreadyBooked
+            ))
         )),
         "{results:?}"
     );
@@ -260,7 +267,7 @@ async fn group_slot_is_booked_when_all_seats_are_confirmed_and_reopens_on_cancel
         matches!(
             result,
             Err(ReserveSlotError::Rejected(
-                DomainError::SlotAlreadyBookedByStudent
+                SchedulingError::SlotAlreadyBookedByStudent
             ))
         ),
         "{result:?}"

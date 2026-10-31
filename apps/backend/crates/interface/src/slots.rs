@@ -10,8 +10,7 @@ use application::{
     identity::account_id_uuid,
     scheduling::{
         CoachIntroduction, CoachIntroductionLookup, LessonMenuLookup, PublishSlot,
-        PublishSlotCommand, PublishSlotError, SearchSlots, SearchSlotsQuery, SlotRepository,
-        slot_id_uuid,
+        PublishSlotCommand, SearchSlots, SearchSlotsQuery, SlotRepository, slot_id_uuid,
     },
 };
 use axum::{
@@ -23,7 +22,6 @@ use axum::{
     http::StatusCode,
 };
 use domain::{
-    DomainError,
     catalog::{LessonMenu, LessonMenuId},
     scheduling::{Slot, SlotCapacity},
 };
@@ -226,16 +224,7 @@ where
         .publish_slot
         .execute(command)
         .await
-        .map_err(|error| match error {
-            PublishSlotError::Invalid(error @ DomainError::SlotOverlaps { .. }) => {
-                ApiError::conflict("slot_overlaps", crate::message::domain_error(&error))
-            }
-            PublishSlotError::Invalid(error) => ApiError::from(error),
-            PublishSlotError::LessonMenuNotFound => {
-                ApiError::validation_failed(crate::message::LESSON_MENU_NOT_FOUND)
-            }
-            PublishSlotError::Unavailable(error) => ApiError::internal(error),
-        })?;
+        .map_err(ApiError::from)?;
     // 公開の応答には結びついたメニュー（`lesson_menu`）を載せない（契約の publishSlot。名前と時間は listMyCoachSlots）
     Ok((StatusCode::CREATED, Json(admin_web_slot_body(&slot, None)?)))
 }

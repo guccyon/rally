@@ -1,9 +1,8 @@
 use std::{future::Future, time::SystemTime};
 
 use domain::{
-    DomainError,
     identity::AccountId,
-    scheduling::{Booking, BookingId, Slot, SlotId},
+    scheduling::{Booking, BookingId, SchedulingError, Slot, SlotId},
 };
 
 use super::{ReserveSlotError, UpdateBookingError};
@@ -42,7 +41,7 @@ pub trait BookingRepository: Send + Sync {
         reserve: F,
     ) -> impl Future<Output = Result<Booking, ReserveSlotError>> + Send
     where
-        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, DomainError> + Send;
+        F: FnOnce(&mut Slot, &[Booking]) -> Result<Booking, SchedulingError> + Send;
 
     /// `booking_id` の予約と、そのスロットを読み、`update` に渡す。`update` が `Ok` なら予約と
     /// スロットの両方を保存し、保存した予約を返す。
@@ -52,7 +51,7 @@ pub trait BookingRepository: Send + Sync {
         update: F,
     ) -> impl Future<Output = Result<Booking, UpdateBookingError>> + Send
     where
-        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), DomainError> + Send;
+        F: FnOnce(&mut Booking, &mut Slot) -> Result<(), SchedulingError> + Send;
 
     /// 開始が `from`（含む）から `until`（含まない）までの枠（状態を問わない）と、それらの枠への予約
     /// （状態を問わない）。読むだけで何も変えない。予約枠の需給（[`super::GetSlotSupply`]）が数える。

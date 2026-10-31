@@ -18,49 +18,6 @@ pub enum DomainError {
     },
     /// コーチの自己紹介文が長すぎる（`max` は文字数）
     CoachBioTooLong { max: usize },
-    /// スロットの開始が終了より前でない
-    SlotEndsBeforeItStarts,
-    /// 同じコーチの時間を占める枠（`existing`）と期間が重なる
-    SlotOverlaps { existing: crate::scheduling::SlotId },
-    /// 別のコーチの枠をコーチのカレンダーに入れようとした
-    SlotOfAnotherCoach,
-    /// スロットが公開中（`Open`）でないので、予約・確定できない（`status` は今の状態）
-    SlotNotOpen {
-        status: crate::scheduling::SlotStatus,
-    },
-    /// スロットの定員が `min`〜`max` の整数でない
-    SlotCapacityOutOfRange { min: u8, max: u8 },
-    /// スロットに確定した予約が入っていない（または閉じた枠な）ので、確定した予約のキャンセルで席を空けられない
-    /// （`status` は今の状態）
-    SlotNotBooked {
-        status: crate::scheduling::SlotStatus,
-    },
-    /// スロットに残りの席がない（有効な予約が定員に達している。定員 1 なら二重予約）
-    SlotAlreadyBooked,
-    /// スロットの有効な予約（未確定か確定）の数 `active` が定員 `capacity` を超える
-    SlotSeatsOverCapacity { capacity: u8, active: u32 },
-    /// スロットの状態と席が合わない（予約済み（`Booked`）なら確定した予約が定員ちょうど、公開中（`Open`）なら
-    /// 定員未満。`status` は渡した状態）
-    SlotStatusMismatchesSeats {
-        status: crate::scheduling::SlotStatus,
-    },
-    /// その生徒はそのスロットに有効な予約をすでに持っている（同じ生徒が同じ枠を 2 回は予約できない）
-    SlotAlreadyBookedByStudent,
-    /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにある）
-    TrialAlreadyUsed,
-    /// 予約が確定前（`Pending`）でない（`status` は今の状態）
-    BookingNotPending {
-        status: crate::scheduling::BookingStatus,
-    },
-    /// 予約はすでにキャンセルしてある
-    BookingAlreadyCancelled,
-    /// 予約した生徒でない
-    BookingOfAnotherStudent,
-    /// 予約したスロットと別のスロットを渡した
-    BookingOfAnotherSlot,
-    /// 予約の確定で、entitlement がビデオ通話の暦月の枠が残っていないと答えた（scheduling の拒否。不変条件 1）。
-    /// 受講権の枠を使うときの違反は [`crate::entitlement::EntitlementError::LiveLessonQuotaExceeded`]
-    LiveLessonQuotaExceeded,
     /// 予約の参加者（生徒・コーチ）でないので、その通話セッションを扱えない
     NotASessionParticipant,
     /// 予約が確定済み（`Confirmed`）でないので、通話を開始できない（`status` は今の状態）
@@ -120,19 +77,6 @@ pub enum DomainError {
     SportNotOfferedByCoach { sport: crate::catalog::Sport },
     /// レッスンメニューのコーチでないので、そのメニューを直せない
     NotTheLessonMenuCoach,
-    /// 別のコーチのレッスンメニューは枠に結びつけられない（枠に結びつけるのは枠のコーチ自身のメニューだけ）
-    LessonMenuOfAnotherCoach,
-    /// 公開中でないレッスンメニューは枠に結びつけられない
-    LessonMenuNotPublished,
-    /// 同期レッスンでない（非同期の）レッスンメニューは枠に結びつけられない
-    LessonMenuNotLive,
-    /// レッスンメニューのスポーツ（`menu`）が枠のスポーツ（`slot`）と違う
-    LessonMenuSportMismatch {
-        menu: crate::catalog::Sport,
-        slot: crate::catalog::Sport,
-    },
-    /// 枠の長さがレッスンメニューの 1 回の時間（`minutes` 分）と違う
-    SlotLengthMismatchesLessonMenu { minutes: u8 },
     /// 動画で選べるのは送り先のコーチのレッスンメニューだけ（別のコーチのメニューは選べない）
     VideoLessonMenuOfAnotherCoach,
     /// 公開中でないレッスンメニューは動画で選べない

@@ -1,10 +1,10 @@
 use std::time::SystemTime;
 
 use super::{
-    BookingId, BookingLessonMenu, BookingStatus, CancellationDecision, CancellationPolicy, Slot,
-    SlotId,
+    BookingId, BookingLessonMenu, BookingStatus, CancellationDecision, CancellationPolicy,
+    SchedulingError, Slot, SlotId,
 };
-use crate::{DomainError, catalog::LessonMenu, identity::AccountId};
+use crate::{catalog::LessonMenu, identity::AccountId};
 
 /// 予約（glossary の booking）。生徒によるスロットの確保で、体験予約（`is_trial`）もこれ。
 ///
@@ -35,13 +35,13 @@ impl Booking {
     /// （[`Slot::hold`]）。
     ///
     /// `existing` には少なくとも、`slot` の予約と `student_id` の生徒の予約を含める（それ以外の予約は
-    /// 判定に影響しない）。次の不変条件を破れば [`DomainError`] を返し、`slot` は変えない。
+    /// 判定に影響しない）。次の不変条件を破れば [`SchedulingError`] を返し、`slot` は変えない。
     ///
-    /// - 公開中（[`SlotStatus::Open`](super::SlotStatus::Open)）のスロットにしか予約できない（[`DomainError::SlotNotOpen`]）
-    /// - 有効な予約（未確定か確定）はスロットの定員まで（[`DomainError::SlotAlreadyBooked`]）
-    /// - 同じ生徒が同じスロットに有効な予約を 2 つは持てない（[`DomainError::SlotAlreadyBookedByStudent`]）
+    /// - 公開中（[`SlotStatus::Open`](super::SlotStatus::Open)）のスロットにしか予約できない（[`SchedulingError::SlotNotOpen`]）
+    /// - 有効な予約（未確定か確定）はスロットの定員まで（[`SchedulingError::SlotAlreadyBooked`]）
+    /// - 同じ生徒が同じスロットに有効な予約を 2 つは持てない（[`SchedulingError::SlotAlreadyBookedByStudent`]）
     /// - 体験予約はその生徒の初回の予約だけ。キャンセルされていない予約が 1 件でもあれば
-    ///   [`DomainError::TrialAlreadyUsed`]
+    ///   [`SchedulingError::TrialAlreadyUsed`]
     pub fn reserve(
         id: BookingId,
         student_id: AccountId,
@@ -49,14 +49,14 @@ impl Booking {
         slot: &mut Slot,
         existing: &[Booking],
         now: SystemTime,
-    ) -> Result<Self, DomainError> {
+    ) -> Result<Self, SchedulingError> {
         slot.ensure_seat_available()?;
         let active = || existing.iter().filter(|b| b.status.is_active());
         if active().any(|b| b.slot_id == slot.id() && b.student_id == student_id) {
-            return Err(DomainError::SlotAlreadyBookedByStudent);
+            return Err(SchedulingError::SlotAlreadyBookedByStudent);
         }
         if is_trial && active().any(|b| b.student_id == student_id) {
-            return Err(DomainError::TrialAlreadyUsed);
+            return Err(SchedulingError::TrialAlreadyUsed);
         }
         slot.hold()?;
         Ok(Self {
@@ -131,23 +131,23 @@ impl Booking {
     /// 予約した生徒 `student_id` が確定する。予約したスロット `slot` の席を確定に移し、確定した予約が定員に
     /// 達したら [`SlotStatus::Booked`](super::SlotStatus::Booked) にする（[`Slot::book`]）。
     ///
-    /// 別の生徒なら [`DomainError::BookingOfAnotherStudent`]、確定前（[`BookingStatus::Pending`]）で
-    /// なければ [`DomainError::BookingNotPending`]、スロットが公開中でなければ
-    /// [`DomainError::SlotNotOpen`]。失敗したときは予約もスロットも変えない。
+    /// 別の生徒なら [`SchedulingError::BookingOfAnotherStudent`]、確定前（[`BookingStatus::Pending`]）で
+    /// なければ [`SchedulingError::BookingNotPending`]、スロットが公開中でなければ
+    /// [`SchedulingError::SlotNotOpen`]。失敗したときは予約もスロットも変えない。
     pub fn confirm(
         &mut self,
         student_id: AccountId,
         slot: &mut Slot,
         now: SystemTime,
-    ) -> Result<(), DomainError> {
+    ) -> Result<(), SchedulingError> {
         if student_id != self.student_id {
-            return Err(DomainError::BookingOfAnotherStudent);
+            return Err(SchedulingError::BookingOfAnotherStudent);
         }
         if slot.id() != self.slot_id {
-            return Err(DomainError::BookingOfAnotherSlot);
+            return Err(SchedulingError::BookingOfAnotherSlot);
         }
         if self.status != BookingStatus::Pending {
-            return Err(DomainError::BookingNotPending {
+            return Err(SchedulingError::BookingNotPending {
                 status: self.status,
             });
         }
@@ -162,23 +162,23 @@ impl Booking {
     /// 判定は [`CancellationPolicy::decide`] だけが行う（回数の消費の実行は entitlement）。予約したスロット `slot` の
     /// 席を 1 つ空ける。確定済みならスロットを公開中（[`SlotStatus::Open`](super::SlotStatus::Open)）に戻す（[`Slot::release`]）。確定前なら
     /// スロットはもともと公開中で、押さえた席だけを空ける（[`Slot::release_hold`]）。
-    /// 別の生徒なら [`DomainError::BookingOfAnotherStudent`]、キャンセル済みなら
-    /// [`DomainError::BookingAlreadyCancelled`]、確定済みなのにスロットに確定した予約が入っていなければ
-    /// [`DomainError::SlotNotBooked`]。失敗したときは予約もスロットも変えない。
+    /// 別の生徒なら [`SchedulingError::BookingOfAnotherStudent`]、キャンセル済みなら
+    /// [`SchedulingError::BookingAlreadyCancelled`]、確定済みなのにスロットに確定した予約が入っていなければ
+    /// [`SchedulingError::SlotNotBooked`]。失敗したときは予約もスロットも変えない。
     pub fn cancel(
         &mut self,
         student_id: AccountId,
         slot: &mut Slot,
         now: SystemTime,
-    ) -> Result<CancellationDecision, DomainError> {
+    ) -> Result<CancellationDecision, SchedulingError> {
         if student_id != self.student_id {
-            return Err(DomainError::BookingOfAnotherStudent);
+            return Err(SchedulingError::BookingOfAnotherStudent);
         }
         if slot.id() != self.slot_id {
-            return Err(DomainError::BookingOfAnotherSlot);
+            return Err(SchedulingError::BookingOfAnotherSlot);
         }
         let decision = match self.status {
-            BookingStatus::Cancelled => return Err(DomainError::BookingAlreadyCancelled),
+            BookingStatus::Cancelled => return Err(SchedulingError::BookingAlreadyCancelled),
             BookingStatus::Pending => {
                 slot.release_hold();
                 CancellationPolicy::decide(self, now)
@@ -292,7 +292,7 @@ mod tests {
         is_trial: bool,
         slot: &mut Slot,
         existing: &[Booking],
-    ) -> Result<Booking, DomainError> {
+    ) -> Result<Booking, SchedulingError> {
         Booking::reserve(
             BookingId::from_u128(id),
             student,
@@ -355,25 +355,25 @@ mod tests {
                 pending.clone(),
                 OTHER_STUDENT,
                 open.clone(),
-                DomainError::BookingOfAnotherStudent,
+                SchedulingError::BookingOfAnotherStudent,
             ),
             (
                 pending.clone(),
                 STUDENT,
                 self::slot(11, SlotStatus::Open),
-                DomainError::BookingOfAnotherSlot,
+                SchedulingError::BookingOfAnotherSlot,
             ),
             (
                 cancelled(pending.clone()),
                 STUDENT,
                 open.clone(),
-                DomainError::BookingAlreadyCancelled,
+                SchedulingError::BookingAlreadyCancelled,
             ),
             (
                 confirmed.clone(),
                 STUDENT,
                 open.clone(),
-                DomainError::SlotNotBooked {
+                SchedulingError::SlotNotBooked {
                     status: SlotStatus::Open,
                 },
             ),
@@ -411,7 +411,7 @@ mod tests {
         for status in [SlotStatus::Booked, SlotStatus::Closed] {
             assert_eq!(
                 reserve(1, STUDENT, false, &mut slot(10, status), &[]),
-                Err(DomainError::SlotNotOpen { status })
+                Err(SchedulingError::SlotNotOpen { status })
             );
         }
     }
@@ -424,7 +424,7 @@ mod tests {
             let before = slot.clone();
             assert_eq!(
                 reserve(2, student, false, &mut slot, std::slice::from_ref(&first)),
-                Err(DomainError::SlotAlreadyBooked)
+                Err(SchedulingError::SlotAlreadyBooked)
             );
             assert_eq!(slot, before);
         }
@@ -457,7 +457,7 @@ mod tests {
         let before = slot.clone();
         assert_eq!(
             reserve(4, AccountId::from_u128(5), false, &mut slot, &existing),
-            Err(DomainError::SlotAlreadyBooked)
+            Err(SchedulingError::SlotAlreadyBooked)
         );
         assert_eq!(slot, before);
 
@@ -495,7 +495,7 @@ mod tests {
         let before = slot.clone();
         assert_eq!(
             reserve(2, STUDENT, false, &mut slot, std::slice::from_ref(&first)),
-            Err(DomainError::SlotAlreadyBookedByStudent)
+            Err(SchedulingError::SlotAlreadyBookedByStudent)
         );
         assert_eq!(slot, before);
         // 別の生徒は予約できる
@@ -526,13 +526,13 @@ mod tests {
                 &mut next_slot,
                 std::slice::from_ref(&trial)
             ),
-            Err(DomainError::TrialAlreadyUsed)
+            Err(SchedulingError::TrialAlreadyUsed)
         );
         // 通常の予約の後でも体験予約はできない
         let regular = reserve(3, OTHER_STUDENT, false, &mut first_slot, &[]).unwrap();
         assert_eq!(
             reserve(4, OTHER_STUDENT, true, &mut next_slot, &[regular]),
-            Err(DomainError::TrialAlreadyUsed)
+            Err(SchedulingError::TrialAlreadyUsed)
         );
         // 2 件目でも通常の予約はできる
         reserve(
@@ -584,19 +584,19 @@ mod tests {
                 pending.clone(),
                 OTHER_STUDENT,
                 open.clone(),
-                DomainError::BookingOfAnotherStudent,
+                SchedulingError::BookingOfAnotherStudent,
             ),
             (
                 pending.clone(),
                 STUDENT,
                 self::slot(11, SlotStatus::Open),
-                DomainError::BookingOfAnotherSlot,
+                SchedulingError::BookingOfAnotherSlot,
             ),
             (
                 confirmed.clone(),
                 STUDENT,
                 open.clone(),
-                DomainError::BookingNotPending {
+                SchedulingError::BookingNotPending {
                     status: BookingStatus::Confirmed,
                 },
             ),
@@ -604,7 +604,7 @@ mod tests {
                 cancelled(pending.clone()),
                 STUDENT,
                 open.clone(),
-                DomainError::BookingNotPending {
+                SchedulingError::BookingNotPending {
                     status: BookingStatus::Cancelled,
                 },
             ),
@@ -612,7 +612,7 @@ mod tests {
                 pending.clone(),
                 STUDENT,
                 closed.clone(),
-                DomainError::SlotNotOpen {
+                SchedulingError::SlotNotOpen {
                     status: SlotStatus::Closed,
                 },
             ),
@@ -623,7 +623,7 @@ mod tests {
         }
         assert_eq!(
             closed.book(),
-            Err(DomainError::SlotNotOpen {
+            Err(SchedulingError::SlotNotOpen {
                 status: SlotStatus::Closed
             })
         );
