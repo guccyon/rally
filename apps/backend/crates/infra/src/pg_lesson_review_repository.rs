@@ -11,7 +11,10 @@ use application::{
 use domain::{
     identity::AccountId,
     lesson::LessonCompletionId,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+    review::{
+        LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
+        LessonReviewReplyComment, Rating,
+    },
 };
 use sqlx::{
     PgPool,
@@ -23,14 +26,24 @@ use crate::pg_support::{is_unique_violation, timestamp};
 /// [`LessonReviewRepository`] の Postgres 実装。
 ///
 /// 「完了したレッスン 1 件につき評価は 1 つ」は DB の `lesson_reviews_lesson_id_key` で守り、並行な評価の後の方は
-/// [`InsertReviewError::LessonAlreadyReviewed`] になる。
+/// [`InsertReviewError::LessonAlreadyReviewed`] になる。評価へのコーチの返信は同じ行の `reply_comment` / `replied_at`。
 #[derive(Debug, Clone)]
 pub struct PgLessonReviewRepository {
     pool: PgPool,
 }
 
-/// 評価の列（review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at）。
-type ReviewRow = (Uuid, Uuid, Uuid, Uuid, i16, String, OffsetDateTime);
+/// 評価の列（review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at, reply_comment, replied_at）。
+type ReviewRow = (
+    Uuid,
+    Uuid,
+    Uuid,
+    Uuid,
+    i16,
+    String,
+    OffsetDateTime,
+    Option<String>,
+    Option<OffsetDateTime>,
+);
 
 impl PgLessonReviewRepository {
     pub fn new(pool: PgPool) -> Self {
@@ -43,12 +56,29 @@ impl LessonReviewRepository for PgLessonReviewRepository {
         lesson_review_id_uuid::from_uuid(Uuid::new_v4())
     }
 
+    async fn find_by_id(
+        &self,
+        review_id: LessonReviewId,
+    ) -> Result<Option<LessonReview>, Unavailable> {
+        let row: Option<ReviewRow> = sqlx::query_as(
+            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
+                    reply_comment, replied_at
+             FROM review.lesson_reviews WHERE review_id = $1",
+        )
+        .bind(lesson_review_id_uuid::to_uuid(review_id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        row.map(review_from_row).transpose()
+    }
+
     async fn find_by_lesson(
         &self,
         lesson_id: LessonCompletionId,
     ) -> Result<Option<LessonReview>, Unavailable> {
         let row: Option<ReviewRow> = sqlx::query_as(
-            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at
+            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
+                    reply_comment, replied_at
              FROM review.lesson_reviews WHERE lesson_id = $1",
         )
         .bind(lesson_completion_id_uuid::to_uuid(lesson_id))
@@ -83,9 +113,28 @@ impl LessonReviewRepository for PgLessonReviewRepository {
         Ok(())
     }
 
+    async fn save_reply(
+        &self,
+        review_id: LessonReviewId,
+        reply: &LessonReviewReply,
+    ) -> Result<(), Unavailable> {
+        sqlx::query(
+            "UPDATE review.lesson_reviews SET reply_comment = $2, replied_at = $3
+             WHERE review_id = $1",
+        )
+        .bind(lesson_review_id_uuid::to_uuid(review_id))
+        .bind(reply.comment().as_str())
+        .bind(timestamp(reply.replied_at()))
+        .execute(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        Ok(())
+    }
+
     async fn find_by_coach(&self, coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
         let rows: Vec<ReviewRow> = sqlx::query_as(
-            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at
+            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
+                    reply_comment, replied_at
              FROM review.lesson_reviews WHERE coach_id = $1 ORDER BY submitted_at",
         )
         .bind(account_id_uuid::to_uuid(coach_id))
@@ -100,7 +149,8 @@ impl LessonReviewRepository for PgLessonReviewRepository {
         since: SystemTime,
     ) -> Result<Vec<LessonReview>, Unavailable> {
         let rows: Vec<ReviewRow> = sqlx::query_as(
-            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at
+            "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
+                    reply_comment, replied_at
              FROM review.lesson_reviews WHERE submitted_at >= $1 ORDER BY submitted_at",
         )
         .bind(timestamp(since))
@@ -112,8 +162,26 @@ impl LessonReviewRepository for PgLessonReviewRepository {
 }
 
 fn review_from_row(
-    (review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at): ReviewRow,
+    (
+        review_id,
+        lesson_id,
+        student_id,
+        coach_id,
+        rating,
+        comment,
+        submitted_at,
+        reply_comment,
+        replied_at,
+    ): ReviewRow,
 ) -> Result<LessonReview, Unavailable> {
+    // 文と時刻は揃って NULL か揃って値を持つ（DB の lesson_reviews_reply_shape）
+    let reply = match (reply_comment, replied_at) {
+        (Some(comment), Some(replied_at)) => Some(LessonReviewReply::new(
+            LessonReviewReplyComment::new(comment).map_err(Unavailable::new)?,
+            replied_at.into(),
+        )),
+        _ => None,
+    };
     Ok(LessonReview::restore(
         lesson_review_id_uuid::from_uuid(review_id),
         lesson_completion_id_uuid::from_uuid(lesson_id),
@@ -122,5 +190,6 @@ fn review_from_row(
         Rating::new(i64::from(rating)).map_err(Unavailable::new)?,
         LessonReviewComment::new(comment).map_err(Unavailable::new)?,
         submitted_at.into(),
-    ))
+    )
+    .with_reply(reply))
 }

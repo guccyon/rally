@@ -805,7 +805,8 @@ paths:
         自分の分だけで、他のコーチの分は 403）。admin-web の `listCoachReviews` と同じ操作・同じ形。
         各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
         `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
-        メニューの写しで、元にメニューがなければ null。
+        メニューの写しで、元にメニューがなければ null。評価されたコーチの返信 `reply`（`LessonReviewReply`。admin-web の
+        `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
 
         `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
         `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -2298,6 +2299,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ReviewLessonMenu"
             - type: "null"
+        reply:
+          description: |
+            評価されたコーチの返信（admin-web の `replyToLessonReview`）。付け直していれば最後の返信だけ。返信がなければ
+            null。評価の一覧では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/LessonReviewReply"
+            - type: "null"
 
     ReviewLessonMenu:
       type: object
@@ -2311,6 +2319,23 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+
+    LessonReviewReply:
+      type: object
+      description: |
+        glossary の lesson_review_reply（評価へのコーチの返信）。評価 1 件に 1 つで、付けるのは評価されたコーチ
+        （admin-web の `replyToLessonReview`）。admin-web の `LessonReviewReply` と同じ形
+      required: [comment, replied_at]
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 返信の文
+        replied_at:
+          type: string
+          format: date-time
+          description: 返信を付けた（付け直したなら最後に付け直した）時刻
 
     CoachReviewList:
       type: object

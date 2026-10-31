@@ -1,6 +1,9 @@
 use std::time::SystemTime;
 
-use super::{LessonReviewComment, LessonReviewId, Rating, ReviewError};
+use super::{
+    LessonReviewComment, LessonReviewId, LessonReviewReply, LessonReviewReplyComment, Rating,
+    ReviewError,
+};
 use crate::{
     identity::AccountId,
     lesson::{LessonCompletion, LessonCompletionId},
@@ -8,7 +11,8 @@ use crate::{
 
 /// レッスンの評価（glossary の lesson_review）。完了したレッスン 1 件につき 1 つで、付けるのはそのレッスンの生徒。
 ///
-/// 評価されるコーチは完了したレッスンのコーチで、評価する側は選べない。編集・削除は Gen1 の範囲外（作ったら変えない）。
+/// 評価されるコーチは完了したレッスンのコーチで、評価する側は選べない。編集・削除は Gen1 の範囲外（作ったら点と一言は
+/// 変えない）。評価されたコーチは返信（[`LessonReviewReply`]）を 1 つだけ付けられ、付け直すと上書きする（[`Self::write_reply`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LessonReview {
     id: LessonReviewId,
@@ -18,6 +22,7 @@ pub struct LessonReview {
     rating: Rating,
     comment: LessonReviewComment,
     submitted_at: SystemTime,
+    reply: Option<LessonReviewReply>,
 }
 
 impl LessonReview {
@@ -48,10 +53,11 @@ impl LessonReview {
             rating,
             comment,
             submitted_at: now,
+            reply: None,
         })
     }
 
-    /// 保存先から読んだ評価を組み立てる（保存先の実装用）。
+    /// 保存先から読んだ評価を組み立てる（保存先の実装用）。返信は [`Self::with_reply`] で添える（既定はなし）。
     pub const fn restore(
         id: LessonReviewId,
         lesson_id: LessonCompletionId,
@@ -69,7 +75,29 @@ impl LessonReview {
             rating,
             comment,
             submitted_at,
+            reply: None,
         }
+    }
+
+    /// 保存先から読んだ返信 `reply` を添える（保存先の実装用。[`Self::restore`] の続き）。
+    pub fn with_reply(self, reply: Option<LessonReviewReply>) -> Self {
+        Self { reply, ..self }
+    }
+
+    /// アカウント `account_id` がこの評価に返信 `comment` を `now` に付ける。返信がすでにあれば文と時刻を置き換える。
+    ///
+    /// 付けられるのは評価されたコーチだけ（それ以外は [`ReviewError::NotTheReviewedCoach`] で、何も変えない）。
+    pub fn write_reply(
+        &mut self,
+        account_id: AccountId,
+        comment: LessonReviewReplyComment,
+        now: SystemTime,
+    ) -> Result<(), ReviewError> {
+        if account_id != self.coach_id {
+            return Err(ReviewError::NotTheReviewedCoach);
+        }
+        self.reply = Some(LessonReviewReply::new(comment, now));
+        Ok(())
     }
 
     pub const fn id(&self) -> LessonReviewId {
@@ -98,6 +126,11 @@ impl LessonReview {
 
     pub const fn submitted_at(&self) -> SystemTime {
         self.submitted_at
+    }
+
+    /// 評価されたコーチの返信。まだなければ `None`。
+    pub const fn reply(&self) -> Option<&LessonReviewReply> {
+        self.reply.as_ref()
     }
 }
 
@@ -162,6 +195,7 @@ mod tests {
         assert_eq!(review.rating().value(), 4);
         assert_eq!(review.comment().as_str(), "分かりやすかった");
         assert_eq!(review.submitted_at(), at(3));
+        assert_eq!(review.reply(), None);
     }
 
     #[test]
@@ -199,18 +233,74 @@ mod tests {
         );
     }
 
+    fn reply(text: &str) -> LessonReviewReplyComment {
+        LessonReviewReplyComment::new(text).unwrap()
+    }
+
+    #[test]
+    fn the_reviewed_coach_replies_and_a_second_reply_overwrites_the_first() {
+        let mut review = submit(STUDENT, &lesson(10), None).unwrap();
+
+        review
+            .write_reply(COACH, reply("ありがとう"), at(4))
+            .unwrap();
+        assert_eq!(
+            review.reply(),
+            Some(&LessonReviewReply::new(reply("ありがとう"), at(4)))
+        );
+
+        review
+            .write_reply(COACH, reply("次回はサーブも見ます"), at(5))
+            .unwrap();
+        assert_eq!(
+            review.reply(),
+            Some(&LessonReviewReply::new(
+                reply("次回はサーブも見ます"),
+                at(5)
+            )),
+            "文と時刻を置き換える"
+        );
+        // 点と一言は変えない
+        assert_eq!(review.rating().value(), 4);
+        assert_eq!(review.comment().as_str(), "分かりやすかった");
+    }
+
+    #[test]
+    fn only_the_reviewed_coach_can_reply() {
+        let mut review = submit(STUDENT, &lesson(10), None).unwrap();
+        review
+            .write_reply(COACH, reply("ありがとう"), at(4))
+            .unwrap();
+        let before = review.clone();
+        for account in [STUDENT, OTHER_STUDENT, AccountId::from_u128(4)] {
+            assert_eq!(
+                review.write_reply(account, reply("横取り"), at(5)),
+                Err(ReviewError::NotTheReviewedCoach),
+                "{account:?}"
+            );
+        }
+        assert_eq!(review, before, "拒んだら何も変えない");
+    }
+
     #[test]
     fn restore_keeps_every_field() {
-        let review = submit(STUDENT, &lesson(10), None).unwrap();
-        let restored = LessonReview::restore(
-            review.id(),
-            review.lesson_id(),
-            review.student_id(),
-            review.coach_id(),
-            review.rating(),
-            review.comment().clone(),
-            review.submitted_at(),
-        );
-        assert_eq!(restored, review);
+        let mut review = submit(STUDENT, &lesson(10), None).unwrap();
+        let restore = |review: &LessonReview| {
+            LessonReview::restore(
+                review.id(),
+                review.lesson_id(),
+                review.student_id(),
+                review.coach_id(),
+                review.rating(),
+                review.comment().clone(),
+                review.submitted_at(),
+            )
+            .with_reply(review.reply().cloned())
+        };
+        assert_eq!(restore(&review), review);
+        review
+            .write_reply(COACH, reply("ありがとう"), at(4))
+            .unwrap();
+        assert_eq!(restore(&review), review);
     }
 }

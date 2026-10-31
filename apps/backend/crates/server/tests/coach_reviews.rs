@@ -1,7 +1,8 @@
 //! 生徒がコーチの評価（`getCoachReviewSummary` の件数と平均・`listCoachReviews` の一覧）を読むことを、保存先を Postgres に
 //! した組み立て（`server::router_with_postgres`）で通す。評価していない生徒でも、どのコーチの分も読めること、一覧が送った
 //! 時刻の新しい順で評価した生徒を載せないこと、評価のないコーチは 0 件になることを確かめる。
-//! 契約の形の細かい検査は interface の `tests/reviews.rs`。
+//! 評価されたコーチが `PUT /lesson-reviews/{review_id}/reply` で付けた返信（2 回目は上書き）が、生徒の読む一覧に載ることも
+//! 確かめる。契約の形の細かい検査は interface の `tests/reviews.rs`・`tests/review_replies.rs`。
 //!
 //! 評価は完了したレッスンが要り、そこまでの流れは `lessons.rs` で通しているので、ここでは評価を保存先に直に書く
 //! （`review.lesson_reviews` の `lesson_id` には外部キーがない）。
@@ -43,6 +44,18 @@ async fn get(router: &Router, path: &str, token: &str) -> (StatusCode, Value) {
     let request = Request::get(path)
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
+        .unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+async fn put(router: &Router, path: &str, token: &str, body: Value) -> (StatusCode, Value) {
+    let request = Request::put(path)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
         .unwrap();
     let response = router.clone().oneshot(request).await.unwrap();
     let status = response.status();
@@ -164,4 +177,58 @@ async fn a_student_reads_the_reviews_of_any_coach_from_postgres(pool: PgPool) {
     let (status, body) = get(&router, &format!("/coaches/{ito_id}/reviews"), &hanako).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "coach_id": ito_id, "reviews": [] }));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn the_reviewed_coach_replies_and_students_read_the_latest_reply_from_postgres(pool: PgPool) {
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (_, ito_token) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    let review_id = review(&reviews, taro, tanaka, 1, 4, "よい", 1).await;
+    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+    let path = format!("/lesson-reviews/{review_id}/reply");
+
+    let (status, body) = put(
+        &router,
+        &path,
+        &tanaka_token,
+        json!({ "comment": "ありがとう" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["comment"], "ありがとう");
+    let (status, body) = put(
+        &router,
+        &path,
+        &tanaka_token,
+        json!({ "comment": "次回はサーブも見ます" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let replied_at = body["replied_at"].clone();
+
+    // 他のコーチ・生徒は返信できない
+    for token in [&ito_token, &taro_token] {
+        let (status, body) = put(&router, &path, token, json!({ "comment": "横取り" })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    }
+
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let (status, body) = get(
+        &router,
+        &format!("/coaches/{tanaka_id}/reviews"),
+        &taro_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let reply = &body["reviews"][0]["reply"];
+    assert_eq!(
+        reply["comment"], "次回はサーブも見ます",
+        "最後の返信だけが載る"
+    );
+    // 応答の時刻は時計の精度、Postgres はマイクロ秒までなので、秒までを比べる
+    let seconds = |value: &Value| value.as_str().unwrap()[..19].to_string();
+    assert_eq!(seconds(&reply["replied_at"]), seconds(&replied_at));
 }

@@ -1,13 +1,16 @@
 //! profile のユースケースと、他のコンテキストに表示名・紹介を渡すアダプタ。
 //!
-//! データは当面 identity のアカウントの保存先（[`AccountRepository`]。Postgres の `identity` スキーマの表）に
-//! あり、それを読み書きする（docs/adr/0009-subdomain-types.md）。
+//! コーチの自己紹介文は profile のポート（[`CoachProfileRepository`]）で読み書きする。表示名・提供スポーツは当面
+//! identity のアカウントの保存先（[`AccountRepository`]）から読み、生徒の表示名もそこに書く。どちらのデータも当面は
+//! Postgres の `identity` スキーマの表にある（docs/adr/0009-subdomain-types.md）。
 //!
 //! [`AccountRepository`]: crate::identity::AccountRepository
 
 mod coach_acceptance_lookup;
 mod coach_favorite_lookup;
 mod coach_profile;
+mod coach_profile_repository;
+mod get_coach_bio;
 mod get_coach_profile;
 mod list_coaches;
 mod listed_coach;
@@ -22,6 +25,8 @@ mod update_student_profile;
 pub use coach_acceptance_lookup::CoachAcceptanceLookup;
 pub use coach_favorite_lookup::CoachFavoriteLookup;
 pub use coach_profile::CoachProfile;
+pub use coach_profile_repository::CoachProfileRepository;
+pub use get_coach_bio::GetCoachBio;
 pub use get_coach_profile::{GetCoachProfile, GetCoachProfileCommand};
 pub use list_coaches::ListCoaches;
 pub use listed_coach::ListedCoach;

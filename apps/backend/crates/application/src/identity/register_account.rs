@@ -276,14 +276,6 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
-        async fn update_coach_bio(
-            &self,
-            _coach_id: domain::identity::AccountId,
-            _bio: domain::profile::CoachBio,
-        ) -> Result<Option<Account>, Unavailable> {
-            Err(Unavailable::new("connection refused"))
-        }
-
         async fn update_student_display_name(
             &self,
             _student_id: domain::identity::AccountId,

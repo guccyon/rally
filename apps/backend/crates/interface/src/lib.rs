@@ -34,6 +34,7 @@ mod my_videos;
 mod notification_settings;
 mod notifications;
 mod review_error;
+mod review_replies;
 mod reviews;
 mod scheduling_error;
 mod slot_supply;
@@ -90,13 +91,13 @@ use application::{
         NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
     },
     profile::{
-        CoachAcceptanceLookup, CoachFavoriteLookup, GetCoachProfile, ListCoaches,
-        UpdateCoachProfile, UpdateStudentProfile,
+        CoachAcceptanceLookup, CoachFavoriteLookup, CoachProfileRepository, GetCoachBio,
+        GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
-        ListLowRatedReviews, ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup,
-        ReviewerDisplayNameLookup, SubmitLessonReview,
+        ListLowRatedReviews, ReplyToLessonReview, ReviewedCoachDisplayNameLookup,
+        ReviewedLessonMenuLookup, ReviewerDisplayNameLookup, SubmitLessonReview,
     },
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachAcceptanceRepository,
@@ -169,6 +170,7 @@ pub fn router_with<
 >(
     register_account: RegisterAccount<R, A, C>,
     get_account: GetAccount<R>,
+    get_coach_bio: GetCoachBio<R>,
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, J, A, C>,
     search_slots: SearchSlots<S, J, I, C>,
@@ -200,7 +202,7 @@ pub fn router_with<
     tokens: T,
 ) -> Router
 where
-    R: AccountRepository + 'static,
+    R: AccountRepository + CoachProfileRepository + 'static,
     S: SlotRepository + 'static,
     J: LessonMenuLookup + VideoLessonMenuLookup + 'static,
     I: CoachIntroductionLookup + 'static,
@@ -243,6 +245,7 @@ where
         )
         .with_state(Arc::new(me::MeState {
             get_account,
+            get_coach_bio,
             update_coach_profile,
         }));
     let slots = Router::new()
@@ -548,7 +551,7 @@ where
 /// `GET /coaches/{coach_id}` は生徒だけ。
 pub fn coach_profile_router<R, F, T>(get_coach_profile: GetCoachProfile<R, F>, tokens: T) -> Router
 where
-    R: AccountRepository + 'static,
+    R: AccountRepository + CoachProfileRepository + 'static,
     F: CoachFavoriteLookup + 'static,
     T: TokenVerifier + 'static,
 {
@@ -897,6 +900,32 @@ where
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(low_rated_reviews::LowRatedReviewsState {
             list_low_rated_reviews,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 評価への返信（admin-web の `PUT /lesson-reviews/{review_id}/reply`）のルーター。[`router_with`] と同じくトークンの
+/// 検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// コーチだけ（本部・生徒は 403）で、返信できるのは評価されたコーチだけ（他のコーチも 403。ユースケースが確かめる）。
+pub fn review_replies_router<R, C, T>(
+    reply_to_lesson_review: ReplyToLessonReview<R, C>,
+    tokens: T,
+) -> Router
+where
+    R: LessonReviewRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-reviews/{review_id}/reply",
+            put(review_replies::reply_to_lesson_review::<R, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(review_replies::ReviewRepliesState {
+            reply_to_lesson_review,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

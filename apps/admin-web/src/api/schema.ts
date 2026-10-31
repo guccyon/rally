@@ -238,7 +238,8 @@ export interface paths {
          *     生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
          *     各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
          *     `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
-         *     メニューの写しで、元にメニューがなければ null。
+         *     メニューの写しで、元にメニューがなければ null。評価されたコーチの返信 `reply`（`LessonReviewReply`。
+         *     `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
          *
          *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
          *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -273,6 +274,7 @@ export interface paths {
          *     - 各評価には、評価されたコーチと評価した生徒の ID と表示名、評価した完了したレッスンのレッスンメニュー
          *       `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - 各評価には、評価されたコーチの返信 `reply`（`LessonReviewReply`。`replyToLessonReview`）も載せる。返信がなければ null
          *     - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
@@ -280,6 +282,37 @@ export interface paths {
          */
         get: operations["listLowRatedLessonReviews"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-reviews/{review_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 評価への返信（コーチ）
+         * @description コーチが自分の受けたレッスンの評価（glossary の lesson_review）1 件に、感謝やフォローの短い返信（glossary の
+         *     lesson_review_reply）を付け、付けたあとの返信を返す。評価 1 件に返信は 1 つで、2 回目からは文と時刻を丸ごと
+         *     置き換える（上書き。前の返信は残さない）。返信の削除はない。点と一言は変えない。
+         *
+         *     - コーチの役割のトークンだけが呼べる（本部・生徒は 403）。返信できるのは評価されたコーチ（評価したレッスンの
+         *       コーチ）だけで、他のコーチの評価は 403（評価は `listCoachReviews` で誰でも読めるので、あることは隠さない）
+         *     - 評価がないとき・`review_id` が UUID でないときは 404
+         *     - `comment` は空（空白だけを含む）でなく、200 文字まで。不正な入力では 422 で、何も変えない
+         *     - `replied_at` は返信を付けた（付け直したなら最後に付け直した）時刻
+         *
+         *     付けた返信は評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`、student-app の `listCoachReviews`）の
+         *     評価ごとの `reply` に載る。行動イベントは発火しない。
+         */
+        put: operations["replyToLessonReview"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1205,12 +1238,34 @@ export interface components {
              *     null。評価の一覧では必ず載せる
              */
             lesson_menu?: components["schemas"]["ReviewLessonMenu"] | null;
+            /**
+             * @description 評価されたコーチの返信（`replyToLessonReview`）。付け直していれば最後の返信だけ。返信がなければ null。
+             *     評価の一覧では必ず載せる
+             */
+            reply?: components["schemas"]["LessonReviewReply"] | null;
         };
         /** @description 評価した完了したレッスンのコーチのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく、レッスンの元（予約・動画）が持つ写し。student-app の `ReviewLessonMenu` と同じ形 */
         ReviewLessonMenu: {
             /** Format: uuid */
             lesson_menu_id: string;
             name: string;
+        };
+        /**
+         * @description glossary の lesson_review_reply（評価へのコーチの返信）。評価 1 件に 1 つで、付けるのは評価されたコーチ。
+         *     student-app の `LessonReviewReply` と同じ形
+         */
+        LessonReviewReply: {
+            /** @description 返信の文 */
+            comment: string;
+            /**
+             * Format: date-time
+             * @description 返信を付けた（付け直したなら最後に付け直した）時刻
+             */
+            replied_at: string;
+        };
+        ReplyToLessonReviewRequest: {
+            /** @description 返信の文。空白だけは不可（422） */
+            comment: string;
         };
         /** @description コーチ 1 人が受けた評価の一覧（並べ方は `listCoachReviews` の説明） */
         CoachReviewList: {
@@ -1259,6 +1314,11 @@ export interface components {
              *     レッスンの元が持つメニューの写し。元にメニューがなければ null
              */
             lesson_menu: components["schemas"]["ReviewLessonMenu"] | null;
+            /**
+             * @description 評価されたコーチの返信（`replyToLessonReview`）。付け直していれば最後の返信だけ。返信がなければ null。
+             *     評価の一覧では必ず載せる
+             */
+            reply?: components["schemas"]["LessonReviewReply"] | null;
         };
         /** @description 本部が見る低い評価の一覧（しきい値・期間・並べ方は `listLowRatedLessonReviews` の説明） */
         LowRatedLessonReviewList: {
@@ -1906,6 +1966,36 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    replyToLessonReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplyToLessonReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description 付けた（置き換えた）あとの返信 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonReviewReply"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     suspendCoach: {

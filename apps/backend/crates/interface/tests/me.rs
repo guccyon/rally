@@ -101,6 +101,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
         GetAccount::new(accounts.clone()),
+        application::profile::GetCoachBio::new(accounts.clone()),
         application::profile::UpdateCoachProfile::new(accounts),
         PublishSlot::new(
             slots.clone(),
