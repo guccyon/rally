@@ -39,8 +39,8 @@ use application::{
         VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
     },
     catalog::{
-        CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
-        UpdateLessonMenu,
+        CreateLessonMenu, LessonMenuCoachDisplayNameLookup, LessonMenuRepository,
+        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -420,44 +420,55 @@ where
 /// `/coaches/me/lesson-menus`（admin-web の自分のメニューの一覧・作成）と `PUT /coaches/me/lesson-menus/{lesson_menu_id}`
 /// （変更・非公開）はコーチだけで、扱うのはトークンのコーチ自身のメニューだけ。
 /// `GET /coaches/{coach_id}/lesson-menus`（student-app のコーチの公開中のメニューの一覧）は生徒だけ。
-pub fn catalog_router<M, R, C, T>(
+/// `GET /lesson-menus`（admin-web のすべてのコーチのメニューの横断の一覧）は本部だけ。
+pub fn catalog_router<M, R, C, D, T>(
     create_lesson_menu: CreateLessonMenu<M, R, C>,
     update_lesson_menu: UpdateLessonMenu<M, R>,
     list_my_lesson_menus: ListMyLessonMenus<M>,
     list_coach_lesson_menus: ListCoachLessonMenus<M>,
+    list_lesson_menus: ListLessonMenus<M, D>,
     tokens: T,
 ) -> Router
 where
     M: LessonMenuRepository + 'static,
     R: AccountRepository + 'static,
     C: Clock + 'static,
+    D: LessonMenuCoachDisplayNameLookup + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     let coach_routes = Router::new()
         .route(
             "/coaches/me/lesson-menus",
-            get(lesson_menus::list_my_lesson_menus::<M, R, C>)
-                .post(lesson_menus::create_my_lesson_menu::<M, R, C>),
+            get(lesson_menus::list_my_lesson_menus::<M, R, C, D>)
+                .post(lesson_menus::create_my_lesson_menu::<M, R, C, D>),
         )
         .route(
             "/coaches/me/lesson-menus/{lesson_menu_id}",
-            put(lesson_menus::update_my_lesson_menu::<M, R, C>),
+            put(lesson_menus::update_my_lesson_menu::<M, R, C, D>),
         )
         .route_layer(require_role(&[Role::Coach]));
     let student_routes = Router::new()
         .route(
             "/coaches/{coach_id}/lesson-menus",
-            get(lesson_menus::list_coach_lesson_menus::<M, R, C>),
+            get(lesson_menus::list_coach_lesson_menus::<M, R, C, D>),
         )
         .route_layer(require_role(&[Role::Student]));
+    let headquarters_routes = Router::new()
+        .route(
+            "/lesson-menus",
+            get(lesson_menus::list_lesson_menus::<M, R, C, D>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]));
     coach_routes
         .merge(student_routes)
+        .merge(headquarters_routes)
         .with_state(Arc::new(lesson_menus::LessonMenusState {
             create_lesson_menu,
             update_lesson_menu,
             list_my_lesson_menus,
             list_coach_lesson_menus,
+            list_lesson_menus,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

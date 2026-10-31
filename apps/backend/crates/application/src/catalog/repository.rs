@@ -33,4 +33,7 @@ pub trait LessonMenuRepository: Send + Sync {
         &self,
         coach_id: AccountId,
     ) -> impl Future<Output = Result<Vec<LessonMenu>, Unavailable>> + Send;
+
+    /// すべてのコーチのメニューを、公開中かを問わずすべて読む（絞らない・並べない。絞るのと並べるのはユースケース）。
+    fn find_all(&self) -> impl Future<Output = Result<Vec<LessonMenu>, Unavailable>> + Send;
 }
