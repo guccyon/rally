@@ -1,5 +1,6 @@
 //! `PgVideoRepository`（`async_lesson.videos`・`video_reviews`）の検証。送付・返却の往復と、2 回目の返却の拒否と、
-//! コーチに送られた動画の列挙と、AI の一次フィードバックの往復（添削の返却で変わらないこと）。
+//! コーチに送られた動画の列挙と、AI の一次フィードバックの往復（添削の返却で変わらないこと）と、送った時点の
+//! レッスンメニューの写しの往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,7 +10,11 @@ mod support;
 use application::async_lesson::{UpdateVideoError, VideoRepository};
 use domain::{
     DomainError,
-    async_lesson::{AiFeedback, ReviewComment, Video, VideoStatus},
+    async_lesson::{AiFeedback, ReviewComment, Video, VideoLessonMenu, VideoStatus},
+    catalog::{
+        LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+        LessonMenuName,
+    },
     identity::Sport,
 };
 use infra::PgVideoRepository;
@@ -194,5 +199,71 @@ async fn ai_feedback_round_trips_and_survives_the_coachs_review(pool: PgPool) {
         videos.videos_of_coach(coach).await.unwrap(),
         [reviewed],
         "コーチの一覧でも読める"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_copy_round_trips_and_survives_the_coachs_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    // メニューは catalog の持ち物なので、catalog.lesson_menus に行がなくても写しは保存できる（外部キーは張らない）
+    let menu = LessonMenu::restore(
+        LessonMenuId::from_u128(0x50),
+        coach,
+        LessonMenuContent {
+            sport: Sport::Tennis,
+            format: LessonFormat::Async,
+            name: LessonMenuName::new("フォーム添削").unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        true,
+        at(0),
+    );
+    let with_menu = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(1))
+        .with_lesson_menu(&menu)
+        .unwrap();
+    let without_menu = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(2));
+    videos.insert(with_menu.clone()).await.unwrap();
+    videos.insert(without_menu.clone()).await.unwrap();
+
+    let copy = VideoLessonMenu::copy_of(&menu);
+    let found = videos.find(with_menu.id()).await.unwrap().unwrap();
+    assert_eq!(found.lesson_menu(), Some(&copy));
+    assert_eq!(found, with_menu);
+    assert_eq!(
+        videos
+            .find(without_menu.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .lesson_menu(),
+        None
+    );
+
+    // 添削の返却と AI の一次フィードバックでは写しは変わらない
+    let reviewed = videos
+        .update(with_menu.id(), |v| {
+            v.record_ai_feedback(
+                AiFeedback::new("ラケットの面が上を向いています", at(1)).unwrap(),
+            )?;
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.lesson_menu(), Some(&copy));
+    assert_eq!(videos.find(with_menu.id()).await.unwrap(), Some(reviewed));
+
+    let mut of_coach = videos.videos_of_coach(coach).await.unwrap();
+    of_coach.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        of_coach.iter().map(Video::lesson_menu).collect::<Vec<_>>(),
+        [Some(&copy), None]
     );
 }

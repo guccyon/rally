@@ -34,7 +34,8 @@ use application::{
     analytics::AnalyticsSink,
     async_lesson::{
         AiFeedbackGenerator, GetVideoReview, ListCoachVideos, ReturnVideoReview, ReviewGate,
-        SubmitVideo, VideoRepository, VideoStorage, VideoStudentDisplayNameLookup,
+        SubmitVideo, VideoLessonMenuLookup, VideoRepository, VideoStorage,
+        VideoStudentDisplayNameLookup,
     },
     catalog::{
         CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
@@ -117,7 +118,7 @@ pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
     end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
-    submit_video: SubmitVideo<W, U, Y, A, P, C>,
+    submit_video: SubmitVideo<W, J, U, Y, A, P, C>,
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     list_coach_videos: ListCoachVideos<W, F>,
@@ -136,7 +137,7 @@ pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N
 where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
-    J: LessonMenuLookup + 'static,
+    J: LessonMenuLookup + VideoLessonMenuLookup + 'static,
     I: CoachIntroductionLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     B: BookingRepository + 'static,
@@ -280,13 +281,13 @@ where
     let videos = Router::new()
         .route(
             "/videos",
-            post(videos::submit_video::<W, U, Y, Q, A, P, C>)
+            post(videos::submit_video::<W, J, U, Y, Q, A, P, C>)
                 .route_layer(require_role(&[Role::Student])),
         )
         .route(
             "/videos/{video_id}/review",
-            get(videos::get_video_review::<W, U, Y, Q, A, P, C>).merge(
-                post(videos::return_video_review::<W, U, Y, Q, A, P, C>)
+            get(videos::get_video_review::<W, J, U, Y, Q, A, P, C>).merge(
+                post(videos::return_video_review::<W, J, U, Y, Q, A, P, C>)
                     .route_layer(require_role(&[Role::Coach])),
             ),
         )

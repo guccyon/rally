@@ -172,6 +172,9 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         ),
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
             analytics.clone(),

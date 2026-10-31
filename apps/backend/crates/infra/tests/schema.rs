@@ -979,6 +979,64 @@ async fn video_parties_have_the_right_roles(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn video_lesson_menu_is_null_unless_copied_and_has_the_shape_of_a_copy(pool: PgPool) {
+    // 列を知らない（古い版の）INSERT の動画は NULL（メニューなしの動画）
+    let video_id = submit_video(&pool, &student(&pool).await, &coach(&pool).await, "tennis")
+        .await
+        .unwrap();
+    let copy: (Option<Uuid>, Option<String>) = sqlx::query_as(
+        "SELECT lesson_menu_id, lesson_menu_name FROM async_lesson.videos WHERE video_id = $1::uuid",
+    )
+    .bind(&video_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(copy, (None, None));
+
+    let set_copy = |id: Option<Uuid>, name: Option<&'static str>| {
+        sqlx::query(
+            "UPDATE async_lesson.videos SET lesson_menu_id = $2, lesson_menu_name = $3
+             WHERE video_id = $1::uuid",
+        )
+        .bind(&video_id)
+        .bind(id)
+        .bind(name)
+        .execute(&pool)
+    };
+    // メニューは catalog の持ち物なので外部キーは張らない（ない ID も入る）
+    let id = Some(Uuid::new_v4());
+    for name in [
+        "フォーム添削",
+        "あいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあいうえおかきくけこ",
+    ] {
+        set_copy(id, Some(name)).await.unwrap();
+    }
+    set_copy(None, None).await.unwrap();
+
+    for (id, name, expected) in [
+        (id, None, "videos_lesson_menu_shape"),
+        (None, Some("フォーム添削"), "videos_lesson_menu_shape"),
+        (id, Some(""), "videos_lesson_menu_name_check"),
+        (id, Some(" "), "videos_lesson_menu_name_check"),
+        (
+            id,
+            Some(
+                "あいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあいうえおかきくけこあ",
+            ),
+            "videos_lesson_menu_name_check",
+        ),
+    ] {
+        let (code, constraint) = violation(set_copy(id, name).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected),
+            "{name:?}"
+        );
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn video_sports_match_the_identity_values(pool: PgPool) {
     use domain::identity::Sport;
     use infra::identity_values::sport_value;
