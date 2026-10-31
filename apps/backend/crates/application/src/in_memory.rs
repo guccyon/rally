@@ -50,7 +50,7 @@ use crate::{
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
-        UpdateBookingError, booking_id_uuid, slot_id_uuid,
+        UpdateBookingError, UpdateSlotError, booking_id_uuid, slot_id_uuid,
     },
 };
 
@@ -183,7 +183,8 @@ impl Clock for FixedClock {
 
 /// [`SlotRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
 ///
-/// カレンダーの読み取りから保存までは 1 つのロックの中で行うので、同じコーチへの公開は直列になる。
+/// カレンダーの読み取りから保存までは 1 つのロックの中で行うので、同じコーチへの公開は直列になる。枠の変更
+/// （[`SlotRepository::update`]）も同じロックの中で行うので、[`InMemoryBookingRepository`] の予約と直列になる。
 #[derive(Debug, Clone, Default)]
 pub struct InMemorySlotRepository {
     slots: Arc<Mutex<Vec<Slot>>>,
@@ -224,6 +225,22 @@ impl SlotRepository for InMemorySlotRepository {
         add(&mut calendar, slot.clone()).map_err(AddToCalendarError::Rejected)?;
         slots.push(slot);
         Ok(())
+    }
+
+    async fn update<F>(&self, slot_id: SlotId, update: F) -> Result<Slot, UpdateSlotError>
+    where
+        F: FnOnce(&mut Slot) -> Result<(), SchedulingError> + Send,
+    {
+        let mut slots = self.slots.lock().unwrap();
+        let slot = slots
+            .iter_mut()
+            .find(|slot| slot.id() == slot_id)
+            .ok_or(UpdateSlotError::SlotNotFound)?;
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let mut next = slot.clone();
+        update(&mut next).map_err(UpdateSlotError::Rejected)?;
+        *slot = next.clone();
+        Ok(next)
     }
 
     async fn search(&self, criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {

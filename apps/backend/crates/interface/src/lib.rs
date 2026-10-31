@@ -31,6 +31,7 @@ mod review_error;
 mod reviews;
 mod scheduling_error;
 mod slot_supply;
+mod slot_withdrawals;
 mod slots;
 mod subscription_plans;
 mod subscriptions;
@@ -82,6 +83,7 @@ use application::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
         GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
         PublishSlot, QuotaGate, SearchSlots, SlotRepository, StudentDisplayNameLookup,
+        WithdrawSlot,
     },
 };
 use axum::{
@@ -632,6 +634,31 @@ where
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(subscription_plans::SubscriptionPlansState {
             list_subscription_plans,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// コーチが公開した枠の取り下げ（admin-web の `POST /coaches/me/slots/{slot_id}/withdraw`）のルーター。
+/// [`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge`
+/// する（同じ検証器を渡す）。
+///
+/// `POST /coaches/me/slots/{slot_id}/withdraw` はコーチだけで、取り下げられるのはトークンのコーチ自身の枠だけ。
+pub fn slot_withdrawal_router<S, A, C, T>(withdraw_slot: WithdrawSlot<S, A, C>, tokens: T) -> Router
+where
+    S: SlotRepository + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/me/slots/{slot_id}/withdraw",
+            post(slot_withdrawals::withdraw_my_slot::<S, A, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(slot_withdrawals::SlotWithdrawalsState {
+            withdraw_slot,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

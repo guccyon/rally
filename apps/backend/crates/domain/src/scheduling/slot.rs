@@ -16,6 +16,9 @@ use crate::{
 /// [`SlotStatus::Booked`] になり、キャンセルで空きができると [`SlotStatus::Open`] に戻る。定員 1 の枠は
 /// マンツーマン（予約の確定で埋まり、確定した予約のキャンセルで公開中に戻る）。
 ///
+/// コーチは、予約の入っていない・まだ始まっていない公開中の自分の枠を取り下げられる（[`Slot::withdraw`]。
+/// [`SlotStatus::Closed`] にする）。
+///
 /// 任意でコーチのレッスンメニュー（catalog の [`LessonMenu`]）に結びつく（[`Slot::with_lesson_menu`]）。持つのは
 /// メニューの ID だけで、メニューの中身（名前・時間）の持ち主は catalog。結びつけるのは公開のときだけ。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,6 +230,37 @@ impl Slot {
         Ok(())
     }
 
+    /// コーチ `coach_id` が、時刻 `now` に枠を取り下げる（[`SlotStatus::Open`] → [`SlotStatus::Closed`]。閉じた枠は
+    /// 時間を占めないので、同じ時間に新しい枠を公開できる）。
+    ///
+    /// 取り下げられるのは、自分の・公開中の・有効な予約（未確定か確定）が 1 件もない・まだ始まっていない（`now` が
+    /// 開始より前の）枠だけ。違えば順に [`SchedulingError::SlotOfAnotherCoach`]・[`SchedulingError::SlotNotOpen`]
+    /// （すでに閉じた枠）・[`SchedulingError::SlotHasActiveBookings`]（予約済みの枠も）・[`SchedulingError::SlotAlreadyStarted`]
+    /// で、何も変えない。キャンセルした予約しかない枠は取り下げられる。
+    pub fn withdraw(
+        &mut self,
+        coach_id: AccountId,
+        now: SystemTime,
+    ) -> Result<(), SchedulingError> {
+        if coach_id != self.coach_id {
+            return Err(SchedulingError::SlotOfAnotherCoach);
+        }
+        if self.status == SlotStatus::Closed {
+            return Err(SchedulingError::SlotNotOpen {
+                status: self.status,
+            });
+        }
+        let active = self.seats.active();
+        if active > 0 {
+            return Err(SchedulingError::SlotHasActiveBookings { active });
+        }
+        if now >= self.starts_at {
+            return Err(SchedulingError::SlotAlreadyStarted);
+        }
+        self.status = SlotStatus::Closed;
+        Ok(())
+    }
+
     /// 期間が重なるか（コーチ・状態は見ない）。
     pub fn overlaps(&self, other: &Slot) -> bool {
         self.starts_at < other.ends_at && other.starts_at < self.ends_at
@@ -432,6 +466,102 @@ mod tests {
                 Err(SchedulingError::SlotStatusMismatchesSeats { status }),
                 "{status:?} {pending}/{confirmed}"
             );
+        }
+    }
+
+    #[test]
+    fn coach_withdraws_an_open_slot_without_bookings_before_it_starts() {
+        let mut open = slot_with_capacity(1, 10, 11, 3);
+        open.withdraw(AccountId::from_u128(1), at(9)).unwrap();
+        assert_eq!(open.status(), SlotStatus::Closed);
+        assert_eq!(open.remaining_seats(), 3);
+        assert!(!open.status().occupies_time());
+
+        // 開始の直前（1 ナノ秒前）まで取り下げられる
+        let mut just_before = slot(2, 10, 11);
+        just_before
+            .withdraw(AccountId::from_u128(1), at(10) - Duration::from_nanos(1))
+            .unwrap();
+        assert_eq!(just_before.status(), SlotStatus::Closed);
+    }
+
+    #[test]
+    fn slot_whose_bookings_were_all_cancelled_can_be_withdrawn() {
+        let mut slot = slot_with_capacity(1, 10, 11, 2);
+        slot.hold().unwrap();
+        slot.hold().unwrap();
+        slot.book().unwrap();
+        slot.release_hold();
+        slot.release().unwrap();
+        slot.withdraw(AccountId::from_u128(1), at(9)).unwrap();
+        assert_eq!(slot.status(), SlotStatus::Closed);
+    }
+
+    #[test]
+    fn slot_cannot_be_withdrawn_by_another_coach_with_bookings_once_started_or_closed() {
+        let closed = Slot::restore(
+            SlotId::from_u128(1),
+            AccountId::from_u128(1),
+            Sport::Tennis,
+            at(10),
+            at(11),
+            SlotStatus::Closed,
+            SlotSeats::vacant(SlotCapacity::ONE),
+        )
+        .unwrap();
+        let mut pending = slot_with_capacity(1, 10, 11, 2);
+        pending.hold().unwrap();
+        let mut booked = slot(1, 10, 11);
+        booked.hold().unwrap();
+        booked.book().unwrap();
+        for (mut slot, coach, now, expected) in [
+            (
+                slot(1, 10, 11),
+                2,
+                at(9),
+                SchedulingError::SlotOfAnotherCoach,
+            ),
+            (
+                closed,
+                1,
+                at(9),
+                SchedulingError::SlotNotOpen {
+                    status: SlotStatus::Closed,
+                },
+            ),
+            (
+                pending,
+                1,
+                at(9),
+                SchedulingError::SlotHasActiveBookings { active: 1 },
+            ),
+            (
+                booked,
+                1,
+                at(9),
+                SchedulingError::SlotHasActiveBookings { active: 1 },
+            ),
+            // 開始ちょうどと、終わった枠
+            (
+                slot(1, 10, 11),
+                1,
+                at(10),
+                SchedulingError::SlotAlreadyStarted,
+            ),
+            (
+                slot(1, 10, 11),
+                1,
+                at(12),
+                SchedulingError::SlotAlreadyStarted,
+            ),
+        ] {
+            let before = slot.clone();
+            assert_eq!(
+                slot.withdraw(AccountId::from_u128(coach), now),
+                Err(expected.clone()),
+                "{expected:?}"
+            );
+            assert_eq!(slot, before);
         }
     }
 

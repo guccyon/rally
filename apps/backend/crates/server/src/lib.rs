@@ -62,7 +62,7 @@ use application::{
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
         ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, SchedulingBookingLookup,
-        SearchSlots, SlotRepository,
+        SearchSlots, SlotRepository, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -350,6 +350,10 @@ where
         interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
     let coach_profile =
         interface::coach_profile_router(GetCoachProfile::new(accounts.clone()), MockTokenService);
+    let slot_withdrawal = interface::slot_withdrawal_router(
+        WithdrawSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -502,4 +506,5 @@ where
     .merge(coach_profile)
     .merge(my_profile)
     .merge(my_notifications)
+    .merge(slot_withdrawal)
 }

@@ -403,6 +403,19 @@ mod tests {
             )))
         }
 
+        async fn update<F>(
+            &self,
+            _slot_id: SlotId,
+            _update: F,
+        ) -> Result<Slot, crate::scheduling::UpdateSlotError>
+        where
+            F: FnOnce(&mut Slot) -> Result<(), SchedulingError> + Send,
+        {
+            Err(crate::scheduling::UpdateSlotError::Unavailable(
+                Unavailable::new("connection refused"),
+            ))
+        }
+
         async fn search(&self, _criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }

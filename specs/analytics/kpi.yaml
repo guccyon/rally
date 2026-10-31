@@ -56,17 +56,20 @@ kpis:
     window_on: f.occurred_at
     direction: down_is_good
     note: "初回レッスンが 5 件未満のコーチは標本が小さいので除く"
-  # 開始時刻が過ぎた枠のうち、確定した予約がキャンセルされずに残った枠の割合（キャンセルで枠は公開中に戻る）
+  # 開始時刻が過ぎた枠のうち、確定した予約がキャンセルされずに残った枠の割合（キャンセルで枠は公開中に戻る）。
+  # コーチが取り下げた枠（slot.withdrawn。予約の入っていない枠だけ）は公開していないものとして分母から除く
   - id: slot_fill_rate
     ja: "コーチの予約枠充足率"
     north_star: false
     formula: |
-      from slot.published as p where p.starts_at < now
+      from slot.published as p
+        where p.starts_at < now
+          and not exists(slot.withdrawn as w where w.slot_id = p.slot_id)
       ratio(
         exists(booking.confirmed as c
                where c.slot_id = p.slot_id
                  and not exists(booking.cancelled as x where x.booking_id = c.booking_id)))
-    inputs: [slot.published, booking.confirmed, booking.cancelled]
+    inputs: [slot.published, slot.withdrawn, booking.confirmed, booking.cancelled]
     window: 30d
     window_on: p.starts_at
     direction: up_is_good

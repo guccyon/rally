@@ -8,7 +8,8 @@ info:
     Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。通話への参加（`startLiveLessonSession` /
     `endLiveLessonSession`）は student-app と同じ操作・同じ形で、予約の参加者であるコーチが呼ぶ。参加する予約は
     コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
-    （`listMyCoachVideos`）から選ぶ。公開した枠は、コーチの自分の枠の一覧（`listMyCoachSlots`）で見る。
+    （`listMyCoachVideos`）から選ぶ。公開した枠は、コーチの自分の枠の一覧（`listMyCoachSlots`）で見て、予約の入っていない
+    まだ始まっていない枠は取り下げられる（`withdrawMySlot`）。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
     student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
     コーチのレッスンメニュー（catalog）は、コーチが自分の分を作り（`createMyLessonMenu`）・直し・非公開にし
@@ -365,6 +366,54 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /coaches/me/slots/{slot_id}/withdraw:
+    post:
+      operationId: withdrawMySlot
+      summary: 公開した枠の取り下げ（コーチ）
+      description: |
+        トークンが示す本人（コーチ）が公開した予約枠（`publishSlot`）を取り下げ、閉じた枠（`status` が `closed`）を返す。
+        予定が変わったときや、間違えて公開したときに戻すのに使う。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
+        リクエストの本文は読まない。
+
+        - 取り下げられるのは、自分の・公開中（`open`）の・有効な予約（未確定 `pending` か確定 `confirmed`）が 1 件もない・
+          まだ始まっていない（開始時刻 `starts_at` より前の）枠だけ。キャンセル済みの予約しかない枠は取り下げられる
+        - 枠がないとき・他のコーチの枠のとき・`slot_id` が UUID でないときは 404 `not_found`（他のコーチの枠はあることも知らせない）
+        - 有効な予約が入っている枠（予約済み `booked` の枠も）は 409 `slot_has_active_booking`。予約の入った枠のキャンセルはこの操作ではできない
+        - 開始時刻を過ぎた枠（開始時刻ちょうどを含む）は 409 `slot_already_started`
+        - すでに閉じた枠（`closed`）は 409 `slot_already_closed`
+        - 判定は上の順（他のコーチの枠 → 閉じた枠 → 予約 → 開始）。失敗したときは何も変えない
+        - 閉じた枠は生徒の検索（student-app の `searchSlots`）に出ず、予約できない。時間を占めないので、同じ時間に新しい枠を
+          公開できる（`publishSlot`）。自分の枠の一覧（`listMyCoachSlots`）には `closed` のまま残る。閉じた枠を公開中に戻す操作はない
+        - 応答の `Slot` には `lesson_menu` を載せない（`publishSlot` と同じ）
+
+        取り下げると行動イベント `slot.withdrawn`（KPI「コーチの予約枠充足率」の入力。取り下げた枠を分母から除く）を発火する。
+        予約の入っていない枠だけを閉じるので、境界間イベントは発行しない。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: [slot.withdrawn]
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 取り下げた（閉じた）スロット
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Slot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /coaches/me/videos:
     get:
@@ -833,7 +882,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、添削が返却済み、予約が未確定など）
+      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定など）
       content:
         application/json:
           schema:
@@ -892,7 +941,7 @@ components:
         lesson_menu:
           description: |
             枠に結びついたレッスンメニュー。メニューのない枠は null。載せるのは `listMyCoachSlots` だけで、
-            それ以外の操作（`publishSlot`・`listMyCoachBookings`）では載らない（予約した時点のメニューは `Booking` の `lesson_menu`）
+            それ以外の操作（`publishSlot`・`withdrawMySlot`・`listMyCoachBookings`）では載らない（予約した時点のメニューは `Booking` の `lesson_menu`）
           oneOf:
             - $ref: "#/components/schemas/SlotLessonMenu"
             - type: "null"
@@ -1749,6 +1798,9 @@ components:
         - not_found
         - validation_failed
         - slot_overlaps
+        - slot_has_active_booking
+        - slot_already_started
+        - slot_already_closed
         - invalid_booking_state
         - invalid_session_state
         - invalid_video_state

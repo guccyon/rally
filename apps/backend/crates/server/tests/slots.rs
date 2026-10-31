@@ -3,6 +3,8 @@
 //! 契約の形・絞り込み・ページングの細かい検査は interface の `tests/slots.rs`。
 //! コーチの自分の枠の一覧（`GET /coaches/me/slots`）は本人の枠だけを予約が入っているかと一緒に返し、コーチ以外は 403
 //! （契約の形の細かい検査は interface の `tests/bookings.rs`）。
+//! 枠の取り下げ（`POST /coaches/me/slots/{slot_id}/withdraw`）は予約の入っていない枠を閉じ、生徒の予約と同じ枠を
+//! 共有する（予約の入った枠は 409、閉じた枠は予約できない）。細かい検査は interface の `tests/slot_withdrawals.rs`。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -159,4 +161,79 @@ async fn coach_lists_own_slots_with_whether_a_booking_is_in() {
     // 生徒は呼べない
     let (status, body) = send(&router, get(&student)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+async fn coach_withdraws_a_slot_without_bookings_and_students_cannot_book_it() {
+    let router = server::router();
+    let coach = MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(42),
+            role: Role::Coach,
+        })
+        .into_string();
+    let mut slots = Vec::new();
+    for hour in ["10", "12"] {
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                Some(&coach),
+                json!({
+                    "sport": "tennis",
+                    "starts_at": format!("2099-01-01T{hour}:00:00Z"),
+                    "ends_at": format!("2099-01-01T{hour}:30:00Z"),
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        slots.push(slot);
+    }
+    let (status, body) = send(
+        &router,
+        post_json(
+            "/accounts",
+            None,
+            json!({ "email": "taro@example.com", "display_name": "たろう", "sport": "tennis" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let student = body["access_token"].as_str().unwrap().to_string();
+    let book = |slot: &Value| {
+        post_json(
+            "/bookings",
+            Some(&student),
+            json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+        )
+    };
+    let (status, body) = send(&router, book(&slots[1])).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let withdraw = |slot: &Value, token: &str| {
+        let slot_id = slot["slot_id"].as_str().unwrap();
+        let mut request = Request::post(format!("/coaches/me/slots/{slot_id}/withdraw"))
+            .body(Body::empty())
+            .unwrap();
+        request.headers_mut().insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        request
+    };
+    let (status, body) = send(&router, withdraw(&slots[0], &coach)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "closed");
+    // 予約の入った枠は取り下げられない
+    let (status, body) = send(&router, withdraw(&slots[1], &coach)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "slot_has_active_booking");
+    // 生徒は呼べない
+    let (status, _) = send(&router, withdraw(&slots[1], &student)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // 閉じた枠は予約できない（ない枠と同じ）
+    let (status, body) = send(&router, book(&slots[0])).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 }
