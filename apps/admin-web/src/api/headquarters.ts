@@ -1,5 +1,5 @@
 import { call } from "./call";
-import type { ApiClient } from "./client";
+import type { ApiClient, Schemas } from "./client";
 
 /** 本部の操作（契約の operationId と 1 対 1）。 */
 export function headquartersApi(client: ApiClient) {
@@ -18,6 +18,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
+      call(() => client.GET("/lesson-menus", { params: { query: filter } })),
   };
 }
 

@@ -95,4 +95,24 @@ describe("headquartersApi", () => {
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/reviews`);
   });
+
+  test("listLessonMenus は絞り込みをクエリにして GET /api/lesson-menus を呼ぶ", async () => {
+    const list = { lesson_menus: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLessonMenus({ sport: "tennis", published: true });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/lesson-menus");
+    expect(url.searchParams.get("sport")).toBe("tennis");
+    expect(url.searchParams.get("published")).toBe("true");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listLessonMenus は条件がなければクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { lesson_menus: [] }));
+    await api.listLessonMenus({});
+    expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
 });
