@@ -1,0 +1,75 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/468
+decided_at: '2026-11-01'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+votes:
+- role: consistency
+  vote: human
+  reasons:
+  - knowledge/ には既存の K-* も committee/ の議決もないので、K-0001 と K-0002 が過去の知見と矛盾・重複することはなく、影響を受ける既存知見の扱いを添える必要もありません。
+  - specs/glossary.yaml と specs/context-map.yaml は製品ドメインの規範で、review_fix・supervisor・worker
+    image といった工場側の語とは衝突しません。
+  - K-0001 と K-0002 は同じ C-0001 から出ていますが、マージの順序とイメージの割り当てという別々の主張なので、1 件 1 主張の決まりに合っています。
+  - K-0001 の提案は supervisor のマージ判定、つまり Engine とラインの決まりを変えるもので、C-0001 も作用先を role_line_engine（人の承認）としているため、整合の観点だけでは決められません。
+  - K-0002 は scope.roles を implement にしていますが、像を割り当てるのは implement 役ではなくラインの設定なので、作用先をラインの設定にするか、人に判断してもらうのがよいと考えます。
+  - C-0001 の真因の筆頭は entrypoint.sh が gh pr view の接続失敗を exit 6 と同じに扱うことですが、これを知見にしていないので、取りこぼしでないなら改善チケットに回したことを変更セットに書き添えるとよいです。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0001 と K-0002 はどちらも C-0001、case.analyzed:39242、PR #327、Issue #400 に辿れ、C-0001
+    には job 395 や session.txt の行、各イベントの時刻など一次記録への手がかりが書かれています。'
+  - K-0001 のうち「直しが PR に入らないままマージされた」は事例で実際に起きていますが、「マージ済みの PR への push の競合」は C-0001
+    でも推測とされているので、1 件だけの今は hypothesis が妥当です。
+  - K-0002 は、道具の入れ直しで時間と費用が増えたことを job 390 と比べるだけで、Flutter の道具が入った作業機の像との比較がなく、今回の失敗（gh
+    pr view の接続の失敗）との因果も推測なので、hypothesis に留めるべきです。
+  - K-0002 を confirmed に上げる前に、道具の入れ直しにかかる時間と費用の実測と、入れ直しが原因で起きた失敗の事例を根拠に足すべきです。
+  - K-0002 の主張は「アプリの種類」全般を指していますが、根拠は Flutter（apps/student-app）の 1 件だけなので、確かさを上げるときは
+    scope に合わせて主張を絞るのが望ましいです。
+  - 氏名・連絡先・利用者 ID・本文の引用は含まれておらず、「生徒アプリ」は製品の名前で、個人を指す情報ではありません。
+  personal_data: false
+- role: enforcement
+  vote: human
+  reasons:
+  - K-0001 は「同じ PR の review_fix のジョブが動いている間は supervisor がマージしない」という判定で決定論にでき、線が引きやすく、繰り返しもしそうなので、文脈として渡すより決定論で担保するほうがよいです。
+  - ただし K-0001 の担保先は supervisor のマージ判定（Engine・ラインの設定）で、マージを待たせるか差し戻しに回すかは業務の決まりを選ぶことになるので、人が決める必要があります。
+  - K-0002 は「apps/student-app の変更には Flutter SDK（arm64 対応）と unzip の入った worker image
+    を割り当てる」という設定と、その対応の検査で決定論にできますが、これは作業機の像を作る費用とラインの設定に関わるので、人の判断が要ります。
+  - C-0001 の一番大きな真因である「entrypoint.sh が gh pr view の接続の失敗を、PR が開いていないことと同じに扱う」は知見にせず、テストで担保する工場のコードの直しとして別の改善チケットにするのがよいです。
+  - K-0001 と K-0002 はどちらも根拠が事例 1 件で、K-0001 の push の競合は推測なので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0001 の「直しが PR に入らないままマージされ、push の競合が起きやすい」は C-0001 では起きておらず（job 395 が止まったのは
+    gh pr view の通信失敗のため）、競合は事例記録でも推測なので、主張を「マージが続きのジョブを待たない作りになっている」という観察までにとどめてほしい。
+  - 'C-0001 では「続きのジョブか差し戻しで直す」という basis のとおり差し戻し #328 で害なく済んでおり、K-0001 が問題として挙げる筋への反例になっているので、statement
+    でこの点に触れてほしい。'
+  - K-0001 の scope.roles の implement はマージの順番を決められない役なので、supervisor だけに絞ってほしい。
+  - K-0001 は因果の主張と「どちらか一方の道だけを通す」という指示が 1 件に混ざっていて 1 件 1 主張に合わないので、分けるか指示を外してほしい。
+  - K-0002 の「アプリの種類に合う道具」は Flutter の 1 件から全部のアプリの種類へ広げすぎで、「失敗の機会も増える」も C-0001 に裏付けがなく
+    cost_usd も job 390 とほぼ同じなので、Flutter と arm64 の作業機に絞り、主張は時間が延びたことだけにしてほしい。
+  - K-0002 の scope.roles の implement は作業機の像を選べない役で、この知見を渡しても役が取れる行動がないので、作用先を線の設定や改善チケットの側に移してほしい。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: supervisor のマージ判定の前に、同じ PR の continue（review_fix）のジョブが queued か running
+    なら、マージを止めて待たせる検査を足す。もしくは、採用した指摘は review_fix を起こさず sendback だけに回すと決める。どちらにするかは人が選び、選んだ道を
+    Engine のテストで確かめる。
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: config
+  proposal: ラインの設定で、paths apps/student-app/** に Flutter SDK（arm64）と unzip の入った worker
+    image を割り当てる対応表を持つ。Flutter のチケットに factory-worker:rust が割り当てられたら、ジョブを始める前に止める検査を足す。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: （C-0001 の真因から）entrypoint.sh の PR の状態の確認で、gh pr view が接続エラーで空を返したときは、やり直してから「開いていない」とは別の終了コードで止まり、worker.err
+    に原因を残すことを確かめるテストを工場側に足す。
