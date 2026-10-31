@@ -125,6 +125,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "live_lesson.sessions",
             "messaging.messages",
             "messaging.threads",
+            "notification.announcements",
             "notification.notification_settings",
             "notification.notifications",
             "scheduling.bookings",
@@ -2404,6 +2405,259 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
         .await,
     );
     assert_eq!(code, FOREIGN_KEY_VIOLATION, "{constraint}");
+}
+
+/// 本部 `sender_id` の送った記録を入れて ID を返す。
+async fn insert_announcement(
+    pool: &PgPool,
+    sender_id: &str,
+    title: &str,
+    body: &str,
+    sport: Option<&str>,
+    recipient_count: i32,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO notification.announcements
+             (announcement_id, sender_id, title, body, sport, recipient_count, sent_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, '2026-11-01T10:00:00Z')
+         RETURNING announcement_id::text",
+    )
+    .bind(sender_id)
+    .bind(title)
+    .bind(body)
+    .bind(sport)
+    .bind(recipient_count)
+    .fetch_one(pool)
+    .await
+}
+
+/// 種類 `kind` のお知らせの行を、コーチ `coach_id`（なければ NULL）・送った記録 `announcement_id`・予約 `booking_id` で入れる。
+async fn insert_announcement_notification(
+    pool: &PgPool,
+    recipient_id: &str,
+    kind: &str,
+    (student_id, coach_id): (&str, Option<&str>),
+    announcement_id: Option<&str>,
+    booking_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification.notifications
+             (notification_id, recipient_id, kind, student_id, coach_id, booking_id, announcement_id, created_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, '2026-11-01T10:00:00Z')",
+    )
+    .bind(recipient_id)
+    .bind(kind)
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(booking_id)
+    .bind(announcement_id)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn announcements_have_a_title_a_body_a_known_sport_and_recipients(pool: PgPool) {
+    use domain::catalog::Sport;
+    use infra::identity_values::sport_value;
+
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.announcements",
+            "announcements_sport_check"
+        )
+        .await,
+        sports
+    );
+
+    let headquarters = account(&pool, "headquarters", None).await;
+    insert_announcement(&pool, &headquarters, "題", "本文", None, 1)
+        .await
+        .unwrap();
+    insert_announcement(
+        &pool,
+        &headquarters,
+        &"あ".repeat(50),
+        &"あ".repeat(2000),
+        Some("swimming"),
+        3,
+    )
+    .await
+    .unwrap();
+
+    for (title, body, sport, recipient_count, constraint) in [
+        (" ", "本文", None, 1, "announcements_title_check"),
+        (
+            &*"あ".repeat(51),
+            "本文",
+            None,
+            1,
+            "announcements_title_check",
+        ),
+        ("題", "", None, 1, "announcements_body_check"),
+        (
+            "題",
+            &*"あ".repeat(2001),
+            None,
+            1,
+            "announcements_body_check",
+        ),
+        (
+            "題",
+            "本文",
+            Some("cricket"),
+            1,
+            "announcements_sport_check",
+        ),
+        ("題", "本文", None, 0, "announcements_recipient_count_check"),
+    ] {
+        let (code, actual) = violation(
+            insert_announcement(&pool, &headquarters, title, body, sport, recipient_count).await,
+        );
+        assert_eq!(
+            (code.as_str(), actual.as_str()),
+            (CHECK_VIOLATION, constraint)
+        );
+    }
+
+    let (code, constraint) = violation(
+        insert_announcement(
+            &pool,
+            "00000000-0000-4000-8000-000000000001",
+            "題",
+            "本文",
+            None,
+            1,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "announcements_sender_id_fkey")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn announcement_notifications_go_to_a_student_without_a_coach_once(pool: PgPool) {
+    let headquarters = account(&pool, "headquarters", None).await;
+    let announcement = insert_announcement(&pool, &headquarters, "題", "本文", None, 2)
+        .await
+        .unwrap();
+    let student_id = student(&pool).await;
+    let other = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    const BOOKING: &str = "00000000-0000-4000-8000-00000000000a";
+
+    insert_announcement_notification(
+        &pool,
+        &student_id,
+        "announcement",
+        (&student_id, None),
+        Some(&announcement),
+        None,
+    )
+    .await
+    .unwrap();
+    insert_announcement_notification(
+        &pool,
+        &other,
+        "announcement",
+        (&other, None),
+        Some(&announcement),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 同じお知らせは同じ生徒に 1 件
+    let (code, constraint) = violation(
+        insert_announcement_notification(
+            &pool,
+            &student_id,
+            "announcement",
+            (&student_id, None),
+            Some(&announcement),
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "notifications_one_per_announcement")
+    );
+
+    // 形に合わないものは入らない: コーチを持つ・送った記録がない・受け取る人が生徒でない・ほかの中身を持つ・
+    // ほかの種類がコーチを持たない・ほかの種類が送った記録を持つ
+    for (recipient, kind, coach, announcement_id, booking) in [
+        (
+            &student_id,
+            "announcement",
+            Some(coach_id.as_str()),
+            Some(announcement.as_str()),
+            None,
+        ),
+        (&student_id, "announcement", None, None, None),
+        (
+            &other,
+            "announcement",
+            None,
+            Some(announcement.as_str()),
+            None,
+        ),
+        (
+            &student_id,
+            "announcement",
+            None,
+            Some(announcement.as_str()),
+            Some(BOOKING),
+        ),
+        (&student_id, "booking_confirmed", None, None, Some(BOOKING)),
+        (
+            &student_id,
+            "booking_confirmed",
+            Some(coach_id.as_str()),
+            Some(announcement.as_str()),
+            Some(BOOKING),
+        ),
+    ] {
+        let (code, constraint) = violation(
+            insert_announcement_notification(
+                &pool,
+                recipient,
+                kind,
+                (&student_id, coach),
+                announcement_id,
+                booking,
+            )
+            .await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "notifications_kind_shape"),
+            "{kind} {coach:?} {announcement_id:?} {booking:?}"
+        );
+    }
+
+    // ない送った記録は指せない
+    let (code, constraint) = violation(
+        insert_announcement_notification(
+            &pool,
+            &student_id,
+            "announcement",
+            (&student_id, None),
+            Some("00000000-0000-4000-8000-000000000001"),
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "notifications_announcement_id_fkey")
+    );
 }
 
 /// コーチ `coach_id` のレッスンメニューを入れる。

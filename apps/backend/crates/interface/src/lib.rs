@@ -4,6 +4,7 @@
 //! （docs/adr/0003-backend-layers.md）。ポートの実装は組み立て用のクレート（`server`）が渡す。
 
 mod accounts;
+mod announcements;
 pub mod auth;
 mod bookings;
 mod coach_bookings;
@@ -82,8 +83,9 @@ use application::{
         SendMessage,
     },
     notification::{
-        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
-        NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
+        AnnouncementRecipientLookup, AnnouncementRepository, GetNotificationSettings,
+        ListAnnouncements, ListMyNotifications, MarkMyNotificationsRead, NotificationRepository,
+        NotificationSettingsRepository, PushSender, SendAnnouncement, UpdateNotificationSettings,
     },
     profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile, UpdateStudentProfile},
     review::{
@@ -632,13 +634,14 @@ where
 /// （同じ検証器を渡す）。
 ///
 /// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
-pub fn notifications_router<N, C, T>(
-    list_my_notifications: ListMyNotifications<N>,
-    mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
+pub fn notifications_router<N, A, C, T>(
+    list_my_notifications: ListMyNotifications<N, A>,
+    mark_my_notifications_read: MarkMyNotificationsRead<N, A, C>,
     tokens: T,
 ) -> Router
 where
     N: NotificationRepository + 'static,
+    A: AnnouncementRepository + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
@@ -646,11 +649,11 @@ where
     Router::new()
         .route(
             "/notifications/me",
-            get(notifications::list_my_notifications::<N, C>),
+            get(notifications::list_my_notifications::<N, A, C>),
         )
         .route(
             "/notifications/me/read",
-            post(notifications::mark_my_notifications_read::<N, C>),
+            post(notifications::mark_my_notifications_read::<N, A, C>),
         )
         .route_layer(require_role(&[Role::Student, Role::Coach]))
         .with_state(Arc::new(notifications::NotificationsState {
@@ -781,6 +784,39 @@ where
         .route("/students", get(students::list_students::<R, C, B>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(students::StudentsState { list_students }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部からのお知らせ（admin-web の `POST /announcements`・`GET /announcements`）のルーター。[`router_with`] と同じく
+/// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。受け取った生徒は自分のお知らせ（[`notifications_router`]）で読む。
+pub fn announcements_router<A, L, N, S, P, C, T>(
+    send_announcement: SendAnnouncement<A, L, N, S, P, C>,
+    list_announcements: ListAnnouncements<A>,
+    tokens: T,
+) -> Router
+where
+    A: AnnouncementRepository + 'static,
+    L: AnnouncementRecipientLookup + 'static,
+    N: NotificationRepository + 'static,
+    S: NotificationSettingsRepository + 'static,
+    P: PushSender + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/announcements",
+            post(announcements::send_announcement::<A, L, N, S, P, C>)
+                .get(announcements::list_announcements::<A, L, N, S, P, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(announcements::AnnouncementsState {
+            send_announcement,
+            list_announcements,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

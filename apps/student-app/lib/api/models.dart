@@ -191,7 +191,8 @@ enum StampId {
 enum NotificationKind {
   bookingConfirmed('booking_confirmed'),
   videoReviewReturned('video_review_returned'),
-  messageReceived('message_received');
+  messageReceived('message_received'),
+  announcement('announcement');
 
   const NotificationKind(this.wire);
   final String wire;
@@ -1643,6 +1644,7 @@ class NotificationSettings {
     required this.bookingConfirmed,
     required this.videoReviewReturned,
     required this.messageReceived,
+    required this.announcement,
   });
 
   final String studentId;
@@ -1656,11 +1658,15 @@ class NotificationSettings {
   /// 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
   final bool messageReceived;
 
+  /// 本部からのお知らせの通知を受け取るか
+  final bool announcement;
+
   /// [kind] の通知を受け取るか
   bool receives(NotificationKind kind) => switch (kind) {
     NotificationKind.bookingConfirmed => bookingConfirmed,
     NotificationKind.videoReviewReturned => videoReviewReturned,
     NotificationKind.messageReceived => messageReceived,
+    NotificationKind.announcement => announcement,
   };
 
   /// [kind] だけを [receives] に変えた設定
@@ -1676,6 +1682,9 @@ class NotificationSettings {
         messageReceived: kind == NotificationKind.messageReceived
             ? receives
             : messageReceived,
+        announcement: kind == NotificationKind.announcement
+            ? receives
+            : announcement,
       );
 
   factory NotificationSettings.fromJson(Map<String, dynamic> json) =>
@@ -1684,6 +1693,7 @@ class NotificationSettings {
         bookingConfirmed: json['booking_confirmed'] as bool,
         videoReviewReturned: json['video_review_returned'] as bool,
         messageReceived: json['message_received'] as bool,
+        announcement: json['announcement'] as bool,
       );
 }
 
@@ -1693,6 +1703,7 @@ class UpdateNotificationSettingsRequest {
     this.bookingConfirmed,
     this.videoReviewReturned,
     this.messageReceived,
+    this.announcement,
   });
 
   /// [kind] 1 つだけを [receives] に変える
@@ -1709,16 +1720,21 @@ class UpdateNotificationSettingsRequest {
     NotificationKind.messageReceived => UpdateNotificationSettingsRequest(
       messageReceived: receives,
     ),
+    NotificationKind.announcement => UpdateNotificationSettingsRequest(
+      announcement: receives,
+    ),
   };
 
   final bool? bookingConfirmed;
   final bool? videoReviewReturned;
   final bool? messageReceived;
+  final bool? announcement;
 
   Map<String, dynamic> toJson() => {
     'booking_confirmed': ?bookingConfirmed,
     'video_review_returned': ?videoReviewReturned,
     'message_received': ?messageReceived,
+    'announcement': ?announcement,
   };
 }
 

@@ -165,6 +165,7 @@ String notificationKindLabel(NotificationKind kind) => switch (kind) {
   NotificationKind.bookingConfirmed => '予約が確定したとき',
   NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
   NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
+  NotificationKind.announcement => '本部からのお知らせが届いたとき',
 };
 
 /// 月額契約のプランの名前

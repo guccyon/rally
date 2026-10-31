@@ -26,12 +26,12 @@ use application::{
     },
     identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
     in_memory::{
-        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
-        InMemoryMessageThreadRepository, InMemoryNotificationRepository,
-        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
-        RecordingAnalyticsSink,
+        InMemoryAccountRepository, InMemoryAnnouncementRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryLiveLessonSessionRepository, InMemoryMessageThreadRepository,
+        InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
+        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
@@ -47,14 +47,15 @@ use application::{
         MessageThreadSubscriber, SendMessage,
     },
     notification::{
-        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
-        NotificationRepository, NotificationSettingsRepository, PushNotificationSubscriber,
-        PushSender, UpdateNotificationSettings,
+        AnnouncementRepository, GetNotificationSettings, ListAnnouncements, ListMyNotifications,
+        MarkMyNotificationsRead, NotificationRepository, NotificationSettingsRepository,
+        PushNotificationSubscriber, PushSender, SendAnnouncement, UpdateNotificationSettings,
     },
     profile::{
-        GetCoachProfile, ListCoaches, ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup,
-        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, ProfileStudentSportLookup,
-        UpdateCoachProfile, UpdateStudentProfile,
+        GetCoachProfile, ListCoaches, ProfileAnnouncementRecipientLookup,
+        ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
+        ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
+        UpdateStudentProfile,
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
@@ -71,10 +72,11 @@ use application::{
 use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
-    MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
-    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
-    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
+    MockVideoStorage, PgAccountRepository, PgAnnouncementRepository, PgBookingRepository,
+    PgEntitlementRepository, PgLessonCompletionRepository, PgLessonMenuRepository,
+    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
+    PgNotificationRepository, PgNotificationSettingsRepository, PgSlotRepository,
+    PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -94,7 +96,10 @@ pub fn router() -> Router {
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
 /// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。送る通知はオフの種類も含めてお知らせとして残し、
 /// 生徒とコーチは自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
-/// お知らせの保存先も当面インメモリ。
+/// お知らせの保存先も当面インメモリ。本部は生徒全員か、あるスポーツの生徒全員にお知らせを送り（`POST /announcements`）、
+/// 送った記録を一覧で見る（`GET /announcements`）。受け取る生徒はアカウントの保存先から読み
+/// （`ProfileAnnouncementRecipientLookup`）、生徒ごとにお知らせを残して、受け取り設定に従って同じ送り先にプッシュ通知を送る。
+/// 送った記録の保存先も当面インメモリ。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
@@ -175,7 +180,7 @@ pub fn router_with_push_sender<C, A, P>(clock: C, analytics: A, push: P) -> Rout
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
-    P: PushSender + 'static,
+    P: PushSender + Clone + 'static,
 {
     compose(
         in_memory_repositories(),
@@ -201,6 +206,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryNotificationSettingsRepository,
     InMemoryNotificationRepository,
     InMemoryLessonMenuRepository,
+    InMemoryAnnouncementRepository,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
@@ -216,6 +222,7 @@ fn in_memory_repositories() -> Repositories<
         notification_settings: InMemoryNotificationSettingsRepository::default(),
         notifications: InMemoryNotificationRepository::default(),
         lesson_menus: InMemoryLessonMenuRepository::default(),
+        announcements: InMemoryAnnouncementRepository::default(),
     }
 }
 
@@ -256,7 +263,8 @@ where
             reviews: PgLessonReviewRepository::new(pool.clone()),
             notification_settings: PgNotificationSettingsRepository::new(pool.clone()),
             notifications: PgNotificationRepository::new(pool.clone()),
-            lesson_menus: PgLessonMenuRepository::new(pool),
+            lesson_menus: PgLessonMenuRepository::new(pool.clone()),
+            announcements: PgAnnouncementRepository::new(pool),
         },
         clock,
         analytics,
@@ -275,7 +283,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -288,11 +296,13 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J> {
     notification_settings: Z,
     notifications: K,
     lesson_menus: J,
+    announcements: G,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J>,
+#[allow(clippy::type_complexity)]
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, G, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, G>,
     clock: C,
     analytics: A,
     push: P,
@@ -311,9 +321,10 @@ where
     Z: NotificationSettingsRepository + Clone + 'static,
     K: NotificationRepository + Clone + 'static,
     J: LessonMenuRepository + Clone + 'static,
+    G: AnnouncementRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
-    P: PushSender + 'static,
+    P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
     let Repositories {
@@ -329,6 +340,7 @@ where
         notification_settings,
         notifications,
         lesson_menus,
+        announcements,
     } = repositories;
     let catalog = interface::catalog_router(
         CreateLessonMenu::new(lesson_menus.clone(), accounts.clone(), clock.clone()),
@@ -408,8 +420,20 @@ where
         MockTokenService,
     );
     let my_notifications = interface::notifications_router(
-        ListMyNotifications::new(notifications.clone()),
-        MarkMyNotificationsRead::new(notifications.clone(), clock.clone()),
+        ListMyNotifications::new(notifications.clone(), announcements.clone()),
+        MarkMyNotificationsRead::new(notifications.clone(), announcements.clone(), clock.clone()),
+        MockTokenService,
+    );
+    let announcements = interface::announcements_router(
+        SendAnnouncement::new(
+            announcements.clone(),
+            ProfileAnnouncementRecipientLookup::new(accounts.clone()),
+            notifications.clone(),
+            notification_settings.clone(),
+            push.clone(),
+            clock.clone(),
+        ),
+        ListAnnouncements::new(announcements),
         MockTokenService,
     );
     let events = InMemoryDomainEventBus::new((
@@ -561,4 +585,5 @@ where
     .merge(lesson_stats)
     .merge(headquarters_bookings)
     .merge(students)
+    .merge(announcements)
 }

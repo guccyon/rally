@@ -1097,11 +1097,13 @@ paths:
         生徒が呼ぶ（本部は 403。コーチも同じ操作で自分の分を読めるが、それは admin-web の契約）。照会だけで、何も保存しない
         （既読にもしない）。
 
-        - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ）。
+        - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ・
+          本部からのお知らせ（admin-web の `sendAnnouncement`。生徒全員か、生徒のスポーツに送ったもの））。
           通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
           お知らせには残る
-        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ）のお知らせは 1 件
-        - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める
+        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ）のお知らせは 1 件
+        - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める。本部からのお知らせ（`announcement`）は、
+          本部が書いた題と本文を改行（`\n`）でつないだもの
 
         行動イベントは発火しない。
       tags: [notification]
@@ -2382,7 +2384,7 @@ components:
       description: |
         glossary の notification_settings（プッシュ通知の種類ごとに受け取るか。既定はすべて true）。
         種類は追加しうる（項目が増える）。
-      required: [student_id, booking_confirmed, video_review_returned, message_received]
+      required: [student_id, booking_confirmed, video_review_returned, message_received, announcement]
       properties:
         student_id:
           type: string
@@ -2396,6 +2398,9 @@ components:
         message_received:
           type: boolean
           description: 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
+        announcement:
+          type: boolean
+          description: 本部からのお知らせ（メンテナンスやキャンペーンの知らせ）の通知を受け取るか
 
     UpdateNotificationSettingsRequest:
       type: object
@@ -2410,13 +2415,16 @@ components:
         message_received:
           type: boolean
           description: 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
+        announcement:
+          type: boolean
+          description: 本部からのお知らせの通知を受け取るか
 
     NotificationKind:
       type: string
       description: |
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
         汎用のお知らせとして扱う）。
-      enum: [booking_confirmed, video_review_returned, message_received]
+      enum: [booking_confirmed, video_review_returned, message_received, announcement]
 
     Notification:
       type: object
@@ -2431,7 +2439,9 @@ components:
         body:
           type: string
           minLength: 1
-          description: 表示用の本文（例「予約が確定しました」）。サーバーが種類と中身から決める
+          description: |
+            表示用の本文（例「予約が確定しました」）。サーバーが種類と中身から決める。本部からのお知らせは
+            題と本文を改行でつないだもの
         created_at:
           type: string
           format: date-time

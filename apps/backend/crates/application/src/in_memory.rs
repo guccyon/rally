@@ -16,7 +16,10 @@ use domain::{
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
-    notification::{Notification, NotificationId, NotificationSettings, PushNotification},
+    notification::{
+        Announcement, AnnouncementId, Notification, NotificationId, NotificationSettings,
+        PushNotification,
+    },
     profile::{CoachBio, DisplayName},
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, SchedulingError, Slot, SlotId},
@@ -46,7 +49,8 @@ use crate::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     notification::{
-        NotificationRepository, NotificationSettingsRepository, PushSender, notification_id_uuid,
+        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        announcement_id_uuid, notification_id_uuid,
     },
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
@@ -1303,5 +1307,55 @@ impl NotificationRepository for InMemoryNotificationRepository {
             }
         }
         Ok(())
+    }
+}
+
+/// [`AnnouncementRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAnnouncementRepository {
+    announcements: Arc<Mutex<Vec<Announcement>>>,
+}
+
+impl InMemoryAnnouncementRepository {
+    /// 既存の送った記録を入れて作る（テストの準備用）。
+    pub fn with_announcements(announcements: impl IntoIterator<Item = Announcement>) -> Self {
+        Self {
+            announcements: Arc::new(Mutex::new(announcements.into_iter().collect())),
+        }
+    }
+
+    /// 残した送った記録（残した順）。
+    pub fn all(&self) -> Vec<Announcement> {
+        self.announcements.lock().unwrap().clone()
+    }
+}
+
+impl AnnouncementRepository for InMemoryAnnouncementRepository {
+    fn next_id(&self) -> AnnouncementId {
+        announcement_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, announcement: Announcement) -> Result<(), Unavailable> {
+        self.announcements.lock().unwrap().push(announcement);
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Announcement>, Unavailable> {
+        let mut all: Vec<Announcement> = self.all().into_iter().rev().collect();
+        // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
+        all.sort_by_key(|a| std::cmp::Reverse(a.sent_at()));
+        Ok(all)
+    }
+
+    async fn find_by_ids(
+        &self,
+        ids: &BTreeSet<AnnouncementId>,
+    ) -> Result<BTreeMap<AnnouncementId, Announcement>, Unavailable> {
+        Ok(self
+            .all()
+            .into_iter()
+            .filter(|a| ids.contains(&a.id()))
+            .map(|a| (a.id(), a))
+            .collect())
     }
 }
