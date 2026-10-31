@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/student_flow.dart';
+import '../ui/coach_review_entry.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/lesson_menu_entry.dart';
 import '../ui/sport_selector.dart';
 
-/// スロットの検索（`searchSlots`。スポーツで絞る）と体験予約（`createBooking`）
+/// スロットの検索（`searchSlots`。スポーツで絞り、コーチの紹介から来たときはそのコーチでも絞る）と体験予約（`createBooking`）
 class SlotSearchScreen extends ConsumerWidget {
   const SlotSearchScreen({super.key});
 
@@ -24,6 +26,16 @@ class SlotSearchScreen extends ConsumerWidget {
           selected: state.searchSport,
           onSelected: state.busy ? (_) {} : notifier.searchSlots,
         ),
+        if (state.searchCoach case final coach?)
+          Row(
+            children: [
+              Flexible(child: Text('${coach.displayName} コーチの枠')),
+              TextButton(
+                onPressed: state.busy ? null : notifier.clearSearchCoach,
+                child: const Text('すべてのコーチの枠を見る'),
+              ),
+            ],
+          ),
         const SizedBox(height: 16),
         if (slots == null)
           const Text('スポーツを選ぶと、予約できるスロットを表示します。')
@@ -254,22 +266,7 @@ class _CoachReviewsState extends ConsumerState<_CoachReviews> {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final menu in menus)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(menu.name, style: textTheme.titleSmall),
-                  Text(
-                    '${sportLabel(menu.sport)}・${lessonTypeLabel(menu.lessonType)}',
-                  ),
-                  if (menu.durationMinutes case final minutes?)
-                    Text(lessonMenuDurationLabel(minutes)),
-                  if (menu.description.isNotEmpty) Text(menu.description),
-                ],
-              ),
-            ),
+          for (final menu in menus) LessonMenuEntry(menu: menu),
         ],
       );
     }
@@ -308,23 +305,7 @@ class _CoachReviewsState extends ConsumerState<_CoachReviews> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final review in reviews)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(coachReviewRatingLabel(review.rating)),
-                if (review.lessonMenu case final menu?)
-                  Text(reviewLessonMenuLabel(menu)),
-                Text(review.comment),
-                Text(
-                  formatDateTime(review.submittedAt),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
+        for (final review in reviews) CoachReviewEntry(review: review),
       ],
     );
   }

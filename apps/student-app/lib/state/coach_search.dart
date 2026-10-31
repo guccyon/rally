@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../api/student_api.dart';
+import 'coach_profile.dart';
 import 'student_flow.dart';
 
 /// コーチを探す画面の状態。画面の段（[FlowStep]）と、API を呼んでいる間の印・直前の操作の失敗の文言は
@@ -62,6 +63,7 @@ class CoachSearchNotifier extends Notifier<CoachSearchState> {
     }
   });
 
-  /// 一覧の行を押したとき。コーチの紹介は次の段で足すので、今は生徒のスポーツの予約枠の検索へ移る
-  Future<void> select(CoachListing coach) => _flow.goToSlotSearch();
+  /// 一覧の行を押したとき。そのコーチの紹介を開く
+  Future<void> select(CoachListing coach) =>
+      ref.read(coachProfileProvider.notifier).open(coach);
 }

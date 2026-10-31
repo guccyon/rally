@@ -1180,6 +1180,39 @@ class CoachListingList {
       );
 }
 
+/// `CoachProfile`（コーチの紹介 `getCoachProfile`。glossary の coach の、生徒に見せる表示名・自己紹介文・提供スポーツ）。
+/// 一覧をコンストラクタで写して持つので const では作らない。
+class CoachProfile {
+  // 渡した元のリストを後で変えても値が変わらないよう、読み取り専用の写しを持つ
+  CoachProfile({
+    required this.coachId,
+    required this.displayName,
+    required this.bio,
+    required List<Sport> sports,
+  }) : sports = List.unmodifiable(sports);
+
+  final String coachId;
+
+  /// コーチの表示名
+  final String displayName;
+
+  /// 自己紹介文（書いたとおり）。書いていないコーチは null
+  final String? bio;
+
+  /// 提供するスポーツ（`Sport` の enum の順。ゴルフは載らない）。読み取り専用
+  final List<Sport> sports;
+
+  factory CoachProfile.fromJson(Map<String, dynamic> json) => CoachProfile(
+    coachId: json['coach_id'] as String,
+    displayName: json['display_name'] as String,
+    bio: json['bio'] as String?,
+    sports: [
+      for (final e in json['sports'] as List<dynamic>)
+        Sport.fromWire(e as String),
+    ],
+  );
+}
+
 /// `CoachReview`（コーチが受けた lesson_review 1 件。評価した生徒は載らない）
 class CoachReview {
   const CoachReview({

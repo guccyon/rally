@@ -25,14 +25,17 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
-  Future<SlotPage> searchSlots({required Sport sport, String? cursor}) async =>
-      SlotPage.fromJson(
-        await _send(
-          'GET',
-          '/slots',
-          query: {'sport': sport.wire, 'cursor': ?cursor},
-        ),
-      );
+  Future<SlotPage> searchSlots({
+    required Sport sport,
+    String? coachId,
+    String? cursor,
+  }) async => SlotPage.fromJson(
+    await _send(
+      'GET',
+      '/slots',
+      query: {'sport': sport.wire, 'coach_id': ?coachId, 'cursor': ?cursor},
+    ),
+  );
 
   @override
   Future<Booking> createBooking(CreateBookingRequest body) async =>
@@ -100,6 +103,12 @@ class HttpStudentApi implements StudentApi {
   Future<CoachListingList> listCoachesForStudent({Sport? sport}) async =>
       CoachListingList.fromJson(
         await _send('GET', '/coaches', query: {'sport': ?sport?.wire}),
+      );
+
+  @override
+  Future<CoachProfile> getCoachProfile(String coachId) async =>
+      CoachProfile.fromJson(
+        await _send('GET', '/coaches/${Uri.encodeComponent(coachId)}'),
       );
 
   @override

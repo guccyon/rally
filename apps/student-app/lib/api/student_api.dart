@@ -1,14 +1,18 @@
 import 'models.dart';
 
-/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
+/// student-app の契約の操作。メソッドは operationId と 1 対 1（Gen1 の一周シナリオ・自分の予約・自分の動画・受講権の照会・レッスンの評価・コーチを探す・コーチの紹介・コーチの評価・契約プランの一覧・チャット・通知の受け取り設定で使うものだけ）。
 ///
 /// 失敗は [StudentApiException] で返す。画面のテストはこの抽象をモックに差し替える。
 abstract interface class StudentApi {
   /// `registerAccount`（POST /accounts）
   Future<RegisterAccountResponse> registerAccount(RegisterAccountRequest body);
 
-  /// `searchSlots`（GET /slots）
-  Future<SlotPage> searchSlots({required Sport sport, String? cursor});
+  /// `searchSlots`（GET /slots）。[coachId] を渡せばそのコーチの枠に絞る
+  Future<SlotPage> searchSlots({
+    required Sport sport,
+    String? coachId,
+    String? cursor,
+  });
 
   /// `createBooking`（POST /bookings）
   Future<Booking> createBooking(CreateBookingRequest body);
@@ -48,6 +52,10 @@ abstract interface class StudentApi {
 
   /// `listCoachesForStudent`（GET /coaches）。[sport] を省けば生徒自身のスポーツのコーチ。並びはサーバーが決め、ページングはしない
   Future<CoachListingList> listCoachesForStudent({Sport? sport});
+
+  /// `getCoachProfile`（GET /coaches/{coach_id}）。表示名・自己紹介文（書いていなければ null）・提供スポーツ。
+  /// コーチでないアカウント・ない ID・ゴルフだけのコーチは 404
+  Future<CoachProfile> getCoachProfile(String coachId);
 
   /// `getCoachReviewSummary`（GET /coaches/{coach_id}/review-summary）。どのコーチの分も読める。評価がなければ 0 件で平均は null
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId);

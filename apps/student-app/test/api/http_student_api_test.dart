@@ -106,6 +106,42 @@ void main() {
     expect(page.nextCursor, isNull);
   });
 
+  test('searchSlots は coach_id を渡せばそのコーチで絞る', () async {
+    await apiReplying(200, {
+      'items': <Object>[],
+      'next_cursor': null,
+    }).searchSlots(sport: Sport.tennis, coachId: 'c1');
+
+    expect(sent.single.url.queryParameters, {
+      'sport': 'tennis',
+      'coach_id': 'c1',
+    });
+  });
+
+  test('getCoachProfile は GET /coaches/{coach_id} へ送り、自己紹介文がなければ null で読む', () async {
+    final profile = await apiReplying(200, {
+      'coach_id': 'c1',
+      'display_name': '佐藤',
+      'bio': 'テニス歴 20 年',
+      'sports': ['tennis', 'soccer'],
+    }).getCoachProfile('c1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/coaches/c1');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(profile.coachId, 'c1');
+    expect(profile.displayName, '佐藤');
+    expect(profile.bio, 'テニス歴 20 年');
+    expect(profile.sports, [Sport.tennis, Sport.soccer]);
+
+    final noBio = await apiReplying(200, {
+      'coach_id': 'c2',
+      'display_name': '高橋',
+      'bio': null,
+      'sports': ['tennis'],
+    }).getCoachProfile('c2');
+    expect(noBio.bio, isNull);
+  });
+
   test('操作ごとのパス', () async {
     final booking = {
       'booking_id': 'b1',
