@@ -70,7 +70,7 @@ impl From<DomainError> for SubmitVideoError {
 /// （失敗の理由は [`SubmittedVideo::ai_feedback_failure`] で返し、書くのは外の層）。添削の着手条件・返却の流れには関わらない。
 ///
 /// レッスンメニューの指定があれば、catalog に問い合わせて（[`VideoLessonMenuLookup`]）動画で選べるか
-/// （[`Video::with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
+/// （[`Video::submit_with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
 /// イベントも発火しない。
 ///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
@@ -120,15 +120,15 @@ where
         command: SubmitVideoCommand,
     ) -> Result<SubmittedVideo, SubmitVideoError> {
         let now = self.clock.now();
-        let video = Video::submit(
-            self.videos.next_video_id(),
-            command.student_id,
-            command.coach_id,
-            command.sport,
-            now,
-        );
+        let video_id = self.videos.next_video_id();
         let video = match command.lesson_menu_id {
-            None => video,
+            None => Video::submit(
+                video_id,
+                command.student_id,
+                command.coach_id,
+                command.sport,
+                now,
+            ),
             Some(id) => {
                 let menu = self
                     .lesson_menus
@@ -136,7 +136,14 @@ where
                     .await
                     .map_err(SubmitVideoError::Unavailable)?
                     .ok_or(SubmitVideoError::LessonMenuNotFound)?;
-                video.with_lesson_menu(&menu)?
+                Video::submit_with_lesson_menu(
+                    video_id,
+                    command.student_id,
+                    command.coach_id,
+                    command.sport,
+                    &menu,
+                    now,
+                )?
             }
         };
         let upload_url = self

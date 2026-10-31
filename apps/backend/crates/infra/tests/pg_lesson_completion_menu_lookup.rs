@@ -184,10 +184,14 @@ async fn an_async_lesson_has_the_menu_copied_to_its_video(pool: PgPool) {
     let videos = PgVideoRepository::new(pool.clone());
     let lookup = lookup(&pool);
     for menu in [Some(&async_menu), None] {
-        let mut video = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(1));
-        if let Some(menu) = menu {
-            video = video.with_lesson_menu(menu).unwrap();
-        }
+        let id = videos.next_video_id();
+        let video = match menu {
+            Some(menu) => {
+                Video::submit_with_lesson_menu(id, student, coach, Sport::Tennis, menu, at(1))
+                    .unwrap()
+            }
+            None => Video::submit(id, student, coach, Sport::Tennis, at(1)),
+        };
         videos.insert(video.clone()).await.unwrap();
         let review_id = videos.next_review_id();
         let video = videos

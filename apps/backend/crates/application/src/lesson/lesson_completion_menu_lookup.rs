@@ -182,14 +182,16 @@ mod tests {
 
     /// 返却した動画（メニューは `menu`）。
     fn reviewed_video(id: u128, menu: Option<VideoLessonMenu>) -> Video {
-        let mut video = Video::submit(
+        let mut video = Video::restore(
             VideoId::from_u128(id),
             STUDENTS[0],
             COACH,
             Sport::Tennis,
             at(0),
+            None,
+            menu,
         )
-        .with_restored_lesson_menu(menu);
+        .unwrap();
         video
             .return_review(
                 VideoReviewId::from_u128(id),

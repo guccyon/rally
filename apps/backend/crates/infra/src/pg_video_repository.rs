@@ -233,9 +233,9 @@ fn video_from_row(
         sport,
         submitted_at.into(),
         review,
+        lesson_menu_from_columns(lesson_menu_id, lesson_menu_name)?,
     )
-    .map_err(Unavailable::new)?
-    .with_restored_lesson_menu(lesson_menu_from_columns(lesson_menu_id, lesson_menu_name)?);
+    .map_err(Unavailable::new)?;
     if let (Some(comment), Some(created_at)) = (ai_feedback_comment, ai_feedback_created_at) {
         video
             .record_ai_feedback(

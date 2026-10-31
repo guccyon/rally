@@ -287,9 +287,15 @@ async fn lesson_menu_copy_round_trips_and_survives_the_coachs_review(pool: PgPoo
         true,
         at(0),
     );
-    let with_menu = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(1))
-        .with_lesson_menu(&menu)
-        .unwrap();
+    let with_menu = Video::submit_with_lesson_menu(
+        videos.next_video_id(),
+        student,
+        coach,
+        Sport::Tennis,
+        &menu,
+        at(1),
+    )
+    .unwrap();
     let without_menu = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(2));
     videos.insert(with_menu.clone()).await.unwrap();
     videos.insert(without_menu.clone()).await.unwrap();
