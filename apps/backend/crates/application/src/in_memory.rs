@@ -1048,6 +1048,10 @@ impl LessonMenuRepository for InMemoryLessonMenuRepository {
             .cloned()
             .collect())
     }
+
+    async fn find_all(&self) -> Result<Vec<LessonMenu>, Unavailable> {
+        Ok(self.all())
+    }
 }
 
 /// 送った通知を記録する [`PushSender`]（テスト用）。複製は同じ記録を共有する。

@@ -125,6 +125,18 @@ impl LessonMenuRepository for PgLessonMenuRepository {
         .map_err(Unavailable::new)?;
         rows.into_iter().map(menu_from_row).collect()
     }
+
+    async fn find_all(&self) -> Result<Vec<LessonMenu>, Unavailable> {
+        let rows: Vec<MenuRow> = sqlx::query_as(
+            "SELECT lesson_menu_id, coach_id, sport, lesson_type, name, description, duration_minutes,
+                    is_published, created_at
+             FROM catalog.lesson_menus",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(menu_from_row).collect()
+    }
 }
 
 fn duration_minutes(menu: &LessonMenu) -> Option<i16> {

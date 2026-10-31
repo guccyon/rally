@@ -2,9 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use domain::{identity::AccountId, profile::DisplayName};
 
-use crate::{Unavailable, async_lesson::VideoCoachDisplayNameLookup, identity::AccountRepository};
+use crate::{
+    Unavailable, async_lesson::VideoCoachDisplayNameLookup,
+    catalog::LessonMenuCoachDisplayNameLookup, identity::AccountRepository,
+};
 
-/// async-lesson の [`VideoCoachDisplayNameLookup`] の profile による実装。アカウントの保存先（データは当面 identity の
+/// async-lesson の [`VideoCoachDisplayNameLookup`] と catalog の [`LessonMenuCoachDisplayNameLookup`] の profile による実装。アカウントの保存先（データは当面 identity の
 /// 表）から読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
@@ -19,11 +22,11 @@ impl<R> ProfileCoachDisplayNameLookup<R> {
     }
 }
 
-impl<R> VideoCoachDisplayNameLookup for ProfileCoachDisplayNameLookup<R>
+impl<R> ProfileCoachDisplayNameLookup<R>
 where
     R: AccountRepository,
 {
-    async fn find_coach_display_names(
+    async fn coach_display_names(
         &self,
         coach_ids: &BTreeSet<AccountId>,
     ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
@@ -38,6 +41,30 @@ where
             names.insert(coach_id, account.display_name().clone());
         }
         Ok(names)
+    }
+}
+
+impl<R> VideoCoachDisplayNameLookup for ProfileCoachDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_coach_display_names(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.coach_display_names(coach_ids).await
+    }
+}
+
+impl<R> LessonMenuCoachDisplayNameLookup for ProfileCoachDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_coach_display_names(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.coach_display_names(coach_ids).await
     }
 }
 
@@ -74,10 +101,17 @@ mod tests {
         }
 
         let ids = [1, 2, 3, 4].map(AccountId::from_u128).into();
-        let found = ProfileCoachDisplayNameLookup::new(accounts)
-            .find_coach_display_names(&ids)
+        let lookup = ProfileCoachDisplayNameLookup::new(accounts);
+        let found = VideoCoachDisplayNameLookup::find_coach_display_names(&lookup, &ids)
             .await
             .unwrap();
+        assert_eq!(
+            LessonMenuCoachDisplayNameLookup::find_coach_display_names(&lookup, &ids)
+                .await
+                .unwrap(),
+            found,
+            "catalog にも同じ表示名を渡す"
+        );
         assert_eq!(
             found,
             BTreeMap::from([

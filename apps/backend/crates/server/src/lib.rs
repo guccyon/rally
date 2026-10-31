@@ -15,7 +15,7 @@ use application::{
     },
     catalog::{
         CatalogLessonMenuLookup, CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus,
-        ListMyLessonMenus, UpdateLessonMenu,
+        ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
     },
     clock::{Clock, SystemClock},
     entitlement::{
@@ -104,7 +104,7 @@ pub fn router() -> Router {
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
 /// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`ProfileStudentDisplayNameLookup`）。コーチに届いた動画の一覧
 /// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。生徒が送った動画の一覧（`GET /videos/me`）は、
-/// 送り先のコーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
+/// 送り先のコーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。本部が見るレッスンメニューの横断の一覧（`GET /lesson-menus`）も、作ったコーチの表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
 /// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
@@ -305,6 +305,10 @@ where
         UpdateLessonMenu::new(lesson_menus.clone(), accounts.clone()),
         ListMyLessonMenus::new(lesson_menus.clone()),
         ListCoachLessonMenus::new(lesson_menus.clone()),
+        ListLessonMenus::new(
+            lesson_menus.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ),
         MockTokenService,
     );
     let my_videos = interface::my_videos_router(
