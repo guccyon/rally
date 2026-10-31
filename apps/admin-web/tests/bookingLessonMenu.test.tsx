@@ -6,6 +6,8 @@ import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { CoachHome } from "@/components/coach/CoachHome";
+import { CoachTasks } from "@/components/coach/CoachTasks";
+import type { PendingTasks } from "@/components/coach/pendingTasks";
 import { LiveSessionPanel } from "@/components/coach/LiveSessionPanel";
 
 // 配置のテストでは CoachHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
@@ -34,6 +36,7 @@ function coachBooking(
   startsIn: number,
   studentName: string,
   lessonMenu: Schemas["BookingLessonMenu"] | null | undefined,
+  status: Schemas["BookingStatus"] = "confirmed",
 ): Schemas["CoachBooking"] {
   const slotId = id.replace(/^./, "1");
   return {
@@ -43,7 +46,7 @@ function coachBooking(
       student_id: STUDENT_ID,
       coach_id: COACH_ID,
       is_trial: false,
-      status: "confirmed",
+      status,
       starts_at: at(startsIn),
       created_at: at(-100),
       confirmed_at: at(-99),
@@ -128,6 +131,41 @@ describe("通話への参加の予約のメニュー", () => {
     const upcoming = await screen.findByRole("table", { name: "これからの予約" });
     expect(menuCell(upcoming, "佐藤さん")).toHaveTextContent(/^—$/);
     expect(within(upcoming).getByRole("button", { name: "通話を開始" })).toBeEnabled();
+  });
+});
+
+describe("対応待ちの確定待ちの予約のメニュー", () => {
+  test("メニューがあれば「メニュー: 名前（N 分）」、時間がなければ名前だけ、メニューがなければ今までどおり", () => {
+    const pending = [
+      coachBooking("b0000000-0000-4000-8000-000000000011", 24, "佐藤さん", SERVE, "pending"),
+      coachBooking("b0000000-0000-4000-8000-000000000012", 48, "鈴木さん", NO_DURATION, "pending"),
+      coachBooking("b0000000-0000-4000-8000-000000000013", 72, "中村さん", null, "pending"),
+      // lesson_menu を持たない予約（古い版の応答）。
+      coachBooking("b0000000-0000-4000-8000-000000000014", 96, "高橋さん", undefined, "pending"),
+    ];
+    const tasks: PendingTasks = {
+      videos: { ok: true, data: [] },
+      bookings: { ok: true, data: pending },
+      threads: { ok: true, data: [] },
+      names: new Map(),
+    };
+    render(
+      <CoachTasks
+        tasks={tasks}
+        onOpenVideo={vi.fn()}
+        onOpenBookings={vi.fn()}
+        onOpenThread={vi.fn()}
+      />,
+    );
+
+    const items = within(screen.getByRole("list", { name: "確定待ちの予約" })).getAllByRole("listitem");
+    expect(items).toHaveLength(4);
+    expect(within(items[0]!).getByText("メニュー: サーブ特訓（90 分）")).toBeInTheDocument();
+    expect(within(items[1]!).getByText("メニュー: フォーム改善")).toBeInTheDocument();
+    expect(items[2]).toHaveTextContent("中村さん");
+    expect(items[2]).not.toHaveTextContent("メニュー");
+    expect(items[3]).toHaveTextContent("高橋さん");
+    expect(items[3]).not.toHaveTextContent("メニュー");
   });
 });
 

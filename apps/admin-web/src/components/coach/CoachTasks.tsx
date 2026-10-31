@@ -6,6 +6,7 @@ import type { Result } from "@/api/call";
 import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
+import { bookingLessonMenuLabel } from "./bookingLessonMenu";
 import type { PendingTasks } from "./pendingTasks";
 import { UNKNOWN_NAME } from "./studentNames";
 import { videoLessonMenuLabel } from "./videoLessonMenu";
@@ -47,7 +48,8 @@ function TaskGroup<T>({
 /**
  * コーチの「対応待ち」。添削待ちの動画（送られた古い順）・生徒の確定を待っている予約（日時の早い順）・
  * 未読のあるチャット（最後の出来事の新しい順）を並べ、それぞれのボタンで該当の画面へ移る。
- * 添削待ちの動画には、送った時点のレッスンメニューがあれば「メニュー: 〇〇」も出す。
+ * 添削待ちの動画には送った時点の、確定待ちの予約には予約した時点のレッスンメニューがあれば「メニュー: 〇〇」も出す
+ * （予約のメニューは「通話への参加」と同じ「名前（N 分）」の形。時間がなければ名前だけ）。
  */
 export function CoachTasks({
   tasks,
@@ -102,6 +104,11 @@ export function CoachTasks({
               <span className="block text-gray-600">
                 {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
               </span>
+              {item.booking.lesson_menu && (
+                <span className="block text-gray-600">
+                  メニュー: {bookingLessonMenuLabel(item.booking.lesson_menu)}
+                </span>
+              )}
             </span>
             <button type="button" onClick={onOpenBookings} className={BUTTON}>
               予約を見る
