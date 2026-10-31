@@ -570,6 +570,61 @@ void main() {
     expect(updated.messageReceived, isTrue);
   });
 
+  test('自分のプロフィールの照会と表示名の変更のパスと、書いたとおりに送る表示名', () async {
+    final student = {
+      'student_id': 's1',
+      'display_name': '山田',
+      'sport': 'tennis',
+      'created_at': '2026-10-26T03:00:00Z',
+    };
+
+    final read = await apiReplying(200, student).getMyStudentProfile();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/me/profile');
+    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+    expect(read.displayName, '山田');
+
+    final updated =
+        await apiReplying(200, {
+          ...student,
+          'display_name': ' やまだ ',
+        }).updateMyStudentProfile(
+          const UpdateStudentProfileRequest(displayName: ' やまだ '),
+        );
+    expect(sent.single.method, 'PATCH');
+    expect(sent.single.url.path, '/me/profile');
+    expect(jsonDecode(sent.single.body), {'display_name': ' やまだ '});
+    expect(updated.displayName, ' やまだ ');
+    expect(updated.sport, Sport.tennis);
+  });
+
+  test('表示名の変更の 422 はサーバーの文言を出し、それ以外の失敗は ErrorCode の文言', () async {
+    final rejected =
+        apiReplying(422, {
+          'code': 'validation_failed',
+          'message': '表示名は 50 文字まで',
+        }).updateMyStudentProfile(
+          UpdateStudentProfileRequest(displayName: 'あ' * 51),
+        );
+    final error = await rejected.then<Object>(
+      (_) => 'ok',
+      onError: (Object e) => e,
+    );
+    expect(profileErrorMessageOf(error), '表示名は 50 文字まで');
+    // ほかの画面の 422 はこれまでどおりサーバーの文言を出さない
+    expect(errorMessageOf(error), '入力内容を確かめてください。');
+
+    final emptyMessage = StudentApiException(
+      statusCode: 422,
+      error: ApiError(code: ErrorCode.validationFailed, message: ' '),
+    );
+    expect(profileErrorMessageOf(emptyMessage), '入力内容を確かめてください。');
+    expect(
+      profileErrorMessageOf(const StudentApiException()),
+      'サーバーにつながりませんでした。通信状態を確かめてください。',
+    );
+  });
+
   test(
     'listSubscriptionPlans は GET /subscription-plans でプランと暦月の上限を返った順のまま読む',
     () async {

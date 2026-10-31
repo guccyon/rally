@@ -9,7 +9,7 @@ import 'coach_search.dart';
 import 'lesson_review.dart';
 import 'subscription.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定の画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定・プロフィールの画面の段。
 enum FlowStep {
   register,
 
@@ -38,6 +38,9 @@ enum FlowStep {
   /// 通知の受け取り設定（登録後のどの段からも開け、閉じると開いた段に戻る）
   notificationSettings,
 
+  /// 自分のプロフィール（表示名を見て変える。登録後のどの段からも開け、閉じると開いた段に戻る）
+  profile,
+
   /// 自分の予約の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
   myBookings,
 
@@ -49,10 +52,11 @@ enum FlowStep {
 
   bool get isChat => this == messageThreads || this == messages;
 
-  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・自分の予約・自分の動画）。ここからはほかの脇の画面を開かない
+  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・プロフィール・自分の予約・自分の動画）。ここからはほかの脇の画面を開かない
   bool get isAside =>
       isChat ||
       this == notificationSettings ||
+      this == profile ||
       this == myBookings ||
       this == myVideos ||
       this == myVideoReview;
@@ -112,6 +116,7 @@ class StudentFlowState {
     this.homeFailures = const {},
     this.settingsReturnStep,
     this.notificationSettings,
+    this.profileReturnStep,
     this.bookingsReturnStep,
     this.myBookings,
     this.videosReturnStep,
@@ -131,6 +136,9 @@ class StudentFlowState {
 
   /// 契約の bearerAuth。中身は解釈しない
   final String? accessToken;
+
+  /// 登録した生徒（`registerAccount`）。プロフィールを開いたら `getMyStudentProfile`、表示名を変えたら
+  /// `updateMyStudentProfile` の応答で置き換える（ホームの挨拶などはここの表示名を出す）
   final Student? student;
 
   /// スロットを絞ったスポーツ（未検索なら null）
@@ -189,6 +197,9 @@ class StudentFlowState {
   /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
   final NotificationSettings? notificationSettings;
 
+  /// プロフィールを閉じたときに戻る段（プロフィールを開いた段）
+  final FlowStep? profileReturnStep;
+
   /// 自分の予約の一覧を閉じたときに戻る段（一覧を開いた段）
   final FlowStep? bookingsReturnStep;
 
@@ -232,6 +243,7 @@ class StudentFlowState {
     Set<HomeSection>? homeFailures,
     FlowStep? settingsReturnStep,
     NotificationSettings? notificationSettings,
+    FlowStep? profileReturnStep,
     FlowStep? bookingsReturnStep,
     List<MyBooking>? myBookings,
     FlowStep? videosReturnStep,
@@ -263,6 +275,7 @@ class StudentFlowState {
     homeFailures: homeFailures ?? this.homeFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
+    profileReturnStep: profileReturnStep ?? this.profileReturnStep,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
     // 外から書き換えて state = を通さずに状態を変えられないよう、読み取り専用で持つ（const のコンストラクタでは包めないので copyWith で包む）
     myBookings: myBookings != null
@@ -653,6 +666,41 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(notificationSettings: settings);
   }
 
+  /// 自分のプロフィールを開く（`getMyStudentProfile`）。閉じたら今の段に戻る。
+  /// 読めなくても登録で受け取った表示名はそのまま出す
+  Future<void> openProfile() {
+    if (state.step != FlowStep.profile) {
+      state = state.copyWith(
+        profileReturnStep: state.step,
+        step: FlowStep.profile,
+      );
+    }
+    return run(_loadProfile);
+  }
+
+  /// プロフィールを閉じて、開いた段に戻る
+  void closeProfile() =>
+      state = state.copyWith(step: state.profileReturnStep ?? FlowStep.home);
+
+  /// `updateMyStudentProfile`。表示名を [displayName] に変え、応答の生徒で [StudentFlowState.student] を置き換える
+  /// （ホームなどの表示もこれで変わる）。保存できたら true。422 はサーバーの文言を出す（[profileErrorMessageOf]）
+  Future<bool> saveDisplayName(String displayName) async {
+    var saved = false;
+    await run(() async {
+      final student = await _api.updateMyStudentProfile(
+        UpdateStudentProfileRequest(displayName: displayName),
+      );
+      state = state.copyWith(student: student);
+      saved = true;
+    }, messageOf: profileErrorMessageOf);
+    return saved;
+  }
+
+  Future<void> _loadProfile() async {
+    final student = await _api.getMyStudentProfile();
+    state = state.copyWith(student: student);
+  }
+
   /// 自分の予約の一覧を開く（`listMyBookings`）。閉じたら今の段に戻る。
   Future<void> openMyBookings() {
     if (state.step != FlowStep.myBookings) {
@@ -751,8 +799,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// [action] を busy にして走らせ、API の失敗を [StudentFlowState.errorMessage] にする。busy の間は何もしない。
   /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）と評価（[LessonReviewNotifier]）と
-  /// 契約（[SubscriptionNotifier]）の操作もここを通す
-  Future<void> run(Future<void> Function() action) async {
+  /// 契約（[SubscriptionNotifier]）の操作もここを通す。失敗の文言は [messageOf]（既定は [errorMessageOf]）で作る
+  Future<void> run(
+    Future<void> Function() action, {
+    String Function(Object error) messageOf = errorMessageOf,
+  }) async {
     if (state.busy) return;
     state = state.copyWith(busy: true);
     try {
@@ -760,7 +811,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       if (ref.mounted) state = state.copyWith(busy: false);
     } on StudentApiException catch (e) {
       if (ref.mounted) {
-        state = state.copyWith(busy: false, errorMessage: errorMessageOf(e));
+        state = state.copyWith(busy: false, errorMessage: messageOf(e));
       }
     }
   }

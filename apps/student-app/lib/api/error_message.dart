@@ -2,7 +2,7 @@ import 'models.dart';
 import 'student_api.dart';
 
 /// API の失敗 → 画面の文言。契約の `ErrorCode` を日本語にするのはここだけ
-/// （`Error.message` は表示用ではないので出さない）。
+/// （`Error.message` は表示用ではないので出さない。例外は表示名の変更の 422 だけで、[profileErrorMessageOf]）。
 String errorMessageOf(Object error) {
   if (error is! StudentApiException) return '想定しないエラーが起きました。';
   final code = error.error?.code;
@@ -29,4 +29,18 @@ String errorMessageOf(Object error) {
     ErrorCode.lessonAlreadyReviewed => 'このレッスンはすでに評価しています。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
+}
+
+/// 表示名の変更（`updateMyStudentProfile`）の失敗 → 画面の文言。422 `validation_failed` のときだけは、
+/// どの規則に反したか（例: `表示名は 50 文字まで`）をサーバーの `Error.message` のまま出す
+/// （規則を判定するのはサーバーで、アプリに書き写さない）。空なら、それ以外の失敗と同じく [errorMessageOf]。
+String profileErrorMessageOf(Object error) {
+  if (error
+      case StudentApiException(
+        error: ApiError(code: ErrorCode.validationFailed, :final message),
+      )
+      when message.trim().isNotEmpty) {
+    return message;
+  }
+  return errorMessageOf(error);
 }
