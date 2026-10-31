@@ -8,6 +8,7 @@ import { formatDateTime } from "@/components/labels";
 
 import type { PendingTasks } from "./pendingTasks";
 import { UNKNOWN_NAME } from "./studentNames";
+import { videoLessonMenuLabel } from "./videoLessonMenu";
 
 const BUTTON = "rounded bg-blue-600 px-3 py-1 text-white";
 
@@ -46,6 +47,7 @@ function TaskGroup<T>({
 /**
  * コーチの「対応待ち」。添削待ちの動画（送られた古い順）・生徒の確定を待っている予約（日時の早い順）・
  * 未読のあるチャット（最後の出来事の新しい順）を並べ、それぞれのボタンで該当の画面へ移る。
+ * 添削待ちの動画には、送った時点のレッスンメニューがあれば「メニュー: 〇〇」も出す。
  */
 export function CoachTasks({
   tasks,
@@ -75,6 +77,9 @@ export function CoachTasks({
               <span className="block text-gray-600">
                 {formatDateTime(video.submitted_at)} に送られました
               </span>
+              {video.lesson_menu && (
+                <span className="block text-gray-600">{videoLessonMenuLabel(video.lesson_menu)}</span>
+              )}
             </span>
             <button type="button" onClick={() => onOpenVideo(video.video_id)} className={BUTTON}>
               添削する
