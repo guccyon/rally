@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { NotImplemented, Section } from "@/components/Section";
 
-/** 本部の画面（読むだけ）。予約・完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
+/** 本部の画面（読むだけ）。完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
 export function HeadquartersHome() {
   return (
     <>
@@ -26,8 +26,10 @@ export function HeadquartersHome() {
           生徒の一覧を見る
         </Link>
       </Section>
-      <Section title="予約の一覧">
-        <NotImplemented>予約の一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
+      <Section title="予約">
+        <Link href="/headquarters/bookings" className="text-blue-600 underline">
+          予約の一覧を見る
+        </Link>
       </Section>
       <Section title="完了記録の一覧">
         <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
