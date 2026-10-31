@@ -108,6 +108,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
 
 ### 変更
+- 生徒のメッセージの未読と既読: student-app の `GET /message-threads` の `unread_count` と `POST /message-threads/{thread_id}/read`（`markMessageThreadRead`）は #90 から admin-web と同じ操作・同じ形（当事者でないスレッドは 404）で使えることを確かめ、生徒が既読にすると未読が 0 になることのテスト（ユースケースとハンドラ）を足した。API と契約と DB の変更はない（#342）
 - API のエラー文言（`message`）の予約と枠の状態の呼び名を画面に揃えた: 予約の `pending` を「確定前」から「確定待ち」に（例: 「確定待ちの予約でない（確定済み）」）、枠の `closed` を「閉じている」から「終了」にした。呼び名は `specs/glossary.yaml` の `booking`・`slot` の `states` に置いた。エラーのコード・契約の enum・DB の変更はない（#309）
 - student-app のビデオ通話の上限の案内を契約プランの回数に合わせた: 409 `live_lesson_quota_exceeded` の文言を「今月のビデオ通話の枠を使い切っています。」にし（固定の「2 回」を出さない。plus は月 4 回）、完了記録の画面の月額契約の案内を「ビデオ通話は月 2 回（スタンダード）・月 4 回（プラス）まで」にした。API と契約の変更はない（#302）
 - admin-web の契約で、自己紹介文の変更（`updateMyCoachProfile`）とコーチの一覧（`listCoaches`）の `x-context` と tags を `identity` から `profile` にした（タグ `profile` を足した）。backend も表示名・自己紹介文の型とそのユースケースを identity から profile のモジュールに移した。API の形・振る舞い・DB は変えない（#201）

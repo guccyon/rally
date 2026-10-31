@@ -590,6 +590,23 @@ async fn the_student_and_the_coach_exchange_messages_and_read_them() {
     let (_, body) = app.list_threads(Some(STUDENT)).await;
     assert_eq!(body["threads"][0]["unread_count"], 1);
 
+    // 生徒が既読にすると、生徒の未読は 0 になり、コーチのメッセージに既読が付く
+    app.clock.set(minutes(7));
+    let (status, read) = app.mark_read(Some(STUDENT), &thread).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["thread_id"], thread);
+    assert_eq!(read["unread_count"], 0);
+    assert_eq!(read["last_message"]["message_id"], answer["message_id"]);
+    assert_eq!(read["last_message"]["read_at"], "2026-10-26T10:07:00Z");
+    let (_, body) = app.list_threads(Some(STUDENT)).await;
+    assert_eq!(body["threads"][0]["unread_count"], 0);
+    let (_, body) = app.list_messages(Some(STUDENT), &thread).await;
+    assert_eq!(
+        body["messages"][0]["read_at"], "2026-10-26T10:05:00Z",
+        "自分が送ったメッセージの既読は変えない"
+    );
+    assert_eq!(body["messages"][1]["read_at"], "2026-10-26T10:07:00Z");
+
     // 行動イベント message.sent が送信ごとに 1 回
     assert_eq!(
         app.message_events(),
