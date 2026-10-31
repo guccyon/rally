@@ -537,6 +537,36 @@ void main() {
       );
     });
 
+    testWidgets('コーチの返信がある評価は、送った時刻の下に「コーチからの返信」と返信の文と時刻を出し、ない評価には出さない', (
+      tester,
+    ) async {
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: FakeStudentApi(),
+        initial: registered,
+      );
+      await tapText(tester, 'テニス');
+
+      await tapText(tester, '評価を見る');
+
+      final [newer, older] = Fixtures.coachReviews;
+      expect(older.reply, isNull);
+      final reply = newer.reply!;
+      expect(find.text('コーチからの返信'), findsOneWidget, reason: '返信のない評価には出さない');
+      final texts = [
+        formatDateTime(newer.submittedAt),
+        'コーチからの返信',
+        reply.comment,
+        formatDateTime(reply.repliedAt),
+        '4 点（5 点満点）',
+      ];
+      final tops = [for (final t in texts) tester.getTopLeft(find.text(t)).dy];
+      for (var i = 1; i < tops.length; i++) {
+        expect(tops[i], greaterThan(tops[i - 1]), reason: '${texts[i]} の並び');
+      }
+    });
+
     testWidgets('評価が 0 件のコーチは、評価がまだない旨だけを出す', (tester) async {
       final api = FakeStudentApi(
         coachReviewSummaries: {
