@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/chat.dart';
+import '../state/coach_search.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
-/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、添削の依頼の入口を 1 画面に並べる。
+/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼の入口を 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -114,6 +115,12 @@ class _BookingsSection extends ConsumerWidget {
             TextButton(
               onPressed: state.busy ? null : notifier.goToSlotSearch,
               child: const Text('スロットを探して予約する'),
+            ),
+            TextButton(
+              onPressed: state.busy
+                  ? null
+                  : ref.read(coachSearchProvider.notifier).open,
+              child: const Text('コーチを探す'),
             ),
           ],
         ),

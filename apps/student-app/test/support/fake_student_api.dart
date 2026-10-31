@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 
@@ -15,6 +17,7 @@ class FakeStudentApi implements StudentApi {
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
     this.coachReviewSummaries = const {},
+    List<CoachListing>? coachListings,
     this.lessonMenus = const {},
     this.videoReviews = const {},
     this.bookingLessonMenu,
@@ -27,7 +30,8 @@ class FakeStudentApi implements StudentApi {
        messages = List.of(messages ?? Fixtures.messages),
        notificationSettings =
            notificationSettings ?? Fixtures.notificationSettings,
-       subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans;
+       subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans,
+       coachListings = coachListings ?? Fixtures.coachListings;
 
   final List<Slot> slots;
   final List<VideoReview> _reviews;
@@ -55,6 +59,12 @@ class FakeStudentApi implements StudentApi {
 
   /// コーチの ID ごとの評価の件数と平均（`getCoachReviewSummary` が返す。ないコーチは [Fixtures.coachReviews] の 2 件で平均 4.5）
   final Map<String, CoachReviewSummary> coachReviewSummaries;
+
+  /// 生徒のスポーツのコーチ（`listCoachesForStudent` が並びのまま返す）
+  final List<CoachListing> coachListings;
+
+  /// 入れておくと、`listCoachesForStudent` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? coachListingsGate;
 
   /// コーチの ID ごとの公開中のレッスンメニュー（`listCoachLessonMenus` が `sport` で絞って返す。ないコーチは空の一覧）
   final Map<String, List<LessonMenu>> lessonMenus;
@@ -215,6 +225,16 @@ class FakeStudentApi implements StudentApi {
         ),
         body,
       );
+
+  @override
+  Future<CoachListingList> listCoachesForStudent({Sport? sport}) async {
+    await coachListingsGate?.future;
+    return _answer(
+      'listCoachesForStudent',
+      () => CoachListingList(coaches: [...coachListings]),
+      sport,
+    );
+  }
 
   @override
   Future<CoachReviewSummary> getCoachReviewSummary(String coachId) => _answer(
@@ -677,6 +697,34 @@ abstract final class Fixtures {
     returnedAt: now,
     lessonMenu: videoLessonMenu,
   );
+
+  /// 生徒のスポーツ（テニス）のコーチ（`listCoachesForStudent` の並び。評価の平均の高い順で、評価のないコーチは最後）
+  static final coachListings = [
+    const CoachListing(
+      coachId: coachId,
+      displayName: '佐藤',
+      sport: Sport.tennis,
+      reviewCount: 12,
+      averageRating: 4.25,
+      publishedLessonMenuCount: 2,
+    ),
+    const CoachListing(
+      coachId: 'abababab-abab-4bab-8bab-abababababab',
+      displayName: '鈴木',
+      sport: Sport.tennis,
+      reviewCount: 3,
+      averageRating: 3.67,
+      publishedLessonMenuCount: 1,
+    ),
+    const CoachListing(
+      coachId: 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd',
+      displayName: '高橋',
+      sport: Sport.tennis,
+      reviewCount: 0,
+      averageRating: null,
+      publishedLessonMenuCount: 0,
+    ),
+  ];
 
   /// 評価したレッスンのレッスンメニューの写し（`CoachReview.lesson_menu`）
   static final reviewLessonMenu = ReviewLessonMenu(

@@ -109,6 +109,7 @@ void main() {
         'getVideoReview',
         'recordLessonCompletion',
         'submitLessonReview',
+        'listCoachesForStudent',
         'getCoachReviewSummary',
         'listCoachReviews',
         'listCoachLessonMenus',
@@ -400,6 +401,43 @@ void main() {
               as YamlMap);
       expect(refOf(body), '#/components/schemas/$schema');
     }
+  });
+
+  test('コーチを探す一覧の項目が契約と一致する（listCoachesForStudent）', () {
+    // CoachListing.fromJson・CoachListingList.fromJson が読む項目
+    expect(propertiesOf('CoachListing'), [
+      'coach_id',
+      'display_name',
+      'sport',
+      'review_count',
+      'average_rating',
+      'published_lesson_menu_count',
+    ]);
+    expect(requiredOf('CoachListing'), propertiesOf('CoachListing'));
+    final listing =
+        (schemas['CoachListing'] as YamlMap)['properties'] as YamlMap;
+    expect(refOf(listing['sport'] as YamlMap), '#/components/schemas/Sport');
+    expect(
+      ((listing['average_rating'] as YamlMap)['type'] as YamlList)
+          .cast<String>(),
+      ['number', 'null'],
+    );
+    expect(propertiesOf('CoachListingList'), ['coaches']);
+    final items =
+        (((schemas['CoachListingList'] as YamlMap)['properties']
+                    as YamlMap)['coaches']
+                as YamlMap)['items']
+            as YamlMap;
+    expect(refOf(items), '#/components/schemas/CoachListing');
+
+    final operation =
+        ((spec['paths'] as YamlMap)['/coaches'] as YamlMap)['get'] as YamlMap;
+    expect(operation['operationId'], 'listCoachesForStudent');
+    final ok = ((operation['responses'] as YamlMap)['200'] as YamlMap);
+    final body =
+        (((ok['content'] as YamlMap)['application/json'] as YamlMap)['schema']
+            as YamlMap);
+    expect(refOf(body), '#/components/schemas/CoachListingList');
   });
 
   test('レッスンメニューの項目が契約と一致する（listCoachLessonMenus）', () {

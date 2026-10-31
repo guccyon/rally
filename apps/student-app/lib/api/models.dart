@@ -1098,6 +1098,62 @@ class CoachReviewSummary {
       );
 }
 
+/// `CoachListing`（コーチを探す一覧 `listCoachesForStudent` の 1 件。表示名・評価の件数と平均・そのスポーツの公開中のメニューの数）
+class CoachListing {
+  const CoachListing({
+    required this.coachId,
+    required this.displayName,
+    required this.sport,
+    required this.reviewCount,
+    required this.averageRating,
+    required this.publishedLessonMenuCount,
+  });
+
+  final String coachId;
+
+  /// コーチの表示名
+  final String displayName;
+
+  /// 探したスポーツ
+  final Sport sport;
+
+  /// 評価の件数（[CoachReviewSummary.reviewCount] と同じ。スポーツで分けない）
+  final int reviewCount;
+
+  /// 点（1〜5）の平均（[CoachReviewSummary.averageRating] と同じ。スポーツで分けない）。評価が 0 件なら null
+  final double? averageRating;
+
+  /// [sport] の公開中のレッスンメニューの数
+  final int publishedLessonMenuCount;
+
+  factory CoachListing.fromJson(Map<String, dynamic> json) => CoachListing(
+    coachId: json['coach_id'] as String,
+    displayName: json['display_name'] as String,
+    sport: Sport.fromWire(json['sport'] as String),
+    reviewCount: json['review_count'] as int,
+    averageRating: (json['average_rating'] as num?)?.toDouble(),
+    publishedLessonMenuCount: json['published_lesson_menu_count'] as int,
+  );
+}
+
+/// `CoachListingList`。一覧をコンストラクタで写して持つので const では作らない。
+class CoachListingList {
+  // 渡した元のリストを後で変えても値が変わらないよう、読み取り専用の写しを持つ
+  CoachListingList({required List<CoachListing> coaches})
+    : coaches = List.unmodifiable(coaches);
+
+  /// 評価の平均の高い順（評価のないコーチは最後）→ 表示名 → `coach_id` の順（サーバーが並べる）。読み取り専用
+  final List<CoachListing> coaches;
+
+  factory CoachListingList.fromJson(Map<String, dynamic> json) =>
+      CoachListingList(
+        coaches: [
+          for (final e in json['coaches'] as List<dynamic>)
+            CoachListing.fromJson(e as Map<String, dynamic>),
+        ],
+      );
+}
+
 /// `CoachReview`（コーチが受けた lesson_review 1 件。評価した生徒は載らない）
 class CoachReview {
   const CoachReview({
