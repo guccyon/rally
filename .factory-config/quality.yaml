@@ -1,0 +1,17 @@
+# 内部品質の定期診断の設定（factory-engine の health/quality/snapshot.py が読む。ADR 0017・definitions/quality.yaml）。
+# 測るパスを言語ごとに、製品コード（src）とテスト（tests）に分けて書く。exclude は正規表現（生成物と検査そのものを外す）。
+schema_version: "0.1"
+languages:
+  rust:
+    src: ["apps/backend/crates/*/src/**/*.rs"]
+    tests: ["apps/backend/crates/*/tests/**/*.rs"]
+    inline_test_marker: "#[cfg(test)]"
+  typescript:
+    src: ["apps/admin-web/src/**/*.ts", "apps/admin-web/src/**/*.tsx"]
+    tests: ["apps/admin-web/tests/**/*.ts", "apps/admin-web/tests/**/*.tsx"]
+  dart:
+    src: ["apps/student-app/lib/**/*.dart"]
+    tests: ["apps/student-app/test/**/*.dart"]
+exclude:
+  - "^apps/admin-web/src/api/schema\\.ts$"
+  - "^apps/backend/crates/architecture/"

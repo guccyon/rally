@@ -1,0 +1,88 @@
+# 内部品質の定期診断（factory-engine の health/quality/snapshot.py、定義は definitions/quality.yaml、設定は .factory-config/quality.yaml。ADR 0017）。
+# 決定的（LLM を使わない）。
+# - main: 1 日 1 回（JST 4 時）全体を測り、成果物 quality-snapshot に残す。工場の supervisor が取り込んで推移にする
+# - PR: base と head の複雑すぎる関数の数を比べて、下限割れを Job Summary に出す（shadow。PR は落とさない、必須チェックにもしない）
+name: quality
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 75c09270541ad97b2843d103ee634e58c9fd2d56
+
+jobs:
+  snapshot:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 測る道具を取る
+        run: |
+          python3 -m pip install --quiet pyyaml lizard
+          curl -fsSL -o /tmp/snapshot.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/health/quality/snapshot.py"
+          curl -fsSL -o /tmp/quality.yaml "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/definitions/quality.yaml"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/backend
+      - name: Linter の警告と層の違反を数える
+        working-directory: apps/backend
+        run: |
+          # ふだんの CI は -D warnings で通しているので、ここではその外側の観点（pedantic と認知的複雑度）を警告として数える
+          cargo clippy --all-targets --message-format=json -- -W clippy::pedantic -W clippy::cognitive_complexity > "$RUNNER_TEMP/clippy.json" || true
+          # 層の依存の向き（architecture クレートのテスト）の失敗の数
+          n=$(cargo test -p architecture 2>&1 | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || true)
+          echo "LAYER_VIOLATIONS=${n:-0}" >> "$GITHUB_ENV"
+      - name: 測る
+        run: |
+          python3 /tmp/snapshot.py measure --config .factory-config/quality.yaml --definitions /tmp/quality.yaml \
+            --clippy "$RUNNER_TEMP/clippy.json" --extra "layer_violations=${LAYER_VIOLATIONS}" --repo "${{ github.repository }}" \
+            --out quality-snapshot.json
+          python3 -c "import json; s=json.load(open('quality-snapshot.json')); print('### 内部品質の定期診断\n\nスコア', s['score']); print(); [print('-', k, v) for k, v in s['metrics'].items()]" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-snapshot
+          path: quality-snapshot.json
+          retention-days: 30
+
+  floor:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 測る道具を取る
+        run: |
+          python3 -m pip install --quiet pyyaml lizard
+          curl -fsSL -o /tmp/snapshot.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/health/quality/snapshot.py"
+          curl -fsSL -o /tmp/quality.yaml "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/definitions/quality.yaml"
+      - name: 下限（shadow）
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          git worktree add -q /tmp/base "$BASE"
+          # 設定は head の側を両方に使う（同じ設定で比べる）
+          python3 /tmp/snapshot.py measure --root /tmp/base --config .factory-config/quality.yaml --definitions /tmp/quality.yaml --no-history --out base.json
+          python3 /tmp/snapshot.py measure --root . --config .factory-config/quality.yaml --definitions /tmp/quality.yaml --no-history --out head.json
+          python3 /tmp/snapshot.py floor --definitions /tmp/quality.yaml --base base.json --head head.json --out floor.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-floor
+          path: floor.json
+          retention-days: 14
