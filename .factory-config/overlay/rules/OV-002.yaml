@@ -1,0 +1,29 @@
+id: OV-002
+title: "型の不変条件は生成のすべての経路で守らせる（検証せずに作れる値・外から書き換えられるコレクションを残さない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#102"
+  - "github:guccyon/rally#108"
+  - "github:guccyon/rally#104"
+  - "github:guccyon/rally#109"
+  - "github:guccyon/rally#189"
+  - "github:guccyon/rally#191"
+signature: "rubric:CODE-001"
+check:
+  kind: rubric
+  text: >-
+    追加・変更した型の生成の経路（コンストラクタ、factory、fromJson、保存先から読み戻す restore など）が、コメントや契約に書かれた不変条件
+    （文字数の上限・空白だけは不可・数が定員を超えない・状態と数が合うなど）を確かめずにそのまま値を作れるとき
+    （`copyWith` や画面の入力制限など一部の経路だけで守り、コンストラクタで直接作る経路が素通りになっている場合を含む）は欠陥とする。
+    モデルや状態が `.toList()` や Set / List のリテラルで作った変更できるコレクションをそのまま持ち、受け取った側が `add` などで書き換えられるときも欠陥とする。
+    生成のときに検証して拒む（例外・`Result`）か、`List.unmodifiable`・`UnmodifiableSetView` などでどの経路でも凍結している差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-002/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-002/negative-1.diff" }
+  - { id: p2, polarity: positive, expect: fire, diff_ref: "file:rules/OV-002/positive-2.diff" }
+  - { id: n2, polarity: negative, expect: silent, diff_ref: "file:rules/OV-002/negative-2.diff" }
+  - { id: p3, polarity: positive, expect: fire, diff_ref: "file:rules/OV-002/positive-3.diff" }
+  - { id: n3, polarity: negative, expect: silent, diff_ref: "file:rules/OV-002/negative-3.diff" }
