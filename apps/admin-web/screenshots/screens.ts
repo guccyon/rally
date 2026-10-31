@@ -53,4 +53,5 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/coach-review-summary",
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
+  { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
 ];
