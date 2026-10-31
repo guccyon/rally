@@ -843,6 +843,13 @@ pub struct InMemoryLessonCompletionRepository {
 }
 
 impl InMemoryLessonCompletionRepository {
+    /// 既存の完了記録を入れて作る（初回の判定や重複は確かめない。テストの準備用）。
+    pub fn with_completions(completions: impl IntoIterator<Item = LessonCompletion>) -> Self {
+        Self {
+            completions: Arc::new(Mutex::new(completions.into_iter().collect())),
+        }
+    }
+
     /// 保存した完了記録（保存した順）。
     pub fn all(&self) -> Vec<LessonCompletion> {
         self.completions.lock().unwrap().clone()
@@ -865,6 +872,21 @@ impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
             .iter()
             .find(|c| c.id() == lesson_id)
             .cloned())
+    }
+
+    async fn find_by_coach(
+        &self,
+        coach_id: AccountId,
+        completed_since: SystemTime,
+    ) -> Result<Vec<LessonCompletion>, Unavailable> {
+        Ok(self
+            .completions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c.coach_id() == coach_id && c.completed_at() >= completed_since)
+            .cloned()
+            .collect())
     }
 
     async fn record<F>(

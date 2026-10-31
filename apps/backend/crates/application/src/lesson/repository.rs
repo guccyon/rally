@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, time::SystemTime};
 
 use domain::{
     DomainError,
@@ -28,6 +28,14 @@ pub trait LessonCompletionRepository: Send + Sync {
         &self,
         lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
+
+    /// コーチ `coach_id` の完了記録（同期・非同期の両方）のうち、完了した時刻が `completed_since` 以後のものをすべて読む
+    /// （数えない・並べない。数えるのは domain の [`domain::lesson::CoachLessonCount::tally`]）。
+    fn find_by_coach(
+        &self,
+        coach_id: AccountId,
+        completed_since: SystemTime,
+    ) -> impl Future<Output = Result<Vec<LessonCompletion>, Unavailable>> + Send;
 
     /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読み、`record` に渡す。`record` が `Ok` なら
     /// 返した記録を保存して返す。
