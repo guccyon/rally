@@ -1,5 +1,6 @@
 //! `PgLessonCompletionRepository`（`live_lesson.lesson_completions`・`async_lesson.lesson_completions`）の検証。
-//! 同期・非同期をまたいだ初回の判定、同じレッスンの 2 回目の拒否、並行な記録で初回が 1 件になること。
+//! 同期・非同期をまたいだ初回の判定、同じレッスンの 2 回目の拒否、並行な記録で初回が 1 件になること、生徒ごとに
+//! 同期・非同期の両方を読めること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -154,6 +155,50 @@ async fn finds_live_and_async_completions_by_their_lesson_id(pool: PgPool) {
         Some(async_lesson)
     );
     assert_eq!(completions.find(completions.next_id()).await.unwrap(), None);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_every_live_and_async_completion_of_a_student(pool: PgPool) {
+    let completions = PgLessonCompletionRepository::new(pool.clone());
+    let session = support::ended_session(&pool, 11).await;
+    let student = session.student_id();
+    let id = completions.next_id();
+    let live = completions
+        .record(student, |history| {
+            session.complete(id, student, history, at(12))
+        })
+        .await
+        .unwrap();
+    let video = reviewed_video(&pool, student, session.coach_id()).await;
+    let id = completions.next_id();
+    let async_lesson = completions
+        .record(student, |history| {
+            video.complete(id, student, history, at(13))
+        })
+        .await
+        .unwrap();
+    // 別の生徒の完了したレッスンは読まない
+    let other_student = support::student(&pool).await;
+    let others_video = reviewed_video(&pool, other_student, session.coach_id()).await;
+    let id = completions.next_id();
+    completions
+        .record(other_student, |history| {
+            others_video.complete(id, other_student, history, at(14))
+        })
+        .await
+        .unwrap();
+
+    let mut found = completions.completions_of_student(student).await.unwrap();
+    found.sort_by_key(|completion| completion.completed_at());
+    assert_eq!(found, [live, async_lesson]);
+    assert!(
+        completions
+            .completions_of_student(support::student(&pool).await)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

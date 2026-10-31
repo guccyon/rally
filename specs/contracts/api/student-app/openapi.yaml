@@ -589,6 +589,44 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /lessons/completions/me:
+    get:
+      operationId: listMyLessonCompletions
+      summary: 自分が受けたレッスンの一覧
+      description: |
+        トークンが示す本人（生徒）の完了したレッスン（glossary の lesson_completion。`recordLessonCompletion` で記録したもの）を、
+        同期レッスン（通話）・非同期レッスン（動画添削）の両方ともすべて返す。生徒が受けたレッスンを振り返るのと、まだ評価を
+        付けていないレッスンを見つけて `submitLessonReview` するのに使う。生徒の役割のトークンだけが呼べる（コーチ・本部は 403）。
+        返すのは本人が生徒の完了したレッスンだけ（グループレッスンでは本人の分だけ）。
+
+        - 並べ方: 完了した時刻 `completed_at` の新しい順。同じ時刻は `lesson_id` の順
+        - 各項目には完了したレッスンの ID `lesson_id`（`submitLessonReview` に渡す ID）と、完了した時刻と、レッスンのコーチの ID
+          `coach_id` と表示名 `coach_display_name` と、通話か動画添削か `lesson_type` と、元の通話セッション `session_id`・動画
+          `video_id`（`Lesson` と同じく、種類に合わないほうは null）を載せる。コーチのアカウントが引けないときは
+          `coach_display_name` を載せない
+        - 各項目の `lesson_menu` は、完了したレッスンの元が持つレッスンメニューの写し（同期レッスンは本人の予約が予約した時点で、
+          非同期レッスンは動画が送った時点で写したもの。`LessonCompletionMenu`）。メニューの今の中身ではない。元にメニューが
+          ないときは null
+        - 各項目の `is_reviewed` は、本人がその完了したレッスンに評価（`submitLessonReview`）を付けたか
+        - 期間で絞らず、ページングもしない（件数の上限も設けない）。完了したレッスンがなければ `lesson_completions` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [catalog]
+      x-context: [live-lesson, async-lesson]
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 自分が受けたレッスンの一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyLessonCompletionList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 
   /lesson-reviews:
     post:
@@ -1756,6 +1794,76 @@ components:
         completed_at:
           type: string
           format: date-time
+
+    MyLessonCompletion:
+      type: object
+      description: |
+        生徒が受けたレッスンの一覧の 1 件。生徒の完了したレッスン（glossary の lesson_completion）と、そのコーチの表示名・
+        レッスンメニューの写し・評価を付けたか
+      required: [lesson_id, coach_id, lesson_type, session_id, video_id, completed_at, lesson_menu, is_reviewed]
+      properties:
+        lesson_id:
+          type: string
+          format: uuid
+          description: 完了したレッスン（`Lesson.lesson_id`。評価の `submitLessonReview` に渡す）
+        coach_id:
+          type: string
+          format: uuid
+          description: レッスンのコーチ
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: レッスンのコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        session_id:
+          type: [string, "null"]
+          format: uuid
+          description: 同期レッスンの通話セッション（非同期なら null）
+        video_id:
+          type: [string, "null"]
+          format: uuid
+          description: 非同期レッスンの動画（同期なら null）
+        completed_at:
+          type: string
+          format: date-time
+          description: 完了を記録した時刻
+        lesson_menu:
+          description: |
+            完了したレッスンの元（同期レッスンは本人の予約、非同期レッスンは動画）が持つレッスンメニューの写し（ID・名前）。
+            予約した・動画を送った時点のもので、その後にメニューが直されても変わらない。元にメニューがない（メニューのない枠の予約・
+            メニューを選ばずに送った動画、この項目を足す前の予約・動画を含む）なら null。一覧では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/LessonCompletionMenu"
+            - type: "null"
+        is_reviewed:
+          type: boolean
+          description: 本人がこの完了したレッスンに評価（`submitLessonReview`）を付けたか
+
+    LessonCompletionMenu:
+      type: object
+      description: 完了したレッスンのコーチのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく、レッスンの元（予約・動画）が持つ写し
+      required: [lesson_menu_id, name]
+      properties:
+        lesson_menu_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+
+    MyLessonCompletionList:
+      type: object
+      description: 生徒が受けたレッスンの一覧（並べ方は `listMyLessonCompletions` の説明）
+      required: [lesson_completions]
+      properties:
+        lesson_completions:
+          type: array
+          description: 完了した時刻の新しい順（同じ時刻は `lesson_id` の順）
+          items:
+            $ref: "#/components/schemas/MyLessonCompletion"
 
     RecordLessonCompletionRequest:
       description: 同期レッスンは session_id、非同期レッスンは video_id を指定する

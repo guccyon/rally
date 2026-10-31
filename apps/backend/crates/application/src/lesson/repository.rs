@@ -29,6 +29,13 @@ pub trait LessonCompletionRepository: Send + Sync {
         lesson_id: LessonCompletionId,
     ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
 
+    /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読む（並べない。並べるのは
+    /// [`super::ListMyLessonCompletions`]）。
+    fn completions_of_student(
+        &self,
+        student_id: AccountId,
+    ) -> impl Future<Output = Result<Vec<LessonCompletion>, Unavailable>> + Send;
+
     /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読み、`record` に渡す。`record` が `Ok` なら
     /// 返した記録を保存して返す。
     fn record<F>(

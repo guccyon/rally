@@ -23,6 +23,7 @@ mod message;
 mod messaging;
 mod messaging_error;
 mod my_bookings;
+mod my_lesson_completions;
 mod my_profile;
 mod my_videos;
 mod notification_settings;
@@ -55,7 +56,10 @@ use application::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
     identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
-    lesson::{LessonCompletionRepository, RecordLessonCompletion},
+    lesson::{
+        LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
+        LessonCompletionReviewLookup, ListMyLessonCompletions, RecordLessonCompletion,
+    },
     live_lesson::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
@@ -102,7 +106,7 @@ pub use error::ApiError;
 /// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
 /// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
 /// `POST /lessons/completions`（レッスンの完了記録）も役割で絞らず、通話セッション・動画の当事者かをユースケースが
-/// 確かめる（契約に 403 がない）。`GET /slot-supply`（admin-web のスポーツごとの予約枠の需給）は本部だけ。
+/// 確かめる（契約に 403 がない）。生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は [`my_lesson_completions_router`]。`GET /slot-supply`（admin-web のスポーツごとの予約枠の需給）は本部だけ。
 /// `/message-threads`（student-app・admin-web の生徒と担当コーチのチャット）は役割で絞らず、スレッドの当事者かを
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
@@ -575,6 +579,37 @@ where
         .route("/videos/me", get(my_videos::list_my_videos::<V, D>))
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(my_videos::MyVideosState { list_my_videos }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 生徒が受けたレッスンの一覧（student-app の `GET /lessons/completions/me`）のルーター。[`router_with`] と同じくトークンの
+/// 検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /lessons/completions/me` は生徒だけ（コーチ・本部は 403）。同じ接頭辞の `POST /lessons/completions`（完了記録）は
+/// [`router_with`] で、役割で絞らない。
+pub fn my_lesson_completions_router<R, L, B, W, D, V, T>(
+    list_my_lesson_completions: ListMyLessonCompletions<R, L, B, W, D, V>,
+    tokens: T,
+) -> Router
+where
+    R: LessonCompletionRepository + 'static,
+    L: LiveLessonSessionRepository + 'static,
+    B: BookingLookup + 'static,
+    W: VideoRepository + 'static,
+    D: LessonCompletionCoachDisplayNameLookup + 'static,
+    V: LessonCompletionReviewLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lessons/completions/me",
+            get(my_lesson_completions::list_my_lesson_completions::<R, L, B, W, D, V>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(my_lesson_completions::MyLessonCompletionsState {
+            list_my_lesson_completions,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

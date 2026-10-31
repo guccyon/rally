@@ -135,11 +135,16 @@ fn lesson_source(request: RecordLessonCompletionRequest) -> Result<LessonSource,
     }
 }
 
-fn lesson_body(completion: &LessonCompletion) -> Result<LessonBody, ApiError> {
-    let (session_id, video_id) = match completion.source() {
+/// 完了したレッスンの元を、契約の `session_id`・`video_id`（種類に合わないほうは null）の組に写す。
+pub(crate) fn source_ids(source: LessonSource) -> (Option<String>, Option<String>) {
+    match source {
         LessonSource::Live(session_id) => (Some(session_id_uuid::format(session_id)), None),
         LessonSource::Async(video_id) => (None, Some(video_id_uuid::format(video_id))),
-    };
+    }
+}
+
+fn lesson_body(completion: &LessonCompletion) -> Result<LessonBody, ApiError> {
+    let (session_id, video_id) = source_ids(completion.source());
     Ok(LessonBody {
         lesson_id: lesson_completion_id_uuid::format(completion.id()),
         student_id: account_id_uuid::format(completion.student_id()),

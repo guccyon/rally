@@ -848,6 +848,20 @@ impl LessonCompletionRepository for InMemoryLessonCompletionRepository {
             .cloned())
     }
 
+    async fn completions_of_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Vec<LessonCompletion>, Unavailable> {
+        Ok(self
+            .completions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c.student_id() == student_id)
+            .cloned()
+            .collect())
+    }
+
     async fn record<F>(
         &self,
         student_id: AccountId,
