@@ -21,7 +21,8 @@ pub struct UpdateLessonMenuCommand {
 pub enum UpdateLessonMenuError {
     /// メニューがない
     LessonMenuNotFound,
-    /// 変更がドメインの不変条件を満たさない（メニューのコーチでない、スポーツがコーチの提供スポーツでない）
+    /// 変更がドメインの不変条件を満たさない（メニューのコーチでない、スポーツがコーチの提供スポーツでない、
+    /// 本部が非公開にしたメニューを公開中にしようとした）
     Invalid(DomainError),
     /// `coach_id` のコーチのアカウントがない（ID のアカウントがないか、コーチでない）
     CoachNotFound,
@@ -30,7 +31,7 @@ pub enum UpdateLessonMenuError {
 }
 
 /// レッスンメニューの変更のユースケース（admin-web の `updateMyLessonMenu`。コーチだけが呼ぶ）。中身と公開中かを
-/// 丸ごと置き換え（非公開にするのもこれ）、変えたあとのメニューを返す。
+/// 丸ごと置き換え（非公開にするのもこれ。本部が非公開にしたメニューは公開し直せない）、変えたあとのメニューを返す。
 ///
 /// メニューとコーチのアカウントを読み、domain の [`LessonMenu::revise`] で確かめて保存する。拒否では何も保存しない。
 /// 行動イベントも境界間イベントも発火しない。
@@ -92,7 +93,10 @@ mod tests {
 
     use domain::{
         catalog::Sport,
-        catalog::{LessonFormat, LessonMenuDescription, LessonMenuName},
+        catalog::{
+            HeadquartersUnpublish, HeadquartersUnpublishReason, LessonFormat,
+            LessonMenuDescription, LessonMenuName,
+        },
         identity::{Account, Email, Role},
         profile::DisplayName,
     };
@@ -220,5 +224,51 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(use_case.menus().all(), vec![menu()]);
+    }
+
+    #[tokio::test]
+    async fn the_coach_cannot_republish_a_menu_headquarters_unpublished_but_can_fix_it() {
+        let accounts = InMemoryAccountRepository::default();
+        accounts
+            .insert(account(COACH, Role::Coach, &[Sport::Tennis]))
+            .await
+            .unwrap();
+        let unpublish = HeadquartersUnpublish::new(
+            HeadquartersUnpublishReason::new("誤った記載").unwrap(),
+            at(50),
+        );
+        let held = LessonMenu::restore(
+            MENU,
+            COACH,
+            content(Sport::Tennis, "前の名前"),
+            false,
+            at(5),
+        )
+        .with_headquarters_unpublish(Some(unpublish.clone()));
+        let use_case = UpdateLessonMenu::new(
+            InMemoryLessonMenuRepository::with_menus([held.clone()]),
+            accounts,
+        );
+
+        let result = use_case.execute(command(COACH, Sport::Tennis, true)).await;
+        assert!(
+            matches!(
+                result,
+                Err(UpdateLessonMenuError::Invalid(
+                    DomainError::LessonMenuUnpublishedByHeadquarters
+                ))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(use_case.menus().all(), vec![held], "何も変えない");
+
+        let fixed = use_case
+            .execute(command(COACH, Sport::Tennis, false))
+            .await
+            .unwrap();
+        assert_eq!(fixed.name().as_str(), "新しい名前");
+        assert!(!fixed.is_published());
+        assert_eq!(fixed.headquarters_unpublish(), Some(&unpublish));
+        assert_eq!(use_case.menus().all(), vec![fixed]);
     }
 }
