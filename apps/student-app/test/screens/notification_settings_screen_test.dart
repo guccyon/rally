@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/state/subscription.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -12,6 +13,8 @@ void main() {
     step: FlowStep.subscription,
     accessToken: Fixtures.registered.accessToken,
     student: Fixtures.student,
+  );
+  final subscribed = SubscriptionState(
     subscription: Fixtures.subscriptionStarted.subscription,
     entitlement: Fixtures.subscriptionStarted.entitlement,
   );
@@ -41,6 +44,7 @@ void main() {
         const StudentFlowScreen(),
         api: api,
         initial: afterSubscription,
+        subscription: subscribed,
       );
 
       await openSettings(tester);
@@ -75,6 +79,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openSettings(tester);
 
@@ -114,6 +119,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openSettings(tester);
 
@@ -148,6 +154,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openSettings(tester);
 

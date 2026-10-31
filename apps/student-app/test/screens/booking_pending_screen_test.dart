@@ -3,6 +3,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/booking_pending_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/state/subscription.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -55,10 +56,10 @@ void main() {
       tester,
       const BookingPendingScreen(),
       api: api,
-      initial: pending().copyWith(
-        entitlement: Fixtures.subscriptionStartedWith(
-          SubscriptionPlan.plus,
-        ).entitlement,
+      initial: pending(),
+      subscription: SubscriptionState(
+        entitlement: Fixtures.subscriptionStartedWith(SubscriptionPlan.plus)
+            .entitlement,
       ),
     );
 

@@ -4,6 +4,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/state/subscription.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
@@ -14,6 +15,8 @@ void main() {
     step: FlowStep.subscription,
     accessToken: Fixtures.registered.accessToken,
     student: Fixtures.student,
+  );
+  final subscribed = SubscriptionState(
     subscription: Fixtures.subscriptionStarted.subscription,
     entitlement: Fixtures.subscriptionStarted.entitlement,
   );
@@ -61,6 +64,7 @@ void main() {
         const StudentFlowScreen(),
         api: api,
         initial: afterSubscription,
+        subscription: subscribed,
       );
 
       await openBookings(tester);
@@ -136,6 +140,7 @@ void main() {
       const StudentFlowScreen(),
       api: FakeStudentApi(myBookings: [withMenu, asyncMenu, noMenu]),
       initial: afterSubscription,
+      subscription: subscribed,
     );
 
     await openBookings(tester);
@@ -176,6 +181,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
 
@@ -198,6 +204,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
     final later = bookingOf('booking-later');
@@ -245,6 +252,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
     final soon = bookingOf('booking-soon');
@@ -284,6 +292,7 @@ void main() {
         const StudentFlowScreen(),
         api: FakeStudentApi(),
         initial: afterSubscription,
+        subscription: subscribed,
         now: later.booking.startsAt.subtract(before),
       );
       await openBookings(tester);
@@ -328,6 +337,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
     final later = bookingOf('booking-later');
@@ -361,6 +371,7 @@ void main() {
       const StudentFlowScreen(),
       api: api,
       initial: afterSubscription,
+      subscription: subscribed,
     );
     await openBookings(tester);
 

@@ -10,6 +10,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/subscription_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/state/subscription.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -17,7 +18,7 @@ import '../support/pump.dart';
 void main() {
   Future<FakeStudentApi> pumpSubscription(
     WidgetTester tester, {
-    StudentFlowState? initial,
+    SubscriptionState? subscription,
     FakeStudentApi? api,
   }) async {
     api ??= FakeStudentApi();
@@ -25,12 +26,11 @@ void main() {
       tester,
       const SubscriptionScreen(),
       api: api,
-      initial:
-          initial ??
-          StudentFlowState(
-            step: FlowStep.subscription,
-            student: Fixtures.student,
-          ),
+      initial: StudentFlowState(
+        step: FlowStep.subscription,
+        student: Fixtures.student,
+      ),
+      subscription: subscription,
     );
     // 開いた直後に読むプランの一覧を待つ
     await tester.pumpAndSettle();
@@ -198,9 +198,7 @@ void main() {
     final entitlement = started.entitlement;
     await pumpSubscription(
       tester,
-      initial: StudentFlowState(
-        step: FlowStep.subscription,
-        student: Fixtures.student,
+      subscription: SubscriptionState(
         subscription: started.subscription,
         entitlement: Entitlement(
           entitlementId: entitlement.entitlementId,
@@ -227,9 +225,7 @@ void main() {
     final started = Fixtures.subscriptionStarted;
     final api = await pumpSubscription(
       tester,
-      initial: StudentFlowState(
-        step: FlowStep.subscription,
-        student: Fixtures.student,
+      subscription: SubscriptionState(
         subscription: started.subscription,
         entitlement: started.entitlement,
       ),
