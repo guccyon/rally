@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web のコーチの画面に「お知らせ」を足した: メニューの上の「お知らせ」に未読のお知らせの数のバッジを出し（0 件なら出さない）、押すとお知らせを新しい順に本文と日時で並べ、開いたときに未読だったものに「新着」と添えて、すべて既読にする（`listMyNotifications` / `markMyNotificationsRead`）。行を押すと、新しい予約は「通話への参加」、動画の添削の依頼は「動画の添削」、生徒からのメッセージは「チャット」へ移る（知らない種類の行は押せない）。0 件なら「まだお知らせはありません。…」、読み込めなければその文言を出す。API と契約の変更はない（#368）
 - コーチのお知らせの API: admin-web の契約に `GET /notifications/me`（`listMyNotifications`）と `POST /notifications/me/read`（`markMyNotificationsRead`）を student-app と同じ形で足した。コーチには新しい予約（`booking_confirmed`）・生徒からのメッセージ（`message_received`）に加え、生徒が動画を送ったとき（境界間イベント `VideoReviewRequested`）にも添削の依頼（`video_review_requested`。「生徒から動画の添削の依頼が届きました」）のプッシュ通知を送ってお知らせとして残す。本部は 403（student-app の生徒の分は変わらない）。DB は `notification.notifications` と `notification_settings` の種類に `video_review_requested` を足す expand だけ。管理画面の画面は次の段（#367）
 - 本部が予約の一覧を日付で見る API: admin-web の契約に `GET /bookings`（`listBookings`）を足した。すべてのコーチの枠への予約を、開始する日付（日本時間）の `from` から `to` まで（両端を含む。省けば今日から 7 日、31 日まで）で絞り、状態を問わず開始の古い順に返す。各行は予約（ID・開始・コーチ・状態・体験予約か・予約した時点のレッスンメニュー）とコーチ・生徒の表示名。`to` が `from` より前・31 日を超える・日付でない値は 422、本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#378）
 - admin-web の本部に「生徒」（`/headquarters/students`）を足した: 本部の画面の「生徒の一覧を見る」から開き、生徒を登録の新しい順に表示名・スポーツ・契約プラン（月額（スタンダード / プラス）・ワンショット・未契約）・最後に予約した日時（なければ「—」）・登録日で一覧にし、スポーツで絞り込める（画面の中で。`listStudents`）。0 人なら「まだ生徒はいません」、絞り込んで 0 件なら「このスポーツの生徒はいません」、読み込めなければその文言を出す。API と契約の変更はない（#377）
