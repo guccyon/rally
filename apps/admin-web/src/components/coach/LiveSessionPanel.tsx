@@ -11,6 +11,8 @@ import {
   SESSION_STATUS_LABELS,
 } from "@/components/labels";
 
+import { bookingLessonMenuLabel } from "./bookingLessonMenu";
+
 type CoachBooking = Schemas["CoachBooking"];
 
 type ListState =
@@ -43,6 +45,7 @@ function BookingTable({
         <tr>
           <th className="py-1">日時</th>
           <th className="py-1">生徒</th>
+          <th className="py-1">メニュー</th>
           <th className="py-1">状態</th>
           {renderAction && <th className="py-1">操作</th>}
         </tr>
@@ -54,6 +57,7 @@ function BookingTable({
               {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
             </td>
             <td className="py-1">{item.student_display_name ?? "（名前を表示できません）"}</td>
+            <td className="py-1">{bookingLessonMenuLabel(item.booking.lesson_menu)}</td>
             <td className="py-1">{BOOKING_STATUS_LABELS[item.booking.status]}</td>
             {renderAction && <td className="py-1">{renderAction(item)}</td>}
           </tr>
@@ -64,8 +68,8 @@ function BookingTable({
 }
 
 /**
- * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を出し、確定した予約の行から
- * セッションを開始し、同じセッションを終了する。映像はモックなので出さない。
+ * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を、生徒が予約したときのレッスンメニューとともに出し、
+ * 確定した予約の行からセッションを開始し、同じセッションを終了する。映像はモックなので出さない。
  */
 export function LiveSessionPanel({
   api,
