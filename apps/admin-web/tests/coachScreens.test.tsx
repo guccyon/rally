@@ -59,6 +59,14 @@ describe("枠の公開", () => {
     return fn;
   }
 
+  // メニューを結びつける試験は tests/slotLessonMenu.test.tsx。ここではメニューのないコーチ。
+  function noMenus() {
+    return vi.fn<CoachApi["listMyLessonMenus"]>(async () => ({
+      ok: true,
+      data: { coach_id: COACH_ID, lesson_menus: [] },
+    }));
+  }
+
   function firstCells(table: HTMLElement) {
     return within(table)
       .getAllByRole("row")
@@ -67,7 +75,7 @@ describe("枠の公開", () => {
   }
 
   test("これからの枠を API の順で上に、終わった枠を新しい順で畳んで下に出し、予約が入っているかを出す", async () => {
-    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS) }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS) }} />);
 
     const upcoming = await screen.findByRole("table", { name: "これからの枠" });
     expect(firstCells(upcoming)).toEqual(["テニス", "バスケットボール", "ゴルフ"]);
@@ -97,7 +105,7 @@ describe("枠の公開", () => {
     }));
     const listMyCoachSlots = listOf([], [published]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot, listMyCoachSlots }} />);
 
     expect(await screen.findByText("まだ枠を公開していません。")).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("スポーツ"), "野球");
@@ -126,7 +134,7 @@ describe("枠の公開", () => {
     }));
     const listMyCoachSlots = listOf([], [published]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot, listMyCoachSlots }} />);
 
     await screen.findByText("まだ枠を公開していません。");
     const sportSelect = screen.getByLabelText("スポーツ");
@@ -165,7 +173,7 @@ describe("枠の公開", () => {
     }));
     const listMyCoachSlots = listOf([], [published]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot, listMyCoachSlots }} />);
 
     await screen.findByText("まだ枠を公開していません。");
     const capacitySelect = screen.getByLabelText("定員");
@@ -207,7 +215,7 @@ describe("枠の公開", () => {
       }),
       coachSlot("c0000000-0000-4000-8000-000000000011", "tennis", 72, "open", false),
     ];
-    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(slots) }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot: vi.fn(), listMyCoachSlots: listOf(slots) }} />);
 
     const upcoming = await screen.findByRole("table", { name: "これからの枠" });
     const soccer = within(upcoming).getByRole("row", { name: /サッカー/ });
@@ -222,7 +230,7 @@ describe("枠の公開", () => {
   });
 
   test("枠が 0 件ならその旨を出す", async () => {
-    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf([]) }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot: vi.fn(), listMyCoachSlots: listOf([]) }} />);
 
     expect(await screen.findByText("まだ枠を公開していません。")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -230,7 +238,7 @@ describe("枠の公開", () => {
 
   test("これからの枠がなく終わった枠だけなら、これからの枠がない旨と終わった枠を出す", async () => {
     render(
-      <PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS.slice(0, 2)) }} />,
+      <PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot: vi.fn(), listMyCoachSlots: listOf(SLOTS.slice(0, 2)) }} />,
     );
 
     expect(await screen.findByText("これからの枠はありません。")).toBeInTheDocument();
@@ -242,7 +250,7 @@ describe("枠の公開", () => {
       ok: false,
       message: "権限がないためアクセスできません。",
     }));
-    render(<PublishSlotForm api={{ publishSlot: vi.fn(), listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot: vi.fn(), listMyCoachSlots }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -252,7 +260,7 @@ describe("枠の公開", () => {
     const publishSlot = vi.fn<CoachApi["publishSlot"]>();
     const listMyCoachSlots = listOf([]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot, listMyCoachSlots }} />);
 
     await screen.findByText("まだ枠を公開していません。");
     await user.type(screen.getByLabelText("開始"), "2026-11-01T11:00");
@@ -271,7 +279,7 @@ describe("枠の公開", () => {
     }));
     const listMyCoachSlots = listOf([]);
     const user = userEvent.setup();
-    render(<PublishSlotForm api={{ publishSlot, listMyCoachSlots }} />);
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), publishSlot, listMyCoachSlots }} />);
 
     await screen.findByText("まだ枠を公開していません。");
     await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
