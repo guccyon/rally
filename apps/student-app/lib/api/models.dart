@@ -1343,6 +1343,7 @@ class CoachReview {
     required this.comment,
     required this.submittedAt,
     this.lessonMenu,
+    this.reply,
   });
 
   final String reviewId;
@@ -1362,6 +1363,9 @@ class CoachReview {
   /// 評価した完了したレッスンの元（予約・動画）が持つレッスンメニューの写し。元にメニューがなければ null
   final ReviewLessonMenu? lessonMenu;
 
+  /// 評価されたコーチの返信（付け直していれば最後の返信だけ）。返信がない・項目のない応答（足す前のサーバー）は null
+  final LessonReviewReply? reply;
+
   factory CoachReview.fromJson(Map<String, dynamic> json) => CoachReview(
     reviewId: json['review_id'] as String,
     lessonId: json['lesson_id'] as String,
@@ -1373,7 +1377,27 @@ class CoachReview {
         : ReviewLessonMenu.fromJson(
             json['lesson_menu'] as Map<String, dynamic>,
           ),
+    reply: json['reply'] == null
+        ? null
+        : LessonReviewReply.fromJson(json['reply'] as Map<String, dynamic>),
   );
+}
+
+/// `LessonReviewReply`（glossary の lesson_review_reply。評価へのコーチの返信。評価 1 件に 1 つ）
+class LessonReviewReply {
+  const LessonReviewReply({required this.comment, required this.repliedAt});
+
+  /// 返信の文（1〜200 文字）
+  final String comment;
+
+  /// 返信を付けた（付け直したなら最後に付け直した）時刻
+  final DateTime repliedAt;
+
+  factory LessonReviewReply.fromJson(Map<String, dynamic> json) =>
+      LessonReviewReply(
+        comment: json['comment'] as String,
+        repliedAt: _dateTime(json['replied_at']),
+      );
 }
 
 /// `ReviewLessonMenu`（評価した完了したレッスンのレッスンメニューの ID・名前。メニューの今の中身ではなくレッスンの元が持つ写し）

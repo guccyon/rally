@@ -19,7 +19,7 @@ use domain::{
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{Notification, NotificationId, NotificationSettings, PushNotification},
     profile::{CoachBio, DisplayName},
-    review::{LessonReview, LessonReviewId},
+    review::{LessonReview, LessonReviewId, LessonReviewReply},
     scheduling::{
         Booking, BookingId, CoachAcceptance, CoachAcceptanceStatus, CoachCalendar, SchedulingError,
         Slot, SlotId,
@@ -1159,6 +1159,19 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
         lesson_review_id_uuid::from_uuid(uuid::Uuid::new_v4())
     }
 
+    async fn find_by_id(
+        &self,
+        review_id: LessonReviewId,
+    ) -> Result<Option<LessonReview>, Unavailable> {
+        Ok(self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.id() == review_id)
+            .cloned())
+    }
+
     async fn find_by_lesson(
         &self,
         lesson_id: LessonCompletionId,
@@ -1178,6 +1191,23 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
             return Err(InsertReviewError::LessonAlreadyReviewed);
         }
         reviews.push(review);
+        Ok(())
+    }
+
+    async fn save_reply(
+        &self,
+        review_id: LessonReviewId,
+        reply: &LessonReviewReply,
+    ) -> Result<(), Unavailable> {
+        if let Some(review) = self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r.id() == review_id)
+        {
+            *review = review.clone().with_reply(Some(reply.clone()));
+        }
         Ok(())
     }
 

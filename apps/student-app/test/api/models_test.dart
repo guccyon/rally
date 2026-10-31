@@ -294,6 +294,20 @@ void main() {
       );
       expect(CoachReview.fromJson(review).lessonMenu, isNull);
     });
+
+    test('評価されたコーチの返信を読み、null・項目がなければ null', () {
+      final parsed = CoachReview.fromJson({
+        ...review,
+        'reply': {
+          'comment': 'ありがとうございます',
+          'replied_at': '2026-10-26T04:00:00Z',
+        },
+      });
+      expect(parsed.reply?.comment, 'ありがとうございます');
+      expect(parsed.reply?.repliedAt, DateTime.utc(2026, 10, 26, 4));
+      expect(CoachReview.fromJson({...review, 'reply': null}).reply, isNull);
+      expect(CoachReview.fromJson(review).reply, isNull);
+    });
   });
 
   group('Slot.fromJson', () {

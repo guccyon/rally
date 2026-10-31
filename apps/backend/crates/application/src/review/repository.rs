@@ -3,7 +3,7 @@ use std::{future::Future, time::SystemTime};
 use domain::{
     identity::AccountId,
     lesson::LessonCompletionId,
-    review::{LessonReview, LessonReviewId},
+    review::{LessonReview, LessonReviewId, LessonReviewReply},
 };
 
 use super::InsertReviewError;
@@ -18,6 +18,12 @@ pub trait LessonReviewRepository: Send + Sync {
     /// 新しい評価の ID を払い出す。
     fn next_id(&self) -> LessonReviewId;
 
+    /// 評価 `review_id`（返信を含む）。なければ `None`。
+    fn find_by_id(
+        &self,
+        review_id: LessonReviewId,
+    ) -> impl Future<Output = Result<Option<LessonReview>, Unavailable>> + Send;
+
     /// `lesson_id` のレッスンの評価。なければ `None`。
     fn find_by_lesson(
         &self,
@@ -29,6 +35,14 @@ pub trait LessonReviewRepository: Send + Sync {
         &self,
         review: LessonReview,
     ) -> impl Future<Output = Result<(), InsertReviewError>> + Send;
+
+    /// 評価 `review_id` の返信を `reply` に置き換える（返信がなければ付ける）。点と一言は変えない。返信できるかの判定は
+    /// domain の [`LessonReview::write_reply`] が済ませてある。評価がなければ何もしない。
+    fn save_reply(
+        &self,
+        review_id: LessonReviewId,
+        reply: &LessonReviewReply,
+    ) -> impl Future<Output = Result<(), Unavailable>> + Send;
 
     /// コーチ `coach_id` への評価をすべて読む（数えない・並べない。並べるのは [`super::ListCoachReviews`]、数えるのは domain の
     /// [`domain::review::CoachReviewSummary::tally`]）。
