@@ -279,6 +279,14 @@ mod tests {
         ) -> Result<Option<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
+
+        async fn update_student_display_name(
+            &self,
+            _student_id: domain::identity::AccountId,
+            _display_name: domain::profile::DisplayName,
+        ) -> Result<Option<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

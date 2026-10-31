@@ -1136,20 +1136,21 @@ class CoachListing {
   );
 }
 
-/// `CoachListingList`
+/// `CoachListingList`。一覧をコンストラクタで写して持つので const では作らない。
 class CoachListingList {
-  const CoachListingList({required this.coaches});
+  // 渡した元のリストを後で変えても値が変わらないよう、読み取り専用の写しを持つ
+  CoachListingList({required List<CoachListing> coaches})
+    : coaches = List.unmodifiable(coaches);
 
-  /// 評価の平均の高い順（評価のないコーチは最後）→ 表示名 → `coach_id` の順（サーバーが並べる）
+  /// 評価の平均の高い順（評価のないコーチは最後）→ 表示名 → `coach_id` の順（サーバーが並べる）。読み取り専用
   final List<CoachListing> coaches;
 
   factory CoachListingList.fromJson(Map<String, dynamic> json) =>
       CoachListingList(
-        coaches: List.unmodifiable(
-          (json['coaches'] as List<dynamic>).map(
-            (e) => CoachListing.fromJson(e as Map<String, dynamic>),
-          ),
-        ),
+        coaches: [
+          for (final e in json['coaches'] as List<dynamic>)
+            CoachListing.fromJson(e as Map<String, dynamic>),
+        ],
       );
 }
 

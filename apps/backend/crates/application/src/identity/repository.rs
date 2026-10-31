@@ -2,7 +2,7 @@ use std::future::Future;
 
 use domain::{
     identity::{Account, AccountId},
-    profile::CoachBio,
+    profile::{CoachBio, DisplayName},
 };
 
 use crate::Unavailable;
@@ -36,6 +36,14 @@ pub trait AccountRepository: Send + Sync {
         &self,
         coach_id: AccountId,
         bio: CoachBio,
+    ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
+
+    /// 生徒 `student_id` の表示名を `display_name` に置き換え、置き換えたあとのアカウントを返す。生徒のアカウントが
+    /// なければ（ID のアカウントがないか、生徒でなければ）何も変えずに `None`。
+    fn update_student_display_name(
+        &self,
+        student_id: AccountId,
+        display_name: DisplayName,
     ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
 }
 

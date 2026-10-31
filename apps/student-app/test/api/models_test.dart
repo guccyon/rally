@@ -604,6 +604,40 @@ void main() {
     expect(() => list.plans.clear(), throwsUnsupportedError);
   });
 
+  test('CoachListingList をコンストラクタで直接作っても、渡した元を変えても一覧は変わらず、書き換えられない', () {
+    const coach = CoachListing(
+      coachId: 'c1',
+      displayName: '佐藤',
+      sport: Sport.tennis,
+      reviewCount: 0,
+      averageRating: null,
+      publishedLessonMenuCount: 0,
+    );
+    final source = [coach];
+    final list = CoachListingList(coaches: source);
+    source.clear();
+    expect(list.coaches, [coach]);
+    expect(() => list.coaches.clear(), throwsUnsupportedError);
+    expect(() => list.coaches.add(coach), throwsUnsupportedError);
+  });
+
+  test('CoachListingList.fromJson の一覧は書き換えられない', () {
+    final list = CoachListingList.fromJson({
+      'coaches': [
+        {
+          'coach_id': 'c1',
+          'display_name': '佐藤',
+          'sport': 'tennis',
+          'review_count': 0,
+          'average_rating': null,
+          'published_lesson_menu_count': 0,
+        },
+      ],
+    });
+    expect(list.coaches.single.coachId, 'c1');
+    expect(() => list.coaches.clear(), throwsUnsupportedError);
+  });
+
   test('SubscriptionPlanDetail は上限が 1 未満なら作れない（契約の minimum: 1）', () {
     for (final value in [0, -1]) {
       expect(
