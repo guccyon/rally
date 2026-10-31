@@ -8,6 +8,7 @@ import { ResultMessage } from "@/components/ResultMessage";
 import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import { addMinutesToLocal, selectableMenus } from "./slotLessonMenu";
+import { WithdrawSlotAction } from "./WithdrawSlotAction";
 
 const SPORTS = Object.keys(SPORT_LABELS) as Schemas["Sport"][];
 
@@ -34,7 +35,7 @@ const MENU_CHANGED =
 
 type ListState =
   | { kind: "loading" }
-  | { kind: "loaded"; upcoming: CoachSlot[]; past: CoachSlot[] }
+  | { kind: "loaded"; upcoming: CoachSlot[]; past: CoachSlot[]; fetchedAt: number }
   | { kind: "failed"; message: string };
 
 /**
@@ -47,7 +48,28 @@ function splitSlots(slots: CoachSlot[], now: number) {
   return { upcoming, past };
 }
 
-function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
+/**
+ * 取り下げ（withdrawMySlot）を出す枠か。契約が取り下げを認める、公開中の・有効な予約がない・まだ始まっていない枠だけ。
+ * 予約が入っている枠（予約済みも）には出さない。始まったかは一覧を読んだ時刻で見る。
+ */
+function canWithdraw(item: CoachSlot, now: number): boolean {
+  return (
+    item.slot.status === "open" &&
+    !item.has_active_booking &&
+    new Date(item.slot.starts_at).getTime() > now
+  );
+}
+
+function SlotTable({
+  label,
+  slots,
+  withdraw,
+}: {
+  label: string;
+  slots: CoachSlot[];
+  /** これからの枠だけに渡す。渡したら取り下げの列を出す。 */
+  withdraw?: { now: number; onWithdraw: (item: CoachSlot) => Promise<void> };
+}) {
   return (
     <table aria-label={label} className="w-full text-left text-sm">
       <thead>
@@ -57,6 +79,7 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
           <th className="py-1">日時</th>
           <th className="py-1">状態</th>
           <th className="py-1">予約</th>
+          {withdraw && <th className="py-1">取り下げ</th>}
         </tr>
       </thead>
       <tbody>
@@ -77,6 +100,13 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
                 </span>
               )}
             </td>
+            {withdraw && (
+              <td className="py-1">
+                {canWithdraw(item, withdraw.now) && (
+                  <WithdrawSlotAction onWithdraw={() => withdraw.onWithdraw(item)} />
+                )}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -86,13 +116,14 @@ function SlotTable({ label, slots }: { label: string; slots: CoachSlot[] }) {
 
 /**
  * 枠の公開（publishSlot）と、開いたときから出す自分の枠の一覧（listMyCoachSlots）。公開したら一覧を取り直す。
+ * これからの枠のうち予約の入っていない公開中の枠は、行の中で確かめてから取り下げられる（withdrawMySlot）。
  * 枠には自分のレッスンメニュー（listMyLessonMenus）のうち、公開中の同期の、枠と同じスポーツのものを結びつけられる。
  * メニューを選んだら終了は開始＋メニューの時間で決まり、手では変えられない。
  */
 export function PublishSlotForm({
   api,
 }: {
-  api: Pick<CoachApi, "publishSlot" | "listMyCoachSlots" | "listMyLessonMenus">;
+  api: Pick<CoachApi, "publishSlot" | "listMyCoachSlots" | "listMyLessonMenus" | "withdrawMySlot">;
 }) {
   const [sport, setSport] = useState<Schemas["Sport"]>("tennis");
   const [startsAt, setStartsAt] = useState("");
@@ -108,7 +139,8 @@ export function PublishSlotForm({
   const fetchSlots = useCallback(async (): Promise<ListState> => {
     const response = await api.listMyCoachSlots();
     if (!response.ok) return { kind: "failed", message: response.message };
-    return { kind: "loaded", ...splitSlots(response.data.slots, Date.now()) };
+    const now = Date.now();
+    return { kind: "loaded", ...splitSlots(response.data.slots, now), fetchedAt: now };
   }, [api]);
 
   const fetchMenus = useCallback(async (): Promise<MenuState> => {
@@ -189,6 +221,30 @@ export function PublishSlotForm({
       setResult(response);
     }
     setBusy(false);
+  }
+
+  async function withdrawSlot(item: CoachSlot) {
+    const response = await api.withdrawMySlot(item.slot.slot_id);
+    if (response.ok) {
+      setResult({ ok: true, message: "枠を取り下げました。" });
+      // 応答の Slot には lesson_menu が載らない（契約）ので、行の状態だけを応答で置き換える。
+      setList((current) =>
+        current.kind === "loaded"
+          ? {
+              ...current,
+              upcoming: current.upcoming.map((row) =>
+                row.slot.slot_id === item.slot.slot_id
+                  ? { ...row, slot: { ...row.slot, status: response.data.status } }
+                  : row,
+              ),
+            }
+          : current,
+      );
+      return;
+    }
+    // 409（予約が入った・始まった・すでに閉じた）などはサーバーの ErrorCode の文言を出し、一覧を今の状態に取り直す。
+    setResult(response);
+    if (response.code !== undefined) setList(await fetchSlots());
   }
 
   return (
@@ -290,7 +346,11 @@ export function PublishSlotForm({
             {list.upcoming.length === 0 ? (
               <p className="text-sm">これからの枠はありません。</p>
             ) : (
-              <SlotTable label="これからの枠" slots={list.upcoming} />
+              <SlotTable
+                label="これからの枠"
+                slots={list.upcoming}
+                withdraw={{ now: list.fetchedAt, onWithdraw: withdrawSlot }}
+              />
             )}
           </div>
           {list.past.length > 0 && (
