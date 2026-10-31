@@ -10,7 +10,8 @@ pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 use application::{
     analytics::AnalyticsSink,
     async_lesson::{
-        GetVideoReview, ListCoachVideos, ReturnVideoReview, SubmitVideo, VideoRepository,
+        GetVideoReview, ListCoachVideos, ListMyVideos, ReturnVideoReview, SubmitVideo,
+        VideoRepository,
     },
     catalog::{
         CatalogLessonMenuLookup, CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus,
@@ -46,8 +47,8 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        ListCoaches, ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup,
-        UpdateCoachProfile,
+        ListCoaches, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
+        ProfileStudentDisplayNameLookup, UpdateCoachProfile,
     },
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
@@ -102,7 +103,8 @@ pub fn router() -> Router {
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
 /// 予約した生徒の表示名を同じくアカウントの保存先から読んで添える（`ProfileStudentDisplayNameLookup`）。コーチに届いた動画の一覧
-/// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
+/// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。生徒が送った動画の一覧（`GET /videos/me`）は、
+/// 送り先のコーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
 /// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
@@ -305,6 +307,13 @@ where
         ListCoachLessonMenus::new(lesson_menus.clone()),
         MockTokenService,
     );
+    let my_videos = interface::my_videos_router(
+        ListMyVideos::new(
+            videos.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ),
+        MockTokenService,
+    );
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
         (
@@ -437,4 +446,5 @@ where
         MockTokenService,
     )
     .merge(catalog)
+    .merge(my_videos)
 }

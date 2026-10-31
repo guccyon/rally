@@ -1,0 +1,90 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use domain::{identity::AccountId, profile::DisplayName};
+
+use crate::{Unavailable, async_lesson::VideoCoachDisplayNameLookup, identity::AccountRepository};
+
+/// async-lesson の [`VideoCoachDisplayNameLookup`] の profile による実装。アカウントの保存先（データは当面 identity の
+/// 表）から読むだけで、何も変えない。
+///
+/// コーチでないアカウントと、ないアカウントは結果に含めない。
+#[derive(Debug, Clone)]
+pub struct ProfileCoachDisplayNameLookup<R> {
+    accounts: R,
+}
+
+impl<R> ProfileCoachDisplayNameLookup<R> {
+    pub fn new(accounts: R) -> Self {
+        Self { accounts }
+    }
+}
+
+impl<R> VideoCoachDisplayNameLookup for ProfileCoachDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_coach_display_names(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        let mut names = BTreeMap::new();
+        for &coach_id in coach_ids {
+            let Some(account) = self.accounts.find(coach_id).await? else {
+                continue;
+            };
+            if account.as_coach().is_none() {
+                continue;
+            }
+            names.insert(coach_id, account.display_name().clone());
+        }
+        Ok(names)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::SystemTime;
+
+    use domain::identity::{Account, Email, Role, Sport};
+
+    use super::*;
+    use crate::in_memory::InMemoryAccountRepository;
+
+    fn account(id: u128, display_name: &str, role: Role) -> Account {
+        Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("user{id}@example.com")).unwrap(),
+            DisplayName::new(display_name).unwrap(),
+            role,
+            [Sport::Tennis],
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn returns_display_names_of_coaches_only() {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach),
+            account(2, "あおき", Role::Student),
+            account(3, "いとう", Role::Coach),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+
+        let ids = [1, 2, 3, 4].map(AccountId::from_u128).into();
+        let found = ProfileCoachDisplayNameLookup::new(accounts)
+            .find_coach_display_names(&ids)
+            .await
+            .unwrap();
+        assert_eq!(
+            found,
+            BTreeMap::from([
+                (AccountId::from_u128(1), DisplayName::new("たなか").unwrap()),
+                (AccountId::from_u128(3), DisplayName::new("いとう").unwrap()),
+            ]),
+            "生徒（2）とないアカウント（4）は含めない"
+        );
+    }
+}

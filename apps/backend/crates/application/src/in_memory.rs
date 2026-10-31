@@ -728,6 +728,17 @@ impl VideoRepository for InMemoryVideoRepository {
             .collect())
     }
 
+    async fn videos_of_student(&self, student_id: AccountId) -> Result<Vec<Video>, Unavailable> {
+        Ok(self
+            .videos
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| v.student_id() == student_id)
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {
         self.videos.lock().unwrap().push(video);
         Ok(())

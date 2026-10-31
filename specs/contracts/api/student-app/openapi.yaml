@@ -445,6 +445,42 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /videos/me:
+    get:
+      operationId: listMyVideos
+      summary: 自分が送った動画の一覧
+      description: |
+        トークンが示す本人（生徒）が送った動画（`submitVideo`）を、添削待ちも返却済みも含めてすべて返す。添削が返ってきたかを
+        生徒が自分で確かめるのに使う（添削の中身は 1 本ずつ `getVideoReview` で読む）。生徒の役割のトークンだけが呼べる（コーチ・本部は 403）。
+        返すのは本人が送った動画だけ。
+
+        - 並べ方: 送った時刻 `submitted_at` の新しい順。同じ時刻は動画 ID の順
+        - 各項目には動画の ID と、送り先のコーチの ID `coach_id` と表示名 `coach_display_name` と、スポーツと、送った時刻と、
+          添削の状態 `review_status`（`in_progress`: 添削待ち / `returned`: 返却済み）と、返却された時刻 `returned_at` を載せる。
+          コーチのアカウントが引けないときは `coach_display_name` を載せない。添削待ちの動画の `returned_at` は null
+        - 各項目の `lesson_menu` は、動画を送った時点で選んだレッスンメニュー（ID・名前の写し。`VideoLessonMenu`）。
+          メニューの今の中身ではない。メニューを選ばずに送った動画は null
+        - 添削のコメントと AI の一次フィードバックは載せない（`getVideoReview` で読む）
+        - ゴルフの動画（golf-app の範囲）は載せない
+        - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [async-lesson]
+      x-context: async-lesson
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 自分が送った動画の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyVideoList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /videos/{video_id}/review:
     get:
       operationId: getVideoReview
@@ -1435,6 +1471,54 @@ components:
           oneOf:
             - $ref: "#/components/schemas/VideoLessonMenu"
             - type: "null"
+
+    MyVideo:
+      type: object
+      description: 生徒が送った動画の一覧の 1 件。生徒が送った動画（glossary の async_lesson）と、その添削（glossary の video_review）の状態
+      required: [video_id, coach_id, sport, submitted_at, review_status, returned_at, lesson_menu]
+      properties:
+        video_id:
+          type: string
+          format: uuid
+        coach_id:
+          type: string
+          format: uuid
+          description: 動画の送り先のコーチ
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 送り先のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+        sport:
+          $ref: "#/components/schemas/Sport"
+        submitted_at:
+          type: string
+          format: date-time
+          description: 生徒が動画を送った時刻
+        review_status:
+          $ref: "#/components/schemas/VideoReviewStatus"
+        returned_at:
+          type: [string, "null"]
+          format: date-time
+          description: コーチが添削を返した時刻。添削待ち（`in_progress`）のときは null
+        lesson_menu:
+          description: |
+            動画を送った時点で生徒が選んだコーチの非同期レッスンのレッスンメニュー（ID・名前の写し）。送った後にメニューが
+            直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
+          oneOf:
+            - $ref: "#/components/schemas/VideoLessonMenu"
+            - type: "null"
+
+    MyVideoList:
+      type: object
+      description: 生徒が送った動画の一覧（並べ方は `listMyVideos` の説明）
+      required: [videos]
+      properties:
+        videos:
+          type: array
+          description: 送った時刻の新しい順（同じ時刻は動画 ID の順）
+          items:
+            $ref: "#/components/schemas/MyVideo"
 
     LessonType:
       type: string
