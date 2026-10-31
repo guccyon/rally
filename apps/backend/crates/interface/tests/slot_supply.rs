@@ -152,7 +152,14 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
             ),
             clock,
         ),
-        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+        CreateBooking::new(
+            bookings.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock,
+        ),
         ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),

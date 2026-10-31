@@ -106,7 +106,7 @@ pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, J, A, C>,
     search_slots: SearchSlots<S, J, I, C>,
-    create_booking: CreateBooking<B, A, C>,
+    create_booking: CreateBooking<B, J, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     get_slot_supply: GetSlotSupply<B, C>,
@@ -195,14 +195,17 @@ where
             search_slots,
         }));
     let bookings = Router::new()
-        .route("/bookings", post(bookings::create_booking::<B, G, A, P, C>))
+        .route(
+            "/bookings",
+            post(bookings::create_booking::<B, J, G, A, P, C>),
+        )
         .route(
             "/bookings/{booking_id}/confirm",
-            post(bookings::confirm_booking::<B, G, A, P, C>),
+            post(bookings::confirm_booking::<B, J, G, A, P, C>),
         )
         .route(
             "/bookings/{booking_id}/cancel",
-            post(bookings::cancel_booking::<B, G, A, P, C>),
+            post(bookings::cancel_booking::<B, J, G, A, P, C>),
         )
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(bookings::BookingsState {

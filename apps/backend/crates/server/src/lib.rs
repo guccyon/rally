@@ -324,7 +324,12 @@ where
             ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock.clone(),
         ),
-        CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+        CreateBooking::new(
+            bookings.clone(),
+            CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock.clone(),
+        ),
         ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(entitlements.clone()),

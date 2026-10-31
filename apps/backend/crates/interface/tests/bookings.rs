@@ -7,7 +7,8 @@
 //! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
 //! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
 //! 有効な予約が入っているかと、結びついたレッスンメニュー（なければ null）を添えて返すことと、コーチ以外は 403 を確かめる。
-//! 予約の一覧（`listMyBookings`・`listMyCoachBookings`）の枠には `lesson_menu` を載せない。
+//! 予約の一覧（`listMyBookings`・`listMyCoachBookings`）の枠には `lesson_menu` を載せない。予約には予約した時点のレッスンメニュー
+//! `lesson_menu`（なければ null）を載せ、予約した後にメニューを直しても変わらないことを確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -177,7 +178,12 @@ fn app_with_entitlements(
             ),
             clock,
         ),
-        CreateBooking::new(bookings.clone(), analytics.clone(), clock),
+        CreateBooking::new(
+            bookings.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock,
+        ),
         ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(entitlements.clone()),
@@ -1406,6 +1412,103 @@ async fn coach_slots_carry_the_lesson_menu_bound_to_each_slot() {
         body["bookings"][0]["slot"].get("lesson_menu").is_none(),
         "{body}"
     );
+}
+
+#[tokio::test]
+async fn bookings_carry_the_lesson_menu_of_the_time_of_booking() {
+    use application::catalog::{LessonMenuRepository, lesson_menu_id_uuid};
+    use domain::catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuId, LessonMenuName,
+    };
+
+    let menu = |id, name: &str, is_published| {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            COACH,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+                name: LessonMenuName::new(name).unwrap(),
+                description: domain::catalog::LessonMenuDescription::default(),
+            },
+            is_published,
+            nov1(0),
+        )
+    };
+    // スロット 30 は公開中のメニュー 50 に、31 は非公開のメニュー 51 に結びついている
+    let bound = |id, menu| {
+        slot(id, SlotStatus::Open).with_restored_lesson_menu(Some(LessonMenuId::from_u128(menu)))
+    };
+    let app = app_with([bound(30, 50), bound(31, 51)]);
+    register_coach(&app).await;
+    register_student(&app).await;
+    app.lesson_menus
+        .insert(menu(50, "フォア改善", true))
+        .await
+        .unwrap();
+    app.lesson_menus
+        .insert(menu(51, "非公開", false))
+        .await
+        .unwrap();
+    let copy = json!({
+        "lesson_menu_id": lesson_menu_id_uuid::format(LessonMenuId::from_u128(50)),
+        "name": "フォア改善",
+        "duration_minutes": 60,
+    });
+
+    // 作成の応答に予約した時点のメニューを載せ、公開中でないメニューとメニューのない枠は null（予約は断らない）
+    let (status, created) = post_bookings(&app.router, Some(STUDENT), booking(30, false)).await;
+    assert_create_contract(status, &created);
+    assert_eq!(created["lesson_menu"], copy);
+    for slot in [31, 10] {
+        let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(slot, false)).await;
+        assert_create_contract(status, &body);
+        assert_eq!(body["lesson_menu"], Value::Null, "スロット {slot}");
+    }
+    let (status, confirmed) = post_confirm(
+        &app.router,
+        Some(STUDENT),
+        created["booking_id"].as_str().unwrap(),
+    )
+    .await;
+    assert_confirm_contract(status, &confirmed);
+    assert_eq!(confirmed["lesson_menu"], copy);
+
+    // 予約した後にメニューを直しても、予約の一覧は予約した時点のまま
+    app.lesson_menus
+        .update(menu(50, "直した名前", true))
+        .await
+        .unwrap();
+
+    let (status, mine) = get_my_bookings(&app.router, Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_list_contract(status, &mine);
+    let (status, of_coach) = get_my_coach_bookings(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{of_coach}");
+    assert_coach_list_contract(status, &of_coach);
+    for body in [&mine, &of_coach] {
+        let mut menus: Vec<(&str, &Value)> = body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                assert!(item["slot"].get("lesson_menu").is_none(), "{item}");
+                (
+                    item["slot"]["slot_id"].as_str().unwrap(),
+                    &item["booking"]["lesson_menu"],
+                )
+            })
+            .collect();
+        menus.sort_by_key(|(slot, _)| *slot);
+        assert_eq!(
+            menus,
+            [
+                (slot_id(10).as_str(), &Value::Null),
+                (slot_id(30).as_str(), &copy),
+                (slot_id(31).as_str(), &Value::Null),
+            ]
+        );
+    }
 }
 
 #[tokio::test]

@@ -140,7 +140,14 @@ fn app() -> App {
             ),
             clock.clone(),
         ),
-        CreateBooking::new(bookings.clone(), analytics.clone(), clock.clone()),
+        CreateBooking::new(
+            bookings.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock.clone(),
+        ),
         ConfirmBooking::new(
             bookings.clone(),
             EntitlementQuotaGate::new(entitlements.clone()),

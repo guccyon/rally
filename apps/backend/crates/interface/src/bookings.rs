@@ -6,13 +6,14 @@ use std::sync::Arc;
 
 use application::{
     analytics::AnalyticsSink,
+    catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
     identity::account_id_uuid,
     scheduling::{
         BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError, ConfirmBooking,
         ConfirmBookingCommand, ConfirmBookingError, CreateBooking, CreateBookingCommand,
-        CreateBookingError, QuotaGate, booking_id_uuid, slot_id_uuid,
+        CreateBookingError, LessonMenuLookup, QuotaGate, booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -22,7 +23,7 @@ use axum::{
 };
 use domain::{
     DomainError,
-    scheduling::{Booking, SlotStatus},
+    scheduling::{Booking, BookingLessonMenu, SlotStatus},
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,14 +35,14 @@ use crate::{
 };
 
 /// `/bookings` のハンドラーが使うユースケース。
-pub struct BookingsState<B, G, A, P, C> {
-    pub create_booking: CreateBooking<B, A, C>,
+pub struct BookingsState<B, J, G, A, P, C> {
+    pub create_booking: CreateBooking<B, J, A, C>,
     pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
     pub cancel_booking: CancelBooking<B, A, P, C>,
 }
 
 /// ハンドラーが共有する [`BookingsState`]。
-type Shared<B, G, A, P, C> = Arc<BookingsState<B, G, A, P, C>>;
+type Shared<B, J, G, A, P, C> = Arc<BookingsState<B, J, G, A, P, C>>;
 
 /// student-app の `CreateBookingRequest`。
 #[derive(Deserialize)]
@@ -50,7 +51,7 @@ pub struct CreateBookingRequest {
     is_trial: bool,
 }
 
-/// student-app の `Booking`。
+/// student-app・admin-web の `Booking`。
 #[derive(Serialize)]
 pub struct BookingBody {
     booking_id: String,
@@ -63,16 +64,27 @@ pub struct BookingBody {
     created_at: String,
     confirmed_at: Option<String>,
     cancelled_at: Option<String>,
+    /// 予約した時点のレッスンメニュー。メニューなしの予約は null
+    lesson_menu: Option<BookingLessonMenuBody>,
+}
+
+/// student-app・admin-web の `BookingLessonMenu`（予約した時点のレッスンメニューの ID・名前・1 回の時間）。
+#[derive(Serialize)]
+pub struct BookingLessonMenuBody {
+    lesson_menu_id: String,
+    name: String,
+    duration_minutes: Option<u8>,
 }
 
 /// `POST /bookings`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。予約する生徒はトークンのアカウント。
-pub async fn create_booking<B, G, A, P, C>(
-    State(state): State<Shared<B, G, A, P, C>>,
+pub async fn create_booking<B, J, G, A, P, C>(
+    State(state): State<Shared<B, J, G, A, P, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<CreateBookingRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<BookingBody>), ApiError>
 where
     B: BookingRepository,
+    J: LessonMenuLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -114,13 +126,14 @@ where
 
 /// `POST /bookings/{booking_id}/confirm`。生徒だけが呼べ、確定できるのは自分の予約だけ。
 /// 月額の生徒のビデオ通話の暦月の枠が残っていなければ 409 `live_lesson_quota_exceeded`（不変条件 1）。
-pub async fn confirm_booking<B, G, A, P, C>(
-    State(state): State<Shared<B, G, A, P, C>>,
+pub async fn confirm_booking<B, J, G, A, P, C>(
+    State(state): State<Shared<B, J, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
+    J: LessonMenuLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -158,13 +171,14 @@ where
 ///
 /// 回数を消費するかはレスポンスに含めない（契約。判定は境界間イベント `BookingCancelled` の
 /// `consumes_quota` で entitlement に渡す）。リクエストの本文（任意の `reason`）は読まない。
-pub async fn cancel_booking<B, G, A, P, C>(
-    State(state): State<Shared<B, G, A, P, C>>,
+pub async fn cancel_booking<B, J, G, A, P, C>(
+    State(state): State<Shared<B, J, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
+    J: LessonMenuLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -221,5 +235,14 @@ pub(crate) fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {
             .cancelled_at()
             .map(date_time_to_contract)
             .transpose()?,
+        lesson_menu: booking.lesson_menu().map(booking_lesson_menu_body),
     })
+}
+
+fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLessonMenuBody {
+    BookingLessonMenuBody {
+        lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
+        name: menu.name().as_str().to_string(),
+        duration_minutes: menu.duration().map(|d| d.minutes()),
+    }
 }

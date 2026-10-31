@@ -1,6 +1,6 @@
 # ADR 0004: DB スキーマの初版と expand/contract のマイグレーション
 
-- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し。D57（Issue #235）で 1 にサーバーの起動時のマイグレーションと、知らない版を飛ばすことを追記。D58（Issue #243）で `catalog.lesson_menus` を追記。D61（Issue #249）で `scheduling.slots.lesson_menu_id` を追記
+- 状態: 提案（2026-10-26、T04 / Issue #22）。T07（Issue #30）で `slots.status` とスロットの重なりの判定の置き場所を追記。T12（Issue #37）で `live_lesson.sessions` を、T13（Issue #38）で `async_lesson.videos` / `video_reviews` を、T14（Issue #39）で `live_lesson.lesson_completions` / `async_lesson.lesson_completions` を追記。D01（Issue #90）で `messaging.threads` / `messages` を、D16（Issue #134）で `notification.notification_settings` を、D18（Issue #136）で `identity.coaches.bio` を追記。D31（Issue #165）で sport の CHECK 制約の付け直し（水泳の追加）と、それを expand に書ける例外を追記。D34（Issue #168）で `async_lesson.videos` の AI の一次フィードバックの列を追記。D37（Issue #174）で `entitlement.subscriptions.plan`（契約プラン）と、`live_lesson_quotas.remaining_live_lessons` の CHECK の緩和を追記。D47（Issue #207）で `messaging.messages` の種類（`kind`）と参照（`video_id` / `review_id`）の列、`sender_role` の `system` を追記。D53（Issue #220）で 2 の緩和を個別の例外の表から形の定義に書き直し。D57（Issue #235）で 1 にサーバーの起動時のマイグレーションと、知らない版を飛ばすことを追記。D58（Issue #243）で `catalog.lesson_menus` を追記。D61（Issue #249）で `scheduling.slots.lesson_menu_id` を、D64（Issue #261）で `scheduling.bookings` の予約した時点のレッスンメニューの写しの列を追記
 - 関係: `docs/plans/p1-walking-skeleton.md`（段 1 の T04）、`specs/product-context.md`（不変条件）、`specs/context-map.yaml`、ADR 0002（キャンセル規定）、ADR 0003（層）、`.factory-config/manifest.yaml`（`always_human_approve` の `destructive_schema`）
 
 ## 決定
@@ -42,7 +42,7 @@
 | `identity` | `accounts` | アカウント。`role` で生徒（`student`）・コーチ（`coach`）・本部（`headquarters`）を区別。生徒だけが `sport` を持つ。メールは大文字小文字を区別せず一意 |
 | | `coaches` | コーチとしての情報（T05 で育てる）。`role = 'coach'` のアカウントだけを参照できる。自己紹介文 `bio`（D18 の expand で追加。既定は空文字列、`coaches_bio_length` で 400 文字まで） |
 | `scheduling` | `slots` | コーチが公開する予約枠。状態（`status`）は `open` / `booked` / `closed`（T07 の expand で追加）。任意で結びついたコーチのレッスンメニュー `lesson_menu_id`（D61 の expand で追加。NULL 可で、既存の枠とメニューを指定しない枠は NULL）。メニューは catalog の持ち物なので外部キーは張らない |
-| | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled` |
+| | `bookings` | 予約（体験予約は `is_trial`）。状態は `pending` / `confirmed` / `cancelled`。予約した時点で枠に結びついていたレッスンメニューの写し（D64 の expand で追加）: ID `lesson_menu_id`・名前 `lesson_menu_name`（1〜40 文字）・1 回の時間 `lesson_menu_duration_minutes`（15〜120 分の 15 分刻み。予約の時点でメニューが非同期なら NULL）。どれも NULL 可で、既存の予約とメニューなしの予約は NULL。ID と名前は揃って NULL か揃って値を持つ（`bookings_lesson_menu_shape`）。メニューは catalog の持ち物なので外部キーは張らず、後でメニューを直しても写しは書き換えない |
 | `entitlement` | `subscriptions` | 月額契約（ゴルフ以外）。契約プラン `plan`（D37 の expand で追加。変更シナリオ cs-003。`standard` / `plus`、既定は `standard` で既存の契約も standard） |
 | | `entitlements` | 受講権（契約種別と利用権）。月額は元の契約と送り放題、ワンショットはゴルフと残りの添削回数 |
 | | `live_lesson_quotas` | ビデオ通話の暦月の枠。受講権 × 暦月の初日で 1 行、`remaining_live_lessons` が残回数（0 以上。上限は契約プランで決まる。D37 の expand で 0〜2 から緩め、既定値の 2 も外した） |
@@ -88,6 +88,7 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 - 生徒がチャットを送ってよいか（月額の送り放題。D01）: 判定は domain の `Entitlement::unlimited_video_and_chat`（規則は `ContractType`）の 1 か所で、messaging は送信の前にポート `ChatGate` で問い合わせる（ADR 0007）。送り放題なので送信の回数は保存しない
 - 契約プランごとの暦月の上限の数（D37。standard 2 回・plus 4 回）: 判定は domain の `SubscriptionPlan::live_lessons_per_month` の 1 か所で、`LiveLessonQuota` がそこから上限を受け取る。プランは `subscriptions` に、残回数は `live_lesson_quotas` にあり、上限を CHECK にするとプランの数を SQL に写して 2 か所で持つことになるので、DB は残回数が 0 以上だけを守る（上の端の 2 も外した）
 - 枠に結びつけられるレッスンメニュー（D61。枠のコーチ自身の・公開中の・同期の・スポーツが枠と同じ・1 回の時間が枠の長さと同じ）: 判定は domain の `Slot::with_lesson_menu` の 1 か所で、scheduling は公開の前にポート `LessonMenuLookup` で catalog に問い合わせる。メニューは別のコンテキストの表なので外部キーも CHECK も置かない。結びつけた後にメニューを直す・非公開にすることは止めない（枠の一覧は今のメニューを添え、生徒の検索は公開中のものだけを添える）
+- 予約が写すレッスンメニュー（D64。予約したスロットに結びついたメニューで、予約の時点で公開中のもの。そうでなければメニューなしの予約にし、予約は断らない）: 判定は domain の `Booking::with_lesson_menu` の 1 か所で、予約の作成は保存の前にポート `LessonMenuLookup` で catalog に問い合わせる。DB は写しの形（`bookings_lesson_menu_shape`・`bookings_lesson_menu_name_check`・`bookings_lesson_menu_duration_check`）だけを守り、スロットの `lesson_menu_id` との一致は守らない（別のコンテキストの表を読む CHECK は置けず、写しは予約の時点の値なので後で枠やメニューと食い違ってよい）
 - コーチへの支払い（不変条件 4）: billing のテーブルとともに段 5 以降
 
 ### 5. 検査

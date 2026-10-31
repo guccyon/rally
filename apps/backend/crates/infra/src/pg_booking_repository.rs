@@ -4,6 +4,7 @@ use std::time::SystemTime;
 
 use application::{
     Unavailable,
+    catalog::lesson_menu_id_uuid,
     identity::account_id_uuid,
     scheduling::{
         BookingRepository, ReserveSlotError, UpdateBookingError, booking_id_uuid, slot_id_uuid,
@@ -11,8 +12,9 @@ use application::{
 };
 use domain::{
     DomainError,
+    catalog::{LessonDuration, LessonMenuName},
     identity::AccountId,
-    scheduling::{Booking, BookingId, Slot, SlotId},
+    scheduling::{Booking, BookingId, BookingLessonMenu, Slot, SlotId},
 };
 use sqlx::{
     FromRow, PgPool, Postgres, Row, Transaction,
@@ -49,9 +51,13 @@ type BookingColumns = (
     Option<OffsetDateTime>,
 );
 
-/// 予約の列（[`BookingColumns`]）と、続く予約したスロットの列（[`SlotRow`]）。sqlx のタプルの `FromRow` は 16 列
-/// までなので、列の位置で読む（[`select_bookings`] の列の順）。
-struct BookingRow(BookingColumns, SlotRow);
+/// 予約した時点のレッスンメニューの写しの列（lesson_menu_id, lesson_menu_name, lesson_menu_duration_minutes）。
+/// 写しのない予約はどれも NULL（DB の `bookings_lesson_menu_shape`）。
+type LessonMenuColumns = (Option<Uuid>, Option<String>, Option<i16>);
+
+/// 予約の列（[`BookingColumns`]）と、レッスンメニューの写しの列（[`LessonMenuColumns`]）と、続く予約したスロットの列
+/// （[`SlotRow`]）。sqlx のタプルの `FromRow` は 16 列までなので、列の位置で読む（[`select_bookings`] の列の順）。
+struct BookingRow(BookingColumns, LessonMenuColumns, SlotRow);
 
 impl<'r> FromRow<'r, PgRow> for BookingRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -65,7 +71,8 @@ impl<'r> FromRow<'r, PgRow> for BookingRow {
                 row.try_get(5)?,
                 row.try_get(6)?,
             ),
-            slot_row_at(row, 7)?,
+            (row.try_get(7)?, row.try_get(8)?, row.try_get(9)?),
+            slot_row_at(row, 10)?,
         ))
     }
 }
@@ -75,7 +82,8 @@ macro_rules! select_bookings {
     ($where:literal) => {
         concat!(
             "SELECT b.booking_id, b.student_id, b.is_trial, b.status, b.created_at,
-        b.confirmed_at, b.cancelled_at, ",
+        b.confirmed_at, b.cancelled_at, b.lesson_menu_id, b.lesson_menu_name,
+        b.lesson_menu_duration_minutes, ",
             slot_columns!(),
             " FROM scheduling.bookings b JOIN scheduling.slots s ON s.slot_id = b.slot_id ",
             $where
@@ -147,6 +155,19 @@ impl BookingRepository for PgBookingRepository {
         booking_id_uuid::from_uuid(Uuid::new_v4())
     }
 
+    async fn find_slot(&self, slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+        let row: Option<SlotRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            slot_columns!(),
+            " FROM scheduling.slots s WHERE s.slot_id = $1"
+        ))
+        .bind(slot_id_uuid::to_uuid(slot_id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        row.map(slot_from_row).transpose()
+    }
+
     async fn find(&self, booking_id: BookingId) -> Result<Option<Booking>, Unavailable> {
         let row: Option<BookingRow> = sqlx::query_as(select_bookings!("WHERE b.booking_id = $1"))
             .bind(booking_id_uuid::to_uuid(booking_id))
@@ -191,10 +212,12 @@ impl BookingRepository for PgBookingRepository {
         // 押さえた席（slot の数）は保存しない。数は予約の行から数える
         let booking = reserve(&mut slot, &existing).map_err(ReserveSlotError::Rejected)?;
 
+        let lesson_menu = booking.lesson_menu();
         sqlx::query(
             "INSERT INTO scheduling.bookings
-                 (booking_id, slot_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                 (booking_id, slot_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at,
+                  lesson_menu_id, lesson_menu_name, lesson_menu_duration_minutes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(booking_id_uuid::to_uuid(booking.id()))
         .bind(slot_id_uuid::to_uuid(booking.slot_id()))
@@ -204,6 +227,13 @@ impl BookingRepository for PgBookingRepository {
         .bind(timestamp(booking.created_at()))
         .bind(booking.confirmed_at().map(timestamp))
         .bind(booking.cancelled_at().map(timestamp))
+        .bind(lesson_menu.map(|menu| lesson_menu_id_uuid::to_uuid(menu.id())))
+        .bind(lesson_menu.map(|menu| menu.name().as_str()))
+        .bind(
+            lesson_menu
+                .and_then(BookingLessonMenu::duration)
+                .map(|duration| i16::from(duration.minutes())),
+        )
         .execute(&mut *tx)
         .await
         .map_err(reserve_unavailable)?;
@@ -335,6 +365,7 @@ fn booking_from_row(row: BookingRow) -> Result<Booking, Unavailable> {
 fn booking_and_slot_from_row(
     BookingRow(
         (booking_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at),
+        lesson_menu,
         slot,
     ): BookingRow,
 ) -> Result<(Booking, Slot), Unavailable> {
@@ -350,6 +381,25 @@ fn booking_and_slot_from_row(
         created_at.into(),
         confirmed_at.map(Into::into),
         cancelled_at.map(Into::into),
-    );
+    )
+    .with_restored_lesson_menu(lesson_menu_from_columns(lesson_menu)?);
     Ok((booking, slot))
+}
+
+/// 予約した時点のレッスンメニューの写し。写しのない予約は `None`。
+fn lesson_menu_from_columns(
+    (lesson_menu_id, name, duration_minutes): LessonMenuColumns,
+) -> Result<Option<BookingLessonMenu>, Unavailable> {
+    let (Some(lesson_menu_id), Some(name)) = (lesson_menu_id, name) else {
+        return Ok(None);
+    };
+    let duration = duration_minutes
+        .map(|minutes| LessonDuration::from_minutes(i64::from(minutes)))
+        .transpose()
+        .map_err(Unavailable::new)?;
+    Ok(Some(BookingLessonMenu::restore(
+        lesson_menu_id_uuid::from_uuid(lesson_menu_id),
+        LessonMenuName::new(name).map_err(Unavailable::new)?,
+        duration,
+    )))
 }

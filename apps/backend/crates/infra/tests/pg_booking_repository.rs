@@ -1,19 +1,31 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
 //! 生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
+//! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
-use application::scheduling::{BookingRepository, ReserveSlotError};
+use application::{
+    catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
+    in_memory::{FixedClock, RecordingAnalyticsSink},
+    scheduling::{
+        BookingRepository, CreateBooking, CreateBookingCommand, ListCoachBookings, ListMyBookings,
+        ReserveSlotError, SlotRepository,
+    },
+};
 use domain::{
     DomainError,
-    identity::AccountId,
-    scheduling::{Booking, BookingStatus, Slot, SlotStatus},
+    catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+        LessonMenuId, LessonMenuName,
+    },
+    identity::{AccountId, Coach, Sport},
+    scheduling::{Booking, BookingLessonMenu, BookingStatus, Slot, SlotCapacity, SlotStatus},
 };
-use infra::PgBookingRepository;
+use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};
 use sqlx::PgPool;
 use support::at;
 
@@ -461,4 +473,170 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
 
     let nobody = support::coach(&pool).await;
     assert!(bookings.bookings_of_coach(nobody).await.unwrap().is_empty());
+}
+
+/// コーチ `coach` のテニスの 1 回 60 分のメニューを保存する。
+async fn lesson_menu(pool: &PgPool, id: u128, coach: AccountId, is_published: bool) -> LessonMenu {
+    let menu = LessonMenu::restore(
+        LessonMenuId::from_u128(id),
+        coach,
+        LessonMenuContent {
+            sport: Sport::Tennis,
+            format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+            name: LessonMenuName::new("フォア改善").unwrap(),
+            description: LessonMenuDescription::new("").unwrap(),
+        },
+        is_published,
+        at(0),
+    );
+    PgLessonMenuRepository::new(pool.clone())
+        .insert(menu.clone())
+        .await
+        .unwrap();
+    menu
+}
+
+/// `coach` の公開中の枠（`from` 時から 1 時間）を、公開中のメニュー `menu` に結びつけて保存する。
+async fn slot_with_menu(pool: &PgPool, coach: AccountId, from: u64, menu: &LessonMenu) -> Slot {
+    let slots = PgSlotRepository::new(pool.clone());
+    let slot = Slot::publish(
+        slots.next_id(),
+        coach,
+        Sport::Tennis,
+        at(from),
+        at(from + 1),
+        SlotCapacity::ONE,
+    )
+    .unwrap()
+    .with_lesson_menu(menu)
+    .unwrap();
+    slots
+        .add_to_calendar(slot.clone(), |calendar, slot| calendar.publish(slot))
+        .await
+        .unwrap();
+    slot
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn find_slot_reads_the_slot_with_its_lesson_menu(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let menu = lesson_menu(&pool, 1, coach, true).await;
+    let bound = slot_with_menu(&pool, coach, 30, &menu).await;
+    let plain = support::open_slot(&pool, coach, 32, 33).await;
+
+    assert_eq!(bookings.find_slot(bound.id()).await.unwrap(), Some(bound));
+    assert_eq!(bookings.find_slot(plain.id()).await.unwrap(), Some(plain));
+    assert_eq!(
+        bookings
+            .find_slot(SlotRepository::next_id(&PgSlotRepository::new(
+                pool.clone()
+            )))
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let create = CreateBooking::new(
+        bookings.clone(),
+        CatalogLessonMenuLookup::new(menus.clone()),
+        RecordingAnalyticsSink::default(),
+        FixedClock(at(1)),
+    );
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let published = lesson_menu(&pool, 1, coach, true).await;
+    let to_unpublish = lesson_menu(&pool, 2, coach, true).await;
+    let bound = slot_with_menu(&pool, coach, 30, &published).await;
+    let unpublished_slot = slot_with_menu(&pool, coach, 32, &to_unpublish).await;
+    let plain = support::open_slot(&pool, coach, 34, 35).await;
+    let mut unpublished = to_unpublish.clone();
+    unpublished
+        .revise(
+            coach,
+            &Coach::new([Sport::Tennis]).unwrap(),
+            to_unpublish.content().clone(),
+            false,
+        )
+        .unwrap();
+    menus.update(unpublished).await.unwrap();
+
+    let book = |slot: &Slot| CreateBookingCommand {
+        student_id: student,
+        slot_id: slot.id(),
+        is_trial: false,
+    };
+    let with_menu = create.execute(book(&bound)).await.unwrap();
+    let copy = BookingLessonMenu::copy_of(&published);
+    assert_eq!(with_menu.lesson_menu(), Some(&copy));
+    // 予約の時点で公開中でないメニューと、メニューのない枠は、メニューなしの予約（予約は断らない）
+    let without_menu = create.execute(book(&unpublished_slot)).await.unwrap();
+    assert_eq!(without_menu.lesson_menu(), None);
+    let plain_booking = create.execute(book(&plain)).await.unwrap();
+    assert_eq!(plain_booking.lesson_menu(), None);
+
+    // 予約した後にメニューを直しても、読み戻した予約の写しは予約した時点のまま
+    let mut revised = published.clone();
+    revised
+        .revise(
+            coach,
+            &Coach::new([Sport::Tennis]).unwrap(),
+            LessonMenuContent {
+                name: LessonMenuName::new("直した名前").unwrap(),
+                format: LessonFormat::Live(LessonDuration::from_minutes(90).unwrap()),
+                ..published.content().clone()
+            },
+            true,
+        )
+        .unwrap();
+    menus.update(revised).await.unwrap();
+    assert_eq!(
+        bookings.find(with_menu.id()).await.unwrap(),
+        Some(with_menu.clone())
+    );
+
+    // 確定しても写しは残る
+    let confirmed = bookings
+        .update(with_menu.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))
+        })
+        .await
+        .unwrap();
+    assert_eq!(confirmed.lesson_menu(), Some(&copy));
+
+    // 本人の予約の一覧とコーチの自分の予約の一覧にも、予約した時点の写しが載る
+    let mine = ListMyBookings::new(
+        bookings.clone(),
+        application::profile::ProfileCoachIntroductionLookup::new(PgAccountRepository::new(
+            pool.clone(),
+        )),
+    )
+    .execute(student)
+    .await
+    .unwrap();
+    let of_coach = ListCoachBookings::new(
+        bookings.clone(),
+        application::profile::ProfileStudentDisplayNameLookup::new(PgAccountRepository::new(
+            pool.clone(),
+        )),
+    )
+    .execute(coach)
+    .await
+    .unwrap();
+    for items in [&mine.items, &of_coach.items] {
+        let menus: Vec<_> = items
+            .iter()
+            .map(|(booking, _)| (booking.id(), booking.lesson_menu().cloned()))
+            .collect();
+        assert_eq!(menus.len(), 3);
+        assert!(menus.contains(&(with_menu.id(), Some(copy.clone()))));
+        assert!(menus.contains(&(without_menu.id(), None)));
+        assert!(menus.contains(&(plain_booking.id(), None)));
+    }
 }

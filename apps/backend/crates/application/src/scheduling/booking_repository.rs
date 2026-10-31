@@ -25,6 +25,13 @@ pub trait BookingRepository: Send + Sync {
         booking_id: BookingId,
     ) -> impl Future<Output = Result<Option<Booking>, Unavailable>> + Send;
 
+    /// `slot_id` のスロット（状態を問わない）。なければ `None`。読むだけで何も変えない。予約の作成
+    /// （[`super::CreateBooking`]）が、スロットに結びついたレッスンメニューを catalog に引くために先に読む。
+    fn find_slot(
+        &self,
+        slot_id: SlotId,
+    ) -> impl Future<Output = Result<Option<Slot>, Unavailable>> + Send;
+
     /// `slot_id` のスロットと、既存の予約（少なくともそのスロットの予約と `student_id` の生徒の予約）を
     /// 読み、`reserve` に渡す。`reserve` が `Ok` なら返した予約を保存して返す。スロットの席の数
     /// （[`domain::scheduling::SlotSeats`]）は予約から数えるので、`reserve` が押さえた席は保存しない。

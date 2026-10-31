@@ -272,6 +272,17 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned())
     }
 
+    async fn find_slot(&self, slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+        Ok(self
+            .slots
+            .slots
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|slot| slot.id() == slot_id)
+            .cloned())
+    }
+
     async fn reserve<F>(
         &self,
         slot_id: SlotId,
