@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- student-app のチャットの「添削を依頼する」で、担当コーチの公開中の非同期のレッスンメニューのうち生徒のスポーツのもの（名前と説明）と「指定しない」（既定）から選んで送れる（`listCoachLessonMenus`・`submitVideo` の `lesson_menu_id`）。メニューがなければ選択の欄を出さず今までどおり送れる。メニューを付けて断られたら、メニューが変わった可能性を伝えて読み直し、選んだ動画はそのままで選び直させる。添削結果の画面とチャットの返却のカードに、選んだメニューがあれば「メニュー: 〇〇」を出す。API と契約の変更はない（#269）
 - student-app の自分の予約の行と、ホームの「これからの予約」に、予約した時点のレッスンメニューの名前と 1 回の時間（例: 「メニュー: フォアハンドの基礎（1 回 60 分）」。時間がなければ名前だけ）を出す。メニューのない予約はこれまでどおり。`Booking.lesson_menu` を手写しの型に足した。API と契約の変更はない（#262）
 - admin-web のコーチの「動画の添削」の添削待ち・返却済みの行と、「対応待ち」の添削待ちの動画の行に、生徒が動画を送った時点で選んだレッスンメニューを「メニュー: 〇〇」の形で出す（`listMyCoachVideos` の `lesson_menu`）。メニューのない動画はこれまでどおり。API と契約の変更はない（#270）
 - 添削の依頼で非同期のレッスンメニューを選べる API: student-app の `submitVideo` のリクエストに任意の `lesson_menu_id` を足した。選べるのは送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー（満たさないか、メニューがなければ 422 `validation_failed`。省けば今までどおりメニューなし）。受け付けたときにメニューの ID・名前を動画に写して残す（後でメニューを直しても動画の表示は送った時点のまま）。student-app の `Video`（`submitVideo`）・`VideoReview`（`getVideoReview`）と admin-web の `CoachVideo`（`listMyCoachVideos`）・`VideoReview`（`returnVideoReview`）に `lesson_menu`（`VideoLessonMenu`。なければ null）を足した。既存の動画は null。DB は動画の列の追加だけ（expand）。admin-web は型を生成し直しただけで、画面は変えない（#268）

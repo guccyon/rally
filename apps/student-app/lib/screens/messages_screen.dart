@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -63,19 +65,37 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     await ref.read(studentFlowProvider.notifier).sendStamp(stamp);
   }
 
-  /// 動画を選んで添削を依頼する（動画の選択はモック）。やめたら何もしない
+  /// 動画を選んで添削を依頼する（動画の選択はモック）。担当コーチの非同期のメニューを読んで選ばせる。やめたら何もしない。
+  /// メニューを付けて断られたら、選んだ動画と相談内容はそのままで、読み直したメニューを選び直させる
   Future<void> _requestVideoReview() async {
-    final request = await showDialog<({String? note})>(
-      context: context,
-      builder: (_) => const _VideoReviewRequestDialog(),
-    );
-    if (request == null || !mounted) return;
-    await ref
-        .read(studentFlowProvider.notifier)
-        .requestVideoReview(
-          contentType: VideoSubmitScreen.mockContentType,
-          note: request.note,
-        );
+    final notifier = ref.read(studentFlowProvider.notifier);
+    final coachId = ref.read(studentFlowProvider).thread!.coachId;
+    String? note;
+    var fileSelected = false;
+    var menuRejected = false;
+    while (true) {
+      if (!mounted) return;
+      if (!menuRejected) unawaited(notifier.loadCoachLessonMenus(coachId));
+      final request = await showDialog<_VideoReviewRequest>(
+        context: context,
+        builder: (_) => _VideoReviewRequestDialog(
+          coachId: coachId,
+          initialNote: note,
+          fileSelected: fileSelected,
+          menuRejected: menuRejected,
+        ),
+      );
+      if (request == null || !mounted) return;
+      final result = await notifier.requestVideoReview(
+        contentType: VideoSubmitScreen.mockContentType,
+        note: request.note,
+        lessonMenuId: request.lessonMenuId,
+      );
+      if (result != VideoReviewRequestResult.menuRejected) return;
+      note = request.note;
+      fileSelected = true;
+      menuRejected = true;
+    }
   }
 
   @override
@@ -207,18 +227,47 @@ class _StampPicker extends StatelessWidget {
   }
 }
 
-/// 添削の依頼に添える動画の選択（モック）と相談内容。依頼するなら相談内容（空なら null）を返す
-class _VideoReviewRequestDialog extends StatefulWidget {
-  const _VideoReviewRequestDialog();
+// 選択肢はコーチ・公開中・非同期・生徒のスポーツで絞ってあるので、メニューを付けて送ったあとの 422 は、
+// 読み込んだ後にメニューが変わった（非公開にした・直した）ものと読む（admin-web の枠の公開と同じ読み方）。
+const _menuRejectedMessage =
+    '選んだレッスンメニューでは依頼できませんでした。メニューが非公開になったか、内容が変わった可能性があります。'
+    'メニューを読み込み直したので、選び直してください（選んだ動画はそのままです）。';
+
+/// 添削の依頼の中身（相談内容は空なら null、メニューは「指定しない」なら null）
+typedef _VideoReviewRequest = ({String? note, String? lessonMenuId});
+
+/// 添削の依頼に添える動画の選択（モック）と、担当コーチの非同期のメニューの選択と、相談内容。依頼するならその中身を返す。
+/// メニューは「指定しない」（既定）と、コーチの公開中の非同期のメニューのうち生徒のスポーツのもの（名前と説明）から選ぶ。
+/// メニューがなければ選択の欄を出さない
+class _VideoReviewRequestDialog extends ConsumerStatefulWidget {
+  const _VideoReviewRequestDialog({
+    required this.coachId,
+    required this.initialNote,
+    required this.fileSelected,
+    required this.menuRejected,
+  });
+
+  final String coachId;
+
+  /// 断られたあとに開き直したときの相談内容と、動画を選んだか
+  final String? initialNote;
+  final bool fileSelected;
+
+  /// 直前の依頼が、選んだメニューを付けて断られた
+  final bool menuRejected;
 
   @override
-  State<_VideoReviewRequestDialog> createState() =>
+  ConsumerState<_VideoReviewRequestDialog> createState() =>
       _VideoReviewRequestDialogState();
 }
 
-class _VideoReviewRequestDialogState extends State<_VideoReviewRequestDialog> {
-  final _note = TextEditingController();
-  bool _fileSelected = false;
+class _VideoReviewRequestDialogState
+    extends ConsumerState<_VideoReviewRequestDialog> {
+  late final _note = TextEditingController(text: widget.initialNote);
+  late bool _fileSelected = widget.fileSelected;
+
+  /// 選んだメニュー（null は「指定しない」）
+  String? _lessonMenuId;
 
   @override
   void dispose() {
@@ -228,6 +277,14 @@ class _VideoReviewRequestDialogState extends State<_VideoReviewRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(studentFlowProvider);
+    final menusFailed = state.coachLessonMenusFailures.contains(widget.coachId);
+    final menus = menusFailed ? null : state.asyncLessonMenusOf(widget.coachId);
+    // 読み直したメニューから選んでいたものが消えたら「指定しない」に戻す
+    final lessonMenuId =
+        menus?.any((menu) => menu.lessonMenuId == _lessonMenuId) ?? false
+        ? _lessonMenuId
+        : null;
     return AlertDialog(
       title: const Text('動画の添削を依頼する'),
       content: SingleChildScrollView(
@@ -246,6 +303,43 @@ class _VideoReviewRequestDialogState extends State<_VideoReviewRequestDialog> {
                   ? '選んだ動画: ${VideoSubmitScreen.mockFileName}'
                   : '動画が選ばれていません',
             ),
+            if (widget.menuRejected) ...[
+              const SizedBox(height: 8),
+              Text(
+                _menuRejectedMessage,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (menusFailed)
+              const Text('レッスンメニューを読み込めませんでした。メニューを指定せずに依頼できます。')
+            else if (menus == null)
+              const Text('レッスンメニューを読み込んでいます。')
+            else if (menus.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('レッスンメニュー'),
+              RadioGroup<String?>(
+                groupValue: lessonMenuId,
+                onChanged: (id) => setState(() => _lessonMenuId = id),
+                child: Column(
+                  children: [
+                    const RadioListTile<String?>(
+                      value: null,
+                      title: Text('指定しない'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    for (final menu in menus)
+                      RadioListTile<String?>(
+                        value: menu.lessonMenuId,
+                        title: Text(menu.name),
+                        subtitle: menu.description.isEmpty
+                            ? null
+                            : Text(menu.description),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                  ],
+                ),
+              ),
+            ],
             TextField(
               controller: _note,
               decoration: const InputDecoration(labelText: 'コーチへの相談内容（任意）'),
@@ -266,7 +360,10 @@ class _VideoReviewRequestDialogState extends State<_VideoReviewRequestDialog> {
               ? null
               : () {
                   final note = _note.text.trim();
-                  Navigator.of(context).pop((note: note.isEmpty ? null : note));
+                  Navigator.of(context).pop((
+                    note: note.isEmpty ? null : note,
+                    lessonMenuId: lessonMenuId,
+                  ));
                 },
           child: const Text('依頼する'),
         ),
@@ -344,7 +441,7 @@ class _ReviewRequestCard extends StatelessWidget {
   );
 }
 
-/// 添削の返却（コーチの添削の本文と、あれば AI の一次フィードバックを別の枠で）
+/// 添削の返却（依頼で選んだメニューがあればその名前と、コーチの添削の本文と、あれば AI の一次フィードバックを別の枠で）
 class _ReviewReturnedCard extends StatelessWidget {
   const _ReviewReturnedCard({
     required this.message,
@@ -373,6 +470,10 @@ class _ReviewReturnedCard extends StatelessWidget {
       icon: Icons.rate_review_outlined,
       title: number == null ? 'コーチの添削' : 'コーチの添削（$number 回目の依頼）',
       children: [
+        if (review?.lessonMenu case final menu?) ...[
+          Text(videoLessonMenuLabel(menu)),
+          const SizedBox(height: 4),
+        ],
         if (review != null)
           Text(comment)
         else if (failed)

@@ -577,6 +577,24 @@ abstract final class Fixtures {
     aiFeedback: aiFeedback,
   );
 
+  /// 動画を送った時点で選んだレッスンメニューの写し（[lessonMenus] のテニスの非同期）
+  static final videoLessonMenu = VideoLessonMenu(
+    lessonMenuId: lessonMenus[1].lessonMenuId,
+    name: lessonMenus[1].name,
+  );
+
+  /// 送るときにレッスンメニューを選んだ動画の、返却された添削
+  static final reviewReturnedWithMenu = VideoReview(
+    reviewId: reviewReturned.reviewId,
+    videoId: videoId,
+    studentId: studentId,
+    coachId: coachId,
+    status: VideoReviewStatus.returned,
+    comment: reviewReturned.comment,
+    returnedAt: now,
+    lessonMenu: videoLessonMenu,
+  );
+
   /// コーチが受けた評価（送った時刻の新しい順）
   static final coachReviews = [
     CoachReview(

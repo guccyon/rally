@@ -372,6 +372,7 @@ void main() {
     expect(api.calls, [
       'markMessageThreadRead',
       'listMessages',
+      'listCoachLessonMenus',
       'submitVideo',
       'markMessageThreadRead',
       'listMessages',

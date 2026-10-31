@@ -25,6 +25,8 @@ void main() {
 
     expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
     expect(find.text('完了の記録へ進む'), findsNothing);
+    // メニューを選ばずに送った動画には、メニューを出さない
+    expect(find.textContaining('メニュー: '), findsNothing);
 
     await tapText(tester, '添削結果を確かめる');
 
@@ -95,5 +97,24 @@ void main() {
     expect(coachCard, findsOneWidget);
     expect(aiCard, findsOneWidget);
     expect(tester.widget(coachCard), isNot(same(tester.widget(aiCard))));
+  });
+
+  testWidgets('動画を送ったときにメニューを選んでいれば「メニュー: 名前」を出す', (tester) async {
+    await pumpScreen(
+      tester,
+      const VideoReviewScreen(),
+      api: FakeStudentApi(),
+      initial: StudentFlowState(
+        step: FlowStep.videoReview,
+        student: Fixtures.student,
+        bookedSlot: Fixtures.slot,
+        booking: Fixtures.bookingConfirmed,
+        video: Fixtures.video,
+        review: Fixtures.reviewReturnedWithMenu,
+      ),
+    );
+
+    expect(find.text('メニュー: サーブの動画添削'), findsOneWidget);
+    expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
   });
 }
