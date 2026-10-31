@@ -237,7 +237,7 @@ fn coach_review_body(
     })
 }
 
-fn review_lesson_menu_body(menu: &ReviewLessonMenu) -> ReviewLessonMenuBody {
+pub(crate) fn review_lesson_menu_body(menu: &ReviewLessonMenu) -> ReviewLessonMenuBody {
     ReviewLessonMenuBody {
         lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
         name: menu.name().as_str().to_string(),
