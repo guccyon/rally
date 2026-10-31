@@ -275,10 +275,15 @@ export interface paths {
          *       `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - 各評価には、評価されたコーチの返信 `reply`（`LessonReviewReply`。`replyToLessonReview`）も載せる。返信がなければ null
-         *     - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
+         *     - 絞り込み（任意）: `sport` を付ければ、そのスポーツのレッスンの評価だけ（スポーツごとの担当者が自分のスポーツの
+         *       低い評価だけを見る）。レッスンのスポーツは評価した完了したレッスンの元のスポーツ（同期は予約した枠、非同期は
+         *       送った動画の `sport`）で、レッスンメニューの有無を問わない。付けなければスポーツを問わずすべて（ゴルフも含む）。
+         *       しきい値・期間・並べ方は付けても変わらない
+         *     - `sport` が `Sport` の値でないときは 422 `validation_failed`
+         *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
-         *     パスパラメータもクエリも受けないので 404・422 はない。行動イベントは発火しない。
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
          */
         get: operations["listLowRatedLessonReviews"];
         put?: never;
@@ -2100,7 +2105,10 @@ export interface operations {
     };
     listLowRatedLessonReviews: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description このスポーツのレッスンの評価だけを返す（付けなければスポーツを問わない） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2118,6 +2126,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     replyToLessonReview: {
