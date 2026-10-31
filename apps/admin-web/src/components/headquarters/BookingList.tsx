@@ -6,9 +6,9 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
-import { BOOKING_STATUS_LABELS, formatDay, formatTime } from "@/components/labels";
+import { BOOKING_STATUS_LABELS, formatDay, formatTime, toJstDate } from "@/components/labels";
 
-import { type Period, defaultPeriod, isPendingSoon, jstDate, periodError } from "./bookingPeriod";
+import { type Period, defaultPeriod, isPendingSoon, periodError } from "./bookingPeriod";
 
 type HeadquartersBooking = Schemas["HeadquartersBooking"];
 type BookingStatus = Schemas["BookingStatus"];
@@ -31,7 +31,7 @@ const NO_NAME = "（名前を表示できません）";
 function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: HeadquartersBooking[] }[] {
   const groups: { day: string; items: HeadquartersBooking[] }[] = [];
   for (const item of bookings) {
-    const day = jstDate(Date.parse(item.booking.starts_at));
+    const day = toJstDate(item.booking.starts_at);
     const last = groups.at(-1);
     if (last?.day === day) last.items.push(item);
     else groups.push({ day, items: [item] });

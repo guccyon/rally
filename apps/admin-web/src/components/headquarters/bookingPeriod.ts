@@ -1,8 +1,8 @@
 // 本部の予約の一覧（listBookings）の期間と、開始が近い確定待ちの見分け。日付は日本時間（契約の `from` / `to` と同じ）。
 
+import { toJstDate } from "@/components/labels";
+
 const DAY = 86_400_000;
-/** 日本時間は UTC+9（夏時間はない）。 */
-const JST_OFFSET = 9 * 3_600_000;
 
 /** 期間の日数の上限（契約の `listBookings`。`from` と `to` を含めて数える）。 */
 export const MAX_PERIOD_DAYS = 31;
@@ -15,14 +15,10 @@ export const PENDING_SOON_MS = DAY;
 
 export type Period = { from: string; to: string };
 
-/** その時刻の日本時間の日付（YYYY-MM-DD）。 */
-export function jstDate(epochMs: number): string {
-  return new Date(epochMs + JST_OFFSET).toISOString().slice(0, 10);
-}
-
 /** 既定の期間: 今日（日本時間）から 7 日。 */
 export function defaultPeriod(now: number): Period {
-  return { from: jstDate(now), to: jstDate(now + (DEFAULT_PERIOD_DAYS - 1) * DAY) };
+  // 日本時間に夏時間はないので、24 時間ずつ進めれば日本時間の日付も 1 日ずつ進む。
+  return { from: toJstDate(now), to: toJstDate(now + (DEFAULT_PERIOD_DAYS - 1) * DAY) };
 }
 
 /**

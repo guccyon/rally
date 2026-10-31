@@ -78,6 +78,20 @@ export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 }
 
+const JST_DATE_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Tokyo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** 時刻（契約の date-time か epoch ミリ秒）の日本時間の日付を、契約の date の形（YYYY-MM-DD）にする。 */
+export function toJstDate(value: string | number): string {
+  const parts = JST_DATE_PARTS.formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 /** 契約の date-time の時刻だけを日本時間で表示する（例: 10:30）。 */
 export function formatTime(value: string): string {
   return new Date(value).toLocaleTimeString("ja-JP", {
