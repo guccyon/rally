@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/chat.dart';
+import '../state/notifications.dart';
 import '../state/student_flow.dart';
 
 /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
-/// 登録後はアプリバーにホーム（ホームの画面では出さない）・自分の予約・自分の動画・チャット・通知の受け取り設定・プロフィールの入口を出す（それらの画面では [leading] で戻り先を出す）。
-/// ホームの画面では、読んだスレッドに未読があればチャットの入口に未読の数の合計のしるしを付ける（ホームは開くたびにスレッドを読み直す）。
+/// 登録後はアプリバーにホーム（ホームの画面では出さない）・自分の予約・自分の動画・チャット・お知らせ・通知の受け取り設定・プロフィールの入口を出す（それらの画面では [leading] で戻り先を出す）。
+/// ホームの画面では、読んだスレッドに未読があればチャットの入口に未読の数の合計のしるしを、読んだお知らせに未読があれば
+/// お知らせの入口に点のしるしを付ける（ホームは開くたびにスレッドとお知らせを読み直す）。
 class FlowScaffold extends ConsumerWidget {
   const FlowScaffold({
     super.key,
@@ -27,6 +29,11 @@ class FlowScaffold extends ConsumerWidget {
     final notifier = ref.read(studentFlowProvider.notifier);
     final threadsUnread = ref.watch(chatProvider.select((s) => s.unreadCount));
     final unreadCount = state.step == FlowStep.home ? threadsUnread : 0;
+    final notificationsUnread = ref.watch(
+      notificationsProvider.select((s) => s.hasUnread),
+    );
+    final hasUnreadNotifications =
+        state.step == FlowStep.home && notificationsUnread;
     return Scaffold(
       appBar: AppBar(
         leading: leading,
@@ -61,8 +68,18 @@ class FlowScaffold extends ConsumerWidget {
                   : ref.read(chatProvider.notifier).openChat,
             ),
             IconButton(
+              tooltip: 'お知らせ',
+              icon: Badge(
+                isLabelVisible: hasUnreadNotifications,
+                child: const Icon(Icons.notifications_outlined),
+              ),
+              onPressed: state.busy
+                  ? null
+                  : ref.read(notificationsProvider.notifier).open,
+            ),
+            IconButton(
               tooltip: '通知の設定',
-              icon: const Icon(Icons.notifications_outlined),
+              icon: const Icon(Icons.edit_notifications_outlined),
               onPressed: state.busy ? null : notifier.openNotificationSettings,
             ),
             IconButton(

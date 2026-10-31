@@ -12,6 +12,7 @@ class FakeStudentApi implements StudentApi {
     List<MessageThread>? threads,
     List<Message>? messages,
     NotificationSettings? notificationSettings,
+    List<ApiNotification>? notifications,
     List<MyBooking>? myBookings,
     List<MyVideo>? myVideos,
     this.entitlement,
@@ -34,6 +35,7 @@ class FakeStudentApi implements StudentApi {
        messages = List.of(messages ?? Fixtures.messages),
        notificationSettings =
            notificationSettings ?? Fixtures.notificationSettings,
+       notifications = List.of(notifications ?? const []),
        subscriptionPlans = subscriptionPlans ?? Fixtures.subscriptionPlans,
        coachListings = coachListings ?? Fixtures.coachListings,
        coachReviews = coachReviews ?? Fixtures.coachReviews;
@@ -55,6 +57,12 @@ class FakeStudentApi implements StudentApi {
 
   /// 通知の受け取り設定（`getMyNotificationSettings` が返す。`updateMyNotificationSettings` で書いた種類だけを変える）
   NotificationSettings notificationSettings;
+
+  /// お知らせ（`listMyNotifications` が返す。既定は 0 件。`markMyNotificationsRead` ですべて既読にする）
+  final List<ApiNotification> notifications;
+
+  /// 入れておくと、`listMyNotifications` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? notificationsGate;
 
   /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
   final List<MyBooking> myBookings;
@@ -399,6 +407,30 @@ class FakeStudentApi implements StudentApi {
     }
     return notificationSettings;
   }, body);
+
+  @override
+  Future<NotificationList> listMyNotifications() async {
+    calls.add('listMyNotifications');
+    await notificationsGate?.future;
+    final failure = failures['listMyNotifications'];
+    if (failure != null) throw failure;
+    return NotificationList(notifications: notifications);
+  }
+
+  @override
+  Future<NotificationList> markMyNotificationsRead() =>
+      _answer('markMyNotificationsRead', () {
+        for (final (i, n) in notifications.indexed) {
+          notifications[i] = ApiNotification(
+            notificationId: n.notificationId,
+            kind: n.kind,
+            body: n.body,
+            createdAt: n.createdAt,
+            isRead: true,
+          );
+        }
+        return NotificationList(notifications: notifications);
+      });
 
   @override
   Future<Student> getMyStudentProfile() =>
