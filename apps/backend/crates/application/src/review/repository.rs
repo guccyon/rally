@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, time::SystemTime};
 
 use domain::{
     identity::AccountId,
@@ -35,5 +35,12 @@ pub trait LessonReviewRepository: Send + Sync {
     fn find_by_coach(
         &self,
         coach_id: AccountId,
+    ) -> impl Future<Output = Result<Vec<LessonReview>, Unavailable>> + Send;
+
+    /// 送った時刻が `since` 以降（含む）の評価をすべて読む（点で絞らない・並べない。低い評価を選んで並べるのは domain の
+    /// [`domain::review::LowRatedReviewCriteria::select`]）。
+    fn find_submitted_since(
+        &self,
+        since: SystemTime,
     ) -> impl Future<Output = Result<Vec<LessonReview>, Unavailable>> + Send;
 }

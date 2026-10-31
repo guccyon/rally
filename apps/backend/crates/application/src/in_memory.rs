@@ -1103,6 +1103,20 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
             .cloned()
             .collect())
     }
+
+    async fn find_submitted_since(
+        &self,
+        since: SystemTime,
+    ) -> Result<Vec<LessonReview>, Unavailable> {
+        Ok(self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.submitted_at() >= since)
+            .cloned()
+            .collect())
+    }
 }
 
 /// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。

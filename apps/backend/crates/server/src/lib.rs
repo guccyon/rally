@@ -60,7 +60,7 @@ use application::{
         UpdateCoachProfile, UpdateStudentProfile,
     },
     review::{
-        GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
+        GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, ListLowRatedReviews,
         ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
         ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
@@ -138,7 +138,9 @@ pub fn router() -> Router {
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
 /// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。評価の一覧に添えるレッスンメニューは、
 /// 完了記録の元（通話セッションに結び付いた予約・動画）が持つ写しを読む（`LessonCompletionMenuLookup`。予約は
-/// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。
+/// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。本部が見る低い評価の一覧
+/// （`GET /lesson-reviews/low`）も同じ保存先から読み、同じメニューの写しと、コーチ・生徒の表示名をアカウントの保存先から
+/// （`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）読んで添える。
 ///
 /// 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は完了記録の保存先から生徒の完了したレッスンを読み、
 /// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
@@ -432,6 +434,21 @@ where
         ),
         MockTokenService,
     );
+    let low_rated_reviews = interface::low_rated_reviews_router(
+        ListLowRatedReviews::new(
+            reviews.clone(),
+            LessonCompletionMenuLookup::new(
+                completions.clone(),
+                sessions.clone(),
+                SchedulingBookingLookup::new(bookings.clone()),
+                videos.clone(),
+            ),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            ProfileStudentDisplayNameLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -592,4 +609,5 @@ where
     .merge(lesson_stats)
     .merge(headquarters_bookings)
     .merge(students)
+    .merge(low_rated_reviews)
 }

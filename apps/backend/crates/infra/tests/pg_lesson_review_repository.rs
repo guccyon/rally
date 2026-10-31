@@ -1,24 +1,32 @@
 //! `PgLessonReviewRepository`（`review.lesson_reviews`）の検証。完了したレッスンを `PgLessonCompletionRepository::find`
-//! で読んで評価を保存・読み取りできること、同じレッスンの 2 回目の保存の拒否、コーチごとの読み取り。
+//! で読んで評価を保存・読み取りできること、同じレッスンの 2 回目の保存の拒否、コーチごとの読み取り、送った時刻での
+//! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
+use std::time::Duration;
+
 use application::{
     in_memory::{FixedClock, RecordingAnalyticsSink},
-    lesson::{LessonCompletionLookup, LessonCompletionRepository},
+    lesson::{LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository},
+    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::{
-        GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, SubmitLessonReview,
-        SubmitLessonReviewCommand, SubmitLessonReviewError,
+        GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, ListLowRatedReviews,
+        SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
     },
+    scheduling::SchedulingBookingLookup,
 };
 use domain::{
     lesson::{LessonCompletion, LessonCompletionId},
     review::{LessonReview, LessonReviewComment, Rating, ReviewError},
 };
-use infra::{PgLessonCompletionRepository, PgLessonReviewRepository};
+use infra::{
+    PgAccountRepository, PgBookingRepository, PgLessonCompletionRepository,
+    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgVideoRepository,
+};
 use sqlx::PgPool;
 use support::at;
 
@@ -142,4 +150,80 @@ async fn summarizes_only_the_reviews_of_the_coach(pool: PgPool) {
         .unwrap();
     assert_eq!(summary.review_count(), 1);
     assert_eq!(summary.average_rating(), Some(5.0));
+}
+
+/// `lesson` に `rating` の評価を `submitted_at` に付ける（ユースケースを通して保存する）。
+async fn review_at(
+    pool: &PgPool,
+    lesson: &LessonCompletion,
+    rating: i64,
+    submitted_at: std::time::SystemTime,
+) -> LessonReview {
+    SubmitLessonReview::new(
+        LessonCompletionLookup::new(PgLessonCompletionRepository::new(pool.clone())),
+        PgLessonReviewRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        FixedClock(submitted_at),
+    )
+    .execute(command(lesson, rating))
+    .await
+    .unwrap()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
+    let now = at(24 * 40);
+    let since = now - Duration::from_secs(30 * 24 * 3600);
+    let mut lessons = Vec::new();
+    for _ in 0..4 {
+        lessons.push(completed_lesson(&pool).await);
+    }
+    let old = review_at(&pool, &lessons[0], 1, since - Duration::from_secs(1)).await;
+    let edge = review_at(&pool, &lessons[1], 2, since).await;
+    let good = review_at(&pool, &lessons[2], 4, now).await;
+    let latest = review_at(&pool, &lessons[3], 1, now).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+
+    let mut found = reviews.find_submitted_since(since).await.unwrap();
+    found.sort_by_key(LessonReview::id);
+    let mut expected = vec![edge.clone(), good, latest.clone()];
+    expected.sort_by_key(LessonReview::id);
+    assert_eq!(
+        found, expected,
+        "since ちょうどを含み、それより前（{old:?}）は含まない"
+    );
+
+    let accounts = PgAccountRepository::new(pool.clone());
+    let list = ListLowRatedReviews::new(
+        reviews,
+        LessonCompletionMenuLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ProfileStudentDisplayNameLookup::new(accounts),
+        FixedClock(now),
+    )
+    .execute()
+    .await
+    .unwrap();
+    assert_eq!(
+        list.reviews,
+        [latest.clone(), edge.clone()],
+        "★2 以下を新しい順"
+    );
+    assert!(list.lesson_menus.is_empty(), "メニューのない予約のレッスン");
+    for review in [&latest, &edge] {
+        assert_eq!(
+            list.coach_display_names[&review.coach_id()].as_str(),
+            "テスト"
+        );
+        assert_eq!(
+            list.student_display_names[&review.student_id()].as_str(),
+            "テスト"
+        );
+    }
 }
