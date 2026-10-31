@@ -23,9 +23,9 @@ concurrency:
 jobs:
   admin-web:
     runs-on: ubuntu-latest
-    env:
-      SHOTS: ${{ runner.temp }}/shots
     steps:
+      - name: キャプチャの置き場
+        run: echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -100,9 +100,9 @@ jobs:
 
   student-app:
     runs-on: ubuntu-latest
-    env:
-      SHOTS: ${{ runner.temp }}/shots
     steps:
+      - name: キャプチャの置き場
+        run: echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
