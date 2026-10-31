@@ -28,8 +28,9 @@ use application::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
         InMemoryLessonReviewRepository, InMemoryLiveLessonSessionRepository,
-        InMemoryMessageThreadRepository, InMemoryNotificationSettingsRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+        InMemoryMessageThreadRepository, InMemoryNotificationRepository,
+        InMemoryNotificationSettingsRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        RecordingAnalyticsSink,
     },
     lesson::{
         LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository,
@@ -45,7 +46,8 @@ use application::{
         MessageThreadSubscriber, SendMessage,
     },
     notification::{
-        GetNotificationSettings, NotificationSettingsRepository, PushNotificationSubscriber,
+        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
+        NotificationRepository, NotificationSettingsRepository, PushNotificationSubscriber,
         PushSender, UpdateNotificationSettings,
     },
     profile::{
@@ -68,8 +70,8 @@ use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
     MockVideoStorage, PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
     PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
-    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationSettingsRepository,
-    PgSlotRepository, PgVideoRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
+    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -87,7 +89,9 @@ pub fn router() -> Router {
 /// 予約の確定で、その生徒とコーチのチャットのスレッドが開く。動画の送付（`VideoReviewRequested`）と添削の返却
 /// （`VideoReviewReturned`）では、そのスレッドに（なければ開いて）添削依頼・添削の返却のメッセージが足される。
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
-/// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。受け取り設定の保存先も当面インメモリ。
+/// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。送る通知はオフの種類も含めてお知らせとして残し、
+/// 生徒は自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
+/// お知らせの保存先も当面インメモリ。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
@@ -183,6 +187,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryMessageThreadRepository,
     InMemoryLessonReviewRepository,
     InMemoryNotificationSettingsRepository,
+    InMemoryNotificationRepository,
     InMemoryLessonMenuRepository,
 > {
     let slots = InMemorySlotRepository::default();
@@ -197,6 +202,7 @@ fn in_memory_repositories() -> Repositories<
         threads: InMemoryMessageThreadRepository::default(),
         reviews: InMemoryLessonReviewRepository::default(),
         notification_settings: InMemoryNotificationSettingsRepository::default(),
+        notifications: InMemoryNotificationRepository::default(),
         lesson_menus: InMemoryLessonMenuRepository::default(),
     }
 }
@@ -237,6 +243,7 @@ where
             threads: PgMessageThreadRepository::new(pool.clone()),
             reviews: PgLessonReviewRepository::new(pool.clone()),
             notification_settings: PgNotificationSettingsRepository::new(pool.clone()),
+            notifications: PgNotificationRepository::new(pool.clone()),
             lesson_menus: PgLessonMenuRepository::new(pool),
         },
         clock,
@@ -256,7 +263,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 }
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, J> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -267,12 +274,13 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, J> {
     threads: X,
     reviews: N,
     notification_settings: Z,
+    notifications: K,
     lesson_menus: J,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。
-fn compose<R, S, B, E, L, W, M, X, N, Z, J, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, J>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J>,
     clock: C,
     analytics: A,
     push: P,
@@ -289,6 +297,7 @@ where
     X: MessageThreadRepository + Clone + 'static,
     N: LessonReviewRepository + Clone + 'static,
     Z: NotificationSettingsRepository + Clone + 'static,
+    K: NotificationRepository + Clone + 'static,
     J: LessonMenuRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
@@ -306,6 +315,7 @@ where
         threads,
         reviews,
         notification_settings,
+        notifications,
         lesson_menus,
     } = repositories;
     let catalog = interface::catalog_router(
@@ -345,11 +355,21 @@ where
         UpdateStudentProfile::new(accounts.clone()),
         MockTokenService,
     );
+    let my_notifications = interface::notifications_router(
+        ListMyNotifications::new(notifications.clone()),
+        MarkMyNotificationsRead::new(notifications.clone(), clock.clone()),
+        MockTokenService,
+    );
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
         (
             MessageThreadSubscriber::new(threads.clone()),
-            PushNotificationSubscriber::new(push, notification_settings.clone()),
+            PushNotificationSubscriber::new(
+                push,
+                notification_settings.clone(),
+                notifications,
+                clock.clone(),
+            ),
         ),
     ));
     interface::router_with(
@@ -481,4 +501,5 @@ where
     .merge(subscription_plans)
     .merge(coach_profile)
     .merge(my_profile)
+    .merge(my_notifications)
 }

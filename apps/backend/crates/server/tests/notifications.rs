@@ -9,7 +9,8 @@
 //! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
 //! `MessageSent`。本文でもスタンプでも）では受け手（送り手でない側の当事者）に届く。
 //!
-//! 受け取る人が通知の受け取り設定（`PUT /notification-settings/me`）でその種類をオフにしていれば送らない。受け取り設定が
+//! 受け取る人が通知の受け取り設定（`PUT /notification-settings/me`）でその種類をオフにしていれば送らない。オフでも
+//! お知らせ（`GET /notifications/me`）には残り、`POST /notifications/me/read` で既読にできる。受け取り設定が
 //! Postgres に保存されることは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
 
 use std::time::{Duration, SystemTime};
@@ -412,6 +413,65 @@ async fn a_kind_the_student_turned_off_is_not_pushed_to_the_student() {
         }],
         "生徒には送らず、コーチ（受け取り設定はオンのまま）には送る"
     );
+
+    // オフが止めるのはプッシュ通知だけで、お知らせには残る
+    let unread = json!({
+        "notifications": [{
+            "kind": "booking_confirmed",
+            "body": "予約が確定しました",
+            "created_at": "2026-10-05T00:00:00Z",
+            "is_read": false,
+        }]
+    });
+    let without_ids = |mut list: Value| {
+        for notification in list["notifications"].as_array_mut().unwrap() {
+            assert!(notification["notification_id"].is_string());
+            notification
+                .as_object_mut()
+                .unwrap()
+                .remove("notification_id");
+        }
+        list
+    };
+    let listed = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(&student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(without_ids(listed.clone()), unread);
+
+    // すべて既読にすると、既読の一覧を返す
+    let read = call(
+        &router,
+        "POST",
+        "/notifications/me/read",
+        Some(&student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        read["notifications"][0]["notification_id"],
+        listed["notifications"][0]["notification_id"]
+    );
+    let mut expected = unread;
+    expected["notifications"][0]["is_read"] = json!(true);
+    assert_eq!(without_ids(read), expected);
+
+    // コーチは生徒のお知らせを呼べない
+    call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(&coach),
+        Value::Null,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
 }
 
 /// 保存先を Postgres にした組み立てで、受け取り設定の変更が保存されて次の照会に出ることを確かめる。

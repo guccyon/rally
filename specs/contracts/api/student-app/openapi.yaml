@@ -46,7 +46,7 @@ tags:
   - name: messaging
     description: メッセージ（生徒と担当コーチのチャット）
   - name: notification
-    description: 通知（プッシュ通知の受け取り設定）
+    description: 通知（プッシュ通知の受け取り設定と、送ったプッシュ通知を残したお知らせ）
   - name: profile
     description: プロフィール（生徒の表示名と、コーチの表示名・自己紹介・提供スポーツ）
 
@@ -1022,7 +1022,8 @@ paths:
         認証した生徒の通知の受け取り設定を変え、変えたあとの設定を返す。リクエストに書いた種類だけを変え、
         書かなかった種類は今の設定のまま（空のオブジェクトなら何も変えない）。生徒だけが呼べる（それ以外の役割は 403）。
         値が真偽値でないときは 422。受け取るかは通知を送る時点の設定で決まり、false の種類の通知は送らない。
-        送らなかった通知は、あとで true に戻しても送り直さない。
+        送らなかった通知は、あとで true に戻しても送り直さない。false が止めるのはプッシュ通知だけで、
+        お知らせ（`listMyNotifications`）には false の種類の分も残る。
       tags: [notification]
       x-context: notification
       x-analytics-events: []
@@ -1045,6 +1046,62 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /notifications/me:
+    get:
+      operationId: listMyNotifications
+      summary: 自分のお知らせの一覧
+      description: |
+        認証した生徒が受け取ったお知らせ（送ったプッシュ通知を残したもの）を、作った時刻の新しい順に返す
+        （同じ時刻なら後に作ったものが先）。ページングはしない。お知らせがなければ空の配列。
+        生徒だけが呼べる（それ以外の役割は 403）。照会だけで、何も保存しない（既読にもしない）。
+
+        - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ）。
+          通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
+          お知らせには残る
+        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ）のお知らせは 1 件
+        - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒のお知らせ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /notifications/me/read:
+    post:
+      operationId: markMyNotificationsRead
+      summary: 自分のお知らせをすべて既読にする
+      description: |
+        認証した生徒が受け取ったお知らせを、サーバーの現在時刻ですべて既読（`is_read: true`）にし、既読にしたあとの一覧
+        （`listMyNotifications` と同じ形・同じ並び）を返す。すでに既読のお知らせは変えない（何度呼んでもよい）。
+        リクエストの本文は要らない。生徒だけが呼べる（それ以外の役割は 403）。
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 既読にしたあとの生徒のお知らせ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
 components:
   securitySchemes:
@@ -2227,6 +2284,45 @@ components:
         message_received:
           type: boolean
           description: 担当コーチからチャットのメッセージが届いたときの通知を受け取るか
+
+    NotificationKind:
+      type: string
+      description: |
+        お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
+        汎用のお知らせとして扱う）。
+      enum: [booking_confirmed, video_review_returned, message_received]
+
+    Notification:
+      type: object
+      description: glossary の notification（お知らせ。送ったプッシュ通知を、あとで一覧で見られるように残したもの）
+      required: [notification_id, kind, body, created_at, is_read]
+      properties:
+        notification_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/NotificationKind"
+        body:
+          type: string
+          minLength: 1
+          description: 表示用の本文（例「予約が確定しました」）。サーバーが種類と中身から決める
+        created_at:
+          type: string
+          format: date-time
+          description: お知らせを作った時刻（プッシュ通知を送るときの時刻）
+        is_read:
+          type: boolean
+          description: 既読か（`markMyNotificationsRead` で既読にする）
+
+    NotificationList:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          description: 作った時刻の新しい順
+          items:
+            $ref: "#/components/schemas/Notification"
 
     ErrorCode:
       type: string

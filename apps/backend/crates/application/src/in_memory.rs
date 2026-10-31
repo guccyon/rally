@@ -15,7 +15,7 @@ use domain::{
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
-    notification::{NotificationSettings, PushNotification},
+    notification::{Notification, NotificationId, NotificationSettings, PushNotification},
     profile::{CoachBio, DisplayName},
     review::{LessonReview, LessonReviewId},
     scheduling::{Booking, BookingId, CoachCalendar, SchedulingError, Slot, SlotId},
@@ -44,7 +44,9 @@ use crate::{
     messaging::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
-    notification::{NotificationSettingsRepository, PushSender},
+    notification::{
+        NotificationRepository, NotificationSettingsRepository, PushSender, notification_id_uuid,
+    },
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
         AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
@@ -1151,5 +1153,69 @@ impl NotificationSettingsRepository for InMemoryNotificationSettingsRepository {
         };
         update(&mut all[index]);
         Ok(all[index].clone())
+    }
+}
+
+/// [`NotificationRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryNotificationRepository {
+    notifications: Arc<Mutex<Vec<Notification>>>,
+}
+
+impl InMemoryNotificationRepository {
+    /// 既存のお知らせを入れて作る（同じプッシュ通知が 1 件かは確かめない。テストの準備用）。
+    pub fn with_notifications(notifications: impl IntoIterator<Item = Notification>) -> Self {
+        Self {
+            notifications: Arc::new(Mutex::new(notifications.into_iter().collect())),
+        }
+    }
+
+    /// 残したお知らせ（残した順）。
+    pub fn all(&self) -> Vec<Notification> {
+        self.notifications.lock().unwrap().clone()
+    }
+}
+
+impl NotificationRepository for InMemoryNotificationRepository {
+    fn next_id(&self) -> NotificationId {
+        notification_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, notification: Notification) -> Result<(), Unavailable> {
+        let mut notifications = self.notifications.lock().unwrap();
+        if !notifications
+            .iter()
+            .any(|n| n.push() == notification.push())
+        {
+            notifications.push(notification);
+        }
+        Ok(())
+    }
+
+    async fn find_by_recipient(
+        &self,
+        recipient: AccountId,
+    ) -> Result<Vec<Notification>, Unavailable> {
+        let mut mine: Vec<Notification> = self
+            .notifications
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .filter(|n| n.recipient() == recipient)
+            .copied()
+            .collect();
+        // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
+        mine.sort_by_key(|n| std::cmp::Reverse(n.created_at()));
+        Ok(mine)
+    }
+
+    async fn mark_all_read(&self, recipient: AccountId, at: SystemTime) -> Result<(), Unavailable> {
+        for notification in self.notifications.lock().unwrap().iter_mut() {
+            if notification.recipient() == recipient {
+                notification.mark_read(at);
+            }
+        }
+        Ok(())
     }
 }
