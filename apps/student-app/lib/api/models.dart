@@ -883,17 +883,18 @@ class MyVideo {
 
 /// `MyVideoList`
 class MyVideoList {
-  const MyVideoList({required this.videos});
+  /// [videos] は書き換えられない写しにして持つ（`fromJson` でもコンストラクタで直接作っても、作った後に一覧を変えさせない）
+  MyVideoList({required List<MyVideo> videos})
+    : videos = List.unmodifiable(videos);
 
   /// 送った時刻の新しい順（同じ時刻は動画 ID の順）。添削待ちも返却済みも含む
   final List<MyVideo> videos;
 
   factory MyVideoList.fromJson(Map<String, dynamic> json) => MyVideoList(
-    videos: List.unmodifiable(
-      (json['videos'] as List<dynamic>).map(
-        (e) => MyVideo.fromJson(e as Map<String, dynamic>),
-      ),
-    ),
+    videos: [
+      for (final e in json['videos'] as List<dynamic>)
+        MyVideo.fromJson(e as Map<String, dynamic>),
+    ],
   );
 }
 

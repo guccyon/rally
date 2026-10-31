@@ -117,11 +117,13 @@ class StudentFlowState {
     this.bookingsReturnStep,
     this.myBookings,
     this.videosReturnStep,
-    this.myVideos,
+    List<MyVideo>? myVideos,
     this.myVideoReview,
     // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
     // ignore: prefer_initializing_formals
-  }) : _reviewedLessonIds = reviewedLessonIds;
+  }) : _reviewedLessonIds = reviewedLessonIds,
+       // ignore: prefer_initializing_formals
+       _myVideos = myVideos;
 
   final FlowStep step;
 
@@ -239,8 +241,13 @@ class StudentFlowState {
   /// 自分の動画の一覧を閉じたときに戻る段（一覧を開いた段）
   final FlowStep? videosReturnStep;
 
-  /// 自分が送った動画（`listMyVideos`。未取得なら null。送った時刻の新しい順）
-  final List<MyVideo>? myVideos;
+  /// 自分が送った動画（`listMyVideos`。未取得なら null。送った時刻の新しい順）。
+  /// 読み出しは変更できないビューで返す（コンストラクタで直接渡しても、Riverpod を通さずに状態を変えさせない）
+  List<MyVideo>? get myVideos => switch (_myVideos) {
+    final videos? => UnmodifiableListView(videos),
+    null => null,
+  };
+  final List<MyVideo>? _myVideos;
 
   /// 自分の動画の一覧から開いた動画の添削（`getVideoReview`）。一周シナリオの [review] とは別に持つ
   final VideoReview? myVideoReview;
@@ -330,7 +337,8 @@ class StudentFlowState {
         ? List.unmodifiable(myBookings)
         : this.myBookings,
     videosReturnStep: videosReturnStep ?? this.videosReturnStep,
-    myVideos: myVideos != null ? List.unmodifiable(myVideos) : this.myVideos,
+    // copyWith では写しを持つ（渡した元のリストを後で変えても状態は変わらない）
+    myVideos: myVideos != null ? List.unmodifiable(myVideos) : _myVideos,
     myVideoReview: myVideoReview ?? this.myVideoReview,
   );
 }

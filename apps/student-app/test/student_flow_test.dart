@@ -185,4 +185,25 @@ void main() {
       throwsUnsupportedError,
     );
   });
+
+  test('自分の動画は、コンストラクタで直接渡しても copyWith で渡しても外から書き換えられない', () {
+    final direct = StudentFlowState(
+      step: FlowStep.myVideos,
+      myVideos: [...Fixtures.myVideos],
+    );
+    expect(
+      () => direct.myVideos!.add(Fixtures.myVideos.first),
+      throwsUnsupportedError,
+    );
+    expect(() => direct.myVideos!.clear(), throwsUnsupportedError);
+
+    final source = [...Fixtures.myVideos];
+    final copied = const StudentFlowState(step: FlowStep.myVideos)
+        .copyWith(myVideos: source);
+    source.clear();
+    expect(copied.myVideos, hasLength(Fixtures.myVideos.length));
+    expect(() => copied.myVideos!.clear(), throwsUnsupportedError);
+    // 渡さなければ未取得のまま
+    expect(const StudentFlowState().myVideos, isNull);
+  });
 }

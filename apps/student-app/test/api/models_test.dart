@@ -400,6 +400,22 @@ void main() {
     expect(() => list.bookings.clear(), throwsUnsupportedError);
   });
 
+  test('MyVideoList をコンストラクタで直接作っても、渡した元を変えても一覧は変わらず、書き換えられない', () {
+    final video = MyVideo(
+      videoId: 'v1',
+      coachId: 'c1',
+      sport: Sport.tennis,
+      submittedAt: DateTime.utc(2026, 10, 26),
+      reviewStatus: VideoReviewStatus.inProgress,
+    );
+    final source = [video];
+    final list = MyVideoList(videos: source);
+    source.clear();
+    expect(list.videos, [video]);
+    expect(() => list.videos.clear(), throwsUnsupportedError);
+    expect(() => list.videos.add(video), throwsUnsupportedError);
+  });
+
   test('MyVideoList.fromJson は添削の状態と任意の項目を読み、一覧は書き換えられない', () {
     final list = MyVideoList.fromJson({
       'videos': [
