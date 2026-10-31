@@ -88,6 +88,8 @@ paths:
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
         各枠には、結びついたコーチのレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
         メニューのない枠と、結びついたメニューが公開中でなくなった枠は null。
+        任意の `coach_id` でそのコーチの枠だけに絞れる（コーチの紹介の画面から、そのコーチの空き枠を見る）。`sport`・期間
+        （`starts_after` / `starts_before`）・ページング（`limit` / `cursor`）と組み合わせられ、並びとページの分け方は変わらない。
       tags: [scheduling]
       x-context: scheduling
       parameters:
@@ -99,6 +101,9 @@ paths:
         - name: coach_id
           in: query
           required: false
+          description: |
+            あればこのコーチの枠だけに絞る。ほかの絞り込みと組み合わせられる。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID・そのスポーツに公開中の枠がないコーチは、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
           schema:
             type: string
             format: uuid
