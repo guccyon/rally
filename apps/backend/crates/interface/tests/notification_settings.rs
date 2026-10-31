@@ -233,6 +233,16 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         ),
         application::review::ListCoachReviews::new(
             application::in_memory::InMemoryLessonReviewRepository::default(),
+            application::lesson::LessonCompletionMenuLookup::new(
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryLiveLessonSessionRepository::default(),
+                application::scheduling::SchedulingBookingLookup::new(
+                    application::in_memory::InMemoryBookingRepository::new(
+                        application::in_memory::InMemorySlotRepository::default(),
+                    ),
+                ),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
         ),
         GetNotificationSettings::new(settings.clone()),
         UpdateNotificationSettings::new(settings),

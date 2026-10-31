@@ -194,7 +194,9 @@ export interface paths {
          *     点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
          *     （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
          *     生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
-         *     各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。
+         *     各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
+         *     `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
+         *     メニューの写しで、元にメニューがなければ null。
          *
          *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
          *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -760,6 +762,19 @@ export interface components {
              * @description 評価を送った時刻
              */
             submitted_at: string;
+            /**
+             * @description 評価した完了したレッスンのレッスンメニュー（ID・名前）。中身は、完了したレッスンの元（同期レッスンは予約、
+             *     非同期レッスンは動画）が持つ、予約した・動画を送った時点のメニューの写しで、その後にメニューが直されても変わらない。
+             *     元にメニューがない（メニューのない枠の予約・メニューを選ばずに送った動画、この項目を足す前の予約・動画を含む）なら
+             *     null。評価の一覧では必ず載せる
+             */
+            lesson_menu?: components["schemas"]["ReviewLessonMenu"] | null;
+        };
+        /** @description 評価した完了したレッスンのコーチのレッスンメニュー（glossary の lesson）の ID・名前。メニューの今の中身ではなく、レッスンの元（予約・動画）が持つ写し。student-app の `ReviewLessonMenu` と同じ形 */
+        ReviewLessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            name: string;
         };
         /** @description コーチ 1 人が受けた評価の一覧（並べ方は `listCoachReviews` の説明） */
         CoachReviewList: {

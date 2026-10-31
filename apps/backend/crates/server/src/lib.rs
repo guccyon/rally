@@ -29,7 +29,10 @@ use application::{
         InMemoryMessageThreadRepository, InMemoryNotificationSettingsRepository,
         InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
-    lesson::{LessonCompletionLookup, LessonCompletionRepository, RecordLessonCompletion},
+    lesson::{
+        LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository,
+        RecordLessonCompletion,
+    },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
@@ -104,7 +107,9 @@ pub fn router() -> Router {
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
-/// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。
+/// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。評価の一覧に添えるレッスンメニューは、
+/// 完了記録の元（通話セッションに結び付いた予約・動画）が持つ写しを読む（`LessonCompletionMenuLookup`。予約は
+/// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -366,7 +371,7 @@ where
         GetEntitlement::new(entitlements.clone(), clock.clone()),
         StartLiveLessonSession::new(
             sessions.clone(),
-            SchedulingBookingLookup::new(bookings),
+            SchedulingBookingLookup::new(bookings.clone()),
             video.clone(),
             analytics.clone(),
             clock.clone(),
@@ -394,8 +399,8 @@ where
             ProfileStudentDisplayNameLookup::new(accounts),
         ),
         RecordLessonCompletion::new(
-            sessions,
-            videos,
+            sessions.clone(),
+            videos.clone(),
             completions.clone(),
             analytics.clone(),
             events.clone(),
@@ -412,13 +417,21 @@ where
         ),
         MarkMessageThreadRead::new(threads, clock.clone()),
         SubmitLessonReview::new(
-            LessonCompletionLookup::new(completions),
+            LessonCompletionLookup::new(completions.clone()),
             reviews.clone(),
             analytics,
             clock,
         ),
         GetCoachReviewSummary::new(reviews.clone()),
-        ListCoachReviews::new(reviews),
+        ListCoachReviews::new(
+            reviews,
+            LessonCompletionMenuLookup::new(
+                completions,
+                sessions,
+                SchedulingBookingLookup::new(bookings),
+                videos,
+            ),
+        ),
         GetNotificationSettings::new(notification_settings.clone()),
         UpdateNotificationSettings::new(notification_settings),
         MockTokenService,

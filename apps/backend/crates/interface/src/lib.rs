@@ -60,7 +60,7 @@ use application::{
     profile::{ListCoaches, UpdateCoachProfile},
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
-        SubmitLessonReview,
+        ReviewedLessonMenuLookup, SubmitLessonReview,
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
@@ -93,14 +93,42 @@ pub use error::ApiError;
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web・student-app のコーチの評価の件数と平均）と
-/// `GET /coaches/{coach_id}/reviews`（コーチが受けた評価の一覧）は本部・コーチ・生徒で、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+/// `GET /coaches/{coach_id}/reviews`（コーチが受けた評価の一覧。評価したレッスンのメニューを添える）は本部・コーチ・生徒で、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
 /// `GET /coaches/me/bookings`（admin-web のコーチの自分の予約の一覧）と `GET /coaches/me/slots`（コーチの自分の枠の
 /// 一覧）と `GET /coaches/me/videos`（コーチに届いた動画の一覧）はコーチだけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<
+    R,
+    S,
+    J,
+    I,
+    D,
+    B,
+    G,
+    E,
+    L,
+    K,
+    V,
+    W,
+    U,
+    Y,
+    Q,
+    F,
+    M,
+    X,
+    H,
+    O,
+    N,
+    Rm,
+    Z,
+    A,
+    P,
+    C,
+    T,
+>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
@@ -129,7 +157,7 @@ pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
     submit_lesson_review: SubmitLessonReview<O, N, A, C>,
     get_coach_review_summary: GetCoachReviewSummary<N>,
-    list_coach_reviews: ListCoachReviews<N>,
+    list_coach_reviews: ListCoachReviews<N, Rm>,
     get_notification_settings: GetNotificationSettings<Z>,
     update_notification_settings: UpdateNotificationSettings<Z>,
     tokens: T,
@@ -156,6 +184,7 @@ where
     H: ChatGate + 'static,
     O: CompletedLessonLookup + 'static,
     N: LessonReviewRepository + 'static,
+    Rm: ReviewedLessonMenuLookup + 'static,
     Z: NotificationSettingsRepository + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
@@ -324,33 +353,32 @@ where
             send_message,
             mark_message_thread_read,
         }));
-    let reviews = Router::new()
-        .route(
-            "/lesson-reviews",
-            post(reviews::submit_lesson_review::<O, N, A, C>)
-                .route_layer(require_role(&[Role::Student])),
-        )
-        .route(
-            "/coaches/{coach_id}/review-summary",
-            get(reviews::get_coach_review_summary::<O, N, A, C>).route_layer(require_role(&[
-                Role::Headquarters,
-                Role::Coach,
-                Role::Student,
-            ])),
-        )
-        .route(
-            "/coaches/{coach_id}/reviews",
-            get(reviews::list_coach_reviews::<O, N, A, C>).route_layer(require_role(&[
-                Role::Headquarters,
-                Role::Coach,
-                Role::Student,
-            ])),
-        )
-        .with_state(Arc::new(reviews::ReviewsState {
-            submit_lesson_review,
-            get_coach_review_summary,
-            list_coach_reviews,
-        }));
+    let reviews =
+        Router::new()
+            .route(
+                "/lesson-reviews",
+                post(reviews::submit_lesson_review::<O, N, Rm, A, C>)
+                    .route_layer(require_role(&[Role::Student])),
+            )
+            .route(
+                "/coaches/{coach_id}/review-summary",
+                get(reviews::get_coach_review_summary::<O, N, Rm, A, C>).route_layer(require_role(
+                    &[Role::Headquarters, Role::Coach, Role::Student],
+                )),
+            )
+            .route(
+                "/coaches/{coach_id}/reviews",
+                get(reviews::list_coach_reviews::<O, N, Rm, A, C>).route_layer(require_role(&[
+                    Role::Headquarters,
+                    Role::Coach,
+                    Role::Student,
+                ])),
+            )
+            .with_state(Arc::new(reviews::ReviewsState {
+                submit_lesson_review,
+                get_coach_review_summary,
+                list_coach_reviews,
+            }));
     let notification_settings = Router::new()
         .route(
             "/notification-settings/me",
