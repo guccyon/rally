@@ -62,7 +62,7 @@ use application::{
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, ListLowRatedReviews,
-        ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
+        ReplyToLessonReview, ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
         ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
     scheduling::{
@@ -478,6 +478,10 @@ where
         ),
         MockTokenService,
     );
+    let review_replies = interface::review_replies_router(
+        ReplyToLessonReview::new(reviews.clone(), clock.clone()),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -640,4 +644,5 @@ where
     .merge(students)
     .merge(coach_acceptance)
     .merge(low_rated_reviews)
+    .merge(review_replies)
 }

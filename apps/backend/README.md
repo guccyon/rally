@@ -109,6 +109,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - ユースケースは `application::review::ListLowRatedReviews`。保存先のポート `LessonReviewRepository::find_submitted_since`（期間の始まり以降の評価を点で絞らずに読む。Postgres は `submitted_at >= $1`）で読み、domain で選ぶ。メニューは評価の一覧と同じ `ReviewedLessonMenuLookup`（実装は `lesson::LessonCompletionMenuLookup`）、表示名はポート `review::ReviewedCoachDisplayNameLookup` / `review::ReviewerDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup` / `profile::ProfileStudentDisplayNameLookup`）で、載せる評価のコーチ・生徒の ID をまとめて問い合わせる。DB の変更はない
 - テスト: `domain::review::low_rated_review_criteria`（★2 と★3 の境目・30 日の両端・並べ方）、`application::review::list_low_rated_reviews`（コーチを問わない・メニューと表示名・低い評価がなければ表示名を問い合わせない）、`crates/interface/tests/low_rated_reviews.rs`（契約の形・本部 200・空・コーチ / 生徒 403・401・500 に理由を出さない）、`crates/infra/tests/pg_lesson_review_repository.rs`（Postgres の `find_submitted_since` の境目と一覧。`--include-ignored`）、`crates/server/tests/low_rated_reviews.rs`（Postgres の組み立てで一覧と 403。`--include-ignored`）。パスパラメータもクエリも受けないので 404・422 はない
 
+## review: 評価へのコーチの返信（D131）
+
+- `PUT /lesson-reviews/{review_id}/reply`（admin-web の `replyToLessonReview`）: コーチだけが呼べる（`interface::review_replies_router`。`require_role(&[Role::Coach])`。本部・生徒は 403）。返信できるのは評価されたコーチだけで、他のコーチは 403（評価は一覧で誰でも読めるので、あることは隠さない）。評価 1 件に返信は 1 つで、2 回目は文と時刻を上書きする。返信の削除はない。ない評価・UUID でない `review_id` は 404、空・200 文字を超える返信は 422。レスポンスは返信（`comment`・`replied_at`）。行動イベントは発火しない
+- 返信できるかと上書きは domain の `review::LessonReview::write_reply`、文の規則（空でない・200 文字まで）は `review::LessonReviewReplyComment` の 1 か所。ユースケースは `application::review::ReplyToLessonReview`（保存先のポート `LessonReviewRepository::find_by_id` で読み、`save_reply` で返信だけを書く）
+- 返信は評価の一覧（admin-web・student-app の `listCoachReviews`、admin-web の `listLowRatedLessonReviews`）の評価ごとの `reply` に載る（なければ null）
+- DB は `review.lesson_reviews` に `reply_comment` / `replied_at` を足す expand（`20261101000002_expand_lesson_review_reply.sql`。ADR 0004 の 3）
+- テスト: `domain::review::lesson_review`・`lesson_review_reply_comment`（評価されたコーチだけ・上書き・文の境目）、`application::review::reply_to_lesson_review`（保存・上書き・403 にあたる拒否・ない評価）、`crates/interface/tests/review_replies.rs`（契約の形・200・上書き・他のコーチ / 本部 / 生徒 403・401・404・422・500 に理由を出さない）、`crates/interface/tests/reviews.rs`・`low_rated_reviews.rs`（一覧の `reply`）、`crates/infra/tests/pg_lesson_review_repository.rs`・`schema.rs`（Postgres の保存と上書き・制約。`--include-ignored`）、`crates/server/tests/coach_reviews.rs`（Postgres の組み立てで返信して生徒の一覧に載る。`--include-ignored`）
+
 ## profile: コーチの自己紹介文（D18）
 
 - `PUT /me/profile`（admin-web の `updateMyCoachProfile`）: コーチだけが呼べる（`require_role(&[Role::Coach])`。本部・生徒は 403）。トークンのコーチの自己紹介文を `bio` で丸ごと置き換え、`GET /me` と同じ形の `Account` を返す。`bio` がない・文字列でない・400 文字を超えると 422（何も変えない）。トークンのコーチのアカウントがなければ `GET /me` と同じく 401。行動イベントは発火しない
