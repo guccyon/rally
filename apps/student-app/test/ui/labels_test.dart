@@ -26,6 +26,10 @@ void main() {
     expect(coachNameLabel(null), '担当コーチ');
   });
 
+  test('コーチで絞ったスロット検索の見出しは「〇〇 コーチの空き枠」', () {
+    expect(coachSlotsHeadingLabel('佐藤'), '佐藤 コーチの空き枠');
+  });
+
   test('評価の各点に言葉の目安を添える', () {
     expect(
       [for (var rating = 1; rating <= 5; rating++) ratingLabel(rating)],
