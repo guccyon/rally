@@ -1,8 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { CoachApi } from "@/api/coach";
+import { CoachReviewList } from "@/components/CoachReviewList";
 import { CoachHome } from "@/components/coach/CoachHome";
 import { MyCoachReviews } from "@/components/coach/MyCoachReviews";
 import { formatDateTime } from "@/components/labels";
@@ -35,6 +36,7 @@ const REVIEWS = [
     comment: "もう少し時間がほしかった",
     submitted_at: "2026-10-01T09:30:00Z",
     lesson_menu: null,
+    reply: { comment: "ご意見ありがとうございます。次回は長めに取ります。", replied_at: "2026-10-02T01:00:00Z" },
   },
 ];
 
@@ -46,7 +48,10 @@ function summaryOf(list: HTMLElement) {
   ]);
 }
 
-type ReviewsApi = Pick<CoachApi, "getMyAccount" | "getCoachReviewSummary" | "listCoachReviews">;
+type ReviewsApi = Pick<
+  CoachApi,
+  "getMyAccount" | "getCoachReviewSummary" | "listCoachReviews" | "replyToLessonReview"
+>;
 
 function mockApi(overrides: Partial<ReviewsApi> = {}) {
   return {
@@ -58,6 +63,10 @@ function mockApi(overrides: Partial<ReviewsApi> = {}) {
     listCoachReviews: vi.fn<CoachApi["listCoachReviews"]>(async (coachId) => ({
       ok: true,
       data: { coach_id: coachId, reviews: REVIEWS },
+    })),
+    replyToLessonReview: vi.fn<CoachApi["replyToLessonReview"]>(async (_reviewId, body) => ({
+      ok: true,
+      data: { comment: body.comment, replied_at: "2026-10-26T03:00:00Z" },
     })),
     ...overrides,
   };
@@ -191,5 +200,150 @@ describe("自分の評価", () => {
     const summary = await within(region).findByLabelText("評価の件数と平均");
     expect(summaryOf(summary)).toContainEqual(["評価の件数", "2 件"]);
     expect(within(region).getByRole("list", { name: "評価の一覧" })).toBeInTheDocument();
+  });
+});
+
+/** 開いて一覧を出し、各行（listitem）を返す。 */
+async function renderLoaded(api: ReturnType<typeof mockApi>) {
+  render(<MyCoachReviews api={api} />);
+  const list = await screen.findByRole("list", { name: "評価の一覧" });
+  return within(list).getAllByRole("listitem");
+}
+
+describe("自分の評価への返信", () => {
+  test("返信のない行は「返信する」、ある行は保存済みの返信と時刻と「返信を書き直す」を出す", async () => {
+    const items = await renderLoaded(mockApi());
+
+    expect(within(items[0]!).getByRole("button", { name: "返信する" })).toBeInTheDocument();
+    expect(within(items[0]!).queryByLabelText("あなたの返信")).not.toBeInTheDocument();
+    const saved = within(items[1]!).getByRole("region", { name: "あなたの返信" });
+    expect(saved).toHaveTextContent("ご意見ありがとうございます。次回は長めに取ります。");
+    expect(saved).toHaveTextContent(formatDateTime("2026-10-02T01:00:00Z"));
+    expect(within(items[1]!).getByRole("button", { name: "返信を書き直す" })).toBeInTheDocument();
+  });
+
+  test("「返信する」で欄を開き、書いて保存すると replyToLessonReview を呼び、行に返信を出す", async () => {
+    const api = mockApi();
+    const items = await renderLoaded(api);
+    const row = items[0]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信する" }));
+    const form = within(row).getByRole("form", { name: "評価に返信する" });
+    expect(within(form).getByLabelText("返信")).toHaveValue("");
+    expect(form).toHaveTextContent("あと 200 文字");
+    await userEvent.type(within(form).getByLabelText("返信"), "ありがとうございます！");
+    expect(form).toHaveTextContent("あと 189 文字");
+    await userEvent.click(within(form).getByRole("button", { name: "保存する" }));
+
+    expect(api.replyToLessonReview).toHaveBeenCalledWith(REVIEWS[0]!.review_id, {
+      comment: "ありがとうございます！",
+    });
+    expect(await within(row).findByRole("status")).toHaveTextContent("返信を保存しました。");
+    expect(within(row).queryByRole("form", { name: "評価に返信する" })).not.toBeInTheDocument();
+    const saved = within(row).getByRole("region", { name: "あなたの返信" });
+    expect(saved).toHaveTextContent("ありがとうございます！");
+    expect(saved).toHaveTextContent(formatDateTime("2026-10-26T03:00:00Z"));
+    expect(within(row).getByRole("button", { name: "返信を書き直す" })).toBeInTheDocument();
+    // 一覧は取り直さない。
+    expect(api.listCoachReviews).toHaveBeenCalledTimes(1);
+  });
+
+  test("「返信を書き直す」は今の返信を欄に入れ、保存すると置き換える", async () => {
+    const api = mockApi();
+    const items = await renderLoaded(api);
+    const row = items[1]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信を書き直す" }));
+    const input = within(row).getByLabelText("返信");
+    expect(input).toHaveValue("ご意見ありがとうございます。次回は長めに取ります。");
+    expect(within(row).queryByRole("region", { name: "あなたの返信" })).not.toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, "またお待ちしています。");
+    await userEvent.click(within(row).getByRole("button", { name: "保存する" }));
+
+    expect(api.replyToLessonReview).toHaveBeenCalledWith(REVIEWS[1]!.review_id, {
+      comment: "またお待ちしています。",
+    });
+    const saved = await within(row).findByRole("region", { name: "あなたの返信" });
+    expect(saved).toHaveTextContent("またお待ちしています。");
+    expect(saved).not.toHaveTextContent("次回は長めに取ります。");
+  });
+
+  test("「やめる」で欄を閉じ、保存済みの返信はそのまま", async () => {
+    const api = mockApi();
+    const items = await renderLoaded(api);
+    const row = items[1]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信を書き直す" }));
+    await userEvent.type(within(row).getByLabelText("返信"), "追記");
+    await userEvent.click(within(row).getByRole("button", { name: "やめる" }));
+
+    expect(within(row).queryByRole("form", { name: "評価に返信する" })).not.toBeInTheDocument();
+    expect(within(row).getByRole("region", { name: "あなたの返信" })).toHaveTextContent(
+      "ご意見ありがとうございます。次回は長めに取ります。",
+    );
+    expect(api.replyToLessonReview).not.toHaveBeenCalled();
+  });
+
+  test("空白だけの返信は送らずに理由を出す", async () => {
+    const api = mockApi();
+    const items = await renderLoaded(api);
+    const row = items[0]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信する" }));
+    await userEvent.type(within(row).getByLabelText("返信"), "   ");
+    await userEvent.click(within(row).getByRole("button", { name: "保存する" }));
+
+    expect(within(row).getByRole("alert")).toHaveTextContent("返信を入力してください。");
+    expect(api.replyToLessonReview).not.toHaveBeenCalled();
+  });
+
+  test("200 文字（コードポイント）を超える返信は送らずに理由を出し、絵文字は 1 文字と数える", async () => {
+    const api = mockApi();
+    const items = await renderLoaded(api);
+    const row = items[0]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信する" }));
+    const input = within(row).getByLabelText("返信");
+    // 絵文字（UTF-16 では 2 単位）でちょうど 200 文字なら超えていない。
+    fireEvent.change(input, { target: { value: "🎾".repeat(200) } });
+    expect(row).toHaveTextContent("あと 0 文字");
+    fireEvent.change(input, { target: { value: "あ".repeat(201) } });
+    expect(row).toHaveTextContent("200 文字を 1 文字超えています");
+    await userEvent.click(within(row).getByRole("button", { name: "保存する" }));
+
+    expect(within(row).getByRole("alert")).toHaveTextContent(
+      "返信は 200 文字までです。1 文字減らしてください。",
+    );
+    expect(api.replyToLessonReview).not.toHaveBeenCalled();
+  });
+
+  test("保存できなければその文言を出して欄と入力を残す", async () => {
+    const api = mockApi({
+      replyToLessonReview: vi.fn<CoachApi["replyToLessonReview"]>(async () => ({
+        ok: false,
+        code: "forbidden",
+        message: "権限がないためアクセスできません。",
+      })),
+    });
+    const items = await renderLoaded(api);
+    const row = items[0]!;
+
+    await userEvent.click(within(row).getByRole("button", { name: "返信する" }));
+    await userEvent.type(within(row).getByLabelText("返信"), "ありがとうございます");
+    await userEvent.click(within(row).getByRole("button", { name: "保存する" }));
+
+    expect(await within(row).findByRole("alert")).toHaveTextContent(
+      "権限がないためアクセスできません。",
+    );
+    expect(within(row).getByLabelText("返信")).toHaveValue("ありがとうございます");
+    expect(within(row).queryByRole("region", { name: "あなたの返信" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  test("本部の画面と同じ一覧の部品でも、返信の欄を渡さなければ出さない", async () => {
+    render(<CoachReviewList reviews={REVIEWS} />);
+
+    expect(screen.queryByRole("button", { name: /返信/ })).not.toBeInTheDocument();
   });
 });
