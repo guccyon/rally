@@ -315,6 +315,8 @@ class _CoachReviewsState extends ConsumerState<_CoachReviews> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(coachReviewRatingLabel(review.rating)),
+                if (review.lessonMenu case final menu?)
+                  Text(reviewLessonMenuLabel(menu)),
                 Text(review.comment),
                 Text(
                   formatDateTime(review.submittedAt),
