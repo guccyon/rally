@@ -1,6 +1,8 @@
 //! コーチの自己紹介文（admin-web の `PUT /me/profile` と `GET /me` の `bio`）を、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。書いた自己紹介文が保存されて次の `GET /me` に出ること、400 文字を超えれば
-//! 422 で何も変わらないこと、本部・生徒は 403 であることを確かめる。契約の形の細かい検査は interface の `tests/me.rs`。
+//! 422 で何も変わらないこと、本部・生徒は 403 であることを確かめる。書いた自己紹介文が、生徒が見るコーチの紹介
+//! （student-app の `GET /coaches/{coach_id}`）にも出ることを確かめる。契約の形の細かい検査は interface の `tests/me.rs` と
+//! `tests/coach_profiles.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coach_profile -- --include-ignored` で走らせる。
@@ -111,6 +113,27 @@ async fn coach_bio_is_saved_in_postgres_and_only_coaches_can_write_it(pool: PgPo
     assert_eq!(body["code"], "validation_failed");
     let (_, me) = send(&router, "GET", "/me", &coach, None).await;
     assert_eq!(me["bio"], "テニス歴 20 年。初心者歓迎");
+
+    // 生徒はコーチの紹介で、書いた自己紹介文を読める
+    let coach_id = me["account_id"].as_str().unwrap();
+    let (status, profile) = send(
+        &router,
+        "GET",
+        &format!("/coaches/{coach_id}"),
+        &student,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{profile}");
+    assert_eq!(
+        profile,
+        json!({
+            "coach_id": coach_id,
+            "display_name": "テスト",
+            "bio": "テニス歴 20 年。初心者歓迎",
+            "sports": ["tennis"]
+        })
+    );
 
     // 本部・生徒は書けず、GET /me に bio は載らない
     for token in [&headquarters, &student] {

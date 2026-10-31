@@ -5,6 +5,8 @@
 //!
 //! [`AccountRepository`]: crate::identity::AccountRepository
 
+mod coach_profile;
+mod get_coach_profile;
 mod list_coaches;
 mod profile_coach_candidate_lookup;
 mod profile_coach_display_name_lookup;
@@ -13,6 +15,8 @@ mod profile_student_display_name_lookup;
 mod profile_student_sport_lookup;
 mod update_coach_profile;
 
+pub use coach_profile::CoachProfile;
+pub use get_coach_profile::GetCoachProfile;
 pub use list_coaches::ListCoaches;
 pub use profile_coach_candidate_lookup::ProfileCoachCandidateLookup;
 pub use profile_coach_display_name_lookup::ProfileCoachDisplayNameLookup;

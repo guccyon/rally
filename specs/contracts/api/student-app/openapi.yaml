@@ -47,6 +47,8 @@ tags:
     description: メッセージ（生徒と担当コーチのチャット）
   - name: notification
     description: 通知（プッシュ通知の受け取り設定）
+  - name: profile
+    description: プロフィール（コーチの表示名・自己紹介・提供スポーツ）
 
 paths:
   /accounts:
@@ -670,6 +672,41 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /coaches/{coach_id}:
+    get:
+      operationId: getCoachProfile
+      summary: コーチの紹介
+      description: |
+        コーチ 1 人の紹介（表示名・自己紹介文・提供スポーツ）を返す。生徒がコーチを選ぶ前に、どんなコーチかを見る手がかりにする。
+        生徒の役割のトークンだけが呼べる（本部・コーチは 403。コーチは admin-web の `getMyAccount` で自分の分を読む）。
+        自己紹介文はコーチが admin-web の `updateMyCoachProfile` で書いたもの。
+
+        - `bio`: 書いたとおりの自己紹介文。書いていない（空の）コーチは null
+        - `sports`: コーチが提供するスポーツ（student-app の `Sport` の値の順）。ゴルフ（golf-app の範囲）は載せない
+        - `coach_id` がコーチのアカウントでない（生徒・本部のアカウントや、ない ID）ときと、ゴルフだけを提供するコーチは 404
+        - `coach_id` が UUID でなければ 404
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [profile]
+      x-context: profile
+      x-analytics-events: []
+      parameters:
+        - $ref: "#/components/parameters/CoachId"
+      responses:
+        "200":
+          description: コーチの紹介
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /coaches/{coach_id}/review-summary:
     get:
@@ -1765,6 +1802,31 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CoachListing"
+
+    CoachProfile:
+      type: object
+      description: glossary の coach の、生徒に見せる紹介（profile。表示名・自己紹介文・提供スポーツ）
+      required: [coach_id, display_name, bio, sports]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: コーチの表示名
+        bio:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 400
+          description: コーチの自己紹介文（書いたとおり）。書いていない（空の）コーチは null
+        sports:
+          type: array
+          minItems: 1
+          description: コーチが提供するスポーツ（`Sport` の enum の順）。ゴルフは載せない
+          items:
+            $ref: "#/components/schemas/Sport"
 
     CoachReviewSummary:
       type: object
