@@ -656,4 +656,37 @@ void main() {
       );
     }
   });
+
+  test('SubscriptionPlanList.fromJson は項目が欠けた・型が違う応答を FormatException にする', () {
+    for (final json in <Map<String, dynamic>>[
+      {},
+      {'plans': null},
+      {'plans': 'standard'},
+      {
+        'plans': ['plus'],
+      },
+      {
+        'plans': [
+          {'plan': 'plus'},
+        ],
+      },
+      {
+        'plans': [
+          {'live_lessons_per_month': 4},
+        ],
+      },
+      {
+        'plans': [
+          {'plan': 'plus', 'live_lessons_per_month': '4'},
+        ],
+      },
+      {
+        'plans': [
+          {'plan': 1, 'live_lessons_per_month': 4},
+        ],
+      },
+    ]) {
+      expect(() => SubscriptionPlanList.fromJson(json), throwsFormatException);
+    }
+  });
 }
