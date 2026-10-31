@@ -1,4 +1,4 @@
-use domain::identity::Sport;
+use domain::catalog::Sport;
 
 /// 合成するコーチ 1 人。
 #[derive(Debug, Clone, PartialEq, Eq)]

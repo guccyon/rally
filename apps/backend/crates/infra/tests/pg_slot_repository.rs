@@ -22,11 +22,12 @@ use application::{
 };
 use domain::{
     DomainError,
+    catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuName,
     },
-    identity::{AccountId, Sport},
+    identity::AccountId,
     scheduling::{Booking, Slot, SlotCapacity, SlotStatus},
 };
 use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};

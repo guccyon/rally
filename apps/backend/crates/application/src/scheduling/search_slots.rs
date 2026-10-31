@@ -1,9 +1,6 @@
 use std::{collections::BTreeSet, num::NonZeroUsize, time::SystemTime};
 
-use domain::{
-    catalog::LessonMenuId,
-    identity::{AccountId, Sport},
-};
+use domain::{catalog::LessonMenuId, catalog::Sport, identity::AccountId};
 
 use super::{
     CoachIntroductionLookup, LessonMenuLookup, SlotCriteria, SlotCursor, SlotPage, SlotRepository,

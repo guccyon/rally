@@ -61,7 +61,7 @@ pub enum DomainError {
     /// その契約種別ではそのスポーツの契約を結べない（月額はゴルフ以外、ワンショットはゴルフだけ）
     SportNotCoveredByContract {
         contract_type: crate::entitlement::ContractType,
-        sport: crate::identity::Sport,
+        sport: crate::catalog::Sport,
     },
     /// 暦月の月が 1〜12 でない
     InvalidMonth { month: u8 },
@@ -91,7 +91,7 @@ pub enum DomainError {
     VideoReviewAlreadyReturned,
     /// その動画の添削にはまだ着手できない（`sport` は動画のスポーツ。ゴルフはワンショット決済の確定が要る。
     /// 不変条件 2）
-    VideoReviewNotAllowed { sport: crate::identity::Sport },
+    VideoReviewNotAllowed { sport: crate::catalog::Sport },
     /// 添削の返却が動画の送付より前
     ReviewReturnedBeforeSubmission,
     /// 添削コメントが空（空白だけを含む）
@@ -153,7 +153,7 @@ pub enum DomainError {
         lesson_type: crate::lesson::LessonType,
     },
     /// そのスポーツはコーチの提供スポーツでない（レッスンメニューはコーチのスポーツのどれかで作る）
-    SportNotOfferedByCoach { sport: crate::identity::Sport },
+    SportNotOfferedByCoach { sport: crate::catalog::Sport },
     /// レッスンメニューのコーチでないので、そのメニューを直せない
     NotTheLessonMenuCoach,
     /// 別のコーチのレッスンメニューは枠に結びつけられない（枠に結びつけるのは枠のコーチ自身のメニューだけ）
@@ -164,8 +164,8 @@ pub enum DomainError {
     LessonMenuNotLive,
     /// レッスンメニューのスポーツ（`menu`）が枠のスポーツ（`slot`）と違う
     LessonMenuSportMismatch {
-        menu: crate::identity::Sport,
-        slot: crate::identity::Sport,
+        menu: crate::catalog::Sport,
+        slot: crate::catalog::Sport,
     },
     /// 枠の長さがレッスンメニューの 1 回の時間（`minutes` 分）と違う
     SlotLengthMismatchesLessonMenu { minutes: u8 },
@@ -177,8 +177,8 @@ pub enum DomainError {
     LessonMenuNotAsync,
     /// レッスンメニューのスポーツ（`menu`）が動画のスポーツ（`video`）と違う
     VideoLessonMenuSportMismatch {
-        menu: crate::identity::Sport,
-        video: crate::identity::Sport,
+        menu: crate::catalog::Sport,
+        video: crate::catalog::Sport,
     },
 }
 

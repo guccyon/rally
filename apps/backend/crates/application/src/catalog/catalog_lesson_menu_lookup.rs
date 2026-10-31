@@ -53,8 +53,9 @@ mod tests {
     use std::time::SystemTime;
 
     use domain::{
+        catalog::Sport,
         catalog::{LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuName},
-        identity::{AccountId, Sport},
+        identity::AccountId,
     };
 
     use super::*;

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use application::async_lesson::{AiFeedbackGenerator, AiFeedbackRequest};
 use domain::{
     async_lesson::{VideoContentType, VideoId},
-    identity::Sport,
+    catalog::Sport,
 };
 use infra::MockAiFeedbackGenerator;
 

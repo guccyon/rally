@@ -169,11 +169,11 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::Sport,
         entitlement::{
             Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
             YearMonth,
         },
-        identity::Sport,
         messaging::{MessageAuthor, MessageBody, MessageSender, Stamp},
     };
 

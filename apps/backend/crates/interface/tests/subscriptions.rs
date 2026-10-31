@@ -36,7 +36,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{AccountId, Role, Sport};
+use domain::{
+    catalog::Sport,
+    identity::{AccountId, Role},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 

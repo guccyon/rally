@@ -11,11 +11,11 @@ use application::async_lesson::{UpdateVideoError, VideoRepository};
 use domain::{
     DomainError,
     async_lesson::{AiFeedback, ReviewComment, Video, VideoLessonMenu, VideoStatus},
+    catalog::Sport,
     catalog::{
         LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
         LessonMenuName,
     },
-    identity::Sport,
 };
 use infra::PgVideoRepository;
 use sqlx::PgPool;

@@ -1,7 +1,4 @@
-use domain::{
-    catalog::LessonMenu,
-    identity::{AccountId, Sport},
-};
+use domain::{catalog::LessonMenu, catalog::Sport, identity::AccountId};
 
 use super::LessonMenuRepository;
 use crate::Unavailable;

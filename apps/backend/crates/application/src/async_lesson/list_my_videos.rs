@@ -47,7 +47,7 @@ mod tests {
 
     use domain::{
         async_lesson::{ReviewComment, VideoId, VideoReviewId, VideoStatus},
-        identity::Sport,
+        catalog::Sport,
         profile::DisplayName,
     };
 

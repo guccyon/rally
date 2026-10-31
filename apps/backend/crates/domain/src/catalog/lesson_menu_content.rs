@@ -1,5 +1,5 @@
 use super::{LessonFormat, LessonMenuDescription, LessonMenuName};
-use crate::identity::Sport;
+use crate::catalog::Sport;
 
 /// レッスンメニューの中身（コーチが作るとき・直すときに書くもの。公開中かは別に渡す）。
 ///

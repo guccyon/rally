@@ -248,7 +248,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        identity::Sport,
+        catalog::Sport,
         scheduling::{SlotCapacity, SlotSeats, SlotStatus},
     };
 

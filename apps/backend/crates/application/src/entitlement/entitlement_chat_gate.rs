@@ -35,11 +35,11 @@ where
 #[cfg(test)]
 mod tests {
     use domain::{
+        catalog::Sport,
         entitlement::{
             Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
             YearMonth,
         },
-        identity::Sport,
     };
 
     use super::*;

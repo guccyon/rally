@@ -8,8 +8,9 @@ use std::time::SystemTime;
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
+    catalog::Sport,
     entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
-    identity::{Role, Sport},
+    identity::Role,
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},

@@ -22,8 +22,9 @@ use axum::{
 };
 use domain::{
     async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+    catalog::Sport,
     catalog::{LessonMenuId, LessonMenuName},
-    identity::{Account, AccountId, Email, Role, Sport},
+    identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
 };
 use serde_json::{Value, json};

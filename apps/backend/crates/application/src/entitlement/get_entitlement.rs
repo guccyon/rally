@@ -57,10 +57,10 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::Sport,
         entitlement::{
             EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
         },
-        identity::Sport,
         scheduling::BookingId,
     };
 

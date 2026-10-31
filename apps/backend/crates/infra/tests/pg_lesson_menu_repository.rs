@@ -18,11 +18,12 @@ use application::{
 };
 use domain::{
     DomainError,
+    catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuName,
     },
-    identity::{AccountId, Role, Sport},
+    identity::{AccountId, Role},
     lesson::LessonType,
 };
 use infra::{PgAccountRepository, PgLessonMenuRepository};

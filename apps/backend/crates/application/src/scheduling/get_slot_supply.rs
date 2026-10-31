@@ -1,4 +1,4 @@
-use domain::{identity::Sport, scheduling::SlotSupply};
+use domain::{catalog::Sport, scheduling::SlotSupply};
 
 use super::{BookingRepository, SlotSupplyReport};
 use crate::{Unavailable, clock::Clock};

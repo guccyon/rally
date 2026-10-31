@@ -1,9 +1,10 @@
 use domain::{
     DomainError,
+    catalog::Sport,
     entitlement::{
         Entitlement, LiveLessonQuota, Subscription, SubscriptionPlan, SubscriptionStatus,
     },
-    identity::{AccountId, Sport},
+    identity::AccountId,
 };
 use uuid::Uuid;
 

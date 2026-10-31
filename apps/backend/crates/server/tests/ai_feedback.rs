@@ -16,7 +16,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{Role, Sport};
+use domain::{catalog::Sport, identity::Role};
 use infra::{MockAiFeedbackGenerator, MockTokenService, PgAccountRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;

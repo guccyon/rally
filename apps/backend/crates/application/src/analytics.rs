@@ -6,8 +6,9 @@ use std::{future::Future, time::SystemTime};
 
 use domain::{
     async_lesson::{VideoId, VideoReviewId},
+    catalog::Sport,
     entitlement::SubscriptionId,
-    identity::{AccountId, Sport},
+    identity::AccountId,
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
     messaging::{MessageId, MessageSender, MessageThreadId},

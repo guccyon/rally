@@ -145,7 +145,7 @@ mod tests {
 
     use domain::{
         async_lesson::{VideoContentType, VideoStatus},
-        identity::Sport,
+        catalog::Sport,
     };
 
     use super::*;

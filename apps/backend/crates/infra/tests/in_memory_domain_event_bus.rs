@@ -14,10 +14,11 @@ use application::{
     in_memory::InMemoryEntitlementRepository,
 };
 use domain::{
+    catalog::Sport,
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
-    identity::{AccountId, Sport},
+    identity::AccountId,
     scheduling::BookingId,
 };
 use infra::InMemoryDomainEventBus;

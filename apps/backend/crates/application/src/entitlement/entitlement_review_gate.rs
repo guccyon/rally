@@ -1,4 +1,4 @@
-use domain::{async_lesson::VideoId, entitlement::ContractType, identity::Sport};
+use domain::{async_lesson::VideoId, catalog::Sport, entitlement::ContractType};
 
 use crate::{Unavailable, async_lesson::ReviewGate};
 

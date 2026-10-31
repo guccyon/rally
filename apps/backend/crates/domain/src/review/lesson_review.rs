@@ -109,7 +109,7 @@ mod tests {
     use super::*;
     use crate::{
         async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
-        identity::Sport,
+        catalog::Sport,
     };
 
     const STUDENT: AccountId = AccountId::from_u128(1);

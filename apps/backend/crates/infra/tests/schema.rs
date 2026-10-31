@@ -475,7 +475,7 @@ async fn subscription_is_not_for_golf(pool: PgPool) {
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn subscription_sports_are_the_sports_monthly_covers(pool: PgPool) {
-    use domain::{entitlement::ContractType, identity::Sport};
+    use domain::{catalog::Sport, entitlement::ContractType};
     use infra::identity_values::sport_value;
 
     let monthly: Vec<&str> = Sport::ALL
@@ -747,7 +747,7 @@ async fn check_values(pool: &PgPool, table: &str, constraint: &str) -> Vec<Strin
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn identity_values_match_the_accounts_checks(pool: PgPool) {
-    use domain::identity::{Role, Sport};
+    use domain::{catalog::Sport, identity::Role};
     use infra::identity_values::{role_value, sport_value};
 
     let roles: Vec<&str> = Role::ALL.into_iter().map(role_value).collect();
@@ -1038,7 +1038,7 @@ async fn video_lesson_menu_is_null_unless_copied_and_has_the_shape_of_a_copy(poo
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn video_sports_match_the_identity_values(pool: PgPool) {
-    use domain::identity::Sport;
+    use domain::catalog::Sport;
     use infra::identity_values::sport_value;
 
     let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
@@ -1507,7 +1507,7 @@ async fn subscriptions_default_to_the_standard_plan_and_reject_unknown_plans(poo
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn only_coaches_have_coach_sports(pool: PgPool) {
-    use domain::identity::Sport;
+    use domain::catalog::Sport;
     use infra::identity_values::sport_value;
 
     let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
@@ -2203,7 +2203,7 @@ async fn insert_lesson_menu(
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn catalog_values_match_the_lesson_menus_checks(pool: PgPool) {
-    use domain::{identity::Sport, lesson::LessonType};
+    use domain::{catalog::Sport, lesson::LessonType};
     use infra::{catalog_values::lesson_type_value, identity_values::sport_value};
 
     assert_eq!(

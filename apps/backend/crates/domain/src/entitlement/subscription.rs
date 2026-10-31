@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use super::{ContractType, SubscriptionId, SubscriptionPlan, SubscriptionStatus};
-use crate::{DomainError, identity::AccountId, identity::Sport};
+use crate::{DomainError, catalog::Sport, identity::AccountId};
 
 /// 月額の契約（glossary の subscription）。ゴルフ以外のスポーツで結ぶ。
 ///

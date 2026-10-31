@@ -17,7 +17,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::identity::{AccountId, Role, Sport};
+use domain::{
+    catalog::Sport,
+    identity::{AccountId, Role},
+};
 use infra::{MockAiFeedbackGenerator, MockTokenService, MockVideoStorage};
 use serde_json::{Value, json};
 use tower::ServiceExt;

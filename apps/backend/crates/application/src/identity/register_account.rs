@@ -1,6 +1,7 @@
 use domain::{
     DomainError,
-    identity::{Account, Email, Profile, Role, Sport},
+    catalog::Sport,
+    identity::{Account, Email, Profile, Role},
     profile::DisplayName,
 };
 

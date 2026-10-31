@@ -12,7 +12,7 @@ use application::{
     scheduling::GetSlotSupply,
 };
 use domain::{
-    identity::Sport,
+    catalog::Sport,
     scheduling::{SlotSupply, SlotSupplyStatus},
 };
 use infra::PgBookingRepository;

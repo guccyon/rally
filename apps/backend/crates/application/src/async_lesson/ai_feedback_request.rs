@@ -1,6 +1,6 @@
 use domain::{
     async_lesson::{VideoContentType, VideoId},
-    identity::Sport,
+    catalog::Sport,
 };
 
 /// AI の一次フィードバックを作る材料（[`super::AiFeedbackGenerator`] に渡す）。送付した動画の ID・スポーツ・形式と、

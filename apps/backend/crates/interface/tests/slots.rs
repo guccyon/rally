@@ -33,7 +33,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    identity::{Account, AccountId, Email, Role, Sport},
+    catalog::Sport,
+    identity::{Account, AccountId, Email, Role},
     profile::{CoachBio, DisplayName},
 };
 use serde_json::{Value, json};

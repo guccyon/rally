@@ -4,7 +4,7 @@
 //! （[`crate::MockTokenService`]）の役割はこの表だけを通す。CHECK との一致は
 //! `tests/schema.rs` が確かめる。
 
-use domain::identity::{Role, Sport};
+use domain::{catalog::Sport, identity::Role};
 
 /// `identity.accounts.role` の値。
 pub const fn role_value(role: Role) -> &'static str {

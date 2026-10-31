@@ -141,11 +141,11 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        catalog::Sport,
         catalog::{
             LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId,
             LessonMenuName,
         },
-        identity::Sport,
         scheduling::{
             BookingId, BookingLessonMenu, BookingStatus, Slot, SlotCapacity, SlotSeats, SlotStatus,
         },

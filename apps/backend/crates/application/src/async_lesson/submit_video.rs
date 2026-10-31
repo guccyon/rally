@@ -2,7 +2,8 @@ use domain::{
     DomainError,
     async_lesson::{AiFeedback, Video, VideoContentType},
     catalog::LessonMenuId,
-    identity::{AccountId, Sport},
+    catalog::Sport,
+    identity::AccountId,
 };
 
 use uuid::Uuid;

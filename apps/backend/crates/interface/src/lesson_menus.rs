@@ -28,11 +28,12 @@ use axum::{
 };
 use domain::{
     DomainError,
+    catalog::Sport,
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuName,
     },
-    identity::{AccountId, Sport},
+    identity::AccountId,
 };
 use serde::{Deserialize, Serialize};
 

@@ -72,7 +72,10 @@ where
 mod tests {
     use std::time::SystemTime;
 
-    use domain::identity::{Account, Email, Role, Sport};
+    use domain::{
+        catalog::Sport,
+        identity::{Account, Email, Role},
+    };
 
     use super::*;
     use crate::in_memory::InMemoryAccountRepository;

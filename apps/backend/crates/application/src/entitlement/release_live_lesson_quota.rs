@@ -71,10 +71,10 @@ mod tests {
     use std::time::Duration;
 
     use domain::{
+        catalog::Sport,
         entitlement::{
             EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
         },
-        identity::Sport,
     };
 
     use super::*;

@@ -30,7 +30,8 @@ impl CancellationPolicy {
 mod tests {
     use super::*;
     use crate::{
-        identity::{AccountId, Sport},
+        catalog::Sport,
+        identity::AccountId,
         scheduling::{BookingId, Slot, SlotId},
     };
 

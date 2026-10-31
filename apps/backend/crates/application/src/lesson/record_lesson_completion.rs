@@ -209,7 +209,7 @@ mod tests {
 
     use domain::{
         async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
-        identity::Sport,
+        catalog::Sport,
         lesson::LessonType,
         live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
         scheduling::{Booking, BookingId, Slot, SlotId, SlotStatus},

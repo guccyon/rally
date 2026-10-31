@@ -5,8 +5,9 @@ use super::{
 };
 use crate::{
     DomainError,
+    catalog::Sport,
     catalog::{LessonFormat, LessonMenu},
-    identity::{AccountId, Sport},
+    identity::AccountId,
     lesson::{LessonCompletion, LessonId, LessonSource},
 };
 

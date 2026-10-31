@@ -3,8 +3,9 @@ use std::time::{Duration, SystemTime};
 use super::{SlotCapacity, SlotId, SlotSeats, SlotStatus};
 use crate::{
     DomainError,
+    catalog::Sport,
     catalog::{LessonFormat, LessonMenu, LessonMenuId},
-    identity::{AccountId, Sport},
+    identity::AccountId,
 };
 
 /// スロット（glossary の slot）。コーチが公開する予約枠で、開始は終了より前。

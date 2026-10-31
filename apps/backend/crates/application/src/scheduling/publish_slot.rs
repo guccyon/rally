@@ -3,7 +3,8 @@ use std::{collections::BTreeSet, time::SystemTime};
 use domain::{
     DomainError,
     catalog::LessonMenuId,
-    identity::{AccountId, Sport},
+    catalog::Sport,
+    identity::AccountId,
     scheduling::{Slot, SlotCapacity},
 };
 

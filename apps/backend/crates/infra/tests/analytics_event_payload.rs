@@ -8,8 +8,9 @@ use std::{
 use application::analytics::AnalyticsEvent;
 use domain::{
     async_lesson::{VideoId, VideoReviewId},
+    catalog::Sport,
     entitlement::SubscriptionId,
-    identity::{AccountId, Sport},
+    identity::AccountId,
     lesson::{LessonId, LessonType},
     live_lesson::SessionId,
     messaging::{MessageId, MessageSender, MessageThreadId},

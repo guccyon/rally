@@ -1,4 +1,4 @@
-use crate::{DomainError, identity::Sport};
+use crate::{DomainError, catalog::Sport};
 
 /// 契約種別（specs/product-context.md の課金の 2 種類）。
 ///

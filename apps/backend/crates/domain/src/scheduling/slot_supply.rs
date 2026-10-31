@@ -1,7 +1,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use super::{Booking, Slot, SlotStatus, SlotSupplyStatus};
-use crate::identity::Sport;
+use crate::catalog::Sport;
 
 /// スポーツ 1 つの予約枠の需給（admin-web の `getSlotSupply`。式と期間の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。

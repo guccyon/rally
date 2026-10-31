@@ -11,7 +11,8 @@ use application::{
     scheduling::{BookingRepository, SlotRepository},
 };
 use domain::{
-    identity::{AccountId, Role, Sport},
+    catalog::Sport,
+    identity::{AccountId, Role},
     live_lesson::{ConnectionQuality, LiveLessonSession},
     scheduling::{Booking, Slot},
 };
