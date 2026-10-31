@@ -87,7 +87,7 @@ function slotsOf(...lists: Schemas["CoachSlot"][][]) {
   return fn;
 }
 
-type SlotApi = Pick<CoachApi, "publishSlot" | "listMyCoachSlots" | "listMyLessonMenus">;
+type SlotApi = Pick<CoachApi, "publishSlot" | "listMyCoachSlots" | "listMyLessonMenus" | "withdrawMySlot">;
 
 function mockApi(overrides: Partial<SlotApi> = {}): SlotApi {
   return {
@@ -97,6 +97,7 @@ function mockApi(overrides: Partial<SlotApi> = {}): SlotApi {
     })),
     listMyCoachSlots: slotsOf([], []),
     listMyLessonMenus: menusOf(MENUS),
+    withdrawMySlot: vi.fn(),
     ...overrides,
   };
 }

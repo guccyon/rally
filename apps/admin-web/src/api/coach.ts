@@ -17,6 +17,12 @@ export function coachApi(client: ApiClient) {
         }),
       ),
     listMyCoachSlots: () => call(() => client.GET("/coaches/me/slots")),
+    withdrawMySlot: (slotId: string) =>
+      call(() =>
+        client.POST("/coaches/me/slots/{slot_id}/withdraw", {
+          params: { path: { slot_id: slotId } },
+        }),
+      ),
     listMyCoachVideos: () => call(() => client.GET("/coaches/me/videos")),
     listMyCoachBookings: () => call(() => client.GET("/coaches/me/bookings")),
     startLiveLessonSession: (body: Schemas["StartLiveLessonSessionRequest"]) =>

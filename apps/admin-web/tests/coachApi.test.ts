@@ -250,6 +250,27 @@ describe("coachApi", () => {
     expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
+  test("withdrawMySlot はトークンを付けて POST /api/coaches/me/slots/{slot_id}/withdraw を呼び、閉じた枠を返す", async () => {
+    const closed = { ...SLOT, status: "closed" };
+    const { api, fetchMock } = setup(json(200, closed));
+    const result = await api.withdrawMySlot(SLOT.slot_id);
+    expect(result).toEqual({ ok: true, data: closed });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/me/slots/${SLOT.slot_id}/withdraw`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("withdrawMySlot の 409 は ErrorCode の文言にする", async () => {
+    const { api } = setup(json(409, { code: "slot_has_active_booking", message: "booked" }));
+    const result = await api.withdrawMySlot(SLOT.slot_id);
+    expect(result).toEqual({
+      ok: false,
+      code: "slot_has_active_booking",
+      message: "予約が入っている枠は取り下げられません。",
+    });
+  });
+
   test("listMyCoachVideos はトークンを付けて GET /api/coaches/me/videos を呼び、返った順のまま返す", async () => {
     const list = {
       videos: [
