@@ -74,6 +74,10 @@ void main() {
       enumOf('StampId'),
       StampId.values.map((e) => e.wire).toList(),
     ),
+    'NotificationKind': (
+      enumOf('NotificationKind'),
+      NotificationKind.values.map((e) => e.wire).toList(),
+    ),
     'ErrorCode': (
       enumOf('ErrorCode'),
       ErrorCode.values
@@ -123,6 +127,8 @@ void main() {
         'markMessageThreadRead',
         'getMyNotificationSettings',
         'updateMyNotificationSettings',
+        'listMyNotifications',
+        'markMyNotificationsRead',
         'getMyStudentProfile',
         'updateMyStudentProfile',
       ]),
@@ -141,6 +147,18 @@ void main() {
       propertiesOf('NotificationSettings').where((p) => p != 'student_id'),
     );
     expect(kinds, propertiesOf('UpdateNotificationSettingsRequest'));
+  });
+
+  test('お知らせの項目が契約と一致する（listMyNotifications / markMyNotificationsRead）', () {
+    // ApiNotification.fromJson / NotificationList.fromJson が読む項目
+    expect(propertiesOf('Notification'), [
+      'notification_id',
+      'kind',
+      'body',
+      'created_at',
+      'is_read',
+    ]);
+    expect(propertiesOf('NotificationList'), ['notifications']);
   });
 
   test('CoachProfile の項目が契約と一致する（getCoachProfile）', () {

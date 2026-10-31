@@ -108,6 +108,7 @@ void main() {
       'getMyEntitlement',
       'listMessageThreads',
       'listMyVideos',
+      'listMyNotifications',
     ]);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('山田さん、こんにちは'), findsOneWidget);
@@ -615,6 +616,7 @@ void main() {
       'getMyEntitlement',
       'listMessageThreads',
       'listMyVideos',
+      'listMyNotifications',
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);

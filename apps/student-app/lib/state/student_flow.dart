@@ -8,9 +8,10 @@ import 'chat.dart';
 import 'coach_profile.dart';
 import 'coach_search.dart';
 import 'lesson_review.dart';
+import 'notifications.dart';
 import 'subscription.dart';
 
-/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定・プロフィールの画面の段。
+/// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定・お知らせ・プロフィールの画面の段。
 enum FlowStep {
   register,
 
@@ -42,6 +43,10 @@ enum FlowStep {
   /// 通知の受け取り設定（登録後のどの段からも開け、閉じると開いた段に戻る）
   notificationSettings,
 
+  /// お知らせの一覧（登録後のどの段からも開け、閉じると開いた段に戻る。開いたらすべて既読にする。状態は [NotificationsState]）。
+  /// 行からは種類に応じて自分の予約・自分の動画・チャットを開く（閉じるとここに戻る）
+  notifications,
+
   /// 自分のプロフィール（表示名を見て変える。登録後のどの段からも開け、閉じると開いた段に戻る）
   profile,
 
@@ -56,10 +61,12 @@ enum FlowStep {
 
   bool get isChat => this == messageThreads || this == messages;
 
-  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・プロフィール・自分の予約・自分の動画）。ここからはほかの脇の画面を開かない
+  /// 一周シナリオの脇に開く画面（チャット・通知の受け取り設定・お知らせ・プロフィール・自分の予約・自分の動画）。
+  /// ここからはアプリバーでほかの脇の画面を開かない（お知らせの行からは開く）
   bool get isAside =>
       isChat ||
       this == notificationSettings ||
+      this == notifications ||
       this == profile ||
       this == myBookings ||
       this == myVideos ||
@@ -367,7 +374,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
-  /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画）を
+  /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画）と、
+  /// アプリバーのお知らせのしるし（[NotificationsNotifier.loadForHome]。読めなければしるしを出さないだけ）を
   /// 並べて読む。どれかが失敗しても他の欄は出す（失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
   /// 受講権の 404 は失敗ではなく、月額契約の前（[SubscriptionState.noEntitlement]）
   Future<void> _loadHome() async {
@@ -388,6 +396,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       ),
       load(HomeSection.threads, ref.read(chatProvider.notifier).loadThreads),
       load(HomeSection.videos, _loadMyVideos),
+      ref.read(notificationsProvider.notifier).loadForHome(),
     ]);
     if (!ref.mounted) return;
     state = state.copyWith(homeFailures: Set.unmodifiable(failures));

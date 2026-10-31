@@ -14,6 +14,7 @@ import 'messages_screen.dart';
 import 'my_bookings_screen.dart';
 import 'my_videos_screen.dart';
 import 'notification_settings_screen.dart';
+import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'register_screen.dart';
 import 'slot_search_screen.dart';
@@ -44,6 +45,7 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.messageThreads => const MessageThreadsScreen(),
       FlowStep.messages => const MessagesScreen(),
       FlowStep.notificationSettings => const NotificationSettingsScreen(),
+      FlowStep.notifications => const NotificationsScreen(),
       FlowStep.profile => const ProfileScreen(),
       FlowStep.myBookings => const MyBookingsScreen(),
       FlowStep.myVideos => const MyVideosScreen(),
