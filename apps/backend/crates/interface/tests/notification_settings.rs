@@ -133,6 +133,8 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            clock,
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

@@ -3,6 +3,8 @@
 //! レスポンスの形を OpenAPI のスキーマで検査し、二重予約の拒否・体験予約の 1 回限り・確定でスロットが埋まること・
 //! キャンセルでスロットが空くこととキャンセル規定の判定（`consumes_quota`）・発火するイベントを確かめる。
 //! `GET /bookings/me`（`listMyBookings`）は本人の予約だけをスロットの開始時刻の新しい順に返すことと、生徒以外は 403 を確かめる。
+//! 各予約には今キャンセルしたら枠を使うか（`cancel_consumes_quota`）と境目（`free_cancel_until`）を載せ、境目の前後・キャンセル済み・
+//! 月額の受講権のない生徒の体験予約で値が変わることを確かめる。
 //! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
 //! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
 //! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
@@ -199,6 +201,8 @@ fn app_with_entitlements(
         ListMyBookings::new(
             bookings.clone(),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            clock,
         ),
         ListCoachBookings::new(
             bookings.clone(),
@@ -1074,9 +1078,104 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         "自己紹介文を書いていないコーチは coach_bio を載せない"
     );
     assert_eq!(items[2]["booking"]["is_trial"], true);
+    // 受講権のない生徒なので、キャンセルできる予約は枠を使わない。キャンセル済みは null
+    assert_eq!(
+        items
+            .iter()
+            .map(|i| (&i["cancel_consumes_quota"], &i["free_cancel_until"]))
+            .collect::<Vec<_>>(),
+        [
+            (&Value::Null, &Value::Null),
+            (&json!(false), &Value::Null),
+            (&json!(false), &Value::Null),
+        ]
+    );
     // 照会では何も発火しない
     assert_eq!(app.analytics.events().len(), analytics);
     assert_eq!(app.events.events().len(), events);
+}
+
+/// `STUDENT` の月額（standard）の受講権。今の暦月（2026-10）の枠はまだ使っていない。
+fn monthly_entitlement() -> Entitlement {
+    Entitlement::monthly(
+        EntitlementId::from_u128(30),
+        account_id(STUDENT),
+        Sport::Tennis,
+        SubscriptionId::from_u128(40),
+        LiveLessonQuota::restore(
+            SubscriptionPlan::Standard,
+            YearMonth::new(2026, 10).unwrap(),
+            [],
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+/// 一覧の各項目の（予約の ID、`cancel_consumes_quota`、`free_cancel_until`）。
+fn cancellation_previews(body: &Value) -> Vec<(String, Value, Value)> {
+    body["bookings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["booking"]["booking_id"].as_str().unwrap().to_string(),
+                item["cancel_consumes_quota"].clone(),
+                item["free_cancel_until"].clone(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn my_bookings_tell_whether_cancelling_now_consumes_the_quota() {
+    // 現在は 2026-10-26T00:00Z。枠 25 は 25 時間後・枠 23 は 23 時間後・枠 26 は 26 時間後に始まる
+    let app = app_with_entitlements(
+        [
+            slot_starting_in(25, 25),
+            slot_starting_in(23, 23),
+            slot_starting_in(26, 26),
+        ],
+        InMemoryEntitlementRepository::with_entitlements([monthly_entitlement()]),
+    );
+    let early = create(&app.router, STUDENT, 25, false).await;
+    let late = create(&app.router, STUDENT, 23, false).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &late).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let cancelled = create(&app.router, STUDENT, 26, false).await;
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = get_my_bookings(&app.router, Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_list_contract(status, &body);
+    assert_eq!(
+        cancellation_previews(&body),
+        [
+            // キャンセル済みはキャンセルできないので null
+            (cancelled, Value::Null, Value::Null),
+            // 境目（開始の 24 時間前）の前なので使わない
+            (early, json!(false), json!("2026-10-26T01:00:00Z")),
+            // 境目を過ぎた（確定済み）ので使う
+            (late, json!(true), json!("2026-10-25T23:00:00Z")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn bookings_of_students_without_the_monthly_entitlement_never_consume_the_quota() {
+    // 受講権のない生徒（月額契約の前）の体験予約は、境目を過ぎても枠を使わず、境目もない
+    let app = app_with([slot_starting_in(23, 23)]);
+    let trial = create(&app.router, STUDENT, 23, true).await;
+
+    let (status, body) = get_my_bookings(&app.router, Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_list_contract(status, &body);
+    assert_eq!(
+        cancellation_previews(&body),
+        [(trial, json!(false), Value::Null)]
+    );
 }
 
 #[tokio::test]
