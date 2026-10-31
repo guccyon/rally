@@ -7,7 +7,8 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// 自分の予約の一覧（`listMyBookings`）とキャンセル（`cancelBooking`）。
-/// まだ始まっていない予約にだけキャンセルのボタンを出し、押したら確認してからキャンセルする。
+/// まだ始まっていない予約にだけキャンセルのボタンと、枠を使わずにキャンセルできる境目か、今キャンセルすると
+/// 枠を使うことを出し（`listMyBookings` の `free_cancel_until` / `cancel_consumes_quota`）、押したら確認してからキャンセルする。
 class MyBookingsScreen extends ConsumerWidget {
   const MyBookingsScreen({super.key});
 
@@ -44,6 +45,10 @@ class MyBookingsScreen extends ConsumerWidget {
                     Text('コーチ: $name'),
                   Text('状態: ${bookingStatusLabel(item.booking.status)}'),
                   if (notifier.canCancel(item.booking)) ...[
+                    if (notifier.cancellationUsesQuota(item))
+                      const Text(cancelConsumesQuotaNotice)
+                    else if (item.freeCancelUntil case final until?)
+                      Text(freeCancelUntilLabel(until)),
                     const SizedBox(height: 8),
                     OutlinedButton(
                       onPressed: state.busy
@@ -66,14 +71,14 @@ class MyBookingsScreen extends ConsumerWidget {
   }
 
   /// キャンセルしてよいかを確かめ、よければ `cancelBooking`。
-  /// 今キャンセルすると今月のビデオ通話の回数を使うなら、そのことを添える
+  /// 今キャンセルすると今月のビデオ通話の枠を使うなら、そのことを添える
   Future<void> _confirmCancel(
     BuildContext context,
     WidgetRef ref,
     MyBooking item,
   ) async {
     final notifier = ref.read(studentFlowProvider.notifier);
-    final usesQuota = notifier.cancellationUsesQuota(item.booking);
+    final usesQuota = notifier.cancellationUsesQuota(item);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -88,7 +93,7 @@ class MyBookingsScreen extends ConsumerWidget {
             ),
             if (usesQuota) ...[
               const SizedBox(height: 8),
-              const Text('今キャンセルすると、今月のビデオ通話の回数を 1 回使います。'),
+              const Text(cancelConsumesQuotaNotice),
             ],
           ],
         ),

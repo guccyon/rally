@@ -241,27 +241,4 @@ void main() {
     expect(container.read(subscriptionProvider).noEntitlement, isTrue);
     expect(container.read(studentFlowProvider).homeFailures, isEmpty);
   });
-
-  test('キャンセルで回数を使うかは、こちらの受講権の契約種別で見る', () {
-    final soon = Fixtures.myBooking(
-      bookingId: 'booking-soon',
-      startsIn: const Duration(hours: 1),
-    ).booking;
-    final before = containerOf(FakeStudentApi());
-    final subscribed = containerOf(
-      FakeStudentApi(),
-      subscription: SubscriptionState(
-        entitlement: Fixtures.subscriptionStarted.entitlement,
-      ),
-    );
-
-    expect(
-      before.read(studentFlowProvider.notifier).cancellationUsesQuota(soon),
-      isFalse,
-    );
-    expect(
-      subscribed.read(studentFlowProvider.notifier).cancellationUsesQuota(soon),
-      isTrue,
-    );
-  });
 }

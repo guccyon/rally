@@ -226,4 +226,15 @@ void main() {
     expect(lessonMenuDurationLabel(60), '1 回 60 分');
     expect(lessonMenuDurationLabel(15), '1 回 15 分');
   });
+
+  test('枠を使わずにキャンセルできる境目の案内は、端末のタイムゾーンの月日と時で出し、分があれば分まで出す', () {
+    expect(
+      freeCancelUntilLabel(DateTime(2026, 10, 28, 3)),
+      '10月28日 3時までなら、ビデオ通話の枠を使わずにキャンセルできます。',
+    );
+    expect(
+      freeCancelUntilLabel(DateTime(2026, 10, 28, 15, 30)),
+      '10月28日 15時30分までなら、ビデオ通話の枠を使わずにキャンセルできます。',
+    );
+  });
 }
