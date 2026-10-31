@@ -56,6 +56,10 @@ autonomy:
       ja: "憲法の変更"
       match: "この manifest.yaml（autonomy・承認ゲート）、base/ の差し替え、Blueprint の autonomy・budgets、Engine の知財・利用許諾に関わる記述"
       source: "憲章 08 節「憲法の管理」は builder の署名。2026-10-26 マージ基準"
+    knowledge:
+      ja: "知見の変更セット"
+      match: ".factory-config/knowledge/ の変更（事例記録・知見の追加・置き換え・廃止、委員会の議決）"
+      source: "Engine ADR 0024。2026-10-31 オーナー: 委員会（観点別の 4 役）が採用したものを自動でマージ、割れたら人"
     untrusted_input_path:
       ja: "外部入力がシェル実行やエージェントのプロンプトにつながる経路を作る・変える変更"
       match: "Issue 本文・Webhook・PR コメント・利用者入力などの外部入力が、シェルのコマンド・環境変数・エージェントのプロンプトに流れ込む箇所の追加・変更（例: ワーカーのプロンプト組み立て、Webhook 受け口、ワーカーに渡す引数）"
@@ -77,6 +81,7 @@ autonomy:
     irreversible:         { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "運用開始時に human_approve へ" }
     untrusted_input_path: { pr_create: auto, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
     factory_rule:         { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "採用まで自動（2026-10-30 オーナー、Engine ADR 0013）。CI の rule-eval と工場の eval 判定が緑のときだけ。adopted への昇格も条件を満たせば自動、カナリアで自動で shadow に戻し、日報で事後に知らせる" }
+    knowledge:            { pr_create: auto, merge: auto,          deploy_test: forbidden, deploy_prod: forbidden, note: "知見の委員会が採用（adopt・enforce）したときだけ工場がマージする（Engine ADR 0024、supervisor の committee.approved）。割れた・人に回すべきものは委員会が factory:needs-approval を付けて人へ" }
     constitution:         { pr_create: human_approve, merge: human_approve, deploy_test: forbidden, deploy_prod: forbidden }
   # 運用開始 ＝ プロダクトを利用者（合成でない人）に出した時点（2026-10-27 戦略会議 D4）。
   # 工場をサーバー（EC2 など）に移しただけでは発動しない。切り替えは builder が宣言し、この表の変更と同じく承認付き PR で行う

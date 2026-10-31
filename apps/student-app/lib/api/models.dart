@@ -1244,6 +1244,7 @@ class CoachListing {
     required this.reviewCount,
     required this.averageRating,
     required this.publishedLessonMenuCount,
+    this.isFavorite = false,
   });
 
   final String coachId;
@@ -1263,6 +1264,9 @@ class CoachListing {
   /// [sport] の公開中のレッスンメニューの数
   final int publishedLessonMenuCount;
 
+  /// 探した生徒のお気に入り（`addFavoriteCoach`）に入っているか。項目のない応答（足す前のサーバー）は false で読む
+  final bool isFavorite;
+
   factory CoachListing.fromJson(Map<String, dynamic> json) => CoachListing(
     coachId: json['coach_id'] as String,
     displayName: json['display_name'] as String,
@@ -1270,6 +1274,7 @@ class CoachListing {
     reviewCount: json['review_count'] as int,
     averageRating: (json['average_rating'] as num?)?.toDouble(),
     publishedLessonMenuCount: json['published_lesson_menu_count'] as int,
+    isFavorite: json['is_favorite'] as bool? ?? false,
   );
 }
 
@@ -1300,6 +1305,7 @@ class CoachProfile {
     required this.displayName,
     required this.bio,
     required List<Sport> sports,
+    this.isFavorite = false,
   }) : sports = List.unmodifiable(sports);
 
   final String coachId;
@@ -1313,6 +1319,9 @@ class CoachProfile {
   /// 提供するスポーツ（`Sport` の enum の順。ゴルフは載らない）。読み取り専用
   final List<Sport> sports;
 
+  /// 見た生徒のお気に入り（`addFavoriteCoach`）に入っているか。項目のない応答（足す前のサーバー）は false で読む
+  final bool isFavorite;
+
   factory CoachProfile.fromJson(Map<String, dynamic> json) => CoachProfile(
     coachId: json['coach_id'] as String,
     displayName: json['display_name'] as String,
@@ -1321,6 +1330,7 @@ class CoachProfile {
       for (final e in json['sports'] as List<dynamic>)
         Sport.fromWire(e as String),
     ],
+    isFavorite: json['is_favorite'] as bool? ?? false,
   );
 }
 

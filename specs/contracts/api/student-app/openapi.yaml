@@ -90,6 +90,8 @@ paths:
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
         各枠には、結びついたコーチのレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
         メニューのない枠と、結びついたメニューが公開中でなくなった枠は null。
+        任意の `coach_id` でそのコーチの枠だけに絞れる（コーチの紹介の画面から、そのコーチの空き枠を見る）。`sport`・期間
+        （`starts_after` / `starts_before`）・ページング（`limit` / `cursor`）と組み合わせられ、並びとページの分け方は変わらない。
       tags: [scheduling]
       x-context: scheduling
       parameters:
@@ -101,6 +103,9 @@ paths:
         - name: coach_id
           in: query
           required: false
+          description: |
+            あればこのコーチの枠だけに絞る。ほかの絞り込みと組み合わせられる。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID・そのスポーツに公開中の枠がないコーチは、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
           schema:
             type: string
             format: uuid
@@ -684,7 +689,7 @@ paths:
         admin-web の `listCoaches` の形で返す（同じパス。admin-web の契約）。
 
         - 各項目: `coach_id`・表示名・探したスポーツ・評価の件数と平均（数え方と丸めは `getCoachReviewSummary` と同じ）・
-          そのスポーツの公開中のレッスンメニューの数
+          そのスポーツの公開中のレッスンメニューの数・生徒のお気に入り（`addFavoriteCoach`）に入っているか
         - 並べ方: 評価の平均 `average_rating` の高い順。評価のないコーチ（`average_rating` が null）は最後。同じ平均（評価のない
           コーチどうしを含む）は表示名の Unicode のコードポイントの順（言語ごとの照合はしない）、同じ表示名は `coach_id` の順
         - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
@@ -730,6 +735,7 @@ paths:
 
         - `bio`: 書いたとおりの自己紹介文。書いていない（空の）コーチは null
         - `sports`: コーチが提供するスポーツ（student-app の `Sport` の値の順）。ゴルフ（golf-app の範囲）は載せない
+        - `is_favorite`: 生徒のお気に入り（`addFavoriteCoach`）に入っているか
         - `coach_id` がコーチのアカウントでない（生徒・本部のアカウントや、ない ID）ときと、ゴルフだけを提供するコーチは 404
         - `coach_id` が UUID でなければ 404
         - 照会だけで、何も保存しない
@@ -863,6 +869,101 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /favorite-coaches:
+    get:
+      operationId: listFavoriteCoaches
+      summary: お気に入りのコーチの一覧
+      description: |
+        認証した生徒がお気に入りに入れたコーチ（glossary の favorite_coach。`addFavoriteCoach`）を、また開く手がかりとともに返す。
+        生徒の役割のトークンだけが呼べる（本部・コーチは 403）。
+
+        - 各項目: `coach_id`・表示名・提供スポーツ（`getCoachProfile` の `sports` と同じ。ゴルフは載せない）・評価の件数と平均
+          （数え方と丸めは `getCoachReviewSummary` と同じ）・お気に入りに入れた時刻
+        - 並べ方: お気に入りに入れた時刻 `favorited_at` の新しい順。同じ時刻は `coach_id` の順
+        - コーチでなくなった・ゴルフだけを提供するようになったコーチは載せない（お気に入りには残り、`removeFavoriteCoach` で外せる）
+        - ページングはしない。お気に入りがなければ `favorite_coaches` は空の配列
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [matching]
+      x-context: matching
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒のお気に入りのコーチ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteCoachList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /favorite-coaches/{coach_id}:
+    put:
+      operationId: addFavoriteCoach
+      summary: コーチをお気に入りに入れる
+      description: |
+        認証した生徒のお気に入りにコーチ `coach_id` を入れ、入れたあとのお気に入りの一覧（`listFavoriteCoaches` と同じ形・同じ並び）を
+        返す。生徒の役割のトークンだけが呼べる（本部・コーチは 403）。リクエストの本文は要らない。
+
+        - 同じコーチを何度入れても 1 件で、`favorited_at` は最初に入れた時刻のまま（何度呼んでもよい）
+        - `coach_id` がコーチのアカウントでない（生徒・本部のアカウントや、ない ID）ときと、ゴルフだけを提供するコーチ
+          （golf-app の範囲）は 404。`getCoachProfile` が 404 を返すコーチと同じ
+        - `coach_id` が UUID でなければ 404
+        - トークンが示す生徒のアカウントがなければ 401
+        - お気に入りかは `listCoachesForStudent`・`getCoachProfile` の `is_favorite` にも出る
+
+        行動イベントは発火しない。
+      tags: [matching]
+      x-context: matching
+      x-analytics-events: []
+      parameters:
+        - $ref: "#/components/parameters/CoachId"
+      responses:
+        "200":
+          description: 入れたあとの生徒のお気に入りのコーチ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteCoachList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: removeFavoriteCoach
+      summary: コーチをお気に入りから外す
+      description: |
+        認証した生徒のお気に入りからコーチ `coach_id` を外し、外したあとのお気に入りの一覧（`listFavoriteCoaches` と同じ形・
+        同じ並び）を返す。生徒の役割のトークンだけが呼べる（本部・コーチは 403）。リクエストの本文は要らない。
+
+        - 入っていないコーチ（ない ID を含む）を外しても何も変えずに 200（何度呼んでもよい）
+        - `coach_id` が UUID でなければ 404
+
+        行動イベントは発火しない。
+      tags: [matching]
+      x-context: matching
+      x-analytics-events: []
+      parameters:
+        - $ref: "#/components/parameters/CoachId"
+      responses:
+        "200":
+          description: 外したあとの生徒のお気に入りのコーチ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteCoachList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /message-threads:
     get:
@@ -2034,8 +2135,8 @@ components:
       type: object
       description: |
         コーチを探す一覧（`listCoachesForStudent`）の 1 件。表示名は profile、評価の件数と平均は review、メニューの数は catalog の
-        持ち物を読んだもの
-      required: [coach_id, display_name, sport, review_count, average_rating, published_lesson_menu_count]
+        持ち物を読んだもの。お気に入りかは matching の持ち物
+      required: [coach_id, display_name, sport, review_count, average_rating, published_lesson_menu_count, is_favorite]
       properties:
         coach_id:
           type: string
@@ -2058,6 +2159,9 @@ components:
           type: integer
           minimum: 0
           description: '`sport` の公開中のレッスンメニューの数'
+        is_favorite:
+          type: boolean
+          description: 探した生徒のお気に入り（`addFavoriteCoach`）に入っているか（お気に入りは matching の持ち物）
 
     CoachListingList:
       type: object
@@ -2070,8 +2174,8 @@ components:
 
     CoachProfile:
       type: object
-      description: glossary の coach の、生徒に見せる紹介（profile。表示名・自己紹介文・提供スポーツ）
-      required: [coach_id, display_name, bio, sports]
+      description: glossary の coach の、生徒に見せる紹介（profile。表示名・自己紹介文・提供スポーツ）と、見た生徒のお気に入りに入っているか（matching）
+      required: [coach_id, display_name, bio, sports, is_favorite]
       properties:
         coach_id:
           type: string
@@ -2092,6 +2196,53 @@ components:
           description: コーチが提供するスポーツ（`Sport` の enum の順）。ゴルフは載せない
           items:
             $ref: "#/components/schemas/Sport"
+        is_favorite:
+          type: boolean
+          description: 見た生徒のお気に入り（`addFavoriteCoach`）に入っているか
+
+    FavoriteCoach:
+      type: object
+      description: |
+        glossary の favorite_coach（お気に入りのコーチ）の、一覧（`listFavoriteCoaches`）の 1 件。お気に入りは matching、表示名と
+        提供スポーツは profile、評価の件数と平均は review の持ち物を読んだもの
+      required: [coach_id, display_name, sports, review_count, average_rating, favorited_at]
+      properties:
+        coach_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: コーチの表示名
+        sports:
+          type: array
+          minItems: 1
+          description: コーチが提供するスポーツ（`Sport` の enum の順。`CoachProfile.sports` と同じ）。ゴルフは載せない
+          items:
+            $ref: "#/components/schemas/Sport"
+        review_count:
+          type: integer
+          minimum: 0
+          description: 評価の件数（`CoachReviewSummary.review_count` と同じ）
+        average_rating:
+          type: [number, "null"]
+          minimum: 1
+          maximum: 5
+          description: 点（1〜5）の平均（`CoachReviewSummary.average_rating` と同じ）。評価が 0 件なら null
+        favorited_at:
+          type: string
+          format: date-time
+          description: お気に入りに入れた時刻（入れ直しても最初の時刻）
+
+    FavoriteCoachList:
+      type: object
+      required: [favorite_coaches]
+      properties:
+        favorite_coaches:
+          type: array
+          items:
+            $ref: "#/components/schemas/FavoriteCoach"
 
     CoachReviewSummary:
       type: object

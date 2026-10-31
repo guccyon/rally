@@ -171,3 +171,12 @@ terms:
     code: [Video::return_review, VideoReview, VideoStatus::Reviewed, VideoReviewReturned, MessageKind::VideoReviewReturn, returnVideoReview, video_review.returned]
     note: >-
       返した添削そのものは動画添削（video_review）。非同期レッスンの完了したレッスンは、添削を返した動画にだけ記録できる。
+  - id: favorite_coach
+    ja: "お気に入りのコーチ"
+    definition: "生徒が、コーチを探す一覧から毎回探さずにまた開けるように残しておいたコーチで、お気に入りに入れられるのは生徒だけ、入れる相手はコーチだけであり、同じ生徒と同じコーチの組は 1 つ（何度入れても 1 件で、入れた時刻は最初のまま）である。"
+    context: matching
+    code: [FavoriteCoach, matching.favorite_coaches, addFavoriteCoach, removeFavoriteCoach, listFavoriteCoaches, is_favorite]
+    note: >-
+      コーチを探す一覧（listCoachesForStudent）とコーチの紹介（getCoachProfile）にも、その生徒のお気に入りかを is_favorite で添える。
+      student-app はゴルフを扱わないので、ゴルフだけを提供するコーチは入れられない（コーチの紹介と同じく 404）。
+      外すのは何度でもでき、入っていないコーチを外しても何も変わらない。行動イベントは発火しない。

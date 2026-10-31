@@ -16,6 +16,7 @@ mod contract;
 mod entitlement_error;
 mod entitlements;
 mod error;
+mod favorite_coaches;
 mod headquarters_bookings;
 mod lesson_menus;
 mod lesson_stats;
@@ -75,8 +76,9 @@ use application::{
         VideoCallProvider,
     },
     matching::{
-        CoachCandidateLookup, CoachReviewSummaryLookup, ListCoachesForStudent,
-        PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
+        AddFavoriteCoach, CoachCandidateLookup, CoachReviewSummaryLookup, FavoriteCoachRepository,
+        ListCoachesForStudent, ListFavoriteCoaches, PublishedLessonMenuCountLookup,
+        RemoveFavoriteCoach, StudentSportLookup, SuspendedCoachLookup,
     },
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
@@ -87,8 +89,8 @@ use application::{
         NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
     },
     profile::{
-        CoachAcceptanceLookup, GetCoachProfile, ListCoaches, UpdateCoachProfile,
-        UpdateStudentProfile,
+        CoachAcceptanceLookup, CoachFavoriteLookup, GetCoachProfile, ListCoaches,
+        UpdateCoachProfile, UpdateStudentProfile,
     },
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
@@ -449,9 +451,9 @@ where
 ///
 /// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
 /// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
-pub fn coaches_router<R, A, S, C, V, M, U, T>(
+pub fn coaches_router<R, A, S, C, V, M, F, U, T>(
     list_coaches: ListCoaches<R, A>,
-    list_coaches_for_student: ListCoachesForStudent<S, C, V, M, U>,
+    list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
     tokens: T,
 ) -> Router
 where
@@ -461,6 +463,7 @@ where
     C: CoachCandidateLookup + 'static,
     V: CoachReviewSummaryLookup + 'static,
     M: PublishedLessonMenuCountLookup + 'static,
+    F: FavoriteCoachRepository + 'static,
     U: SuspendedCoachLookup + 'static,
     T: TokenVerifier + 'static,
 {
@@ -468,7 +471,7 @@ where
     Router::new()
         .route(
             "/coaches",
-            get(coaches::list_coaches::<R, A, S, C, V, M, U>),
+            get(coaches::list_coaches::<R, A, S, C, V, M, F, U>),
         )
         .route_layer(require_role(&[Role::Headquarters, Role::Student]))
         .with_state(Arc::new(coaches::CoachesState {
@@ -541,20 +544,59 @@ where
 /// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /coaches/{coach_id}` は生徒だけ。
-pub fn coach_profile_router<R, T>(get_coach_profile: GetCoachProfile<R>, tokens: T) -> Router
+pub fn coach_profile_router<R, F, T>(get_coach_profile: GetCoachProfile<R, F>, tokens: T) -> Router
 where
     R: AccountRepository + 'static,
+    F: CoachFavoriteLookup + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
         .route(
             "/coaches/{coach_id}",
-            get(coach_profiles::get_coach_profile::<R>),
+            get(coach_profiles::get_coach_profile::<R, F>),
         )
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(coach_profiles::CoachProfilesState {
             get_coach_profile,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 生徒のお気に入りのコーチ（student-app の `GET /favorite-coaches`・`PUT`・`DELETE /favorite-coaches/{coach_id}`）の
+/// ルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに
+/// `merge` する（同じ検証器を渡す）。
+///
+/// どれも生徒だけ（コーチ・本部は 403）で、扱うのはトークンの生徒自身のお気に入りだけ。
+pub fn favorite_coaches_router<F, R, C, V, T>(
+    add_favorite_coach: AddFavoriteCoach<F, R, C>,
+    remove_favorite_coach: RemoveFavoriteCoach<F>,
+    list_favorite_coaches: ListFavoriteCoaches<F, R, V>,
+    tokens: T,
+) -> Router
+where
+    F: FavoriteCoachRepository + 'static,
+    R: AccountRepository + 'static,
+    C: Clock + 'static,
+    V: CoachReviewSummaryLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/favorite-coaches",
+            get(favorite_coaches::list_favorite_coaches::<F, R, C, V>),
+        )
+        .route(
+            "/favorite-coaches/{coach_id}",
+            put(favorite_coaches::add_favorite_coach::<F, R, C, V>)
+                .delete(favorite_coaches::remove_favorite_coach::<F, R, C, V>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(favorite_coaches::FavoriteCoachesState {
+            add_favorite_coach,
+            remove_favorite_coach,
+            list_favorite_coaches,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }

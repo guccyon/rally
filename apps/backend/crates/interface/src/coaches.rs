@@ -1,7 +1,7 @@
 //! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチをすべて受付の状態を添えて返す。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
-//! 評価の件数と平均と公開中のレッスンメニューの数を添えて返す（ゴルフは golf-app の範囲なので載せない。受付を止めている
-//! コーチも載せない）。
+//! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
+//! 載せない。受付を止めているコーチも載せない）。
 //! 同じパスなので、どちらの形で返すかはトークンの役割で決める。
 
 use std::sync::Arc;
@@ -9,9 +9,9 @@ use std::sync::Arc;
 use application::{
     identity::{AccountRepository, account_id_uuid},
     matching::{
-        CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, ListCoachesForStudent,
-        ListCoachesForStudentCommand, ListCoachesForStudentError, PublishedLessonMenuCountLookup,
-        StudentSportLookup, SuspendedCoachLookup,
+        CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, FavoriteCoachRepository,
+        ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
+        PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
     },
     profile::{CoachAcceptanceLookup, ListCoaches, ListedCoach},
 };
@@ -30,13 +30,13 @@ use crate::{
 };
 
 /// `/coaches` のハンドラーが使うユースケース。
-pub struct CoachesState<R, A, S, C, V, M, U> {
+pub struct CoachesState<R, A, S, C, V, M, F, U> {
     pub list_coaches: ListCoaches<R, A>,
-    pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, U>,
+    pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
 }
 
 /// ハンドラーが共有する [`CoachesState`]。
-type Shared<R, A, S, C, V, M, U> = Arc<CoachesState<R, A, S, C, V, M, U>>;
+type Shared<R, A, S, C, V, M, F, U> = Arc<CoachesState<R, A, S, C, V, M, F, U>>;
 
 /// admin-web の `CoachList`。
 #[derive(Serialize)]
@@ -73,12 +73,14 @@ pub struct CoachListingBody {
     review_count: u32,
     average_rating: Option<f64>,
     published_lesson_menu_count: u32,
+    is_favorite: bool,
 }
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
 /// （役割は `require_role` の層が確かめる。コーチは 403）。
-pub async fn list_coaches<R, A, S, C, V, M, U>(
-    State(state): State<Shared<R, A, S, C, V, M, U>>,
+#[allow(clippy::type_complexity)]
+pub async fn list_coaches<R, A, S, C, V, M, F, U>(
+    State(state): State<Shared<R, A, S, C, V, M, F, U>>,
     account: AuthenticatedAccount,
     params: Result<Query<ListCoachesForStudentParams>, QueryRejection>,
 ) -> Result<Response, ApiError>
@@ -89,6 +91,7 @@ where
     C: CoachCandidateLookup,
     V: CoachReviewSummaryLookup,
     M: PublishedLessonMenuCountLookup,
+    F: FavoriteCoachRepository,
     U: SuspendedCoachLookup,
 {
     match account.role() {
@@ -150,5 +153,6 @@ fn coach_listing_body(listing: &CoachListing) -> CoachListingBody {
         review_count: listing.review_summary.review_count(),
         average_rating: listing.review_summary.average_rating(),
         published_lesson_menu_count: listing.published_lesson_menu_count,
+        is_favorite: listing.is_favorite,
     }
 }

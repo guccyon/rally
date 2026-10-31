@@ -1,5 +1,6 @@
 //! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
-//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。コーチは 403。
+//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。生徒にはその生徒のお気に入りかを
+//! 添える。コーチは 403。
 
 use std::time::SystemTime;
 
@@ -9,7 +10,8 @@ use application::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        InMemoryAccountRepository, InMemoryCoachAcceptanceRepository, InMemoryLessonMenuRepository,
+        InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
+        InMemoryFavoriteCoachRepository, InMemoryLessonMenuRepository,
         InMemoryLessonReviewRepository,
     },
     matching::ListCoachesForStudent,
@@ -29,6 +31,7 @@ use domain::{
     },
     identity::{Account, AccountId, Email, Role},
     lesson::LessonCompletionId,
+    matching::FavoriteCoach,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
     scheduling::CoachAcceptance,
@@ -123,6 +126,7 @@ fn menu(id: u128, coach_id: u128, sport: Sport, is_published: bool) -> LessonMen
     )
 }
 
+/// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。
 fn app(accounts: InMemoryAccountRepository) -> Router {
     app_with(accounts, InMemoryCoachAcceptanceRepository::default())
 }
@@ -152,6 +156,18 @@ fn app_with(
             ProfileCoachCandidateLookup::new(accounts),
             ReviewCoachReviewSummaryLookup::new(reviews),
             CatalogPublishedLessonMenuCountLookup::new(menus),
+            InMemoryFavoriteCoachRepository::with_favorites([
+                FavoriteCoach::restore(
+                    AccountId::from_u128(3),
+                    AccountId::from_u128(4),
+                    SystemTime::UNIX_EPOCH,
+                ),
+                FavoriteCoach::restore(
+                    AccountId::from_u128(6),
+                    AccountId::from_u128(2),
+                    SystemTime::UNIX_EPOCH,
+                ),
+            ]),
             acceptances,
         ),
         FakeTokens,
@@ -281,6 +297,7 @@ async fn student_lists_coaches_of_own_sport_by_average_rating() {
                     "review_count": 1,
                     "average_rating": 5.0,
                     "published_lesson_menu_count": 0,
+                    "is_favorite": true,
                 },
                 {
                     "coach_id": "00000000-0000-0000-0000-000000000002",
@@ -289,10 +306,11 @@ async fn student_lists_coaches_of_own_sport_by_average_rating() {
                     "review_count": 2,
                     "average_rating": 3.5,
                     "published_lesson_menu_count": 1,
+                    "is_favorite": false,
                 },
             ],
         }),
-        "生徒のスポーツ（テニス）を提供するコーチだけ。非公開のメニューは数えない"
+        "生徒のスポーツ（テニス）を提供するコーチだけ。非公開のメニューは数えない。お気に入りはその生徒の分だけ"
     );
 }
 
@@ -311,6 +329,7 @@ async fn student_filters_by_sport() {
                 "review_count": 1,
                 "average_rating": 2.0,
                 "published_lesson_menu_count": 1,
+                "is_favorite": false,
             }],
         }),
         "ゴルフのメニューは数えない"
