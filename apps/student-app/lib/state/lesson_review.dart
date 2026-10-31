@@ -54,30 +54,34 @@ class LessonReviewNotifier extends Notifier<LessonReviewState> {
 
   StudentApi get _api => ref.read(studentApiProvider);
 
-  /// `submitLessonReview`。評価するのは完了を記録したレッスン（[StudentFlowState.lesson]）。評価は完了したレッスン 1 件につき
+  /// `submitLessonReview`。評価するのは [lessonId] の完了したレッスン（受けたレッスンの行から来たとき）で、渡さなければ
+  /// 一周シナリオで完了を記録したレッスン（[StudentFlowState.lesson]）。評価は完了したレッスン 1 件につき
   /// 1 回なので、送れたときも 409 `lesson_already_reviewed` が返ったときも評価済みにする（以後は入力させない）。
-  Future<void> submitReview({required int rating, required String comment}) =>
-      ref.read(studentFlowProvider.notifier).run(() async {
-        final lessonId = ref.read(studentFlowProvider).lesson!.lessonId;
-        try {
-          final review = await _api.submitLessonReview(
-            SubmitLessonReviewRequest(
-              lessonId: lessonId,
-              rating: rating,
-              comment: comment,
-            ),
-          );
-          state = state.copyWith(
-            lessonReview: review,
-            reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
-          );
-        } on StudentApiException catch (e) {
-          if (e.error?.code == ErrorCode.lessonAlreadyReviewed) {
-            state = state.copyWith(
-              reviewedLessonIds: {...state.reviewedLessonIds, lessonId},
-            );
-          }
-          rethrow;
-        }
-      });
+  Future<void> submitReview({
+    required int rating,
+    required String comment,
+    String? lessonId,
+  }) => ref.read(studentFlowProvider.notifier).run(() async {
+    final targetId = lessonId ?? ref.read(studentFlowProvider).lesson!.lessonId;
+    try {
+      final review = await _api.submitLessonReview(
+        SubmitLessonReviewRequest(
+          lessonId: targetId,
+          rating: rating,
+          comment: comment,
+        ),
+      );
+      state = state.copyWith(
+        lessonReview: review,
+        reviewedLessonIds: {...state.reviewedLessonIds, targetId},
+      );
+    } on StudentApiException catch (e) {
+      if (e.error?.code == ErrorCode.lessonAlreadyReviewed) {
+        state = state.copyWith(
+          reviewedLessonIds: {...state.reviewedLessonIds, targetId},
+        );
+      }
+      rethrow;
+    }
+  });
 }

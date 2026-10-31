@@ -1022,6 +1022,98 @@ class Lesson {
   );
 }
 
+/// `MyLessonCompletion`（生徒が受けたレッスンの一覧の 1 件。完了したレッスン（glossary の lesson_completion）と、
+/// そのコーチの表示名・レッスンメニューの写し・評価を付けたか）
+class MyLessonCompletion {
+  const MyLessonCompletion({
+    required this.lessonId,
+    required this.coachId,
+    required this.lessonType,
+    required this.completedAt,
+    required this.isReviewed,
+    this.coachDisplayName,
+    this.sessionId,
+    this.videoId,
+    this.lessonMenu,
+  });
+
+  /// 完了したレッスン（`Lesson.lessonId`。評価の `submitLessonReview` に渡す）
+  final String lessonId;
+
+  /// レッスンのコーチ
+  final String coachId;
+
+  /// コーチの表示名。コーチのアカウントが引けないときは null
+  final String? coachDisplayName;
+  final LessonType lessonType;
+
+  /// 同期レッスンの通話セッション（非同期なら null）
+  final String? sessionId;
+
+  /// 非同期レッスンの動画（同期なら null）
+  final String? videoId;
+
+  /// 完了を記録した時刻
+  final DateTime completedAt;
+
+  /// レッスンの元（同期は予約、非同期は動画）が持つレッスンメニューの写し。元にメニューがなければ null
+  final LessonCompletionMenu? lessonMenu;
+
+  /// 本人がこの完了したレッスンに評価を付けたか
+  final bool isReviewed;
+
+  factory MyLessonCompletion.fromJson(Map<String, dynamic> json) =>
+      MyLessonCompletion(
+        lessonId: json['lesson_id'] as String,
+        coachId: json['coach_id'] as String,
+        coachDisplayName: json['coach_display_name'] as String?,
+        lessonType: LessonType.fromWire(json['lesson_type'] as String),
+        sessionId: json['session_id'] as String?,
+        videoId: json['video_id'] as String?,
+        completedAt: _dateTime(json['completed_at']),
+        lessonMenu: json['lesson_menu'] == null
+            ? null
+            : LessonCompletionMenu.fromJson(
+                json['lesson_menu'] as Map<String, dynamic>,
+              ),
+        isReviewed: json['is_reviewed'] as bool,
+      );
+}
+
+/// `LessonCompletionMenu`（完了したレッスンのレッスンメニューの ID・名前。メニューの今の中身ではなくレッスンの元が持つ写し）
+class LessonCompletionMenu {
+  const LessonCompletionMenu({required this.lessonMenuId, required this.name});
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  factory LessonCompletionMenu.fromJson(Map<String, dynamic> json) =>
+      LessonCompletionMenu(
+        lessonMenuId: json['lesson_menu_id'] as String,
+        name: json['name'] as String,
+      );
+}
+
+/// `MyLessonCompletionList`
+class MyLessonCompletionList {
+  /// [lessonCompletions] は書き換えられない写しにして持つ
+  MyLessonCompletionList({required List<MyLessonCompletion> lessonCompletions})
+    : lessonCompletions = List.unmodifiable(lessonCompletions);
+
+  /// 完了した時刻の新しい順（同じ時刻は `lesson_id` の順）。通話も動画添削も含む
+  final List<MyLessonCompletion> lessonCompletions;
+
+  factory MyLessonCompletionList.fromJson(Map<String, dynamic> json) =>
+      MyLessonCompletionList(
+        lessonCompletions: [
+          for (final e in json['lesson_completions'] as List<dynamic>)
+            MyLessonCompletion.fromJson(e as Map<String, dynamic>),
+        ],
+      );
+}
+
 /// `RecordLessonCompletionRequest`（`LiveLessonCompletion` / `AsyncLessonCompletion` の oneOf）
 sealed class RecordLessonCompletionRequest {
   const RecordLessonCompletionRequest();

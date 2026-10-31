@@ -47,6 +47,9 @@ abstract interface class StudentApi {
   /// `recordLessonCompletion`（POST /lessons/completions）
   Future<Lesson> recordLessonCompletion(RecordLessonCompletionRequest body);
 
+  /// `listMyLessonCompletions`（GET /lessons/completions/me）。通話も動画添削も含み、完了した時刻の新しい順
+  Future<MyLessonCompletionList> listMyLessonCompletions();
+
   /// `submitLessonReview`（POST /lesson-reviews）。2 回目は 409 `lesson_already_reviewed`
   Future<LessonReview> submitLessonReview(SubmitLessonReviewRequest body);
 

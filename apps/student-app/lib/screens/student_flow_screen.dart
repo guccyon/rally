@@ -7,6 +7,7 @@ import 'coach_profile_screen.dart';
 import 'coach_search_screen.dart';
 import 'home_screen.dart';
 import 'lesson_completion_screen.dart';
+import 'lesson_completions_screen.dart';
 import 'lesson_review_screen.dart';
 import 'live_lesson_screen.dart';
 import 'message_threads_screen.dart';
@@ -50,6 +51,8 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.myBookings => const MyBookingsScreen(),
       FlowStep.myVideos => const MyVideosScreen(),
       FlowStep.myVideoReview => const VideoReviewScreen(),
+      FlowStep.lessonCompletions => const LessonCompletionsScreen(),
+      FlowStep.lessonCompletionReview => const LessonReviewScreen(),
     };
   }
 }

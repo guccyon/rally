@@ -23,6 +23,7 @@ class FakeStudentApi implements StudentApi {
     List<CoachListing>? coachListings,
     this.lessonMenus = const {},
     this.videoReviews = const {},
+    List<MyLessonCompletion>? lessonCompletions,
     this.bookingLessonMenu,
     this.failures = const {},
     Student? student,
@@ -30,6 +31,9 @@ class FakeStudentApi implements StudentApi {
        slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
        myVideos = List.of(myVideos ?? Fixtures.myVideos),
+       lessonCompletions = List.of(
+         lessonCompletions ?? Fixtures.lessonCompletions,
+       ),
        _reviews = reviews ?? [Fixtures.reviewReturned],
        threads = List.of(threads ?? [Fixtures.thread]),
        messages = List.of(messages ?? Fixtures.messages),
@@ -69,6 +73,12 @@ class FakeStudentApi implements StudentApi {
 
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
+
+  /// 受けたレッスン（`listMyLessonCompletions` が並びのまま返す）
+  final List<MyLessonCompletion> lessonCompletions;
+
+  /// 入れておくと、`listMyLessonCompletions` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? lessonCompletionsGate;
 
   /// 受講権（`getMyEntitlement` が返す。null なら月額契約の前として 404 `not_found`。`startSubscription` で開始の応答のものになる）
   Entitlement? entitlement;
@@ -241,6 +251,15 @@ class FakeStudentApi implements StudentApi {
         return videoReviews[videoId] ??
             (_reviews.length > 1 ? _reviews.removeAt(0) : _reviews.first);
       }, videoId);
+
+  @override
+  Future<MyLessonCompletionList> listMyLessonCompletions() async {
+    await lessonCompletionsGate?.future;
+    return _answer(
+      'listMyLessonCompletions',
+      () => MyLessonCompletionList(lessonCompletions: [...lessonCompletions]),
+    );
+  }
 
   @override
   Future<Lesson> recordLessonCompletion(RecordLessonCompletionRequest body) =>
@@ -926,6 +945,58 @@ abstract final class Fixtures {
     isFirstLesson: true,
     completedAt: now,
   );
+
+  static MyLessonCompletion lessonCompletion({
+    required String lessonId,
+    required LessonType lessonType,
+    required Duration completedAgo,
+    String? coachDisplayName = '佐藤',
+    String? videoId,
+    LessonCompletionMenu? lessonMenu,
+    bool isReviewed = false,
+  }) => MyLessonCompletion(
+    lessonId: lessonId,
+    coachId: coachId,
+    coachDisplayName: coachDisplayName,
+    lessonType: lessonType,
+    sessionId: lessonType == LessonType.liveLesson ? sessionId : null,
+    videoId: lessonType == LessonType.asyncLesson ? videoId : null,
+    completedAt: now.subtract(completedAgo),
+    lessonMenu: lessonMenu,
+    isReviewed: isReviewed,
+  );
+
+  /// 1 時間前（動画添削・コーチ鈴木・メニューあり・未評価）・1 日前（通話・コーチ佐藤・メニューあり・評価済み）・
+  /// 3 日前（通話・コーチの名前なし・メニューなし・未評価）の 3 件（完了した時刻の新しい順）
+  static final lessonCompletions = [
+    lessonCompletion(
+      lessonId: 'lesson-async',
+      lessonType: LessonType.asyncLesson,
+      completedAgo: const Duration(hours: 1),
+      coachDisplayName: '鈴木',
+      videoId: 'video-returned',
+      lessonMenu: const LessonCompletionMenu(
+        lessonMenuId: 'menu-serve',
+        name: 'サーブの動画添削',
+      ),
+    ),
+    lessonCompletion(
+      lessonId: 'lesson-live-reviewed',
+      lessonType: LessonType.liveLesson,
+      completedAgo: const Duration(days: 1),
+      lessonMenu: const LessonCompletionMenu(
+        lessonMenuId: 'menu-forehand',
+        name: 'フォアハンドの基礎',
+      ),
+      isReviewed: true,
+    ),
+    lessonCompletion(
+      lessonId: 'lesson-live',
+      lessonType: LessonType.liveLesson,
+      completedAgo: const Duration(days: 3),
+      coachDisplayName: null,
+    ),
+  ];
 
   /// サーバーが返す契約プランの一覧（不変条件 1。standard 2 回・plus 4 回）
   static const subscriptionPlans = [

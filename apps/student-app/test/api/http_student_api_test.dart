@@ -259,6 +259,26 @@ void main() {
     expect(myVideos.videos.single.coachDisplayName, '佐藤');
     expect(myVideos.videos.single.lessonMenu?.name, 'サーブの動画添削');
 
+    final completions = await apiReplying(200, {
+      'lesson_completions': [
+        {
+          'lesson_id': 'l1',
+          'coach_id': 'c1',
+          'coach_display_name': '佐藤',
+          'lesson_type': 'live_lesson',
+          'session_id': 'ls1',
+          'video_id': null,
+          'completed_at': '2026-10-28T03:30:00Z',
+          'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'フォアハンドの基礎'},
+          'is_reviewed': false,
+        },
+      ],
+    }).listMyLessonCompletions();
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/lessons/completions/me');
+    expect(completions.lessonCompletions.single.lessonId, 'l1');
+    expect(completions.lessonCompletions.single.lessonMenu?.name, 'フォアハンドの基礎');
+
     final review = {
       'review_id': null,
       'video_id': 'v1',
