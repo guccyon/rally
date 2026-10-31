@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
@@ -52,6 +54,59 @@ void main() {
 
     expect(api.requests.whereType<Sport>().last, Sport.soccer);
     expect(find.text('予約できるスロットはありません。'), findsOneWidget);
+  });
+
+  testWidgets('検索の読み込みの間は読み込み中の旨を出し、前のスポーツの結果を出さない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+    await tapText(tester, 'テニス');
+    final gate = Completer<void>();
+    api.slotsGate = gate;
+
+    await tester.tap(find.text('サッカー'));
+    await tester.pump();
+
+    expect(find.text('予約できるスロットを読み込んでいます…'), findsOneWidget);
+    expect(find.text('体験予約する'), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('予約できるスロットを読み込んでいます…'), findsNothing);
+    expect(find.text('予約できるスロットはありません。'), findsOneWidget);
+  });
+
+  testWidgets('検索を読めなければその旨と読み直しのボタンを出し、同じスポーツで読み直せる', (tester) async {
+    final failures = {'searchSlots': Fixtures.unreachable};
+    final api = FakeStudentApi(failures: failures);
+    final container = await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    expect(find.text('予約できるスロットを読み込めませんでした。'), findsOneWidget);
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+    // コーチで絞っていなければ見出しは出さない
+    expect(find.text('絞り込みを外す'), findsNothing);
+
+    failures.clear();
+    await tapText(tester, 'もう一度読み込む');
+
+    expect(api.requests.whereType<Sport>().toList(), [
+      Sport.tennis,
+      Sport.tennis,
+    ]);
+    expect(api.slotSearchCoachIds, isEmpty);
+    expect(find.text('予約できるスロットを読み込めませんでした。'), findsNothing);
+    expect(find.text('体験予約する'), findsOneWidget);
   });
 
   testWidgets('水泳で絞って検索すると水泳のスロットを出し、体験予約できる', (tester) async {

@@ -98,6 +98,9 @@ class FakeStudentApi implements StudentApi {
   /// `searchSlots` をコーチで絞って呼んだときの、絞ったコーチの ID（呼んだ順）
   final List<String> slotSearchCoachIds = [];
 
+  /// 入れておくと、`searchSlots` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? slotsGate;
+
   /// 生徒のスポーツのコーチ（`listCoachesForStudent` が並びのまま返す）
   final List<CoachListing> coachListings;
 
@@ -155,9 +158,10 @@ class FakeStudentApi implements StudentApi {
     required Sport sport,
     String? coachId,
     String? cursor,
-  }) {
+  }) async {
     // コーチで絞ったときは、絞ったコーチの ID も残す（スポーツは今までどおり [requests] に Sport で残す）
     if (coachId != null) slotSearchCoachIds.add(coachId);
+    await slotsGate?.future;
     return _answer(
       'searchSlots',
       () => SlotPage(
