@@ -13,8 +13,8 @@ use application::{
         GetVideoReview, ListCoachVideos, ReturnVideoReview, SubmitVideo, VideoRepository,
     },
     catalog::{
-        CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus, ListMyLessonMenus,
-        UpdateLessonMenu,
+        CatalogLessonMenuLookup, CreateLessonMenu, LessonMenuRepository, ListCoachLessonMenus,
+        ListMyLessonMenus, UpdateLessonMenu,
     },
     clock::{Clock, SystemClock},
     entitlement::{
@@ -297,7 +297,7 @@ where
         CreateLessonMenu::new(lesson_menus.clone(), accounts.clone(), clock.clone()),
         UpdateLessonMenu::new(lesson_menus.clone(), accounts.clone()),
         ListMyLessonMenus::new(lesson_menus.clone()),
-        ListCoachLessonMenus::new(lesson_menus),
+        ListCoachLessonMenus::new(lesson_menus.clone()),
         MockTokenService,
     );
     let events = InMemoryDomainEventBus::new((
@@ -312,9 +312,15 @@ where
         ListCoaches::new(accounts.clone()),
         GetAccount::new(accounts.clone()),
         UpdateCoachProfile::new(accounts.clone()),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+        PublishSlot::new(
+            slots.clone(),
+            CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock.clone(),
+        ),
         SearchSlots::new(
             slots.clone(),
+            CatalogLessonMenuLookup::new(lesson_menus.clone()),
             ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock.clone(),
         ),
@@ -341,7 +347,11 @@ where
             bookings.clone(),
             ProfileStudentDisplayNameLookup::new(accounts.clone()),
         ),
-        ListCoachSlots::new(slots, bookings.clone()),
+        ListCoachSlots::new(
+            slots,
+            CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            bookings.clone(),
+        ),
         StartSubscription::new(
             entitlements.clone(),
             analytics.clone(),

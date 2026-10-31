@@ -149,11 +149,14 @@ void main() {
       'remaining_seats',
       'coach_display_name',
       'coach_bio',
+      // 枠に結びついたレッスンメニュー（#249）。Slot.fromJson で読むのは #251
+      'lesson_menu',
     ]);
     final required = ((schemas['Slot'] as YamlMap)['required'] as YamlList)
         .cast<String>();
     expect(required, isNot(contains('coach_display_name')));
     expect(required, isNot(contains('coach_bio')));
+    expect(required, isNot(contains('lesson_menu')));
   });
 
   String refOf(YamlMap node) => node[r'$ref'] as String;

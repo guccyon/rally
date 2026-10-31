@@ -207,9 +207,19 @@ fn app() -> App {
         application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock.clone()),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
+            analytics.clone(),
+            clock.clone(),
+        ),
         SearchSlots::new(
             slots,
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -244,6 +254,9 @@ fn app() -> App {
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(
+                application::in_memory::InMemoryLessonMenuRepository::default(),
+            ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         ),
         StartSubscription::new(

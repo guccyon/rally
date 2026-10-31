@@ -1,27 +1,34 @@
 use std::collections::BTreeSet;
 
-use domain::{identity::AccountId, scheduling::SlotId};
+use domain::{catalog::LessonMenuId, identity::AccountId, scheduling::SlotId};
 
-use super::{BookingRepository, CoachSlotList, SlotRepository};
+use super::{BookingRepository, CoachSlotList, LessonMenuLookup, SlotRepository};
 use crate::Unavailable;
 
 /// コーチの自分の枠の一覧のユースケース（admin-web の `listMyCoachSlots`。コーチだけが呼ぶ）。
 ///
 /// コーチ `coach_id` の枠を、状態を問わず（終わった枠も含めて）読み、開始時刻の古い順に並べる（同じ開始時刻は枠の ID の
 /// 順）。それぞれの枠に有効な予約（[`domain::scheduling::BookingStatus::is_active`]。未確定か確定）が入っているかを、
-/// コーチの枠への予約（[`BookingRepository::bookings_of_coach`]）から添える。読むだけで何も変えない。
-pub struct ListCoachSlots<S, B> {
+/// コーチの枠への予約（[`BookingRepository::bookings_of_coach`]）から添える。枠に結びついたレッスンメニュー（名前と時間）は
+/// catalog に問い合わせて（[`LessonMenuLookup`]）、公開中かを問わずに添える。読むだけで何も変えない。
+pub struct ListCoachSlots<S, M, B> {
     slots: S,
+    lesson_menus: M,
     bookings: B,
 }
 
-impl<S, B> ListCoachSlots<S, B>
+impl<S, M, B> ListCoachSlots<S, M, B>
 where
     S: SlotRepository,
+    M: LessonMenuLookup,
     B: BookingRepository,
 {
-    pub fn new(slots: S, bookings: B) -> Self {
-        Self { slots, bookings }
+    pub fn new(slots: S, lesson_menus: M, bookings: B) -> Self {
+        Self {
+            slots,
+            lesson_menus,
+            bookings,
+        }
     }
 
     pub async fn execute(&self, coach_id: AccountId) -> Result<CoachSlotList, Unavailable> {
@@ -35,6 +42,17 @@ where
             .filter(|(booking, _)| booking.status().is_active())
             .map(|(booking, _)| booking.slot_id())
             .collect();
+        let lesson_menu_ids: BTreeSet<LessonMenuId> = slots
+            .iter()
+            .filter_map(|slot| slot.lesson_menu_id())
+            .collect();
+        let lesson_menus = if lesson_menu_ids.is_empty() {
+            Default::default()
+        } else {
+            self.lesson_menus
+                .find_lesson_menus(&lesson_menu_ids)
+                .await?
+        };
         Ok(CoachSlotList {
             items: slots
                 .into_iter()
@@ -43,13 +61,17 @@ where
                     (slot, has_active_booking)
                 })
                 .collect(),
+            lesson_menus,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime};
+    use std::{
+        collections::BTreeMap,
+        time::{Duration, SystemTime},
+    };
 
     use domain::{
         identity::Sport,
@@ -57,7 +79,16 @@ mod tests {
     };
 
     use super::*;
-    use crate::in_memory::{InMemoryBookingRepository, InMemorySlotRepository};
+    use crate::{
+        catalog::CatalogLessonMenuLookup,
+        in_memory::{
+            InMemoryBookingRepository, InMemoryLessonMenuRepository, InMemorySlotRepository,
+        },
+    };
+
+    fn no_menus() -> CatalogLessonMenuLookup<InMemoryLessonMenuRepository> {
+        CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default())
+    }
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const OTHER_STUDENT: AccountId = AccountId::from_u128(2);
@@ -132,7 +163,7 @@ mod tests {
         // 別のコーチの枠は出ない
         book(&bookings, STUDENT, 9).await;
 
-        let list = ListCoachSlots::new(slots, bookings)
+        let list = ListCoachSlots::new(slots, no_menus(), bookings)
             .execute(COACH)
             .await
             .unwrap();
@@ -149,6 +180,65 @@ mod tests {
         );
         assert!(list.items.iter().all(|(slot, _)| slot.coach_id() == COACH));
         assert_eq!(list.items[3].0.status(), SlotStatus::Booked);
+        assert!(list.lesson_menus.is_empty());
+    }
+
+    #[tokio::test]
+    async fn adds_the_lesson_menus_bound_to_the_slots_whether_published_or_not() {
+        use domain::catalog::{
+            LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+            LessonMenuName,
+        };
+
+        let menu = |id: u128, is_published| {
+            LessonMenu::restore(
+                LessonMenuId::from_u128(id),
+                COACH,
+                LessonMenuContent {
+                    sport: Sport::Tennis,
+                    format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+                    name: LessonMenuName::new("フォア改善").unwrap(),
+                    description: LessonMenuDescription::default(),
+                },
+                is_published,
+                at(0),
+            )
+        };
+        let bound = |id, hour, menu: u128| {
+            slot(id, COACH, hour, SlotStatus::Open)
+                .with_restored_lesson_menu(Some(LessonMenuId::from_u128(menu)))
+        };
+        let slots = InMemorySlotRepository::with_slots([
+            bound(1, 10, 50),
+            bound(2, 11, 51),
+            bound(3, 12, 52),
+            slot(4, COACH, 13, SlotStatus::Open),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots.clone());
+        let menus = CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::with_menus([
+            menu(50, true),
+            menu(51, false),
+            menu(53, true),
+        ]));
+        let list = ListCoachSlots::new(slots, menus, bookings)
+            .execute(COACH)
+            .await
+            .unwrap();
+        assert_eq!(
+            list.items
+                .iter()
+                .map(|(slot, _)| slot.lesson_menu_id().map(LessonMenuId::as_u128))
+                .collect::<Vec<_>>(),
+            [Some(50), Some(51), Some(52), None]
+        );
+        assert_eq!(
+            list.lesson_menus,
+            BTreeMap::from([
+                (LessonMenuId::from_u128(50), menu(50, true)),
+                (LessonMenuId::from_u128(51), menu(51, false)),
+            ]),
+            "非公開のメニューも含め、ない（52）・結びついていない（53）メニューは含めない"
+        );
     }
 
     #[tokio::test]
@@ -156,7 +246,7 @@ mod tests {
         let slots =
             InMemorySlotRepository::with_slots([slot(1, OTHER_COACH, 10, SlotStatus::Open)]);
         let bookings = InMemoryBookingRepository::new(slots.clone());
-        let list = ListCoachSlots::new(slots, bookings)
+        let list = ListCoachSlots::new(slots, no_menus(), bookings)
             .execute(COACH)
             .await
             .unwrap();

@@ -1,5 +1,6 @@
 //! `/slots` の統合テスト。`POST /slots`（admin-web の `publishSlot`）と `GET /slots`（student-app の
-//! `searchSlots`）のレスポンスの形を、それぞれの OpenAPI のスキーマで検査する。
+//! `searchSlots`）のレスポンスの形を、それぞれの OpenAPI のスキーマで検査する。枠に結びつけるレッスンメニュー
+//! （`lesson_menu_id`）の 422 と、検索の枠に添えるメニュー（`lesson_menu`）も確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -83,6 +84,8 @@ struct App {
     analytics: RecordingAnalyticsSink,
     /// `GET /slots` がコーチの紹介を引くアカウントの保存先
     accounts: InMemoryAccountRepository,
+    /// `POST /slots` と `GET /slots` が枠に結びついたレッスンメニューを引く保存先
+    lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
 }
 
 fn app() -> App {
@@ -91,6 +94,7 @@ fn app() -> App {
     let accounts = InMemoryAccountRepository::default();
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
+    let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -100,9 +104,15 @@ fn app() -> App {
         application::profile::ListCoaches::new(InMemoryAccountRepository::default()),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
-        PublishSlot::new(slots.clone(), analytics.clone(), clock),
+        PublishSlot::new(
+            slots.clone(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            analytics.clone(),
+            clock,
+        ),
         SearchSlots::new(
             slots,
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock,
         ),
@@ -138,6 +148,7 @@ fn app() -> App {
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
+            application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         ),
         StartSubscription::new(
@@ -237,6 +248,7 @@ fn app() -> App {
         router,
         analytics,
         accounts,
+        lesson_menus,
     }
 }
 
@@ -351,6 +363,136 @@ async fn coach_publishes_a_slot_with_the_admin_web_contract_shape() {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_527_200)
     );
     assert_eq!(*occurred_at, SystemTime::UNIX_EPOCH + NOW);
+}
+
+/// メニュー `id`（2026-11-01 に作った名前「フォア改善」のメニュー）を `app` の保存先に入れる。
+async fn add_menu(
+    app: &App,
+    id: u128,
+    coach: &str,
+    sport: Sport,
+    format: domain::catalog::LessonFormat,
+    is_published: bool,
+) -> String {
+    use application::catalog::{LessonMenuRepository, lesson_menu_id_uuid};
+    use domain::catalog::{
+        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
+    };
+
+    let coach = AccountId::from_u128(coach.split_once(':').unwrap().1.parse().unwrap());
+    let id = LessonMenuId::from_u128(id);
+    app.lesson_menus
+        .insert(LessonMenu::restore(
+            id,
+            coach,
+            LessonMenuContent {
+                sport,
+                format,
+                name: LessonMenuName::new("フォア改善").unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            is_published,
+            SystemTime::UNIX_EPOCH + NOW,
+        ))
+        .await
+        .unwrap();
+    lesson_menu_id_uuid::format(id)
+}
+
+fn live(minutes: i64) -> domain::catalog::LessonFormat {
+    domain::catalog::LessonFormat::Live(
+        domain::catalog::LessonDuration::from_minutes(minutes).unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn coach_publishes_a_slot_bound_to_a_lesson_menu_and_the_search_carries_it() {
+    let app = app();
+    let menu_id = add_menu(&app, 50, COACH_A, Sport::Tennis, live(60), true).await;
+    let mut request = slot("tennis", &nov1(10), &nov1(11));
+    request["lesson_menu_id"] = json!(menu_id);
+
+    let (status, body) = post_slots(&app.router, Some(COACH_A), request).await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_admin_web(status, &body);
+    assert!(
+        body.get("lesson_menu").is_none(),
+        "公開の応答には載せない: {body}"
+    );
+    assert_eq!(app.analytics.events().len(), 1);
+    let bound = body["slot_id"].as_str().unwrap().to_string();
+    let plain = publish(&app.router, COACH_A, "tennis", 12).await;
+
+    let (status, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_student_app(status, &body);
+    assert_eq!(item_ids(&body), [bound, plain]);
+    assert_eq!(
+        body["items"][0]["lesson_menu"],
+        json!({
+            "lesson_menu_id": menu_id,
+            "name": "フォア改善",
+            "duration_minutes": 60,
+        })
+    );
+    assert_eq!(
+        body["items"][1]["lesson_menu"],
+        Value::Null,
+        "メニューのない枠は null"
+    );
+}
+
+#[tokio::test]
+async fn lesson_menu_that_does_not_fit_the_slot_is_422_validation_failed() {
+    let app = app();
+    let other_coach = add_menu(&app, 50, COACH_B, Sport::Tennis, live(60), true).await;
+    let unpublished = add_menu(&app, 51, COACH_A, Sport::Tennis, live(60), false).await;
+    let async_menu = add_menu(
+        &app,
+        52,
+        COACH_A,
+        Sport::Tennis,
+        domain::catalog::LessonFormat::Async,
+        true,
+    )
+    .await;
+    let soccer = add_menu(&app, 53, COACH_A, Sport::Soccer, live(60), true).await;
+    let ninety = add_menu(&app, 54, COACH_A, Sport::Tennis, live(90), true).await;
+    let cases = [
+        (other_coach, "自分のレッスンメニューだけ"),
+        (unpublished, "公開中でないレッスンメニュー"),
+        (async_menu, "非同期レッスンのメニュー"),
+        (
+            soccer,
+            "レッスンメニューのスポーツ（soccer）が枠のスポーツ（tennis）と違う",
+        ),
+        (ninety, "1 回の時間（90 分）と違う"),
+        (
+            "00000000-0000-0000-0000-000000000063".to_string(),
+            "指定したレッスンメニューがない",
+        ),
+        ("not-a-uuid".to_string(), "lesson_menu_id が UUID でない"),
+    ];
+    for (menu_id, message) in cases {
+        let mut request = slot("tennis", &nov1(10), &nov1(11));
+        request["lesson_menu_id"] = json!(menu_id);
+        let (status, body) = post_slots(&app.router, Some(COACH_A), request).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{menu_id}: {body}"
+        );
+        assert_admin_web(status, &body);
+        assert_eq!(body["code"], "validation_failed");
+        assert!(
+            body["message"].as_str().unwrap().contains(message),
+            "{menu_id}: {body}"
+        );
+    }
+    assert!(app.analytics.events().is_empty(), "拒否では発火しない");
+    let (_, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+    assert!(item_ids(&body).is_empty(), "拒否した枠は保存しない");
 }
 
 #[tokio::test]

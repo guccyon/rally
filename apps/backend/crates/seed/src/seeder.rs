@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use application::{
     analytics::AnalyticsSink,
     async_lesson::{ReturnVideoReview, ReturnVideoReviewCommand, SubmitVideo, SubmitVideoCommand},
+    catalog::CatalogLessonMenuLookup,
     entitlement::{
         EntitlementQuotaGate, EntitlementReviewGate, LiveLessonQuotaSubscriber, StartSubscription,
         StartSubscriptionCommand,
@@ -30,8 +31,8 @@ use domain::{
 use infra::{
     InMemoryDomainEventBus, MockAiFeedbackGenerator, MockVideoCallProvider, MockVideoStorage,
     PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
-    PgLessonCompletionRepository, PgLiveLessonSessionRepository, PgSlotRepository,
-    PgVideoRepository,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgLiveLessonSessionRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -94,6 +95,7 @@ where
         );
         let publish = PublishSlot::new(
             PgSlotRepository::new(pool.clone()),
+            CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
             analytics.clone(),
             clock.clone(),
         );
@@ -181,6 +183,8 @@ where
                     ends_at: slot.ends_at,
                     // 合成シードの枠はマンツーマン（定員 1）
                     capacity: SlotCapacity::default(),
+                    // 合成シードの枠はレッスンメニューに結びつけない
+                    lesson_menu_id: None,
                 })
                 .await
                 .map_err(|e| failed(&format!("コーチ {}", slot.coach + 1), "枠の公開", e))?;

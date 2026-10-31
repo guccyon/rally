@@ -63,8 +63,8 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate,
-        SearchSlots, SlotRepository, StudentDisplayNameLookup,
+        GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
+        PublishSlot, QuotaGate, SearchSlots, SlotRepository, StudentDisplayNameLookup,
     },
 };
 use axum::{
@@ -99,20 +99,20 @@ pub use error::ApiError;
 /// 自己紹介文の変更）はコーチだけ。
 /// `/notification-settings/me`（student-app の自分の通知の受け取り設定の照会・変更）は生徒だけ。
 #[allow(clippy::too_many_arguments)]
-pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z, A, P, C, T>(
+pub fn router_with<R, S, J, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z, A, P, C, T>(
     register_account: RegisterAccount<R, A, C>,
     list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
     update_coach_profile: UpdateCoachProfile<R>,
-    publish_slot: PublishSlot<S, A, C>,
-    search_slots: SearchSlots<S, I, C>,
+    publish_slot: PublishSlot<S, J, A, C>,
+    search_slots: SearchSlots<S, J, I, C>,
     create_booking: CreateBooking<B, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     get_slot_supply: GetSlotSupply<B, C>,
     list_my_bookings: ListMyBookings<B, I>,
     list_coach_bookings: ListCoachBookings<B, D>,
-    list_coach_slots: ListCoachSlots<S, B>,
+    list_coach_slots: ListCoachSlots<S, J, B>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,
     start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
@@ -136,6 +136,7 @@ pub fn router_with<R, S, I, D, B, G, E, L, K, V, W, U, Y, Q, F, M, X, H, O, N, Z
 where
     R: AccountRepository + 'static,
     S: SlotRepository + 'static,
+    J: LessonMenuLookup + 'static,
     I: CoachIntroductionLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     B: BookingRepository + 'static,
@@ -184,8 +185,9 @@ where
     let slots = Router::new()
         .route(
             "/slots",
-            get(slots::search_slots::<S, I, A, C>).merge(
-                post(slots::publish_slot::<S, I, A, C>).route_layer(require_role(&[Role::Coach])),
+            get(slots::search_slots::<S, J, I, A, C>).merge(
+                post(slots::publish_slot::<S, J, I, A, C>)
+                    .route_layer(require_role(&[Role::Coach])),
             ),
         )
         .with_state(Arc::new(slots::SlotsState {
@@ -224,7 +226,7 @@ where
     let coach_slots = Router::new()
         .route(
             "/coaches/me/slots",
-            get(coach_slots::list_my_coach_slots::<S, B>),
+            get(coach_slots::list_my_coach_slots::<S, J, B>),
         )
         .route_layer(require_role(&[Role::Coach]))
         .with_state(Arc::new(coach_slots::CoachSlotsState { list_coach_slots }));

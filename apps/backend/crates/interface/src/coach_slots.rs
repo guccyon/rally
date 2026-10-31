@@ -3,7 +3,9 @@
 
 use std::sync::Arc;
 
-use application::scheduling::{BookingRepository, ListCoachSlots, SlotRepository};
+use application::scheduling::{
+    BookingRepository, LessonMenuLookup, ListCoachSlots, SlotRepository,
+};
 use axum::{Json, extract::State};
 use serde::Serialize;
 
@@ -14,8 +16,8 @@ use crate::{
 };
 
 /// `/coaches/me/slots` のハンドラーが使うユースケース。
-pub struct CoachSlotsState<S, B> {
-    pub list_coach_slots: ListCoachSlots<S, B>,
+pub struct CoachSlotsState<S, J, B> {
+    pub list_coach_slots: ListCoachSlots<S, J, B>,
 }
 
 /// admin-web の `CoachSlotList`。
@@ -33,12 +35,13 @@ pub struct CoachSlotBody {
 
 /// `GET /coaches/me/slots`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
 /// アカウントの枠。
-pub async fn list_my_coach_slots<S, B>(
-    State(state): State<Arc<CoachSlotsState<S, B>>>,
+pub async fn list_my_coach_slots<S, J, B>(
+    State(state): State<Arc<CoachSlotsState<S, J, B>>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<CoachSlotListBody>, ApiError>
 where
     S: SlotRepository,
+    J: LessonMenuLookup,
     B: BookingRepository,
 {
     let list = state
@@ -52,7 +55,7 @@ where
             .iter()
             .map(|(slot, has_active_booking)| {
                 Ok(CoachSlotBody {
-                    slot: admin_web_slot_body(slot)?,
+                    slot: admin_web_slot_body(slot, Some(&list.lesson_menus))?,
                     has_active_booking: *has_active_booking,
                 })
             })

@@ -156,6 +156,19 @@ pub enum DomainError {
     SportNotOfferedByCoach { sport: crate::identity::Sport },
     /// レッスンメニューのコーチでないので、そのメニューを直せない
     NotTheLessonMenuCoach,
+    /// 別のコーチのレッスンメニューは枠に結びつけられない（枠に結びつけるのは枠のコーチ自身のメニューだけ）
+    LessonMenuOfAnotherCoach,
+    /// 公開中でないレッスンメニューは枠に結びつけられない
+    LessonMenuNotPublished,
+    /// 同期レッスンでない（非同期の）レッスンメニューは枠に結びつけられない
+    LessonMenuNotLive,
+    /// レッスンメニューのスポーツ（`menu`）が枠のスポーツ（`slot`）と違う
+    LessonMenuSportMismatch {
+        menu: crate::identity::Sport,
+        slot: crate::identity::Sport,
+    },
+    /// 枠の長さがレッスンメニューの 1 回の時間（`minutes` 分）と違う
+    SlotLengthMismatchesLessonMenu { minutes: u8 },
 }
 
 impl fmt::Display for DomainError {

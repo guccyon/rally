@@ -21,6 +21,9 @@ pub(crate) const fn role_label(role: Role) -> &'static str {
     }
 }
 
+/// 枠に結びつけるレッスンメニューがない（admin-web の `publishSlot` の 422）。
+pub(crate) const LESSON_MENU_NOT_FOUND: &str = "指定したレッスンメニューがない";
+
 /// 不変条件の違反の説明。
 pub(crate) fn domain_error(error: &DomainError) -> String {
     match error {
@@ -147,6 +150,24 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*sport)
         ),
         DomainError::NotTheLessonMenuCoach => "レッスンメニューのコーチでない".to_string(),
+        DomainError::LessonMenuOfAnotherCoach => {
+            "枠に結びつけられるのは自分のレッスンメニューだけ".to_string()
+        }
+        DomainError::LessonMenuNotPublished => {
+            "公開中でないレッスンメニューは枠に結びつけられない".to_string()
+        }
+        DomainError::LessonMenuNotLive => {
+            "非同期レッスンのメニューは枠に結びつけられない（同期レッスンのメニューだけ）"
+                .to_string()
+        }
+        DomainError::LessonMenuSportMismatch { menu, slot } => format!(
+            "レッスンメニューのスポーツ（{}）が枠のスポーツ（{}）と違う",
+            sport_to_contract(*menu),
+            sport_to_contract(*slot)
+        ),
+        DomainError::SlotLengthMismatchesLessonMenu { minutes } => {
+            format!("枠の長さがレッスンメニューの 1 回の時間（{minutes} 分）と違う")
+        }
     }
 }
 

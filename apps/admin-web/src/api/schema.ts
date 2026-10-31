@@ -19,6 +19,11 @@ export interface paths {
          *     開始は終了より前（違えば 422）。期間は開始を含み終了を含まない。同じコーチの、時間を占める枠
          *     （`open` / `booked`）と期間が重なれば 409 `slot_overlaps`。定員 `capacity` は 1〜6（範囲外は 422）で、省けば 1
          *     （マンツーマン）。2 以上はグループレッスンの枠（変更シナリオ cs-004）で、定員まで生徒の予約を受ける。
+         *     任意の `lesson_menu_id` で、枠を自分のレッスンメニュー（`listMyLessonMenus`）に結びつけられる（省けばメニューのない枠で、今までと同じ）。
+         *     結びつけられるのは、自分の・公開中の（`is_published`）・同期レッスン（`live_lesson`）のメニューで、`sport` が枠と同じで、
+         *     `duration_minutes` が枠の長さ（終了 − 開始）と同じもの。満たさないか、メニューがなければ 422 `validation_failed`
+         *     （`message` に理由）で、枠は保存しない。応答の `Slot` には `lesson_menu` を載せない（結びついたメニューの名前と時間は
+         *     `listMyCoachSlots` で見る）。予約（`createBooking`）は枠のメニューを引き継がない。
          *     公開すると行動イベント `slot.published`（KPI「コーチの予約枠充足率」の入力）を発火する。
          */
         post: operations["publishSlot"];
@@ -249,6 +254,8 @@ export interface paths {
          *     - 並べ方: 枠の開始時刻 `starts_at` の古い順。同じ開始時刻は `slot_id` の順
          *     - 各項目には枠（`Slot`）と、その枠に有効な予約（未確定 `pending` か確定 `confirmed`）が入っているか `has_active_booking` を載せる。
          *       キャンセル済みの予約しかない枠は `false`。予約の中身は自分の予約の一覧（`listMyCoachBookings`）で見る
+         *     - 各項目の枠には、結びついたレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
+         *       メニューのない枠は null。メニューは今の中身で、非公開にしたメニューも載せる
          *     - 期間で絞らず、ページングもしない。枠がなければ `slots` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -558,6 +565,19 @@ export interface components {
             capacity: number;
             /** @description 残りの席（定員 − 有効な予約（未確定 `pending` か確定 `confirmed`）の数）。キャンセル済みの予約は数えない */
             remaining_seats: number;
+            /**
+             * @description 枠に結びついたレッスンメニュー。メニューのない枠は null。載せるのは `listMyCoachSlots` だけで、
+             *     それ以外の操作（`publishSlot`・`listMyCoachBookings`）では載らない
+             */
+            lesson_menu?: components["schemas"]["SlotLessonMenu"] | null;
+        };
+        /** @description 枠に結びついたコーチのレッスンメニュー（glossary の lesson）の ID・名前・1 回の時間。メニューの今の中身。student-app の `SlotLessonMenu` と同じ形 */
+        SlotLessonMenu: {
+            /** Format: uuid */
+            lesson_menu_id: string;
+            name: string;
+            /** @description 同期レッスン 1 回の時間（分）。結びつけたときは枠の長さと同じ。結びつけた後にメニューが非同期に直されたら null */
+            duration_minutes: number | null;
         };
         PublishSlotRequest: {
             sport: components["schemas"]["Sport"];
@@ -570,6 +590,11 @@ export interface components {
             ends_at: string;
             /** @description 定員（1〜6）。省いたら 1（マンツーマン）。2 以上はグループレッスンの枠 */
             capacity?: number;
+            /**
+             * Format: uuid
+             * @description 枠に結びつける自分のレッスンメニュー（任意）。条件は `publishSlot` の説明
+             */
+            lesson_menu_id?: string;
         };
         /**
          * @description student-app の BookingStatus と同じ値。pending: 未確定 / confirmed: 確定 / cancelled: キャンセル済み

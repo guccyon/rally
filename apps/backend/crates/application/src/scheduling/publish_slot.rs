@@ -1,12 +1,13 @@
-use std::time::SystemTime;
+use std::{collections::BTreeSet, time::SystemTime};
 
 use domain::{
     DomainError,
+    catalog::LessonMenuId,
     identity::{AccountId, Sport},
     scheduling::{Slot, SlotCapacity},
 };
 
-use super::{AddToCalendarError, SlotRepository};
+use super::{AddToCalendarError, LessonMenuLookup, SlotRepository};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -22,12 +23,17 @@ pub struct PublishSlotCommand {
     pub ends_at: SystemTime,
     /// 定員（1〜6。契約で省かれたら境界が [`SlotCapacity::default`] の 1 を渡す）
     pub capacity: SlotCapacity,
+    /// 枠に結びつけるレッスンメニュー（任意。なければメニューのない枠）
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 #[derive(Debug)]
 pub enum PublishSlotError {
-    /// 入力がドメインの不変条件を満たさない（開始が終了より前でない、同じコーチの枠と重なる）
+    /// 入力がドメインの不変条件を満たさない（開始が終了より前でない、同じコーチの枠と重なる、結びつけるメニューが
+    /// 枠に合わない）
     Invalid(DomainError),
+    /// 結びつけるレッスンメニューがない
+    LessonMenuNotFound,
     /// 保存先の障害
     Unavailable(Unavailable),
 }
@@ -41,23 +47,27 @@ impl From<DomainError> for PublishSlotError {
 /// スロットの公開のユースケース（コーチだけが呼ぶ。admin-web の `publishSlot`）。
 ///
 /// 定員つきの枠を作り（開始 < 終了の検証）、コーチのカレンダー（[`domain::scheduling::CoachCalendar`]）で
-/// 同じコーチの枠と重ならないことを確かめて保存する。保存したら行動イベント `slot.published`
-/// （KPI「コーチの予約枠充足率」の入力）を 1 回発火する。拒否・保存の失敗では発火しない。
-pub struct PublishSlot<S, A, C> {
+/// 同じコーチの枠と重ならないことを確かめて保存する。レッスンメニューの指定があれば、catalog に問い合わせて
+/// （[`LessonMenuLookup`]）枠に結びつけられるか（[`Slot::with_lesson_menu`]）を確かめる。保存したら行動イベント
+/// `slot.published`（KPI「コーチの予約枠充足率」の入力）を 1 回発火する。拒否・保存の失敗では発火しない。
+pub struct PublishSlot<S, M, A, C> {
     slots: S,
+    lesson_menus: M,
     analytics: A,
     clock: C,
 }
 
-impl<S, A, C> PublishSlot<S, A, C>
+impl<S, M, A, C> PublishSlot<S, M, A, C>
 where
     S: SlotRepository,
+    M: LessonMenuLookup,
     A: AnalyticsSink,
     C: Clock,
 {
-    pub fn new(slots: S, analytics: A, clock: C) -> Self {
+    pub fn new(slots: S, lesson_menus: M, analytics: A, clock: C) -> Self {
         Self {
             slots,
+            lesson_menus,
             analytics,
             clock,
         }
@@ -72,6 +82,18 @@ where
             command.ends_at,
             command.capacity,
         )?;
+        let slot = match command.lesson_menu_id {
+            None => slot,
+            Some(id) => {
+                let menus = self
+                    .lesson_menus
+                    .find_lesson_menus(&BTreeSet::from([id]))
+                    .await
+                    .map_err(PublishSlotError::Unavailable)?;
+                let menu = menus.get(&id).ok_or(PublishSlotError::LessonMenuNotFound)?;
+                slot.with_lesson_menu(menu)?
+            }
+        };
 
         self.slots
             .add_to_calendar(slot.clone(), |calendar, slot| calendar.publish(slot))
@@ -106,15 +128,26 @@ where
 mod tests {
     use std::time::Duration;
 
-    use domain::scheduling::{SlotId, SlotStatus};
+    use domain::{
+        catalog::{
+            LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+            LessonMenuName,
+        },
+        scheduling::{SlotId, SlotStatus},
+    };
 
     use super::*;
     use crate::{
-        in_memory::{FixedClock, InMemorySlotRepository, RecordingAnalyticsSink},
+        catalog::CatalogLessonMenuLookup,
+        in_memory::{
+            FixedClock, InMemoryLessonMenuRepository, InMemorySlotRepository,
+            RecordingAnalyticsSink,
+        },
         scheduling::SlotCriteria,
     };
 
-    type UseCase = PublishSlot<InMemorySlotRepository, RecordingAnalyticsSink, FixedClock>;
+    type Menus = CatalogLessonMenuLookup<InMemoryLessonMenuRepository>;
+    type UseCase = PublishSlot<InMemorySlotRepository, Menus, RecordingAnalyticsSink, FixedClock>;
 
     const NOW: SystemTime = SystemTime::UNIX_EPOCH;
     const COACH: AccountId = AccountId::from_u128(7);
@@ -123,9 +156,49 @@ mod tests {
         NOW + Duration::from_secs(hour * 3600)
     }
 
+    /// `COACH` のテニスの公開中の 60 分のメニュー
+    const MENU: LessonMenuId = LessonMenuId::from_u128(50);
+    /// `COACH` のテニスの非公開の 60 分のメニュー
+    const UNPUBLISHED_MENU: LessonMenuId = LessonMenuId::from_u128(51);
+    /// `COACH` のテニスの非同期のメニュー
+    const ASYNC_MENU: LessonMenuId = LessonMenuId::from_u128(52);
+    /// 別のコーチのテニスの公開中の 60 分のメニュー
+    const OTHER_COACH_MENU: LessonMenuId = LessonMenuId::from_u128(53);
+
+    fn menu(
+        id: LessonMenuId,
+        coach_id: AccountId,
+        format: LessonFormat,
+        is_published: bool,
+    ) -> LessonMenu {
+        LessonMenu::restore(
+            id,
+            coach_id,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format,
+                name: LessonMenuName::new("フォア改善").unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            is_published,
+            NOW,
+        )
+    }
+
+    fn menus() -> Menus {
+        let sixty = LessonFormat::Live(LessonDuration::from_minutes(60).unwrap());
+        CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::with_menus([
+            menu(MENU, COACH, sixty, true),
+            menu(UNPUBLISHED_MENU, COACH, sixty, false),
+            menu(ASYNC_MENU, COACH, LessonFormat::Async, true),
+            menu(OTHER_COACH_MENU, AccountId::from_u128(8), sixty, true),
+        ]))
+    }
+
     fn use_case() -> UseCase {
         PublishSlot::new(
             InMemorySlotRepository::default(),
+            menus(),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         )
@@ -138,6 +211,7 @@ mod tests {
             starts_at: at(from),
             ends_at: at(to),
             capacity: SlotCapacity::ONE,
+            lesson_menu_id: None,
         }
     }
 
@@ -151,6 +225,7 @@ mod tests {
         assert_eq!(slot.coach_id(), COACH);
         assert_eq!(slot.capacity(), SlotCapacity::ONE);
         assert_eq!(slot.remaining_seats(), 1);
+        assert_eq!(slot.lesson_menu_id(), None);
         assert_eq!(use_case.slots().all(), vec![slot.clone()]);
         let events = use_case.analytics().events();
         assert_eq!(
@@ -227,6 +302,81 @@ mod tests {
         assert!(use_case.analytics().events().is_empty());
     }
 
+    #[tokio::test]
+    async fn publishes_a_slot_bound_to_a_lesson_menu() {
+        let use_case = use_case();
+
+        let slot = use_case
+            .execute(PublishSlotCommand {
+                lesson_menu_id: Some(MENU),
+                ..command(COACH, 10, 11)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(slot.lesson_menu_id(), Some(MENU));
+        assert_eq!(use_case.slots().all(), vec![slot]);
+        assert_eq!(use_case.analytics().events().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lesson_menu_that_does_not_fit_is_rejected_without_saving_or_emitting() {
+        let use_case = use_case();
+
+        for (lesson_menu_id, to, expected) in [
+            (OTHER_COACH_MENU, 11, DomainError::LessonMenuOfAnotherCoach),
+            (UNPUBLISHED_MENU, 11, DomainError::LessonMenuNotPublished),
+            (ASYNC_MENU, 11, DomainError::LessonMenuNotLive),
+            (
+                MENU,
+                12,
+                DomainError::SlotLengthMismatchesLessonMenu { minutes: 60 },
+            ),
+        ] {
+            let result = use_case
+                .execute(PublishSlotCommand {
+                    lesson_menu_id: Some(lesson_menu_id),
+                    ..command(COACH, 10, to)
+                })
+                .await;
+            assert!(
+                matches!(&result, Err(PublishSlotError::Invalid(error)) if *error == expected),
+                "{lesson_menu_id:?}: {result:?}"
+            );
+        }
+        let result = use_case
+            .execute(PublishSlotCommand {
+                lesson_menu_id: Some(MENU),
+                sport: Sport::Soccer,
+                ..command(COACH, 10, 11)
+            })
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PublishSlotError::Invalid(
+                    DomainError::LessonMenuSportMismatch {
+                        menu: Sport::Tennis,
+                        slot: Sport::Soccer
+                    }
+                ))
+            ),
+            "{result:?}"
+        );
+        let result = use_case
+            .execute(PublishSlotCommand {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..command(COACH, 10, 11)
+            })
+            .await;
+        assert!(
+            matches!(result, Err(PublishSlotError::LessonMenuNotFound)),
+            "{result:?}"
+        );
+        assert!(use_case.slots().all().is_empty());
+        assert!(use_case.analytics().events().is_empty());
+    }
+
     /// 保存に必ず失敗する保存先。
     struct BrokenRepository;
 
@@ -261,6 +411,7 @@ mod tests {
     async fn storage_failure_is_unavailable_and_nothing_is_emitted() {
         let use_case = PublishSlot::new(
             BrokenRepository,
+            menus(),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );

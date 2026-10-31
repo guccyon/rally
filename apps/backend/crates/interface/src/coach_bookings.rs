@@ -56,7 +56,7 @@ where
             .map(|(booking, slot)| {
                 Ok(CoachBookingBody {
                     booking: booking_body(booking)?,
-                    slot: admin_web_slot_body(slot)?,
+                    slot: admin_web_slot_body(slot, None)?,
                     student_display_name: list
                         .students
                         .get(&booking.student_id())

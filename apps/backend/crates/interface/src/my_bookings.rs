@@ -52,7 +52,7 @@ where
             .map(|(booking, slot)| {
                 Ok(MyBookingBody {
                     booking: booking_body(booking)?,
-                    slot: student_app_slot_body(slot, list.coaches.get(&slot.coach_id()))?,
+                    slot: student_app_slot_body(slot, list.coaches.get(&slot.coach_id()), None)?,
                 })
             })
             .collect::<Result<_, ApiError>>()?,
