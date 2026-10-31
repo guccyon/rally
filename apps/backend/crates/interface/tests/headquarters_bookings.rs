@@ -1,6 +1,7 @@
 //! `GET /bookings`（admin-web の `listBookings`。本部が見る予約の一覧）の統合テスト。レスポンスの形を admin-web の
 //! OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付（日本時間）で絞って開始の古い順に返すこと、
-//! 日付を省いたときは今日から 7 日であること、期間の違反と日付でない値が 422 であることを確かめる。期間の規則の境界は
+//! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
+//! 期間の違反と日付でない値・UUID でない `coach_id` が 422 であることを確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -211,6 +212,10 @@ fn slot_uuid(id: u128) -> String {
     format!("00000000-0000-0000-0000-{id:012x}")
 }
 
+fn account_uuid(id: u128) -> String {
+    format!("00000000-0000-0000-0000-{id:012x}")
+}
+
 #[tokio::test]
 async fn headquarters_lists_bookings_starting_in_the_days_oldest_first() {
     let admin = support::Contract::load("admin-web");
@@ -320,6 +325,53 @@ async fn days_without_bookings_are_an_empty_list() {
 }
 
 #[tokio::test]
+async fn coach_id_lists_only_bookings_of_that_coach() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?coach_id={}", account_uuid(42)),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    admin.assert_response("get", PATH, status, &body);
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-11-01"), &json!("2026-11-07"))
+    );
+    assert_eq!(
+        slot_ids(&body),
+        [slot_uuid(2)],
+        "たなかの枠で、期間（今日から 7 日）に開始する予約だけ: {body}"
+    );
+    assert_eq!(body["bookings"][0]["coach_display_name"], "たなか");
+
+    // 期間と組み合わせる
+    let (status, body) = get(
+        &app,
+        &format!(
+            "{PATH}?from=2026-11-01&to=2026-11-08&coach_id={}",
+            account_uuid(43)
+        ),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(slot_ids(&body), [slot_uuid(3), slot_uuid(6)]);
+
+    // コーチでない ID・ない ID は 404 にせず空の一覧
+    for coach_id in [account_uuid(3), account_uuid(1000)] {
+        let (status, body) = get(&app, &format!("{PATH}?coach_id={coach_id}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{coach_id}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["bookings"], json!([]), "{coach_id}");
+    }
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -357,6 +409,8 @@ async fn invalid_days_are_422() {
         ("?from=2026-11-31", "from は YYYY-MM-DD の日付でない"),
         ("?from=2026/11/01", "from は YYYY-MM-DD の日付でない"),
         ("?to=tomorrow", "to は YYYY-MM-DD の日付でない"),
+        ("?coach_id=42", "coach_id が UUID でない"),
+        ("?coach_id=", "coach_id が UUID でない"),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
