@@ -211,6 +211,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lesson-reviews/low": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 低い評価の一覧（本部）
+         * @description 直近の期間に付いた低い点のレッスンの評価（glossary の lesson_review）を、コーチを問わず横断で返す。本部が
+         *     レッスンの品質の問題に早く気づくための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     しきい値と期間はここが正本（実装は backend の domain `LowRatedReviewCriteria` の 1 か所）。レスポンスの
+         *     `max_rating` と `period_days` にも同じ値を載せる。
+         *
+         *     - 低い評価: 点 `rating` が 2 以下（★2 以下）
+         *     - 期間: 照会した時刻の 30 日前（30 × 24 時間前。含む）から照会した時刻（含む）までに送られた評価（`submitted_at`）。暦日では区切らない
+         *     - 並べ方: 送った時刻 `submitted_at` の新しい順。同じ時刻は `review_id` の順
+         *     - 各評価には、評価されたコーチと評価した生徒の ID と表示名、評価した完了したレッスンのレッスンメニュー
+         *       `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
+         *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
+         *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
+         *
+         *     パスパラメータもクエリも受けないので 404・422 はない。行動イベントは発火しない。
+         */
+        get: operations["listLowRatedLessonReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/bookings": {
         parameters: {
             query?: never;
@@ -987,6 +1022,56 @@ export interface components {
             reviews: components["schemas"]["CoachReview"][];
         };
         /**
+         * @description 本部が見る低い評価 1 件（`listLowRatedLessonReviews`）。glossary の lesson_review に、評価されたコーチと評価した
+         *     生徒の表示名と、評価した完了したレッスンのレッスンメニューを添える
+         */
+        LowRatedLessonReview: {
+            /** Format: uuid */
+            review_id: string;
+            /**
+             * Format: uuid
+             * @description 評価された完了したレッスン
+             */
+            lesson_id: string;
+            /**
+             * Format: uuid
+             * @description 評価されたコーチ（レッスンのコーチ）のアカウントの ID
+             */
+            coach_id: string;
+            /** @description 評価されたコーチの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description 評価した生徒（レッスンの生徒）のアカウントの ID
+             */
+            student_id: string;
+            /** @description 評価した生徒の表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+            /** @description 点（低い評価なので 2 以下） */
+            rating: number;
+            /** @description 一言 */
+            comment: string;
+            /**
+             * Format: date-time
+             * @description 評価を送った時刻
+             */
+            submitted_at: string;
+            /**
+             * @description 評価した完了したレッスンのレッスンメニュー（ID・名前）。中身は `CoachReview` の `lesson_menu` と同じく、完了した
+             *     レッスンの元が持つメニューの写し。元にメニューがなければ null
+             */
+            lesson_menu: components["schemas"]["ReviewLessonMenu"] | null;
+        };
+        /** @description 本部が見る低い評価の一覧（しきい値・期間・並べ方は `listLowRatedLessonReviews` の説明） */
+        LowRatedLessonReviewList: {
+            /** @description 低い評価とする点の上限（含む）。今は 2 */
+            max_rating: number;
+            /** @description 見る期間の日数（照会した時刻からさかのぼる）。今は 30 */
+            period_days: number;
+            /** @description 送った時刻の新しい順（同じ時刻は `review_id` の順） */
+            reviews: components["schemas"]["LowRatedLessonReview"][];
+        };
+        /**
          * @description student-app の LessonType と同じ値。live_lesson: 同期レッスン（ビデオ通話）/ async_lesson: 非同期レッスン（動画添削）
          * @enum {string}
          */
@@ -1547,6 +1632,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listLowRatedLessonReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 低い評価の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LowRatedLessonReviewList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMyCoachBookings: {

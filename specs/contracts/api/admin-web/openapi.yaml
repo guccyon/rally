@@ -16,6 +16,7 @@ info:
     （`updateMyLessonMenu`）・一覧する（`listMyLessonMenus`）。生徒は student-app の `listCoachLessonMenus` で公開中のものを読む。
     本部はすべてのコーチのメニューを横断で読む（`listLessonMenus`）。
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
+    本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
 
     - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える（slot → Slot など）
@@ -44,7 +45,7 @@ tags:
   - name: async-lesson
     description: 非同期レッスン（コーチに届いた動画の一覧と、動画添削の返却）
   - name: review
-    description: 評価（コーチごとの評価の集計と一覧）
+    description: 評価（コーチごとの評価の集計と一覧・本部が見る低い評価の一覧）
   - name: identity
     description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧）
   - name: profile
@@ -304,6 +305,42 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /lesson-reviews/low:
+    get:
+      operationId: listLowRatedLessonReviews
+      summary: 低い評価の一覧（本部）
+      description: |
+        直近の期間に付いた低い点のレッスンの評価（glossary の lesson_review）を、コーチを問わず横断で返す。本部が
+        レッスンの品質の問題に早く気づくための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+
+        しきい値と期間はここが正本（実装は backend の domain `LowRatedReviewCriteria` の 1 か所）。レスポンスの
+        `max_rating` と `period_days` にも同じ値を載せる。
+
+        - 低い評価: 点 `rating` が 2 以下（★2 以下）
+        - 期間: 照会した時刻の 30 日前（30 × 24 時間前。含む）から照会した時刻（含む）までに送られた評価（`submitted_at`）。暦日では区切らない
+        - 並べ方: 送った時刻 `submitted_at` の新しい順。同じ時刻は `review_id` の順
+        - 各評価には、評価されたコーチと評価した生徒の ID と表示名、評価した完了したレッスンのレッスンメニュー
+          `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
+          表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+        - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
+        - 照会だけで、何も保存しない（評価の非表示・削除はしない）
+
+        パスパラメータもクエリも受けないので 404・422 はない。行動イベントは発火しない。
+      tags: [review]
+      x-context: [review, profile]
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 低い評価の一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LowRatedLessonReviewList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /coaches/me/bookings:
     get:
@@ -1461,6 +1498,75 @@ components:
           description: 送った時刻の新しい順（同じ時刻は `review_id` の順）
           items:
             $ref: "#/components/schemas/CoachReview"
+
+    LowRatedLessonReview:
+      type: object
+      description: |
+        本部が見る低い評価 1 件（`listLowRatedLessonReviews`）。glossary の lesson_review に、評価されたコーチと評価した
+        生徒の表示名と、評価した完了したレッスンのレッスンメニューを添える
+      required: [review_id, lesson_id, coach_id, student_id, rating, comment, submitted_at, lesson_menu]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        lesson_id:
+          type: string
+          format: uuid
+          description: 評価された完了したレッスン
+        coach_id:
+          type: string
+          format: uuid
+          description: 評価されたコーチ（レッスンのコーチ）のアカウントの ID
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 評価されたコーチの表示名。コーチのアカウントが引けないときは載らない
+        student_id:
+          type: string
+          format: uuid
+          description: 評価した生徒（レッスンの生徒）のアカウントの ID
+        student_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 評価した生徒の表示名。生徒のアカウントが引けないときは載らない
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 2
+          description: 点（低い評価なので 2 以下）
+        comment:
+          type: string
+          description: 一言
+        submitted_at:
+          type: string
+          format: date-time
+          description: 評価を送った時刻
+        lesson_menu:
+          description: |
+            評価した完了したレッスンのレッスンメニュー（ID・名前）。中身は `CoachReview` の `lesson_menu` と同じく、完了した
+            レッスンの元が持つメニューの写し。元にメニューがなければ null
+          oneOf:
+            - $ref: "#/components/schemas/ReviewLessonMenu"
+            - type: "null"
+
+    LowRatedLessonReviewList:
+      type: object
+      description: 本部が見る低い評価の一覧（しきい値・期間・並べ方は `listLowRatedLessonReviews` の説明）
+      required: [max_rating, period_days, reviews]
+      properties:
+        max_rating:
+          type: integer
+          description: 低い評価とする点の上限（含む）。今は 2
+        period_days:
+          type: integer
+          description: 見る期間の日数（照会した時刻からさかのぼる）。今は 30
+        reviews:
+          type: array
+          description: 送った時刻の新しい順（同じ時刻は `review_id` の順）
+          items:
+            $ref: "#/components/schemas/LowRatedLessonReview"
 
     LessonType:
       type: string
