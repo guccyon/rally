@@ -6,15 +6,19 @@
 //! [`AccountRepository`]: crate::identity::AccountRepository
 
 mod list_coaches;
+mod profile_coach_candidate_lookup;
 mod profile_coach_display_name_lookup;
 mod profile_coach_introduction_lookup;
 mod profile_student_display_name_lookup;
+mod profile_student_sport_lookup;
 mod update_coach_profile;
 
 pub use list_coaches::ListCoaches;
+pub use profile_coach_candidate_lookup::ProfileCoachCandidateLookup;
 pub use profile_coach_display_name_lookup::ProfileCoachDisplayNameLookup;
 pub use profile_coach_introduction_lookup::ProfileCoachIntroductionLookup;
 pub use profile_student_display_name_lookup::ProfileStudentDisplayNameLookup;
+pub use profile_student_sport_lookup::ProfileStudentSportLookup;
 pub use update_coach_profile::{
     UpdateCoachProfile, UpdateCoachProfileCommand, UpdateCoachProfileError,
 };

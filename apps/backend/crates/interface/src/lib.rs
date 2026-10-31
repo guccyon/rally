@@ -58,6 +58,10 @@ use application::{
         BookingLookup, EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
         VideoCallProvider,
     },
+    matching::{
+        CoachCandidateLookup, CoachReviewSummaryLookup, ListCoachesForStudent,
+        PublishedLessonMenuCountLookup, StudentSportLookup,
+    },
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
         SendMessage,
@@ -101,7 +105,7 @@ pub use error::ApiError;
 /// ユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
 /// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
 /// `GET /coaches/{coach_id}/review-summary`（admin-web・student-app のコーチの評価の件数と平均）と
-/// `GET /coaches/{coach_id}/reviews`（コーチが受けた評価の一覧。評価したレッスンのメニューを添える）は本部・コーチ・生徒で、コーチは自分の分だけ。`GET /coaches`（admin-web のコーチの一覧）は本部だけ。
+/// `GET /coaches/{coach_id}/reviews`（コーチが受けた評価の一覧。評価したレッスンのメニューを添える）は本部・コーチ・生徒で、コーチは自分の分だけ。`GET /coaches`（コーチの一覧）は [`coaches_router`]。
 /// `GET /coaches/me/bookings`（admin-web のコーチの自分の予約の一覧）と `GET /coaches/me/slots`（コーチの自分の枠の
 /// 一覧）と `GET /coaches/me/videos`（コーチに届いた動画の一覧）はコーチだけ。
 /// `GET /me`（admin-web のログイン中の本人のアカウント）は役割で絞らない。`PUT /me/profile`（admin-web の自分の
@@ -138,7 +142,6 @@ pub fn router_with<
     T,
 >(
     register_account: RegisterAccount<R, A, C>,
-    list_coaches: ListCoaches<R>,
     get_account: GetAccount<R>,
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, J, A, C>,
@@ -206,10 +209,6 @@ where
             register_account,
             tokens: tokens.clone(),
         }));
-    let coaches = Router::new()
-        .route("/coaches", get(coaches::list_coaches::<R>))
-        .route_layer(require_role(&[Role::Headquarters]))
-        .with_state(Arc::new(coaches::CoachesState { list_coaches }));
     let me = Router::new()
         .route("/me", get(me::get_my_account::<R>))
         .route(
@@ -401,7 +400,6 @@ where
     Router::new()
         .route("/healthz", get(healthz))
         .merge(accounts)
-        .merge(coaches)
         .merge(me)
         .merge(slots)
         .merge(bookings)
@@ -418,6 +416,35 @@ where
         .merge(messaging)
         .merge(reviews)
         .merge(notification_settings)
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// コーチの一覧（`GET /coaches`）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用の
+/// クレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
+/// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
+pub fn coaches_router<R, S, C, V, M, T>(
+    list_coaches: ListCoaches<R>,
+    list_coaches_for_student: ListCoachesForStudent<S, C, V, M>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    S: StudentSportLookup + 'static,
+    C: CoachCandidateLookup + 'static,
+    V: CoachReviewSummaryLookup + 'static,
+    M: PublishedLessonMenuCountLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/coaches", get(coaches::list_coaches::<R, S, C, V, M>))
+        .route_layer(require_role(&[Role::Headquarters, Role::Student]))
+        .with_state(Arc::new(coaches::CoachesState {
+            list_coaches,
+            list_coaches_for_student,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

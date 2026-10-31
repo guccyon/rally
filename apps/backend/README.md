@@ -91,7 +91,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## profile: 本部向けのコーチの一覧
 
-- `GET /coaches`（admin-web の `listCoaches`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの役割のアカウントの `coach_id` と `display_name` を返す。絞り込み・ページングはせず、行動イベントは発火しない
+- `GET /coaches`（admin-web の `listCoaches`）: 本部が呼べる（コーチは 403）。同じパスを生徒が呼ぶと student-app の `listCoachesForStudent`（下の matching）の形で返す（ルーターは `interface::coaches_router`。`require_role(&[Role::Headquarters, Role::Student])` のうえで、ハンドラーがトークンの役割で形を選ぶ）。コーチの役割のアカウントの `coach_id` と `display_name` を返す。絞り込み・ページングはせず、行動イベントは発火しない
 - 並べ方の正本は契約（表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。保存先のポート `AccountRepository::list_coaches` が並べて返す。Postgres は `ORDER BY display_name COLLATE "C", account_id`（DB の照合順序に依らない。UTF-8 のバイト順はコードポイントの順と同じ）、インメモリは `(表示名の文字列, AccountId)` の順で、両方が同じ並びになる。読んだ行は `Account`（提供スポーツを含む）に戻す
 - テスト: `application::profile::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
 
@@ -101,6 +101,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - `GET /me`（`getMyAccount`）はコーチのときだけ `bio` を返す（書いていなければ空文字列）。本部・生徒の応答には載らない
 - 自己紹介文は domain の `Coach` の属性（`profile::CoachBio`）で、ユースケースは `application::profile::UpdateCoachProfile`。保存先はポート `AccountRepository::update_coach_bio`（コーチのアカウントがなければ何も変えずに `None`）。Postgres は `identity.coaches.bio`（マイグレーション `20261028000002_expand_coach_bio.sql`。既定は空、`coaches_bio_length` で 400 文字まで）
 - テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・コーチ以外は変えない）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
+
+## matching: 生徒がスポーツでコーチを探す（D96）
+
+- `GET /coaches`（student-app の `listCoachesForStudent`）: 生徒が呼ぶ（本部は admin-web の `listCoaches` の形、コーチは 403）。`sport`（省いたら生徒自身のスポーツ）を提供するコーチを、`coach_id`・表示名・スポーツ・評価の件数と平均・そのスポーツの公開中のレッスンメニューの数で返す。ページングはせず、行動イベントは発火しない（読み取りだけ）
+- 並べ方の正本は契約（評価の平均の高い順、評価のないコーチは最後。同じなら表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。並べるのはユースケース `application::matching::ListCoachesForStudent`
+- ゴルフは golf-app の範囲: `sport=golf` は 422（student-app の `Sport` にない）。生徒自身のスポーツがゴルフ（student-app からは登録できない）なら空の配列。`sport` を省いて生徒のアカウントがなければ 401
+- matching は保存先を持たず、他のコンテキストの持ち物をポートで読む: 生徒のスポーツ `StudentSportLookup`（実装は `profile::ProfileStudentSportLookup`）、提供スポーツと表示名 `CoachCandidateLookup`（`profile::ProfileCoachCandidateLookup`）、評価の件数と平均 `CoachReviewSummaryLookup`（`review::ReviewCoachReviewSummaryLookup`。数え方は domain の `CoachReviewSummary::tally`）、公開中のメニューの数 `PublishedLessonMenuCountLookup`（`catalog::CatalogPublishedLessonMenuCountLookup`）。DB の変更はない
+- テスト: `application::matching::list_coaches_for_student`（絞り込み・並べ方・生徒がいない）と各ポートの実装の単体テスト、`crates/interface/tests/coaches.rs`（両方の契約の形・生徒 200・`sport` の絞り込み・422・コーチ 403・401）
 
 ## 認証と認可（モック）
 

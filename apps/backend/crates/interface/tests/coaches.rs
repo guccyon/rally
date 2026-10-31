@@ -1,29 +1,19 @@
-//! `GET /coaches`（admin-web の `listCoaches`）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで
-//! 検査し、本部だけが呼べることと、コーチだけを表示名の順で返すことを確かめる。
+//! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
+//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。コーチは 403。
 
 use std::time::SystemTime;
 
 use application::{
-    async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
-    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
+    catalog::CatalogPublishedLessonMenuCountLookup,
     identity::{
-        AccessToken, AccountRepository, GetAccount, InvalidToken, RegisterAccount, TokenClaims,
-        TokenIssuer, TokenVerifier,
+        AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
     },
     in_memory::{
-        FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
-        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemoryLessonCompletionRepository, InMemoryLiveLessonSessionRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
-        RecordingDomainEventPublisher,
+        InMemoryAccountRepository, InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
     },
-    lesson::RecordLessonCompletion,
-    live_lesson::{EndLiveLessonSession, StartLiveLessonSession},
-    profile::ListCoaches,
-    scheduling::{
-        CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
-        SchedulingBookingLookup, SearchSlots,
-    },
+    matching::ListCoachesForStudent,
+    profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
+    review::ReviewCoachReviewSummaryLookup,
 };
 use axum::{
     Router,
@@ -31,9 +21,14 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    catalog::Sport,
+    catalog::{
+        LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+        LessonMenuName, Sport,
+    },
     identity::{Account, AccountId, Email, Role},
+    lesson::LessonCompletionId,
     profile::DisplayName,
+    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -67,6 +62,8 @@ impl TokenVerifier for FakeTokens {
 }
 
 const HEADQUARTERS: &str = "headquarters:1";
+const STUDENT: &str = "student:3";
+const GOLF_STUDENT: &str = "student:6";
 
 fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Account {
     Account::new(
@@ -80,7 +77,7 @@ fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Accoun
     .unwrap()
 }
 
-/// コーチ 3 人（うち 2 人は同じ表示名）と、生徒・本部が 1 人ずつ。
+/// コーチ 3 人（うち 2 人は同じ表示名）と、テニスの生徒・ゴルフの生徒（seed などでしか作れない）・本部が 1 人ずつ。
 async fn accounts() -> InMemoryAccountRepository {
     let accounts = InMemoryAccountRepository::default();
     for account in [
@@ -88,192 +85,74 @@ async fn accounts() -> InMemoryAccountRepository {
         account(2, "たなか", Role::Coach, &[Sport::Tennis]),
         account(3, "あおき", Role::Student, &[Sport::Tennis]),
         account(5, "いとう", Role::Coach, &[Sport::Soccer, Sport::Golf]),
-        account(4, "いとう", Role::Coach, &[Sport::Baseball]),
+        account(4, "いとう", Role::Coach, &[Sport::Baseball, Sport::Tennis]),
+        account(6, "ごるふ", Role::Student, &[Sport::Golf]),
     ] {
         accounts.insert(account).await.unwrap();
     }
     accounts
 }
 
+fn review(id: u128, coach_id: u128, rating: i64) -> LessonReview {
+    LessonReview::restore(
+        LessonReviewId::from_u128(id),
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Rating::new(rating).unwrap(),
+        LessonReviewComment::new("よい").unwrap(),
+        SystemTime::UNIX_EPOCH,
+    )
+}
+
+fn menu(id: u128, coach_id: u128, sport: Sport, is_published: bool) -> LessonMenu {
+    LessonMenu::restore(
+        LessonMenuId::from_u128(id),
+        AccountId::from_u128(coach_id),
+        LessonMenuContent {
+            sport,
+            format: LessonFormat::Async,
+            name: LessonMenuName::new("添削").unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        is_published,
+        SystemTime::UNIX_EPOCH,
+    )
+}
+
 fn app(accounts: InMemoryAccountRepository) -> Router {
-    let analytics = RecordingAnalyticsSink::default();
-    let clock = FixedClock(SystemTime::UNIX_EPOCH);
-    let slots = InMemorySlotRepository::default();
-    let bookings = InMemoryBookingRepository::new(slots.clone());
-    interface::router_with(
-        RegisterAccount::new(accounts.clone(), analytics.clone(), clock),
+    let reviews = InMemoryLessonReviewRepository::with_reviews([
+        review(1, 2, 4),
+        review(2, 2, 3),
+        review(3, 4, 5),
+        review(4, 5, 2),
+    ]);
+    let menus = InMemoryLessonMenuRepository::with_menus([
+        menu(1, 2, Sport::Tennis, true),
+        menu(2, 2, Sport::Tennis, false),
+        menu(3, 5, Sport::Soccer, true),
+        menu(4, 5, Sport::Golf, true),
+    ]);
+    interface::coaches_router(
         ListCoaches::new(accounts.clone()),
-        GetAccount::new(accounts.clone()),
-        application::profile::UpdateCoachProfile::new(accounts),
-        PublishSlot::new(
-            slots.clone(),
-            application::catalog::CatalogLessonMenuLookup::new(
-                application::in_memory::InMemoryLessonMenuRepository::default(),
-            ),
-            analytics.clone(),
-            clock,
-        ),
-        SearchSlots::new(
-            slots,
-            application::catalog::CatalogLessonMenuLookup::new(
-                application::in_memory::InMemoryLessonMenuRepository::default(),
-            ),
-            application::profile::ProfileCoachIntroductionLookup::new(
-                InMemoryAccountRepository::default(),
-            ),
-            clock,
-        ),
-        CreateBooking::new(
-            bookings.clone(),
-            application::catalog::CatalogLessonMenuLookup::new(
-                application::in_memory::InMemoryLessonMenuRepository::default(),
-            ),
-            analytics.clone(),
-            clock,
-        ),
-        ConfirmBooking::new(
-            bookings.clone(),
-            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            analytics.clone(),
-            RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        CancelBooking::new(
-            bookings.clone(),
-            analytics.clone(),
-            RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        GetSlotSupply::new(bookings, clock),
-        application::scheduling::ListMyBookings::new(
-            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::profile::ProfileCoachIntroductionLookup::new(
-                InMemoryAccountRepository::default(),
-            ),
-        ),
-        application::scheduling::ListCoachBookings::new(
-            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-            application::profile::ProfileStudentDisplayNameLookup::new(
-                InMemoryAccountRepository::default(),
-            ),
-        ),
-        application::scheduling::ListCoachSlots::new(
-            InMemorySlotRepository::default(),
-            application::catalog::CatalogLessonMenuLookup::new(
-                application::in_memory::InMemoryLessonMenuRepository::default(),
-            ),
-            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
-        ),
-        StartSubscription::new(
-            InMemoryEntitlementRepository::default(),
-            analytics.clone(),
-            RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        GetEntitlement::new(InMemoryEntitlementRepository::default(), clock),
-        StartLiveLessonSession::new(
-            InMemoryLiveLessonSessionRepository::default(),
-            SchedulingBookingLookup::new(InMemoryBookingRepository::new(
-                InMemorySlotRepository::default(),
-            )),
-            FixedVideoCallProvider::default(),
-            analytics.clone(),
-            clock,
-        ),
-        EndLiveLessonSession::new(
-            InMemoryLiveLessonSessionRepository::default(),
-            FixedVideoCallProvider::default(),
-            analytics.clone(),
-            clock,
-        ),
-        SubmitVideo::new(
-            InMemoryVideoRepository::default(),
-            application::catalog::CatalogLessonMenuLookup::new(
-                application::in_memory::InMemoryLessonMenuRepository::default(),
-            ),
-            FixedVideoStorage,
-            FixedAiFeedbackGenerator,
-            analytics.clone(),
-            application::in_memory::RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        GetVideoReview::new(InMemoryVideoRepository::default()),
-        ReturnVideoReview::new(
-            InMemoryVideoRepository::default(),
-            EntitlementReviewGate,
-            analytics.clone(),
-            application::in_memory::RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        application::async_lesson::ListCoachVideos::new(
-            InMemoryVideoRepository::default(),
-            application::profile::ProfileStudentDisplayNameLookup::new(
-                InMemoryAccountRepository::default(),
-            ),
-        ),
-        RecordLessonCompletion::new(
-            InMemoryLiveLessonSessionRepository::default(),
-            InMemoryVideoRepository::default(),
-            InMemoryLessonCompletionRepository::default(),
-            analytics,
-            RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        application::messaging::ListMessageThreads::new(
-            application::in_memory::InMemoryMessageThreadRepository::default(),
-        ),
-        application::messaging::ListMessages::new(
-            application::in_memory::InMemoryMessageThreadRepository::default(),
-        ),
-        application::messaging::SendMessage::new(
-            application::in_memory::InMemoryMessageThreadRepository::default(),
-            application::entitlement::EntitlementChatGate::new(
-                application::in_memory::InMemoryEntitlementRepository::default(),
-            ),
-            RecordingAnalyticsSink::default(),
-            application::in_memory::RecordingDomainEventPublisher::default(),
-            clock,
-        ),
-        application::messaging::MarkMessageThreadRead::new(
-            application::in_memory::InMemoryMessageThreadRepository::default(),
-            clock,
-        ),
-        application::review::SubmitLessonReview::new(
-            application::lesson::LessonCompletionLookup::new(
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-            ),
-            application::in_memory::InMemoryLessonReviewRepository::default(),
-            RecordingAnalyticsSink::default(),
-            clock,
-        ),
-        application::review::GetCoachReviewSummary::new(
-            application::in_memory::InMemoryLessonReviewRepository::default(),
-        ),
-        application::review::ListCoachReviews::new(
-            application::in_memory::InMemoryLessonReviewRepository::default(),
-            application::lesson::LessonCompletionMenuLookup::new(
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-                application::in_memory::InMemoryLiveLessonSessionRepository::default(),
-                application::scheduling::SchedulingBookingLookup::new(
-                    application::in_memory::InMemoryBookingRepository::new(
-                        application::in_memory::InMemorySlotRepository::default(),
-                    ),
-                ),
-                application::in_memory::InMemoryVideoRepository::default(),
-            ),
-        ),
-        application::notification::GetNotificationSettings::new(
-            application::in_memory::InMemoryNotificationSettingsRepository::default(),
-        ),
-        application::notification::UpdateNotificationSettings::new(
-            application::in_memory::InMemoryNotificationSettingsRepository::default(),
+        ListCoachesForStudent::new(
+            ProfileStudentSportLookup::new(accounts.clone()),
+            ProfileCoachCandidateLookup::new(accounts),
+            ReviewCoachReviewSummaryLookup::new(reviews),
+            CatalogPublishedLessonMenuCountLookup::new(menus),
         ),
         FakeTokens,
     )
 }
 
-async fn list_coaches(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/coaches");
+/// `GET /coaches<query>`。レスポンスを `app`（admin-web / student-app）の契約で検査する。
+async fn list_coaches(
+    router: &Router,
+    app: &str,
+    query: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/coaches{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -285,14 +164,14 @@ async fn list_coaches(router: &Router, token: Option<&str>) -> (StatusCode, Valu
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap();
-    support::Contract::load("admin-web").assert_response("get", "/coaches", status, &body);
+    support::Contract::load(app).assert_response("get", "/coaches", status, &body);
     (status, body)
 }
 
 #[tokio::test]
 async fn headquarters_lists_only_coaches_in_display_name_order() {
     let router = app(accounts().await);
-    let (status, body) = list_coaches(&router, Some(HEADQUARTERS)).await;
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body,
@@ -310,20 +189,100 @@ async fn headquarters_lists_only_coaches_in_display_name_order() {
 #[tokio::test]
 async fn no_coaches_is_an_empty_list() {
     let router = app(InMemoryAccountRepository::default());
-    let (status, body) = list_coaches(&router, Some(HEADQUARTERS)).await;
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "coaches": [] }));
 }
 
 #[tokio::test]
-async fn only_headquarters_may_list_coaches() {
+async fn student_lists_coaches_of_own_sport_by_average_rating() {
     let router = app(accounts().await);
-    for token in ["coach:2", "student:3"] {
-        let (status, body) = list_coaches(&router, Some(token)).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
-        assert_eq!(body["code"], "forbidden");
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000004",
+                    "display_name": "いとう",
+                    "sport": "tennis",
+                    "review_count": 1,
+                    "average_rating": 5.0,
+                    "published_lesson_menu_count": 0,
+                },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000002",
+                    "display_name": "たなか",
+                    "sport": "tennis",
+                    "review_count": 2,
+                    "average_rating": 3.5,
+                    "published_lesson_menu_count": 1,
+                },
+            ],
+        }),
+        "生徒のスポーツ（テニス）を提供するコーチだけ。非公開のメニューは数えない"
+    );
+}
+
+#[tokio::test]
+async fn student_filters_by_sport() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "student-app", "?sport=soccer", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [{
+                "coach_id": "00000000-0000-0000-0000-000000000005",
+                "display_name": "いとう",
+                "sport": "soccer",
+                "review_count": 1,
+                "average_rating": 2.0,
+                "published_lesson_menu_count": 1,
+            }],
+        }),
+        "ゴルフのメニューは数えない"
+    );
+
+    let (status, body) =
+        list_coaches(&router, "student-app", "?sport=swimming", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coaches": [] }));
+}
+
+#[tokio::test]
+async fn golf_or_unknown_sport_is_422_and_golf_student_gets_an_empty_list() {
+    let router = app(accounts().await);
+    for query in ["?sport=golf", "?sport=cricket"] {
+        let (status, body) = list_coaches(&router, "student-app", query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
     }
-    let (status, body) = list_coaches(&router, None).await;
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(GOLF_STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coaches": [] }), "ゴルフは golf-app の範囲");
+}
+
+#[tokio::test]
+async fn student_without_account_is_401_when_sport_is_omitted() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "student-app", "", Some("student:99")).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(body["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn coach_is_403_and_no_token_is_401() {
+    let router = app(accounts().await);
+    for contract in ["admin-web", "student-app"] {
+        let (status, body) = list_coaches(&router, contract, "", Some("coach:2")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{contract}: {body}");
+        assert_eq!(body["code"], "forbidden");
+
+        let (status, body) = list_coaches(&router, contract, "", None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{contract}: {body}");
+        assert_eq!(body["code"], "unauthorized");
+    }
 }
