@@ -47,8 +47,8 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        ListCoaches, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
-        ProfileStudentDisplayNameLookup, UpdateCoachProfile,
+        GetCoachProfile, ListCoaches, ProfileCoachDisplayNameLookup,
+        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, UpdateCoachProfile,
     },
     review::{GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, SubmitLessonReview},
     scheduling::{
@@ -106,6 +106,8 @@ pub fn router() -> Router {
 /// （`GET /coaches/me/videos`）も、動画を送った生徒の表示名を同じ実装で添える。生徒が送った動画の一覧（`GET /videos/me`）は、
 /// 送り先のコーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。本部が見るレッスンメニューの横断の一覧（`GET /lesson-menus`）も、作ったコーチの表示名を同じ実装で添える。コーチの自分の枠の一覧（`GET /coaches/me/slots`）は、
 /// スロットの保存先から枠を、予約の保存先から枠に入った予約を読む（`ListCoachSlots`）。
+/// 生徒が見るコーチの紹介（`GET /coaches/{coach_id}`）は、アカウントの保存先から表示名・自己紹介文・提供スポーツを読む
+/// （`GetCoachProfile`）。
 ///
 /// レッスンの評価（`POST /lesson-reviews`）は完了記録の保存先から評価するレッスンを読み（`LessonCompletionLookup`）、
 /// 評価の保存先も当面インメモリ。コーチの評価の件数と平均（`GET /coaches/{coach_id}/review-summary`）と
@@ -320,6 +322,8 @@ where
     );
     let subscription_plans =
         interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
+    let coach_profile =
+        interface::coach_profile_router(GetCoachProfile::new(accounts.clone()), MockTokenService);
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(entitlements.clone()),
         (
@@ -454,4 +458,5 @@ where
     .merge(catalog)
     .merge(my_videos)
     .merge(subscription_plans)
+    .merge(coach_profile)
 }

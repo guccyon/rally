@@ -7,6 +7,7 @@ mod accounts;
 pub mod auth;
 mod bookings;
 mod coach_bookings;
+mod coach_profiles;
 mod coach_slots;
 mod coach_videos;
 mod coaches;
@@ -65,7 +66,7 @@ use application::{
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
     },
-    profile::{ListCoaches, UpdateCoachProfile},
+    profile::{GetCoachProfile, ListCoaches, UpdateCoachProfile},
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         ReviewedLessonMenuLookup, SubmitLessonReview,
@@ -476,6 +477,28 @@ where
             list_my_lesson_menus,
             list_coach_lesson_menus,
             list_lesson_menus,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// コーチの紹介（student-app の `GET /coaches/{coach_id}`）のルーター。[`router_with`] と同じくトークンの検証の層を
+/// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /coaches/{coach_id}` は生徒だけ。
+pub fn coach_profile_router<R, T>(get_coach_profile: GetCoachProfile<R>, tokens: T) -> Router
+where
+    R: AccountRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}",
+            get(coach_profiles::get_coach_profile::<R>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(coach_profiles::CoachProfilesState {
+            get_coach_profile,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }
