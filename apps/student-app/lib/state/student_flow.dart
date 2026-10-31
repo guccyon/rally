@@ -7,6 +7,7 @@ import '../api/student_api.dart';
 import 'chat.dart';
 import 'coach_profile.dart';
 import 'coach_search.dart';
+import 'lesson_completions.dart';
 import 'lesson_review.dart';
 import 'notifications.dart';
 import 'subscription.dart';
@@ -56,8 +57,15 @@ enum FlowStep {
   /// 自分が送った動画の一覧（登録後のどの段からも開け、閉じると開いた段に戻る）
   myVideos,
 
-  /// 自分の動画の一覧かホームの「返ってきた添削」から開いた、返却済みの動画の添削結果（閉じると開いた段に戻る）
-  myVideoReview;
+  /// 自分の動画の一覧かホームの「返ってきた添削」か受けたレッスンの動画添削の行から開いた、動画の添削結果（閉じると開いた段に戻る）
+  myVideoReview,
+
+  /// 受けたレッスン（完了したレッスンの一覧。ホームから開く。状態は [LessonCompletionsState]）。
+  /// 行からはまだ評価していないレッスンの評価と、動画添削の添削結果を開く
+  lessonCompletions,
+
+  /// 受けたレッスンのまだ評価していない行から開いた、そのレッスンの評価（評価するレッスンは [LessonCompletionsState.reviewing]）
+  lessonCompletionReview;
 
   bool get isChat => this == messageThreads || this == messages;
 
@@ -232,7 +240,7 @@ class StudentFlowState {
   /// 自分の動画の一覧から開いた動画の添削（`getVideoReview`）。一周シナリオの [review] とは別に持つ
   final VideoReview? myVideoReview;
 
-  /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧かホーム）
+  /// [myVideoReview] の画面を閉じたときに戻る段（自分の動画の一覧・ホーム・受けたレッスン）
   final FlowStep? videoReviewReturnStep;
 
   /// `errorMessage` は引き継がない（渡さなければ消える）。[searchCoach] は [clearSearchCoach] で外す。
@@ -762,15 +770,14 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       booking.status != BookingStatus.cancelled &&
       booking.startsAt.isAfter(_now());
 
-  /// 今キャンセルすると今月のビデオ通話の回数を使うか（確認の文言を添えるかの目安）。
-  /// 回数を使うかを決めるのはサーバー（scheduling のキャンセル規定。開始 24 時間前ちょうどからを含む）で、
-  /// ここは確認に添える文言のためだけに同じ境界で見る。回数の制約があるのは月額契約の生徒だけ（docs/adr/0005 の 6）
-  bool cancellationUsesQuota(Booking booking) =>
-      ref.read(subscriptionProvider).entitlement?.contractType ==
-          ContractType.subscription &&
-      !_now().add(_quotaConsumingNotice).isBefore(booking.startsAt);
-
-  static const _quotaConsumingNotice = Duration(hours: 24);
+  /// 今キャンセルすると今月のビデオ通話の枠を使うか（行の案内と確認の文言を添えるかの目安）。
+  /// 決めるのはサーバー（scheduling のキャンセル規定）で、ここは `listMyBookings` の見込みを読むだけ。
+  /// 境目 `free_cancel_until` があれば今の時刻と比べ（一覧を読んだあとで境目を過ぎても合うように。境目ちょうどからを含む）、
+  /// なければ `cancel_consumes_quota` のまま（null は使わないとみなす）
+  bool cancellationUsesQuota(MyBooking item) => switch (item.freeCancelUntil) {
+    final until? => !_now().isBefore(until),
+    null => item.cancelConsumesQuota ?? false,
+  };
 
   /// `cancelBooking`。キャンセルできたら一覧のその予約を応答で置き換える。
   Future<void> cancelBooking(Booking booking) => run(() async {
@@ -808,10 +815,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void closeMyVideos() =>
       state = state.copyWith(step: state.videosReturnStep ?? FlowStep.home);
 
-  /// 自分の動画の一覧かホームの「返ってきた添削」から、返却済みの動画の添削結果を開く（`getVideoReview`）。
-  /// 読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
-  Future<void> openMyVideoReview(MyVideo video) => run(() async {
-    final review = await _api.getVideoReview(video.videoId);
+  /// 自分の動画の一覧かホームの「返ってきた添削」か受けたレッスンの動画添削の行から、[videoId] の動画の添削結果を開く
+  /// （`getVideoReview`）。読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
+  Future<void> openMyVideoReview(String videoId) => run(() async {
+    final review = await _api.getVideoReview(videoId);
     state = state.copyWith(
       myVideoReview: review,
       videoReviewReturnStep: state.step,
@@ -819,7 +826,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧かホーム）に戻る
+  /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧・ホーム・受けたレッスン）に戻る
   void closeMyVideoReview() => state = state.copyWith(
     step: state.videoReviewReturnStep ?? FlowStep.myVideos,
   );

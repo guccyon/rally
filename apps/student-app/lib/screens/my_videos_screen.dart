@@ -47,7 +47,7 @@ class MyVideosScreen extends ConsumerWidget {
                     OutlinedButton(
                       onPressed: state.busy
                           ? null
-                          : () => notifier.openMyVideoReview(item),
+                          : () => notifier.openMyVideoReview(item.videoId),
                       child: const Text('添削結果を見る'),
                     ),
                   ],

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/coach_profile.dart';
 import 'package:rally_student_app/state/coach_search.dart';
+import 'package:rally_student_app/state/lesson_completions.dart';
 import 'package:rally_student_app/state/lesson_review.dart';
 import 'package:rally_student_app/state/notifications.dart';
 import 'package:rally_student_app/state/student_flow.dart';
@@ -11,7 +12,7 @@ import 'package:rally_student_app/state/subscription.dart';
 
 import 'fake_student_api.dart';
 
-/// [screen] を、API をモックにした ProviderScope で描く。[initial] で途中の段から始め、[chat] でチャットの状態、[review] で完了したレッスンの評価の状態、[subscription] で月額契約と受講権の状態、[coachSearch] でコーチを探す画面の状態、[coachProfile] でコーチの紹介の状態、[notifications] でお知らせの状態を渡す。
+/// [screen] を、API をモックにした ProviderScope で描く。[initial] で途中の段から始め、[chat] でチャットの状態、[review] で完了したレッスンの評価の状態、[subscription] で月額契約と受講権の状態、[coachSearch] でコーチを探す画面の状態、[coachProfile] でコーチの紹介の状態、[notifications] でお知らせの状態、[lessonCompletions] で受けたレッスンの状態を渡す。
 /// 今の時刻は [now]（既定は [Fixtures.now]）に固定する。
 Future<ProviderContainer> pumpScreen(
   WidgetTester tester,
@@ -24,6 +25,7 @@ Future<ProviderContainer> pumpScreen(
   CoachSearchState? coachSearch,
   CoachProfileState? coachProfile,
   NotificationsState? notifications,
+  LessonCompletionsState? lessonCompletions,
   DateTime? now,
 }) async {
   await tester.pumpWidget(
@@ -46,6 +48,9 @@ Future<ProviderContainer> pumpScreen(
         ),
         notificationsProvider.overrideWith(
           () => NotificationsNotifier(notifications),
+        ),
+        lessonCompletionsProvider.overrideWith(
+          () => LessonCompletionsNotifier(lessonCompletions),
         ),
         clockProvider.overrideWithValue(() => now ?? Fixtures.now),
       ],

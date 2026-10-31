@@ -4,6 +4,7 @@
 //! - 体験予約 → 確定 → 通話の開始・終了 → 完了の記録で、`is_first_lesson` が true になる
 //! - 同じ生徒が動画を送り、添削が返されてから完了を記録すると、2 回目なので `is_first_lesson` は false
 //! - 生徒が完了したレッスンを 1 回だけ評価でき、本部とコーチ本人と生徒がコーチの評価の件数と平均を読める
+//! - 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）に、通話と動画添削の両方が新しい順に、評価済みの印付きで出る
 
 use std::time::{Duration, SystemTime};
 
@@ -234,4 +235,41 @@ async fn live_and_async_lessons_are_completed_and_only_the_first_is_the_first_le
         assert_eq!(summary["review_count"], 1);
         assert_eq!(summary["average_rating"], 4.0);
     }
+
+    // 生徒が受けたレッスンの一覧: 新しい順（動画添削 → 通話）で、評価した通話だけが評価済み。コーチは 403
+    let me = |token: &str| {
+        Request::get("/lessons/completions/me")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, list) = send(&router, me(&student)).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let lessons = list["lesson_completions"].as_array().unwrap();
+    assert_eq!(
+        lessons
+            .iter()
+            .map(|lesson| (
+                lesson["lesson_id"].clone(),
+                lesson["lesson_type"].clone(),
+                lesson["is_reviewed"].clone()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                second["lesson_id"].clone(),
+                json!("async_lesson"),
+                json!(false)
+            ),
+            (
+                first["lesson_id"].clone(),
+                json!("live_lesson"),
+                json!(true)
+            ),
+        ]
+    );
+    assert_eq!(lessons[1]["session_id"], session_id);
+    assert_eq!(lessons[0]["video_id"], video_id);
+    let (status, _) = send(&router, me(&coach)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

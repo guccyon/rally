@@ -34,7 +34,7 @@ use application::{
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
-        LessonCompletionRepository, RecordLessonCompletion,
+        LessonCompletionRepository, ListMyLessonCompletions, RecordLessonCompletion,
     },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -57,7 +57,8 @@ use application::{
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
-        ReviewCoachReviewSummaryLookup, ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
+        ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
+        ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
     scheduling::{
         BookingRepository, CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply,
@@ -124,6 +125,10 @@ pub fn router() -> Router {
 /// 評価の一覧（`GET /coaches/{coach_id}/reviews`）は同じ保存先から読む。評価の一覧に添えるレッスンメニューは、
 /// 完了記録の元（通話セッションに結び付いた予約・動画）が持つ写しを読む（`LessonCompletionMenuLookup`。予約は
 /// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。
+///
+/// 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は完了記録の保存先から生徒の完了したレッスンを読み、
+/// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
+/// 付けたかは評価の保存先から（`ReviewLessonCompletionReviewLookup`）読む（完了記録は profile・review を直接読まない）。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -336,6 +341,17 @@ where
         ),
         MockTokenService,
     );
+    let my_lesson_completions = interface::my_lesson_completions_router(
+        ListMyLessonCompletions::new(
+            completions.clone(),
+            sessions.clone(),
+            SchedulingBookingLookup::new(bookings.clone()),
+            videos.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            ReviewLessonCompletionReviewLookup::new(reviews.clone()),
+        ),
+        MockTokenService,
+    );
     let coaches = interface::coaches_router(
         ListCoaches::new(accounts.clone()),
         ListCoachesForStudent::new(
@@ -512,6 +528,7 @@ where
     .merge(catalog)
     .merge(coaches)
     .merge(my_videos)
+    .merge(my_lesson_completions)
     .merge(subscription_plans)
     .merge(coach_profile)
     .merge(my_profile)

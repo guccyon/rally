@@ -1,0 +1,53 @@
+# 知見の変更セットの検査（factory-engine の core-gates/knowledge_check.py、ADR 0024）。決定論（LLM を使わない）。
+# 形・期限・置き換えの相互参照・根拠の参照先・個人情報の形・INDEX.md の一致を見る。
+# PR が .factory-config/knowledge/ を変えたときだけ、通らなければジョブを落とす（委員会に持ち込む前の関門）。ほかの PR では結果を Job Summary に残すだけ
+name: knowledge-check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knowledge-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
+
+jobs:
+  knowledge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 検査を取る（Engine の固定した版）
+        run: |
+          curl -fsSL -o /tmp/knowledge_check.py "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/core-gates/knowledge_check.py"
+      - name: 知見の変更の PR か
+        id: scope
+        env:
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^\.factory-config/knowledge/'; then
+            echo "knowledge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "knowledge=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 知見の検査
+        env:
+          KNOWLEDGE: ${{ steps.scope.outputs.knowledge }}
+        run: |
+          rc=0
+          python3 /tmp/knowledge_check.py --repo . --json knowledge-check.json > knowledge-check.txt || rc=$?
+          { echo "## knowledge-check"; echo; echo '```'; cat knowledge-check.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat knowledge-check.txt
+          if [ "$KNOWLEDGE" = "true" ]; then exit $rc; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: knowledge-check
+          path: knowledge-check.json
+          if-no-files-found: ignore

@@ -459,6 +459,55 @@ void main() {
     expect(() => list.videos.clear(), throwsUnsupportedError);
   });
 
+  test('MyLessonCompletionList.fromJson は通話と動画添削・任意の項目を読み、一覧は書き換えられない', () {
+    final list = MyLessonCompletionList.fromJson({
+      'lesson_completions': [
+        {
+          'lesson_id': 'l1',
+          'coach_id': 'c1',
+          'coach_display_name': '佐藤',
+          'lesson_type': 'async_lesson',
+          'session_id': null,
+          'video_id': 'v1',
+          'completed_at': '2026-10-26T00:00:00Z',
+          'lesson_menu': {'lesson_menu_id': 'm1', 'name': 'サーブの動画添削'},
+          'is_reviewed': false,
+        },
+        {
+          'lesson_id': 'l2',
+          'coach_id': 'c2',
+          'lesson_type': 'live_lesson',
+          'session_id': 'ls1',
+          'video_id': null,
+          'completed_at': '2026-10-25T00:00:00Z',
+          'lesson_menu': null,
+          'is_reviewed': true,
+        },
+      ],
+    });
+
+    expect(list.lessonCompletions, hasLength(2));
+    final async = list.lessonCompletions[0];
+    expect(async.lessonId, 'l1');
+    expect(async.coachDisplayName, '佐藤');
+    expect(async.lessonType, LessonType.asyncLesson);
+    expect(async.sessionId, isNull);
+    expect(async.videoId, 'v1');
+    expect(async.completedAt, DateTime.utc(2026, 10, 26));
+    expect(async.lessonMenu?.lessonMenuId, 'm1');
+    expect(async.lessonMenu?.name, 'サーブの動画添削');
+    expect(async.isReviewed, isFalse);
+    final live = list.lessonCompletions[1];
+    // コーチのアカウントが引けないときは表示名が載らない
+    expect(live.coachDisplayName, isNull);
+    expect(live.lessonType, LessonType.liveLesson);
+    expect(live.sessionId, 'ls1');
+    expect(live.videoId, isNull);
+    expect(live.lessonMenu, isNull);
+    expect(live.isReviewed, isTrue);
+    expect(() => list.lessonCompletions.clear(), throwsUnsupportedError);
+  });
+
   group('Booking のレッスンメニュー', () {
     final booking = {
       'booking_id': 'b1',

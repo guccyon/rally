@@ -86,6 +86,12 @@ class HttpStudentApi implements StudentApi {
       );
 
   @override
+  Future<MyLessonCompletionList> listMyLessonCompletions() async =>
+      MyLessonCompletionList.fromJson(
+        await _send('GET', '/lessons/completions/me'),
+      );
+
+  @override
   Future<Lesson> recordLessonCompletion(
     RecordLessonCompletionRequest body,
   ) async => Lesson.fromJson(

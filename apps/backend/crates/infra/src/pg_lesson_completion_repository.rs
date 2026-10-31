@@ -35,6 +35,14 @@ pub struct PgLessonCompletionRepository {
 /// 同期なら true）。
 type CompletionRow = (Uuid, Uuid, Uuid, bool, OffsetDateTime, bool);
 
+/// 生徒（`$1`）の完了記録を同期・非同期の両方から読む（[`CompletionRow`] の形）。
+const COMPLETIONS_OF_STUDENT: &str =
+    "SELECT lesson_id, session_id, coach_id, is_first_lesson, completed_at, true
+     FROM live_lesson.lesson_completions WHERE student_id = $1
+     UNION ALL
+     SELECT lesson_id, video_id, coach_id, is_first_lesson, completed_at, false
+     FROM async_lesson.lesson_completions WHERE student_id = $1";
+
 impl PgLessonCompletionRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -69,6 +77,21 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
                 )
             },
         ))
+    }
+
+    async fn completions_of_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Vec<LessonCompletion>, Unavailable> {
+        let rows: Vec<CompletionRow> = sqlx::query_as(COMPLETIONS_OF_STUDENT)
+            .bind(account_id_uuid::to_uuid(student_id))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Unavailable::new)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| completion_from_row(student_id, row))
+            .collect())
     }
 
     async fn find_by_coach(
@@ -115,17 +138,11 @@ impl LessonCompletionRepository for PgLessonCompletionRepository {
         lock(&mut tx, &format!("lesson_completions:{student}"))
             .await
             .map_err(unavailable)?;
-        let rows: Vec<CompletionRow> = sqlx::query_as(
-            "SELECT lesson_id, session_id, coach_id, is_first_lesson, completed_at, true
-             FROM live_lesson.lesson_completions WHERE student_id = $1
-             UNION ALL
-             SELECT lesson_id, video_id, coach_id, is_first_lesson, completed_at, false
-             FROM async_lesson.lesson_completions WHERE student_id = $1",
-        )
-        .bind(student)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(unavailable)?;
+        let rows: Vec<CompletionRow> = sqlx::query_as(COMPLETIONS_OF_STUDENT)
+            .bind(student)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(unavailable)?;
         let history: Vec<LessonCompletion> = rows
             .into_iter()
             .map(|row| completion_from_row(student_id, row))

@@ -222,8 +222,28 @@ void main() {
     );
   });
 
+  test('受けたレッスンのメニューは名前だけを出す', () {
+    expect(
+      lessonCompletionMenuLabel(
+        const LessonCompletionMenu(lessonMenuId: 'm1', name: 'サーブの動画添削'),
+      ),
+      'メニュー: サーブの動画添削',
+    );
+  });
+
   test('レッスンメニューの同期レッスン 1 回の時間を分で出す', () {
     expect(lessonMenuDurationLabel(60), '1 回 60 分');
     expect(lessonMenuDurationLabel(15), '1 回 15 分');
+  });
+
+  test('枠を使わずにキャンセルできる境目の案内は、端末のタイムゾーンの月日と時で出し、分があれば分まで出す', () {
+    expect(
+      freeCancelUntilLabel(DateTime(2026, 10, 28, 3)),
+      '10月28日 3時までなら、ビデオ通話の枠を使わずにキャンセルできます。',
+    );
+    expect(
+      freeCancelUntilLabel(DateTime(2026, 10, 28, 15, 30)),
+      '10月28日 15時30分までなら、ビデオ通話の枠を使わずにキャンセルできます。',
+    );
   });
 }

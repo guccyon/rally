@@ -1,0 +1,178 @@
+# 画面のキャプチャ（admin-web は Playwright、student-app は Flutter）。PR の前（ベース）と後で同じ画面を撮って比べ、
+# 変わった画面の前・後・差分を CI の成果物（screenshots-<アプリ>）にして、PR のチェックの一覧からリンクする。
+# 人が出口で見た目を判断する土台と、外部品質の検査に使う。
+#
+# - 撮るのは各アプリの撮影（apps/admin-web/screenshots/、apps/student-app/screenshots/）。API は決まった応答で代用し、時刻も固定する
+# - 前と後は同じジョブ（同じマシンとフォント）で、それぞれ自分の版の撮影の定義で撮る。ベースに撮影がなければ全画面が「新しい画面」
+# - 比べるのは tools/screenshots/compare.mjs。成果物の manifest.json が変わった画面の一覧（工場が読む）、index.html が人の見るページ
+# - PR のチェックに「画面のキャプチャ / <アプリ>」を出し、詳細のリンクを成果物にする。見た目は人の判断なので、状態は常に success（マージを止めない）
+# - アプリに変更がない PR では撮らない
+name: screenshots
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: キャプチャの置き場
+        run: echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: admin-web に変更があるか
+        id: changed
+        run: |
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- apps/admin-web specs/contracts/api/admin-web tools/screenshots .github/workflows/screenshots.yml; then
+            echo "yes=false" >> "$GITHUB_OUTPUT"; echo "admin-web に変更なし。撮らない"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: ベースの版を取り出す
+        if: steps.changed.outputs.yes == 'true'
+        run: git worktree add "$RUNNER_TEMP/base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/admin-web/package-lock.json
+            tools/screenshots/package-lock.json
+      - name: 後（この PR）を撮る
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: apps/admin-web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm run build
+          SCREENSHOT_DIR="$SHOTS/head" npm run screenshots || echo "撮れなかった画面がある（成果物の一覧に出す）"
+      - name: 前（ベース）を撮る
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: ${{ runner.temp }}/base/apps/admin-web
+        run: |
+          if [ ! -f screenshots/playwright.config.ts ]; then echo "ベースに撮影がない。全画面を新しい画面として扱う"; exit 0; fi
+          npm ci --no-audit --no-fund
+          npx playwright install chromium
+          npm run build
+          SCREENSHOT_DIR="$SHOTS/base" npm run screenshots || echo "ベースで撮れなかった画面がある"
+      - name: 前と後を比べる
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: tools/screenshots
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          node compare.mjs --app admin-web --base "$SHOTS/base" --head "$SHOTS/head" --out "$SHOTS/report"
+      - uses: actions/upload-artifact@v4
+        id: upload
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          name: screenshots-admin-web
+          path: ${{ env.SHOTS }}/report
+          retention-days: 14
+      - name: PR のチェックにリンクを出す
+        if: steps.changed.outputs.yes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          node -e '
+            const m = require(process.argv[1]);
+            const n = m.changed.length + m.added.length + m.removed.length;
+            const d = n ? `見た目が変わった画面 ${n}` : "見た目が変わった画面なし";
+            console.log(m.failed.length ? `${d}・撮れなかった画面 ${m.failed.length}` : d);
+          ' "$SHOTS/report/manifest.json" > "$SHOTS/description.txt"
+          { cat "$SHOTS/report/summary.md"; echo; echo "成果物: $URL"; } >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=success -f context="画面のキャプチャ / admin-web" \
+            -f description="$(cat "$SHOTS/description.txt")" -f target_url="$URL" \
+            || echo "チェックに出せなかった（フォークからの PR など）。成果物と要約は残る"
+
+  student-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: キャプチャの置き場
+        run: echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: student-app に変更があるか
+        id: changed
+        run: |
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- apps/student-app specs/contracts/api/student-app tools/screenshots .github/workflows/screenshots.yml; then
+            echo "yes=false" >> "$GITHUB_OUTPUT"; echo "student-app に変更なし。撮らない"
+          else
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: ベースの版を取り出す
+        if: steps.changed.outputs.yes == 'true'
+        run: git worktree add "$RUNNER_TEMP/base" "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+      - name: 日本語のフォント
+        if: steps.changed.outputs.yes == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-ipafont-gothic
+      - uses: subosito/flutter-action@v2
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/screenshots/package-lock.json
+      - name: 後（この PR）を撮る
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: apps/student-app
+        run: |
+          flutter pub get
+          SCREENSHOT_DIR="$SHOTS/head" flutter test screenshots/ || echo "撮れなかった画面がある（成果物の一覧に出す）"
+      - name: 前（ベース）を撮る
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: ${{ runner.temp }}/base/apps/student-app
+        run: |
+          if [ ! -d screenshots ]; then echo "ベースに撮影がない。全画面を新しい画面として扱う"; exit 0; fi
+          flutter pub get
+          SCREENSHOT_DIR="$SHOTS/base" flutter test screenshots/ || echo "ベースで撮れなかった画面がある"
+      - name: 前と後を比べる
+        if: steps.changed.outputs.yes == 'true'
+        working-directory: tools/screenshots
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          node compare.mjs --app student-app --base "$SHOTS/base" --head "$SHOTS/head" --out "$SHOTS/report"
+      - uses: actions/upload-artifact@v4
+        id: upload
+        if: steps.changed.outputs.yes == 'true'
+        with:
+          name: screenshots-student-app
+          path: ${{ env.SHOTS }}/report
+          retention-days: 14
+      - name: PR のチェックにリンクを出す
+        if: steps.changed.outputs.yes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          node -e '
+            const m = require(process.argv[1]);
+            const n = m.changed.length + m.added.length + m.removed.length;
+            const d = n ? `見た目が変わった画面 ${n}` : "見た目が変わった画面なし";
+            console.log(m.failed.length ? `${d}・撮れなかった画面 ${m.failed.length}` : d);
+          ' "$SHOTS/report/manifest.json" > "$SHOTS/description.txt"
+          { cat "$SHOTS/report/summary.md"; echo; echo "成果物: $URL"; } >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state=success -f context="画面のキャプチャ / student-app" \
+            -f description="$(cat "$SHOTS/description.txt")" -f target_url="$URL" \
+            || echo "チェックに出せなかった（フォークからの PR など）。成果物と要約は残る"
