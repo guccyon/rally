@@ -1,0 +1,52 @@
+guccyon/rally#109（#104 の差し戻しの修正）の apps/student-app/lib/state/student_flow.dart の差分。gh pr diff から切り出したもの。
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index f795641f..21ac87e2 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -1,3 +1,5 @@
++import 'dart:collection';
++
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import '../api/error_message.dart';
+@@ -45,14 +47,16 @@ class StudentFlowState {
+     this.review,
+     this.lesson,
+     this.lessonReview,
+-    this.reviewedLessonIds = const {},
++    Set<String> reviewedLessonIds = const {},
+     this.subscription,
+     this.entitlement,
+     this.chatReturnStep,
+     this.threads,
+     this.thread,
+     this.messages,
+-  });
++    // 名前付き引数は _ で始められないので、初期化子で private の欄に入れる
++    // ignore: prefer_initializing_formals
++  }) : _reviewedLessonIds = reviewedLessonIds;
+ 
+   final FlowStep step;
+ 
+@@ -86,8 +90,10 @@ class StudentFlowState {
+   final LessonReview? lessonReview;
+ 
+   /// 評価済みと分かっている完了したレッスンの ID。評価済みを返す読み取りの API はないので、
+-  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す
+-  final Set<String> reviewedLessonIds;
++  /// この端末で送れたときと、送って 409 `lesson_already_reviewed` が返ったときに足す。
++  /// 読み出しは変更できないビューで返す（どの経路で作っても、`add` などで Riverpod を通さずに状態を変えさせない）
++  Set<String> get reviewedLessonIds => UnmodifiableSetView(_reviewedLessonIds);
++  final Set<String> _reviewedLessonIds;
+ 
+   /// 完了を記録したレッスンを評価済みと分かっているか
+   bool get lessonReviewed => reviewedLessonIds.contains(lesson?.lessonId);
+@@ -145,7 +151,7 @@ class StudentFlowState {
+     review: review ?? this.review,
+     lesson: lesson ?? this.lesson,
+     lessonReview: lessonReview ?? this.lessonReview,
+-    reviewedLessonIds: reviewedLessonIds ?? this.reviewedLessonIds,
++    reviewedLessonIds: reviewedLessonIds ?? _reviewedLessonIds,
+     subscription: subscription ?? this.subscription,
+     entitlement: entitlement ?? this.entitlement,
+     chatReturnStep: chatReturnStep ?? this.chatReturnStep,
