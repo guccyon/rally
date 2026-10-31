@@ -6,7 +6,7 @@ use std::{
 
 use domain::{
     identity::AccountId,
-    scheduling::{Booking, BookingId, SchedulingError, Slot, SlotId},
+    scheduling::{Booking, BookingId, CoachAcceptance, SchedulingError, Slot, SlotId},
 };
 
 use super::{ReserveSlotError, UpdateBookingError};
@@ -34,6 +34,13 @@ pub trait BookingRepository: Send + Sync {
         &self,
         slot_id: SlotId,
     ) -> impl Future<Output = Result<Option<Slot>, Unavailable>> + Send;
+
+    /// `coach_id` のコーチの受付（受付を止めていなければ受付中。[`super::CoachAcceptanceRepository`] と同じ状態）。読むだけで
+    /// 何も変えない。予約の作成（[`super::CreateBooking`]）が、枠のコーチが新しい予約を受けるかを確かめるために先に読む。
+    fn find_coach_acceptance(
+        &self,
+        coach_id: AccountId,
+    ) -> impl Future<Output = Result<CoachAcceptance, Unavailable>> + Send;
 
     /// `slot_id` のスロットと、既存の予約（少なくともそのスロットの予約と `student_id` の生徒の予約）を
     /// 読み、`reserve` に渡す。`reserve` が `Ok` なら返した予約を保存して返す。スロットの席の数

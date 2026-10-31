@@ -27,6 +27,7 @@ String errorMessageOf(Object error) {
     ErrorCode.lessonAlreadyCompleted => 'このレッスンの完了はすでに記録されています。',
     ErrorCode.chatNotEntitled => 'チャットは月額契約を始めると使えます。',
     ErrorCode.lessonAlreadyReviewed => 'このレッスンはすでに評価しています。',
+    ErrorCode.coachNotAcceptingBookings => 'このコーチは今、新しい予約を受け付けていません。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }

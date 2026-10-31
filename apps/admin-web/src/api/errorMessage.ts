@@ -15,6 +15,8 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   invalid_video_state: "この動画の添削はすでに返却済みです。",
   review_payment_not_confirmed: "ワンショットの決済が確定していないため、添削に着手できません。",
   chat_not_entitled: "この生徒はまだ月額契約がないため、チャットを送れません。",
+  coach_already_suspended: "このコーチの受付はすでに停止しています。",
+  coach_not_suspended: "このコーチの受付は停止していません。",
 };
 
 const UNKNOWN = "エラーが発生しました。時間をおいてやり直してください。";

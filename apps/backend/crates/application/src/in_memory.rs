@@ -20,7 +20,10 @@ use domain::{
     notification::{Notification, NotificationId, NotificationSettings, PushNotification},
     profile::{CoachBio, DisplayName},
     review::{LessonReview, LessonReviewId},
-    scheduling::{Booking, BookingId, CoachCalendar, SchedulingError, Slot, SlotId},
+    scheduling::{
+        Booking, BookingId, CoachAcceptance, CoachAcceptanceStatus, CoachCalendar, SchedulingError,
+        Slot, SlotId,
+    },
 };
 
 use crate::{
@@ -52,8 +55,9 @@ use crate::{
     },
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
-        AddToCalendarError, BookingRepository, ReserveSlotError, SlotCriteria, SlotRepository,
-        UpdateBookingError, UpdateSlotError, booking_id_uuid, slot_id_uuid,
+        AddToCalendarError, BookingRepository, CoachAcceptanceRepository, ReserveSlotError,
+        SlotCriteria, SlotRepository, UpdateBookingError, UpdateCoachAcceptanceError,
+        UpdateSlotError, booking_id_uuid, slot_id_uuid,
     },
 };
 
@@ -204,9 +208,11 @@ impl Clock for FixedClock {
 ///
 /// カレンダーの読み取りから保存までは 1 つのロックの中で行うので、同じコーチへの公開は直列になる。枠の変更
 /// （[`SlotRepository::update`]）も同じロックの中で行うので、[`InMemoryBookingRepository`] の予約と直列になる。
+/// 検索から除く受付を止めているコーチは、[`Self::coach_acceptances`] の保存先と共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemorySlotRepository {
     slots: Arc<Mutex<Vec<Slot>>>,
+    acceptances: InMemoryCoachAcceptanceRepository,
 }
 
 impl InMemorySlotRepository {
@@ -214,12 +220,19 @@ impl InMemorySlotRepository {
     pub fn with_slots(slots: impl IntoIterator<Item = Slot>) -> Self {
         Self {
             slots: Arc::new(Mutex::new(slots.into_iter().collect())),
+            acceptances: InMemoryCoachAcceptanceRepository::default(),
         }
     }
 
     /// 保存した枠（保存した順）。
     pub fn all(&self) -> Vec<Slot> {
         self.slots.lock().unwrap().clone()
+    }
+
+    /// 共有しているコーチの受付の保存先（複製は同じ中身を共有する）。受付を止めたコーチの枠は検索に出ず、
+    /// [`InMemoryBookingRepository::find_coach_acceptance`] も同じ状態を読む。
+    pub fn coach_acceptances(&self) -> InMemoryCoachAcceptanceRepository {
+        self.acceptances.clone()
     }
 }
 
@@ -263,12 +276,13 @@ impl SlotRepository for InMemorySlotRepository {
     }
 
     async fn search(&self, criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {
+        let suspended = self.acceptances.suspended();
         let mut found: Vec<Slot> = self
             .slots
             .lock()
             .unwrap()
             .iter()
-            .filter(|slot| criteria.matches(slot))
+            .filter(|slot| criteria.matches(slot) && !suspended.contains(&slot.coach_id()))
             .cloned()
             .collect();
         found.sort_by_key(|slot| (slot.starts_at(), slot.id()));
@@ -330,6 +344,13 @@ impl BookingRepository for InMemoryBookingRepository {
             .iter()
             .find(|b| b.id() == booking_id)
             .cloned())
+    }
+
+    async fn find_coach_acceptance(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<CoachAcceptance, Unavailable> {
+        Ok(self.slots.acceptances.find(coach_id))
     }
 
     async fn find_slot(&self, slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
@@ -473,6 +494,58 @@ impl BookingRepository for InMemoryBookingRepository {
                 Ok((b.clone(), slot.clone()))
             })
             .collect()
+    }
+}
+
+/// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID だけを持つ（ないコーチは受付中）。
+/// 複製は同じ中身を共有する。枠の検索と予約の作成が読めるよう、[`InMemorySlotRepository::coach_acceptances`] から
+/// 取り出して使う（単独で作ると、どの枠の保存先とも共有しない）。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryCoachAcceptanceRepository {
+    suspended: Arc<Mutex<BTreeSet<AccountId>>>,
+}
+
+impl InMemoryCoachAcceptanceRepository {
+    fn suspended(&self) -> BTreeSet<AccountId> {
+        self.suspended.lock().unwrap().clone()
+    }
+
+    fn find(&self, coach_id: AccountId) -> CoachAcceptance {
+        restore_acceptance(&self.suspended.lock().unwrap(), coach_id)
+    }
+}
+
+/// 受付を止めているコーチの集合 `suspended` から、`coach_id` のコーチの受付を戻す。
+fn restore_acceptance(suspended: &BTreeSet<AccountId>, coach_id: AccountId) -> CoachAcceptance {
+    let status = if suspended.contains(&coach_id) {
+        CoachAcceptanceStatus::Suspended
+    } else {
+        CoachAcceptanceStatus::Accepting
+    };
+    CoachAcceptance::restore(coach_id, status)
+}
+
+impl CoachAcceptanceRepository for InMemoryCoachAcceptanceRepository {
+    async fn update<F>(
+        &self,
+        coach_id: AccountId,
+        update: F,
+    ) -> Result<CoachAcceptance, UpdateCoachAcceptanceError>
+    where
+        F: FnOnce(&mut CoachAcceptance) -> Result<(), SchedulingError> + Send,
+    {
+        let mut suspended = self.suspended.lock().unwrap();
+        let mut acceptance = restore_acceptance(&suspended, coach_id);
+        update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
+        match acceptance.status() {
+            CoachAcceptanceStatus::Suspended => suspended.insert(coach_id),
+            CoachAcceptanceStatus::Accepting => suspended.remove(&coach_id),
+        };
+        Ok(acceptance)
+    }
+
+    async fn suspended_coaches(&self) -> Result<BTreeSet<AccountId>, Unavailable> {
+        Ok(self.suspended())
     }
 }
 
