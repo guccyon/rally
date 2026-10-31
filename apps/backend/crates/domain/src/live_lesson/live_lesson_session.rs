@@ -233,6 +233,17 @@ impl LiveLessonSession {
         account == self.coach_id || self.links_student(account)
     }
 
+    /// 結び付いた予約のうち、生徒 `student` の予約。結び付いていない生徒なら `None`。
+    ///
+    /// このセッションの同期レッスンの完了したレッスン（[`LiveLessonSession::complete_for`]）は結び付いた予約の生徒
+    /// ごとに 1 つなので、完了したレッスンの元の予約はこれで決まる（グループレッスンでは開始した予約とは限らない）。
+    pub fn booking_of(&self, student: AccountId) -> Option<BookingId> {
+        self.bookings
+            .iter()
+            .find(|b| b.student_id() == student)
+            .map(SessionBooking::booking_id)
+    }
+
     /// グループレッスンのセッション（結び付いた予約が 2 つ以上）か。
     pub fn is_group(&self) -> bool {
         self.bookings.len() > 1
@@ -794,6 +805,20 @@ mod tests {
             session.complete_for(LESSON, GROUP[1], GROUP[1], &history, at(651)),
             Err(DomainError::LessonAlreadyCompleted)
         );
+    }
+
+    #[test]
+    fn each_linked_student_has_their_own_booking() {
+        let bookings = group(3);
+        let session =
+            LiveLessonSession::start(SESSION, COACH, &bookings[0], &bookings, None, at(600))
+                .unwrap();
+        for (booking, student) in bookings.iter().zip(GROUP) {
+            assert_eq!(session.booking_of(student), Some(booking.id()));
+        }
+        // 結び付いていない生徒・コーチには予約がない
+        assert_eq!(session.booking_of(OTHER_STUDENT), None);
+        assert_eq!(session.booking_of(COACH), None);
     }
 
     #[test]

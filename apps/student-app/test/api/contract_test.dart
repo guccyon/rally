@@ -321,8 +321,21 @@ void main() {
       'rating',
       'comment',
       'submitted_at',
+      'lesson_menu',
     ]);
     expect(propertiesOf('CoachReview'), isNot(contains('student_id')));
+    expect(requiredOf('CoachReview'), isNot(contains('lesson_menu')));
+    final lessonMenu =
+        ((schemas['CoachReview'] as YamlMap)['properties']
+                as YamlMap)['lesson_menu']
+            as YamlMap;
+    final oneOf = (lessonMenu['oneOf'] as YamlList).cast<YamlMap>().toList();
+    expect(oneOf, hasLength(2));
+    expect(refOf(oneOf.first), '#/components/schemas/ReviewLessonMenu');
+    expect(oneOf.last['type'], 'null');
+    // ReviewLessonMenu.fromJson が読む項目
+    expect(propertiesOf('ReviewLessonMenu'), ['lesson_menu_id', 'name']);
+    expect(requiredOf('ReviewLessonMenu'), propertiesOf('ReviewLessonMenu'));
     expect(propertiesOf('CoachReviewList'), ['coach_id', 'reviews']);
     final items =
         (((schemas['CoachReviewList'] as YamlMap)['properties']

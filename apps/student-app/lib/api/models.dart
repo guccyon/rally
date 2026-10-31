@@ -999,6 +999,7 @@ class CoachReview {
     required this.rating,
     required this.comment,
     required this.submittedAt,
+    this.lessonMenu,
   });
 
   final String reviewId;
@@ -1015,13 +1016,37 @@ class CoachReview {
   /// 評価を送った時刻
   final DateTime submittedAt;
 
+  /// 評価した完了したレッスンの元（予約・動画）が持つレッスンメニューの写し。元にメニューがなければ null
+  final ReviewLessonMenu? lessonMenu;
+
   factory CoachReview.fromJson(Map<String, dynamic> json) => CoachReview(
     reviewId: json['review_id'] as String,
     lessonId: json['lesson_id'] as String,
     rating: json['rating'] as int,
     comment: json['comment'] as String,
     submittedAt: _dateTime(json['submitted_at']),
+    lessonMenu: json['lesson_menu'] == null
+        ? null
+        : ReviewLessonMenu.fromJson(
+            json['lesson_menu'] as Map<String, dynamic>,
+          ),
   );
+}
+
+/// `ReviewLessonMenu`（評価した完了したレッスンのレッスンメニューの ID・名前。メニューの今の中身ではなくレッスンの元が持つ写し）
+class ReviewLessonMenu {
+  const ReviewLessonMenu({required this.lessonMenuId, required this.name});
+
+  final String lessonMenuId;
+
+  /// 名前（1〜40 文字）
+  final String name;
+
+  factory ReviewLessonMenu.fromJson(Map<String, dynamic> json) =>
+      ReviewLessonMenu(
+        lessonMenuId: json['lesson_menu_id'] as String,
+        name: json['name'] as String,
+      );
 }
 
 /// `CoachReviewList`
