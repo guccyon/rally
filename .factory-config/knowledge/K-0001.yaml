@@ -1,0 +1,22 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: >-
+  PR 本文に求める見出しが rubric（OV-001・PR-002 は「背景」「問題」を求める）とリポジトリの CLAUDE.md の PR テンプレートで違うと、judge が reject した解釈が body_fix に伝わらない（body_fix の入力は採用した指摘の remediation_hint だけ）。そのため body_fix が求められていない見出しを足し、同じ本文の指摘が繰り返されやすい。
+scope:
+  roles: [inspect, judge, body_fix]
+  paths: [CLAUDE.md]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "373"
+  - event: "case.analyzed:39223"
+status: active
+verified_at: 2026-10-31
+review_by: 2026-11-30
+invalidate_when:
+  - "rubric の OV-001・PR-002 が求める見出しが CLAUDE.md の PR テンプレートと一致した"
+  - "body_fix の入力に judge の interpretation が渡るようになった"
+related: [K-0003]
+confidentiality: product
+decided_by: committee:D-0001

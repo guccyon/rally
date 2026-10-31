@@ -1,0 +1,21 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  検査中（judge が裁いている間）の PR で、CHANGELOG.md だけの機械的な衝突を続きのジョブが並行して大きなモデル（tier-large・再開した大きなセッション）で解くと、費用がかさむうえに head が変わり、検査と judge が 2 周する。CHANGELOG の [Unreleased] に毎回行を足す運用では、並行の PR とこの衝突が起きやすい。
+scope:
+  roles: [implement, inspect, judge]
+  paths: [CHANGELOG.md]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "373"
+  - event: "case.analyzed:39223"
+status: active
+verified_at: 2026-10-31
+review_by: 2026-11-30
+invalidate_when:
+  - "CHANGELOG.md だけの衝突を小さなモデルか決まった手順で解くようになった"
+  - "judge がその head を裁いている間は衝突の続きのジョブを待たせるようになった"
+confidentiality: product
+decided_by: committee:D-0001

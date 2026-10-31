@@ -1,0 +1,84 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/467
+decided_at: '2026-11-01'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+- K-0003
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 既存の知見は 0 件で、committee/ にも過去の議決がないため、K-0001・K-0002・K-0003 が過去の知見と矛盾や重複を起こすことはありません。
+  - 変更セットで添えるべき既存の知見の扱いは、対象がないので空のままで足ります。新しい 3 件と C-0001 と INDEX.md を 1 本の PR にまとめた形は
+    README.md の決まりに合っています。
+  - 3 件はどれも工場の工程（rubric・body_fix・衝突の解消・supervisor のマージの順番）についての主張です。specs/ の glossary.yaml
+    や context-map.yaml の製品の用語・境界とは重ならず、言葉の衝突もありません。
+  - K-0001 と K-0003 は related で互いを指しています。K-0001 は本文の基準のずれ、K-0003 はマージと body_fix の順番を扱っていて、論点が分かれているので重複ではありません。
+  - 3 件の statement と invalidate_when は、C-0001 の学びの表と提案の内容に合っています。K-0003 は事例で繰り返しそうが「いいえ」なので、確かさは
+    hypothesis のままがよく、上げる理由はありません。
+  - INDEX.md は 3 件の id・テーマ・期限と一致しており、自動生成の結果として食い違いはありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0001・K-0002・K-0003 はどれも根拠に C-0001・PR 373・event case.analyzed:39223 を挙げていて、C-0001
+    には judge 530・540、body_fix 533・542、続きのジョブ 532 の番号と、pr.conflicted・pr.head_updated・merged
+    の時刻が書いてあるので、一次記録まで辿れます。
+  - '3 件とも根拠は 1 事例だけで、C-0001 でも communication と process の確からしさは mid なので、confidence:
+    hypothesis は妥当で、上げる理由も下げる理由もありません。'
+  - K-0002 の「費用がかさむ」は、C-0001 の数字（812k トークン、3.05 USD、tier-large）が裏付けています。
+  - K-0001 に入れたのは C-0001 で事実として書かれた部分（judge 530 の OV-001 の reject、body_fix の入力が remediation_hint
+    だけであること）で、推測とされた「Engine が見出しを落とした」は主張に入っていないので、根拠の線引きは適切です。
+  - 'K-0003 の「直した本文がマージの時点の記録と食い違う」という結果は C-0001 では直接確かめられておらず、C-0001 でも「繰り返しそう: いいえ」なので、confirmed
+    に上げるときは食い違いを示す記録を別に足すべきです。'
+  - C-0001 と知見に出てくるのは役割名、ジョブ番号、PR・Issue 番号、画面の機能名だけで、利用者の氏名・連絡先・ID・本文の引用は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: human
+  reasons:
+  - K-0003 はマージの順番の話で、supervisor のマージの条件に「その head に対する body_fix のジョブが終わっていること」を足せば決定論で完全に担保できますが、作用先が
+    Engine の supervisor なので人の判断が要ります。
+  - K-0001 の見出しの食い違いは、rubric の OV-001・PR-002 が求める見出しと CLAUDE.md の PR テンプレートの見出しを突き合わせる
+    CI の検査で機械的に見つけられますが、どちらに寄せるかは rubric と役割への指示の決定なので人が決めるべきです。
+  - K-0002 の CHANGELOG.md だけの衝突は、衝突したファイルの一覧で線がはっきり引けるので、tier-small か両方の行を残す決まった手順に回すラインの設定で担保できますが、ラインの設定と
+    Engine の振り分けに作用します。
+  - 3 件とも繰り返しやすく線も引きやすいので文脈（context）に置くだけでは弱く、確かさが confirmed になった時点で下の担保案を実装するのが妥当です。
+  - '3 件とも PR #373 の 1 事例だけが根拠なので確かさは hypothesis のままが妥当で、K-0003 は事例記録でも「繰り返しそう: いいえ」とされています。'
+  - 事例記録と知見に残っているのは judge 530 などのジョブ番号とイベント id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0002 は「費用がかさむ」「head が変わって検査と judge が 2 周する」「CHANGELOG の [Unreleased] は衝突しやすい」の
+    3 つの主張を 1 件にまとめていて、README の 1 件 1 主張に反します。
+  - K-0002 で head が変わり 2 周したのは、judge が裁いている間に続きのジョブが走ったからで、モデルの大きさとは関係ありません。小さなモデルでも決まった手順でも同じことが起きるので、「大きなモデルで解くと
+    head が変わる」という因果の書き方は誤りです。
+  - K-0002 は、検査中に続きのジョブが並行して走って 2 周すること（衝突のファイルを問わない）と、CHANGELOG.md だけの衝突に tier-large
+    を使うと高くつくことの 2 件に分けてください。それぞれに invalidate_when を付けてください。
+  - K-0001 は「同じ本文の指摘が繰り返されやすい」と言っていますが、C-0001 の 2 回目の指摘は続きのジョブ 532 の見出しが重複したことが原因で、見出しの基準の違いではありません。繰り返しの原因として言えるのは
+    1 回目の分だけに絞ってください。
+  - K-0001 には、judge 530 が OV-001 を reject しながら同じ趣旨の PR-002 を採用したという、judge の中の食い違いも根拠にあります。この主張を「rubric
+    とテンプレートの違い」だけに帰すのは範囲を狭く取りすぎていて、反例になる説明が残ります。
+  - 'K-0003 は 1 件の事例しかなく、C-0001 でも「繰り返しそう: いいえ」です。scope.roles に judge が入っていますが、条件を持つのは
+    supervisor だけなので、judge は外してください。確かさは hypothesis のまま据え置くのが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0003
+  level: deterministic
+  solution_kind: ci_check
+  proposal: supervisor のマージのゲートに「同じ head_sha に対する body_fix のジョブが queued・running のときはマージしない」条件を足し、その順番を固定するテスト（judge
+    の後、body_fix が終わる前に merged が出ないこと）を Engine に置く。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: rubric の OV-001・PR-002 が求める見出しの一覧と、リポジトリの CLAUDE.md の PR テンプレートの見出しの一覧を抜き出して突き合わせ、食い違えば落とす検査を
+    CI に足す。あわせて body_fix の入力のスキーマに judge の interpretation を必須の項目として足す。
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: config
+  proposal: 衝突したファイルが CHANGELOG.md だけのときは、続きのジョブを tier-small か両方の行を残す決まった手順に回し、judge
+    がその head を裁いている間は衝突の続きのジョブを待たせるルールをラインの設定に足す。
