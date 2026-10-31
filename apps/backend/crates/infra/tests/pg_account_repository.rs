@@ -8,7 +8,7 @@ mod support;
 
 use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
-    in_memory::{FixedClock, RecordingAnalyticsSink},
+    in_memory::{FixedClock, InMemoryAccountRepository, RecordingAnalyticsSink},
     profile::CoachProfileRepository,
 };
 use domain::{
@@ -235,6 +235,7 @@ async fn students_are_searched_by_a_part_of_their_display_name(pool: PgPool) {
     let taro = account(1, Role::Student, &[Sport::Tennis], "Taro Yamada", 1);
     let jiro = account(2, Role::Student, &[Sport::Soccer], "YAMADA Jiro", 2);
     let wide = account(3, Role::Student, &[Sport::Swimming], "ＹＡＭＡＤＡ", 3);
+    let in_memory = InMemoryAccountRepository::default();
     let kana = account(4, Role::Student, &[Sport::Tennis], "やまだ_100%", 4);
     for account in [
         taro.clone(),
@@ -244,12 +245,23 @@ async fn students_are_searched_by_a_part_of_their_display_name(pool: PgPool) {
         // 生徒でないアカウントは表示名が一致しても載せない
         account(5, Role::Coach, &[Sport::Tennis], "yamada coach", 9),
     ] {
-        accounts.insert(account).await.unwrap();
+        accounts.insert(account.clone()).await.unwrap();
+        in_memory.insert(account).await.unwrap();
     }
+    // Postgres の絞り込み（translate）と DisplayNameQuery::matches（in-memory）が同じ結果になることも確かめる
     let search = |q: &str| {
         let accounts = accounts.clone();
+        let in_memory = in_memory.clone();
         let query = DisplayNameQuery::new(q).unwrap().unwrap();
-        async move { accounts.list_students(Some(&query)).await.unwrap() }
+        async move {
+            let found = accounts.list_students(Some(&query)).await.unwrap();
+            assert_eq!(
+                found,
+                in_memory.list_students(Some(&query)).await.unwrap(),
+                "{query:?}"
+            );
+            found
+        }
     };
 
     // ASCII の英字は大文字・小文字を区別しない。並べ方は登録の新しい順のまま

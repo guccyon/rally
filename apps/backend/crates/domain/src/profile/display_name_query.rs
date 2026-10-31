@@ -13,6 +13,12 @@ impl DisplayNameQuery {
     /// 検索語の上限（前後の空白を除いた文字数）。表示名の上限と同じ。
     pub const MAX_CHARS: usize = DisplayName::MAX_CHARS;
 
+    /// 比べる前にそろえる文字（ASCII の大文字）。[`DisplayNameQuery::FOLD_TO`] の同じ位置の文字に置き換える。
+    /// そろえ方の定義はこの 2 つの表だけで、保存先も同じ表で表示名をそろえる（Postgres なら `translate`）。
+    pub const FOLD_FROM: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    /// [`DisplayNameQuery::FOLD_FROM`] の各文字の置き換え先（ASCII の小文字）。
+    pub const FOLD_TO: &str = "abcdefghijklmnopqrstuvwxyz";
+
     /// 前後の空白を除いて空なら（空白だけなら）検索語なしとして `None`。
     pub fn new(value: &str) -> Result<Option<Self>, DomainError> {
         let value = value.trim();
@@ -24,18 +30,34 @@ impl DisplayNameQuery {
                 max: Self::MAX_CHARS,
             });
         }
-        Ok(Some(Self(value.to_ascii_lowercase())))
+        Ok(Some(Self(fold(value))))
     }
 
-    /// 比べるときの形（前後の空白を除き、ASCII の英字を小文字にしたもの）。保存先が同じ規則で絞り込むのに使う。
+    /// 比べるときの形（前後の空白を除き、[`DisplayNameQuery::FOLD_FROM`] の文字を [`DisplayNameQuery::FOLD_TO`] に
+    /// そろえたもの）。保存先が同じ規則で絞り込むのに使う。
     pub fn folded(&self) -> &str {
         &self.0
     }
 
     /// 表示名 `name` がこの検索語に部分一致するか。
     pub fn matches(&self, name: &DisplayName) -> bool {
-        name.as_str().to_ascii_lowercase().contains(&self.0)
+        fold(name.as_str()).contains(&self.0)
     }
+}
+
+/// `value` の [`DisplayNameQuery::FOLD_FROM`] の文字を、[`DisplayNameQuery::FOLD_TO`] の同じ位置の文字に置き換える
+/// （SQL の `translate` と同じ）。
+fn fold(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            DisplayNameQuery::FOLD_FROM
+                .chars()
+                .position(|from| from == c)
+                .and_then(|i| DisplayNameQuery::FOLD_TO.chars().nth(i))
+                .unwrap_or(c)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -79,6 +101,15 @@ mod tests {
         // 全角の英字・ひらがなとカタカナは同じとみなさない
         assert!(!query("ｔａｒｏ").matches(&name("ＴＡＲＯ")));
         assert!(!query("たろう").matches(&name("タロウ")));
+    }
+
+    #[test]
+    fn fold_tables_pair_each_ascii_uppercase_letter_with_its_lowercase() {
+        assert_eq!(
+            DisplayNameQuery::FOLD_FROM.chars().count(),
+            DisplayNameQuery::FOLD_TO.chars().count()
+        );
+        assert_eq!(fold("Taro ＹＡＭＡＤＡ 山田"), "taro ＹＡＭＡＤＡ 山田");
     }
 
     #[test]

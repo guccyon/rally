@@ -22,10 +22,6 @@ use crate::{
     pg_support::{is_unique_violation, timestamp},
 };
 
-/// 表示名の検索で小文字にそろえる ASCII の大文字と、対応する小文字（`translate` の引数）。
-const ASCII_UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const ASCII_LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
-
 /// [`AccountRepository`] と [`CoachProfileRepository`] の Postgres 実装。
 ///
 /// 生徒のスポーツは `accounts.sport`、コーチの提供スポーツは `coach_sports` に持つ。メールアドレスの一意性
@@ -149,9 +145,9 @@ impl AccountRepository for PgAccountRepository {
         &self,
         name: Option<&DisplayNameQuery>,
     ) -> Result<Vec<Account>, Unavailable> {
-        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名の一致は DisplayNameQuery と
-        // 同じ規則で、ASCII の英字だけを小文字にそろえて（照合順序・ロケールに左右されない translate）、検索語の折りたたんだ
-        // 形を部分文字列として探す（strpos なので % や _ も文字のまま）
+        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名は DisplayNameQuery のそろえ方の
+        // 表（FOLD_FROM → FOLD_TO）で translate してから（照合順序・ロケールに左右されない）、検索語のそろえた形を
+        // 部分文字列として探す（strpos なので % や _ も文字のまま）
         let rows: Vec<StudentRow> = sqlx::query_as(
             "SELECT account_id, email, display_name, created_at, sport
              FROM identity.accounts
@@ -161,8 +157,8 @@ impl AccountRepository for PgAccountRepository {
         )
         .bind(role_value(Role::Student))
         .bind(name.map(DisplayNameQuery::folded))
-        .bind(ASCII_UPPERCASE)
-        .bind(ASCII_LOWERCASE)
+        .bind(DisplayNameQuery::FOLD_FROM)
+        .bind(DisplayNameQuery::FOLD_TO)
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;

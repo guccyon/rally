@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use domain::{identity::AccountId, review::LowRatedReviewCriteria};
+use domain::{catalog::Sport, identity::AccountId, review::LowRatedReviewCriteria};
 
 use super::{
     LessonReviewRepository, LowRatedReviewList, ReviewedCoachDisplayNameLookup,
-    ReviewedLessonMenuLookup, ReviewerDisplayNameLookup,
+    ReviewedLessonMenuLookup, ReviewedLessonSportLookup, ReviewerDisplayNameLookup,
 };
 use crate::{Unavailable, clock::Clock};
 
@@ -12,43 +12,70 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// 期間の始まり（domain の [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み、低い評価を domain の
-/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。各評価には、評価した完了した
+/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。スポーツを指定されたら、評価した
+/// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
+/// （スポーツが引けない評価は残さない）。各評価には、評価した完了した
 /// レッスンの元が持つレッスンメニューの写し（[`ReviewedLessonMenuLookup`]）と、コーチ・生徒の表示名
 /// （[`ReviewedCoachDisplayNameLookup`]・[`ReviewerDisplayNameLookup`]）を引いて添える。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListLowRatedReviews<R, M, D, S, C> {
+pub struct ListLowRatedReviews<R, M, P, D, S, C> {
     reviews: R,
     lesson_menus: M,
+    lesson_sports: P,
     coach_names: D,
     student_names: S,
     clock: C,
 }
 
-impl<R, M, D, S, C> ListLowRatedReviews<R, M, D, S, C>
+impl<R, M, P, D, S, C> ListLowRatedReviews<R, M, P, D, S, C>
 where
     R: LessonReviewRepository,
     M: ReviewedLessonMenuLookup,
+    P: ReviewedLessonSportLookup,
     D: ReviewedCoachDisplayNameLookup,
     S: ReviewerDisplayNameLookup,
     C: Clock,
 {
-    pub fn new(reviews: R, lesson_menus: M, coach_names: D, student_names: S, clock: C) -> Self {
+    pub fn new(
+        reviews: R,
+        lesson_menus: M,
+        lesson_sports: P,
+        coach_names: D,
+        student_names: S,
+        clock: C,
+    ) -> Self {
         Self {
             reviews,
             lesson_menus,
+            lesson_sports,
             coach_names,
             student_names,
             clock,
         }
     }
 
-    pub async fn execute(&self) -> Result<LowRatedReviewList, Unavailable> {
+    /// `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。
+    pub async fn execute(&self, sport: Option<Sport>) -> Result<LowRatedReviewList, Unavailable> {
         let now = self.clock.now();
         let submitted = self
             .reviews
             .find_submitted_since(LowRatedReviewCriteria::since(now))
             .await?;
-        let reviews = LowRatedReviewCriteria::select(submitted, now);
+        let mut reviews = LowRatedReviewCriteria::select(submitted, now);
+        if let Some(sport) = sport {
+            let mut of_sport = Vec::with_capacity(reviews.len());
+            for review in reviews {
+                if self
+                    .lesson_sports
+                    .find_lesson_sport(review.lesson_id())
+                    .await?
+                    == Some(sport)
+                {
+                    of_sport.push(review);
+                }
+            }
+            reviews = of_sport;
+        }
         if reviews.is_empty() {
             return Ok(LowRatedReviewList {
                 reviews,
@@ -95,7 +122,7 @@ mod tests {
     };
 
     use domain::{
-        catalog::{LessonMenuId, LessonMenuName},
+        catalog::{LessonMenuId, LessonMenuName, Sport},
         lesson::LessonCompletionId,
         profile::DisplayName,
         review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
@@ -122,6 +149,26 @@ mod tests {
             lesson_id: LessonCompletionId,
         ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
             Ok((lesson_id.as_u128() == 1).then(|| menu(1)))
+        }
+    }
+
+    /// レッスン 1 はテニス、2 は水泳、5 はテニス。他（3・4・6 以降）はスポーツが引けない。問い合わせたレッスンを記録する。
+    #[derive(Default)]
+    struct FixedLessonSports {
+        asked: Mutex<Vec<LessonCompletionId>>,
+    }
+
+    impl ReviewedLessonSportLookup for FixedLessonSports {
+        async fn find_lesson_sport(
+            &self,
+            lesson_id: LessonCompletionId,
+        ) -> Result<Option<Sport>, Unavailable> {
+            self.asked.lock().unwrap().push(lesson_id);
+            Ok(match lesson_id.as_u128() {
+                1 | 5 => Some(Sport::Tennis),
+                2 => Some(Sport::Swimming),
+                _ => None,
+            })
         }
     }
 
@@ -192,6 +239,7 @@ mod tests {
     type UseCase = ListLowRatedReviews<
         InMemoryLessonReviewRepository,
         FixedLessonMenus,
+        FixedLessonSports,
         FixedNames,
         FixedNames,
         FixedClock,
@@ -201,6 +249,7 @@ mod tests {
         ListLowRatedReviews::new(
             InMemoryLessonReviewRepository::with_reviews(reviews),
             FixedLessonMenus,
+            FixedLessonSports::default(),
             FixedNames::default(),
             FixedNames::default(),
             FixedClock(now()),
@@ -220,9 +269,13 @@ mod tests {
             review(5, OTHER_COACH, 2, now() - 30 * DAY),
         ]);
 
-        let list = use_case.execute().await.unwrap();
+        let list = use_case.execute(None).await.unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
-        assert_eq!(ids, [2, 1, 5], "コーチを問わず、新しい順");
+        assert_eq!(ids, [2, 1, 5], "コーチ・スポーツを問わず、新しい順");
+        assert!(
+            use_case.lesson_sports.asked.lock().unwrap().is_empty(),
+            "スポーツを指定しなければスポーツを引かない"
+        );
         assert_eq!(
             list.lesson_menus,
             BTreeMap::from([(LessonCompletionId::from_u128(1), menu(1))]),
@@ -252,12 +305,49 @@ mod tests {
     async fn no_low_reviews_is_an_empty_list_without_asking_names() {
         let use_case = use_case([review(1, COACH, 5, now())]);
 
-        let list = use_case.execute().await.unwrap();
+        let list = use_case.execute(None).await.unwrap();
         assert!(list.reviews.is_empty());
         assert!(list.lesson_menus.is_empty());
         assert!(list.coach_display_names.is_empty());
         assert!(list.student_display_names.is_empty());
         assert!(use_case.coach_names.asked.lock().unwrap().is_empty());
         assert!(use_case.student_names.asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_sport_keeps_only_low_reviews_of_lessons_of_that_sport() {
+        let use_case = use_case([
+            review(1, COACH, 1, now() - 3 * DAY),
+            review(2, OTHER_COACH, 2, now() - DAY),
+            // ★3 は低い評価でない（スポーツは引かない）
+            review(3, COACH, 3, now() - DAY),
+            review(5, OTHER_COACH, 2, now() - 30 * DAY),
+            // スポーツが引けないレッスンの評価は、どのスポーツにも載らない
+            review(6, COACH, 1, now() - 2 * DAY),
+        ]);
+
+        let list = use_case.execute(Some(Sport::Tennis)).await.unwrap();
+        let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
+        assert_eq!(ids, [1, 5], "テニスのレッスンの評価だけを、新しい順");
+        assert_eq!(
+            use_case.lesson_sports.asked.lock().unwrap().clone(),
+            [2, 6, 1, 5].map(LessonCompletionId::from_u128),
+            "低い評価のレッスンだけを問い合わせる"
+        );
+        assert_eq!(
+            list.student_display_names
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [101, 105].map(AccountId::from_u128),
+            "絞ったあとの評価の生徒だけ"
+        );
+        assert_eq!(
+            use_case.coach_names.asked.lock().unwrap().clone(),
+            [BTreeSet::from([COACH, OTHER_COACH])]
+        );
+
+        let list = use_case.execute(Some(Sport::Golf)).await.unwrap();
+        assert!(list.reviews.is_empty(), "そのスポーツの評価がなければ空");
     }
 }

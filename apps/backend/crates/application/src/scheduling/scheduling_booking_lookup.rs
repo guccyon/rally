@@ -1,4 +1,4 @@
-use domain::scheduling::{Booking, BookingId};
+use domain::scheduling::{Booking, BookingId, Slot, SlotId};
 
 use super::BookingRepository;
 use crate::{Unavailable, live_lesson::BookingLookup};
@@ -34,5 +34,9 @@ where
             .map(|(booking, _)| booking)
             .filter(|booking| booking.slot_id() == slot_id)
             .collect())
+    }
+
+    async fn find_slot(&self, slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+        self.bookings.find_slot(slot_id).await
     }
 }
