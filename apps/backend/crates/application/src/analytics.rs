@@ -35,6 +35,13 @@ pub enum AnalyticsEvent {
         starts_at: SystemTime,
         occurred_at: SystemTime,
     },
+    /// `slot.withdrawn`（KPI「コーチの予約枠充足率」の入力。取り下げた枠を分母から除く）
+    SlotWithdrawn {
+        coach_id: AccountId,
+        slot_id: SlotId,
+        starts_at: SystemTime,
+        occurred_at: SystemTime,
+    },
     /// `booking.created`（体験予約を含む。KPI「初回レッスンまでの日数」の入力）
     BookingCreated {
         student_id: AccountId,
@@ -151,6 +158,7 @@ impl AnalyticsEvent {
         match self {
             AnalyticsEvent::AccountRegistered { .. } => "account.registered",
             AnalyticsEvent::SlotPublished { .. } => "slot.published",
+            AnalyticsEvent::SlotWithdrawn { .. } => "slot.withdrawn",
             AnalyticsEvent::BookingCreated { .. } => "booking.created",
             AnalyticsEvent::BookingConfirmed { .. } => "booking.confirmed",
             AnalyticsEvent::BookingCancelled { .. } => "booking.cancelled",

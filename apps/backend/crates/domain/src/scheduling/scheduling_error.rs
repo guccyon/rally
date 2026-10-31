@@ -4,7 +4,7 @@ use super::{BookingStatus, SlotId, SlotStatus};
 use crate::catalog::Sport;
 
 /// scheduling（予約と枠）の不変条件の違反。枠・定員・席・コーチのカレンダー・予約の生成と操作と、枠へのレッスン
-/// メニューの結びつけで返す。
+/// メニューの結びつけと、コーチによる枠の取り下げで返す。
 ///
 /// 表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`] に置く。予約の確定で entitlement が
 /// 「枠が残っていない」と答えたときの拒否は [`Self::LiveLessonQuotaExceeded`]（受講権の枠を使うときの違反は
@@ -16,9 +16,9 @@ pub enum SchedulingError {
     SlotEndsBeforeItStarts,
     /// 同じコーチの時間を占める枠（`existing`）と期間が重なる
     SlotOverlaps { existing: SlotId },
-    /// 別のコーチの枠をコーチのカレンダーに入れようとした
+    /// 別のコーチの枠をコーチのカレンダーに入れようとした、または別のコーチの枠を取り下げようとした
     SlotOfAnotherCoach,
-    /// スロットが公開中（`Open`）でないので、予約・確定できない（`status` は今の状態）
+    /// スロットが公開中（`Open`）でないので、予約・確定・取り下げできない（`status` は今の状態）
     SlotNotOpen { status: SlotStatus },
     /// スロットの定員が `min`〜`max` の整数でない
     SlotCapacityOutOfRange { min: u8, max: u8 },
@@ -56,6 +56,10 @@ pub enum SchedulingError {
     LessonMenuSportMismatch { menu: Sport, slot: Sport },
     /// 枠の長さがレッスンメニューの 1 回の時間（`minutes` 分）と違う
     SlotLengthMismatchesLessonMenu { minutes: u8 },
+    /// スロットに有効な予約（未確定か確定。`active` 件）が入っているので取り下げられない
+    SlotHasActiveBookings { active: u32 },
+    /// スロットはもう始まっている（開始時刻を過ぎた）ので取り下げられない
+    SlotAlreadyStarted,
 }
 
 impl fmt::Display for SchedulingError {

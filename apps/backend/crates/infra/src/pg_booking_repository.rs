@@ -22,7 +22,7 @@ use sqlx::{
 };
 
 use crate::{
-    pg_slot_repository::{SlotRow, slot_columns, slot_from_row, slot_row_at},
+    pg_slot_repository::{SlotRow, lock_slot, slot_columns, slot_from_row, slot_row_at},
     pg_support::{lock, timestamp},
     scheduling_values::{booking_status_from_value, booking_status_value, slot_status_value},
 };
@@ -95,36 +95,6 @@ impl PgBookingRepository {
         Self { pool }
     }
 
-    /// スロットの行をロックして読む。なければ `None`。
-    ///
-    /// 席の数はロックを取った後の別の文で数える（READ COMMITTED では文ごとにスナップショットを取るので、ロックを
-    /// 待っている間に確定した他の予約も数に入る。ロックと同じ文で数えると、待つ前のスナップショットで数えてしまう）。
-    async fn lock_slot(
-        tx: &mut Transaction<'_, Postgres>,
-        slot_id: Uuid,
-    ) -> Result<Option<Slot>, Unavailable> {
-        let locked: Option<Uuid> = sqlx::query_scalar(
-            "SELECT slot_id FROM scheduling.slots WHERE slot_id = $1 FOR UPDATE",
-        )
-        .bind(slot_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(Unavailable::new)?;
-        if locked.is_none() {
-            return Ok(None);
-        }
-        let row: SlotRow = sqlx::query_as(concat!(
-            "SELECT ",
-            slot_columns!(),
-            " FROM scheduling.slots s WHERE s.slot_id = $1"
-        ))
-        .bind(slot_id)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(Unavailable::new)?;
-        slot_from_row(row).map(Some)
-    }
-
     async fn save(
         tx: &mut Transaction<'_, Postgres>,
         booking: &Booking,
@@ -187,7 +157,7 @@ impl BookingRepository for PgBookingRepository {
     {
         let student = account_id_uuid::to_uuid(student_id);
         let mut tx = self.pool.begin().await.map_err(reserve_unavailable)?;
-        let mut slot = Self::lock_slot(&mut tx, slot_id_uuid::to_uuid(slot_id))
+        let mut slot = lock_slot(&mut tx, slot_id_uuid::to_uuid(slot_id))
             .await
             .map_err(ReserveSlotError::Unavailable)?
             .ok_or(ReserveSlotError::SlotNotFound)?;
@@ -258,7 +228,7 @@ impl BookingRepository for PgBookingRepository {
                 .await
                 .map_err(update_unavailable)?
                 .ok_or(UpdateBookingError::BookingNotFound)?;
-        let mut slot = Self::lock_slot(&mut tx, slot_id)
+        let mut slot = lock_slot(&mut tx, slot_id)
             .await
             .map_err(UpdateBookingError::Unavailable)?
             .ok_or_else(|| {
