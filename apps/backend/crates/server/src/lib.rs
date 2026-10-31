@@ -56,13 +56,14 @@ use application::{
         PushSender, UpdateNotificationSettings,
     },
     profile::{
-        GetCoachProfile, ListCoaches, ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup,
-        ProfileCoachIntroductionLookup, ProfileStudentDisplayNameLookup, ProfileStudentSportLookup,
-        UpdateCoachProfile, UpdateStudentProfile,
+        CoachProfileRepository, GetCoachBio, GetCoachProfile, ListCoaches,
+        ProfileCoachCandidateLookup, ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
+        ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
+        UpdateStudentProfile,
     },
     review::{
         GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, ListLowRatedReviews,
-        ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
+        ReplyToLessonReview, ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
         ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
     },
     scheduling::{
@@ -325,7 +326,7 @@ fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, P, V>(
     video: V,
 ) -> Router
 where
-    R: AccountRepository + Clone + 'static,
+    R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
     B: BookingRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
@@ -478,6 +479,10 @@ where
         ),
         MockTokenService,
     );
+    let review_replies = interface::review_replies_router(
+        ReplyToLessonReview::new(reviews.clone(), clock.clone()),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -503,6 +508,7 @@ where
     interface::router_with(
         RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
         GetAccount::new(accounts.clone()),
+        GetCoachBio::new(accounts.clone()),
         UpdateCoachProfile::new(accounts.clone()),
         PublishSlot::new(
             slots.clone(),
@@ -640,4 +646,5 @@ where
     .merge(students)
     .merge(coach_acceptance)
     .merge(low_rated_reviews)
+    .merge(review_replies)
 }

@@ -39,7 +39,10 @@ use domain::{
     catalog::{LessonMenuId, LessonMenuName},
     identity::{AccountId, Role},
     lesson::LessonCompletionId,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
+    review::{
+        LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
+        LessonReviewReplyComment, Rating, ReviewLessonMenu,
+    },
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -123,7 +126,11 @@ fn review(id: u128, coach: u128, rating: i64, comment: &str, hours_ago: u32) -> 
 fn reviews() -> InMemoryLessonReviewRepository {
     InMemoryLessonReviewRepository::with_reviews([
         review(1, 42, 3, "ふつう", 48),
-        review(2, 42, 5, "とてもよい", 1),
+        // 評価されたコーチの返信がある
+        review(2, 42, 5, "とてもよい", 1).with_reply(Some(LessonReviewReply::new(
+            LessonReviewReplyComment::new("ありがとうございます").unwrap(),
+            now(),
+        ))),
         review(3, 43, 1, "別のコーチ", 2),
         review(4, 42, 4, "よい", 24),
     ])
@@ -141,6 +148,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             clock,
         ),
         application::identity::GetAccount::new(InMemoryAccountRepository::default()),
+        application::profile::GetCoachBio::new(InMemoryAccountRepository::default()),
         application::profile::UpdateCoachProfile::new(InMemoryAccountRepository::default()),
         PublishSlot::new(
             slots.clone(),
@@ -373,6 +381,11 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                             "lesson_menu_id": "00000000-0000-0000-0000-00000000005a",
                             "name": "フォア改善",
                         },
+                        // 評価されたコーチの返信
+                        "reply": {
+                            "comment": "ありがとうございます",
+                            "replied_at": "2026-10-26T00:00:00Z",
+                        },
                     },
                     {
                         "review_id": "00000000-0000-0000-0000-000000000004",
@@ -382,6 +395,8 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                         "submitted_at": "2026-10-25T00:00:00Z",
                         // メニューのないレッスンは null
                         "lesson_menu": null,
+                        // 返信のない評価は null
+                        "reply": null,
                     },
                     {
                         "review_id": "00000000-0000-0000-0000-000000000001",
@@ -390,6 +405,7 @@ async fn headquarters_the_coach_and_students_read_the_reviews_newest_first() {
                         "comment": "ふつう",
                         "submitted_at": "2026-10-24T00:00:00Z",
                         "lesson_menu": null,
+                        "reply": null,
                     },
                 ],
             }),
@@ -415,6 +431,7 @@ async fn a_student_reads_the_reviews_of_any_coach() {
                 "comment": "別のコーチ",
                 "submitted_at": "2026-10-25T22:00:00Z",
                 "lesson_menu": null,
+                "reply": null,
             }],
         })
     );
