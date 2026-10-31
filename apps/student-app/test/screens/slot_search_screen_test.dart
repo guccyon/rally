@@ -442,6 +442,46 @@ void main() {
       expect(find.text(newer.comment), findsOneWidget);
     });
 
+    testWidgets('メニューのあるレッスンへの評価は点の下・一言の上にメニューを出し、ない評価には出さない', (
+      tester,
+    ) async {
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: FakeStudentApi(),
+        initial: registered,
+      );
+      await tapText(tester, 'テニス');
+      expect(find.textContaining('メニュー: '), findsNothing);
+
+      await tapText(tester, '評価を見る');
+
+      final [newer, older] = Fixtures.coachReviews;
+      expect(newer.lessonMenu, isNotNull);
+      expect(older.lessonMenu, isNull);
+      final menu = find.text('メニュー: ${Fixtures.reviewLessonMenu.name}');
+      expect(menu, findsOneWidget);
+      expect(
+        find.textContaining('メニュー: '),
+        findsOneWidget,
+        reason: 'メニューのない評価には出さない',
+      );
+      final menuTop = tester.getTopLeft(menu).dy;
+      expect(
+        menuTop,
+        greaterThan(tester.getTopLeft(find.text('5 点（5 点満点）')).dy),
+      );
+      expect(
+        menuTop,
+        lessThan(tester.getTopLeft(find.text(newer.comment)).dy),
+      );
+      // メニューのない評価は、点の次に一言が来る（これまでどおり）
+      expect(
+        tester.getTopLeft(find.text('4 点（5 点満点）')).dy,
+        greaterThan(tester.getTopLeft(find.text(newer.comment)).dy),
+      );
+    });
+
     testWidgets('評価が 0 件のコーチは、評価がまだない旨だけを出す', (tester) async {
       final api = FakeStudentApi(
         coachReviewSummaries: {

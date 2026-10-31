@@ -42,6 +42,9 @@ String _lessonMenuLabel(String name, int? durationMinutes) =>
 /// 動画を送った時点で選んだレッスンメニュー（`Video.lesson_menu` / `VideoReview.lesson_menu`）。例: `メニュー: サーブの動画添削`
 String videoLessonMenuLabel(VideoLessonMenu menu) => 'メニュー: ${menu.name}';
 
+/// 評価したレッスンのレッスンメニュー（`CoachReview.lesson_menu`。admin-web の評価の一覧と同じ書き方）。例: `メニュー: フォアハンドの基礎`
+String reviewLessonMenuLabel(ReviewLessonMenu menu) => 'メニュー: ${menu.name}';
+
 /// 端末のタイムゾーンで `M/d HH:mm`
 String formatDateTime(DateTime value) {
   final local = value.toLocal();
