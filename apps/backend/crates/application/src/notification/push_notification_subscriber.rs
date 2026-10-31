@@ -9,8 +9,8 @@ use crate::{
     domain_event::{DomainEvent, DomainEventSubscriber},
 };
 
-/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、添削の返却
-/// （`VideoReviewReturned`）で生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を
+/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、添削の依頼
+/// （`VideoReviewRequested`）でコーチに、添削の返却（`VideoReviewReturned`）で生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を
 /// 送る（[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
 /// 呼ばない（context-map の向き）。
 ///
@@ -127,6 +127,23 @@ where
                 )
                 .await
             }
+            DomainEvent::VideoReviewRequested {
+                event_id,
+                student_id,
+                coach_id,
+                video_id,
+                ..
+            } => {
+                self.send_once(
+                    event_id,
+                    &[PushNotification::VideoReviewRequested {
+                        student_id,
+                        coach_id,
+                        video_id,
+                    }],
+                )
+                .await
+            }
             DomainEvent::VideoReviewReturned {
                 event_id,
                 student_id,
@@ -169,8 +186,7 @@ where
             }
             DomainEvent::BookingCancelled { .. }
             | DomainEvent::LessonCompleted { .. }
-            | DomainEvent::SubscriptionStarted { .. }
-            | DomainEvent::VideoReviewRequested { .. } => Ok(()),
+            | DomainEvent::SubscriptionStarted { .. } => Ok(()),
         }
     }
 }
@@ -301,6 +317,39 @@ mod tests {
                 .iter()
                 .all(|n| n.created_at() == oct26() && !n.is_read()),
             "作った時刻は今の時刻で、まだ読んでいない"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_requested_review_notifies_the_coach_once_per_event() {
+        let subscriber = subscriber_with(RecordingPushSender::default(), all_on());
+        let requested = |video: u128| DomainEvent::VideoReviewRequested {
+            event_id: Uuid::from_u128(video),
+            occurred_at: oct26(),
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VideoId::from_u128(video),
+        };
+        let to_coach = |video: u128| PushNotification::VideoReviewRequested {
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VideoId::from_u128(video),
+        };
+        subscriber.handle(&requested(3)).await.unwrap();
+        subscriber.handle(&requested(3)).await.unwrap();
+        subscriber.handle(&requested(4)).await.unwrap();
+
+        let sent = subscriber.sender().sent();
+        assert_eq!(
+            sent,
+            [to_coach(3), to_coach(4)],
+            "同じイベントの再送では送らない"
+        );
+        assert_eq!(sent[0].recipient(), COACH, "依頼を受けたコーチに届く");
+        assert_eq!(
+            recorded(&subscriber),
+            sent,
+            "コーチへの通知もお知らせとして 1 件ずつ残す"
         );
     }
 

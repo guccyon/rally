@@ -22,6 +22,12 @@ pub enum PushNotification {
         coach_id: AccountId,
         booking_id: BookingId,
     },
+    /// 生徒が動画を添削依頼として送った（`VideoReviewRequested`）ことを、依頼を受けたコーチに知らせる
+    VideoReviewRequested {
+        student_id: AccountId,
+        coach_id: AccountId,
+        video_id: VideoId,
+    },
     /// 動画の添削が返却された（`VideoReviewReturned`）ことを、動画を送った生徒に知らせる
     VideoReviewReturned {
         student_id: AccountId,
@@ -46,7 +52,8 @@ impl PushNotification {
         match *self {
             PushNotification::BookingConfirmed { student_id, .. }
             | PushNotification::VideoReviewReturned { student_id, .. } => student_id,
-            PushNotification::BookingReceived { coach_id, .. } => coach_id,
+            PushNotification::BookingReceived { coach_id, .. }
+            | PushNotification::VideoReviewRequested { coach_id, .. } => coach_id,
             PushNotification::MessageReceived {
                 student_id,
                 coach_id,
@@ -64,6 +71,7 @@ impl PushNotification {
         match *self {
             PushNotification::BookingConfirmed { .. }
             | PushNotification::BookingReceived { .. } => NotificationKind::BookingConfirmed,
+            PushNotification::VideoReviewRequested { .. } => NotificationKind::VideoReviewRequested,
             PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
             PushNotification::MessageReceived { .. } => NotificationKind::MessageReceived,
         }
@@ -101,6 +109,17 @@ mod tests {
             NotificationKind::BookingConfirmed,
             "コーチへの知らせも予約の確定の種類"
         );
+    }
+
+    #[test]
+    fn a_requested_review_goes_to_the_coach() {
+        let notification = PushNotification::VideoReviewRequested {
+            student_id: STUDENT,
+            coach_id: COACH,
+            video_id: VideoId::from_u128(3),
+        };
+        assert_eq!(notification.recipient(), COACH);
+        assert_eq!(notification.kind(), NotificationKind::VideoReviewRequested);
     }
 
     #[test]

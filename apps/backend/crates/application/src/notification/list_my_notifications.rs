@@ -3,7 +3,8 @@ use domain::{identity::AccountId, notification::Notification};
 use super::NotificationRepository;
 use crate::Unavailable;
 
-/// 自分のお知らせの一覧のユースケース（student-app の `listMyNotifications`）。照会だけで、何も保存しない。
+/// 自分のお知らせの一覧のユースケース（student-app と admin-web の `listMyNotifications`。生徒もコーチも、自分が受け取る
+/// お知らせだけ）。照会だけで、何も保存しない。
 /// 作った時刻の新しい順で、受け取り設定でオフの種類のお知らせも含む。誰が呼べるか（役割）は境界（interface）が確かめる。
 /// 行動イベントは発火しない。
 pub struct ListMyNotifications<N> {
@@ -29,6 +30,8 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        async_lesson::VideoId,
+        messaging::{MessageId, MessageSender, MessageThreadId},
         notification::{NotificationId, PushNotification},
         scheduling::BookingId,
     };
@@ -76,6 +79,61 @@ mod tests {
             "新しい順。同じ時刻は後に残したものが先。ほかの生徒の分は出さない"
         );
         assert_eq!(notifications.all().len(), 4, "照会では何も変えない");
+    }
+
+    #[tokio::test]
+    async fn a_coach_lists_only_the_notifications_sent_to_the_coach() {
+        let notification = |id: u128, push, minute| {
+            Notification::new(NotificationId::from_u128(id), push, at(minute))
+        };
+        let received = notification(
+            1,
+            PushNotification::BookingReceived {
+                student_id: STUDENT,
+                coach_id: COACH,
+                booking_id: BookingId::from_u128(1),
+            },
+            10,
+        );
+        let requested = notification(
+            2,
+            PushNotification::VideoReviewRequested {
+                student_id: STUDENT,
+                coach_id: COACH,
+                video_id: VideoId::from_u128(2),
+            },
+            20,
+        );
+        let message = |id: u128, sender, minute| {
+            notification(
+                id,
+                PushNotification::MessageReceived {
+                    student_id: STUDENT,
+                    coach_id: COACH,
+                    thread_id: MessageThreadId::from_u128(3),
+                    message_id: MessageId::from_u128(id),
+                    sender,
+                },
+                minute,
+            )
+        };
+        let from_student = message(3, MessageSender::Student, 30);
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            confirmed(4, STUDENT, 5),
+            received,
+            requested,
+            from_student,
+            message(5, MessageSender::Coach, 40),
+        ]);
+        let listed = ListMyNotifications::new(notifications)
+            .execute(COACH)
+            .await
+            .unwrap();
+        assert_eq!(
+            listed,
+            [from_student, requested, received],
+            "新しい予約・添削の依頼・生徒からのメッセージだけ。生徒が受け取る分は出さない"
+        );
     }
 
     #[tokio::test]

@@ -4,6 +4,8 @@
 pub enum NotificationKind {
     /// 予約の確定（`BookingConfirmed`）の通知。生徒への確定の知らせと、コーチへの新しい予約の知らせの両方
     BookingConfirmed,
+    /// 動画の添削の依頼（`VideoReviewRequested`）の通知。依頼を受けたコーチへの知らせ
+    VideoReviewRequested,
     /// 動画の添削の返却（`VideoReviewReturned`）の通知
     VideoReviewReturned,
     /// チャットのメッセージが届いた（`MessageSent`）ことの通知
@@ -11,8 +13,9 @@ pub enum NotificationKind {
 }
 
 impl NotificationKind {
-    pub const ALL: [NotificationKind; 3] = [
+    pub const ALL: [NotificationKind; 4] = [
         NotificationKind::BookingConfirmed,
+        NotificationKind::VideoReviewRequested,
         NotificationKind::VideoReviewReturned,
         NotificationKind::MessageReceived,
     ];

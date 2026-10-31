@@ -6,18 +6,22 @@
 //!    `MockPushSender`）
 //! 3. 予約のキャンセルでは送らない（キャンセルの通知はまだない）
 //!
-//! 添削の返却（async-lesson の `VideoReviewReturned`）では動画を送った生徒に、メッセージの送信（messaging の
-//! `MessageSent`。本文でもスタンプでも）では受け手（送り手でない側の当事者）に届く。
+//! 動画の送付（async-lesson の `VideoReviewRequested`）では依頼を受けたコーチに、添削の返却（`VideoReviewReturned`）では
+//! 動画を送った生徒に、メッセージの送信（messaging の `MessageSent`。本文でもスタンプでも）では受け手（送り手でない側の
+//! 当事者）に届く。
 //!
 //! 受け取る人が通知の受け取り設定（`PUT /notification-settings/me`）でその種類をオフにしていれば送らない。オフでも
-//! お知らせ（`GET /notifications/me`）には残り、`POST /notifications/me/read` で既読にできる。受け取り設定が
-//! Postgres に保存されることは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
+//! お知らせ（`GET /notifications/me`）には残り、`POST /notifications/me/read` で既読にできる。コーチも自分のお知らせ
+//! （admin-web の同じ操作）を読んで既読にできる。受け取り設定と、コーチへの添削の依頼のお知らせが Postgres に保存される
+//! ことは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
     async_lesson::{video_id_uuid, video_review_id_uuid},
-    identity::{TokenClaims, TokenIssuer, account_id_uuid},
+    identity::{
+        RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
+    },
     in_memory::{ManualClock, RecordingAnalyticsSink},
     messaging::{message_id_uuid, message_thread_id_uuid},
     scheduling::booking_id_uuid,
@@ -28,11 +32,12 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    catalog::Sport,
     identity::{AccountId, Role},
     messaging::MessageSender,
     notification::PushNotification,
 };
-use infra::{MockPushSender, MockTokenService};
+use infra::{MockPushSender, MockTokenService, PgAccountRepository};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -196,10 +201,10 @@ async fn setup() -> (Router, MockPushSender, AccountId, String, AccountId, Strin
 }
 
 #[tokio::test]
-async fn returning_a_video_review_pushes_a_notification_to_the_student() {
+async fn submitting_a_video_notifies_the_coach_and_returning_it_notifies_the_student() {
     let (router, push, coach_id, coach, student_id, student) = setup().await;
 
-    // 動画の送付では送らない
+    // 動画の送付で、依頼を受けたコーチに 1 件届く
     let video = call(
         &router,
         "POST",
@@ -214,7 +219,13 @@ async fn returning_a_video_review_pushes_a_notification_to_the_student() {
     )
     .await;
     let video_id = video["video_id"].as_str().unwrap();
-    assert!(push.sent().is_empty(), "送付では送らない");
+    let requested = PushNotification::VideoReviewRequested {
+        student_id,
+        coach_id,
+        video_id: video_id_uuid::parse(video_id).unwrap(),
+    };
+    assert_eq!(push.sent(), [requested]);
+    assert_eq!(push.sent()[0].recipient(), coach_id);
 
     // コーチの返却で生徒に 1 件届く
     let review = call(
@@ -232,8 +243,25 @@ async fn returning_a_video_review_pushes_a_notification_to_the_student() {
         video_id: video_id_uuid::parse(video_id).unwrap(),
         review_id: video_review_id_uuid::parse(review["review_id"].as_str().unwrap()).unwrap(),
     };
-    assert_eq!(push.sent(), [expected]);
-    assert_eq!(push.sent()[0].recipient(), student_id);
+    assert_eq!(push.sent(), [requested, expected]);
+    assert_eq!(push.sent()[1].recipient(), student_id);
+
+    // コーチのお知らせには添削の依頼だけが残る（生徒への返却の知らせは出さない）
+    let listed = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(&coach),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["notifications"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["notifications"][0]["kind"], "video_review_requested");
+    assert_eq!(
+        listed["notifications"][0]["body"],
+        "生徒から動画の添削の依頼が届きました"
+    );
 }
 
 #[tokio::test]
@@ -462,16 +490,141 @@ async fn a_kind_the_student_turned_off_is_not_pushed_to_the_student() {
     expected["notifications"][0]["is_read"] = json!(true);
     assert_eq!(without_ids(read), expected);
 
-    // コーチは生徒のお知らせを呼べない
-    call(
+    // コーチは生徒のお知らせではなく、自分への新しい予約のお知らせを読む（生徒の既読はコーチの分に及ばない）
+    let coachs = call(
         &router,
         "GET",
         "/notifications/me",
         Some(&coach),
         Value::Null,
-        StatusCode::FORBIDDEN,
+        StatusCode::OK,
     )
     .await;
+    assert_ne!(
+        coachs["notifications"][0]["notification_id"],
+        listed["notifications"][0]["notification_id"]
+    );
+    assert_eq!(
+        without_ids(coachs),
+        json!({
+            "notifications": [{
+                "kind": "booking_confirmed",
+                "body": "新しい予約が入りました",
+                "created_at": "2026-10-05T00:00:00Z",
+                "is_read": false,
+            }]
+        })
+    );
+}
+
+/// 保存先を Postgres にした組み立てで、生徒の動画の送付がコーチへのお知らせとして保存され、コーチが一覧で読んで
+/// 既読にできることを確かめる。
+///
+/// Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+/// `cargo test -p server --test notifications -- --include-ignored` で走らせる。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_review_request_is_saved_as_the_coachs_notification_in_postgres(pool: sqlx::PgPool) {
+    // 契約にコーチの登録の操作がないので、ユースケースを直に呼ぶ
+    let coach_account = RegisterAccount::new(
+        PgAccountRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        ManualClock::new(oct5()),
+    )
+    .execute(RegisterAccountCommand {
+        email: "coach@example.com".to_string(),
+        display_name: "コーチ".to_string(),
+        role: Role::Coach,
+        sports: vec![Sport::Soccer],
+    })
+    .await
+    .unwrap();
+    let coach = MockTokenService
+        .issue(TokenClaims {
+            account_id: coach_account.id(),
+            role: Role::Coach,
+        })
+        .into_string();
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(oct5()),
+        RecordingAnalyticsSink::default(),
+    );
+    let account = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "hanako@example.com", "display_name": "はなこ", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let student = account["access_token"].as_str().unwrap();
+    let empty = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(&coach),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(empty, json!({ "notifications": [] }));
+
+    call(
+        &router,
+        "POST",
+        "/videos",
+        Some(student),
+        json!({
+            "coach_id": account_id_uuid::format(coach_account.id()),
+            "sport": "soccer",
+            "content_type": "video/quicktime"
+        }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let listed = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(&coach),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    let notifications = listed["notifications"].as_array().unwrap();
+    assert_eq!(notifications.len(), 1, "{listed}");
+    assert_eq!(notifications[0]["kind"], "video_review_requested");
+    assert_eq!(notifications[0]["is_read"], false);
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/notifications/me",
+            Some(student),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "notifications": [] }),
+        "生徒には残さない"
+    );
+
+    let read = call(
+        &router,
+        "POST",
+        "/notifications/me/read",
+        Some(&coach),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        read["notifications"][0]["notification_id"],
+        notifications[0]["notification_id"]
+    );
+    assert_eq!(read["notifications"][0]["is_read"], true);
 }
 
 /// 保存先を Postgres にした組み立てで、受け取り設定の変更が保存されて次の照会に出ることを確かめる。

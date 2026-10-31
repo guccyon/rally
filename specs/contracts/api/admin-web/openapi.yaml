@@ -12,6 +12,8 @@ info:
     まだ始まっていない枠は取り下げられる（`withdrawMySlot`）。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
     student-app と同じ操作・同じ形で、スレッドの当事者であるコーチが呼ぶ。
+    コーチへのお知らせ（新しい予約・添削の依頼・生徒からのメッセージのプッシュ通知を残したもの）の一覧と既読
+    （`listMyNotifications` / `markMyNotificationsRead`）も student-app と同じ操作・同じ形で、コーチが自分の分を呼ぶ。
     コーチのレッスンメニュー（catalog）は、コーチが自分の分を作り（`createMyLessonMenu`）・直し・非公開にし
     （`updateMyLessonMenu`）・一覧する（`listMyLessonMenus`）。生徒は student-app の `listCoachLessonMenus` で公開中のものを読む。
     本部はすべてのコーチのメニューを横断で読む（`listLessonMenus`）。
@@ -54,6 +56,8 @@ tags:
     description: メッセージ（生徒と担当コーチのチャット）
   - name: catalog
     description: カタログ（コーチのレッスンメニュー）
+  - name: notification
+    description: 通知（コーチへのお知らせ）
   - name: entitlement
     description: プラン（受講権。本部が見る生徒の一覧に添える契約種別と契約プラン）
 
@@ -975,6 +979,63 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /notifications/me:
+    get:
+      operationId: listMyNotifications
+      summary: 自分のお知らせの一覧
+      description: |
+        認証したコーチが受け取ったお知らせ（送ったプッシュ通知を残したもの）を、作った時刻の新しい順に返す
+        （同じ時刻なら後に作ったものが先）。ページングはしない。お知らせがなければ空の配列。
+        student-app の `listMyNotifications` と同じ操作・同じ形。コーチだけが呼べる（本部は 403。生徒の分は student-app の契約）。
+        照会だけで、何も保存しない（既読にもしない）。
+
+        - お知らせはコーチにプッシュ通知を送るときに作る（生徒が予約を確定した＝新しい予約・生徒からの動画の添削の依頼・
+          生徒からのチャットのメッセージ）
+        - 同じ通知（同じ予約・同じ動画の添削の依頼・同じメッセージ）のお知らせは 1 件
+        - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: コーチのお知らせ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /notifications/me/read:
+    post:
+      operationId: markMyNotificationsRead
+      summary: 自分のお知らせをすべて既読にする
+      description: |
+        認証したコーチが受け取ったお知らせを、サーバーの現在時刻ですべて既読（`is_read: true`）にし、既読にしたあとの一覧
+        （`listMyNotifications` と同じ形・同じ並び）を返す。すでに既読のお知らせは変えない（何度呼んでもよい）。
+        リクエストの本文は要らない。student-app の `markMyNotificationsRead` と同じ操作・同じ形。コーチだけが呼べる
+        （本部は 403。生徒の分は student-app の契約）。
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: notification
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 既読にしたあとのコーチのお知らせ（新しい順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
 components:
   securitySchemes:
@@ -2057,6 +2118,46 @@ components:
         stamp_id:
           description: 本文の代わりに送るスタンプ
           $ref: "#/components/schemas/StampId"
+
+    NotificationKind:
+      type: string
+      description: |
+        お知らせ・プッシュ通知の種類（student-app の `NotificationKind` と同じ綴り）。コーチが受け取るのは、予約の確定
+        （`booking_confirmed`。コーチには新しい予約として知らせる）・添削の依頼（`video_review_requested`）・
+        メッセージの受信（`message_received`。生徒から届いたもの）。値は追加しうる（クライアントは未知の値を汎用のお知らせとして扱う）。
+      enum: [booking_confirmed, video_review_requested, message_received]
+
+    Notification:
+      type: object
+      description: glossary の notification（お知らせ。送ったプッシュ通知を、あとで一覧で見られるように残したもの）
+      required: [notification_id, kind, body, created_at, is_read]
+      properties:
+        notification_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/NotificationKind"
+        body:
+          type: string
+          minLength: 1
+          description: 表示用の本文（例「新しい予約が入りました」）。サーバーが種類と中身から決める
+        created_at:
+          type: string
+          format: date-time
+          description: お知らせを作った時刻（プッシュ通知を送るときの時刻）
+        is_read:
+          type: boolean
+          description: 既読か（`markMyNotificationsRead` で既読にする）
+
+    NotificationList:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          description: 作った時刻の新しい順
+          items:
+            $ref: "#/components/schemas/Notification"
 
     ErrorCode:
       type: string

@@ -1,7 +1,7 @@
-//! `/notifications/me` の統合テスト。student-app の `GET /notifications/me`（`listMyNotifications`）と
-//! `POST /notifications/me/read`（`markMyNotificationsRead`）のレスポンスの形を OpenAPI のスキーマで検査し、
-//! 生徒が自分のお知らせだけを新しい順に種類・本文・作った時刻・既読かで読めること・すべて既読にできて何度呼んでもよいこと・
-//! ほかの生徒のお知らせに触れないこと・生徒以外（コーチ・本部）の 403・トークンなしの 401 を確かめる。
+//! `/notifications/me` の統合テスト。student-app と admin-web の `GET /notifications/me`（`listMyNotifications`）と
+//! `POST /notifications/me/read`（`markMyNotificationsRead`）のレスポンスの形を、生徒は student-app、コーチは admin-web の
+//! OpenAPI のスキーマで検査し、生徒・コーチが自分のお知らせだけを新しい順に種類・本文・作った時刻・既読かで読めること・
+//! すべて既読にできて何度呼んでもよいこと・ほかの人のお知らせに触れないこと・本部の 403・トークンなしの 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -71,8 +71,8 @@ fn notification(id: u128, push: PushNotification, minute: u64) -> Notification {
     Notification::new(NotificationId::from_u128(id), push, at(minute))
 }
 
-/// 生徒への予約の確定（10 分）・添削の返却（20 分）・コーチからのメッセージ（30 分）と、コーチへの新しい予約と
-/// ほかの生徒への予約の確定。
+/// 生徒への予約の確定（10 分）・添削の返却（20 分）・コーチからのメッセージ（30 分）と、コーチへの新しい予約（10 分）・
+/// 添削の依頼（15 分）・生徒からのメッセージ（25 分）と、ほかの生徒への予約の確定。
 fn saved() -> InMemoryNotificationRepository {
     InMemoryNotificationRepository::with_notifications([
         notification(
@@ -123,6 +123,26 @@ fn saved() -> InMemoryNotificationRepository {
             },
             40,
         ),
+        notification(
+            6,
+            PushNotification::VideoReviewRequested {
+                student_id: STUDENT_ID,
+                coach_id: COACH_ID,
+                video_id: VideoId::from_u128(8),
+            },
+            15,
+        ),
+        notification(
+            7,
+            PushNotification::MessageReceived {
+                student_id: STUDENT_ID,
+                coach_id: COACH_ID,
+                thread_id: MessageThreadId::from_u128(5),
+                message_id: MessageId::from_u128(9),
+                sender: MessageSender::Student,
+            },
+            25,
+        ),
     ])
 }
 
@@ -134,6 +154,7 @@ fn router(notifications: InMemoryNotificationRepository, now: SystemTime) -> Rou
     )
 }
 
+/// `token` で呼び、レスポンスを呼んだ人のアプリの契約で検査する（コーチは admin-web、それ以外は student-app）。
 async fn send(
     router: &Router,
     method: &str,
@@ -152,12 +173,12 @@ async fn send(
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap();
-    support::Contract::load("student-app").assert_response(
-        &method.to_lowercase(),
-        path,
-        status,
-        &body,
-    );
+    let app = if token.is_some_and(|token| token.starts_with("coach:")) {
+        "admin-web"
+    } else {
+        "student-app"
+    };
+    support::Contract::load(app).assert_response(&method.to_lowercase(), path, status, &body);
     (status, body)
 }
 
@@ -188,6 +209,35 @@ fn mine(read: [bool; 3]) -> Value {
                 "body": "予約が確定しました",
                 "created_at": "2026-11-01T00:10:00Z",
                 "is_read": read[2]
+            }
+        ]
+    })
+}
+
+/// コーチのお知らせ（新しい順）。`read` は既読か
+fn coachs(read: bool) -> Value {
+    json!({
+        "notifications": [
+            {
+                "notification_id": id(7),
+                "kind": "message_received",
+                "body": "生徒からメッセージが届きました",
+                "created_at": "2026-11-01T00:25:00Z",
+                "is_read": read
+            },
+            {
+                "notification_id": id(6),
+                "kind": "video_review_requested",
+                "body": "生徒から動画の添削の依頼が届きました",
+                "created_at": "2026-11-01T00:15:00Z",
+                "is_read": read
+            },
+            {
+                "notification_id": id(2),
+                "kind": "booking_confirmed",
+                "body": "新しい予約が入りました",
+                "created_at": "2026-11-01T00:10:00Z",
+                "is_read": read
             }
         ]
     })
@@ -239,6 +289,8 @@ async fn a_student_marks_all_their_notifications_read() {
             (NotificationId::from_u128(3), Some(at(60))),
             (NotificationId::from_u128(4), Some(at(60))),
             (NotificationId::from_u128(5), None),
+            (NotificationId::from_u128(6), None),
+            (NotificationId::from_u128(7), None),
         ],
         "コーチ・ほかの生徒のお知らせは既読にしない"
     );
@@ -249,22 +301,55 @@ async fn a_student_marks_all_their_notifications_read() {
 }
 
 #[tokio::test]
-async fn only_students_can_call_and_a_token_is_required() {
+async fn a_coach_lists_their_own_notifications_and_marks_them_read() {
+    let notifications = saved();
+    let router = router(notifications.clone(), at(60));
+    let (status, body) = send(&router, "GET", "/notifications/me", Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        coachs(false),
+        "新しい予約・添削の依頼・生徒からのメッセージだけ。生徒の分は出さない"
+    );
+    assert!(
+        notifications.all().iter().all(|n| !n.is_read()),
+        "照会では既読にしない"
+    );
+
+    let (status, body) = send(&router, "POST", "/notifications/me/read", Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, coachs(true));
+    let (status, again) = send(&router, "POST", "/notifications/me/read", Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again, body, "何度呼んでもよい");
+    let read: Vec<_> = notifications
+        .all()
+        .iter()
+        .filter(|n| n.is_read())
+        .map(Notification::id)
+        .collect();
+    assert_eq!(
+        read,
+        [2, 6, 7].map(NotificationId::from_u128),
+        "生徒のお知らせは既読にしない"
+    );
+
+    let (status, body) = send(&router, "GET", "/notifications/me", Some("coach:10")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "notifications": [] }));
+}
+
+#[tokio::test]
+async fn only_students_and_coaches_can_call_and_a_token_is_required() {
     let notifications = saved();
     let router = router(notifications.clone(), at(60));
     for (method, path) in [
         ("GET", "/notifications/me"),
         ("POST", "/notifications/me/read"),
     ] {
-        for token in [COACH, HEADQUARTERS] {
-            let (status, body) = send(&router, method, path, Some(token)).await;
-            assert_eq!(
-                status,
-                StatusCode::FORBIDDEN,
-                "{method} {path} {token}: {body}"
-            );
-            assert_eq!(body["code"], "forbidden");
-        }
+        let (status, body) = send(&router, method, path, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {body}");
+        assert_eq!(body["code"], "forbidden");
         let (status, body) = send(&router, method, path, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}: {body}");
         assert_eq!(body["code"], "unauthorized");
