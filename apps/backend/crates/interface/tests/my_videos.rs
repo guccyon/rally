@@ -84,6 +84,7 @@ fn menu_copy() -> VideoLessonMenu {
 }
 
 /// `id` の動画を `student` が `coach` に `submitted_hour` に送る。`returned_hour` があればその時刻に返却済み。
+/// `lesson_menu` は送った時点のレッスンメニューの写し。
 fn video(
     id: u128,
     student: &str,
@@ -91,6 +92,7 @@ fn video(
     sport: Sport,
     submitted_hour: u64,
     returned_hour: Option<u64>,
+    lesson_menu: Option<VideoLessonMenu>,
 ) -> Video {
     Video::restore(
         VideoId::from_u128(id),
@@ -105,6 +107,7 @@ fn video(
                 at(hour),
             )
         }),
+        lesson_menu,
     )
     .unwrap()
 }
@@ -129,16 +132,23 @@ async fn app() -> Router {
         .unwrap();
     let videos = InMemoryVideoRepository::with_videos([
         // 返却済み・メニューあり（いちばん古い）
-        video(1, STUDENT, COACH, Sport::Tennis, 1, Some(30))
-            .with_restored_lesson_menu(Some(menu_copy())),
+        video(
+            1,
+            STUDENT,
+            COACH,
+            Sport::Tennis,
+            1,
+            Some(30),
+            Some(menu_copy()),
+        ),
         // 添削待ち・表示名が引けないコーチ（いちばん新しい）
-        video(2, STUDENT, UNKNOWN_COACH, Sport::Soccer, 5, None),
+        video(2, STUDENT, UNKNOWN_COACH, Sport::Soccer, 5, None, None),
         // 添削待ち・メニューなし
-        video(3, STUDENT, COACH, Sport::Tennis, 3, None),
+        video(3, STUDENT, COACH, Sport::Tennis, 3, None, None),
         // ゴルフ（golf-app の範囲）は student-app の一覧に載らない
-        video(4, STUDENT, COACH, Sport::Golf, 4, None),
+        video(4, STUDENT, COACH, Sport::Golf, 4, None, None),
         // 別の生徒の動画は載らない
-        video(5, OTHER_STUDENT, COACH, Sport::Tennis, 6, None),
+        video(5, OTHER_STUDENT, COACH, Sport::Tennis, 6, None, None),
     ]);
     interface::my_videos_router(
         ListMyVideos::new(videos, ProfileCoachDisplayNameLookup::new(accounts)),

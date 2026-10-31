@@ -101,6 +101,7 @@ mod tests {
                     at(hour),
                 )
             }),
+            None,
         )
         .unwrap()
     }

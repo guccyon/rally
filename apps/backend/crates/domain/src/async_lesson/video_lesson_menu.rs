@@ -3,7 +3,7 @@ use crate::catalog::{LessonMenu, LessonMenuId, LessonMenuName};
 /// 動画を送った時点の非同期レッスンのレッスンメニュー（catalog の [`LessonMenu`] の写し）。動画が持つのは ID・名前で、
 /// 送った後にメニューが直されても変わらない（動画の表示は送った時点のまま）。
 ///
-/// 写してよいかの判定は [`super::Video::with_lesson_menu`] の 1 か所。
+/// 写してよいかの判定は [`super::Video::submit_with_lesson_menu`] の 1 か所。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoLessonMenu {
     id: LessonMenuId,
