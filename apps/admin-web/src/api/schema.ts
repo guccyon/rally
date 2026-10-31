@@ -70,6 +70,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 予約の一覧を日付で見る（本部）
+         * @description すべてのコーチの枠への予約（glossary の booking。体験予約を含む）のうち、開始する日付（日本時間）が `from` から `to` まで
+         *     （両端を含む）のものを返す。本部が、その日にどの予約が入っていて、確定待ち（`pending`）のまま残っていないかを見るのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 期間: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに、予約されたスロットが開始する予約。
+         *       `from` を省けば今日（サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。
+         *       応答の `from` / `to` は省いたときに決めた日付を含めて、実際に使った期間
+         *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+         *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
+         *       `from`（今日）より前なので 422
+         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。絞り込み・ページングはしない。
+         *       予約がなければ `bookings` は空の配列（404 にはしない）
+         *     - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
+         *       キャンセル済みの予約より上）、それも同じなら `booking_id` の順
+         *     - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
+         *       コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
+         *       その表示名を載せない
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listBookings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -548,6 +587,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/students": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生徒の一覧（本部）
+         * @description 生徒（glossary の student）の役割のアカウントをすべて、本部が生徒の様子を見るのに要る項目とともに返す。
+         *     どのスポーツか・受講権（glossary の entitlement）があるならその契約種別と契約プラン・最近予約しているか
+         *     （最後に予約した時刻）・いつ登録したかを並べる。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 並べ方: 登録した時刻 `registered_at` の新しい順。同じ時刻は `student_id` の順
+         *     - `contract_type` / `plan`: 生徒の受講権の契約種別と、元の月額契約のプラン（glossary の subscription_plan）。
+         *       受講権がない（まだ契約していない）生徒はどちらも null。ワンショットの受講権は `plan` が null
+         *     - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
+         *       キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
+         *     - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
+         *     - 絞り込み・ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で足す）。生徒がいなければ
+         *       `students` は空の配列
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listStudents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -710,6 +783,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分のお知らせの一覧
+         * @description 認証したコーチが受け取ったお知らせ（送ったプッシュ通知を残したもの）を、作った時刻の新しい順に返す
+         *     （同じ時刻なら後に作ったものが先）。ページングはしない。お知らせがなければ空の配列。
+         *     student-app の `listMyNotifications` と同じ操作・同じ形。コーチだけが呼べる（本部は 403。生徒の分は student-app の契約）。
+         *     照会だけで、何も保存しない（既読にもしない）。
+         *
+         *     - お知らせはコーチにプッシュ通知を送るときに作る（生徒が予約を確定した＝新しい予約・生徒からの動画の添削の依頼・
+         *       生徒からのチャットのメッセージ）
+         *     - 同じ通知（同じ予約・同じ動画の添削の依頼・同じメッセージ）のお知らせは 1 件
+         *     - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listMyNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/me/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 自分のお知らせをすべて既読にする
+         * @description 認証したコーチが受け取ったお知らせを、サーバーの現在時刻ですべて既読（`is_read: true`）にし、既読にしたあとの一覧
+         *     （`listMyNotifications` と同じ形・同じ並び）を返す。すでに既読のお知らせは変えない（何度呼んでもよい）。
+         *     リクエストの本文は要らない。student-app の `markMyNotificationsRead` と同じ操作・同じ形。コーチだけが呼べる
+         *     （本部は 403。生徒の分は student-app の契約）。
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["markMyNotificationsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -825,6 +953,29 @@ export interface components {
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["CoachBooking"][];
         };
+        /** @description 本部が見る予約の一覧（`listBookings`）の 1 件。予約（glossary の booking）と、コーチと予約した生徒の表示名 */
+        HeadquartersBooking: {
+            booking: components["schemas"]["Booking"];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description 本部が見る予約の一覧（期間と並べ方は `listBookings` の説明） */
+        HeadquartersBookingList: {
+            /**
+             * Format: date
+             * @description 実際に使った期間の始まりの日付（日本時間。含む）
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description 実際に使った期間の終わりの日付（日本時間。含む）
+             */
+            to: string;
+            /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
+            bookings: components["schemas"]["HeadquartersBooking"][];
+        };
         /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
         CoachSlot: {
             slot: components["schemas"]["Slot"];
@@ -918,6 +1069,50 @@ export interface components {
         CoachList: {
             /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
             coaches: components["schemas"]["Coach"][];
+        };
+        /**
+         * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
+         * @enum {string}
+         */
+        ContractType: "subscription" | "one_shot";
+        /**
+         * @description glossary の subscription_plan（月額契約のプラン。student-app の `SubscriptionPlan` と同じ）。standard は暦月 2 回（既定）、
+         *     plus は暦月 4 回のビデオ通話の上限
+         * @enum {string}
+         */
+        SubscriptionPlan: "standard" | "plus";
+        /**
+         * @description 本部が見る生徒 1 人の様子（`listStudents`）。glossary の student の役割のアカウントに、受講権の契約種別と契約プラン、
+         *     最後に予約した時刻を添える。メールアドレスは持たない
+         */
+        Student: {
+            /**
+             * Format: uuid
+             * @description 生徒のアカウントの ID（他の操作の `student_id` と同じ値）
+             */
+            student_id: string;
+            /** @description 生徒の表示名 */
+            display_name: string;
+            sport: components["schemas"]["Sport"];
+            /** @description 受講権の契約種別。受講権がなければ null */
+            contract_type: components["schemas"]["ContractType"] | null;
+            /** @description 元の月額契約のプラン。受講権がない・ワンショットなら null */
+            plan: components["schemas"]["SubscriptionPlan"] | null;
+            /**
+             * Format: date-time
+             * @description 最後に予約を作った時刻（予約の状態を問わない）。予約がなければ null
+             */
+            last_booked_at: string | null;
+            /**
+             * Format: date-time
+             * @description アカウントを登録した時刻
+             */
+            registered_at: string;
+        };
+        /** @description 生徒の一覧（並べ方は `listStudents` の説明） */
+        StudentList: {
+            /** @description 登録した時刻の新しい順（同じ時刻は `student_id` の順） */
+            students: components["schemas"]["Student"][];
         };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
@@ -1316,6 +1511,32 @@ export interface components {
             stamp_id?: components["schemas"]["StampId"];
         };
         /**
+         * @description お知らせ・プッシュ通知の種類（student-app の `NotificationKind` と同じ綴り）。コーチが受け取るのは、予約の確定
+         *     （`booking_confirmed`。コーチには新しい予約として知らせる）・添削の依頼（`video_review_requested`）・
+         *     メッセージの受信（`message_received`。生徒から届いたもの）。値は追加しうる（クライアントは未知の値を汎用のお知らせとして扱う）。
+         * @enum {string}
+         */
+        NotificationKind: "booking_confirmed" | "video_review_requested" | "message_received";
+        /** @description glossary の notification（お知らせ。送ったプッシュ通知を、あとで一覧で見られるように残したもの） */
+        Notification: {
+            /** Format: uuid */
+            notification_id: string;
+            kind: components["schemas"]["NotificationKind"];
+            /** @description 表示用の本文（例「新しい予約が入りました」）。サーバーが種類と中身から決める */
+            body: string;
+            /**
+             * Format: date-time
+             * @description お知らせを作った時刻（プッシュ通知を送るときの時刻）
+             */
+            created_at: string;
+            /** @description 既読か（`markMyNotificationsRead` で既読にする） */
+            is_read: boolean;
+        };
+        NotificationList: {
+            /** @description 作った時刻の新しい順 */
+            notifications: components["schemas"]["Notification"][];
+        };
+        /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
@@ -1430,6 +1651,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listBookings: {
+        parameters: {
+            query?: {
+                /** @description 期間の始まりの日付（日本時間。含む）。省けば今日 */
+                from?: string;
+                /** @description 期間の終わりの日付（日本時間。含む）。省けば `from` から 7 日目 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 期間に開始する予約の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadquartersBookingList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getMyAccount: {
@@ -1824,6 +2073,28 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    listStudents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生徒の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     startLiveLessonSession: {
         parameters: {
             query?: never;
@@ -2005,6 +2276,50 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listMyNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチのお知らせ（新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    markMyNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 既読にしたあとのコーチのお知らせ（新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
 }

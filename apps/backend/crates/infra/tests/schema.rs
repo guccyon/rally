@@ -2297,6 +2297,7 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
     let booking = (Some(A), None, None, None, None, None);
     let review = (None, Some(A), Some(B), None, None, None);
     let message = (None, None, None, Some(A), Some(C), Some("coach"));
+    let request = (None, Some(A), None, None, None, None);
 
     // 変種ごとの形で入る
     insert_notification(
@@ -2312,6 +2313,16 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
     insert_notification(&pool, &coach_id, "booking_received", parties, booking, None)
         .await
         .unwrap();
+    insert_notification(
+        &pool,
+        &coach_id,
+        "video_review_requested",
+        parties,
+        request,
+        None,
+    )
+    .await
+    .unwrap();
     insert_notification(
         &pool,
         &student_id,
@@ -2349,6 +2360,25 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
         (code.as_str(), constraint.as_str()),
         (UNIQUE_VIOLATION, "notifications_one_per_push")
     );
+    // 同じ動画の添削の依頼も 1 件（同じ動画の添削の返却とは別）
+    let (code, constraint) = violation(
+        insert_notification(
+            &pool,
+            &coach_id,
+            "video_review_requested",
+            parties,
+            request,
+            None,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            UNIQUE_VIOLATION,
+            "notifications_one_per_video_review_request"
+        )
+    );
 
     // 種類に合わない中身は入らない
     for (kind, push) in [
@@ -2356,6 +2386,15 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
         (
             "video_review_returned",
             (None, Some(B), None, None, None, None),
+        ),
+        ("video_review_requested", review),
+        (
+            "video_review_requested",
+            (Some(B), Some(B), None, None, None, None),
+        ),
+        (
+            "video_review_requested",
+            (None, None, None, None, None, None),
         ),
         (
             "message_received",

@@ -3,6 +3,8 @@
 //! infra のモック（標準出力に書くだけ）。契約の形・拒否の細かい検査は interface の `tests/bookings.rs`。
 //! 自分の予約の一覧（`GET /bookings/me`）は本人の分だけを返し、生徒以外は 403。
 //! コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は本人の枠への予約だけを生徒の表示名と一緒に返し、コーチ以外は 403。
+//! 本部が見る予約の一覧（`GET /bookings`）は同じパスの `POST /bookings`（生徒）と並んで、すべてのコーチの枠への予約を
+//! 日付（日本時間）で絞って返し、本部以外は 403。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -322,4 +324,101 @@ async fn coach_lists_only_bookings_of_own_slots_with_student_display_names() {
     // 生徒は呼べない
     let (status, body) = send(&router, get(&student)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+async fn headquarters_lists_bookings_of_every_coach_by_date_in_japan() {
+    let router = server::router();
+    let token = |id: u128, role: Role| {
+        MockTokenService
+            .issue(TokenClaims {
+                account_id: AccountId::from_u128(id),
+                role,
+            })
+            .into_string()
+    };
+    let (coach, other_coach) = (token(42, Role::Coach), token(43, Role::Coach));
+    let headquarters = token(1, Role::Headquarters);
+    // 2099-01-01T15:00:00Z は日本時間の 1 月 2 日 0 時
+    let mut slots = Vec::new();
+    for (token, starts_at) in [
+        (&coach, "2099-01-01T14:00:00Z"),
+        (&other_coach, "2099-01-01T15:00:00Z"),
+        (&coach, "2099-01-02T03:00:00Z"),
+    ] {
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                Some(token),
+                json!({
+                    "sport": "tennis",
+                    "starts_at": starts_at,
+                    "ends_at": starts_at.replace(":00:00Z", ":30:00Z"),
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        slots.push(slot);
+    }
+    let student = register(&router, "taro@example.com").await;
+    let mut booking_ids = Vec::new();
+    for (slot, is_trial) in [(&slots[0], true), (&slots[1], false), (&slots[2], false)] {
+        let (status, booking) = send(
+            &router,
+            post_json(
+                "/bookings",
+                Some(&student),
+                json!({ "slot_id": slot["slot_id"], "is_trial": is_trial }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{booking}");
+        booking_ids.push(booking["booking_id"].clone());
+    }
+
+    let get = |path: &str, token: &str| {
+        Request::get(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, body) = send(
+        &router,
+        get("/bookings?from=2099-01-02&to=2099-01-02", &headquarters),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (body["from"].clone(), body["to"].clone()),
+        (json!("2099-01-02"), json!("2099-01-02"))
+    );
+    let bookings = body["bookings"].as_array().unwrap();
+    let listed: Vec<_> = bookings
+        .iter()
+        .map(|item| item["booking"]["booking_id"].clone())
+        .collect();
+    assert_eq!(
+        listed,
+        [booking_ids[1].clone(), booking_ids[2].clone()],
+        "日本時間の 1 月 2 日に開始する予約だけを、開始の古い順に: {body}"
+    );
+    assert_eq!(bookings[0]["booking"]["status"], "pending");
+    assert_eq!(bookings[0]["booking"]["is_trial"], false);
+    assert_eq!(bookings[0]["student_display_name"], "たろう");
+
+    // 本部以外は呼べない（生徒の POST /bookings は同じパスのまま使える）
+    for token in [&coach, &student] {
+        let (status, body) = send(&router, get("/bookings", token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    }
+    // 終わりの日付が始まりより前なら 422
+    let (status, body) = send(
+        &router,
+        get("/bookings?from=2099-01-02&to=2099-01-01", &headquarters),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 }

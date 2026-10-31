@@ -21,9 +21,10 @@ use application::{
     clock::{Clock, SystemClock},
     entitlement::{
         EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
-        GetEntitlement, ListSubscriptionPlans, LiveLessonQuotaSubscriber, StartSubscription,
+        EntitlementStudentContractLookup, GetEntitlement, ListSubscriptionPlans,
+        LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, RegisterAccount},
+    identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryCoachAcceptanceRepository,
         InMemoryEntitlementRepository, InMemoryLessonCompletionRepository,
@@ -62,9 +63,10 @@ use application::{
     },
     scheduling::{
         BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
-        GetSlotSupply, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, ResumeCoach,
-        SchedulingBookingLookup, SchedulingCoachAcceptanceLookup, SearchSlots, SlotRepository,
-        SuspendCoach, WithdrawSlot,
+        GetSlotSupply, ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings,
+        PublishSlot, ResumeCoach, SchedulingBookingLookup, SchedulingCoachAcceptanceLookup,
+        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, SuspendCoach,
+        WithdrawSlot,
     },
 };
 use axum::Router;
@@ -93,7 +95,7 @@ pub fn router() -> Router {
 /// （`VideoReviewReturned`）では、そのスレッドに（なければ開いて）添削依頼・添削の返却のメッセージが足される。
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
 /// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。送る通知はオフの種類も含めてお知らせとして残し、
-/// 生徒は自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
+/// 生徒とコーチは自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
 /// お知らせの保存先も当面インメモリ。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
@@ -112,6 +114,11 @@ pub fn router() -> Router {
 /// （billing・review の購読はまだない）。
 ///
 /// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+/// 本部が見る予約の一覧（`GET /bookings`）も同じく予約の保存先から期間に開始する予約を読み、コーチと生徒の表示名を
+/// アカウントの保存先から読んで添える（`ListBookings`。`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）。
+/// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の
+/// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）
+/// 読んで添える（identity は entitlement・scheduling の表を直接読まない）。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
@@ -408,6 +415,23 @@ where
         ),
         MockTokenService,
     );
+    let headquarters_bookings = interface::headquarters_bookings_router(
+        ListBookings::new(
+            bookings.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            ProfileStudentDisplayNameLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
+    let students = interface::students_router(
+        ListStudents::new(
+            accounts.clone(),
+            EntitlementStudentContractLookup::new(entitlements.clone()),
+            SchedulingStudentLastBookingLookup::new(bookings.clone()),
+        ),
+        MockTokenService,
+    );
     let my_profile = interface::my_profile_router(
         GetAccount::new(accounts.clone()),
         UpdateStudentProfile::new(accounts.clone()),
@@ -565,5 +589,7 @@ where
     .merge(my_notifications)
     .merge(slot_withdrawal)
     .merge(lesson_stats)
+    .merge(headquarters_bookings)
+    .merge(students)
     .merge(coach_acceptance)
 }

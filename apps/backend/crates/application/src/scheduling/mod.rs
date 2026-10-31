@@ -1,7 +1,10 @@
 //! scheduling のユースケースとポート。
 
+mod booking_coach_display_name_lookup;
 pub mod booking_id_uuid;
+mod booking_list;
 mod booking_repository;
+pub mod calendar_day;
 mod cancel_booking;
 mod change_coach_acceptance_error;
 mod coach_acceptance_repository;
@@ -13,6 +16,7 @@ mod confirm_booking;
 mod create_booking;
 mod get_slot_supply;
 mod lesson_menu_lookup;
+mod list_bookings;
 mod list_coach_bookings;
 mod list_coach_slots;
 mod list_my_bookings;
@@ -24,6 +28,7 @@ mod reserve_slot_error;
 mod resume_coach;
 mod scheduling_booking_lookup;
 mod scheduling_coach_acceptance_lookup;
+mod scheduling_student_last_booking_lookup;
 mod search_slots;
 mod slot_criteria;
 mod slot_cursor;
@@ -37,6 +42,8 @@ mod update_coach_acceptance_error;
 mod update_slot_error;
 mod withdraw_slot;
 
+pub use booking_coach_display_name_lookup::BookingCoachDisplayNameLookup;
+pub use booking_list::BookingList;
 pub use booking_repository::BookingRepository;
 pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError};
 pub use change_coach_acceptance_error::ChangeCoachAcceptanceError;
@@ -49,6 +56,7 @@ pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingE
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
 pub use get_slot_supply::GetSlotSupply;
 pub use lesson_menu_lookup::LessonMenuLookup;
+pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
 pub use list_coach_bookings::ListCoachBookings;
 pub use list_coach_slots::ListCoachSlots;
 pub use list_my_bookings::ListMyBookings;
@@ -60,6 +68,7 @@ pub use reserve_slot_error::ReserveSlotError;
 pub use resume_coach::ResumeCoach;
 pub use scheduling_booking_lookup::SchedulingBookingLookup;
 pub use scheduling_coach_acceptance_lookup::SchedulingCoachAcceptanceLookup;
+pub use scheduling_student_last_booking_lookup::SchedulingStudentLastBookingLookup;
 pub use search_slots::{SearchSlots, SearchSlotsQuery};
 pub use slot_criteria::SlotCriteria;
 pub use slot_cursor::SlotCursor;

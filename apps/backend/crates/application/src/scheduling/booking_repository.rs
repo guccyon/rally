@@ -1,4 +1,8 @@
-use std::{future::Future, time::SystemTime};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    time::SystemTime,
+};
 
 use domain::{
     identity::AccountId,
@@ -61,7 +65,8 @@ pub trait BookingRepository: Send + Sync {
         F: FnOnce(&mut Booking, &mut Slot) -> Result<(), SchedulingError> + Send;
 
     /// 開始が `from`（含む）から `until`（含まない）までの枠（状態を問わない）と、それらの枠への予約
-    /// （状態を問わない）。読むだけで何も変えない。予約枠の需給（[`super::GetSlotSupply`]）が数える。
+    /// （状態を問わない）。読むだけで何も変えない。予約枠の需給（[`super::GetSlotSupply`]）が数え、本部が見る予約の一覧
+    /// （[`super::ListBookings`]）が読む。
     fn slots_starting_between(
         &self,
         from: SystemTime,
@@ -74,6 +79,14 @@ pub trait BookingRepository: Send + Sync {
         &self,
         student_id: AccountId,
     ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
+
+    /// `student_ids` の生徒それぞれが最後に予約した時刻（予約を作った時刻の最も新しいもの。予約の状態は問わない）。
+    /// 予約がない生徒は結果に含めない。読むだけで何も変えない。本部が見る生徒の一覧
+    /// （[`super::SchedulingStudentLastBookingLookup`]）が読む。
+    fn last_booked_at_of_students(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> impl Future<Output = Result<BTreeMap<AccountId, SystemTime>, Unavailable>> + Send;
 
     /// `coach_id` のコーチのスロットへの予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
     /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）が読む。

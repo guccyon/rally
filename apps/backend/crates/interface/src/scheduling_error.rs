@@ -22,6 +22,8 @@
 //!   `not_found`、有効な予約が入っている（`SlotHasActiveBookings`）は 409 `slot_has_active_booking`、始まった
 //!   （`SlotAlreadyStarted`）は 409 `slot_already_started`、すでに閉じた（`SlotNotOpen` の `closed`）は 409
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
+//! - 本部が見る予約の一覧（`listBookings`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
+//!   422 `validation_failed`、それ以外は一覧では起きないので 500
 //! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
 //!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開
 //!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500
@@ -31,7 +33,7 @@
 
 use application::scheduling::{
     CancelBookingError, ChangeCoachAcceptanceError, ConfirmBookingError, CreateBookingError,
-    PublishSlotError, WithdrawSlotError, slot_id_uuid,
+    ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -112,6 +114,8 @@ impl From<CreateBookingError> for ApiError {
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended => Self::from(error),
         }
@@ -153,6 +157,8 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
@@ -194,6 +200,8 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
@@ -236,6 +244,8 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings => Self::from(error),
@@ -282,6 +292,47 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::LessonMenuNotLive
             | SchedulingError::LessonMenuSportMismatch { .. }
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+        }
+    }
+}
+
+impl From<ListBookingsError> for ApiError {
+    fn from(error: ListBookingsError) -> Self {
+        let error = match error {
+            ListBookingsError::Invalid(error) => error,
+            ListBookingsError::Unavailable(error) => return Self::internal(error),
+        };
+        match error {
+            SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. } => Self::from(error),
+            SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotOverlaps { .. }
+            | SchedulingError::SlotOfAnotherCoach
+            | SchedulingError::SlotNotOpen { .. }
+            | SchedulingError::SlotCapacityOutOfRange { .. }
+            | SchedulingError::SlotNotBooked { .. }
+            | SchedulingError::SlotAlreadyBooked
+            | SchedulingError::SlotSeatsOverCapacity { .. }
+            | SchedulingError::SlotStatusMismatchesSeats { .. }
+            | SchedulingError::SlotAlreadyBookedByStudent
+            | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::BookingNotPending { .. }
+            | SchedulingError::BookingAlreadyCancelled
+            | SchedulingError::BookingOfAnotherStudent
+            | SchedulingError::BookingOfAnotherSlot
+            | SchedulingError::LiveLessonQuotaExceeded
+            | SchedulingError::LessonMenuOfAnotherCoach
+            | SchedulingError::LessonMenuNotPublished
+            | SchedulingError::LessonMenuNotLive
+            | SchedulingError::LessonMenuSportMismatch { .. }
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
@@ -326,6 +377,8 @@ impl From<ChangeCoachAcceptanceError> for ApiError {
             | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
             | SchedulingError::SlotHasActiveBookings { .. }
             | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
         }
     }
@@ -392,6 +445,12 @@ fn describe(error: &SchedulingError) -> String {
             format!("予約が入っている枠は取り下げられない（有効な予約 {active} 件）")
         }
         SchedulingError::SlotAlreadyStarted => "始まった枠は取り下げられない".to_string(),
+        SchedulingError::BookingPeriodEndsBeforeItStarts => {
+            "to は from と同じ日か、それより後の日付にする".to_string()
+        }
+        SchedulingError::BookingPeriodTooLong { max_days } => {
+            format!("from から to までは {max_days} 日まで")
+        }
         SchedulingError::CoachAlreadySuspended => "コーチの受付はすでに止めてある".to_string(),
         SchedulingError::CoachNotSuspended => "コーチの受付は止めていない".to_string(),
         SchedulingError::CoachNotAcceptingBookings => {
@@ -538,6 +597,14 @@ mod tests {
                 "始まった枠は取り下げられない",
             ),
             (
+                SchedulingError::BookingPeriodEndsBeforeItStarts,
+                "to は from と同じ日か、それより後の日付にする",
+            ),
+            (
+                SchedulingError::BookingPeriodTooLong { max_days: 31 },
+                "from から to までは 31 日まで",
+            ),
+            (
                 SchedulingError::CoachAlreadySuspended,
                 "コーチの受付はすでに止めてある",
             ),
@@ -576,6 +643,8 @@ mod tests {
                 | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
                 | SchedulingError::SlotHasActiveBookings { .. }
                 | SchedulingError::SlotAlreadyStarted
+                | SchedulingError::BookingPeriodEndsBeforeItStarts
+                | SchedulingError::BookingPeriodTooLong { .. }
                 | SchedulingError::CoachAlreadySuspended
                 | SchedulingError::CoachNotSuspended
                 | SchedulingError::CoachNotAcceptingBookings => {}
@@ -888,6 +957,37 @@ mod tests {
                 (status, code, message)
             );
         }
+    }
+
+    #[test]
+    fn maps_each_list_bookings_error_to_a_status_and_code() {
+        assert_maps(
+            |error| ApiError::from(ListBookingsError::Invalid(error)),
+            &[
+                (
+                    SchedulingError::BookingPeriodEndsBeforeItStarts,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "to は from と同じ日か、それより後の日付にする",
+                ),
+                (
+                    SchedulingError::BookingPeriodTooLong { max_days: 31 },
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "from から to までは 31 日まで",
+                ),
+            ],
+            INTERNAL,
+        );
+        let api_error = ApiError::from(ListBookingsError::Unavailable(Unavailable::new("db")));
+        assert_eq!(
+            (api_error.status(), api_error.code(), api_error.message()),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "サーバー内部のエラー"
+            )
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ mod contract;
 mod entitlement_error;
 mod entitlements;
 mod error;
+mod headquarters_bookings;
 mod lesson_menus;
 mod lesson_stats;
 mod lessons;
@@ -36,6 +37,7 @@ mod scheduling_error;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
+mod students;
 mod subscription_plans;
 mod subscriptions;
 pub mod version;
@@ -59,7 +61,10 @@ use application::{
     entitlement::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, RegisterAccount, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, GetAccount, ListStudents, RegisterAccount, StudentContractLookup,
+        StudentLastBookingLookup, TokenIssuer, TokenVerifier,
+    },
     lesson::{
         GetMyLessonStats, LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
         LessonCompletionReviewLookup, ListMyLessonCompletions, MonthlyReviewSummaryLookup,
@@ -90,10 +95,11 @@ use application::{
         ReviewedLessonMenuLookup, SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, CoachAcceptanceRepository, CoachIntroductionLookup,
-        ConfirmBooking, CreateBooking, GetSlotSupply, LessonMenuLookup, ListCoachBookings,
-        ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate, ResumeCoach, SearchSlots,
-        SlotRepository, StudentDisplayNameLookup, SuspendCoach, WithdrawSlot,
+        BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachAcceptanceRepository,
+        CoachIntroductionLookup, ConfirmBooking, CreateBooking, GetSlotSupply, LessonMenuLookup,
+        ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate,
+        ResumeCoach, SearchSlots, SlotRepository, StudentDisplayNameLookup, SuspendCoach,
+        WithdrawSlot,
     },
 };
 use axum::{
@@ -631,10 +637,11 @@ where
         .layer(auth::TokenVerification::layer(tokens))
 }
 
-/// 生徒のお知らせ（student-app の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。[`router_with`] と
-/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+/// 生徒とコーチのお知らせ（student-app・admin-web の `GET /notifications/me`・`POST /notifications/me/read`）のルーター。
+/// [`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する
+/// （同じ検証器を渡す）。
 ///
-/// どちらも生徒だけで、扱うのはトークンの生徒自身が受け取るお知らせだけ。
+/// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
 pub fn notifications_router<N, C, T>(
     list_my_notifications: ListMyNotifications<N>,
     mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
@@ -655,7 +662,7 @@ where
             "/notifications/me/read",
             post(notifications::mark_my_notifications_read::<N, C>),
         )
-        .route_layer(require_role(&[Role::Student]))
+        .route_layer(require_role(&[Role::Student, Role::Coach]))
         .with_state(Arc::new(notifications::NotificationsState {
             list_my_notifications,
             mark_my_notifications_read,
@@ -769,6 +776,54 @@ where
         .with_state(Arc::new(lesson_stats::LessonStatsState {
             get_my_lesson_stats,
         }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る予約の一覧（admin-web の `GET /bookings`）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、
+/// 組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。同じパスの `POST /bookings`
+/// （student-app の予約の作成。生徒だけ）は [`router_with`] にあり、`merge` で 1 つのパスにまとまる。
+///
+/// `GET /bookings` は本部だけ（コーチ・生徒は 403）。
+pub fn headquarters_bookings_router<B, K, D, C, T>(
+    list_bookings: ListBookings<B, K, D, C>,
+    tokens: T,
+) -> Router
+where
+    B: BookingRepository + 'static,
+    K: BookingCoachDisplayNameLookup + 'static,
+    D: StudentDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/bookings",
+            get(headquarters_bookings::list_bookings::<B, K, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(headquarters_bookings::HeadquartersBookingsState {
+            list_bookings,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る生徒の一覧（admin-web の `GET /students`）のルーター。[`router_with`] と同じくトークンの検証の層を
+/// 重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students` は本部だけ（コーチ・生徒は 403）。
+pub fn students_router<R, C, B, T>(list_students: ListStudents<R, C, B>, tokens: T) -> Router
+where
+    R: AccountRepository + 'static,
+    C: StudentContractLookup + 'static,
+    B: StudentLastBookingLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/students", get(students::list_students::<R, C, B>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(students::StudentsState { list_students }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

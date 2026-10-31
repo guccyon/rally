@@ -12,7 +12,7 @@ use application::{
 };
 use domain::{
     catalog::Sport,
-    identity::Role,
+    identity::{Account, AccountId, Email, Role},
     profile::{CoachBio, DisplayName},
 };
 use infra::PgAccountRepository;
@@ -177,6 +177,62 @@ async fn no_coaches_is_an_empty_list(pool: PgPool) {
 
     let coaches = PgAccountRepository::new(pool).list_coaches().await.unwrap();
     assert!(coaches.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn students_are_listed_with_their_sport_newest_registration_first(pool: PgPool) {
+    let accounts = PgAccountRepository::new(pool);
+    let account = |id: u128, role, sports: &[Sport], registered_hour| {
+        Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("user{id}@example.com")).unwrap(),
+            DisplayName::new(format!("なまえ{id}")).unwrap(),
+            role,
+            sports.iter().copied(),
+            support::at(registered_hour),
+        )
+        .unwrap()
+    };
+    let old = account(1, Role::Student, &[Sport::Tennis], 1);
+    let newest = account(2, Role::Student, &[Sport::Swimming], 3);
+    // 同じ登録時刻は ID の順
+    let same_2 = account(4, Role::Student, &[Sport::Golf], 2);
+    let same_1 = account(3, Role::Student, &[Sport::Soccer], 2);
+    for account in [
+        old.clone(),
+        newest.clone(),
+        same_2.clone(),
+        same_1.clone(),
+        account(5, Role::Coach, &[Sport::Tennis], 9),
+        account(6, Role::Headquarters, &[], 9),
+    ] {
+        accounts.insert(account).await.unwrap();
+    }
+
+    assert_eq!(
+        accounts.list_students().await.unwrap(),
+        [newest, same_1, same_2, old]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn no_students_is_an_empty_list(pool: PgPool) {
+    register_account(&pool)
+        .execute(command(
+            "coach@example.com",
+            Role::Coach,
+            vec![Sport::Tennis],
+        ))
+        .await
+        .unwrap();
+
+    let students = PgAccountRepository::new(pool)
+        .list_students()
+        .await
+        .unwrap();
+    assert!(students.is_empty());
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

@@ -1,6 +1,9 @@
 //! 予約の保存先（Postgres の `scheduling.bookings` と、予約したスロットの `scheduling.slots`）。
 
-use std::time::SystemTime;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::SystemTime,
+};
 
 use application::{
     Unavailable,
@@ -313,6 +316,29 @@ impl BookingRepository for PgBookingRepository {
             .await
             .map_err(Unavailable::new)?;
         rows.into_iter().map(booking_and_slot_from_row).collect()
+    }
+
+    async fn last_booked_at_of_students(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, SystemTime>, Unavailable> {
+        let ids: Vec<Uuid> = student_ids
+            .iter()
+            .copied()
+            .map(account_id_uuid::to_uuid)
+            .collect();
+        let rows: Vec<(Uuid, OffsetDateTime)> = sqlx::query_as(
+            "SELECT student_id, max(created_at) FROM scheduling.bookings
+             WHERE student_id = ANY($1) GROUP BY student_id",
+        )
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        Ok(rows
+            .into_iter()
+            .map(|(student_id, at)| (account_id_uuid::from_uuid(student_id), at.into()))
+            .collect())
     }
 
     async fn bookings_of_coach(

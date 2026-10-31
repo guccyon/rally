@@ -16,7 +16,7 @@ use domain::{
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
     scheduling::{BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus},
 };
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::ApiError;
 
@@ -209,7 +209,7 @@ pub(crate) const fn subscription_status_to_contract(status: SubscriptionStatus) 
     }
 }
 
-/// student-app の `SubscriptionPlan` の値。
+/// student-app・admin-web の `SubscriptionPlan` の値。
 pub(crate) const fn subscription_plan_to_contract(plan: SubscriptionPlan) -> &'static str {
     match plan {
         SubscriptionPlan::Standard => "standard",
@@ -230,7 +230,7 @@ pub(crate) fn subscription_plan_from_contract(
         .ok_or_else(|| ApiError::validation_failed(format!("未知の契約プラン: {value}")))
 }
 
-/// student-app の `ContractType` の値。月額は `subscription`。
+/// student-app・admin-web の `ContractType` の値。月額は `subscription`。
 pub(crate) const fn contract_type_to_contract(contract_type: ContractType) -> &'static str {
     match contract_type {
         ContractType::Monthly => "subscription",
@@ -255,6 +255,38 @@ pub(crate) fn date_time_from_contract(field: &str, value: &str) -> Result<System
     OffsetDateTime::parse(value, &Rfc3339)
         .map(SystemTime::from)
         .map_err(|_| ApiError::validation_failed(format!("{field} は RFC 3339 の日時でない")))
+}
+
+/// `format: date`（RFC 3339 の full-date。`YYYY-MM-DD`）で書く。
+pub(crate) fn date_to_contract(date: Date) -> String {
+    format!(
+        "{:04}-{:02}-{:02}",
+        date.year(),
+        u8::from(date.month()),
+        date.day()
+    )
+}
+
+/// `format: date`（RFC 3339 の full-date。`YYYY-MM-DD`）を読む。`field` は 422 の文言に使う項目名。
+pub(crate) fn date_from_contract(field: &str, value: &str) -> Result<Date, ApiError> {
+    let invalid = || ApiError::validation_failed(format!("{field} は YYYY-MM-DD の日付でない"));
+    let bytes = value.as_bytes();
+    let shaped = bytes.len() == 10
+        && bytes.iter().enumerate().all(|(i, b)| match i {
+            4 | 7 => *b == b'-',
+            _ => b.is_ascii_digit(),
+        });
+    if !shaped {
+        return Err(invalid());
+    }
+    let year = value[0..4].parse().map_err(|_| invalid())?;
+    let month = value[5..7]
+        .parse::<u8>()
+        .ok()
+        .and_then(|month| Month::try_from(month).ok())
+        .ok_or_else(invalid)?;
+    let day = value[8..10].parse().map_err(|_| invalid())?;
+    Date::from_calendar_date(year, month, day).map_err(|_| invalid())
 }
 
 /// `SlotPage.next_cursor` の値（クライアントには不透明）。`<開始時刻の UNIX ナノ秒>_<スロット ID>`。
@@ -483,6 +515,32 @@ mod tests {
         let at = date_time_from_contract("starts_at", "2026-11-01T19:00:00+09:00").unwrap();
         assert_eq!(date_time_to_contract(at).unwrap(), "2026-11-01T10:00:00Z");
         assert!(date_time_from_contract("starts_at", "2026-11-01 10:00").is_err());
+    }
+
+    #[test]
+    fn date_round_trips_as_full_date() {
+        let date = date_from_contract("from", "2026-11-01").unwrap();
+        assert_eq!(
+            date,
+            Date::from_calendar_date(2026, Month::November, 1).unwrap()
+        );
+        assert_eq!(date_to_contract(date), "2026-11-01");
+        for value in [
+            "",
+            "2026-11-1",
+            "2026/11/01",
+            "+2026-11-01",
+            "2026-13-01",
+            "2026-02-29",
+            "2026-11-01T00:00:00+09:00",
+        ] {
+            let error = date_from_contract("from", value).unwrap_err();
+            assert_eq!(
+                (error.code(), error.message()),
+                ("validation_failed", "from は YYYY-MM-DD の日付でない"),
+                "{value:?}"
+            );
+        }
     }
 
     #[test]

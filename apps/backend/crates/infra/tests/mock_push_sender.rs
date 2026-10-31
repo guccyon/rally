@@ -79,3 +79,16 @@ fn writes_the_video_for_a_returned_review_and_the_thread_for_a_received_message(
          00000000-0000-0000-0000-000000000004"
     );
 }
+
+#[test]
+fn writes_the_coach_and_the_video_for_a_requested_review() {
+    assert_eq!(
+        MockPushSender::line(&PushNotification::VideoReviewRequested {
+            student_id: AccountId::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef),
+            coach_id: AccountId::from_u128(9),
+            video_id: VideoId::from_u128(2),
+        }),
+        "push_notification 00000000-0000-0000-0000-000000000009 video_review_requested \
+         00000000-0000-0000-0000-000000000002"
+    );
+}
