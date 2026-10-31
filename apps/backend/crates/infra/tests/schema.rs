@@ -101,7 +101,7 @@ async fn subscription_entitlement(pool: &PgPool, student_id: &str) -> String {
 async fn migrations_create_core_tables(pool: PgPool) {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_schema || '.' || table_name FROM information_schema.tables
-         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson', 'messaging', 'notification')
+         WHERE table_schema IN ('identity', 'scheduling', 'entitlement', 'live_lesson', 'async_lesson', 'matching', 'messaging', 'notification')
          ORDER BY 1",
     )
     .fetch_all(&pool)
@@ -123,6 +123,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "live_lesson.lesson_completions",
             "live_lesson.session_bookings",
             "live_lesson.sessions",
+            "matching.favorite_coaches",
             "messaging.messages",
             "messaging.threads",
             "notification.notification_settings",
@@ -2587,4 +2588,46 @@ async fn lesson_menu_shape_follows_the_lesson_type(pool: PgPool) {
             (CHECK_VIOLATION, constraint_name)
         );
     }
+}
+
+/// 生徒 `student_id` のお気に入りにコーチ `coach_id` を入れる行を入れる。
+async fn favorite(pool: &PgPool, student_id: &str, coach_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO matching.favorite_coaches (student_id, coach_id, favorited_at)
+         VALUES ($1::uuid, $2::uuid, now())",
+    )
+    .bind(student_id)
+    .bind(coach_id)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn favorite_coaches_are_one_per_student_and_coach(pool: PgPool) {
+    let student_id = student(&pool).await;
+    let other_student = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    favorite(&pool, &student_id, &coach_id).await.unwrap();
+    favorite(&pool, &other_student, &coach_id).await.unwrap();
+
+    // 同じ生徒と同じコーチの組は 1 つ
+    let (code, constraint) = violation(favorite(&pool, &student_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "favorite_coaches_pkey")
+    );
+    // お気に入りを持てるのは生徒だけ
+    let (code, constraint) = violation(favorite(&pool, &coach_id, &coach_id).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "favorite_coaches_student_fkey")
+    );
+    // 入れる相手はコーチだけ
+    let (code, constraint) = violation(favorite(&pool, &student_id, &other_student).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "favorite_coaches_coach_id_fkey")
+    );
 }

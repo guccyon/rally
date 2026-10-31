@@ -15,6 +15,7 @@ use domain::{
     identity::{Account, AccountId, RoleAttributes},
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+    matching::FavoriteCoach,
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{Notification, NotificationId, NotificationSettings, PushNotification},
     profile::{CoachBio, DisplayName},
@@ -42,6 +43,7 @@ use crate::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
         session_id_uuid,
     },
+    matching::FavoriteCoachRepository,
     messaging::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
@@ -1317,5 +1319,61 @@ impl NotificationRepository for InMemoryNotificationRepository {
             }
         }
         Ok(())
+    }
+}
+
+/// [`FavoriteCoachRepository`] のインメモリ実装。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryFavoriteCoachRepository {
+    favorites: Arc<Mutex<Vec<FavoriteCoach>>>,
+}
+
+impl InMemoryFavoriteCoachRepository {
+    /// 既存のお気に入りを入れて作る（同じ組が 1 つかは確かめない。テストの準備用）。
+    pub fn with_favorites(favorites: impl IntoIterator<Item = FavoriteCoach>) -> Self {
+        Self {
+            favorites: Arc::new(Mutex::new(favorites.into_iter().collect())),
+        }
+    }
+}
+
+impl FavoriteCoachRepository for InMemoryFavoriteCoachRepository {
+    async fn add(&self, favorite: FavoriteCoach) -> Result<(), Unavailable> {
+        let mut favorites = self.favorites.lock().unwrap();
+        if !favorites
+            .iter()
+            .any(|f| f.student_id() == favorite.student_id() && f.coach_id() == favorite.coach_id())
+        {
+            favorites.push(favorite);
+        }
+        Ok(())
+    }
+
+    async fn remove(&self, student_id: AccountId, coach_id: AccountId) -> Result<(), Unavailable> {
+        self.favorites
+            .lock()
+            .unwrap()
+            .retain(|f| !(f.student_id() == student_id && f.coach_id() == coach_id));
+        Ok(())
+    }
+
+    async fn find_by_student(
+        &self,
+        student_id: AccountId,
+    ) -> Result<Vec<FavoriteCoach>, Unavailable> {
+        let mut mine: Vec<FavoriteCoach> = self
+            .favorites
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|f| f.student_id() == student_id)
+            .copied()
+            .collect();
+        mine.sort_by(|a, b| {
+            b.favorited_at()
+                .cmp(&a.favorited_at())
+                .then_with(|| a.coach_id().cmp(&b.coach_id()))
+        });
+        Ok(mine)
     }
 }
