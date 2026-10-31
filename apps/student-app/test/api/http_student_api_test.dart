@@ -478,6 +478,52 @@ void main() {
     expect(removed.favoriteCoaches, isEmpty);
   });
 
+  test('お気に入りのコーチの契約に反する応答は StudentApiException に包み直す', () async {
+    final valid = {
+      'coach_id': 'c1',
+      'display_name': '佐藤',
+      'sports': ['tennis'],
+      'review_count': 0,
+      'average_rating': null,
+      'favorited_at': '2026-10-26T03:00:00Z',
+    };
+    final broken = [
+      // 契約にないスポーツ（FormatException）
+      {
+        'favorite_coaches': [
+          {
+            ...valid,
+            'sports': ['golf'],
+          },
+        ],
+      },
+      // 必須の項目がない（TypeError）
+      {
+        'favorite_coaches': [
+          {...valid}..remove('display_name'),
+        ],
+      },
+    ];
+    for (final body in broken) {
+      for (final call in <Future<FavoriteCoachList> Function(HttpStudentApi)>[
+        (api) => api.listFavoriteCoaches(),
+        (api) => api.addFavoriteCoach('c1'),
+        (api) => api.removeFavoriteCoach('c1'),
+      ]) {
+        await expectLater(
+          call(apiReplying(200, body)),
+          throwsA(
+            isA<StudentApiException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
+        );
+      }
+    }
+  });
+
   test('listCoachesForStudent のパスとスポーツの絞り込み、コーチの行の変換', () async {
     final rated = {
       'coach_id': 'c1',
