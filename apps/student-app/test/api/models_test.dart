@@ -575,4 +575,51 @@ void main() {
       expect(subscription.plan, SubscriptionPlan.standard);
     });
   });
+
+  test('SubscriptionPlanList をコンストラクタで直接作っても、渡した元を変えても一覧は変わらず、書き換えられない', () {
+    const standard = SubscriptionPlanDetail(
+      plan: SubscriptionPlan.standard,
+      liveLessonsPerMonth: 2,
+    );
+    final source = [standard];
+    final list = SubscriptionPlanList(plans: source);
+    source.clear();
+    expect(list.plans, [standard]);
+    expect(() => list.plans.clear(), throwsUnsupportedError);
+    expect(() => list.plans.add(standard), throwsUnsupportedError);
+  });
+
+  test('SubscriptionPlanList.fromJson はプランと上限を読み、一覧は書き換えられない', () {
+    final list = SubscriptionPlanList.fromJson({
+      'plans': [
+        {'plan': 'standard', 'live_lessons_per_month': 2},
+        {'plan': 'plus', 'live_lessons_per_month': 4},
+      ],
+    });
+    expect(list.plans.map((p) => p.plan), [
+      SubscriptionPlan.standard,
+      SubscriptionPlan.plus,
+    ]);
+    expect(list.plans.map((p) => p.liveLessonsPerMonth), [2, 4]);
+    expect(() => list.plans.clear(), throwsUnsupportedError);
+  });
+
+  test('SubscriptionPlanDetail は上限が 1 未満なら作れない（契約の minimum: 1）', () {
+    for (final value in [0, -1]) {
+      expect(
+        () => SubscriptionPlanDetail.fromJson({
+          'plan': 'plus',
+          'live_lessons_per_month': value,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => SubscriptionPlanDetail(
+          plan: SubscriptionPlan.plus,
+          liveLessonsPerMonth: value,
+        ),
+        throwsA(isA<AssertionError>()),
+      );
+    }
+  });
 }
