@@ -1,0 +1,284 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
+import 'package:rally_student_app/state/chat.dart';
+import 'package:rally_student_app/state/student_flow.dart';
+
+import '../support/fake_student_api.dart';
+
+void main() {
+  final home = StudentFlowState(
+    step: FlowStep.home,
+    accessToken: Fixtures.registered.accessToken,
+    student: Fixtures.student,
+  );
+
+  /// API をモックにした ProviderContainer（画面は描かない）
+  ProviderContainer containerOf(
+    FakeStudentApi api, {
+    StudentFlowState? flow,
+    ChatState? chat,
+  }) {
+    final container = ProviderContainer(
+      overrides: [
+        studentApiProvider.overrideWithValue(api),
+        studentFlowProvider.overrideWith(
+          () => StudentFlowNotifier(flow ?? home),
+        ),
+        chatProvider.overrideWith(() => ChatNotifier(chat)),
+        clockProvider.overrideWithValue(() => Fixtures.now),
+      ],
+    );
+    addTearDown(container.dispose);
+    return container;
+  }
+
+  Message returned(String videoId, {required int minutes}) => Message(
+    messageId: 'returned-$videoId',
+    threadId: Fixtures.threadId,
+    senderId: Fixtures.coachId,
+    senderRole: MessageSenderRole.coach,
+    kind: MessageKind.videoReviewReturned,
+    body: '動画の添削を返しました',
+    videoId: videoId,
+    sentAt: Fixtures.now.add(Duration(minutes: minutes)),
+  );
+
+  test('チャットを開くと開いた段を覚えてスレッドの一覧へ移り、閉じるとその段に戻る', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.subscription),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    await chat.openChat();
+
+    expect(api.calls, ['listMessageThreads']);
+    expect(container.read(studentFlowProvider).step, FlowStep.messageThreads);
+    expect(container.read(studentFlowProvider).busy, isFalse);
+    expect(container.read(chatProvider).returnStep, FlowStep.subscription);
+    expect(container.read(chatProvider).threads, [Fixtures.thread]);
+
+    // チャットの中で開き直しても戻り先は変えない
+    await chat.openChat();
+    expect(container.read(chatProvider).returnStep, FlowStep.subscription);
+
+    chat.closeChat();
+    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+  });
+
+  test('スレッドを開くと既読にしてからメッセージを読み、メッセージの段へ移る', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(api);
+
+    await container.read(chatProvider.notifier).openThread(Fixtures.thread);
+
+    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
+    final state = container.read(chatProvider);
+    expect(state.returnStep, FlowStep.home);
+    expect(state.thread!.unreadCount, 0);
+    expect(state.messages, hasLength(Fixtures.messages.length));
+    expect(container.read(studentFlowProvider).step, FlowStep.messages);
+  });
+
+  test('スレッドを読めなければ開いた段に留まり、失敗の文言は全体の状態に出す', () async {
+    final api = FakeStudentApi(
+      failures: {'markMessageThreadRead': Fixtures.unreachable},
+    );
+    final container = containerOf(api);
+
+    await container.read(chatProvider.notifier).openThread(Fixtures.thread);
+
+    final flow = container.read(studentFlowProvider);
+    expect(flow.step, FlowStep.home);
+    expect(flow.busy, isFalse);
+    expect(flow.errorMessage, isNotNull);
+    expect(container.read(chatProvider).messages, isNull);
+  });
+
+  test('ほかの操作で busy の間は、チャットの操作も何もしない（busy はアプリで 1 つ）', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.messageThreads, busy: true),
+    );
+
+    await container.read(chatProvider.notifier).refreshThreads();
+
+    expect(api.calls, isEmpty);
+    expect(container.read(chatProvider).threads, isNull);
+  });
+
+  test('送れたらメッセージを末尾に足して true を返し、断られたら文言を出して false を返す', () async {
+    final api = FakeStudentApi(failures: {});
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.messages),
+      chat: ChatState(thread: Fixtures.thread, messages: Fixtures.messages),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    expect(await chat.sendMessage('質問です'), isTrue);
+    expect(await chat.sendStamp(StampId.letsGo), isTrue);
+    final messages = container.read(chatProvider).messages!;
+    expect(messages, hasLength(Fixtures.messages.length + 2));
+    expect(messages[messages.length - 2].body, '質問です');
+    expect(messages.last.stampId, StampId.letsGo);
+
+    api.failures['sendMessage'] = const StudentApiException(
+      statusCode: 403,
+      error: ApiError(code: ErrorCode.chatNotEntitled, message: 'not entitled'),
+    );
+    expect(await chat.sendMessage('もう一度'), isFalse);
+    expect(
+      container.read(studentFlowProvider).errorMessage,
+      'チャットは月額契約を始めると使えます。',
+    );
+    expect(container.read(chatProvider).messages, hasLength(messages.length));
+  });
+
+  test('返却が流れた添削は読めたものを読み直さず、読めなかったものだけ確かめ直したときに読み直す', () async {
+    const failingVideoId = 'video-failing';
+    final api = FakeStudentApi(
+      messages: [
+        returned(Fixtures.videoId, minutes: 1),
+        returned(failingVideoId, minutes: 2),
+      ],
+      videoReviews: {
+        Fixtures.videoId: Fixtures.reviewReturned,
+        failingVideoId: Fixtures.reviewReturnedWithAi,
+      },
+    )..videoReviewFailures.add(failingVideoId);
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.messages),
+      chat: ChatState(thread: Fixtures.thread),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    await chat.refreshMessages();
+
+    var state = container.read(chatProvider);
+    expect(state.reviews.keys, [Fixtures.videoId]);
+    expect(state.reviewFailures, {failingVideoId});
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+
+    api.videoReviewFailures.clear();
+    api.calls.clear();
+    await chat.refreshMessages();
+
+    expect(api.calls.where((c) => c == 'getVideoReview'), hasLength(1));
+    expect(api.requests.last, failingVideoId);
+    state = container.read(chatProvider);
+    expect(
+      state.reviews.keys,
+      unorderedEquals([Fixtures.videoId, failingVideoId]),
+    );
+    expect(state.reviewFailures, isEmpty);
+  });
+
+  test('添削の依頼はスレッドの担当コーチと生徒のスポーツで送り、送れたらスレッドを読み直す', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.messages),
+      chat: ChatState(thread: Fixtures.thread, messages: Fixtures.messages),
+    );
+
+    final result = await container
+        .read(chatProvider.notifier)
+        .requestVideoReview(contentType: VideoContentType.mp4, note: 'フォーム');
+
+    expect(result, VideoReviewRequestResult.sent);
+    expect(api.calls, ['submitVideo', 'markMessageThreadRead', 'listMessages']);
+    final request = api.requests.whereType<SubmitVideoRequest>().single;
+    expect(request.coachId, Fixtures.thread.coachId);
+    expect(request.sport, Fixtures.student.sport);
+    expect(
+      container.read(chatProvider).messages!.last.kind,
+      MessageKind.videoReviewRequest,
+    );
+  });
+
+  test('メニューを付けた依頼が 422 で断られたら、文言を出さずにメニューを読み直して menuRejected を返す', () async {
+    final api = FakeStudentApi(
+      failures: {
+        'submitVideo': const StudentApiException(
+          statusCode: 422,
+          error: ApiError(code: ErrorCode.validationFailed, message: 'invalid'),
+        ),
+      },
+    );
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.messages),
+      chat: ChatState(thread: Fixtures.thread, messages: Fixtures.messages),
+    );
+
+    final result = await container
+        .read(chatProvider.notifier)
+        .requestVideoReview(
+          contentType: VideoContentType.mp4,
+          lessonMenuId: 'menu-gone',
+        );
+
+    expect(result, VideoReviewRequestResult.menuRejected);
+    expect(api.calls, ['submitVideo', 'listCoachLessonMenus']);
+    final flow = container.read(studentFlowProvider);
+    expect(flow.errorMessage, isNull);
+    expect(flow.busy, isFalse);
+    expect(flow.step, FlowStep.messages);
+  });
+
+  test('ホームの「添削を依頼する」はスレッドが 1 つならそのスレッドを開いて依頼を出す印を立てる', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      chat: ChatState(threads: [Fixtures.thread]),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    await chat.startVideoReviewRequest();
+
+    expect(container.read(studentFlowProvider).step, FlowStep.messages);
+    expect(container.read(chatProvider).promptVideoReviewRequest, isTrue);
+    expect(container.read(chatProvider).returnStep, FlowStep.home);
+
+    chat.clearVideoReviewRequestPrompt();
+    expect(container.read(chatProvider).promptVideoReviewRequest, isFalse);
+  });
+
+  test('「添削を依頼する」でスレッドを開けなければ印を下ろし、ホームに留まって文言を出す', () async {
+    final api = FakeStudentApi(
+      failures: {'listMessages': Fixtures.unreachable},
+    );
+    final container = containerOf(
+      api,
+      chat: ChatState(threads: [Fixtures.thread]),
+    );
+
+    await container.read(chatProvider.notifier).startVideoReviewRequest();
+
+    final flow = container.read(studentFlowProvider);
+    expect(flow.step, FlowStep.home);
+    expect(flow.errorMessage, isNotNull);
+    expect(container.read(chatProvider).promptVideoReviewRequest, isFalse);
+  });
+
+  test('ホームを読むと、スレッドの一覧はチャットの状態に入る（読めなければホームの欄の失敗にする）', () async {
+    final api = FakeStudentApi(failures: {});
+    final container = containerOf(api);
+
+    await container.read(studentFlowProvider.notifier).refreshHome();
+    expect(container.read(chatProvider).threads, [Fixtures.thread]);
+    expect(container.read(studentFlowProvider).homeFailures, isEmpty);
+
+    api.failures['listMessageThreads'] = Fixtures.unreachable;
+    await container.read(studentFlowProvider.notifier).refreshHome();
+    expect(container.read(studentFlowProvider).homeFailures, {
+      HomeSection.threads,
+    });
+  });
+}

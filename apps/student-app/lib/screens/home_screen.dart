@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
@@ -157,8 +158,9 @@ class _ThreadsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
-    final notifier = ref.read(studentFlowProvider.notifier);
-    final threads = notifier.recentThreads();
+    final allThreads = ref.watch(chatProvider.select((s) => s.threads));
+    final chat = ref.read(chatProvider.notifier);
+    final threads = chat.recentThreads();
     // スレッドにはコーチの名前がないので、自分の予約に載っている名前を使う（なければ「担当コーチ」）
     final coachNames = {
       for (final item in state.myBookings ?? const <MyBooking>[])
@@ -170,7 +172,7 @@ class _ThreadsSection extends ConsumerWidget {
         const _SectionTitle('コーチとのやり取り'),
         if (state.homeFailures.contains(HomeSection.threads))
           const _SectionFailure('コーチとのやり取りを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
-        else if (state.threads != null && threads.isEmpty)
+        else if (allThreads != null && threads.isEmpty)
           const Text('まだ新しいやり取りはありません。')
         else
           for (final thread in threads)
@@ -187,13 +189,13 @@ class _ThreadsSection extends ConsumerWidget {
                 trailing: thread.unreadCount > 0
                     ? Badge(label: Text('未読 ${thread.unreadCount}'))
                     : null,
-                onTap: state.busy ? null : () => notifier.openThread(thread),
+                onTap: state.busy ? null : () => chat.openThread(thread),
               ),
             ),
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton(
-            onPressed: state.busy ? null : notifier.openChat,
+            onPressed: state.busy ? null : chat.openChat,
             child: const Text('チャットをすべて見る'),
           ),
         ),
@@ -254,8 +256,9 @@ class _VideoReviewRequestSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
-    final notifier = ref.read(studentFlowProvider.notifier);
-    final threads = state.threads ?? const <MessageThread>[];
+    final threads =
+        ref.watch(chatProvider.select((s) => s.threads)) ??
+        const <MessageThread>[];
     final available =
         threads.isNotEmpty && !state.homeFailures.contains(HomeSection.threads);
     return Column(
@@ -271,7 +274,7 @@ class _VideoReviewRequestSection extends ConsumerWidget {
         FilledButton.icon(
           onPressed: state.busy || !available
               ? null
-              : notifier.startVideoReviewRequest,
+              : ref.read(chatProvider.notifier).startVideoReviewRequest,
           icon: const Icon(Icons.videocam_outlined),
           label: const Text('添削を依頼する'),
         ),

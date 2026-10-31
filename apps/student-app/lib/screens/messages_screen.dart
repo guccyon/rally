@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../ui/ai_feedback_card.dart';
 import '../ui/flow_scaffold.dart';
@@ -31,10 +32,10 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     super.initState();
     _body.addListener(() => setState(() {}));
     // ホームの「添削を依頼する」から開いたら、すぐに添削の依頼（動画の選択）を出す
-    if (ref.read(studentFlowProvider).promptVideoReviewRequest) {
+    if (ref.read(chatProvider).promptVideoReviewRequest) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ref.read(studentFlowProvider.notifier).clearVideoReviewRequestPrompt();
+        ref.read(chatProvider.notifier).clearVideoReviewRequestPrompt();
         _requestVideoReview();
       });
     }
@@ -51,7 +52,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
   Future<void> _send() async {
     final sent = await ref
-        .read(studentFlowProvider.notifier)
+        .read(chatProvider.notifier)
         .sendMessage(_body.text.trim());
     if (sent && mounted) _body.clear();
   }
@@ -63,20 +64,23 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
       builder: (_) => const _StampPicker(),
     );
     if (stamp == null || !mounted) return;
-    await ref.read(studentFlowProvider.notifier).sendStamp(stamp);
+    await ref.read(chatProvider.notifier).sendStamp(stamp);
   }
 
   /// 動画を選んで添削を依頼する（動画の選択はモック）。担当コーチの非同期のメニューを読んで選ばせる。やめたら何もしない。
   /// メニューを付けて断られたら、選んだ動画と相談内容はそのままで、読み直したメニューを選び直させる
   Future<void> _requestVideoReview() async {
-    final notifier = ref.read(studentFlowProvider.notifier);
-    final coachId = ref.read(studentFlowProvider).thread!.coachId;
+    final notifier = ref.read(chatProvider.notifier);
+    final flowNotifier = ref.read(studentFlowProvider.notifier);
+    final coachId = ref.read(chatProvider).thread!.coachId;
     String? note;
     var fileSelected = false;
     var menuRejected = false;
     while (true) {
       if (!mounted) return;
-      if (!menuRejected) unawaited(notifier.loadCoachLessonMenus(coachId));
+      if (!menuRejected) {
+        unawaited(flowNotifier.loadCoachLessonMenus(coachId));
+      }
       final request = await showDialog<_VideoReviewRequest>(
         context: context,
         builder: (_) => _VideoReviewRequestDialog(
@@ -101,8 +105,10 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(studentFlowProvider);
-    final notifier = ref.read(studentFlowProvider.notifier);
+    final state = ref.watch(chatProvider);
+    // busy はアプリで 1 つ（チャットの操作も StudentFlowNotifier.run を通す）
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final notifier = ref.read(chatProvider.notifier);
     final messages = state.messages ?? const <Message>[];
     // 添削の依頼が何回目か（スレッドの中で送った順。返却のカードもこの番号でどの依頼への返却かを示す）
     final requestNumbers = <String, int>{};
@@ -120,7 +126,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
       leading: IconButton(
         tooltip: 'スレッドの一覧へ戻る',
         icon: const Icon(Icons.arrow_back),
-        onPressed: state.busy ? null : notifier.backToThreads,
+        onPressed: busy ? null : notifier.backToThreads,
       ),
       children: [
         if (messages.isEmpty) const Text('まだメッセージはありません。'),
@@ -133,8 +139,8 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
             MessageKind.videoReviewReturned => _ReviewReturnedCard(
               message: message,
               number: requestNumbers[message.videoId],
-              review: state.chatReviews[message.videoId],
-              failed: state.chatReviewFailures.contains(message.videoId),
+              review: state.reviews[message.videoId],
+              failed: state.reviewFailures.contains(message.videoId),
             ),
             // 知らない ID のスタンプは、知らない種類と同じく body の説明を出す
             MessageKind.stamp when message.stampId != null => _StampTile(
@@ -147,7 +153,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           },
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: state.busy ? null : notifier.refreshMessages,
+          onPressed: busy ? null : notifier.refreshMessages,
           child: const Text('新しいメッセージを確かめる'),
         ),
         const SizedBox(height: 16),
@@ -159,18 +165,18 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           minLines: 1,
         ),
         FilledButton(
-          onPressed: state.busy || !_sendable ? null : _send,
+          onPressed: busy || !_sendable ? null : _send,
           child: const Text('送信する'),
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: state.busy ? null : _sendStamp,
+          onPressed: busy ? null : _sendStamp,
           icon: const Icon(Icons.emoji_emotions_outlined),
           label: const Text('スタンプ'),
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: state.busy ? null : _requestVideoReview,
+          onPressed: busy ? null : _requestVideoReview,
           icon: const Icon(Icons.videocam_outlined),
           label: const Text('添削を依頼する'),
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
@@ -11,15 +12,16 @@ class MessageThreadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(studentFlowProvider);
-    final notifier = ref.read(studentFlowProvider.notifier);
-    final threads = state.threads;
+    final threads = ref.watch(chatProvider.select((s) => s.threads));
+    // busy はアプリで 1 つ（チャットの操作も StudentFlowNotifier.run を通す）
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final notifier = ref.read(chatProvider.notifier);
     return FlowScaffold(
       title: 'チャット',
       leading: IconButton(
         tooltip: 'チャットを閉じる',
         icon: const Icon(Icons.close),
-        onPressed: state.busy ? null : notifier.closeChat,
+        onPressed: busy ? null : notifier.closeChat,
       ),
       children: [
         if (threads != null && threads.isEmpty)
@@ -39,12 +41,12 @@ class MessageThreadsScreen extends ConsumerWidget {
               trailing: thread.unreadCount > 0
                   ? Badge(label: Text('未読 ${thread.unreadCount}'))
                   : null,
-              onTap: state.busy ? null : () => notifier.openThread(thread),
+              onTap: busy ? null : () => notifier.openThread(thread),
             ),
           ),
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: state.busy ? null : notifier.refreshThreads,
+          onPressed: busy ? null : notifier.refreshThreads,
           child: const Text('一覧を更新する'),
         ),
       ],
