@@ -6,6 +6,7 @@
 mod accounts;
 pub mod auth;
 mod bookings;
+mod catalog_error;
 mod coach_acceptances;
 mod coach_bookings;
 mod coach_overviews;
@@ -19,6 +20,7 @@ mod entitlements;
 mod error;
 mod favorite_coaches;
 mod headquarters_bookings;
+mod lesson_menu_publications;
 mod lesson_menus;
 mod lesson_stats;
 mod lessons;
@@ -41,6 +43,7 @@ mod scheduling_error;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
+mod student_activity;
 mod students;
 mod subscription_plans;
 mod subscriptions;
@@ -58,7 +61,8 @@ use application::{
     },
     catalog::{
         CreateLessonMenu, LessonMenuCoachDisplayNameLookup, LessonMenuRepository,
-        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
+        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, RepublishLessonMenu,
+        UnpublishLessonMenu, UpdateLessonMenu,
     },
     clock::Clock,
     domain_event::DomainEventPublisher,
@@ -66,8 +70,9 @@ use application::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
     identity::{
-        AccountRepository, GetAccount, ListStudents, RegisterAccount, StudentContractLookup,
-        StudentLastBookingLookup, TokenIssuer, TokenVerifier,
+        AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount,
+        StudentActivityCoachDisplayNameLookup, StudentBookingActivityLookup, StudentContractLookup,
+        StudentLastBookingLookup, StudentLessonHistoryLookup, TokenIssuer, TokenVerifier,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
@@ -98,7 +103,8 @@ use application::{
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         ListLowRatedReviews, ReplyToLessonReview, ReviewedCoachDisplayNameLookup,
-        ReviewedLessonMenuLookup, ReviewerDisplayNameLookup, SubmitLessonReview,
+        ReviewedLessonMenuLookup, ReviewedLessonSportLookup, ReviewerDisplayNameLookup,
+        SubmitLessonReview,
     },
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachAcceptanceRepository,
@@ -800,6 +806,41 @@ where
         .layer(auth::TokenVerification::layer(tokens))
 }
 
+/// 本部によるレッスンメニューの非公開・公開に戻す操作（admin-web の `POST /lesson-menus/{lesson_menu_id}/unpublish`・
+/// `POST /lesson-menus/{lesson_menu_id}/republish`）のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、
+/// 組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。
+pub fn lesson_menu_publication_router<M, C, T>(
+    unpublish_lesson_menu: UnpublishLessonMenu<M, C>,
+    republish_lesson_menu: RepublishLessonMenu<M>,
+    tokens: T,
+) -> Router
+where
+    M: LessonMenuRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-menus/{lesson_menu_id}/unpublish",
+            post(lesson_menu_publications::unpublish_lesson_menu::<M, C>),
+        )
+        .route(
+            "/lesson-menus/{lesson_menu_id}/republish",
+            post(lesson_menu_publications::republish_lesson_menu::<M, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(
+            lesson_menu_publications::LessonMenuPublicationsState {
+                unpublish_lesson_menu,
+                republish_lesson_menu,
+            },
+        ))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
 /// 本部が見るコーチ 1 人の様子（admin-web の `GET /coaches/{coach_id}/overview`）のルーター。[`router_with`] と同じく
 /// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
 ///
@@ -907,18 +948,48 @@ where
         .layer(auth::TokenVerification::layer(tokens))
 }
 
+/// 本部が見る生徒 1 人の利用の様子（admin-web の `GET /students/{student_id}/activity`）のルーター。[`router_with`] と
+/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students/{student_id}/activity` は本部だけ（コーチ・生徒は 403）。
+pub fn student_activity_router<R, B, L, D, C, T>(
+    get_student_activity: GetStudentActivity<R, B, L, D, C>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    B: StudentBookingActivityLookup + 'static,
+    L: StudentLessonHistoryLookup + 'static,
+    D: StudentActivityCoachDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/students/{student_id}/activity",
+            get(student_activity::get_student_activity::<R, B, L, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(student_activity::StudentActivityState {
+            get_student_activity,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
 /// 本部が見る低い評価の一覧（admin-web の `GET /lesson-reviews/low`）のルーター。[`router_with`] と同じくトークンの
 /// 検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
 /// [`router_with`] で、生徒だけ。
-pub fn low_rated_reviews_router<R, M, D, S, C, T>(
-    list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+pub fn low_rated_reviews_router<R, M, P, D, S, C, T>(
+    list_low_rated_reviews: ListLowRatedReviews<R, M, P, D, S, C>,
     tokens: T,
 ) -> Router
 where
     R: LessonReviewRepository + 'static,
     M: ReviewedLessonMenuLookup + 'static,
+    P: ReviewedLessonSportLookup + 'static,
     D: ReviewedCoachDisplayNameLookup + 'static,
     S: ReviewerDisplayNameLookup + 'static,
     C: Clock + 'static,
@@ -928,7 +999,7 @@ where
     Router::new()
         .route(
             "/lesson-reviews/low",
-            get(low_rated_reviews::list_low_rated_reviews::<R, M, D, S, C>),
+            get(low_rated_reviews::list_low_rated_reviews::<R, M, P, D, S, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(low_rated_reviews::LowRatedReviewsState {

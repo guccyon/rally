@@ -2,10 +2,13 @@
 //!
 //! 境界づけられたコンテキストではない。完了記録は通話セッション（live-lesson）・動画（async-lesson）の集約が
 //! 発行し、ここはそれを保存して行動イベントと境界間イベントを出すだけ。review には完了記録と、その元（予約・動画）が
-//! 持つレッスンメニューの写しを読ませる（[`LessonCompletionLookup`]・[`LessonCompletionMenuLookup`]）。生徒が受けた
+//! 持つレッスンメニューの写しとスポーツを読ませる（[`LessonCompletionLookup`]・[`LessonCompletionMenuLookup`]・
+//! [`LessonCompletionSportLookup`]）。生徒が受けた
 //! レッスンの一覧（[`ListMyLessonCompletions`]）は、コーチの表示名を profile に、評価済みかを review にポートで問い合わせる。
 //! コーチの今月と先月のレッスンの実績（[`GetMyLessonStats`]）は完了記録を数え、評価の件数と平均は review に
 //! [`MonthlyReviewSummaryLookup`] で問い合わせる。
+//! 本部が見る生徒 1 人の利用の様子（identity の [`crate::identity::GetStudentActivity`]）には、直近の受けたレッスンを
+//! [`LessonStudentLessonHistoryLookup`] で読ませる。
 
 mod coach_lesson_stats;
 mod get_my_lesson_stats;
@@ -15,6 +18,8 @@ mod lesson_completion_lookup;
 mod lesson_completion_menu_lookup;
 mod lesson_completion_menus;
 mod lesson_completion_review_lookup;
+mod lesson_completion_sport_lookup;
+mod lesson_student_lesson_history_lookup;
 mod list_my_lesson_completions;
 mod monthly_lesson_stats;
 mod monthly_review_summary_lookup;
@@ -30,6 +35,8 @@ pub use lesson_completion_coach_display_name_lookup::LessonCompletionCoachDispla
 pub use lesson_completion_lookup::LessonCompletionLookup;
 pub use lesson_completion_menu_lookup::LessonCompletionMenuLookup;
 pub use lesson_completion_review_lookup::LessonCompletionReviewLookup;
+pub use lesson_completion_sport_lookup::LessonCompletionSportLookup;
+pub use lesson_student_lesson_history_lookup::LessonStudentLessonHistoryLookup;
 pub use list_my_lesson_completions::ListMyLessonCompletions;
 pub use monthly_lesson_stats::MonthlyLessonStats;
 pub use monthly_review_summary_lookup::MonthlyReviewSummaryLookup;

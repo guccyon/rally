@@ -116,7 +116,7 @@ terms:
       添削の依頼・生徒からのメッセージが届く（D114）。生徒は student-app、コーチは admin-web の同じ操作で一覧と既読を扱う。
   - id: lesson_menu
     ja: "レッスンメニュー"
-    definition: "コーチが自分の提供スポーツのどれかについて作るレッスンのメニューで、スポーツ・同期 / 非同期の別（同期なら 1 回の時間。15〜120 分の 15 分刻み）・名前（1〜40 文字）・説明（0〜400 文字）・公開中かを持ち、作る・直す・非公開にするのはそのコーチだけで、公開中でないメニューは生徒に見せない。"
+    definition: "コーチが自分の提供スポーツのどれかについて作るレッスンのメニューで、スポーツ・同期 / 非同期の別（同期なら 1 回の時間。15〜120 分の 15 分刻み）・名前（1〜40 文字）・説明（0〜400 文字）・公開中かを持ち、作る・直す・非公開にするのはそのコーチで（本部もコーチに代わって非公開にでき、そのあいだコーチは公開し直せない）、公開中でないメニューは生徒に見せない。"
     context: catalog
     code: [LessonMenu, LessonMenuId, LessonMenuContent, LessonFormat, LessonDuration, catalog.lesson_menus]
     note: >-
@@ -137,6 +137,15 @@ terms:
       送付を断る（Video::submit_with_lesson_menu）。メニューを選ばない予約・動画もある。
       評価（review）は写しを持たず、評価の一覧に添えるメニュー（ID・名前）は完了したレッスンの元（同期レッスンは予約、非同期レッスンは動画）が
       持つ写しを読む。枠の一覧に添える枠のメニュー（契約の SlotLessonMenu）は写しではなく今のメニューである。
+  - id: lesson_menu_headquarters_unpublish
+    ja: "本部による非公開"
+    definition: "不適切な内容や誤ったレッスンメニューを本部がコーチに代わって非公開にしたことで、非公開にした時刻と任意の理由（200 文字まで）を持ち、本部が公開に戻すまでコーチはそのメニューを公開し直せない。"
+    context: catalog
+    code: [HeadquartersUnpublish, HeadquartersUnpublishReason, unpublishLessonMenu, republishLessonMenu]
+    note: >-
+      メニュー 1 件に高々 1 つで、本部が公開に戻す（republishLessonMenu）と消える（履歴は残さない）。本部が非公開にしているあいだも、
+      コーチは非公開のままなら中身を直せる。コーチが自分で非公開にしたメニューを本部が公開に戻すことはない。
+      コーチの受付の停止（coach_acceptance）と同じく、本部の運営の操作は本部だけが解く。判定は domain の LessonMenu の 1 か所。
   - id: coach_acceptance
     ja: "コーチの受付"
     definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"

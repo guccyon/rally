@@ -16,7 +16,7 @@ use application::{
     catalog::{
         CatalogLessonMenuLookup, CatalogPublishedLessonMenuCountLookup, CreateLessonMenu,
         LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        UpdateLessonMenu,
+        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
     },
     clock::{Clock, SystemClock},
     entitlement::{
@@ -24,7 +24,7 @@ use application::{
         EntitlementStudentContractLookup, GetEntitlement, ListSubscriptionPlans,
         LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
+    identity::{AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryCoachAcceptanceRepository,
         InMemoryEntitlementRepository, InMemoryFavoriteCoachRepository,
@@ -36,7 +36,8 @@ use application::{
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
-        LessonCompletionRepository, ListMyLessonCompletions, RecordLessonCompletion,
+        LessonCompletionRepository, LessonCompletionSportLookup, LessonStudentLessonHistoryLookup,
+        ListMyLessonCompletions, RecordLessonCompletion,
     },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -70,8 +71,8 @@ use application::{
         BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
         GetSlotSupply, ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings,
         PublishSlot, ResumeCoach, SchedulingBookingLookup, SchedulingCoachAcceptanceLookup,
-        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, SuspendCoach,
-        WithdrawSlot,
+        SchedulingStudentBookingActivityLookup, SchedulingStudentLastBookingLookup, SearchSlots,
+        SlotRepository, SuspendCoach, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -124,6 +125,10 @@ pub fn router() -> Router {
 /// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の
 /// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）
 /// 読んで添える（identity は entitlement・scheduling の表を直接読まない）。
+/// 本部が見る生徒 1 人の利用の様子（`GET /students/{student_id}/activity`）はアカウントの保存先から生徒の表示名を読み、
+/// これからの予約とキャンセルの件数を予約の保存先から（`SchedulingStudentBookingActivityLookup`）、直近の受けたレッスンを
+/// 完了記録の保存先から（`LessonStudentLessonHistoryLookup`）、コーチの表示名をアカウントの保存先から
+/// （`ProfileCoachDisplayNameLookup`）読んで添える。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
@@ -143,7 +148,8 @@ pub fn router() -> Router {
 /// 完了記録の元（通話セッションに結び付いた予約・動画）が持つ写しを読む（`LessonCompletionMenuLookup`。予約は
 /// `SchedulingBookingLookup` で読み、review は予約・動画を直接読まない）。本部が見る低い評価の一覧
 /// （`GET /lesson-reviews/low`）も同じ保存先から読み、同じメニューの写しと、コーチ・生徒の表示名をアカウントの保存先から
-/// （`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）読んで添える。
+/// （`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）読んで添える。スポーツで絞るときは、評価した
+/// レッスンのスポーツを完了記録の元（予約の枠・動画）から読む（`LessonCompletionSportLookup`）。
 ///
 /// 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）は完了記録の保存先から生徒の完了したレッスンを読み、
 /// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
@@ -372,6 +378,11 @@ where
         ),
         MockTokenService,
     );
+    let lesson_menu_publication = interface::lesson_menu_publication_router(
+        UnpublishLessonMenu::new(lesson_menus.clone(), clock.clone()),
+        RepublishLessonMenu::new(lesson_menus.clone()),
+        MockTokenService,
+    );
     let my_videos = interface::my_videos_router(
         ListMyVideos::new(
             videos.clone(),
@@ -478,10 +489,26 @@ where
         ),
         MockTokenService,
     );
+    let student_activity = interface::student_activity_router(
+        GetStudentActivity::new(
+            accounts.clone(),
+            SchedulingStudentBookingActivityLookup::new(bookings.clone()),
+            LessonStudentLessonHistoryLookup::new(completions.clone()),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
     let low_rated_reviews = interface::low_rated_reviews_router(
         ListLowRatedReviews::new(
             reviews.clone(),
             LessonCompletionMenuLookup::new(
+                completions.clone(),
+                sessions.clone(),
+                SchedulingBookingLookup::new(bookings.clone()),
+                videos.clone(),
+            ),
+            LessonCompletionSportLookup::new(
                 completions.clone(),
                 sessions.clone(),
                 SchedulingBookingLookup::new(bookings.clone()),
@@ -646,6 +673,7 @@ where
         MockTokenService,
     )
     .merge(catalog)
+    .merge(lesson_menu_publication)
     .merge(coaches)
     .merge(favorite_coaches_routes)
     .merge(my_videos)
@@ -658,6 +686,7 @@ where
     .merge(lesson_stats)
     .merge(headquarters_bookings)
     .merge(students)
+    .merge(student_activity)
     .merge(coach_acceptance)
     .merge(coach_overview)
     .merge(low_rated_reviews)

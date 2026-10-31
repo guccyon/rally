@@ -101,6 +101,10 @@ mod tests {
                 .cloned()
                 .collect())
         }
+
+        async fn find_slot(&self, _slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+            unreachable!("メニューの照会では枠を読まない")
+        }
     }
 
     type Lookup = LessonCompletionMenuLookup<

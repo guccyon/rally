@@ -77,6 +77,14 @@ pub enum DomainError {
     SportNotOfferedByCoach { sport: crate::catalog::Sport },
     /// レッスンメニューのコーチでないので、そのメニューを直せない
     NotTheLessonMenuCoach,
+    /// 本部がレッスンメニューを非公開にしたときの理由が長すぎる（`max` は文字数）
+    HeadquartersUnpublishReasonTooLong { max: usize },
+    /// 本部が非公開にしたレッスンメニューは、本部が公開に戻すまでコーチが公開し直せない
+    LessonMenuUnpublishedByHeadquarters,
+    /// レッスンメニューはすでに本部が非公開にしている
+    LessonMenuAlreadyUnpublishedByHeadquarters,
+    /// レッスンメニューは本部が非公開にしたものでないので、本部が公開に戻せない
+    LessonMenuNotUnpublishedByHeadquarters,
     /// 動画で選べるのは送り先のコーチのレッスンメニューだけ（別のコーチのメニューは選べない）
     VideoLessonMenuOfAnotherCoach,
     /// 公開中でないレッスンメニューは動画で選べない
