@@ -11,10 +11,11 @@ evidence:
   - case: C-0001
   - pr: "373"
   - event: "case.analyzed:39223"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 invalidate_when:
   - "CHANGELOG.md だけの衝突を小さなモデルか決まった手順で解くようになった"
   - "judge がその head を裁いている間は衝突の続きのジョブを待たせるようになった"
 confidentiality: product
+decided_by: committee:D-0001

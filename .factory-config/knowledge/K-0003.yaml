@@ -10,10 +10,11 @@ evidence:
   - case: C-0001
   - pr: "373"
   - event: "case.analyzed:39223"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 invalidate_when:
   - "supervisor のマージの条件に、その head に対する body_fix のジョブが終わっていることが入った"
 related: [K-0001]
 confidentiality: product
+decided_by: committee:D-0001

@@ -11,7 +11,7 @@ evidence:
   - case: C-0001
   - pr: "373"
   - event: "case.analyzed:39223"
-status: draft
+status: active
 verified_at: 2026-10-31
 review_by: 2026-11-30
 invalidate_when:
@@ -19,3 +19,4 @@ invalidate_when:
   - "body_fix の入力に judge の interpretation が渡るようになった"
 related: [K-0003]
 confidentiality: product
+decided_by: committee:D-0001
