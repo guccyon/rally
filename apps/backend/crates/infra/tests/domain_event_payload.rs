@@ -347,7 +347,7 @@ fn video_review_requested_payload_has_exactly_the_required_attributes_of_the_asy
     );
     assert_eq!(
         contexts("VideoReviewRequested", "x-subscribers"),
-        ["messaging"]
+        ["notification", "messaging"]
     );
 }
 

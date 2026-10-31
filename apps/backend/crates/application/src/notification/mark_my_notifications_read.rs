@@ -3,7 +3,7 @@ use domain::{identity::AccountId, notification::Notification};
 use super::NotificationRepository;
 use crate::{Unavailable, clock::Clock};
 
-/// 自分のお知らせをすべて既読にするユースケース（student-app の `markMyNotificationsRead`）。今の時刻で既読にし
+/// 自分のお知らせをすべて既読にするユースケース（student-app と admin-web の `markMyNotificationsRead`）。今の時刻で既読にし
 /// （すでに読んだものは最初に読んだ時刻のまま。何度呼んでもよい）、既読にしたあとの一覧（[`super::ListMyNotifications`]
 /// と同じ並び）を返す。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
 pub struct MarkMyNotificationsRead<N, C> {
@@ -37,6 +37,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        async_lesson::VideoId,
         notification::{NotificationId, PushNotification},
         scheduling::BookingId,
     };
@@ -104,6 +105,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(again, listed);
+    }
+
+    #[tokio::test]
+    async fn a_coach_marks_only_the_notifications_sent_to_the_coach_read() {
+        let requested = Notification::new(
+            NotificationId::from_u128(2),
+            PushNotification::VideoReviewRequested {
+                student_id: STUDENT,
+                coach_id: COACH,
+                video_id: VideoId::from_u128(2),
+            },
+            at(20),
+        );
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            confirmed(1, STUDENT, 10),
+            requested,
+        ]);
+
+        let listed = MarkMyNotificationsRead::new(notifications.clone(), FixedClock(at(30)))
+            .execute(COACH)
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id(), requested.id());
+        assert_eq!(listed[0].read_at(), Some(at(30)));
+        assert_eq!(
+            notifications.all()[0].read_at(),
+            None,
+            "生徒が受け取るお知らせは変えない"
+        );
     }
 
     #[tokio::test]

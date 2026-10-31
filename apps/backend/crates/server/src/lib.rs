@@ -93,7 +93,7 @@ pub fn router() -> Router {
 /// （`VideoReviewReturned`）では、そのスレッドに（なければ開いて）添削依頼・添削の返却のメッセージが足される。
 /// 予約の確定で、生徒にプッシュ通知を送る（送り先の基盤は infra のモック `MockPushSender`）。受け取る人の通知の受け取り設定
 /// （`GET` / `PUT /notification-settings/me`）でオフの種類は送らない。送る通知はオフの種類も含めてお知らせとして残し、
-/// 生徒は自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
+/// 生徒とコーチは自分のお知らせを一覧で読んで既読にできる（`GET /notifications/me`・`POST /notifications/me/read`）。受け取り設定と
 /// お知らせの保存先も当面インメモリ。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
