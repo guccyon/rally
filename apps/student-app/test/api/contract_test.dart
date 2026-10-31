@@ -193,6 +193,7 @@ void main() {
       'display_name',
       'bio',
       'sports',
+      'is_favorite',
     ]);
     final bio =
         ((schemas['CoachProfile'] as YamlMap)['properties'] as YamlMap)['bio']
@@ -472,6 +473,7 @@ void main() {
       'review_count',
       'average_rating',
       'published_lesson_menu_count',
+      'is_favorite',
     ]);
     expect(requiredOf('CoachListing'), propertiesOf('CoachListing'));
     final listing =
