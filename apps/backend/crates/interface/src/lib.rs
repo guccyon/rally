@@ -101,7 +101,8 @@ use application::{
     review::{
         CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews,
         ListLowRatedReviews, ReplyToLessonReview, ReviewedCoachDisplayNameLookup,
-        ReviewedLessonMenuLookup, ReviewerDisplayNameLookup, SubmitLessonReview,
+        ReviewedLessonMenuLookup, ReviewedLessonSportLookup, ReviewerDisplayNameLookup,
+        SubmitLessonReview,
     },
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachAcceptanceRepository,
@@ -950,13 +951,14 @@ where
 ///
 /// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
 /// [`router_with`] で、生徒だけ。
-pub fn low_rated_reviews_router<R, M, D, S, C, T>(
-    list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+pub fn low_rated_reviews_router<R, M, P, D, S, C, T>(
+    list_low_rated_reviews: ListLowRatedReviews<R, M, P, D, S, C>,
     tokens: T,
 ) -> Router
 where
     R: LessonReviewRepository + 'static,
     M: ReviewedLessonMenuLookup + 'static,
+    P: ReviewedLessonSportLookup + 'static,
     D: ReviewedCoachDisplayNameLookup + 'static,
     S: ReviewerDisplayNameLookup + 'static,
     C: Clock + 'static,
@@ -966,7 +968,7 @@ where
     Router::new()
         .route(
             "/lesson-reviews/low",
-            get(low_rated_reviews::list_low_rated_reviews::<R, M, D, S, C>),
+            get(low_rated_reviews::list_low_rated_reviews::<R, M, P, D, S, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(low_rated_reviews::LowRatedReviewsState {

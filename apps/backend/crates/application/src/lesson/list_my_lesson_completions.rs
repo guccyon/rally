@@ -146,6 +146,10 @@ mod tests {
                 .cloned()
                 .collect())
         }
+
+        async fn find_slot(&self, _slot_id: SlotId) -> Result<Option<Slot>, Unavailable> {
+            unreachable!("受けたレッスンの一覧では枠を読まない")
+        }
     }
 
     /// `COACH` の表示名だけを知っていて（`OTHER_COACH` は引けない）、問い合わせた ID を記録する。
