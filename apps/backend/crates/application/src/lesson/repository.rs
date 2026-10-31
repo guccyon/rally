@@ -30,7 +30,7 @@ pub trait LessonCompletionRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<LessonCompletion>, Unavailable>> + Send;
 
     /// `student_id` の生徒の完了記録（同期・非同期の両方）をすべて読む（並べない。並べるのは
-    /// [`super::ListMyLessonCompletions`]）。
+    /// [`super::ListMyLessonCompletions`] と [`super::LessonStudentLessonHistoryLookup`]）。
     fn completions_of_student(
         &self,
         student_id: AccountId,

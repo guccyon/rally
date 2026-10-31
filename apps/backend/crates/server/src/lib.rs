@@ -24,7 +24,7 @@ use application::{
         EntitlementStudentContractLookup, GetEntitlement, ListSubscriptionPlans,
         LiveLessonQuotaSubscriber, StartSubscription,
     },
-    identity::{AccountRepository, GetAccount, ListStudents, RegisterAccount},
+    identity::{AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount},
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryCoachAcceptanceRepository,
         InMemoryEntitlementRepository, InMemoryFavoriteCoachRepository,
@@ -36,7 +36,8 @@ use application::{
     },
     lesson::{
         GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
-        LessonCompletionRepository, ListMyLessonCompletions, RecordLessonCompletion,
+        LessonCompletionRepository, LessonStudentLessonHistoryLookup, ListMyLessonCompletions,
+        RecordLessonCompletion,
     },
     live_lesson::{
         EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -70,8 +71,8 @@ use application::{
         BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
         GetSlotSupply, ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings,
         PublishSlot, ResumeCoach, SchedulingBookingLookup, SchedulingCoachAcceptanceLookup,
-        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, SuspendCoach,
-        WithdrawSlot,
+        SchedulingStudentBookingActivityLookup, SchedulingStudentLastBookingLookup, SearchSlots,
+        SlotRepository, SuspendCoach, WithdrawSlot,
     },
 };
 use axum::Router;
@@ -124,6 +125,10 @@ pub fn router() -> Router {
 /// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の
 /// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）
 /// 読んで添える（identity は entitlement・scheduling の表を直接読まない）。
+/// 本部が見る生徒 1 人の利用の様子（`GET /students/{student_id}/activity`）はアカウントの保存先から生徒の表示名を読み、
+/// これからの予約とキャンセルの件数を予約の保存先から（`SchedulingStudentBookingActivityLookup`）、直近の受けたレッスンを
+/// 完了記録の保存先から（`LessonStudentLessonHistoryLookup`）、コーチの表示名をアカウントの保存先から
+/// （`ProfileCoachDisplayNameLookup`）読んで添える。
 ///
 /// スロットの検索（`GET /slots`）と自分の予約の一覧（`GET /bookings/me`）は、出るコーチの表示名と自己紹介文をアカウントの保存先から読んで添える
 /// （`ProfileCoachIntroductionLookup`。scheduling は profile を直接読まない）。コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は
@@ -464,6 +469,16 @@ where
         ),
         MockTokenService,
     );
+    let student_activity = interface::student_activity_router(
+        GetStudentActivity::new(
+            accounts.clone(),
+            SchedulingStudentBookingActivityLookup::new(bookings.clone()),
+            LessonStudentLessonHistoryLookup::new(completions.clone()),
+            ProfileCoachDisplayNameLookup::new(accounts.clone()),
+            clock.clone(),
+        ),
+        MockTokenService,
+    );
     let low_rated_reviews = interface::low_rated_reviews_router(
         ListLowRatedReviews::new(
             reviews.clone(),
@@ -644,6 +659,7 @@ where
     .merge(lesson_stats)
     .merge(headquarters_bookings)
     .merge(students)
+    .merge(student_activity)
     .merge(coach_acceptance)
     .merge(low_rated_reviews)
     .merge(review_replies)
