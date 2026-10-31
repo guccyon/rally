@@ -70,6 +70,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 予約の一覧を日付で見る（本部）
+         * @description すべてのコーチの枠への予約（glossary の booking。体験予約を含む）のうち、開始する日付（日本時間）が `from` から `to` まで
+         *     （両端を含む）のものを返す。本部が、その日にどの予約が入っていて、確定待ち（`pending`）のまま残っていないかを見るのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 期間: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに、予約されたスロットが開始する予約。
+         *       `from` を省けば今日（サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。
+         *       応答の `from` / `to` は省いたときに決めた日付を含めて、実際に使った期間
+         *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+         *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
+         *       `from`（今日）より前なので 422
+         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。絞り込み・ページングはしない。
+         *       予約がなければ `bookings` は空の配列（404 にはしない）
+         *     - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
+         *       キャンセル済みの予約より上）、それも同じなら `booking_id` の順
+         *     - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
+         *       コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
+         *       その表示名を載せない
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listBookings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -850,6 +889,29 @@ export interface components {
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["CoachBooking"][];
         };
+        /** @description 本部が見る予約の一覧（`listBookings`）の 1 件。予約（glossary の booking）と、コーチと予約した生徒の表示名 */
+        HeadquartersBooking: {
+            booking: components["schemas"]["Booking"];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description 本部が見る予約の一覧（期間と並べ方は `listBookings` の説明） */
+        HeadquartersBookingList: {
+            /**
+             * Format: date
+             * @description 実際に使った期間の始まりの日付（日本時間。含む）
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description 実際に使った期間の終わりの日付（日本時間。含む）
+             */
+            to: string;
+            /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
+            bookings: components["schemas"]["HeadquartersBooking"][];
+        };
         /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
         CoachSlot: {
             slot: components["schemas"]["Slot"];
@@ -1508,6 +1570,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listBookings: {
+        parameters: {
+            query?: {
+                /** @description 期間の始まりの日付（日本時間。含む）。省けば今日 */
+                from?: string;
+                /** @description 期間の終わりの日付（日本時間。含む）。省けば `from` から 7 日目 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 期間に開始する予約の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadquartersBookingList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getMyAccount: {
