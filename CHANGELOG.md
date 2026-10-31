@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部に「コーチの受付」（`/headquarters/coaches`）を足した: 本部の画面の「受付を止める・再開する」から開き、コーチを表示名の順に受付の状態（受付中・停止中）とともに一覧にする（`listCoaches`）。受付中の行の「受付を止める」、停止中の行の「再開する」は、押すと行の中で確かめてから送り（`suspendCoach` / `resumeCoach`）、結果の状態を行に入れてボタンを入れ替える。断られたら（409 など）サーバーの文言を出して一覧を取り直す。0 人なら「コーチがまだいません」、読み込めなければその文言を出す。API と契約の変更はない（#375）
 - admin-web の本部に「予約」（`/headquarters/bookings`）を足した: 本部の画面の「予約の一覧を見る」から開き、すべてのコーチの枠への予約を、開始日と終了日（既定は今日から 7 日。31 日まで）で選んだ期間の日付ごとに、開始・状態・コーチ・生徒・レッスンメニュー・体験予約かで一覧にする（`listBookings`）。状態は色分けし（確定待ち・確定済み・キャンセル済み）、確定待ちのまま 24 時間以内に始まる予約は行を目立たせて件数を出す。0 件なら「この期間の予約はありません」、読み込めなければその文言を出す。API と契約の変更はない（#379）
 - admin-web のコーチの画面に「お知らせ」を足した: メニューの上の「お知らせ」に未読のお知らせの数のバッジを出し（0 件なら出さない）、押すとお知らせを新しい順に本文と日時で並べ、開いたときに未読だったものに「新着」と添えて、すべて既読にする（`listMyNotifications` / `markMyNotificationsRead`）。行を押すと、新しい予約は「通話への参加」、動画の添削の依頼は「動画の添削」、生徒からのメッセージは「チャット」へ移る（知らない種類の行は押せない）。0 件なら「まだお知らせはありません。…」、読み込めなければその文言を出す。API と契約の変更はない（#368）
 - 本部がコーチの受付を止める・再開する API: admin-web の契約に `POST /coaches/{coach_id}/suspend`（`suspendCoach`）と `POST /coaches/{coach_id}/resume`（`resumeCoach`）を足した。停止中のコーチの枠は student-app の `searchSlots` に出ず、コーチは `listCoachesForStudent` に出ず、そのコーチの枠への `createBooking` は 409 `coach_not_accepting_bookings`。入っている予約と枠はそのまま。本部の `listCoaches` の各行に受付の状態 `acceptance_status`（`accepting` / `suspended`）を足した。コーチでない・ない ID は 404、すでに停止中は 409 `coach_already_suspended`、停止中でないのに再開は 409 `coach_not_suspended`、本部以外は 403。DB は `scheduling.coach_acceptances` の追加だけ（expand）。admin-web は型と文言を足しただけで、画面は次の段（#374）
