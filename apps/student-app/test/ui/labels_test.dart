@@ -21,6 +21,11 @@ void main() {
     ]);
   });
 
+  test('コーチの名前は「〇〇 コーチ」で、名前がわからなければ「担当コーチ」', () {
+    expect(coachNameLabel('佐藤'), '佐藤 コーチ');
+    expect(coachNameLabel(null), '担当コーチ');
+  });
+
   test('評価の各点に言葉の目安を添える', () {
     expect(
       [for (var rating = 1; rating <= 5; rating++) ratingLabel(rating)],

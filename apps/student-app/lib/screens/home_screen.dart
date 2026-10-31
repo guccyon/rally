@@ -176,11 +176,7 @@ class _ThreadsSection extends ConsumerWidget {
           for (final thread in threads)
             Card(
               child: ListTile(
-                title: Text(
-                  coachNames[thread.coachId] == null
-                      ? '担当コーチ'
-                      : '${coachNames[thread.coachId]} コーチ',
-                ),
+                title: Text(coachNameLabel(coachNames[thread.coachId])),
                 subtitle: thread.lastMessage == null
                     ? null
                     : Text(
@@ -230,11 +226,7 @@ class _ReturnedReviewsSection extends ConsumerWidget {
             for (final video in videos)
               Card(
                 child: ListTile(
-                  title: Text(
-                    video.coachDisplayName == null
-                        ? '担当コーチ'
-                        : '${video.coachDisplayName} コーチ',
-                  ),
+                  title: Text(coachNameLabel(video.coachDisplayName)),
                   subtitle: Text(
                     [
                       if (video.returnedAt case final at?)
