@@ -6,6 +6,7 @@ import '../api/models.dart';
 import '../api/student_api.dart';
 import 'chat.dart';
 import 'lesson_review.dart';
+import 'subscription.dart';
 
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
@@ -80,7 +81,8 @@ enum VideoReviewRequestResult {
   failed,
 }
 
-/// 生徒アプリの状態（チャットの状態は [ChatState]、完了したレッスンの評価の状態は [LessonReviewState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
+/// 生徒アプリの状態（チャットの状態は [ChatState]、完了したレッスンの評価の状態は [LessonReviewState]、
+/// 月額契約と受講権の状態は [SubscriptionState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
 /// 一覧をコンストラクタで写して持つので const では作らない。
 class StudentFlowState {
   StudentFlowState({
@@ -103,11 +105,6 @@ class StudentFlowState {
     this.video,
     this.review,
     this.lesson,
-    this.subscriptionPlans,
-    this.subscriptionPlansFailed = false,
-    this.subscription,
-    this.entitlement,
-    this.noEntitlement = false,
     this.homeFailures = const {},
     this.settingsReturnStep,
     this.notificationSettings,
@@ -178,18 +175,6 @@ class StudentFlowState {
   /// 完了を記録したレッスン（評価する対象。評価の状態は [LessonReviewState]）
   final Lesson? lesson;
 
-  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`。契約の画面を開いたときに読む。未取得なら null）
-  final List<SubscriptionPlanDetail>? subscriptionPlans;
-
-  /// 契約プランの一覧を読めなかったら true（契約の画面はプランの名前だけで選ばせ、プランの欄にだけその旨を出す）
-  final bool subscriptionPlansFailed;
-
-  final Subscription? subscription;
-  final Entitlement? entitlement;
-
-  /// `getMyEntitlement` が 404（受講権がまだない＝月額契約の前）を返したら true
-  final bool noEntitlement;
-
   /// ホームで読めなかった欄（その欄にだけ旨を出す）。ホームを読むたびに読み直す
   final Set<HomeSection> homeFailures;
 
@@ -240,11 +225,6 @@ class StudentFlowState {
     Video? video,
     VideoReview? review,
     Lesson? lesson,
-    List<SubscriptionPlanDetail>? subscriptionPlans,
-    bool? subscriptionPlansFailed,
-    Subscription? subscription,
-    Entitlement? entitlement,
-    bool? noEntitlement,
     Set<HomeSection>? homeFailures,
     FlowStep? settingsReturnStep,
     NotificationSettings? notificationSettings,
@@ -276,12 +256,6 @@ class StudentFlowState {
     video: video ?? this.video,
     review: review ?? this.review,
     lesson: lesson ?? this.lesson,
-    subscriptionPlans: subscriptionPlans ?? this.subscriptionPlans,
-    subscriptionPlansFailed:
-        subscriptionPlansFailed ?? this.subscriptionPlansFailed,
-    subscription: subscription ?? this.subscription,
-    entitlement: entitlement ?? this.entitlement,
-    noEntitlement: noEntitlement ?? this.noEntitlement,
     homeFailures: homeFailures ?? this.homeFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
@@ -319,8 +293,8 @@ final studentFlowProvider =
       StudentFlowNotifier.new,
     );
 
-/// 画面の操作。チャットと評価のほかの API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ
-/// （チャットの操作は [ChatNotifier]、完了したレッスンの評価の操作は [LessonReviewNotifier]。
+/// 画面の操作。チャットと評価と契約・受講権のほかの API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ
+/// （チャットの操作は [ChatNotifier]、完了したレッスンの評価の操作は [LessonReviewNotifier]、月額契約と受講権の操作は [SubscriptionNotifier]。
 /// 段の移動と busy・失敗の文言はここの [moveTo] と [run] を使う）。
 class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// [initial] はテストで途中の画面から始めるときに渡す。
@@ -364,9 +338,9 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
-  /// ホームの欄（自分の予約・受講権・スレッド（[ChatNotifier.loadThreads]）・自分の動画）を並べて読む。どれかが失敗しても他の欄は出す
-  /// （失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
-  /// 受講権の 404 は失敗ではなく、月額契約の前（[StudentFlowState.noEntitlement]）
+  /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画）を
+  /// 並べて読む。どれかが失敗しても他の欄は出す（失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
+  /// 受講権の 404 は失敗ではなく、月額契約の前（[SubscriptionState.noEntitlement]）
   Future<void> _loadHome() async {
     final failures = <HomeSection>{};
     Future<void> load(HomeSection section, Future<void> Function() read) async {
@@ -379,22 +353,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
     await Future.wait([
       load(HomeSection.bookings, _loadMyBookings),
-      load(HomeSection.entitlement, _loadEntitlement),
+      load(
+        HomeSection.entitlement,
+        ref.read(subscriptionProvider.notifier).loadEntitlement,
+      ),
       load(HomeSection.threads, ref.read(chatProvider.notifier).loadThreads),
       load(HomeSection.videos, _loadMyVideos),
     ]);
     if (!ref.mounted) return;
     state = state.copyWith(homeFailures: Set.unmodifiable(failures));
-  }
-
-  Future<void> _loadEntitlement() async {
-    try {
-      final entitlement = await _api.getMyEntitlement();
-      state = state.copyWith(entitlement: entitlement, noEntitlement: false);
-    } on StudentApiException catch (e) {
-      if (e.statusCode != 404) rethrow;
-      state = state.copyWith(noEntitlement: true);
-    }
   }
 
   /// これからの予約（キャンセル済みでなく、まだ始まっていないもの）を開始の近い順に [limit] 件まで
@@ -635,52 +602,9 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 完了したレッスンを評価する画面へ（評価の操作は [LessonReviewNotifier]）
   void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
 
-  /// 月額契約の画面へ
+  /// 月額契約の画面へ（契約と受講権の操作は [SubscriptionNotifier]）
   void goToSubscription() =>
       state = state.copyWith(step: FlowStep.subscription);
-
-  /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`）を読む。契約の画面を開いたときに呼ぶ。
-  /// 読めなくてもプランは名前だけで選べるので、busy にせず失敗の文言も出さない
-  /// （[StudentFlowState.subscriptionPlansFailed] を立て、プランの欄にだけその旨を出す）。
-  Future<void> loadSubscriptionPlans() async {
-    state = state.copyWith(
-      errorMessage: state.errorMessage,
-      subscriptionPlansFailed: false,
-    );
-    try {
-      final list = await _api.listSubscriptionPlans();
-      if (!ref.mounted) return;
-      state = state.copyWith(
-        errorMessage: state.errorMessage,
-        subscriptionPlans: list.plans,
-      );
-    } on StudentApiException {
-      if (!ref.mounted) return;
-      state = state.copyWith(
-        errorMessage: state.errorMessage,
-        subscriptionPlansFailed: true,
-      );
-    }
-  }
-
-  /// `startSubscription`。[plan] は選んだ契約プラン（既定は standard）。
-  /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
-  Future<void> startSubscription({
-    SubscriptionPlan plan = SubscriptionPlan.standard,
-  }) => run(() async {
-    final response = await _api.startSubscription(
-      StartSubscriptionRequest(
-        sport: state.student!.sport,
-        plan: plan,
-        paymentMethodToken: mockPaymentMethodToken,
-      ),
-    );
-    state = state.copyWith(
-      subscription: response.subscription,
-      entitlement: response.entitlement,
-      noEntitlement: false,
-    );
-  });
 
   /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
   Future<void> openNotificationSettings() {
@@ -753,7 +677,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 回数を使うかを決めるのはサーバー（scheduling のキャンセル規定。開始 24 時間前ちょうどからを含む）で、
   /// ここは確認に添える文言のためだけに同じ境界で見る。回数の制約があるのは月額契約の生徒だけ（docs/adr/0005 の 6）
   bool cancellationUsesQuota(Booking booking) =>
-      state.entitlement?.contractType == ContractType.subscription &&
+      ref.read(subscriptionProvider).entitlement?.contractType ==
+          ContractType.subscription &&
       !_now().add(_quotaConsumingNotice).isBefore(booking.startsAt);
 
   static const _quotaConsumingNotice = Duration(hours: 24);
@@ -821,7 +746,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void moveTo(FlowStep step) => state = state.copyWith(step: step);
 
   /// [action] を busy にして走らせ、API の失敗を [StudentFlowState.errorMessage] にする。busy の間は何もしない。
-  /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）と評価（[LessonReviewNotifier]）の操作もここを通す
+  /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）と評価（[LessonReviewNotifier]）と
+  /// 契約（[SubscriptionNotifier]）の操作もここを通す
   Future<void> run(Future<void> Function() action) async {
     if (state.busy) return;
     state = state.copyWith(busy: true);
@@ -835,6 +761,3 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     }
   }
 }
-
-/// 決済（Stripe 相当）のモックのトークン。サーバーは受け取るだけで使わない。
-const mockPaymentMethodToken = 'mock-payment-method';

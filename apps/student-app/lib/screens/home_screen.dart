@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/chat.dart';
 import '../state/student_flow.dart';
+import '../state/subscription.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
@@ -127,14 +128,19 @@ class _LiveLessonQuotaSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(studentFlowProvider);
+    final failed = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.homeFailures.contains(HomeSection.entitlement),
+      ),
+    );
+    final state = ref.watch(subscriptionProvider);
     final entitlement = state.entitlement;
     final quota = entitlement?.liveLessonQuota;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const _SectionTitle('今月のビデオ通話'),
-        if (state.homeFailures.contains(HomeSection.entitlement))
+        if (failed)
           const _SectionFailure('ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
         else if (state.noEntitlement)
           const Text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。')
