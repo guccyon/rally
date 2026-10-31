@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use domain::{
     identity::AccountId,
-    scheduling::{Booking, Slot},
+    scheduling::{Booking, BookingId, CancellationPreview, Slot},
 };
 
 use super::CoachIntroduction;
@@ -15,4 +15,7 @@ pub struct MyBookingList {
     pub items: Vec<(Booking, Slot)>,
     /// `items` のコーチの紹介（コーチの ID ごと）。紹介が引けないコーチは含まない
     pub coaches: BTreeMap<AccountId, CoachIntroduction>,
+    /// `items` の予約を一覧を読んだ時刻にキャンセルしたらどうなるかの見込み（予約の ID ごと）。キャンセルできない
+    /// 予約（キャンセル済み）は含まない
+    pub cancellations: BTreeMap<BookingId, CancellationPreview>,
 }

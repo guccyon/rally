@@ -10,6 +10,7 @@ mod support;
 
 use application::{
     catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
+    entitlement::EntitlementQuotaGate,
     in_memory::{FixedClock, RecordingAnalyticsSink},
     scheduling::{
         BookingRepository, CreateBooking, CreateBookingCommand, ListCoachBookings, ListMyBookings,
@@ -27,7 +28,10 @@ use domain::{
         Booking, BookingLessonMenu, BookingStatus, SchedulingError, Slot, SlotCapacity, SlotStatus,
     },
 };
-use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository, PgSlotRepository};
+use infra::{
+    PgAccountRepository, PgBookingRepository, PgEntitlementRepository, PgLessonMenuRepository,
+    PgSlotRepository,
+};
 use sqlx::PgPool;
 use support::at;
 
@@ -386,6 +390,8 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
         application::profile::ProfileCoachIntroductionLookup::new(infra::PgAccountRepository::new(
             pool.clone(),
         )),
+        EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
+        FixedClock(at(0)),
     )
     .execute(student)
     .await
@@ -624,6 +630,8 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
         application::profile::ProfileCoachIntroductionLookup::new(PgAccountRepository::new(
             pool.clone(),
         )),
+        EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
+        FixedClock(at(0)),
     )
     .execute(student)
     .await

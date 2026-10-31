@@ -252,6 +252,8 @@ fn app() -> App {
             application::profile::ProfileCoachIntroductionLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            clock.clone(),
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

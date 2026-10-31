@@ -571,7 +571,12 @@ void main() {
 
   test('MyBooking・MyBookingList の項目が契約と一致する（listMyBookings の応答）', () {
     // MyBooking.fromJson・MyBookingList.fromJson が読む項目
-    expect(propertiesOf('MyBooking'), ['booking', 'slot']);
+    expect(propertiesOf('MyBooking'), [
+      'booking',
+      'slot',
+      'cancel_consumes_quota',
+      'free_cancel_until',
+    ]);
     final myBooking =
         (schemas['MyBooking'] as YamlMap)['properties'] as YamlMap;
     expect(
