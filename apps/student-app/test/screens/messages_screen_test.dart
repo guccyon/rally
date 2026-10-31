@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/messages_screen.dart';
+import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
 import '../support/fake_student_api.dart';
@@ -82,9 +83,12 @@ void main() {
 
   StudentFlowState threadOpened() => StudentFlowState(
     step: FlowStep.messages,
-    chatReturnStep: FlowStep.subscription,
     accessToken: Fixtures.registered.accessToken,
     student: Fixtures.student,
+  );
+
+  ChatState threadChat() => ChatState(
+    returnStep: FlowStep.subscription,
     threads: [Fixtures.thread],
     thread: Fixtures.thread,
     messages: Fixtures.messages,
@@ -96,6 +100,7 @@ void main() {
       const MessagesScreen(),
       api: FakeStudentApi(),
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     expect(find.text('よろしくお願いします'), findsOneWidget);
@@ -118,6 +123,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     final send = find.widgetWithText(FilledButton, '送信する');
@@ -158,6 +164,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tester.enterText(find.byType(TextField), '質問です');
@@ -178,6 +185,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, '新しいメッセージを確かめる');
@@ -204,6 +212,7 @@ void main() {
         const MessagesScreen(),
         api: api,
         initial: threadOpened(),
+        chat: threadChat(),
       );
       await tapText(tester, '新しいメッセージを確かめる');
 
@@ -291,6 +300,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
     await tapText(tester, '新しいメッセージを確かめる');
 
@@ -318,6 +328,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, '添削を依頼する');
@@ -363,6 +374,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, 'スタンプ');
@@ -402,6 +414,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, 'スタンプ');
@@ -431,6 +444,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, 'スタンプ');
@@ -474,6 +488,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
     await tapText(tester, '新しいメッセージを確かめる');
 
@@ -507,6 +522,7 @@ void main() {
       const MessagesScreen(),
       api: api,
       initial: threadOpened(),
+      chat: threadChat(),
     );
 
     await tapText(tester, '添削を依頼する');
@@ -565,6 +581,7 @@ void main() {
         const MessagesScreen(),
         api: api,
         initial: threadOpened(),
+        chat: threadChat(),
       );
       await tapText(tester, '添削を依頼する');
       await tapText(tester, '動画を選ぶ（モック）');
@@ -703,6 +720,7 @@ void main() {
         const MessagesScreen(),
         api: api,
         initial: threadOpened(),
+        chat: threadChat(),
       );
       await tapText(tester, '新しいメッセージを確かめる');
 

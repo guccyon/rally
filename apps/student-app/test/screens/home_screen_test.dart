@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
+import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
@@ -226,9 +227,7 @@ void main() {
     );
     final container = await pumpHome(tester, api);
 
-    final threads = container
-        .read(studentFlowProvider.notifier)
-        .recentThreads();
+    final threads = container.read(chatProvider.notifier).recentThreads();
     expect(threads.map((t) => t.threadId), ['returned', 'requested']);
     expect(find.text('担当コーチ'), findsNWidgets(2));
     expect(find.textContaining('コーチから添削が返ってきました（'), findsOneWidget);
@@ -486,7 +485,7 @@ void main() {
 
     expect(find.text('担当コーチとのチャット'), findsOneWidget);
     expect(api.calls, ['markMessageThreadRead', 'listMessages']);
-    expect(container.read(studentFlowProvider).chatReturnStep, FlowStep.home);
+    expect(container.read(chatProvider).returnStep, FlowStep.home);
 
     await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
     await tester.pumpAndSettle();
@@ -506,10 +505,7 @@ void main() {
 
     expect(find.text('担当コーチとのチャット'), findsOneWidget);
     expect(find.text('動画の添削を依頼する'), findsOneWidget);
-    expect(
-      container.read(studentFlowProvider).promptVideoReviewRequest,
-      isFalse,
-    );
+    expect(container.read(chatProvider).promptVideoReviewRequest, isFalse);
     await tapText(tester, '動画を選ぶ（モック）');
     await tapText(tester, '依頼する');
 
@@ -544,10 +540,10 @@ void main() {
 
     await tapText(tester, '添削を依頼する');
 
-    final state = container.read(studentFlowProvider);
-    expect(state.step, FlowStep.messageThreads);
-    expect(state.chatReturnStep, FlowStep.home);
-    expect(state.promptVideoReviewRequest, isFalse);
+    expect(container.read(studentFlowProvider).step, FlowStep.messageThreads);
+    final chat = container.read(chatProvider);
+    expect(chat.returnStep, FlowStep.home);
+    expect(chat.promptVideoReviewRequest, isFalse);
   });
 
   testWidgets('登録後のほかの画面からは、アプリバーの「ホーム」でホームに戻って読み直す', (tester) async {

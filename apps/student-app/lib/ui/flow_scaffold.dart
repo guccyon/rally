@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 
 /// 各画面の共通の枠。直前の操作の失敗と、API を呼んでいる間の表示を出す。
@@ -48,7 +49,9 @@ class FlowScaffold extends ConsumerWidget {
             IconButton(
               tooltip: 'チャット',
               icon: const Icon(Icons.chat_bubble_outline),
-              onPressed: state.busy ? null : notifier.openChat,
+              onPressed: state.busy
+                  ? null
+                  : ref.read(chatProvider.notifier).openChat,
             ),
             IconButton(
               tooltip: '通知の設定',

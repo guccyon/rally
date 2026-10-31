@@ -6,6 +6,7 @@ import '../api/error_message.dart';
 import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/student_api.dart';
+import 'chat.dart';
 
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定の画面の段。
 enum FlowStep {
@@ -68,7 +69,7 @@ enum HomeSection {
   videos,
 }
 
-/// 添削の依頼（チャットの [StudentFlowNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
+/// 添削の依頼（チャットの [ChatNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
 enum VideoReviewRequestResult {
   /// 受け付けられた
   sent,
@@ -80,7 +81,7 @@ enum VideoReviewRequestResult {
   failed,
 }
 
-/// 生徒アプリの状態（アプリの状態はこれ 1 つ）。
+/// 生徒アプリの状態（チャットの状態は [ChatState] に分けた。画面の段と busy・失敗の文言はここで 1 つ）。
 /// 一覧をコンストラクタで写して持つので const では作らない。
 class StudentFlowState {
   StudentFlowState({
@@ -111,13 +112,6 @@ class StudentFlowState {
     this.entitlement,
     this.noEntitlement = false,
     this.homeFailures = const {},
-    this.promptVideoReviewRequest = false,
-    this.chatReturnStep,
-    this.threads,
-    this.thread,
-    this.messages,
-    this.chatReviews = const {},
-    this.chatReviewFailures = const {},
     this.settingsReturnStep,
     this.notificationSettings,
     this.bookingsReturnStep,
@@ -217,27 +211,6 @@ class StudentFlowState {
   /// ホームで読めなかった欄（その欄にだけ旨を出す）。ホームを読むたびに読み直す
   final Set<HomeSection> homeFailures;
 
-  /// スレッドを開いたら、すぐに添削の依頼（動画の選択）を出すか（ホームの「添削を依頼する」から開いたとき）
-  final bool promptVideoReviewRequest;
-
-  /// チャットを閉じたときに戻る段（チャットを開いた段）
-  final FlowStep? chatReturnStep;
-
-  /// 担当コーチとのスレッド（`listMessageThreads`。未取得なら null）
-  final List<MessageThread>? threads;
-
-  /// 開いているスレッド
-  final MessageThread? thread;
-
-  /// 開いているスレッドのメッセージ（送った順）
-  final List<Message>? messages;
-
-  /// スレッドに返却が流れた動画の添削（`getVideoReview`。動画の ID ごと）。返却された添削は変わらないので、読めたものは読み直さない
-  final Map<String, VideoReview> chatReviews;
-
-  /// スレッドに返却が流れたが添削を読めなかった動画の ID（その返却のカードにだけ読めなかった旨を出し、次に確かめたときに読み直す）
-  final Set<String> chatReviewFailures;
-
   /// 通知の受け取り設定を閉じたときに戻る段（設定を開いた段）
   final FlowStep? settingsReturnStep;
 
@@ -293,13 +266,6 @@ class StudentFlowState {
     Entitlement? entitlement,
     bool? noEntitlement,
     Set<HomeSection>? homeFailures,
-    bool? promptVideoReviewRequest,
-    FlowStep? chatReturnStep,
-    List<MessageThread>? threads,
-    MessageThread? thread,
-    List<Message>? messages,
-    Map<String, VideoReview>? chatReviews,
-    Set<String>? chatReviewFailures,
     FlowStep? settingsReturnStep,
     NotificationSettings? notificationSettings,
     FlowStep? bookingsReturnStep,
@@ -339,14 +305,6 @@ class StudentFlowState {
     entitlement: entitlement ?? this.entitlement,
     noEntitlement: noEntitlement ?? this.noEntitlement,
     homeFailures: homeFailures ?? this.homeFailures,
-    promptVideoReviewRequest:
-        promptVideoReviewRequest ?? this.promptVideoReviewRequest,
-    chatReturnStep: chatReturnStep ?? this.chatReturnStep,
-    threads: threads ?? this.threads,
-    thread: thread ?? this.thread,
-    messages: messages ?? this.messages,
-    chatReviews: chatReviews ?? this.chatReviews,
-    chatReviewFailures: chatReviewFailures ?? this.chatReviewFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
@@ -383,7 +341,8 @@ final studentFlowProvider =
       StudentFlowNotifier.new,
     );
 
-/// 画面の操作。API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ。
+/// 画面の操作。チャットのほかの API を呼ぶのはここだけで、画面は state を表示してこのメソッドを呼ぶ
+/// （チャットの操作は [ChatNotifier]。段の移動と busy・失敗の文言はここの [moveTo] と [run] を使う）。
 class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// [initial] はテストで途中の画面から始めるときに渡す。
   StudentFlowNotifier([StudentFlowState? initial])
@@ -401,7 +360,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     required String email,
     required String displayName,
     required Sport sport,
-  }) => _run(() async {
+  }) => run(() async {
     final response = await _api.registerAccount(
       RegisterAccountRequest(
         email: email,
@@ -420,13 +379,13 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームへ戻る（欄を読み直す）
   Future<void> goHome() {
     state = state.copyWith(step: FlowStep.home);
-    return _run(_loadHome);
+    return run(_loadHome);
   }
 
   /// ホームの欄を読み直す
-  Future<void> refreshHome() => _run(_loadHome);
+  Future<void> refreshHome() => run(_loadHome);
 
-  /// ホームの欄（自分の予約・受講権・スレッド・自分の動画）を並べて読む。どれかが失敗しても他の欄は出す
+  /// ホームの欄（自分の予約・受講権・スレッド（[ChatNotifier.loadThreads]）・自分の動画）を並べて読む。どれかが失敗しても他の欄は出す
   /// （失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
   /// 受講権の 404 は失敗ではなく、月額契約の前（[StudentFlowState.noEntitlement]）
   Future<void> _loadHome() async {
@@ -442,7 +401,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     await Future.wait([
       load(HomeSection.bookings, _loadMyBookings),
       load(HomeSection.entitlement, _loadEntitlement),
-      load(HomeSection.threads, _loadThreads),
+      load(HomeSection.threads, ref.read(chatProvider.notifier).loadThreads),
       load(HomeSection.videos, _loadMyVideos),
     ]);
     if (!ref.mounted) return;
@@ -468,27 +427,9 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return upcoming.take(limit).toList();
   }
 
-  /// ホームに出すコーチとのやり取り: 未読のあるスレッドと、最後のメッセージが添削の依頼か返却のスレッドを、最後のメッセージの新しい順に
-  List<MessageThread> recentThreads() {
-    bool notable(MessageThread thread) =>
-        thread.unreadCount > 0 ||
-        switch (thread.lastMessage?.kind) {
-          MessageKind.videoReviewRequest ||
-          MessageKind.videoReviewReturned => true,
-          _ => false,
-        };
-    DateTime lastAt(MessageThread thread) =>
-        thread.lastMessage?.sentAt ?? thread.openedAt;
-    return [
-      for (final thread in state.threads ?? const <MessageThread>[])
-        if (notable(thread)) thread,
-    ]..sort((a, b) => lastAt(b).compareTo(lastAt(a)));
-  }
-
   /// ホームに出す返ってきた添削: 返却済みの動画を、返却の新しい順に [limit] 件まで
   List<MyVideo> returnedVideos({int limit = 3}) {
-    DateTime returnedAt(MyVideo video) =>
-        video.returnedAt ?? video.submittedAt;
+    DateTime returnedAt(MyVideo video) => video.returnedAt ?? video.submittedAt;
     final returned = [
       for (final video in state.myVideos ?? const <MyVideo>[])
         if (video.reviewStatus == VideoReviewStatus.returned) video,
@@ -496,35 +437,14 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return returned.take(limit).toList();
   }
 
-  /// ホームの「添削を依頼する」。スレッドが 1 つならそのスレッドを開いてすぐに添削の依頼を出し、
-  /// 2 つ以上ならスレッドの一覧を開いて担当コーチを選ばせる（スレッドがなければ呼ばない）
-  Future<void> startVideoReviewRequest() async {
-    final threads = state.threads ?? const <MessageThread>[];
-    if (threads.length != 1) return openChat();
-    state = state.copyWith(promptVideoReviewRequest: true);
-    await openThread(threads.single);
-    if (ref.mounted && state.step != FlowStep.messages) {
-      state = state.copyWith(
-        errorMessage: state.errorMessage,
-        promptVideoReviewRequest: false,
-      );
-    }
-  }
-
-  /// スレッドを開いたときの添削の依頼を出したら、二度は出さない
-  void clearVideoReviewRequestPrompt() => state = state.copyWith(
-    errorMessage: state.errorMessage,
-    promptVideoReviewRequest: false,
-  );
-
   /// スロット検索へ（生徒のスポーツで絞って検索しておく）
   Future<void> goToSlotSearch() {
     state = state.copyWith(step: FlowStep.slotSearch);
-    return _run(() => _search(state.searchSport ?? state.student!.sport));
+    return run(() => _search(state.searchSport ?? state.student!.sport));
   }
 
   /// `searchSlots`。スポーツで絞る。
-  Future<void> searchSlots(Sport sport) => _run(() => _search(sport));
+  Future<void> searchSlots(Sport sport) => run(() => _search(sport));
 
   /// スロットを探し、出てきたコーチの評価の件数と平均（`getCoachReviewSummary`）を読む。
   /// 評価を読めなくても検索結果は出す（そのコーチを [StudentFlowState.coachReviewSummaryFailures] に入れるだけで、失敗の文言は出さない）
@@ -626,7 +546,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// `createBooking`（体験予約）。作成直後は pending なので確定待ちへ。
-  Future<void> bookTrial(Slot slot) => _run(() async {
+  Future<void> bookTrial(Slot slot) => run(() async {
     final booking = await _api.createBooking(
       CreateBookingRequest(slotId: slot.slotId, isTrial: true),
     );
@@ -638,7 +558,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   });
 
   /// `confirmBooking`
-  Future<void> confirmBooking() => _run(() async {
+  Future<void> confirmBooking() => run(() async {
     final booking = await _api.confirmBooking(state.booking!.bookingId);
     state = state.copyWith(booking: booking);
   });
@@ -650,7 +570,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void chooseVideo() => state = state.copyWith(step: FlowStep.videoSubmit);
 
   /// `startLiveLessonSession`（映像はモックなので接続はしない）
-  Future<void> startCall() => _run(() async {
+  Future<void> startCall() => run(() async {
     final session = await _api.startLiveLessonSession(
       StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
     );
@@ -658,23 +578,23 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   });
 
   /// `endLiveLessonSession`。終了したら完了記録へ。
-  Future<void> endCall() => _run(() async {
+  Future<void> endCall() => run(() async {
     final session = await _api.endLiveLessonSession(state.session!.sessionId);
     state = state.copyWith(session: session, step: FlowStep.lessonCompletion);
   });
 
   /// `submitVideo`。送り先は体験予約のコーチで、スポーツはそのスロットのもの。動画本体のアップロードは Gen1 ではモックなので行わない。
   /// [lessonMenuId] は体験予約のコーチの非同期のメニューで、省けばメニューなし。メニューを付けて 422 が返ったときの扱いは
-  /// [requestVideoReview] と同じ（失敗の文言は出さずにメニューを読み直し、この段に留まる）。
+  /// [ChatNotifier.requestVideoReview] と同じ（失敗の文言は出さずにメニューを読み直し、この段に留まる）。
   Future<VideoReviewRequestResult> submitVideo({
     required VideoContentType contentType,
     String? note,
     String? lessonMenuId,
   }) async {
     var result = VideoReviewRequestResult.failed;
-    await _run(() async {
+    await run(() async {
       final booking = state.booking!;
-      final video = await _submitVideoForReview(
+      final video = await submitVideoForReview(
         SubmitVideoRequest(
           coachId: booking.coachId,
           sport: state.bookedSlot!.sport,
@@ -695,9 +615,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return result;
   }
 
-  /// 添削の依頼の `submitVideo`。選択肢はコーチ・公開中・非同期・動画のスポーツで絞ってあるので、メニューを付けて 422 が
+  /// 添削の依頼の `submitVideo`（一周シナリオの [submitVideo] とチャットの [ChatNotifier.requestVideoReview]）。
+  /// 選択肢はコーチ・公開中・非同期・動画のスポーツで絞ってあるので、メニューを付けて 422 が
   /// 返ったら読んだ後にメニューが変わった（非公開にした・直した）ものと読み、送り先のコーチのメニューを読み直して null を返す。
-  Future<Video?> _submitVideoForReview(SubmitVideoRequest request) async {
+  /// busy にはしないので、呼ぶ側の [run] の中で呼ぶ。
+  Future<Video?> submitVideoForReview(SubmitVideoRequest request) async {
     try {
       return await _api.submitVideo(request);
     } on StudentApiException catch (e) {
@@ -711,7 +633,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// `getVideoReview`（コーチが返却したかを確かめ直す）
-  Future<void> refreshReview() => _run(() async {
+  Future<void> refreshReview() => run(() async {
     final review = await _api.getVideoReview(state.video!.videoId);
     state = state.copyWith(review: review);
   });
@@ -721,7 +643,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       state = state.copyWith(step: FlowStep.lessonCompletion);
 
   /// `recordLessonCompletion`。通話を受けたなら live_lesson、動画を送ったなら async_lesson。
-  Future<void> recordCompletion() => _run(() async {
+  Future<void> recordCompletion() => run(() async {
     final session = state.session;
     final lesson = await _api.recordLessonCompletion(
       session != null
@@ -737,7 +659,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// `submitLessonReview`。評価は完了したレッスン 1 件につき 1 回なので、送れたときも
   /// 409 `lesson_already_reviewed` が返ったときも評価済みにする（以後は入力させない）。
   Future<void> submitReview({required int rating, required String comment}) =>
-      _run(() async {
+      run(() async {
         final lessonId = state.lesson!.lessonId;
         try {
           final review = await _api.submitLessonReview(
@@ -793,7 +715,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
   Future<void> startSubscription({
     SubscriptionPlan plan = SubscriptionPlan.standard,
-  }) => _run(() async {
+  }) => run(() async {
     final response = await _api.startSubscription(
       StartSubscriptionRequest(
         sport: state.student!.sport,
@@ -808,137 +730,6 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// チャットを開く（`listMessageThreads`）。閉じたら今の段に戻る。
-  Future<void> openChat() {
-    if (!state.step.isChat) {
-      state = state.copyWith(
-        chatReturnStep: state.step,
-        step: FlowStep.messageThreads,
-      );
-    }
-    return _run(_loadThreads);
-  }
-
-  /// チャットを閉じて、開いた段に戻る
-  void closeChat() =>
-      state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
-
-  /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
-  /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
-  /// 既読が先なので、既読にしたメッセージは必ず一覧に入る（間に届いたものは未読のまま出て、次に確かめたときに既読になる）。
-  /// チャットの外（ホーム）から開いたら、チャットを閉じたときに開いた段に戻る。
-  Future<void> openThread(MessageThread thread) {
-    if (!state.step.isChat) {
-      state = state.copyWith(chatReturnStep: state.step);
-    }
-    return _run(() async {
-      await _loadMessages(thread.threadId);
-      state = state.copyWith(step: FlowStep.messages);
-    });
-  }
-
-  /// 開いているスレッドの新しいメッセージを確かめる（既読にしてから読み直す。順は [openThread] と同じ）
-  Future<void> refreshMessages() =>
-      _run(() => _loadMessages(state.thread!.threadId));
-
-  Future<void> _loadMessages(String threadId) async {
-    final read = await _api.markMessageThreadRead(threadId);
-    final list = await _api.listMessages(threadId);
-    state = state.copyWith(thread: read, messages: list.messages);
-    await _loadChatReviews();
-  }
-
-  /// スレッドに返却が流れた動画の添削（`getVideoReview`）を、まだ読めていないものだけ読む。
-  /// 読めなくてもメッセージの一覧は出す（その動画を [StudentFlowState.chatReviewFailures] に入れるだけで、失敗の文言は出さない）
-  Future<void> _loadChatReviews() async {
-    final videoIds = {
-      for (final message in state.messages ?? const <Message>[])
-        if (message.kind == MessageKind.videoReviewReturned) ?message.videoId,
-    }.difference(state.chatReviews.keys.toSet());
-    if (videoIds.isEmpty) return;
-    final reviews = <String, VideoReview>{};
-    final failures = <String>{};
-    Future<void> load(String videoId) async {
-      try {
-        reviews[videoId] = await _api.getVideoReview(videoId);
-      } on StudentApiException {
-        failures.add(videoId);
-      }
-    }
-
-    await Future.wait(videoIds.map(load));
-    if (!ref.mounted) return;
-    state = state.copyWith(
-      chatReviews: Map.unmodifiable({...state.chatReviews, ...reviews}),
-      chatReviewFailures: Set.unmodifiable(
-        state.chatReviewFailures.difference(videoIds).union(failures),
-      ),
-    );
-  }
-
-  /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
-  Future<bool> sendMessage(String body) =>
-      _sendMessage(SendMessageRequest(body: body));
-
-  /// 本文の代わりにスタンプを送る（`sendMessage` の `stamp_id`）。受講権の扱いは本文と同じ。送れたら true。
-  Future<bool> sendStamp(StampId stamp) =>
-      _sendMessage(SendMessageRequest.stamp(stamp));
-
-  Future<bool> _sendMessage(SendMessageRequest request) async {
-    var sent = false;
-    await _run(() async {
-      final message = await _api.sendMessage(state.thread!.threadId, request);
-      state = state.copyWith(messages: [...?state.messages, message]);
-      sent = true;
-    });
-    return sent;
-  }
-
-  /// チャットから動画の添削を依頼する（`submitVideo`。一周シナリオの動画の送付と同じ API）。送り先はスレッドの担当コーチで、
-  /// スポーツは生徒のもの。動画本体のアップロードは Gen1 ではモックなので行わない。添削依頼はサーバーがスレッドに流すので、
-  /// 送れたらスレッドを読み直す。[lessonMenuId] は担当コーチの非同期のメニュー（[StudentFlowState.asyncLessonMenusOf]）で、
-  /// 省けばメニューなし。メニューを付けて 422 が返ったら、失敗の文言は出さずにメニューを読み直す（[_submitVideoForReview]）。
-  Future<VideoReviewRequestResult> requestVideoReview({
-    required VideoContentType contentType,
-    String? note,
-    String? lessonMenuId,
-  }) async {
-    var result = VideoReviewRequestResult.failed;
-    await _run(() async {
-      final thread = state.thread!;
-      final video = await _submitVideoForReview(
-        SubmitVideoRequest(
-          coachId: thread.coachId,
-          sport: state.student!.sport,
-          contentType: contentType,
-          note: note,
-          lessonMenuId: lessonMenuId,
-        ),
-      );
-      if (video == null) {
-        result = VideoReviewRequestResult.menuRejected;
-        return;
-      }
-      result = VideoReviewRequestResult.sent;
-      await _loadMessages(thread.threadId);
-    });
-    return result;
-  }
-
-  /// スレッドの一覧を読み直す
-  Future<void> refreshThreads() => _run(_loadThreads);
-
-  /// スレッドの一覧に戻る（未読の数と最後のメッセージを読み直す）
-  Future<void> backToThreads() {
-    state = state.copyWith(step: FlowStep.messageThreads);
-    return _run(_loadThreads);
-  }
-
-  Future<void> _loadThreads() async {
-    final list = await _api.listMessageThreads();
-    state = state.copyWith(threads: list.threads);
-  }
-
   /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
   Future<void> openNotificationSettings() {
     if (state.step != FlowStep.notificationSettings) {
@@ -947,11 +738,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         step: FlowStep.notificationSettings,
       );
     }
-    return _run(_loadNotificationSettings);
+    return run(_loadNotificationSettings);
   }
 
   /// 通知の受け取り設定を読み直す（読み込みに失敗したとき）
-  Future<void> refreshNotificationSettings() => _run(_loadNotificationSettings);
+  Future<void> refreshNotificationSettings() => run(_loadNotificationSettings);
 
   /// 通知の受け取り設定を閉じて、開いた段に戻る
   void closeNotificationSettings() => state = state.copyWith(
@@ -961,7 +752,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// `updateMyNotificationSettings`。[kind] の種類だけを変えて保存する。画面はすぐに切り替え、
   /// 保存に失敗したら切り替える前に戻して失敗を知らせる（成功したらサーバーが返した設定にそろえる）。
   Future<void> setNotification(NotificationKind kind, bool receives) =>
-      _run(() async {
+      run(() async {
         final before = state.notificationSettings!;
         state = state.copyWith(
           notificationSettings: before.withKind(kind, receives),
@@ -990,11 +781,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         step: FlowStep.myBookings,
       );
     }
-    return _run(_loadMyBookings);
+    return run(_loadMyBookings);
   }
 
   /// 自分の予約の一覧を読み直す
-  Future<void> refreshMyBookings() => _run(_loadMyBookings);
+  Future<void> refreshMyBookings() => run(_loadMyBookings);
 
   /// 自分の予約の一覧を閉じて、開いた段に戻る
   void closeMyBookings() => state = state.copyWith(
@@ -1016,7 +807,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   static const _quotaConsumingNotice = Duration(hours: 24);
 
   /// `cancelBooking`。キャンセルできたら一覧のその予約を応答で置き換える。
-  Future<void> cancelBooking(Booking booking) => _run(() async {
+  Future<void> cancelBooking(Booking booking) => run(() async {
     final cancelled = await _api.cancelBooking(booking.bookingId);
     state = state.copyWith(
       myBookings: [
@@ -1041,11 +832,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         step: FlowStep.myVideos,
       );
     }
-    return _run(_loadMyVideos);
+    return run(_loadMyVideos);
   }
 
   /// 自分の動画の一覧を読み直す
-  Future<void> refreshMyVideos() => _run(_loadMyVideos);
+  Future<void> refreshMyVideos() => run(_loadMyVideos);
 
   /// 自分の動画の一覧を閉じて、開いた段に戻る
   void closeMyVideos() =>
@@ -1053,7 +844,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// 自分の動画の一覧かホームの「返ってきた添削」から、返却済みの動画の添削結果を開く（`getVideoReview`）。
   /// 読めたら添削結果の画面へ移り、読めなければ開いた画面に留まって失敗の文言を出す
-  Future<void> openMyVideoReview(MyVideo video) => _run(() async {
+  Future<void> openMyVideoReview(MyVideo video) => run(() async {
     final review = await _api.getVideoReview(video.videoId);
     state = state.copyWith(
       myVideoReview: review,
@@ -1074,7 +865,12 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   DateTime _now() => ref.read(clockProvider)();
 
-  Future<void> _run(Future<void> Function() action) async {
+  /// 段を [step] に移す（直前の失敗の文言は消える）。チャット（[ChatNotifier]）が段を移すのに使う
+  void moveTo(FlowStep step) => state = state.copyWith(step: step);
+
+  /// [action] を busy にして走らせ、API の失敗を [StudentFlowState.errorMessage] にする。busy の間は何もしない。
+  /// busy と失敗の文言はアプリで 1 つなので、チャット（[ChatNotifier]）の操作もここを通す
+  Future<void> run(Future<void> Function() action) async {
     if (state.busy) return;
     state = state.copyWith(busy: true);
     try {
