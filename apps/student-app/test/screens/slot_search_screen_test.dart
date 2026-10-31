@@ -282,6 +282,93 @@ void main() {
     expect(find.textContaining('席'), findsNothing);
   });
 
+  testWidgets('レッスンメニューが結びついた枠は、スポーツの下・コーチの上にメニューの名前と 1 回の時間を出す', (
+    tester,
+  ) async {
+    final slot = Fixtures.slotWithCoach(
+      displayName: '佐藤',
+      lessonMenu: Fixtures.slotLessonMenu,
+    );
+    final api = FakeStudentApi(slots: [slot]);
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    final card = find.byType(Card);
+    Finder inCard(String text) =>
+        find.descendant(of: card, matching: find.text(text));
+    final menu = inCard('メニュー: フォアハンドの基礎（1 回 60 分）');
+    expect(menu, findsOneWidget);
+    final order = [inCard('テニス'), menu, inCard('コーチ: 佐藤'), inCard('体験予約する')];
+    final tops = [for (final f in order) tester.getTopLeft(f).dy];
+    for (var i = 1; i < tops.length; i++) {
+      expect(tops[i], greaterThan(tops[i - 1]), reason: '${i + 1} 番目の並び');
+    }
+  });
+
+  testWidgets('1 回の時間のないメニュー（非同期に直されたもの）は名前だけを出す', (tester) async {
+    final api = FakeStudentApi(
+      slots: [
+        Fixtures.slotWithCoach(
+          lessonMenu: const SlotLessonMenu(
+            lessonMenuId: '13131313-1313-4313-8313-131313131313',
+            name: 'サーブの動画添削',
+          ),
+        ),
+      ],
+    );
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    expect(find.text('メニュー: サーブの動画添削'), findsOneWidget);
+    expect(find.textContaining('分'), findsNothing);
+  });
+
+  testWidgets('メニューのない枠には、今までどおりメニューを出さない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+
+    expect(Fixtures.slot.lessonMenu, isNull);
+    expect(find.textContaining('メニュー: '), findsNothing);
+    expect(find.text('体験予約する'), findsOneWidget);
+  });
+
+  testWidgets('メニューの付いた枠を体験予約すると、確定待ちの段にその枠を持ち越す', (tester) async {
+    final slot = Fixtures.slotWithCoach(lessonMenu: Fixtures.slotLessonMenu);
+    final api = FakeStudentApi(slots: [slot]);
+    final container = await pumpScreen(
+      tester,
+      const SlotSearchScreen(),
+      api: api,
+      initial: registered,
+    );
+
+    await tapText(tester, 'テニス');
+    await tapText(tester, '体験予約する');
+
+    final state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.bookingPending);
+    expect(state.bookedSlot!.lessonMenu!.name, 'フォアハンドの基礎');
+  });
+
   group('コーチの評価', () {
     testWidgets('検索結果の枠に、そのコーチの評価の件数と平均を出す', (tester) async {
       final api = FakeStudentApi(

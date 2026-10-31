@@ -380,8 +380,12 @@ abstract final class Fixtures {
     endsAt: now.add(const Duration(days: 2, hours: 1)),
   );
 
-  /// [slot] に、コーチの名前と自己紹介文（どちらも任意）を添えたもの
-  static Slot slotWithCoach({String? displayName, String? bio}) => Slot(
+  /// [slot] に、コーチの名前と自己紹介文と、結びついたレッスンメニュー（どれも任意）を添えたもの
+  static Slot slotWithCoach({
+    String? displayName,
+    String? bio,
+    SlotLessonMenu? lessonMenu,
+  }) => Slot(
     slotId: slot.slotId,
     coachId: slot.coachId,
     sport: slot.sport,
@@ -389,6 +393,14 @@ abstract final class Fixtures {
     endsAt: slot.endsAt,
     coachDisplayName: displayName,
     coachBio: bio,
+    lessonMenu: lessonMenu,
+  );
+
+  /// [slot] に結びついたレッスンメニュー（[lessonMenus] の先頭のテニスの同期。1 回の時間は枠の長さと同じ 60 分）
+  static final slotLessonMenu = SlotLessonMenu(
+    lessonMenuId: lessonMenus.first.lessonMenuId,
+    name: lessonMenus.first.name,
+    durationMinutes: lessonMenus.first.durationMinutes,
   );
 
   static final bookingPending = Booking(

@@ -240,6 +240,39 @@ void main() {
       expect(parsed.coachDisplayName, isNull);
       expect(parsed.coachBio, isNull);
     });
+
+    test('結びついたレッスンメニューの ID・名前・1 回の時間を読む', () {
+      final parsed = Slot.fromJson({
+        ...slot,
+        'lesson_menu': {
+          'lesson_menu_id': 'm1',
+          'name': 'フォアハンドの基礎',
+          'duration_minutes': 60,
+        },
+      });
+      final menu = parsed.lessonMenu!;
+      expect(menu.lessonMenuId, 'm1');
+      expect(menu.name, 'フォアハンドの基礎');
+      expect(menu.durationMinutes, 60);
+    });
+
+    test('非同期に直されたメニューは 1 回の時間が null', () {
+      final parsed = Slot.fromJson({
+        ...slot,
+        'lesson_menu': {
+          'lesson_menu_id': 'm1',
+          'name': 'サーブの動画添削',
+          'duration_minutes': null,
+        },
+      });
+      expect(parsed.lessonMenu!.name, 'サーブの動画添削');
+      expect(parsed.lessonMenu!.durationMinutes, isNull);
+    });
+
+    test('メニューが null か載っていなければ null', () {
+      expect(Slot.fromJson({...slot, 'lesson_menu': null}).lessonMenu, isNull);
+      expect(Slot.fromJson(slot).lessonMenu, isNull);
+    });
   });
 
   test('MyBookingList.fromJson は予約とスロットを読み、一覧は書き換えられない', () {

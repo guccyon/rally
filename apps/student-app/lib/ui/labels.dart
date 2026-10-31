@@ -23,6 +23,15 @@ String lessonTypeLabel(LessonType type) => switch (type) {
 /// レッスンメニューの同期レッスン 1 回の時間（`LessonMenu.duration_minutes`）。例: `1 回 60 分`
 String lessonMenuDurationLabel(int minutes) => '1 回 $minutes 分';
 
+/// 枠に結びついたレッスンメニュー（`Slot.lesson_menu`）の名前と 1 回の時間。例: `メニュー: フォアハンドの基礎（1 回 60 分）`。
+/// 時間が null（結びつけた後に非同期に直されたメニュー）なら名前だけ
+String slotLessonMenuLabel(SlotLessonMenu menu) =>
+    switch (menu.durationMinutes) {
+      final minutes? =>
+        'メニュー: ${menu.name}（${lessonMenuDurationLabel(minutes)}）',
+      null => 'メニュー: ${menu.name}',
+    };
+
 /// 端末のタイムゾーンで `M/d HH:mm`
 String formatDateTime(DateTime value) {
   final local = value.toLocal();
