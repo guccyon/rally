@@ -577,7 +577,7 @@ void main() {
     final exception = error as StudentApiException;
     expect(exception.statusCode, 409);
     expect(exception.error!.code, ErrorCode.liveLessonQuotaExceeded);
-    expect(errorMessageOf(exception), '今月のビデオ通話の回数（2 回）を使い切っています。');
+    expect(errorMessageOf(exception), '今月のビデオ通話の枠を使い切っています。');
   });
 
   test('知らない ErrorCode は汎用のエラーとして扱う', () async {

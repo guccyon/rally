@@ -20,7 +20,7 @@ String errorMessageOf(Object error) {
     ErrorCode.slotAlreadyBooked => 'このスロットはすでに予約されました。別のスロットを選んでください。',
     ErrorCode.trialAlreadyUsed => '体験予約はすでに使っています。',
     ErrorCode.invalidBookingState => '予約の状態が変わっています。予約を確かめてください。',
-    ErrorCode.liveLessonQuotaExceeded => '今月のビデオ通話の回数（2 回）を使い切っています。',
+    ErrorCode.liveLessonQuotaExceeded => '今月のビデオ通話の枠を使い切っています。',
     ErrorCode.subscriptionAlreadyActive => '月額契約はすでに始まっています。',
     ErrorCode.invalidSessionState => '通話の状態が変わっています。',
     ErrorCode.invalidVideoState => '添削がまだ返されていません。',

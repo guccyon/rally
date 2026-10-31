@@ -28,7 +28,8 @@ pub enum ConsumeLiveLessonQuotaError {
 ///
 /// 境界間イベントの購読（[`super::LiveLessonQuotaSubscriber`]）から、ビデオ通話の予約が確定したとき
 /// （`BookingConfirmed`）と、回数を消費するキャンセル（`BookingCancelled` の `consumes_quota: true`）のときに呼ぶ。
-/// 規則（上限 2・同じ予約で 2 回は使わない・月をまたいだら 0 から）は domain の [`Entitlement::consume_live_lesson`]。
+/// 規則（上限は契約プランの `live_lessons_per_month`・同じ予約で 2 回は使わない・月をまたいだら 0 から）は
+/// domain の [`Entitlement::consume_live_lesson`]。
 pub struct ConsumeLiveLessonQuota<E> {
     entitlements: E,
 }

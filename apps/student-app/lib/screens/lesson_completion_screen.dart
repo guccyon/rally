@@ -35,7 +35,9 @@ class LessonCompletionScreen extends ConsumerWidget {
             child: const Text('レッスンを評価する'),
           ),
           const SizedBox(height: 16),
-          const Text('月額契約で、動画とチャットは送り放題、ビデオ通話は月 2 回まで受けられます。'),
+          Text(
+            '月額契約で、動画とチャットは送り放題、ビデオ通話は${subscriptionPlanLiveLessonLimitsLabel()}まで受けられます。',
+          ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: state.busy ? null : notifier.goToSubscription,
