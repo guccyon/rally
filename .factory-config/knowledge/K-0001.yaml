@@ -1,0 +1,22 @@
+id: K-0001
+theme: 6
+kind: causal
+statement: >-
+  採用した指摘を直す続きのジョブ（review_fix）と同じ PR のマージが並んで進むと、直しが PR に入らないままマージされ、
+  直しは差し戻しに回るか、マージ済みの PR への push の競合が起きやすい。続きのジョブで直す間はマージを待たせるか、
+  はじめから差し戻しに回すかを先に決め、どちらか一方の道だけを通す。
+scope:
+  roles: [supervisor, implement]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - event: "case.analyzed:39242"
+  - pr: "#327"
+  - issue: "#400"
+status: draft
+verified_at: 2026-10-31
+review_by: 2026-11-30
+confidentiality: product
+invalidate_when:
+  - "supervisor のマージ判定が、同じ PR の review_fix のジョブが動いている間はマージしないようになった"
+  - "採用した指摘は review_fix を起こさず、はじめから差し戻しに回す決まりになった"

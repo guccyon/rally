@@ -1,0 +1,22 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  アプリの種類に合う道具の入った作業機の像を割り当てないと（Flutter のチケットに Flutter SDK のない factory-worker:rust を割り当てるなど）、
+  ジョブの間で /tmp が消えるたびに道具を入れ直すことになり、ジョブの時間と費用が増え、外部に触れる回数が増えて失敗の機会も増える。
+scope:
+  paths: ["apps/student-app/**"]
+  roles: [implement]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - event: "case.analyzed:39242"
+  - pr: "#327"
+  - issue: "#400"
+status: draft
+verified_at: 2026-10-31
+review_by: 2026-11-30
+confidentiality: product
+invalidate_when:
+  - "apps/student-app の変更に、Flutter SDK（arm64 対応）と unzip の入った worker image が割り当てられるようになった"
+  - "Flutter SDK をジョブの間で残る場所（ticket volume など）に置くようになった"
