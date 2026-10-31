@@ -1,4 +1,4 @@
-# 内部品質の定期診断（factory-engine の health/quality/snapshot.py、定義は definitions/quality.yaml、設定は .factory-config/quality.yaml。ADR 0017）。
+# 内部品質の定期診断（factory-engine の health/quality/snapshot.py、定義は definitions/quality.yaml、設定は .factory-config/quality.yaml。ADR 0019）。
 # 決定的（LLM を使わない）。
 # - main: 1 日 1 回（JST 4 時）全体を測り、成果物 quality-snapshot に残す。工場の supervisor が取り込んで推移にする
 # - PR: base と head の複雑すぎる関数の数を比べて、下限割れを Job Summary に出す（shadow。PR は落とさない、必須チェックにもしない）
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ENGINE_REF: 75c09270541ad97b2843d103ee634e58c9fd2d56
+  ENGINE_REF: 7ee309282d339aad8f33b4bb2251d345712d05f9
 
 jobs:
   snapshot:

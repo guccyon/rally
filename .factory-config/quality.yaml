@@ -1,4 +1,4 @@
-# 内部品質の定期診断の設定（factory-engine の health/quality/snapshot.py が読む。ADR 0017・definitions/quality.yaml）。
+# 内部品質の定期診断の設定（factory-engine の health/quality/snapshot.py が読む。ADR 0019・definitions/quality.yaml）。
 # 測るパスを言語ごとに、製品コード（src）とテスト（tests）に分けて書く。exclude は正規表現（生成物と検査そのものを外す）。
 schema_version: "0.1"
 languages:
