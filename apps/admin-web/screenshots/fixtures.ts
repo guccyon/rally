@@ -385,6 +385,32 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/coaches/{coach_id}/overview",
+    body: {
+      coach_id: COACH_ID,
+      display_name: "鈴木 コーチ",
+      acceptance_status: "accepting",
+      review_count: 3,
+      average_rating: 4.67,
+      current_month: {
+        month: "2026-10",
+        live_lesson_count: 12,
+        async_lesson_count: 5,
+        review_count: 8,
+        average_rating: 4.63,
+      },
+      previous_month: {
+        month: "2026-09",
+        live_lesson_count: 9,
+        async_lesson_count: 3,
+        review_count: 6,
+        average_rating: 4.5,
+      },
+      published_lesson_menu_count: 3,
+    } satisfies Schemas["CoachOverview"],
+  },
+  {
+    method: "GET",
     path: "/coaches",
     body: {
       coaches: [

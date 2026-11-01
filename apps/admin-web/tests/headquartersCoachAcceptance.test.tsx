@@ -85,6 +85,16 @@ describe("本部のコーチの受付", () => {
     expect(listCoaches).toHaveBeenCalledTimes(1);
   });
 
+  test("各行の表示名は、そのコーチの様子へのリンク", async () => {
+    renderList({});
+
+    const row = await rowOf("鈴木 コーチ");
+    expect(within(row).getByRole("link", { name: "鈴木 コーチ" })).toHaveAttribute(
+      "href",
+      `/headquarters/coach-overview?coach_id=${SUZUKI.coach_id}`,
+    );
+  });
+
   test("押したら行の中で確かめ、「やめる」なら送らない（ブラウザの confirm は使わない）", async () => {
     const user = userEvent.setup();
     const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>();
