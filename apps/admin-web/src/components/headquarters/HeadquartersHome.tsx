@@ -41,6 +41,11 @@ export function HeadquartersHome() {
           予約の一覧を見る
         </Link>
       </Section>
+      <Section title="終わっていない通話">
+        <Link href="/headquarters/overdue-live-sessions" className="text-blue-600 underline">
+          時間の過ぎた通話を見る
+        </Link>
+      </Section>
       <Section title="お知らせ">
         <Link href="/headquarters/announcements" className="text-blue-600 underline">
           生徒にお知らせを送る

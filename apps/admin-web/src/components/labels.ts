@@ -123,6 +123,12 @@ export function formatMonth(value: string): string {
   return match ? `${match[1]}年${Number(match[2])}月` : value;
 }
 
+/** 経過時間（秒）を「N 時間 M 分」の形で表示する（分未満は切り捨て）。 */
+export function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${Math.floor(minutes / 60)} 時間 ${minutes % 60} 分`;
+}
+
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
 /** 契約の日付（YYYY-MM-DD）を「2026年10月26日（月）」の形で表示する。形が違えばそのまま出す。 */

@@ -275,6 +275,29 @@ function lowReview(
 const SUZUKI_COACH = { id: COACH_ID, name: "鈴木 コーチ" };
 const TAKAHASHI_COACH = { id: COACH_ID_2, name: "高橋 コーチ" };
 
+// 終わっていない通話。経過は NOW 時点の値（開始の古い順）。名前の引けないコーチの行を 1 つ混ぜる。
+const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
+  {
+    session_id: id("5555", 1),
+    booking_id: id("6666", 1),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-26.5),
+    elapsed_sec: 26.5 * 3600,
+  },
+  {
+    session_id: id("5555", 2),
+    booking_id: id("6666", 2),
+    coach_id: COACH_ID_2,
+    student_id: STUDENT_ID_2,
+    student_display_name: "佐藤 一郎",
+    started_at: at(-4.25),
+    elapsed_sec: 4.25 * 3600,
+  },
+];
+
 const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
   lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
@@ -382,6 +405,11 @@ export const FIXTURES: Fixture[] = [
     method: "GET",
     path: "/lesson-reviews/low",
     body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],
   },
   {
     method: "GET",
