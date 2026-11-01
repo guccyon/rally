@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use domain::{
-    catalog::Sport, identity::AccountId, lesson::CoachLessonCount,
+    catalog::Sport, identity::AccountId, lesson::CoachLessonCount, profile::CoachSportFilter,
     scheduling::CoachAcceptanceStatus,
 };
 
@@ -14,8 +14,8 @@ use crate::{Unavailable, identity::AccountRepository};
 /// （scheduling に問い合わせる。[`CoachAcceptanceLookup`]）と、直近 30 日に終わったレッスンの数（完了記録に問い合わせる。
 /// [`CoachRecentLessonCountLookup`]。数え方と期間は domain の [`CoachLessonCount::tally_recent`] で、ここでは数えない）を
 /// 添えて返す。受付を止めているコーチも載せる。
-/// 任意の条件で絞れる: 受付の状態（`acceptance`）・競技（`sport`。コーチの提供スポーツに含むもの）。両方なら両方を満たすもの、
-/// どちらも `None` なら絞らない。並べ方は絞っても変わらない。
+/// 任意の条件で絞れる: 受付の状態（`acceptance`）・競技（`sport`。コーチの提供スポーツに含むもの。判定は domain の
+/// [`CoachSportFilter`]）。両方なら両方を満たすもの、どちらも `None` なら絞らない。並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListCoaches<R, A, L> {
     accounts: R,
@@ -47,10 +47,7 @@ where
             .list_coaches()
             .await?
             .into_iter()
-            .filter(|account| {
-                sport
-                    .is_none_or(|sport| account.as_coach().is_some_and(|coach| coach.offers(sport)))
-            })
+            .filter(|account| CoachSportFilter::new(sport).matches(account))
             .collect();
         let coach_ids: BTreeSet<AccountId> = coaches.iter().map(|account| account.id()).collect();
         let acceptances = if coach_ids.is_empty() {

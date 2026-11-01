@@ -312,7 +312,11 @@ export interface paths {
          *       （記録するようになったら値が入る。null の間は `registered_at` を目安にする）
          *     - `registered_at`: コーチのアカウントを登録した時刻
          *     - 並べ方: `registered_at` の古い順（長く書きかけのままのコーチから）。同じ時刻は `coach_id` の順
-         *     - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
+         *     - 絞り込み（任意）: `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる。
+         *       コーチの競技の決め方は `listCoaches` の `sport` と同じで、backend の domain `CoachSportFilter` の 1 か所）。付けなければ
+         *       今までどおりすべてのコーチ。絞っても「足りない」の判定と並べ方は変わらない。競技ごとの担当者が自分の競技のコーチだけを見るのに使う
+         *     - `sport` が `Sport` の値でないときは 422 `validation_failed`（`listCoaches` と同じ）
+         *     - ページングはしない。該当するコーチがいなければ（条件に合うコーチがいなければ） `coaches` は空の配列
          *     - 照会だけで、何も保存しない。コーチへの連絡はしない
          *
          *     行動イベントは発火しない。
@@ -3341,7 +3345,10 @@ export interface operations {
     };
     listIncompleteCoachProfiles: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description スポーツ（付ければそのスポーツを提供するコーチだけ） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3359,6 +3366,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCoachReviewSummary: {

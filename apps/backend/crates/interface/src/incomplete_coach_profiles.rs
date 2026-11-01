@@ -1,6 +1,7 @@
 //! `/coaches/incomplete-profiles`。admin-web の `GET /coaches/incomplete-profiles`（`listIncompleteCoachProfiles`。本部が
 //! 見る、プロフィールに足りない項目のあるコーチの一覧）。本部だけが呼べる。どの項目を足りないとみなすかは domain の
-//! `MissingCoachProfileFields` の 1 か所で、項目の名前の文字列は [`crate::contract`] の対応表で決める。
+//! `MissingCoachProfileFields` の 1 か所で、項目の名前の文字列は [`crate::contract`] の対応表で決める。任意の `sport` で
+//! 絞る（値の読み取りと 422 は `listCoaches` の `sport` と同じ [`crate::contract`] の `admin_web_sport`）。
 
 use std::sync::Arc;
 
@@ -8,19 +9,29 @@ use application::{
     identity::{AccountRepository, TokenVerifier, account_id_uuid},
     profile::{CoachProfileRepository, IncompleteCoachProfile, ListIncompleteCoachProfiles},
 };
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Query, State, rejection::QueryRejection},
+    routing::get,
+};
 use domain::identity::Role;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::{coach_profile_field_to_contract, date_time_to_contract},
+    contract::{admin_web_sport, coach_profile_field_to_contract, date_time_to_contract},
     error::ApiError,
 };
 
 /// `/coaches/incomplete-profiles` のハンドラーが使うユースケース。
 pub struct IncompleteCoachProfilesState<R, P> {
     pub list_incomplete_coach_profiles: ListIncompleteCoachProfiles<R, P>,
+}
+
+/// admin-web の `listIncompleteCoachProfiles` のクエリ。
+#[derive(Deserialize)]
+pub struct ListIncompleteCoachProfilesParams {
+    sport: Option<String>,
 }
 
 /// admin-web の `IncompleteCoachProfileList`。
@@ -40,16 +51,21 @@ pub struct IncompleteCoachProfileBody {
 }
 
 /// `GET /coaches/incomplete-profiles`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
+/// `sport` が `Sport` の値でなければ 422。
 pub async fn list_incomplete_coach_profiles<R, P>(
     State(state): State<Arc<IncompleteCoachProfilesState<R, P>>>,
+    params: Result<Query<ListIncompleteCoachProfilesParams>, QueryRejection>,
 ) -> Result<Json<IncompleteCoachProfileListBody>, ApiError>
 where
     R: AccountRepository,
     P: CoachProfileRepository,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
     let profiles = state
         .list_incomplete_coach_profiles
-        .execute()
+        .execute(sport)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(IncompleteCoachProfileListBody {

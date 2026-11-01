@@ -1,4 +1,7 @@
-use domain::profile::MissingCoachProfileFields;
+use domain::{
+    catalog::Sport,
+    profile::{CoachSportFilter, MissingCoachProfileFields},
+};
 
 use super::{CoachProfileRepository, IncompleteCoachProfile};
 use crate::{Unavailable, identity::AccountRepository};
@@ -8,7 +11,9 @@ use crate::{Unavailable, identity::AccountRepository};
 ///
 /// すべてのコーチのアカウント（受付を止めているコーチも含む）のうち、足りない項目（domain の
 /// [`MissingCoachProfileFields`] で判定する）が 1 つ以上あるものを、アカウントを登録した時刻の古い順（同じ時刻は ID の順）で
-/// 返す。プロフィールを最後に更新した時刻は、今の保存先が持たないので常に `None`（記録するのは別の段）。
+/// 返す。任意の競技 `sport` で絞れる（コーチの提供スポーツに含むものだけ。判定は domain の [`CoachSportFilter`] で、
+/// `listCoaches` の `sport` と同じ）。`None` なら絞らない。絞っても「足りない」の判定と並べ方は変わらない。
+/// プロフィールを最後に更新した時刻は、今の保存先が持たないので常に `None`（記録するのは別の段）。
 /// 照会だけで、行動イベントも境界間イベントも発火しない。誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListIncompleteCoachProfiles<R, P> {
     accounts: R,
@@ -24,13 +29,18 @@ where
         Self { accounts, profiles }
     }
 
-    pub async fn execute(&self) -> Result<Vec<IncompleteCoachProfile>, Unavailable> {
+    pub async fn execute(
+        &self,
+        sport: Option<Sport>,
+    ) -> Result<Vec<IncompleteCoachProfile>, Unavailable> {
+        let filter = CoachSportFilter::new(sport);
         let bios = self.profiles.list_coach_bios().await?;
         let mut incomplete: Vec<IncompleteCoachProfile> = self
             .accounts
             .list_coaches()
             .await?
             .into_iter()
+            .filter(|account| filter.matches(account))
             .filter_map(|account| {
                 // 自己紹介文の行がないコーチは書いていない（空）とみなす
                 let bio = bios.get(&account.id()).cloned().unwrap_or_default();
@@ -52,7 +62,6 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        catalog::Sport,
         identity::{Account, AccountId, Email, Role},
         profile::{CoachBio, CoachProfileField, DisplayName},
     };
@@ -65,6 +74,15 @@ mod tests {
             Role::Headquarters => &[],
             _ => &[Sport::Tennis],
         };
+        account_with_sports(id, role, sports, registered_hour)
+    }
+
+    fn account_with_sports(
+        id: u128,
+        role: Role,
+        sports: &[Sport],
+        registered_hour: u64,
+    ) -> Account {
         Account::new(
             AccountId::from_u128(id),
             Email::new(format!("user{id}@example.com")).unwrap(),
@@ -93,10 +111,21 @@ mod tests {
     }
 
     async fn listed(accounts: &InMemoryAccountRepository) -> Vec<IncompleteCoachProfile> {
+        listed_in(accounts, None).await
+    }
+
+    async fn listed_in(
+        accounts: &InMemoryAccountRepository,
+        sport: Option<Sport>,
+    ) -> Vec<IncompleteCoachProfile> {
         ListIncompleteCoachProfiles::new(accounts.clone(), accounts.clone())
-            .execute()
+            .execute(sport)
             .await
             .unwrap()
+    }
+
+    fn ids(profiles: &[IncompleteCoachProfile]) -> Vec<u128> {
+        profiles.iter().map(|p| p.account.id().as_u128()).collect()
     }
 
     #[tokio::test]
@@ -151,5 +180,39 @@ mod tests {
         ])
         .await;
         assert!(listed(&accounts).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn sport_lists_only_coaches_offering_it_keeping_the_order() {
+        let accounts = accounts([
+            account_with_sports(1, Role::Headquarters, &[], 0),
+            account_with_sports(2, Role::Student, &[Sport::Golf], 0),
+            account_with_sports(3, Role::Coach, &[Sport::Tennis, Sport::Golf], 4),
+            account_with_sports(4, Role::Coach, &[Sport::Golf], 1),
+            account_with_sports(5, Role::Coach, &[Sport::Golf], 2),
+            account_with_sports(6, Role::Coach, &[Sport::Soccer], 0),
+            account_with_sports(7, Role::Coach, &[Sport::Golf], 3),
+        ])
+        .await;
+        // 5 はゴルフのコーチでも書き終えているので載らない
+        write_bio(&accounts, 5, "ゴルフ歴 10 年").await;
+        write_bio(&accounts, 7, "\n").await;
+
+        assert_eq!(
+            ids(&listed_in(&accounts, Some(Sport::Golf)).await),
+            [4, 7, 3],
+            "提供スポーツのどれかがゴルフのコーチだけ。登録の古い順のまま。生徒・本部は載らない"
+        );
+        assert_eq!(ids(&listed_in(&accounts, Some(Sport::Tennis)).await), [3]);
+        assert_eq!(ids(&listed_in(&accounts, Some(Sport::Soccer)).await), [6]);
+        assert!(
+            listed_in(&accounts, Some(Sport::Swimming)).await.is_empty(),
+            "合うコーチがいなければ空"
+        );
+        assert_eq!(
+            ids(&listed(&accounts).await),
+            [6, 4, 7, 3],
+            "付けなければ今までどおり"
+        );
     }
 }
