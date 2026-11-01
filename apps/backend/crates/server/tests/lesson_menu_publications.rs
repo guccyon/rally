@@ -2,7 +2,8 @@
 //! `/republish`）を、保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。本部が理由を付けて非公開にした
 //! メニューが生徒の一覧（`GET /coaches/{coach_id}/lesson-menus`）から消え、本部の横断の一覧（`GET /lesson-menus`）とコーチの
 //! 自分の一覧（`GET /coaches/me/lesson-menus`）に非公開にした時刻と理由が出ること、そのあいだコーチは公開し直せない（409）が
-//! 中身は直せること、本部が公開に戻すと生徒の一覧に戻ることを確かめる。契約の形の細かい検査は interface の
+//! 中身は直せること、本部が公開に戻すと生徒の一覧に戻ること、非公開にした・公開に戻した記録（誰が・いつ・理由）が
+//! `GET /lesson-menus/{lesson_menu_id}/publication-changes` で新しい順に読めること（本部だけ）を確かめる。契約の形の細かい検査は interface の
 //! `tests/lesson_menu_publications.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -95,7 +96,8 @@ fn menu_request(name: &str, is_published: bool) -> Value {
 async fn headquarters_unpublishes_and_republishes_a_coach_menu(pool: PgPool) {
     let (coach_id, coach) =
         register(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
-    let (_, headquarters) = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let (headquarters_id, headquarters) =
+        register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
     let (_, student) = register(
         &pool,
         "taro@example.com",
@@ -186,6 +188,7 @@ async fn headquarters_unpublishes_and_republishes_a_coach_menu(pool: PgPool) {
     assert_eq!(body["headquarters_unpublish"], unpublish);
 
     // 本部が公開に戻すと、生徒の一覧に直した中身で戻る
+    clock.set(at(120));
     let (status, body) = send(
         &router,
         "POST",
@@ -212,4 +215,42 @@ async fn headquarters_unpublishes_and_republishes_a_coach_menu(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "lesson_menu_not_unpublished_by_headquarters");
+
+    // 非公開にした・公開に戻した記録が新しい順に残る（断った操作とコーチ自身の変更は載らない）
+    let changes_path = format!("/lesson-menus/{menu_id}/publication-changes");
+    let (status, body) = send(&router, "GET", &changes_path, &headquarters, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "lesson_menu_id": menu_id,
+            "changes": [
+                {
+                    "action": "republished",
+                    "reason": null,
+                    "changed_by": headquarters_id,
+                    "changed_at": "2026-10-30T00:02:00Z",
+                },
+                {
+                    "action": "unpublished",
+                    "reason": "誤解を招く表現がある",
+                    "changed_by": headquarters_id,
+                    "changed_at": "2026-10-30T00:01:00Z",
+                },
+            ],
+        })
+    );
+    for token in [&coach, &student] {
+        let (status, body) = send(&router, "GET", &changes_path, token, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/lesson-menus/00000000-0000-0000-0000-000000000099/publication-changes",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 }

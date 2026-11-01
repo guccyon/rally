@@ -6,7 +6,8 @@ use super::HeadquartersUnpublishReason;
 /// そのとき書いた理由（空なら書かなかった）。
 ///
 /// これを持つメニューは非公開で、コーチは自分で公開し直せない（[`super::LessonMenu::revise`]）。公開に戻すのは本部だけ
-/// （[`super::LessonMenu::republish_by_headquarters`]）で、戻すと消える（履歴は残さない）。
+/// （[`super::LessonMenu::republish_by_headquarters`]）で、戻すと消える。
+/// 非公開にした・公開に戻した履歴は、メニューの状態ではなく記録（[`super::LessonMenuPublicationChange`]）で残す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadquartersUnpublish {
     reason: HeadquartersUnpublishReason,

@@ -182,9 +182,22 @@ terms:
     context: catalog
     code: [HeadquartersUnpublish, HeadquartersUnpublishReason, unpublishLessonMenu, republishLessonMenu]
     note: >-
-      メニュー 1 件に高々 1 つで、本部が公開に戻す（republishLessonMenu）と消える（履歴は残さない）。本部が非公開にしているあいだも、
+      メニュー 1 件に高々 1 つで、本部が公開に戻す（republishLessonMenu）と消える（非公開にした・公開に戻した履歴は
+      lesson_menu_publication_change に残る）。本部が非公開にしているあいだも、
       コーチは非公開のままなら中身を直せる。コーチが自分で非公開にしたメニューを本部が公開に戻すことはない。
       コーチの受付の停止（coach_acceptance）と同じく、本部の運営の操作は本部だけが解く。判定は domain の LessonMenu の 1 か所。
+  - id: lesson_menu_publication_change
+    ja: "レッスンメニューを非公開にした・公開に戻した記録"
+    definition: "本部がレッスンメニューを非公開にした（unpublishLessonMenu）・公開に戻した（republishLessonMenu）1 回ごとの記録で、どのメニューを、いつ、どの本部のアカウントが、どうしたか（非公開にしたときは理由も）を持ち、書き換えない。"
+    context: catalog
+    code: [LessonMenuPublicationChange, LessonMenuPublicationAction, listLessonMenuPublicationChanges, catalog.lesson_menu_publication_changes]
+    states:
+      unpublished: "非公開にした"
+      republished: "公開に戻した"
+    note: >-
+      作るのは domain の LessonMenu の unpublish_by_headquarters・republish_by_headquarters がメニューを変えたときだけで、断った操作は残らない。
+      本部が listLessonMenuPublicationChanges でメニューごとに新しい順にたどる。コーチの受付を止めた・再開した記録（coach_acceptance の
+      CoachAcceptanceChange）と同じ作り。コーチが自分で公開・非公開を変えたことは記録しない。記録を残し始める前の操作は載らない。
   - id: coach_acceptance
     ja: "コーチの受付"
     definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"
