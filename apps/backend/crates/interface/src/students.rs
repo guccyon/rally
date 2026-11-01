@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use application::identity::{
-    AccountRepository, ListStudents, StudentContractLookup, StudentLastBookingLookup,
-    StudentOverview, TokenVerifier, account_id_uuid,
+    AccountRepository, ListStudents, ListStudentsQuery, StudentContractLookup,
+    StudentLastBookingLookup, StudentOverview, TokenVerifier, account_id_uuid,
 };
 use axum::{
     Json, Router,
@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{TokenVerification, require_role},
     contract::{
-        contract_type_to_contract, date_time_to_contract, sport_to_contract,
-        subscription_plan_to_contract,
+        admin_web_sport, contract_type_to_contract, date_from_contract, date_time_to_contract,
+        sport_to_contract, subscription_plan_to_contract,
     },
     error::ApiError,
 };
@@ -32,6 +32,8 @@ pub struct StudentsState<R, C, B> {
 #[derive(Deserialize)]
 pub struct ListStudentsParams {
     q: Option<String>,
+    sport: Option<String>,
+    not_booked_since: Option<String>,
 }
 
 /// admin-web の `StudentList`。
@@ -73,7 +75,9 @@ fn student_body(student: &StudentOverview) -> Result<StudentBody, ApiError> {
 }
 
 /// `GET /students`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。生徒を登録の新しい順で
-/// 返す（ゴルフの生徒も載せる）。`q` があれば表示名に部分一致する生徒だけで、長すぎる `q` は 422。
+/// 返す（ゴルフの生徒も載せる）。`q` があれば表示名に部分一致する生徒だけで、長すぎる `q` は 422。`sport` があれば
+/// そのスポーツの生徒だけ、`not_booked_since`（`YYYY-MM-DD`。日本時間）があればその日以降に予約していない生徒だけで、
+/// `sport` が `Sport` の値でない・`not_booked_since` が日付でないときは 422。
 pub async fn list_students<R, C, B>(
     State(state): State<Arc<StudentsState<R, C, B>>>,
     params: Result<Query<ListStudentsParams>, QueryRejection>,
@@ -91,9 +95,18 @@ where
         .map(DisplayNameQuery::new)
         .transpose()?
         .flatten();
+    let query = ListStudentsQuery {
+        name,
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        not_booked_since: params
+            .not_booked_since
+            .as_deref()
+            .map(|value| date_from_contract("not_booked_since", value))
+            .transpose()?,
+    };
     let students = state
         .list_students
-        .execute(name.as_ref())
+        .execute(&query)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(StudentListBody {
