@@ -1,0 +1,94 @@
+notes:
+- 案は admin-web（PC で見る管理画面）なので desktop で撮る。今の画面は幅 48rem の 1 段組みで、狭い幅でも同じ並びで縦に伸びる。
+- モックの下の「ほかの状態」の並べ方はモックだけのもの。
+states:
+- 'hqLowReviews 読み込み中: 「読み込み中…」（text-sm text-gray-500）'
+- 'hqLowReviews 中身あり: 低い評価の一覧'
+- 'hqLowReviews 0 件: 「低い評価はまだありません」'
+- 'hqLowReviews 失敗: サーバーの文言（errorMessage.ts の文言。role="alert"）'
+- 'hqLowReviews 権限がない（本部以外・未ログイン）: RoleGate が「読み込み中…」のあとログイン画面へ戻す。API の 403 も失敗の文言として出る'
+- 'hqCoachReviews ?coach_id= 付きで開いたとき: コーチの一覧の読み込み中 → 評価の読み込み中 → 評価の件数と平均と一覧（既存の状態をそのまま使う）'
+- '送信中・確認: この画面は読むだけで、送る操作がないので起きない'
+ticket: guccyon/rally#381
+screens:
+- id: hqLowReviews
+  new: true
+  route: /headquarters/low-reviews
+  purpose: 本部が、生徒の付けた点の低いレッスンの評価を新しい順に見て、気になるコーチの評価へ移るための画面。
+  audience: 本部（admin-web に本部のロールでログインした人）
+  elements:
+  - RoleGate の外枠（見出し「Rally 管理画面（本部）」とログアウト。今の本部の画面と同じ）
+  - 「本部の画面へ戻る」のリンク（/headquarters）
+  - Section「低い評価」
+  - 説明の 1 文（点の低い評価を送った時刻の新しい順に出すこと、コーチの名前から評価へ移れること）
+  - 低い評価の一覧（aria-label「低い評価の一覧」）。1 件ごとに点（5 点満点）・コーチの表示名（リンク）・一言・送った日時
+  - 案 b ではレッスンメニュー（評価の API が返すとき。なければ行を出さない）
+  - 読み込み中の文（「読み込み中…」）
+  - 0 件の文（「低い評価はまだありません」）
+  - 失敗の文（サーバーの文言。ResultMessage の role="alert"）
+  behaviors:
+  - 開いたときに GET /lesson-reviews/low（D122）を 1 回読み、読み終わるまで「読み込み中…」を出す。
+  - 並べ方は API が返した順（送った時刻の新しい順）のままにし、画面の中で並べ替えない。
+  - コーチの表示名を押すと /headquarters/coach-review-summary?coach_id=<コーチ ID> へ移る。
+  - 0 件なら一覧の代わりに「低い評価はまだありません」を出す。
+  - 読み込めなければ一覧の代わりにサーバーの文言を role="alert" で出す（もう一度読むには画面を開き直す。今の本部の画面と同じ）。
+  - 本部のロールでなければ RoleGate がログイン画面へ戻す。
+  - 「本部の画面へ戻る」で /headquarters へ移る。
+- id: hqHome
+  new: false
+  route: /headquarters
+  purpose: 本部の各画面への入り口（既存）に「低い評価」を足す。
+  audience: 本部
+  elements:
+  - Section「低い評価」と、リンク「低い評価の一覧を見る」（/headquarters/low-reviews）。「コーチの評価」の欄のすぐ下に置く
+  behaviors:
+  - 「低い評価の一覧を見る」を押すと /headquarters/low-reviews へ移る。
+- id: hqCoachReviews
+  new: false
+  route: /headquarters/coach-review-summary
+  purpose: コーチを選んでそのコーチの評価の件数と平均と一覧を見る既存の画面を、URL でコーチを選んだ状態で開けるようにする。
+  audience: 本部
+  elements:
+  - 既存のコーチの選択欄（select）。?coach_id= があれば、そのコーチを選んだ状態にする
+  behaviors:
+  - ?coach_id= 付きで開き、コーチの一覧にその ID があれば、そのコーチを選んで評価の件数と平均と一覧を読む（選び直したときと同じ流れ）。
+  - ?coach_id= の ID がコーチの一覧になければ、今と同じく「選んでください」のままにする（文言は足さない）。
+  - ?coach_id= がなければ今と同じ。
+judgments:
+- kind: system_interface
+  note: 今の /headquarters/coach-review-summary は画面の中の選択でコーチを選ぶだけなので、?coach_id= で選んだ状態で開けるようにする。新しいコーチ別の画面は作らない。
+  question: コーチの名前から「そのコーチの評価の画面」へどう移るか。
+- kind: system_interface
+  note: '#380 がまだ契約に入っていないので、1 件に点・一言・送った時刻・コーチの ID と表示名がある前提で決めた。メニューが返れば案 b で出す。並べ方としきい値は
+    API の正本に従い、画面では並べ替えない。'
+  question: D122 の GET /lesson-reviews/low の応答の形（1 件の項目、コーチの表示名、メニュー、しきい値）。
+- kind: ui
+  note: しきい値は API（D122）の正本なので、画面に数字を書き写さず「点の低いもの」と書く。契約がしきい値を返すなら、その値を説明の文に出してよい。
+  question: 説明の文に「何点以下」を書くか。
+- kind: error_handling
+  note: admin-web の本部の画面（生徒・コーチの評価など）は文言だけで再読み込みのボタンを出していないので、それに合わせる。
+  question: 失敗のときに「もう一度読み込む」を出すか。
+- kind: scope
+  note: Issue は一覧とコーチへの移動だけなので入れない。件数が増えて要るようになったら別のタスクにする。
+  question: 絞り込み（コーチ・点・期間）やページングを入れるか。
+- kind: aesthetic
+  note: 一覧の全部が低い評価なので目立たせる意味が薄く、今の画面にも点の色分けがないため、色は付けず数字だけにする。
+  question: 低い点を赤などで目立たせるか。
+- kind: ui
+  note: 関わりの近い「コーチの評価」の欄のすぐ下に、ほかの欄と同じ Section とリンクの形で置く。
+  question: 本部のホームのどこに入り口を置くか。
+brand_impact: false
+design_system_gaps: []
+design_system_constraints:
+- product に specs/design/ がない。admin-web の今の画面（apps/admin-web の Tailwind のユーティリティ）を写した。out/admin.css
+  は Tailwind の既定値の写しで、名前もクラス名に合わせた
+- 外枠とヘッダーは RoleGate、欄は Section、失敗の文は ResultMessage、戻るリンクは CoachReviewSummaryHome と同じ「本部の画面へ戻る」を写した
+- 案 a の表は StudentDirectory（本部の「生徒」）の表の型、案 b の一覧は CoachReviewList（「〇 点（5 点満点）」・一言・日時）の型を写した
+- 日時は labels.ts の formatDateTime（日本時間）で出す。ラベルは labels.ts に置く
+- 点の低さを色（赤など）で示さない。今の画面に点の色分けはなく、色だけに頼らないため数字で示す
+variant:
+  id: b
+  name: 1 件ずつ並べる（コーチの評価の一覧と同じ型）
+  height: 1600
+  tradeoff: 一言を読みやすく、メニューも添えられ、コーチの評価の一覧と見た目が揃うが、1 画面に入る件数は表の半分ほどになる。
+  viewport: desktop
