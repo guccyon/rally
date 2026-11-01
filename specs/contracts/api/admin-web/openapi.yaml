@@ -24,6 +24,7 @@ info:
     非公開にし（`unpublishLessonMenu`。理由を任意で残す）・公開に戻す（`republishLessonMenu`）。本部が非公開にしたメニューは、
     本部が公開に戻すまでコーチが自分で公開し直せない（`updateMyLessonMenu` の 409 `lesson_menu_unpublished_by_headquarters`）。
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
+    スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。
     本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数）を
     読む（`getStudentActivity`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。
@@ -1145,6 +1146,13 @@ paths:
           ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる
           （同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。一致する生徒がいなければ `students` は空の配列
         - `q` を付けない・空・空白だけのときは絞り込まない（今までどおりすべての生徒）
+        - スポーツで絞る（任意）: `sport` を付ければ、そのスポーツの生徒だけを返す（ゴルフも指定できる）。`Sport` の値でなければ
+          422 `validation_failed`
+        - 最後に予約した日で絞る（任意）: `not_booked_since`（`YYYY-MM-DD`。日本時間）を付ければ、その日の始まり（日本時間の 0 時）
+          以降に予約を作っていない生徒、つまり `last_booked_at` がその時刻より前か null の生徒だけを返す（一度も予約していない
+          生徒も載る）。`last_booked_at` と同じく予約の状態は問わない。日付でなければ 422 `validation_failed`
+        - `q`・`sport`・`not_booked_since` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
+          どれも付けなければ今までどおりすべての生徒
         - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
         - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
           足す）。生徒がいなければ `students` は空の配列
@@ -1161,6 +1169,21 @@ paths:
           description: 表示名の検索語。表示名に部分一致する生徒だけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない）
           schema:
             type: string
+        - name: sport
+          in: query
+          required: false
+          description: このスポーツの生徒だけを返す（付けなければスポーツを問わない）
+          schema:
+            $ref: "#/components/schemas/Sport"
+        - name: not_booked_since
+          in: query
+          required: false
+          description: |
+            この日付（日本時間）の始まり以降に予約を作っていない生徒だけを返す（一度も予約していない生徒を含む）。
+            付けなければ最後に予約した時刻で絞らない
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: 生徒の一覧
