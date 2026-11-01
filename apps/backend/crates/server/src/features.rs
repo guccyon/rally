@@ -4,6 +4,7 @@
 //! 新しい機能はファイルを足し、`mod` の並びと [`router`] の `merge` の並びに 1 行ずつ足す（どちらも名前の順）。
 
 mod accounts;
+mod announcement_drafts;
 mod announcements;
 mod bookings;
 mod coach_acceptances;
@@ -55,6 +56,7 @@ use crate::ports::Ports;
 pub(crate) fn router<P: Ports>(ports: &P) -> Router {
     Router::new()
         .merge(accounts::router(ports))
+        .merge(announcement_drafts::router(ports))
         .merge(announcements::router(ports))
         .merge(bookings::router(ports))
         .merge(coach_acceptances::router(ports))
