@@ -3,7 +3,7 @@ use std::{future::Future, time::SystemTime};
 use domain::{
     identity::AccountId,
     lesson::LessonCompletionId,
-    review::{LessonReview, LessonReviewId, LessonReviewReply},
+    review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
 };
 
 use super::InsertReviewError;
@@ -42,6 +42,15 @@ pub trait LessonReviewRepository: Send + Sync {
         &self,
         review_id: LessonReviewId,
         reply: &LessonReviewReply,
+    ) -> impl Future<Output = Result<(), Unavailable>> + Send;
+
+    /// 評価 `review_id` に本部の対応済みの印 `handling` を付ける。印がすでにあれば何もしない（最初の印を残す。並行に
+    /// 付けても後の方は残らない）。付けられるかの判定は domain の [`LessonReview::mark_handled`] が済ませてある。
+    /// 評価がなければ何もしない。
+    fn save_handling(
+        &self,
+        review_id: LessonReviewId,
+        handling: &LowRatedReviewHandling,
     ) -> impl Future<Output = Result<(), Unavailable>> + Send;
 
     /// コーチ `coach_id` への評価をすべて読む（数えない・並べない。並べるのは [`super::ListCoachReviews`]、数えるのは domain の
