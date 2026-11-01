@@ -1087,6 +1087,8 @@ export interface paths {
          * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
          *     どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
          *     空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *     取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
+         *     （取り下げていなければ null）。
          *
          *     行動イベントは発火しない。
          */
@@ -1106,11 +1108,48 @@ export interface paths {
          *       `listMyNotifications` で読む（本文は題と本文を改行でつないだもの）
          *     - プッシュ通知（Gen1 はモック）は、生徒の通知の受け取り設定（student-app の `NotificationSettings.announcement`）が
          *       true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
-         *     - 予約送信・取り消しはない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる
+         *     - 予約送信はない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる。誤って送ったものは
+         *       `withdrawAnnouncement` で取り下げる（届いたプッシュ通知は取り消せない）
          *
          *     行動イベントは発火しない。
          */
         post: operations["sendAnnouncement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements/{announcement_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 送ったお知らせの取り下げ（本部）
+         * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を取り下げ、取り下げたあとの記録を返す。誤って送ったお知らせを
+         *     生徒に見せないようにするのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。送った本部のアカウントで
+         *     なくても取り下げられ、取り下げたのはトークンの本部のアカウント。お知らせは本部の一覧（`listAnnouncements`）から選ぶ。
+         *     リクエストの本文は読まない。
+         *
+         *     - 取り下げた本部のアカウントと時刻（サーバーの現在時刻）を `withdrawal` に残す。題・本文・対象のスポーツ・
+         *       受け取った生徒の数・送った時刻は変えない
+         *     - 取り下げたお知らせは、生徒のお知らせの一覧（student-app の `listMyNotifications`・`markMyNotificationsRead` の応答）に
+         *       出なくなる。既読の扱いは変えない（`markMyNotificationsRead` は今までどおりすべてを既読にする）。すでに届いた
+         *       プッシュ通知（Gen1 はモック）は取り消せず、取り下げたことの知らせも送らない
+         *     - 本部の一覧（`listAnnouncements`）には残り、`withdrawal` で取り下げ済みと分かる
+         *     - `announcement_id` のお知らせがないとき・UUID でないときは 404 `not_found`
+         *     - すでに取り下げたお知らせは 409 `announcement_already_withdrawn`（何も変えない。最初の取り下げのアカウントと時刻を残す）
+         *     - 取り下げを戻す操作はない（同じ内容を見せたいなら `sendAnnouncement` で送り直す）
+         *
+         *     本部の運営の操作で、KPI の入力でもないので行動イベントは発火しない。お知らせは notification の持ち物なので境界間イベントも
+         *     発行しない（`unpublishLessonMenu` と同じ）。
+         */
+        post: operations["withdrawAnnouncement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2068,6 +2107,21 @@ export interface components {
              * @description 送った時刻
              */
             sent_at: string;
+            /** @description 本部による取り下げ（`withdrawAnnouncement`）。取り下げていなければ null */
+            withdrawal: components["schemas"]["AnnouncementWithdrawal"] | null;
+        };
+        /** @description 本部がお知らせを取り下げたこと（glossary の announcement_withdrawal）。取り下げたお知らせは生徒のお知らせの一覧に出ない */
+        AnnouncementWithdrawal: {
+            /**
+             * Format: uuid
+             * @description 取り下げた本部のアカウントの ID
+             */
+            withdrawn_by: string;
+            /**
+             * Format: date-time
+             * @description 取り下げた時刻
+             */
+            withdrawn_at: string;
         };
         /** @description 送ったお知らせの一覧（並べ方は `listAnnouncements` の説明） */
         AnnouncementList: {
@@ -2078,7 +2132,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "announcement_already_withdrawn";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -2113,7 +2167,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてあるなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -3090,6 +3144,32 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    withdrawAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取り下げたお知らせの記録（`withdrawal` が入る） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     markMyNotificationsRead: {
