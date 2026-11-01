@@ -168,6 +168,10 @@ mod tests {
             .map(|(id, _)| id)
             .collect())
         }
+
+        async fn is_student(&self, _: AccountId) -> Result<bool, Unavailable> {
+            unreachable!("送るときは生徒か問い合わせない")
+        }
     }
 
     /// 送れない基盤

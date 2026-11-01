@@ -29,7 +29,8 @@ info:
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
     スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。
     本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数）を
-    読む（`getStudentActivity`）。
+    読む（`getStudentActivity`）。「お知らせが届いていない」という問い合わせには、生徒 1 人が受け取った本部からのお知らせと
+    既読・取り下げ済みかを読む（`listStudentAnnouncements`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。確認した低い評価には
     「対応済み」の印を付け（`markLowRatedLessonReviewHandled`。いつ・どの本部のアカウントが）、一覧をまだ対応していない
     ものだけに絞れる（`listLowRatedLessonReviews` の `handled=false`）。
@@ -1458,6 +1459,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StudentActivity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /students/{student_id}/announcements:
+    get:
+      operationId: listStudentAnnouncements
+      summary: 生徒 1 人の受け取ったお知らせと既読（本部）
+      description: |
+        生徒（glossary の student）1 人が受け取った本部からのお知らせ（glossary の announcement。`sendAnnouncement` で送ったもの）を、
+        お知らせごとの既読（glossary の notification の既読）と取り下げ済みか（glossary の announcement_withdrawal）とともに返す。
+        生徒から「お知らせが届いていない」と問い合わせを受けたときに、本部が確かめるのに使う。本部の役割のトークンだけが呼べる
+        （コーチ・生徒は 403）。
+
+        - 載せるのは、その生徒に作ったお知らせ（種類が `announcement`）だけ。予約の確定・添削の返却・メッセージの受信のお知らせは
+          載せない。送った時点で対象でなかった生徒（スポーツが違う・まだ登録していなかった）には載らない
+        - 送った時刻（お知らせを作った時刻）の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件。51 件目より古いものは載せない。
+          受け取ったお知らせがなければ `announcements` は空の配列
+        - 取り下げたお知らせ（`withdrawAnnouncement`）も載り、`is_withdrawn` が true（生徒のお知らせの一覧には出ていない）
+        - `is_read` は生徒が既読にしたか（student-app の `markMyNotificationsRead`）。取り下げても既読は変わらない
+        - 本文・対象のスポーツ・送った本部のアカウントは返さない（`listAnnouncements` で読む）。プッシュ通知が届いたかの記録は持たない
+          （受け取り設定でオフの生徒にもお知らせは作る）
+        - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
+        - 照会だけで、何も保存しない（既読にもしない）
+
+        行動イベントは発火しない。
+      tags: [notification]
+      x-context: [notification, profile]
+      x-analytics-events: []
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentAnnouncementList"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2960,6 +3007,45 @@ components:
           type: string
           format: date-time
           description: 完了を記録した時刻
+
+    StudentAnnouncementList:
+      type: object
+      description: 生徒 1 人の受け取ったお知らせの一覧（`listStudentAnnouncements`）
+      required: [announcements]
+      properties:
+        announcements:
+          type: array
+          maxItems: 50
+          description: 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件
+          items:
+            $ref: "#/components/schemas/StudentAnnouncement"
+
+    StudentAnnouncement:
+      type: object
+      description: |
+        生徒 1 人が受け取った本部からのお知らせ（glossary の announcement）の 1 件。お知らせの ID・題・送った時刻と、
+        その生徒の既読・取り下げ済みか。本文は載せない
+      required: [announcement_id, title, sent_at, is_read, is_withdrawn]
+      properties:
+        announcement_id:
+          type: string
+          format: uuid
+          description: 本部からのお知らせ（`listAnnouncements` の `Announcement.announcement_id` と同じ値）
+        title:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 題
+        sent_at:
+          type: string
+          format: date-time
+          description: 送った時刻
+        is_read:
+          type: boolean
+          description: 生徒が既読にしたか（student-app の `markMyNotificationsRead`）
+        is_withdrawn:
+          type: boolean
+          description: 本部が取り下げたか（`withdrawAnnouncement`。取り下げたものは生徒のお知らせの一覧に出ない）
 
     CoachReviewSummary:
       type: object
