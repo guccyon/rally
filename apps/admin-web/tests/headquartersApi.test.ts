@@ -438,4 +438,21 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe("/api/announcements");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
+
+  test("withdrawAnnouncement は本文なしで POST /api/announcements/{id}/withdraw を呼び、409 は code を付けて返す", async () => {
+    const announcementId = "dddddddd-0000-4000-8000-000000000001";
+    const { api, fetchMock } = setup(
+      json(409, { code: "announcement_already_withdrawn", message: "conflict" }),
+    );
+    const result = await api.withdrawAnnouncement(announcementId);
+    expect(result).toEqual({
+      ok: false,
+      code: "announcement_already_withdrawn",
+      message: "このお知らせはすでに取り下げられています。",
+    });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/announcements/${announcementId}/withdraw`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
 });

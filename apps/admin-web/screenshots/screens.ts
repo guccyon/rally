@@ -126,4 +126,13 @@ export const SCREENS: Screen[] = [
       await page.getByRole("button", { name: "内容を確かめる" }).click();
     },
   },
+  {
+    id: "hq-announcement-withdraw",
+    title: "本部: お知らせの取り下げの確認",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByRole("button", { name: "「水泳の体験予約キャンペーン」を取り下げる" }).click();
+    },
+  },
 ];
