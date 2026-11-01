@@ -153,6 +153,8 @@ describe("お知らせを送る", () => {
     expect(sendAnnouncement).not.toHaveBeenCalled();
     const confirm = screen.getByRole("group", { name: "送る前の確認" });
     expect(confirm).toHaveTextContent("次の内容でテニスの生徒に送りますか？");
+    // 取り下げ（withdrawAnnouncement）はできても、届いたプッシュ通知は取り消せない（契約）
+    expect(confirm).toHaveTextContent("送るとすぐに生徒に届き、プッシュ通知は取り消せません。");
     expect(within(confirm).getByText("コートの案内")).toBeInTheDocument();
     expect(within(confirm).getByText(/1 行目/).textContent).toBe("1 行目\n2 行目");
 

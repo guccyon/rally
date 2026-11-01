@@ -34,11 +34,16 @@ export function validateAnnouncement(input: AnnouncementInput): AnnouncementInpu
   return errors;
 }
 
+/** 入力の対象を契約の形にする（生徒全員なら null）。 */
+export function targetSportOf(input: AnnouncementInput): Schemas["Sport"] | null {
+  return input.sport === "" ? null : input.sport;
+}
+
 /** 入力を契約の本文にする。題と本文は書いたとおりに送り（改行も含めて保存される）、生徒全員なら sport を null にする。 */
 export function toAnnouncementRequest(input: AnnouncementInput): Schemas["SendAnnouncementRequest"] {
   return {
     title: input.title,
     body: input.body,
-    sport: input.sport === "" ? null : input.sport,
+    sport: targetSportOf(input),
   };
 }

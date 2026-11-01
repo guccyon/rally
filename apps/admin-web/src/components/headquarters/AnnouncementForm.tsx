@@ -14,6 +14,7 @@ import {
   BODY_MAX_LENGTH,
   EMPTY_INPUT,
   TITLE_MAX_LENGTH,
+  targetSportOf,
   toAnnouncementRequest,
   validateAnnouncement,
 } from "./announcementInput";
@@ -95,12 +96,12 @@ export function AnnouncementForm({ send, onSent }: Props) {
   }
 
   if (confirming) {
-    const target = announcementTargetLabel(input.sport === "" ? null : input.sport);
+    const target = announcementTargetLabel(targetSportOf(input));
     return (
       <div role="group" aria-label="送る前の確認" className="space-y-3">
         <p className="text-sm">
           次の内容で<strong>{target}</strong>
-          に送りますか？送ったお知らせは取り消せません。
+          に送りますか？送るとすぐに生徒に届き、プッシュ通知は取り消せません。
         </p>
         <dl className="space-y-2 rounded border bg-gray-50 p-3 text-sm">
           <div>
