@@ -243,6 +243,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/incomplete-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * プロフィールに足りない項目のあるコーチの一覧（本部）
+         * @description プロフィール（自己紹介）が書きかけのコーチを、本部が見つけて声をかけるのに使う。コーチ（glossary の coach）の役割の
+         *     アカウントのうち、プロフィールに空の項目（足りない項目）が 1 つ以上あるものを、空の項目の名前の一覧 `missing_fields`・
+         *     最後に更新した時刻 `updated_at` とともに返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - 「足りない」とみなす項目（`CoachProfileField`。判定は backend の domain `MissingCoachProfileFields` の 1 か所）:
+         *       - `bio`（自己紹介文。`updateMyCoachProfile` で書くもの）: 空文字列か、空白（全角の空白・改行・タブを含む Unicode の空白）
+         *         だけのとき
+         *       - 表示名と提供スポーツは空にできない（必須）ので対象にしない。足りないとみなす項目を増やすときは `CoachProfileField` に
+         *         値を足す
+         *     - プロフィールを書き終えた（足りない項目がない）コーチは載らない。受付を止めているコーチも、足りない項目があれば載る
+         *     - `updated_at`: プロフィールを最後に更新した時刻。今はプロフィールの更新の時刻を記録していないので常に null
+         *       （記録するようになったら値が入る。null の間は `registered_at` を目安にする）
+         *     - `registered_at`: コーチのアカウントを登録した時刻
+         *     - 並べ方: `registered_at` の古い順（長く書きかけのままのコーチから）。同じ時刻は `coach_id` の順
+         *     - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
+         *     - 照会だけで、何も保存しない。コーチへの連絡はしない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listIncompleteCoachProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/{coach_id}/review-summary": {
         parameters: {
             query?: never;
@@ -1788,6 +1825,42 @@ export interface components {
             coaches: components["schemas"]["Coach"][];
         };
         /**
+         * @description コーチのプロフィールの項目のうち、空のままにできる（本部が足りないとみなして拾う）もの（`listIncompleteCoachProfiles`）。
+         *     bio: 自己紹介文（`updateMyCoachProfile` の `bio`）。空か空白だけなら足りない
+         * @enum {string}
+         */
+        CoachProfileField: "bio";
+        /**
+         * @description 本部が見る、プロフィールに足りない項目のあるコーチ 1 人（`listIncompleteCoachProfiles`）。glossary の coach に、
+         *     空の項目の名前の一覧と最後に更新した時刻を添える
+         */
+        IncompleteCoachProfile: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+             */
+            coach_id: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+            /** @description 空の（足りない）項目の名前。`CoachProfileField` の enum の並びの順で、重ならない */
+            missing_fields: components["schemas"]["CoachProfileField"][];
+            /**
+             * Format: date-time
+             * @description プロフィールを最後に更新した時刻。記録がなければ null（今は記録していないので常に null）
+             */
+            updated_at: string | null;
+            /**
+             * Format: date-time
+             * @description コーチのアカウントを登録した時刻
+             */
+            registered_at: string;
+        };
+        /** @description プロフィールに足りない項目のあるコーチの一覧（並べ方は `listIncompleteCoachProfiles` の説明） */
+        IncompleteCoachProfileList: {
+            /** @description アカウントを登録した時刻の古い順（同じ時刻は `coach_id` の順） */
+            coaches: components["schemas"]["IncompleteCoachProfile"][];
+        };
+        /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
          *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
          */
@@ -2920,6 +2993,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listIncompleteCoachProfiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description プロフィールに足りない項目のあるコーチの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncompleteCoachProfileList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getCoachReviewSummary: {
