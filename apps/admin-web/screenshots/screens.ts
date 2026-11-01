@@ -128,6 +128,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-announcement-drafts",
+    title: "本部: お知らせの下書き",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("題").fill("年末年始の営業について");
+      await page.getByLabel("本文").fill("12月29日から1月3日は、チャットの返信が遅れます。");
+      await page.getByRole("button", { name: "下書きに保存" }).click();
+      await page.getByRole("list", { name: "下書きの一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-pending-video-reviews",
     title: "本部: 返却待ちの動画添削",
     role: "headquarters",
