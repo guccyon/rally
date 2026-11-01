@@ -1,6 +1,7 @@
 //! `GET /students`（admin-web の `listStudents`）の統合テスト。本部には生徒の一覧を、受講権の契約種別と契約プラン・
 //! 最後に予約した時刻とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
-//! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。この操作はパスパラメータを受けないので、
+//! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。`sport`・`not_booked_since` を付ければ
+//! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。この操作はパスパラメータを受けないので、
 //! 404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
@@ -344,6 +345,96 @@ async fn q_up_to_50_chars_is_accepted_and_longer_is_422() {
 }
 
 #[tokio::test]
+async fn sport_lists_only_students_of_the_sport() {
+    let router = app().await;
+    for (uri, expected) in [
+        ("/students?sport=tennis", vec!["3"]),
+        ("/students?sport=golf", vec!["4"]),
+        ("/students?sport=swimming", vec!["5"]),
+        ("/students?sport=soccer", vec![]),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn not_booked_since_lists_students_without_bookings_from_the_jst_date() {
+    let router = app().await;
+    // 月額の生徒が最後に予約したのは 2026-10-01T12:00:00Z（日本時間の 10 月 1 日 21 時）
+    for (uri, expected) in [
+        ("/students?not_booked_since=2026-10-01", vec!["5", "4"]),
+        ("/students?not_booked_since=2026-10-02", vec!["5", "4", "3"]),
+        ("/students?not_booked_since=2026-09-01", vec!["5", "4"]),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) = list_students_at(
+        &router,
+        "/students?not_booked_since=2026-10-02",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body["students"][2]["last_booked_at"], "2026-10-01T12:00:00Z",
+        "絞り込んでも最後に予約した時刻を添える"
+    );
+}
+
+#[tokio::test]
+async fn q_sport_and_not_booked_since_are_combined() {
+    let router = app().await;
+    // 「なまえ」は生徒 3 人とも含む
+    for (uri, expected) in [
+        (
+            "/students?q=%E3%81%AA%E3%81%BE%E3%81%88&sport=tennis&not_booked_since=2026-10-02",
+            vec!["3"],
+        ),
+        (
+            "/students?q=%E3%81%AA%E3%81%BE%E3%81%88&sport=tennis&not_booked_since=2026-10-01",
+            vec![],
+        ),
+        (
+            "/students?sport=golf&not_booked_since=2026-10-01",
+            vec!["4"],
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn unknown_sport_or_malformed_date_is_422() {
+    let router = app().await;
+    for (uri, message) in [
+        ("/students?sport=cricket", "未知のスポーツ: cricket"),
+        ("/students?sport=", "未知のスポーツ: "),
+        (
+            "/students?not_booked_since=2026-10-1",
+            "not_booked_since は YYYY-MM-DD の日付でない",
+        ),
+        (
+            "/students?not_booked_since=2026-02-30",
+            "not_booked_since は YYYY-MM-DD の日付でない",
+        ),
+        (
+            "/students?not_booked_since=2026-10-01T00:00:00Z",
+            "not_booked_since は YYYY-MM-DD の日付でない",
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{uri}");
+        assert_eq!(body["message"], message, "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn no_students_is_an_empty_list() {
     let accounts = InMemoryAccountRepository::default();
     accounts
@@ -367,6 +458,14 @@ async fn coach_and_student_are_403_and_no_token_is_401() {
         let (status, body) = list_students(&router, Some(token)).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
         assert_eq!(body["code"], "forbidden");
+        // 条件を付けても（不正な値でも）役割の確認が先
+        let (status, body) = list_students_at(
+            &router,
+            "/students?sport=cricket&not_booked_since=x",
+            Some(token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
     }
 
     let (status, body) = list_students(&router, None).await;
