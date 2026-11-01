@@ -11,6 +11,11 @@ export const SPORT_LABELS: Record<Schemas["Sport"], string> = {
   swimming: "水泳",
 };
 
+/** glossary の announcement（本部からのお知らせ）の対象。スポーツがなければ生徒全員（ゴルフの生徒も含む）。 */
+export function announcementTargetLabel(sport: Schemas["Sport"] | null): string {
+  return sport === null ? "生徒全員" : `${SPORT_LABELS[sport]}の生徒`;
+}
+
 export const SLOT_STATUS_LABELS: Record<Schemas["SlotStatus"], string> = {
   open: "公開中",
   booked: "予約済み",
@@ -116,6 +121,12 @@ export function formatDate(value: string): string {
 export function formatMonth(value: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   return match ? `${match[1]}年${Number(match[2])}月` : value;
+}
+
+/** 経過時間（秒）を「N 時間 M 分」の形で表示する（分未満は切り捨て）。 */
+export function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${Math.floor(minutes / 60)} 時間 ${minutes % 60} 分`;
 }
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];

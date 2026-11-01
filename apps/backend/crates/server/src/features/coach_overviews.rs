@@ -1,11 +1,14 @@
 //! 本部が見るコーチ 1 人の様子（`GET /coaches/{coach_id}/overview`）。受付の状態は scheduling に問い合わせ
-//! （`SchedulingCoachAcceptanceLookup`）、評価の件数と平均・月ごとのレッスンの数・メニューはそれぞれの保存先から読む。
+//! （`SchedulingCoachAcceptanceLookup`）、評価の件数と平均・直近の低い評価の件数・月ごとのレッスンの数・メニューはそれぞれの
+//! 保存先から読む。
 
 use application::{
     catalog::ListCoachLessonMenus,
     lesson::GetMyLessonStats,
     profile::GetCoachOverview,
-    review::{GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup},
+    review::{
+        GetCoachLowRatedReviewCount, GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup,
+    },
     scheduling::SchedulingCoachAcceptanceLookup,
 };
 use axum::Router;
@@ -19,6 +22,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.accounts(),
             SchedulingCoachAcceptanceLookup::new(ports.coach_acceptances()),
             GetCoachReviewSummary::new(ports.reviews()),
+            GetCoachLowRatedReviewCount::new(ports.reviews(), ports.clock()),
             GetMyLessonStats::new(
                 ports.completions(),
                 ReviewMonthlyReviewSummaryLookup::new(ports.reviews()),

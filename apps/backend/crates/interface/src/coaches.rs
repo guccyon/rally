@@ -1,4 +1,5 @@
-//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチをすべて受付の状態を添えて返す。student-app の
+//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチを受付の状態を添えて返す（任意の
+//! `acceptance_status`・`sport` で絞る）。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
@@ -26,7 +27,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{self, AuthenticatedAccount, TokenVerification, require_role},
-    contract::{coach_acceptance_status_to_contract, sport_to_contract, student_app_sport},
+    contract::{
+        admin_web_sport, coach_acceptance_status_from_contract,
+        coach_acceptance_status_to_contract, sport_to_contract, student_app_sport,
+    },
     error::ApiError,
 };
 
@@ -51,6 +55,13 @@ pub struct CoachBody {
     coach_id: String,
     display_name: String,
     acceptance_status: &'static str,
+}
+
+/// admin-web の `listCoaches` のクエリ。
+#[derive(Deserialize)]
+pub struct ListCoachesParams {
+    acceptance_status: Option<String>,
+    sport: Option<String>,
 }
 
 /// student-app の `listCoachesForStudent` のクエリ。
@@ -83,6 +94,7 @@ pub struct CoachListingBody {
 pub async fn list_coaches<R, A, S, C, V, M, F, U>(
     State(state): State<Shared<R, A, S, C, V, M, F, U>>,
     account: AuthenticatedAccount,
+    headquarters_params: Result<Query<ListCoachesParams>, QueryRejection>,
     params: Result<Query<ListCoachesForStudentParams>, QueryRejection>,
 ) -> Result<Response, ApiError>
 where
@@ -97,9 +109,17 @@ where
 {
     match account.role() {
         Role::Headquarters => {
+            let Query(params) = headquarters_params
+                .map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+            let acceptance = params
+                .acceptance_status
+                .as_deref()
+                .map(coach_acceptance_status_from_contract)
+                .transpose()?;
+            let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
             let coaches = state
                 .list_coaches
-                .execute()
+                .execute(acceptance, sport)
                 .await
                 .map_err(ApiError::internal)?;
             Ok(Json(CoachListBody {

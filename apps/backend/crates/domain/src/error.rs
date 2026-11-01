@@ -32,6 +32,8 @@ pub enum DomainError {
     LiveLessonSessionAlreadyEnded,
     /// 通話セッションの終了が開始より前
     SessionEndsBeforeItStarts,
+    /// 本部が見る、終わっていないまま時間の過ぎた通話セッションの開始からの時間が `min`〜`max` 時間でない
+    OverdueSessionHoursOutOfRange { min: u16, max: u16 },
     /// パケット損失率が 0〜100（百分率）の有限の値でない
     InvalidPacketLossRate,
     /// 動画の当事者（送った生徒・送り先のコーチ）でないので、その動画を扱えない

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use domain::{identity::AccountId, scheduling::CoachAcceptanceStatus};
+use domain::{catalog::Sport, identity::AccountId, scheduling::CoachAcceptanceStatus};
 
 use super::{CoachAcceptanceLookup, ListedCoach};
 use crate::{Unavailable, identity::AccountRepository};
@@ -9,6 +9,8 @@ use crate::{Unavailable, identity::AccountRepository};
 ///
 /// コーチのアカウントを表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で、1 件ごとに受付の状態
 /// （scheduling に問い合わせる。[`CoachAcceptanceLookup`]）を添えて返す。受付を止めているコーチも載せる。
+/// 任意の条件で絞れる: 受付の状態（`acceptance`）・競技（`sport`。コーチの提供スポーツに含むもの）。両方なら両方を満たすもの、
+/// どちらも `None` なら絞らない。並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListCoaches<R, A> {
     accounts: R,
@@ -27,8 +29,21 @@ where
         }
     }
 
-    pub async fn execute(&self) -> Result<Vec<ListedCoach>, Unavailable> {
-        let coaches = self.accounts.list_coaches().await?;
+    pub async fn execute(
+        &self,
+        acceptance: Option<CoachAcceptanceStatus>,
+        sport: Option<Sport>,
+    ) -> Result<Vec<ListedCoach>, Unavailable> {
+        let coaches: Vec<_> = self
+            .accounts
+            .list_coaches()
+            .await?
+            .into_iter()
+            .filter(|account| {
+                sport
+                    .is_none_or(|sport| account.as_coach().is_some_and(|coach| coach.offers(sport)))
+            })
+            .collect();
         let coach_ids: BTreeSet<AccountId> = coaches.iter().map(|account| account.id()).collect();
         let acceptances = if coach_ids.is_empty() {
             Default::default()
@@ -44,6 +59,7 @@ where
                     .unwrap_or(CoachAcceptanceStatus::Accepting),
                 account,
             })
+            .filter(|coach| acceptance.is_none_or(|status| coach.acceptance == status))
             .collect())
     }
 }
@@ -53,7 +69,6 @@ mod tests {
     use std::time::SystemTime;
 
     use domain::{
-        catalog::Sport,
         identity::{Account, Email, Role},
         profile::DisplayName,
     };
@@ -101,7 +116,7 @@ mod tests {
         }
 
         let coaches = ListCoaches::new(accounts, no_suspension())
-            .execute()
+            .execute(None, None)
             .await
             .unwrap();
         let listed: Vec<_> = coaches
@@ -123,7 +138,7 @@ mod tests {
             .unwrap();
 
         let coaches = ListCoaches::new(accounts, no_suspension())
-            .execute()
+            .execute(None, None)
             .await
             .unwrap();
         assert!(coaches.is_empty());
@@ -147,7 +162,7 @@ mod tests {
             .unwrap();
 
         let coaches = ListCoaches::new(accounts, SchedulingCoachAcceptanceLookup::new(acceptances))
-            .execute()
+            .execute(None, None)
             .await
             .unwrap();
         let listed: Vec<_> = coaches
@@ -160,6 +175,77 @@ mod tests {
                 (2, CoachAcceptanceStatus::Accepting),
                 (1, CoachAcceptanceStatus::Suspended)
             ]
+        );
+    }
+
+    /// たなか（1。テニス・停止中）・いとう（2。サッカーとテニス）・うえの（3。野球・停止中）と、テニスの生徒（4）。
+    async fn filtered(
+        acceptance: Option<CoachAcceptanceStatus>,
+        sport: Option<Sport>,
+    ) -> Vec<(u128, CoachAcceptanceStatus)> {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
+            account(2, "いとう", Role::Coach, &[Sport::Soccer, Sport::Tennis]),
+            account(3, "うえの", Role::Coach, &[Sport::Baseball]),
+            account(4, "あおき", Role::Student, &[Sport::Tennis]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        for id in [1, 3] {
+            acceptances
+                .update(AccountId::from_u128(id), |a| {
+                    a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                })
+                .await
+                .unwrap();
+        }
+        ListCoaches::new(accounts, SchedulingCoachAcceptanceLookup::new(acceptances))
+            .execute(acceptance, sport)
+            .await
+            .unwrap()
+            .iter()
+            .map(|c| (c.account.id().as_u128(), c.acceptance))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn filters_by_acceptance_status_keeping_the_order() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        assert_eq!(
+            filtered(Some(Suspended), None).await,
+            [(3, Suspended), (1, Suspended)]
+        );
+        assert_eq!(filtered(Some(Accepting), None).await, [(2, Accepting)]);
+    }
+
+    #[tokio::test]
+    async fn filters_by_sport_the_coach_offers() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        assert_eq!(
+            filtered(None, Some(Sport::Tennis)).await,
+            [(2, Accepting), (1, Suspended)],
+            "提供スポーツのどれかが一致すれば載る。テニスの生徒は載らない"
+        );
+        assert!(filtered(None, Some(Sport::Golf)).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn both_conditions_must_hold_and_no_condition_lists_all() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        assert_eq!(
+            filtered(Some(Suspended), Some(Sport::Tennis)).await,
+            [(1, Suspended)]
+        );
+        assert!(
+            filtered(Some(Accepting), Some(Sport::Baseball))
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            filtered(None, None).await,
+            [(2, Accepting), (3, Suspended), (1, Suspended)]
         );
     }
 }
