@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
@@ -26,11 +26,15 @@ type ReviewsState =
  * 本部の「コーチの評価」。開いたときにコーチの一覧（listCoaches）を取り、表示名から選んだコーチの
  * 評価の件数と平均（getCoachReviewSummary）と一覧（listCoachReviews）を出す。
  * 一覧の並びは契約の正本どおり API が済ませているので、返った順のまま選択肢にする。
+ * `initialCoachId` がコーチの一覧にあれば、読み込んだあとにそのコーチを選んだときと同じ流れで評価を読む
+ * （一覧にない ID なら「選んでください」のまま）。
  */
 export function CoachReviewPicker({
   api,
+  initialCoachId,
 }: {
   api: Pick<HeadquartersApi, "listCoaches" | "getCoachReviewSummary" | "listCoachReviews">;
+  initialCoachId?: string;
 }) {
   const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   const [coachId, setCoachId] = useState("");
@@ -45,34 +49,44 @@ export function CoachReviewPicker({
       : { kind: "failed", message: response.message };
   }, [api]);
 
+  const selectCoach = useCallback(
+    async (selected: string) => {
+      setCoachId(selected);
+      const request = ++latestRequest.current;
+      if (selected === "") {
+        setReviews({ kind: "idle" });
+        return;
+      }
+      setReviews({ kind: "loading" });
+      const response = await loadCoachReviews(api, selected);
+      if (request !== latestRequest.current) return;
+      setReviews(
+        response.ok
+          ? { kind: "loaded", reviews: response.data }
+          : { kind: "failed", message: response.message },
+      );
+    },
+    [api],
+  );
+
   // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     void fetchCoaches().then((next) => {
-      if (active) setCoaches(next);
+      if (!active) return;
+      setCoaches(next);
+      if (
+        initialCoachId &&
+        next.kind === "loaded" &&
+        next.coaches.some((coach) => coach.coach_id === initialCoachId)
+      ) {
+        void selectCoach(initialCoachId);
+      }
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches]);
-
-  async function onChange(event: ChangeEvent<HTMLSelectElement>) {
-    const selected = event.target.value;
-    setCoachId(selected);
-    const request = ++latestRequest.current;
-    if (selected === "") {
-      setReviews({ kind: "idle" });
-      return;
-    }
-    setReviews({ kind: "loading" });
-    const response = await loadCoachReviews(api, selected);
-    if (request !== latestRequest.current) return;
-    setReviews(
-      response.ok
-        ? { kind: "loaded", reviews: response.data }
-        : { kind: "failed", message: response.message },
-    );
-  }
+  }, [fetchCoaches, selectCoach, initialCoachId]);
 
   return (
     <div className="space-y-4">
@@ -92,7 +106,7 @@ export function CoachReviewPicker({
           <select
             className="mt-1 block w-full rounded border px-2 py-1"
             value={coachId}
-            onChange={(event) => void onChange(event)}
+            onChange={(event) => void selectCoach(event.target.value)}
           >
             <option value="">選んでください</option>
             {coaches.coaches.map((coach) => (
