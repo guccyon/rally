@@ -35,7 +35,7 @@ info:
     コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
-    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチでも絞れる）。
+    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチと予約の状態でも絞れる）。
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
     本部のコーチの一覧（`listCoaches`。受付の状態・スポーツで絞れる）の 1 件ごとに載る。止めた・再開した記録（いつ・どの本部のアカウントが）は
     コーチごとに新しい順に読む（`listCoachAcceptanceChanges`）。停止中のコーチは student-app の `searchSlots`・
@@ -177,8 +177,12 @@ paths:
         - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
           `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
           `from`（今日）より前なので 422
-        - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
+        - `status` を省けば、予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
           予約がなければ `bookings` は空の配列（404 にはしない）
+        - 任意の `status`（`BookingStatus` の値）で、その状態の予約だけに絞れる（確定待ちのまま残っている予約や、キャンセルされた
+          予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
+          期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
+          `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
         - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
           期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
           422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
@@ -217,6 +221,18 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: status
+          in: query
+          required: false
+          description: |
+            あればこの状態の予約だけに絞る。繰り返して付ければ（`status=pending&status=cancelled`）どれかの状態の予約。
+            省けば状態を問わない。`BookingStatus` にない値は 422 `validation_failed`
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/BookingStatus"
       responses:
         "200":
           description: 期間に開始する予約の一覧

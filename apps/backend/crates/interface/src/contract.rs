@@ -132,6 +132,14 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
     }
 }
 
+/// admin-web の `listBookings` の `status` を読む。契約の enum にない値は 422。
+pub(crate) fn booking_status_from_contract(value: &str) -> Result<BookingStatus, ApiError> {
+    BookingStatus::ALL
+        .into_iter()
+        .find(|status| booking_status_to_contract(*status) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の予約の状態: {value}")))
+}
+
 /// student-app の `LiveLessonSessionStatus` の値。
 pub(crate) const fn session_status_to_contract(status: SessionStatus) -> &'static str {
     match status {
@@ -384,6 +392,19 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn booking_statuses_are_pending_confirmed_and_cancelled() {
+        for status in BookingStatus::ALL {
+            assert_eq!(
+                booking_status_from_contract(booking_status_to_contract(status)).unwrap(),
+                status
+            );
+        }
+        for value in ["", "canceled", "PENDING", "pending,cancelled"] {
+            assert!(booking_status_from_contract(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]
