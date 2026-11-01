@@ -8,7 +8,7 @@
 //! [`BookingCanceller`]（[`Booking::cancelled_by`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
 //! [`RecentLessonMenuBookings`] の 1 か所。
 //! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
-//! [`CoachAcceptanceChange`]。不変条件の違反は
+//! [`CoachAcceptanceChange`]（止めた記録は理由 [`CoachSuspensionReason`] を持つ）。不変条件の違反は
 //! [`SchedulingError`]。
 
 mod booking;
@@ -25,6 +25,7 @@ mod coach_acceptance;
 mod coach_acceptance_change;
 mod coach_acceptance_status;
 mod coach_calendar;
+mod coach_suspension_reason;
 mod recent_lesson_menu_bookings;
 mod scheduling_error;
 mod slot;
@@ -49,6 +50,7 @@ pub use coach_acceptance::CoachAcceptance;
 pub use coach_acceptance_change::CoachAcceptanceChange;
 pub use coach_acceptance_status::CoachAcceptanceStatus;
 pub use coach_calendar::CoachCalendar;
+pub use coach_suspension_reason::CoachSuspensionReason;
 pub use recent_lesson_menu_bookings::RecentLessonMenuBookings;
 pub use scheduling_error::SchedulingError;
 pub use slot::Slot;

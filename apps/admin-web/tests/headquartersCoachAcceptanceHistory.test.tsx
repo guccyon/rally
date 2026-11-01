@@ -17,8 +17,8 @@ const HQ_B = "44444444-4444-4444-8444-00000000000b";
 const CHANGES: Schemas["CoachAcceptanceChangeList"] = {
   coach_id: COACH_ID,
   changes: [
-    { acceptance_status: "accepting", changed_by: HQ_B, changed_at: "2026-10-30T01:00:00Z" },
-    { acceptance_status: "suspended", changed_by: HQ_A, changed_at: "2026-10-28T09:30:00Z" },
+    { acceptance_status: "accepting", reason: null, changed_by: HQ_B, changed_at: "2026-10-30T01:00:00Z" },
+    { acceptance_status: "suspended", reason: "", changed_by: HQ_A, changed_at: "2026-10-28T09:30:00Z" },
   ],
 };
 
@@ -56,8 +56,8 @@ describe("本部のコーチの受付の記録", () => {
     const data: Schemas["CoachAcceptanceChangeList"] = {
       coach_id: COACH_ID,
       changes: [
-        { acceptance_status: "suspended", changed_by: HQ_A, changed_at: at },
-        { acceptance_status: "accepting", changed_by: HQ_B, changed_at: at },
+        { acceptance_status: "suspended", reason: "", changed_by: HQ_A, changed_at: at },
+        { acceptance_status: "accepting", reason: null, changed_by: HQ_B, changed_at: at },
       ],
     };
     render(<CoachAcceptanceHistory api={apiOf({ ok: true, data })} coachId={COACH_ID} />);

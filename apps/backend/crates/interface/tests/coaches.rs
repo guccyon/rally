@@ -276,7 +276,11 @@ async fn suspended_coaches_are_listed_to_headquarters_with_their_status_but_not_
     let acceptances = InMemoryCoachAcceptanceRepository::default();
     acceptances
         .update(AccountId::from_u128(4), |a| {
-            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            a.suspend(
+                HEADQUARTERS_ID,
+                domain::scheduling::CoachSuspensionReason::default(),
+                SystemTime::UNIX_EPOCH,
+            )
         })
         .await
         .unwrap();
@@ -324,7 +328,11 @@ async fn app_with_coach_4_suspended() -> Router {
     let acceptances = InMemoryCoachAcceptanceRepository::default();
     acceptances
         .update(AccountId::from_u128(4), |a| {
-            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            a.suspend(
+                HEADQUARTERS_ID,
+                domain::scheduling::CoachSuspensionReason::default(),
+                SystemTime::UNIX_EPOCH,
+            )
         })
         .await
         .unwrap();

@@ -288,7 +288,11 @@ mod tests {
         for coach in [3, 5] {
             acceptances
                 .update(AccountId::from_u128(coach), |a| {
-                    a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                    a.suspend(
+                        HEADQUARTERS_ID,
+                        domain::scheduling::CoachSuspensionReason::default(),
+                        SystemTime::UNIX_EPOCH,
+                    )
                 })
                 .await
                 .unwrap();

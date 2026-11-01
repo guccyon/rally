@@ -228,7 +228,11 @@ mod tests {
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
             .update(AccountId::from_u128(1), |a| {
-                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
             })
             .await
             .unwrap();
@@ -272,7 +276,11 @@ mod tests {
         for id in [1, 3] {
             acceptances
                 .update(AccountId::from_u128(id), |a| {
-                    a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                    a.suspend(
+                        HEADQUARTERS_ID,
+                        domain::scheduling::CoachSuspensionReason::default(),
+                        SystemTime::UNIX_EPOCH,
+                    )
                 })
                 .await
                 .unwrap();
