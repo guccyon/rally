@@ -21,6 +21,11 @@ export function HeadquartersHome() {
           低い評価の一覧を見る
         </Link>
       </Section>
+      <Section title="コーチの受付">
+        <Link href="/headquarters/coaches" className="text-blue-600 underline">
+          受付を止める・再開する
+        </Link>
+      </Section>
       <Section title="レッスンメニュー">
         <Link href="/headquarters/lesson-menus" className="text-blue-600 underline">
           コーチのメニューを見る

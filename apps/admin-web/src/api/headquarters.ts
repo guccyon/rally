@@ -18,6 +18,18 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    suspendCoach: (coachId: string) =>
+      call(() =>
+        client.POST("/coaches/{coach_id}/suspend", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
+    resumeCoach: (coachId: string) =>
+      call(() =>
+        client.POST("/coaches/{coach_id}/resume", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
