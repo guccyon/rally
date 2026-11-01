@@ -191,6 +191,14 @@ mod tests {
             Err(Unavailable::new("壊れている"))
         }
 
+        async fn find(&self, _id: AnnouncementId) -> Result<Option<Announcement>, Unavailable> {
+            unreachable!()
+        }
+
+        async fn update(&self, _announcement: Announcement) -> Result<(), Unavailable> {
+            unreachable!()
+        }
+
         async fn find_all(&self) -> Result<Vec<Announcement>, Unavailable> {
             unreachable!()
         }
