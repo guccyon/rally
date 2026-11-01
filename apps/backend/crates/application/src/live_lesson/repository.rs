@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, time::SystemTime};
 
 use domain::{
     DomainError,
@@ -32,6 +32,14 @@ pub trait LiveLessonSessionRepository: Send + Sync {
         &self,
         booking_id: BookingId,
     ) -> impl Future<Output = Result<Option<LiveLessonSession>, Unavailable>> + Send;
+
+    /// 終了の記録がなく、`started_at_or_before`（含む）までに開始したセッション（本部が見る、終わっていないまま時間の
+    /// 過ぎたセッションの一覧）。並びは問わない（選び方と並べ方は domain の
+    /// [`domain::live_lesson::OverdueSessionCriteria`]）。
+    fn find_in_progress_started_at_or_before(
+        &self,
+        started_at_or_before: SystemTime,
+    ) -> impl Future<Output = Result<Vec<LiveLessonSession>, Unavailable>> + Send;
 
     /// 新しいセッションを、結び付いた予約とともに保存する。結び付いた予約のどれかのセッションがすでにあれば
     /// [`InsertSessionError::BookingAlreadyHasSession`]（何も保存しない）。

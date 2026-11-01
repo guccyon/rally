@@ -931,6 +931,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/live-lesson-sessions/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 終わっていないまま時間の過ぎた通話セッションの一覧（本部）
+         * @description 始まったまま終了の記録がなく（`endLiveLessonSession` が呼ばれていない）、開始から一定の時間が過ぎた通話セッション
+         *     （glossary の live_lesson_session）を、コーチを問わず横断で返す。本部が、終了し忘れや通話の切断で残ったセッションを
+         *     見つけるための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     既定・範囲・境界はここが正本（実装は backend の domain `OverdueSessionCriteria` の 1 か所）。レスポンスの
+         *     `older_than_hours` にも実際に使った時間を載せる。
+         *
+         *     - 対象: 終了していない（`status` が `in_progress`）セッションのうち、照会した時刻に開始 `started_at` から
+         *       `older_than_hours` 時間以上たったもの（ちょうどその時間のものを含む）。グループレッスンのセッションも 1 件
+         *     - `older_than_hours`: 開始からの時間（時間単位の整数）。省けば 3。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 並べ方: 開始 `started_at` の古い順。同じ時刻は `session_id` の順
+         *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
+         *       開始の時刻 `started_at`・照会した時刻までの開始からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の
+         *       表示名（`coach_display_name` / `student_display_name`）は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当するセッションがなければ `sessions` は空の配列
+         *     - 照会だけで、何も保存しない（セッションを終了させない）
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listOverdueLiveLessonSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/videos/{video_id}/review": {
         parameters: {
             query?: never;
@@ -1811,6 +1848,41 @@ export interface components {
             booking_id: string;
             /** Format: uuid */
             student_id: string;
+        };
+        /** @description 本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧（対象・並べ方は `listOverdueLiveLessonSessions` の説明） */
+        OverdueLiveLessonSessionList: {
+            /** @description 使った開始からの時間（時間単位）。省いたときは 3 */
+            older_than_hours: number;
+            /** @description 開始の古い順（同じ時刻は `session_id` の順） */
+            sessions: components["schemas"]["OverdueLiveLessonSession"][];
+        };
+        /** @description 終わっていないまま時間の過ぎた通話セッション 1 件（`listOverdueLiveLessonSessions`） */
+        OverdueLiveLessonSession: {
+            /** Format: uuid */
+            session_id: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約（`LiveLessonSession` の `booking_id` と同じ）
+             */
+            booking_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /** @description コーチの今の表示名。アカウントが引けなければ載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約の生徒（`LiveLessonSession` の `student_id` と同じ）
+             */
+            student_id: string;
+            /** @description 生徒の今の表示名。アカウントが引けなければ載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 開始の時刻
+             */
+            started_at: string;
+            /** @description 照会した時刻までの開始からの経過時間（秒。切り捨て） */
+            elapsed_sec: number;
         };
         StartLiveLessonSessionRequest: {
             /**
@@ -2878,6 +2950,32 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listOverdueLiveLessonSessions: {
+        parameters: {
+            query?: {
+                /** @description 開始からこの時間（時間単位）以上たった通話中のセッションを返す。省けば 3 */
+                older_than_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 終わっていないまま時間の過ぎた通話セッションの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverdueLiveLessonSessionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     returnVideoReview: {
