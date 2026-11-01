@@ -17,6 +17,8 @@ const OVERVIEW: Schemas["CoachOverview"] = {
   acceptance_status: "suspended",
   review_count: 12,
   average_rating: 4.5,
+  low_rated_review_count: 2,
+  unhandled_low_rated_review_count: 1,
   current_month: {
     month: "2026-11",
     live_lesson_count: 3,

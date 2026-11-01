@@ -1,8 +1,8 @@
 //! `/coaches/{coach_id}/overview` の統合テスト。admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）の
-//! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・今月と先月
-//! （日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数を 1 回で読めること、コーチでない ID・ない ID・UUID でない
+//! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の
+//! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数を 1 回で読めること、コーチでない ID・ない ID・UUID でない
 //! ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の細かい検査は各操作の
-//! テスト（`reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`）。
+//! テスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`）。
 
 use std::time::{Duration, SystemTime};
 
@@ -19,7 +19,9 @@ use application::{
     },
     lesson::GetMyLessonStats,
     profile::GetCoachOverview,
-    review::{GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup},
+    review::{
+        GetCoachLowRatedReviewCount, GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup,
+    },
     scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
 };
 use axum::{
@@ -37,7 +39,7 @@ use domain::{
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     live_lesson::SessionId,
     profile::DisplayName,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+    review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -154,7 +156,8 @@ fn menu(id: u128, sport: Sport, is_published: bool) -> LessonMenu {
 }
 
 /// 今は日本時間の 11 月 1 日 2 時。コーチ `COACH`（たなか）は受付を止められていて、11 月に通話 1・添削 1、10 月に通話 1 を
-/// 完了し、評価は 5（11 月）と 4（10 月）と 2（9 月）を受け、公開中のメニューはテニス 1・ゴルフ 1（ほかに非公開 1）。
+/// 完了し、評価は 5（11 月）と 4・1・2（10 月。★2 は本部が対応済み）と 2（9 月。30 日より前）を受け、公開中のメニューは
+/// テニス 1・ゴルフ 1（ほかに非公開 1）。
 /// `NEW_COACH`（いとう）は何もない。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
@@ -173,16 +176,22 @@ async fn app() -> Router {
         })
         .await
         .unwrap();
+    let day = Duration::from_secs(24 * 3600);
+    let now = nov1() + Duration::from_secs(2 * 3600);
     let reviews = InMemoryLessonReviewRepository::with_reviews([
         review(1, 5, nov1()),
         review(2, 4, nov1() - SECOND),
         review(3, 2, oct1() - SECOND),
+        review(4, 1, nov1() - day),
+        review(5, 2, nov1() - 2 * day)
+            .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS_ID, nov1()))),
     ]);
     interface::coach_overview_router(
         GetCoachOverview::new(
             accounts,
             SchedulingCoachAcceptanceLookup::new(acceptances),
             GetCoachReviewSummary::new(reviews.clone()),
+            GetCoachLowRatedReviewCount::new(reviews.clone(), FixedClock(now)),
             GetMyLessonStats::new(
                 InMemoryLessonCompletionRepository::with_completions([
                     completion(1, true, nov1()),
@@ -190,7 +199,7 @@ async fn app() -> Router {
                     completion(3, true, nov1() - SECOND),
                 ]),
                 ReviewMonthlyReviewSummaryLookup::new(reviews),
-                FixedClock(nov1() + Duration::from_secs(2 * 3600)),
+                FixedClock(now),
             ),
             ListCoachLessonMenus::new(InMemoryLessonMenuRepository::with_menus([
                 menu(1, Sport::Tennis, true),
@@ -253,10 +262,12 @@ async fn headquarters_reads_the_overview_of_a_coach() {
             "coach_id": coach_id,
             "display_name": "たなか",
             "acceptance_status": "suspended",
-            "review_count": 3,
-            "average_rating": 3.67,
+            "review_count": 5,
+            "average_rating": 2.8,
+            "low_rated_review_count": 2,
+            "unhandled_low_rated_review_count": 1,
             "current_month": month("2026-11", (1, 1), 1, json!(5.0)),
-            "previous_month": month("2026-10", (1, 0), 1, json!(4.0)),
+            "previous_month": month("2026-10", (1, 0), 3, json!(2.33)),
             "published_lesson_menu_count": 2,
         })
     );
@@ -278,6 +289,8 @@ async fn a_coach_without_anything_is_accepting_with_zero_counts() {
             "acceptance_status": "accepting",
             "review_count": 0,
             "average_rating": null,
+            "low_rated_review_count": 0,
+            "unhandled_low_rated_review_count": 0,
             "current_month": month("2026-11", (0, 0), 0, Value::Null),
             "previous_month": month("2026-10", (0, 0), 0, Value::Null),
             "published_lesson_menu_count": 0,
