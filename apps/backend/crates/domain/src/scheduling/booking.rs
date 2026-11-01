@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    BookingId, BookingLessonMenu, BookingStatus, CancellationDecision, CancellationPolicy,
-    SchedulingError, Slot, SlotId,
+    BookingId, BookingLessonMenu, BookingStatus, BookingStatusChange, CancellationDecision,
+    CancellationPolicy, SchedulingError, Slot, SlotId,
 };
 use crate::{catalog::LessonMenu, identity::AccountId};
 
@@ -239,6 +239,21 @@ impl Booking {
     /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
     pub const fn lesson_menu(&self) -> Option<&BookingLessonMenu> {
         self.lesson_menu.as_ref()
+    }
+
+    /// 状態が変わった記録（確定・キャンセル）を時刻の古い順に返す（同じ時刻は確定、キャンセルの順）。予約が持つ確定・
+    /// キャンセルの時刻から組み立て、時刻のない変化（確定せずにキャンセルした予約の確定など）は含めない。作ったばかりの
+    /// 予約は空。作った時刻は [`Self::created_at`]。
+    pub fn status_changes(&self) -> Vec<BookingStatusChange> {
+        let mut changes: Vec<BookingStatusChange> = [
+            (BookingStatus::Confirmed, self.confirmed_at),
+            (BookingStatus::Cancelled, self.cancelled_at),
+        ]
+        .into_iter()
+        .filter_map(|(status, at)| at.map(|at| BookingStatusChange::new(status, at)))
+        .collect();
+        changes.sort_by_key(BookingStatusChange::changed_at);
+        changes
     }
 }
 
@@ -626,6 +641,84 @@ mod tests {
             Err(SchedulingError::SlotNotOpen {
                 status: SlotStatus::Closed
             })
+        );
+    }
+
+    #[test]
+    fn status_changes_list_confirmation_and_cancellation_oldest_first() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.status_changes().is_empty(),
+            "作っただけでは変化はない"
+        );
+
+        booking.confirm(STUDENT, &mut slot, at(2)).unwrap();
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Confirmed, at(2))]
+        );
+
+        booking.cancel(STUDENT, &mut slot, at(5)).unwrap();
+        let changes = booking.status_changes();
+        assert_eq!(
+            changes
+                .iter()
+                .map(|change| (change.status(), change.changed_at()))
+                .collect::<Vec<_>>(),
+            [
+                (BookingStatus::Confirmed, at(2)),
+                (BookingStatus::Cancelled, at(5)),
+            ]
+        );
+    }
+
+    #[test]
+    fn status_changes_of_a_booking_cancelled_before_confirmation_have_only_the_cancellation() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        booking.cancel(STUDENT, &mut slot, at(3)).unwrap();
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Cancelled, at(3))]
+        );
+    }
+
+    #[test]
+    fn status_changes_of_a_restored_booking_use_only_the_recorded_times() {
+        let slot = slot(10, SlotStatus::Open);
+        // 確定の時刻の記録がないままキャンセル済み（記録のない変化は出さない）
+        let booking = Booking::restore(
+            BookingId::from_u128(1),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            at(0),
+            None,
+            Some(at(4)),
+        );
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Cancelled, at(4))]
+        );
+        // 記録の時刻が前後していても古い順に並べる
+        let booking = Booking::restore(
+            BookingId::from_u128(2),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            at(0),
+            Some(at(6)),
+            Some(at(4)),
+        );
+        assert_eq!(
+            booking.status_changes(),
+            [
+                BookingStatusChange::new(BookingStatus::Cancelled, at(4)),
+                BookingStatusChange::new(BookingStatus::Confirmed, at(6)),
+            ]
         );
     }
 

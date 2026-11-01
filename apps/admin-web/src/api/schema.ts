@@ -116,6 +116,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bookings/{booking_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 予約 1 件の詳細（本部）
+         * @description 予約（glossary の booking。体験予約を含む）1 件の中身と状態の移り変わりを 1 回の照会で返す。本部が生徒やコーチから
+         *     問い合わせを受けたときに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - `booking`: 予約（`listBookings` の 1 件と同じ `Booking`。予約した時点のレッスンメニュー `lesson_menu`・体験予約か
+         *       `is_trial`・今の状態 `status`・作った時刻 `created_at` を含む）。状態を問わない（キャンセル済みも返す）
+         *     - `slot`: 予約したスロット（枠の開始 `starts_at` と終わり `ends_at`。`lesson_menu` は載せない。予約した時点のメニューは
+         *       `booking.lesson_menu`）
+         *     - `status_changes`: 状態が変わった記録（確定 `confirmed`・キャンセル `cancelled`）を時刻の古い順に。予約が持つ確定・
+         *       キャンセルの時刻（`booking.confirmed_at` / `booking.cancelled_at`）から組み立て、時刻の記録がない変化は載せない
+         *       （確定せずにキャンセルした予約はキャンセルだけ、作ったばかりの予約は空の配列）。作った時刻は `booking.created_at`
+         *     - コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
+         *       その表示名を載せない
+         *     - `booking_id` がない予約・UUID でないときは 404 `not_found`
+         *     - 決済の情報は返さない。照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getBooking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -1449,6 +1484,23 @@ export interface components {
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["HeadquartersBooking"][];
         };
+        /** @description 本部が見る予約 1 件の詳細（`getBooking`）。予約（glossary の booking）と予約したスロット（glossary の slot）と、状態の移り変わりと、コーチと予約した生徒の表示名 */
+        HeadquartersBookingDetail: {
+            booking: components["schemas"]["Booking"];
+            slot: components["schemas"]["Slot"];
+            /** @description 状態が変わった記録（確定・キャンセル）。時刻の古い順。記録のない変化は載せない */
+            status_changes: components["schemas"]["BookingStatusChange"][];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description 予約の状態が変わった記録 1 件。`status` は変えた後の状態（確定 `confirmed` かキャンセル `cancelled`）で、`changed_at` は変わった時刻 */
+        BookingStatusChange: {
+            status: components["schemas"]["BookingStatus"];
+            /** Format: date-time */
+            changed_at: string;
+        };
         /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
         CoachSlot: {
             slot: components["schemas"]["Slot"];
@@ -2506,6 +2558,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 予約 1 件の詳細 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadquartersBookingDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getMyAccount: {
