@@ -44,6 +44,7 @@ mod slot_supply;
 mod slot_withdrawals;
 mod slots;
 mod student_activity;
+mod student_announcements;
 mod students;
 mod subscription_plans;
 mod subscriptions;
@@ -97,6 +98,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(slot_withdrawals::router(ports))
         .merge(slots::router(ports))
         .merge(student_activity::router(ports))
+        .merge(student_announcements::router(ports))
         .merge(students::router(ports))
         .merge(subscription_plans::router(ports))
         .merge(subscriptions::router(ports))

@@ -2,7 +2,8 @@
 //!
 //! 境界間イベントの購読でプッシュ通知を送ってお知らせを残すもの（[`PushNotificationSubscriber`]）のほか、本部が生徒に
 //! お知らせを送る（[`SendAnnouncement`]）・送った記録を一覧で見る（[`ListAnnouncements`]）・誤って送ったものを取り下げる
-//! （[`WithdrawAnnouncement`]。取り下げたものは生徒のお知らせの一覧に出さない）。本部からのお知らせを受け取る
+//! （[`WithdrawAnnouncement`]。取り下げたものは生徒のお知らせの一覧に出さない）。生徒 1 人が受け取ったお知らせと既読を
+//! 問い合わせで確かめる（[`ListStudentAnnouncements`]）。本部からのお知らせを受け取る
 //! 生徒は profile に問い合わせる（[`AnnouncementRecipientLookup`]）。
 //!
 //! 本部は送る前のお知らせを下書きとして残し（[`CreateAnnouncementDraft`]・[`UpdateAnnouncementDraft`]・
@@ -21,6 +22,8 @@ mod get_notification_settings;
 mod list_announcement_drafts;
 mod list_announcements;
 mod list_my_notifications;
+mod list_student_announcements;
+mod list_student_announcements_error;
 mod mark_my_notifications_read;
 mod my_notification;
 pub mod notification_id_uuid;
@@ -45,6 +48,8 @@ pub use get_notification_settings::GetNotificationSettings;
 pub use list_announcement_drafts::ListAnnouncementDrafts;
 pub use list_announcements::ListAnnouncements;
 pub use list_my_notifications::ListMyNotifications;
+pub use list_student_announcements::ListStudentAnnouncements;
+pub use list_student_announcements_error::ListStudentAnnouncementsError;
 pub use mark_my_notifications_read::MarkMyNotificationsRead;
 pub use my_notification::MyNotification;
 pub use notification_repository::NotificationRepository;

@@ -18,6 +18,7 @@
 //! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
 //! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
 //! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
+//! 本部は生徒 1 人が受け取ったお知らせと既読・取り下げ済みかを読める（`GET /students/{student_id}/announcements`。Postgres の組み立て）。
 //! 本部が書きかけで残した下書き（`/announcement-drafts`）は生徒に届かず、下書きから送る
 //! （`POST /announcement-drafts/{announcement_draft_id}/send`）と生徒のお知らせに届いて下書きは消える（Postgres の組み立て）。
 
@@ -939,6 +940,38 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
     assert_eq!(read["notifications"][0]["kind"], "announcement");
     assert_eq!(read["notifications"][0]["body"], "題\n本文");
     assert_eq!(read["notifications"][0]["is_read"], true);
+    // 本部は生徒 1 人の受け取ったお知らせと既読を確かめられる
+    let received = format!(
+        "/students/{}/announcements",
+        account["student"]["student_id"].as_str().unwrap()
+    );
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            &received,
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcements": [{
+            "announcement_id": sent["announcement_id"],
+            "title": "題",
+            "sent_at": sent["sent_at"],
+            "is_read": true,
+            "is_withdrawn": false,
+        }] })
+    );
+    call(
+        &router,
+        "GET",
+        &received,
+        Some(student),
+        Value::Null,
+        StatusCode::FORBIDDEN,
+    )
+    .await;
 
     let withdraw = format!(
         "/announcements/{}/withdraw",
@@ -995,6 +1028,23 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
         )
         .await,
         json!({ "announcements": [withdrawn] })
+    );
+    let after = call(
+        &router,
+        "GET",
+        &received,
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        (
+            &after["announcements"][0]["is_read"],
+            &after["announcements"][0]["is_withdrawn"]
+        ),
+        (&json!(true), &json!(true)),
+        "取り下げても本部の確かめる一覧には残り、既読も変わらない"
     );
 }
 
