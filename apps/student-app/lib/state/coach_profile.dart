@@ -2,11 +2,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../api/student_api.dart';
+import 'coach_search.dart';
+import 'favorite_coaches.dart';
 import 'student_flow.dart';
+
+/// コーチの紹介で開いたコーチ（コーチを探す一覧の行か、ホームのお気に入りのコーチの行で選んだもの）。
+/// 表示名は紹介を読む前と読めなかったときにも出し、[sport] はレッスンメニューと空き枠を絞るスポーツ
+class SelectedCoach {
+  const SelectedCoach({
+    required this.coachId,
+    required this.displayName,
+    required this.sport,
+  });
+
+  /// コーチを探す一覧の行（スポーツはコーチを探したスポーツ）
+  SelectedCoach.fromListing(CoachListing coach)
+    : this(
+        coachId: coach.coachId,
+        displayName: coach.displayName,
+        sport: coach.sport,
+      );
+
+  /// ホームのお気に入りのコーチの行。スポーツは、コーチが提供していれば生徒のスポーツ [studentSport]、
+  /// していなければコーチの提供するスポーツの先頭
+  SelectedCoach.fromFavorite(FavoriteCoach coach, {required Sport studentSport})
+    : this(
+        coachId: coach.coachId,
+        displayName: coach.displayName,
+        sport: coach.sports.contains(studentSport)
+            ? studentSport
+            : coach.sports.first,
+      );
+
+  final String coachId;
+
+  /// コーチの表示名（選んだ一覧に載っていたもの）
+  final String displayName;
+
+  /// レッスンメニューと空き枠を絞るスポーツ
+  final Sport sport;
+}
 
 /// コーチの紹介の欄（API ごとに読み、どれかが失敗しても他の欄は出す）
 enum CoachProfileSection {
-  /// 表示名と自己紹介（`getCoachProfile`）
+  /// 表示名と自己紹介とお気に入りか（`getCoachProfile`）
   profile,
 
   /// 評価の平均と件数（`getCoachReviewSummary`）
@@ -25,6 +64,7 @@ enum CoachProfileSection {
 class CoachProfileState {
   CoachProfileState({
     this.coach,
+    this.returnStep = FlowStep.coachSearch,
     this.profile,
     this.reviewSummary,
     List<CoachReview>? reviews,
@@ -35,8 +75,11 @@ class CoachProfileState {
        lessonMenus = lessonMenus == null ? null : List.unmodifiable(lessonMenus),
        failures = Set.unmodifiable(failures);
 
-  /// コーチを探す一覧で選んだコーチ（表示名は紹介を読む前と読めなかったときにも出す）。開く前は null
-  final CoachListing? coach;
+  /// コーチを探す一覧かホームのお気に入りで選んだコーチ（表示名は紹介を読む前と読めなかったときにも出す）。開く前は null
+  final SelectedCoach? coach;
+
+  /// アプリバーの戻るで戻る段（コーチを探す一覧から開けば [FlowStep.coachSearch]、ホームから開けば [FlowStep.home]）
+  final FlowStep returnStep;
 
   /// コーチの紹介（`getCoachProfile`）。読む前・読めなかったときは null
   final CoachProfile? profile;
@@ -85,6 +128,7 @@ class CoachProfileNotifier extends Notifier<CoachProfileState> {
     required Set<CoachProfileSection> failures,
   }) => CoachProfileState(
     coach: state.coach,
+    returnStep: state.returnStep,
     profile: profile ?? state.profile,
     reviewSummary: reviewSummary ?? state.reviewSummary,
     reviews: reviews ?? state.reviews,
@@ -92,9 +136,12 @@ class CoachProfileNotifier extends Notifier<CoachProfileState> {
     failures: failures,
   );
 
-  /// [coach] の紹介を開き、すべての欄を読む（開くたびに読み直す）
-  Future<void> open(CoachListing coach) {
-    state = CoachProfileState(coach: coach);
+  /// [coach] の紹介を開き、すべての欄を読む（開くたびに読み直す）。戻るで [returnStep] に戻る
+  Future<void> open(
+    SelectedCoach coach, {
+    FlowStep returnStep = FlowStep.coachSearch,
+  }) {
+    state = CoachProfileState(coach: coach, returnStep: returnStep);
     _flow.moveTo(FlowStep.coachProfile);
     return _flow.run(() async {
       await Future.wait(CoachProfileSection.values.map(_load));
@@ -141,8 +188,32 @@ class CoachProfileNotifier extends Notifier<CoachProfileState> {
     }
   }
 
-  /// コーチの一覧に戻る（一覧は読み直さない）
-  void close() => _flow.moveTo(FlowStep.coachSearch);
+  /// 開いた段に戻る。コーチの一覧は読み直さず、ホームは開くたびに欄を読み直す
+  Future<void> close() async {
+    if (state.returnStep == FlowStep.home) return _flow.goHome();
+    _flow.moveTo(state.returnStep);
+  }
+
+  /// お気に入りを切り替える（入っていれば `removeFavoriteCoach`、いなければ `addFavoriteCoach`）。
+  /// 紹介を読めるまでは切り替えない。切り替えたら紹介とコーチを探す一覧のしるしとホームのお気に入りの一覧を合わせる
+  /// （読み直さない）。失敗したら状態を変えずに失敗の文言を出す
+  Future<void> toggleFavorite() => _flow.run(() async {
+    final profile = state.profile;
+    if (profile == null) return;
+    final favorite = !profile.isFavorite;
+    final list = favorite
+        ? await _api.addFavoriteCoach(profile.coachId)
+        : await _api.removeFavoriteCoach(profile.coachId);
+    if (!ref.mounted) return;
+    state = _with(
+      profile: profile.withFavorite(favorite),
+      failures: state.failures,
+    );
+    ref.read(favoriteCoachesProvider.notifier).replace(list);
+    ref
+        .read(coachSearchProvider.notifier)
+        .markFavorite(profile.coachId, favorite);
+  });
 
   /// 「このコーチの空き枠を見る」。コーチを探したスポーツで、このコーチの予約枠に絞って探す
   Future<void> showSlots() => _flow.goToSlotSearch(coach: state.coach);

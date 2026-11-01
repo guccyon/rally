@@ -203,6 +203,17 @@ String coachReviewSummaryLabel(CoachReviewSummary summary) =>
 String coachListingRatingLabel(CoachListing coach) =>
     _ratingLabel(coach.reviewCount, coach.averageRating) ?? '評価なし';
 
+/// ホームのお気に入りのコーチの行の、提供スポーツと評価の件数と平均。スポーツは「、」でつなぎ、評価は [coachListingRatingLabel] と
+/// 同じ書き方（0 件なら `評価なし`）。例: `テニス、野球・★ 4.2（12 件）`
+String favoriteCoachSummaryLabel(FavoriteCoach coach) => [
+  coach.sports.map(sportLabel).join('、'),
+  _ratingLabel(coach.reviewCount, coach.averageRating) ?? '評価なし',
+].join('・');
+
+/// コーチの紹介のお気に入りの切り替えのボタン（押すとどうなるかで書く）
+String favoriteToggleLabel(bool isFavorite) =>
+    isFavorite ? 'お気に入りから外す' : 'お気に入りに入れる';
+
 /// 評価の件数と平均（平均は小数第 1 位に四捨五入）。評価が 0 件なら null
 String? _ratingLabel(int count, double? average) {
   if (count == 0 || average == null) return null;

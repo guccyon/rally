@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/chat.dart';
 import '../state/coach_search.dart';
+import '../state/favorite_coaches.dart';
 import '../state/lesson_completions.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
@@ -11,7 +12,7 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
-/// コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口を
+/// お気に入りのコーチ（`listFavoriteCoaches`）・コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口を
 /// 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
 class HomeScreen extends ConsumerWidget {
@@ -29,6 +30,7 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: 16),
         const _BookingsSection(),
         const SizedBox(height: 24),
+        const _FavoriteCoachesSection(),
         const _LiveLessonQuotaSection(),
         const SizedBox(height: 24),
         const _ThreadsSection(),
@@ -135,6 +137,53 @@ class _BookingsSection extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// お気に入りのコーチ（お気に入りに入れた時刻の新しい順にすべて。押すとそのコーチの紹介を開き、戻るとホームに戻る）。
+/// 0 件なら欄ごと出さない（読み込み中と読めなかったときは見出しと旨を出す）
+class _FavoriteCoachesSection extends ConsumerWidget {
+  const _FavoriteCoachesSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final failed = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.homeFailures.contains(HomeSection.favoriteCoaches),
+      ),
+    );
+    final coaches = ref.watch(
+      favoriteCoachesProvider.select((s) => s.favoriteCoaches),
+    );
+    final notifier = ref.read(favoriteCoachesProvider.notifier);
+    if (!failed && coaches != null && coaches.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionTitle('お気に入りのコーチ'),
+          if (failed)
+            const _SectionFailure('お気に入りのコーチを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
+          else if (coaches == null)
+            const Text('お気に入りのコーチを読み込んでいます…')
+          else
+            // 契約どおりお気に入りに入れた時刻の新しい順で返るので、返った順のまま出す
+            for (final coach in coaches)
+              Card(
+                child: ListTile(
+                  title: Text(coachNameLabel(coach.displayName)),
+                  subtitle: Text(favoriteCoachSummaryLabel(coach)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: busy ? null : () => notifier.open(coach),
+                ),
+              ),
+        ],
+      ),
     );
   }
 }

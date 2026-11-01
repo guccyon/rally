@@ -7,6 +7,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/coach_profile.dart';
+import 'package:rally_student_app/state/favorite_coaches.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
@@ -403,5 +404,96 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.coachSearch);
     expect(api.calls, isEmpty);
     expect(find.text('鈴木'), findsOneWidget);
+  });
+
+  testWidgets('「お気に入りに入れる」で入れ、一覧に戻ると読み直さずにしるしが付き、「お気に入りから外す」で外せる', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    final container = await openCoachProfile(tester, api);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    api.calls.clear();
+    api.requests.clear();
+
+    await tapText(tester, 'お気に入りに入れる');
+
+    expect(api.calls, ['addFavoriteCoach']);
+    expect(api.requests, [sato.coachId]);
+    expect(find.text('お気に入りから外す'), findsOneWidget);
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+    expect(container.read(coachProfileProvider).profile?.isFavorite, isTrue);
+    // ホームの欄にも応答の一覧を写す
+    expect(
+      container
+          .read(favoriteCoachesProvider)
+          .favoriteCoaches
+          ?.map((c) => c.coachId),
+      [sato.coachId],
+    );
+
+    await tester.tap(find.byTooltip('コーチの一覧に戻る'));
+    await tester.pumpAndSettle();
+    expect(api.calls, ['addFavoriteCoach']);
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.ancestor(of: find.text('佐藤'), matching: find.byType(ListTile)),
+        matching: find.byIcon(Icons.favorite),
+      ),
+      findsOneWidget,
+    );
+
+    await tapText(tester, '佐藤');
+    // 開き直すと紹介を読み直し、お気に入りのまま
+    expect(find.text('お気に入りから外す'), findsOneWidget);
+    api.calls.clear();
+    await tapText(tester, 'お気に入りから外す');
+
+    expect(api.calls, ['removeFavoriteCoach']);
+    expect(find.text('お気に入りに入れる'), findsOneWidget);
+    expect(container.read(favoriteCoachesProvider).favoriteCoaches, isEmpty);
+    await tester.tap(find.byTooltip('コーチの一覧に戻る'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite), findsNothing);
+  });
+
+  testWidgets('お気に入りに入っているコーチは「お気に入りから外す」で開く', (tester) async {
+    final api = FakeStudentApi(
+      favoriteCoaches: [Fixtures.favoriteCoach(coachId: sato.coachId)],
+    );
+    await openCoachProfile(tester, api);
+
+    expect(find.text('お気に入りから外す'), findsOneWidget);
+    expect(find.text('お気に入りに入れる'), findsNothing);
+  });
+
+  testWidgets('お気に入りを切り替えられなければ失敗の文言を出し、切り替える前のまま', (tester) async {
+    final api = FakeStudentApi(
+      failures: {'addFavoriteCoach': Fixtures.unreachable},
+    );
+    final container = await openCoachProfile(tester, api);
+
+    await tapText(tester, 'お気に入りに入れる');
+
+    expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsOneWidget);
+    expect(find.text('お気に入りに入れる'), findsOneWidget);
+    expect(container.read(coachProfileProvider).profile?.isFavorite, isFalse);
+    expect(container.read(favoriteCoachesProvider).favoriteCoaches, isNull);
+  });
+
+  testWidgets('紹介を読めなければ、お気に入りの切り替えは押せない', (tester) async {
+    final api = FakeStudentApi(
+      failures: {'getCoachProfile': Fixtures.unreachable},
+    );
+    await openCoachProfile(tester, api);
+
+    final button = tester.widget<OutlinedButton>(
+      find.ancestor(
+        of: find.text('お気に入りに入れる'),
+        matching: find.byWidgetPredicate((w) => w is OutlinedButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+    expect(find.text('自己紹介を読み込めませんでした。'), findsOneWidget);
   });
 }
