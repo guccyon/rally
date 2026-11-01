@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, time::SystemTime};
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
-    catalog::Sport,
+    catalog::{LessonMenuPublicationAction, Sport},
     entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
     identity::Role,
     lesson::LessonType,
@@ -105,6 +105,16 @@ pub(crate) fn coach_acceptance_status_from_contract(
         .into_iter()
         .find(|status| coach_acceptance_status_to_contract(*status) == value)
         .ok_or_else(|| ApiError::validation_failed(format!("未知の受付の状態: {value}")))
+}
+
+/// admin-web の `LessonMenuPublicationAction` の値（本部がレッスンメニューにした操作）。理由は値に含めない。
+pub(crate) const fn lesson_menu_publication_action_to_contract(
+    action: &LessonMenuPublicationAction,
+) -> &'static str {
+    match action {
+        LessonMenuPublicationAction::Unpublished { .. } => "unpublished",
+        LessonMenuPublicationAction::Republished => "republished",
+    }
 }
 
 /// admin-web の `CoachProfileField` の値（`listIncompleteCoachProfiles` の `missing_fields`）。

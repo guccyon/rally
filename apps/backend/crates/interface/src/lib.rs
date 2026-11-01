@@ -32,6 +32,7 @@ mod headquarters_bookings;
 mod headquarters_live_lesson_sessions;
 mod healthz;
 mod incomplete_coach_profiles;
+mod lesson_menu_publication_changes;
 mod lesson_menu_publications;
 mod lesson_menus;
 mod lesson_stats;
