@@ -5,7 +5,9 @@ import type { ApiClient, Schemas } from "./client";
 export function headquartersApi(client: ApiClient) {
   return {
     getSlotSupply: () => call(() => client.GET("/slot-supply")),
-    listCoaches: () => call(() => client.GET("/coaches")),
+    listCoaches: (
+      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"] } = {},
+    ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/review-summary", {
