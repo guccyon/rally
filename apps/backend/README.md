@@ -139,6 +139,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 自己紹介文は `profile::CoachBio` で、ユースケースは `application::profile::UpdateCoachProfile`（書き換え）と `GetCoachBio`（`GET /me` に添える）。保存先は profile のポート `CoachProfileRepository`（`find_coach_bio`・`update_coach_bio`。コーチのアカウントがなければ読み書きとも `None`）。`/me` のハンドラーは identity の `GetAccount` で読んだアカウントに自己紹介文を添えて応答を組み立てる。Postgres は `identity.coaches.bio`（マイグレーション `20261028000002_expand_coach_bio.sql`。既定は空、`coaches_bio_length` で 400 文字まで）
 - テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）・`get_coach_bio`（書いた文・空・コーチ以外）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・コーチ以外は読み書きとも `None`）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
 
+## profile: 本部が見るプロフィールの書きかけのコーチ（D176）
+
+- `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）: 本部だけが呼べる（`interface::incomplete_coach_profiles_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチのアカウント（受付を止めているコーチも含む）のうち、プロフィールに足りない項目があるものを、`coach_id`・表示名・足りない項目の名前 `missing_fields`・最後に更新した時刻 `updated_at`・登録した時刻 `registered_at` で、登録の古い順（同じ時刻は `coach_id` の順）に返す。照会だけで、行動イベント・境界間イベントは発火しない
+- 「足りない」の判定は domain の `profile::MissingCoachProfileFields` の 1 か所（今は自己紹介文 `bio` が空か空白だけのとき）。項目は `profile::CoachProfileField`、契約の文字列（`bio`）は interface の `contract.rs` の対応表。表示名と提供スポーツは空にできないので対象にしない
+- `updated_at` は、プロフィールの更新の時刻を保存していない（`identity.coaches` に列がない）ので今は常に null。DB の変更はしていない
+- ユースケースは `application::profile::ListIncompleteCoachProfiles`。コーチは `AccountRepository::list_coaches`、自己紹介文は `CoachProfileRepository::list_coach_bios`（Postgres は `identity.coaches` の `coach_id, bio`）で読む
+- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
+
 ## matching: 生徒がスポーツでコーチを探す（D96）
 
 - `GET /coaches`（student-app の `listCoachesForStudent`）: 生徒が呼ぶ（本部は admin-web の `listCoaches` の形、コーチは 403）。`sport`（省いたら生徒自身のスポーツ）を提供するコーチを、`coach_id`・表示名・スポーツ・評価の件数と平均・そのスポーツの公開中のレッスンメニューの数で返す。ページングはせず、行動イベントは発火しない（読み取りだけ）
