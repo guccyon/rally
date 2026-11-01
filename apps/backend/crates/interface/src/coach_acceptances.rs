@@ -6,21 +6,28 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         CoachAcceptanceRepository, CoachIntroductionLookup, ListCoachAcceptanceChanges,
         ResumeCoach, SuspendCoach,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::{get, post},
 };
-use domain::{identity::AccountId, scheduling::CoachAcceptance};
+use domain::{
+    identity::{AccountId, Role},
+    scheduling::CoachAcceptance,
+};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount, contract::coach_acceptance_status_to_contract, error::ApiError,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
+    coach_acceptance_changes,
+    contract::coach_acceptance_status_to_contract,
+    error::ApiError,
     scheduling_error::coach_not_found,
 };
 
@@ -87,4 +94,44 @@ fn coach_acceptance_body(acceptance: &CoachAcceptance) -> CoachAcceptanceBody {
         coach_id: account_id_uuid::format(acceptance.coach_id()),
         acceptance_status: coach_acceptance_status_to_contract(acceptance.status()),
     }
+}
+
+/// 本部によるコーチの受付の停止・再開と、止めた・再開した記録の照会（admin-web の `POST /coaches/{coach_id}/suspend`・
+/// `POST /coaches/{coach_id}/resume`・`GET /coaches/{coach_id}/acceptance-changes`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どれも本部だけ（コーチ・生徒は 403）。
+pub fn coach_acceptance_router<R, I, C, T>(
+    suspend_coach: SuspendCoach<R, I, C>,
+    resume_coach: ResumeCoach<R, I, C>,
+    list_coach_acceptance_changes: ListCoachAcceptanceChanges<R, I>,
+    tokens: T,
+) -> Router
+where
+    R: CoachAcceptanceRepository + 'static,
+    I: CoachIntroductionLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}/suspend",
+            post(self::suspend_coach::<R, I, C>),
+        )
+        .route(
+            "/coaches/{coach_id}/resume",
+            post(self::resume_coach::<R, I, C>),
+        )
+        .route(
+            "/coaches/{coach_id}/acceptance-changes",
+            get(coach_acceptance_changes::list_coach_acceptance_changes::<R, I, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(CoachAcceptancesState {
+            suspend_coach,
+            resume_coach,
+            list_coach_acceptance_changes,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

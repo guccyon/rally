@@ -6,21 +6,25 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::{AccountRepository, account_id_uuid},
+    identity::{AccountRepository, TokenVerifier, account_id_uuid},
     matching::{
         AddFavoriteCoach, AddFavoriteCoachCommand, AddFavoriteCoachError, CoachReviewSummaryLookup,
         FavoriteCoachListing, FavoriteCoachRepository, ListFavoriteCoaches, RemoveFavoriteCoach,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::{get, put},
 };
-use domain::{identity::AccountId, matching::MatchingError};
+use domain::{
+    identity::{AccountId, Role},
+    matching::MatchingError,
+};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{date_time_to_contract, student_app_sports, student_app_sports_to_contract},
     error::ApiError,
 };
@@ -174,4 +178,41 @@ fn favorite_coach_body(
         average_rating: listing.review_summary.average_rating(),
         favorited_at: date_time_to_contract(listing.favorited_at)?,
     }))
+}
+
+/// 生徒のお気に入りのコーチ（student-app の `GET /favorite-coaches`・`PUT`・`DELETE /favorite-coaches/{coach_id}`）
+/// のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どれも生徒だけ（コーチ・本部は 403）で、扱うのはトークンの生徒自身のお気に入りだけ。
+pub fn favorite_coaches_router<F, R, C, V, T>(
+    add_favorite_coach: AddFavoriteCoach<F, R, C>,
+    remove_favorite_coach: RemoveFavoriteCoach<F>,
+    list_favorite_coaches: ListFavoriteCoaches<F, R, V>,
+    tokens: T,
+) -> Router
+where
+    F: FavoriteCoachRepository + 'static,
+    R: AccountRepository + 'static,
+    C: Clock + 'static,
+    V: CoachReviewSummaryLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/favorite-coaches",
+            get(self::list_favorite_coaches::<F, R, C, V>),
+        )
+        .route(
+            "/favorite-coaches/{coach_id}",
+            put(self::add_favorite_coach::<F, R, C, V>)
+                .delete(self::remove_favorite_coach::<F, R, C, V>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(FavoriteCoachesState {
+            add_favorite_coach,
+            remove_favorite_coach,
+            list_favorite_coaches,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

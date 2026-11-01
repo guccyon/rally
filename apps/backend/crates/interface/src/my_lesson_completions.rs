@@ -6,19 +6,19 @@ use std::sync::Arc;
 use application::{
     async_lesson::VideoRepository,
     catalog::lesson_menu_id_uuid,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     lesson::{
         LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
         LessonCompletionReviewLookup, ListMyLessonCompletions, lesson_completion_id_uuid,
     },
     live_lesson::{BookingLookup, LiveLessonSessionRepository},
 };
-use axum::{Json, extract::State};
-use domain::lesson::LessonCompletionMenu;
+use axum::{Json, Router, extract::State, routing::get};
+use domain::{identity::Role, lesson::LessonCompletionMenu};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{date_time_to_contract, lesson_type_to_contract},
     error::ApiError,
     lessons::source_ids,
@@ -111,4 +111,35 @@ fn lesson_completion_menu_body(menu: &LessonCompletionMenu) -> LessonCompletionM
         lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
         name: menu.name().as_str().to_string(),
     }
+}
+
+/// 生徒が受けたレッスンの一覧（student-app の `GET /lessons/completions/me`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /lessons/completions/me` は生徒だけ（コーチ・本部は 403）。同じ接頭辞の `POST /lessons/completions`（完了記録）
+/// は [`crate::lessons_router`] で、役割で絞らない。
+pub fn my_lesson_completions_router<R, L, B, W, D, V, T>(
+    list_my_lesson_completions: ListMyLessonCompletions<R, L, B, W, D, V>,
+    tokens: T,
+) -> Router
+where
+    R: LessonCompletionRepository + 'static,
+    L: LiveLessonSessionRepository + 'static,
+    B: BookingLookup + 'static,
+    W: VideoRepository + 'static,
+    D: LessonCompletionCoachDisplayNameLookup + 'static,
+    V: LessonCompletionReviewLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lessons/completions/me",
+            get(self::list_my_lesson_completions::<R, L, B, W, D, V>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(MyLessonCompletionsState {
+            list_my_lesson_completions,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

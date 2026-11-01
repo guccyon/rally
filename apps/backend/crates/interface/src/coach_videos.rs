@@ -3,14 +3,18 @@
 
 use std::sync::Arc;
 
-use application::async_lesson::{
-    ListCoachVideos, VideoRepository, VideoStudentDisplayNameLookup, video_id_uuid,
+use application::{
+    async_lesson::{
+        ListCoachVideos, VideoRepository, VideoStudentDisplayNameLookup, video_id_uuid,
+    },
+    identity::TokenVerifier,
 };
-use axum::{Json, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{date_time_to_contract, video_review_status_to_contract},
     error::ApiError,
     videos::{AiFeedbackBody, VideoLessonMenuBody, ai_feedback_body, video_lesson_menu_body},
@@ -80,4 +84,22 @@ where
             })
             .collect::<Result<_, ApiError>>()?,
     }))
+}
+
+/// コーチに届いた動画の一覧（admin-web の `GET /coaches/me/videos`）のルーター。組み立て用のクレートは他の機能の
+/// ルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /coaches/me/videos` はコーチだけ。
+pub fn coach_videos_router<W, F, T>(list_coach_videos: ListCoachVideos<W, F>, tokens: T) -> Router
+where
+    W: VideoRepository + 'static,
+    F: VideoStudentDisplayNameLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/coaches/me/videos", get(list_my_coach_videos::<W, F>))
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(CoachVideosState { list_coach_videos }))
+        .layer(TokenVerification::layer(tokens))
 }

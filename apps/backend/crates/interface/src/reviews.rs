@@ -12,7 +12,7 @@ use application::{
     analytics::AnalyticsSink,
     catalog::lesson_menu_id_uuid,
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     lesson::lesson_completion_id_uuid,
     review::{
         CoachReviewList, CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository,
@@ -21,9 +21,10 @@ use application::{
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
+    routing::{get, post},
 };
 use domain::{
     identity::Role,
@@ -35,7 +36,10 @@ use domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount, contract::date_time_to_contract, error::ApiError, review_error,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
+    contract::date_time_to_contract,
+    error::ApiError,
+    review_error,
 };
 
 /// レッスンの評価のハンドラーが使うユースケース。
@@ -264,4 +268,55 @@ pub(crate) fn lesson_review_reply_body(
         comment: reply.comment().as_str().to_string(),
         replied_at: date_time_to_contract(reply.replied_at())?,
     })
+}
+
+/// レッスンの評価とコーチの評価（`POST /lesson-reviews`・`GET /coaches/{coach_id}/review-summary`・
+/// `GET /coaches/{coach_id}/reviews`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `POST /lesson-reviews`（レッスンの評価）は生徒だけで、評価できるのは自分が生徒の完了したレッスンだけ。
+/// `GET /coaches/{coach_id}/review-summary`（コーチの評価の件数と平均）と `GET /coaches/{coach_id}/reviews`（コーチが
+/// 受けた評価の一覧。評価したレッスンのメニューを添える）は本部・コーチ・生徒で、コーチは自分の分だけ。
+pub fn reviews_router<L, R, M, A, C, T>(
+    submit_lesson_review: SubmitLessonReview<L, R, A, C>,
+    get_coach_review_summary: GetCoachReviewSummary<R>,
+    list_coach_reviews: ListCoachReviews<R, M>,
+    tokens: T,
+) -> Router
+where
+    L: CompletedLessonLookup + 'static,
+    R: LessonReviewRepository + 'static,
+    M: ReviewedLessonMenuLookup + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-reviews",
+            post(self::submit_lesson_review::<L, R, M, A, C>)
+                .route_layer(require_role(&[Role::Student])),
+        )
+        .route(
+            "/coaches/{coach_id}/review-summary",
+            get(self::get_coach_review_summary::<L, R, M, A, C>).route_layer(require_role(&[
+                Role::Headquarters,
+                Role::Coach,
+                Role::Student,
+            ])),
+        )
+        .route(
+            "/coaches/{coach_id}/reviews",
+            get(self::list_coach_reviews::<L, R, M, A, C>).route_layer(require_role(&[
+                Role::Headquarters,
+                Role::Coach,
+                Role::Student,
+            ])),
+        )
+        .with_state(Arc::new(ReviewsState {
+            submit_lesson_review,
+            get_coach_review_summary,
+            list_coach_reviews,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

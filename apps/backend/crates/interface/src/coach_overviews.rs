@@ -6,18 +6,21 @@ use std::sync::Arc;
 use application::{
     catalog::LessonMenuRepository,
     clock::Clock,
-    identity::{AccountRepository, account_id_uuid},
+    identity::{AccountRepository, TokenVerifier, account_id_uuid},
     lesson::{LessonCompletionRepository, MonthlyReviewSummaryLookup},
     profile::{CoachAcceptanceLookup, GetCoachOverview},
     review::LessonReviewRepository,
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::get,
 };
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
+    auth::{TokenVerification, require_role},
     contract::coach_acceptance_status_to_contract,
     error::ApiError,
     lesson_stats::{MonthlyLessonStatsBody, monthly_lesson_stats_body},
@@ -76,4 +79,34 @@ where
         previous_month: monthly_lesson_stats_body(&overview.lesson_stats.previous_month),
         published_lesson_menu_count: overview.published_lesson_menu_count,
     }))
+}
+
+/// 本部が見るコーチ 1 人の様子（admin-web の `GET /coaches/{coach_id}/overview`）のルーター。組み立て用のクレートは
+/// 他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// 本部だけ（コーチ・生徒は 403）。
+#[allow(clippy::type_complexity)]
+pub fn coach_overview_router<R, A, V, M, W, C, N, T>(
+    get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    A: CoachAcceptanceLookup + 'static,
+    V: LessonReviewRepository + 'static,
+    M: LessonCompletionRepository + 'static,
+    W: MonthlyReviewSummaryLookup + 'static,
+    C: Clock + 'static,
+    N: LessonMenuRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches/{coach_id}/overview",
+            get(self::get_coach_overview::<R, A, V, M, W, C, N>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(CoachOverviewsState { get_coach_overview }))
+        .layer(TokenVerification::layer(tokens))
 }

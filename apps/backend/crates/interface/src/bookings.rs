@@ -9,7 +9,7 @@ use application::{
     catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         BookingRepository, CancelBooking, CancelBookingCommand, ConfirmBooking,
         ConfirmBookingCommand, CreateBooking, CreateBookingCommand, LessonMenuLookup, QuotaGate,
@@ -17,15 +17,19 @@ use application::{
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
+    routing::post,
 };
-use domain::scheduling::{Booking, BookingLessonMenu};
+use domain::{
+    identity::Role,
+    scheduling::{Booking, BookingLessonMenu},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{booking_status_to_contract, date_time_to_contract},
     error::ApiError,
     scheduling_error::booking_not_found,
@@ -193,4 +197,44 @@ fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLessonMenuBody {
         name: menu.name().as_str().to_string(),
         duration_minutes: menu.duration().map(|d| d.minutes()),
     }
+}
+
+/// 生徒の予約の作成・確定・キャンセル（student-app の `POST /bookings`・`POST /bookings/{booking_id}/confirm`・
+/// `POST /bookings/{booking_id}/cancel`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どれも生徒だけ。同じパスの `GET /bookings`（本部が見る予約の一覧）は [`crate::headquarters_bookings_router`] にあり、
+/// `merge` で 1 つのパスにまとまる。
+pub fn bookings_router<B, J, G, A, P, C, T>(
+    create_booking: CreateBooking<B, J, A, C>,
+    confirm_booking: ConfirmBooking<B, G, A, P, C>,
+    cancel_booking: CancelBooking<B, A, P, C>,
+    tokens: T,
+) -> Router
+where
+    B: BookingRepository + 'static,
+    J: LessonMenuLookup + 'static,
+    G: QuotaGate + 'static,
+    A: AnalyticsSink + 'static,
+    P: DomainEventPublisher + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/bookings", post(self::create_booking::<B, J, G, A, P, C>))
+        .route(
+            "/bookings/{booking_id}/confirm",
+            post(self::confirm_booking::<B, J, G, A, P, C>),
+        )
+        .route(
+            "/bookings/{booking_id}/cancel",
+            post(self::cancel_booking::<B, J, G, A, P, C>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(BookingsState {
+            create_booking,
+            confirm_booking,
+            cancel_booking,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

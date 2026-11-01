@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use application::{
-    identity::{AccountRepository, account_id_uuid},
+    identity::{AccountRepository, TokenVerifier, account_id_uuid},
     matching::{
         CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, FavoriteCoachRepository,
         ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
@@ -16,15 +16,16 @@ use application::{
     profile::{CoachAcceptanceLookup, ListCoaches, ListedCoach},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State, rejection::QueryRejection},
     response::{IntoResponse, Response},
+    routing::get,
 };
 use domain::{catalog::Sport, identity::Role};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{self, AuthenticatedAccount},
+    auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     contract::{coach_acceptance_status_to_contract, sport_to_contract, student_app_sport},
     error::ApiError,
 };
@@ -155,4 +156,39 @@ fn coach_listing_body(listing: &CoachListing) -> CoachListingBody {
         published_lesson_menu_count: listing.published_lesson_menu_count,
         is_favorite: listing.is_favorite,
     }
+}
+
+/// コーチの一覧（`GET /coaches`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）
+/// 。
+///
+/// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
+/// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
+pub fn coaches_router<R, A, S, C, V, M, F, U, T>(
+    list_coaches: ListCoaches<R, A>,
+    list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    A: CoachAcceptanceLookup + 'static,
+    S: StudentSportLookup + 'static,
+    C: CoachCandidateLookup + 'static,
+    V: CoachReviewSummaryLookup + 'static,
+    M: PublishedLessonMenuCountLookup + 'static,
+    F: FavoriteCoachRepository + 'static,
+    U: SuspendedCoachLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/coaches",
+            get(self::list_coaches::<R, A, S, C, V, M, F, U>),
+        )
+        .route_layer(require_role(&[Role::Headquarters, Role::Student]))
+        .with_state(Arc::new(CoachesState {
+            list_coaches,
+            list_coaches_for_student,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

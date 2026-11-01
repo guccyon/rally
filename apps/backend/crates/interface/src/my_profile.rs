@@ -5,20 +5,21 @@
 use std::sync::Arc;
 
 use application::{
-    identity::{AccountRepository, GetAccount},
+    identity::{AccountRepository, GetAccount, TokenVerifier},
     profile::{UpdateStudentProfile, UpdateStudentProfileCommand, UpdateStudentProfileError},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
     response::{IntoResponse, Response},
+    routing::get,
 };
 use domain::identity::Role;
 use serde::Deserialize;
 
 use crate::{
     accounts::student_body,
-    auth::{self, AuthenticatedAccount},
+    auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     error::ApiError,
 };
 
@@ -86,4 +87,32 @@ where
             ApiError::internal(error).into_response()
         }
     }
+}
+
+/// 生徒の自分のプロフィール（student-app の `GET /me/profile`・`PATCH /me/profile`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。同じパスの `PUT /me/profile`（admin-web
+/// のコーチの自己紹介文）は [`crate::me_router`] にあり、`merge` で 1 つのパスにまとまる。
+///
+/// `GET`・`PATCH /me/profile` は生徒だけで、扱うのはトークンの生徒自身のアカウントだけ。
+pub fn my_profile_router<R, T>(
+    get_account: GetAccount<R>,
+    update_student_profile: UpdateStudentProfile<R>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/me/profile",
+            get(self::get_my_student_profile::<R>).patch(self::update_my_student_profile::<R>),
+        )
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(MyProfileState {
+            get_account,
+            update_student_profile,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

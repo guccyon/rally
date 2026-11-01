@@ -3,19 +3,23 @@
 use std::sync::Arc;
 
 use application::{
-    identity::{AccountRepository, account_id_uuid},
+    identity::{AccountRepository, TokenVerifier, account_id_uuid},
     profile::{
         CoachFavoriteLookup, CoachProfileRepository, GetCoachProfile, GetCoachProfileCommand,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::get,
 };
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount, contract::student_app_sports_to_contract, error::ApiError,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
+    contract::student_app_sports_to_contract,
+    error::ApiError,
 };
 
 /// `/coaches/{coach_id}` のハンドラーが使うユースケース。
@@ -69,4 +73,22 @@ where
         sports,
         is_favorite: profile.is_favorite,
     }))
+}
+
+/// コーチの紹介（student-app の `GET /coaches/{coach_id}`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /coaches/{coach_id}` は生徒だけ。
+pub fn coach_profile_router<R, F, T>(get_coach_profile: GetCoachProfile<R, F>, tokens: T) -> Router
+where
+    R: AccountRepository + CoachProfileRepository + 'static,
+    F: CoachFavoriteLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/coaches/{coach_id}", get(self::get_coach_profile::<R, F>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(CoachProfilesState { get_coach_profile }))
+        .layer(TokenVerification::layer(tokens))
 }

@@ -8,14 +8,17 @@ use application::{
         EntitlementRepository, GetEntitlement, GetEntitlementError, GetEntitlementQuery,
         entitlement_id_uuid,
     },
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
 };
-use axum::{Json, extract::State};
-use domain::entitlement::{Entitlement, LiveLessonQuota};
+use axum::{Json, Router, extract::State, routing::get};
+use domain::{
+    entitlement::{Entitlement, LiveLessonQuota},
+    identity::Role,
+};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         contract_type_to_contract, sport_to_contract, subscription_plan_to_contract,
         year_month_to_contract,
@@ -93,4 +96,22 @@ fn live_lesson_quota_body(quota: &LiveLessonQuota) -> LiveLessonQuotaBody {
         used: quota.used(),
         remaining: quota.remaining(),
     }
+}
+
+/// 受講権の照会（student-app の `GET /entitlements/me`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /entitlements/me` は生徒だけ。
+pub fn entitlements_router<E, C, T>(get_entitlement: GetEntitlement<E, C>, tokens: T) -> Router
+where
+    E: EntitlementRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/entitlements/me", get(get_my_entitlement::<E, C>))
+        .route_layer(require_role(&[Role::Student]))
+        .with_state(Arc::new(EntitlementsState { get_entitlement }))
+        .layer(TokenVerification::layer(tokens))
 }

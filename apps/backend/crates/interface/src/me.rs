@@ -5,22 +5,26 @@
 use std::sync::Arc;
 
 use application::{
-    identity::{AccountRepository, GetAccount, account_id_uuid},
+    identity::{AccountRepository, GetAccount, TokenVerifier, account_id_uuid},
     profile::{
         CoachProfileRepository, GetCoachBio, UpdateCoachProfile, UpdateCoachProfileCommand,
         UpdateCoachProfileError,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
     response::{IntoResponse, Response},
+    routing::{get, put},
 };
-use domain::{identity::Account, profile::CoachBio};
+use domain::{
+    identity::{Account, Role},
+    profile::CoachBio,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{self, AuthenticatedAccount},
+    auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     contract::role_to_contract,
     error::ApiError,
 };
@@ -123,4 +127,34 @@ fn account_body(account: &Account, bio: Option<&CoachBio>) -> AccountBody {
         display_name: account.display_name().as_str().to_string(),
         bio: bio.map(|bio| bio.as_str().to_string()),
     }
+}
+
+/// ログイン中の本人（admin-web の `GET /me`・`PUT /me/profile`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /me` は役割で絞らない。`PUT /me/profile`（自分の自己紹介文の変更）はコーチだけ。同じパスの student-app の
+/// 生徒の分（`GET`・`PATCH /me/profile`）は [`crate::my_profile_router`] にあり、`merge` で 1 つのパスにまとまる。
+pub fn me_router<R, T>(
+    get_account: GetAccount<R>,
+    get_coach_bio: GetCoachBio<R>,
+    update_coach_profile: UpdateCoachProfile<R>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + CoachProfileRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/me", get(get_my_account::<R>))
+        .route(
+            "/me/profile",
+            put(update_my_coach_profile::<R>).route_layer(require_role(&[Role::Coach])),
+        )
+        .with_state(Arc::new(MeState {
+            get_account,
+            get_coach_bio,
+            update_coach_profile,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import { CoachReviewList } from "@/components/CoachReviewList";
@@ -36,13 +38,17 @@ export async function loadCoachReviews(
 
 /**
  * 評価の件数と平均と、その下に評価の一覧。コーチの「自分の評価」と本部の画面で共通。
- * `showLessonMenu` は一覧の各行にレッスンのメニューを出すか（CoachReviewList）。
+ * `showLessonMenu` は一覧の各行にレッスンのメニューを出すか、`renderReply` は各行の下に出す返信の欄（どちらも CoachReviewList）。
  */
 export function CoachReviewSummaryView({
   summary,
   reviews,
   showLessonMenu = false,
-}: CoachReviews & { showLessonMenu?: boolean }) {
+  renderReply,
+}: CoachReviews & {
+  showLessonMenu?: boolean;
+  renderReply?: (review: Schemas["CoachReview"]) => ReactNode;
+}) {
   return (
     <>
       <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
@@ -55,7 +61,7 @@ export function CoachReviewSummaryView({
       </dl>
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">受けた評価（新しい順）</h3>
-        <CoachReviewList reviews={reviews} showLessonMenu={showLessonMenu} />
+        <CoachReviewList reviews={reviews} showLessonMenu={showLessonMenu} renderReply={renderReply} />
       </div>
     </>
   );

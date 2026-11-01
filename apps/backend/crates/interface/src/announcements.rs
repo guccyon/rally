@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     notification::{
         AnnouncementRecipientLookup, AnnouncementRepository, ListAnnouncements,
         NotificationRepository, NotificationSettingsRepository, PushSender, SendAnnouncement,
@@ -15,16 +15,20 @@ use application::{
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
+    routing::post,
 };
-use domain::notification::{Announcement, AnnouncementBody, AnnouncementTitle, NotificationError};
+use domain::{
+    identity::Role,
+    notification::{Announcement, AnnouncementBody, AnnouncementTitle, NotificationError},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
     error::ApiError,
     message::notification_error,
@@ -138,4 +142,37 @@ fn announcement_body(announcement: &Announcement) -> Result<AnnouncementBodyJson
         recipient_count: announcement.recipient_count(),
         sent_at: date_time_to_contract(announcement.sent_at())?,
     })
+}
+
+/// 本部からのお知らせ（admin-web の `POST /announcements`・`GET /announcements`）のルーター。組み立て用のクレートは
+/// 他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。受け取った生徒は自分のお知らせ（[`crate::notifications_router`]）で読む。
+pub fn announcements_router<A, L, N, S, P, C, T>(
+    send_announcement: SendAnnouncement<A, L, N, S, P, C>,
+    list_announcements: ListAnnouncements<A>,
+    tokens: T,
+) -> Router
+where
+    A: AnnouncementRepository + 'static,
+    L: AnnouncementRecipientLookup + 'static,
+    N: NotificationRepository + 'static,
+    S: NotificationSettingsRepository + 'static,
+    P: PushSender + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/announcements",
+            post(self::send_announcement::<A, L, N, S, P, C>)
+                .get(self::list_announcements::<A, L, N, S, P, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(AnnouncementsState {
+            send_announcement,
+            list_announcements,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }
