@@ -1,8 +1,9 @@
 //! `GET /bookings`（admin-web の `listBookings`。本部が見る予約の一覧）の統合テスト。レスポンスの形を admin-web の
 //! OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付（日本時間）で絞って開始の古い順に返すこと、
 //! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
+//! `student_id` でその生徒の予約だけに絞れること（いない生徒は空の一覧）、
 //! `status`（繰り返せる）でその状態の予約だけに絞れること、`trial` で体験予約だけ・体験予約でない予約だけに絞れること、
-//! 期間の違反と日付でない値・UUID でない `coach_id`・予約の状態でない `status`・真偽値でない `trial` が 422 であることを
+//! 期間の違反と日付でない値・UUID でない `coach_id`・`student_id`・予約の状態でない `status`・真偽値でない `trial` が 422 であることを
 //! 確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
@@ -374,6 +375,107 @@ async fn coach_id_lists_only_bookings_of_that_coach() {
 }
 
 #[tokio::test]
+async fn student_id_lists_only_bookings_of_that_student() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?student_id={}", account_uuid(3)),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    admin.assert_response("get", PATH, status, &body);
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-11-01"), &json!("2026-11-07"))
+    );
+    assert_eq!(
+        slot_ids(&body),
+        [slot_uuid(2), slot_uuid(4), slot_uuid(6)],
+        "あおきの予約で、期間（今日から 7 日）に開始する予約だけ: {body}"
+    );
+    assert!(
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["student_display_name"] == "あおき"),
+        "{body}"
+    );
+
+    // 期間と組み合わせる。並べ方は変わらない
+    let (status, body) = get(
+        &app,
+        &format!(
+            "{PATH}?from=2026-10-31&to=2026-11-08&student_id={}",
+            account_uuid(3)
+        ),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        slot_ids(&body),
+        [
+            slot_uuid(1),
+            slot_uuid(2),
+            slot_uuid(4),
+            slot_uuid(6),
+            slot_uuid(5)
+        ]
+    );
+
+    // コーチ・状態・体験予約かと組み合わせる
+    for (query, expected) in [
+        (
+            format!(
+                "coach_id={}&student_id={}",
+                account_uuid(43),
+                account_uuid(3)
+            ),
+            vec![slot_uuid(6)],
+        ),
+        (
+            format!(
+                "coach_id={}&student_id={}",
+                account_uuid(43),
+                account_uuid(4)
+            ),
+            vec![slot_uuid(3)],
+        ),
+        (
+            format!("student_id={}&trial=true", account_uuid(3)),
+            vec![slot_uuid(2)],
+        ),
+        (
+            format!("student_id={}&status=confirmed", account_uuid(3)),
+            vec![],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+
+    // 生徒でない ID（コーチ）・ない ID は 404 にせず空の一覧
+    for student_id in [account_uuid(42), account_uuid(1000)] {
+        let (status, body) = get(
+            &app,
+            &format!("{PATH}?student_id={student_id}"),
+            HEADQUARTERS,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{student_id}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["bookings"], json!([]), "{student_id}");
+    }
+}
+
+#[tokio::test]
 async fn status_lists_only_bookings_in_those_statuses() {
     let admin = support::Contract::load("admin-web");
     let (bookings, made) = bookings().await;
@@ -542,6 +644,8 @@ async fn invalid_days_are_422() {
         ("?to=tomorrow", "to は YYYY-MM-DD の日付でない"),
         ("?coach_id=42", "coach_id が UUID でない"),
         ("?coach_id=", "coach_id が UUID でない"),
+        ("?student_id=3", "student_id が UUID でない"),
+        ("?student_id=", "student_id が UUID でない"),
         ("?status=canceled", "未知の予約の状態: canceled"),
         (
             "?status=pending&status=PENDING",
