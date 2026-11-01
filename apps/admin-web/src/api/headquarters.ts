@@ -32,6 +32,12 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listCoachAcceptanceChanges: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/acceptance-changes", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
     getCoachOverview: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/overview", {
