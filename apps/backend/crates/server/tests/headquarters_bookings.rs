@@ -285,8 +285,38 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
 
+    // 体験予約かで絞る。体験予約は 1 件目（確定済み）だけ。状態と組み合わせられる
+    for (query, expected) in [
+        ("&trial=true", vec![(id(0), json!("confirmed"))]),
+        (
+            "&trial=false",
+            vec![(id(1), json!("cancelled")), (id(2), json!("pending"))],
+        ),
+        (
+            "&trial=false&status=pending",
+            vec![(id(2), json!("pending"))],
+        ),
+        ("&trial=true&status=pending", vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings?from=2026-10-26&to=2026-11-02{query}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(statuses_of(&body), expected, "{query}: {body}");
+    }
+    let (status, body) = send(&router, get("/bookings?trial=yes", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
     for token in [&tanaka_token, &taro_token] {
-        let (status, _) = send(&router, get("/bookings", token)).await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        for path in ["/bookings", "/bookings?trial=true"] {
+            let (status, _) = send(&router, get(path, token)).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+        }
     }
 }
