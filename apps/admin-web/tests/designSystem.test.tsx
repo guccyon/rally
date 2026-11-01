@@ -61,7 +61,8 @@ describe("components.yaml とカタログの対応", () => {
   });
 
   test.skipIf(!existsSync(specPath("tokens.yaml")))("使うトークンは tokens.yaml にある", () => {
-    // tokens.yaml の形に依らず、入れ子のキーをつないだ名前（color.action.primary）と id の値をトークンの名前として集める
+    // tokens.yaml（デザインシステムの正本の PR #505 が置く）の形に依らず、入れ子のキーをつないだ名前（color.roles.primary）と
+    // id の値をトークンの名前として集める
     const names = new Set<string>();
     const walk = (node: unknown, path: string[]) => {
       if (Array.isArray(node)) return node.forEach((item) => walk(item, path));

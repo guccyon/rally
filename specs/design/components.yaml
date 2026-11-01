@@ -5,7 +5,10 @@
 #   部品 × 種類（variants）× 状態（states）をすべて並べる。対応はテストで確かめる
 #   （admin-web `tests/designSystem.test.tsx`、student-app `test/ui/design_catalog_test.dart`）
 # - 部品や種類・状態を足したら、両アプリの部品とカタログも同じ変更で足す（足さないとテストが落ちる）
-# - tokens は `specs/design/tokens.yaml`（#398）のトークンの id。見た目の値はここに書かない
+# - tokens は `specs/design/tokens.yaml` のトークンの名前（入れ子のキーをドットでつないだもの。例: color.roles.primary、
+#   color.status.danger.fg、spacing.scale_px.md）。見た目の値はここに書かない。tokens.yaml はデザインシステムの正本の PR #505
+#   （#398 の後継。#398 の PR #533 は #505 に一本化して閉じた）が置く。名前は #505 の tokens.yaml に揃えてあり、
+#   tokens.yaml が入ると admin-web のテストが照合する（まだないあいだは飛ばす）。この部品の一覧は #505 のあとにマージする
 # - 画面の型（どの部品をどう並べるか）は `specs/design/patterns.yaml`
 #
 # 項目: id（英小文字スネークケース）・ja・purpose（用途）・variants（種類。なければ省く）・states（要る状態。語彙は下の state_vocabulary）・tokens
@@ -41,14 +44,14 @@ components:
         purpose: 取り消せない・相手に効く操作（非公開にする・止める・キャンセルする）。確認の段の確定に使う
     states: [default, disabled, busy]
     tokens:
-      - color.action.primary
-      - color.action.danger
-      - color.text.on_action
-      - color.border.default
-      - radius.default
-      - space.sm
-      - opacity.disabled
-
+      - color.roles.primary
+      - color.roles.on_primary
+      - color.status.danger.fg
+      - color.roles.border_strong
+      - color.roles.surface
+      - color.roles.text_muted
+      - shape.radius_px.pill
+      - spacing.scale_px.sm
   - id: input
     ja: 入力
     purpose: 値を 1 つ入れる。見出し（ラベル）を必ず付け、誤りは項目の下に出す
@@ -64,25 +67,24 @@ components:
         purpose: 決まった選択肢から 1 つ選ぶ（スポーツ・対象・絞り込み）
     states: [default, disabled, invalid]
     tokens:
-      - color.border.default
-      - color.text.default
-      - color.text.muted
-      - color.feedback.error
-      - radius.default
-      - space.xs
-      - space.sm
-      - font.size.sm
-
+      - color.roles.border_strong
+      - color.roles.text
+      - color.roles.text_muted
+      - color.roles.surface
+      - color.status.danger.fg
+      - shape.radius_px.md
+      - spacing.scale_px.xs
+      - spacing.scale_px.sm
+      - typography.scale.small
   - id: card
     ja: カード
     purpose: ひとまとまりの情報（1 件の要点・欄）を枠で囲む
     states: [default]
     tokens:
-      - color.surface.default
-      - color.border.default
-      - radius.default
-      - space.md
-
+      - color.roles.surface
+      - color.roles.border_strong
+      - shape.radius_px.md
+      - spacing.scale_px.md
   - id: list_row
     ja: 一覧の行
     purpose: 一覧の 1 件。押せる行は行の全体が押せ、その 1 件の詳細や関係する画面へ移る
@@ -95,25 +97,24 @@ components:
         purpose: 押すとその 1 件へ移る行
     states: [default, disabled]
     tokens:
-      - color.border.default
-      - color.text.default
-      - color.text.muted
-      - space.sm
-      - space.md
-      - font.size.sm
-
+      - color.roles.border
+      - color.roles.text
+      - color.roles.text_muted
+      - color.roles.primary_container
+      - spacing.scale_px.sm
+      - spacing.scale_px.md
+      - typography.scale.small
   - id: section
     ja: セクション
     purpose: 画面の中の欄。見出しを付け、見出しで欄を探せるようにする
     states: [default]
     tokens:
-      - color.border.default
-      - radius.default
-      - space.lg
-      - space.xl
-      - font.size.lg
-      - font.weight.bold
-
+      - color.roles.border
+      - shape.radius_px.md
+      - spacing.scale_px.md
+      - spacing.scale_px.xl
+      - typography.scale.title
+      - typography.weights.bold
   - id: result_message
     ja: 結果の知らせ
     purpose: 直前の操作や読み込みの結果を 1 行で知らせる。失敗は支援技術にすぐ読み上げられる形（alert）で出す
@@ -126,26 +127,23 @@ components:
         purpose: 送れなかった・読み込めなかった（理由と次にできることを書く）
     states: [default]
     tokens:
-      - color.feedback.success
-      - color.feedback.error
-      - color.feedback.error_surface
-
+      - color.status.success.fg
+      - color.status.danger.fg
+      - color.status.danger.container
   - id: empty_state
     ja: 空の表示
     purpose: 一覧に 1 件もないとき。何がないかと、どうすれば出るかを書く
     states: [default]
     tokens:
-      - color.text.default
-      - font.size.sm
-
+      - color.roles.text
+      - typography.scale.small
   - id: loading
     ja: 読み込み中
     purpose: 一覧や欄を読み込んでいる間の表示（「読み込み中…」「〜を読み込んでいます…」）
     states: [default]
     tokens:
-      - color.text.muted
-      - font.size.sm
-
+      - color.roles.text_muted
+      - typography.scale.small
   - id: confirm_step
     ja: 確認の段
     purpose: 取り消せない操作・相手に届く操作の前に、同じ画面の中で内容を見せて確かめる段（ブラウザの confirm は使わない）。確定と直す（やめる）の 2 つのボタンを置く
@@ -158,9 +156,9 @@ components:
         purpose: 非公開にする・キャンセルするなど（確定のボタンは危険）
     states: [default, busy]
     tokens:
-      - color.surface.subtle
-      - color.border.default
-      - color.text.muted
-      - radius.default
-      - space.md
-      - font.size.sm
+      - color.roles.surface
+      - color.roles.border_strong
+      - color.roles.text_muted
+      - shape.radius_px.md
+      - spacing.scale_px.md
+      - typography.scale.small
