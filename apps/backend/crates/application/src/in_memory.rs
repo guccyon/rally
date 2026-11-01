@@ -1509,6 +1509,23 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
         Ok(())
     }
 
+    async fn find(&self, id: AnnouncementId) -> Result<Option<Announcement>, Unavailable> {
+        Ok(self.all().into_iter().find(|a| a.id() == id))
+    }
+
+    async fn update(&self, announcement: Announcement) -> Result<(), Unavailable> {
+        let mut announcements = self.announcements.lock().unwrap();
+        if let Some(saved) = announcements
+            .iter_mut()
+            .find(|a| a.id() == announcement.id() && !a.is_withdrawn())
+        {
+            *saved = saved
+                .clone()
+                .with_withdrawal(announcement.withdrawal().copied());
+        }
+        Ok(())
+    }
+
     async fn find_all(&self) -> Result<Vec<Announcement>, Unavailable> {
         let mut all: Vec<Announcement> = self.all().into_iter().rev().collect();
         // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
