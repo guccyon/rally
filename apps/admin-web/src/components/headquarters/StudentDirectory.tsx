@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
@@ -12,6 +13,8 @@ import {
   formatDate,
   formatDateTime,
 } from "@/components/labels";
+
+import { studentActivityPath } from "./StudentActivityHome";
 
 type Sport = Schemas["Sport"];
 type Student = Schemas["Student"];
@@ -60,7 +63,9 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
 
   return (
     <div className="space-y-4">
-      <p className="text-sm">登録している生徒を、登録の新しい順に見られます。</p>
+      <p className="text-sm">
+        登録している生徒を、登録の新しい順に見られます。表示名を押すと、その生徒の利用の様子を開きます。
+      </p>
       <label className="block">
         スポーツ
         <select
@@ -98,7 +103,11 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
           <tbody>
             {students.map((student) => (
               <tr key={student.student_id} className="border-t">
-                <td className="py-1">{student.display_name}</td>
+                <td className="py-1">
+                  <Link href={studentActivityPath(student.student_id)} className="text-blue-600 underline">
+                    {student.display_name}
+                  </Link>
+                </td>
                 <td className="py-1">{SPORT_LABELS[student.sport]}</td>
                 <td className="py-1">{planLabel(student)}</td>
                 <td className="py-1">
