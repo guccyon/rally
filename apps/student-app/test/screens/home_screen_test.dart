@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/chat.dart';
+import 'package:rally_student_app/state/coach_profile.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
@@ -109,6 +112,7 @@ void main() {
       'listMessageThreads',
       'listMyVideos',
       'listMyNotifications',
+      'listFavoriteCoaches',
     ]);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('山田さん、こんにちは'), findsOneWidget);
@@ -382,6 +386,132 @@ void main() {
     expect(tops, orderedEquals([...tops]..sort()));
   });
 
+  testWidgets('お気に入りのコーチを返った順のまま、コーチの名前と提供スポーツ・評価で出す', (tester) async {
+    final api = FakeStudentApi(
+      favoriteCoaches: [
+        Fixtures.favoriteCoach(),
+        Fixtures.favoriteCoach(
+          coachId: Fixtures.coachListings[2].coachId,
+          displayName: '高橋',
+          sports: const [Sport.tennis],
+          reviewCount: 0,
+          averageRating: null,
+          favoritedAgo: const Duration(days: 2),
+        ),
+      ],
+    );
+    await pumpHome(tester, api);
+
+    expect(api.calls, contains('listFavoriteCoaches'));
+    expect(find.text('お気に入りのコーチ'), findsOneWidget);
+    expect(find.text('テニス、野球・★ 3.7（3 件）'), findsOneWidget);
+    // 評価が 0 件のコーチは「評価なし」
+    expect(find.text('テニス・評価なし'), findsOneWidget);
+    final suzuki = tester.getTopLeft(find.text('テニス、野球・★ 3.7（3 件）')).dy;
+    final takahashi = tester.getTopLeft(find.text('テニス・評価なし')).dy;
+    expect(suzuki, lessThan(takahashi));
+  });
+
+  testWidgets('お気に入りのコーチの行からコーチの紹介を開き、戻るとホームに戻って読み直す', (tester) async {
+    final suzuki = Fixtures.coachListings[1];
+    final api = FakeStudentApi(
+      // 返ってきた添削の行（鈴木 コーチ）と見分けるため、動画は送っていないことにする
+      myVideos: const [],
+      favoriteCoaches: [Fixtures.favoriteCoach()],
+    );
+    final container = await pumpHome(tester, api);
+    api.calls.clear();
+    api.requests.clear();
+
+    await tapText(tester, '鈴木 コーチ');
+
+    expect(container.read(studentFlowProvider).step, FlowStep.coachProfile);
+    expect(container.read(coachProfileProvider).coach?.coachId, suzuki.coachId);
+    expect(api.calls, contains('getCoachProfile'));
+    // コーチが生徒のスポーツ（テニス）を提供していれば、メニューはテニスで絞る
+    expect(
+      api.requests,
+      contains((coachId: suzuki.coachId, sport: Sport.tennis)),
+    );
+    expect(find.text('お気に入りから外す'), findsOneWidget);
+    api.calls.clear();
+
+    await tester.tap(find.byTooltip('ホームに戻る'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(studentFlowProvider).step, FlowStep.home);
+    expect(api.calls, contains('listFavoriteCoaches'));
+  });
+
+  testWidgets('お気に入りのコーチが生徒のスポーツを提供していなければ、提供するスポーツの先頭で紹介を開く', (tester) async {
+    final suzuki = Fixtures.coachListings[1];
+    final api = FakeStudentApi(
+      myVideos: const [],
+      favoriteCoaches: [
+        Fixtures.favoriteCoach(sports: const [Sport.soccer, Sport.baseball]),
+      ],
+    );
+    final container = await pumpHome(tester, api);
+
+    await tapText(tester, '鈴木 コーチ');
+
+    expect(container.read(coachProfileProvider).coach?.sport, Sport.soccer);
+    expect(
+      api.requests,
+      contains((coachId: suzuki.coachId, sport: Sport.soccer)),
+    );
+  });
+
+  testWidgets('お気に入りのコーチがいなければ、お気に入りのコーチの欄を出さない', (tester) async {
+    final api = FakeStudentApi();
+    await pumpHome(tester, api);
+
+    expect(api.calls, contains('listFavoriteCoaches'));
+    expect(find.text('お気に入りのコーチ'), findsNothing);
+    expect(find.textContaining('お気に入りのコーチを'), findsNothing);
+  });
+
+  testWidgets('お気に入りのコーチを読み込む間は読み込み中の旨を出す', (tester) async {
+    final api = FakeStudentApi()..favoriteCoachesGate = Completer<void>();
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: home,
+    );
+    unawaited(container.read(studentFlowProvider.notifier).refreshHome());
+    await tester.pump();
+
+    expect(find.text('お気に入りのコーチ'), findsOneWidget);
+    expect(find.text('お気に入りのコーチを読み込んでいます…'), findsOneWidget);
+
+    api.favoriteCoachesGate!.complete();
+    await tester.pumpAndSettle();
+    // 0 件だったので欄ごと消える
+    expect(find.text('お気に入りのコーチ'), findsNothing);
+  });
+
+  testWidgets('お気に入りのコーチを読めなければ、その欄にだけ読めなかった旨を出す', (tester) async {
+    final api = FakeStudentApi(
+      entitlement: entitlement,
+      favoriteCoaches: [Fixtures.favoriteCoach()],
+      failures: {'listFavoriteCoaches': Fixtures.unreachable},
+    );
+    await pumpHome(tester, api);
+
+    expect(
+      find.text('お気に入りのコーチを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('読み込めませんでした'), findsOneWidget);
+    expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsNothing);
+    expect(find.text('テニス、野球・★ 3.7（3 件）'), findsNothing);
+    expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
+  });
+
   testWidgets('返却済みの動画がなければ、返ってきた添削の欄を出さない', (tester) async {
     final api = FakeStudentApi(
       myVideos: [
@@ -617,6 +747,7 @@ void main() {
       'listMessageThreads',
       'listMyVideos',
       'listMyNotifications',
+      'listFavoriteCoaches',
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);

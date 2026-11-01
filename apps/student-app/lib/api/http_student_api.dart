@@ -157,6 +157,38 @@ class HttpStudentApi implements StudentApi {
   }
 
   @override
+  Future<FavoriteCoachList> listFavoriteCoaches() async =>
+      _favoriteCoachList(await _send('GET', '/favorite-coaches'));
+
+  @override
+  Future<FavoriteCoachList> addFavoriteCoach(String coachId) async =>
+      _favoriteCoachList(
+        await _send('PUT', '/favorite-coaches/${Uri.encodeComponent(coachId)}'),
+      );
+
+  @override
+  Future<FavoriteCoachList> removeFavoriteCoach(String coachId) async =>
+      _favoriteCoachList(
+        await _send(
+          'DELETE',
+          '/favorite-coaches/${Uri.encodeComponent(coachId)}',
+        ),
+      );
+
+  /// お気に入りのコーチの一覧の応答を読む。契約に反する応答（契約にないスポーツ・項目の欠けや型の違いなど、
+  /// [FormatException] や [TypeError] になるもの）は、呼び出し側（ホームの欄・コーチの紹介）が失敗として受け止められるよう
+  /// [StudentApiException] に包み直す
+  static FavoriteCoachList _favoriteCoachList(Map<String, dynamic> json) {
+    try {
+      return FavoriteCoachList.fromJson(json);
+    } on FormatException {
+      throw const StudentApiException(statusCode: 200);
+    } on TypeError {
+      throw const StudentApiException(statusCode: 200);
+    }
+  }
+
+  @override
   Future<StartSubscriptionResponse> startSubscription(
     StartSubscriptionRequest body,
   ) async => StartSubscriptionResponse.fromJson(

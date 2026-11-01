@@ -8,9 +8,10 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 import '../ui/lesson_menu_entry.dart';
 
-/// コーチの紹介（コーチを探す一覧の行から開く）。表示名 → 自己紹介 → 評価の平均と件数と最近の評価 → 公開中のレッスンメニュー →
+/// コーチの紹介（コーチを探す一覧の行か、ホームのお気に入りのコーチの行から開く）。表示名 → お気に入りの切り替え → 自己紹介 →
+/// 評価の平均と件数と最近の評価 → 公開中のレッスンメニュー →
 /// 「このコーチの空き枠を見る」（そのコーチの予約枠に絞ったスロット検索へ）。欄ごとに別の API を読み、読めなかった欄にだけ
-/// その旨と「もう一度読み込む」を出す（ほかの欄と空き枠への移動はそのまま使える）
+/// その旨と「もう一度読み込む」を出す（ほかの欄と空き枠への移動はそのまま使える）。アプリバーの戻るで開いた画面に戻る
 class CoachProfileScreen extends ConsumerWidget {
   const CoachProfileScreen({super.key});
 
@@ -60,12 +61,25 @@ class CoachProfileScreen extends ConsumerWidget {
     return FlowScaffold(
       title: 'コーチの紹介',
       leading: IconButton(
-        tooltip: 'コーチの一覧に戻る',
+        tooltip: state.returnStep == FlowStep.home ? 'ホームに戻る' : 'コーチの一覧に戻る',
         icon: const Icon(Icons.arrow_back),
         onPressed: busy ? null : notifier.close,
       ),
       children: [
         Text(displayName, style: textTheme.headlineSmall),
+        // お気に入りかは紹介（getCoachProfile）に載るので、読めるまでは押せない
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: busy || profile == null ? null : notifier.toggleFavorite,
+            icon: Icon(
+              profile?.isFavorite ?? false
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+            ),
+            label: Text(favoriteToggleLabel(profile?.isFavorite ?? false)),
+          ),
+        ),
         heading('自己紹介'),
         if (failures.contains(CoachProfileSection.profile))
           failed(CoachProfileSection.profile, '自己紹介を読み込めませんでした。')
