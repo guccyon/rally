@@ -22,25 +22,33 @@ type State =
   | { kind: "failed"; message: string };
 
 /** 絞り込みの条件。空なら絞らない。 */
-type Filter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | "" };
+export type CoachAcceptanceFilter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | "" };
+type Filter = CoachAcceptanceFilter;
 
 const NO_FILTER: Filter = { acceptanceStatus: "", sport: "" };
 
-const ACCEPTANCE_STATUSES = Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[];
-const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
+/** 絞り込みの選択肢（契約の値）。 */
+export const ACCEPTANCE_STATUSES = Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[];
+export const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
 
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
  * 受付中の行は「受付を止める」（suspendCoach）、停止中の行は「再開する」（resumeCoach）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
+ * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
+ * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
  */
 export function CoachAcceptanceList({
   api,
+  initialFilter = NO_FILTER,
+  onFilterChange,
 }: {
   api: Pick<HeadquartersApi, "listCoaches" | "suspendCoach" | "resumeCoach">;
+  initialFilter?: Filter;
+  onFilterChange?: (filter: Filter) => void;
 }) {
-  const [filter, setFilter] = useState<Filter>(NO_FILTER);
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [state, setState] = useState<State>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
@@ -69,20 +77,22 @@ export function CoachAcceptanceList({
     [fetchCoaches],
   );
 
-  // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
+  const { acceptanceStatus: initialAcceptanceStatus, sport: initialSport } = initialFilter;
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchCoaches(NO_FILTER).then((next) => {
+    void fetchCoaches({ acceptanceStatus: initialAcceptanceStatus, sport: initialSport }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches]);
+  }, [fetchCoaches, initialAcceptanceStatus, initialSport]);
 
   async function changeFilter(next: Filter) {
     setFilter(next);
+    onFilterChange?.(next);
     setResult(null);
     setState({ kind: "loading" });
     await reload(next);
@@ -111,6 +121,8 @@ export function CoachAcceptanceList({
             }
           : current,
       );
+      // 今の絞り込みのまま読み直す（行は応答の状態にしてあるので、読み込み中には戻さない）。
+      await reload(filter);
       return;
     }
     // 409（読み込んだ後に他で止めた・再開した）や 404 などはサーバーの ErrorCode の文言を出し、一覧を今の状態に取り直す。

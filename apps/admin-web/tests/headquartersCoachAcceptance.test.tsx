@@ -5,16 +5,25 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
-import { CoachAcceptanceHome } from "@/components/headquarters/CoachAcceptanceHome";
-import { CoachAcceptanceList } from "@/components/headquarters/CoachAcceptanceList";
+import {
+  CoachAcceptanceHome,
+  coachAcceptanceFilterFrom,
+  coachAcceptancePath,
+} from "@/components/headquarters/CoachAcceptanceHome";
+import { type CoachAcceptanceFilter, CoachAcceptanceList } from "@/components/headquarters/CoachAcceptanceList";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
 
+// 配置のテストでは CoachAcceptanceHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
+const { headquartersApiMock } = vi.hoisted(() => ({ headquartersApiMock: vi.fn() }));
+vi.mock("@/api/headquarters", () => ({ headquartersApi: headquartersApiMock }));
+
 beforeEach(() => {
   replace.mockReset();
+  headquartersApiMock.mockReset();
 });
 
 const SUZUKI: Schemas["Coach"] = {
@@ -38,7 +47,10 @@ function listOf(...lists: Schemas["Coach"][][]) {
   return fn;
 }
 
-function renderList(api: Partial<Pick<HeadquartersApi, "listCoaches" | "suspendCoach" | "resumeCoach">>) {
+function renderList(
+  api: Partial<Pick<HeadquartersApi, "listCoaches" | "suspendCoach" | "resumeCoach">>,
+  props: { initialFilter?: CoachAcceptanceFilter; onFilterChange?: (filter: CoachAcceptanceFilter) => void } = {},
+) {
   render(
     <CoachAcceptanceList
       api={{
@@ -46,6 +58,7 @@ function renderList(api: Partial<Pick<HeadquartersApi, "listCoaches" | "suspendC
         suspendCoach: api.suspendCoach ?? vi.fn(),
         resumeCoach: api.resumeCoach ?? vi.fn(),
       }}
+      {...props}
     />,
   );
 }
@@ -118,9 +131,9 @@ describe("本部のコーチの受付", () => {
     confirmSpy.mockRestore();
   });
 
-  test("止めるのを確定したらそのコーチを送り、応答の状態を行に入れて「再開する」にする。一覧は取り直さない", async () => {
+  test("止めるのを確定したらそのコーチを送り、応答の状態を行に入れて「再開する」にし、一覧を読み直す", async () => {
     const user = userEvent.setup();
-    const listCoaches = listOf(COACHES);
+    const listCoaches = listOf(COACHES, [TAKAHASHI, { ...SUZUKI, acceptance_status: "suspended" }]);
     const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
       ok: true,
       data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
@@ -139,7 +152,11 @@ describe("本部のコーチの受付", () => {
     expect(within(updated).queryByRole("group")).not.toBeInTheDocument();
     // 他の行はそのまま。
     expect(statusOf(await rowOf("高橋 コーチ"))).toBe("停止中");
-    expect(listCoaches).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
+    expect(listCoaches).toHaveBeenLastCalledWith({});
+    // 読み直しのあいだも読み込み中に戻さず、結果の文言も残す。
+    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("鈴木 コーチの受付を止めました。");
   });
 
   test("再開を確定したら resumeCoach を送り、行を「受付中」にして「受付を止める」にする", async () => {
@@ -149,7 +166,8 @@ describe("本部のコーチの受付", () => {
       ok: true,
       data: { coach_id: TAKAHASHI.coach_id, acceptance_status: "accepting" },
     }));
-    renderList({ suspendCoach, resumeCoach });
+    const listCoaches = listOf(COACHES, [{ ...TAKAHASHI, acceptance_status: "accepting" }, SUZUKI]);
+    renderList({ listCoaches, suspendCoach, resumeCoach });
 
     const row = await rowOf("高橋 コーチ");
     await user.click(within(row).getByRole("button", { name: "再開する" }));
@@ -164,6 +182,8 @@ describe("本部のコーチの受付", () => {
     const updated = await rowOf("高橋 コーチ");
     expect(statusOf(updated)).toBe("受付中");
     expect(within(updated).getByRole("button", { name: "受付を止める" })).toBeInTheDocument();
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
+    expect(listCoaches).toHaveBeenLastCalledWith({});
   });
 
   test("409 はサーバーの ErrorCode の文言を出し、一覧を今の状態に取り直す", async () => {
@@ -353,6 +373,99 @@ describe("本部のコーチの受付の絞り込み", () => {
     await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(3));
     expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting" });
     await waitFor(async () => expect(statusOf(await rowOf("鈴木 コーチ"))).toBe("停止中"));
+  });
+
+  test("絞り込んだまま止めたら今の条件で読み直し、条件に合わなくなった行は一覧から外れる", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI], []);
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: true,
+      data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
+    }));
+    renderList({ listCoaches, suspendCoach });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeUndefined());
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.click(within(row).getByRole("button", { name: "停止を確定" }));
+
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(3));
+    expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting" });
+    expect(await screen.findByText("条件に合うコーチはいません")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("鈴木 コーチの受付を止めました。");
+    expect(screen.getByRole("combobox", { name: "受付の状態" })).toHaveValue("accepting");
+  });
+
+  test("渡された条件（URL のクエリ）で開き、絞り込みにその値を出す", async () => {
+    const listCoaches = listOf([SUZUKI]);
+    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "accepting", sport: "golf" } });
+
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+    expect(listCoaches).toHaveBeenCalledWith({ acceptance_status: "accepting", sport: "golf" });
+    expect(screen.getByRole("combobox", { name: "受付の状態" })).toHaveValue("accepting");
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("golf");
+  });
+
+  test("渡された条件で開いて 0 件なら「条件に合うコーチはいません」を出す", async () => {
+    renderList({ listCoaches: listOf([]) }, { initialFilter: { acceptanceStatus: "", sport: "swimming" } });
+
+    expect(await screen.findByText("条件に合うコーチはいません")).toBeInTheDocument();
+  });
+
+  test("絞り込みを変えるたびに、変えた後の条件を知らせる", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    renderList({ listCoaches: listOf(COACHES, [TAKAHASHI], [TAKAHASHI]) }, { onFilterChange });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "tennis" });
+    expect(onFilterChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("コーチの受付の絞り込みと URL", () => {
+  test("「すべて」の条件はクエリに出さず、選んだ条件だけを契約のクエリの名前で残す", () => {
+    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "" })).toBe("/headquarters/coaches");
+    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "" })).toBe(
+      "/headquarters/coaches?acceptance_status=suspended",
+    );
+    expect(coachAcceptancePath({ acceptanceStatus: "accepting", sport: "golf" })).toBe(
+      "/headquarters/coaches?acceptance_status=accepting&sport=golf",
+    );
+  });
+
+  test("クエリから条件を読み、契約の値でなければ「すべて」にする", () => {
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("acceptance_status=suspended&sport=tennis"))).toEqual({
+      acceptanceStatus: "suspended",
+      sport: "tennis",
+    });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams(""))).toEqual({ acceptanceStatus: "", sport: "" });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("acceptance_status=paused&sport=chess"))).toEqual({
+      acceptanceStatus: "",
+      sport: "",
+    });
+  });
+
+  test("画面で絞り込みを変えると、履歴を積まずに URL のクエリを置き換える", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI]);
+    headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
+    render(<CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf" }} />);
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledWith({ sport: "golf" });
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("golf");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/coaches?acceptance_status=accepting&sport=golf", {
+      scroll: false,
+    });
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting", sport: "golf" }));
   });
 });
 
