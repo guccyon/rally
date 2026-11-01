@@ -77,6 +77,7 @@ export const SCREENS: Screen[] = [
     open: async (page) => {
       await page.getByRole("link", { name: "鈴木 コーチ" }).click();
       await page.getByRole("heading", { name: "鈴木 コーチ" }).waitFor();
+      await page.getByRole("table", { name: "受付の記録" }).waitFor();
     },
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
