@@ -70,8 +70,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listBookings: (period: { from?: string; to?: string }) =>
-      call(() => client.GET("/bookings", { params: { query: period } })),
+    listBookings: (query: { from?: string; to?: string; trial?: boolean }) =>
+      call(() => client.GET("/bookings", { params: { query } })),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
     listAnnouncements: () => call(() => client.GET("/announcements")),

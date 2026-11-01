@@ -380,6 +380,20 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listBookings は体験予約だけの絞り込みを trial=true のクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01", trial: true });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/bookings");
+    expect(url.searchParams.get("trial")).toBe("true");
+  });
+
+  test("listBookings は trial を渡さなければクエリに付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01" });
+    expect(new URL(fetchMock.mock.calls[0]![0].url).searchParams.has("trial")).toBe(false);
+  });
+
   test("listBookings の 422 は入力の誤りの文言にする", async () => {
     const { api } = setup(json(422, { code: "validation_failed", message: "to is before from" }));
     const result = await api.listBookings({ from: "2026-10-26", to: "2026-10-25" });

@@ -237,6 +237,81 @@ describe("本部の予約", () => {
     expect(screen.getByText("2026年10月27日（火） 〜 2026年10月27日（火）・0 件")).toBeInTheDocument();
   });
 
+  test("「体験予約だけ」を入れると選んでいる期間で trial=true を付けて読み直し、絞った件数を出す", async () => {
+    const listBookings = listOf(BOOKINGS);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件");
+    expect(screen.getByRole("checkbox", { name: "体験予約だけ" })).not.toBeChecked();
+
+    listBookings.mockResolvedValueOnce({
+      ok: true,
+      data: { from: "2026-10-26", to: "2026-11-01", bookings: [BOOKINGS[0]!] },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01", trial: true });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・体験予約 1 件")).toBeInTheDocument();
+    expect(bodyRows("2026年10月26日（月） の予約").map((row) => cellsOf(row)[5])).toEqual(["体験予約"]);
+
+    // 切ると trial を付けずに読み直す
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01" });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件")).toBeInTheDocument();
+  });
+
+  test("「体験予約だけ」のまま期間を変えて「この期間で見る」でも trial=true を付ける", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-27");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-27", trial: true });
+  });
+
+  test("「体験予約だけ」で読み込み中は「読み込み中…」、0 件なら「この期間の体験予約はありません」と出す", async () => {
+    let resolveTrial: (value: Awaited<ReturnType<HeadquartersApi["listBookings"]>>) => void = () => {};
+    const listBookings = vi
+      .fn<HeadquartersApi["listBookings"]>()
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-26", to: "2026-11-01", bookings: BOOKINGS } })
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveTrial = resolve)));
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findAllByRole("table");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    resolveTrial({ ok: true, data: { from: "2026-10-26", to: "2026-11-01", bookings: [] } });
+    expect(await screen.findByText("この期間の体験予約はありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・体験予約 0 件")).toBeInTheDocument();
+    expect(screen.queryByText("この期間の予約はありません")).not.toBeInTheDocument();
+  });
+
+  test("「体験予約だけ」で読めなければその文言を出し、期間が正しくなければ送らずに理由を出す", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    listBookings.mockResolvedValueOnce({ ok: false, message: "通信できませんでした。" });
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("通信できませんでした。");
+    expect(screen.queryByText("この期間の体験予約はありません")).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-25");
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(screen.getByText("終了日は開始日と同じか、それより後の日付にしてください。")).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledTimes(2);
+  });
+
   test("API のエラー（本部以外のトークンの 403 など）の文言を出し、一覧は出さない", async () => {
     const listBookings = vi.fn<HeadquartersApi["listBookings"]>(async () => ({
       ok: false,
