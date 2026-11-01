@@ -976,6 +976,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/video-reviews/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 返却を待っている動画添削の一覧（本部）
+         * @description 生徒が送った動画（student-app の `submitVideo`）のうち、コーチがまだ添削を返していない（`returnVideoReview` していない）ものを、
+         *     コーチを問わず横断で、送付からの経過の長い順に返す。本部が返却の遅れている添削に気づくための一覧。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     経過時間の数え方と並べ方はここが正本（実装は backend の domain `PendingVideoReviewFilter` の 1 か所）。
+         *
+         *     - 対象: 添削が返却されていない動画すべて（スポーツ・コーチを問わない。ゴルフの動画も、ワンショット決済が確定していなくても載る）
+         *     - 経過時間 `elapsed_hours`: 動画を送った時刻 `submitted_at` から照会した時刻 `as_of`（サーバーの現在時刻）までの時間。
+         *       1 時間に満たない端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない
+         *     - 並べ方: 送った時刻 `submitted_at` の古い順（経過時間の長い順）。同じ時刻は `video_id` の順
+         *     - 絞り込み（任意）: `sport` を付ければそのスポーツの動画だけ。`min_elapsed_hours` を付ければ経過時間がその時間以上
+         *       （含む）の動画だけ（例: `48` で 48 時間以上）。両方を組み合わせられ、並べ方は変わらない。付けなければ絞らない
+         *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）ときは 422 `validation_failed`
+         *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
+         *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
+         *     - 照会だけで、何も保存しない（コーチへの催促の通知はしない）
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listPendingVideoReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/videos/{video_id}/review": {
         parameters: {
             query?: never;
@@ -2008,6 +2046,43 @@ export interface components {
             /** @description 添削待ちを送られた時刻の古い順で先に、その後に返却済みを返却した時刻の新しい順（同じ時刻は動画 ID の順） */
             videos: components["schemas"]["CoachVideo"][];
         };
+        /** @description 本部が見る返却待ちの動画添削の一覧の 1 件。生徒が送った動画（glossary の async_lesson）で、コーチがまだ添削（glossary の video_review）を返していないもの */
+        PendingVideoReview: {
+            /** Format: uuid */
+            video_id: string;
+            sport: components["schemas"]["Sport"];
+            /**
+             * Format: uuid
+             * @description 動画を送った生徒
+             */
+            student_id: string;
+            /** @description 生徒のアカウントの表示名。アカウントが引けないときは載らない */
+            student_display_name?: string;
+            /**
+             * Format: uuid
+             * @description 担当のコーチ（動画の送り先で、添削を返すコーチ）
+             */
+            coach_id: string;
+            /** @description コーチのアカウントの表示名。アカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 生徒が動画を送った時刻
+             */
+            submitted_at: string;
+            /** @description 送った時刻から照会した時刻（一覧の `as_of`）までの経過時間（時間。1 時間に満たない端数は切り捨て） */
+            elapsed_hours: number;
+        };
+        /** @description 本部が見る返却待ちの動画添削の一覧（選び方・並べ方は `listPendingVideoReviews` の説明） */
+        PendingVideoReviewList: {
+            /**
+             * Format: date-time
+             * @description 照会した時刻（サーバーの現在時刻）。各項目の `elapsed_hours` はこの時刻までの経過時間
+             */
+            as_of: string;
+            /** @description 送った時刻の古い順（経過時間の長い順。同じ時刻は `video_id` の順） */
+            videos: components["schemas"]["PendingVideoReview"][];
+        };
         /**
          * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った / system: システムが流した（当事者のどちらでもない。お知らせなど）
          * @enum {string}
@@ -3033,6 +3108,34 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listPendingVideoReviews: {
+        parameters: {
+            query?: {
+                /** @description このスポーツの動画だけを返す（付けなければスポーツを問わない） */
+                sport?: components["schemas"]["Sport"];
+                /** @description 送付からの経過時間（時間。端数は切り捨て）がこの値以上の動画だけを返す（付けなければ絞らない） */
+                min_elapsed_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 返却を待っている動画添削の一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingVideoReviewList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     returnVideoReview: {
