@@ -3,6 +3,8 @@
 //! 完了記録の保存先から読まれてコーチごとの数に出ること、照会した時刻から 30 日を過ぎると数えないこと、生徒には同じパスで
 //! student-app の形（数を載せない）で返し、コーチは 403 であることを確かめる。期間の境目と契約の形の細かい検査は
 //! interface の `tests/coaches.rs` と domain の `RecentLessonPeriod`。
+//! あわせて、本部が表示名の検索語 `q` で Postgres に保存したコーチを探せること（ほかの絞り込みとの組み合わせと 422 を含む。
+//! 一致の規則の細かい検査は domain の `DisplayNameQuery`）を確かめる。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coaches -- --include-ignored` で走らせる。
@@ -243,4 +245,103 @@ async fn headquarters_sees_lessons_completed_in_the_last_30_days_of_each_coach(p
     }
     let (status, _) = send(&router, "GET", "/coaches", Some(&tanaka), None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// コーチの一覧の表示名を、並びのまま取り出す。
+fn names(body: &Value) -> Vec<String> {
+    body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["display_name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_searches_coaches_by_display_name(pool: PgPool) {
+    let (yamada_id, _) = register(
+        &pool,
+        "yamada@example.com",
+        "Taro Yamada",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    for (email, name, sport) in [
+        ("hanako@example.com", "山田 花子", Sport::Soccer),
+        ("yamada2@example.com", "山田", Sport::Tennis),
+        ("hira@example.com", "やまだ", Sport::Tennis),
+        ("percent@example.com", "100%コーチ", Sport::Golf),
+    ] {
+        register(&pool, email, name, Role::Coach, vec![sport]).await;
+    }
+    register(
+        &pool,
+        "student@example.com",
+        "山田 生徒",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(at(60)),
+        RecordingAnalyticsSink::default(),
+    );
+    let (status, body) = send(
+        &router,
+        "POST",
+        &format!("/coaches/{yamada_id}/suspend"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // 山田 = %E5%B1%B1%E7%94%B0、やまだ = %E3%82%84%E3%81%BE%E3%81%A0、全角の空白 = %E3%80%80
+    for (query, expected) in [
+        // 並べ方は表示名のコードポイントの順のまま。生徒は載らない
+        ("?q=%E5%B1%B1%E7%94%B0", vec!["山田", "山田 花子"]),
+        ("?q=%E3%80%80%E5%B1%B1%E7%94%B0+", vec!["山田", "山田 花子"]),
+        // ASCII の英字の大文字・小文字は区別しない。ひらがなと漢字は同じとみなさない
+        ("?q=YAMADA", vec!["Taro Yamada"]),
+        ("?q=%E3%82%84%E3%81%BE%E3%81%A0", vec!["やまだ"]),
+        // % はワイルドカードでなく文字のまま
+        ("?q=%25", vec!["100%コーチ"]),
+        ("?q=_", vec![]),
+        // ほかの絞り込みと組み合わせる
+        ("?q=%E5%B1%B1%E7%94%B0&sport=tennis", vec!["山田"]),
+        ("?q=yamada&acceptance_status=accepting", vec![]),
+        ("?q=yamada&acceptance_status=suspended", vec!["Taro Yamada"]),
+        // 空白だけは絞らない
+        (
+            "?q=+",
+            vec!["100%コーチ", "Taro Yamada", "やまだ", "山田", "山田 花子"],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches{query}"),
+            Some(&headquarters),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        &format!("/coaches?q={}", "a".repeat(51)),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 }
