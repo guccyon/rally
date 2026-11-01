@@ -24,6 +24,7 @@
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
 //! - 本部が見る予約の一覧（`listBookings`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
 //!   422 `validation_failed`、それ以外は一覧では起きないので 500
+//! - 本部が見る予約 1 件の詳細（`getBooking`）: ない予約は 404 `not_found`、保存先の障害は 500
 //! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
 //!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開
 //!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500
@@ -33,7 +34,7 @@
 
 use application::scheduling::{
     CancelBookingError, ChangeCoachAcceptanceError, ConfirmBookingError, CreateBookingError,
-    ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
+    GetBookingError, ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -297,6 +298,15 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+        }
+    }
+}
+
+impl From<GetBookingError> for ApiError {
+    fn from(error: GetBookingError) -> Self {
+        match error {
+            GetBookingError::NotFound => booking_not_found(),
+            GetBookingError::Unavailable(error) => Self::internal(error),
         }
     }
 }
