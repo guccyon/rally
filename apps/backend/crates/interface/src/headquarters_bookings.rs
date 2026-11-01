@@ -37,6 +37,7 @@ pub struct ListBookingsParams {
     from: Option<String>,
     to: Option<String>,
     coach_id: Option<String>,
+    trial: Option<bool>,
 }
 
 /// admin-web の `HeadquartersBookingList`。
@@ -71,7 +72,8 @@ fn statuses_from_query(pairs: &[(String, String)]) -> Result<Vec<BookingStatus>,
 }
 
 /// `GET /bookings`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の日付で
-/// ないとき・`coach_id` が UUID でないとき・`status` が予約の状態でないときと、期間の違反は 422（失敗の応答は
+/// ないとき・`coach_id` が UUID でないとき・`status` が予約の状態でないとき・`trial` が `true` / `false` でないときと、
+/// 期間の違反は 422（失敗の応答は
 /// [`crate::scheduling_error`] が決める）。
 pub async fn list_bookings<B, K, D, C>(
     State(state): State<Arc<HeadquartersBookingsState<B, K, D, C>>>,
@@ -109,6 +111,7 @@ where
             })
             .transpose()?,
         statuses: statuses_from_query(&pairs)?,
+        trial: params.trial,
     };
     let list = state
         .list_bookings

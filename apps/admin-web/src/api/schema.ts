@@ -95,6 +95,10 @@ export interface paths {
          *       予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
          *       期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
          *       `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
+         *     - 任意の `trial`（`true` / `false`）で、体験予約か（各予約の `is_trial`）で絞れる。`true` なら体験予約だけ、`false` なら
+         *       体験予約でない予約だけ（本部が体験予約がどれだけ入っているかを拾う）。省けば今までどおり体験予約かを問わない。
+         *       状態を問わないので、キャンセルされた体験予約も `true` で出る。期間・`coach_id`・`status` と組み合わせられ、期間の規則と
+         *       並べ方は変わらない。`true` / `false` でない値（空文字列・`1`・`TRUE` を含む）は 422 `validation_failed`
          *     - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
          *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
@@ -2791,6 +2795,11 @@ export interface operations {
                  *     省けば状態を問わない。`BookingStatus` にない値は 422 `validation_failed`
                  */
                 status?: components["schemas"]["BookingStatus"][];
+                /**
+                 * @description 体験予約か（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ。省けば問わない）。
+                 *     `true` / `false` でない値は 422 `validation_failed`
+                 */
+                trial?: boolean;
             };
             header?: never;
             path?: never;

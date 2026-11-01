@@ -422,6 +422,20 @@ mod tests {
     }
 
     #[test]
+    fn trial_stays_a_trial_after_it_is_confirmed_or_cancelled() {
+        for cancel in [false, true] {
+            let mut slot = slot(10, SlotStatus::Open);
+            let mut booking = reserve(1, STUDENT, true, &mut slot, &[]).unwrap();
+            if cancel {
+                booking.cancel(STUDENT, &mut slot, at(1)).unwrap();
+            } else {
+                booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
+            }
+            assert!(booking.is_trial(), "状態が変わっても体験予約のまま");
+        }
+    }
+
+    #[test]
     fn only_open_slots_can_be_reserved() {
         for status in [SlotStatus::Booked, SlotStatus::Closed] {
             assert_eq!(
