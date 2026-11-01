@@ -1,6 +1,7 @@
 //! 本部が見る生徒の一覧（admin-web の `GET /students`）を、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。生徒が student-app の操作で登録し・月額契約を始め・予約したことが、
-//! 一覧の契約種別と契約プラン・最後に予約した時刻に出ること、コーチ・生徒は 403 であることを確かめる。契約の形の
+//! 一覧の契約種別と契約プラン・最後に予約した時刻に出ること、スポーツと最後に予約した日（日本時間）で絞れること、
+//! コーチ・生徒は 403 であることを確かめる。契約の形の
 //! 細かい検査は interface の `tests/students.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -169,8 +170,58 @@ async fn headquarters_sees_contract_and_last_booking_of_students(pool: PgPool) {
         })
     );
 
+    // スポーツと、その日（日本時間）以降に予約していないかで絞る。予約は日本時間の 2026-10-05 09:04
+    for (path, expected) in [
+        ("/students?sport=tennis", vec![&subscriber_id]),
+        ("/students?sport=swimming", vec![&newcomer_id]),
+        ("/students?sport=golf", vec![]),
+        ("/students?not_booked_since=2026-10-05", vec![&newcomer_id]),
+        (
+            "/students?not_booked_since=2026-10-06",
+            vec![&newcomer_id, &subscriber_id],
+        ),
+        ("/students?sport=tennis&not_booked_since=2026-10-05", vec![]),
+        (
+            "/students?sport=tennis&not_booked_since=2026-10-06",
+            vec![&subscriber_id],
+        ),
+    ] {
+        let (status, body) = send(&router, "GET", path, Some(&headquarters), None).await;
+        assert_eq!(status, StatusCode::OK, "{path}: {body}");
+        let listed: Vec<&str> = body["students"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["student_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(listed, expected, "{path}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/students?sport=tennis&not_booked_since=2026-10-06",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["students"][0]["contract_type"], "subscription");
+    assert_eq!(
+        body["students"][0]["last_booked_at"],
+        "2026-10-05T00:04:00Z"
+    );
+
     for token in [&coach, &subscriber] {
         let (status, body) = send(&router, "GET", "/students", Some(token), None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        let (status, body) = send(
+            &router,
+            "GET",
+            "/students?sport=tennis&not_booked_since=2026-10-06",
+            Some(token),
+            None,
+        )
+        .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     }
 }
