@@ -15,3 +15,6 @@
   - 検査は `apps/backend/crates/application/tests/` の `kpi_semantic_layer.rs`（式が events.yaml にある名前だけを参照し、`inputs` と一致すること）と `analytics_emission.rs`（events.yaml の全イベントに発火するユースケースがあること。イベント名と発火箇所の対応表）。実際の集計ジョブとダッシュボードは P5
 - `change-scenarios.yaml`: L3 の固定変更シナリオ
   - 初版を配置済み（Blueprint のシナリオの種から 7 件、すべて `status: candidate`）。構造は `scenarios:` の配列で、各項目は `id`・`title`・`description`・`expected_contexts`（context-map.yaml の id）・`rationale`・`status` を持つ
+- `design/`: デザインシステムの正本（コンセプト `rally-court`）
+  - `principles.yaml`（原則）・`concept_tone.yaml`（コンセプトとトーン＆マナー）・`tokens.yaml`（色・書体・余白・角丸・アイコン・動き）・`components.yaml`（基本の部品）・`patterns.yaml`（画面の型）・`content.yaml`（文言と表記）・`accessibility.yaml`（WCAG 2.2 AA）・`governance.yaml`（育て方・lint の基準）。変更の記録は `design/CHANGELOG.md`
+  - アプリへの写しは student-app の `lib/ui/theme/`（`RallyColors` など）と `lib/ui/components/`、admin-web の `src/app/globals.css`（`@theme`）と `src/components/ui/`。トークンの値が正本と同じことを student-app の `test/ui/theme/rally_tokens_test.dart` と admin-web の `tests/designTokens.test.ts` が確かめる

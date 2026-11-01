@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/app.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/theme/rally_tokens.dart';
 
 import '../test/support/fake_student_api.dart';
 import '../test/support/pump.dart';
@@ -177,7 +178,7 @@ class _WriteComparator extends GoldenFileComparator {
   }
 }
 
-/// 日本語が四角にならないよう、日本語のフォントを既定の書体（Roboto）として読み込む。
+/// 日本語が四角にならないよう、日本語のフォントを既定の書体（Roboto）とテーマの書体（RallyTypography.family）として読み込む。
 /// アイコンは Flutter の SDK に入っている Material Icons を読み込む。
 Future<void> _loadFonts() async {
   final candidates = [
@@ -191,9 +192,10 @@ Future<void> _loadFonts() async {
       .where((f) => f.existsSync())
       .firstOrNull;
   if (text != null) {
-    final loader = FontLoader('Roboto')
-      ..addFont(Future.value(ByteData.sublistView(text.readAsBytesSync())));
-    await loader.load();
+    final bytes = ByteData.sublistView(text.readAsBytesSync());
+    for (final family in ['Roboto', RallyTypography.family]) {
+      await (FontLoader(family)..addFont(Future.value(bytes))).load();
+    }
   }
   final flutterRoot = Platform.environment['FLUTTER_ROOT'];
   final icons = File(

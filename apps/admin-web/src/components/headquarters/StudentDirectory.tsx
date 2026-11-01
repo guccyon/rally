@@ -64,7 +64,7 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
       <label className="block">
         スポーツ
         <select
-          className="mt-1 block rounded border px-2 py-1"
+          className="mt-1 block rounded-md border px-2 py-1"
           value={sport}
           onChange={(event) => setSport(event.target.value as Sport | "")}
         >
@@ -76,7 +76,7 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
           ))}
         </select>
       </label>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.students.length === 0 && (
         <p className="text-sm">まだ生徒はいません</p>

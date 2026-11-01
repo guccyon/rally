@@ -45,11 +45,11 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
         type="button"
         disabled={state.kind === "loading"}
         onClick={() => void reload()}
-        className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+        className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
       >
         再集計
       </button>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">集計中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">集計中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
         <>
@@ -70,7 +70,7 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
               {state.report.sports.map((supply) => (
                 <tr key={supply.sport}>
                   <td>{SPORT_LABELS[supply.sport]}</td>
-                  <td className={supply.status === "insufficient" ? "font-semibold text-red-600" : ""}>
+                  <td className={supply.status === "insufficient" ? "font-semibold text-danger" : ""}>
                     {SLOT_SUPPLY_STATUS_LABELS[supply.status]}
                   </td>
                   <td>{supply.published_slots}</td>

@@ -22,16 +22,16 @@ export function CoachReviewList({
     return <p className="text-sm">まだ評価はありません</p>;
   }
   return (
-    <ul aria-label="評価の一覧" className="divide-y rounded border text-sm">
+    <ul aria-label="評価の一覧" className="divide-y rounded-md border text-sm">
       {reviews.map((review) => (
         <li key={review.review_id} className="space-y-1 px-3 py-2">
           <p>
             <span className="font-semibold">{review.rating} 点</span>
-            <span className="text-gray-500">（5 点満点）</span>
+            <span className="text-text-muted">（5 点満点）</span>
           </p>
           {showLessonMenu && review.lesson_menu && <p>メニュー: {review.lesson_menu.name}</p>}
           <p>{review.comment}</p>
-          <p className="text-gray-500">{formatDateTime(review.submitted_at)}</p>
+          <p className="text-text-muted">{formatDateTime(review.submitted_at)}</p>
           {renderReply?.(review)}
         </li>
       ))}

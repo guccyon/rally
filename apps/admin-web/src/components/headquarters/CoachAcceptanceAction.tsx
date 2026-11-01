@@ -13,15 +13,15 @@ const ACTIONS: Record<
     question:
       "このコーチの受付を止めますか？新しい予約を受け付けなくなり、枠は生徒の検索に出なくなります。入っている予約はそのままです。",
     confirm: "停止を確定",
-    buttonClass: "border-red-600 text-red-700",
-    confirmClass: "bg-red-600",
+    buttonClass: "border-danger text-danger",
+    confirmClass: "bg-danger",
   },
   suspended: {
     button: "再開する",
     question: "このコーチの受付を再開しますか？公開中の枠がまた生徒の検索に出て、予約できるようになります。",
     confirm: "再開を確定",
-    buttonClass: "border-blue-600 text-blue-700",
-    confirmClass: "bg-blue-600",
+    buttonClass: "border-primary text-primary",
+    confirmClass: "bg-primary",
   },
 };
 
@@ -51,7 +51,7 @@ export function CoachAcceptanceAction({
     return (
       <button
         type="button"
-        className={`rounded border px-2 py-0.5 ${action.buttonClass}`}
+        className={`rounded-pill border px-2 py-0.5 ${action.buttonClass}`}
         onClick={() => setConfirming(true)}
       >
         {action.button}
@@ -65,7 +65,7 @@ export function CoachAcceptanceAction({
         <button
           type="button"
           disabled={busy}
-          className={`rounded px-2 py-0.5 text-white disabled:opacity-50 ${action.confirmClass}`}
+          className={`rounded-pill px-2 py-0.5 text-on-primary disabled:opacity-50 ${action.confirmClass}`}
           onClick={() => void confirm()}
         >
           {action.confirm}
@@ -73,7 +73,7 @@ export function CoachAcceptanceAction({
         <button
           type="button"
           disabled={busy}
-          className="rounded border px-2 py-0.5 disabled:opacity-50"
+          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
           onClick={() => setConfirming(false)}
         >
           やめる

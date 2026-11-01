@@ -128,7 +128,7 @@ export function LiveSessionPanel({
       <p className="text-sm">
         あなたの枠に入った予約です。確定した予約の「通話を開始」を押すと、その生徒との通話を始めます。
       </p>
-      {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
       {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
         <p className="text-sm">まだ予約はありません。</p>
@@ -149,7 +149,7 @@ export function LiveSessionPanel({
                       type="button"
                       disabled={busy || session?.status === "in_progress"}
                       onClick={() => void onStart(item.booking.booking_id)}
-                      className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
+                      className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
                     >
                       通話を開始
                     </button>
@@ -192,12 +192,12 @@ export function LiveSessionPanel({
       )}
       {session?.status === "in_progress" && (
         <>
-          <p className="text-sm text-gray-500">映像はモックのため表示しません。</p>
+          <p className="text-sm text-text-muted">映像はモックのため表示しません。</p>
           <button
             type="button"
             disabled={busy}
             onClick={onEnd}
-            className="rounded bg-red-600 px-4 py-1 text-white disabled:opacity-50"
+            className="rounded-pill bg-danger px-4 py-1 text-on-primary disabled:opacity-50"
           >
             通話を終了
           </button>

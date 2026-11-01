@@ -147,7 +147,7 @@ export function LessonMenus({
       <ResultMessage result={result} />
       <div className="space-y-2">
         <h3 className="font-semibold">自分のメニュー</h3>
-        {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+        {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
         {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
         {list.kind === "loaded" && list.menus.length === 0 && (
           <p className="text-sm">まだレッスンメニューを登録していません。</p>
@@ -181,7 +181,7 @@ export function LessonMenus({
                         setEditing({ kind: "edit", menu });
                         setResult(null);
                       }}
-                      className="rounded border px-2 disabled:opacity-50"
+                      className="rounded-pill border px-2 disabled:opacity-50"
                     >
                       編集
                     </button>
@@ -194,7 +194,7 @@ export function LessonMenus({
                           : `「${menu.name}」を公開する`
                       }
                       onClick={() => void setPublished(menu, !menu.is_published)}
-                      className="rounded border px-2 disabled:opacity-50"
+                      className="rounded-pill border px-2 disabled:opacity-50"
                     >
                       {menu.is_published ? "非公開にする" : "公開する"}
                     </button>

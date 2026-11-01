@@ -27,6 +27,11 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 - 画面を足した・タブや押す文言を変えたら `screens.ts` を直す。応答の要る API を足したら `fixtures.ts` に足す（ないと 404 の表示のまま撮られる）
 - id は前後の突き合わせに使うので変えない
 
+## テーマと部品
+
+- `src/app/globals.css` の `@theme` に `specs/design/tokens.yaml` の色・角丸・書体を写した。Tailwind の既定の色・角丸・影は消してあり、色は役割の名前（`bg-primary`・`text-text-muted`・`bg-danger-container` など）、角丸は `rounded-sm` / `rounded-md` / `rounded-pill` だけを使う。値が正本と同じことを `tests/designTokens.test.ts` が確かめる
+- 基本の部品（`specs/design/components.yaml`）は `src/components/ui/`（`Button`・`TextField` / `TextArea`・`Card`・`ListRow`・`Badge`・`StatusTag`・`Notice`・`EmptyState`・`Loading`・`ConfirmDialog`）。score_panel は admin-web では使わない
+
 ## API
 
 - 型は契約 `specs/contracts/api/admin-web/openapi.yaml` から `openapi-typescript` で生成した `src/api/schema.ts` だけを使う（手書きの型を置かない）。契約を変えたら `npm run gen:api`。生成物が契約とずれていれば `tests/apiSchema.test.ts` が落ちる

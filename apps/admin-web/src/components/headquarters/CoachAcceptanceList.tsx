@@ -17,8 +17,8 @@ type State =
   | { kind: "failed"; message: string };
 
 const STATUS_CLASSES: Record<Schemas["CoachAcceptanceStatus"], string> = {
-  accepting: "bg-green-100 text-green-800",
-  suspended: "bg-gray-200 text-gray-700",
+  accepting: "bg-success-container text-success-on-container",
+  suspended: "bg-surface text-text-muted",
 };
 
 /**
@@ -88,7 +88,7 @@ export function CoachAcceptanceList({
         受付を止めたコーチの枠は生徒の検索に出ず、新しい予約を受け付けません。入っている予約と枠はそのままです。
       </p>
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
         <p className="text-sm">コーチがまだいません</p>
@@ -108,7 +108,7 @@ export function CoachAcceptanceList({
                 <td className="py-1">{coach.display_name}</td>
                 <td className="py-1">
                   <span
-                    className={`rounded px-2 py-0.5 text-xs ${STATUS_CLASSES[coach.acceptance_status]}`}
+                    className={`rounded-sm px-2 py-0.5 text-xs ${STATUS_CLASSES[coach.acceptance_status]}`}
                   >
                     {COACH_ACCEPTANCE_STATUS_LABELS[coach.acceptance_status]}
                   </span>
