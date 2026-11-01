@@ -59,6 +59,10 @@ pub enum DomainError {
     AiFeedbackAlreadyRecorded,
     /// AI の一次フィードバックを作った時刻が動画の送付より前
     AiFeedbackBeforeSubmission,
+    /// 本部が見る返した動画添削の記録の期間の終わりが始まりより後でない
+    ReturnedVideoReviewPeriodEndsBeforeItStarts,
+    /// 本部が見る返した動画添削の記録の期間が長すぎる（`max_days` は始まりと終わりの日を含めた日数）
+    ReturnedVideoReviewPeriodTooLong { max_days: u16 },
     /// 動画の添削がまだ返されていないので、レッスンの完了を記録できない
     VideoReviewNotReturned,
     /// レッスンの完了の記録がレッスンの終わり（通話の終了・添削の返却）より前

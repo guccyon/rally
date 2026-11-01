@@ -1,6 +1,8 @@
 //! 動画と添削の保存先（Postgres の `async_lesson.videos`・`video_reviews`）。AI の一次フィードバックと、送った時点の
 //! レッスンメニューの写しは `videos` の列。
 
+use std::time::SystemTime;
+
 use application::{
     Unavailable,
     async_lesson::{UpdateVideoError, VideoRepository, video_id_uuid, video_review_id_uuid},
@@ -127,6 +129,28 @@ impl VideoRepository for PgVideoRepository {
              LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
              WHERE r.review_id IS NULL",
         )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(video_from_row).collect()
+    }
+
+    async fn videos_returned_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Video>, Unavailable> {
+        let rows: Vec<VideoRow> = sqlx::query_as(
+            "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
+                    r.review_id, r.comment, r.returned_at,
+                    v.ai_feedback_comment, v.ai_feedback_created_at,
+                    v.lesson_menu_id, v.lesson_menu_name
+             FROM async_lesson.videos v
+             JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
+             WHERE r.returned_at >= $1 AND r.returned_at < $2",
+        )
+        .bind(timestamp(starts_at))
+        .bind(timestamp(ends_at))
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;

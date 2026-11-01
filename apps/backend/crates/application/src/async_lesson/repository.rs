@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, time::SystemTime};
 
 use domain::{
     DomainError,
@@ -43,6 +43,14 @@ pub trait VideoRepository: Send + Sync {
     /// コーチがまだ添削を返していない動画（すべてのコーチ・生徒。本部が見る返却待ちの一覧の材料）。並びは決めない。
     fn videos_awaiting_review(
         &self,
+    ) -> impl Future<Output = Result<Vec<Video>, Unavailable>> + Send;
+
+    /// 添削の返却の時刻が `starts_at`（含む）から `ends_at`（含まない）までの動画（すべてのコーチ・生徒。本部が見る
+    /// 返した動画添削の記録の材料）。並びは決めない。
+    fn videos_returned_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
     ) -> impl Future<Output = Result<Vec<Video>, Unavailable>> + Send;
 
     /// 送付した動画を保存する。
