@@ -941,6 +941,8 @@ export interface paths {
          *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
          *     - すでに本部が非公開にしているメニューは 409 `lesson_menu_already_unpublished_by_headquarters`（何も変えない。最初の時刻と
          *       理由を残す）
+         *     - 非公開にしたとき、いつ・どの本部のアカウント（トークンのアカウント）が・どの理由で非公開にしたかの記録を 1 件残す
+         *       （`listLessonMenuPublicationChanges`）。404・409・422 で断った操作は残らない
          *
          *     メニューは catalog の持ち物で、他のコンテキストはポートで読むだけなので境界間イベントは発行しない。本部の運営の操作で、
          *     KPI の入力でもないので行動イベントも発火しない（`suspendCoach` と同じ）。コーチへの通知はしない。
@@ -966,8 +968,10 @@ export interface paths {
          * @description `unpublishLessonMenu` で本部が非公開にしたレッスンメニューを公開中（`is_published: true`）に戻し、戻したメニューを返す。
          *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。リクエストの本文は読まない。
          *
-         *     - 本部が非公開にした時刻と理由（`headquarters_unpublish`）は消す（履歴は残さない）。以後はコーチがまた
+         *     - 本部が非公開にした時刻と理由（`headquarters_unpublish`）は消す。以後はコーチがまた
          *       `updateMyLessonMenu` で公開・非公開を決められる
+         *     - 公開に戻したとき、いつ・どの本部のアカウント（トークンのアカウント）が公開に戻したかの記録を 1 件残す
+         *       （`listLessonMenuPublicationChanges`。非公開にした記録と理由もそこに残る）。404・409 で断った操作は残らない
          *     - 公開中に戻ったメニューは、また生徒の一覧（`listCoachLessonMenus`）に出る
          *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
          *     - 本部が非公開にしたメニューでない（公開中のもの・コーチが自分で非公開にしたもの）は 409
@@ -976,6 +980,43 @@ export interface paths {
          *     境界間イベント・行動イベントは発火しない（`unpublishLessonMenu` と同じ）。
          */
         post: operations["republishLessonMenu"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-menus/{lesson_menu_id}/publication-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * レッスンメニューを本部が非公開にした・公開に戻した記録（本部）
+         * @description レッスンメニュー 1 件を本部が非公開にした（`unpublishLessonMenu`）・公開に戻した（`republishLessonMenu`）記録を、
+         *     新しい順に返す。どのメニューを、いつ、どの本部のアカウントが非公開にして・公開に戻したかを、本部が後からたどるのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     - 記録は `unpublishLessonMenu`・`republishLessonMenu` がメニューを変えたとき 1 回につき 1 件で、書き換えない。
+         *       断られた操作（404・409・422）は残らない
+         *     - 各記録の `action` は操作（`unpublished` なら非公開にした、`republished` なら公開に戻した）。`reason` は非公開にしたときに
+         *       書いた理由（書かなければ空文字列）で、公開に戻した記録は null。`changed_by` は操作した本部のアカウントの ID、
+         *       `changed_at` は操作した時刻
+         *     - 公開に戻すとメニューの `headquarters_unpublish` は消えるが、記録は残る
+         *     - コーチが自分で公開・非公開を変えたこと（`updateMyLessonMenu`）は載らない
+         *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
+         *     - 記録を残し始める前（この操作を足す前）の非公開・公開に戻す操作は載らない。本部が一度も非公開にしていないメニューは
+         *       `changes` が空の配列
+         *     - 絞り込み・ページング・件数の上限はない
+         *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
+         *
+         *     境界間イベント・行動イベントは発火しない（`unpublishLessonMenu` と同じ）。
+         */
+        get: operations["listLessonMenuPublicationChanges"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2375,7 +2416,8 @@ export interface components {
         /**
          * @description 本部がレッスンメニューを非公開にしたこと（glossary の lesson_menu_headquarters_unpublish。`unpublishLessonMenu`）。
          *     本部が非公開にしたメニューにだけ載せ、本部が非公開にしていなければ項目ごと省く。これがあるあいだ、コーチは
-         *     メニューを公開し直せない（本部が `republishLessonMenu` で公開に戻すと消える）
+         *     メニューを公開し直せない（本部が `republishLessonMenu` で公開に戻すと消える。非公開にした・公開に戻した記録は
+         *     `listLessonMenuPublicationChanges` に残る）
          */
         HeadquartersUnpublish: {
             /**
@@ -2385,6 +2427,41 @@ export interface components {
             unpublished_at: string;
             /** @description 本部が非公開にしたときに書いた理由（書かなければ空文字列） */
             reason: string;
+        };
+        /**
+         * @description 本部がレッスンメニューにした操作（`listLessonMenuPublicationChanges`）。
+         *     unpublished: 非公開にした（`unpublishLessonMenu`）、republished: 公開に戻した（`republishLessonMenu`）
+         * @enum {string}
+         */
+        LessonMenuPublicationAction: "unpublished" | "republished";
+        /**
+         * @description レッスンメニューを本部が非公開にした・公開に戻した記録 1 件（glossary の lesson_menu_publication_change。
+         *     `listLessonMenuPublicationChanges`）。`unpublishLessonMenu`・`republishLessonMenu` がメニューを変えたときに残り、書き換えない
+         */
+        LessonMenuPublicationChange: {
+            action: components["schemas"]["LessonMenuPublicationAction"];
+            /** @description 非公開にしたときに書いた理由（書かなければ空文字列）。公開に戻した記録（`action` が `republished`）は null */
+            reason: string | null;
+            /**
+             * Format: uuid
+             * @description 非公開にした・公開に戻した本部のアカウントの ID
+             */
+            changed_by: string;
+            /**
+             * Format: date-time
+             * @description 非公開にした・公開に戻した時刻
+             */
+            changed_at: string;
+        };
+        /** @description レッスンメニュー 1 件を本部が非公開にした・公開に戻した記録の一覧（並べ方は `listLessonMenuPublicationChanges` の説明） */
+        LessonMenuPublicationChangeList: {
+            /**
+             * Format: uuid
+             * @description レッスンメニューの ID
+             */
+            lesson_menu_id: string;
+            /** @description 操作した時刻の新しい順（同じ時刻は後に記録した方が先）。記録がなければ空の配列 */
+            changes: components["schemas"]["LessonMenuPublicationChange"][];
         };
         /** @description コーチ 1 人のレッスンメニューの一覧（並べ方は各操作の説明） */
         LessonMenuList: {
@@ -3801,6 +3878,31 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listLessonMenuPublicationChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description レッスンメニューを本部が非公開にした・公開に戻した記録 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenuPublicationChangeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listStudents: {

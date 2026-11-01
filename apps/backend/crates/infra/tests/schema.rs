@@ -3164,6 +3164,149 @@ async fn lesson_menu_headquarters_unpublish_has_both_time_and_reason_or_neither(
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_publication_changes_are_by_headquarters_and_match_the_catalog_values(
+    pool: PgPool,
+) {
+    use domain::catalog::{HeadquartersUnpublishReason, LessonMenuPublicationAction};
+    use infra::catalog_values::lesson_menu_publication_action_value;
+
+    assert_eq!(
+        check_values(
+            &pool,
+            "catalog.lesson_menu_publication_changes",
+            "lesson_menu_publication_changes_action_check"
+        )
+        .await,
+        [
+            LessonMenuPublicationAction::Unpublished {
+                reason: HeadquartersUnpublishReason::default()
+            },
+            LessonMenuPublicationAction::Republished,
+        ]
+        .iter()
+        .map(lesson_menu_publication_action_value)
+        .collect::<Vec<_>>()
+    );
+
+    let coach_id = coach(&pool).await;
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
+        .bind(&coach_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    insert_lesson_menu(&pool, &coach_id, "tennis", "async_lesson", "添削", "", None)
+        .await
+        .unwrap();
+    let menu_id: String =
+        sqlx::query_scalar("SELECT lesson_menu_id::text FROM catalog.lesson_menus")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let headquarters_id = account(&pool, "headquarters", None).await;
+    let insert = |menu_id: String, action: &'static str, reason: Option<String>, by: String| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO catalog.lesson_menu_publication_changes
+                     (lesson_menu_id, action, reason, changed_by, changed_at)
+                 VALUES ($1::uuid, $2, $3, $4::uuid, now())",
+            )
+            .bind(menu_id)
+            .bind(action)
+            .bind(reason)
+            .bind(by)
+            .execute(&pool)
+            .await
+            .map(|_| ())
+        }
+    };
+
+    // 非公開にした記録は理由（空でも 200 文字でもよい）を持ち、公開に戻した記録は持たない
+    for reason in [String::new(), "あ".repeat(200)] {
+        insert(
+            menu_id.clone(),
+            "unpublished",
+            Some(reason),
+            headquarters_id.clone(),
+        )
+        .await
+        .unwrap();
+    }
+    insert(
+        menu_id.clone(),
+        "republished",
+        None,
+        headquarters_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    for (action, reason, code_name, constraint_name) in [
+        (
+            "withdrawn",
+            None,
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_action_check",
+        ),
+        (
+            "unpublished",
+            None,
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_shape",
+        ),
+        (
+            "republished",
+            Some(String::new()),
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_shape",
+        ),
+        (
+            "unpublished",
+            Some("あ".repeat(201)),
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_check",
+        ),
+    ] {
+        let (code, constraint) =
+            violation(insert(menu_id.clone(), action, reason, headquarters_id.clone()).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (code_name, constraint_name)
+        );
+    }
+
+    // 操作したのは本部のアカウントだけ
+    let (code, constraint) =
+        violation(insert(menu_id.clone(), "republished", None, coach_id.clone()).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "lesson_menu_publication_changes_changed_by_fkey"
+        )
+    );
+
+    // ないメニューの記録は入らない
+    let (code, constraint) = violation(
+        insert(
+            "00000000-0000-4000-8000-000000000001".to_string(),
+            "republished",
+            None,
+            headquarters_id,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "lesson_menu_publication_changes_lesson_menu_id_fkey"
+        )
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn lesson_menu_shape_follows_the_lesson_type(pool: PgPool) {
     let coach_id = coach(&pool).await;
     sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
