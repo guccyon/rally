@@ -1,0 +1,164 @@
+# デザインシステムの部品の一覧（正本）。画面はここにある部品で組む（P4・ADR 0025 の「画面はデザインシステムの部品で組む」）。
+#
+# - id はアプリをまたいで同じ。admin-web は `apps/admin-web/src/components/ui/`、student-app は `apps/student-app/lib/ui/` に
+#   同じ id の部品を置き、各アプリのカタログ（admin-web の `/design`、student-app の DesignCatalogScreen）に
+#   部品 × 種類（variants）× 状態（states）をすべて並べる。対応はテストで確かめる
+#   （admin-web `tests/designSystem.test.tsx`、student-app `test/ui/design_catalog_test.dart`）
+# - 部品や種類・状態を足したら、両アプリの部品とカタログも同じ変更で足す（足さないとテストが落ちる）
+# - tokens は `specs/design/tokens.yaml` のトークンの名前（入れ子のキーをドットでつないだもの。例: color.roles.primary、
+#   color.status.danger.fg、spacing.scale_px.md）。見た目の値はここに書かない。tokens.yaml はデザインシステムの正本の PR #505
+#   （#398 の後継。#398 の PR #533 は #505 に一本化して閉じた）が置く。名前は #505 の tokens.yaml に揃えてあり、
+#   tokens.yaml が入ると admin-web のテストが照合する（まだないあいだは飛ばす）。この部品の一覧は #505 のあとにマージする
+# - 画面の型（どの部品をどう並べるか）は `specs/design/patterns.yaml`
+#
+# 項目: id（英小文字スネークケース）・ja・purpose（用途）・variants（種類。なければ省く）・states（要る状態。語彙は下の state_vocabulary）・tokens
+
+version: 1
+
+state_vocabulary:
+  - id: default
+    ja: 通常
+  - id: disabled
+    ja: 無効
+    note: 押せない・入れられない。いまは操作できない理由を近くに書く
+  - id: busy
+    ja: 処理中
+    note: 押したあと API の応答を待つ間。押せなくし、文言を「〜しています…」にする
+  - id: invalid
+    ja: 入力の誤り
+    note: 項目の下に理由を出す（送る前に分かる誤り）
+
+components:
+  - id: button
+    ja: ボタン
+    purpose: 操作を 1 つ起こす。1 つの段に主のボタンは 1 つまで
+    variants:
+      - id: primary
+        ja: 主
+        purpose: その段で一番進めたい操作（送る・確かめる・確定）
+      - id: secondary
+        ja: 副
+        purpose: 主の横の戻る・直す・やめる、行ごとの軽い操作
+      - id: danger
+        ja: 危険
+        purpose: 取り消せない・相手に効く操作（非公開にする・止める・キャンセルする）。確認の段の確定に使う
+    states: [default, disabled, busy]
+    tokens:
+      - color.roles.primary
+      - color.roles.on_primary
+      - color.status.danger.fg
+      - color.roles.border_strong
+      - color.roles.surface
+      - color.roles.text_muted
+      - shape.radius_px.pill
+      - spacing.scale_px.sm
+  - id: input
+    ja: 入力
+    purpose: 値を 1 つ入れる。見出し（ラベル）を必ず付け、誤りは項目の下に出す
+    variants:
+      - id: single_line
+        ja: 1 行
+        purpose: 題・名前・短い文
+      - id: multi_line
+        ja: 複数行
+        purpose: 本文・自己紹介・コメント
+      - id: select
+        ja: 選択
+        purpose: 決まった選択肢から 1 つ選ぶ（スポーツ・対象・絞り込み）
+    states: [default, disabled, invalid]
+    tokens:
+      - color.roles.border_strong
+      - color.roles.text
+      - color.roles.text_muted
+      - color.roles.surface
+      - color.status.danger.fg
+      - shape.radius_px.md
+      - spacing.scale_px.xs
+      - spacing.scale_px.sm
+      - typography.scale.small
+  - id: card
+    ja: カード
+    purpose: ひとまとまりの情報（1 件の要点・欄）を枠で囲む
+    states: [default]
+    tokens:
+      - color.roles.surface
+      - color.roles.border_strong
+      - shape.radius_px.md
+      - spacing.scale_px.md
+  - id: list_row
+    ja: 一覧の行
+    purpose: 一覧の 1 件。押せる行は行の全体が押せ、その 1 件の詳細や関係する画面へ移る
+    variants:
+      - id: plain
+        ja: 表示だけ
+        purpose: 読むだけの行
+      - id: action
+        ja: 押せる
+        purpose: 押すとその 1 件へ移る行
+    states: [default, disabled]
+    tokens:
+      - color.roles.border
+      - color.roles.text
+      - color.roles.text_muted
+      - color.roles.primary_container
+      - spacing.scale_px.sm
+      - spacing.scale_px.md
+      - typography.scale.small
+  - id: section
+    ja: セクション
+    purpose: 画面の中の欄。見出しを付け、見出しで欄を探せるようにする
+    states: [default]
+    tokens:
+      - color.roles.border
+      - shape.radius_px.md
+      - spacing.scale_px.md
+      - spacing.scale_px.xl
+      - typography.scale.title
+      - typography.weights.bold
+  - id: result_message
+    ja: 結果の知らせ
+    purpose: 直前の操作や読み込みの結果を 1 行で知らせる。失敗は支援技術にすぐ読み上げられる形（alert）で出す
+    variants:
+      - id: success
+        ja: 成功
+        purpose: 送れた・保存できた
+      - id: failure
+        ja: 失敗
+        purpose: 送れなかった・読み込めなかった（理由と次にできることを書く）
+    states: [default]
+    tokens:
+      - color.status.success.fg
+      - color.status.danger.fg
+      - color.status.danger.container
+  - id: empty_state
+    ja: 空の表示
+    purpose: 一覧に 1 件もないとき。何がないかと、どうすれば出るかを書く
+    states: [default]
+    tokens:
+      - color.roles.text
+      - typography.scale.small
+  - id: loading
+    ja: 読み込み中
+    purpose: 一覧や欄を読み込んでいる間の表示（「読み込み中…」「〜を読み込んでいます…」）
+    states: [default]
+    tokens:
+      - color.roles.text_muted
+      - typography.scale.small
+  - id: confirm_step
+    ja: 確認の段
+    purpose: 取り消せない操作・相手に届く操作の前に、同じ画面の中で内容を見せて確かめる段（ブラウザの confirm は使わない）。確定と直す（やめる）の 2 つのボタンを置く
+    variants:
+      - id: primary
+        ja: 通常の確定
+        purpose: 送る・登録するなど（確定のボタンは主）
+      - id: danger
+        ja: 危険な確定
+        purpose: 非公開にする・キャンセルするなど（確定のボタンは危険）
+    states: [default, busy]
+    tokens:
+      - color.roles.surface
+      - color.roles.border_strong
+      - color.roles.text_muted
+      - shape.radius_px.md
+      - spacing.scale_px.md
+      - typography.scale.small

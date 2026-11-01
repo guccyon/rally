@@ -27,6 +27,12 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 - 画面を足した・タブや押す文言を変えたら `screens.ts` を直す。応答の要る API を足したら `fixtures.ts` に足す（ないと 404 の表示のまま撮られる）
 - id は前後の突き合わせに使うので変えない
 
+## デザインシステムの部品
+
+- 部品は `src/components/ui/`（`specs/design/components.yaml` の id ごと: `Button`・`TextInput` / `TextArea` / `Select`（入力の見出しと誤りの並びは共通の `Field`）・`Card`・`List` / `ListRow`・`Section`・`ResultMessage`・`EmptyState`・`Loading`・`ConfirmStep`）。1 ファイルに公開する部品は 1 つで、ファイル名は部品の名前（`TextInput.tsx` なら `TextInput`）。画面の型は `specs/design/patterns.yaml`
+- 部品 × 種類 × 状態の全部を `src/components/ui/catalog.tsx` に並べ、`/design` で見られる（本番のメニューには出さない）。画面のキャプチャの `design-catalog` なので、部品を変えると PR のキャプチャに出る
+- components.yaml に部品・種類・状態を足したら、部品と `catalog.tsx` にも足す（`tests/designSystem.test.tsx` が突き合わせる）
+
 ## API
 
 - 型は契約 `specs/contracts/api/admin-web/openapi.yaml` から `openapi-typescript` で生成した `src/api/schema.ts` だけを使う（手書きの型を置かない）。契約を変えたら `npm run gen:api`。生成物が契約とずれていれば `tests/apiSchema.test.ts` が落ちる

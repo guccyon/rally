@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { formatAverageRating } from "@/components/CoachReviewSummaryView";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LessonStatsTable } from "@/components/coach/LessonStats";
 
 import { CoachAcceptanceBadge } from "./CoachAcceptanceBadge";

@@ -3,7 +3,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import type { CoachApi } from "@/api/coach";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 
 // 契約の UpdateCoachProfileRequest.bio の maxLength（Unicode のコードポイントで数える）。
 const BIO_MAX_LENGTH = 400;

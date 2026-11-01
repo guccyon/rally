@@ -9,7 +9,7 @@ import {
   CoachReviewSummaryView,
   loadCoachReviews,
 } from "@/components/CoachReviewSummaryView";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LessonReviewReplyForm } from "@/components/coach/LessonReviewReplyForm";
 
 type State =

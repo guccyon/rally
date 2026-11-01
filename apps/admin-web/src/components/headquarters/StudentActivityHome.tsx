@@ -5,7 +5,7 @@ import { useMemo } from "react";
 
 import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
-import { Section } from "@/components/Section";
+import { Section } from "@/components/ui/Section";
 
 import { StudentActivity } from "./StudentActivity";
 

@@ -4,7 +4,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import { addMinutesToLocal, selectableMenus } from "./slotLessonMenu";

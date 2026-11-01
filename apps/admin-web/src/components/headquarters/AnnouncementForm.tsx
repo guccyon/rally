@@ -4,7 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { lengthOf } from "@/components/coach/lessonMenuInput";
 import { SPORT_LABELS, announcementTargetLabel } from "@/components/labels";
 

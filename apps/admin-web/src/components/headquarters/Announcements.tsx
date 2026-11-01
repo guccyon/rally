@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
-import { Section } from "@/components/Section";
+import { ResultMessage } from "@/components/ui/ResultMessage";
+import { Section } from "@/components/ui/Section";
 
 import { AnnouncementDraftList } from "./AnnouncementDraftList";
 import { AnnouncementForm } from "./AnnouncementForm";

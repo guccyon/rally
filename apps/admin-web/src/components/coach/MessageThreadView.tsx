@@ -4,7 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, knownStamp, STAMPS } from "@/components/labels";
 
 import { VideoReviewCommentForm } from "./VideoReviewCommentForm";

@@ -21,6 +21,8 @@ const coachTab = (name: string) => async (page: Page) => {
 
 export const SCREENS: Screen[] = [
   { id: "login", title: "ログイン", path: "/" },
+  // デザインシステムの部品のカタログ（本番のメニューには出さない）。部品が変わるとここに出る
+  { id: "design-catalog", title: "デザインシステム: 部品のカタログ", path: "/design" },
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
   { id: "coach-slots", title: "コーチ: 予約枠", role: "coach", path: "/coach", open: coachTab("予約枠") },
   {
