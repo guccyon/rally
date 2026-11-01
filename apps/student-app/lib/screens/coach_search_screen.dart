@@ -8,7 +8,8 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// コーチを探す（`listCoachesForStudent`。生徒のスポーツのコーチをサーバーの並びのまま出す）。
-/// 各行は表示名と、評価の平均と件数（0 件なら「評価なし」）・レッスンメニューの数を「・」でつなぐ。
+/// 各行は表示名と、評価の平均と件数（0 件なら「評価なし」）・レッスンメニューの数を「・」でつなぐ。お気に入りのコーチには
+/// ハートのしるしを付ける（コーチの紹介で切り替えたら、一覧を読み直さずに合わせる）。
 /// 行を押すと、そのコーチの紹介（[CoachProfileState]）を開く
 class CoachSearchScreen extends ConsumerWidget {
   const CoachSearchScreen({super.key});
@@ -55,7 +56,18 @@ class CoachSearchScreen extends ConsumerWidget {
                     coachListingLessonMenuCountLabel(coach),
                   ].join('・'),
                 ),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (coach.isFavorite)
+                      Icon(
+                        Icons.favorite,
+                        semanticLabel: 'お気に入り',
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
                 onTap: busy ? null : () => notifier.select(coach),
               ),
             ),
