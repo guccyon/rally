@@ -126,6 +126,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "matching.favorite_coaches",
             "messaging.messages",
             "messaging.threads",
+            "notification.announcement_drafts",
             "notification.announcements",
             "notification.notification_settings",
             "notification.notifications",
@@ -2626,6 +2627,89 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
         .await,
     );
     assert_eq!(code, FOREIGN_KEY_VIOLATION, "{constraint}");
+}
+
+/// 本部 `created_by` の下書きを入れる。
+async fn insert_announcement_draft(
+    pool: &PgPool,
+    created_by: &str,
+    title: &str,
+    body: &str,
+    sport: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification.announcement_drafts
+             (announcement_draft_id, created_by, title, body, sport, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, '2026-11-01T10:00:00Z', '2026-11-01T10:00:00Z')",
+    )
+    .bind(created_by)
+    .bind(title)
+    .bind(body)
+    .bind(sport)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn announcement_drafts_may_be_empty_but_keep_the_limits_and_a_known_sport(pool: PgPool) {
+    use domain::catalog::Sport;
+    use infra::identity_values::sport_value;
+
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.announcement_drafts",
+            "announcement_drafts_sport_check"
+        )
+        .await,
+        sports
+    );
+
+    let headquarters = account(&pool, "headquarters", None).await;
+    for (title, body, sport) in [
+        ("", "", None),
+        (" ", "\n", None),
+        (&*"あ".repeat(50), &*"あ".repeat(2000), Some("swimming")),
+    ] {
+        insert_announcement_draft(&pool, &headquarters, title, body, sport)
+            .await
+            .unwrap();
+    }
+
+    for (title, body, sport, constraint) in [
+        (
+            &*"あ".repeat(51),
+            "",
+            None,
+            "announcement_drafts_title_check",
+        ),
+        (
+            "",
+            &*"あ".repeat(2001),
+            None,
+            "announcement_drafts_body_check",
+        ),
+        ("", "", Some("cricket"), "announcement_drafts_sport_check"),
+    ] {
+        let (code, actual) =
+            violation(insert_announcement_draft(&pool, &headquarters, title, body, sport).await);
+        assert_eq!(
+            (code.as_str(), actual.as_str()),
+            (CHECK_VIOLATION, constraint)
+        );
+    }
+
+    let (code, constraint) = violation(
+        insert_announcement_draft(&pool, "00000000-0000-4000-8000-000000000001", "", "", None)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "announcement_drafts_created_by_fkey")
+    );
 }
 
 /// 本部 `sender_id` の送った記録を入れて ID を返す。

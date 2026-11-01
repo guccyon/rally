@@ -9,6 +9,7 @@
 //! （`specs/contracts/api/<app>/openapi.yaml`）が正。
 
 mod accounts;
+mod announcement_drafts;
 mod announcements;
 pub mod auth;
 mod bookings;
@@ -66,6 +67,7 @@ pub mod version;
 mod videos;
 
 pub use accounts::accounts_router;
+pub use announcement_drafts::announcement_drafts_router;
 pub use announcements::announcements_router;
 pub use auth::{AuthenticatedAccount, require_role};
 pub use bookings::bookings_router;

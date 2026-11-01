@@ -1358,6 +1358,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/announcement-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * お知らせの下書きの一覧（本部）
+         * @description 本部のお知らせの下書き（`createAnnouncementDraft` で作ったもの）を、最後に直した時刻 `updated_at` の新しい順に返す
+         *     （同じ時刻なら後に作ったものが先）。どの本部のアカウントが作ったかで絞らない。絞り込み・ページングはしない。
+         *     送った下書き・消した下書きは載らない。下書きがなければ `announcement_drafts` は空の配列。本部の役割のトークンだけが
+         *     呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listAnnouncementDrafts"];
+        put?: never;
+        /**
+         * お知らせの下書きの作成（本部）
+         * @description 本部が、生徒へのお知らせ（`sendAnnouncement`）を送る前に書きかけで残す下書き（glossary の announcement_draft）を作り、
+         *     作った下書きを返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。作ったのはトークンの本部のアカウント。
+         *
+         *     - 下書きは生徒に届かない（お知らせもプッシュ通知も作らない）。送るのは `sendAnnouncementDraft`
+         *     - 書きかけなので `title` と `body` は空（空白だけを含む）でもよい。上限は `sendAnnouncement` と同じで、`title` は
+         *       50 文字まで、`body` は 2000 文字まで（文字数は Unicode のコードポイントで数え、改行を含めて書いたとおりに保存する）。
+         *       超えれば 422 `validation_failed`
+         *     - `sport` を付ければそのスポーツの生徒へ、省くか null なら生徒全員へ送る下書き。`Sport` の値でなければ 422
+         *       `validation_failed`。対象の生徒がいるかは送るときに確かめる
+         *     - 作った時刻と最後に直した時刻はサーバーの現在時刻
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["createAnnouncementDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcement-drafts/{announcement_draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * お知らせの下書きの書き直し（本部）
+         * @description 本部が、お知らせの下書きの題・本文・対象のスポーツをまとめて書き換え、直したあとの下書きを返す。本部の役割の
+         *     トークンだけが呼べる（コーチ・生徒は 403）。作った本部のアカウントでなくても直せる。下書きは本部の一覧
+         *     （`listAnnouncementDrafts`）から選ぶ。
+         *
+         *     - リクエストの形と規則は `createAnnouncementDraft` と同じ（`sport` を省くか null にすれば生徒全員へ送る下書きになる）。
+         *       違えば 422 `validation_failed` で、何も変えない
+         *     - 最後に直した時刻 `updated_at` をサーバーの現在時刻にする。作った本部のアカウントと作った時刻は変えない
+         *     - `announcement_draft_id` の下書きがないとき（送った・消したものを含む）・UUID でないときは 404 `not_found`
+         *
+         *     行動イベントは発火しない。
+         */
+        put: operations["updateAnnouncementDraft"];
+        post?: never;
+        /**
+         * お知らせの下書きの削除（本部）
+         * @description 本部が、お知らせの下書きを消し、残った下書きの一覧（`listAnnouncementDrafts` と同じ並び）を返す。本部の役割の
+         *     トークンだけが呼べる（コーチ・生徒は 403）。作った本部のアカウントでなくても消せる。消した下書きは戻せない。
+         *     送ったお知らせ（`listAnnouncements`）には触れない。
+         *
+         *     - `announcement_draft_id` の下書きがないとき（送った・消したものを含む）・UUID でないときは 404 `not_found`
+         *
+         *     行動イベントは発火しない。
+         */
+        delete: operations["deleteAnnouncementDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcement-drafts/{announcement_draft_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * お知らせの下書きから送る（本部）
+         * @description 本部が、お知らせの下書きの題・本文・対象のスポーツで生徒にお知らせを送り、送った記録を返す。本部の役割のトークン
+         *     だけが呼べる（コーチ・生徒は 403）。作った本部のアカウントでなくても送れ、送ったのはトークンの本部のアカウント。
+         *     リクエストの本文は読まない。
+         *
+         *     - 送る中身の検証と送り方は `sendAnnouncement` と同じ。題（1〜50 文字）・本文（1〜2000 文字）が空（空白だけを含む）
+         *       なら 422 `validation_failed`、対象の生徒が 1 人もいなければ 404 `not_found`。どちらも何も送らず、下書きは残す
+         *     - 送れたら下書きは消え（`listAnnouncementDrafts` に載らない・同じ下書きをもう一度送ると 404）、送った記録は
+         *       `listAnnouncements` に出る。対象の生徒ごとのお知らせとプッシュ通知（受け取り設定に従う）も `sendAnnouncement` と同じ
+         *     - `announcement_draft_id` の下書きがないとき・UUID でないときは 404 `not_found`
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["sendAnnouncementDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications/me/read": {
         parameters: {
             query?: never;
@@ -2477,6 +2586,46 @@ export interface components {
         AnnouncementList: {
             /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先） */
             announcements: components["schemas"]["Announcement"][];
+        };
+        /** @description お知らせの下書きの作成・書き直し（`createAnnouncementDraft` / `updateAnnouncementDraft`） */
+        AnnouncementDraftRequest: {
+            /** @description 題（0〜50 文字。書きかけなので空でもよい。送るときは 1 文字以上で、空白だけは不可） */
+            title: string;
+            /** @description 本文（0〜2000 文字。書きかけなので空でもよい。改行を含めてよい。送るときは 1 文字以上で、空白だけは不可） */
+            body: string;
+            /** @description 対象のスポーツ。省くか null なら生徒全員 */
+            sport?: components["schemas"]["Sport"] | null;
+        };
+        /** @description glossary の announcement_draft（本部が送る前に書きかけで残したお知らせ。生徒には届かない） */
+        AnnouncementDraft: {
+            /** Format: uuid */
+            announcement_draft_id: string;
+            /**
+             * Format: uuid
+             * @description 下書きを作った本部のアカウントの ID
+             */
+            created_by: string;
+            /** @description 題（空のこともある） */
+            title: string;
+            /** @description 本文（空のこともある） */
+            body: string;
+            /** @description 対象のスポーツ。生徒全員へ送る下書きなら null */
+            sport: components["schemas"]["Sport"] | null;
+            /**
+             * Format: date-time
+             * @description 作った時刻
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description 最後に直した時刻（直していなければ作った時刻）
+             */
+            updated_at: string;
+        };
+        /** @description お知らせの下書きの一覧（並べ方は `listAnnouncementDrafts` の説明） */
+        AnnouncementDraftList: {
+            /** @description 最後に直した時刻の新しい順（同じ時刻なら後に作ったものが先） */
+            announcement_drafts: components["schemas"]["AnnouncementDraft"][];
         };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
@@ -3666,6 +3815,136 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listAnnouncementDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description お知らせの下書きの一覧（最後に直した時刻の新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementDraftList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createAnnouncementDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description 作った下書き */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementDraft"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    updateAnnouncementDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description 直したあとの下書き */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementDraft"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    deleteAnnouncementDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 消したあとに残ったお知らせの下書きの一覧（最後に直した時刻の新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementDraftList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    sendAnnouncementDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 下書きから送ったお知らせの記録（`sendAnnouncement` の応答と同じ形） */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     markMyNotificationsRead: {
