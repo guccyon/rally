@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成で返す。
+/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成と、本部からのお知らせの取り下げで返す。
 ///
 /// 利用者に見せる文言は境界が変種から決める。[`fmt::Display`] はデバッグ用。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub enum NotificationError {
     AnnouncementBodyTooLong { max: usize },
     /// 本部からのお知らせを受け取る生徒がいない（対象のスポーツの生徒が 1 人もいない）
     AnnouncementWithoutRecipients,
+    /// 本部からのお知らせはすでに取り下げてある
+    AnnouncementAlreadyWithdrawn,
 }
 
 impl fmt::Display for NotificationError {

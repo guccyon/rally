@@ -5,7 +5,7 @@ use crate::{Unavailable, clock::Clock};
 
 /// 自分のお知らせをすべて既読にするユースケース（student-app と admin-web の `markMyNotificationsRead`）。今の時刻で既読にし
 /// （すでに読んだものは最初に読んだ時刻のまま。何度呼んでもよい）、既読にしたあとの一覧（[`super::ListMyNotifications`]
-/// と同じ並び）を返す。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
+/// と同じ並び。本部が取り下げたお知らせは出さない）を返す。既読にするのは取り下げたものも含めて今までどおりすべて。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
 pub struct MarkMyNotificationsRead<N, A, C> {
     notifications: N,
     announcements: A,
@@ -42,7 +42,10 @@ mod tests {
 
     use domain::{
         async_lesson::VideoId,
-        notification::{Notification, NotificationId, PushNotification},
+        notification::{
+            Announcement, AnnouncementBody, AnnouncementId, AnnouncementTitle, Notification,
+            NotificationId, PushNotification,
+        },
         scheduling::BookingId,
     };
 
@@ -161,6 +164,50 @@ mod tests {
             notifications.all()[0].read_at(),
             None,
             "生徒が受け取るお知らせは変えない"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_withdrawn_announcement_is_marked_read_but_not_listed() {
+        let mut withdrawn = Announcement::new(
+            AnnouncementId::from_u128(7),
+            AccountId::from_u128(5),
+            AnnouncementTitle::new("メンテナンスのお知らせ").unwrap(),
+            AnnouncementBody::new("11/3 は使えません").unwrap(),
+            None,
+            1,
+            at(20),
+        )
+        .unwrap();
+        withdrawn.withdraw(AccountId::from_u128(5), at(25)).unwrap();
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            confirmed(1, STUDENT, 10),
+            Notification::new(
+                NotificationId::from_u128(2),
+                withdrawn.push_to(STUDENT),
+                at(20),
+            ),
+        ]);
+
+        let listed = MarkMyNotificationsRead::new(
+            notifications.clone(),
+            InMemoryAnnouncementRepository::with_announcements([withdrawn]),
+            FixedClock(at(30)),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|mine| mine.notification.id())
+                .collect::<Vec<_>>(),
+            [NotificationId::from_u128(1)],
+            "取り下げたお知らせは返さない"
+        );
+        assert!(
+            notifications.all().iter().all(Notification::is_read),
+            "既読の扱いは変えない（取り下げたものも既読にする）"
         );
     }
 

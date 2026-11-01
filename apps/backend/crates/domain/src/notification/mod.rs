@@ -7,12 +7,14 @@
 //! 決める。
 //!
 //! 本部は生徒全員か、あるスポーツの生徒全員にお知らせを送れる（[`Announcement`]。送った記録）。受け取る生徒ごとに
-//! お知らせを作り、プッシュ通知は受け取り設定に従う（種類は [`NotificationKind::Announcement`]）。
+//! お知らせを作り、プッシュ通知は受け取り設定に従う（種類は [`NotificationKind::Announcement`]）。誤って送ったお知らせは
+//! 本部が取り下げられ（[`AnnouncementWithdrawal`]）、取り下げたお知らせは生徒のお知らせの一覧に出さない。
 
 mod announcement;
 mod announcement_body;
 mod announcement_id;
 mod announcement_title;
+mod announcement_withdrawal;
 #[allow(clippy::module_inception)]
 mod notification;
 mod notification_error;
@@ -25,6 +27,7 @@ pub use announcement::Announcement;
 pub use announcement_body::AnnouncementBody;
 pub use announcement_id::AnnouncementId;
 pub use announcement_title::AnnouncementTitle;
+pub use announcement_withdrawal::AnnouncementWithdrawal;
 pub use notification::Notification;
 pub use notification_error::NotificationError;
 pub use notification_id::NotificationId;
