@@ -1077,7 +1077,8 @@ export interface paths {
          *       `to` が `from` より前・31 日を超えるときは 422 `validation_failed`（`message` に理由）
          *     - 任意の `coach_id` で、そのコーチのセッションだけに絞れる。省けばすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間にセッションがないコーチは、404 にせず `sessions` が空の配列
-         *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件
+         *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件。
+         *       本部が終わらせたセッション（`endLiveLessonSessionByHeadquarters`）は、本部が操作した時刻を `ended_at` にして載る
          *     - 並べ方: 開始 `started_at` の新しい順。同じ時刻は `session_id` の順
          *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
          *       開始の時刻 `started_at`・終了の時刻 `ended_at`（通話中は null）・長さ `duration_minutes`（開始から終了までの分。
@@ -1133,6 +1134,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/live-lesson-sessions/{session_id}/headquarters-end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 通話セッションを本部の判断で終わらせる（本部）
+         * @description 始まったまま終了の記録がない通話セッション（glossary の live_lesson_session。`listOverdueLiveLessonSessions` で
+         *     見つけたもの）を、本部の判断で終わったことにし、終わらせたセッションを返す。参加者が `endLiveLessonSession` を
+         *     呼ばないまま残った（終了し忘れ・通話の切断）セッションを片付けるのに使う。本部の役割のトークンだけが呼べる
+         *     （コーチ・生徒は 403）。リクエストの本文は読まない。
+         *
+         *     - 終わった時刻 `ended_at` は操作した時刻（サーバーの現在時刻）。終わらせた本部のアカウントの ID を `ended_by` に残す
+         *     - 開始の時刻からの経過は問わない（`listOverdueLiveLessonSessions` の時間に満たないセッションも終わらせられる）。
+         *       グループレッスンのセッションも 1 回で終わる
+         *     - 終わらせた後は、ほかの終了したセッションと同じに扱う: `listOverdueLiveLessonSessions` に出ず、
+         *       `listLiveLessonSessions` には `ended_at` と長さつきで載り、参加者の `endLiveLessonSession` は 409
+         *       `invalid_session_state`。参加者は今までどおり完了したレッスンを記録できる（`recordLessonCompletion`）
+         *     - すでに終わっている（参加者が終了した・本部が終わらせた）セッションは 409 `invalid_session_state`（何も変えない。
+         *       最初の終了を残す）
+         *     - `session_id` のセッションがない・UUID でないときは 404 `not_found`
+         *     - 通話そのもの（通話基盤のルーム）は切らない。通話基盤から接続品質の指標を受け取らないので、行動イベント `call.ended`
+         *       は発火しない（通話品質スコアの入力にしない）
+         *     - 予約・ビデオ通話の暦月の枠（`getMyEntitlement` の `live_lesson_quota`）は変えない（枠は予約の確定とキャンセルで数える）
+         *
+         *     live-lesson の持ち物の記録だけで、境界間イベントは発行しない。本部の運営の操作で、KPI の入力でもないので行動イベントも
+         *     発火しない。
+         */
+        post: operations["endLiveLessonSessionByHeadquarters"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions/overdue": {
         parameters: {
             query?: never;
@@ -1142,7 +1182,7 @@ export interface paths {
         };
         /**
          * 終わっていないまま時間の過ぎた通話セッションの一覧（本部）
-         * @description 始まったまま終了の記録がなく（`endLiveLessonSession` が呼ばれていない）、開始から一定の時間が過ぎた通話セッション
+         * @description 始まったまま終了の記録がなく（`endLiveLessonSession` も本部の `endLiveLessonSessionByHeadquarters` も呼ばれていない）、開始から一定の時間が過ぎた通話セッション
          *     （glossary の live_lesson_session）を、コーチを問わず横断で返す。本部が、終了し忘れや通話の切断で残ったセッションを
          *     見つけるための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *
@@ -2427,6 +2467,38 @@ export interface components {
             /** @description 開始から終了までの長さ（分。切り捨て）。通話中は null */
             duration_minutes: number | null;
         };
+        /** @description 本部が終わらせた通話セッション（`endLiveLessonSessionByHeadquarters`）。いつ始まり、いつ・どの本部のアカウントが終わらせたか */
+        HeadquartersEndedLiveLessonSession: {
+            /** Format: uuid */
+            session_id: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約（`LiveLessonSession` の `booking_id` と同じ）
+             */
+            booking_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約の生徒（`LiveLessonSession` の `student_id` と同じ）
+             */
+            student_id: string;
+            /**
+             * Format: date-time
+             * @description 開始の時刻
+             */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description 終わった時刻（本部が操作した時刻）
+             */
+            ended_at: string;
+            /**
+             * Format: uuid
+             * @description 終わらせた本部のアカウントの ID
+             */
+            ended_by: string;
+        };
         StartLiveLessonSessionRequest: {
             /**
              * Format: uuid
@@ -2816,7 +2888,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -3744,6 +3816,32 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    endLiveLessonSessionByHeadquarters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本部が終わらせた通話セッション */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadquartersEndedLiveLessonSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };

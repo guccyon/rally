@@ -122,6 +122,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "identity.coaches",
             "live_lesson.lesson_completions",
             "live_lesson.session_bookings",
+            "live_lesson.session_headquarters_ends",
             "live_lesson.sessions",
             "matching.favorite_coaches",
             "messaging.messages",
@@ -1069,6 +1070,67 @@ async fn live_lesson_session_records_quality_only_when_ended(pool: PgPool) {
         (code.as_str(), constraint.as_str()),
         (CHECK_VIOLATION, "sessions_quality_when_ended")
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_live_lesson_session_is_ended_by_headquarters_at_most_once(pool: PgPool) {
+    let (booking_id, student_id, coach_id) = session_parties(&pool).await;
+    let session_id = start_session(&pool, &booking_id, &student_id, &coach_id)
+        .await
+        .unwrap();
+    let headquarters = account(&pool, "headquarters", None).await;
+    let end = |session_id: String, ended_by: String| {
+        sqlx::query(
+            "INSERT INTO live_lesson.session_headquarters_ends (session_id, ended_by, ended_at)
+             VALUES ($1::uuid, $2::uuid, '2026-11-01T15:00:00Z')",
+        )
+        .bind(session_id)
+        .bind(ended_by)
+        .execute(&pool)
+    };
+
+    // 終わらせるのは本部のアカウントだけ
+    for other in [student_id.clone(), coach_id.clone()] {
+        let (code, constraint) = violation(end(session_id.clone(), other).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (
+                FOREIGN_KEY_VIOLATION,
+                "session_headquarters_ends_ended_by_fkey"
+            )
+        );
+    }
+    // ないセッションは終わらせられない
+    let (code, constraint) = violation(
+        end(
+            "00000000-0000-0000-0000-000000000099".to_string(),
+            headquarters.clone(),
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "session_headquarters_ends_session_id_fkey"
+        )
+    );
+    // セッション 1 つに 1 行。sessions の行は通話中のまま残せる（指標の制約に触れない）
+    end(session_id.clone(), headquarters.clone()).await.unwrap();
+    let (code, constraint) = violation(end(session_id.clone(), headquarters).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "session_headquarters_ends_pkey")
+    );
+    let ended_at: Option<String> = sqlx::query_scalar(
+        "SELECT ended_at::text FROM live_lesson.sessions WHERE session_id = $1::uuid",
+    )
+    .bind(&session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ended_at, None);
 }
 
 /// 生徒 `student_id` がコーチ `coach_id` に送った動画の行を入れ、video_id を返す。

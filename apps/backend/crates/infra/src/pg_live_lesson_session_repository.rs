@@ -1,4 +1,5 @@
-//! 通話セッションの保存先（Postgres の `live_lesson.sessions` と、結び付いた予約の `live_lesson.session_bookings`）。
+//! 通話セッションの保存先（Postgres の `live_lesson.sessions` と、結び付いた予約の `live_lesson.session_bookings`、
+//! 本部が終わらせた記録の `live_lesson.session_headquarters_ends`）。
 
 use application::{
     Unavailable,
@@ -29,13 +30,19 @@ use crate::pg_support::{is_unique_violation, timestamp};
 /// `session_bookings_booking_id_key`（結び付いた予約）で守る。セッションと結び付いた予約は 1 つのトランザクションで
 /// 保存する。`session_bookings` に行のないセッション（D41 より前の版が始めたもの）は、開始した予約だけが結び付いた
 /// ものとして読む。終了は行のロック（`FOR UPDATE`）の中で読み取りから保存までを行う。
+///
+/// 本部が終わらせたセッション（[`LiveLessonSession::ended_by_headquarters`]）は、`sessions` の行を変えずに
+/// `session_headquarters_ends` に 1 行足す（`sessions` は終了の時刻と接続品質を揃えて持つ制約があり、本部の終了には
+/// 指標がない）。読むときは `sessions.ended_at` があれば参加者の終了、なければ `session_headquarters_ends` の行が
+/// 本部の終了。両方あるのは古い版に戻した間に参加者が終了したときだけで、そのときは参加者の終了を採る。
 #[derive(Debug, Clone)]
 pub struct PgLiveLessonSessionRepository {
     pool: PgPool,
 }
 
 /// `live_lesson.sessions` の 1 行（session_id, booking_id, student_id, coach_id, started_at, ended_at,
-/// packet_loss_rate, jitter_ms, round_trip_ms, disconnect_count）。
+/// packet_loss_rate, jitter_ms, round_trip_ms, disconnect_count）と、本部が終わらせた記録
+/// （`session_headquarters_ends` の ended_by, ended_at。なければ NULL）。
 type SessionRow = (
     Uuid,
     Uuid,
@@ -47,15 +54,19 @@ type SessionRow = (
     Option<i32>,
     Option<i32>,
     Option<i32>,
+    Option<Uuid>,
+    Option<OffsetDateTime>,
 );
 
-/// セッションを読む SELECT（`$where` は WHERE 句から後ろ）。
+/// セッションを読む SELECT（`$where` は WHERE 句から後ろ。`sessions` は `s`、本部が終わらせた記録は `h`）。
 macro_rules! select_sessions {
     ($where:literal) => {
         concat!(
-            "SELECT session_id, booking_id, student_id, coach_id, started_at, ended_at,
-                    packet_loss_rate, jitter_ms, round_trip_ms, disconnect_count
-             FROM live_lesson.sessions ",
+            "SELECT s.session_id, s.booking_id, s.student_id, s.coach_id, s.started_at, s.ended_at,
+                    s.packet_loss_rate, s.jitter_ms, s.round_trip_ms, s.disconnect_count,
+                    h.ended_by, h.ended_at
+             FROM live_lesson.sessions s
+             LEFT JOIN live_lesson.session_headquarters_ends h ON h.session_id = s.session_id ",
             $where
         )
     };
@@ -99,7 +110,7 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
 
     async fn find(&self, session_id: SessionId) -> Result<Option<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
-        let row: Option<SessionRow> = sqlx::query_as(select_sessions!("WHERE session_id = $1"))
+        let row: Option<SessionRow> = sqlx::query_as(select_sessions!("WHERE s.session_id = $1"))
             .bind(session_id_uuid::to_uuid(session_id))
             .fetch_optional(&mut *conn)
             .await
@@ -116,8 +127,8 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
     ) -> Result<Option<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
         let row: Option<SessionRow> = sqlx::query_as(select_sessions!(
-            "WHERE booking_id = $1
-                OR session_id IN (SELECT session_id FROM live_lesson.session_bookings WHERE booking_id = $1)"
+            "WHERE s.booking_id = $1
+                OR s.session_id IN (SELECT session_id FROM live_lesson.session_bookings WHERE booking_id = $1)"
         ))
         .bind(booking_id_uuid::to_uuid(booking_id))
         .fetch_optional(&mut *conn)
@@ -135,7 +146,8 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
         let rows: Vec<SessionRow> = sqlx::query_as(select_sessions!(
-            "WHERE ended_at IS NULL AND started_at <= $1 ORDER BY started_at, session_id"
+            "WHERE s.ended_at IS NULL AND h.session_id IS NULL AND s.started_at <= $1
+             ORDER BY s.started_at, s.session_id"
         ))
         .bind(timestamp(started_at_or_before))
         .fetch_all(&mut *conn)
@@ -156,8 +168,8 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
         let rows: Vec<SessionRow> = sqlx::query_as(select_sessions!(
-            "WHERE started_at >= $1 AND started_at < $2 AND ($3::uuid IS NULL OR coach_id = $3)
-             ORDER BY started_at DESC, session_id"
+            "WHERE s.started_at >= $1 AND s.started_at < $2 AND ($3::uuid IS NULL OR s.coach_id = $3)
+             ORDER BY s.started_at DESC, s.session_id"
         ))
         .bind(timestamp(starts_at))
         .bind(timestamp(ends_at))
@@ -223,7 +235,7 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
         let unavailable = |e: sqlx::Error| UpdateSessionError::Unavailable(Unavailable::new(e));
         let mut tx = self.pool.begin().await.map_err(unavailable)?;
         let row: Option<SessionRow> =
-            sqlx::query_as(select_sessions!("WHERE session_id = $1 FOR UPDATE"))
+            sqlx::query_as(select_sessions!("WHERE s.session_id = $1 FOR UPDATE OF s"))
                 .bind(session_id_uuid::to_uuid(session_id))
                 .fetch_optional(&mut *tx)
                 .await
@@ -233,6 +245,27 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
             .await
             .map_err(UpdateSessionError::Unavailable)?;
         update(&mut session).map_err(UpdateSessionError::Rejected)?;
+
+        if let Some(ended_by) = session.ended_by_headquarters() {
+            // 本部の終了は sessions の行を変えずに記録を足す（2 回目は行のロックの中で domain が拒む）
+            let ended_at = session
+                .ended_at()
+                .ok_or_else(|| Unavailable::new("本部が終わらせたセッションに終了時刻がない"))
+                .map_err(UpdateSessionError::Unavailable)?;
+            sqlx::query(
+                "INSERT INTO live_lesson.session_headquarters_ends (session_id, ended_by, ended_at)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (session_id) DO NOTHING",
+            )
+            .bind(session_id_uuid::to_uuid(session.id()))
+            .bind(account_id_uuid::to_uuid(ended_by))
+            .bind(timestamp(ended_at))
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+            tx.commit().await.map_err(unavailable)?;
+            return Ok(session);
+        }
 
         let quality = session.quality();
         sqlx::query(
@@ -271,6 +304,8 @@ fn session_from_row(
         jitter_ms,
         round_trip_ms,
         disconnect_count,
+        headquarters_ended_by,
+        headquarters_ended_at,
     ): SessionRow,
     bookings: Vec<SessionBooking>,
 ) -> Result<LiveLessonSession, Unavailable> {
@@ -295,7 +330,7 @@ fn session_from_row(
         }
         _ => return Err(Unavailable::new("終了したセッションに接続品質がない")),
     };
-    LiveLessonSession::restore(
+    let mut session = LiveLessonSession::restore(
         session_id_uuid::from_uuid(session_id),
         booking_id_uuid::from_uuid(booking_id),
         account_id_uuid::from_uuid(student_id),
@@ -304,5 +339,14 @@ fn session_from_row(
         started_at.into(),
         ended,
     )
-    .map_err(Unavailable::new)
+    .map_err(Unavailable::new)?;
+    // 参加者の終了があればそちらを採る（両方あるのは古い版に戻した間に参加者が終了したときだけ）
+    if let (None, Some(ended_by), Some(ended_at)) =
+        (ended, headquarters_ended_by, headquarters_ended_at)
+    {
+        session
+            .end_by_headquarters(account_id_uuid::from_uuid(ended_by), ended_at.into())
+            .map_err(Unavailable::new)?;
+    }
+    Ok(session)
 }

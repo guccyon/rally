@@ -207,9 +207,9 @@ terms:
       残りの席は定員から有効な予約の数を引いた数（SlotSeats::remaining、契約の remaining_seats）。同じ生徒が同じ枠を 2 回は予約できない。
   - id: live_lesson_session
     ja: "通話セッション"
-    definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録する。"
+    definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録し、終了の記録がないまま残ったものは本部が終わったことにでき、そのときは指標を持たずに終わらせた本部のアカウントを残す。"
     context: live-lesson
-    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended]
+    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended, LiveLessonSession::end_by_headquarters, endLiveLessonSessionByHeadquarters, live_lesson.session_headquarters_ends]
     note: >-
       開始・終了できるのは参加者だけで、確定した予約にしか開始できず、同じ予約のセッションは 1 つ。グループレッスンの通話中のセッションには、
       結び付いた予約の生徒が同じセッションに入る。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
