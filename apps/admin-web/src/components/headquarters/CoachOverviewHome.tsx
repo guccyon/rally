@@ -7,6 +7,7 @@ import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
 import { Section } from "@/components/Section";
 
+import { CoachAcceptanceHistory } from "./CoachAcceptanceHistory";
 import { CoachOverview } from "./CoachOverview";
 
 /** コーチを指すクエリの名前（`?coach_id=`）。 */
@@ -17,7 +18,10 @@ export function coachOverviewPath(coachId: string): string {
   return `/headquarters/coach-overview?${new URLSearchParams({ [COACH_OVERVIEW_QUERY]: coachId })}`;
 }
 
-/** 本部の画面: コーチの受付の一覧の行から開く、コーチ 1 人の様子。 */
+/**
+ * 本部の画面: コーチの受付の一覧の行から開く、コーチ 1 人の様子と受付の記録。
+ * コーチの ID がなければ受付の記録の欄は出さない（様子の欄が「見つかりません」を出す）。
+ */
 export function CoachOverviewHome({ token, coachId }: { token: string; coachId: string | undefined }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
@@ -33,6 +37,11 @@ export function CoachOverviewHome({ token, coachId }: { token: string; coachId: 
       <Section title="コーチの様子">
         <CoachOverview api={api} coachId={coachId} />
       </Section>
+      {coachId !== undefined && (
+        <Section title="受付の記録">
+          <CoachAcceptanceHistory api={api} coachId={coachId} />
+        </Section>
+      )}
     </>
   );
 }

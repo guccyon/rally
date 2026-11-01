@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -60,7 +60,7 @@ function bodyRows() {
 }
 
 describe("本部の生徒", () => {
-  test("読み込み中を出し、読めたら各行に表示名・スポーツ・契約プラン・最後の予約・登録日を API の順で出す", async () => {
+  test("読み込み中を出し、読めたら各行に表示名・スポーツ・契約プラン・最後に予約した日・登録日を API の順で出す", async () => {
     const listStudents = listOf(STUDENTS);
     render(<StudentDirectory api={{ listStudents }} />);
 
@@ -68,14 +68,20 @@ describe("本部の生徒", () => {
     await screen.findByRole("table", { name: "生徒の一覧" });
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
     expect(bodyRows().map(cellsOf)).toEqual([
-      ["山田 花子", "テニス", "月額（プラス）", "2026/10/25 10:30:00", "2026/10/21"],
-      // ワンショットはプランがなく、予約がなければ「—」
-      ["佐藤 一郎", "ゴルフ", "ワンショット", "—", "2026/10/10"],
-      // 受講権がなければ「未契約」
-      ["鈴木 次郎", "テニス", "未契約", "2026/10/1 18:00:00", "2026/9/30"],
+      ["山田 花子", "テニス", "月額（プラス）", "2026/10/25", "2026/10/21"],
+      // ワンショットはプランがなく、予約がなければ「まだ予約がありません」
+      ["佐藤 一郎", "ゴルフ", "ワンショット", "まだ予約がありません", "2026/10/10"],
+      // 受講権がなければ「未契約」。最後に予約した日は日本時間の日付
+      ["鈴木 次郎", "テニス", "未契約", "2026/10/1", "2026/9/30"],
     ]);
+    expect(within(screen.getByRole("table")).getAllByRole("columnheader")[3]).toHaveTextContent(
+      "最後に予約した日",
+    );
+    // 開いたときは条件を付けずに読む
     expect(listStudents).toHaveBeenCalledTimes(1);
+    expect(listStudents).toHaveBeenCalledWith({});
     expect(screen.getByLabelText("スポーツ")).toHaveValue("");
+    expect(screen.getByLabelText("この日以降に予約していない")).toHaveValue("");
   });
 
   test("スポーツは「すべて」と 6 種類から選べる", async () => {
@@ -94,31 +100,89 @@ describe("本部の生徒", () => {
     ]);
   });
 
-  test("スポーツの絞り込みは画面の中でし、API を読み直さない", async () => {
+  test("スポーツを選ぶと API の sport に渡して読み直し、返った行だけを出す", async () => {
+    const listStudents = listOf(STUDENTS);
+    listStudents.mockResolvedValueOnce({
+      ok: true,
+      data: { students: STUDENTS },
+    });
+    listStudents.mockResolvedValueOnce({
+      ok: true,
+      data: { students: [STUDENTS[1]!] },
+    });
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents }} />);
+    await screen.findByRole("table");
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    await waitFor(() => expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["佐藤 一郎"]));
+    expect(listStudents).toHaveBeenLastCalledWith({ sport: "golf" });
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "すべて");
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    expect(listStudents).toHaveBeenLastCalledWith({});
+  });
+
+  test("日付を入れると API の not_booked_since に渡し、スポーツと組み合わせられる。日付を消せば外す", async () => {
     const listStudents = listOf(STUDENTS);
     const user = userEvent.setup();
     render(<StudentDirectory api={{ listStudents }} />);
     await screen.findByRole("table");
 
+    const since = screen.getByLabelText("この日以降に予約していない");
+    fireEvent.change(since, { target: { value: "2026-10-15" } });
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({
+        not_booked_since: "2026-10-15",
+      }),
+    );
+
     await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
-    expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["山田 花子", "鈴木 次郎"]);
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({
+        sport: "tennis",
+        not_booked_since: "2026-10-15",
+      }),
+    );
 
-    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
-    expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["佐藤 一郎"]);
-
-    await user.selectOptions(screen.getByLabelText("スポーツ"), "すべて");
-    expect(bodyRows()).toHaveLength(3);
-    expect(listStudents).toHaveBeenCalledTimes(1);
+    fireEvent.change(since, { target: { value: "" } });
+    await waitFor(() => expect(listStudents).toHaveBeenLastCalledWith({ sport: "tennis" }));
+    expect(listStudents).toHaveBeenCalledTimes(4);
   });
 
-  test("絞り込んで 0 件なら「このスポーツの生徒はいません」と出し、表は出さない", async () => {
+  test("先に変えた条件の結果が遅れて返っても、最後の条件の結果を出す", async () => {
+    let resolveSlow: (
+      value: Awaited<ReturnType<HeadquartersApi["listStudents"]>>,
+    ) => void = () => {};
+    const listStudents = listOf(STUDENTS);
     const user = userEvent.setup();
-    render(<StudentDirectory api={{ listStudents: listOf(STUDENTS) }} />);
+    render(<StudentDirectory api={{ listStudents }} />);
     await screen.findByRole("table");
 
+    listStudents.mockImplementationOnce(() => new Promise((resolve) => (resolveSlow = resolve)));
+    listStudents.mockResolvedValueOnce({
+      ok: true,
+      data: { students: [STUDENTS[1]!] },
+    });
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    await waitFor(() => expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["佐藤 一郎"]));
+
+    resolveSlow({ ok: true, data: { students: [STUDENTS[0]!, STUDENTS[2]!] } });
+    await waitFor(() => expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["佐藤 一郎"]));
+  });
+
+  test("絞り込んで 0 件なら「条件に合う生徒はいません」と出し、表は出さない", async () => {
+    const listStudents = listOf(STUDENTS);
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents }} />);
+    await screen.findByRole("table");
+
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [] } });
     await user.selectOptions(screen.getByLabelText("スポーツ"), "水泳");
-    expect(screen.getByText("このスポーツの生徒はいません")).toBeInTheDocument();
+    expect(await screen.findByText("条件に合う生徒はいません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("まだ生徒はいません")).not.toBeInTheDocument();
   });
 
   test("生徒が 0 人なら「まだ生徒はいません」と出し、表は出さない", async () => {
@@ -126,7 +190,7 @@ describe("本部の生徒", () => {
 
     expect(await screen.findByText("まだ生徒はいません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByText("このスポーツの生徒はいません")).not.toBeInTheDocument();
+    expect(screen.queryByText("条件に合う生徒はいません")).not.toBeInTheDocument();
   });
 
   test("API のエラー（本部以外のトークンの 403 など）の文言を出し、一覧は出さない", async () => {
@@ -136,7 +200,9 @@ describe("本部の生徒", () => {
     }));
     render(<StudentDirectory api={{ listStudents }} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "権限がないためアクセスできません。",
+    );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText("まだ生徒はいません")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument());

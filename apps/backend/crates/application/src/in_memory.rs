@@ -18,8 +18,8 @@ use domain::{
     matching::FavoriteCoach,
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{
-        Announcement, AnnouncementId, Notification, NotificationId, NotificationSettings,
-        PushNotification,
+        Announcement, AnnouncementDraft, AnnouncementDraftId, AnnouncementId, Notification,
+        NotificationId, NotificationSettings, PushNotification,
     },
     profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
@@ -54,7 +54,8 @@ use crate::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     notification::{
-        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
+        NotificationSettingsRepository, PushSender, announcement_draft_id_uuid,
         announcement_id_uuid, notification_id_uuid,
     },
     profile::CoachProfileRepository,
@@ -195,6 +196,22 @@ impl CoachProfileRepository for InMemoryAccountRepository {
             .unwrap()
             .insert(coach_id, bio.clone());
         Ok(Some(bio))
+    }
+
+    async fn list_coach_bios(&self) -> Result<BTreeMap<AccountId, CoachBio>, Unavailable> {
+        let coach_ids: Vec<AccountId> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.as_coach().is_some())
+            .map(|a| a.id())
+            .collect();
+        let bios = self.coach_bios.lock().unwrap();
+        Ok(coach_ids
+            .into_iter()
+            .map(|id| (id, bios.get(&id).cloned().unwrap_or_default()))
+            .collect())
     }
 }
 
@@ -518,6 +535,25 @@ impl BookingRepository for InMemoryBookingRepository {
             })
             .collect()
     }
+
+    async fn bookings_of_lesson_menus_created_since(
+        &self,
+        lesson_menu_ids: &BTreeSet<LessonMenuId>,
+        created_since: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| {
+                b.lesson_menu()
+                    .is_some_and(|menu| lesson_menu_ids.contains(&menu.id()))
+                    && b.created_at() >= created_since
+            })
+            .cloned()
+            .collect())
+    }
 }
 
 /// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID（ないコーチは受付中）と、止めた・再開した
@@ -771,6 +807,20 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .iter()
             .find(|s| s.bookings().iter().any(|b| b.booking_id() == booking_id))
             .cloned())
+    }
+
+    async fn find_in_progress_started_at_or_before(
+        &self,
+        started_at_or_before: SystemTime,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| s.ended_at().is_none() && s.started_at() <= started_at_or_before)
+            .cloned()
+            .collect())
     }
 
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
@@ -1560,6 +1610,77 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
             .filter(|a| ids.contains(&a.id()))
             .map(|a| (a.id(), a))
             .collect())
+    }
+}
+
+/// [`AnnouncementDraftRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAnnouncementDraftRepository {
+    drafts: Arc<Mutex<Vec<AnnouncementDraft>>>,
+}
+
+impl InMemoryAnnouncementDraftRepository {
+    /// 既存の下書きを入れて作る（テストの準備用）。
+    pub fn with_drafts(drafts: impl IntoIterator<Item = AnnouncementDraft>) -> Self {
+        Self {
+            drafts: Arc::new(Mutex::new(drafts.into_iter().collect())),
+        }
+    }
+
+    /// 残っている下書き（作った順）。
+    pub fn all(&self) -> Vec<AnnouncementDraft> {
+        self.drafts.lock().unwrap().clone()
+    }
+}
+
+impl AnnouncementDraftRepository for InMemoryAnnouncementDraftRepository {
+    fn next_id(&self) -> AnnouncementDraftId {
+        announcement_draft_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, draft: AnnouncementDraft) -> Result<(), Unavailable> {
+        self.drafts.lock().unwrap().push(draft);
+        Ok(())
+    }
+
+    async fn find(
+        &self,
+        id: AnnouncementDraftId,
+    ) -> Result<Option<AnnouncementDraft>, Unavailable> {
+        Ok(self.all().into_iter().find(|d| d.id() == id))
+    }
+
+    async fn update(&self, draft: AnnouncementDraft) -> Result<bool, Unavailable> {
+        let mut drafts = self.drafts.lock().unwrap();
+        let Some(saved) = drafts.iter_mut().find(|d| d.id() == draft.id()) else {
+            return Ok(false);
+        };
+        // 作った本部のアカウントと作った時刻は保存してあるものを残す
+        let mut revised = saved.clone();
+        revised
+            .revise(
+                draft.title(),
+                draft.body(),
+                draft.sport(),
+                draft.updated_at(),
+            )
+            .map_err(Unavailable::new)?;
+        *saved = revised;
+        Ok(true)
+    }
+
+    async fn delete(&self, id: AnnouncementDraftId) -> Result<bool, Unavailable> {
+        let mut drafts = self.drafts.lock().unwrap();
+        let before = drafts.len();
+        drafts.retain(|d| d.id() != id);
+        Ok(drafts.len() != before)
+    }
+
+    async fn find_all(&self) -> Result<Vec<AnnouncementDraft>, Unavailable> {
+        let mut all: Vec<AnnouncementDraft> = self.all().into_iter().rev().collect();
+        // 後に作ったものから並べてあるので、安定な並べ替えで同じ時刻は後に作ったものが先になる
+        all.sort_by_key(|d| std::cmp::Reverse(d.updated_at()));
+        Ok(all)
     }
 }
 

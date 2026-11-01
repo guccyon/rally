@@ -2,7 +2,8 @@
 //! `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（コーチだけ）、student-app の `GET /coaches/{coach_id}/lesson-menus`
 //! （生徒だけ・公開中だけ）を、レスポンスの形をそれぞれの OpenAPI のスキーマで検査しながら通す。
 //! 生徒・本部がメニューを作る・直すことができないこと（403）、他のコーチのメニューを直せないこと（404）を確かめる。
-//! admin-web の `GET /lesson-menus`（本部だけ・すべてのコーチの横断）の絞り込みと並べ方、コーチ・生徒が読めないこと（403）も確かめる。
+//! admin-web の `GET /lesson-menus`（本部だけ・すべてのコーチの横断）の絞り込み（スポーツ・公開中か・コーチ）と並べ方、各行の直近の予約の数、
+//! コーチ・生徒が読めないこと（403）も確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -12,8 +13,12 @@ use application::{
         UpdateLessonMenu,
     },
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
-    in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLessonMenuRepository},
+    in_memory::{
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryLessonMenuRepository, InMemorySlotRepository,
+    },
     profile::ProfileCoachDisplayNameLookup,
+    scheduling::{BookingRepository, SchedulingLessonMenuRecentBookingCountLookup},
 };
 use axum::{
     Router,
@@ -22,9 +27,14 @@ use axum::{
 };
 use domain::{
     catalog::Sport,
-    catalog::{LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName},
+    catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+        LessonMenuId, LessonMenuName,
+    },
     identity::{Account, AccountId, Email, Role},
+    lesson::LessonType,
     profile::DisplayName,
+    scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -33,6 +43,8 @@ mod support;
 
 /// 2026-10-26T00:00:00Z（現在時刻）
 const NOW: Duration = Duration::from_secs(1_792_972_800);
+/// 1 日（秒）
+const DAY: u64 = 24 * 3600;
 
 /// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
 struct FakeTokens;
@@ -100,13 +112,29 @@ async fn app() -> Router {
 }
 
 async fn app_with(menus: InMemoryLessonMenuRepository) -> Router {
+    app_with_bookings(
+        menus,
+        InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+    )
+    .await
+}
+
+async fn app_with_bookings(
+    menus: InMemoryLessonMenuRepository,
+    bookings: InMemoryBookingRepository,
+) -> Router {
     let accounts = accounts().await;
     interface::catalog_router(
         CreateLessonMenu::new(menus.clone(), accounts.clone(), FixedClock(now())),
         UpdateLessonMenu::new(menus.clone(), accounts.clone()),
         ListMyLessonMenus::new(menus.clone()),
         ListCoachLessonMenus::new(menus.clone()),
-        ListLessonMenus::new(menus, ProfileCoachDisplayNameLookup::new(accounts)),
+        ListLessonMenus::new(
+            menus,
+            ProfileCoachDisplayNameLookup::new(accounts),
+            SchedulingLessonMenuRecentBookingCountLookup::new(bookings),
+            FixedClock(now()),
+        ),
         FakeTokens,
     )
 }
@@ -500,6 +528,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
                 "coach_id": OTHER_COACH_ID,
                 "coach_display_name": "いとう",
                 "created_at": review["created_at"],
+                "recent_booking_count": 0,
             },
             {
                 "lesson_menu_id": forehand["lesson_menu_id"],
@@ -511,6 +540,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
                 "coach_id": COACH_ID,
                 "coach_display_name": "たなか",
                 "created_at": forehand["created_at"],
+                "recent_booking_count": 0,
             },
             {
                 "lesson_menu_id": swing["lesson_menu_id"],
@@ -522,6 +552,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
                 "coach_id": COACH_ID,
                 "coach_display_name": "たなか",
                 "created_at": swing["created_at"],
+                "recent_booking_count": 0,
             },
         ])
     );
@@ -540,6 +571,22 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         ("?published=true", vec!["フォア", "スイング"]),
         ("?sport=tennis&published=true", vec!["フォア"]),
         ("?sport=swimming", vec![]),
+        // コーチで絞ると公開中も非公開もまとめて。sport・published と組み合わせられる
+        (&format!("?coach_id={COACH_ID}"), vec!["フォア", "スイング"]),
+        (
+            &format!("?coach_id={OTHER_COACH_ID}"),
+            vec!["フォームの添削"],
+        ),
+        (
+            &format!("?coach_id={COACH_ID}&sport=golf"),
+            vec!["スイング"],
+        ),
+        (
+            &format!("?coach_id={OTHER_COACH_ID}&published=true"),
+            vec![],
+        ),
+        // いないコーチは 404 にせず空の一覧
+        ("?coach_id=00000000-0000-0000-0000-000000000063", vec![]),
     ] {
         let (status, body) = send(
             &app,
@@ -554,7 +601,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         assert_eq!(names(&body), expected, "{query}");
     }
 
-    for query in ["?sport=cricket", "?published=yes"] {
+    for query in ["?sport=cricket", "?published=yes", "?coach_id=not-a-uuid"] {
         let (status, body) = send(
             &app,
             "GET",
@@ -591,7 +638,7 @@ async fn only_headquarters_lists_menus_of_every_coach() {
 async fn a_menu_whose_coach_cannot_be_found_has_no_display_name_and_comes_last() {
     let admin = support::Contract::load("admin-web");
     let orphan = LessonMenu::restore(
-        domain::catalog::LessonMenuId::from_u128(7),
+        LessonMenuId::from_u128(7),
         AccountId::from_u128(99),
         LessonMenuContent {
             sport: Sport::Tennis,
@@ -622,5 +669,88 @@ async fn a_menu_whose_coach_cannot_be_found_has_no_display_name_and_comes_last()
     assert!(
         menus[1].get("coach_display_name").is_none(),
         "表示名が引けなければ載せない: {body}"
+    );
+}
+
+#[tokio::test]
+async fn each_menu_has_the_number_of_active_bookings_of_the_last_thirty_days() {
+    let admin = support::Contract::load("admin-web");
+    let menu = |id: u128, name: &str| {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            AccountId::from_u128(42),
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::new(
+                    LessonType::Live,
+                    Some(LessonDuration::from_minutes(60).unwrap()),
+                )
+                .unwrap(),
+                name: LessonMenuName::new(name).unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            true,
+            now() - Duration::from_secs(60 * DAY),
+        )
+    };
+    let (popular, quiet) = (menu(7, "フォア"), menu(8, "バック"));
+    let slots = InMemorySlotRepository::with_slots((1..=3).map(|id| {
+        let starts_at = now() + Duration::from_secs(id as u64 * DAY);
+        Slot::restore(
+            SlotId::from_u128(id),
+            AccountId::from_u128(42),
+            Sport::Tennis,
+            starts_at,
+            starts_at + Duration::from_secs(3600),
+            SlotStatus::Open,
+            SlotSeats::default(),
+        )
+        .unwrap()
+        .with_lesson_menu(&popular)
+        .unwrap()
+    }));
+    let bookings = InMemoryBookingRepository::new(slots);
+    // 直近 30 日の 2 件を数え、31 日前の 1 件は数えない
+    for (slot, student, days_ago) in [(1, 3, 1), (2, 4, 30), (3, 5, 31)] {
+        let student = AccountId::from_u128(student);
+        bookings
+            .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+                Booking::reserve(
+                    bookings.next_id(),
+                    student,
+                    false,
+                    slot,
+                    existing,
+                    now() - Duration::from_secs(days_ago * DAY),
+                )
+                .map(|booking| booking.with_lesson_menu(slot, Some(&popular)))
+            })
+            .await
+            .unwrap();
+    }
+    let app = app_with_bookings(
+        InMemoryLessonMenuRepository::with_menus([popular.clone(), quiet]),
+        bookings,
+    )
+    .await;
+
+    let (status, body) = send(&app, "GET", HEADQUARTERS_MENUS, HEADQUARTERS, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+    let counts: Vec<(&str, &Value)> = body["lesson_menus"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|menu| {
+            (
+                menu["name"].as_str().unwrap(),
+                &menu["recent_booking_count"],
+            )
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [("フォア", &json!(2)), ("バック", &json!(0))],
+        "予約のないメニューは 0: {body}"
     );
 }

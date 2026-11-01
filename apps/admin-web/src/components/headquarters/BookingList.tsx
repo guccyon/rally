@@ -6,24 +6,17 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
-import { BOOKING_STATUS_LABELS, formatDay, formatTime, toJstDate } from "@/components/labels";
+import { formatDay, formatTime, toJstDate } from "@/components/labels";
 
+import { BookingStatusBadge } from "./BookingStatusBadge";
 import { type Period, defaultPeriod, isPendingSoon, periodError } from "./bookingPeriod";
 
 type HeadquartersBooking = Schemas["HeadquartersBooking"];
-type BookingStatus = Schemas["BookingStatus"];
 
 type State =
   | { kind: "loading" }
   | { kind: "loaded"; period: Period; bookings: HeadquartersBooking[]; now: number }
   | { kind: "failed"; message: string };
-
-/** 状態の色分け。確定待ちは対応が要るので目に付く色、キャンセル済みは沈める。 */
-const STATUS_BADGE_CLASSES: Record<BookingStatus, string> = {
-  pending: "bg-warning-container text-warning-on-container",
-  confirmed: "bg-success-container text-success-on-container",
-  cancelled: "bg-surface text-text-muted",
-};
 
 const NO_NAME = "（名前を表示できません）";
 
@@ -172,9 +165,7 @@ function LoadedBookings({
                   <tr key={booking.booking_id} className={`border-t ${soon ? "bg-danger-container" : ""}`}>
                     <td className="py-1">{formatTime(booking.starts_at)}</td>
                     <td className="py-1">
-                      <span className={`rounded-sm px-2 text-xs ${STATUS_BADGE_CLASSES[booking.status]}`}>
-                        {BOOKING_STATUS_LABELS[booking.status]}
-                      </span>
+                      <BookingStatusBadge status={booking.status} />
                       {soon && (
                         <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
                           開始まで 24 時間以内

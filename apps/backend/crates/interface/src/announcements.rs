@@ -180,7 +180,9 @@ where
     }))
 }
 
-fn announcement_body(announcement: &Announcement) -> Result<AnnouncementBodyJson, ApiError> {
+pub(crate) fn announcement_body(
+    announcement: &Announcement,
+) -> Result<AnnouncementBodyJson, ApiError> {
     Ok(AnnouncementBodyJson {
         announcement_id: announcement_id_uuid::format(announcement.id()),
         sender_id: account_id_uuid::format(announcement.sender_id()),

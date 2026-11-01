@@ -4,6 +4,7 @@
 //! 新しい機能はファイルを足し、`mod` の並びと [`router`] の `merge` の並びに 1 行ずつ足す（どちらも名前の順）。
 
 mod accounts;
+mod announcement_drafts;
 mod announcements;
 mod bookings;
 mod coach_acceptances;
@@ -15,8 +16,10 @@ mod coach_videos;
 mod coaches;
 mod entitlements;
 mod favorite_coaches;
+mod headquarters_booking_details;
 mod headquarters_bookings;
 mod healthz;
+mod incomplete_coach_profiles;
 mod lesson_menu_publications;
 mod lesson_menus;
 mod lesson_stats;
@@ -32,6 +35,7 @@ mod my_profile;
 mod my_videos;
 mod notification_settings;
 mod notifications;
+mod overdue_live_lesson_sessions;
 mod pending_video_reviews;
 mod review_replies;
 mod reviews;
@@ -52,6 +56,7 @@ use crate::ports::Ports;
 pub(crate) fn router<P: Ports>(ports: &P) -> Router {
     Router::new()
         .merge(accounts::router(ports))
+        .merge(announcement_drafts::router(ports))
         .merge(announcements::router(ports))
         .merge(bookings::router(ports))
         .merge(coach_acceptances::router(ports))
@@ -63,8 +68,10 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(coaches::router(ports))
         .merge(entitlements::router(ports))
         .merge(favorite_coaches::router(ports))
+        .merge(headquarters_booking_details::router(ports))
         .merge(headquarters_bookings::router(ports))
         .merge(healthz::router(ports))
+        .merge(incomplete_coach_profiles::router(ports))
         .merge(lesson_menu_publications::router(ports))
         .merge(lesson_menus::router(ports))
         .merge(lesson_stats::router(ports))
@@ -80,6 +87,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(my_videos::router(ports))
         .merge(notification_settings::router(ports))
         .merge(notifications::router(ports))
+        .merge(overdue_live_lesson_sessions::router(ports))
         .merge(pending_video_reviews::router(ports))
         .merge(review_replies::router(ports))
         .merge(reviews::router(ports))

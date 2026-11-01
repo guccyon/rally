@@ -17,7 +17,12 @@ type State =
   | { kind: "loaded"; menus: LessonMenu[] }
   | { kind: "failed"; message: string };
 
-type Filter = { sport: Sport | ""; publishedOnly: boolean };
+type CoachesState =
+  | { kind: "loading" }
+  | { kind: "loaded"; coaches: Schemas["Coach"][] }
+  | { kind: "failed"; message: string };
+
+type Filter = { sport: Sport | ""; publishedOnly: boolean; coachId: string };
 
 const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
 
@@ -42,15 +47,27 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
 
 /**
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
- * 絞り込み（スポーツ・公開中だけ）は API の `sport` / `published` に渡し、並びは契約の正本どおり返った順のまま出す。
+ * 絞り込み（スポーツ・公開中だけ・コーチ）は API の `sport` / `published` / `coach_id` に渡し、並びは契約の正本どおり返った順のまま出す。
+ * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
+ * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。
  * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
  */
 export function LessonMenuCatalog({
   api,
+  initialCoachId,
 }: {
-  api: Pick<HeadquartersApi, "listLessonMenus" | "unpublishLessonMenu" | "republishLessonMenu">;
+  api: Pick<
+    HeadquartersApi,
+    "listLessonMenus" | "listCoaches" | "unpublishLessonMenu" | "republishLessonMenu"
+  >;
+  initialCoachId?: string;
 }) {
-  const [filter, setFilter] = useState<Filter>({ sport: "", publishedOnly: false });
+  const [filter, setFilter] = useState<Filter>({
+    sport: "",
+    publishedOnly: false,
+    coachId: initialCoachId ?? "",
+  });
+  const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   const [state, setState] = useState<State>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
@@ -61,6 +78,7 @@ export function LessonMenuCatalog({
       const response = await api.listLessonMenus({
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.publishedOnly ? { published: true } : {}),
+        ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
       });
       return response.ok
         ? { kind: "loaded", menus: response.data.lesson_menus }
@@ -69,17 +87,40 @@ export function LessonMenuCatalog({
     [api],
   );
 
-  // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（URL のコーチだけで絞る）。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchMenus({ sport: "", publishedOnly: false }).then((next) => {
-      if (active && request === latestRequest.current) setState(next);
+    void fetchMenus({ sport: "", publishedOnly: false, coachId: initialCoachId ?? "" }).then(
+      (next) => {
+        if (active && request === latestRequest.current) setState(next);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [fetchMenus, initialCoachId]);
+
+  // コーチの選択肢。読めなくてもメニューの一覧は出し、コーチの絞り込みだけを使えなくする。
+  useEffect(() => {
+    let active = true;
+    void api.listCoaches().then((response) => {
+      if (!active) return;
+      setCoaches(
+        response.ok
+          ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
     });
     return () => {
       active = false;
     };
-  }, [fetchMenus]);
+  }, [api]);
+
+  const coachOptions = coaches.kind === "loaded" ? coaches.coaches : [];
+  // URL で渡されたコーチがコーチの一覧にない（読めていない・ない ID）ときも、選んだ状態を select に出す。
+  const unknownCoachSelected =
+    filter.coachId !== "" && !coachOptions.some((coach) => coach.coach_id === filter.coachId);
 
   async function reload(next: Filter) {
     const request = ++latestRequest.current;
@@ -157,7 +198,33 @@ export function LessonMenuCatalog({
           />
           公開中だけ
         </label>
+        <label className="block">
+          コーチ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.coachId}
+            disabled={coaches.kind !== "loaded" && !unknownCoachSelected}
+            onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {unknownCoachSelected && (
+              <option value={filter.coachId}>
+                {coaches.kind === "loading" ? "読み込み中…" : "（一覧にないコーチ）"}
+              </option>
+            )}
+            {coachOptions.map((coach) => (
+              <option key={coach.coach_id} value={coach.coach_id}>
+                {coach.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
+      {coaches.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
+        />
+      )}
       <ResultMessage result={result} />
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
