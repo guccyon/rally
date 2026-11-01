@@ -11,7 +11,13 @@ import { Section } from "@/components/Section";
 import { AnnouncementDraftList } from "./AnnouncementDraftList";
 import { AnnouncementForm } from "./AnnouncementForm";
 import { AnnouncementList } from "./AnnouncementList";
-import { type AnnouncementInput, EMPTY_INPUT, draftTitleOf, inputOfDraft } from "./announcementInput";
+import {
+  type AnnouncementInput,
+  EMPTY_INPUT,
+  draftTitleOf,
+  inputOfDraft,
+  toAnnouncementDraftRequest,
+} from "./announcementInput";
 
 type Announcement = Schemas["Announcement"];
 type AnnouncementDraft = Schemas["AnnouncementDraft"];
@@ -159,11 +165,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   async function send(request: Schemas["SendAnnouncementRequest"]): Promise<Result<Announcement>> {
     if (openedId === null) return api.sendAnnouncement(request);
     // 確かめた中身で送るように、先に下書きを直す
-    const updated = await api.updateAnnouncementDraft(openedId, {
-      title: request.title,
-      body: request.body,
-      sport: request.sport ?? null,
-    });
+    const updated = await api.updateAnnouncementDraft(openedId, toAnnouncementDraftRequest(request));
     if (!updated.ok) {
       if (updated.code !== "not_found") return updated;
       removeDraft(openedId);

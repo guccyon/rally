@@ -41,6 +41,13 @@ export function validateAnnouncementDraft(input: AnnouncementInput): Announcemen
   return errors;
 }
 
+/** 送る本文を下書きの書き直しの本文にする（下書きを開いたまま送るとき、確かめた中身で先に下書きを直す）。 */
+export function toAnnouncementDraftRequest(
+  request: Schemas["SendAnnouncementRequest"],
+): Schemas["AnnouncementDraftRequest"] {
+  return { title: request.title, body: request.body, sport: request.sport ?? null };
+}
+
 /** 下書きをフォームの入力にする（生徒全員なら ""）。 */
 export function inputOfDraft(draft: Schemas["AnnouncementDraft"]): AnnouncementInput {
   return { sport: draft.sport ?? "", title: draft.title, body: draft.body };

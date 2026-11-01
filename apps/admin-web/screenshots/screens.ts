@@ -139,4 +139,10 @@ export const SCREENS: Screen[] = [
       await page.getByRole("list", { name: "下書きの一覧" }).waitFor();
     },
   },
+  {
+    id: "hq-pending-video-reviews",
+    title: "本部: 返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+  },
 ];
