@@ -7,7 +7,7 @@ use application::{
     async_lesson::{video_id_uuid, video_review_id_uuid},
     identity::account_id_uuid,
     messaging::{message_id_uuid, message_thread_id_uuid},
-    notification::{NotificationRepository, notification_id_uuid},
+    notification::{NotificationRepository, announcement_id_uuid, notification_id_uuid},
     scheduling::booking_id_uuid,
 };
 use domain::{
@@ -22,8 +22,8 @@ use sqlx::{
 use crate::{
     messaging_values::{message_sender_from_value, message_sender_value},
     notification_values::{
-        BOOKING_CONFIRMED, BOOKING_RECEIVED, MESSAGE_RECEIVED, VIDEO_REVIEW_REQUESTED,
-        VIDEO_REVIEW_RETURNED, push_notification_kind_value,
+        ANNOUNCEMENT, BOOKING_CONFIRMED, BOOKING_RECEIVED, MESSAGE_RECEIVED,
+        VIDEO_REVIEW_REQUESTED, VIDEO_REVIEW_RETURNED, push_notification_kind_value,
     },
     pg_support::timestamp,
 };
@@ -31,8 +31,9 @@ use crate::{
 /// [`NotificationRepository`] の Postgres 実装。
 ///
 /// お知らせ 1 件で 1 行。プッシュ通知の中身は種類（`kind`）ごとの列に分けて持つ（形は `notifications_kind_shape`）。
-/// 同じプッシュ通知のお知らせは 1 件（`notifications_one_per_push` と、添削の依頼は `notifications_one_per_video_review_request`。
-/// 残すときは `ON CONFLICT DO NOTHING`）。新しい順は
+/// 本部からのお知らせはコーチを持たない（`coach_id` は NULL）で、送った記録（`announcement_id`）を指す。
+/// 同じプッシュ通知のお知らせは 1 件（`notifications_one_per_push` と、添削の依頼は `notifications_one_per_video_review_request`、
+/// 本部からのお知らせは `notifications_one_per_announcement`。残すときは `ON CONFLICT DO NOTHING`）。新しい順は
 /// 作った時刻（`created_at`）と残した順（`seq`）で並べる。既読は、受け取る人のまだ読んでいない行をロック（`FOR UPDATE`）
 /// して domain の [`Notification::mark_read`] に通してから書く。
 #[derive(Debug, Clone)]
@@ -47,18 +48,19 @@ impl PgNotificationRepository {
 }
 
 /// お知らせの列（notification_id, kind, student_id, coach_id, booking_id, video_id, review_id, thread_id, message_id,
-/// sender_role, created_at, read_at）。
+/// sender_role, announcement_id, created_at, read_at）。
 type NotificationRow = (
     Uuid,
     String,
     Uuid,
-    Uuid,
+    Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<String>,
+    Option<Uuid>,
     OffsetDateTime,
     Option<OffsetDateTime>,
 );
@@ -66,7 +68,7 @@ type NotificationRow = (
 /// `recipient_id = $1` のお知らせ（新しい順）。
 const NOTIFICATIONS_OF: &str =
     "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id, review_id,
-            thread_id, message_id, sender_role, created_at, read_at
+            thread_id, message_id, sender_role, announcement_id, created_at, read_at
      FROM notification.notifications
      WHERE recipient_id = $1
      ORDER BY created_at DESC, seq DESC";
@@ -74,13 +76,13 @@ const NOTIFICATIONS_OF: &str =
 /// `recipient_id = $1` のまだ読んでいないお知らせ（新しい順）。行のロックを取る。
 const UNREAD_NOTIFICATIONS_OF_FOR_UPDATE: &str =
     "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id,
-            review_id, thread_id, message_id, sender_role, created_at, read_at
+            review_id, thread_id, message_id, sender_role, announcement_id, created_at, read_at
      FROM notification.notifications
      WHERE recipient_id = $1 AND read_at IS NULL
      ORDER BY created_at DESC, seq DESC
      FOR UPDATE";
 
-/// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role）。
+/// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id）。
 type PushColumns = (
     Option<Uuid>,
     Option<Uuid>,
@@ -88,6 +90,7 @@ type PushColumns = (
     Option<Uuid>,
     Option<Uuid>,
     Option<&'static str>,
+    Option<Uuid>,
 );
 
 impl NotificationRepository for PgNotificationRepository {
@@ -98,26 +101,27 @@ impl NotificationRepository for PgNotificationRepository {
     async fn insert(&self, notification: Notification) -> Result<(), Unavailable> {
         let push = notification.push();
         let (student_id, coach_id) = parties(&push);
-        let (booking_id, video_id, review_id, thread_id, message_id, sender_role) =
+        let (booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id) =
             push_columns(&push);
         sqlx::query(
             "INSERT INTO notification.notifications
                  (notification_id, recipient_id, kind, student_id, coach_id, booking_id, video_id, review_id,
-                  thread_id, message_id, sender_role, created_at, read_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                  thread_id, message_id, sender_role, announcement_id, created_at, read_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              ON CONFLICT DO NOTHING",
         )
         .bind(notification_id_uuid::to_uuid(notification.id()))
         .bind(account_id_uuid::to_uuid(notification.recipient()))
         .bind(push_notification_kind_value(&push))
         .bind(account_id_uuid::to_uuid(student_id))
-        .bind(account_id_uuid::to_uuid(coach_id))
+        .bind(coach_id.map(account_id_uuid::to_uuid))
         .bind(booking_id)
         .bind(video_id)
         .bind(review_id)
         .bind(thread_id)
         .bind(message_id)
         .bind(sender_role)
+        .bind(announcement_id)
         .bind(timestamp(notification.created_at()))
         .bind(notification.read_at().map(timestamp))
         .execute(&self.pool)
@@ -191,12 +195,20 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
         thread_id,
         message_id,
         sender_role,
+        announcement_id,
         created_at,
         read_at,
     ) = row;
-    let student_id = account_id_uuid::from_uuid(student_id);
-    let coach_id = account_id_uuid::from_uuid(coach_id);
     let broken = || Unavailable::new(format!("お知らせ {id} の中身が種類 {kind} の形でない"));
+    let student_id = account_id_uuid::from_uuid(student_id);
+    if kind == ANNOUNCEMENT {
+        let push = PushNotification::Announcement {
+            student_id,
+            announcement_id: announcement_id_uuid::from_uuid(announcement_id.ok_or_else(broken)?),
+        };
+        return restore(id, push, created_at, read_at);
+    }
+    let coach_id = account_id_uuid::from_uuid(coach_id.ok_or_else(broken)?);
     let push = match kind.as_str() {
         BOOKING_CONFIRMED => PushNotification::BookingConfirmed {
             student_id,
@@ -231,6 +243,15 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
         },
         _ => return Err(Unavailable::new(format!("未知の kind: {kind}"))),
     };
+    restore(id, push, created_at, read_at)
+}
+
+fn restore(
+    id: Uuid,
+    push: PushNotification,
+    created_at: OffsetDateTime,
+    read_at: Option<OffsetDateTime>,
+) -> Result<Notification, Unavailable> {
     Notification::restore(
         notification_id_uuid::from_uuid(id),
         push,
@@ -240,8 +261,8 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
     .map_err(Unavailable::new)
 }
 
-/// プッシュ通知の当事者（生徒, コーチ）。
-fn parties(push: &PushNotification) -> (AccountId, AccountId) {
+/// プッシュ通知の当事者（生徒, コーチ）。本部からのお知らせはコーチを持たない。
+fn parties(push: &PushNotification) -> (AccountId, Option<AccountId>) {
     match *push {
         PushNotification::BookingConfirmed {
             student_id,
@@ -267,7 +288,8 @@ fn parties(push: &PushNotification) -> (AccountId, AccountId) {
             student_id,
             coach_id,
             ..
-        } => (student_id, coach_id),
+        } => (student_id, Some(coach_id)),
+        PushNotification::Announcement { student_id, .. } => (student_id, None),
     }
 }
 
@@ -281,10 +303,12 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             None,
             None,
             None,
+            None,
         ),
         PushNotification::VideoReviewRequested { video_id, .. } => (
             None,
             Some(video_id_uuid::to_uuid(video_id)),
+            None,
             None,
             None,
             None,
@@ -301,6 +325,7 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             None,
             None,
             None,
+            None,
         ),
         PushNotification::MessageReceived {
             thread_id,
@@ -314,6 +339,18 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             Some(message_thread_id_uuid::to_uuid(thread_id)),
             Some(message_id_uuid::to_uuid(message_id)),
             Some(message_sender_value(sender)),
+            None,
+        ),
+        PushNotification::Announcement {
+            announcement_id, ..
+        } => (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(announcement_id_uuid::to_uuid(announcement_id)),
         ),
     }
 }

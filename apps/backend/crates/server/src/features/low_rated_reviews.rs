@@ -1,8 +1,9 @@
 //! 本部が見る低い評価の一覧（`GET /lesson-reviews/low`）。メニューは完了記録の元が持つ写しを、
-//! コーチ・生徒の表示名はアカウントの保存先から読んで添える。
+//! コーチ・生徒の表示名はアカウントの保存先から読んで添える。スポーツで絞るときは、評価したレッスンのスポーツを
+//! 完了記録の元（予約の枠・動画）から読む（`LessonCompletionSportLookup`）。
 
 use application::{
-    lesson::LessonCompletionMenuLookup,
+    lesson::{LessonCompletionMenuLookup, LessonCompletionSportLookup},
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::ListLowRatedReviews,
     scheduling::SchedulingBookingLookup,
@@ -17,6 +18,12 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         ListLowRatedReviews::new(
             ports.reviews(),
             LessonCompletionMenuLookup::new(
+                ports.completions(),
+                ports.sessions(),
+                SchedulingBookingLookup::new(ports.bookings()),
+                ports.videos(),
+            ),
+            LessonCompletionSportLookup::new(
                 ports.completions(),
                 ports.sessions(),
                 SchedulingBookingLookup::new(ports.bookings()),

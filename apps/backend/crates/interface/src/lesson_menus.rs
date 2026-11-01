@@ -3,7 +3,8 @@
 //! （`updateMyLessonMenu`）はコーチだけで、扱うのはトークンのコーチ自身のメニューだけ。student-app の
 //! `GET /coaches/{coach_id}/lesson-menus`（`listCoachLessonMenus`）は生徒だけで、公開中のメニューだけを返す
 //! （ゴルフは golf-app の範囲なので載せない）。他のコーチのメニューは、あることも知らせない（404）。admin-web の
-//! `GET /lesson-menus`（`listLessonMenus`）は本部だけで、すべてのコーチのメニューを横断で返す。
+//! `GET /lesson-menus`（`listLessonMenus`）は本部だけで、すべてのコーチのメニューを横断で返す。本部による非公開・公開に
+//! 戻す操作は [`crate::lesson_menu_publications`]。
 
 use std::sync::Arc;
 
@@ -30,8 +31,8 @@ use axum::{
 use domain::{
     DomainError,
     catalog::{
-        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
-        LessonMenuName, Sport,
+        HeadquartersUnpublish, LessonDuration, LessonFormat, LessonMenu, LessonMenuContent,
+        LessonMenuDescription, LessonMenuName, Sport,
     },
     identity::{AccountId, Role},
 };
@@ -39,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{self, AuthenticatedAccount, TokenVerification, require_role},
+    catalog_error::lesson_menu_error,
     contract::{
         admin_web_sport, date_time_to_contract, lesson_type_from_contract, lesson_type_to_contract,
         sport_to_contract, student_app_sport,
@@ -106,6 +108,16 @@ pub struct LessonMenuBody {
     duration_minutes: Option<u8>,
     is_published: bool,
     created_at: String,
+    /// admin-web だけの項目。本部が非公開にしていなければ載せない（student-app は公開中のメニューしか返さないので載らない）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    headquarters_unpublish: Option<HeadquartersUnpublishBody>,
+}
+
+/// admin-web の `HeadquartersUnpublish`（本部が非公開にした時刻と理由）。
+#[derive(Serialize)]
+pub struct HeadquartersUnpublishBody {
+    unpublished_at: String,
+    reason: String,
 }
 
 /// admin-web・student-app の `LessonMenuList`。
@@ -128,6 +140,8 @@ pub struct CoachLessonMenuBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     coach_display_name: Option<String>,
     created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    headquarters_unpublish: Option<HeadquartersUnpublishBody>,
 }
 
 /// admin-web の `CoachLessonMenuList`。
@@ -194,7 +208,8 @@ where
 }
 
 /// `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（admin-web）。コーチだけが呼べる（役割は `require_role` の層が
-/// 確かめる）。直せるのはトークンのコーチのメニューだけで、他のコーチのメニューはないものとして 404。
+/// 確かめる）。直せるのはトークンのコーチのメニューだけで、他のコーチのメニューはないものとして 404。本部が非公開にした
+/// メニューを公開中にしようとすれば 409 `lesson_menu_unpublished_by_headquarters`（[`crate::catalog_error`]）。
 pub async fn update_my_lesson_menu<M, R, C, D>(
     State(state): State<Shared<M, R, C, D>>,
     account: AuthenticatedAccount,
@@ -232,7 +247,7 @@ where
             UpdateLessonMenuError::LessonMenuNotFound
             | UpdateLessonMenuError::Invalid(DomainError::NotTheLessonMenuCoach),
         ) => Err(ApiError::not_found("レッスンメニューがない")),
-        Err(UpdateLessonMenuError::Invalid(error)) => Err(ApiError::from(error)),
+        Err(UpdateLessonMenuError::Invalid(error)) => Err(lesson_menu_error(error)),
         Err(UpdateLessonMenuError::CoachNotFound) => Ok(auth::unauthorized(
             "トークンが示すコーチのアカウントが存在しない",
         )),
@@ -314,7 +329,7 @@ fn lesson_menu_content(
     })
 }
 
-fn lesson_menu_body(menu: &LessonMenu) -> Result<LessonMenuBody, ApiError> {
+pub(crate) fn lesson_menu_body(menu: &LessonMenu) -> Result<LessonMenuBody, ApiError> {
     Ok(LessonMenuBody {
         lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
         coach_id: account_id_uuid::format(menu.coach_id()),
@@ -325,7 +340,21 @@ fn lesson_menu_body(menu: &LessonMenu) -> Result<LessonMenuBody, ApiError> {
         duration_minutes: menu.format().duration().map(LessonDuration::minutes),
         is_published: menu.is_published(),
         created_at: date_time_to_contract(menu.created_at())?,
+        headquarters_unpublish: headquarters_unpublish_body(menu.headquarters_unpublish())?,
     })
+}
+
+fn headquarters_unpublish_body(
+    unpublish: Option<&HeadquartersUnpublish>,
+) -> Result<Option<HeadquartersUnpublishBody>, ApiError> {
+    unpublish
+        .map(|unpublish| {
+            Ok(HeadquartersUnpublishBody {
+                unpublished_at: date_time_to_contract(unpublish.unpublished_at())?,
+                reason: unpublish.reason().as_str().to_string(),
+            })
+        })
+        .transpose()
 }
 
 fn lesson_menu_list_body(
@@ -362,6 +391,9 @@ fn coach_lesson_menu_list_body(
                         .get(&menu.coach_id())
                         .map(|name| name.as_str().to_string()),
                     created_at: date_time_to_contract(menu.created_at())?,
+                    headquarters_unpublish: headquarters_unpublish_body(
+                        menu.headquarters_unpublish(),
+                    )?,
                 })
             })
             .collect::<Result<_, ApiError>>()?,

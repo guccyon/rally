@@ -1,5 +1,6 @@
 //! `/lesson-reviews/low`。admin-web の `GET /lesson-reviews/low`（`listLowRatedLessonReviews`。本部が横断で見る
-//! 直近の低い評価の一覧）。本部だけが呼べる。各評価には評価されたコーチの返信を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
+//! 直近の低い評価の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツのレッスンの評価だけ（`Sport` の値で
+//! なければ 422）。各評価には評価されたコーチの返信を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
 
@@ -9,20 +10,24 @@ use application::{
     lesson::lesson_completion_id_uuid,
     review::{
         LessonReviewRepository, ListLowRatedReviews, LowRatedReviewList,
-        ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup, ReviewerDisplayNameLookup,
-        lesson_review_id_uuid,
+        ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup, ReviewedLessonSportLookup,
+        ReviewerDisplayNameLookup, lesson_review_id_uuid,
     },
 };
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Query, State, rejection::QueryRejection},
+    routing::get,
+};
 use domain::{
     identity::Role,
     review::{LessonReview, LowRatedReviewCriteria},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::date_time_to_contract,
+    contract::{admin_web_sport, date_time_to_contract},
     error::ApiError,
     reviews::{
         LessonReviewReplyBody, ReviewLessonMenuBody, lesson_review_reply_body,
@@ -31,12 +36,18 @@ use crate::{
 };
 
 /// `/lesson-reviews/low` のハンドラーが使うユースケース。
-pub struct LowRatedReviewsState<R, M, D, S, C> {
-    pub list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+pub struct LowRatedReviewsState<R, M, P, D, S, C> {
+    pub list_low_rated_reviews: ListLowRatedReviews<R, M, P, D, S, C>,
 }
 
 /// ハンドラーが共有する [`LowRatedReviewsState`]。
-type Shared<R, M, D, S, C> = Arc<LowRatedReviewsState<R, M, D, S, C>>;
+type Shared<R, M, P, D, S, C> = Arc<LowRatedReviewsState<R, M, P, D, S, C>>;
+
+/// admin-web の `listLowRatedLessonReviews` のクエリ。
+#[derive(Deserialize)]
+pub struct ListLowRatedReviewsParams {
+    sport: Option<String>,
+}
 
 /// admin-web の `LowRatedLessonReviewList`。
 #[derive(Serialize)]
@@ -65,19 +76,25 @@ pub struct LowRatedLessonReviewBody {
 }
 
 /// `GET /lesson-reviews/low`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-pub async fn list_low_rated_reviews<R, M, D, S, C>(
-    State(state): State<Shared<R, M, D, S, C>>,
+/// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。
+pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
+    State(state): State<Shared<R, M, P, D, S, C>>,
+    params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
 ) -> Result<Json<LowRatedLessonReviewListBody>, ApiError>
 where
     R: LessonReviewRepository,
     M: ReviewedLessonMenuLookup,
+    P: ReviewedLessonSportLookup,
     D: ReviewedCoachDisplayNameLookup,
     S: ReviewerDisplayNameLookup,
     C: Clock,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
     let list = state
         .list_low_rated_reviews
-        .execute()
+        .execute(sport)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(LowRatedLessonReviewListBody {
@@ -125,13 +142,14 @@ fn low_rated_review_body(
 ///
 /// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
 /// [`crate::reviews_router`] で、生徒だけ。
-pub fn low_rated_reviews_router<R, M, D, S, C, T>(
-    list_low_rated_reviews: ListLowRatedReviews<R, M, D, S, C>,
+pub fn low_rated_reviews_router<R, M, P, D, S, C, T>(
+    list_low_rated_reviews: ListLowRatedReviews<R, M, P, D, S, C>,
     tokens: T,
 ) -> Router
 where
     R: LessonReviewRepository + 'static,
     M: ReviewedLessonMenuLookup + 'static,
+    P: ReviewedLessonSportLookup + 'static,
     D: ReviewedCoachDisplayNameLookup + 'static,
     S: ReviewerDisplayNameLookup + 'static,
     C: Clock + 'static,
@@ -141,7 +159,7 @@ where
     Router::new()
         .route(
             "/lesson-reviews/low",
-            get(self::list_low_rated_reviews::<R, M, D, S, C>),
+            get(self::list_low_rated_reviews::<R, M, P, D, S, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(LowRatedReviewsState {

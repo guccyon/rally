@@ -17,12 +17,15 @@ use domain::{
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     matching::FavoriteCoach,
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
-    notification::{Notification, NotificationId, NotificationSettings, PushNotification},
-    profile::{CoachBio, DisplayName},
+    notification::{
+        Announcement, AnnouncementId, Notification, NotificationId, NotificationSettings,
+        PushNotification,
+    },
+    profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply},
     scheduling::{
-        Booking, BookingId, CoachAcceptance, CoachAcceptanceStatus, CoachCalendar, SchedulingError,
-        Slot, SlotId,
+        Booking, BookingId, CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus,
+        CoachCalendar, SchedulingError, Slot, SlotId,
     },
 };
 
@@ -51,7 +54,8 @@ use crate::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     notification::{
-        NotificationRepository, NotificationSettingsRepository, PushSender, notification_id_uuid,
+        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        announcement_id_uuid, notification_id_uuid,
     },
     profile::CoachProfileRepository,
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
@@ -126,13 +130,17 @@ impl AccountRepository for InMemoryAccountRepository {
         Ok(coaches)
     }
 
-    async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+    async fn list_students(
+        &self,
+        name: Option<&DisplayNameQuery>,
+    ) -> Result<Vec<Account>, Unavailable> {
         let mut students: Vec<Account> = self
             .accounts
             .lock()
             .unwrap()
             .iter()
             .filter(|a| a.as_student().is_some())
+            .filter(|a| name.is_none_or(|name| name.matches(a.display_name())))
             .cloned()
             .collect();
         students.sort_by(|a, b| {
@@ -512,12 +520,13 @@ impl BookingRepository for InMemoryBookingRepository {
     }
 }
 
-/// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID だけを持つ（ないコーチは受付中）。
-/// 複製は同じ中身を共有する。枠の検索と予約の作成が読めるよう、[`InMemorySlotRepository::coach_acceptances`] から
+/// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID（ないコーチは受付中）と、止めた・再開した
+/// 記録を保存した順に持つ。複製は同じ中身を共有する。枠の検索と予約の作成が読めるよう、[`InMemorySlotRepository::coach_acceptances`] から
 /// 取り出して使う（単独で作ると、どの枠の保存先とも共有しない）。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryCoachAcceptanceRepository {
     suspended: Arc<Mutex<BTreeSet<AccountId>>>,
+    changes: Arc<Mutex<Vec<CoachAcceptanceChange>>>,
 }
 
 impl InMemoryCoachAcceptanceRepository {
@@ -547,20 +556,39 @@ impl CoachAcceptanceRepository for InMemoryCoachAcceptanceRepository {
         update: F,
     ) -> Result<CoachAcceptance, UpdateCoachAcceptanceError>
     where
-        F: FnOnce(&mut CoachAcceptance) -> Result<(), SchedulingError> + Send,
+        F: FnOnce(&mut CoachAcceptance) -> Result<CoachAcceptanceChange, SchedulingError> + Send,
     {
         let mut suspended = self.suspended.lock().unwrap();
         let mut acceptance = restore_acceptance(&suspended, coach_id);
-        update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
+        let change = update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
         match acceptance.status() {
             CoachAcceptanceStatus::Suspended => suspended.insert(coach_id),
             CoachAcceptanceStatus::Accepting => suspended.remove(&coach_id),
         };
+        self.changes.lock().unwrap().push(change);
         Ok(acceptance)
     }
 
     async fn suspended_coaches(&self) -> Result<BTreeSet<AccountId>, Unavailable> {
         Ok(self.suspended())
+    }
+
+    async fn changes(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        // 保存した順の逆にしてから時刻で安定に並べるので、同じ時刻は後に保存した方が先
+        let mut changes: Vec<_> = self
+            .changes
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .filter(|change| change.coach_id() == coach_id)
+            .cloned()
+            .collect();
+        changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
+        Ok(changes)
     }
 }
 
@@ -1437,6 +1465,56 @@ impl NotificationRepository for InMemoryNotificationRepository {
             }
         }
         Ok(())
+    }
+}
+
+/// [`AnnouncementRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAnnouncementRepository {
+    announcements: Arc<Mutex<Vec<Announcement>>>,
+}
+
+impl InMemoryAnnouncementRepository {
+    /// 既存の送った記録を入れて作る（テストの準備用）。
+    pub fn with_announcements(announcements: impl IntoIterator<Item = Announcement>) -> Self {
+        Self {
+            announcements: Arc::new(Mutex::new(announcements.into_iter().collect())),
+        }
+    }
+
+    /// 残した送った記録（残した順）。
+    pub fn all(&self) -> Vec<Announcement> {
+        self.announcements.lock().unwrap().clone()
+    }
+}
+
+impl AnnouncementRepository for InMemoryAnnouncementRepository {
+    fn next_id(&self) -> AnnouncementId {
+        announcement_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, announcement: Announcement) -> Result<(), Unavailable> {
+        self.announcements.lock().unwrap().push(announcement);
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Announcement>, Unavailable> {
+        let mut all: Vec<Announcement> = self.all().into_iter().rev().collect();
+        // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
+        all.sort_by_key(|a| std::cmp::Reverse(a.sent_at()));
+        Ok(all)
+    }
+
+    async fn find_by_ids(
+        &self,
+        ids: &BTreeSet<AnnouncementId>,
+    ) -> Result<BTreeMap<AnnouncementId, Announcement>, Unavailable> {
+        Ok(self
+            .all()
+            .into_iter()
+            .filter(|a| ids.contains(&a.id()))
+            .map(|a| (a.id(), a))
+            .collect())
     }
 }
 

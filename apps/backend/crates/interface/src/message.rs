@@ -5,6 +5,7 @@ use domain::{
     identity::Role,
     lesson::LessonType,
     messaging::{MessageContent, Stamp},
+    notification::NotificationError,
     scheduling::BookingStatus,
 };
 
@@ -27,6 +28,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
     match error {
         DomainError::EmptyDisplayName => "表示名が空".to_string(),
         DomainError::DisplayNameTooLong { max } => format!("表示名は {max} 文字まで"),
+        DomainError::DisplayNameQueryTooLong { max } => {
+            format!("表示名の検索語は {max} 文字まで")
+        }
         DomainError::InvalidEmail => "メールアドレスの形が不正".to_string(),
         DomainError::CoachBioTooLong { max } => format!("自己紹介文は {max} 文字まで"),
         DomainError::RoleAttributeMismatch { role, sports } => {
@@ -82,6 +86,18 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*sport)
         ),
         DomainError::NotTheLessonMenuCoach => "レッスンメニューのコーチでない".to_string(),
+        DomainError::HeadquartersUnpublishReasonTooLong { max } => {
+            format!("非公開にする理由は {max} 文字まで")
+        }
+        DomainError::LessonMenuUnpublishedByHeadquarters => {
+            "本部が非公開にしたレッスンメニューは、本部が公開に戻すまで公開できない".to_string()
+        }
+        DomainError::LessonMenuAlreadyUnpublishedByHeadquarters => {
+            "レッスンメニューはすでに本部が非公開にしている".to_string()
+        }
+        DomainError::LessonMenuNotUnpublishedByHeadquarters => {
+            "本部が非公開にしたレッスンメニューでない".to_string()
+        }
         DomainError::VideoLessonMenuOfAnotherCoach => {
             "動画で選べるのは送り先のコーチのレッスンメニューだけ".to_string()
         }
@@ -96,6 +112,26 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*menu),
             sport_to_contract(*video)
         ),
+    }
+}
+
+/// notification の不変条件の違反の説明。
+pub(crate) fn notification_error(error: &NotificationError) -> String {
+    match error {
+        NotificationError::NotificationReadBeforeCreated => {
+            "お知らせの既読が作った時刻より前".to_string()
+        }
+        NotificationError::EmptyAnnouncementTitle => "お知らせの題が空".to_string(),
+        NotificationError::AnnouncementTitleTooLong { max } => {
+            format!("お知らせの題は {max} 文字まで")
+        }
+        NotificationError::EmptyAnnouncementBody => "お知らせの本文が空".to_string(),
+        NotificationError::AnnouncementBodyTooLong { max } => {
+            format!("お知らせの本文は {max} 文字まで")
+        }
+        NotificationError::AnnouncementWithoutRecipients => {
+            "お知らせを受け取る生徒がいない".to_string()
+        }
     }
 }
 
@@ -144,6 +180,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::DisplayNameTooLong { max: 50 }),
             "表示名は 50 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::DisplayNameQueryTooLong { max: 50 }),
+            "表示名の検索語は 50 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::InvalidEmail),

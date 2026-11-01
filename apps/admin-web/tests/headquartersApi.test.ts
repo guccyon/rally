@@ -122,6 +122,59 @@ describe("headquartersApi", () => {
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
 
+  test("unpublishLessonMenu は理由を本文にして POST /api/lesson-menus/{id}/unpublish を呼ぶ", async () => {
+    const lessonMenuId = "aaaaaaaa-0000-4000-8000-000000000001";
+    const menu = {
+      lesson_menu_id: lessonMenuId,
+      coach_id: "22222222-2222-4222-8222-222222222222",
+      sport: "tennis",
+      lesson_type: "live_lesson",
+      name: "フォアハンドの基礎",
+      description: "",
+      duration_minutes: 60,
+      is_published: false,
+      created_at: "2026-10-01T00:00:00Z",
+      headquarters_unpublish: { unpublished_at: "2026-10-26T03:00:00Z", reason: "誤った内容" },
+    };
+    const { api, fetchMock } = setup(json(200, menu));
+    const result = await api.unpublishLessonMenu(lessonMenuId, { reason: "誤った内容" });
+    expect(result).toEqual({ ok: true, data: menu });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-menus/${lessonMenuId}/unpublish`);
+    expect(await request.json()).toEqual({ reason: "誤った内容" });
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("unpublishLessonMenu の 409 は ErrorCode の文言と code にする", async () => {
+    const { api } = setup(
+      json(409, { code: "lesson_menu_already_unpublished_by_headquarters", message: "conflict" }),
+    );
+    const result = await api.unpublishLessonMenu("aaaaaaaa-0000-4000-8000-000000000001", {});
+    expect(result).toEqual({
+      ok: false,
+      code: "lesson_menu_already_unpublished_by_headquarters",
+      message: "このメニューはすでに本部が非公開にしています。",
+    });
+  });
+
+  test("republishLessonMenu は本文なしで POST /api/lesson-menus/{id}/republish を呼ぶ", async () => {
+    const lessonMenuId = "aaaaaaaa-0000-4000-8000-000000000001";
+    const { api, fetchMock } = setup(
+      json(409, { code: "lesson_menu_not_unpublished_by_headquarters", message: "conflict" }),
+    );
+    const result = await api.republishLessonMenu(lessonMenuId);
+    expect(result).toEqual({
+      ok: false,
+      code: "lesson_menu_not_unpublished_by_headquarters",
+      message: "このメニューは本部が非公開にしたものではありません。",
+    });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-menus/${lessonMenuId}/republish`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
   test("listStudents は GET /api/students を呼び、生徒の一覧を返す", async () => {
     const list = {
       students: [
@@ -142,6 +195,33 @@ describe("headquartersApi", () => {
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe("/api/students");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listLowRatedLessonReviews は GET /api/lesson-reviews/low を呼び、低い評価の一覧を返す", async () => {
+    const list = {
+      max_rating: 2,
+      period_days: 30,
+      reviews: [
+        {
+          review_id: "33333333-3333-4333-8333-333333333333",
+          lesson_id: "44444444-4444-4444-8444-444444444444",
+          coach_id: "22222222-2222-4222-8222-222222222222",
+          coach_display_name: "鈴木 コーチ",
+          student_id: "11111111-1111-4111-8111-111111111111",
+          rating: 1,
+          comment: "通話が途中で切れました",
+          submitted_at: "2026-10-20T03:00:00Z",
+          lesson_menu: null,
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLowRatedLessonReviews();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/lesson-reviews/low");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 

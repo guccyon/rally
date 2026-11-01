@@ -17,6 +17,10 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   chat_not_entitled: "この生徒はまだ月額契約がないため、チャットを送れません。",
   coach_already_suspended: "このコーチの受付はすでに停止しています。",
   coach_not_suspended: "このコーチの受付は停止していません。",
+  lesson_menu_unpublished_by_headquarters:
+    "本部が非公開にしたメニューのため、公開できません。非公開のままなら内容は直せます。",
+  lesson_menu_already_unpublished_by_headquarters: "このメニューはすでに本部が非公開にしています。",
+  lesson_menu_not_unpublished_by_headquarters: "このメニューは本部が非公開にしたものではありません。",
 };
 
 const UNKNOWN = "エラーが発生しました。時間をおいてやり直してください。";

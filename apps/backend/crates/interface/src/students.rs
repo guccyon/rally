@@ -6,9 +6,13 @@ use application::identity::{
     AccountRepository, ListStudents, StudentContractLookup, StudentLastBookingLookup,
     StudentOverview, TokenVerifier, account_id_uuid,
 };
-use axum::{Json, Router, extract::State, routing::get};
-use domain::identity::Role;
-use serde::Serialize;
+use axum::{
+    Json, Router,
+    extract::{Query, State, rejection::QueryRejection},
+    routing::get,
+};
+use domain::{identity::Role, profile::DisplayNameQuery};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
@@ -22,6 +26,12 @@ use crate::{
 /// `/students` のハンドラーが使うユースケース。
 pub struct StudentsState<R, C, B> {
     pub list_students: ListStudents<R, C, B>,
+}
+
+/// admin-web の `listStudents` のクエリ。
+#[derive(Deserialize)]
+pub struct ListStudentsParams {
+    q: Option<String>,
 }
 
 /// admin-web の `StudentList`。
@@ -62,19 +72,28 @@ fn student_body(student: &StudentOverview) -> Result<StudentBody, ApiError> {
     })
 }
 
-/// `GET /students`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。生徒をすべて、登録の
-/// 新しい順で返す（ゴルフの生徒も載せる）。
+/// `GET /students`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。生徒を登録の新しい順で
+/// 返す（ゴルフの生徒も載せる）。`q` があれば表示名に部分一致する生徒だけで、長すぎる `q` は 422。
 pub async fn list_students<R, C, B>(
     State(state): State<Arc<StudentsState<R, C, B>>>,
+    params: Result<Query<ListStudentsParams>, QueryRejection>,
 ) -> Result<Json<StudentListBody>, ApiError>
 where
     R: AccountRepository,
     C: StudentContractLookup,
     B: StudentLastBookingLookup,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let name = params
+        .q
+        .as_deref()
+        .map(DisplayNameQuery::new)
+        .transpose()?
+        .flatten();
     let students = state
         .list_students
-        .execute()
+        .execute(name.as_ref())
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(StudentListBody {

@@ -44,7 +44,7 @@ pub struct MonthlyLessonStatsBody {
     average_rating: Option<f64>,
 }
 
-fn monthly_lesson_stats_body(stats: &MonthlyLessonStats) -> MonthlyLessonStatsBody {
+pub(crate) fn monthly_lesson_stats_body(stats: &MonthlyLessonStats) -> MonthlyLessonStatsBody {
     MonthlyLessonStatsBody {
         month: year_month_to_contract(stats.month),
         live_lesson_count: stats.lessons.live_count(),

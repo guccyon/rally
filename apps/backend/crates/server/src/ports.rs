@@ -12,7 +12,9 @@ use application::{
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
     messaging::MessageThreadRepository,
-    notification::{NotificationRepository, NotificationSettingsRepository},
+    notification::{
+        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+    },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
     scheduling::{BookingRepository, CoachAcceptanceRepository, SlotRepository},
@@ -36,9 +38,11 @@ pub(crate) trait Ports {
     type LessonMenus: LessonMenuRepository + Clone + 'static;
     type CoachAcceptances: CoachAcceptanceRepository + Clone + 'static;
     type FavoriteCoaches: FavoriteCoachRepository + Clone + 'static;
+    type Announcements: AnnouncementRepository + Clone + 'static;
     type Clock: Clock + Clone + 'static;
     type Analytics: AnalyticsSink + Clone + 'static;
     type VideoCall: VideoCallProvider + Clone + 'static;
+    type Push: PushSender + Clone + 'static;
     type Events: DomainEventPublisher + Clone + 'static;
 
     fn accounts(&self) -> Self::Accounts;
@@ -55,10 +59,14 @@ pub(crate) trait Ports {
     fn lesson_menus(&self) -> Self::LessonMenus;
     fn coach_acceptances(&self) -> Self::CoachAcceptances;
     fn favorite_coaches(&self) -> Self::FavoriteCoaches;
+    /// 本部が送ったお知らせの記録。
+    fn announcements(&self) -> Self::Announcements;
     fn clock(&self) -> Self::Clock;
     fn analytics(&self) -> Self::Analytics;
     /// 通話基盤。
     fn video_call(&self) -> Self::VideoCall;
+    /// プッシュ通知の送り先（境界間イベントの購読と、本部からのお知らせが同じ送り先を使う）。
+    fn push(&self) -> Self::Push;
     /// 境界間イベントの発行先（インメモリのイベントバス）。
     fn events(&self) -> Self::Events;
 }

@@ -1,6 +1,8 @@
 //! `PgLessonMenuRepository`（`catalog.lesson_menus`）の検証。コーチのアカウントを `PgAccountRepository` で読んで
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
 //! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込みと並べ方。
+//! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
+//! 公開し直せないこと。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,8 +11,9 @@ mod support;
 
 use application::{
     catalog::{
-        CreateLessonMenu, CreateLessonMenuCommand, LessonMenuRepository, ListCoachLessonMenus,
-        ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu, UpdateLessonMenuCommand,
+        ChangeLessonMenuPublicationError, CreateLessonMenu, CreateLessonMenuCommand,
+        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
+        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu, UpdateLessonMenuCommand,
         UpdateLessonMenuError,
     },
     in_memory::FixedClock,
@@ -20,8 +23,8 @@ use domain::{
     DomainError,
     catalog::Sport,
     catalog::{
-        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
-        LessonMenuName,
+        HeadquartersUnpublish, HeadquartersUnpublishReason, LessonDuration, LessonFormat,
+        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName,
     },
     identity::{AccountId, Role},
     lesson::LessonType,
@@ -284,5 +287,123 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
             .unwrap()
             .lesson_menus
             .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
+    let coach = support::coach(&pool).await;
+    let menu = create(
+        &pool,
+        coach,
+        1,
+        content(Sport::Tennis, live(30), "フォア"),
+        true,
+    )
+    .await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let reason = HeadquartersUnpublishReason::new("料金の記載が誤っている").unwrap();
+
+    // 本部が非公開にすると、時刻と理由が残り、生徒の公開中の一覧から消える
+    let unpublish = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(10)));
+    let unpublished = unpublish.execute(menu.id(), reason.clone()).await.unwrap();
+    assert_eq!(
+        menus.find(menu.id()).await.unwrap(),
+        Some(unpublished.clone())
+    );
+    assert!(!unpublished.is_published());
+    assert_eq!(
+        unpublished.headquarters_unpublish(),
+        Some(&HeadquartersUnpublish::new(reason.clone(), at(10)))
+    );
+    assert!(
+        ListCoachLessonMenus::new(menus.clone())
+            .execute(coach, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // 二度目は断り、最初の時刻と理由を残す
+    let result = unpublish
+        .execute(menu.id(), HeadquartersUnpublishReason::default())
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::Invalid(
+                DomainError::LessonMenuAlreadyUnpublishedByHeadquarters
+            ))
+        ),
+        "{result:?}"
+    );
+
+    // コーチは公開し直せないが、非公開のまま中身は直せる（本部が非公開にしたことは残る）
+    let update = UpdateLessonMenu::new(menus.clone(), PgAccountRepository::new(pool.clone()));
+    let result = update
+        .execute(UpdateLessonMenuCommand {
+            coach_id: coach,
+            lesson_menu_id: menu.id(),
+            content: content(Sport::Tennis, live(30), "フォア（直した）"),
+            is_published: true,
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(UpdateLessonMenuError::Invalid(
+                DomainError::LessonMenuUnpublishedByHeadquarters
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(
+        menus.find(menu.id()).await.unwrap(),
+        Some(unpublished.clone())
+    );
+    let fixed = update
+        .execute(UpdateLessonMenuCommand {
+            coach_id: coach,
+            lesson_menu_id: menu.id(),
+            content: content(Sport::Tennis, live(30), "フォア（直した）"),
+            is_published: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(menus.find(menu.id()).await.unwrap(), Some(fixed.clone()));
+    assert_eq!(
+        fixed.headquarters_unpublish(),
+        unpublished.headquarters_unpublish()
+    );
+
+    // 本部が公開に戻すと、公開中になり、本部が非公開にしたことは消える
+    let republish = RepublishLessonMenu::new(menus.clone());
+    let republished = republish.execute(menu.id()).await.unwrap();
+    assert_eq!(
+        menus.find(menu.id()).await.unwrap(),
+        Some(republished.clone())
+    );
+    assert!(republished.is_published());
+    assert_eq!(republished.headquarters_unpublish(), None);
+    assert_eq!(republished.name().as_str(), "フォア（直した）");
+    assert_eq!(
+        ListCoachLessonMenus::new(menus.clone())
+            .execute(coach, None)
+            .await
+            .unwrap(),
+        vec![republished]
+    );
+
+    // 本部が非公開にしていないメニューは公開に戻せない
+    let result = republish.execute(menu.id()).await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::Invalid(
+                DomainError::LessonMenuNotUnpublishedByHeadquarters
+            ))
+        ),
+        "{result:?}"
     );
 }

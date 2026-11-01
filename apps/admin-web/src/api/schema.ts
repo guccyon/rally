@@ -89,8 +89,11 @@ export interface paths {
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
          *       `from`（今日）より前なので 422
-         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。絞り込み・ページングはしない。
+         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
          *       予約がなければ `bookings` は空の配列（404 にはしない）
+         *     - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
+         *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
+         *       422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
          *     - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
          *       キャンセル済みの予約より上）、それも同じなら `booking_id` の順
          *     - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
@@ -275,10 +278,15 @@ export interface paths {
          *       `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - 各評価には、評価されたコーチの返信 `reply`（`LessonReviewReply`。`replyToLessonReview`）も載せる。返信がなければ null
-         *     - 絞り込み・ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
+         *     - 絞り込み（任意）: `sport` を付ければ、そのスポーツのレッスンの評価だけ（スポーツごとの担当者が自分のスポーツの
+         *       低い評価だけを見る）。レッスンのスポーツは評価した完了したレッスンの元のスポーツ（同期は予約した枠、非同期は
+         *       送った動画の `sport`）で、レッスンメニューの有無を問わない。付けなければスポーツを問わずすべて（ゴルフも含む）。
+         *       しきい値・期間・並べ方は付けても変わらない
+         *     - `sport` が `Sport` の値でないときは 422 `validation_failed`
+         *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
-         *     パスパラメータもクエリも受けないので 404・422 はない。行動イベントは発火しない。
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
          */
         get: operations["listLowRatedLessonReviews"];
         put?: never;
@@ -376,6 +384,73 @@ export interface paths {
          *     境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
          */
         post: operations["resumeCoach"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/acceptance-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチの受付を止めた・再開した記録（本部）
+         * @description コーチ 1 人の受付（glossary の coach_acceptance）を止めた（`suspendCoach`）・再開した（`resumeCoach`）記録を、
+         *     新しい順に返す。どのコーチの受付を、いつ、どの本部のアカウントが止めて・再開したかを、本部が後からたどるのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     - 記録は `suspendCoach`・`resumeCoach` が受付を変えたとき 1 回につき 1 件で、書き換えない。409 で断られた操作は残らない
+         *     - 各記録の `acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）。`changed_by` は
+         *       操作した本部のアカウントの ID、`changed_at` は変えた時刻
+         *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
+         *     - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
+         *     - 絞り込み・ページング・件数の上限はない
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *
+         *     境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
+         */
+        get: operations["listCoachAcceptanceChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチ 1 人の様子（本部）
+         * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・今月と先月の完了したレッスンの数・公開中のレッスンメニューの
+         *     数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     照会だけで、何も保存しない。
+         *
+         *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
+         *
+         *     - `acceptance_status`: `listCoaches` の 1 件と同じ受付の状態（一度も止めていないコーチは `accepting`）
+         *     - `review_count` / `average_rating`: `getCoachReviewSummary` と同じ（期間で絞らない、これまでのすべての評価。0 件なら
+         *       `average_rating` は null）
+         *     - `current_month` / `previous_month`: `getMyLessonStats` の同じ名前の項目と同じ（日本時間の暦月。月ごとの評価の件数と
+         *       平均も載る）。金額は返さない
+         *     - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
+         *       メニューの数。スポーツで絞らず、ゴルフのメニューも数える）
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getCoachOverview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -607,6 +682,11 @@ export interface paths {
          * @description トークンが示す本人（コーチ）のレッスンメニューの中身と公開中かを丸ごと置き換え、置き換えたあとのメニューを返す。
          *     非公開にするのも、公開し直すのもこれ（`is_published`）。コーチの役割のトークンだけが呼べる（本部・生徒は 403）。
          *
+         *     - 本部が非公開にしたメニュー（`headquarters_unpublish` があるもの。`unpublishLessonMenu`）は、本部が公開に戻す
+         *       （`republishLessonMenu`）まで公開し直せない。`is_published: true` は 409 `lesson_menu_unpublished_by_headquarters`
+         *       （何も変えない）。`is_published: false` のままなら中身は直せ、本部が非公開にしたことと理由はそのまま残る
+         *       （コーチの受付の停止をコーチが自分で解けないのと同じく、本部の運営の操作は本部だけが解く）
+         *
          *     - 項目の規則は `createMyLessonMenu` と同じ。`description` と `is_published` も省けない
          *     - メニューがないとき・他のコーチのメニューのとき・`lesson_menu_id` が UUID でないときは 404（他のコーチのメニューは
          *       あることも知らせない）
@@ -641,6 +721,8 @@ export interface paths {
          *       同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
          *     - 各行には作ったコーチの表示名 `coach_display_name` を載せる。コーチのアカウントが引けないときは載せない
          *       （その行は同じスポーツの中で最後に、`coach_id` の順で並べる）
+         *     - 本部が非公開にしたメニュー（`unpublishLessonMenu`）の行には、非公開にした時刻と理由 `headquarters_unpublish` を載せる
+         *       （`published=false` の絞り込みには、コーチが自分で非公開にしたものと本部が非公開にしたものの両方が入る）
          *     - 集計（件数の表）・ページングはしない。メニューがなければ `lesson_menus` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -649,6 +731,72 @@ export interface paths {
         get: operations["listLessonMenus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-menus/{lesson_menu_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * レッスンメニューの非公開（本部）
+         * @description 不適切な内容や誤ったレッスンメニュー（glossary の lesson_menu）を、本部がコーチに代わって非公開にし、非公開にしたメニューを
+         *     返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。メニューは本部の横断の一覧（`listLessonMenus`）から選ぶ。
+         *
+         *     - 本文は省いてよい。`reason`（非公開にする理由。0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに保存する）
+         *       を任意で書け、省けば空文字列（理由なし）。201 文字以上・JSON でない本文は 422 `validation_failed`（何も変えない）
+         *     - 非公開にした時刻と理由を `headquarters_unpublish` に残し、`is_published` を `false` にする。中身（名前・説明など）は変えない
+         *     - コーチが自分で非公開にしていたメニューも非公開にできる（以後はコーチが自分で公開し直せなくなる）
+         *     - 本部が非公開にしたメニューは、本部が公開に戻す（`republishLessonMenu`）までコーチが公開し直せない（コーチの
+         *       `updateMyLessonMenu` の `is_published: true` は 409 `lesson_menu_unpublished_by_headquarters`。非公開のまま中身は直せる）
+         *     - 非公開になったメニューは、生徒の一覧（student-app の `listCoachLessonMenus`）に出ず、動画の送付で選べない（`submitVideo` は
+         *       422）。枠への結びつけと予約がメニューを写すかは、コーチが非公開にしたときと同じ（予約・動画がすでに持つ写しは変えない）
+         *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
+         *     - すでに本部が非公開にしているメニューは 409 `lesson_menu_already_unpublished_by_headquarters`（何も変えない。最初の時刻と
+         *       理由を残す）
+         *
+         *     メニューは catalog の持ち物で、他のコンテキストはポートで読むだけなので境界間イベントは発行しない。本部の運営の操作で、
+         *     KPI の入力でもないので行動イベントも発火しない（`suspendCoach` と同じ）。コーチへの通知はしない。
+         */
+        post: operations["unpublishLessonMenu"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-menus/{lesson_menu_id}/republish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 本部が非公開にしたレッスンメニューを公開に戻す（本部）
+         * @description `unpublishLessonMenu` で本部が非公開にしたレッスンメニューを公開中（`is_published: true`）に戻し、戻したメニューを返す。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。リクエストの本文は読まない。
+         *
+         *     - 本部が非公開にした時刻と理由（`headquarters_unpublish`）は消す（履歴は残さない）。以後はコーチがまた
+         *       `updateMyLessonMenu` で公開・非公開を決められる
+         *     - 公開中に戻ったメニューは、また生徒の一覧（`listCoachLessonMenus`）に出る
+         *     - `lesson_menu_id` のメニューがないとき・UUID でないときは 404 `not_found`
+         *     - 本部が非公開にしたメニューでない（公開中のもの・コーチが自分で非公開にしたもの）は 409
+         *       `lesson_menu_not_unpublished_by_headquarters`（何も変えない。コーチが自分で非公開にしたメニューを本部が公開しない）
+         *
+         *     境界間イベント・行動イベントは発火しない（`unpublishLessonMenu` と同じ）。
+         */
+        post: operations["republishLessonMenu"];
         delete?: never;
         options?: never;
         head?: never;
@@ -674,13 +822,55 @@ export interface paths {
          *     - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
          *       キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
          *     - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
-         *     - 絞り込み・ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で足す）。生徒がいなければ
-         *       `students` は空の配列
+         *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含む生徒だけを返す
+         *       （並べ方は上と同じ）。`q` の前後の空白（全角の空白を含む）は除いて比べ、途中の空白はそのまま比べる。大文字・小文字は
+         *       ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる
+         *       （同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。一致する生徒がいなければ `students` は空の配列
+         *     - `q` を付けない・空・空白だけのときは絞り込まない（今までどおりすべての生徒）
+         *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
+         *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
+         *       足す）。生徒がいなければ `students` は空の配列
          *     - 照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
          */
         get: operations["listStudents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/students/{student_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生徒 1 人の利用の様子（本部）
+         * @description 生徒（glossary の student）1 人の予約（glossary の booking）と受けたレッスン（glossary の lesson_completion）を 1 か所で返す。
+         *     本部が生徒からの問い合わせに答えるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - `upcoming_bookings`: これからの予約。予約の状態が未確定（`pending`）か確定（`confirmed`）で、予約したスロットの開始時刻が
+         *       サーバーの現在時刻より後のもの（始まった予約・キャンセル済みの予約は載せない）。開始時刻の古い順、同じ開始時刻は予約の
+         *       作成の古い順、それも同じなら `booking_id` の順。件数の上限はない（これからの予約は暦月の上限などで小さい前提）
+         *     - `recent_lessons`: 直近の受けたレッスン。生徒の完了したレッスン（同期レッスン（通話）・非同期レッスン（動画添削）の両方。
+         *       student-app の `listMyLessonCompletions` と同じもの）を、完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に
+         *       最大 20 件。21 件目より古いものは載せない
+         *     - `cancelled_booking_count`: 生徒がキャンセルした予約（状態が `cancelled`）の件数。期間で絞らず、これまでのすべて
+         *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
+         *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
+         *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
+         *     - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getStudentActivity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -875,6 +1065,48 @@ export interface paths {
         get: operations["listMyNotifications"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 送ったお知らせの一覧（本部）
+         * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
+         *     どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
+         *     空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listAnnouncements"];
+        put?: never;
+        /**
+         * 生徒へのお知らせの送信（本部）
+         * @description 本部が、生徒全員か、あるスポーツの生徒全員にお知らせ（glossary の announcement。メンテナンスやキャンペーンの知らせ）を
+         *     送り、送った記録を返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。送ったのはトークンの本部のアカウント。
+         *
+         *     - `title` は 1〜50 文字、`body` は 1〜2000 文字（どちらも空白だけは不可。文字数は Unicode のコードポイントで数え、
+         *       改行を含めて書いたとおりに保存する）。違えば 422 `validation_failed`
+         *     - `sport` を付ければそのスポーツの生徒だけ、省くか null なら生徒全員（ゴルフの生徒も含む）。`Sport` の値でなければ
+         *       422 `validation_failed`
+         *     - 対象の生徒が 1 人もいなければ 404 `not_found` で、何も残さない
+         *     - 対象の生徒ごとにお知らせ（glossary の notification。種類は `announcement`）を作る。生徒は student-app の
+         *       `listMyNotifications` で読む（本文は題と本文を改行でつないだもの）
+         *     - プッシュ通知（Gen1 はモック）は、生徒の通知の受け取り設定（student-app の `NotificationSettings.announcement`）が
+         *       true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
+         *     - 予約送信・取り消しはない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる
+         *
+         *     行動イベントは発火しない。
+         */
+        post: operations["sendAnnouncement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1133,10 +1365,59 @@ export interface components {
             coach_id: string;
             acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
         };
+        /**
+         * @description コーチの受付を止めた・再開した記録 1 件（`listCoachAcceptanceChanges`）。`suspendCoach`・`resumeCoach` が受付を
+         *     変えたときに残り、書き換えない。`acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）
+         */
+        CoachAcceptanceChange: {
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+            /**
+             * Format: uuid
+             * @description 止めた・再開した本部のアカウントの ID
+             */
+            changed_by: string;
+            /**
+             * Format: date-time
+             * @description 止めた・再開した時刻
+             */
+            changed_at: string;
+        };
+        /** @description コーチ 1 人の受付を止めた・再開した記録の一覧（並べ方は `listCoachAcceptanceChanges` の説明） */
+        CoachAcceptanceChangeList: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID
+             */
+            coach_id: string;
+            /** @description 変えた時刻の新しい順（同じ時刻は後に記録した方が先）。記録がなければ空の配列 */
+            changes: components["schemas"]["CoachAcceptanceChange"][];
+        };
         /** @description コーチの一覧（並べ方は `listCoaches` の説明） */
         CoachList: {
             /** @description 表示名のコードポイントの順（同じ表示名は `coach_id` の順） */
             coaches: components["schemas"]["Coach"][];
+        };
+        /**
+         * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・今月と先月の
+         *     レッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+         */
+        CoachOverview: {
+            /**
+             * Format: uuid
+             * @description コーチのアカウントの ID（他の操作の `coach_id` と同じ値）
+             */
+            coach_id: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+            /** @description これまでに受けた評価の件数（`getCoachReviewSummary` の `review_count` と同じ） */
+            review_count: number;
+            /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
+            average_rating: number | null;
+            current_month: components["schemas"]["MonthlyLessonStats"];
+            previous_month: components["schemas"]["MonthlyLessonStats"];
+            /** @description 公開中のレッスンメニューの数（スポーツを問わない） */
+            published_lesson_menu_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -1181,6 +1462,55 @@ export interface components {
         StudentList: {
             /** @description 登録した時刻の新しい順（同じ時刻は `student_id` の順） */
             students: components["schemas"]["Student"][];
+        };
+        /**
+         * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
+         *     キャンセルの件数を添える。生徒を特定する情報は表示名と ID だけ
+         */
+        StudentActivity: {
+            /**
+             * Format: uuid
+             * @description 生徒のアカウントの ID（`listStudents` の `student_id` と同じ値）
+             */
+            student_id: string;
+            /** @description 生徒の表示名 */
+            display_name: string;
+            /** @description これからの予約（未確定・確定で、開始が現在時刻より後）。開始時刻の古い順（同じ開始時刻は予約の作成の古い順） */
+            upcoming_bookings: components["schemas"]["StudentActivityBooking"][];
+            /** @description 直近の受けたレッスン。完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に最大 20 件 */
+            recent_lessons: components["schemas"]["StudentActivityLesson"][];
+            /** @description 生徒がキャンセルした予約の件数（これまでのすべて） */
+            cancelled_booking_count: number;
+        };
+        /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
+        StudentActivityBooking: {
+            booking: components["schemas"]["Booking"];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+        };
+        /**
+         * @description 生徒 1 人の利用の様子の直近の受けたレッスンの 1 件。完了したレッスン（glossary の lesson_completion）の ID・種類・
+         *     完了した時刻と、そのコーチ
+         */
+        StudentActivityLesson: {
+            /**
+             * Format: uuid
+             * @description 完了したレッスン（student-app の `MyLessonCompletion.lesson_id` と同じ値）
+             */
+            lesson_id: string;
+            /**
+             * Format: uuid
+             * @description レッスンのコーチ
+             */
+            coach_id: string;
+            /** @description レッスンのコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            lesson_type: components["schemas"]["LessonType"];
+            /**
+             * Format: date-time
+             * @description 完了を記録した時刻
+             */
+            completed_at: string;
         };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
@@ -1337,6 +1667,7 @@ export interface components {
         /**
          * @description glossary の lesson（レッスン種別。スポーツごとにコーチが提供するメニューで、同期と非同期の別を持つ）。
          *     student-app の `Lesson`（完了したレッスン）と区別するため、スキーマ名は LessonMenu にした。student-app の `LessonMenu` と同じ形
+         *     （admin-web だけの任意の項目 `headquarters_unpublish` を除く。student-app は公開中のメニューしか返さないので載らない）
          */
         LessonMenu: {
             /** Format: uuid */
@@ -1360,6 +1691,21 @@ export interface components {
              * @description 作った時刻
              */
             created_at: string;
+            headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
+        };
+        /**
+         * @description 本部がレッスンメニューを非公開にしたこと（glossary の lesson_menu_headquarters_unpublish。`unpublishLessonMenu`）。
+         *     本部が非公開にしたメニューにだけ載せ、本部が非公開にしていなければ項目ごと省く。これがあるあいだ、コーチは
+         *     メニューを公開し直せない（本部が `republishLessonMenu` で公開に戻すと消える）
+         */
+        HeadquartersUnpublish: {
+            /**
+             * Format: date-time
+             * @description 本部が非公開にした時刻
+             */
+            unpublished_at: string;
+            /** @description 本部が非公開にしたときに書いた理由（書かなければ空文字列） */
+            reason: string;
         };
         /** @description コーチ 1 人のレッスンメニューの一覧（並べ方は各操作の説明） */
         LessonMenuList: {
@@ -1391,6 +1737,7 @@ export interface components {
              * @description 作った時刻
              */
             created_at: string;
+            headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
         };
         /** @description コーチのレッスンメニューの横断の一覧（並べ方は `listLessonMenus` の説明） */
         CoachLessonMenuList: {
@@ -1408,6 +1755,11 @@ export interface components {
             duration_minutes?: number | null;
             /** @description 公開中か。省けば true */
             is_published?: boolean;
+        };
+        /** @description 本部によるレッスンメニューの非公開（`unpublishLessonMenu`）。本文ごと省いてよい */
+        UnpublishLessonMenuRequest: {
+            /** @description 非公開にする理由（0〜200 文字）。省けば空文字列 */
+            reason?: string;
         };
         /** @description レッスンメニューの変更（`updateMyLessonMenu`）。今のメニューの中身と公開中かを丸ごと置き換える */
         UpdateLessonMenuRequest: {
@@ -1681,11 +2033,48 @@ export interface components {
             /** @description 作った時刻の新しい順 */
             notifications: components["schemas"]["Notification"][];
         };
+        /** @description 生徒へのお知らせの送信（`sendAnnouncement`） */
+        SendAnnouncementRequest: {
+            /** @description 題（1〜50 文字。空白だけは不可） */
+            title: string;
+            /** @description 本文（1〜2000 文字。空白だけは不可。改行を含めてよい） */
+            body: string;
+            /** @description 対象のスポーツ。省くか null なら生徒全員 */
+            sport?: components["schemas"]["Sport"] | null;
+        };
+        /** @description glossary の announcement（本部が生徒に送ったお知らせの記録） */
+        Announcement: {
+            /** Format: uuid */
+            announcement_id: string;
+            /**
+             * Format: uuid
+             * @description 送った本部のアカウントの ID
+             */
+            sender_id: string;
+            /** @description 題 */
+            title: string;
+            /** @description 本文 */
+            body: string;
+            /** @description 対象のスポーツ。生徒全員に送ったなら null */
+            sport: components["schemas"]["Sport"] | null;
+            /** @description お知らせを受け取った生徒の数（送った時点の対象の生徒の数。プッシュ通知を送らなかった生徒も数える） */
+            recipient_count: number;
+            /**
+             * Format: date-time
+             * @description 送った時刻
+             */
+            sent_at: string;
+        };
+        /** @description 送ったお知らせの一覧（並べ方は `listAnnouncements` の説明） */
+        AnnouncementList: {
+            /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先） */
+            announcements: components["schemas"]["Announcement"][];
+        };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -1720,7 +2109,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していないなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -1805,6 +2194,11 @@ export interface operations {
                 from?: string;
                 /** @description 期間の終わりの日付（日本時間。含む）。省けば `from` から 7 日目 */
                 to?: string;
+                /**
+                 * @description あればこのコーチの枠への予約だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
@@ -1948,7 +2342,10 @@ export interface operations {
     };
     listLowRatedLessonReviews: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description このスポーツのレッスンの評価だけを返す（付けなければスポーツを問わない） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1966,6 +2363,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     replyToLessonReview: {
@@ -2048,6 +2446,56 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listCoachAcceptanceChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチの受付を止めた・再開した記録 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachAcceptanceChangeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCoachOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description コーチ 1 人の様子 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listMyCoachBookings: {
@@ -2240,6 +2688,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -2270,9 +2719,69 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
-    listStudents: {
+    unpublishLessonMenu: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UnpublishLessonMenuRequest"];
+            };
+        };
+        responses: {
+            /** @description 本部が非公開にしたレッスンメニュー（`headquarters_unpublish` を載せる） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    republishLessonMenu: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_menu_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公開中に戻したレッスンメニュー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonMenu"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listStudents: {
+        parameters: {
+            query?: {
+                /** @description 表示名の検索語。表示名に部分一致する生徒だけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2290,6 +2799,32 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getStudentActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                student_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生徒 1 人の利用の様子 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentActivity"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     startLiveLessonSession: {
@@ -2495,6 +3030,56 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 送ったお知らせの一覧（新しい順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    sendAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description 送ったお知らせの記録 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     markMyNotificationsRead: {

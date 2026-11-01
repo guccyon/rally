@@ -12,7 +12,9 @@ use application::{
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
     messaging::MessageThreadRepository,
-    notification::{NotificationRepository, NotificationSettingsRepository},
+    notification::{
+        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+    },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
     scheduling::{BookingRepository, CoachAcceptanceRepository, SlotRepository},
@@ -22,16 +24,17 @@ use crate::{Repositories, ports::Ports};
 
 /// 保存先（[`Repositories`]）と、保存先のほかのポートの実装。
 #[allow(clippy::type_complexity)]
-pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, V, D> {
-    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G>,
+pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D> {
+    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H>,
     pub(crate) clock: C,
     pub(crate) analytics: A,
     pub(crate) video_call: V,
+    pub(crate) push: P,
     pub(crate) events: D,
 }
 
-impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, V, D> Ports
-    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, C, A, V, D>
+impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D> Ports
+    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D>
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -47,9 +50,11 @@ where
     J: LessonMenuRepository + Clone + 'static,
     Q: CoachAcceptanceRepository + Clone + 'static,
     G: FavoriteCoachRepository + Clone + 'static,
+    H: AnnouncementRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
+    P: PushSender + Clone + 'static,
     D: DomainEventPublisher + Clone + 'static,
 {
     type Accounts = R;
@@ -66,9 +71,11 @@ where
     type LessonMenus = J;
     type CoachAcceptances = Q;
     type FavoriteCoaches = G;
+    type Announcements = H;
     type Clock = C;
     type Analytics = A;
     type VideoCall = V;
+    type Push = P;
     type Events = D;
 
     fn accounts(&self) -> R {
@@ -127,6 +134,10 @@ where
         self.repositories.favorite_coaches.clone()
     }
 
+    fn announcements(&self) -> H {
+        self.repositories.announcements.clone()
+    }
+
     fn clock(&self) -> C {
         self.clock.clone()
     }
@@ -137,6 +148,10 @@ where
 
     fn video_call(&self) -> V {
         self.video_call.clone()
+    }
+
+    fn push(&self) -> P {
+        self.push.clone()
     }
 
     fn events(&self) -> D {
