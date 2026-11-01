@@ -28,6 +28,7 @@ const SENT: Schemas["Announcement"][] = [
     sport: "swimming",
     recipient_count: 8,
     sent_at: "2026-10-25T01:30:00Z",
+    withdrawal: null,
   },
   {
     announcement_id: "dddddddd-0000-4000-8000-000000000001",
@@ -37,6 +38,7 @@ const SENT: Schemas["Announcement"][] = [
     sport: null,
     recipient_count: 120,
     sent_at: "2026-10-20T00:00:00Z",
+    withdrawal: null,
   },
 ];
 
@@ -58,6 +60,7 @@ function sendOk() {
       sport: request.sport ?? null,
       recipient_count: 30,
       sent_at: "2026-10-26T03:00:00Z",
+      withdrawal: null,
     },
   }));
 }

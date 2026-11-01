@@ -16,7 +16,8 @@
 //! ことは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
 //!
 //! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
-//! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。
+//! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
+//! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
 
 use std::time::{Duration, SystemTime};
 
@@ -806,6 +807,48 @@ async fn an_announcement_reaches_students_as_notifications_and_pushes_follow_the
     )
     .await;
     assert_eq!(list, json!({ "announcements": [soccer, sent] }));
+
+    // 生徒全員に送ったほうを取り下げると、生徒のお知らせから外れる
+    let withdrawn = call(
+        &router,
+        "POST",
+        &format!(
+            "/announcements/{}/withdraw",
+            sent["announcement_id"].as_str().unwrap()
+        ),
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert!(withdrawn["withdrawal"].is_object(), "{withdrawn}");
+    for (token, expected) in [(student.as_str(), 0), (other_token, 1)] {
+        let listed = call(
+            &router,
+            "GET",
+            "/notifications/me",
+            Some(token),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await;
+        assert_eq!(
+            listed["notifications"].as_array().unwrap().len(),
+            expected,
+            "{listed}"
+        );
+    }
+    assert_eq!(push.sent().len(), 1, "取り下げてもプッシュ通知は送らない");
+    let list = call(
+        &router,
+        "GET",
+        "/announcements",
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(list, json!({ "announcements": [soccer, withdrawn] }));
 }
 
 /// 保存先を Postgres にした組み立てで、本部からのお知らせの送った記録と生徒のお知らせが保存されることを確かめる。
@@ -894,4 +937,61 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
     assert_eq!(read["notifications"][0]["kind"], "announcement");
     assert_eq!(read["notifications"][0]["body"], "題\n本文");
     assert_eq!(read["notifications"][0]["is_read"], true);
+
+    let withdraw = format!(
+        "/announcements/{}/withdraw",
+        sent["announcement_id"].as_str().unwrap()
+    );
+    let withdrawn = call(
+        &router,
+        "POST",
+        &withdraw,
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        withdrawn["withdrawal"],
+        json!({
+            "withdrawn_by": account_id_uuid::format(headquarters_account.id()),
+            "withdrawn_at": "2026-10-05T00:00:00Z"
+        })
+    );
+    let listed = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        listed,
+        json!({ "notifications": [] }),
+        "取り下げたお知らせは出ない"
+    );
+    let again = call(
+        &router,
+        "POST",
+        &withdraw,
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::CONFLICT,
+    )
+    .await;
+    assert_eq!(again["code"], "announcement_already_withdrawn");
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/announcements",
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcements": [withdrawn] })
+    );
 }

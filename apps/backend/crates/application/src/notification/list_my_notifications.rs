@@ -6,7 +6,7 @@ use crate::Unavailable;
 /// 自分のお知らせの一覧のユースケース（student-app と admin-web の `listMyNotifications`。生徒もコーチも、自分が受け取る
 /// お知らせだけ）。照会だけで、何も保存しない。
 /// 作った時刻の新しい順で、受け取り設定でオフの種類のお知らせも含む。本部からのお知らせには送った記録を添える
-/// （[`MyNotification`]）。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
+/// （[`MyNotification`]）。本部が取り下げたお知らせは出さない。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
 pub struct ListMyNotifications<N, A> {
     notifications: N,
     announcements: A,
@@ -204,6 +204,38 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_withdrawn_announcement_is_not_listed() {
+        let mut withdrawn = announcement(7);
+        withdrawn.withdraw(AccountId::from_u128(5), at(40)).unwrap();
+        let kept = announcement(8);
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            confirmed(1, STUDENT, 10),
+            Notification::new(
+                NotificationId::from_u128(2),
+                withdrawn.push_to(STUDENT),
+                at(30),
+            ),
+            Notification::new(NotificationId::from_u128(3), kept.push_to(STUDENT), at(30)),
+        ]);
+        let announcements =
+            InMemoryAnnouncementRepository::with_announcements([withdrawn, kept.clone()]);
+        let listed = ListMyNotifications::new(notifications.clone(), announcements)
+            .execute(STUDENT)
+            .await
+            .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|mine| mine.notification.id())
+                .collect::<Vec<_>>(),
+            [NotificationId::from_u128(3), NotificationId::from_u128(1)],
+            "取り下げたお知らせだけを外し、ほかの並びは変えない"
+        );
+        assert_eq!(listed[0].announcement, Some(kept));
+        assert_eq!(notifications.all().len(), 3, "お知らせそのものは消さない");
     }
 
     #[tokio::test]

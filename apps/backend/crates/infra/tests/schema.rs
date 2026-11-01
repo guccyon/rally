@@ -2763,6 +2763,52 @@ async fn announcements_have_a_title_a_body_a_known_sport_and_recipients(pool: Pg
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn an_announcement_withdrawal_has_both_an_account_and_a_time(pool: PgPool) {
+    let headquarters = account(&pool, "headquarters", None).await;
+    let announcement = insert_announcement(&pool, &headquarters, "題", "本文", None, 1)
+        .await
+        .unwrap();
+    let withdraw = |by: Option<&str>, at: Option<&str>| {
+        sqlx::query(
+            "UPDATE notification.announcements
+             SET withdrawn_by = $2::uuid, withdrawn_at = $3::timestamptz
+             WHERE announcement_id = $1::uuid",
+        )
+        .bind(announcement.clone())
+        .bind(by.map(str::to_owned))
+        .bind(at.map(str::to_owned))
+        .execute(&pool)
+    };
+
+    for (by, at) in [
+        (Some(headquarters.as_str()), None),
+        (None, Some("2026-11-01T11:00:00Z")),
+    ] {
+        let (code, constraint) = violation(withdraw(by, at).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, "announcements_withdrawal_check"),
+            "片方だけは不可"
+        );
+    }
+    let (code, constraint) = violation(
+        withdraw(
+            Some("00000000-0000-4000-8000-000000000001"),
+            Some("2026-11-01T11:00:00Z"),
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "announcements_withdrawn_by_fkey")
+    );
+    withdraw(Some(&headquarters), Some("2026-11-01T11:00:00Z"))
+        .await
+        .unwrap();
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn announcement_notifications_go_to_a_student_without_a_coach_once(pool: PgPool) {
     let headquarters = account(&pool, "headquarters", None).await;
     let announcement = insert_announcement(&pool, &headquarters, "題", "本文", None, 2)

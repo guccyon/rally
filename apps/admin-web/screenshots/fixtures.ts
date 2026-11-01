@@ -522,6 +522,7 @@ export const FIXTURES: Fixture[] = [
           sport: "swimming",
           recipient_count: 8,
           sent_at: at(-24),
+          withdrawal: null,
         },
         {
           announcement_id: id("8888", 1),
@@ -531,6 +532,7 @@ export const FIXTURES: Fixture[] = [
           sport: null,
           recipient_count: 120,
           sent_at: at(-24 * 4),
+          withdrawal: null,
         },
       ],
     } satisfies Schemas["AnnouncementList"],
