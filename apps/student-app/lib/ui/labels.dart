@@ -227,3 +227,6 @@ String coachListingLessonMenuCountLabel(CoachListing coach) =>
 
 /// コーチが受けた評価 1 件の点（admin-web の評価の一覧と同じ書き方）。例: `4 点（5 点満点）`
 String coachReviewRatingLabel(int rating) => '$rating 点（5 点満点）';
+
+/// コーチが受けた評価 1 件の下に出す、評価されたコーチの返信（`CoachReview.reply`）の見出し
+const coachReviewReplyHeading = 'コーチからの返信';

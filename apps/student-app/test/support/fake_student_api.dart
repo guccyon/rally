@@ -97,6 +97,9 @@ class FakeStudentApi implements StudentApi {
   /// コーチが受けた評価（`listCoachReviews` がどのコーチにも返す。新しい順）
   final List<CoachReview> coachReviews;
 
+  /// 入れておくと、`listCoachReviews` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? coachReviewsGate;
+
   /// `searchSlots` をコーチで絞って呼んだときの、絞ったコーチの ID（呼んだ順）
   final List<String> slotSearchCoachIds = [];
 
@@ -391,11 +394,14 @@ class FakeStudentApi implements StudentApi {
   );
 
   @override
-  Future<CoachReviewList> listCoachReviews(String coachId) => _answer(
-    'listCoachReviews',
-    () => CoachReviewList(coachId: coachId, reviews: coachReviews),
-    coachId,
-  );
+  Future<CoachReviewList> listCoachReviews(String coachId) async {
+    await coachReviewsGate?.future;
+    return _answer(
+      'listCoachReviews',
+      () => CoachReviewList(coachId: coachId, reviews: coachReviews),
+      coachId,
+    );
+  }
 
   @override
   Future<LessonMenuList> listCoachLessonMenus(String coachId, {Sport? sport}) =>
@@ -947,7 +953,14 @@ abstract final class Fixtures {
     name: lessonMenus.first.name,
   );
 
-  /// コーチが受けた評価（送った時刻の新しい順）。新しい方はメニューのあるレッスン、古い方はメニューのないレッスンへの評価
+  /// コーチの返信（[coachReviews] の新しい方に付いている）
+  static final coachReviewReply = LessonReviewReply(
+    comment: 'ありがとうございます。次はバックハンドも見ましょう',
+    repliedAt: now.add(const Duration(hours: 1)),
+  );
+
+  /// コーチが受けた評価（送った時刻の新しい順）。新しい方はメニューのあるレッスンへの評価でコーチの返信があり、
+  /// 古い方はメニューのないレッスンへの評価で返信がない
   static final coachReviews = [
     CoachReview(
       reviewId: reviewId,
@@ -956,6 +969,7 @@ abstract final class Fixtures {
       comment: '丁寧でした',
       submittedAt: now,
       lessonMenu: reviewLessonMenu,
+      reply: coachReviewReply,
     ),
     CoachReview(
       reviewId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',

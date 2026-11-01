@@ -9,6 +9,7 @@ import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/coach_profile.dart';
 import 'package:rally_student_app/state/favorite_coaches.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -110,6 +111,78 @@ void main() {
     expect(find.text('一言 3'), findsNothing);
   });
 
+  testWidgets('最近の評価のうち、コーチの返信がある評価だけ、その下に「コーチからの返信」と返信の文と時刻を出す', (
+    tester,
+  ) async {
+    await openCoachProfile(tester, FakeStudentApi());
+
+    final [newer, older] = Fixtures.coachReviews;
+    expect(older.reply, isNull);
+    final reply = newer.reply!;
+    expect(find.text('コーチからの返信'), findsOneWidget, reason: '返信のない評価には出さない');
+    expect(find.text(reply.comment), findsOneWidget);
+    expect(find.text(formatDateTime(reply.repliedAt)), findsOneWidget);
+    final replyTop = tester.getTopLeft(find.text('コーチからの返信')).dy;
+    // 返信は返信先の評価（一言）の下、次の評価の上
+    expect(
+      replyTop,
+      greaterThan(tester.getTopLeft(find.text(newer.comment)).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text(reply.comment)).dy,
+      greaterThan(replyTop),
+    );
+    expect(
+      tester.getTopLeft(find.text(older.comment)).dy,
+      greaterThan(tester.getTopLeft(find.text(reply.comment)).dy),
+    );
+  });
+
+  testWidgets('返信のある評価がなければ「コーチからの返信」は出さない', (tester) async {
+    final api = FakeStudentApi(
+      coachReviews: [
+        for (final review in Fixtures.coachReviews)
+          CoachReview(
+            reviewId: review.reviewId,
+            lessonId: review.lessonId,
+            rating: review.rating,
+            comment: review.comment,
+            submittedAt: review.submittedAt,
+            lessonMenu: review.lessonMenu,
+          ),
+      ],
+    );
+    await openCoachProfile(tester, api);
+
+    expect(find.text('丁寧でした'), findsOneWidget);
+    expect(find.text('コーチからの返信'), findsNothing);
+  });
+
+  testWidgets('最近の評価を読み込んでいる間はその旨を出し、返信はまだ出さない', (tester) async {
+    final gate = Completer<void>();
+    final api = FakeStudentApi()..coachReviewsGate = gate;
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: home,
+    );
+    await tapText(tester, 'コーチを探す');
+    await tester.tap(find.text('佐藤'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('最近の評価を読み込んでいます…'), findsOneWidget);
+    expect(find.text('コーチからの返信'), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('最近の評価を読み込んでいます…'), findsNothing);
+    expect(find.text('コーチからの返信'), findsOneWidget);
+  });
+
   testWidgets('自己紹介を書いていないコーチは、自己紹介がまだない旨を出す', (tester) async {
     final api = FakeStudentApi(
       coachProfiles: {
@@ -140,6 +213,7 @@ void main() {
     expect(find.text('高橋'), findsOneWidget);
     expect(find.text('評価はまだありません'), findsOneWidget);
     expect(find.text('最近の評価'), findsNothing);
+    expect(find.text('コーチからの返信'), findsNothing);
     expect(find.text('まだ公開中のレッスンメニューはありません。'), findsOneWidget);
   });
 
@@ -192,6 +266,7 @@ void main() {
     expect(find.text(Fixtures.coachBio), findsOneWidget);
     expect(find.text('評価の平均と件数を読み込めませんでした。'), findsOneWidget);
     expect(find.text('最近の評価を読み込めませんでした。'), findsOneWidget);
+    expect(find.text('コーチからの返信'), findsNothing);
     expect(find.text('レッスンメニューを読み込めませんでした。'), findsOneWidget);
     expect(find.text('もう一度読み込む'), findsNWidgets(3));
     expect(container.read(studentFlowProvider).errorMessage, isNull);
