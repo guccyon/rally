@@ -5,12 +5,15 @@
 
 use std::{collections::BTreeSet, time::SystemTime};
 
-use application::scheduling::{SlotCursor, slot_id_uuid};
+use application::{
+    identity::account_id_uuid,
+    scheduling::{SlotCursor, slot_id_uuid},
+};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
     catalog::{LessonMenuPublicationAction, Sport},
     entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
-    identity::Role,
+    identity::{AccountId, Role},
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
@@ -352,6 +355,13 @@ pub(crate) fn date_from_contract(field: &str, value: &str) -> Result<Date, ApiEr
         .ok_or_else(invalid)?;
     let day = value[8..10].parse().map_err(|_| invalid())?;
     Date::from_calendar_date(year, month, day).map_err(|_| invalid())
+}
+
+/// アカウント ID（`format: uuid`）のクエリの値を読む。UUID でなければ 422（`field` は文言に使う項目名）。ID のアカウントが
+/// あるか・役割は問わない（ない ID・役割の違う ID で絞れば一覧が空になる）。
+pub(crate) fn account_id_from_contract(field: &str, value: &str) -> Result<AccountId, ApiError> {
+    account_id_uuid::parse(value)
+        .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
 }
 
 /// `SlotPage.next_cursor` の値（クライアントには不透明）。`<開始時刻の UNIX ナノ秒>_<スロット ID>`。

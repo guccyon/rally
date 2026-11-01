@@ -143,6 +143,10 @@ export interface paths {
          *       含めて、実際に使った期間
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）
+         *     - 任意の `coach_id` で、そのコーチの枠へのキャンセルされた予約だけに絞れる（コーチ 1 人のキャンセルが多いかを確かめる）。
+         *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。検証と扱いは `listBookings` の
+         *       `coach_id` と同じで、UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・期間にキャンセルがないコーチは、
+         *       404 にせず `bookings` が空の配列
          *     - 並べ方: キャンセルした時刻（`cancelled_at`）の新しい順。同じ時刻は `booking_id` の順。ページングはしない。
          *       キャンセルされた予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 各項目には予約の ID・予約した生徒（`student_id` と表示名 `student_display_name`）・予約された枠のコーチ（`coach_id` と
@@ -3226,6 +3230,11 @@ export interface operations {
                 from?: string;
                 /** @description 期間の終わりの日付（日本時間。含む）。省けば `from` から 7 日目（`from` も省けば今日） */
                 to?: string;
+                /**
+                 * @description あればこのコーチの枠へのキャンセルされた予約だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;

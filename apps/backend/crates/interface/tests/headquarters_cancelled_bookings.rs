@@ -318,6 +318,66 @@ async fn days_without_cancellations_are_an_empty_list() {
 }
 
 #[tokio::test]
+async fn coach_id_narrows_to_the_coach_keeping_the_days_and_the_order() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, made) = bookings().await;
+    let app = app_at(nov1(10 * DAY), bookings).await;
+    let days = "from=2026-10-31&to=2026-11-08";
+
+    for (coach_id, expected) in [
+        // たなか（42）の枠。期間とキャンセルの新しい順は絞らないときと同じ
+        ("00000000-0000-0000-0000-00000000002a", vec![4, 1, 0]),
+        // いとう（43）の枠
+        ("00000000-0000-0000-0000-00000000002b", vec![5, 2]),
+        // アカウントのないコーチ（99）でも枠のコーチの ID で絞る
+        ("00000000-0000-0000-0000-000000000063", vec![3]),
+        // コーチでない ID（生徒のあおき）・ない ID は 404 にせず空の配列
+        ("00000000-0000-0000-0000-000000000003", vec![]),
+        ("00000000-0000-0000-0000-0000000003e7", vec![]),
+    ] {
+        let (status, body) = get(
+            &app,
+            &format!("{PATH}?{days}&coach_id={coach_id}"),
+            HEADQUARTERS,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{coach_id}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(
+            (&body["from"], &body["to"]),
+            (&json!("2026-10-31"), &json!("2026-11-08"))
+        );
+        assert_eq!(
+            booking_ids(&body),
+            ids(&made, &expected),
+            "{coach_id}: {body}"
+        );
+        assert!(
+            body["bookings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["coach_id"] == coach_id),
+            "{body}"
+        );
+    }
+
+    // 期間を省いても期間の規則は同じ（今日までの 7 日）
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?coach_id=00000000-0000-0000-0000-00000000002a"),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-11-05"), &json!("2026-11-11"))
+    );
+    assert_eq!(booking_ids(&body), ids(&made, &[4]));
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_cancelled_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -350,6 +410,9 @@ async fn invalid_days_are_422() {
         ("?from=2026-11-31", "from は YYYY-MM-DD の日付でない"),
         ("?from=2026/11/01", "from は YYYY-MM-DD の日付でない"),
         ("?to=yesterday", "to は YYYY-MM-DD の日付でない"),
+        // coach_id の検証は listBookings と同じ
+        ("?coach_id=42", "coach_id が UUID でない"),
+        ("?coach_id=", "coach_id が UUID でない"),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

@@ -204,6 +204,42 @@ async fn headquarters_reads_cancelled_bookings_by_cancellation_date_from_postgre
     assert_eq!(body["bookings"].as_array().unwrap().len(), 1, "{body}");
     assert_eq!(body["bookings"][0]["booking_id"], booking_ids[0].as_str());
 
+    // コーチで絞る（期間は省いたときと同じ今日までの 7 日。キャンセルしていないたなかの 3 つ目は出ない）
+    for (coach_id, expected) in [
+        (account_id_uuid::format(tanaka), vec![&booking_ids[0]]),
+        (account_id_uuid::format(ito), vec![&booking_ids[1]]),
+        // コーチでない ID（生徒）は 404 にせず空の配列
+        (account_id_uuid::format(taro), vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings/cancelled?coach_id={coach_id}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            (&body["from"], &body["to"]),
+            (&json!("2026-10-21"), &json!("2026-10-27"))
+        );
+        let ids: Vec<&str> = body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["booking_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, expected, "{coach_id}: {body}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/bookings/cancelled?coach_id=tanaka", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["message"], "coach_id が UUID でない");
+
     // 同じ階層の予約 1 件の詳細も読める
     let (status, body) = send(
         &router,

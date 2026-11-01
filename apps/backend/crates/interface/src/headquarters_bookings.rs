@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::{TokenVerifier, account_id_uuid},
+    identity::TokenVerifier,
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, ListBookings, ListBookingsQuery,
         StudentDisplayNameLookup,
@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
-    contract::{booking_status_from_contract, date_from_contract, date_to_contract},
+    contract::{
+        account_id_from_contract, booking_status_from_contract, date_from_contract,
+        date_to_contract,
+    },
     error::ApiError,
 };
 
@@ -106,18 +109,12 @@ where
         coach_id: params
             .coach_id
             .as_deref()
-            .map(|id| {
-                account_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
-            })
+            .map(|id| account_id_from_contract("coach_id", id))
             .transpose()?,
         student_id: params
             .student_id
             .as_deref()
-            .map(|id| {
-                account_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("student_id が UUID でない"))
-            })
+            .map(|id| account_id_from_contract("student_id", id))
             .transpose()?,
         statuses: statuses_from_query(&pairs)?,
         trial: params.trial,

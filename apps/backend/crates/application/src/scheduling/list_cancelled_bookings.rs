@@ -14,7 +14,9 @@ use crate::clock::Clock;
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）にキャンセルした予約を読み、キャンセルした時刻の新しい順に並べる
 /// （同じ時刻は予約 ID の順）。日付を両方省けば今日までの [`BookingPeriod::DEFAULT_DAYS`] 日、`from` だけなら `from` から、
 /// `to` だけなら `to` までの [`BookingPeriod::DEFAULT_DAYS`] 日。期間の規則（`to` が `from` より前でない・
-/// [`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。キャンセルした人は domain の
+/// [`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに
+/// 絞る（いないコーチなら空の一覧。規則は [`super::ListBookings`] と同じ domain の
+/// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。キャンセルした人は domain の
 /// [`Booking::cancelled_by`](domain::scheduling::Booking::cancelled_by)。一覧に出るコーチと生徒の表示名は profile に
 /// 問い合わせて添える。読むだけで何も変えない。
 pub struct ListCancelledBookings<B, K, D, C> {
@@ -31,6 +33,8 @@ pub struct ListCancelledBookingsQuery {
     pub from: Option<Date>,
     /// 期間の終わりの日付（日本時間。含む）
     pub to: Option<Date>,
+    /// あればこのコーチの枠への予約だけ
+    pub coach_id: Option<AccountId>,
 }
 
 impl<B, K, D, C> ListCancelledBookings<B, K, D, C>
@@ -69,7 +73,10 @@ where
             .bookings
             .bookings_cancelled_between(period.starts_at(), period.ends_at())
             .await?;
-        bookings.retain(|booking| booking.cancelled_at().is_some_and(|at| period.includes(at)));
+        bookings.retain(|booking| {
+            booking.cancelled_at().is_some_and(|at| period.includes(at))
+                && booking.matches_coach(query.coach_id)
+        });
         bookings.sort_by_key(|booking| (Reverse(booking.cancelled_at()), booking.id()));
 
         let coach_ids: BTreeSet<AccountId> = bookings.iter().map(|b| b.coach_id()).collect();
@@ -229,7 +236,11 @@ mod tests {
     }
 
     fn query(from: Option<Date>, to: Option<Date>) -> ListCancelledBookingsQuery {
-        ListCancelledBookingsQuery { from, to }
+        ListCancelledBookingsQuery {
+            from,
+            to,
+            coach_id: None,
+        }
     }
 
     /// 一覧の予約の枠の ID
@@ -301,6 +312,63 @@ mod tests {
             *lookup.students_asked.lock().unwrap(),
             [BTreeSet::from([STUDENT, OTHER_STUDENT])]
         );
+    }
+
+    #[tokio::test]
+    async fn coach_id_narrows_to_the_coach_keeping_the_days_and_the_order() {
+        let slots = InMemorySlotRepository::with_slots(
+            [(1, COACH), (2, OTHER_COACH), (3, COACH), (4, COACH)]
+                .map(|(id, coach)| slot(id, coach)),
+        );
+        let bookings = InMemoryBookingRepository::new(slots);
+        for (slot, cancelled_at) in [
+            (1, at(2, 9)),
+            (2, at(2, 10)),
+            (3, at(3, 8)),
+            // 期間（11 月 2 日〜3 日）の外
+            (4, at(4, 0)),
+        ] {
+            let booking = book(&bookings, STUDENT, slot).await;
+            cancel(&bookings, &booking, cancelled_at).await;
+        }
+
+        let lookup = RecordingLookup::default();
+        let use_case = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0));
+        let with_coach = |coach_id| ListCancelledBookingsQuery {
+            coach_id: Some(coach_id),
+            ..query(Some(date(2)), Some(date(3)))
+        };
+        let list = use_case.execute(with_coach(COACH)).await.unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(rows(&list), [3, 1]);
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH])],
+            "絞ったあとのコーチだけを問い合わせる"
+        );
+
+        let list = use_case.execute(with_coach(OTHER_COACH)).await.unwrap();
+        assert_eq!(rows(&list), [2]);
+
+        // ない ID・コーチでない ID（生徒）は空の一覧で、表示名を問い合わせない
+        for coach_id in [AccountId::from_u128(99), STUDENT] {
+            let list = use_case.execute(with_coach(coach_id)).await.unwrap();
+            assert!(list.bookings.is_empty(), "{coach_id:?}");
+        }
+        assert_eq!(lookup.coaches_asked.lock().unwrap().len(), 2);
+
+        // 期間の規則はコーチで絞っても同じ
+        let error = use_case
+            .execute(ListCancelledBookingsQuery {
+                coach_id: Some(COACH),
+                ..query(Some(date(3)), Some(date(2)))
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ListBookingsError::Invalid(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        ));
     }
 
     #[tokio::test]

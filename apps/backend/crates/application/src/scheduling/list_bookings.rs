@@ -17,7 +17,8 @@ use crate::{Unavailable, clock::Clock};
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始する予約を読み、開始時刻の古い順に並べる
 /// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
 /// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
-/// domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧）。
+/// domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧。
+/// 規則は domain の [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
 /// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
@@ -101,9 +102,7 @@ where
             .await?;
         bookings.retain(|booking| {
             period.includes(booking.starts_at())
-                && query
-                    .coach_id
-                    .is_none_or(|coach_id| booking.coach_id() == coach_id)
+                && booking.matches_coach(query.coach_id)
                 && query
                     .student_id
                     .is_none_or(|student_id| booking.student_id() == student_id)

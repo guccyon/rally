@@ -209,6 +209,13 @@ impl Booking {
         self.coach_id
     }
 
+    /// 一覧を絞るコーチの指定に当てはまるか。指定があればその ID が予約された枠のコーチのときだけ、なければどの予約も
+    /// 当てはまる。コーチでない ID・ない ID はどの予約にも当てはまらない（一覧は空になる）。本部が見る予約の一覧と
+    /// キャンセルされた予約の一覧が共に使う。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
     pub const fn is_trial(&self) -> bool {
         self.is_trial
     }
@@ -898,6 +905,22 @@ mod tests {
             .unwrap()
             .with_lesson_menu(&other, Some(&lesson_menu(50, COACH, true)));
         assert_eq!(booking.lesson_menu(), None);
+    }
+
+    #[test]
+    fn matches_coach_only_the_coach_of_the_slot_or_any_without_a_coach() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.matches_coach(None),
+            "指定がなければどのコーチの予約も"
+        );
+        assert!(booking.matches_coach(Some(COACH)));
+        // 別のコーチ・予約した生徒（コーチでない ID）には当てはまらない
+        assert!(!booking.matches_coach(Some(AccountId::from_u128(99))));
+        assert!(!booking.matches_coach(Some(STUDENT)));
+        // キャンセルしても枠のコーチは変わらない
+        assert!(cancelled(booking).matches_coach(Some(COACH)));
     }
 
     #[test]

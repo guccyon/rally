@@ -240,7 +240,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## scheduling: 本部が見るキャンセルされた予約の一覧（D185）
 
-- `GET /bookings/cancelled`（admin-web の `listCancelledBookings`）: 本部だけが呼べる（`interface::headquarters_cancelled_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じ階層の `GET /bookings/{booking_id}`（`getBooking`）とは `merge` で並び、固定のパスが先に当たる。キャンセルした時刻が期間に入る予約を、キャンセルの新しい順（同じ時刻は `booking_id` の順）に返し、各行に予約の ID・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・枠の開始・キャンセルした時刻・キャンセルした人 `cancelled_by` を載せる。行動イベントは発火しない
+- `GET /bookings/cancelled`（admin-web の `listCancelledBookings`）: 本部だけが呼べる（`interface::headquarters_cancelled_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じ階層の `GET /bookings/{booking_id}`（`getBooking`）とは `merge` で並び、固定のパスが先に当たる。キャンセルした時刻が期間に入る予約を（任意の `coach_id` でそのコーチの枠への予約だけに絞れる。検証は `listBookings` と同じ `interface::contract::account_id_from_contract`、絞り込みは domain の `Booking::matches_coach`）、キャンセルの新しい順（同じ時刻は `booking_id` の順）に返し、各行に予約の ID・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・枠の開始・キャンセルした時刻・キャンセルした人 `cancelled_by` を載せる。行動イベントは発火しない
 - 期間は日付（日本時間）の `from` から `to` まで（両端を含む）で、規則は `listBookings` と同じ `domain::scheduling::BookingPeriod`（1 日以上 31 日まで。違反と日付でない値は 422）。省いたときは今日までの 7 日（`from` だけなら `from` から、`to` だけなら `to` までの 7 日）。ユースケースは `application::scheduling::ListCancelledBookings`（失敗は `ListBookingsError` を共有）
 - キャンセルした人は domain の `Booking::cancelled_by`（`BookingCanceller`）。DB はキャンセルした人を持たず、今キャンセルできるのは予約した生徒だけ（`Booking::cancel`）なので、キャンセル済みは `student`。契約の値は `interface::contract::booking_canceller_to_contract`
 - 保存先は `BookingRepository::bookings_cancelled_between`（Postgres は `scheduling.bookings.cancelled_at` の範囲で読む）。DB の変更はない
