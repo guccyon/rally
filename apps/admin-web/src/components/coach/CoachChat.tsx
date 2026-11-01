@@ -97,7 +97,7 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
     );
   }, []);
 
-  if (list.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (list.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (list.kind === "failed") return <ResultMessage result={{ ok: false, message: list.message }} />;
   if (list.threads.length === 0) {
     return (
@@ -115,7 +115,7 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
       <p className="text-sm">
         担当している生徒とのチャットです。生徒を選ぶと、やりとりを読んで返信できます。動画の添削の依頼もここから返せます。
       </p>
-      <ul aria-label="生徒とのチャット" className="divide-y rounded border">
+      <ul aria-label="生徒とのチャット" className="divide-y rounded-md border">
         {list.threads.map((thread) => {
           const last = thread.last_message;
           const isSelected = thread.thread_id === selectedId;
@@ -125,19 +125,19 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => setSelectedId(thread.thread_id)}
-                className={`block w-full px-3 py-2 text-left text-sm ${isSelected ? "bg-blue-50" : ""}`}
+                className={`block w-full px-3 py-2 text-left text-sm ${isSelected ? "bg-primary-container" : ""}`}
               >
                 <span className="font-semibold">{nameOf(thread)}</span>
                 {thread.unread_count > 0 && (
-                  <span className="ml-2 rounded bg-red-600 px-2 text-xs text-white">
+                  <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
                     未読 {thread.unread_count} 件
                   </span>
                 )}
-                <span className="block truncate text-gray-600">
+                <span className="block truncate text-text-muted">
                   {last ? lastMessagePreview(last) : "まだメッセージはありません"}
                 </span>
                 {last && (
-                  <span className="block text-xs text-gray-500">{formatDateTime(last.sent_at)}</span>
+                  <span className="block text-xs text-text-muted">{formatDateTime(last.sent_at)}</span>
                 )}
               </button>
             </li>

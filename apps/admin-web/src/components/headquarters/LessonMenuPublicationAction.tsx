@@ -50,8 +50,8 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
         }
         className={
           unpublishedByHeadquarters
-            ? "rounded border px-2 py-0.5"
-            : "rounded border border-red-600 px-2 py-0.5 text-red-700"
+            ? "rounded-md border px-2 py-0.5"
+            : "rounded-pill border border-danger px-2 py-0.5 text-danger"
         }
         onClick={() => setConfirming(true)}
       >
@@ -70,7 +70,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
           <button
             type="button"
             disabled={busy}
-            className="rounded bg-blue-600 px-2 py-0.5 text-white disabled:opacity-50"
+            className="rounded-pill bg-primary px-2 py-0.5 text-on-primary disabled:opacity-50"
             onClick={() => void confirm()}
           >
             {busy ? "公開に戻しています…" : "公開に戻すのを確定"}
@@ -78,7 +78,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
           <button
             type="button"
             disabled={busy}
-            className="rounded border px-2 py-0.5 disabled:opacity-50"
+            className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
             onClick={cancel}
           >
             やめる
@@ -96,7 +96,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
       <label className="block text-xs">
         理由（任意）
         <textarea
-          className="mt-1 block w-full rounded border px-2 py-1"
+          className="mt-1 block w-full rounded-md border px-2 py-1"
           rows={2}
           value={reason}
           disabled={busy}
@@ -104,7 +104,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
           onChange={(event) => setReason(event.target.value)}
         />
       </label>
-      <span className={remaining < 0 ? "text-xs text-red-600" : "text-xs text-gray-500"}>
+      <span className={remaining < 0 ? "text-xs text-danger" : "text-xs text-text-muted"}>
         {remaining < 0
           ? `${UNPUBLISH_REASON_MAX_LENGTH} 文字を ${-remaining} 文字超えています`
           : `あと ${remaining} 文字`}
@@ -113,7 +113,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
         <button
           type="button"
           disabled={busy || remaining < 0}
-          className="rounded bg-red-600 px-2 py-0.5 text-white disabled:opacity-50"
+          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
           onClick={() => void confirm()}
         >
           {busy ? "非公開にしています…" : "非公開を確定"}
@@ -121,7 +121,7 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
         <button
           type="button"
           disabled={busy}
-          className="rounded border px-2 py-0.5 disabled:opacity-50"
+          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
           onClick={cancel}
         >
           やめる

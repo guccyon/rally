@@ -57,7 +57,7 @@ export function Announcements({
         <AnnouncementForm send={api.sendAnnouncement} onSent={prepend} />
       </Section>
       <Section title="送ったお知らせ">
-        {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+        {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
         {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
         {state.kind === "loaded" && state.announcements.length === 0 && (
           <p className="text-sm">まだお知らせを送っていません</p>

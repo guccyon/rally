@@ -1,0 +1,119 @@
+# 画面の型と振る舞いのパターン。部品は components.yaml、文言は content.yaml
+schema_version: "0.1"
+status: draft
+section: patterns
+
+common_layout:
+  student_app: アプリバー（題と入口のアイコン）→ 主役（score_panel か画面の見出し）→ 欄（title の見出しと中身）を xl 40px あけて縦に並べる
+  admin_web: 見出し（headline 24px）→ Section（surface の面・md の角丸・padding 16px）を xl 40px あけて 1 段で並べる。score_panel は使わない
+
+patterns:
+  - id: list
+    ja: 一覧
+    examples_in_app: 自分の予約・自分の動画・お知らせ・スレッド・受けたレッスン・admin-web の本部の一覧
+    structure: [画面の見出し, 件数か説明の 1 文（任意）, 絞り込み（任意）, list_row か card の並び, 続きの読み込み（任意）]
+    rules:
+      - level: should
+        statement: 並べ方は API が返した順のままにし、画面の中で並べ替えない
+        why: 生徒と本部が同じ順で見られ、説明の文と食い違わない
+        check: design_inspector
+      - level: should
+        statement: 1 行に出すのは題・日時・状態の 3 つまで。残りは詳細へ
+        why: スマホで一目で見比べられる
+        check: design_inspector
+
+  - id: detail
+    ja: 詳細
+    examples_in_app: コーチの紹介・添削結果・予約の確定待ち
+    structure: [主役（名前か日時。headline か score_panel）, 状態の status_tag, 中身の欄, 主な操作（button primary を 1 つ。下に固定してよい）]
+    rules:
+      - level: should
+        statement: 主な操作は画面に 1 つ、下に固定するときは安全領域の上に置く
+        why: 片手の親指で次の一手に届く
+        check: design_inspector
+
+  - id: form
+    ja: 入力フォーム
+    examples_in_app: アカウント登録・プロフィール・評価・添削の依頼・レッスンメニューの編集
+    structure: [見出し, text_field などの欄（上から順に 1 段）, 送るボタン（primary）]
+    validation:
+      - 欄を離れたときと送るときに確かめる。打っている途中には誤りを出さない
+      - 誤りは欄の下に error_text で、何をどう直すかを書く（「表示名は 1〜20 文字で入れてください」）
+      - 送るときに誤りがあれば、最初の誤りの欄へフォーカスを移し、画面の上に件数を notice（danger）で出す
+      - サーバーが断ったときは、サーバーの文言を notice で出し、入れた値を消さない
+    rules:
+      - level: should
+        statement: 送るのに失敗しても、入れた値を消さない
+        why: 長い自己紹介や評価の一言を打ち直させない
+        check: design_inspector
+
+  - id: confirm
+    ja: 送る前の確認と取り消せない操作
+    examples_in_app: 予約のキャンセル・体験予約・コーチの受付の停止・本部による非公開・本部からのお知らせの送信
+    when:
+      confirm_dialog: 取り消せない操作、回数を使う操作、相手に知らせが届く操作
+      no_confirm: 取り消せる操作（お気に入りの切り替え・既読・設定のオンとオフ）は確認せずに実行し、結果を出す
+    rules:
+      - level: should
+        statement: キャンセル規定で回数を使うときは、確認の本文にそのことを本文の大きさで書く
+        why: 生徒が知らないまま今月のビデオ通話の枠を失わないため
+        check: design_inspector
+      - level: should
+        statement: 危険な操作の確認のボタンは danger、それ以外の確認は primary
+        why: 取り消せないことが押す前に分かる
+        check: design_inspector
+
+  - id: search_filter
+    ja: 検索と絞り込み
+    examples_in_app: スロットの検索・コーチを探す・本部の生徒の一覧（スポーツで絞り込み）・予約の一覧（日付の期間）
+    structure: [絞り込みの欄（スポーツはチップか select、日付は期間）, 件数, 一覧]
+    behavior: 選んだらすぐ一覧を読み直す（「検索する」のボタンは文字の検索だけ）。選んだ条件は一覧の上に残す。0 件は empty_state で条件の変え方を書く
+
+  - id: states
+    ja: 空・読み込み中・失敗
+    rules:
+      - level: should
+        statement: 欄ごとに別の API を読む画面では、読み込み中と失敗を欄ごとに出し、読めた欄はそのまま出す
+        why: 1 つの失敗でホーム全体が見えなくなると、次のレッスンも分からなくなる
+        check: design_inspector
+    empty: empty_state（背中を押す一言と次の操作）
+    loading: 画面全体は loading の bar、欄は section_text
+    failure: notice の inline（danger）。何が起きたかと、もう一度読む方法（「ホームを更新する」など）
+
+  - id: feedback
+    ja: 知らせと反応
+    saved: 成功は toast（4 秒）か、その場の表示の変化（ボタンが「お気に入りから外す」に変わる）。感嘆符は 1 つまで
+    failed: notice の inline（danger）。消さない。入れた値は残す
+    confirmed_moment: 予約が確定したときだけ、score_panel の数字を slow 320ms で入れ替えてよい
+
+  - id: no_permission
+    ja: 権限がないとき
+    admin_web: RoleGate が「読み込み中…」のあとログイン画面へ戻す。API の 403 は失敗の文言として notice で出す
+    student_app: 登録の前はアカウント登録へ。他人のものを開いたときは「この画面は見られません」と戻り先のボタン
+    rule: 権限のない操作のボタンは出さない（無効で見せない）
+
+  - id: onboarding
+    ja: はじめての利用
+    flow: アカウント登録 → スポーツを選ぶ → コーチを探す → 体験予約 → 確定
+    rules:
+      - level: should
+        statement: はじめての画面は 1 画面 1 つの問いにし、説明のスライドを挟まない
+        why: 早く練習に進みたい生徒を止めない
+        check: human
+    empty_home: 予約がないホームは、score_panel に「まずは体験予約」と「コーチを探す」の on_dark のボタンを置く
+
+  - id: settings
+    ja: 設定
+    examples_in_app: 通知の受け取り設定・プロフィール
+    structure: 項目ごとに list_row とスイッチ。説明は small で項目の下に
+    behavior: スイッチは押したらすぐ保存し、失敗したら元に戻して notice で知らせる。保存のボタンは置かない（表示名など文字の欄はフォームの型）
+
+  - id: navigation
+    ja: ナビゲーション
+    student_app: 今はアプリバーの右にアイコンの入口（ホーム・自分の予約・自分の動画・チャット・お知らせ・通知の設定・プロフィール）。入口が 5 つを超えるので、下のタブ（ホーム・予約・チャット・お知らせ・プロフィール）へ移す案を proposed にする
+    admin_web: 本部のホームの Section から各画面へ。各画面の上に「本部の画面へ戻る」
+    rules:
+      - level: should
+        statement: 戻る先はいつも 1 つで、アプリバーの左に置く
+        why: どこに戻るかが迷わない
+        check: design_inspector

@@ -52,11 +52,11 @@ function ReviewCard({
   return (
     <article
       aria-label={title}
-      className="space-y-2 rounded border-2 border-blue-200 bg-blue-50 p-3 text-sm"
+      className="space-y-2 rounded-md border-2 border-border bg-primary-container p-3 text-sm"
     >
       <h4 className="font-semibold">{title}</h4>
       {children}
-      <p className="text-xs text-gray-500">{formatDateTime(sentAt)}</p>
+      <p className="text-xs text-text-muted">{formatDateTime(sentAt)}</p>
     </article>
   );
 }
@@ -180,11 +180,11 @@ export function MessageThreadView({
       <ReviewCard title={title} sentAt={message.sent_at}>
         <p>{studentName}が動画を送って、添削を依頼しました。</p>
         {!video ? (
-          <p className="text-gray-600">
+          <p className="text-text-muted">
             添削の状態を確かめられませんでした。「動画の添削」の一覧から確かめてください。
           </p>
         ) : video.review_status === "returned" ? (
-          <p className="text-gray-600">
+          <p className="text-text-muted">
             返却済み{video.returned_at ? `（${formatDateTime(video.returned_at)}）` : ""}
           </p>
         ) : reviewingVideoId === video.video_id ? (
@@ -197,7 +197,7 @@ export function MessageThreadView({
           />
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">まだ添削を返していません。</span>
+            <span className="text-text-muted">まだ添削を返していません。</span>
             <button
               type="button"
               disabled={busy}
@@ -205,7 +205,7 @@ export function MessageThreadView({
                 setReviewingVideoId(video.video_id);
                 setResult(null);
               }}
-              className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
+              className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
             >
               添削する
             </button>
@@ -228,10 +228,10 @@ export function MessageThreadView({
     const mine = message.sender_role === "coach";
     const sender = mine ? "あなた" : message.sender_role === "student" ? studentName : "お知らせ";
     return (
-      <div className={`rounded p-2 text-sm ${mine ? "ml-8 bg-green-50" : "mr-8 bg-gray-100"}`}>
+      <div className={`rounded-md p-2 text-sm ${mine ? "ml-8 bg-success-container" : "mr-8 bg-surface"}`}>
         <p className="text-xs font-semibold">{sender}</p>
         <p className="whitespace-pre-wrap">{message.body}</p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           {formatDateTime(message.sent_at)}
           {mine && message.read_at ? "・既読" : ""}
         </p>
@@ -253,7 +253,7 @@ export function MessageThreadView({
           <span className="text-5xl leading-tight">{stamp.emoji}</span>
           <span>{stamp.label}</span>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-text-muted">
           {formatDateTime(message.sent_at)}
           {mine && message.read_at ? "・既読" : ""}
         </p>
@@ -280,19 +280,19 @@ export function MessageThreadView({
     state.kind === "loaded" ? requestNumbers(state.messages) : new Map<string, number>();
 
   return (
-    <section aria-label={`${studentName}とのチャット`} className="space-y-3 rounded border p-3">
+    <section aria-label={`${studentName}とのチャット`} className="space-y-3 rounded-md border p-3">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">{studentName}とのチャット</h3>
         <button
           type="button"
           disabled={busy || state.kind === "loading"}
           onClick={() => void onReload()}
-          className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+          className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
         >
           新しいメッセージを確かめる
         </button>
       </div>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" &&
         (state.messages.length === 0 ? (
@@ -309,7 +309,7 @@ export function MessageThreadView({
           <label className="block text-sm">
             送るメッセージ
             <textarea
-              className="mt-1 block w-full rounded border px-2 py-1"
+              className="mt-1 block w-full rounded-md border px-2 py-1"
               rows={3}
               maxLength={BODY_MAX_LENGTH}
               value={draft}
@@ -320,7 +320,7 @@ export function MessageThreadView({
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+              className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
             >
               送る
             </button>
@@ -329,13 +329,13 @@ export function MessageThreadView({
               disabled={busy}
               aria-expanded={pickingStamp}
               onClick={() => setPickingStamp((current) => !current)}
-              className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+              className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
             >
               スタンプ
             </button>
           </div>
           {pickingStamp && (
-            <fieldset className="space-y-2 rounded border p-2">
+            <fieldset className="space-y-2 rounded-md border p-2">
               <legend className="px-1 text-sm">送るスタンプを選んでください</legend>
               <div className="flex flex-wrap gap-2">
                 {STAMP_IDS.map((stampId) => (
@@ -345,7 +345,7 @@ export function MessageThreadView({
                     disabled={busy}
                     aria-label={`スタンプ「${STAMPS[stampId].label}」を送る`}
                     onClick={() => void onSendStamp(stampId)}
-                    className="flex w-24 flex-col items-center rounded border py-1 text-sm disabled:opacity-50"
+                    className="flex w-24 flex-col items-center rounded-md border py-1 text-sm disabled:opacity-50"
                   >
                     <span aria-hidden="true" className="text-3xl">
                       {STAMPS[stampId].emoji}

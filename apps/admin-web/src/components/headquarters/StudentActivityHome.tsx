@@ -23,7 +23,7 @@ export function StudentActivityHome({ token, studentId }: { token: string; stude
   return (
     <>
       <p className="mb-4 text-sm">
-        <Link href="/headquarters/students" className="text-blue-600 underline">
+        <Link href="/headquarters/students" className="text-primary underline">
           生徒の一覧へ戻る
         </Link>
       </p>

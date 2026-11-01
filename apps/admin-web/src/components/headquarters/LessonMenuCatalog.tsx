@@ -37,7 +37,7 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
   return (
     <>
       非公開（本部）
-      <span className="block text-xs text-gray-500">
+      <span className="block text-xs text-text-muted">
         {formatDateTime(unpublish.unpublished_at)}
         {unpublish.reason === "" ? "" : `・理由: ${unpublish.reason}`}
       </span>
@@ -174,7 +174,7 @@ export function LessonMenuCatalog({
         <label className="block">
           スポーツ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
               void changeFilter({ ...filter, sport: event.target.value as Sport | "" })
@@ -201,7 +201,7 @@ export function LessonMenuCatalog({
         <label className="block">
           コーチ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.coachId}
             disabled={coaches.kind !== "loaded" && !unknownCoachSelected}
             onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
@@ -226,7 +226,7 @@ export function LessonMenuCatalog({
         />
       )}
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.menus.length === 0 && (
         <p className="text-sm">条件に合うメニューはありません</p>

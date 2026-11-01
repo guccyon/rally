@@ -78,7 +78,7 @@ export function MyCoachReviews({
       <p className="text-sm">
         生徒がレッスンに付けたあなたへの評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言です。各評価に返信を 1 つ（200 文字まで）付けられ、書き直すと置き換わります。
       </p>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
         <CoachReviewSummaryView

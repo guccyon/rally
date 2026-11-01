@@ -22,15 +22,15 @@ export function RoleGate({
     if (session !== undefined && !allowed) router.replace("/");
   }, [session, allowed, router]);
 
-  if (!session || !allowed) return <p className="p-6 text-gray-500">読み込み中…</p>;
+  if (!session || !allowed) return <p className="p-6 text-text-muted">読み込み中…</p>;
 
   return (
     <div className="mx-auto max-w-3xl p-6">
       <header className="mb-6 flex items-center justify-between border-b pb-3">
-        <h1 className="text-xl font-bold">Rally 管理画面（{ROLE_LABELS[role]}）</h1>
+        <h1 className="text-headline font-black">Rally 管理画面（{ROLE_LABELS[role]}）</h1>
         <button
           type="button"
-          className="rounded border px-3 py-1 text-sm"
+          className="rounded-pill border px-3 py-1 text-sm"
           onClick={() => {
             clearSession();
             router.replace("/");

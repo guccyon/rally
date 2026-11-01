@@ -72,24 +72,24 @@ export function LessonReviewReplyForm({
   return (
     <div className="space-y-2 pt-1">
       {reply && !editing && (
-        <section aria-label="あなたの返信" className="rounded bg-gray-50 p-2">
+        <section aria-label="あなたの返信" className="rounded-md bg-surface p-2">
           <h4 className="font-semibold">あなたの返信</h4>
           <p className="whitespace-pre-wrap">{reply.comment}</p>
-          <p className="text-gray-500">{formatDateTime(reply.replied_at)}</p>
+          <p className="text-text-muted">{formatDateTime(reply.replied_at)}</p>
         </section>
       )}
       {editing ? (
-        <form onSubmit={onSubmit} aria-label="評価に返信する" className="space-y-2 rounded border p-2">
+        <form onSubmit={onSubmit} aria-label="評価に返信する" className="space-y-2 rounded-md border p-2">
           <label className="block">
             返信
             <textarea
-              className="mt-1 block w-full rounded border px-2 py-1"
+              className="mt-1 block w-full rounded-md border px-2 py-1"
               rows={3}
               value={comment}
               onChange={(event) => setComment(event.target.value)}
             />
           </label>
-          <p className={remaining < 0 ? "text-red-600" : "text-gray-500"}>
+          <p className={remaining < 0 ? "text-danger" : "text-text-muted"}>
             {remaining < 0
               ? `${REPLY_MAX_LENGTH} 文字を ${-remaining} 文字超えています`
               : `あと ${remaining} 文字`}
@@ -98,7 +98,7 @@ export function LessonReviewReplyForm({
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+              className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
             >
               保存する
             </button>
@@ -106,7 +106,7 @@ export function LessonReviewReplyForm({
               type="button"
               disabled={busy}
               onClick={() => setEditing(false)}
-              className="rounded border px-4 py-1 disabled:opacity-50"
+              className="rounded-pill border px-4 py-1 disabled:opacity-50"
             >
               やめる
             </button>
@@ -114,7 +114,7 @@ export function LessonReviewReplyForm({
           <ResultMessage result={error ? { ok: false, message: error } : null} />
         </form>
       ) : (
-        <button type="button" onClick={open} className="rounded border px-3 py-0.5">
+        <button type="button" onClick={open} className="rounded-pill border px-3 py-0.5">
           {reply ? "返信を書き直す" : "返信する"}
         </button>
       )}

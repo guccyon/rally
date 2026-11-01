@@ -60,17 +60,17 @@ export function VideoReviewCommentForm({
   const aiFeedback = aiFeedbackComment(video);
 
   return (
-    <form onSubmit={onSubmit} aria-label="添削を書く" className="space-y-3 rounded border p-3">
+    <form onSubmit={onSubmit} aria-label="添削を書く" className="space-y-3 rounded-md border p-3">
       <p className="text-sm">
         {studentName}の動画（{formatDateTime(video.submitted_at)} に届いたもの）
       </p>
       {aiFeedback && (
         <section
           aria-label="AI の一次フィードバック（参考）"
-          className="rounded border border-dashed bg-gray-50 p-2 text-sm"
+          className="rounded-md border border-dashed bg-surface p-2 text-sm"
         >
           <h4 className="font-semibold">AI の一次フィードバック（参考）</h4>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-muted">
             AI が自動で作った文です。コーチの添削ではなく、下の添削コメントには入りません。
           </p>
           <p className="mt-1 whitespace-pre-wrap">{aiFeedback}</p>
@@ -79,7 +79,7 @@ export function VideoReviewCommentForm({
       <label className="block">
         添削コメント
         <textarea
-          className="mt-1 block w-full rounded border px-2 py-1"
+          className="mt-1 block w-full rounded-md border px-2 py-1"
           rows={4}
           maxLength={COMMENT_MAX_LENGTH}
           value={comment}
@@ -90,7 +90,7 @@ export function VideoReviewCommentForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
         >
           添削を返却
         </button>
@@ -98,7 +98,7 @@ export function VideoReviewCommentForm({
           type="button"
           disabled={busy}
           onClick={onCancel}
-          className="rounded border px-4 py-1 disabled:opacity-50"
+          className="rounded-pill border px-4 py-1 disabled:opacity-50"
         >
           やめる
         </button>

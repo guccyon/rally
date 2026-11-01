@@ -9,9 +9,9 @@ export function AnnouncementList({ announcements }: { announcements: Schemas["An
   return (
     <ul aria-label="送ったお知らせの一覧" className="space-y-3">
       {announcements.map((announcement) => (
-        <li key={announcement.announcement_id} className="rounded border p-3">
+        <li key={announcement.announcement_id} className="rounded-md border p-3">
           <p className="font-semibold">{announcement.title}</p>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-text-muted">
             {announcementTargetLabel(announcement.sport)}・{announcement.recipient_count} 人に送信・
             {formatDateTime(announcement.sent_at)}
           </p>

@@ -92,7 +92,7 @@ export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"
           開始日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.from}
             onChange={(event) => setDraft({ ...draft, from: event.target.value })}
           />
@@ -101,17 +101,17 @@ export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"
           終了日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.to}
             onChange={(event) => setDraft({ ...draft, to: event.target.value })}
           />
         </label>
-        <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
           この期間で見る
         </button>
       </form>
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
         <LoadedBookings period={state.period} bookings={state.bookings} now={state.now} />
@@ -136,7 +136,7 @@ function LoadedBookings({
         {formatDay(period.from)} 〜 {formatDay(period.to)}・{bookings.length} 件
       </p>
       {soonCount > 0 && (
-        <p className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-700">
+        <p className="rounded-md border border-danger bg-danger-container p-2 text-sm text-danger">
           確定待ちのまま 24 時間以内に始まる予約が {soonCount} 件あります。
         </p>
       )}
@@ -162,12 +162,12 @@ function LoadedBookings({
                 const { booking } = item;
                 const soon = isPendingSoon(booking, now);
                 return (
-                  <tr key={booking.booking_id} className={`border-t ${soon ? "bg-red-50" : ""}`}>
+                  <tr key={booking.booking_id} className={`border-t ${soon ? "bg-danger-container" : ""}`}>
                     <td className="py-1">{formatTime(booking.starts_at)}</td>
                     <td className="py-1">
                       <BookingStatusBadge status={booking.status} />
                       {soon && (
-                        <span className="ml-2 rounded bg-red-600 px-2 text-xs text-white">
+                        <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
                           開始まで 24 時間以内
                         </span>
                       )}

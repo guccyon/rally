@@ -29,7 +29,7 @@ const NO_RECIPIENTS = "対象の生徒がいないため、お知らせは送ら
 function Remaining({ max, length }: { max: number; length: number }) {
   const remaining = max - length;
   return (
-    <span className={remaining < 0 ? "text-sm text-red-600" : "text-sm text-gray-500"}>
+    <span className={remaining < 0 ? "text-sm text-danger" : "text-sm text-text-muted"}>
       {remaining < 0 ? `${max} 文字を ${-remaining} 文字超えています` : `あと ${remaining} 文字`}
     </span>
   );
@@ -38,7 +38,7 @@ function Remaining({ max, length }: { max: number; length: number }) {
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-sm text-red-600">
+    <p id={id} className="text-sm text-danger">
       {message}
     </p>
   );
@@ -103,17 +103,17 @@ export function AnnouncementForm({ send, onSent }: Props) {
           次の内容で<strong>{target}</strong>
           に送りますか？送るとすぐに生徒に届き、プッシュ通知は取り消せません。
         </p>
-        <dl className="space-y-2 rounded border bg-gray-50 p-3 text-sm">
+        <dl className="space-y-2 rounded-md border bg-surface p-3 text-sm">
           <div>
-            <dt className="text-gray-600">対象</dt>
+            <dt className="text-text-muted">対象</dt>
             <dd>{target}</dd>
           </div>
           <div>
-            <dt className="text-gray-600">題</dt>
+            <dt className="text-text-muted">題</dt>
             <dd>{input.title}</dd>
           </div>
           <div>
-            <dt className="text-gray-600">本文</dt>
+            <dt className="text-text-muted">本文</dt>
             <dd className="whitespace-pre-wrap">{input.body}</dd>
           </div>
         </dl>
@@ -121,7 +121,7 @@ export function AnnouncementForm({ send, onSent }: Props) {
           <button
             type="button"
             disabled={busy}
-            className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+            className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
             onClick={() => void confirm()}
           >
             {busy ? "送っています…" : "送るのを確定"}
@@ -129,7 +129,7 @@ export function AnnouncementForm({ send, onSent }: Props) {
           <button
             type="button"
             disabled={busy}
-            className="rounded border px-4 py-1 disabled:opacity-50"
+            className="rounded-pill border px-4 py-1 disabled:opacity-50"
             onClick={() => setConfirming(false)}
           >
             直す
@@ -145,7 +145,7 @@ export function AnnouncementForm({ send, onSent }: Props) {
       <label className="block">
         対象
         <select
-          className="mt-1 block rounded border px-2 py-1"
+          className="mt-1 block rounded-md border px-2 py-1"
           value={input.sport}
           onChange={(event) => update({ sport: event.target.value as Schemas["Sport"] | "" })}
         >
@@ -162,7 +162,7 @@ export function AnnouncementForm({ send, onSent }: Props) {
           題
           <input
             type="text"
-            className="mt-1 block w-full rounded border px-2 py-1"
+            className="mt-1 block w-full rounded-md border px-2 py-1"
             value={input.title}
             aria-invalid={errors.title ? true : undefined}
             aria-describedby={errors.title ? "announcement-title-error" : undefined}
@@ -176,7 +176,7 @@ export function AnnouncementForm({ send, onSent }: Props) {
         <label className="block">
           本文
           <textarea
-            className="mt-1 block w-full rounded border px-2 py-1"
+            className="mt-1 block w-full rounded-md border px-2 py-1"
             rows={6}
             value={input.body}
             aria-invalid={errors.body ? true : undefined}
@@ -187,10 +187,10 @@ export function AnnouncementForm({ send, onSent }: Props) {
         <Remaining max={BODY_MAX_LENGTH} length={lengthOf(input.body)} />
         <FieldError id="announcement-body-error" message={errors.body} />
       </div>
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-text-muted">
         お知らせは対象の生徒全員のお知らせの一覧に届きます。プッシュ通知は、お知らせの通知を受け取る設定にしている生徒にだけ送ります。
       </p>
-      <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+      <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
         内容を確かめる
       </button>
     </form>

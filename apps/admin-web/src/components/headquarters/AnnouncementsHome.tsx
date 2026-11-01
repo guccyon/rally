@@ -14,7 +14,7 @@ export function AnnouncementsHome({ token }: { token: string }) {
   return (
     <>
       <p className="mb-4 text-sm">
-        <Link href="/headquarters" className="text-blue-600 underline">
+        <Link href="/headquarters" className="text-primary underline">
           本部の画面へ戻る
         </Link>
       </p>
