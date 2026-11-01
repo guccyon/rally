@@ -22,6 +22,7 @@ mod lesson_menus;
 mod lesson_stats;
 mod lessons;
 mod live_lesson_sessions;
+mod low_rated_review_handlings;
 mod low_rated_reviews;
 mod me;
 mod messaging;
@@ -68,6 +69,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(lesson_stats::router(ports))
         .merge(lessons::router(ports))
         .merge(live_lesson_sessions::router(ports))
+        .merge(low_rated_review_handlings::router(ports))
         .merge(low_rated_reviews::router(ports))
         .merge(me::router(ports))
         .merge(messaging::router(ports))

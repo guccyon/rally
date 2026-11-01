@@ -87,6 +87,15 @@ terms:
     note: >-
       文は空でなく 200 文字まで。削除はない。返信は評価の点と一言を変えない。評価の一覧（listCoachReviews・
       listLowRatedLessonReviews）の評価ごとの reply に載る（なければ null）。
+  - id: low_rated_review_handling
+    ja: "低い評価の対応済み"
+    definition: "本部が低い評価（★2 以下のレッスンの評価 lesson_review）を確認したしるしで、付けた本部のアカウントと時刻を持ち、評価 1 件に高々 1 つであり、2 回目は最初のしるしを残す。"
+    context: review
+    code: [LowRatedReviewHandling, LessonReview::mark_handled, markLowRatedLessonReviewHandled]
+    note: >-
+      付けられるのは点が 2 以下の評価だけで（一覧の 30 日の期間は問わない）、外す操作はない。評価の点・一言・コーチの返信は
+      変えない。低い評価の一覧（listLowRatedLessonReviews）の評価ごとの handling に載り（なければ null）、handled=false で
+      未対応だけに絞れる。コーチ・生徒には見せない。
   - id: message_thread
     ja: "スレッド"
     definition: "生徒と担当コーチの 1 対 1 のチャットで、生徒とコーチの組に 1 つあり、Gen1 では予約が確定したときか、添削依頼・添削の返却をスレッドに流すときにまだなければ開く。"
