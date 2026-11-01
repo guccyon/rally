@@ -1,9 +1,15 @@
 use std::collections::BTreeSet;
 
-use domain::{catalog::LessonMenu, catalog::Sport, identity::AccountId};
+use domain::{
+    catalog::{LessonMenu, LessonMenuId, Sport},
+    identity::AccountId,
+};
 
-use super::{CoachLessonMenuList, LessonMenuCoachDisplayNameLookup, LessonMenuRepository};
-use crate::Unavailable;
+use super::{
+    CoachLessonMenuList, LessonMenuCoachDisplayNameLookup, LessonMenuRecentBookingCountLookup,
+    LessonMenuRepository,
+};
+use crate::{Unavailable, clock::Clock};
 
 /// コーチのレッスンメニューの横断の一覧のユースケース（admin-web の `listLessonMenus`。本部だけが呼ぶ）。
 /// 照会だけで、何も保存しない。
@@ -12,19 +18,29 @@ use crate::Unavailable;
 /// あればそのコーチのメニューに絞って返す（いないコーチなら空の一覧）。
 /// 並べ方はスポーツの順（[`Sport`] の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。引けないコーチは
 /// 同じスポーツの中で最後）→ コーチの ID → 作った時刻の古い順 → メニューの ID の順。コーチの表示名は profile に
-/// 問い合わせて（[`LessonMenuCoachDisplayNameLookup`]）添える。
-pub struct ListLessonMenus<M, D> {
+/// 問い合わせて（[`LessonMenuCoachDisplayNameLookup`]）添える。メニューごとの直近の予約の数は、時計の今の時刻で scheduling に
+/// 問い合わせて（[`LessonMenuRecentBookingCountLookup`]）添える（並べ方には使わない）。
+pub struct ListLessonMenus<M, D, B, C> {
     menus: M,
     coaches: D,
+    bookings: B,
+    clock: C,
 }
 
-impl<M, D> ListLessonMenus<M, D>
+impl<M, D, B, C> ListLessonMenus<M, D, B, C>
 where
     M: LessonMenuRepository,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
+    C: Clock,
 {
-    pub fn new(menus: M, coaches: D) -> Self {
-        Self { menus, coaches }
+    pub fn new(menus: M, coaches: D, bookings: B, clock: C) -> Self {
+        Self {
+            menus,
+            coaches,
+            bookings,
+            clock,
+        }
     }
 
     pub async fn execute(
@@ -45,10 +61,16 @@ where
             })
             .collect();
         let coach_ids: BTreeSet<AccountId> = menus.iter().map(LessonMenu::coach_id).collect();
-        let coaches = if coach_ids.is_empty() {
+        let (coaches, recent_booking_counts) = if menus.is_empty() {
             Default::default()
         } else {
-            self.coaches.find_coach_display_names(&coach_ids).await?
+            let menu_ids: BTreeSet<LessonMenuId> = menus.iter().map(LessonMenu::id).collect();
+            (
+                self.coaches.find_coach_display_names(&coach_ids).await?,
+                self.bookings
+                    .count_recent_bookings(&menu_ids, self.clock.now())
+                    .await?,
+            )
         };
         menus.sort_by(|a, b| {
             let name_a = coaches.get(&a.coach_id()).map(|name| name.as_str());
@@ -73,6 +95,7 @@ where
         Ok(CoachLessonMenuList {
             lesson_menus: menus,
             coaches,
+            recent_booking_counts,
         })
     }
 }
@@ -94,7 +117,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::in_memory::InMemoryLessonMenuRepository;
+    use crate::in_memory::{FixedClock, InMemoryLessonMenuRepository};
 
     /// 表示名「たなか」のコーチ
     const TANAKA: AccountId = AccountId::from_u128(1);
@@ -123,6 +146,44 @@ mod tests {
                 .map(|(id, name)| (id, DisplayName::new(name).unwrap()))
                 .collect())
         }
+    }
+
+    /// 直近の予約の数を固定の表から返す偽物。問い合わせたメニューの ID と時刻を記録する。
+    #[derive(Default)]
+    struct FakeCounts {
+        asked: std::sync::Mutex<Vec<(BTreeSet<LessonMenuId>, SystemTime)>>,
+    }
+
+    impl LessonMenuRecentBookingCountLookup for FakeCounts {
+        async fn count_recent_bookings(
+            &self,
+            lesson_menu_ids: &BTreeSet<LessonMenuId>,
+            now: SystemTime,
+        ) -> Result<BTreeMap<LessonMenuId, u32>, Unavailable> {
+            self.asked
+                .lock()
+                .unwrap()
+                .push((lesson_menu_ids.clone(), now));
+            Ok([(1, 3), (4, 1), (7, 2)]
+                .into_iter()
+                .map(|(id, count)| (LessonMenuId::from_u128(id), count))
+                .filter(|(id, _)| lesson_menu_ids.contains(id))
+                .collect())
+        }
+    }
+
+    fn now() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_404_800)
+    }
+
+    fn use_case() -> ListLessonMenus<InMemoryLessonMenuRepository, FakeNames, FakeCounts, FixedClock>
+    {
+        ListLessonMenus::new(
+            repository(),
+            FakeNames::default(),
+            FakeCounts::default(),
+            FixedClock(now()),
+        )
     }
 
     fn menu(
@@ -176,7 +237,7 @@ mod tests {
 
     #[tokio::test]
     async fn lists_every_menu_by_sport_then_coach_name_then_created_at() {
-        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let use_case = use_case();
         let list = use_case.execute(None, None, None).await.unwrap();
         assert_eq!(
             ids(&list),
@@ -196,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn filters_by_sport_and_published() {
-        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let use_case = use_case();
         let list = use_case
             .execute(Some(Sport::Tennis), None, None)
             .await
@@ -221,20 +282,21 @@ mod tests {
 
     #[tokio::test]
     async fn no_menus_is_an_empty_list_without_asking_names() {
-        let names = FakeNames::default();
-        let use_case = ListLessonMenus::new(repository(), names);
+        let use_case = use_case();
         let list = use_case
             .execute(Some(Sport::Swimming), None, None)
             .await
             .unwrap();
         assert!(list.lesson_menus.is_empty());
         assert!(list.coaches.is_empty());
+        assert!(list.recent_booking_counts.is_empty());
         assert!(use_case.coaches.asked.lock().unwrap().is_empty());
+        assert!(use_case.bookings.asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn filters_by_coach_together_with_sport_and_published() {
-        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let use_case = use_case();
         let list = use_case.execute(None, None, Some(TANAKA)).await.unwrap();
         assert_eq!(
             ids(&list),
@@ -256,13 +318,45 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_coach_is_an_empty_list() {
-        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let use_case = use_case();
         let list = use_case
             .execute(None, None, Some(AccountId::from_u128(99)))
             .await
             .unwrap();
         assert!(list.lesson_menus.is_empty());
         assert!(list.coaches.is_empty());
+        assert!(list.recent_booking_counts.is_empty());
         assert!(use_case.coaches.asked.lock().unwrap().is_empty());
+        assert!(use_case.bookings.asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn adds_recent_booking_counts_of_the_listed_menus_at_the_current_time() {
+        let use_case = use_case();
+        let list = use_case
+            .execute(Some(Sport::Tennis), Some(true), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [4, 6, 1, 8, 9, 5].map(LessonMenuId::from_u128),
+            "直近の予約の数は並べ方を変えない"
+        );
+        assert_eq!(
+            list.recent_booking_counts,
+            BTreeMap::from([
+                (LessonMenuId::from_u128(1), 3),
+                (LessonMenuId::from_u128(4), 1)
+            ]),
+            "一覧に載ったメニューの数だけ。予約のないメニューは含まない"
+        );
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            [(
+                [4, 6, 1, 8, 9, 5].map(LessonMenuId::from_u128).into(),
+                now()
+            )],
+            "絞り込んだメニューだけを、時計の今の時刻で問い合わせる"
+        );
     }
 }

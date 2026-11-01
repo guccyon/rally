@@ -11,9 +11,9 @@ use std::sync::Arc;
 use application::{
     catalog::{
         CoachLessonMenuList, CreateLessonMenu, CreateLessonMenuCommand, CreateLessonMenuError,
-        LessonMenuCoachDisplayNameLookup, LessonMenuRepository, ListCoachLessonMenus,
-        ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu, UpdateLessonMenuCommand,
-        UpdateLessonMenuError, lesson_menu_id_uuid,
+        LessonMenuCoachDisplayNameLookup, LessonMenuRecentBookingCountLookup, LessonMenuRepository,
+        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
+        UpdateLessonMenuCommand, UpdateLessonMenuError, lesson_menu_id_uuid,
     },
     clock::Clock,
     identity::{AccountRepository, TokenVerifier, account_id_uuid},
@@ -49,16 +49,16 @@ use crate::{
 };
 
 /// レッスンメニューのハンドラーが使うユースケース。
-pub struct LessonMenusState<M, R, C, D> {
+pub struct LessonMenusState<M, R, C, D, B> {
     pub create_lesson_menu: CreateLessonMenu<M, R, C>,
     pub update_lesson_menu: UpdateLessonMenu<M, R>,
     pub list_my_lesson_menus: ListMyLessonMenus<M>,
     pub list_coach_lesson_menus: ListCoachLessonMenus<M>,
-    pub list_lesson_menus: ListLessonMenus<M, D>,
+    pub list_lesson_menus: ListLessonMenus<M, D, B, C>,
 }
 
 /// ハンドラーが共有する [`LessonMenusState`]。
-type Shared<M, R, C, D> = Arc<LessonMenusState<M, R, C, D>>;
+type Shared<M, R, C, D, B> = Arc<LessonMenusState<M, R, C, D, B>>;
 
 /// admin-web の `CreateLessonMenuRequest`。
 #[derive(Deserialize)]
@@ -143,6 +143,8 @@ pub struct CoachLessonMenuBody {
     created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     headquarters_unpublish: Option<HeadquartersUnpublishBody>,
+    /// 直近 30 日に入った予約の数（キャンセルを除く。数え方は domain の `RecentLessonMenuBookings`）
+    recent_booking_count: u32,
 }
 
 /// admin-web の `CoachLessonMenuList`。
@@ -153,8 +155,8 @@ pub struct CoachLessonMenuListBody {
 
 /// `GET /coaches/me/lesson-menus`（admin-web）。コーチだけが呼べる（役割は `require_role` の層が確かめる）。
 /// 一覧にするのはトークンのコーチのメニューで、公開中かを問わない。
-pub async fn list_my_lesson_menus<M, R, C, D>(
-    State(state): State<Shared<M, R, C, D>>,
+pub async fn list_my_lesson_menus<M, R, C, D, B>(
+    State(state): State<Shared<M, R, C, D, B>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<LessonMenuListBody>, ApiError>
 where
@@ -162,6 +164,7 @@ where
     R: AccountRepository,
     C: Clock,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
 {
     let menus = state
         .list_my_lesson_menus
@@ -173,8 +176,8 @@ where
 
 /// `POST /coaches/me/lesson-menus`（admin-web）。コーチだけが呼べる（役割は `require_role` の層が確かめる）。
 /// 作るのはトークンのコーチのメニューで、そのコーチのアカウントがなければ `PUT /me/profile` と同じく無効なトークンとして 401。
-pub async fn create_my_lesson_menu<M, R, C, D>(
-    State(state): State<Shared<M, R, C, D>>,
+pub async fn create_my_lesson_menu<M, R, C, D, B>(
+    State(state): State<Shared<M, R, C, D, B>>,
     account: AuthenticatedAccount,
     request: Result<Json<CreateLessonMenuRequest>, JsonRejection>,
 ) -> Result<Response, ApiError>
@@ -183,6 +186,7 @@ where
     R: AccountRepository,
     C: Clock,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
 {
     let Json(request) =
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
@@ -211,8 +215,8 @@ where
 /// `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（admin-web）。コーチだけが呼べる（役割は `require_role` の層が
 /// 確かめる）。直せるのはトークンのコーチのメニューだけで、他のコーチのメニューはないものとして 404。本部が非公開にした
 /// メニューを公開中にしようとすれば 409 `lesson_menu_unpublished_by_headquarters`（[`crate::catalog_error`]）。
-pub async fn update_my_lesson_menu<M, R, C, D>(
-    State(state): State<Shared<M, R, C, D>>,
+pub async fn update_my_lesson_menu<M, R, C, D, B>(
+    State(state): State<Shared<M, R, C, D, B>>,
     account: AuthenticatedAccount,
     Path(lesson_menu_id): Path<String>,
     request: Result<Json<UpdateLessonMenuRequest>, JsonRejection>,
@@ -222,6 +226,7 @@ where
     R: AccountRepository,
     C: Clock,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
 {
     // 契約の updateMyLessonMenu では、UUID でない ID はないものとして 404
     let lesson_menu_id = lesson_menu_id_uuid::parse(&lesson_menu_id)
@@ -259,8 +264,8 @@ where
 /// `GET /coaches/{coach_id}/lesson-menus`（student-app）。生徒だけが呼べる（役割は `require_role` の層が確かめる）。
 /// 公開中のメニューだけを、`sport` があればそのスポーツに絞って返す。ゴルフのメニューは載せない（student-app の
 /// `Sport` にない）。
-pub async fn list_coach_lesson_menus<M, R, C, D>(
-    State(state): State<Shared<M, R, C, D>>,
+pub async fn list_coach_lesson_menus<M, R, C, D, B>(
+    State(state): State<Shared<M, R, C, D, B>>,
     Path(coach_id): Path<String>,
     params: Result<Query<ListCoachLessonMenusParams>, QueryRejection>,
 ) -> Result<Json<LessonMenuListBody>, ApiError>
@@ -269,6 +274,7 @@ where
     R: AccountRepository,
     C: Clock,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
 {
     // 契約の listCoachLessonMenus では、UUID でない ID はないものとして 404
     let coach_id =
@@ -290,9 +296,10 @@ where
 
 /// `GET /lesson-menus`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
 /// すべてのコーチのメニューを、`sport`・`published`・`coach_id` があればそれで絞って返す（ゴルフも載せる）。
+/// 各行に直近 30 日に入った予約の数（キャンセルを除く）を載せる（予約がなければ 0）。
 /// `coach_id` が UUID でなければ 422。いないコーチの ID なら空の一覧（404 にしない）。
-pub async fn list_lesson_menus<M, R, C, D>(
-    State(state): State<Shared<M, R, C, D>>,
+pub async fn list_lesson_menus<M, R, C, D, B>(
+    State(state): State<Shared<M, R, C, D, B>>,
     params: Result<Query<ListLessonMenusParams>, QueryRejection>,
 ) -> Result<Json<CoachLessonMenuListBody>, ApiError>
 where
@@ -300,6 +307,7 @@ where
     R: AccountRepository,
     C: Clock,
     D: LessonMenuCoachDisplayNameLookup,
+    B: LessonMenuRecentBookingCountLookup,
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
@@ -404,6 +412,11 @@ fn coach_lesson_menu_list_body(
                     headquarters_unpublish: headquarters_unpublish_body(
                         menu.headquarters_unpublish(),
                     )?,
+                    recent_booking_count: list
+                        .recent_booking_counts
+                        .get(&menu.id())
+                        .copied()
+                        .unwrap_or(0),
                 })
             })
             .collect::<Result<_, ApiError>>()?,
@@ -417,12 +430,12 @@ fn coach_lesson_menu_list_body(
 /// （変更・非公開）はコーチだけで、扱うのはトークンのコーチ自身のメニューだけ。
 /// `GET /coaches/{coach_id}/lesson-menus`（student-app のコーチの公開中のメニューの一覧）は生徒だけ。
 /// `GET /lesson-menus`（admin-web のすべてのコーチのメニューの横断の一覧）は本部だけ。
-pub fn catalog_router<M, R, C, D, T>(
+pub fn catalog_router<M, R, C, D, B, T>(
     create_lesson_menu: CreateLessonMenu<M, R, C>,
     update_lesson_menu: UpdateLessonMenu<M, R>,
     list_my_lesson_menus: ListMyLessonMenus<M>,
     list_coach_lesson_menus: ListCoachLessonMenus<M>,
-    list_lesson_menus: ListLessonMenus<M, D>,
+    list_lesson_menus: ListLessonMenus<M, D, B, C>,
     tokens: T,
 ) -> Router
 where
@@ -430,28 +443,32 @@ where
     R: AccountRepository + 'static,
     C: Clock + 'static,
     D: LessonMenuCoachDisplayNameLookup + 'static,
+    B: LessonMenuRecentBookingCountLookup + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     let coach_routes = Router::new()
         .route(
             "/coaches/me/lesson-menus",
-            get(self::list_my_lesson_menus::<M, R, C, D>)
-                .post(self::create_my_lesson_menu::<M, R, C, D>),
+            get(self::list_my_lesson_menus::<M, R, C, D, B>)
+                .post(self::create_my_lesson_menu::<M, R, C, D, B>),
         )
         .route(
             "/coaches/me/lesson-menus/{lesson_menu_id}",
-            put(self::update_my_lesson_menu::<M, R, C, D>),
+            put(self::update_my_lesson_menu::<M, R, C, D, B>),
         )
         .route_layer(require_role(&[Role::Coach]));
     let student_routes = Router::new()
         .route(
             "/coaches/{coach_id}/lesson-menus",
-            get(self::list_coach_lesson_menus::<M, R, C, D>),
+            get(self::list_coach_lesson_menus::<M, R, C, D, B>),
         )
         .route_layer(require_role(&[Role::Student]));
     let headquarters_routes = Router::new()
-        .route("/lesson-menus", get(self::list_lesson_menus::<M, R, C, D>))
+        .route(
+            "/lesson-menus",
+            get(self::list_lesson_menus::<M, R, C, D, B>),
+        )
         .route_layer(require_role(&[Role::Headquarters]));
     coach_routes
         .merge(student_routes)

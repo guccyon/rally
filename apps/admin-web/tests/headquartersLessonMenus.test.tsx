@@ -31,6 +31,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     coach_id: COACH_A,
     coach_display_name: "山田コーチ",
     created_at: "2026-10-01T00:00:00Z",
+    recent_booking_count: 4,
   },
   {
     lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000002",
@@ -42,6 +43,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     coach_id: COACH_B,
     coach_display_name: "佐藤コーチ",
     created_at: "2026-10-02T00:00:00Z",
+    recent_booking_count: 0,
   },
   {
     lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000003",
@@ -52,6 +54,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     is_published: true,
     coach_id: COACH_A,
     created_at: "2026-10-03T00:00:00Z",
+    recent_booking_count: 1,
   },
 ];
 
@@ -293,6 +296,7 @@ const HQ_UNPUBLISHED: Schemas["CoachLessonMenu"] = {
   coach_display_name: "山田コーチ",
   created_at: "2026-10-04T00:00:00Z",
   headquarters_unpublish: { unpublished_at: "2026-10-26T03:00:00Z", reason: "料金の表記が誤っている" },
+  recent_booking_count: 0,
 };
 
 /** unpublishLessonMenu / republishLessonMenu の応答（LessonMenu。説明つき・表示名なし）。 */
