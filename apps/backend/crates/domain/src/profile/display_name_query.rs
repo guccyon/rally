@@ -1,63 +1,39 @@
-use crate::DomainError;
+use crate::{DomainError, NameQuery};
 
 use super::DisplayName;
 
 /// 表示名の検索語（本部の生徒の一覧の `q`）。表示名に部分一致するものを探す。
 ///
-/// 前後の空白（全角の空白を含む）は除いて扱い、除いたあとに [`DisplayNameQuery::MAX_CHARS`] 文字まで。大文字・小文字は
-/// ASCII の英字（`A`〜`Z` と `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる。
+/// 一致のしかた（前後の空白・大文字と小文字・空白だけのとき）は名前の検索語の共通の規則 [`NameQuery`] のとおりで、
+/// 前後の空白を除いたあとに [`DisplayNameQuery::MAX_CHARS`] 文字まで。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DisplayNameQuery(String);
+pub struct DisplayNameQuery(NameQuery);
 
 impl DisplayNameQuery {
     /// 検索語の上限（前後の空白を除いた文字数）。表示名の上限と同じ。
     pub const MAX_CHARS: usize = DisplayName::MAX_CHARS;
 
-    /// 比べる前にそろえる文字（ASCII の大文字）。[`DisplayNameQuery::FOLD_TO`] の同じ位置の文字に置き換える。
-    /// そろえ方の定義はこの 2 つの表だけで、保存先も同じ表で表示名をそろえる（Postgres なら `translate`）。
-    pub const FOLD_FROM: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    /// [`DisplayNameQuery::FOLD_FROM`] の各文字の置き換え先（ASCII の小文字）。
-    pub const FOLD_TO: &str = "abcdefghijklmnopqrstuvwxyz";
-
     /// 前後の空白を除いて空なら（空白だけなら）検索語なしとして `None`。
     pub fn new(value: &str) -> Result<Option<Self>, DomainError> {
-        let value = value.trim();
-        if value.is_empty() {
-            return Ok(None);
-        }
-        if value.chars().count() > Self::MAX_CHARS {
-            return Err(DomainError::DisplayNameQueryTooLong {
+        Ok(NameQuery::new(
+            value,
+            Self::MAX_CHARS,
+            DomainError::DisplayNameQueryTooLong {
                 max: Self::MAX_CHARS,
-            });
-        }
-        Ok(Some(Self(fold(value))))
+            },
+        )?
+        .map(Self))
     }
 
-    /// 比べるときの形（前後の空白を除き、[`DisplayNameQuery::FOLD_FROM`] の文字を [`DisplayNameQuery::FOLD_TO`] に
-    /// そろえたもの）。保存先が同じ規則で絞り込むのに使う。
+    /// 比べるときの形（[`NameQuery::folded`]）。保存先が同じ規則で絞り込むのに使う。
     pub fn folded(&self) -> &str {
-        &self.0
+        self.0.folded()
     }
 
     /// 表示名 `name` がこの検索語に部分一致するか。
     pub fn matches(&self, name: &DisplayName) -> bool {
-        fold(name.as_str()).contains(&self.0)
+        self.0.matches(name.as_str())
     }
-}
-
-/// `value` の [`DisplayNameQuery::FOLD_FROM`] の文字を、[`DisplayNameQuery::FOLD_TO`] の同じ位置の文字に置き換える
-/// （SQL の `translate` と同じ）。
-fn fold(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| {
-            DisplayNameQuery::FOLD_FROM
-                .chars()
-                .position(|from| from == c)
-                .and_then(|i| DisplayNameQuery::FOLD_TO.chars().nth(i))
-                .unwrap_or(c)
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -80,36 +56,13 @@ mod tests {
     }
 
     #[test]
-    fn surrounding_spaces_are_trimmed_and_inner_spaces_are_kept() {
-        assert_eq!(query("\u{3000} たろう ").folded(), "たろう");
-        assert!(query(" 山田 太郎 ").matches(&name("山田 太郎")));
-        assert!(!query("山田 太郎").matches(&name("山田太郎")));
-    }
-
-    #[test]
-    fn matches_a_part_of_the_display_name() {
-        let q = query("ろう");
-        assert!(q.matches(&name("たろう")));
-        assert!(q.matches(&name("じろう先生")));
-        assert!(!q.matches(&name("はなこ")));
-    }
-
-    #[test]
-    fn ascii_letters_are_case_insensitive_and_others_are_compared_as_written() {
-        assert!(query("TARO").matches(&name("Taro Yamada")));
-        assert!(query("yamada").matches(&name("Taro YAMADA")));
-        // 全角の英字・ひらがなとカタカナは同じとみなさない
-        assert!(!query("ｔａｒｏ").matches(&name("ＴＡＲＯ")));
-        assert!(!query("たろう").matches(&name("タロウ")));
-    }
-
-    #[test]
-    fn fold_tables_pair_each_ascii_uppercase_letter_with_its_lowercase() {
-        assert_eq!(
-            DisplayNameQuery::FOLD_FROM.chars().count(),
-            DisplayNameQuery::FOLD_TO.chars().count()
-        );
-        assert_eq!(fold("Taro ＹＡＭＡＤＡ 山田"), "taro ＹＡＭＡＤＡ 山田");
+    fn matches_a_part_of_the_display_name_by_the_common_rule() {
+        let q = query(" YAMA ");
+        assert_eq!(q.folded(), "yama");
+        assert!(q.matches(&name("Taro Yamada")));
+        assert!(!q.matches(&name("ＹＡＭＡＤＡ")));
+        assert!(query("ろう").matches(&name("じろう先生")));
+        assert!(!query("ろう").matches(&name("はなこ")));
     }
 
     #[test]

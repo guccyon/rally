@@ -1,6 +1,6 @@
 //! `PgLessonMenuRepository`（`catalog.lesson_menus`）の検証。コーチのアカウントを `PgAccountRepository` で読んで
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
-//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（スポーツ・公開中か・コーチ）と並べ方。
+//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（名前・スポーツ・公開中か・コーチ）と並べ方。
 //! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
 //! 公開し直せないこと。非公開にした・公開に戻した記録（`catalog.lesson_menu_publication_changes`）を誰が・いつ・理由とともに
 //! メニューと同じトランザクションで残し、新しい順に読めること（`ListLessonMenuPublicationChanges`）と、並行な非公開は 1 つだけ通ること。
@@ -14,8 +14,8 @@ use application::{
     catalog::{
         ChangeLessonMenuPublicationError, CreateLessonMenu, CreateLessonMenuCommand,
         LessonMenuRepository, ListCoachLessonMenus, ListLessonMenuPublicationChanges,
-        ListLessonMenus, ListMyLessonMenus, RepublishLessonMenu, UnpublishLessonMenu,
-        UpdateLessonMenu, UpdateLessonMenuCommand, UpdateLessonMenuError,
+        ListLessonMenus, ListLessonMenusQuery, ListMyLessonMenus, RepublishLessonMenu,
+        UnpublishLessonMenu, UpdateLessonMenu, UpdateLessonMenuCommand, UpdateLessonMenuError,
     },
     in_memory::FixedClock,
     profile::ProfileCoachDisplayNameLookup,
@@ -27,7 +27,7 @@ use domain::{
     catalog::{
         HeadquartersUnpublish, HeadquartersUnpublishReason, LessonDuration, LessonFormat,
         LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
-        LessonMenuPublicationAction, LessonMenuPublicationChange,
+        LessonMenuNameQuery, LessonMenuPublicationAction, LessonMenuPublicationChange,
     },
     identity::{AccountId, Role},
     lesson::LessonType,
@@ -35,6 +35,20 @@ use domain::{
 use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository};
 use sqlx::PgPool;
 use support::at;
+
+/// 横断の一覧の条件（名前の検索語なし）。
+fn query(
+    sport: Option<Sport>,
+    is_published: Option<bool>,
+    coach_id: Option<AccountId>,
+) -> ListLessonMenusQuery {
+    ListLessonMenusQuery {
+        name: None,
+        sport,
+        is_published,
+        coach_id,
+    }
+}
 
 fn content(sport: Sport, format: LessonFormat, name: &str) -> LessonMenuContent {
     LessonMenuContent {
@@ -241,7 +255,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
         SchedulingLessonMenuRecentBookingCountLookup::new(PgBookingRepository::new(pool.clone())),
         FixedClock(at(100)),
     );
-    let list = use_case.execute(None, None, None).await.unwrap();
+    let list = use_case.execute(&query(None, None, None)).await.unwrap();
     assert_eq!(
         list.lesson_menus,
         vec![
@@ -263,7 +277,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
 
     assert_eq!(
         use_case
-            .execute(Some(Sport::Soccer), None, None)
+            .execute(&query(Some(Sport::Soccer), None, None))
             .await
             .unwrap()
             .lesson_menus,
@@ -271,7 +285,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(None, Some(false), None)
+            .execute(&query(None, Some(false), None))
             .await
             .unwrap()
             .lesson_menus,
@@ -279,7 +293,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(Some(Sport::Tennis), Some(true), None)
+            .execute(&query(Some(Sport::Tennis), Some(true), None))
             .await
             .unwrap()
             .lesson_menus,
@@ -287,7 +301,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert!(
         use_case
-            .execute(Some(Sport::Swimming), None, None)
+            .execute(&query(Some(Sport::Swimming), None, None))
             .await
             .unwrap()
             .lesson_menus
@@ -297,7 +311,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     // コーチで絞ると、公開中も非公開もまとめて返し、sport・published と組み合わせられる
     assert_eq!(
         use_case
-            .execute(None, None, Some(ito))
+            .execute(&query(None, None, Some(ito)))
             .await
             .unwrap()
             .lesson_menus,
@@ -305,14 +319,14 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(None, Some(false), Some(ito))
+            .execute(&query(None, Some(false), Some(ito)))
             .await
             .unwrap()
             .lesson_menus,
         vec![ito_later]
     );
     let tanaka_tennis_only = use_case
-        .execute(Some(Sport::Tennis), None, Some(tanaka))
+        .execute(&query(Some(Sport::Tennis), None, Some(tanaka)))
         .await
         .unwrap();
     assert_eq!(tanaka_tennis_only.lesson_menus, vec![tanaka_tennis]);
@@ -326,11 +340,114 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     // いないコーチは空の一覧
     let unknown = use_case
-        .execute(None, None, Some(AccountId::from_u128(0xdead)))
+        .execute(&query(None, None, Some(AccountId::from_u128(0xdead))))
         .await
         .unwrap();
     assert!(unknown.lesson_menus.is_empty());
     assert!(unknown.coaches.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lists_menus_whose_name_contains_the_query(pool: PgPool) {
+    let tanaka = support::register_named(
+        &pool,
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Soccer],
+        "たなか",
+    )
+    .await;
+    let ito = support::register_named(&pool, Role::Coach, vec![Sport::Tennis], "いとう").await;
+    let serve = create(
+        &pool,
+        tanaka,
+        0,
+        content(Sport::Tennis, live(60), "Serve の基礎"),
+        true,
+    )
+    .await;
+    let wide = create(
+        &pool,
+        tanaka,
+        1,
+        content(Sport::Soccer, LessonFormat::Async, "ＳＥＲＶＥ（全角）"),
+        true,
+    )
+    .await;
+    let ito_serve = create(
+        &pool,
+        ito,
+        2,
+        content(Sport::Tennis, LessonFormat::Async, "サーブとserveの添削"),
+        false,
+    )
+    .await;
+    let percent = create(
+        &pool,
+        ito,
+        3,
+        content(Sport::Tennis, live(30), "100%_フォア"),
+        true,
+    )
+    .await;
+
+    let use_case = ListLessonMenus::new(
+        PgLessonMenuRepository::new(pool.clone()),
+        ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
+        SchedulingLessonMenuRecentBookingCountLookup::new(PgBookingRepository::new(pool.clone())),
+        FixedClock(at(100)),
+    );
+    let search = |q: &str, base: ListLessonMenusQuery| ListLessonMenusQuery {
+        name: LessonMenuNameQuery::new(q).unwrap(),
+        ..base
+    };
+    let found = |query: ListLessonMenusQuery| {
+        let use_case = &use_case;
+        async move { use_case.execute(&query).await.unwrap().lesson_menus }
+    };
+
+    // ASCII の英字は大文字・小文字を区別せず、全角の英字は書いたとおりに比べる。並べ方（テニス（いとう → たなか）→
+    // サッカー）は変わらない
+    assert_eq!(
+        found(search(" SERVE ", ListLessonMenusQuery::default())).await,
+        vec![ito_serve.clone(), serve.clone()]
+    );
+    assert_eq!(
+        found(search("ＳＥＲＶＥ", ListLessonMenusQuery::default())).await,
+        vec![wide]
+    );
+    // % と _ はワイルドカードでなく文字のまま
+    assert_eq!(
+        found(search("%_", ListLessonMenusQuery::default())).await,
+        vec![percent.clone()]
+    );
+    // 空白だけなら絞り込まない
+    assert_eq!(
+        found(search("\u{3000} ", ListLessonMenusQuery::default()))
+            .await
+            .len(),
+        4
+    );
+    // ほかの絞り込みと組み合わせられる
+    assert_eq!(
+        found(search("serve", query(None, Some(true), None))).await,
+        vec![serve.clone()]
+    );
+    assert_eq!(
+        found(search("serve", query(Some(Sport::Tennis), None, Some(ito)))).await,
+        vec![ito_serve]
+    );
+    assert!(
+        found(search("フォア", query(None, None, Some(tanaka))))
+            .await
+            .is_empty()
+    );
+    let none = use_case
+        .execute(&search("いない", ListLessonMenusQuery::default()))
+        .await
+        .unwrap();
+    assert!(none.lesson_menus.is_empty());
+    assert!(none.coaches.is_empty());
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

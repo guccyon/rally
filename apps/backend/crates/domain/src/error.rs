@@ -77,6 +77,8 @@ pub enum DomainError {
     EmptyLessonMenuName,
     /// レッスンメニューの名前が長すぎる（`max` は文字数）
     LessonMenuNameTooLong { max: usize },
+    /// レッスンメニューの名前の検索語が長すぎる（`max` は前後の空白を除いた文字数）
+    LessonMenuNameQueryTooLong { max: usize },
     /// レッスンメニューの説明が長すぎる（`max` は文字数）
     LessonMenuDescriptionTooLong { max: usize },
     /// 同期レッスンの 1 回の時間が `min`〜`max` 分の `step` 分刻みでない
