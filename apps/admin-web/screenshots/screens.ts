@@ -127,4 +127,10 @@ export const SCREENS: Screen[] = [
       await page.getByRole("button", { name: "内容を確かめる" }).click();
     },
   },
+  {
+    id: "hq-pending-video-reviews",
+    title: "本部: 返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+  },
 ];
