@@ -30,6 +30,12 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    getCoachOverview: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/overview", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
