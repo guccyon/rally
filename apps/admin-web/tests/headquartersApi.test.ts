@@ -198,6 +198,34 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("getStudentActivity は GET /api/students/{student_id}/activity を呼び、生徒 1 人の利用の様子を返す", async () => {
+    const studentId = "11111111-1111-4111-8111-111111111111";
+    const activity = {
+      student_id: studentId,
+      display_name: "山田 花子",
+      upcoming_bookings: [],
+      recent_lessons: [],
+      cancelled_booking_count: 0,
+    };
+    const { api, fetchMock } = setup(json(200, activity));
+    const result = await api.getStudentActivity(studentId);
+    expect(result).toEqual({ ok: true, data: activity });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/students/${studentId}/activity`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("getStudentActivity の 404 は code を not_found にして返す", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "not found" }));
+    const result = await api.getStudentActivity("11111111-1111-4111-8111-999999999999");
+    expect(result).toEqual({
+      ok: false,
+      code: "not_found",
+      message: "対象が見つかりません（ID を確かめてください）。",
+    });
+  });
+
   test("listLowRatedLessonReviews は GET /api/lesson-reviews/low を呼び、低い評価の一覧を返す", async () => {
     const list = {
       max_rating: 2,

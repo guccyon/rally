@@ -476,6 +476,34 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/students/{student_id}/activity",
+    body: {
+      student_id: STUDENT_ID,
+      display_name: YAMADA.name,
+      upcoming_bookings: HQ_BOOKINGS.filter(
+        (item) => item.booking.student_id === STUDENT_ID && item.booking.status !== "cancelled",
+      ).map((item) => ({ booking: item.booking, coach_display_name: item.coach_display_name })),
+      recent_lessons: [
+        {
+          lesson_id: id("5555", 1),
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          lesson_type: "live_lesson",
+          completed_at: at(-24 * 2),
+        },
+        {
+          lesson_id: id("5555", 2),
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          lesson_type: "async_lesson",
+          completed_at: at(-24 * 6),
+        },
+      ],
+      cancelled_booking_count: 1,
+    } satisfies Schemas["StudentActivity"],
+  },
+  {
+    method: "GET",
     path: "/bookings",
     body: {
       from: "2026-10-26",
