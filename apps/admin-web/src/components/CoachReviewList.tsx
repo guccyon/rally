@@ -27,11 +27,11 @@ export function CoachReviewList({
         <li key={review.review_id} className="space-y-1 px-3 py-2">
           <p>
             <span className="font-semibold">{review.rating} 点</span>
-            <span className="text-gray-500">（5 点満点）</span>
+            <span className="text-muted">（5 点満点）</span>
           </p>
           {showLessonMenu && review.lesson_menu && <p>メニュー: {review.lesson_menu.name}</p>}
           <p>{review.comment}</p>
-          <p className="text-gray-500">{formatDateTime(review.submitted_at)}</p>
+          <p className="text-muted">{formatDateTime(review.submitted_at)}</p>
           {renderReply?.(review)}
         </li>
       ))}

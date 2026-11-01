@@ -1,0 +1,246 @@
+# デザイントークン（見た目の正本）
+# admin-web と student-app の色・文字の大きさ・余白・角丸を意味の名前で 1 か所に置く。
+# 値は今の見た目そのまま（admin-web は Tailwind v4 の既定色、student-app は Colors.teal を seed にした ColorScheme）。ブランドの方向は後で人が決める。
+#
+# 構造
+# - tokens: 両アプリ共通の名前（id → ja・value・任意で was）。value は admin-web の今の値。
+#   value が null のものはアプリごとに違う所で、使うアプリが overrides で決める。
+#   was は置き換える前の Tailwind のクラスの色（画面の設計で今の見た目を写すための手がかり）。
+# - apps.<app>.overrides: そのアプリだけの値（id → value）。共通の値を上書きする。tokens にない id は書かない。
+# - 色の値: admin-web は CSS の色（oklch か #rgb）、student-app は #RRGGBB。
+# - 長さの値: 論理ピクセル（px。admin-web は 1rem = 16px）。
+#
+# アプリでの名前
+# - admin-web: src/app/globals.css の @theme に CSS 変数で置く。クラスは次の名前になる
+#   - color.text.<名前>    → --text-color-<名前>       → text-<名前>（例: text-muted）
+#   - color.surface.<名前> → --background-color-<名前> → bg-<名前>（例: bg-subtle）
+#   - それ以外の color.<a>[.<b>] → --color-<a>[-<b>]  → text- / bg- / border- のどれでも（例: bg-primary、text-danger-strong）
+#   - font.size / space / radius は Tailwind の既定の段階（text-xs・p-2・rounded など）のままで、ここは今の値の写し
+# - student-app: lib/ui/rally_theme.dart の定数に写し、ThemeData（ColorScheme と TextTheme）を組む。
+#   ColorScheme は apps.student-app.seed から作り、color_scheme の対応で主要色を上書きする（seed から出る色と同じ値）。
+#   TextTheme は text_theme の対応で役割ごとの大きさを決める。student-app が使うのは color_scheme と text_theme に出てくるトークンだけ。
+#   余白・角丸は Material の部品の既定と画面の数値のままで、ここは今の値の写し。
+# - 揃っているかは admin-web の tests/designTokens.test.ts と student-app の test/ui/rally_theme_test.dart で確かめる。
+version: 1
+
+tokens:
+  # 主に押すもの（ボタン・リンク・選択中）。アプリごとに違う
+  color.primary:
+    ja: 主色（主操作のボタンの地・リンクの文字）
+    value: null
+  color.primary.strong:
+    ja: 主色の濃いもの（白地の上の主色の文字）
+    value: null
+  color.primary.soft:
+    ja: 主色の淡い線（主色で囲む枠）
+    value: null
+  color.primary.faint:
+    ja: 主色のごく淡い地（選択中の行・強調する囲み）
+    value: null
+
+  # 状態の表示
+  color.danger:
+    ja: 危険・誤り（取り消す操作の地、誤りの文言、新着のしるし）
+    value: "oklch(57.7% 0.245 27.325)"
+    was: red-600
+  color.danger.strong:
+    ja: 危険の濃いもの（白地の上の危険の操作の文字、誤りの囲みの文字）
+    value: "oklch(50.5% 0.213 27.518)"
+    was: red-700
+  color.danger.soft:
+    ja: 危険の淡い線（誤りの囲みの枠）
+    value: "oklch(80.8% 0.114 19.571)"
+    was: red-300
+  color.danger.faint:
+    ja: 危険のごく淡い地（注意の要る行・誤りの囲み）
+    value: "oklch(97.1% 0.013 17.38)"
+    was: red-50
+  color.success:
+    ja: 成功（できたことの文言）
+    value: "oklch(52.7% 0.154 150.069)"
+    was: green-700
+  color.success.strong:
+    ja: 成功の濃いもの（成功の札の文字）
+    value: "oklch(44.8% 0.119 151.328)"
+    was: green-800
+  color.success.subtle:
+    ja: 成功の淡い地（成功の札）
+    value: "oklch(96.2% 0.044 156.743)"
+    was: green-100
+  color.success.faint:
+    ja: 成功のごく淡い地（チャットの自分の発言）
+    value: "oklch(98.2% 0.018 155.826)"
+    was: green-50
+  color.warning.strong:
+    ja: 待ち・注意の濃いもの（待ちの札の文字）
+    value: "oklch(47.3% 0.137 46.201)"
+    was: amber-800
+  color.warning.subtle:
+    ja: 待ち・注意の淡い地（待ちの札）
+    value: "oklch(96.2% 0.059 95.617)"
+    was: amber-100
+  color.inactive.strong:
+    ja: 止めている状態の濃いもの（停止中の札の文字）
+    value: "oklch(37.3% 0.034 259.733)"
+    was: gray-700
+  color.inactive.subtle:
+    ja: 止めている状態の淡い地（停止中の札）
+    value: "oklch(92.8% 0.006 264.531)"
+    was: gray-200
+
+  # 文字
+  color.text.default:
+    ja: 本文の文字
+    value: "oklch(21% 0.034 264.665)"
+    was: gray-900
+  color.text.secondary:
+    ja: 補う文字（説明・項目名）
+    value: "oklch(44.6% 0.03 256.802)"
+    was: gray-600
+  color.text.muted:
+    ja: 控えめな文字（読み込み中・日時・残り文字数）
+    value: "oklch(55.1% 0.027 264.364)"
+    was: gray-500
+  color.text.inverse:
+    ja: 色の地の上の文字（主色・危険の地のボタンや札）
+    value: "#fff"
+    was: white
+
+  # 地
+  color.surface.default:
+    ja: 画面の地
+    value: "#fff"
+    was: white
+  color.surface.subtle:
+    ja: ごく淡い地（下書き・確かめる内容の囲み、触れている行）
+    value: "oklch(98.5% 0.002 247.839)"
+    was: gray-50
+  color.surface.muted:
+    ja: 淡い地（未実装の囲み・相手の発言・選択中のタブ・取り消した札）
+    value: "oklch(96.7% 0.003 264.542)"
+    was: gray-100
+
+  # 文字の大きさの段階（px）
+  font.size.2xs:
+    ja: いちばん小さい文字（student-app のラベル小）
+    value: null
+  font.size.xs:
+    ja: とても小さい文字（日時・注記）
+    value: 12
+  font.size.sm:
+    ja: 小さい文字（一覧・フォーム）
+    value: 14
+  font.size.base:
+    ja: 本文の文字
+    value: 16
+  font.size.lg:
+    ja: 少し大きい文字
+    value: 18
+  font.size.xl:
+    ja: 大きい文字（小見出し）
+    value: 20
+  font.size.2xl:
+    ja: 見出しの文字
+    value: 24
+  font.size.3xl:
+    ja: 大きい見出しの文字
+    value: 30
+  font.size.4xl:
+    ja: とても大きい見出しの文字
+    value: 36
+  font.size.5xl:
+    ja: 表示用の大きい文字
+    value: 48
+  font.size.6xl:
+    ja: 表示用のいちばん大きい文字（student-app の display）
+    value: null
+
+  # 余白の段階（px）
+  space.xs:
+    ja: ごく狭い余白
+    value: 4
+  space.sm:
+    ja: 狭い余白
+    value: 8
+  space.md:
+    ja: 中くらいの余白（囲みの内側）
+    value: 12
+  space.lg:
+    ja: 広い余白（画面の端・区切りの間）
+    value: 16
+  space.xl:
+    ja: とても広い余白（欄の間）
+    value: 24
+  space.2xl:
+    ja: いちばん広い余白
+    value: 32
+
+  # 角丸（px）
+  radius.sm:
+    ja: 小さい角丸（ボタン・囲み。admin-web の rounded）
+    value: 4
+  radius.full:
+    ja: 丸（札・件数のしるし。admin-web の rounded-full）
+    value: 9999
+
+apps:
+  admin-web:
+    overrides:
+      color.primary: "oklch(54.6% 0.245 262.881)" # blue-600
+      color.primary.strong: "oklch(48.8% 0.243 264.376)" # blue-700
+      color.primary.soft: "oklch(88.2% 0.059 254.128)" # blue-200
+      color.primary.faint: "oklch(97% 0.014 254.604)" # blue-50
+
+  student-app:
+    # ThemeData(colorSchemeSeed: Colors.teal) の seed（Colors.teal = #009688）
+    seed: "#009688"
+    # 色は seed から ColorScheme.fromSeed（明るい側）で出る今の色。文字の大きさは Material 3 の既定（Typography.material2021）
+    overrides:
+      color.primary: "#006A60"
+      color.primary.strong: "#005048"
+      color.primary.faint: "#9EF2E4"
+      color.danger: "#BA1A1A"
+      color.danger.strong: "#93000A"
+      color.danger.faint: "#FFDAD6"
+      color.text.default: "#161D1C"
+      color.text.muted: "#3F4947"
+      color.text.inverse: "#FFFFFF"
+      color.surface.default: "#F4FBF8"
+      font.size.2xs: 11
+      font.size.lg: 22
+      font.size.xl: 24
+      font.size.2xl: 28
+      font.size.3xl: 32
+      font.size.4xl: 36
+      font.size.5xl: 45
+      font.size.6xl: 57
+    # ColorScheme の項目 → トークン（rally_theme.dart はこの項目を上書きする。ほかの項目は seed から出るまま）
+    color_scheme:
+      primary: color.primary
+      onPrimary: color.text.inverse
+      primaryContainer: color.primary.faint
+      onPrimaryContainer: color.primary.strong
+      error: color.danger
+      onError: color.text.inverse
+      errorContainer: color.danger.faint
+      onErrorContainer: color.danger.strong
+      surface: color.surface.default
+      onSurface: color.text.default
+      onSurfaceVariant: color.text.muted
+    # TextTheme の役割 → 文字の大きさのトークン
+    text_theme:
+      displayLarge: font.size.6xl
+      displayMedium: font.size.5xl
+      displaySmall: font.size.4xl
+      headlineLarge: font.size.3xl
+      headlineMedium: font.size.2xl
+      headlineSmall: font.size.xl
+      titleLarge: font.size.lg
+      titleMedium: font.size.base
+      titleSmall: font.size.sm
+      bodyLarge: font.size.base
+      bodyMedium: font.size.sm
+      bodySmall: font.size.xs
+      labelLarge: font.size.sm
+      labelMedium: font.size.xs
+      labelSmall: font.size.2xs

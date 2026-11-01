@@ -48,7 +48,7 @@ export function CoachOverview({
     };
   }, [api, coachId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-muted">読み込み中…</p>;
   if (state.kind === "failed") return <ResultMessage result={{ ok: false, message: state.message }} />;
   if (state.kind === "not_found") {
     return <p className="text-sm">このコーチは見つかりません。コーチの一覧から選び直してください。</p>;
@@ -68,7 +68,7 @@ export function CoachOverview({
         <dt>点の平均（1〜5）</dt>
         <dd>
           {formatAverageRating(overview.average_rating)}
-          <Link href={coachReviewSummaryPath(overview.coach_id)} className="ml-3 text-blue-600 underline">
+          <Link href={coachReviewSummaryPath(overview.coach_id)} className="ml-3 text-primary underline">
             コーチの評価を見る
           </Link>
         </dd>

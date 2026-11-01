@@ -132,15 +132,15 @@ describe("本部の予約", () => {
     expect(screen.getByText("確定待ちのまま 24 時間以内に始まる予約が 1 件あります。")).toBeInTheDocument();
     const [soon, confirmed] = bodyRows("2026年10月26日（月） の予約") as [HTMLElement, HTMLElement];
     const [laterPending, cancelled] = bodyRows("2026年10月28日（水） の予約") as [HTMLElement, HTMLElement];
-    expect(soon).toHaveClass("bg-red-50");
+    expect(soon).toHaveClass("bg-danger-faint");
     for (const row of [confirmed, laterPending, cancelled]) {
-      expect(row).not.toHaveClass("bg-red-50");
+      expect(row).not.toHaveClass("bg-danger-faint");
       expect(within(row).queryByText("開始まで 24 時間以内")).not.toBeInTheDocument();
     }
-    expect(within(soon).getByText("確定待ち")).toHaveClass("bg-amber-100");
-    expect(within(laterPending).getByText("確定待ち")).toHaveClass("bg-amber-100");
-    expect(within(confirmed).getByText("確定済み")).toHaveClass("bg-green-100");
-    expect(within(cancelled).getByText("キャンセル済み")).toHaveClass("bg-gray-100");
+    expect(within(soon).getByText("確定待ち")).toHaveClass("bg-warning-subtle");
+    expect(within(laterPending).getByText("確定待ち")).toHaveClass("bg-warning-subtle");
+    expect(within(confirmed).getByText("確定済み")).toHaveClass("bg-success-subtle");
+    expect(within(cancelled).getByText("キャンセル済み")).toHaveClass("bg-muted");
   });
 
   test("始まってしまった確定待ちと、確定済みで近いものは目立たせない", async () => {

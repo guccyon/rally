@@ -79,7 +79,7 @@ export function CoachNotifications({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
-  if (!result) return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (!result) return <p className="text-sm text-muted">読み込み中…</p>;
   if (!result.ok) return <ResultMessage result={{ ok: false, message: result.message }} />;
   if (result.data.length === 0) {
     return (
@@ -96,11 +96,11 @@ export function CoachNotifications({
           <>
             <span className="block">
               {newIds.has(notification.notification_id) && (
-                <span className="mr-2 rounded bg-red-600 px-2 text-xs text-white">新着</span>
+                <span className="mr-2 rounded bg-danger px-2 text-xs text-inverse">新着</span>
               )}
               {notification.body}
             </span>
-            <span className="block text-gray-600">{formatDateTime(notification.created_at)}</span>
+            <span className="block text-secondary">{formatDateTime(notification.created_at)}</span>
           </>
         );
         return (
@@ -109,10 +109,10 @@ export function CoachNotifications({
               <button
                 type="button"
                 onClick={() => onOpen(notification.kind)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-gray-50"
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-subtle"
               >
                 <span>{content}</span>
-                <span className="shrink-0 text-blue-700">「{destination}」へ</span>
+                <span className="shrink-0 text-primary-strong">「{destination}」へ</span>
               </button>
             ) : (
               <div className="px-3 py-2">{content}</div>

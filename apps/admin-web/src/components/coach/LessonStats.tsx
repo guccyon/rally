@@ -44,7 +44,7 @@ export function LessonStats({ api }: { api: Pick<CoachApi, "getMyLessonStats"> }
   return (
     <div className="space-y-2">
       <h3 className="font-semibold">今月と先月の実績</h3>
-      {!result && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {!result && <p className="text-sm text-muted">読み込み中…</p>}
       {result && !result.ok && <ResultMessage result={{ ok: false, message: result.message }} />}
       {result?.ok && <LessonStatsTable stats={result.data} />}
     </div>
@@ -94,7 +94,7 @@ export function LessonStatsTable({
       {months.every(({ month }) => isEmptyMonth(month)) && (
         <p className="text-sm">今月と先月は、完了したレッスンも受けた評価もまだありません。</p>
       )}
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-secondary">
         レッスンは完了を記録した月、評価は生徒が送った月で数えます（日本時間）。
       </p>
     </>

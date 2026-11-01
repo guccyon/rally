@@ -47,7 +47,7 @@ export function StudentActivity({
     };
   }, [api, studentId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-muted">読み込み中…</p>;
   if (state.kind === "not_found") {
     return <ResultMessage result={{ ok: false, message: NOT_FOUND }} />;
   }
@@ -99,7 +99,7 @@ export function StudentActivity({
           <p className="text-sm">まだ受けたレッスンはありません</p>
         ) : (
           <>
-            <p className="mb-2 text-sm text-gray-600">完了した新しい順に、最大 20 件まで出します。</p>
+            <p className="mb-2 text-sm text-secondary">完了した新しい順に、最大 20 件まで出します。</p>
             <table aria-label="直近の受けたレッスン" className="w-full text-left text-sm">
               <thead>
                 <tr>

@@ -11,7 +11,7 @@ export function AnnouncementList({ announcements }: { announcements: Schemas["An
       {announcements.map((announcement) => (
         <li key={announcement.announcement_id} className="rounded border p-3">
           <p className="font-semibold">{announcement.title}</p>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-secondary">
             {announcementTargetLabel(announcement.sport)}・{announcement.recipient_count} 人に送信・
             {formatDateTime(announcement.sent_at)}
           </p>

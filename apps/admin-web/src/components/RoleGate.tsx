@@ -22,7 +22,7 @@ export function RoleGate({
     if (session !== undefined && !allowed) router.replace("/");
   }, [session, allowed, router]);
 
-  if (!session || !allowed) return <p className="p-6 text-gray-500">読み込み中…</p>;
+  if (!session || !allowed) return <p className="p-6 text-muted">読み込み中…</p>;
 
   return (
     <div className="mx-auto max-w-3xl p-6">

@@ -21,7 +21,7 @@ export function WithdrawSlotAction({ onWithdraw }: { onWithdraw: () => Promise<v
     return (
       <button
         type="button"
-        className="rounded border border-red-600 px-2 py-0.5 text-red-700"
+        className="rounded border border-danger px-2 py-0.5 text-danger-strong"
         onClick={() => setConfirming(true)}
       >
         取り下げる
@@ -37,7 +37,7 @@ export function WithdrawSlotAction({ onWithdraw }: { onWithdraw: () => Promise<v
         <button
           type="button"
           disabled={busy}
-          className="rounded bg-red-600 px-2 py-0.5 text-white disabled:opacity-50"
+          className="rounded bg-danger px-2 py-0.5 text-inverse disabled:opacity-50"
           onClick={() => void confirm()}
         >
           取り下げを確定

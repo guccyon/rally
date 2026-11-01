@@ -47,10 +47,10 @@ export function LowRatedReviewList({
       <p className="text-sm">
         生徒がレッスンに付けた評価のうち、点の低いものを送った時刻の新しい順に見られます。コーチの名前から、そのコーチの評価へ移れます。
       </p>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted">
           直近 {state.list.period_days} 日に送られた、{state.list.max_rating} 点以下の評価です。
         </p>
       )}
@@ -63,20 +63,20 @@ export function LowRatedReviewList({
             <li key={review.review_id} className="space-y-1 px-3 py-2">
               <p>
                 <span className="font-semibold">{review.rating} 点</span>
-                <span className="text-gray-500">（5 点満点）</span>
+                <span className="text-muted">（5 点満点）</span>
               </p>
               <p>
                 コーチ:{" "}
                 <Link
                   href={coachReviewSummaryPath(review.coach_id)}
-                  className="text-blue-600 underline"
+                  className="text-primary underline"
                 >
                   {review.coach_display_name ?? "（名前を表示できません）"}
                 </Link>
               </p>
               {review.lesson_menu && <p>メニュー: {review.lesson_menu.name}</p>}
               <p>{review.comment}</p>
-              <p className="text-gray-500">{formatDateTime(review.submitted_at)}</p>
+              <p className="text-muted">{formatDateTime(review.submitted_at)}</p>
             </li>
           ))}
         </ul>

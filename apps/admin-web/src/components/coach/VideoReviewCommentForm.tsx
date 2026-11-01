@@ -67,10 +67,10 @@ export function VideoReviewCommentForm({
       {aiFeedback && (
         <section
           aria-label="AI の一次フィードバック（参考）"
-          className="rounded border border-dashed bg-gray-50 p-2 text-sm"
+          className="rounded border border-dashed bg-subtle p-2 text-sm"
         >
           <h4 className="font-semibold">AI の一次フィードバック（参考）</h4>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             AI が自動で作った文です。コーチの添削ではなく、下の添削コメントには入りません。
           </p>
           <p className="mt-1 whitespace-pre-wrap">{aiFeedback}</p>
@@ -90,7 +90,7 @@ export function VideoReviewCommentForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded bg-primary px-4 py-1 text-inverse disabled:opacity-50"
         >
           添削を返却
         </button>

@@ -147,7 +147,7 @@ export function LessonMenus({
       <ResultMessage result={result} />
       <div className="space-y-2">
         <h3 className="font-semibold">自分のメニュー</h3>
-        {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+        {list.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
         {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
         {list.kind === "loaded" && list.menus.length === 0 && (
           <p className="text-sm">まだレッスンメニューを登録していません。</p>

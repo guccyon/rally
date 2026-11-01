@@ -2,11 +2,11 @@
 export function ResultMessage({ result }: { result: { ok: boolean; message: string } | null }) {
   if (!result) return null;
   return result.ok ? (
-    <p role="status" className="text-green-700">
+    <p role="status" className="text-success">
       {result.message}
     </p>
   ) : (
-    <p role="alert" className="text-red-600">
+    <p role="alert" className="text-danger">
       {result.message}
     </p>
   );

@@ -81,7 +81,7 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
           ))}
         </select>
       </label>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.students.length === 0 && (
         <p className="text-sm">まだ生徒はいません</p>
@@ -104,7 +104,7 @@ export function StudentDirectory({ api }: { api: Pick<HeadquartersApi, "listStud
             {students.map((student) => (
               <tr key={student.student_id} className="border-t">
                 <td className="py-1">
-                  <Link href={studentActivityPath(student.student_id)} className="text-blue-600 underline">
+                  <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
                     {student.display_name}
                   </Link>
                 </td>

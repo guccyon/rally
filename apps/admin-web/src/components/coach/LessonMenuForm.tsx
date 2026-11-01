@@ -22,7 +22,7 @@ const LESSON_TYPES = Object.keys(LESSON_TYPE_LABELS) as Schemas["LessonType"][];
 function Remaining({ max, length }: { max: number; length: number }) {
   const remaining = max - length;
   return (
-    <span className={remaining < 0 ? "text-sm text-red-600" : "text-sm text-gray-500"}>
+    <span className={remaining < 0 ? "text-sm text-danger" : "text-sm text-muted"}>
       {remaining < 0 ? `${max} 文字を ${-remaining} 文字超えています` : `あと ${remaining} 文字`}
     </span>
   );
@@ -31,7 +31,7 @@ function Remaining({ max, length }: { max: number; length: number }) {
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-sm text-red-600">
+    <p id={id} className="text-sm text-danger">
       {message}
     </p>
   );
@@ -121,7 +121,7 @@ export function LessonMenuForm({
           </label>
         )}
       </div>
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-secondary">
         スポーツは、あなたが提供しているスポーツから選んでください（提供していないスポーツのメニューは登録できません）。
       </p>
       <FieldError id="lesson-menu-duration-error" message={errors.durationMinutes} />
@@ -167,7 +167,7 @@ export function LessonMenuForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded bg-primary px-4 py-1 text-inverse disabled:opacity-50"
         >
           {submitLabel}
         </button>

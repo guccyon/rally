@@ -85,7 +85,7 @@ export function CoachAcceptanceList({
         受付を止めたコーチの枠は生徒の検索に出ず、新しい予約を受け付けません。入っている予約と枠はそのままです。
       </p>
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
         <p className="text-sm">コーチがまだいません</p>
@@ -103,7 +103,7 @@ export function CoachAcceptanceList({
             {state.coaches.map((coach) => (
               <tr key={coach.coach_id} className="border-t align-top">
                 <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-blue-600 underline">
+                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
                     {coach.display_name}
                   </Link>
                 </td>

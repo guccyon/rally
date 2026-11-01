@@ -72,10 +72,10 @@ export function LessonReviewReplyForm({
   return (
     <div className="space-y-2 pt-1">
       {reply && !editing && (
-        <section aria-label="あなたの返信" className="rounded bg-gray-50 p-2">
+        <section aria-label="あなたの返信" className="rounded bg-subtle p-2">
           <h4 className="font-semibold">あなたの返信</h4>
           <p className="whitespace-pre-wrap">{reply.comment}</p>
-          <p className="text-gray-500">{formatDateTime(reply.replied_at)}</p>
+          <p className="text-muted">{formatDateTime(reply.replied_at)}</p>
         </section>
       )}
       {editing ? (
@@ -89,7 +89,7 @@ export function LessonReviewReplyForm({
               onChange={(event) => setComment(event.target.value)}
             />
           </label>
-          <p className={remaining < 0 ? "text-red-600" : "text-gray-500"}>
+          <p className={remaining < 0 ? "text-danger" : "text-muted"}>
             {remaining < 0
               ? `${REPLY_MAX_LENGTH} 文字を ${-remaining} 文字超えています`
               : `あと ${remaining} 文字`}
@@ -98,7 +98,7 @@ export function LessonReviewReplyForm({
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+              className="rounded bg-primary px-4 py-1 text-inverse disabled:opacity-50"
             >
               保存する
             </button>

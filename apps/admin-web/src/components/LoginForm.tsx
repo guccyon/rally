@@ -52,11 +52,11 @@ export function LoginForm() {
         />
       </label>
       {error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {error}
         </p>
       )}
-      <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+      <button type="submit" className="rounded bg-primary px-4 py-1 text-inverse">
         ログイン
       </button>
     </form>

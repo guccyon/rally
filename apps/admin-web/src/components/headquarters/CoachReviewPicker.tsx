@@ -93,7 +93,7 @@ export function CoachReviewPicker({
       <p className="text-sm">
         生徒がレッスンに付けた評価の、これまでのすべての件数と点の平均と、1 件ずつの点と一言です。
       </p>
-      {coaches.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {coaches.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
       {coaches.kind === "failed" && (
         <ResultMessage result={{ ok: false, message: coaches.message }} />
       )}
@@ -117,7 +117,7 @@ export function CoachReviewPicker({
           </select>
         </label>
       )}
-      {reviews.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {reviews.kind === "loading" && <p className="text-sm text-muted">読み込み中…</p>}
       {reviews.kind === "failed" && (
         <ResultMessage result={{ ok: false, message: reviews.message }} />
       )}
