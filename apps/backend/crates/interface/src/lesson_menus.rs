@@ -12,8 +12,8 @@ use application::{
     catalog::{
         CoachLessonMenuList, CreateLessonMenu, CreateLessonMenuCommand, CreateLessonMenuError,
         LessonMenuCoachDisplayNameLookup, LessonMenuRecentBookingCountLookup, LessonMenuRepository,
-        ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus, UpdateLessonMenu,
-        UpdateLessonMenuCommand, UpdateLessonMenuError, lesson_menu_id_uuid,
+        ListCoachLessonMenus, ListLessonMenus, ListLessonMenusQuery, ListMyLessonMenus,
+        UpdateLessonMenu, UpdateLessonMenuCommand, UpdateLessonMenuError, lesson_menu_id_uuid,
     },
     clock::Clock,
     identity::{AccountRepository, TokenVerifier, account_id_uuid},
@@ -32,7 +32,7 @@ use domain::{
     DomainError,
     catalog::{
         HeadquartersUnpublish, LessonDuration, LessonFormat, LessonMenu, LessonMenuContent,
-        LessonMenuDescription, LessonMenuName, Sport,
+        LessonMenuDescription, LessonMenuName, LessonMenuNameQuery, Sport,
     },
     identity::{AccountId, Role},
 };
@@ -92,6 +92,7 @@ pub struct ListCoachLessonMenusParams {
 /// admin-web の `listLessonMenus` のクエリ。
 #[derive(Deserialize)]
 pub struct ListLessonMenusParams {
+    q: Option<String>,
     sport: Option<String>,
     published: Option<bool>,
     coach_id: Option<String>,
@@ -295,9 +296,10 @@ where
 }
 
 /// `GET /lesson-menus`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// すべてのコーチのメニューを、`sport`・`published`・`coach_id` があればそれで絞って返す（ゴルフも載せる）。
+/// すべてのコーチのメニューを、`q`・`sport`・`published`・`coach_id` があればそれで絞って返す（ゴルフも載せる）。
+/// `q` は名前に部分一致するメニューだけで、一致のしかたは `listStudents` の `q` と同じ（[`LessonMenuNameQuery`]）。
 /// 各行に直近 30 日に入った予約の数（キャンセルを除く）を載せる（予約がなければ 0）。
-/// `coach_id` が UUID でなければ 422。いないコーチの ID なら空の一覧（404 にしない）。
+/// 長すぎる `q`・UUID でない `coach_id` は 422。いないコーチの ID なら空の一覧（404 にしない）。
 pub async fn list_lesson_menus<M, R, C, D, B>(
     State(state): State<Shared<M, R, C, D, B>>,
     params: Result<Query<ListLessonMenusParams>, QueryRejection>,
@@ -311,18 +313,27 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
-    let coach_id = params
-        .coach_id
-        .as_deref()
-        .map(|id| {
-            account_id_uuid::parse(id)
-                .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
-        })
-        .transpose()?;
+    let query = ListLessonMenusQuery {
+        name: params
+            .q
+            .as_deref()
+            .map(LessonMenuNameQuery::new)
+            .transpose()?
+            .flatten(),
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        is_published: params.published,
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+            })
+            .transpose()?,
+    };
     let list = state
         .list_lesson_menus
-        .execute(sport, params.published, coach_id)
+        .execute(&query)
         .await
         .map_err(ApiError::internal)?;
     coach_lesson_menu_list_body(&list).map(Json)

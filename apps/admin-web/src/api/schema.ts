@@ -894,6 +894,14 @@ export interface paths {
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
          *       非公開（`false`）のメニューだけ、`coach_id` を付ければそのコーチのメニューだけ（公開中も非公開もまとめて。コーチ 1 人が
          *       出しているメニューを見るのに使う）。いくつ付けてもすべてを満たすもの。付けなければすべて（ゴルフも含む）
+         *     - 名前で探す（任意）: `q` を付ければ、メニューの名前 `name` に `q` を部分文字列として含むメニューだけを返す（問い合わせのあった
+         *       メニューを本部が探すのに使う）。一致のしかたは `listStudents` の `q` と同じ: `q` の前後の空白（全角の空白を含む）は除いて
+         *       比べ、途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・
+         *       ひらがなとカタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。
+         *       `q` を付けない・空・空白だけのときは絞り込まない。`sport`・`published`・`coach_id` と組み合わせられ、並べ方は下と同じ。
+         *       名前以外（説明・コーチの表示名など）では探さない
+         *     - `q` は前後の空白を除いて 40 文字（Unicode のコードポイントの数。メニューの名前の上限と同じ。`listStudents` の `q` が
+         *       表示名の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
          *     - `sport` が `Sport` の値でない・`published` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
          *     - コーチでない ID・ない ID・メニューのないコーチの `coach_id` は、404 にせず `lesson_menus` が空の配列
          *     - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
@@ -3803,6 +3811,8 @@ export interface operations {
     listLessonMenus: {
         parameters: {
             query?: {
+                /** @description メニューの名前の検索語。名前に部分一致するメニューだけを返す。前後の空白を除いて 40 文字まで（空白だけなら絞り込まない） */
+                q?: string;
                 sport?: components["schemas"]["Sport"];
                 /** @description 公開中か（`true` なら公開中だけ、`false` なら非公開だけ） */
                 published?: boolean;

@@ -10,6 +10,7 @@ use application::{
     profile::CoachProfileRepository,
 };
 use domain::{
+    NameQuery,
     catalog::Sport,
     identity::{Account, AccountId, Coach, Email, Role, RoleAttributes},
     profile::{CoachBio, DisplayName, DisplayNameQuery},
@@ -147,7 +148,7 @@ impl AccountRepository for PgAccountRepository {
         &self,
         name: Option<&DisplayNameQuery>,
     ) -> Result<Vec<Account>, Unavailable> {
-        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名は DisplayNameQuery のそろえ方の
+        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名は NameQuery のそろえ方の
         // 表（FOLD_FROM → FOLD_TO）で translate してから（照合順序・ロケールに左右されない）、検索語のそろえた形を
         // 部分文字列として探す（strpos なので % や _ も文字のまま）
         let rows: Vec<StudentRow> = sqlx::query_as(
@@ -159,8 +160,8 @@ impl AccountRepository for PgAccountRepository {
         )
         .bind(role_value(Role::Student))
         .bind(name.map(DisplayNameQuery::folded))
-        .bind(DisplayNameQuery::FOLD_FROM)
-        .bind(DisplayNameQuery::FOLD_TO)
+        .bind(NameQuery::FOLD_FROM)
+        .bind(NameQuery::FOLD_TO)
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;

@@ -12,9 +12,11 @@ pub mod lesson;
 pub mod live_lesson;
 pub mod matching;
 pub mod messaging;
+mod name_query;
 pub mod notification;
 pub mod profile;
 pub mod review;
 pub mod scheduling;
 
 pub use error::DomainError;
+pub use name_query::NameQuery;

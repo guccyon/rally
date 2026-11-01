@@ -77,6 +77,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LessonMenuNameTooLong { max } => {
             format!("レッスンメニューの名前は {max} 文字まで")
         }
+        DomainError::LessonMenuNameQueryTooLong { max } => {
+            format!("レッスンメニューの名前の検索語は {max} 文字まで")
+        }
         DomainError::LessonMenuDescriptionTooLong { max } => {
             format!("レッスンメニューの説明は {max} 文字まで")
         }
@@ -306,6 +309,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonMenuNameTooLong { max: 40 }),
             "レッスンメニューの名前は 40 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonMenuNameQueryTooLong { max: 40 }),
+            "レッスンメニューの名前の検索語は 40 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::LessonMenuDescriptionTooLong { max: 400 }),
