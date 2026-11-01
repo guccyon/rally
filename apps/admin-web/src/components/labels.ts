@@ -28,6 +28,13 @@ export const BOOKING_STATUS_LABELS: Record<Schemas["BookingStatus"], string> = {
   cancelled: "キャンセル済み",
 };
 
+/** 予約をキャンセルした人の役割（契約の BookingCanceller）。 */
+export const BOOKING_CANCELLER_LABELS: Record<Schemas["BookingCanceller"], string> = {
+  student: "生徒",
+  coach: "コーチ",
+  headquarters: "本部",
+};
+
 export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], string> = {
   in_progress: "通話中",
   ended: "終了",

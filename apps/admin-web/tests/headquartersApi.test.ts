@@ -433,6 +433,28 @@ describe("headquartersApi", () => {
     });
   });
 
+  test("listCancelledBookings は期間をクエリにして GET /api/bookings/cancelled を呼ぶ", async () => {
+    const list = { from: "2026-10-20", to: "2026-10-26", bookings: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listCancelledBookings({ from: "2026-10-20", to: "2026-10-26" });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/bookings/cancelled");
+    expect(url.searchParams.get("from")).toBe("2026-10-20");
+    expect(url.searchParams.get("to")).toBe("2026-10-26");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listCancelledBookings は期間を省けばクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-20", to: "2026-10-26", bookings: [] }));
+    await api.listCancelledBookings({});
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/bookings/cancelled");
+    expect(url.search).toBe("");
+  });
+
   test("suspendCoach は POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const acceptance = { coach_id: coachId, acceptance_status: "suspended" };
