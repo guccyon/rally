@@ -432,8 +432,9 @@ export const FIXTURES: Fixture[] = [
       acceptance_status: "accepting",
       review_count: 3,
       average_rating: 4.67,
-      low_rated_review_count: 0,
-      unhandled_low_rated_review_count: 0,
+      // 低い評価の一覧（LOW_REVIEWS）の鈴木 コーチの 2 件。どちらも対応済みの印はない。
+      low_rated_review_count: 2,
+      unhandled_low_rated_review_count: 2,
       current_month: {
         month: "2026-10",
         live_lesson_count: 12,
