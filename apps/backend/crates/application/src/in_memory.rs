@@ -1012,6 +1012,24 @@ impl VideoRepository for InMemoryVideoRepository {
             .collect())
     }
 
+    async fn videos_returned_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Video>, Unavailable> {
+        Ok(self
+            .videos
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| {
+                v.review()
+                    .is_some_and(|r| starts_at <= r.returned_at() && r.returned_at() < ends_at)
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {
         self.videos.lock().unwrap().push(video);
         Ok(())

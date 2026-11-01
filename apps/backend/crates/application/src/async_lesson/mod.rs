@@ -7,10 +7,12 @@ mod get_video_review;
 mod list_coach_videos;
 mod list_my_videos;
 mod list_pending_video_reviews;
+mod list_returned_video_reviews;
 mod my_video_list;
 mod pending_video_review_list;
 mod repository;
 mod return_video_review;
+mod returned_video_review_list;
 mod review_gate;
 mod submit_video;
 mod update_video_error;
@@ -28,12 +30,16 @@ pub use get_video_review::{GetVideoReview, GetVideoReviewError, GetVideoReviewQu
 pub use list_coach_videos::ListCoachVideos;
 pub use list_my_videos::ListMyVideos;
 pub use list_pending_video_reviews::ListPendingVideoReviews;
+pub use list_returned_video_reviews::{
+    ListReturnedVideoReviews, ListReturnedVideoReviewsError, ListReturnedVideoReviewsQuery,
+};
 pub use my_video_list::MyVideoList;
 pub use pending_video_review_list::PendingVideoReviewList;
 pub use repository::VideoRepository;
 pub use return_video_review::{
     ReturnVideoReview, ReturnVideoReviewCommand, ReturnVideoReviewError,
 };
+pub use returned_video_review_list::ReturnedVideoReviewList;
 pub use review_gate::ReviewGate;
 pub use submit_video::{SubmitVideo, SubmitVideoCommand, SubmitVideoError, SubmittedVideo};
 pub use update_video_error::UpdateVideoError;
