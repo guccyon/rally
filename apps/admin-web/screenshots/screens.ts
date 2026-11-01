@@ -69,6 +69,16 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
+  {
+    id: "hq-coach-overview",
+    title: "本部: コーチの様子",
+    role: "headquarters",
+    path: "/headquarters/coaches",
+    open: async (page) => {
+      await page.getByRole("link", { name: "鈴木 コーチ" }).click();
+      await page.getByRole("heading", { name: "鈴木 コーチ" }).waitFor();
+    },
+  },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   {
     id: "hq-lesson-menu-unpublish",
