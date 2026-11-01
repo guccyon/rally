@@ -2,7 +2,8 @@
 //! で読んで評価を保存・読み取りできること、同じレッスンの 2 回目の保存の拒否、コーチごとの読み取り、送った時刻での
 //! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む。スポーツで絞るときは
 //! レッスンのスポーツを予約の枠から読む）。評価へのコーチの返信の
-//! 保存と上書き、評価の ID での読み取り。
+//! 保存と上書き、評価の ID での読み取り。低い評価への本部の対応済みの印の保存（2 回目は最初の印が残る）と、一覧の
+//! 未対応・対応済みの絞り込み。DB が印の形と付けたアカウントの役割を守ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -20,17 +21,20 @@ use application::{
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::{
         GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, ListLowRatedReviews,
-        ReplyToLessonReview, ReplyToLessonReviewCommand, ReplyToLessonReviewError,
-        SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
+        MarkLowRatedReviewHandled, MarkLowRatedReviewHandledCommand,
+        MarkLowRatedReviewHandledError, ReplyToLessonReview, ReplyToLessonReviewCommand,
+        ReplyToLessonReviewError, SubmitLessonReview, SubmitLessonReviewCommand,
+        SubmitLessonReviewError,
     },
     scheduling::SchedulingBookingLookup,
 };
 use domain::{
     catalog::Sport,
+    identity::Role,
     lesson::{LessonCompletion, LessonCompletionId},
     review::{
         LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
-        LessonReviewReplyComment, Rating, ReviewError,
+        LessonReviewReplyComment, LowRatedReviewHandling, Rating, ReviewError,
     },
 };
 use infra::{
@@ -223,7 +227,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         ProfileStudentDisplayNameLookup::new(accounts),
         FixedClock(now),
     );
-    let list = use_case.execute(None).await.unwrap();
+    let list = use_case.execute(None, None).await.unwrap();
     assert_eq!(
         list.reviews,
         [latest.clone(), edge.clone()],
@@ -242,9 +246,9 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
     }
 
     // 予約の枠はテニス
-    let tennis = use_case.execute(Some(Sport::Tennis)).await.unwrap();
+    let tennis = use_case.execute(Some(Sport::Tennis), None).await.unwrap();
     assert_eq!(tennis.reviews, [latest, edge], "テニスのレッスンの評価");
-    let golf = use_case.execute(Some(Sport::Golf)).await.unwrap();
+    let golf = use_case.execute(Some(Sport::Golf), None).await.unwrap();
     assert!(golf.reviews.is_empty(), "ゴルフのレッスンの評価はない");
 }
 
@@ -335,5 +339,187 @@ async fn the_reviewed_coach_replies_and_a_second_reply_overwrites_it(pool: PgPoo
     assert_eq!(
         reviews.find_by_id(review.id()).await.unwrap(),
         Some(replied)
+    );
+}
+
+fn mark(
+    reviews: &PgLessonReviewRepository,
+    hours: u64,
+) -> MarkLowRatedReviewHandled<PgLessonReviewRepository, FixedClock> {
+    MarkLowRatedReviewHandled::new(reviews.clone(), FixedClock(at(hours)))
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_marks_a_low_review_handled_once_and_lists_only_the_unhandled(pool: PgPool) {
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let other_headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let low = review_at(&pool, &completed_lesson(&pool).await, 1, at(13)).await;
+    let unhandled = review_at(&pool, &completed_lesson(&pool).await, 2, at(14)).await;
+    let good = review_at(&pool, &completed_lesson(&pool).await, 4, at(13)).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    assert_eq!(
+        reviews
+            .find_by_id(low.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .handling(),
+        None,
+        "印のない評価"
+    );
+
+    let handled = mark(&reviews, 15)
+        .execute(MarkLowRatedReviewHandledCommand {
+            account_id: headquarters,
+            review_id: low.id(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        handled.handling(),
+        Some(&LowRatedReviewHandling::new(headquarters, at(15)))
+    );
+    // 2 回目（別の本部のアカウントでも）は最初の印を返し、保存先も変えない
+    let again = mark(&reviews, 16)
+        .execute(MarkLowRatedReviewHandledCommand {
+            account_id: other_headquarters,
+            review_id: low.id(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(again, handled);
+    // 保存先にじかに後の印を書いても、最初の印が残る（並行に付けたときの後の方）
+    reviews
+        .save_handling(
+            low.id(),
+            &LowRatedReviewHandling::new(other_headquarters, at(17)),
+        )
+        .await
+        .unwrap();
+    // どの読み取りも印を含めて読み、点・一言は変わらない
+    assert_eq!(
+        reviews.find_by_id(low.id()).await.unwrap(),
+        Some(handled.clone())
+    );
+    assert_eq!(
+        reviews.find_by_lesson(low.lesson_id()).await.unwrap(),
+        Some(handled.clone())
+    );
+    assert_eq!(
+        reviews.find_by_coach(low.coach_id()).await.unwrap(),
+        std::slice::from_ref(&handled)
+    );
+    assert_eq!(handled.comment(), low.comment());
+
+    // 低い評価でない評価・ない評価は拒み、何も変えない
+    let result = mark(&reviews, 16)
+        .execute(MarkLowRatedReviewHandledCommand {
+            account_id: headquarters,
+            review_id: good.id(),
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(MarkLowRatedReviewHandledError::Invalid(
+                ReviewError::NotLowRated
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(reviews.find_by_id(good.id()).await.unwrap(), Some(good));
+    let result = mark(&reviews, 16)
+        .execute(MarkLowRatedReviewHandledCommand {
+            account_id: headquarters,
+            review_id: LessonReviewId::from_u128(99),
+        })
+        .await;
+    assert!(
+        matches!(result, Err(MarkLowRatedReviewHandledError::ReviewNotFound)),
+        "{result:?}"
+    );
+
+    // 一覧は未対応・対応済みで絞れる
+    let accounts = PgAccountRepository::new(pool.clone());
+    let use_case = ListLowRatedReviews::new(
+        reviews.clone(),
+        LessonCompletionMenuLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        LessonCompletionSportLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ProfileStudentDisplayNameLookup::new(accounts),
+        FixedClock(at(24 * 3)),
+    );
+    let ids = |list: application::review::LowRatedReviewList| -> Vec<LessonReviewId> {
+        list.reviews.iter().map(LessonReview::id).collect()
+    };
+    assert_eq!(
+        ids(use_case.execute(None, Some(false)).await.unwrap()),
+        [unhandled.id()]
+    );
+    assert_eq!(
+        ids(use_case.execute(None, Some(true)).await.unwrap()),
+        [low.id()]
+    );
+    assert_eq!(
+        ids(use_case.execute(None, None).await.unwrap()),
+        [unhandled.id(), low.id()]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn the_db_keeps_the_shape_of_the_mark_and_only_headquarters_can_make_it(pool: PgPool) {
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let coach = support::coach(&pool).await;
+    let review = review_at(&pool, &completed_lesson(&pool).await, 1, at(13)).await;
+    let id = application::review::lesson_review_id_uuid::to_uuid(review.id());
+    let account = |id| application::identity::account_id_uuid::to_uuid(id);
+
+    for (sql, constraint) in [
+        (
+            "UPDATE review.lesson_reviews SET handled_by = $2, handled_at = NULL WHERE review_id = $1",
+            "lesson_reviews_handling_shape",
+        ),
+        (
+            "UPDATE review.lesson_reviews SET handled_by = $2, handled_at = '2026-01-01T00:00:00Z' WHERE review_id = $1",
+            "lesson_reviews_handled_after_submission",
+        ),
+    ] {
+        let error = sqlx::query(sql)
+            .bind(id)
+            .bind(account(headquarters))
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.constraint()),
+            Some(constraint),
+            "{error}"
+        );
+    }
+    // 本部でないアカウントは印を付けられない
+    let error = sqlx::query(
+        "UPDATE review.lesson_reviews SET handled_by = $2, handled_at = submitted_at WHERE review_id = $1",
+    )
+    .bind(id)
+    .bind(account(coach))
+    .execute(&pool)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.as_database_error().and_then(|e| e.constraint()),
+        Some("lesson_reviews_handled_by_fkey"),
+        "{error}"
     );
 }
