@@ -1215,6 +1215,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/video-reviews/returned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 返した動画添削の記録を期間で見る（本部）
+         * @description コーチが添削を返した（`returnVideoReview` した）動画を、コーチを問わず横断で、返却の日付（日本時間）が `from` から `to` まで
+         *     （両端を含む）のものについて、送付から返却までにかかった時間とともに返却の新しい順に返す。本部が、動画添削が返されるまでに
+         *     かかった時間（KPI「添削の返却リードタイム」。`specs/analytics/kpi.yaml` の `video_review_lead_time`）を 1 件ずつたどるための記録。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     かかった時間の数え方と並べ方はここが正本（実装は backend の domain `Video::review_lead_hours` と
+         *     `ReturnedVideoReviewFilter` の 1 か所）。
+         *
+         *     - 期間: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに、添削を返した動画。送付が期間より前でもよい。
+         *       `from` と `to` の両方を省けば今日（サーバーの現在時刻の日本時間の日付）までの 7 日（今日を含めて 7 日）。`to` だけを付ければ
+         *       `to` から遡って 7 日、`from` だけを付ければ `from` から 7 日目まで（どちらも両端を含めて 7 日）。応答の `from` / `to` は
+         *       省いたときに決めた日付を含めて、実際に使った期間
+         *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+         *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+         *     - 任意の `coach_id` で、そのコーチ（動画の送り先で、添削を返したコーチ）の動画だけに絞れる。期間と組み合わせられ、期間の規則と
+         *       並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・
+         *       期間に返却がないコーチは、404 にせず `reviews` が空の配列
+         *     - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
+         *       端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
+         *       （KPI は小数で、ここは切り捨てた整数）
+         *     - 並べ方: 返却の時刻 `returned_at` の新しい順。同じ時刻は `video_id` の順
+         *     - 対象: 返却済みの動画だけ（スポーツを問わない）。返却を待っている動画は `listPendingVideoReviews`
+         *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチの ID と表示名・送った時刻・返した時刻・かかった時間を載せる。添削の中身
+         *       （コメント）は載せない。表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当する動画がなければ `reviews` は空の配列（404 にはしない）
+         *     - 照会だけで、何も保存しない
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listReturnedVideoReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/videos/{video_id}/review": {
         parameters: {
             query?: never;
@@ -2567,6 +2614,53 @@ export interface components {
             /** @description 送った時刻の古い順（経過時間の長い順。同じ時刻は `video_id` の順） */
             videos: components["schemas"]["PendingVideoReview"][];
         };
+        /** @description 本部が見る返した動画添削の記録の 1 件。生徒が送った動画（glossary の async_lesson）で、コーチが添削（glossary の video_review）を返したもの */
+        ReturnedVideoReview: {
+            /** Format: uuid */
+            video_id: string;
+            sport: components["schemas"]["Sport"];
+            /**
+             * Format: uuid
+             * @description 動画を送った生徒
+             */
+            student_id: string;
+            /** @description 生徒のアカウントの表示名。アカウントが引けないときは載らない */
+            student_display_name?: string;
+            /**
+             * Format: uuid
+             * @description 担当のコーチ（動画の送り先で、添削を返したコーチ）
+             */
+            coach_id: string;
+            /** @description コーチのアカウントの表示名。アカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 生徒が動画を送った時刻
+             */
+            submitted_at: string;
+            /**
+             * Format: date-time
+             * @description コーチが添削を返した時刻
+             */
+            returned_at: string;
+            /** @description 送った時刻から返した時刻までにかかった時間（時間。1 時間に満たない端数は切り捨て） */
+            lead_time_hours: number;
+        };
+        /** @description 本部が見る返した動画添削の記録（期間・選び方・並べ方は `listReturnedVideoReviews` の説明） */
+        ReturnedVideoReviewList: {
+            /**
+             * Format: date
+             * @description 実際に使った期間の始まりの日付（日本時間。含む）
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description 実際に使った期間の終わりの日付（日本時間。含む）
+             */
+            to: string;
+            /** @description 返した時刻の新しい順（同じ時刻は `video_id` の順） */
+            reviews: components["schemas"]["ReturnedVideoReview"][];
+        };
         /**
          * @description student: スレッドの生徒が送った / coach: スレッドの担当コーチが送った / system: システムが流した（当事者のどちらでもない。お知らせなど）
          * @enum {string}
@@ -3807,6 +3901,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingVideoReviewList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listReturnedVideoReviews: {
+        parameters: {
+            query?: {
+                /** @description 期間の始まりの日付（日本時間。含む。返却の日付）。省けば `to` から遡って 7 日目 */
+                from?: string;
+                /** @description 期間の終わりの日付（日本時間。含む。返却の日付）。`from` も省けば今日、`from` だけを付ければ `from` から 7 日目 */
+                to?: string;
+                /**
+                 * @description あればこのコーチの動画だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 期間に返した動画添削の記録 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnedVideoReviewList"];
                 };
             };
             401: components["responses"]["Unauthorized"];
