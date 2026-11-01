@@ -1,6 +1,7 @@
 //! `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）の統合テスト。本部には、プロフィールに
 //! 足りない項目のあるコーチを、空の項目の名前・最後に更新した時刻（今は記録していないので null）・登録した時刻とともに、
-//! 登録の古い順で返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
+//! 登録の古い順で返すことを OpenAPI のスキーマで検査する。任意の `sport` で絞れ、`Sport` の値でなければ 422。
+//! コーチ・生徒は 403、トークンがなければ 401。
 
 use std::time::{Duration, SystemTime};
 
@@ -97,7 +98,12 @@ async fn app() -> Router {
 
 /// `GET /coaches/incomplete-profiles`。レスポンスを admin-web の契約で検査する。
 async fn list(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/coaches/incomplete-profiles");
+    list_with_query(router, token, "").await
+}
+
+/// `GET /coaches/incomplete-profiles<query>`（`query` は空か `?` から始まるクエリ）。
+async fn list_with_query(router: &Router, token: Option<&str>, query: &str) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/coaches/incomplete-profiles{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -176,5 +182,41 @@ async fn missing_or_invalid_token_is_unauthorized() {
     for token in [None, Some("nobody:1")] {
         let (status, body) = list(&router, token).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{token:?}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn sport_narrows_to_coaches_offering_it() {
+    let router = app().await;
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?sport=golf").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["coaches"],
+        json!([{
+            "coach_id": "00000000-0000-0000-0000-000000000004",
+            "display_name": "なまえ4",
+            "missing_fields": ["bio"],
+            "updated_at": null,
+            "registered_at": "2026-10-01T03:00:00Z",
+        }]),
+        "ゴルフも絞れる"
+    );
+
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?sport=tennis").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({ "coaches": [] }),
+        "テニスのコーチは書き終えているので空"
+    );
+}
+
+#[tokio::test]
+async fn unknown_sport_is_unprocessable() {
+    let router = app().await;
+    for query in ["?sport=curling", "?sport=", "?sport=Tennis"] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
     }
 }

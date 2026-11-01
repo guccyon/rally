@@ -141,11 +141,12 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## profile: 本部が見るプロフィールの書きかけのコーチ（D176）
 
-- `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）: 本部だけが呼べる（`interface::incomplete_coach_profiles_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチのアカウント（受付を止めているコーチも含む）のうち、プロフィールに足りない項目があるものを、`coach_id`・表示名・足りない項目の名前 `missing_fields`・最後に更新した時刻 `updated_at`・登録した時刻 `registered_at` で、登録の古い順（同じ時刻は `coach_id` の順）に返す。照会だけで、行動イベント・境界間イベントは発火しない
+- `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）: 本部だけが呼べる（`interface::incomplete_coach_profiles_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチのアカウント（受付を止めているコーチも含む）のうち、プロフィールに足りない項目があるものを、`coach_id`・表示名・足りない項目の名前 `missing_fields`・最後に更新した時刻 `updated_at`・登録した時刻 `registered_at` で、登録の古い順（同じ時刻は `coach_id` の順）に返す。任意の `sport` でそのスポーツを提供するコーチだけに絞る（D196。`Sport` の値でなければ 422 `validation_failed`）。照会だけで、行動イベント・境界間イベントは発火しない
+- 競技での絞り込みは `listCoaches` の `sport` と同じ規則で、コーチの競技の決め方は domain の `profile::CoachSportFilter` の 1 か所（両方のユースケースが使う）。値の読み取りと 422 は interface の `contract.rs` の `admin_web_sport`
 - 「足りない」の判定は domain の `profile::MissingCoachProfileFields` の 1 か所（今は自己紹介文 `bio` が空か空白だけのとき）。項目は `profile::CoachProfileField`、契約の文字列（`bio`）は interface の `contract.rs` の対応表。表示名と提供スポーツは空にできないので対象にしない
 - `updated_at` は、プロフィールの更新の時刻を保存していない（`identity.coaches` に列がない）ので今は常に null。DB の変更はしていない
 - ユースケースは `application::profile::ListIncompleteCoachProfiles`。コーチは `AccountRepository::list_coaches`、自己紹介文は `CoachProfileRepository::list_coach_bios`（Postgres は `identity.coaches` の `coach_id, bio`）で読む
-- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
+- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`crates/domain/src/profile/coach_sport_filter.rs`（複数の提供スポーツ・生徒と本部・絞らない）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件・競技で絞る）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・競技で絞る・422・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
 
 ## matching: 生徒がスポーツでコーチを探す（D96）
 

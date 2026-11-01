@@ -52,7 +52,7 @@ info:
     本部のコーチの一覧には、1 件ごとに直近 30 日に終わったレッスンの数（同期・非同期の合計）も載り、コーチどうしを見比べられる。
     本部はコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月のレッスンの実績・
     公開中のレッスンメニューの数を 1 回で読む（`getCoachOverview`）。
-    本部はプロフィール（自己紹介）に空の項目があるコーチを、空の項目の名前とともに読む（`listIncompleteCoachProfiles`。
+    本部はプロフィール（自己紹介）に空の項目があるコーチを、空の項目の名前とともに、任意のスポーツで絞って読む（`listIncompleteCoachProfiles`。
     書きかけのコーチを見つけて声をかける）。
     本部は、始まったまま終了の記録がなく開始から一定の時間（既定 3 時間）が過ぎた通話セッションを、コーチを問わず
     開始の古い順に読む（`listOverdueLiveLessonSessions`。照会だけで、セッションを終了させない）。
@@ -528,13 +528,24 @@ paths:
           （記録するようになったら値が入る。null の間は `registered_at` を目安にする）
         - `registered_at`: コーチのアカウントを登録した時刻
         - 並べ方: `registered_at` の古い順（長く書きかけのままのコーチから）。同じ時刻は `coach_id` の順
-        - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
+        - 絞り込み（任意）: `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる。
+          コーチの競技の決め方は `listCoaches` の `sport` と同じで、backend の domain `CoachSportFilter` の 1 か所）。付けなければ
+          今までどおりすべてのコーチ。絞っても「足りない」の判定と並べ方は変わらない。競技ごとの担当者が自分の競技のコーチだけを見るのに使う
+        - `sport` が `Sport` の値でないときは 422 `validation_failed`（`listCoaches` と同じ）
+        - ページングはしない。該当するコーチがいなければ（条件に合うコーチがいなければ） `coaches` は空の配列
         - 照会だけで、何も保存しない。コーチへの連絡はしない
 
         行動イベントは発火しない。
       tags: [profile]
       x-context: profile
       x-analytics-events: []
+      parameters:
+        - name: sport
+          in: query
+          required: false
+          description: スポーツ（付ければそのスポーツを提供するコーチだけ）
+          schema:
+            $ref: "#/components/schemas/Sport"
       responses:
         "200":
           description: プロフィールに足りない項目のあるコーチの一覧
@@ -546,6 +557,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /coaches/{coach_id}/review-summary:
     get:
