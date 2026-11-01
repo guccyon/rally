@@ -1,8 +1,9 @@
 //! 本部が見る低い評価の一覧（admin-web の `GET /lesson-reviews/low`）を、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。直近 30 日の★2 以下の評価だけがコーチを問わず新しい順に並び、コーチ・生徒の
 //! 表示名がアカウントの表から添わること、コーチ・生徒は 403 であることを確かめる。`sport` を付けると、評価した完了した
-//! レッスンの元（同期は予約の枠、非同期は動画）のスポーツで絞られることも確かめる。契約の形の細かい検査は interface の
-//! `tests/low_rated_reviews.rs`。
+//! レッスンの元（同期は予約の枠、非同期は動画）のスポーツで絞られることも確かめる。本部が `PUT /lesson-reviews/{review_id}/handling`
+//! で対応済みの印を付けると Postgres に残り（2 回目は最初の印のまま）、一覧の `handled=false` で未対応だけに絞れることも確かめる。
+//! 契約の形の細かい検査は interface の `tests/low_rated_reviews.rs`・`tests/low_rated_review_handlings.rs`。
 //!
 //! 評価は完了したレッスンが要り、そこまでの HTTP の流れは `lessons.rs` で通しているので、ここでは枠・予約・通話セッション・
 //! 動画・完了記録・評価を保存先に直に書く（`review.lesson_reviews` の `lesson_id` には外部キーがない）。
@@ -341,4 +342,80 @@ async fn headquarters_narrows_low_reviews_to_a_sport_from_postgres(pool: PgPool)
     let (status, body) = get_with_query(&router, &headquarters, "?sport=pingpong").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
+}
+
+/// `PUT /lesson-reviews/{review_id}/handling`（本文なし）。
+async fn put_handling(router: &Router, token: &str, review_id: &str) -> (StatusCode, Value) {
+    let request = Request::put(format!("/lesson-reviews/{review_id}/handling"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_marks_low_reviews_handled_and_lists_only_the_unhandled_from_postgres(
+    pool: PgPool,
+) {
+    let (honbu, headquarters) = register(&pool, "honbu@example.com", Role::Headquarters).await;
+    let (_, other_headquarters) = register(&pool, "honbu2@example.com", Role::Headquarters).await;
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    let older = review(&reviews, taro, tanaka, 1, 1, now() - 20 * DAY).await;
+    let newer = review(&reviews, taro, tanaka, 2, 2, now() - DAY).await;
+    let good = review(&reviews, taro, tanaka, 3, 3, now() - DAY).await;
+    let router =
+        server::router_with_postgres(pool, FixedClock(now()), RecordingAnalyticsSink::default());
+
+    let (status, body) = put_handling(&router, &headquarters, &older).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["handled_by"], account_id_uuid::format(honbu));
+    assert_eq!(body["handled_at"], "2026-10-31T00:00:00Z");
+    // 2 回目（別の本部のアカウント）も同じ結果
+    let (status, again) = put_handling(&router, &other_headquarters, &older).await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again, body);
+
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (status, list) = get_with_query(&router, &headquarters, "?handled=false").await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(ids(&list), [newer.as_str()], "未対応だけ");
+    assert_eq!(list["reviews"][0]["handling"], Value::Null);
+    let (status, list) = get(&router, &headquarters).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(ids(&list), [newer.as_str(), older.as_str()]);
+    assert_eq!(
+        list["reviews"][1]["handling"], body,
+        "一覧にも最初の印が載る"
+    );
+
+    let (status, body) = put_handling(&router, &headquarters, &good).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "lesson_review_not_low_rated");
+    let (status, body) = put_handling(
+        &router,
+        &headquarters,
+        "00000000-0000-0000-0000-000000000063",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    for token in [&tanaka_token, &taro_token] {
+        let (status, body) = put_handling(&router, token, &newer).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    }
+    let (_, list) = get_with_query(&router, &headquarters, "?handled=false").await;
+    assert_eq!(ids(&list), [newer.as_str()], "拒んだ操作は何も変えない");
 }

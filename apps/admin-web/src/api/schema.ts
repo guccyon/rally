@@ -278,11 +278,16 @@ export interface paths {
          *       `lesson_menu`（ID・名前。`ReviewLessonMenu`。レッスンの元（同期は予約、非同期は動画）が持つ写しで、元にメニューがなければ null）を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - 各評価には、評価されたコーチの返信 `reply`（`LessonReviewReply`。`replyToLessonReview`）も載せる。返信がなければ null
+         *     - 各評価には、本部の対応済みの印 `handling`（`LowRatedReviewHandling`。`markLowRatedLessonReviewHandled`）も載せる。
+         *       まだ対応済みにしていなければ null
          *     - 絞り込み（任意）: `sport` を付ければ、そのスポーツのレッスンの評価だけ（スポーツごとの担当者が自分のスポーツの
          *       低い評価だけを見る）。レッスンのスポーツは評価した完了したレッスンの元のスポーツ（同期は予約した枠、非同期は
          *       送った動画の `sport`）で、レッスンメニューの有無を問わない。付けなければスポーツを問わずすべて（ゴルフも含む）。
          *       しきい値・期間・並べ方は付けても変わらない
-         *     - `sport` が `Sport` の値でないときは 422 `validation_failed`
+         *     - 絞り込み（任意）: `handled` を付ければ、`false` なら本部がまだ対応済みにしていない評価（`handling` が null）だけ、
+         *       `true` なら対応済みの評価だけ。付けなければ印を問わない。`sport` と合わせて付けられる。しきい値・期間・並べ方は
+         *       付けても変わらない
+         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないときは 422 `validation_failed`
          *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
@@ -290,6 +295,39 @@ export interface paths {
          */
         get: operations["listLowRatedLessonReviews"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lesson-reviews/{review_id}/handling": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 低い評価を対応済みにする（本部）
+         * @description 本部が確認した低い評価（glossary の lesson_review）1 件に「対応済み」の印（glossary の low_rated_review_handling）を
+         *     付け、付いている印を返す。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。評価は低い評価の一覧
+         *     （`listLowRatedLessonReviews`）から選ぶ。リクエストの本文は読まない。
+         *
+         *     - 印には付けた時刻 `handled_at` と、付けた本部のアカウントの ID `handled_by`（トークンのアカウント）を残す
+         *     - 同じ評価に 2 回目以降を呼んでも何も変えず、最初の印（最初のアカウントと時刻）をそのまま 200 で返す（別の本部の
+         *       アカウントが呼んでも同じ）。印を外す操作はない
+         *     - 付けられるのは点 `rating` が 2 以下（`listLowRatedLessonReviews` のしきい値）の評価だけ。一覧の期間（30 日）は問わない
+         *       （一覧から選んだあとに期間を過ぎても付けられる）。点が 3 以上の評価は 409 `lesson_review_not_low_rated`（何も変えない）
+         *     - 評価がないとき・`review_id` が UUID でないときは 404 `not_found`
+         *     - 点・一言・コーチの返信は変えない
+         *
+         *     付けた印は `listLowRatedLessonReviews` の評価ごとの `handling` に載り、`handled=false` で未対応だけに絞れる。
+         *     本部の運営の操作で、KPI の入力でもないので行動イベントは発火しない。境界間イベントも発行しない。コーチへの通知はしない。
+         */
+        put: operations["markLowRatedLessonReviewHandled"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1737,6 +1775,27 @@ export interface components {
              *     評価の一覧では必ず載せる
              */
             reply?: components["schemas"]["LessonReviewReply"] | null;
+            /**
+             * @description 本部の対応済みの印（`markLowRatedLessonReviewHandled`）。まだ対応済みにしていなければ null。
+             *     評価の一覧では必ず載せる
+             */
+            handling?: components["schemas"]["LowRatedReviewHandling"] | null;
+        };
+        /**
+         * @description glossary の low_rated_review_handling（低い評価に本部が付けた「対応済み」の印）。評価 1 件に高々 1 つで、
+         *     最初に付けたアカウントと時刻を残す
+         */
+        LowRatedReviewHandling: {
+            /**
+             * Format: uuid
+             * @description 印を付けた本部のアカウントの ID
+             */
+            handled_by: string;
+            /**
+             * Format: date-time
+             * @description 印を付けた（最初に付けた）時刻
+             */
+            handled_at: string;
         };
         /** @description 本部が見る低い評価の一覧（しきい値・期間・並べ方は `listLowRatedLessonReviews` の説明） */
         LowRatedLessonReviewList: {
@@ -2219,7 +2278,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "announcement_already_withdrawn";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -2254,7 +2313,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてあるなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -2490,6 +2549,8 @@ export interface operations {
             query?: {
                 /** @description このスポーツのレッスンの評価だけを返す（付けなければスポーツを問わない） */
                 sport?: components["schemas"]["Sport"];
+                /** @description 本部の対応済みか（`false` なら未対応だけ、`true` なら対応済みだけ。付けなければ問わない） */
+                handled?: boolean;
             };
             header?: never;
             path?: never;
@@ -2509,6 +2570,32 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    markLowRatedLessonReviewHandled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 評価に付いている対応済みの印（2 回目以降は最初の印） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LowRatedReviewHandling"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     replyToLessonReview: {
