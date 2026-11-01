@@ -182,7 +182,11 @@ export interface paths {
          *     student-app の `listCoachesForStudent`（スポーツでコーチを探す）の形で返す（student-app の契約）。
          *
          *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
-         *     - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
+         *     - 絞り込み（任意）: `acceptance_status` を付ければその受付の状態（受付中 `accepting` / 停止中 `suspended`）のコーチだけ、
+         *       `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる）。両方付ければ両方を
+         *       満たすもの。付けなければ今までどおりすべてのコーチ。絞っても並べ方は変わらない
+         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でないときは 422 `validation_failed`
+         *     - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
          *
          *     受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える（`x-context` が 2 つなのはそのため）。
          *     行動イベントは発火しない。
@@ -2270,7 +2274,12 @@ export interface operations {
     };
     listCoaches: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 受付の状態（付ければその状態のコーチだけ） */
+                acceptance_status?: components["schemas"]["CoachAcceptanceStatus"];
+                /** @description スポーツ（付ければそのスポーツを提供するコーチだけ） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2288,6 +2297,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCoachReviewSummary: {

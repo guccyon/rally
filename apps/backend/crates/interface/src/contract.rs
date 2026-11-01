@@ -96,6 +96,16 @@ pub(crate) const fn coach_acceptance_status_to_contract(
     }
 }
 
+/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` のクエリ `acceptance_status`）。値でなければ 422。
+pub(crate) fn coach_acceptance_status_from_contract(
+    value: &str,
+) -> Result<CoachAcceptanceStatus, ApiError> {
+    CoachAcceptanceStatus::ALL
+        .into_iter()
+        .find(|status| coach_acceptance_status_to_contract(*status) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の受付の状態: {value}")))
+}
+
 /// admin-web の `SlotSupplyStatus` の値。
 pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> &'static str {
     match status {
