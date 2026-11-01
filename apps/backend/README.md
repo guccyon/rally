@@ -92,7 +92,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## profile: 本部向けのコーチの一覧
 
-- `GET /coaches`（admin-web の `listCoaches`）: 本部が呼べる（コーチは 403）。同じパスを生徒が呼ぶと student-app の `listCoachesForStudent`（下の matching）の形で返す（ルーターは `interface::coaches_router`。`require_role(&[Role::Headquarters, Role::Student])` のうえで、ハンドラーがトークンの役割で形を選ぶ）。コーチの役割のアカウントの `coach_id` と `display_name` を返す。絞り込み・ページングはせず、行動イベントは発火しない
+- `GET /coaches`（admin-web の `listCoaches`）: 本部が呼べる（コーチは 403）。同じパスを生徒が呼ぶと student-app の `listCoachesForStudent`（下の matching）の形で返す（ルーターは `interface::coaches_router`。`require_role(&[Role::Headquarters, Role::Student])` のうえで、ハンドラーがトークンの役割で形を選ぶ）。コーチの役割のアカウントの `coach_id` と `display_name` と受付の状態（scheduling に問い合わせる）と、直近 30 日に終わったレッスンの数 `recent_lesson_count`（同期・非同期の合計。完了記録を `LessonCoachRecentLessonCountLookup` で読み、domain の `CoachLessonCount::tally_recent` で数える。期間は `RecentLessonPeriod`）を返す。任意の `acceptance_status`・`sport` で絞る。ページングはせず、行動イベントは発火しない
 - 並べ方の正本は契約（表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。保存先のポート `AccountRepository::list_coaches` が並べて返す。Postgres は `ORDER BY display_name COLLATE "C", account_id`（DB の照合順序に依らない。UTF-8 のバイト順はコードポイントの順と同じ）、インメモリは `(表示名の文字列, AccountId)` の順で、両方が同じ並びになる。読んだ行は `Account`（提供スポーツを含む）に戻す
 - テスト: `application::profile::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
 

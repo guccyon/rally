@@ -1,8 +1,8 @@
 //! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
-//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。生徒にはその生徒のお気に入りかを
-//! 添える。コーチは 403。
+//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
+//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。コーチは 403。
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use application::{
     catalog::CatalogPublishedLessonMenuCountLookup,
@@ -11,10 +11,11 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
-        InMemoryFavoriteCoachRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository,
+        FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
+        InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
     },
+    lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
     review::ReviewCoachReviewSummaryLookup,
@@ -26,12 +27,14 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    async_lesson::VideoId,
     catalog::{
         LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
         LessonMenuName, Sport,
     },
     identity::{Account, AccountId, Email, Role},
-    lesson::LessonCompletionId,
+    lesson::{LessonCompletion, LessonCompletionId, LessonSource},
+    live_lesson::SessionId,
     matching::FavoriteCoach,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
@@ -129,7 +132,31 @@ fn menu(id: u128, coach_id: u128, sport: Sport, is_published: bool) -> LessonMen
     )
 }
 
-/// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。
+/// 照会した時刻（2026-10-31T00:00:00Z）。
+fn now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_404_800)
+}
+
+const DAY: Duration = Duration::from_secs(24 * 3600);
+
+fn completion(id: u128, coach_id: u128, live: bool, at: SystemTime) -> LessonCompletion {
+    let source = if live {
+        LessonSource::Live(SessionId::from_u128(id))
+    } else {
+        LessonSource::Async(VideoId::from_u128(id))
+    };
+    LessonCompletion::restore(
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        source,
+        at,
+        false,
+    )
+}
+
+/// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。直近 30 日に終わったレッスンは
+/// コーチ 2 が通話 1・添削 1（30 日前ちょうどを含む。31 日前の添削は数えない）、コーチ 5 が添削 1。コーチ 4 は 0。
 fn app(accounts: InMemoryAccountRepository) -> Router {
     app_with(accounts, InMemoryCoachAcceptanceRepository::default())
 }
@@ -151,9 +178,19 @@ fn app_with(
         menu(3, 5, Sport::Soccer, true),
         menu(4, 5, Sport::Golf, true),
     ]);
+    let completions = InMemoryLessonCompletionRepository::with_completions([
+        completion(1, 2, true, now() - DAY),
+        completion(2, 2, false, now() - 30 * DAY),
+        completion(3, 2, false, now() - 31 * DAY),
+        completion(4, 5, false, now()),
+    ]);
     let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
     interface::coaches_router(
-        ListCoaches::new(accounts.clone(), acceptances.clone()),
+        ListCoaches::new(
+            accounts.clone(),
+            acceptances.clone(),
+            LessonCoachRecentLessonCountLookup::new(completions, FixedClock(now())),
+        ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
             ProfileCoachCandidateLookup::new(accounts),
@@ -214,16 +251,20 @@ async fn headquarters_lists_only_coaches_in_display_name_order() {
                     "coach_id": "00000000-0000-0000-0000-000000000004",
                     "display_name": "いとう",
                     "acceptance_status": "accepting",
+                    "recent_lesson_count": 0,
                 },
                 {
                     "coach_id": "00000000-0000-0000-0000-000000000005",
                     "display_name": "いとう",
                     "acceptance_status": "accepting",
+                    "recent_lesson_count": 1,
                 },
                 {
+                    // 同期と非同期の合計。31 日前のレッスンは数えない
                     "coach_id": "00000000-0000-0000-0000-000000000002",
                     "display_name": "たなか",
                     "acceptance_status": "accepting",
+                    "recent_lesson_count": 2,
                 },
             ],
         })
@@ -337,6 +378,7 @@ async fn headquarters_filters_by_acceptance_status_and_sport_keeping_the_order()
                 "coach_id": "00000000-0000-0000-0000-000000000004",
                 "display_name": "いとう",
                 "acceptance_status": "suspended",
+                "recent_lesson_count": 0,
             }],
         })
     );
@@ -472,5 +514,28 @@ async fn coach_is_403_and_no_token_is_401() {
         let (status, body) = list_coaches(&router, contract, "", None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{contract}: {body}");
         assert_eq!(body["code"], "unauthorized");
+    }
+}
+
+#[tokio::test]
+async fn recent_lesson_count_is_kept_when_filtered_and_not_given_to_students() {
+    let router = app_with_coach_4_suspended().await;
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        "?sport=tennis&acceptance_status=accepting",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["coaches"][0]["recent_lesson_count"], 2);
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for coach in body["coaches"].as_array().unwrap() {
+        assert!(
+            coach.get("recent_lesson_count").is_none(),
+            "生徒の一覧（student-app の CoachListing）には載せない: {coach}"
+        );
     }
 }
