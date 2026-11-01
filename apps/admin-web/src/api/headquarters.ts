@@ -72,6 +72,12 @@ export function headquartersApi(client: ApiClient) {
       ),
     listBookings: (period: { from?: string; to?: string }) =>
       call(() => client.GET("/bookings", { params: { query: period } })),
+    getBooking: (bookingId: string) =>
+      call(() =>
+        client.GET("/bookings/{booking_id}", {
+          params: { path: { booking_id: bookingId } },
+        }),
+      ),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
     listAnnouncements: () => call(() => client.GET("/announcements")),

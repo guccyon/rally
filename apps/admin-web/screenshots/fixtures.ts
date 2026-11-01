@@ -580,6 +580,18 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // 予約の詳細は、一覧のキャンセル済みの予約（確定待ちのままキャンセル）を返す。
+    method: "GET",
+    path: "/bookings/{booking_id}",
+    body: {
+      booking: HQ_BOOKINGS[3]!.booking,
+      slot: { ...BOOKINGS[1]!.slot, starts_at: HQ_BOOKINGS[3]!.booking.starts_at, ends_at: at(49), status: "open" },
+      status_changes: [{ status: "cancelled", changed_at: at(-2) }],
+      coach_display_name: HQ_BOOKINGS[3]!.coach_display_name,
+      student_display_name: HQ_BOOKINGS[3]!.student_display_name,
+    } satisfies Schemas["HeadquartersBookingDetail"],
+  },
+  {
     method: "GET",
     path: "/announcements",
     body: {

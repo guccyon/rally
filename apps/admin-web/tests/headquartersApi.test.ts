@@ -378,6 +378,55 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("getBooking は GET /api/bookings/{booking_id} を呼び、予約 1 件の詳細を返す", async () => {
+    const bookingId = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
+    const slotId = "55555555-5555-4555-8555-000000000001";
+    const coachId = "22222222-2222-4222-8222-000000000001";
+    const detail = {
+      booking: {
+        booking_id: bookingId,
+        slot_id: slotId,
+        student_id: "11111111-1111-4111-8111-000000000001",
+        coach_id: coachId,
+        is_trial: false,
+        status: "pending",
+        starts_at: "2026-10-27T01:00:00Z",
+        created_at: "2026-10-20T00:00:00Z",
+        confirmed_at: null,
+        cancelled_at: null,
+        lesson_menu: null,
+      },
+      slot: {
+        slot_id: slotId,
+        coach_id: coachId,
+        sport: "tennis",
+        starts_at: "2026-10-27T01:00:00Z",
+        ends_at: "2026-10-27T02:00:00Z",
+        status: "booked",
+        capacity: 1,
+        remaining_seats: 0,
+      },
+      status_changes: [],
+    };
+    const { api, fetchMock } = setup(json(200, detail));
+    const result = await api.getBooking(bookingId);
+    expect(result).toEqual({ ok: true, data: detail });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/bookings/${bookingId}`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("getBooking の 404 は code を not_found にして返す", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "not found" }));
+    const result = await api.getBooking("bbbbbbbb-bbbb-4bbb-8bbb-999999999999");
+    expect(result).toEqual({
+      ok: false,
+      code: "not_found",
+      message: "対象が見つかりません（ID を確かめてください）。",
+    });
+  });
+
   test("listBookings の 422 は入力の誤りの文言にする", async () => {
     const { api } = setup(json(422, { code: "validation_failed", message: "to is before from" }));
     const result = await api.listBookings({ from: "2026-10-26", to: "2026-10-25" });
