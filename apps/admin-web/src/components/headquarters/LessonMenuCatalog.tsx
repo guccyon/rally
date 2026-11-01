@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
 import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";

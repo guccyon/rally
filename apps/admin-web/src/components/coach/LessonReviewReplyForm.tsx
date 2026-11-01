@@ -4,7 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
 // 契約の ReplyToLessonReviewRequest.comment の maxLength（Unicode のコードポイントで数える）。

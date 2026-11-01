@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/app.dart';
+import 'package:rally_student_app/screens/design_catalog_screen.dart';
+import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
 import '../test/support/fake_student_api.dart';
@@ -24,10 +26,13 @@ import '../test/support/pump.dart';
 typedef Navigate = Future<void> Function(WidgetTester tester);
 
 class Screen {
-  const Screen(this.id, this.title, this.navigate);
+  const Screen(this.id, this.title, this.navigate, {this.home});
   final String id;
   final String title;
   final Navigate navigate;
+
+  /// 最初の画面（なければアプリの画面の流れ）
+  final Widget? home;
 }
 
 Future<void> _register(WidgetTester tester) async {
@@ -42,6 +47,18 @@ Future<void> _register(WidgetTester tester) async {
 
 Future<void> _tapTooltip(WidgetTester tester, String tooltip) async {
   await tester.tap(find.byTooltip(tooltip));
+  await tester.pumpAndSettle();
+}
+
+/// 縦に長い画面を、画面の高さを伸ばして下まで 1 枚に収める。
+Future<void> _showWholePage(WidgetTester tester) async {
+  final position = tester
+      .state<ScrollableState>(find.byType(Scrollable).first)
+      .position;
+  final ratio = tester.view.devicePixelRatio;
+  final size = tester.view.physicalSize / ratio;
+  tester.view.physicalSize =
+      Size(size.width, size.height + position.maxScrollExtent) * ratio;
   await tester.pumpAndSettle();
 }
 
@@ -71,6 +88,13 @@ Future<void> _toReview(WidgetTester tester) async {
 
 final screens = <Screen>[
   Screen('register', 'アカウント登録', (_) async {}),
+  // デザインシステムの部品のカタログ（アプリの流れからは開けない）。部品が変わるとここに出る
+  Screen(
+    'design-catalog',
+    'デザインシステム: 部品のカタログ',
+    _showWholePage,
+    home: const DesignCatalogScreen(),
+  ),
   Screen('home', 'ホーム', _register),
   Screen('coach-search', 'コーチを探す', (t) async {
     await _register(t);
@@ -239,7 +263,7 @@ void main() {
             studentApiProvider.overrideWithValue(_api()),
             clockProvider.overrideWithValue(() => Fixtures.now),
           ],
-          child: const StudentApp(),
+          child: StudentApp(home: screen.home ?? const StudentFlowScreen()),
         ),
       );
       await tester.pumpAndSettle();

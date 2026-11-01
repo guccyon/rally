@@ -6,7 +6,7 @@ import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { formatAverageRating } from "@/components/CoachReviewSummaryView";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatMonth } from "@/components/labels";
 
 type MonthlyLessonStats = Schemas["MonthlyLessonStats"];

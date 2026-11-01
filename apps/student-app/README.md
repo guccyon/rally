@@ -51,6 +51,12 @@ SCREENSHOT_DIR=$PWD/screenshots/out flutter test screenshots/   # <id>.png と <
 - 画面を足した・押す文言を変えたら `screens` を直す。id は前後の突き合わせに使うので変えない
 - `SCREENSHOT_DIR` がないときは撮らない（`flutter test` の既定の対象 `test/` にも入れていない）
 
+## デザインシステムの部品
+
+- 部品は `lib/ui/rally_*.dart`（`specs/design/components.yaml` の id ごと: `RallyButton`・`RallyTextInput` / `RallySelect`・`RallyCard`・`RallyListRow`・`RallySection`・`RallyResultMessage`・`RallyEmptyState`・`RallyLoading`・`RallyConfirmStep`）。画面の型は `specs/design/patterns.yaml`
+- 部品 × 種類 × 状態の全部を `lib/ui/design_catalog.dart` に並べ、`lib/screens/design_catalog_screen.dart` で見る（アプリの流れからは開けない）。画面のキャプチャの `design-catalog`（縦に伸ばして下まで 1 枚）なので、部品を変えると PR のキャプチャに出る
+- components.yaml に部品・種類・状態を足したら、部品と `design_catalog.dart` にも足す（`test/ui/design_catalog_test.dart` が突き合わせる）
+
 ## API
 
 - 契約 `specs/contracts/api/student-app/openapi.yaml` のスキーマを `lib/api/models.dart` に手で写した（ジェネレーターは Java が要るので使っていない）。型名は契約のスキーマ名に揃え、項目名は lowerCamelCase にする。契約の `Error` は Dart の `Error` と、`Notification` は Flutter の `Notification` と衝突するので `ApiError` / `ApiNotification`

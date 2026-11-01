@@ -1,0 +1,101 @@
+# 画面の型（正本）。画面はこのどれか（または組み合わせ）で組み、部品は `specs/design/components.yaml` の id のものだけを使う。
+#
+# - layout は上から下への並び。各段の component は components.yaml の id、variant はその部品の種類
+# - when は「その段を出すとき」、optional: true は画面によってなくてよい段
+# - 読み込み中・失敗・空は同じ場所に出し分ける（どれか 1 つだけを出す）
+# - examples は今の画面のうちこの型に近いもの（画面のキャプチャの id。admin-web は `apps/admin-web/screenshots/screens.ts`、
+#   student-app は `apps/student-app/screenshots/capture_test.dart`）。既存の画面を部品に置き換えるのは次の段
+# - components.yaml にない id を書くとテスト（admin-web `tests/designSystem.test.tsx`）が落ちる
+#
+# 項目: id・ja・purpose・layout（並び）・components（使う部品の id。layout に出る id と一致させる）・examples
+
+version: 1
+
+patterns:
+  - id: list
+    ja: 一覧
+    purpose: 同じ種類のものを並べて見せ、行から 1 件へ移る
+    layout:
+      - component: section
+        note: 欄の見出し。見出しの下に、何の一覧か・どの順かを 1 文で書く
+      - component: input
+        variant: select
+        optional: true
+        note: 絞り込み。変えたらすぐ読み直す
+      - component: loading
+        when: 読み込んでいる間
+      - component: result_message
+        variant: failure
+        when: 読み込めなかったとき（読み直すボタンを添える）
+      - component: button
+        variant: secondary
+        when: 読み込めなかったとき（読み直す）
+      - component: empty_state
+        when: 1 件もないとき
+      - component: list_row
+        when: 1 件以上あるとき。並びは API が返した順のまま
+    components: [section, input, loading, result_message, button, empty_state, list_row]
+    examples:
+      admin-web: [hq-students, hq-bookings, hq-lesson-menus, coach-notifications]
+      student-app: [notifications, my-bookings, coach-search]
+
+  - id: detail
+    ja: 詳細
+    purpose: 1 件の要点と、それに関係する一覧・操作をまとめて見せる
+    layout:
+      - component: section
+        note: 見出しは対象の名前
+      - component: card
+        note: 要点（状態・数・日時）。欄ごとに読み込み中・失敗を出し分け、読めなかった欄があっても他の欄は出す
+      - component: loading
+        when: 欄を読み込んでいる間
+      - component: result_message
+        variant: failure
+        when: 欄を読み込めなかったとき
+      - component: list_row
+        optional: true
+        note: 関係する一覧（並びは一覧の型と同じ）
+      - component: button
+        optional: true
+        note: その 1 件への操作。取り消せない操作は確認の段を挟む（送る前の確認の型）
+    components: [section, card, loading, result_message, list_row, button]
+    examples:
+      admin-web: [hq-coach-overview, hq-student-activity]
+      student-app: [coach-profile]
+
+  - id: form
+    ja: 入力
+    purpose: 値を入れて送る・保存する
+    layout:
+      - component: section
+      - component: result_message
+        when: 直前に送った結果（成功なら入力を空にする・失敗なら入力を残す）
+      - component: input
+        note: 項目ごとに見出しを付ける。送る前に分かる誤りは invalid の状態で項目の下に出し、送らない
+      - component: button
+        variant: primary
+        note: 送る（または送る前の確認へ進む）。送っている間は busy
+    components: [section, result_message, input, button]
+    examples:
+      admin-web: [hq-announcements, coach-profile, coach-slots]
+      student-app: [register, profile, lesson-review]
+
+  - id: confirm_before_send
+    ja: 送る前の確認
+    purpose: 取り消せない操作・相手に届く操作の前に、同じ画面の中で内容を確かめてから送る
+    layout:
+      - component: section
+      - component: confirm_step
+        note: 入力の型の「確かめる」から進む。何が起きるか（誰に届くか・取り消せないこと）を 1 文で書き、内容の要約を並べる
+      - component: button
+        variant: primary
+        note: 確定（相手に効く・取り消せない操作は danger）。送っている間は busy で、直すも押せなくする
+      - component: button
+        variant: secondary
+        note: 直す・やめる。入力を残したまま入力の型に戻る
+      - component: result_message
+        note: 送ったあとは入力の型に戻って結果を出す（失敗なら入力を残す）
+    components: [section, confirm_step, button, result_message]
+    examples:
+      admin-web: [hq-announcement-confirm, hq-lesson-menu-unpublish]
+      student-app: [my-bookings]
