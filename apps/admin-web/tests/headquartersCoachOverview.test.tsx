@@ -51,6 +51,7 @@ describe("本部のコーチの様子", () => {
     render(<CoachOverview api={api} coachId={COACH_ID} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.queryByText("直近 30 日の低い評価")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "鈴木 コーチ" })).toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
     expect(api.getCoachOverview).toHaveBeenCalledTimes(1);
@@ -82,6 +83,37 @@ describe("本部のコーチの様子", () => {
 
     const link = await screen.findByRole("link", { name: "このコーチのレッスンメニューを見る" });
     expect(link).toHaveAttribute("href", `/headquarters/lesson-menus?coach_id=${COACH_ID}`);
+  });
+
+  test("直近 30 日の低い評価の件数と未対応の件数を出し、「低い評価を見る」は低い評価の画面へのリンク", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("直近 30 日の低い評価");
+    expect(value).toHaveTextContent("2 件（未対応 1 件）");
+    expect(within(value).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/low-reviews",
+    );
+  });
+
+  test("低い評価がすべて対応済みなら未対応は 0 件と出す", async () => {
+    const data = { ...OVERVIEW, low_rated_review_count: 3, unhandled_low_rated_review_count: 0 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    expect(valueOf("直近 30 日の低い評価")).toHaveTextContent("3 件（未対応 0 件）");
+  });
+
+  test("直近 30 日の低い評価が 0 件なら「ありません」と出し、リンクは残す", async () => {
+    const data = { ...OVERVIEW, low_rated_review_count: 0, unhandled_low_rated_review_count: 0 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("直近 30 日の低い評価");
+    expect(value).toHaveTextContent("ありません");
+    expect(value).not.toHaveTextContent("件");
+    expect(within(value).getByRole("link", { name: "低い評価を見る" })).toBeInTheDocument();
   });
 
   test("評価が 0 件なら平均は「評価はまだありません」、受付中なら「受付中」", async () => {
@@ -128,6 +160,7 @@ describe("本部のコーチの様子", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("heading", { name: "鈴木 コーチ" })).not.toBeInTheDocument();
+    expect(screen.queryByText("直近 30 日の低い評価")).not.toBeInTheDocument();
   });
 
   test("接続できないときもその文言を出す", async () => {
