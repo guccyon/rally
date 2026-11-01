@@ -1,8 +1,9 @@
 //! `GET /bookings`（admin-web の `listBookings`。本部が見る予約の一覧）の統合テスト。レスポンスの形を admin-web の
 //! OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付（日本時間）で絞って開始の古い順に返すこと、
 //! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
-//! `status`（繰り返せる）でその状態の予約だけに絞れること、期間の違反と日付でない値・UUID でない `coach_id`・
-//! 予約の状態でない `status` が 422 であることを確かめる。期間の規則の境界は
+//! `status`（繰り返せる）でその状態の予約だけに絞れること、`trial` で体験予約だけ・体験予約でない予約だけに絞れること、
+//! 期間の違反と日付でない値・UUID でない `coach_id`・予約の状態でない `status`・真偽値でない `trial` が 422 であることを
+//! 確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -430,14 +431,86 @@ async fn status_lists_only_bookings_in_those_statuses() {
 }
 
 #[tokio::test]
+async fn trial_lists_only_trial_or_only_regular_bookings() {
+    let admin = support::Contract::load("admin-web");
+    // 11 月 1 日〜7 日の予約は枠 3・2・4・6 で、体験予約は枠 2 だけ
+    let (bookings, made) = bookings().await;
+    let student = AccountId::from_u128(3);
+    bookings
+        .update(made[0].id(), |booking, slot| {
+            booking
+                .cancel(student, slot, nov1(Duration::ZERO) - HOUR)
+                .map(|_| ())
+        })
+        .await
+        .unwrap();
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+
+    for (query, expected) in [
+        // キャンセルした体験予約も体験予約
+        ("?trial=true", vec![slot_uuid(2)]),
+        (
+            "?trial=false",
+            vec![slot_uuid(3), slot_uuid(4), slot_uuid(6)],
+        ),
+        // 付けなければ体験予約かを問わない（今までと同じ）
+        (
+            "",
+            vec![slot_uuid(3), slot_uuid(2), slot_uuid(4), slot_uuid(6)],
+        ),
+        // 期間・コーチ・状態と組み合わせる
+        (
+            "?from=2026-11-02&to=2026-11-07&trial=false",
+            vec![slot_uuid(4), slot_uuid(6)],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-00000000002a&trial=true",
+            vec![slot_uuid(2)],
+        ),
+        ("?status=pending&trial=true", vec![]),
+        ("?status=cancelled&trial=true", vec![slot_uuid(2)]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = get(&app, &format!("{PATH}?trial=true"), HEADQUARTERS).await;
+    assert_eq!(body["bookings"][0]["booking"]["is_trial"], true);
+    let (_, body) = get(&app, &format!("{PATH}?trial=false"), HEADQUARTERS).await;
+    assert!(
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["booking"]["is_trial"] == false)
+    );
+}
+
+#[tokio::test]
+async fn trial_that_is_not_a_boolean_is_422() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+    for query in ["?trial=yes", "?trial=", "?trial=1", "?trial=TRUE"] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
     let app = app_at(nov1(Duration::ZERO), bookings).await;
     for token in [COACH, STUDENT] {
-        let (status, body) = get(&app, PATH, token).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
-        admin.assert_response("get", PATH, status, &body);
+        for path in [PATH.to_string(), format!("{PATH}?trial=true")] {
+            let (status, body) = get(&app, &path, token).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{token} {path}: {body}");
+            admin.assert_response("get", PATH, status, &body);
+        }
     }
     let (status, body) = get(&app, PATH, "nope").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
