@@ -535,6 +535,7 @@ abstract final class Fixtures {
     bookingConfirmed: true,
     videoReviewReturned: true,
     messageReceived: true,
+    announcement: true,
   );
 
   static final now = DateTime.utc(2026, 10, 26, 3);

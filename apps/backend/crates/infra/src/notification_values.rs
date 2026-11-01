@@ -12,6 +12,7 @@ pub const fn notification_kind_value(kind: NotificationKind) -> &'static str {
         NotificationKind::VideoReviewRequested => "video_review_requested",
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",
+        NotificationKind::Announcement => "announcement",
     }
 }
 
@@ -27,14 +28,16 @@ pub const BOOKING_RECEIVED: &str = "booking_received";
 pub const VIDEO_REVIEW_REQUESTED: &str = "video_review_requested";
 pub const VIDEO_REVIEW_RETURNED: &str = "video_review_returned";
 pub const MESSAGE_RECEIVED: &str = "message_received";
+pub const ANNOUNCEMENT: &str = "announcement";
 
 /// `notification.notifications.kind` のすべての値（CHECK 制約の値の順）。
-pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 5] = [
+pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 6] = [
     BOOKING_CONFIRMED,
     BOOKING_RECEIVED,
     VIDEO_REVIEW_REQUESTED,
     VIDEO_REVIEW_RETURNED,
     MESSAGE_RECEIVED,
+    ANNOUNCEMENT,
 ];
 
 /// `notification.notifications.kind` の値（プッシュ通知の変種ごと）。
@@ -45,6 +48,7 @@ pub const fn push_notification_kind_value(notification: &PushNotification) -> &'
         PushNotification::VideoReviewRequested { .. } => VIDEO_REVIEW_REQUESTED,
         PushNotification::VideoReviewReturned { .. } => VIDEO_REVIEW_RETURNED,
         PushNotification::MessageReceived { .. } => MESSAGE_RECEIVED,
+        PushNotification::Announcement { .. } => ANNOUNCEMENT,
     }
 }
 

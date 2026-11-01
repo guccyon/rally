@@ -134,8 +134,14 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
   /// お知らせの画面を閉じて、開いた段に戻る
   void close() => _flow.moveTo(state.returnStep ?? FlowStep.home);
 
-  /// [notification] の行から進めるか（このアプリの版が知らない種類は進めない）
-  bool canOpen(ApiNotification notification) => notification.kind != null;
+  /// [notification] の行から進めるか（本部からのお知らせは本文がすべてで行き先がなく、このアプリの版が知らない種類も
+  /// 進めない）
+  bool canOpen(ApiNotification notification) => switch (notification.kind) {
+    NotificationKind.bookingConfirmed ||
+    NotificationKind.videoReviewReturned ||
+    NotificationKind.messageReceived => true,
+    NotificationKind.announcement || null => false,
+  };
 
   /// 行を押したとき。お知らせは行き先の ID を持たないので、種類に応じた一覧の画面を開く
   /// （予約の確定は自分の予約・添削の返却は自分の動画・メッセージの受信はチャットのスレッドの一覧）。
@@ -148,7 +154,7 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
         await _flow.openMyVideos();
       case NotificationKind.messageReceived:
         await ref.read(chatProvider.notifier).openChat();
-      case null:
+      case NotificationKind.announcement || null:
         return;
     }
   }

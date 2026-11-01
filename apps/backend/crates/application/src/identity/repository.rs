@@ -2,7 +2,7 @@ use std::future::Future;
 
 use domain::{
     identity::{Account, AccountId},
-    profile::DisplayName,
+    profile::{DisplayName, DisplayNameQuery},
 };
 
 use crate::Unavailable;
@@ -30,8 +30,12 @@ pub trait AccountRepository: Send + Sync {
     /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。
     fn list_coaches(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
 
-    /// 生徒のアカウントをすべて、登録の新しい順（同じ登録時刻は ID の順）で返す。
-    fn list_students(&self) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
+    /// 生徒のアカウントを、登録の新しい順（同じ登録時刻は ID の順）で返す。`name` があれば表示名がそれに部分一致する
+    /// 生徒だけ（一致の規則は [`DisplayNameQuery`]）、なければすべて。
+    fn list_students(
+        &self,
+        name: Option<&DisplayNameQuery>,
+    ) -> impl Future<Output = Result<Vec<Account>, Unavailable>> + Send;
 
     /// 生徒 `student_id` の表示名を `display_name` に置き換え、置き換えたあとのアカウントを返す。生徒のアカウントが
     /// なければ（ID のアカウントがないか、生徒でなければ）何も変えずに `None`。

@@ -49,12 +49,15 @@ use domain::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{AccountId, Role},
-    scheduling::{BookingId, CoachAcceptance, Slot, SlotId, SlotStatus},
+    scheduling::{BookingId, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 mod support;
+
+/// 受付を止める・再開する本部のアカウント。
+const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
 /// 2026-10-26T00:00:00Z（現在時刻）
 const NOW: Duration = Duration::from_secs(1_792_972_800);
@@ -500,7 +503,9 @@ async fn booking_a_slot_of_a_suspended_coach_is_409_until_resumed_and_keeps_exis
     let existing = create(&app.router, STUDENT, 10, false).await;
     let acceptances = app.slots.coach_acceptances();
     acceptances
-        .update(COACH, CoachAcceptance::suspend)
+        .update(COACH, |a| {
+            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+        })
         .await
         .unwrap();
 
@@ -517,7 +522,7 @@ async fn booking_a_slot_of_a_suspended_coach_is_409_until_resumed_and_keeps_exis
     assert_eq!(status, StatusCode::OK, "{body}");
 
     acceptances
-        .update(COACH, CoachAcceptance::resume)
+        .update(COACH, |a| a.resume(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH))
         .await
         .unwrap();
     create(&app.router, OTHER_STUDENT, 11, false).await;

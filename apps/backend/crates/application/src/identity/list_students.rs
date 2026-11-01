@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 
-use domain::identity::AccountId;
+use domain::{identity::AccountId, profile::DisplayNameQuery};
 
 use super::{AccountRepository, StudentContractLookup, StudentLastBookingLookup, StudentOverview};
 use crate::Unavailable;
 
 /// 生徒の一覧のユースケース（admin-web の `listStudents`。本部だけが呼ぶ）。照会だけで、何も保存しない。
 ///
-/// 生徒のアカウントを登録の新しい順（同じ時刻は ID の順）に並べ、受講権の契約種別と契約プランを entitlement に
+/// 生徒のアカウント（検索語 [`DisplayNameQuery`] があれば表示名がそれに部分一致する生徒だけ）を登録の新しい順
+/// （同じ時刻は ID の順）に並べ、受講権の契約種別と契約プランを entitlement に
 /// （[`StudentContractLookup`]）、最後に予約した時刻を scheduling に（[`StudentLastBookingLookup`]）問い合わせて添える。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListStudents<R, C, B> {
@@ -30,8 +31,11 @@ where
         }
     }
 
-    pub async fn execute(&self) -> Result<Vec<StudentOverview>, Unavailable> {
-        let students = self.accounts.list_students().await?;
+    pub async fn execute(
+        &self,
+        name: Option<&DisplayNameQuery>,
+    ) -> Result<Vec<StudentOverview>, Unavailable> {
+        let students = self.accounts.list_students(name).await?;
         let student_ids: BTreeSet<AccountId> = students.iter().map(|a| a.id()).collect();
         if student_ids.is_empty() {
             return Ok(Vec::new());
@@ -69,7 +73,7 @@ mod tests {
         catalog::Sport,
         entitlement::{ContractType, SubscriptionPlan},
         identity::{Account, Email, Role},
-        profile::DisplayName,
+        profile::{DisplayName, DisplayNameQuery},
     };
 
     use super::*;
@@ -168,7 +172,7 @@ mod tests {
         let bookings = FakeBookings::default();
         let use_case = ListStudents::new(accounts().await, contracts, bookings);
 
-        let students = use_case.execute().await.unwrap();
+        let students = use_case.execute(None).await.unwrap();
         let listed: Vec<_> = students
             .iter()
             .map(|s| {
@@ -202,6 +206,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn query_lists_only_students_whose_display_name_contains_it() {
+        let accounts = InMemoryAccountRepository::default();
+        for (id, role, name, registered_at) in [
+            (1, Role::Student, "Taro Yamada", 100),
+            (2, Role::Student, "はなこ", 200),
+            (3, Role::Student, "山田 次郎", 300),
+            // 生徒でないアカウントは表示名が一致しても載せない
+            (4, Role::Coach, "山田コーチ", 400),
+        ] {
+            let sports: &[Sport] = &[Sport::Tennis];
+            let account = Account::new(
+                AccountId::from_u128(id),
+                Email::new(format!("user{id}@example.com")).unwrap(),
+                DisplayName::new(name).unwrap(),
+                role,
+                sports.iter().copied(),
+                at(registered_at),
+            )
+            .unwrap();
+            accounts.insert(account).await.unwrap();
+        }
+        let use_case =
+            ListStudents::new(accounts, FakeContracts::default(), FakeBookings::default());
+
+        let listed = |students: Vec<StudentOverview>| -> Vec<u128> {
+            students.iter().map(|s| s.student_id.as_u128()).collect()
+        };
+        // ASCII の英字の大文字・小文字は区別しない。登録の新しい順はそのまま
+        let query = DisplayNameQuery::new("YAMADA").unwrap().unwrap();
+        assert_eq!(listed(use_case.execute(Some(&query)).await.unwrap()), [1]);
+        let query = DisplayNameQuery::new("山田").unwrap().unwrap();
+        assert_eq!(listed(use_case.execute(Some(&query)).await.unwrap()), [3]);
+        assert_eq!(
+            *use_case.contracts.asked.lock().unwrap().last().unwrap(),
+            [AccountId::from_u128(3)].into(),
+            "一致した生徒の ID だけを問い合わせる"
+        );
+
+        let before = use_case.contracts.asked.lock().unwrap().len();
+        let query = DisplayNameQuery::new("いない").unwrap().unwrap();
+        assert!(use_case.execute(Some(&query)).await.unwrap().is_empty());
+        assert_eq!(
+            use_case.contracts.asked.lock().unwrap().len(),
+            before,
+            "一致する生徒がいなければ他のコンテキストに問い合わせない"
+        );
+    }
+
+    #[tokio::test]
     async fn no_students_is_an_empty_list_without_asking_other_contexts() {
         let accounts = InMemoryAccountRepository::default();
         accounts
@@ -211,7 +264,7 @@ mod tests {
         let use_case =
             ListStudents::new(accounts, FakeContracts::default(), FakeBookings::default());
 
-        assert!(use_case.execute().await.unwrap().is_empty());
+        assert!(use_case.execute(None).await.unwrap().is_empty());
         assert!(use_case.contracts.asked.lock().unwrap().is_empty());
         assert!(use_case.bookings.asked.lock().unwrap().is_empty());
     }
@@ -219,6 +272,6 @@ mod tests {
     #[tokio::test]
     async fn unavailable_lookup_is_an_error() {
         let use_case = ListStudents::new(accounts().await, Broken, FakeBookings::default());
-        assert!(use_case.execute().await.is_err());
+        assert!(use_case.execute(None).await.is_err());
     }
 }

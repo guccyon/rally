@@ -9,7 +9,7 @@ import '../ui/labels.dart';
 
 /// お知らせ（`listMyNotifications`。作った時刻の新しい順）。開いたらすべて既読にし（`markMyNotificationsRead`）、
 /// 開いたときに未読だったものは「新着」と添える。行を押すと、種類に応じて自分の予約・自分の動画・チャットを開く
-/// （このアプリの版が知らない種類の行は押せない）
+/// （本部からのお知らせと、このアプリの版が知らない種類の行は押せない）
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -75,6 +75,7 @@ class NotificationsScreen extends ConsumerWidget {
     NotificationKind.bookingConfirmed => Icons.event_available_outlined,
     NotificationKind.videoReviewReturned => Icons.rate_review_outlined,
     NotificationKind.messageReceived => Icons.chat_bubble_outline,
+    NotificationKind.announcement => Icons.campaign_outlined,
     null => Icons.notifications_outlined,
   };
 }
