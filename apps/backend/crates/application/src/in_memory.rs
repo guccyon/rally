@@ -19,7 +19,7 @@ use domain::{
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{
         Announcement, AnnouncementDraft, AnnouncementDraftId, AnnouncementId, Notification,
-        NotificationId, NotificationSettings, PushNotification,
+        NotificationId, NotificationKind, NotificationSettings, PushNotification,
     },
     profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
@@ -1569,6 +1569,17 @@ impl NotificationRepository for InMemoryNotificationRepository {
         // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
         mine.sort_by_key(|n| std::cmp::Reverse(n.created_at()));
         Ok(mine)
+    }
+
+    async fn find_announcements_by_recipient(
+        &self,
+        recipient: AccountId,
+        limit: usize,
+    ) -> Result<Vec<Notification>, Unavailable> {
+        let mut announcements = self.find_by_recipient(recipient).await?;
+        announcements.retain(|n| n.kind() == NotificationKind::Announcement);
+        announcements.truncate(limit);
+        Ok(announcements)
     }
 
     async fn mark_all_read(&self, recipient: AccountId, at: SystemTime) -> Result<(), Unavailable> {

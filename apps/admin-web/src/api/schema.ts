@@ -1058,6 +1058,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/students/{student_id}/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 生徒 1 人の受け取ったお知らせと既読（本部）
+         * @description 生徒（glossary の student）1 人が受け取った本部からのお知らせ（glossary の announcement。`sendAnnouncement` で送ったもの）を、
+         *     お知らせごとの既読（glossary の notification の既読）と取り下げ済みか（glossary の announcement_withdrawal）とともに返す。
+         *     生徒から「お知らせが届いていない」と問い合わせを受けたときに、本部が確かめるのに使う。本部の役割のトークンだけが呼べる
+         *     （コーチ・生徒は 403）。
+         *
+         *     - 載せるのは、その生徒に作ったお知らせ（種類が `announcement`）だけ。予約の確定・添削の返却・メッセージの受信のお知らせは
+         *       載せない。送った時点で対象でなかった生徒（スポーツが違う・まだ登録していなかった）には載らない
+         *     - 送った時刻（お知らせを作った時刻）の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件。51 件目より古いものは載せない。
+         *       受け取ったお知らせがなければ `announcements` は空の配列
+         *     - 取り下げたお知らせ（`withdrawAnnouncement`）も載り、`is_withdrawn` が true（生徒のお知らせの一覧には出ていない）
+         *     - `is_read` は生徒が既読にしたか（student-app の `markMyNotificationsRead`）。取り下げても既読は変わらない
+         *     - 本文・対象のスポーツ・送った本部のアカウントは返さない（`listAnnouncements` で読む）。プッシュ通知が届いたかの記録は持たない
+         *       （受け取り設定でオフの生徒にもお知らせは作る）
+         *     - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
+         *     - 照会だけで、何も保存しない（既読にもしない）
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["listStudentAnnouncements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/live-lesson-sessions": {
         parameters: {
             query?: never;
@@ -2047,6 +2083,33 @@ export interface components {
              * @description 完了を記録した時刻
              */
             completed_at: string;
+        };
+        /** @description 生徒 1 人の受け取ったお知らせの一覧（`listStudentAnnouncements`） */
+        StudentAnnouncementList: {
+            /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件 */
+            announcements: components["schemas"]["StudentAnnouncement"][];
+        };
+        /**
+         * @description 生徒 1 人が受け取った本部からのお知らせ（glossary の announcement）の 1 件。お知らせの ID・題・送った時刻と、
+         *     その生徒の既読・取り下げ済みか。本文は載せない
+         */
+        StudentAnnouncement: {
+            /**
+             * Format: uuid
+             * @description 本部からのお知らせ（`listAnnouncements` の `Announcement.announcement_id` と同じ値）
+             */
+            announcement_id: string;
+            /** @description 題 */
+            title: string;
+            /**
+             * Format: date-time
+             * @description 送った時刻
+             */
+            sent_at: string;
+            /** @description 生徒が既読にしたか（student-app の `markMyNotificationsRead`） */
+            is_read: boolean;
+            /** @description 本部が取り下げたか（`withdrawAnnouncement`。取り下げたものは生徒のお知らせの一覧に出ない） */
+            is_withdrawn: boolean;
         };
         /** @description コーチ 1 人の、glossary の lesson_review（レッスンの評価）の件数と平均（数え方は `getCoachReviewSummary` の説明） */
         CoachReviewSummary: {
@@ -3685,6 +3748,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudentActivity"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listStudentAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                student_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudentAnnouncementList"];
                 };
             };
             401: components["responses"]["Unauthorized"];

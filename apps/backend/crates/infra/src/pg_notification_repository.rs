@@ -82,6 +82,15 @@ const UNREAD_NOTIFICATIONS_OF_FOR_UPDATE: &str =
      ORDER BY created_at DESC, seq DESC
      FOR UPDATE";
 
+/// `recipient_id = $1` で種類が `$2`（本部からのお知らせ）のお知らせ（新しい順に最大 `$3` 件）。
+const ANNOUNCEMENT_NOTIFICATIONS_OF: &str =
+    "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id, review_id,
+            thread_id, message_id, sender_role, announcement_id, created_at, read_at
+     FROM notification.notifications
+     WHERE recipient_id = $1 AND kind = $2
+     ORDER BY created_at DESC, seq DESC
+     LIMIT $3";
+
 /// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id）。
 type PushColumns = (
     Option<Uuid>,
@@ -135,6 +144,21 @@ impl NotificationRepository for PgNotificationRepository {
         recipient: AccountId,
     ) -> Result<Vec<Notification>, Unavailable> {
         notifications_of(&self.pool, recipient, false).await
+    }
+
+    async fn find_announcements_by_recipient(
+        &self,
+        recipient: AccountId,
+        limit: usize,
+    ) -> Result<Vec<Notification>, Unavailable> {
+        let rows: Vec<NotificationRow> = sqlx::query_as(ANNOUNCEMENT_NOTIFICATIONS_OF)
+            .bind(account_id_uuid::to_uuid(recipient))
+            .bind(ANNOUNCEMENT)
+            .bind(i64::try_from(limit).map_err(Unavailable::new)?)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Unavailable::new)?;
+        rows.into_iter().map(notification_from_row).collect()
     }
 
     async fn mark_all_read(&self, recipient: AccountId, at: SystemTime) -> Result<(), Unavailable> {

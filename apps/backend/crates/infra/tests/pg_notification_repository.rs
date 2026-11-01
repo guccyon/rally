@@ -1,6 +1,7 @@
 //! `PgNotificationRepository`（`notification.notifications`）の検証。プッシュ通知の変種ごとの往復・受け取る人ごとの
 //! 新しい順・同じプッシュ通知（同じ動画の添削の依頼を含む）を 2 件にしないこと・すべて既読（最初に読んだ時刻のまま、
-//! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復。
+//! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復と、
+//! 生徒 1 人の本部からのお知らせだけを新しい順に上限まで読むこと。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -282,4 +283,75 @@ async fn an_announcement_round_trips_once_per_student(pool: PgPool) {
     let read = notifications.find_by_recipient(student).await.unwrap();
     assert_eq!(read[0].push(), sent.push_to(student));
     assert_eq!(read[0].read_at(), Some(at(5)));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn only_the_announcements_of_the_student_are_found_newest_first_up_to_the_limit(
+    pool: PgPool,
+) {
+    let notifications = PgNotificationRepository::new(pool.clone());
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let (student, other, coach) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::coach(&pool).await,
+    );
+    let mut sent = Vec::new();
+    for minute in [3, 5, 5] {
+        let announcement = Announcement::new(
+            announcements.next_id(),
+            headquarters,
+            AnnouncementTitle::new("題").unwrap(),
+            AnnouncementBody::new("本文").unwrap(),
+            None,
+            2,
+            at(minute),
+        )
+        .unwrap();
+        announcements.insert(announcement.clone()).await.unwrap();
+        sent.push(announcement);
+    }
+    let [confirmed, ..] = pushes(student, coach);
+    let booking = Notification::new(notifications.next_id(), confirmed, at(9));
+    let received: Vec<Notification> = sent
+        .iter()
+        .map(|a| Notification::new(notifications.next_id(), a.push_to(student), a.sent_at()))
+        .collect();
+    let to_other = Notification::new(notifications.next_id(), sent[0].push_to(other), at(3));
+    for notification in received.iter().copied().chain([booking, to_other]) {
+        notifications.insert(notification).await.unwrap();
+    }
+    notifications.mark_all_read(student, at(4)).await.unwrap();
+
+    let found = notifications
+        .find_announcements_by_recipient(student, 50)
+        .await
+        .unwrap();
+    assert_eq!(
+        found.iter().map(Notification::id).collect::<Vec<_>>(),
+        [received[2].id(), received[1].id(), received[0].id()],
+        "本部からのお知らせだけを新しい順（同じ時刻は後に残したものが先）。ほかの生徒の分は出さない"
+    );
+    assert_eq!(found[2].read_at(), Some(at(4)), "既読も読む");
+    assert!(!found[0].is_read());
+    assert_eq!(
+        notifications
+            .find_announcements_by_recipient(student, 2)
+            .await
+            .unwrap()
+            .iter()
+            .map(Notification::id)
+            .collect::<Vec<_>>(),
+        [received[2].id(), received[1].id()],
+        "上限までの新しいものだけ"
+    );
+    assert!(
+        notifications
+            .find_announcements_by_recipient(coach, 50)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
