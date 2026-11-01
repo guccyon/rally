@@ -8,13 +8,13 @@ mod support;
 
 use application::{
     identity::{AccountRepository, RegisterAccount, RegisterAccountCommand, RegisterAccountError},
-    in_memory::{FixedClock, RecordingAnalyticsSink},
+    in_memory::{FixedClock, InMemoryAccountRepository, RecordingAnalyticsSink},
     profile::CoachProfileRepository,
 };
 use domain::{
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
-    profile::{CoachBio, DisplayName},
+    profile::{CoachBio, DisplayName, DisplayNameQuery},
 };
 use infra::PgAccountRepository;
 use sqlx::{PgPool, types::Uuid};
@@ -212,9 +212,71 @@ async fn students_are_listed_with_their_sport_newest_registration_first(pool: Pg
     }
 
     assert_eq!(
-        accounts.list_students().await.unwrap(),
+        accounts.list_students(None).await.unwrap(),
         [newest, same_1, same_2, old]
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn students_are_searched_by_a_part_of_their_display_name(pool: PgPool) {
+    let accounts = PgAccountRepository::new(pool);
+    let account = |id: u128, role, sports: &[Sport], name: &str, registered_hour| {
+        Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("user{id}@example.com")).unwrap(),
+            DisplayName::new(name).unwrap(),
+            role,
+            sports.iter().copied(),
+            support::at(registered_hour),
+        )
+        .unwrap()
+    };
+    let taro = account(1, Role::Student, &[Sport::Tennis], "Taro Yamada", 1);
+    let jiro = account(2, Role::Student, &[Sport::Soccer], "YAMADA Jiro", 2);
+    let wide = account(3, Role::Student, &[Sport::Swimming], "ＹＡＭＡＤＡ", 3);
+    let in_memory = InMemoryAccountRepository::default();
+    let kana = account(4, Role::Student, &[Sport::Tennis], "やまだ_100%", 4);
+    for account in [
+        taro.clone(),
+        jiro.clone(),
+        wide.clone(),
+        kana.clone(),
+        // 生徒でないアカウントは表示名が一致しても載せない
+        account(5, Role::Coach, &[Sport::Tennis], "yamada coach", 9),
+    ] {
+        accounts.insert(account.clone()).await.unwrap();
+        in_memory.insert(account).await.unwrap();
+    }
+    // Postgres の絞り込み（translate）と DisplayNameQuery::matches（in-memory）が同じ結果になることも確かめる
+    let search = |q: &str| {
+        let accounts = accounts.clone();
+        let in_memory = in_memory.clone();
+        let query = DisplayNameQuery::new(q).unwrap().unwrap();
+        async move {
+            let found = accounts.list_students(Some(&query)).await.unwrap();
+            assert_eq!(
+                found,
+                in_memory.list_students(Some(&query)).await.unwrap(),
+                "{query:?}"
+            );
+            found
+        }
+    };
+
+    // ASCII の英字は大文字・小文字を区別しない。並べ方は登録の新しい順のまま
+    assert_eq!(search("yamada").await, [jiro.clone(), taro.clone()]);
+    assert_eq!(search(" a J ").await, [jiro]);
+    // 全角の英字は ASCII と同じとみなさず、書いたとおりに比べる
+    assert_eq!(search("ＹＡＭ").await, [wide]);
+    assert!(search("ｙａｍ").await.is_empty());
+    // % と _ はワイルドカードでなく文字のまま
+    assert_eq!(search("_100%").await, std::slice::from_ref(&kana));
+    assert_eq!(search("%").await, [kana]);
+    assert!(search("や_").await.is_empty());
+    assert!(search("はなこ").await.is_empty());
+    // 検索語がなければすべての生徒
+    assert_eq!(accounts.list_students(None).await.unwrap().len(), 4);
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -230,7 +292,7 @@ async fn no_students_is_an_empty_list(pool: PgPool) {
         .unwrap();
 
     let students = PgAccountRepository::new(pool)
-        .list_students()
+        .list_students(None)
         .await
         .unwrap();
     assert!(students.is_empty());

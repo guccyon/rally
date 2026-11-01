@@ -28,6 +28,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
     match error {
         DomainError::EmptyDisplayName => "表示名が空".to_string(),
         DomainError::DisplayNameTooLong { max } => format!("表示名は {max} 文字まで"),
+        DomainError::DisplayNameQueryTooLong { max } => {
+            format!("表示名の検索語は {max} 文字まで")
+        }
         DomainError::InvalidEmail => "メールアドレスの形が不正".to_string(),
         DomainError::CoachBioTooLong { max } => format!("自己紹介文は {max} 文字まで"),
         DomainError::RoleAttributeMismatch { role, sports } => {
@@ -177,6 +180,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::DisplayNameTooLong { max: 50 }),
             "表示名は 50 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::DisplayNameQueryTooLong { max: 50 }),
+            "表示名の検索語は 50 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::InvalidEmail),
