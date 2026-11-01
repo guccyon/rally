@@ -12,7 +12,8 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// 期間の始まり（domain の [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み、低い評価を domain の
-/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。スポーツを指定されたら、評価した
+/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。本部の対応済みかを指定されたら、
+/// 対応済みの印（domain の [`domain::review::LowRatedReviewHandling`]）の有無がそれと同じ評価だけを残す。スポーツを指定されたら、評価した
 /// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
 /// （スポーツが引けない評価は残さない）。各評価には、評価した完了した
 /// レッスンの元が持つレッスンメニューの写し（[`ReviewedLessonMenuLookup`]）と、コーチ・生徒の表示名
@@ -54,14 +55,22 @@ where
         }
     }
 
-    /// `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。
-    pub async fn execute(&self, sport: Option<Sport>) -> Result<LowRatedReviewList, Unavailable> {
+    /// `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
+    /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。
+    pub async fn execute(
+        &self,
+        sport: Option<Sport>,
+        handled: Option<bool>,
+    ) -> Result<LowRatedReviewList, Unavailable> {
         let now = self.clock.now();
         let submitted = self
             .reviews
             .find_submitted_since(LowRatedReviewCriteria::since(now))
             .await?;
         let mut reviews = LowRatedReviewCriteria::select(submitted, now);
+        if let Some(handled) = handled {
+            reviews.retain(|review| review.handling().is_some() == handled);
+        }
         if let Some(sport) = sport {
             let mut of_sport = Vec::with_capacity(reviews.len());
             for review in reviews {
@@ -125,7 +134,10 @@ mod tests {
         catalog::{LessonMenuId, LessonMenuName, Sport},
         lesson::LessonCompletionId,
         profile::DisplayName,
-        review::{LessonReview, LessonReviewComment, LessonReviewId, Rating, ReviewLessonMenu},
+        review::{
+            LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating,
+            ReviewLessonMenu,
+        },
     };
 
     use super::*;
@@ -269,7 +281,7 @@ mod tests {
             review(5, OTHER_COACH, 2, now() - 30 * DAY),
         ]);
 
-        let list = use_case.execute(None).await.unwrap();
+        let list = use_case.execute(None, None).await.unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
         assert_eq!(ids, [2, 1, 5], "コーチ・スポーツを問わず、新しい順");
         assert!(
@@ -305,7 +317,7 @@ mod tests {
     async fn no_low_reviews_is_an_empty_list_without_asking_names() {
         let use_case = use_case([review(1, COACH, 5, now())]);
 
-        let list = use_case.execute(None).await.unwrap();
+        let list = use_case.execute(None, None).await.unwrap();
         assert!(list.reviews.is_empty());
         assert!(list.lesson_menus.is_empty());
         assert!(list.coach_display_names.is_empty());
@@ -326,7 +338,7 @@ mod tests {
             review(6, COACH, 1, now() - 2 * DAY),
         ]);
 
-        let list = use_case.execute(Some(Sport::Tennis)).await.unwrap();
+        let list = use_case.execute(Some(Sport::Tennis), None).await.unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
         assert_eq!(ids, [1, 5], "テニスのレッスンの評価だけを、新しい順");
         assert_eq!(
@@ -347,7 +359,60 @@ mod tests {
             [BTreeSet::from([COACH, OTHER_COACH])]
         );
 
-        let list = use_case.execute(Some(Sport::Golf)).await.unwrap();
+        let list = use_case.execute(Some(Sport::Golf), None).await.unwrap();
         assert!(list.reviews.is_empty(), "そのスポーツの評価がなければ空");
+    }
+
+    #[tokio::test]
+    async fn handled_keeps_only_reviews_with_or_without_the_mark_of_headquarters() {
+        let handled = |review: LessonReview| {
+            review.with_handling(Some(LowRatedReviewHandling::new(
+                AccountId::from_u128(9),
+                now() - DAY,
+            )))
+        };
+        let use_case = use_case([
+            handled(review(1, COACH, 1, now() - 3 * DAY)),
+            review(2, OTHER_COACH, 2, now() - DAY),
+            review(5, OTHER_COACH, 2, now() - 4 * DAY),
+            // 30 日より前は印がなくても載らない
+            review(4, COACH, 1, now() - 31 * DAY),
+        ]);
+
+        let ids = |list: LowRatedReviewList| -> Vec<u128> {
+            list.reviews.iter().map(|r| r.id().as_u128()).collect()
+        };
+        assert_eq!(
+            ids(use_case.execute(None, Some(false)).await.unwrap()),
+            [2, 5],
+            "未対応だけを、新しい順"
+        );
+        assert_eq!(
+            ids(use_case.execute(None, Some(true)).await.unwrap()),
+            [1],
+            "対応済みだけ"
+        );
+        assert_eq!(
+            ids(use_case.execute(None, None).await.unwrap()),
+            [2, 1, 5],
+            "指定しなければ印を問わない"
+        );
+        // スポーツと合わせて絞れる（レッスン 1・5 はテニス、2 は水泳）
+        assert_eq!(
+            ids(use_case
+                .execute(Some(Sport::Tennis), Some(false))
+                .await
+                .unwrap()),
+            [5]
+        );
+        let list = use_case.execute(None, Some(true)).await.unwrap();
+        assert_eq!(
+            list.student_display_names
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [AccountId::from_u128(101)],
+            "絞ったあとの評価の生徒だけ"
+        );
     }
 }

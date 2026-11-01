@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    LessonReviewComment, LessonReviewId, LessonReviewReply, LessonReviewReplyComment, Rating,
-    ReviewError,
+    LessonReviewComment, LessonReviewId, LessonReviewReply, LessonReviewReplyComment,
+    LowRatedReviewCriteria, LowRatedReviewHandling, Rating, ReviewError,
 };
 use crate::{
     identity::AccountId,
@@ -13,6 +13,8 @@ use crate::{
 ///
 /// 評価されるコーチは完了したレッスンのコーチで、評価する側は選べない。編集・削除は Gen1 の範囲外（作ったら点と一言は
 /// 変えない）。評価されたコーチは返信（[`LessonReviewReply`]）を 1 つだけ付けられ、付け直すと上書きする（[`Self::write_reply`]）。
+/// 低い評価には本部が「対応済み」の印（[`LowRatedReviewHandling`]）を 1 つだけ付けられ、2 回目は何も変えない
+/// （[`Self::mark_handled`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LessonReview {
     id: LessonReviewId,
@@ -23,6 +25,7 @@ pub struct LessonReview {
     comment: LessonReviewComment,
     submitted_at: SystemTime,
     reply: Option<LessonReviewReply>,
+    handling: Option<LowRatedReviewHandling>,
 }
 
 impl LessonReview {
@@ -54,10 +57,12 @@ impl LessonReview {
             comment,
             submitted_at: now,
             reply: None,
+            handling: None,
         })
     }
 
-    /// 保存先から読んだ評価を組み立てる（保存先の実装用）。返信は [`Self::with_reply`] で添える（既定はなし）。
+    /// 保存先から読んだ評価を組み立てる（保存先の実装用）。返信は [`Self::with_reply`]、対応済みの印は
+    /// [`Self::with_handling`] で添える（既定はどちらもなし）。
     pub const fn restore(
         id: LessonReviewId,
         lesson_id: LessonCompletionId,
@@ -76,12 +81,18 @@ impl LessonReview {
             comment,
             submitted_at,
             reply: None,
+            handling: None,
         }
     }
 
     /// 保存先から読んだ返信 `reply` を添える（保存先の実装用。[`Self::restore`] の続き）。
     pub fn with_reply(self, reply: Option<LessonReviewReply>) -> Self {
         Self { reply, ..self }
+    }
+
+    /// 保存先から読んだ対応済みの印 `handling` を添える（保存先の実装用。[`Self::restore`] の続き）。
+    pub fn with_handling(self, handling: Option<LowRatedReviewHandling>) -> Self {
+        Self { handling, ..self }
     }
 
     /// アカウント `account_id` がこの評価に返信 `comment` を `now` に付ける。返信がすでにあれば文と時刻を置き換える。
@@ -97,6 +108,25 @@ impl LessonReview {
             return Err(ReviewError::NotTheReviewedCoach);
         }
         self.reply = Some(LessonReviewReply::new(comment, now));
+        Ok(())
+    }
+
+    /// 本部のアカウント `handled_by` がこの評価に「対応済み」の印を `now` に付ける。
+    ///
+    /// 付けられるのは低い点（[`LowRatedReviewCriteria::is_low_rating`]。期間は問わない）の評価だけで、それ以外は
+    /// [`ReviewError::NotLowRated`]（何も変えない）。すでに印があれば何も変えずに成功する（最初のアカウントと時刻を残す）。
+    /// 本部の役割かは境界が確かめる。
+    pub fn mark_handled(
+        &mut self,
+        handled_by: AccountId,
+        now: SystemTime,
+    ) -> Result<(), ReviewError> {
+        if !LowRatedReviewCriteria::is_low_rating(self.rating) {
+            return Err(ReviewError::NotLowRated);
+        }
+        if self.handling.is_none() {
+            self.handling = Some(LowRatedReviewHandling::new(handled_by, now));
+        }
         Ok(())
     }
 
@@ -131,6 +161,11 @@ impl LessonReview {
     /// 評価されたコーチの返信。まだなければ `None`。
     pub const fn reply(&self) -> Option<&LessonReviewReply> {
         self.reply.as_ref()
+    }
+
+    /// 本部の「対応済み」の印。まだなければ `None`。
+    pub const fn handling(&self) -> Option<&LowRatedReviewHandling> {
+        self.handling.as_ref()
     }
 }
 
@@ -196,6 +231,7 @@ mod tests {
         assert_eq!(review.comment().as_str(), "分かりやすかった");
         assert_eq!(review.submitted_at(), at(3));
         assert_eq!(review.reply(), None);
+        assert_eq!(review.handling(), None);
     }
 
     #[test]
@@ -282,6 +318,71 @@ mod tests {
         assert_eq!(review, before, "拒んだら何も変えない");
     }
 
+    const HEADQUARTERS: AccountId = AccountId::from_u128(5);
+    const OTHER_HEADQUARTERS: AccountId = AccountId::from_u128(6);
+
+    fn rated(rating: i64) -> LessonReview {
+        LessonReview::submit(
+            LessonReviewId::from_u128(9),
+            STUDENT,
+            &lesson(10),
+            None,
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("いまひとつ").unwrap(),
+            at(3),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn headquarters_marks_a_low_review_handled_once_and_a_second_mark_changes_nothing() {
+        for rating in [1, 2] {
+            let mut review = rated(rating);
+            review.mark_handled(HEADQUARTERS, at(4)).unwrap();
+            assert_eq!(
+                review.handling(),
+                Some(&LowRatedReviewHandling::new(HEADQUARTERS, at(4))),
+                "★{rating}"
+            );
+
+            let first = review.clone();
+            review.mark_handled(OTHER_HEADQUARTERS, at(5)).unwrap();
+            assert_eq!(review, first, "最初のアカウントと時刻を残す");
+        }
+    }
+
+    #[test]
+    fn only_a_low_review_can_be_marked_handled() {
+        for rating in [3, 4, 5] {
+            let mut review = rated(rating);
+            let before = review.clone();
+            assert_eq!(
+                review.mark_handled(HEADQUARTERS, at(4)),
+                Err(ReviewError::NotLowRated),
+                "★{rating}"
+            );
+            assert_eq!(review, before, "拒んだら何も変えない");
+        }
+    }
+
+    #[test]
+    fn marking_handled_keeps_the_rating_comment_and_reply() {
+        let mut review = rated(1);
+        review
+            .write_reply(COACH, reply("ご意見ありがとうございます"), at(4))
+            .unwrap();
+        review.mark_handled(HEADQUARTERS, at(5)).unwrap();
+        assert_eq!(review.rating().value(), 1);
+        assert_eq!(review.comment().as_str(), "いまひとつ");
+        assert_eq!(
+            review.reply(),
+            Some(&LessonReviewReply::new(
+                reply("ご意見ありがとうございます"),
+                at(4)
+            ))
+        );
+    }
+
     #[test]
     fn restore_keeps_every_field() {
         let mut review = submit(STUDENT, &lesson(10), None).unwrap();
@@ -296,11 +397,16 @@ mod tests {
                 review.submitted_at(),
             )
             .with_reply(review.reply().cloned())
+            .with_handling(review.handling().cloned())
         };
         assert_eq!(restore(&review), review);
         review
             .write_reply(COACH, reply("ありがとう"), at(4))
             .unwrap();
         assert_eq!(restore(&review), review);
+
+        let mut low = rated(2);
+        low.mark_handled(HEADQUARTERS, at(4)).unwrap();
+        assert_eq!(restore(&low), low);
     }
 }
