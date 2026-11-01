@@ -6,7 +6,9 @@ mod coach_video_list;
 mod get_video_review;
 mod list_coach_videos;
 mod list_my_videos;
+mod list_pending_video_reviews;
 mod my_video_list;
+mod pending_video_review_list;
 mod repository;
 mod return_video_review;
 mod review_gate;
@@ -25,7 +27,9 @@ pub use coach_video_list::CoachVideoList;
 pub use get_video_review::{GetVideoReview, GetVideoReviewError, GetVideoReviewQuery};
 pub use list_coach_videos::ListCoachVideos;
 pub use list_my_videos::ListMyVideos;
+pub use list_pending_video_reviews::ListPendingVideoReviews;
 pub use my_video_list::MyVideoList;
+pub use pending_video_review_list::PendingVideoReviewList;
 pub use repository::VideoRepository;
 pub use return_video_review::{
     ReturnVideoReview, ReturnVideoReviewCommand, ReturnVideoReviewError,
