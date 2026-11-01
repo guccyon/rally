@@ -18,6 +18,7 @@ use crate::{Unavailable, clock::Clock};
 /// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
 /// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
 /// domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧）。
+/// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
 /// 一覧に出るコーチと生徒の表示名は profile に問い合わせて添える。読むだけで何も変えない。
@@ -37,6 +38,8 @@ pub struct ListBookingsQuery {
     pub to: Option<Date>,
     /// あればこのコーチの枠への予約だけ
     pub coach_id: Option<AccountId>,
+    /// あればこの生徒が予約した予約だけ
+    pub student_id: Option<AccountId>,
     /// 空でなければこのどれかの状態の予約だけ（空なら状態を問わない）
     pub statuses: Vec<BookingStatus>,
     /// あれば体験予約か（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ。なければ問わない）
@@ -101,6 +104,9 @@ where
                 && query
                     .coach_id
                     .is_none_or(|coach_id| booking.coach_id() == coach_id)
+                && query
+                    .student_id
+                    .is_none_or(|student_id| booking.student_id() == student_id)
                 && (query.statuses.is_empty() || query.statuses.contains(&booking.status()))
                 && query.trial.is_none_or(|trial| booking.is_trial() == trial)
         });
@@ -299,6 +305,7 @@ mod tests {
                 from: Some(date(2)),
                 to: Some(date(3)),
                 coach_id: None,
+                student_id: None,
                 statuses: Vec::new(),
                 trial: None,
             })
@@ -362,6 +369,7 @@ mod tests {
             from: Some(date(10)),
             to: None,
             coach_id: None,
+            student_id: None,
             statuses: Vec::new(),
             trial: None,
         })
@@ -384,6 +392,7 @@ mod tests {
                     from: Some(date(3)),
                     to: Some(date(2)),
                     coach_id: None,
+                    student_id: None,
                     statuses: Vec::new(),
                     trial: None,
                 },
@@ -395,6 +404,7 @@ mod tests {
                     from: None,
                     to: Some(date(9)),
                     coach_id: None,
+                    student_id: None,
                     statuses: Vec::new(),
                     trial: None,
                 },
@@ -406,6 +416,7 @@ mod tests {
                     from: Some(date(1)),
                     to: Some(Date::from_calendar_date(2026, Month::December, 2).unwrap()),
                     coach_id: None,
+                    student_id: None,
                     statuses: Vec::new(),
                     trial: None,
                 },
@@ -425,6 +436,7 @@ mod tests {
                     from: Some(date(1)),
                     to: Some(Date::from_calendar_date(2026, Month::December, 1).unwrap()),
                     coach_id: None,
+                    student_id: None,
                     statuses: Vec::new(),
                     trial: None,
                 })
@@ -454,6 +466,7 @@ mod tests {
                 from: Some(date(2)),
                 to: Some(date(3)),
                 coach_id: Some(OTHER_COACH),
+                student_id: None,
                 statuses: Vec::new(),
                 trial: None,
             })
@@ -550,6 +563,7 @@ mod tests {
                     from: Some(date(2)),
                     to: Some(date(2)),
                     coach_id: None,
+                    student_id: None,
                     statuses: statuses.clone(),
                     trial: None,
                 })
@@ -564,6 +578,7 @@ mod tests {
                 from: Some(date(2)),
                 to: Some(date(2)),
                 coach_id: Some(OTHER_COACH),
+                student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: None,
             })
@@ -658,6 +673,7 @@ mod tests {
                 from: Some(date(2)),
                 to: Some(date(2)),
                 coach_id: Some(OTHER_COACH),
+                student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: Some(true),
             })
@@ -669,12 +685,143 @@ mod tests {
                 from: Some(date(2)),
                 to: Some(date(2)),
                 coach_id: Some(COACH),
+                student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: Some(true),
             })
             .await
             .unwrap();
         assert!(list.bookings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_student_lists_only_bookings_of_that_student_in_the_days() {
+        let slots = InMemorySlotRepository::with_slots([
+            slot(1, COACH, at(2, 10)),
+            slot(2, OTHER_COACH, at(2, 9)),
+            slot(3, OTHER_COACH, at(3, 18)),
+            slot(4, COACH, at(3, 12)),
+            // 期間（11 月 2 日〜3 日）の後
+            slot(5, OTHER_COACH, at(4, 0)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        let trial = reserve(&bookings, OTHER_STUDENT, 2, true, at(1, 0)).await;
+        for (student, slot) in [
+            (STUDENT, 1),
+            (OTHER_STUDENT, 3),
+            (STUDENT, 4),
+            (OTHER_STUDENT, 5),
+        ] {
+            book(&bookings, student, slot, at(1, 0)).await;
+        }
+        bookings
+            .update(trial.id(), |booking, slot| {
+                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+            })
+            .await
+            .unwrap();
+
+        let lookup = RecordingLookup::default();
+        let use_case = list_bookings(bookings, lookup.clone(), at(1, 0));
+        let list = use_case
+            .execute(ListBookingsQuery {
+                from: Some(date(2)),
+                to: Some(date(3)),
+                student_id: Some(OTHER_STUDENT),
+                ..ListBookingsQuery::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(
+            rows(&list),
+            [(2, BookingStatus::Cancelled), (3, BookingStatus::Pending)]
+        );
+        assert!(
+            list.bookings
+                .iter()
+                .all(|booking| booking.student_id() == OTHER_STUDENT)
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([OTHER_STUDENT])],
+            "絞った後の予約の生徒だけを問い合わせる"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([OTHER_COACH])]
+        );
+
+        // コーチ・状態・体験予約かとも組み合わせられる
+        for (query, expected) in [
+            (
+                ListBookingsQuery {
+                    coach_id: Some(COACH),
+                    student_id: Some(STUDENT),
+                    ..ListBookingsQuery::default()
+                },
+                vec![(1, BookingStatus::Pending), (4, BookingStatus::Pending)],
+            ),
+            (
+                ListBookingsQuery {
+                    coach_id: Some(COACH),
+                    student_id: Some(OTHER_STUDENT),
+                    ..ListBookingsQuery::default()
+                },
+                vec![],
+            ),
+            (
+                ListBookingsQuery {
+                    student_id: Some(OTHER_STUDENT),
+                    statuses: vec![BookingStatus::Pending],
+                    ..ListBookingsQuery::default()
+                },
+                vec![(3, BookingStatus::Pending)],
+            ),
+            (
+                ListBookingsQuery {
+                    student_id: Some(OTHER_STUDENT),
+                    trial: Some(true),
+                    ..ListBookingsQuery::default()
+                },
+                vec![(2, BookingStatus::Cancelled)],
+            ),
+        ] {
+            let list = use_case
+                .execute(ListBookingsQuery {
+                    from: Some(date(2)),
+                    to: Some(date(3)),
+                    ..query.clone()
+                })
+                .await
+                .unwrap();
+            assert_eq!(rows(&list), expected, "{query:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn with_unknown_student_is_an_empty_list() {
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([slot(
+            1,
+            COACH,
+            at(2, 10),
+        )]));
+        book(&bookings, STUDENT, 1, at(1, 0)).await;
+        let lookup = RecordingLookup::default();
+        let use_case = list_bookings(bookings, lookup.clone(), at(1, 0));
+        // 生徒でない ID（コーチ）・ない ID
+        for student_id in [COACH, AccountId::from_u128(99)] {
+            let list = use_case
+                .execute(ListBookingsQuery {
+                    student_id: Some(student_id),
+                    ..ListBookingsQuery::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!((list.from, list.to), (date(1), date(7)));
+            assert!(list.bookings.is_empty(), "{student_id:?}");
+        }
+        assert!(lookup.students_asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
