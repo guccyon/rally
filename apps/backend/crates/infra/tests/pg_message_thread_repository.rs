@@ -1,5 +1,5 @@
 //! `PgMessageThreadRepository`（`messaging.threads`・`messages`）の検証。スレッドを開く（同じ生徒とコーチは 1 つ）・
-//! 送信と既読の往復・当事者の一覧・拒否した送信が何も保存しないこと・並行な送信が両方残ること・添削依頼と添削の返却の
+//! 送信と既読の往復・当事者の一覧・すべてのスレッドの一覧（本部が見る返信のないスレッドの一覧が読む）・拒否した送信が何も保存しないこと・並行な送信が両方残ること・添削依頼と添削の返却の
 //! メッセージの往復（同じ動画は 1 通ずつ）・境界間イベントの購読でスレッドに足されること・システムのメッセージを読めること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -177,6 +177,54 @@ async fn list_for_returns_the_threads_of_the_participant(pool: PgPool) {
             .unwrap()
             .is_empty()
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn list_all_returns_every_thread_with_its_messages(pool: PgPool) {
+    let threads = PgMessageThreadRepository::new(pool.clone());
+    assert!(threads.list_all().await.unwrap().is_empty());
+    let (student, other_student) = (support::student(&pool).await, support::student(&pool).await);
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let quiet = threads
+        .open(
+            MessageThread::open(threads.next_thread_id(), other_student, other_coach, at(1))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let talking = threads
+        .open(MessageThread::open(threads.next_thread_id(), student, coach, at(1)).unwrap())
+        .await
+        .unwrap();
+    let (first, second) = (threads.next_message_id(), threads.next_message_id());
+    let talked = threads
+        .update(talking.id(), |t| {
+            t.send(
+                first,
+                student,
+                MessageContent::Text(body("質問です")),
+                true,
+                at(2),
+            )?;
+            t.send(
+                second,
+                student,
+                MessageContent::Stamp(Stamp::Question),
+                true,
+                at(3),
+            )
+            .map(|_| ())
+        })
+        .await
+        .unwrap();
+    assert_eq!(talked.awaiting_coach_reply_since(), Some(at(3)));
+
+    let mut all = threads.list_all().await.unwrap();
+    all.sort_by_key(MessageThread::id);
+    let mut expected = vec![quiet, talked];
+    expected.sort_by_key(MessageThread::id);
+    assert_eq!(all, expected, "当事者を問わず、メッセージを送った順に含む");
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

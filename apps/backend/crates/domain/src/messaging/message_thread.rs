@@ -242,6 +242,24 @@ impl MessageThread {
             .map_or(self.opened_at, Message::sent_at)
     }
 
+    /// 生徒がコーチの返信を待っているなら、待ち始めた生徒の最後の発言の送信時刻。待っていなければ `None`。
+    ///
+    /// 発言は当事者がチャットとして送ったメッセージ（本文・スタンプ。[`MessageKind::is_chat`]）だけを見る。最後の発言が
+    /// 生徒のものなら、その送信時刻を返す（生徒が続けて送ったなら最後の 1 通）。最後の発言がコーチのもの・発言が
+    /// まだないなら `None`。添削依頼・添削の返却（async-lesson の出来事の写し）とシステムのメッセージは発言に数えない。
+    pub fn awaiting_coach_reply_since(&self) -> Option<SystemTime> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|message| {
+                message.content().kind().is_chat() && message.author().participant().is_some()
+            })
+            .filter(|message| {
+                message.author() == MessageAuthor::Participant(MessageSender::Student)
+            })
+            .map(Message::sent_at)
+    }
+
     /// 当事者 `sender` のアカウント。
     pub const fn account_of(&self, sender: MessageSender) -> AccountId {
         match sender {
@@ -808,5 +826,89 @@ mod tests {
             Err(MessagingError::NotAThreadParticipant)
         );
         assert_eq!(thread, before);
+    }
+
+    #[test]
+    fn a_thread_awaits_the_coach_after_the_last_chat_message_of_the_student() {
+        let mut thread = opened();
+        assert_eq!(thread.awaiting_coach_reply_since(), None, "発言がまだない");
+        thread
+            .send(message(1), STUDENT, text("質問です"), true, at(1))
+            .unwrap();
+        thread
+            .send(
+                message(2),
+                STUDENT,
+                MessageContent::Stamp(Stamp::Question),
+                true,
+                at(2),
+            )
+            .unwrap();
+        assert_eq!(
+            thread.awaiting_coach_reply_since(),
+            Some(at(2)),
+            "生徒が続けて送ったら最後の 1 通の時刻（スタンプも発言）"
+        );
+        thread
+            .send(
+                message(3),
+                COACH,
+                MessageContent::Stamp(Stamp::GotIt),
+                true,
+                at(3),
+            )
+            .unwrap();
+        assert_eq!(thread.awaiting_coach_reply_since(), None, "コーチが返した");
+        thread
+            .send(
+                message(4),
+                STUDENT,
+                text("ありがとうございます"),
+                true,
+                at(4),
+            )
+            .unwrap();
+        assert_eq!(thread.awaiting_coach_reply_since(), Some(at(4)));
+    }
+
+    #[test]
+    fn video_review_and_system_messages_are_not_chat_messages_to_reply_to() {
+        let mut thread = opened();
+        thread
+            .post_video_review_request(message(1), VIDEO, at(1))
+            .unwrap();
+        assert_eq!(
+            thread.awaiting_coach_reply_since(),
+            None,
+            "添削依頼だけでは返信を待たない"
+        );
+        thread
+            .send(message(2), STUDENT, text("動画を送りました"), true, at(2))
+            .unwrap();
+        thread
+            .post_video_review_return(message(3), VIDEO, REVIEW, at(3))
+            .unwrap();
+        assert_eq!(
+            thread.awaiting_coach_reply_since(),
+            Some(at(2)),
+            "添削の返却はチャットの返信に数えない"
+        );
+
+        let system = Message::restore(
+            message(4),
+            MessageAuthor::System,
+            MessageContent::Text(body("お知らせ")),
+            at(4),
+            None,
+        )
+        .unwrap();
+        let mut messages = thread.messages().to_vec();
+        messages.push(system);
+        let thread = MessageThread::restore(THREAD, STUDENT, COACH, NOW, messages).unwrap();
+        assert_eq!(
+            thread.awaiting_coach_reply_since(),
+            Some(at(2)),
+            "システムのメッセージは飛ばす"
+        );
     }
 }

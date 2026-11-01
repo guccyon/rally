@@ -24,6 +24,8 @@ pub enum MessagingError {
     MessageAuthorMismatchesKind,
     /// 当事者がチャットとして送れない種類のメッセージ（添削依頼・添削の返却は async-lesson の出来事から足すもの）
     MessageKindNotSendable,
+    /// 本部が見る、返信のないまま時間の過ぎたスレッドの生徒の最後の発言からの時間が `min`〜`max` 時間でない
+    UnansweredThreadHoursOutOfRange { min: u16, max: u16 },
 }
 
 impl fmt::Display for MessagingError {

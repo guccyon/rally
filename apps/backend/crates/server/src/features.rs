@@ -43,6 +43,7 @@ mod student_activity;
 mod students;
 mod subscription_plans;
 mod subscriptions;
+mod unanswered_message_threads;
 mod videos;
 
 use axum::Router;
@@ -92,5 +93,6 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(students::router(ports))
         .merge(subscription_plans::router(ports))
         .merge(subscriptions::router(ports))
+        .merge(unanswered_message_threads::router(ports))
         .merge(videos::router(ports))
 }
