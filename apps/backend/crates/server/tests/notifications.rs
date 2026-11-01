@@ -18,6 +18,8 @@
 //! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
 //! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
 //! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
+//! 本部が書きかけで残した下書き（`/announcement-drafts`）は生徒に届かず、下書きから送る
+//! （`POST /announcement-drafts/{announcement_draft_id}/send`）と生徒のお知らせに届いて下書きは消える（Postgres の組み立て）。
 
 use std::time::{Duration, SystemTime};
 
@@ -994,4 +996,151 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
         .await,
         json!({ "announcements": [withdrawn] })
     );
+}
+
+/// Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+/// `cargo test -p server --test notifications -- --include-ignored` で走らせる。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_draft_is_saved_in_postgres_and_sending_it_reaches_the_students(pool: sqlx::PgPool) {
+    // 契約に本部の登録の操作がないので、ユースケースを直に呼ぶ
+    let headquarters_account = RegisterAccount::new(
+        PgAccountRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        ManualClock::new(oct5()),
+    )
+    .execute(RegisterAccountCommand {
+        email: "hq@example.com".to_string(),
+        display_name: "本部".to_string(),
+        role: Role::Headquarters,
+        sports: vec![],
+    })
+    .await
+    .unwrap();
+    let headquarters = MockTokenService
+        .issue(TokenClaims {
+            account_id: headquarters_account.id(),
+            role: Role::Headquarters,
+        })
+        .into_string();
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(oct5()),
+        RecordingAnalyticsSink::default(),
+    );
+    let account = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "hanako@example.com", "display_name": "はなこ", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let student = account["access_token"].as_str().unwrap();
+
+    let draft = call(
+        &router,
+        "POST",
+        "/announcement-drafts",
+        Some(&headquarters),
+        json!({ "title": "題", "body": "" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let path = format!(
+        "/announcement-drafts/{}",
+        draft["announcement_draft_id"].as_str().unwrap()
+    );
+    let send = format!("{path}/send");
+    call(
+        &router,
+        "POST",
+        &send,
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
+    let revised = call(
+        &router,
+        "PUT",
+        &path,
+        Some(&headquarters),
+        json!({ "title": "題", "body": "本文", "sport": "soccer" }),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/announcement-drafts",
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcement_drafts": [revised] })
+    );
+    let before = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        before,
+        json!({ "notifications": [] }),
+        "下書きは生徒に届かない"
+    );
+
+    let sent = call(
+        &router,
+        "POST",
+        &send,
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(sent["recipient_count"], 1);
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/announcements",
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcements": [sent] })
+    );
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/announcement-drafts",
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcement_drafts": [] }),
+        "送った下書きは消える"
+    );
+    let after = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(after["notifications"][0]["body"], "題\n本文");
 }

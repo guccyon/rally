@@ -143,6 +143,15 @@ terms:
       取り下げられる。送った中身・受け取った生徒の数は変えず、本部の一覧（listAnnouncements）には取り下げ済みとして残る。
       生徒ごとのお知らせ（notification）と既読は消さず、一覧で外すだけ。届いたプッシュ通知は取り消さない。判定は domain の
       Announcement の 1 か所（D141）。
+  - id: announcement_draft
+    ja: "お知らせの下書き"
+    definition: "本部が本部からのお知らせ（announcement）を送る前に書きかけで残したもので、作った本部のアカウント・題（0〜50 文字）・本文（0〜2000 文字）・対象のスポーツ・作った時刻・最後に直した時刻を持ち、生徒には届かない。"
+    context: notification
+    code: [AnnouncementDraft, AnnouncementDraftId, notification.announcement_drafts, createAnnouncementDraft, updateAnnouncementDraft, deleteAnnouncementDraft, listAnnouncementDrafts, sendAnnouncementDraft]
+    note: >-
+      作る・直す・消す・一覧を見る・送るのは本部だけ（admin-web）で、作った本部のアカウントでなくても扱える。書きかけなので題と
+      本文は空でもよく、送るときに送るお知らせと同じ規則（題・本文が空でない、受け取る生徒がいる）で確かめる（domain の
+      AnnouncementDraft::sendable）。送ったら下書きは消え、送った記録（announcement）が残る。予約送信は扱わない（D177）。
   - id: lesson_menu
     ja: "レッスンメニュー"
     definition: "コーチが自分の提供スポーツのどれかについて作るレッスンのメニューで、スポーツ・同期 / 非同期の別（同期なら 1 回の時間。15〜120 分の 15 分刻み）・名前（1〜40 文字）・説明（0〜400 文字）・公開中かを持ち、作る・直す・非公開にするのはそのコーチで（本部もコーチに代わって非公開にでき、そのあいだコーチは公開し直せない）、公開中でないメニューは生徒に見せない。"
