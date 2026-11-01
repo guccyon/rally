@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use super::LessonReview;
+use super::{LessonReview, Rating};
 
 /// 本部が横断で見る「低い評価」の規則（admin-web の `listLowRatedLessonReviews`。しきい値と期間の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `listLowRatedLessonReviews`）。
@@ -27,9 +27,15 @@ impl LowRatedReviewCriteria {
             .unwrap_or(SystemTime::UNIX_EPOCH)
     }
 
+    /// 点 `rating` が低い点（[`Self::MAX_RATING`] 以下）か。期間は問わない（本部の「対応済み」の印を付けられるか。
+    /// [`LessonReview::mark_handled`]）。
+    pub fn is_low_rating(rating: Rating) -> bool {
+        rating.value() <= Self::MAX_RATING
+    }
+
     /// `review` が `now` に照会したときの低い評価か。
     pub fn matches(review: &LessonReview, now: SystemTime) -> bool {
-        review.rating().value() <= Self::MAX_RATING
+        Self::is_low_rating(review.rating())
             && (Self::since(now)..=now).contains(&review.submitted_at())
     }
 
@@ -50,7 +56,7 @@ mod tests {
     use crate::{
         identity::AccountId,
         lesson::LessonCompletionId,
-        review::{LessonReviewComment, LessonReviewId, Rating},
+        review::{LessonReviewComment, LessonReviewId},
     };
 
     const DAY: Duration = Duration::from_secs(24 * 3600);
@@ -85,6 +91,17 @@ mod tests {
         for (rating, low) in [(1, true), (2, true), (3, false), (4, false), (5, false)] {
             assert_eq!(
                 LowRatedReviewCriteria::matches(&review(1, rating, now()), now()),
+                low,
+                "★{rating}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_low_rating_ignores_the_window() {
+        for (rating, low) in [(1, true), (2, true), (3, false), (5, false)] {
+            assert_eq!(
+                LowRatedReviewCriteria::is_low_rating(Rating::new(rating).unwrap()),
                 low,
                 "★{rating}"
             );
