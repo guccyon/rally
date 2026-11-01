@@ -773,6 +773,20 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .cloned())
     }
 
+    async fn find_in_progress_started_at_or_before(
+        &self,
+        started_at_or_before: SystemTime,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| s.ended_at().is_none() && s.started_at() <= started_at_or_before)
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.iter().any(|s| {

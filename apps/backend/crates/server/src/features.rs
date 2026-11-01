@@ -32,6 +32,7 @@ mod my_profile;
 mod my_videos;
 mod notification_settings;
 mod notifications;
+mod overdue_live_lesson_sessions;
 mod pending_video_reviews;
 mod review_replies;
 mod reviews;
@@ -80,6 +81,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(my_videos::router(ports))
         .merge(notification_settings::router(ports))
         .merge(notifications::router(ports))
+        .merge(overdue_live_lesson_sessions::router(ports))
         .merge(pending_video_reviews::router(ports))
         .merge(review_replies::router(ports))
         .merge(reviews::router(ports))
