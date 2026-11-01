@@ -49,6 +49,7 @@ info:
     本部のコーチの一覧（`listCoaches`。受付の状態・スポーツで絞れる）の 1 件ごとに載る。止めた・再開した記録（いつ・どの本部のアカウントが）は
     コーチごとに新しい順に読む（`listCoachAcceptanceChanges`）。停止中のコーチは student-app の `searchSlots`・
     `listCoachesForStudent` に出ず、`createBooking` は 409 `coach_not_accepting_bookings`（入っている予約はそのまま）。
+    本部のコーチの一覧には、1 件ごとに直近 30 日に終わったレッスンの数（同期・非同期の合計）も載り、コーチどうしを見比べられる。
     本部はコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月のレッスンの実績・
     公開中のレッスンメニューの数を 1 回で読む（`getCoachOverview`）。
     本部はプロフィール（自己紹介）に空の項目があるコーチを、空の項目の名前とともに読む（`listIncompleteCoachProfiles`。
@@ -445,8 +446,9 @@ paths:
       summary: コーチの一覧（本部）
       description: |
         コーチの役割のアカウントをすべて、アカウントの ID と表示名と受付の状態 `acceptance_status`（受付中 `accepting` /
-        停止中 `suspended`。`suspendCoach`・`resumeCoach`）で返す。受付を止めているコーチも載せる。本部がコーチを選ぶ
-        （評価の件数と平均・一覧を見る、受付を止める・再開するなど）のに使う。本部の役割のトークンが呼べる（コーチは 403）。生徒の役割のトークンには、同じパスで
+        停止中 `suspended`。`suspendCoach`・`resumeCoach`）と、直近 30 日に終わったレッスンの数 `recent_lesson_count` で返す。
+        受付を止めているコーチも載せる。本部がコーチを選ぶ
+        （評価の件数と平均・一覧を見る、受付を止める・再開する、どのコーチがどれだけレッスンをしているかを見比べるなど）のに使う。本部の役割のトークンが呼べる（コーチは 403）。生徒の役割のトークンには、同じパスで
         student-app の `listCoachesForStudent`（スポーツでコーチを探す）の形で返す（student-app の契約）。
 
         - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
@@ -455,11 +457,17 @@ paths:
           満たすもの。付けなければ今までどおりすべてのコーチ。絞っても並べ方は変わらない
         - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でないときは 422 `validation_failed`
         - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
+        - `recent_lesson_count`: 照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスン（glossary の
+          lesson_completion）の数。同期レッスン（通話）と非同期レッスン（動画添削）の合計で、数え方は `getCoachOverview` の
+          `current_month` / `previous_month` の `live_lesson_count`・`async_lesson_count` と同じ（グループレッスンの通話は
+          結び付いた生徒ごとに 1 つ。実装は backend の domain `CoachLessonCount` の 1 か所で、期間は `RecentLessonPeriod`）。
+          完了したレッスンがなければ 0。並べ方・絞り込みには使わない
 
-        受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える（`x-context` が 2 つなのはそのため）。
+        受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える。完了したレッスンは live-lesson と
+        async-lesson が記録し、1 件ごとに数えて添える（`x-context` が複数なのはそのため）。
         行動イベントは発火しない。
       tags: [profile]
-      x-context: [profile, scheduling]
+      x-context: [profile, scheduling, live-lesson, async-lesson]
       x-analytics-events: []
       parameters:
         - name: acceptance_status
@@ -2943,7 +2951,7 @@ components:
     Coach:
       type: object
       description: glossary の coach（コーチの役割のアカウント）。本部がコーチを選ぶのに要る項目だけを持つ
-      required: [coach_id, display_name, acceptance_status]
+      required: [coach_id, display_name, acceptance_status, recent_lesson_count]
       properties:
         coach_id:
           type: string
@@ -2956,6 +2964,12 @@ components:
           description: アカウントの表示名
         acceptance_status:
           $ref: "#/components/schemas/CoachAcceptanceStatus"
+        recent_lesson_count:
+          type: integer
+          minimum: 0
+          description: |
+            照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスンの数（同期・非同期の合計。
+            数え方は `listCoaches` の説明）
 
     CoachAcceptanceStatus:
       type: string
