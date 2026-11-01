@@ -39,6 +39,11 @@ export const COACH_ACCEPTANCE_STATUS_LABELS: Record<Schemas["CoachAcceptanceStat
   suspended: "停止中",
 };
 
+/** コーチのプロフィールの項目のうち、空のままにできる（本部が足りないとみなす）もの。 */
+export const COACH_PROFILE_FIELD_LABELS: Record<Schemas["CoachProfileField"], string> = {
+  bio: "自己紹介文",
+};
+
 /** glossary の live_lesson（同期レッスン）と async_lesson（非同期レッスン）。 */
 export const LESSON_TYPE_LABELS: Record<Schemas["LessonType"], string> = {
   live_lesson: "同期（ビデオ通話）",

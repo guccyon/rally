@@ -7,7 +7,7 @@ import { RoleGate } from "@/components/RoleGate";
 import { COACH_OVERVIEW_QUERY, CoachOverviewHome } from "@/components/headquarters/CoachOverviewHome";
 
 function CoachOverviewContent() {
-  // コーチの受付の一覧の行から `?coach_id=` で開く。
+  // コーチの受付・自己紹介の足りないコーチの一覧の行から `?coach_id=` で開く。
   const coachId = useSearchParams().get(COACH_OVERVIEW_QUERY) || undefined;
   return (
     <RoleGate role="headquarters">
