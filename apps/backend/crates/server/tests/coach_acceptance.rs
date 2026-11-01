@@ -3,7 +3,7 @@
 //! （`GET /coaches`）に出ず、予約の作成（`POST /bookings`）が 409 `coach_not_accepting_bookings` になること、止める前に
 //! 入った予約は確定できること、本部のコーチの一覧に受付の状態が出ること、再開すると戻ることを確かめる。止めた・再開した記録
 //! （`GET /coaches/{coach_id}/acceptance-changes`）が操作した本部のアカウントとともに Postgres に残り、新しい順に読めることも
-//! 確かめる。契約の形の細かい検査は interface の `tests/coach_acceptances.rs`・`tests/coaches.rs`・`tests/bookings.rs`。
+//! 確かめる。本部のコーチの一覧（`GET /coaches`）を受付の状態と競技で絞れることも確かめる。契約の形の細かい検査は interface の `tests/coach_acceptances.rs`・`tests/coaches.rs`・`tests/bookings.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coach_acceptance -- --include-ignored` で走らせる。
@@ -270,4 +270,103 @@ async fn headquarters_reads_who_suspended_and_resumed_a_coach_newest_first(pool:
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_filters_coaches_by_acceptance_status_and_sport(pool: PgPool) {
+    let (tennis_id, _) = register(
+        &pool,
+        "tennis@example.com",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (soccer_id, _) = register(
+        &pool,
+        "soccer@example.com",
+        Role::Coach,
+        vec![Sport::Soccer, Sport::Golf],
+    )
+    .await;
+    let (_, headquarters) = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let (_, student) = register(
+        &pool,
+        "taro@example.com",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+    let (status, body) = send(
+        &router,
+        "POST",
+        &format!("/coaches/{tennis_id}/suspend"),
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = send(&router, "GET", "/coaches", &headquarters, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut all = ids(&body, "coaches", "coach_id");
+    all.sort();
+    let mut expected = vec![tennis_id.clone(), soccer_id.clone()];
+    expected.sort();
+    assert_eq!(all, expected, "条件がなければ今までどおりすべて");
+
+    for (query, expected) in [
+        ("?acceptance_status=suspended", vec![tennis_id.as_str()]),
+        ("?acceptance_status=accepting", vec![soccer_id.as_str()]),
+        ("?sport=golf", vec![soccer_id.as_str()]),
+        (
+            "?sport=tennis&acceptance_status=suspended",
+            vec![tennis_id.as_str()],
+        ),
+        ("?sport=tennis&acceptance_status=accepting", vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches{query}"),
+            &headquarters,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body, "coaches", "coach_id"), expected, "{query}");
+    }
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?acceptance_status=suspended",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(body["coaches"][0]["acceptance_status"], "suspended");
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?acceptance_status=paused",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 生徒には今までどおり（受付の状態の条件は見ない。止めたテニスのコーチは出ない）
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?acceptance_status=suspended",
+        &student,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(ids(&body, "coaches", "coach_id").is_empty(), "{body}");
 }

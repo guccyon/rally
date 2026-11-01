@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部のコーチの一覧を受付の状態と競技で絞る: admin-web の `GET /coaches`（`listCoaches`）に任意のクエリ `acceptance_status`（`accepting` / `suspended`）と `sport` を足した。付ければその受付の状態のコーチ・そのスポーツを提供するコーチ（ゴルフも絞れる）だけを、今までと同じ並びで返す。両方なら両方を満たすもの、付けなければ今までどおりすべて。値でなければ 422 `validation_failed`。応答の項目（1 件ごとの `acceptance_status` を含む）は変わらず、生徒のトークンでの振る舞いも変わらない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#500）
 - admin-web の本部に「終わっていない通話」（`/headquarters/overdue-live-sessions`）を足した: 本部の画面の「時間の過ぎた通話を見る」から開き、始まったまま終了の記録がない通話セッションを、コーチ・生徒・開始の日時・開始からの経過（「N 時間 M 分」）で開始の古い順に表にする（`listOverdueLiveLessonSessions`）。「開始からの経過」の下限（既定 3 時間。1 時間〜7 日の 7 段階）を変えるたびに読み直す。0 件なら「終わっていない通話はありません」、読み込めなければその文言を出す。照会だけで、セッションを終わらせる操作はない。API と契約の変更はない（#517）
 - 本部が終わっていないまま時間の過ぎた通話セッションを見る API: admin-web の契約に `GET /live-lesson-sessions/overdue`（`listOverdueLiveLessonSessions`）を足した。始まったまま終了の記録がなく、開始から 3 時間（任意の `older_than_hours` で 1〜168 時間に変えられる。範囲の外・整数でなければ 422 `validation_failed`）以上たったセッションを、コーチを問わず開始の古い順に返す。各行はセッションの ID・開始した予約の ID・コーチと生徒の ID と表示名・開始の時刻・経過時間 `elapsed_sec`（秒）で、一覧に使った時間 `older_than_hours` を添える。本部以外は 403。照会だけで、セッションを終了させない。DB の変更はない。admin-web は型を生成し直しただけで、画面は次の段（#499）
 - 本部の予約の一覧を状態で絞る: admin-web の `GET /bookings`（`listBookings`）に任意のクエリ `status`（`pending` / `confirmed` / `cancelled`。`status=pending&status=cancelled` のように繰り返せばどれかの状態）を足した。付けなければ今までどおり状態を問わない。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` の値でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#521）
