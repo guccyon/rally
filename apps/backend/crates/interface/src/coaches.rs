@@ -1,5 +1,5 @@
 //! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチを受付の状態と直近 30 日に終わった
-//! レッスンの数を添えて返す（任意の `acceptance_status`・`sport` で絞る）。student-app の
+//! レッスンの数を添えて返す（任意の `q`・`acceptance_status`・`sport` で絞る）。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
@@ -14,7 +14,10 @@ use application::{
         ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
         PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
     },
-    profile::{CoachAcceptanceLookup, CoachRecentLessonCountLookup, ListCoaches, ListedCoach},
+    profile::{
+        CoachAcceptanceLookup, CoachRecentLessonCountLookup, ListCoaches, ListCoachesQuery,
+        ListedCoach,
+    },
 };
 use axum::{
     Json, Router,
@@ -29,7 +32,8 @@ use crate::{
     auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         admin_web_sport, coach_acceptance_status_from_contract,
-        coach_acceptance_status_to_contract, sport_to_contract, student_app_sport,
+        coach_acceptance_status_to_contract, display_name_query_from_contract, sport_to_contract,
+        student_app_sport,
     },
     error::ApiError,
 };
@@ -61,6 +65,7 @@ pub struct CoachBody {
 /// admin-web の `listCoaches` のクエリ。
 #[derive(Deserialize)]
 pub struct ListCoachesParams {
+    q: Option<String>,
     acceptance_status: Option<String>,
     sport: Option<String>,
 }
@@ -90,7 +95,8 @@ pub struct CoachListingBody {
 }
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
-/// （役割は `require_role` の層が確かめる。コーチは 403）。
+/// （役割は `require_role` の層が確かめる。コーチは 403）。本部の `q` は表示名の検索語で、長すぎれば 422（生徒の一覧の
+/// `q` と同じ規則）。生徒は `q` を付けても変わらない。
 #[allow(clippy::type_complexity)]
 pub async fn list_coaches<R, A, L, S, C, V, M, F, U>(
     State(state): State<Shared<R, A, L, S, C, V, M, F, U>>,
@@ -113,15 +119,18 @@ where
         Role::Headquarters => {
             let Query(params) = headquarters_params
                 .map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-            let acceptance = params
-                .acceptance_status
-                .as_deref()
-                .map(coach_acceptance_status_from_contract)
-                .transpose()?;
-            let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
+            let query = ListCoachesQuery {
+                name: display_name_query_from_contract(params.q.as_deref())?,
+                acceptance: params
+                    .acceptance_status
+                    .as_deref()
+                    .map(coach_acceptance_status_from_contract)
+                    .transpose()?,
+                sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+            };
             let coaches = state
                 .list_coaches
-                .execute(acceptance, sport)
+                .execute(&query)
                 .await
                 .map_err(ApiError::internal)?;
             Ok(Json(CoachListBody {
