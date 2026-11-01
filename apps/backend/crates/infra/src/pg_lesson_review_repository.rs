@@ -13,7 +13,7 @@ use domain::{
     lesson::LessonCompletionId,
     review::{
         LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
-        LessonReviewReplyComment, Rating,
+        LessonReviewReplyComment, LowRatedReviewHandling, Rating,
     },
 };
 use sqlx::{
@@ -26,13 +26,15 @@ use crate::pg_support::{is_unique_violation, timestamp};
 /// [`LessonReviewRepository`] の Postgres 実装。
 ///
 /// 「完了したレッスン 1 件につき評価は 1 つ」は DB の `lesson_reviews_lesson_id_key` で守り、並行な評価の後の方は
-/// [`InsertReviewError::LessonAlreadyReviewed`] になる。評価へのコーチの返信は同じ行の `reply_comment` / `replied_at`。
+/// [`InsertReviewError::LessonAlreadyReviewed`] になる。評価へのコーチの返信は同じ行の `reply_comment` / `replied_at`、
+/// 本部の対応済みの印は `handled_by` / `handled_at`（最初の印だけを残す）。
 #[derive(Debug, Clone)]
 pub struct PgLessonReviewRepository {
     pool: PgPool,
 }
 
-/// 評価の列（review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at, reply_comment, replied_at）。
+/// 評価の列（review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at, reply_comment, replied_at,
+/// handled_by, handled_at）。
 type ReviewRow = (
     Uuid,
     Uuid,
@@ -42,6 +44,8 @@ type ReviewRow = (
     String,
     OffsetDateTime,
     Option<String>,
+    Option<OffsetDateTime>,
+    Option<Uuid>,
     Option<OffsetDateTime>,
 );
 
@@ -62,7 +66,7 @@ impl LessonReviewRepository for PgLessonReviewRepository {
     ) -> Result<Option<LessonReview>, Unavailable> {
         let row: Option<ReviewRow> = sqlx::query_as(
             "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
-                    reply_comment, replied_at
+                    reply_comment, replied_at, handled_by, handled_at
              FROM review.lesson_reviews WHERE review_id = $1",
         )
         .bind(lesson_review_id_uuid::to_uuid(review_id))
@@ -78,7 +82,7 @@ impl LessonReviewRepository for PgLessonReviewRepository {
     ) -> Result<Option<LessonReview>, Unavailable> {
         let row: Option<ReviewRow> = sqlx::query_as(
             "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
-                    reply_comment, replied_at
+                    reply_comment, replied_at, handled_by, handled_at
              FROM review.lesson_reviews WHERE lesson_id = $1",
         )
         .bind(lesson_completion_id_uuid::to_uuid(lesson_id))
@@ -131,10 +135,29 @@ impl LessonReviewRepository for PgLessonReviewRepository {
         Ok(())
     }
 
+    async fn save_handling(
+        &self,
+        review_id: LessonReviewId,
+        handling: &LowRatedReviewHandling,
+    ) -> Result<(), Unavailable> {
+        // 印がすでにあれば書かない（並行に付けても最初の印が残る）
+        sqlx::query(
+            "UPDATE review.lesson_reviews SET handled_by = $2, handled_at = $3
+             WHERE review_id = $1 AND handled_at IS NULL",
+        )
+        .bind(lesson_review_id_uuid::to_uuid(review_id))
+        .bind(account_id_uuid::to_uuid(handling.handled_by()))
+        .bind(timestamp(handling.handled_at()))
+        .execute(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        Ok(())
+    }
+
     async fn find_by_coach(&self, coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
         let rows: Vec<ReviewRow> = sqlx::query_as(
             "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
-                    reply_comment, replied_at
+                    reply_comment, replied_at, handled_by, handled_at
              FROM review.lesson_reviews WHERE coach_id = $1 ORDER BY submitted_at",
         )
         .bind(account_id_uuid::to_uuid(coach_id))
@@ -150,7 +173,7 @@ impl LessonReviewRepository for PgLessonReviewRepository {
     ) -> Result<Vec<LessonReview>, Unavailable> {
         let rows: Vec<ReviewRow> = sqlx::query_as(
             "SELECT review_id, lesson_id, student_id, coach_id, rating, comment, submitted_at,
-                    reply_comment, replied_at
+                    reply_comment, replied_at, handled_by, handled_at
              FROM review.lesson_reviews WHERE submitted_at >= $1 ORDER BY submitted_at",
         )
         .bind(timestamp(since))
@@ -172,6 +195,8 @@ fn review_from_row(
         submitted_at,
         reply_comment,
         replied_at,
+        handled_by,
+        handled_at,
     ): ReviewRow,
 ) -> Result<LessonReview, Unavailable> {
     // 文と時刻は揃って NULL か揃って値を持つ（DB の lesson_reviews_reply_shape）
@@ -179,6 +204,14 @@ fn review_from_row(
         (Some(comment), Some(replied_at)) => Some(LessonReviewReply::new(
             LessonReviewReplyComment::new(comment).map_err(Unavailable::new)?,
             replied_at.into(),
+        )),
+        _ => None,
+    };
+    // アカウントと時刻は揃って NULL か揃って値を持つ（DB の lesson_reviews_handling_shape）
+    let handling = match (handled_by, handled_at) {
+        (Some(handled_by), Some(handled_at)) => Some(LowRatedReviewHandling::new(
+            account_id_uuid::from_uuid(handled_by),
+            handled_at.into(),
         )),
         _ => None,
     };
@@ -191,5 +224,6 @@ fn review_from_row(
         LessonReviewComment::new(comment).map_err(Unavailable::new)?,
         submitted_at.into(),
     )
-    .with_reply(reply))
+    .with_reply(reply)
+    .with_handling(handling))
 }

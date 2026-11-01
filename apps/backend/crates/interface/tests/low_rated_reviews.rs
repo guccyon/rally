@@ -1,5 +1,7 @@
 //! `GET /lesson-reviews/low`（admin-web の `listLowRatedLessonReviews`）の統合テスト。本部には直近 30 日の★2 以下の評価を
-//! コーチを問わず新しい順に、コーチ・生徒の表示名とレッスンメニューと評価されたコーチの返信とともに返すことを OpenAPI のスキーマで検査する。
+//! コーチを問わず新しい順に、コーチ・生徒の表示名とレッスンメニューと評価されたコーチの返信と本部の対応済みの印とともに返すことを
+//! OpenAPI のスキーマで検査する。クエリの `handled` を付ければ印の有無で絞り（`false` で未対応だけ）、`true` / `false` で
+//! なければ 422 `validation_failed`。
 //! クエリの `sport` を付ければそのスポーツのレッスンの評価だけを返し、`Sport` の値でなければ 422 `validation_failed`。
 //! コーチ・生徒は 403、トークンがなければ 401。この操作はパスパラメータを受けないので、404（見つからない）の応答はない
 //! （しきい値・期間の規則の境目は domain の `LowRatedReviewCriteria` のテストと、ここの一覧に載らない評価で確かめる）。
@@ -30,7 +32,7 @@ use domain::{
     profile::DisplayName,
     review::{
         LessonReview, LessonReviewComment, LessonReviewId, LessonReviewReply,
-        LessonReviewReplyComment, Rating, ReviewLessonMenu,
+        LessonReviewReplyComment, LowRatedReviewHandling, Rating, ReviewLessonMenu,
     },
 };
 use serde_json::{Value, json};
@@ -149,6 +151,14 @@ impl LessonReviewRepository for BrokenReviews {
         unreachable!("一覧では保存しない")
     }
 
+    async fn save_handling(
+        &self,
+        _review_id: LessonReviewId,
+        _handling: &domain::review::LowRatedReviewHandling,
+    ) -> Result<(), Unavailable> {
+        unreachable!("一覧では保存しない")
+    }
+
     async fn find_by_coach(&self, _coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
         unreachable!("一覧では読まない")
     }
@@ -245,8 +255,10 @@ async fn app() -> Router {
                 1,
                 now() - 30 * DAY - Duration::from_secs(1),
             ),
-            // 30 日前ちょうどは載る
-            review(14, OTHER_COACH, STUDENT, 2, now() - 30 * DAY),
+            // 30 日前ちょうどは載る。本部の対応済みの印があるものは載せる
+            review(14, OTHER_COACH, STUDENT, 2, now() - 30 * DAY).with_handling(Some(
+                LowRatedReviewHandling::new(AccountId::from_u128(1), now() - 29 * DAY),
+            )),
         ]),
     )
 }
@@ -303,6 +315,7 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                     "submitted_at": "2026-10-30T00:00:00Z",
                     "lesson_menu": null,
                     "reply": null,
+                    "handling": null,
                 },
                 {
                     "review_id": "00000000-0000-0000-0000-00000000000a",
@@ -322,6 +335,7 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                         "comment": "ご意見ありがとうございます",
                         "replied_at": "2026-10-29T00:00:00Z",
                     },
+                    "handling": null,
                 },
                 {
                     "review_id": "00000000-0000-0000-0000-00000000000e",
@@ -335,6 +349,10 @@ async fn headquarters_lists_low_reviews_of_the_last_thirty_days_newest_first() {
                     "submitted_at": "2026-10-01T00:00:00Z",
                     "lesson_menu": null,
                     "reply": null,
+                    "handling": {
+                        "handled_by": "00000000-0000-0000-0000-000000000001",
+                        "handled_at": "2026-10-02T00:00:00Z",
+                    },
                 },
             ],
         }),
@@ -380,6 +398,50 @@ async fn sport_keeps_only_low_reviews_of_lessons_of_that_sport() {
 async fn sport_that_is_not_a_sport_is_422_validation_failed() {
     let router = app().await;
     for query in ["?sport=pingpong", "?sport=", "?sport=Tennis"] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn handled_keeps_only_low_reviews_with_or_without_the_mark_of_headquarters() {
+    let router = app().await;
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?handled=false").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [
+            "00000000-0000-0000-0000-00000000000b",
+            "00000000-0000-0000-0000-00000000000a"
+        ],
+        "未対応（11・10）だけを、新しい順"
+    );
+
+    let (status, body) = list_with_query(&router, Some(HEADQUARTERS), "?handled=true").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), ["00000000-0000-0000-0000-00000000000e"]);
+
+    // スポーツと合わせて絞れる（14 は水泳）
+    let (status, body) =
+        list_with_query(&router, Some(HEADQUARTERS), "?sport=swimming&handled=false").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"], json!([]));
+}
+
+#[tokio::test]
+async fn handled_that_is_not_a_boolean_is_422_validation_failed() {
+    let router = app().await;
+    for query in ["?handled=yes", "?handled=", "?handled=1"] {
         let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed", "{query}");

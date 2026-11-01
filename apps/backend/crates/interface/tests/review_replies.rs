@@ -117,6 +117,14 @@ impl LessonReviewRepository for BrokenReviews {
         unreachable!("読めなければ保存しない")
     }
 
+    async fn save_handling(
+        &self,
+        _review_id: LessonReviewId,
+        _handling: &domain::review::LowRatedReviewHandling,
+    ) -> Result<(), Unavailable> {
+        unreachable!("返信では印を保存しない")
+    }
+
     async fn find_by_coach(&self, _coach_id: AccountId) -> Result<Vec<LessonReview>, Unavailable> {
         unreachable!("返信では読まない")
     }

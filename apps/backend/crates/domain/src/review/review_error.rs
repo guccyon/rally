@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// review（評価）の不変条件の違反。評価の点・一言・返信の文の生成と、評価・返信を付けるときに返す。
+/// review（評価）の不変条件の違反。評価の点・一言・返信の文の生成と、評価・返信・対応済みの印を付けるときに返す。
 ///
 /// 表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`] に置く。利用者に見せる文言と HTTP の
 /// 状態は境界（interface）が変種から決める。[`fmt::Display`] はデバッグ用。
@@ -22,6 +22,8 @@ pub enum ReviewError {
     LessonReviewReplyTooLong { max: usize },
     /// 評価されたコーチでないので、その評価に返信できない
     NotTheReviewedCoach,
+    /// 低い評価（点が [`super::LowRatedReviewCriteria::MAX_RATING`] 以下）でないので、本部の「対応済み」の印を付けられない
+    NotLowRated,
 }
 
 impl fmt::Display for ReviewError {

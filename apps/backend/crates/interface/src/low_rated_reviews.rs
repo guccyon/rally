@@ -1,6 +1,7 @@
 //! `/lesson-reviews/low`。admin-web の `GET /lesson-reviews/low`（`listLowRatedLessonReviews`。本部が横断で見る
 //! 直近の低い評価の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツのレッスンの評価だけ（`Sport` の値で
-//! なければ 422）。各評価には評価されたコーチの返信を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
+//! なければ 422）。`handled` があれば本部の対応済みの印の有無がそれと同じ評価だけ（`true` / `false` でなければ 422）。
+//! 各評価には評価されたコーチの返信と、本部の対応済みの印を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ use crate::{
     auth::{TokenVerification, require_role},
     contract::{admin_web_sport, date_time_to_contract},
     error::ApiError,
+    low_rated_review_handlings::{LowRatedReviewHandlingBody, low_rated_review_handling_body},
     reviews::{
         LessonReviewReplyBody, ReviewLessonMenuBody, lesson_review_reply_body,
         review_lesson_menu_body,
@@ -47,6 +49,7 @@ type Shared<R, M, P, D, S, C> = Arc<LowRatedReviewsState<R, M, P, D, S, C>>;
 #[derive(Deserialize)]
 pub struct ListLowRatedReviewsParams {
     sport: Option<String>,
+    handled: Option<bool>,
 }
 
 /// admin-web の `LowRatedLessonReviewList`。
@@ -73,10 +76,12 @@ pub struct LowRatedLessonReviewBody {
     submitted_at: String,
     lesson_menu: Option<ReviewLessonMenuBody>,
     reply: Option<LessonReviewReplyBody>,
+    handling: Option<LowRatedReviewHandlingBody>,
 }
 
 /// `GET /lesson-reviews/low`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。
+/// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。`handled` があれば対応済みの印の
+/// 有無がそれと同じ評価だけ（`false` で未対応だけ）。
 pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
     State(state): State<Shared<R, M, P, D, S, C>>,
     params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
@@ -94,7 +99,7 @@ where
     let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
     let list = state
         .list_low_rated_reviews
-        .execute(sport)
+        .execute(sport, params.handled)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(LowRatedLessonReviewListBody {
@@ -134,6 +139,10 @@ fn low_rated_review_body(
             .get(&review.lesson_id())
             .map(review_lesson_menu_body),
         reply: review.reply().map(lesson_review_reply_body).transpose()?,
+        handling: review
+            .handling()
+            .map(low_rated_review_handling_body)
+            .transpose()?,
     })
 }
 
@@ -141,7 +150,8 @@ fn low_rated_review_body(
 /// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /lesson-reviews/low` は本部だけ（コーチ・生徒は 403）。同じ接頭辞の `POST /lesson-reviews`（評価）は
-/// [`crate::reviews_router`] で、生徒だけ。
+/// [`crate::reviews_router`] で、生徒だけ。対応済みの印を付ける `PUT /lesson-reviews/{review_id}/handling` は
+/// [`crate::low_rated_review_handlings_router`]。
 pub fn low_rated_reviews_router<R, M, P, D, S, C, T>(
     list_low_rated_reviews: ListLowRatedReviews<R, M, P, D, S, C>,
     tokens: T,
