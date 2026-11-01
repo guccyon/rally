@@ -380,6 +380,15 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listBookings は coach_id を付ければクエリに入れる", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01", coach_id: coachId });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.searchParams.get("coach_id")).toBe(coachId);
+    expect(url.searchParams.get("from")).toBe("2026-10-26");
+  });
+
   test("listBookings の 422 は入力の誤りの文言にする", async () => {
     const { api } = setup(json(422, { code: "validation_failed", message: "to is before from" }));
     const result = await api.listBookings({ from: "2026-10-26", to: "2026-10-25" });
