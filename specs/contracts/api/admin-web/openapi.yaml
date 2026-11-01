@@ -36,6 +36,8 @@ info:
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
     本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチと予約の状態でも絞れる）。
+    問い合わせを受けたときは、予約 1 件の中身（生徒・コーチ・レッスンメニュー・枠の開始と終わり・体験予約か・今の状態）と
+    状態の移り変わり（確定・キャンセルの時刻）を 1 回で読む（`getBooking`）。
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
     本部のコーチの一覧（`listCoaches`。受付の状態・スポーツで絞れる）の 1 件ごとに載る。止めた・再開した記録（いつ・どの本部のアカウントが）は
     コーチごとに新しい順に読む（`listCoachAcceptanceChanges`）。停止中のコーチは student-app の `searchSlots`・
@@ -248,6 +250,51 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /bookings/{booking_id}:
+    get:
+      operationId: getBooking
+      summary: 予約 1 件の詳細（本部）
+      description: |
+        予約（glossary の booking。体験予約を含む）1 件の中身と状態の移り変わりを 1 回の照会で返す。本部が生徒やコーチから
+        問い合わせを受けたときに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+
+        - `booking`: 予約（`listBookings` の 1 件と同じ `Booking`。予約した時点のレッスンメニュー `lesson_menu`・体験予約か
+          `is_trial`・今の状態 `status`・作った時刻 `created_at` を含む）。状態を問わない（キャンセル済みも返す）
+        - `slot`: 予約したスロット（枠の開始 `starts_at` と終わり `ends_at`。`lesson_menu` は載せない。予約した時点のメニューは
+          `booking.lesson_menu`）
+        - `status_changes`: 状態が変わった記録（確定 `confirmed`・キャンセル `cancelled`）を時刻の古い順に。予約が持つ確定・
+          キャンセルの時刻（`booking.confirmed_at` / `booking.cancelled_at`）から組み立て、時刻の記録がない変化は載せない
+          （確定せずにキャンセルした予約はキャンセルだけ、作ったばかりの予約は空の配列）。作った時刻は `booking.created_at`
+        - コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
+          その表示名を載せない
+        - `booking_id` がない予約・UUID でないときは 404 `not_found`
+        - 決済の情報は返さない。照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [scheduling]
+      x-context: scheduling
+      x-analytics-events: []
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 予約 1 件の詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeadquartersBookingDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /me:
     get:
@@ -2140,6 +2187,42 @@ components:
           description: 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
           items:
             $ref: "#/components/schemas/HeadquartersBooking"
+
+    HeadquartersBookingDetail:
+      type: object
+      description: 本部が見る予約 1 件の詳細（`getBooking`）。予約（glossary の booking）と予約したスロット（glossary の slot）と、状態の移り変わりと、コーチと予約した生徒の表示名
+      required: [booking, slot, status_changes]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        slot:
+          $ref: "#/components/schemas/Slot"
+        status_changes:
+          type: array
+          description: 状態が変わった記録（確定・キャンセル）。時刻の古い順。記録のない変化は載せない
+          items:
+            $ref: "#/components/schemas/BookingStatusChange"
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない
+        student_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない
+
+    BookingStatusChange:
+      type: object
+      description: 予約の状態が変わった記録 1 件。`status` は変えた後の状態（確定 `confirmed` かキャンセル `cancelled`）で、`changed_at` は変わった時刻
+      required: [status, changed_at]
+      properties:
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        changed_at:
+          type: string
+          format: date-time
 
     CoachSlot:
       type: object
