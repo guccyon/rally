@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{collections::BTreeMap, future::Future};
 
 use domain::{identity::AccountId, profile::CoachBio};
 
@@ -24,4 +24,10 @@ pub trait CoachProfileRepository: Send + Sync {
         coach_id: AccountId,
         bio: CoachBio,
     ) -> impl Future<Output = Result<Option<CoachBio>, Unavailable>> + Send;
+
+    /// すべてのコーチの自己紹介文（コーチのアカウントの ID ごと）。書いていないコーチは空（[`CoachBio::default`]）で載る。
+    /// コーチでないアカウントは載らない。
+    fn list_coach_bios(
+        &self,
+    ) -> impl Future<Output = Result<BTreeMap<AccountId, CoachBio>, Unavailable>> + Send;
 }

@@ -14,6 +14,7 @@ use domain::{
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
+    profile::CoachProfileField,
     scheduling::{
         BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus,
     },
@@ -106,6 +107,13 @@ pub(crate) fn coach_acceptance_status_from_contract(
         .into_iter()
         .find(|status| coach_acceptance_status_to_contract(*status) == value)
         .ok_or_else(|| ApiError::validation_failed(format!("未知の受付の状態: {value}")))
+}
+
+/// admin-web の `CoachProfileField` の値（`listIncompleteCoachProfiles` の `missing_fields`）。
+pub(crate) const fn coach_profile_field_to_contract(field: CoachProfileField) -> &'static str {
+    match field {
+        CoachProfileField::Bio => "bio",
+    }
 }
 
 /// admin-web の `SlotSupplyStatus` の値。
