@@ -91,6 +91,34 @@ describe("headquartersApi", () => {
     expect(result).toEqual({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" });
   });
 
+  test("getCoachOverview は GET /api/coaches/{coach_id}/overview を呼び、コーチの様子を返す", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const month = { live_lesson_count: 1, async_lesson_count: 0, review_count: 0, average_rating: null };
+    const overview = {
+      coach_id: coachId,
+      display_name: "山田コーチ",
+      acceptance_status: "accepting",
+      review_count: 0,
+      average_rating: null,
+      current_month: { month: "2026-11", ...month },
+      previous_month: { month: "2026-10", ...month },
+      published_lesson_menu_count: 2,
+    };
+    const { api, fetchMock } = setup(json(200, overview));
+    const result = await api.getCoachOverview(coachId);
+    expect(result).toEqual({ ok: true, data: overview });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/overview`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("getCoachOverview の 404 は code を not_found で返す", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "not found" }));
+    const result = await api.getCoachOverview("22222222-2222-4222-8222-222222222222");
+    expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
+  });
+
   test("listCoachReviews は指定したコーチの評価の一覧を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const list = { coach_id: coachId, reviews: [] };
