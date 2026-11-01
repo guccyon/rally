@@ -1,0 +1,19 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  差し戻しの直しで、同じ PR 本文を複数のジョブ（body_fix と続きの implement）が並列に末尾へ追記すると、
+  本文の持ち主がいないため見出しの順と階層が崩れ、新しい差し戻しを生む。
+scope:
+  roles: [judge, body_fix, implement]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "396"
+  - event: "case.analyzed:40381"
+status: active
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+related: [K-0001]
+decided_by: committee:D-0001

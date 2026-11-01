@@ -1,0 +1,18 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: >-
+  実装役が書く報告（summary.md）の型と、検査役が PR-002 で見る PR テンプレートの見出しが揃っていないと、
+  報告がそのまま PR 本文になるので、テンプレートにある見出し（背景・問題）が最初から欠け、同じ指摘で差し戻されやすい。
+scope:
+  roles: [implement, inspector]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "396"
+  - event: "case.analyzed:40381"
+status: active
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+decided_by: committee:D-0001
