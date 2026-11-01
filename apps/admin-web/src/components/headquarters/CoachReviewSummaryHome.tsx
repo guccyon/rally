@@ -9,8 +9,25 @@ import { Section } from "@/components/Section";
 
 import { CoachReviewPicker } from "./CoachReviewPicker";
 
-/** 本部の画面: コーチを一覧から選んで、そのコーチの評価の件数と平均と一覧を見る。 */
-export function CoachReviewSummaryHome({ token }: { token: string }) {
+/** URL でコーチを選んだ状態にするクエリの名前（`?coach_id=`）。 */
+export const COACH_ID_QUERY = "coach_id";
+
+/** そのコーチを選んだ状態で開く「コーチの評価」の画面の URL。 */
+export function coachReviewSummaryPath(coachId: string): string {
+  return `/headquarters/coach-review-summary?${new URLSearchParams({ [COACH_ID_QUERY]: coachId })}`;
+}
+
+/**
+ * 本部の画面: コーチを一覧から選んで、そのコーチの評価の件数と平均と一覧を見る。
+ * `initialCoachId`（URL の `?coach_id=`）があれば、そのコーチを選んだ状態で開く。
+ */
+export function CoachReviewSummaryHome({
+  token,
+  initialCoachId,
+}: {
+  token: string;
+  initialCoachId?: string;
+}) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
     <>
@@ -20,7 +37,7 @@ export function CoachReviewSummaryHome({ token }: { token: string }) {
         </Link>
       </p>
       <Section title="コーチの評価">
-        <CoachReviewPicker api={api} />
+        <CoachReviewPicker api={api} initialCoachId={initialCoachId} />
       </Section>
     </>
   );
