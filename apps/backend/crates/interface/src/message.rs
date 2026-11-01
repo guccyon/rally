@@ -150,6 +150,9 @@ pub(crate) fn notification_error(error: &NotificationError) -> String {
         NotificationError::AnnouncementAlreadyWithdrawn => {
             "お知らせはすでに取り下げてある".to_string()
         }
+        NotificationError::ReceivedAnnouncementMismatch => {
+            "受け取ったお知らせが本部からのお知らせを指していない".to_string()
+        }
     }
 }
 
