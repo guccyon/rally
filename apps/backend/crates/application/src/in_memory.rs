@@ -945,6 +945,17 @@ impl VideoRepository for InMemoryVideoRepository {
             .collect())
     }
 
+    async fn videos_awaiting_review(&self) -> Result<Vec<Video>, Unavailable> {
+        Ok(self
+            .videos
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| v.review().is_none())
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {
         self.videos.lock().unwrap().push(video);
         Ok(())

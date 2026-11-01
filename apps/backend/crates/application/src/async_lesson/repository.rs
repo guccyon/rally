@@ -40,6 +40,11 @@ pub trait VideoRepository: Send + Sync {
         student_id: AccountId,
     ) -> impl Future<Output = Result<Vec<Video>, Unavailable>> + Send;
 
+    /// コーチがまだ添削を返していない動画（すべてのコーチ・生徒。本部が見る返却待ちの一覧の材料）。並びは決めない。
+    fn videos_awaiting_review(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Video>, Unavailable>> + Send;
+
     /// 送付した動画を保存する。
     fn insert(&self, video: Video) -> impl Future<Output = Result<(), Unavailable>> + Send;
 
