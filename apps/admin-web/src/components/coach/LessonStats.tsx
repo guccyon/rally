@@ -51,7 +51,14 @@ export function LessonStats({ api }: { api: Pick<CoachApi, "getMyLessonStats"> }
   );
 }
 
-function LessonStatsTable({ stats }: { stats: Schemas["CoachLessonStats"] }) {
+/**
+ * 今月と先月の実績の表。コーチのホーム（getMyLessonStats）と本部のコーチの様子（getCoachOverview。同じ形の月の項目）で共通。
+ */
+export function LessonStatsTable({
+  stats,
+}: {
+  stats: Pick<Schemas["CoachLessonStats"], "current_month" | "previous_month">;
+}) {
   const months = [
     { title: "今月", month: stats.current_month },
     { title: "先月", month: stats.previous_month },

@@ -1,13 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
-import { COACH_ACCEPTANCE_STATUS_LABELS } from "@/components/labels";
 
 import { CoachAcceptanceAction } from "./CoachAcceptanceAction";
+import { CoachAcceptanceBadge } from "./CoachAcceptanceBadge";
+import { coachOverviewPath } from "./CoachOverviewHome";
 
 type Coach = Schemas["Coach"];
 
@@ -16,15 +18,10 @@ type State =
   | { kind: "loaded"; coaches: Coach[] }
   | { kind: "failed"; message: string };
 
-const STATUS_CLASSES: Record<Schemas["CoachAcceptanceStatus"], string> = {
-  accepting: "bg-success-container text-success-on-container",
-  suspended: "bg-surface text-text-muted",
-};
-
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
  * 受付中の行は「受付を止める」（suspendCoach）、停止中の行は「再開する」（resumeCoach）を行の中で確かめてから送り、
- * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。
+ * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  */
 export function CoachAcceptanceList({
   api,
@@ -105,13 +102,13 @@ export function CoachAcceptanceList({
           <tbody>
             {state.coaches.map((coach) => (
               <tr key={coach.coach_id} className="border-t align-top">
-                <td className="py-1">{coach.display_name}</td>
                 <td className="py-1">
-                  <span
-                    className={`rounded-sm px-2 py-0.5 text-xs ${STATUS_CLASSES[coach.acceptance_status]}`}
-                  >
-                    {COACH_ACCEPTANCE_STATUS_LABELS[coach.acceptance_status]}
-                  </span>
+                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+                    {coach.display_name}
+                  </Link>
+                </td>
+                <td className="py-1">
+                  <CoachAcceptanceBadge status={coach.acceptance_status} />
                 </td>
                 <td className="py-1">
                   <CoachAcceptanceAction
