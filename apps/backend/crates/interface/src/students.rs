@@ -4,16 +4,18 @@ use std::sync::Arc;
 
 use application::identity::{
     AccountRepository, ListStudents, StudentContractLookup, StudentLastBookingLookup,
-    StudentOverview, account_id_uuid,
+    StudentOverview, TokenVerifier, account_id_uuid,
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State, rejection::QueryRejection},
+    routing::get,
 };
-use domain::profile::DisplayNameQuery;
+use domain::{identity::Role, profile::DisplayNameQuery};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::{TokenVerification, require_role},
     contract::{
         contract_type_to_contract, date_time_to_contract, sport_to_contract,
         subscription_plan_to_contract,
@@ -100,4 +102,23 @@ where
             .map(student_body)
             .collect::<Result<_, _>>()?,
     }))
+}
+
+/// 本部が見る生徒の一覧（admin-web の `GET /students`）のルーター。組み立て用のクレートは他の機能のルーターと
+/// `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students` は本部だけ（コーチ・生徒は 403）。
+pub fn students_router<R, C, B, T>(list_students: ListStudents<R, C, B>, tokens: T) -> Router
+where
+    R: AccountRepository + 'static,
+    C: StudentContractLookup + 'static,
+    B: StudentLastBookingLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/students", get(self::list_students::<R, C, B>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(StudentsState { list_students }))
+        .layer(TokenVerification::layer(tokens))
 }

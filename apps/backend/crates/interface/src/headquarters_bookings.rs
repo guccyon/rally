@@ -5,20 +5,22 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, ListBookings, ListBookingsQuery,
         StudentDisplayNameLookup,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State, rejection::QueryRejection},
+    routing::get,
 };
+use domain::identity::Role;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
     contract::{date_from_contract, date_to_contract},
     error::ApiError,
@@ -116,4 +118,28 @@ where
             })
             .collect::<Result<_, ApiError>>()?,
     }))
+}
+
+/// 本部が見る予約の一覧（admin-web の `GET /bookings`）のルーター。組み立て用のクレートは他の機能のルーターと `merge`
+/// する（同じ検証器を渡す）。同じパスの `POST /bookings`（student-app の予約の作成。生徒だけ）は
+/// [`crate::bookings_router`] にあり、`merge` で 1 つのパスにまとまる。
+///
+/// `GET /bookings` は本部だけ（コーチ・生徒は 403）。
+pub fn headquarters_bookings_router<B, K, D, C, T>(
+    list_bookings: ListBookings<B, K, D, C>,
+    tokens: T,
+) -> Router
+where
+    B: BookingRepository + 'static,
+    K: BookingCoachDisplayNameLookup + 'static,
+    D: StudentDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/bookings", get(self::list_bookings::<B, K, D, C>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(HeadquartersBookingsState { list_bookings }))
+        .layer(TokenVerification::layer(tokens))
 }

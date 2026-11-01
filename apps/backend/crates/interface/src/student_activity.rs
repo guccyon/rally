@@ -8,17 +8,20 @@ use application::{
     identity::{
         AccountRepository, GetStudentActivity, GetStudentActivityError,
         StudentActivityCoachDisplayNameLookup, StudentBookingActivityLookup,
-        StudentLessonHistoryLookup, account_id_uuid,
+        StudentLessonHistoryLookup, TokenVerifier, account_id_uuid,
     },
     lesson::lesson_completion_id_uuid,
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
+    routing::get,
 };
+use domain::identity::Role;
 use serde::Serialize;
 
 use crate::{
+    auth::{TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
     contract::{date_time_to_contract, lesson_type_to_contract},
     error::ApiError,
@@ -118,4 +121,33 @@ where
             .collect::<Result<_, ApiError>>()?,
         cancelled_booking_count: activity.cancelled_booking_count,
     }))
+}
+
+/// 本部が見る生徒 1 人の利用の様子（admin-web の `GET /students/{student_id}/activity`）のルーター。組み立て用の
+/// クレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students/{student_id}/activity` は本部だけ（コーチ・生徒は 403）。
+pub fn student_activity_router<R, B, L, D, C, T>(
+    get_student_activity: GetStudentActivity<R, B, L, D, C>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    B: StudentBookingActivityLookup + 'static,
+    L: StudentLessonHistoryLookup + 'static,
+    D: StudentActivityCoachDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/students/{student_id}/activity",
+            get(self::get_student_activity::<R, B, L, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(StudentActivityState {
+            get_student_activity,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

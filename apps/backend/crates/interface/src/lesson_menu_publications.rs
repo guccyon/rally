@@ -10,16 +10,22 @@ use application::{
         UnpublishLessonMenu, lesson_menu_id_uuid,
     },
     clock::Clock,
+    identity::TokenVerifier,
 };
 use axum::{
-    Json,
+    Json, Router,
     body::Bytes,
     extract::{Path, State},
+    routing::post,
 };
-use domain::catalog::{HeadquartersUnpublishReason, LessonMenuId};
+use domain::{
+    catalog::{HeadquartersUnpublishReason, LessonMenuId},
+    identity::Role,
+};
 use serde::Deserialize;
 
 use crate::{
+    auth::{TokenVerification, require_role},
     catalog_error::lesson_menu_error,
     error::ApiError,
     lesson_menus::{LessonMenuBody, lesson_menu_body},
@@ -98,4 +104,37 @@ fn publication_error(error: ChangeLessonMenuPublicationError) -> ApiError {
         ChangeLessonMenuPublicationError::Invalid(error) => lesson_menu_error(error),
         ChangeLessonMenuPublicationError::Unavailable(error) => ApiError::internal(error),
     }
+}
+
+/// 本部によるレッスンメニューの非公開・公開に戻す操作（admin-web の `POST /lesson-menus/{lesson_menu_id}/unpublish`・
+/// `POST /lesson-menus/{lesson_menu_id}/republish`）のルーター。組み立て用のクレートは他の機能のルーターと `merge`
+/// する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。
+pub fn lesson_menu_publication_router<M, C, T>(
+    unpublish_lesson_menu: UnpublishLessonMenu<M, C>,
+    republish_lesson_menu: RepublishLessonMenu<M>,
+    tokens: T,
+) -> Router
+where
+    M: LessonMenuRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-menus/{lesson_menu_id}/unpublish",
+            post(self::unpublish_lesson_menu::<M, C>),
+        )
+        .route(
+            "/lesson-menus/{lesson_menu_id}/republish",
+            post(self::republish_lesson_menu::<M, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(LessonMenuPublicationsState {
+            unpublish_lesson_menu,
+            republish_lesson_menu,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

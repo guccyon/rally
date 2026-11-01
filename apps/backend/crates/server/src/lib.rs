@@ -7,24 +7,17 @@ pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
 pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 
+mod assembly;
+mod features;
+mod ports;
+
 use application::{
     analytics::AnalyticsSink,
-    async_lesson::{
-        GetVideoReview, ListCoachVideos, ListMyVideos, ReturnVideoReview, SubmitVideo,
-        VideoRepository,
-    },
-    catalog::{
-        CatalogLessonMenuLookup, CatalogPublishedLessonMenuCountLookup, CreateLessonMenu,
-        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
-    },
+    async_lesson::VideoRepository,
+    catalog::LessonMenuRepository,
     clock::{Clock, SystemClock},
-    entitlement::{
-        EntitlementChatGate, EntitlementQuotaGate, EntitlementRepository, EntitlementReviewGate,
-        EntitlementStudentContractLookup, GetEntitlement, ListSubscriptionPlans,
-        LiveLessonQuotaSubscriber, StartSubscription,
-    },
-    identity::{AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount},
+    entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
+    identity::AccountRepository,
     in_memory::{
         InMemoryAccountRepository, InMemoryAnnouncementRepository, InMemoryBookingRepository,
         InMemoryCoachAcceptanceRepository, InMemoryEntitlementRepository,
@@ -34,59 +27,30 @@ use application::{
         InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
         InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
-    lesson::{
-        GetMyLessonStats, LessonCompletionLookup, LessonCompletionMenuLookup,
-        LessonCompletionRepository, LessonCompletionSportLookup, LessonStudentLessonHistoryLookup,
-        ListMyLessonCompletions, RecordLessonCompletion,
-    },
-    live_lesson::{
-        EndLiveLessonSession, LiveLessonSessionRepository, StartLiveLessonSession,
-        VideoCallProvider,
-    },
-    matching::{
-        AddFavoriteCoach, FavoriteCoachRepository, ListCoachesForStudent, ListFavoriteCoaches,
-        MatchingCoachFavoriteLookup, RemoveFavoriteCoach,
-    },
-    messaging::{
-        ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
-        MessageThreadSubscriber, SendMessage,
-    },
+    lesson::LessonCompletionRepository,
+    live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
+    matching::FavoriteCoachRepository,
+    messaging::{MessageThreadRepository, MessageThreadSubscriber},
     notification::{
-        AnnouncementRepository, GetNotificationSettings, ListAnnouncements, ListMyNotifications,
-        MarkMyNotificationsRead, NotificationRepository, NotificationSettingsRepository,
-        PushNotificationSubscriber, PushSender, SendAnnouncement, UpdateNotificationSettings,
+        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository,
+        PushNotificationSubscriber, PushSender,
     },
-    profile::{
-        CoachProfileRepository, GetCoachBio, GetCoachOverview, GetCoachProfile, ListCoaches,
-        ProfileAnnouncementRecipientLookup, ProfileCoachCandidateLookup,
-        ProfileCoachDisplayNameLookup, ProfileCoachIntroductionLookup,
-        ProfileStudentDisplayNameLookup, ProfileStudentSportLookup, UpdateCoachProfile,
-        UpdateStudentProfile,
-    },
-    review::{
-        GetCoachReviewSummary, LessonReviewRepository, ListCoachReviews, ListLowRatedReviews,
-        ReplyToLessonReview, ReviewCoachReviewSummaryLookup, ReviewLessonCompletionReviewLookup,
-        ReviewMonthlyReviewSummaryLookup, SubmitLessonReview,
-    },
-    scheduling::{
-        BookingRepository, CancelBooking, CoachAcceptanceRepository, ConfirmBooking, CreateBooking,
-        GetSlotSupply, ListBookings, ListCoachAcceptanceChanges, ListCoachBookings, ListCoachSlots,
-        ListMyBookings, PublishSlot, ResumeCoach, SchedulingBookingLookup,
-        SchedulingCoachAcceptanceLookup, SchedulingStudentBookingActivityLookup,
-        SchedulingStudentLastBookingLookup, SearchSlots, SlotRepository, SuspendCoach,
-        WithdrawSlot,
-    },
+    profile::CoachProfileRepository,
+    review::LessonReviewRepository,
+    scheduling::{BookingRepository, CoachAcceptanceRepository, SlotRepository},
 };
 use axum::Router;
 use infra::{
-    InMemoryDomainEventBus, MockAiFeedbackGenerator, MockPushSender, MockTokenService,
-    MockVideoStorage, PgAccountRepository, PgAnnouncementRepository, PgBookingRepository,
-    PgCoachAcceptanceRepository, PgEntitlementRepository, PgFavoriteCoachRepository,
-    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
-    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
-    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
+    InMemoryDomainEventBus, MockPushSender, PgAccountRepository, PgAnnouncementRepository,
+    PgBookingRepository, PgCoachAcceptanceRepository, PgEntitlementRepository,
+    PgFavoriteCoachRepository, PgLessonCompletionRepository, PgLessonMenuRepository,
+    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
+    PgNotificationRepository, PgNotificationSettingsRepository, PgSlotRepository,
+    PgVideoRepository,
 };
 use sqlx::PgPool;
+
+use crate::assembly::Assembly;
 
 /// HTTP のルーター（現在時刻は OS の時計）。組み立ては [`router_at`]。
 pub fn router() -> Router {
@@ -331,7 +295,8 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H> {
     announcements: H,
 }
 
-/// 保存先のほかの組み立て（インメモリと Postgres で共通）。
+/// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
+/// ポートの実装をまとめて渡す。
 #[allow(clippy::type_complexity)]
 fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, P, V>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H>,
@@ -361,364 +326,24 @@ where
     P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
-    let Repositories {
-        accounts,
-        slots,
-        bookings,
-        entitlements,
-        sessions,
-        videos,
-        completions,
-        threads,
-        reviews,
-        notification_settings,
-        notifications,
-        lesson_menus,
-        coach_acceptances,
-        favorite_coaches,
-        announcements,
-    } = repositories;
-    let catalog = interface::catalog_router(
-        CreateLessonMenu::new(lesson_menus.clone(), accounts.clone(), clock.clone()),
-        UpdateLessonMenu::new(lesson_menus.clone(), accounts.clone()),
-        ListMyLessonMenus::new(lesson_menus.clone()),
-        ListCoachLessonMenus::new(lesson_menus.clone()),
-        ListLessonMenus::new(
-            lesson_menus.clone(),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-        ),
-        MockTokenService,
-    );
-    let lesson_menu_publication = interface::lesson_menu_publication_router(
-        UnpublishLessonMenu::new(lesson_menus.clone(), clock.clone()),
-        RepublishLessonMenu::new(lesson_menus.clone()),
-        MockTokenService,
-    );
-    let my_videos = interface::my_videos_router(
-        ListMyVideos::new(
-            videos.clone(),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-        ),
-        MockTokenService,
-    );
-    let my_lesson_completions = interface::my_lesson_completions_router(
-        ListMyLessonCompletions::new(
-            completions.clone(),
-            sessions.clone(),
-            SchedulingBookingLookup::new(bookings.clone()),
-            videos.clone(),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-            ReviewLessonCompletionReviewLookup::new(reviews.clone()),
-        ),
-        MockTokenService,
-    );
-    let coaches = interface::coaches_router(
-        ListCoaches::new(
-            accounts.clone(),
-            SchedulingCoachAcceptanceLookup::new(coach_acceptances.clone()),
-        ),
-        ListCoachesForStudent::new(
-            ProfileStudentSportLookup::new(accounts.clone()),
-            ProfileCoachCandidateLookup::new(accounts.clone()),
-            ReviewCoachReviewSummaryLookup::new(reviews.clone()),
-            CatalogPublishedLessonMenuCountLookup::new(lesson_menus.clone()),
-            favorite_coaches.clone(),
-            SchedulingCoachAcceptanceLookup::new(coach_acceptances.clone()),
-        ),
-        MockTokenService,
-    );
-    let coach_acceptance = interface::coach_acceptance_router(
-        SuspendCoach::new(
-            coach_acceptances.clone(),
-            ProfileCoachIntroductionLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        ResumeCoach::new(
-            coach_acceptances.clone(),
-            ProfileCoachIntroductionLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        ListCoachAcceptanceChanges::new(
-            coach_acceptances.clone(),
-            ProfileCoachIntroductionLookup::new(accounts.clone()),
-        ),
-        MockTokenService,
-    );
-    let coach_overview = interface::coach_overview_router(
-        GetCoachOverview::new(
-            accounts.clone(),
-            SchedulingCoachAcceptanceLookup::new(coach_acceptances),
-            GetCoachReviewSummary::new(reviews.clone()),
-            GetMyLessonStats::new(
-                completions.clone(),
-                ReviewMonthlyReviewSummaryLookup::new(reviews.clone()),
-                clock.clone(),
-            ),
-            ListCoachLessonMenus::new(lesson_menus.clone()),
-        ),
-        MockTokenService,
-    );
-    let favorite_coaches_routes = interface::favorite_coaches_router(
-        AddFavoriteCoach::new(favorite_coaches.clone(), accounts.clone(), clock.clone()),
-        RemoveFavoriteCoach::new(favorite_coaches.clone()),
-        ListFavoriteCoaches::new(
-            favorite_coaches.clone(),
-            accounts.clone(),
-            ReviewCoachReviewSummaryLookup::new(reviews.clone()),
-        ),
-        MockTokenService,
-    );
-    let subscription_plans =
-        interface::subscription_plans_router(ListSubscriptionPlans::new(), MockTokenService);
-    let coach_profile = interface::coach_profile_router(
-        GetCoachProfile::new(
-            accounts.clone(),
-            MatchingCoachFavoriteLookup::new(favorite_coaches),
-        ),
-        MockTokenService,
-    );
-    let slot_withdrawal = interface::slot_withdrawal_router(
-        WithdrawSlot::new(slots.clone(), analytics.clone(), clock.clone()),
-        MockTokenService,
-    );
-    let lesson_stats = interface::lesson_stats_router(
-        GetMyLessonStats::new(
-            completions.clone(),
-            ReviewMonthlyReviewSummaryLookup::new(reviews.clone()),
-            clock.clone(),
-        ),
-        MockTokenService,
-    );
-    let headquarters_bookings = interface::headquarters_bookings_router(
-        ListBookings::new(
-            bookings.clone(),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-            ProfileStudentDisplayNameLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        MockTokenService,
-    );
-    let students = interface::students_router(
-        ListStudents::new(
-            accounts.clone(),
-            EntitlementStudentContractLookup::new(entitlements.clone()),
-            SchedulingStudentLastBookingLookup::new(bookings.clone()),
-        ),
-        MockTokenService,
-    );
-    let student_activity = interface::student_activity_router(
-        GetStudentActivity::new(
-            accounts.clone(),
-            SchedulingStudentBookingActivityLookup::new(bookings.clone()),
-            LessonStudentLessonHistoryLookup::new(completions.clone()),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        MockTokenService,
-    );
-    let low_rated_reviews = interface::low_rated_reviews_router(
-        ListLowRatedReviews::new(
-            reviews.clone(),
-            LessonCompletionMenuLookup::new(
-                completions.clone(),
-                sessions.clone(),
-                SchedulingBookingLookup::new(bookings.clone()),
-                videos.clone(),
-            ),
-            LessonCompletionSportLookup::new(
-                completions.clone(),
-                sessions.clone(),
-                SchedulingBookingLookup::new(bookings.clone()),
-                videos.clone(),
-            ),
-            ProfileCoachDisplayNameLookup::new(accounts.clone()),
-            ProfileStudentDisplayNameLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        MockTokenService,
-    );
-    let review_replies = interface::review_replies_router(
-        ReplyToLessonReview::new(reviews.clone(), clock.clone()),
-        MockTokenService,
-    );
-    let my_profile = interface::my_profile_router(
-        GetAccount::new(accounts.clone()),
-        UpdateStudentProfile::new(accounts.clone()),
-        MockTokenService,
-    );
-    let my_notifications = interface::notifications_router(
-        ListMyNotifications::new(notifications.clone(), announcements.clone()),
-        MarkMyNotificationsRead::new(notifications.clone(), announcements.clone(), clock.clone()),
-        MockTokenService,
-    );
-    let announcements = interface::announcements_router(
-        SendAnnouncement::new(
-            announcements.clone(),
-            ProfileAnnouncementRecipientLookup::new(accounts.clone()),
-            notifications.clone(),
-            notification_settings.clone(),
-            push.clone(),
-            clock.clone(),
-        ),
-        ListAnnouncements::new(announcements),
-        MockTokenService,
-    );
     let events = InMemoryDomainEventBus::new((
-        LiveLessonQuotaSubscriber::new(entitlements.clone()),
+        LiveLessonQuotaSubscriber::new(repositories.entitlements.clone()),
         (
-            MessageThreadSubscriber::new(threads.clone()),
+            MessageThreadSubscriber::new(repositories.threads.clone()),
             PushNotificationSubscriber::new(
-                push,
-                notification_settings.clone(),
-                notifications,
+                push.clone(),
+                repositories.notification_settings.clone(),
+                repositories.notifications.clone(),
                 clock.clone(),
             ),
         ),
     ));
-    interface::router_with(
-        RegisterAccount::new(accounts.clone(), analytics.clone(), clock.clone()),
-        GetAccount::new(accounts.clone()),
-        GetCoachBio::new(accounts.clone()),
-        UpdateCoachProfile::new(accounts.clone()),
-        PublishSlot::new(
-            slots.clone(),
-            CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            analytics.clone(),
-            clock.clone(),
-        ),
-        SearchSlots::new(
-            slots.clone(),
-            CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            ProfileCoachIntroductionLookup::new(accounts.clone()),
-            clock.clone(),
-        ),
-        CreateBooking::new(
-            bookings.clone(),
-            CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            analytics.clone(),
-            clock.clone(),
-        ),
-        ConfirmBooking::new(
-            bookings.clone(),
-            EntitlementQuotaGate::new(entitlements.clone()),
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        CancelBooking::new(
-            bookings.clone(),
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        GetSlotSupply::new(bookings.clone(), clock.clone()),
-        ListMyBookings::new(
-            bookings.clone(),
-            ProfileCoachIntroductionLookup::new(accounts.clone()),
-            EntitlementQuotaGate::new(entitlements.clone()),
-            clock.clone(),
-        ),
-        ListCoachBookings::new(
-            bookings.clone(),
-            ProfileStudentDisplayNameLookup::new(accounts.clone()),
-        ),
-        ListCoachSlots::new(
-            slots,
-            CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            bookings.clone(),
-        ),
-        StartSubscription::new(
-            entitlements.clone(),
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        GetEntitlement::new(entitlements.clone(), clock.clone()),
-        StartLiveLessonSession::new(
-            sessions.clone(),
-            SchedulingBookingLookup::new(bookings.clone()),
-            video.clone(),
-            analytics.clone(),
-            clock.clone(),
-        ),
-        EndLiveLessonSession::new(sessions.clone(), video, analytics.clone(), clock.clone()),
-        SubmitVideo::new(
-            videos.clone(),
-            CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            MockVideoStorage,
-            MockAiFeedbackGenerator,
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        GetVideoReview::new(videos.clone()),
-        ReturnVideoReview::new(
-            videos.clone(),
-            EntitlementReviewGate,
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        ListCoachVideos::new(
-            videos.clone(),
-            ProfileStudentDisplayNameLookup::new(accounts),
-        ),
-        RecordLessonCompletion::new(
-            sessions.clone(),
-            videos.clone(),
-            completions.clone(),
-            analytics.clone(),
-            events.clone(),
-            clock.clone(),
-        ),
-        ListMessageThreads::new(threads.clone()),
-        ListMessages::new(threads.clone()),
-        SendMessage::new(
-            threads.clone(),
-            EntitlementChatGate::new(entitlements),
-            analytics.clone(),
-            events,
-            clock.clone(),
-        ),
-        MarkMessageThreadRead::new(threads, clock.clone()),
-        SubmitLessonReview::new(
-            LessonCompletionLookup::new(completions.clone()),
-            reviews.clone(),
-            analytics,
-            clock,
-        ),
-        GetCoachReviewSummary::new(reviews.clone()),
-        ListCoachReviews::new(
-            reviews,
-            LessonCompletionMenuLookup::new(
-                completions,
-                sessions,
-                SchedulingBookingLookup::new(bookings),
-                videos,
-            ),
-        ),
-        GetNotificationSettings::new(notification_settings.clone()),
-        UpdateNotificationSettings::new(notification_settings),
-        MockTokenService,
-    )
-    .merge(catalog)
-    .merge(lesson_menu_publication)
-    .merge(coaches)
-    .merge(favorite_coaches_routes)
-    .merge(my_videos)
-    .merge(my_lesson_completions)
-    .merge(subscription_plans)
-    .merge(coach_profile)
-    .merge(my_profile)
-    .merge(my_notifications)
-    .merge(slot_withdrawal)
-    .merge(lesson_stats)
-    .merge(headquarters_bookings)
-    .merge(students)
-    .merge(announcements)
-    .merge(student_activity)
-    .merge(coach_acceptance)
-    .merge(coach_overview)
-    .merge(low_rated_reviews)
-    .merge(review_replies)
+    features::router(&Assembly {
+        repositories,
+        clock,
+        analytics,
+        video_call: video,
+        push,
+        events,
+    })
 }

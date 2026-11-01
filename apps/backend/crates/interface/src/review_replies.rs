@@ -6,20 +6,22 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    identity::TokenVerifier,
     review::{
         LessonReviewRepository, ReplyToLessonReview, ReplyToLessonReviewCommand,
         ReplyToLessonReviewError, lesson_review_id_uuid,
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
+    routing::put,
 };
-use domain::review::LessonReviewReplyComment;
+use domain::{identity::Role, review::LessonReviewReplyComment};
 use serde::Deserialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     error::ApiError,
     reviews::{LessonReviewReplyBody, lesson_review_reply_body},
 };
@@ -77,4 +79,30 @@ where
 
 fn review_not_found() -> ApiError {
     ApiError::not_found("評価がない")
+}
+
+/// 評価への返信（admin-web の `PUT /lesson-reviews/{review_id}/reply`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// コーチだけ（本部・生徒は 403）で、返信できるのは評価されたコーチだけ（他のコーチも 403。ユースケースが確かめる）。
+pub fn review_replies_router<R, C, T>(
+    reply_to_lesson_review: ReplyToLessonReview<R, C>,
+    tokens: T,
+) -> Router
+where
+    R: LessonReviewRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lesson-reviews/{review_id}/reply",
+            put(self::reply_to_lesson_review::<R, C>),
+        )
+        .route_layer(require_role(&[Role::Coach]))
+        .with_state(Arc::new(ReviewRepliesState {
+            reply_to_lesson_review,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

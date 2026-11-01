@@ -16,30 +16,30 @@ use application::{
         UpdateLessonMenuError, lesson_menu_id_uuid,
     },
     clock::Clock,
-    identity::{AccountRepository, account_id_uuid},
+    identity::{AccountRepository, TokenVerifier, account_id_uuid},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{
         Path, Query, State,
         rejection::{JsonRejection, QueryRejection},
     },
     http::StatusCode,
     response::{IntoResponse, Response},
+    routing::{get, put},
 };
 use domain::{
     DomainError,
-    catalog::Sport,
     catalog::{
         HeadquartersUnpublish, LessonDuration, LessonFormat, LessonMenu, LessonMenuContent,
-        LessonMenuDescription, LessonMenuName,
+        LessonMenuDescription, LessonMenuName, Sport,
     },
-    identity::AccountId,
+    identity::{AccountId, Role},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{self, AuthenticatedAccount},
+    auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     catalog_error::lesson_menu_error,
     contract::{
         admin_web_sport, date_time_to_contract, lesson_type_from_contract, lesson_type_to_contract,
@@ -398,4 +398,60 @@ fn coach_lesson_menu_list_body(
             })
             .collect::<Result<_, ApiError>>()?,
     })
+}
+
+/// catalog（コーチのレッスンメニュー）のルーター。組み立て用のクレートは他の機能のルーターと `merge`
+/// する（同じ検証器を渡す）。
+///
+/// `/coaches/me/lesson-menus`（admin-web の自分のメニューの一覧・作成）と `PUT /coaches/me/lesson-menus/{lesson_menu_id}`
+/// （変更・非公開）はコーチだけで、扱うのはトークンのコーチ自身のメニューだけ。
+/// `GET /coaches/{coach_id}/lesson-menus`（student-app のコーチの公開中のメニューの一覧）は生徒だけ。
+/// `GET /lesson-menus`（admin-web のすべてのコーチのメニューの横断の一覧）は本部だけ。
+pub fn catalog_router<M, R, C, D, T>(
+    create_lesson_menu: CreateLessonMenu<M, R, C>,
+    update_lesson_menu: UpdateLessonMenu<M, R>,
+    list_my_lesson_menus: ListMyLessonMenus<M>,
+    list_coach_lesson_menus: ListCoachLessonMenus<M>,
+    list_lesson_menus: ListLessonMenus<M, D>,
+    tokens: T,
+) -> Router
+where
+    M: LessonMenuRepository + 'static,
+    R: AccountRepository + 'static,
+    C: Clock + 'static,
+    D: LessonMenuCoachDisplayNameLookup + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    let coach_routes = Router::new()
+        .route(
+            "/coaches/me/lesson-menus",
+            get(self::list_my_lesson_menus::<M, R, C, D>)
+                .post(self::create_my_lesson_menu::<M, R, C, D>),
+        )
+        .route(
+            "/coaches/me/lesson-menus/{lesson_menu_id}",
+            put(self::update_my_lesson_menu::<M, R, C, D>),
+        )
+        .route_layer(require_role(&[Role::Coach]));
+    let student_routes = Router::new()
+        .route(
+            "/coaches/{coach_id}/lesson-menus",
+            get(self::list_coach_lesson_menus::<M, R, C, D>),
+        )
+        .route_layer(require_role(&[Role::Student]));
+    let headquarters_routes = Router::new()
+        .route("/lesson-menus", get(self::list_lesson_menus::<M, R, C, D>))
+        .route_layer(require_role(&[Role::Headquarters]));
+    coach_routes
+        .merge(student_routes)
+        .merge(headquarters_routes)
+        .with_state(Arc::new(LessonMenusState {
+            create_lesson_menu,
+            update_lesson_menu,
+            list_my_lesson_menus,
+            list_coach_lesson_menus,
+            list_lesson_menus,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

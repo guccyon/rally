@@ -7,7 +7,7 @@ use std::sync::Arc;
 use application::{
     analytics::AnalyticsSink,
     clock::Clock,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     live_lesson::{
         BookingLookup, EndLiveLessonSession, EndLiveLessonSessionCommand,
         EndLiveLessonSessionError, LiveLessonSessionRepository, StartLiveLessonSession,
@@ -17,15 +17,16 @@ use application::{
     scheduling::booking_id_uuid,
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
+    routing::post,
 };
 use domain::{DomainError, live_lesson::LiveLessonSession};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification},
     contract::{date_time_to_contract, session_status_to_contract},
     error::ApiError,
     message,
@@ -184,4 +185,38 @@ fn session_body(
             })
             .collect(),
     })
+}
+
+/// 通話セッションの開始・終了（`POST /live-lesson-sessions`・`POST /live-lesson-sessions/{session_id}/end`）のルーター。
+/// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// 役割で絞らず、予約の参加者（生徒・コーチ）かをユースケースが確かめる（契約に 403 がない）。
+pub fn live_lesson_sessions_router<L, K, V, A, C, T>(
+    start_live_lesson_session: StartLiveLessonSession<L, K, V, A, C>,
+    end_live_lesson_session: EndLiveLessonSession<L, V, A, C>,
+    tokens: T,
+) -> Router
+where
+    L: LiveLessonSessionRepository + 'static,
+    K: BookingLookup + 'static,
+    V: VideoCallProvider + 'static,
+    A: AnalyticsSink + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/live-lesson-sessions",
+            post(self::start_live_lesson_session::<L, K, V, A, C>),
+        )
+        .route(
+            "/live-lesson-sessions/{session_id}/end",
+            post(self::end_live_lesson_session::<L, K, V, A, C>),
+        )
+        .with_state(Arc::new(LiveLessonSessionsState {
+            start_live_lesson_session,
+            end_live_lesson_session,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

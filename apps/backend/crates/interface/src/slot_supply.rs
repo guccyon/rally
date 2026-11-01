@@ -4,14 +4,15 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    identity::TokenVerifier,
     scheduling::{BookingRepository, GetSlotSupply},
 };
-use axum::{Json, extract::State};
-use domain::scheduling::SlotSupply;
+use axum::{Json, Router, extract::State, routing::get};
+use domain::{identity::Role, scheduling::SlotSupply};
 use serde::Serialize;
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{date_time_to_contract, slot_supply_status_to_contract, sport_to_contract},
     error::ApiError,
 };
@@ -66,4 +67,22 @@ fn slot_supply_body(supply: &SlotSupply) -> SlotSupplyBody {
         published_slots: supply.published_slots(),
         booking_students: supply.booking_students(),
     }
+}
+
+/// スポーツごとの予約枠の需給（admin-web の `GET /slot-supply`）のルーター。組み立て用のクレートは他の機能の
+/// ルーターと `merge` する（同じ検証器を渡す）。
+///
+/// `GET /slot-supply` は本部だけ。
+pub fn slot_supply_router<B, C, T>(get_slot_supply: GetSlotSupply<B, C>, tokens: T) -> Router
+where
+    B: BookingRepository + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route("/slot-supply", get(self::get_slot_supply::<B, C>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(SlotSupplyState { get_slot_supply }))
+        .layer(TokenVerification::layer(tokens))
 }

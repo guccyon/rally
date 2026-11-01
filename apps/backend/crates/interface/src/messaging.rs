@@ -21,7 +21,7 @@ use application::{
     async_lesson::{video_id_uuid, video_review_id_uuid},
     clock::Clock,
     domain_event::DomainEventPublisher,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     messaging::{
         ChatGate, ListMessageThreads, ListMessageThreadsError, ListMessageThreadsQuery,
         ListMessages, ListMessagesError, ListMessagesQuery, MarkMessageThreadRead,
@@ -30,9 +30,10 @@ use application::{
     },
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
+    routing::{get, post},
 };
 use domain::{
     identity::AccountId,
@@ -41,7 +42,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification},
     contract::{
         SYSTEM_MESSAGE_SENDER_ID, date_time_to_contract, message_author_to_contract,
         message_kind_to_contract, stamp_from_contract, stamp_to_contract,
@@ -296,4 +297,46 @@ fn message_json(thread: &MessageThread, message: &Message) -> Result<MessageJson
         sent_at: date_time_to_contract(message.sent_at())?,
         read_at: message.read_at().map(date_time_to_contract).transpose()?,
     })
+}
+
+/// 生徒と担当コーチのチャット（student-app・admin-web の `/message-threads`）のルーター。組み立て用のクレートは他の
+/// 機能のルーターと `merge` する（同じ検証器を渡す）。
+///
+/// 役割で絞らず、スレッドの当事者かをユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
+pub fn messaging_router<X, H, A, P, C, T>(
+    list_message_threads: ListMessageThreads<X>,
+    list_messages: ListMessages<X>,
+    send_message: SendMessage<X, H, A, P, C>,
+    mark_message_thread_read: MarkMessageThreadRead<X, C>,
+    tokens: T,
+) -> Router
+where
+    X: MessageThreadRepository + 'static,
+    H: ChatGate + 'static,
+    A: AnalyticsSink + 'static,
+    P: DomainEventPublisher + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/message-threads",
+            get(self::list_message_threads::<X, H, A, P, C>),
+        )
+        .route(
+            "/message-threads/{thread_id}/messages",
+            get(self::list_messages::<X, H, A, P, C>).post(self::send_message::<X, H, A, P, C>),
+        )
+        .route(
+            "/message-threads/{thread_id}/read",
+            post(self::mark_message_thread_read::<X, H, A, P, C>),
+        )
+        .with_state(Arc::new(MessagingState {
+            list_message_threads,
+            list_messages,
+            send_message,
+            mark_message_thread_read,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }

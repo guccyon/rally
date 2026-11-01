@@ -11,7 +11,7 @@ use application::{
     async_lesson::{VideoRepository, video_id_uuid},
     clock::Clock,
     domain_event::DomainEventPublisher,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     lesson::{
         LessonCompletionRepository, RecordLessonCompletion, RecordLessonCompletionCommand,
         RecordLessonCompletionError, lesson_completion_id_uuid,
@@ -19,9 +19,10 @@ use application::{
     live_lesson::{LiveLessonSessionRepository, session_id_uuid},
 };
 use axum::{
-    Json,
+    Json, Router,
     extract::{State, rejection::JsonRejection},
     http::StatusCode,
+    routing::post,
 };
 use domain::{
     DomainError,
@@ -30,7 +31,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::AuthenticatedAccount,
+    auth::{AuthenticatedAccount, TokenVerification},
     contract::{date_time_to_contract, lesson_type_from_contract, lesson_type_to_contract},
     error::ApiError,
     message,
@@ -155,4 +156,34 @@ fn lesson_body(completion: &LessonCompletion) -> Result<LessonBody, ApiError> {
         is_first_lesson: completion.is_first_lesson(),
         completed_at: date_time_to_contract(completion.completed_at())?,
     })
+}
+
+/// レッスンの完了記録（`POST /lessons/completions`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する
+/// （同じ検証器を渡す）。
+///
+/// 役割で絞らず、通話セッション・動画の当事者かをユースケースが確かめる（契約に 403 がない）。生徒が受けたレッスンの
+/// 一覧（`GET /lessons/completions/me`）は [`crate::my_lesson_completions_router`]。
+pub fn lessons_router<L, W, M, A, P, C, T>(
+    record_lesson_completion: RecordLessonCompletion<L, W, M, A, P, C>,
+    tokens: T,
+) -> Router
+where
+    L: LiveLessonSessionRepository + 'static,
+    W: VideoRepository + 'static,
+    M: LessonCompletionRepository + 'static,
+    A: AnalyticsSink + 'static,
+    P: DomainEventPublisher + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/lessons/completions",
+            post(self::record_lesson_completion::<L, W, M, A, P, C>),
+        )
+        .with_state(Arc::new(LessonsState {
+            record_lesson_completion,
+        }))
+        .layer(TokenVerification::layer(tokens))
 }
