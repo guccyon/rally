@@ -91,4 +91,10 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
+  {
+    id: "hq-pending-video-reviews",
+    title: "本部: 返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+  },
 ];

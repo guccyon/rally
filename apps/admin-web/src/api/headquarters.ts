@@ -37,6 +37,8 @@ export function headquartersApi(client: ApiClient) {
         }),
       ),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
+    listPendingVideoReviews: (filter: { sport?: Schemas["Sport"]; min_elapsed_hours?: number }) =>
+      call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>

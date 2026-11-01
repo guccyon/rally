@@ -253,6 +253,26 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listPendingVideoReviews は絞り込みをクエリにして GET /api/video-reviews/pending を呼ぶ", async () => {
+    const list = { as_of: "2026-10-26T03:00:00Z", videos: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listPendingVideoReviews({ sport: "golf", min_elapsed_hours: 48 });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/video-reviews/pending");
+    expect(url.searchParams.get("sport")).toBe("golf");
+    expect(url.searchParams.get("min_elapsed_hours")).toBe("48");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listPendingVideoReviews は条件がなければクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { as_of: "2026-10-26T03:00:00Z", videos: [] }));
+    await api.listPendingVideoReviews({});
+    expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
+
   test("listBookings は期間をクエリにして GET /api/bookings を呼ぶ", async () => {
     const list = { from: "2026-10-26", to: "2026-11-01", bookings: [] };
     const { api, fetchMock } = setup(json(200, list));
