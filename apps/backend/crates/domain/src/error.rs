@@ -34,6 +34,10 @@ pub enum DomainError {
     SessionEndsBeforeItStarts,
     /// 本部が見る、終わっていないまま時間の過ぎた通話セッションの開始からの時間が `min`〜`max` 時間でない
     OverdueSessionHoursOutOfRange { min: u16, max: u16 },
+    /// 本部が見る通話セッションの記録の期間の終わりが始まりより後でない
+    SessionPeriodEndsBeforeItStarts,
+    /// 本部が見る通話セッションの記録の期間が長すぎる（`max_days` は日数）
+    SessionPeriodTooLong { max_days: u16 },
     /// パケット損失率が 0〜100（百分率）の有限の値でない
     InvalidPacketLossRate,
     /// 動画の当事者（送った生徒・送り先のコーチ）でないので、その動画を扱えない
