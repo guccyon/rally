@@ -14,6 +14,9 @@
 //! お知らせ（`GET /notifications/me`）には残り、`POST /notifications/me/read` で既読にできる。コーチも自分のお知らせ
 //! （admin-web の同じ操作）を読んで既読にできる。受け取り設定と、コーチへの添削の依頼のお知らせが Postgres に保存される
 //! ことは `router_with_postgres` の組み立てで確かめる（`#[ignore]`。`DATABASE_URL` が要る）。
+//!
+//! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
+//! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。
 
 use std::time::{Duration, SystemTime};
 
@@ -35,7 +38,7 @@ use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
     messaging::MessageSender,
-    notification::PushNotification,
+    notification::{NotificationKind, PushNotification},
 };
 use infra::{MockPushSender, MockTokenService, PgAccountRepository};
 use serde_json::{Value, json};
@@ -654,6 +657,7 @@ async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
         "booking_confirmed": true,
         "video_review_returned": true,
         "message_received": true,
+        "announcement": true,
     });
     assert_eq!(
         call(
@@ -695,4 +699,199 @@ async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
         .await,
         expected
     );
+}
+
+/// 本部 77 のトークン。
+fn headquarters() -> String {
+    MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(77),
+            role: Role::Headquarters,
+        })
+        .into_string()
+}
+
+#[tokio::test]
+async fn an_announcement_reaches_students_as_notifications_and_pushes_follow_the_settings() {
+    let (router, push, _coach_id, _coach, student_id, student) = setup().await;
+    let other = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "jiro@example.com", "display_name": "じろう", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let other_token = other["access_token"].as_str().unwrap();
+    let other_id =
+        account_id_uuid::parse(other["student"]["student_id"].as_str().unwrap()).unwrap();
+    // じろうは本部からのお知らせのプッシュ通知をオフにする
+    call(
+        &router,
+        "PUT",
+        "/notification-settings/me",
+        Some(other_token),
+        json!({ "announcement": false }),
+        StatusCode::OK,
+    )
+    .await;
+
+    let headquarters = headquarters();
+    let sent = call(
+        &router,
+        "POST",
+        "/announcements",
+        Some(&headquarters),
+        json!({ "title": "メンテナンスのお知らせ", "body": "11/3 は使えません" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(sent["recipient_count"], 2);
+    assert_eq!(sent["sport"], Value::Null);
+    let pushed = push.sent();
+    assert_eq!(pushed.len(), 1, "オフの生徒にはプッシュ通知を送らない");
+    assert_eq!(pushed[0].recipient(), student_id);
+    assert_eq!(pushed[0].kind(), NotificationKind::Announcement);
+
+    for token in [student.as_str(), other_token] {
+        let listed = call(
+            &router,
+            "GET",
+            "/notifications/me",
+            Some(token),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await;
+        assert_eq!(listed["notifications"].as_array().unwrap().len(), 1);
+        assert_eq!(listed["notifications"][0]["kind"], "announcement");
+        assert_eq!(
+            listed["notifications"][0]["body"],
+            "メンテナンスのお知らせ\n11/3 は使えません"
+        );
+    }
+
+    // スポーツを絞ると、そのスポーツの生徒だけ
+    let soccer = call(
+        &router,
+        "POST",
+        "/announcements",
+        Some(&headquarters),
+        json!({ "title": "サッカーのキャンペーン", "body": "今月だけ", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(soccer["recipient_count"], 1);
+    let listed = call(
+        &router,
+        "GET",
+        "/notifications/me",
+        Some(other_token),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(listed["notifications"].as_array().unwrap().len(), 2);
+    assert_eq!(push.sent().len(), 1, "オフの生徒には送らない");
+    assert!(push.sent().iter().all(|p| p.recipient() != other_id));
+
+    let list = call(
+        &router,
+        "GET",
+        "/announcements",
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(list, json!({ "announcements": [soccer, sent] }));
+}
+
+/// 保存先を Postgres にした組み立てで、本部からのお知らせの送った記録と生徒のお知らせが保存されることを確かめる。
+///
+/// Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+/// `cargo test -p server --test notifications -- --include-ignored` で走らせる。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
+    // 契約に本部の登録の操作がないので、ユースケースを直に呼ぶ
+    let headquarters_account = RegisterAccount::new(
+        PgAccountRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        ManualClock::new(oct5()),
+    )
+    .execute(RegisterAccountCommand {
+        email: "hq@example.com".to_string(),
+        display_name: "本部".to_string(),
+        role: Role::Headquarters,
+        sports: vec![],
+    })
+    .await
+    .unwrap();
+    let headquarters = MockTokenService
+        .issue(TokenClaims {
+            account_id: headquarters_account.id(),
+            role: Role::Headquarters,
+        })
+        .into_string();
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(oct5()),
+        RecordingAnalyticsSink::default(),
+    );
+    call(
+        &router,
+        "POST",
+        "/announcements",
+        Some(&headquarters),
+        json!({ "title": "題", "body": "本文" }),
+        StatusCode::NOT_FOUND,
+    )
+    .await;
+    let account = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "hanako@example.com", "display_name": "はなこ", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let student = account["access_token"].as_str().unwrap();
+
+    let sent = call(
+        &router,
+        "POST",
+        "/announcements",
+        Some(&headquarters),
+        json!({ "title": "題", "body": "本文", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(
+        call(
+            &router,
+            "GET",
+            "/announcements",
+            Some(&headquarters),
+            Value::Null,
+            StatusCode::OK,
+        )
+        .await,
+        json!({ "announcements": [sent] })
+    );
+    let read = call(
+        &router,
+        "POST",
+        "/notifications/me/read",
+        Some(student),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(read["notifications"].as_array().unwrap().len(), 1);
+    assert_eq!(read["notifications"][0]["kind"], "announcement");
+    assert_eq!(read["notifications"][0]["body"], "題\n本文");
+    assert_eq!(read["notifications"][0]["is_read"], true);
 }

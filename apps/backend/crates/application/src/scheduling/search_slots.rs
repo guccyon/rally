@@ -115,7 +115,7 @@ mod tests {
             LessonMenuName,
         },
         profile::{CoachBio, DisplayName},
-        scheduling::{CoachAcceptance, Slot, SlotId, SlotStatus},
+        scheduling::{Slot, SlotId, SlotStatus},
     };
 
     use super::*;
@@ -124,6 +124,9 @@ mod tests {
         in_memory::{FixedClock, InMemoryLessonMenuRepository, InMemorySlotRepository},
         scheduling::{CoachAcceptanceRepository, CoachIntroduction},
     };
+
+    /// 受付を止める・再開する本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
     type Menus = CatalogLessonMenuLookup<InMemoryLessonMenuRepository>;
 
@@ -253,7 +256,9 @@ mod tests {
         let use_case = use_case();
         let acceptances = use_case.slots.coach_acceptances();
         acceptances
-            .update(COACH, CoachAcceptance::suspend)
+            .update(COACH, |a| {
+                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            })
             .await
             .unwrap();
 
@@ -270,7 +275,7 @@ mod tests {
         assert!(page.items.is_empty());
 
         acceptances
-            .update(COACH, CoachAcceptance::resume)
+            .update(COACH, |a| a.resume(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH))
             .await
             .unwrap();
         let page = use_case.execute(query(20)).await.unwrap();

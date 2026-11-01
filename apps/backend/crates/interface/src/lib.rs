@@ -4,9 +4,11 @@
 //! （docs/adr/0003-backend-layers.md）。ポートの実装は組み立て用のクレート（`server`）が渡す。
 
 mod accounts;
+mod announcements;
 pub mod auth;
 mod bookings;
 mod catalog_error;
+mod coach_acceptance_changes;
 mod coach_acceptances;
 mod coach_bookings;
 mod coach_overviews;
@@ -43,6 +45,7 @@ mod scheduling_error;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
+mod student_activity;
 mod students;
 mod subscription_plans;
 mod subscriptions;
@@ -69,8 +72,9 @@ use application::{
         EntitlementRepository, GetEntitlement, ListSubscriptionPlans, StartSubscription,
     },
     identity::{
-        AccountRepository, GetAccount, ListStudents, RegisterAccount, StudentContractLookup,
-        StudentLastBookingLookup, TokenIssuer, TokenVerifier,
+        AccountRepository, GetAccount, GetStudentActivity, ListStudents, RegisterAccount,
+        StudentActivityCoachDisplayNameLookup, StudentBookingActivityLookup, StudentContractLookup,
+        StudentLastBookingLookup, StudentLessonHistoryLookup, TokenIssuer, TokenVerifier,
     },
     lesson::{
         GetMyLessonStats, LessonCompletionCoachDisplayNameLookup, LessonCompletionRepository,
@@ -91,8 +95,9 @@ use application::{
         SendMessage,
     },
     notification::{
-        GetNotificationSettings, ListMyNotifications, MarkMyNotificationsRead,
-        NotificationRepository, NotificationSettingsRepository, UpdateNotificationSettings,
+        AnnouncementRecipientLookup, AnnouncementRepository, GetNotificationSettings,
+        ListAnnouncements, ListMyNotifications, MarkMyNotificationsRead, NotificationRepository,
+        NotificationSettingsRepository, PushSender, SendAnnouncement, UpdateNotificationSettings,
     },
     profile::{
         CoachAcceptanceLookup, CoachFavoriteLookup, CoachProfileRepository, GetCoachBio,
@@ -107,9 +112,9 @@ use application::{
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachAcceptanceRepository,
         CoachIntroductionLookup, ConfirmBooking, CreateBooking, GetSlotSupply, LessonMenuLookup,
-        ListBookings, ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate,
-        ResumeCoach, SearchSlots, SlotRepository, StudentDisplayNameLookup, SuspendCoach,
-        WithdrawSlot,
+        ListBookings, ListCoachAcceptanceChanges, ListCoachBookings, ListCoachSlots,
+        ListMyBookings, PublishSlot, QuotaGate, ResumeCoach, SearchSlots, SlotRepository,
+        StudentDisplayNameLookup, SuspendCoach, WithdrawSlot,
     },
 };
 use axum::{
@@ -694,13 +699,14 @@ where
 /// （同じ検証器を渡す）。
 ///
 /// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
-pub fn notifications_router<N, C, T>(
-    list_my_notifications: ListMyNotifications<N>,
-    mark_my_notifications_read: MarkMyNotificationsRead<N, C>,
+pub fn notifications_router<N, A, C, T>(
+    list_my_notifications: ListMyNotifications<N, A>,
+    mark_my_notifications_read: MarkMyNotificationsRead<N, A, C>,
     tokens: T,
 ) -> Router
 where
     N: NotificationRepository + 'static,
+    A: AnnouncementRepository + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
@@ -708,11 +714,11 @@ where
     Router::new()
         .route(
             "/notifications/me",
-            get(notifications::list_my_notifications::<N, C>),
+            get(notifications::list_my_notifications::<N, A, C>),
         )
         .route(
             "/notifications/me/read",
-            post(notifications::mark_my_notifications_read::<N, C>),
+            post(notifications::mark_my_notifications_read::<N, A, C>),
         )
         .route_layer(require_role(&[Role::Student, Role::Coach]))
         .with_state(Arc::new(notifications::NotificationsState {
@@ -771,35 +777,42 @@ where
         .layer(auth::TokenVerification::layer(tokens))
 }
 
-/// 本部によるコーチの受付の停止・再開（admin-web の `POST /coaches/{coach_id}/suspend`・`POST /coaches/{coach_id}/resume`）
-/// のルーター。[`router_with`] と同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに
-/// `merge` する（同じ検証器を渡す）。
+/// 本部によるコーチの受付の停止・再開と、止めた・再開した記録の照会（admin-web の `POST /coaches/{coach_id}/suspend`・
+/// `POST /coaches/{coach_id}/resume`・`GET /coaches/{coach_id}/acceptance-changes`）のルーター。[`router_with`] と同じく
+/// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
 ///
-/// どちらも本部だけ（コーチ・生徒は 403）。
-pub fn coach_acceptance_router<R, I, T>(
-    suspend_coach: SuspendCoach<R, I>,
-    resume_coach: ResumeCoach<R, I>,
+/// どれも本部だけ（コーチ・生徒は 403）。
+pub fn coach_acceptance_router<R, I, C, T>(
+    suspend_coach: SuspendCoach<R, I, C>,
+    resume_coach: ResumeCoach<R, I, C>,
+    list_coach_acceptance_changes: ListCoachAcceptanceChanges<R, I>,
     tokens: T,
 ) -> Router
 where
     R: CoachAcceptanceRepository + 'static,
     I: CoachIntroductionLookup + 'static,
+    C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
         .route(
             "/coaches/{coach_id}/suspend",
-            post(coach_acceptances::suspend_coach::<R, I>),
+            post(coach_acceptances::suspend_coach::<R, I, C>),
         )
         .route(
             "/coaches/{coach_id}/resume",
-            post(coach_acceptances::resume_coach::<R, I>),
+            post(coach_acceptances::resume_coach::<R, I, C>),
+        )
+        .route(
+            "/coaches/{coach_id}/acceptance-changes",
+            get(coach_acceptance_changes::list_coach_acceptance_changes::<R, I, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(coach_acceptances::CoachAcceptancesState {
             suspend_coach,
             resume_coach,
+            list_coach_acceptance_changes,
         }))
         .layer(auth::TokenVerification::layer(tokens))
 }
@@ -943,6 +956,68 @@ where
         .route("/students", get(students::list_students::<R, C, B>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(students::StudentsState { list_students }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部からのお知らせ（admin-web の `POST /announcements`・`GET /announcements`）のルーター。[`router_with`] と同じく
+/// トークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// どちらも本部だけ（コーチ・生徒は 403）。受け取った生徒は自分のお知らせ（[`notifications_router`]）で読む。
+pub fn announcements_router<A, L, N, S, P, C, T>(
+    send_announcement: SendAnnouncement<A, L, N, S, P, C>,
+    list_announcements: ListAnnouncements<A>,
+    tokens: T,
+) -> Router
+where
+    A: AnnouncementRepository + 'static,
+    L: AnnouncementRecipientLookup + 'static,
+    N: NotificationRepository + 'static,
+    S: NotificationSettingsRepository + 'static,
+    P: PushSender + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/announcements",
+            post(announcements::send_announcement::<A, L, N, S, P, C>)
+                .get(announcements::list_announcements::<A, L, N, S, P, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(announcements::AnnouncementsState {
+            send_announcement,
+            list_announcements,
+        }))
+        .layer(auth::TokenVerification::layer(tokens))
+}
+
+/// 本部が見る生徒 1 人の利用の様子（admin-web の `GET /students/{student_id}/activity`）のルーター。[`router_with`] と
+/// 同じくトークンの検証の層を重ねるので、組み立て用のクレートは [`router_with`] のルーターに `merge` する（同じ検証器を渡す）。
+///
+/// `GET /students/{student_id}/activity` は本部だけ（コーチ・生徒は 403）。
+pub fn student_activity_router<R, B, L, D, C, T>(
+    get_student_activity: GetStudentActivity<R, B, L, D, C>,
+    tokens: T,
+) -> Router
+where
+    R: AccountRepository + 'static,
+    B: StudentBookingActivityLookup + 'static,
+    L: StudentLessonHistoryLookup + 'static,
+    D: StudentActivityCoachDisplayNameLookup + 'static,
+    C: Clock + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/students/{student_id}/activity",
+            get(student_activity::get_student_activity::<R, B, L, D, C>),
+        )
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(student_activity::StudentActivityState {
+            get_student_activity,
+        }))
         .layer(auth::TokenVerification::layer(tokens))
 }
 

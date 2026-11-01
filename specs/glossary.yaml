@@ -101,11 +101,11 @@ terms:
     context: messaging
   - id: notification_settings
     ja: "通知の受け取り設定"
-    definition: "アカウントごとに、プッシュ通知の種類（予約の確定・添削の依頼・添削の返却・メッセージの受信）ごとに受け取るかを決める設定で、既定はすべて受け取る。"
+    definition: "アカウントごとに、プッシュ通知の種類（予約の確定・添削の依頼・添削の返却・メッセージの受信・本部からのお知らせ）ごとに受け取るかを決める設定で、既定はすべて受け取る。"
     context: notification
   - id: notification
     ja: "お知らせ"
-    definition: "送ったプッシュ通知（予約の確定・添削の依頼・添削の返却・メッセージの受信）を、受け取った人があとで一覧で見られるように残したもので、種類・作った時刻・既読かを持ち、通知の受け取り設定でオフの種類も残る。"
+    definition: "送ったプッシュ通知（予約の確定・添削の依頼・添削の返却・メッセージの受信・本部からのお知らせ）を、受け取った人があとで一覧で見られるように残したもので、種類・作った時刻・既読かを持ち、通知の受け取り設定でオフの種類も残る。"
     context: notification
     code: [Notification, NotificationId, notification.notifications]
     note: >-
@@ -114,6 +114,15 @@ terms:
       context-map の notification（コンテキスト）とは別の id（こちらは用語）。
       受け取るのは生徒とコーチで、生徒には予約の確定・添削の返却・コーチからのメッセージ、コーチには新しい予約（種類は予約の確定）・
       添削の依頼・生徒からのメッセージが届く（D114）。生徒は student-app、コーチは admin-web の同じ操作で一覧と既読を扱う。
+      生徒には本部からのお知らせ（announcement）も届き、表示する本文は送った記録の題と本文から決める（D124）。
+  - id: announcement
+    ja: "本部からのお知らせ"
+    definition: "本部が生徒全員か、あるスポーツの生徒全員に送る知らせ（メンテナンスやキャンペーンなど）の記録で、題（1〜50 文字）・本文（1〜2000 文字）・対象のスポーツ・受け取った生徒の数・送った時刻を持ち、受け取る生徒ごとにお知らせ（notification）を 1 件作る。"
+    context: notification
+    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, notification.announcements, sendAnnouncement, listAnnouncements]
+    note: >-
+      送るのも一覧を見るのも本部だけ（admin-web）。受け取る生徒がいなければ送らない。プッシュ通知は生徒の通知の受け取り設定
+      （notification_settings の announcement）に従い、オフの生徒にもお知らせは作る。予約送信・取り消しは Gen1 では扱わない（D124）。
   - id: lesson_menu
     ja: "レッスンメニュー"
     definition: "コーチが自分の提供スポーツのどれかについて作るレッスンのメニューで、スポーツ・同期 / 非同期の別（同期なら 1 回の時間。15〜120 分の 15 分刻み）・名前（1〜40 文字）・説明（0〜400 文字）・公開中かを持ち、作る・直す・非公開にするのはそのコーチで（本部もコーチに代わって非公開にでき、そのあいだコーチは公開し直せない）、公開中でないメニューは生徒に見せない。"
@@ -150,14 +159,15 @@ terms:
     ja: "コーチの受付"
     definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"
     context: scheduling
-    code: [CoachAcceptance, CoachAcceptanceStatus, suspendCoach, resumeCoach, scheduling.coach_acceptances]
+    code: [CoachAcceptance, CoachAcceptanceStatus, CoachAcceptanceChange, suspendCoach, resumeCoach, listCoachAcceptanceChanges, scheduling.coach_acceptances, scheduling.coach_acceptance_changes]
     states:
       accepting: "受付中"
       suspended: "停止中"
     note: >-
       一度も止めていないコーチは受付中。止めても予約のキャンセルやコーチへの通知はせず、コーチは枠の公開・取り下げも今までどおりできる
       （公開した枠は再開するまで検索に出ない）。止める・再開する規則は domain の CoachAcceptance の 1 か所。matching（コーチを探す一覧）と
-      profile（本部のコーチの一覧）はポートで読むだけ。
+      profile（本部のコーチの一覧）はポートで読むだけ。止めた・再開したときは、いつ・どの本部のアカウントが変えたかの記録
+      （CoachAcceptanceChange。変えた後の状態を持つ）を 1 件残し、本部が listCoachAcceptanceChanges で新しい順にたどる。
   - id: slot_capacity
     ja: "定員"
     definition: "1 つのスロットに入れる有効な予約（未確定と確定。キャンセルした予約は数えない）の数の上限で、1〜6 の整数（公開で省いたときは 1）であり、1 はマンツーマン、2 以上はグループレッスンである（変更シナリオ cs-004）。"
