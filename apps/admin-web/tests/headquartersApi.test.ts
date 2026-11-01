@@ -134,6 +134,26 @@ describe("headquartersApi", () => {
     expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
   });
 
+  test("listCoachAcceptanceChanges は GET /api/coaches/{coach_id}/acceptance-changes を呼び、受付の記録を返す", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const list = {
+      coach_id: coachId,
+      changes: [
+        {
+          acceptance_status: "suspended",
+          changed_by: "33333333-3333-4333-8333-333333333333",
+          changed_at: "2026-10-26T03:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listCoachAcceptanceChanges(coachId);
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/acceptance-changes`);
+  });
+
   test("listCoachReviews は指定したコーチの評価の一覧を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const list = { coach_id: coachId, reviews: [] };
