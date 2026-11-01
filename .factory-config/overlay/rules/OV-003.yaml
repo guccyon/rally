@@ -1,0 +1,23 @@
+id: OV-003
+title: "コードで足した画面・HTTP のルート・ユースケース・公開関数を、それを列挙する README の表にも同じ PR で足す"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#86"
+  - "github:guccyon/rally#124"
+  - "github:guccyon/rally#236"
+  - "github:guccyon/rally#239"
+signature: "rubric:PR-001"
+check:
+  kind: rubric
+  text: >-
+    差分が新しい画面のパス・HTTP のルート（`.route("/version", ...)` など）・ユースケース・公開のモジュールや関数（`pub mod`・`pub fn`・`pub async fn`）を足しているのに、
+    それらを名前で並べている README の表や一覧（ルートの `README.md` の構成表、`apps/backend/README.md` の crates の表の `crates/application/`・`crates/infra/`・`crates/interface/` の行など）が
+    差分で変わっていないか、同じ表の別の行や別の節だけを直して足した名前がその行に入っていないときは欠陥とする。
+    PR 本文の「補足」で README を更新していないと書くだけで、理由と追従の Issue がない場合も欠陥とする。
+    足した名前がすべて該当する行に入っている差分や、README の表に載せる種類の名前を足していない差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-003/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-003/negative-1.diff" }

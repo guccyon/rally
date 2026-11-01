@@ -599,6 +599,35 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/students/{student_id}/announcements",
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 3),
+          title: "年末年始の営業について",
+          sent_at: at(-12),
+          is_read: false,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 1),
+          title: "メンテナンスのお知らせ",
+          sent_at: at(-24 * 4),
+          is_read: true,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 4),
+          title: "テニスの新しいコーチのご紹介",
+          sent_at: at(-24 * 5),
+          is_read: false,
+          is_withdrawn: true,
+        },
+      ],
+    } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    method: "GET",
     path: "/bookings",
     body: {
       from: "2026-10-26",
