@@ -1,4 +1,4 @@
-//! `GET /live-lesson-sessions`。admin-web の `listLiveLessonSessions`（本部が期間とコーチで見る通話セッションの記録の
+//! `GET /live-lesson-sessions`。admin-web の `listLiveLessonSessions`（本部が期間とコーチ・生徒で見る通話セッションの記録の
 //! 一覧）。本部だけが呼べる。同じパスの `POST /live-lesson-sessions`（開始。予約の参加者だけ）は
 //! [`crate::live_lesson_sessions`]、終わっていないまま時間の過ぎたセッションの一覧は
 //! [`crate::overdue_live_lesson_sessions`]。
@@ -39,6 +39,7 @@ pub struct ListLiveLessonSessionsParams {
     from: Option<String>,
     to: Option<String>,
     coach_id: Option<String>,
+    student_id: Option<String>,
 }
 
 /// admin-web の `LiveLessonSessionRecordList`。
@@ -67,7 +68,7 @@ pub struct LiveLessonSessionRecordBody {
 }
 
 /// `GET /live-lesson-sessions`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が
-/// ない・`YYYY-MM-DD` の日付でないとき、`coach_id` が UUID でないときと、期間の違反（domain の
+/// ない・`YYYY-MM-DD` の日付でないとき、`coach_id`・`student_id` が UUID でないときと、期間の違反（domain の
 /// [`domain::live_lesson::SessionHistoryCriteria::new`]）は 422。
 pub async fn list_live_lesson_sessions<L, D, S>(
     State(state): State<Arc<HeadquartersLiveLessonSessionsState<L, D, S>>>,
@@ -84,17 +85,19 @@ where
         Some(value) => date_from_contract(field, value),
         None => Err(ApiError::validation_failed(format!("{field} がない"))),
     };
+    let optional_account_id = |field: &str, value: Option<&str>| {
+        value
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
+            })
+            .transpose()
+    };
     let query = ListLiveLessonSessionsQuery {
         from: required_date("from", params.from.as_deref())?,
         to: required_date("to", params.to.as_deref())?,
-        coach_id: params
-            .coach_id
-            .as_deref()
-            .map(|id| {
-                account_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
-            })
-            .transpose()?,
+        coach_id: optional_account_id("coach_id", params.coach_id.as_deref())?,
+        student_id: optional_account_id("student_id", params.student_id.as_deref())?,
     };
     let history = state
         .list_live_lesson_sessions
@@ -139,7 +142,7 @@ fn session_record_body(
     })
 }
 
-/// 本部が期間とコーチで見る通話セッションの記録の一覧（admin-web の `GET /live-lesson-sessions`）のルーター。
+/// 本部が期間とコーチ・生徒で見る通話セッションの記録の一覧（admin-web の `GET /live-lesson-sessions`）のルーター。
 /// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。同じパスの `POST /live-lesson-sessions`
 /// （開始。予約の参加者だけ）は [`crate::live_lesson_sessions_router`] にあり、`merge` で 1 つのパスにまとまる。
 ///

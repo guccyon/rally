@@ -1,7 +1,7 @@
-//! `GET /live-lesson-sessions`（admin-web の `listLiveLessonSessions`。本部が期間とコーチで見る通話セッションの記録の
+//! `GET /live-lesson-sessions`（admin-web の `listLiveLessonSessions`。本部が期間とコーチ・生徒で見る通話セッションの記録の
 //! 一覧）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付
 //! （日本時間）の期間に開始したセッションを終了の有無を問わず開始の新しい順に返すこと、終了の時刻と長さ（分）、
-//! `coach_id` で絞れること、期間の不正が 422 であることを確かめる。期間の境界は domain の `SessionHistoryCriteria`、
+//! `coach_id`・`student_id` で絞れること、期間の不正が 422 であることを確かめる。期間の境界は domain の `SessionHistoryCriteria`、
 //! 選び方の細部はユースケース `ListLiveLessonSessions` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -255,6 +255,53 @@ async fn coach_id_narrows_the_sessions() {
 }
 
 #[tokio::test]
+async fn student_id_narrows_the_sessions() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for (query, expected) in [
+        (
+            format!("student_id={}", uuid(3)),
+            vec![uuid(4), uuid(1), uuid(2)],
+        ),
+        (format!("student_id={}", uuid(4)), vec![uuid(3)]),
+        // コーチと組み合わさる
+        (
+            format!("student_id={}&coach_id={}", uuid(3), uuid(99)),
+            vec![],
+        ),
+        (
+            format!("student_id={}&coach_id={}", uuid(4), uuid(99)),
+            vec![uuid(3)],
+        ),
+        // 生徒でない ID・ない ID は空の一覧
+        (format!("student_id={}", uuid(42)), vec![]),
+        (format!("student_id={}", uuid(777)), vec![]),
+    ] {
+        let (status, body) = get(
+            &app,
+            &format!("{PATH}?from=2026-10-31&to=2026-11-02&{query}"),
+            HEADQUARTERS,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(session_ids(&body), expected, "{query}");
+    }
+    // 期間と組み合わさる（10 月 31 日を外せば前日に始まった通話は出ない）
+    let (status, body) = get(
+        &app,
+        &format!(
+            "{PATH}?from=2026-11-01&to=2026-11-02&student_id={}",
+            uuid(3)
+        ),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(session_ids(&body), [uuid(4), uuid(1)]);
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_sessions() {
     let admin = support::Contract::load("admin-web");
     let app = app().await;
@@ -296,6 +343,10 @@ async fn invalid_periods_are_422() {
         (
             "from=2026-11-01&to=2026-11-02&coach_id=nope",
             "coach_id が UUID でない",
+        ),
+        (
+            "from=2026-11-01&to=2026-11-02&student_id=nope",
+            "student_id が UUID でない",
         ),
     ] {
         let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;

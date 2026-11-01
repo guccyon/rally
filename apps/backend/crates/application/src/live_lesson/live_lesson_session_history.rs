@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use domain::{identity::AccountId, live_lesson::LiveLessonSession, profile::DisplayName};
 use time::Date;
 
-/// 本部が期間とコーチで見る通話セッションの記録の一覧（[`super::ListLiveLessonSessions`] の結果）。
+/// 本部が期間とコーチ・生徒で見る通話セッションの記録の一覧（[`super::ListLiveLessonSessions`] の結果）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiveLessonSessionHistory {
     /// 期間の始まりの日付（日本時間。含む）

@@ -153,15 +153,21 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
         starts_at: SystemTime,
         ends_at: SystemTime,
         coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
+        // 生徒は結び付いた予約の生徒で見る。session_bookings に行のない古いセッションは開始した予約の生徒だけ
         let rows: Vec<SessionRow> = sqlx::query_as(select_sessions!(
             "WHERE started_at >= $1 AND started_at < $2 AND ($3::uuid IS NULL OR coach_id = $3)
+               AND ($4::uuid IS NULL OR student_id = $4 OR EXISTS (
+                     SELECT 1 FROM live_lesson.session_bookings b
+                     WHERE b.session_id = sessions.session_id AND b.student_id = $4))
              ORDER BY started_at DESC, session_id"
         ))
         .bind(timestamp(starts_at))
         .bind(timestamp(ends_at))
         .bind(coach_id.map(account_id_uuid::to_uuid))
+        .bind(student_id.map(account_id_uuid::to_uuid))
         .fetch_all(&mut *conn)
         .await
         .map_err(Unavailable::new)?;
