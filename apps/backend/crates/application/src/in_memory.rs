@@ -482,6 +482,21 @@ impl BookingRepository for InMemoryBookingRepository {
         Ok((found, booked))
     }
 
+    async fn bookings_cancelled_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| b.cancelled_at().is_some_and(|at| from <= at && at < until))
+            .cloned()
+            .collect())
+    }
+
     async fn bookings_of_student(
         &self,
         student_id: AccountId,

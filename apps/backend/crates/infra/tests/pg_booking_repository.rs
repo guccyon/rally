@@ -1,6 +1,6 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
-//! 生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
+//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
 //! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
 //! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数）。
 //!
@@ -339,6 +339,46 @@ async fn slots_starting_between_reads_slots_of_any_status_and_their_bookings(poo
             (confirmed.id(), BookingStatus::Confirmed)
         ]
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_cancelled_between_reads_only_bookings_cancelled_in_the_period(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let mut cancelled = Vec::new();
+    // 枠の開始（20 時〜）はキャンセルした時刻の期間（10 時〜30 時）と関係しない
+    for (from, student, cancelled_at) in [
+        (40, first, at(10) - std::time::Duration::from_secs(1)),
+        (41, first, at(10)),
+        (42, second, at(29)),
+        (43, second, at(30)),
+    ] {
+        let slot = support::open_slot(&pool, coach, from, from + 1).await;
+        let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+        let booking = bookings
+            .update(booking.id(), |booking, slot| {
+                booking.cancel(student, slot, cancelled_at).map(|_| ())
+            })
+            .await
+            .unwrap();
+        cancelled.push(booking);
+    }
+    // キャンセルしていない予約（確定待ち・確定済み）は出ない
+    let pending = support::open_slot(&pool, coach, 50, 51).await;
+    reserve(&bookings, first, &pending, false).await.unwrap();
+    let confirmed = support::open_slot(&pool, coach, 52, 53).await;
+    support::confirmed_booking(&pool, second, &confirmed).await;
+
+    // 始まりは含み、終わりは含まない
+    let mut found = bookings
+        .bookings_cancelled_between(at(10), at(30))
+        .await
+        .unwrap();
+    found.sort_by_key(|b| b.cancelled_at());
+    assert_eq!(found, [cancelled[1].clone(), cancelled[2].clone()]);
+    assert!(found.iter().all(|b| b.status() == BookingStatus::Cancelled));
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

@@ -238,6 +238,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 保存先は予約枠の需給と同じ `BookingRepository::slots_starting_between` を読むだけで、DB の変更はない
 - テスト: `domain::scheduling::booking_period`（1 日・31 日・逆転・超過・端）、`application::scheduling::list_bookings`（日本時間の日付の境目・既定の 7 日・並べ方・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/headquarters_bookings.rs`（契約の形・既定の期間・403 / 401・422）、`crates/server/tests/bookings.rs`（`POST /bookings` と同じパスで通す）、`crates/server/tests/headquarters_bookings.rs`（Postgres の組み立て。`--include-ignored`）
 
+## scheduling: 本部が見るキャンセルされた予約の一覧（D185）
+
+- `GET /bookings/cancelled`（admin-web の `listCancelledBookings`）: 本部だけが呼べる（`interface::headquarters_cancelled_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じ階層の `GET /bookings/{booking_id}`（`getBooking`）とは `merge` で並び、固定のパスが先に当たる。キャンセルした時刻が期間に入る予約を、キャンセルの新しい順（同じ時刻は `booking_id` の順）に返し、各行に予約の ID・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・枠の開始・キャンセルした時刻・キャンセルした人 `cancelled_by` を載せる。行動イベントは発火しない
+- 期間は日付（日本時間）の `from` から `to` まで（両端を含む）で、規則は `listBookings` と同じ `domain::scheduling::BookingPeriod`（1 日以上 31 日まで。違反と日付でない値は 422）。省いたときは今日までの 7 日（`from` だけなら `from` から、`to` だけなら `to` までの 7 日）。ユースケースは `application::scheduling::ListCancelledBookings`（失敗は `ListBookingsError` を共有）
+- キャンセルした人は domain の `Booking::cancelled_by`（`BookingCanceller`）。DB はキャンセルした人を持たず、今キャンセルできるのは予約した生徒だけ（`Booking::cancel`）なので、キャンセル済みは `student`。契約の値は `interface::contract::booking_canceller_to_contract`
+- 保存先は `BookingRepository::bookings_cancelled_between`（Postgres は `scheduling.bookings.cancelled_at` の範囲で読む）。DB の変更はない
+- テスト: `domain::scheduling::booking`（`cancelled_by`）、`application::scheduling::list_cancelled_bookings`（日本時間の日付の境目・既定の期間・並べ方・違反・0 件で表示名を問い合わせない）、`crates/infra/tests/pg_booking_repository.rs`（期間の端・キャンセルしていない予約を読まない。`--include-ignored`）、`crates/interface/tests/headquarters_cancelled_bookings.rs`（契約の形・既定の期間・403 / 401・422・`getBooking` と並べること）、`crates/server/tests/headquarters_cancelled_bookings.rs`（Postgres の組み立てで `cancelBooking` から通す。`--include-ignored`）
+
 ## scheduling: コーチの受付の停止・再開（D116）
 
 - `POST /coaches/{coach_id}/suspend`（admin-web の `suspendCoach`）・`POST /coaches/{coach_id}/resume`（`resumeCoach`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの受付（glossary の coach_acceptance。受付中・停止中）を止める・再開し、`{ coach_id, acceptance_status }` を返す。コーチでない・ない・UUID でない ID は 404、停止中の停止は 409 `coach_already_suspended`、受付中の再開は 409 `coach_not_suspended`。行動イベント・境界間イベントは発火しない
