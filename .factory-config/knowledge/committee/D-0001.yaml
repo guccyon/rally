@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/571
+decided_at: '2026-11-02'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 既存の知見がないので、変更セットに既存の知見の扱いを添える必要はなく、K-0001・K-0002・C-0001・INDEX.md を 1 本の PR にまとめた扱いは
+    README.md の決まりに合っています。
+  - specs/glossary.yaml と specs/context-map.yaml は製品のドメイン用語だけを持ち、judge・supervisor・adopt・sendback・仮決めといった工場の言葉を定義していないので、specs/
+    との矛盾はありません。
+  - K-0001 は言葉が 2 つの意味に使われること（テーマ 4）、K-0002 は差し戻しを起こす条件とマージ済みかを見ないこと（テーマ 6）を主張しており、同じ事例から出ていても主張が分かれているので重複とはみなしません。related
+    で互いを指している点も妥当です。
+  - K-0002 の statement にある「adopt の件数の合計で起こし」は K-0001 の「数える側が取り違え」と重なっているので、次に見直すときは
+    K-0002 を条件とマージ済みの確かめに絞ると、境目がはっきりします。
+  - C-0001 は集計のロジックを推測と明記していて、Engine の supervisor の実装とは照らし合わせていないので、確かさは hypothesis
+    のままが妥当です。
+  - C-0001 の提案（approve_provisional・adopt_defect の用語定義と、supervisor の sendback 条件の変更）は
+    Engine と役割に作用するため、この PR では実装せず、承認の線（ADR 0023・0024）で別に人が判断する前提でのみ採ります。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0001 と K-0002 は、どちらも C-0001・PR #395・case.analyzed:40376 を根拠にしていて、一次記録まで辿れます。'
+  - 'C-0001 には、judge が採った 3 件がどれも defect: null だったこと、欠陥の 2 件が reject されたこと、PR がマージ済みだったこと、inspector_approved
+    の basis の文が具体的に書かれていて、主張の前半は事実で裏付けられています。'
+  - 一方で、supervisor が adopt の件数を合計して sendback を起こしているという肝の部分は、事例記録の中でも「集計のロジックは材料にないので推測」とされているので、confidence
+    は hypothesis のままが妥当です。
+  - confirmed に上げる前に、supervisor が sendback を起こす条件のコードかログを直接確かめて、事例を 2 件目以上に増やすべきです。
+  - K-0002 の「マージ済みかも見ない」も、process の観点では推測とされているので、確かめるまでは hypothesis の段に留めるべきです。
+  - 知見にも事例記録にも、利用者や人を特定できる情報は見当たりません（「コーチのホーム」は画面の呼び名で、人ではありません）。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0002 の線は「defect が null でなく verdict が adopt の件数が 1 以上で、まだ直っていない」という機械で判定できる条件なので、文脈で渡すより
+    supervisor の判定へのテストで担保するほうが確かで安くつきます。
+  - K-0001 の取り違えは、judgment.judged の verdict と incident の数を、仮決めの承認と欠陥の採用に分けたスキーマにすれば型の段階で防げます。
+  - どちらも繰り返し起こりそうで、外すと分析や指標が汚れ、ジョブが無駄に動くので、決定論で担保する値打ちがあります。
+  - '集計のロジックは C-0001 でも推測にとどまるため、確かさは hypothesis のままとし、PR #395 と同じ入力で sendback が起きるかを再現テストで確かめてから
+    confirmed に上げるのがよいです。'
+  - 担保の作用先は Engine の supervisor の判定と judge の出力の形なので、実装は ADR 0023・0024 の承認の線で人が決める必要があります。
+  - INDEX.md の担保の列は context のままですが、担保を実装したら enforcement.solutions に記録し、列も更新してください。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0002 の statement は「adopt の件数で起こす」と「マージ済みかを見ない」という 2 つの条件と 3 つの結果を 1 件にまとめていて、README
+    の「1 件 1 主張」に合わないので、件数の条件だけに絞るか 2 件に分けてください。
+  - K-0002 の「マージ済みかも見ないと」には反例があり、マージ後でも採用した欠陥が残っていれば続きのジョブや差し戻しは正当なので、マージの有無ではなく「直っていない採用欠陥があるか」の
+    1 つの条件に言い直してください。
+  - K-0001 の後半（supervisor が取り違えて差し戻しが生まれる）は K-0002 の主張と重なっているので、K-0001 は「verdict adopt
+    が 2 つの意味で使われ、adopted に区別なく数えられる」という言葉の問題までに絞ってください。
+  - K-0002 の「続きのジョブや差し戻しを無駄に起こすおそれ」は C-0001 で観測されておらず推測なので、観測できた結果（見せかけの差し戻しが記録された）だけを書いてください。
+  - どちらの知見も事例は C-0001 の 1 件だけで、集計ロジックは材料になく推測と事例に書かれているので、confidence は hypothesis
+    のままにし、他の PR で同じ形が出るまで上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: test
+  proposal: 'supervisor が sendback を起こす判定にテストを足す。(1) adopt が 3 件ですべて defect: null、PR
+    はマージ済み、という PR #395 と同じ入力では sendback も続きのジョブも起きないこと、(2) defect が null でない adopt
+    が 1 件以上あってまだ直っていないときだけ sendback が起きること、(3) inspector_approved の basis に欠陥の採用数と仮決めの承認数が分けて書かれること、を確かめる。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: schema
+  proposal: judgment.judged の verdict を、仮決め向けの approve_provisional と欠陥向けの adopt_defect
+    に分ける（または、adopt のときは defect が null かどうかで種類を必ず示す）。incident の adopted も adopted_defects
+    と approved_provisionals に分け、2 つを混ぜた合計は置かないことを、イベントのスキーマで検証する。
