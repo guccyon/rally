@@ -1,8 +1,9 @@
 //! `/announcements` の統合テスト。admin-web の `POST /announcements`（`sendAnnouncement`）と `GET /announcements`
-//! （`listAnnouncements`）のレスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った
-//! 生徒にお知らせを送れること（生徒ごとにお知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に
-//! 読めること・対象の生徒がいなければ 404・題と本文とスポーツの規則違反は 422・コーチと生徒の 403・トークンなしの 401 を
-//! 確かめる。
+//! （`listAnnouncements`）と `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`）のレスポンスの形を
+//! admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った生徒にお知らせを送れること（生徒ごとに
+//! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること・対象の生徒がいなければ 404・
+//! 題と本文とスポーツの規則違反は 422・送ったお知らせを取り下げられること（一覧で取り下げ済みと分かる。二度目は 409、
+//! ないものは 404）・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -16,7 +17,7 @@ use application::{
         InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
         RecordingPushSender,
     },
-    notification::{ListAnnouncements, SendAnnouncement},
+    notification::{ListAnnouncements, SendAnnouncement, WithdrawAnnouncement},
     profile::ProfileAnnouncementRecipientLookup,
 };
 use axum::{
@@ -126,6 +127,7 @@ impl App {
                 FixedClock(now),
             ),
             ListAnnouncements::new(self.announcements.clone()),
+            WithdrawAnnouncement::new(self.announcements.clone(), FixedClock(now)),
             FakeTokens,
         )
     }
@@ -138,7 +140,44 @@ async fn send(
     token: Option<&str>,
     body: Option<Result<Value, &str>>,
 ) -> (StatusCode, Value) {
-    let mut request = Request::builder().method(method).uri("/announcements");
+    call(
+        router,
+        method,
+        "/announcements",
+        "/announcements",
+        token,
+        body,
+    )
+    .await
+}
+
+/// `token` で `announcement_id` のお知らせを取り下げ、レスポンスを admin-web の契約で検査する。
+async fn withdraw(
+    router: &Router,
+    token: Option<&str>,
+    announcement_id: &str,
+) -> (StatusCode, Value) {
+    call(
+        router,
+        "POST",
+        &format!("/announcements/{announcement_id}/withdraw"),
+        "/announcements/{announcement_id}/withdraw",
+        token,
+        None,
+    )
+    .await
+}
+
+/// `token` で `uri` を呼び、レスポンスを admin-web の契約の `path` で検査する。
+async fn call(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<Result<Value, &str>>,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder().method(method).uri(uri);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -162,7 +201,7 @@ async fn send(
     let body = serde_json::from_slice(&bytes).unwrap();
     support::Contract::load("admin-web").assert_response(
         &method.to_lowercase(),
-        "/announcements",
+        path,
         status,
         &body,
     );
@@ -194,7 +233,8 @@ async fn headquarters_sends_to_every_student_and_respects_the_settings() {
             "body": "11/3 の 2:00〜4:00 は使えません。\nご不便をおかけします。",
             "sport": null,
             "recipient_count": 3,
-            "sent_at": "2026-11-01T00:10:00Z"
+            "sent_at": "2026-11-01T00:10:00Z",
+            "withdrawal": null
         }),
         "コーチ・本部は数えない"
     );
@@ -331,6 +371,108 @@ async fn an_invalid_request_is_rejected_and_records_nothing() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
+#[tokio::test]
+async fn headquarters_withdraws_an_announcement_and_the_list_shows_it() {
+    let app = App::new().await;
+    let (_, first) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let (_, second) = send(
+        &app.router(at(20)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(json!({ "title": "キャンペーン", "body": "本文" }))),
+    )
+    .await;
+    let id = first["announcement_id"].as_str().unwrap();
+
+    let (status, body) = withdraw(&app.router(at(30)).await, Some("headquarters:6"), id).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut expected = first.clone();
+    expected["withdrawal"] = json!({
+        "withdrawn_by": account_id_uuid::format(AccountId::from_u128(6)),
+        "withdrawn_at": "2026-11-01T00:30:00Z"
+    });
+    assert_eq!(
+        body, expected,
+        "送った中身は変えず、取り下げた本部のアカウント（送った本部でなくてよい）と時刻を載せる"
+    );
+
+    let (_, listed) = send(&app.router(at(40)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(
+        listed,
+        json!({ "announcements": [second, expected] }),
+        "一覧には取り下げたものも残り、取り下げ済みと分かる"
+    );
+    assert_eq!(
+        app.notifications.all().len(),
+        6,
+        "生徒ごとのお知らせは消さない（生徒の一覧で外す）"
+    );
+    assert_eq!(
+        app.push.sent().len(),
+        4,
+        "取り下げてもプッシュ通知は送らない"
+    );
+}
+
+#[tokio::test]
+async fn withdrawing_twice_is_a_conflict_and_keeps_the_first_withdrawal() {
+    let app = App::new().await;
+    let (_, sent) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let id = sent["announcement_id"].as_str().unwrap();
+    let (_, first) = withdraw(&app.router(at(20)).await, Some(HEADQUARTERS), id).await;
+
+    let (status, body) = withdraw(&app.router(at(30)).await, Some("headquarters:6"), id).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "announcement_already_withdrawn");
+    let (_, listed) = send(&app.router(at(40)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(listed["announcements"][0], first, "最初の取り下げのまま");
+}
+
+#[tokio::test]
+async fn a_missing_announcement_is_not_found() {
+    let app = App::new().await;
+    let router = app.router(at(10)).await;
+    send(&router, "POST", Some(HEADQUARTERS), Some(Ok(maintenance()))).await;
+    for id in ["00000000-0000-4000-8000-000000000099", "not-a-uuid"] {
+        let (status, body) = withdraw(&router, Some(HEADQUARTERS), id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{id}: {body}");
+        assert_eq!(body["code"], "not_found");
+    }
+    assert!(!app.announcements.all()[0].is_withdrawn(), "何も変えない");
+}
+
+#[tokio::test]
+async fn only_headquarters_can_withdraw() {
+    let app = App::new().await;
+    let router = app.router(at(10)).await;
+    let (_, sent) = send(&router, "POST", Some(HEADQUARTERS), Some(Ok(maintenance()))).await;
+    let id = sent["announcement_id"].as_str().unwrap();
+    for token in ["coach:9", "student:1"] {
+        let (status, body) = withdraw(&router, Some(token), id).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+    let (status, body) = withdraw(&router, None, id).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert_eq!(body["code"], "unauthorized");
+    assert!(
+        !app.announcements.all()[0].is_withdrawn(),
+        "断ったときは何も変えない"
+    );
 }
 
 #[tokio::test]

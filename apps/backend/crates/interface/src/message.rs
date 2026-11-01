@@ -135,6 +135,9 @@ pub(crate) fn notification_error(error: &NotificationError) -> String {
         NotificationError::AnnouncementWithoutRecipients => {
             "お知らせを受け取る生徒がいない".to_string()
         }
+        NotificationError::AnnouncementAlreadyWithdrawn => {
+            "お知らせはすでに取り下げてある".to_string()
+        }
     }
 }
 
