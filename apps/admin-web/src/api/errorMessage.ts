@@ -21,6 +21,7 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
     "本部が非公開にしたメニューのため、公開できません。非公開のままなら内容は直せます。",
   lesson_menu_already_unpublished_by_headquarters: "このメニューはすでに本部が非公開にしています。",
   lesson_menu_not_unpublished_by_headquarters: "このメニューは本部が非公開にしたものではありません。",
+  lesson_review_not_low_rated: "低い評価ではないため、対応済みにできません。",
   announcement_already_withdrawn: "このお知らせはすでに取り下げられています。",
 };
 

@@ -20,6 +20,7 @@ pub mod lesson_review_id_uuid;
 mod list_coach_reviews;
 mod list_low_rated_reviews;
 mod low_rated_review_list;
+mod mark_low_rated_review_handled;
 mod reply_to_lesson_review;
 mod repository;
 mod review_coach_review_summary_lookup;
@@ -38,6 +39,9 @@ pub use insert_review_error::InsertReviewError;
 pub use list_coach_reviews::ListCoachReviews;
 pub use list_low_rated_reviews::ListLowRatedReviews;
 pub use low_rated_review_list::LowRatedReviewList;
+pub use mark_low_rated_review_handled::{
+    MarkLowRatedReviewHandled, MarkLowRatedReviewHandledCommand, MarkLowRatedReviewHandledError,
+};
 pub use reply_to_lesson_review::{
     ReplyToLessonReview, ReplyToLessonReviewCommand, ReplyToLessonReviewError,
 };
