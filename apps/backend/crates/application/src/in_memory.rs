@@ -197,6 +197,22 @@ impl CoachProfileRepository for InMemoryAccountRepository {
             .insert(coach_id, bio.clone());
         Ok(Some(bio))
     }
+
+    async fn list_coach_bios(&self) -> Result<BTreeMap<AccountId, CoachBio>, Unavailable> {
+        let coach_ids: Vec<AccountId> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.as_coach().is_some())
+            .map(|a| a.id())
+            .collect();
+        let bios = self.coach_bios.lock().unwrap();
+        Ok(coach_ids
+            .into_iter()
+            .map(|id| (id, bios.get(&id).cloned().unwrap_or_default()))
+            .collect())
+    }
 }
 
 /// 発火したイベントを記録する [`AnalyticsSink`]。複製は同じ記録を共有する。
