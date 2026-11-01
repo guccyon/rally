@@ -386,7 +386,7 @@ export const FIXTURES: Fixture[] = [
     body: {
       coaches: [
         { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting" },
-        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "accepting" },
+        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended" },
       ],
     } satisfies Schemas["CoachList"],
   },
