@@ -1,0 +1,16 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: supervisor が差し戻し（sendback）を「採用した欠陥があり、まだ直っていない」かではなく adopt の件数の合計で起こし、PR がマージ済みかも見ないと、直すもののない見せかけの差し戻しが記録され、分析や指標が汚れ、続きのジョブや差し戻しを無駄に起こすおそれがある。
+scope:
+  roles: [supervisor]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: 395
+  - event: "case.analyzed:40376"
+status: draft
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+related: [K-0001]

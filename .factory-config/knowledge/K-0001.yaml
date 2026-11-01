@@ -1,0 +1,16 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: judge の verdict「adopt」が「仮決めを認める」と「欠陥を直す対象にする」の 2 つの意味で使われ、incident の adopted にまとめて数えられると、数える側（supervisor）が仮決めの承認まで直すべき指摘と取り違え、直すもののない差し戻しが生まれる。
+scope:
+  roles: [judge, supervisor]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: 395
+  - event: "case.analyzed:40376"
+status: draft
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+related: [K-0002]
