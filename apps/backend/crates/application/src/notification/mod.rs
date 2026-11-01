@@ -1,7 +1,8 @@
 //! notification のユースケースとポート。
 //!
 //! 境界間イベントの購読でプッシュ通知を送ってお知らせを残すもの（[`PushNotificationSubscriber`]）のほか、本部が生徒に
-//! お知らせを送る（[`SendAnnouncement`]）・送った記録を一覧で見る（[`ListAnnouncements`]）。本部からのお知らせを受け取る
+//! お知らせを送る（[`SendAnnouncement`]）・送った記録を一覧で見る（[`ListAnnouncements`]）・誤って送ったものを取り下げる
+//! （[`WithdrawAnnouncement`]。取り下げたものは生徒のお知らせの一覧に出さない）。本部からのお知らせを受け取る
 //! 生徒は profile に問い合わせる（[`AnnouncementRecipientLookup`]）。
 
 pub mod announcement_id_uuid;
@@ -19,6 +20,8 @@ mod push_sender;
 mod repository;
 mod send_announcement;
 mod update_notification_settings;
+mod withdraw_announcement;
+mod withdraw_announcement_error;
 
 pub use announcement_recipient_lookup::AnnouncementRecipientLookup;
 pub use announcement_repository::AnnouncementRepository;
@@ -35,3 +38,5 @@ pub use send_announcement::{SendAnnouncement, SendAnnouncementCommand, SendAnnou
 pub use update_notification_settings::{
     UpdateNotificationSettings, UpdateNotificationSettingsCommand,
 };
+pub use withdraw_announcement::WithdrawAnnouncement;
+pub use withdraw_announcement_error::WithdrawAnnouncementError;
