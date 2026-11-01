@@ -1114,6 +1114,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/message-threads/unanswered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 返信のないまま時間の過ぎたスレッドの一覧（本部）
+         * @description 最後の発言が生徒のもので、それから一定の時間（既定 24 時間）コーチが返していないチャットのスレッド
+         *     （glossary の message_thread）を、コーチを問わず横断で、経過の長い順に返す。本部が、生徒からのメッセージに
+         *     返していないコーチに気づくための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     本部は件数と時間だけを見るので、**メッセージの本文・種類・スタンプは返さない**（本部がメッセージを読む・送る操作もない）。
+         *
+         *     既定・範囲・境界と、何を発言と数えるかはここが正本（実装は backend の domain `UnansweredThreadCriteria` と
+         *     `MessageThread::awaiting_coach_reply_since` の 1 か所）。レスポンスの `older_than_hours` にも実際に使った時間を載せる。
+         *
+         *     - 発言: 当事者（生徒・担当コーチ）がチャットとして送ったメッセージ（`kind` が `text` か `stamp`）。添削依頼・添削の返却
+         *       （`video_review_request` / `video_review_returned`。返却待ちの添削は `listPendingVideoReviews` で見る）と送り手が
+         *       システムのメッセージは数えない（コーチの添削の返却はチャットの返信に数えない）
+         *     - 対象: 最後の発言が生徒のもので、照会した時刻にその発言の送信時刻 `last_student_message_at` から `older_than_hours`
+         *       時間以上たったスレッド（ちょうどその時間のものを含む）。生徒が続けて送ったときは最後の 1 通の時刻から数える。
+         *       コーチが最後に発言したスレッドと、発言がまだないスレッドは載らない。既読かどうかは問わない
+         *     - `older_than_hours`: 生徒の最後の発言からの時間（時間単位の整数）。省けば 24。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 並べ方: 経過の長い順（`last_student_message_at` の古い順）。同じ時刻は `thread_id` の順
+         *     - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・生徒の最後の発言の時刻 `last_student_message_at`・
+         *       照会した時刻までのその発言からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
+         *       （`coach_display_name` / `student_display_name`）は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当するスレッドがなければ `threads` は空の配列
+         *     - 照会だけで、何も保存しない（既読にしない・コーチに催促の通知をしない）
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listUnansweredMessageThreads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/message-threads/{thread_id}/messages": {
         parameters: {
             query?: never;
@@ -2256,6 +2298,42 @@ export interface components {
             /** @description 最後の出来事の新しい順 */
             threads: components["schemas"]["MessageThread"][];
         };
+        /** @description 本部が見る、返信のないまま時間の過ぎたスレッドの一覧（対象・並べ方は `listUnansweredMessageThreads` の説明）。メッセージの本文は含まない */
+        UnansweredMessageThreadList: {
+            /** @description 使った生徒の最後の発言からの時間（時間単位）。省いたときは 24 */
+            older_than_hours: number;
+            /** @description 経過の長い順（`last_student_message_at` の古い順。同じ時刻は `thread_id` の順） */
+            threads: components["schemas"]["UnansweredMessageThread"][];
+        };
+        /** @description 返信のないまま時間の過ぎたスレッド 1 件（`listUnansweredMessageThreads`）。件数と時間だけで、メッセージの本文は含まない */
+        UnansweredMessageThread: {
+            /**
+             * Format: uuid
+             * @description スレッド（`MessageThread` の `thread_id` と同じ）
+             */
+            thread_id: string;
+            /**
+             * Format: uuid
+             * @description スレッドの担当コーチ
+             */
+            coach_id: string;
+            /** @description コーチの今の表示名。アカウントが引けなければ載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description スレッドの生徒
+             */
+            student_id: string;
+            /** @description 生徒の今の表示名。アカウントが引けなければ載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 生徒の最後の発言（本文かスタンプ）の送信時刻
+             */
+            last_student_message_at: string;
+            /** @description 照会した時刻までの、生徒の最後の発言からの経過時間（秒。切り捨て） */
+            elapsed_sec: number;
+        };
         MessageList: {
             /** Format: uuid */
             thread_id: string;
@@ -3312,6 +3390,32 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listUnansweredMessageThreads: {
+        parameters: {
+            query?: {
+                /** @description 生徒の最後の発言からこの時間（時間単位）以上コーチが返していないスレッドを返す。省けば 24 */
+                older_than_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 返信のないまま時間の過ぎたスレッドの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnansweredMessageThreadList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listMessages: {

@@ -1,7 +1,7 @@
 # ADR 0007: messaging の最小形（生徒と担当コーチのチャット）
 
-- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記。D48（Issue #208）で種類と送り手のシステムを契約に出すこと（決定 8）を追記。D54（Issue #227）でスタンプ（決定 9）を追記
-- 関係: docs/adr/0009 の答え合わせ（チャットは会話でありレッスンのログ）、`specs/context-map.yaml`（messaging・async-lesson）、`specs/glossary.yaml`（message_thread / message / stamp / subscription）、`specs/contracts/events/asyncapi.yaml`（BookingConfirmed）、`specs/contracts/api/student-app/openapi.yaml`・`admin-web/openapi.yaml`（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）、`specs/analytics/events.yaml`（message.sent）、ADR 0004（スキーマ）、ADR 0005（境界間イベントの購読）
+- 状態: 提案（2026-10-27、D01 / Issue #90）。D47（Issue #207）でメッセージの種類と、添削依頼・添削の返却をスレッドに流すこと（決定 7）を追記。D48（Issue #208）で種類と送り手のシステムを契約に出すこと（決定 8）を追記。D54（Issue #227）でスタンプ（決定 9）を追記。D169（Issue #542）で本部が返信のないスレッドを拾う一覧（決定 10）を追記
+- 関係: docs/adr/0009 の答え合わせ（チャットは会話でありレッスンのログ）、`specs/context-map.yaml`（messaging・async-lesson）、`specs/glossary.yaml`（message_thread / message / stamp / subscription）、`specs/contracts/events/asyncapi.yaml`（BookingConfirmed）、`specs/contracts/api/student-app/openapi.yaml`・`admin-web/openapi.yaml`（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`。admin-web だけ `listUnansweredMessageThreads`）、`specs/analytics/events.yaml`（message.sent）、ADR 0004（スキーマ）、ADR 0005（境界間イベントの購読）
 
 ## 決定
 
@@ -30,6 +30,11 @@
    - 契約: `sendMessage` の `SendMessageRequest` に `stamp_id`（`StampId`）を足し、`body` を任意にした（リクエストの必須を外すのは互換）。本文とスタンプのどちらか 1 つで、両方・どちらもなし・知らない ID は 422。`Message` に `stamp_id`（スタンプのときだけ）を足し、`MessageKind` に `stamp` を足した（レスポンスの enum の追加。決定 8 で知らない種類は読み飛ばしてよいと書いてある）
    - `body` には古い版のクライアント向けに「スタンプ: ありがとう」の形の短い説明を入れる（呼び名は interface の `message.rs`。契約の `StampId` の説明と同じ）
    - DB は `messaging.messages` に `stamp` の列を足し、種類と形と送り手の CHECK を stamp の場合を OR で足すだけの付け直しにした（`20261029000002_expand_message_stamps.sql`）
+10. **本部は返信のないスレッドを件数と時間だけで拾う（D169）。** admin-web に本部だけが呼べる `listUnansweredMessageThreads`（`GET /message-threads/unanswered`）を足した。
+   - 最後の「発言」が生徒のもので、それから `older_than_hours` 時間（既定 24。1〜168）以上たったスレッドを、経過の長い順に返す。生徒が続けて送ったら最後の 1 通から数える。判定は `MessageThread::awaiting_coach_reply_since`、既定と範囲と並べ方は `UnansweredThreadCriteria` の 1 か所
+   - 発言は当事者がチャットとして送ったもの（本文・スタンプ。`MessageKind::is_chat`）だけ。添削依頼・添削の返却はレッスンのログで（決定 7）、返却待ちは本部の `listPendingVideoReviews` で見るので数えない。システムのメッセージも数えない
+   - 本文・種類・スタンプは返さない（本部はメッセージを読まない）。決定 5 の「当事者でないアカウントには 404」は当事者の操作の規則のままで、本部はこの一覧からスレッドの中身に入れない
+   - 保存先は `MessageThreadRepository::list_all` ですべてのスレッドを読む（決定 6 と同じく Gen1 の規模。増えたら最後の発言の写しを持つなど読み方を変える）
 
 ## 選ばなかった案
 
@@ -44,3 +49,5 @@
 - `SendMessageRequest` を `oneOf`（本文のスキーマとスタンプのスキーマ）にする（D54）: 型は締まるが、既存のスキーマの置き換えになり、互換の検査と両クライアントの型の扱いが重くなる（決定 8 の `Message` と同じ理由）。どちらか 1 つは API が 422 で守る
 - 受講権のない生徒にも送らせる: Blueprint の「月額: 動画とチャットは送り放題」を、チャットは月額の利用権に含まれると読んだ。体験予約だけの生徒に送らせるかは、通知・matching と合わせて見直せる（`EntitlementChatGate` の 1 か所を変えればよい）
 - 既読をスレッドの当事者ごとの「最後に読んだ時刻」で持つ: 行が少なく済むが、メッセージごとの既読（相手が読んだか）を返すには時刻の比較が要り、同じ時刻のメッセージで曖昧になる
+- 返信のないスレッドの判定で添削の返却をコーチの返信に数える（D169）: チャットの問いかけに添削の返却で答えたことにはならず、添削依頼を「返信待ち」に数えると `listPendingVideoReviews` と同じものを二重に拾う。会話（チャットの種類）だけを見た
+- 返信のないスレッドの経過を、生徒の最初の未返信の発言から数える（D169）: 待たせた長さとしては素直だが、Issue の「最後の生徒の発言の時刻」に合わせた

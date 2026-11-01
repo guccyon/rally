@@ -4,12 +4,14 @@ use domain::{identity::AccountId, profile::DisplayName};
 
 use crate::{
     Unavailable, async_lesson::VideoStudentDisplayNameLookup, identity::AccountRepository,
-    live_lesson::SessionStudentDisplayNameLookup, review::ReviewerDisplayNameLookup,
-    scheduling::StudentDisplayNameLookup,
+    live_lesson::SessionStudentDisplayNameLookup, messaging::ThreadStudentDisplayNameLookup,
+    review::ReviewerDisplayNameLookup, scheduling::StudentDisplayNameLookup,
 };
 
 /// scheduling の [`StudentDisplayNameLookup`] と async-lesson の [`VideoStudentDisplayNameLookup`] と review の
-/// [`ReviewerDisplayNameLookup`] と live-lesson の [`SessionStudentDisplayNameLookup`] の profile による実装。アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
+/// [`ReviewerDisplayNameLookup`] と live-lesson の [`SessionStudentDisplayNameLookup`] と messaging の
+/// [`ThreadStudentDisplayNameLookup`] の profile による実装。アカウントの保存先（データは当面 identity の表）から
+/// 読むだけで、何も変えない。
 ///
 /// 生徒でないアカウントと、ないアカウントは結果に含めない。
 #[derive(Debug, Clone)]
@@ -82,6 +84,18 @@ where
 }
 
 impl<R> SessionStudentDisplayNameLookup for ProfileStudentDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_student_display_names(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.student_display_names(student_ids).await
+    }
+}
+
+impl<R> ThreadStudentDisplayNameLookup for ProfileStudentDisplayNameLookup<R>
 where
     R: AccountRepository,
 {

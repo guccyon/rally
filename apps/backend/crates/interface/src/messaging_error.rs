@@ -4,7 +4,8 @@
 //!
 //! - 当事者でない（`NotAThreadParticipant`）は、スレッドがあることも知らせない 404 `not_found`（ないスレッドと同じ）
 //! - 生徒がチャットの送り放題を持たない（`ChatNotAllowed`）は 403 `chat_not_entitled`
-//! - 本文の違反（`EmptyMessageBody`・`MessageBodyTooLong`）は 422 `validation_failed`
+//! - 本文の違反（`EmptyMessageBody`・`MessageBodyTooLong`）と、本部が見る返信のないスレッドの時間の範囲の外
+//!   （`UnansweredThreadHoursOutOfRange`）は 422 `validation_failed`
 //! - それ以外は、ハンドラーが組み立てる送信・既読では起きない（保存した値の破損か時計の巻き戻り）。契約に当たる応答が
 //!   ないので 500（理由はクライアントに返さない）
 
@@ -28,6 +29,9 @@ impl From<MessagingError> for ApiError {
             MessagingError::EmptyMessageBody => Self::validation_failed("メッセージの本文が空"),
             MessagingError::MessageBodyTooLong { max } => {
                 Self::validation_failed(format!("メッセージの本文は {max} 文字まで"))
+            }
+            MessagingError::UnansweredThreadHoursOutOfRange { min, max } => {
+                Self::validation_failed(format!("生徒の最後の発言からの時間は {min}〜{max} 時間"))
             }
             MessagingError::MessageThreadWithOneself
             | MessagingError::MessageSentBeforeLastActivity
@@ -70,6 +74,12 @@ mod tests {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "validation_failed",
                 "メッセージの本文は 2000 文字まで",
+            ),
+            (
+                MessagingError::UnansweredThreadHoursOutOfRange { min: 1, max: 168 },
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "validation_failed",
+                "生徒の最後の発言からの時間は 1〜168 時間",
             ),
             (
                 MessagingError::MessageThreadWithOneself,

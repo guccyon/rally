@@ -8,6 +8,7 @@
 //! 生徒が送ってよいか（月額はチャットが送り放題）の規則は
 //! [`crate::entitlement::ContractType::unlimited_video_and_chat`] の 1 か所に置き、スレッドは答えに従う。
 //! 不変条件の違反は [`MessagingError`] で返す（表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`]）。
+//! 本部が見る、返信のないまま時間の過ぎたスレッドの基準は [`UnansweredThreadCriteria`]（本部はメッセージを読まない）。
 //! 通知（notification）と添付ファイルは扱わない。
 
 mod message;
@@ -21,6 +22,7 @@ mod message_thread;
 mod message_thread_id;
 mod messaging_error;
 mod stamp;
+mod unanswered_thread_criteria;
 
 pub use message::Message;
 pub use message_author::MessageAuthor;
@@ -33,3 +35,4 @@ pub use message_thread::MessageThread;
 pub use message_thread_id::MessageThreadId;
 pub use messaging_error::MessagingError;
 pub use stamp::Stamp;
+pub use unanswered_thread_criteria::UnansweredThreadCriteria;

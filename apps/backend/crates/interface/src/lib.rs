@@ -60,6 +60,7 @@ mod student_activity;
 mod students;
 mod subscription_plans;
 mod subscriptions;
+mod unanswered_message_threads;
 pub mod version;
 mod videos;
 
@@ -106,4 +107,5 @@ pub use student_activity::student_activity_router;
 pub use students::students_router;
 pub use subscription_plans::subscription_plans_router;
 pub use subscriptions::subscriptions_router;
+pub use unanswered_message_threads::unanswered_message_threads_router;
 pub use videos::videos_router;

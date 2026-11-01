@@ -375,6 +375,10 @@ mod tests {
             self.0.list_for(account_id).await
         }
 
+        async fn list_all(&self) -> Result<Vec<MessageThread>, crate::Unavailable> {
+            self.0.list_all().await
+        }
+
         async fn update<F>(
             &self,
             _thread_id: domain::messaging::MessageThreadId,
