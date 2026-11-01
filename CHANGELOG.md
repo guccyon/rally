@@ -6,6 +6,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 
 ### 追加
 - 本部がコーチ 1 人の様子で直近の低い評価の数を見る API: admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）に `low_rated_review_count`（そのコーチへの直近 30 日の★2 以下の評価の件数。`listLowRatedLessonReviews` と同じしきい値と期間）と `unhandled_low_rated_review_count`（そのうち本部がまだ対応済みの印を付けていない件数）を足した。既存の項目と、本部以外は 403 の振る舞いは変わらない。DB の変更はない。admin-web は型を生成し直してテストの固定データに足しただけで、画面は変えない（#556）
+- 本部がお知らせを下書きとして保存する API: admin-web の契約に `POST` / `GET /announcement-drafts`（`createAnnouncementDraft` / `listAnnouncementDrafts`。一覧は最後に直した時刻の新しい順）・`PUT` / `DELETE /announcement-drafts/{announcement_draft_id}`（`updateAnnouncementDraft` / `deleteAnnouncementDraft`。削除は残った一覧を返す）・`POST /announcement-drafts/{announcement_draft_id}/send`（`sendAnnouncementDraft`）を足した。下書きは生徒に届かず、書きかけなので題・本文は空でもよい（上限は 50 文字・2000 文字）。下書きから送ると `sendAnnouncement` と同じ規則で確かめて送り（空の題・本文は 422、対象の生徒がいなければ 404。どちらも下書きは残る）、送れたら下書きは消えて `listAnnouncements` に出る。ない・UUID でない下書きは 404、本部以外は 403。DB は `notification.announcement_drafts` を足す expand だけ。admin-web は型を生成し直しただけで、画面は変えない（#555）
 - 本部がレッスンメニューごとの直近の予約の数を見る API: admin-web の `GET /lesson-menus`（`listLessonMenus`）の各行に `recent_booking_count` を足した。照会した時刻の 30 日前（含む）から照会した時刻までに作られた予約のうち、キャンセルされていないもの（`pending` / `confirmed`）を、予約した時点の枠のメニューごとに数える（予約がなければ 0）。既存の項目・絞り込み・並べ方は変わらない。DB の変更はない。admin-web は型を生成し直してテストの固定データに足しただけで、画面は変えない（#543）
 - 本部が予約 1 件の詳細を見る API: admin-web の契約に `GET /bookings/{booking_id}`（`getBooking`）を足した。予約（生徒・コーチ・予約した時点のレッスンメニュー・体験予約か・今の状態・作った時刻）・予約した枠（開始と終わり）・状態の移り変わり `status_changes`（確定・キャンセルの時刻を古い順に。記録のない変化は載せない）・コーチと生徒の表示名を 1 回で返す。ない予約は 404、本部以外は 403。照会だけで何も保存しない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#541）
 - admin-web の本部の「コーチの様子」（`/headquarters/coach-overview?coach_id=…`）に「受付の記録」の欄を足した: そのコーチの受付を止めた・再開した記録を新しい順（API の返った順）に、操作（止めた／再開した）・日時・操作した本部のアカウント（ID）で表にする（`listCoachAcceptanceChanges`）。読み込み中、0 件なら「受付を止めたことはありません」、読み込めなければその文言を出す。受付を止める・再開する操作はこの欄にはない。API と契約の変更はない（#540）
@@ -164,6 +165,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
 
 ### 変更
+- admin-web の本部の「生徒の利用の様子」で、これからの予約の「状態」を本部の「予約」と同じ色の札にした（確定待ちは琥珀、確定済みは緑）。色の対応は 2 つの画面で共通。API と契約の変更はない（#528）
 - backend の内部の整理: コーチの自己紹介文を identity の `Coach` から外し、profile のポート `CoachProfileRepository` で読み書きするようにした（保存先は今までどおり `identity.coaches.bio`）。API・契約・振る舞いと DB の変更はない（#388）
 - 生徒のメッセージの未読と既読: student-app の `GET /message-threads` の `unread_count` と `POST /message-threads/{thread_id}/read`（`markMessageThreadRead`）は #90 から admin-web と同じ操作・同じ形（当事者でないスレッドは 404）で使えることを確かめ、生徒が既読にすると未読が 0 になることのテスト（ユースケースとハンドラ）を足した。API と契約と DB の変更はない（#342）
 - API のエラー文言（`message`）の予約と枠の状態の呼び名を画面に揃えた: 予約の `pending` を「確定前」から「確定待ち」に（例: 「確定待ちの予約でない（確定済み）」）、枠の `closed` を「閉じている」から「終了」にした。呼び名は `specs/glossary.yaml` の `booking`・`slot` の `states` に置いた。エラーのコード・契約の enum・DB の変更はない（#309）
