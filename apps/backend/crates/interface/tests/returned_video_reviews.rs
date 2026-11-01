@@ -354,6 +354,21 @@ async fn the_period_and_coach_narrow_the_list() {
             "2026-10-31",
             vec![],
         ),
+        // スポーツは動画のスポーツで絞る。期間・コーチと組み合わせられ、並べ方は変わらない
+        ("?sport=golf", "2026-10-25", "2026-10-31", vec![b]),
+        (
+            "?sport=tennis&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![a, c],
+        ),
+        (
+            "?sport=tennis&coach_id=00000000-0000-0000-0000-000000000003&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![c],
+        ),
+        ("?sport=soccer", "2026-10-25", "2026-10-31", vec![]),
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
@@ -382,6 +397,14 @@ async fn invalid_query_is_422_validation_failed() {
         ("?to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
         ("?from=", "from は YYYY-MM-DD の日付でない"),
         ("?coach_id=coach-2", "coach_id が UUID でない"),
+        ("?sport=pingpong", "未知のスポーツ: pingpong"),
+        ("?sport=", "未知のスポーツ: "),
+        ("?sport=Tennis", "未知のスポーツ: Tennis"),
+        // スポーツが正しくても期間の規則は変わらない
+        (
+            "?sport=golf&from=2026-10-02&to=2026-10-01",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

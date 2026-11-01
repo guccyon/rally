@@ -1325,11 +1325,15 @@ export interface paths {
          *     - 任意の `coach_id` で、そのコーチ（動画の送り先で、添削を返したコーチ）の動画だけに絞れる。期間と組み合わせられ、期間の規則と
          *       並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・
          *       期間に返却がないコーチは、404 にせず `reviews` が空の配列
+         *     - 任意の `sport` で、そのスポーツの動画だけに絞れる。動画のスポーツと値の検証は `listPendingVideoReviews` の `sport` と同じ
+         *       （動画のスポーツは送ったときのスポーツ `sport`。実装は backend の domain `Video::is_in_sport` の 1 か所）。期間・`coach_id` と
+         *       組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。省けばスポーツを問わない。`sport` が `Sport` の値で
+         *       なければ 422 `validation_failed`。期間にそのスポーツの返却がなければ `reviews` が空の配列
          *     - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
          *       端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
          *       （KPI は小数で、ここは切り捨てた整数）
          *     - 並べ方: 返却の時刻 `returned_at` の新しい順。同じ時刻は `video_id` の順
-         *     - 対象: 返却済みの動画だけ（スポーツを問わない）。返却を待っている動画は `listPendingVideoReviews`
+         *     - 対象: 返却済みの動画だけ（`sport` を付けなければスポーツを問わない）。返却を待っている動画は `listPendingVideoReviews`
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチの ID と表示名・送った時刻・返した時刻・かかった時間を載せる。添削の中身
          *       （コメント）は載せない。表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `reviews` は空の配列（404 にはしない）
@@ -4149,6 +4153,8 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /** @description このスポーツの動画だけを返す（付けなければスポーツを問わない。`Sport` の値でなければ 422 `validation_failed`） */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;
