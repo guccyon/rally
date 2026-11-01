@@ -14,7 +14,9 @@ use domain::{
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
-    scheduling::{BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus},
+    scheduling::{
+        BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus,
+    },
 };
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -129,6 +131,15 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Pending => "pending",
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
+    }
+}
+
+/// admin-web の `BookingCanceller` の値（`CancelledBooking.cancelled_by`）。
+pub(crate) const fn booking_canceller_to_contract(canceller: BookingCanceller) -> &'static str {
+    match canceller {
+        BookingCanceller::Student => "student",
+        BookingCanceller::Coach => "coach",
+        BookingCanceller::Headquarters => "headquarters",
     }
 }
 
@@ -392,6 +403,19 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn booking_cancellers_are_student_coach_and_headquarters() {
+        assert_eq!(
+            [
+                BookingCanceller::Student,
+                BookingCanceller::Coach,
+                BookingCanceller::Headquarters,
+            ]
+            .map(booking_canceller_to_contract),
+            ["student", "coach", "headquarters"]
+        );
     }
 
     #[test]
