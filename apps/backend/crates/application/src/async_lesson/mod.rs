@@ -3,6 +3,7 @@
 mod ai_feedback_generator;
 mod ai_feedback_request;
 mod coach_video_list;
+mod get_coach_video_review_lead_time;
 mod get_video_review;
 mod list_coach_videos;
 mod list_my_videos;
@@ -24,6 +25,7 @@ mod video_student_display_name_lookup;
 pub use ai_feedback_generator::AiFeedbackGenerator;
 pub use ai_feedback_request::AiFeedbackRequest;
 pub use coach_video_list::CoachVideoList;
+pub use get_coach_video_review_lead_time::GetCoachVideoReviewLeadTime;
 pub use get_video_review::{GetVideoReview, GetVideoReviewError, GetVideoReviewQuery};
 pub use list_coach_videos::ListCoachVideos;
 pub use list_my_videos::ListMyVideos;

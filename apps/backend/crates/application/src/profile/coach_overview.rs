@@ -1,4 +1,7 @@
-use domain::{profile::DisplayName, review::CoachReviewSummary, scheduling::CoachAcceptanceStatus};
+use domain::{
+    async_lesson::VideoReviewLeadTime, profile::DisplayName, review::CoachReviewSummary,
+    scheduling::CoachAcceptanceStatus,
+};
 
 use crate::lesson::CoachLessonStats;
 
@@ -15,4 +18,7 @@ pub struct CoachOverview {
     pub lesson_stats: CoachLessonStats,
     /// 公開中のレッスンメニューの数（catalog の `ListCoachLessonMenus`。スポーツで絞らない）
     pub published_lesson_menu_count: u32,
+    /// 直近 30 日に返した動画添削の件数と、送付から返却までの時間の中央値（async-lesson の
+    /// `GetCoachVideoReviewLeadTime`）
+    pub video_review_lead_time: VideoReviewLeadTime,
 }

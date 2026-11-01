@@ -14,6 +14,7 @@ mod video_id;
 mod video_lesson_menu;
 mod video_review;
 mod video_review_id;
+mod video_review_lead_time;
 mod video_status;
 
 pub use ai_feedback::AiFeedback;
@@ -25,4 +26,5 @@ pub use video_id::VideoId;
 pub use video_lesson_menu::VideoLessonMenu;
 pub use video_review::VideoReview;
 pub use video_review_id::VideoReviewId;
+pub use video_review_lead_time::VideoReviewLeadTime;
 pub use video_status::VideoStatus;
