@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    identity::account_id_uuid,
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, ListBookings, ListBookingsQuery,
         StudentDisplayNameLookup,
@@ -33,6 +34,7 @@ pub struct HeadquartersBookingsState<B, K, D, C> {
 pub struct ListBookingsParams {
     from: Option<String>,
     to: Option<String>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `HeadquartersBookingList`。
@@ -54,7 +56,7 @@ pub struct HeadquartersBookingBody {
 }
 
 /// `GET /bookings`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の日付で
-/// ないときと、期間の違反は 422（失敗の応答は [`crate::scheduling_error`] が決める）。
+/// ないとき・`coach_id` が UUID でないときと、期間の違反は 422（失敗の応答は [`crate::scheduling_error`] が決める）。
 pub async fn list_bookings<B, K, D, C>(
     State(state): State<Arc<HeadquartersBookingsState<B, K, D, C>>>,
     _account: AuthenticatedAccount,
@@ -78,6 +80,14 @@ where
             .to
             .as_deref()
             .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+            })
             .transpose()?,
     };
     let list = state

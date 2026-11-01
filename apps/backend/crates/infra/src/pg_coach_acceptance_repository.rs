@@ -1,6 +1,7 @@
-//! コーチの受付の保存先（Postgres の `scheduling.coach_acceptances`）。
+//! コーチの受付の保存先（Postgres の `scheduling.coach_acceptances` と、止めた・再開した記録の
+//! `scheduling.coach_acceptance_changes`）。
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::SystemTime};
 
 use application::{
     Unavailable,
@@ -9,12 +10,15 @@ use application::{
 };
 use domain::{
     identity::AccountId,
-    scheduling::{CoachAcceptance, CoachAcceptanceStatus, SchedulingError},
+    scheduling::{CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus, SchedulingError},
 };
-use sqlx::{PgExecutor, PgPool, types::Uuid};
+use sqlx::{
+    PgExecutor, PgPool,
+    types::{Uuid, time::OffsetDateTime},
+};
 
 use crate::{
-    pg_support::lock,
+    pg_support::{lock, timestamp},
     scheduling_values::{coach_acceptance_status_from_value, coach_acceptance_status_value},
 };
 
@@ -22,7 +26,8 @@ use crate::{
 ///
 /// 一度も止めていないコーチは行を持たず、受付中として読む。止める・再開する規則は domain の [`CoachAcceptance`] だけで
 /// 判定する。読み取りから保存までは 1 つのトランザクションで、コーチごとの advisory lock を取ってから行う（行がまだない
-/// コーチへの並行な停止も直列にするため、行のロックではなく advisory lock にする）。
+/// コーチへの並行な停止も直列にするため、行のロックではなく advisory lock にする）。止めた・再開した記録は同じ
+/// トランザクションで `scheduling.coach_acceptance_changes` に 1 行足す（書き換えない）。
 #[derive(Debug, Clone)]
 pub struct PgCoachAcceptanceRepository {
     pool: PgPool,
@@ -60,7 +65,7 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         update: F,
     ) -> Result<CoachAcceptance, UpdateCoachAcceptanceError>
     where
-        F: FnOnce(&mut CoachAcceptance) -> Result<(), SchedulingError> + Send,
+        F: FnOnce(&mut CoachAcceptance) -> Result<CoachAcceptanceChange, SchedulingError> + Send,
     {
         let unavailable = |e| UpdateCoachAcceptanceError::Unavailable(Unavailable::new(e));
         let coach = account_id_uuid::to_uuid(coach_id);
@@ -71,7 +76,7 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         let mut acceptance = find_coach_acceptance(&mut *tx, coach_id)
             .await
             .map_err(UpdateCoachAcceptanceError::Unavailable)?;
-        update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
+        let change = update(&mut acceptance).map_err(UpdateCoachAcceptanceError::Rejected)?;
         sqlx::query(
             "INSERT INTO scheduling.coach_acceptances (coach_id, status, updated_at)
              VALUES ($1, $2, now())
@@ -79,6 +84,17 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         )
         .bind(coach)
         .bind(coach_acceptance_status_value(acceptance.status()))
+        .execute(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+        sqlx::query(
+            "INSERT INTO scheduling.coach_acceptance_changes (coach_id, status, changed_by, changed_at)
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(account_id_uuid::to_uuid(change.coach_id()))
+        .bind(coach_acceptance_status_value(change.status()))
+        .bind(account_id_uuid::to_uuid(change.changed_by()))
+        .bind(timestamp(change.changed_at()))
         .execute(&mut *tx)
         .await
         .map_err(unavailable)?;
@@ -97,5 +113,32 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         .await
         .map_err(Unavailable::new)?;
         Ok(ids.into_iter().map(account_id_uuid::from_uuid).collect())
+    }
+
+    async fn changes(
+        &self,
+        coach_id: AccountId,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        let rows: Vec<(String, Uuid, OffsetDateTime)> = sqlx::query_as(
+            "SELECT status, changed_by, changed_at FROM scheduling.coach_acceptance_changes
+             WHERE coach_id = $1
+             ORDER BY changed_at DESC, seq DESC",
+        )
+        .bind(account_id_uuid::to_uuid(coach_id))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter()
+            .map(|(status, changed_by, changed_at)| {
+                let status = coach_acceptance_status_from_value(&status)
+                    .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
+                Ok(CoachAcceptanceChange::restore(
+                    coach_id,
+                    status,
+                    account_id_uuid::from_uuid(changed_by),
+                    SystemTime::from(changed_at),
+                ))
+            })
+            .collect()
     }
 }

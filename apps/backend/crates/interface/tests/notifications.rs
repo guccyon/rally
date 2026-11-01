@@ -1,14 +1,17 @@
 //! `/notifications/me` の統合テスト。student-app と admin-web の `GET /notifications/me`（`listMyNotifications`）と
 //! `POST /notifications/me/read`（`markMyNotificationsRead`）のレスポンスの形を、生徒は student-app、コーチは admin-web の
 //! OpenAPI のスキーマで検査し、生徒・コーチが自分のお知らせだけを新しい順に種類・本文・作った時刻・既読かで読めること・
-//! すべて既読にできて何度呼んでもよいこと・ほかの人のお知らせに触れないこと・本部の 403・トークンなしの 401 を確かめる。
+//! すべて既読にできて何度呼んでもよいこと・ほかの人のお知らせに触れないこと・本部からのお知らせは題と本文を本文に
+//! 載せること・本部の 403・トークンなしの 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
     identity::{AccessToken, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier},
-    in_memory::{FixedClock, InMemoryNotificationRepository},
-    notification::{ListMyNotifications, MarkMyNotificationsRead, notification_id_uuid},
+    in_memory::{FixedClock, InMemoryAnnouncementRepository, InMemoryNotificationRepository},
+    notification::{
+        ListMyNotifications, MarkMyNotificationsRead, NotificationRepository, notification_id_uuid,
+    },
 };
 use axum::{
     Router,
@@ -19,7 +22,10 @@ use domain::{
     async_lesson::{VideoId, VideoReviewId},
     identity::{AccountId, Role},
     messaging::{MessageId, MessageSender, MessageThreadId},
-    notification::{Notification, NotificationId, PushNotification},
+    notification::{
+        Announcement, AnnouncementBody, AnnouncementId, AnnouncementTitle, Notification,
+        NotificationId, PushNotification,
+    },
     scheduling::BookingId,
 };
 use serde_json::{Value, json};
@@ -147,9 +153,21 @@ fn saved() -> InMemoryNotificationRepository {
 }
 
 fn router(notifications: InMemoryNotificationRepository, now: SystemTime) -> Router {
+    router_with(
+        notifications,
+        InMemoryAnnouncementRepository::default(),
+        now,
+    )
+}
+
+fn router_with(
+    notifications: InMemoryNotificationRepository,
+    announcements: InMemoryAnnouncementRepository,
+    now: SystemTime,
+) -> Router {
     interface::notifications_router(
-        ListMyNotifications::new(notifications.clone()),
-        MarkMyNotificationsRead::new(notifications, FixedClock(now)),
+        ListMyNotifications::new(notifications.clone(), announcements.clone()),
+        MarkMyNotificationsRead::new(notifications, announcements, FixedClock(now)),
         FakeTokens,
     )
 }
@@ -358,4 +376,48 @@ async fn only_students_and_coaches_can_call_and_a_token_is_required() {
         notifications.all().iter().all(|n| !n.is_read()),
         "断ったときは既読にしない"
     );
+}
+
+#[tokio::test]
+async fn an_announcement_shows_its_title_and_body() {
+    let sent = Announcement::new(
+        AnnouncementId::from_u128(70),
+        AccountId::from_u128(5),
+        AnnouncementTitle::new("メンテナンスのお知らせ").unwrap(),
+        AnnouncementBody::new("11/3 の 2:00〜4:00 は使えません").unwrap(),
+        None,
+        2,
+        at(50),
+    )
+    .unwrap();
+    let notifications = saved();
+    notifications
+        .insert(notification(8, sent.push_to(STUDENT_ID), 50))
+        .await
+        .unwrap();
+    let router = router_with(
+        notifications,
+        InMemoryAnnouncementRepository::with_announcements([sent]),
+        at(60),
+    );
+
+    let (status, body) = send(&router, "GET", "/notifications/me", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["notifications"][0],
+        json!({
+            "notification_id": id(8),
+            "kind": "announcement",
+            "body": "メンテナンスのお知らせ\n11/3 の 2:00〜4:00 は使えません",
+            "created_at": "2026-11-01T00:50:00Z",
+            "is_read": false
+        }),
+        "本文は題と本文を改行でつないだもの"
+    );
+    assert_eq!(body["notifications"].as_array().unwrap().len(), 4);
+
+    let (status, body) = send(&router, "POST", "/notifications/me/read", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["notifications"][0]["kind"], "announcement");
+    assert_eq!(body["notifications"][0]["is_read"], true);
 }

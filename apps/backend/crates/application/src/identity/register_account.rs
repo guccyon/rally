@@ -272,7 +272,10 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
-        async fn list_students(&self) -> Result<Vec<Account>, Unavailable> {
+        async fn list_students(
+            &self,
+            _name: Option<&domain::profile::DisplayNameQuery>,
+        ) -> Result<Vec<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
 

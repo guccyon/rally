@@ -38,12 +38,14 @@ use domain::{
     live_lesson::SessionId,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
-    scheduling::CoachAcceptance,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 mod support;
+
+/// 受付を止める・再開する本部のアカウント。
+const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
 /// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
 struct FakeTokens;
@@ -166,7 +168,9 @@ async fn app() -> Router {
     }
     let acceptances = InMemoryCoachAcceptanceRepository::default();
     acceptances
-        .update(COACH, CoachAcceptance::suspend)
+        .update(COACH, |a| {
+            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+        })
         .await
         .unwrap();
     let reviews = InMemoryLessonReviewRepository::with_reviews([

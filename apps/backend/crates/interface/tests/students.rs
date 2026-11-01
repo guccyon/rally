@@ -1,6 +1,7 @@
 //! `GET /students`（admin-web の `listStudents`）の統合テスト。本部には生徒の一覧を、受講権の契約種別と契約プラン・
 //! 最後に予約した時刻とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
-//! この操作はパスパラメータもクエリも受けないので、404（見つからない）と 422（規則違反）の応答はない。
+//! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。この操作はパスパラメータを受けないので、
+//! 404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
 
@@ -171,7 +172,12 @@ fn router(
 
 /// `GET /students`。レスポンスを admin-web の契約で検査する。
 async fn list_students(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/students");
+    list_students_at(router, "/students", token).await
+}
+
+/// クエリ付きの `GET /students`（`uri` はパスとクエリ）。レスポンスを admin-web の契約で検査する。
+async fn list_students_at(router: &Router, uri: &str, token: Option<&str>) -> (StatusCode, Value) {
+    let mut request = Request::get(uri);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -227,6 +233,114 @@ async fn headquarters_lists_students_newest_first_with_contract_and_last_booking
         }),
         "生徒だけを載せ、メールアドレスは載せない"
     );
+}
+
+/// 生徒の ID の末尾の数（`students` の並び順）。
+fn listed_ids(body: &Value) -> Vec<String> {
+    body["students"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            s["student_id"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches(['0', '-'])
+                .to_string()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn q_lists_only_students_whose_display_name_contains_it() {
+    let router = app().await;
+    // 「なまえ」は生徒 3 人とも含む。「%E3%81%BE%E3%81%883」は「まえ3」
+    for (uri, expected) in [
+        (
+            "/students?q=%E3%81%AA%E3%81%BE%E3%81%88",
+            vec!["5", "4", "3"],
+        ),
+        ("/students?q=%E3%81%BE%E3%81%883", vec!["3"]),
+        // 前後の空白（全角の空白を含む）は除いて比べる
+        ("/students?q=%E3%80%80%E3%81%BE%E3%81%884+", vec!["4"]),
+        ("/students?q=%E3%81%84%E3%81%AA%E3%81%84", vec![]),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) = list_students_at(
+        &router,
+        "/students?q=%E3%81%BE%E3%81%883",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body["students"][0]["contract_type"], "subscription",
+        "絞り込んでも受講権と最後の予約を添える"
+    );
+    assert_eq!(
+        body["students"][0]["last_booked_at"],
+        "2026-10-01T12:00:00Z"
+    );
+}
+
+#[tokio::test]
+async fn q_matches_ascii_letters_case_insensitively() {
+    let accounts = InMemoryAccountRepository::default();
+    for (id, name) in [(3, "Taro YAMADA"), (4, "ＹＡＭＡＤＡ")] {
+        let account = Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("user{id}@example.com")).unwrap(),
+            DisplayName::new(name).unwrap(),
+            Role::Student,
+            [Sport::Tennis],
+            at(id as u64),
+        )
+        .unwrap();
+        accounts.insert(account).await.unwrap();
+    }
+    let router = router(
+        accounts,
+        InMemoryEntitlementRepository::default(),
+        InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+    );
+    let (status, body) = list_students_at(&router, "/students?q=yamada", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(listed_ids(&body), ["3"], "全角の英字は同じとみなさない");
+}
+
+#[tokio::test]
+async fn blank_or_missing_q_lists_all_students() {
+    let router = app().await;
+    for uri in ["/students?q=", "/students?q=+%E3%80%80+", "/students?"] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), ["5", "4", "3"], "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn q_up_to_50_chars_is_accepted_and_longer_is_422() {
+    let router = app().await;
+    let (status, body) = list_students_at(
+        &router,
+        &format!("/students?q=+{}+", "a".repeat(50)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "前後の空白は数えない: {body}");
+    assert_eq!(body, json!({ "students": [] }));
+
+    let (status, body) = list_students_at(
+        &router,
+        &format!("/students?q={}", "a".repeat(51)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    assert_eq!(body["message"], "表示名の検索語は 50 文字まで");
 }
 
 #[tokio::test]

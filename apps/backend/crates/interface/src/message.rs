@@ -5,6 +5,7 @@ use domain::{
     identity::Role,
     lesson::LessonType,
     messaging::{MessageContent, Stamp},
+    notification::NotificationError,
     scheduling::BookingStatus,
 };
 
@@ -27,6 +28,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
     match error {
         DomainError::EmptyDisplayName => "表示名が空".to_string(),
         DomainError::DisplayNameTooLong { max } => format!("表示名は {max} 文字まで"),
+        DomainError::DisplayNameQueryTooLong { max } => {
+            format!("表示名の検索語は {max} 文字まで")
+        }
         DomainError::InvalidEmail => "メールアドレスの形が不正".to_string(),
         DomainError::CoachBioTooLong { max } => format!("自己紹介文は {max} 文字まで"),
         DomainError::RoleAttributeMismatch { role, sports } => {
@@ -111,6 +115,26 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
     }
 }
 
+/// notification の不変条件の違反の説明。
+pub(crate) fn notification_error(error: &NotificationError) -> String {
+    match error {
+        NotificationError::NotificationReadBeforeCreated => {
+            "お知らせの既読が作った時刻より前".to_string()
+        }
+        NotificationError::EmptyAnnouncementTitle => "お知らせの題が空".to_string(),
+        NotificationError::AnnouncementTitleTooLong { max } => {
+            format!("お知らせの題は {max} 文字まで")
+        }
+        NotificationError::EmptyAnnouncementBody => "お知らせの本文が空".to_string(),
+        NotificationError::AnnouncementBodyTooLong { max } => {
+            format!("お知らせの本文は {max} 文字まで")
+        }
+        NotificationError::AnnouncementWithoutRecipients => {
+            "お知らせを受け取る生徒がいない".to_string()
+        }
+    }
+}
+
 /// メッセージの本文（student-app・admin-web の `Message.body`）。本文の種類は本文そのもの、添削依頼・添削の返却・
 /// スタンプは種類（`Message.kind`）を知らない版のクライアントがそのまま表示できる短い説明（スタンプは「スタンプ: 呼び名」）。
 pub(crate) fn message_content_text(content: &MessageContent) -> String {
@@ -156,6 +180,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::DisplayNameTooLong { max: 50 }),
             "表示名は 50 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::DisplayNameQueryTooLong { max: 50 }),
+            "表示名の検索語は 50 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::InvalidEmail),
