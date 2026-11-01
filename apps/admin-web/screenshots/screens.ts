@@ -68,6 +68,7 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222",
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
+  { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   {
     id: "hq-lesson-menu-unpublish",

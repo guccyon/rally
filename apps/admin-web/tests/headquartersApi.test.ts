@@ -248,4 +248,30 @@ describe("headquartersApi", () => {
       code: "validation_failed",
     });
   });
+
+  test("suspendCoach は POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const acceptance = { coach_id: coachId, acceptance_status: "suspended" };
+    const { api, fetchMock } = setup(json(200, acceptance));
+    const result = await api.suspendCoach(coachId);
+    expect(result).toEqual({ ok: true, data: acceptance });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/suspend`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("resumeCoach は POST /api/coaches/{coach_id}/resume を呼び、409 は ErrorCode の文言にする", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const { api, fetchMock } = setup(json(409, { code: "coach_not_suspended", message: "not suspended" }));
+    const result = await api.resumeCoach(coachId);
+    expect(result).toEqual({
+      ok: false,
+      code: "coach_not_suspended",
+      message: "このコーチの受付は停止していません。",
+    });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/resume`);
+  });
 });
