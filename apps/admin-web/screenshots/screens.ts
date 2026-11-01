@@ -97,6 +97,12 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
+  {
+    id: "hq-overdue-live-sessions",
+    title: "本部: 終わっていない通話",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions",
+  },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
     id: "hq-announcement-confirm",
