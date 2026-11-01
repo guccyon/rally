@@ -15,6 +15,9 @@ use crate::{
 /// [`SessionStatus::Ended`] になる。セッションには、開始したときに確定していた同じ枠の予約がすべて結び付く
 /// （[`SessionBooking`]。マンツーマンの枠では 1 つ、グループレッスンの枠では人数分。変更シナリオ cs-004）。
 /// 参加者はコーチと、結び付いた予約の生徒たち。開始・終了できるのは参加者だけ。
+///
+/// 終了の記録がないまま残ったセッションは、本部が終わったことにできる（[`LiveLessonSession::end_by_headquarters`]）。
+/// そのときは通話基盤から指標を受け取らないので接続品質を持たず、終わらせた本部のアカウントを持つ。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiveLessonSession {
     id: SessionId,
@@ -26,6 +29,8 @@ pub struct LiveLessonSession {
     started_at: SystemTime,
     ended_at: Option<SystemTime>,
     quality: Option<ConnectionQuality>,
+    /// 本部が終わらせたときの本部のアカウント（参加者が終了したか、終了するまでは `None`）
+    ended_by_headquarters: Option<AccountId>,
 }
 
 impl LiveLessonSession {
@@ -76,6 +81,7 @@ impl LiveLessonSession {
             started_at: now,
             ended_at: None,
             quality: None,
+            ended_by_headquarters: None,
         })
     }
 
@@ -104,6 +110,7 @@ impl LiveLessonSession {
             started_at,
             ended_at: ended.map(|(ended_at, _)| ended_at),
             quality: ended.map(|(_, quality)| quality),
+            ended_by_headquarters: None,
         })
     }
 
@@ -167,6 +174,30 @@ impl LiveLessonSession {
         self.ensure_can_end(participant, now)?;
         self.ended_at = Some(now);
         self.quality = Some(quality);
+        Ok(())
+    }
+
+    /// 本部のアカウント `headquarters` が `now` に、終了の記録がないまま残ったセッションを終わったことにする（D188）。
+    ///
+    /// 終わった時刻は `now`（操作の時刻）で、終わらせた本部のアカウントを残す。通話基盤からは指標を受け取らないので
+    /// 接続品質は持たない（[`LiveLessonSession::quality`] は `None`）。`headquarters` が本部の役割かは境界が確かめる
+    /// （domain はアカウントの役割を持たない）。終了済みなら [`DomainError::LiveLessonSessionAlreadyEnded`]、`now` が
+    /// 開始より前なら [`DomainError::SessionEndsBeforeItStarts`]。失敗したときはセッションを変えない。
+    ///
+    /// 保存先から読んだ通話中のセッションに、本部が終わらせた記録を戻すときにも使う（判定は同じ）。
+    pub fn end_by_headquarters(
+        &mut self,
+        headquarters: AccountId,
+        now: SystemTime,
+    ) -> Result<(), DomainError> {
+        if self.ended_at.is_some() {
+            return Err(DomainError::LiveLessonSessionAlreadyEnded);
+        }
+        if now < self.started_at {
+            return Err(DomainError::SessionEndsBeforeItStarts);
+        }
+        self.ended_at = Some(now);
+        self.ended_by_headquarters = Some(headquarters);
         Ok(())
     }
 
@@ -310,9 +341,15 @@ impl LiveLessonSession {
         now.duration_since(self.started_at).unwrap_or_default()
     }
 
-    /// 終了時に記録した接続品質の指標。終了するまでは `None`。
+    /// 終了時に記録した接続品質の指標。終了するまでと、本部が終わらせたときは `None`。
     pub const fn quality(&self) -> Option<ConnectionQuality> {
         self.quality
+    }
+
+    /// 本部が終わらせたときの本部のアカウント（[`LiveLessonSession::end_by_headquarters`]）。参加者が終了したときと、
+    /// 終了するまでは `None`。
+    pub const fn ended_by_headquarters(&self) -> Option<AccountId> {
+        self.ended_by_headquarters
     }
 }
 
@@ -520,6 +557,85 @@ mod tests {
     }
 
     const LESSON: LessonCompletionId = LessonCompletionId::from_u128(70);
+
+    const HEADQUARTERS: AccountId = AccountId::from_u128(9);
+
+    #[test]
+    fn headquarters_ends_a_session_at_the_time_of_the_operation_without_quality() {
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        session.end_by_headquarters(HEADQUARTERS, at(900)).unwrap();
+        assert_eq!(session.status(), SessionStatus::Ended);
+        assert_eq!(session.ended_at(), Some(at(900)));
+        assert_eq!(session.duration(), Some(Duration::from_secs(300 * 60)));
+        assert_eq!(session.ended_by_headquarters(), Some(HEADQUARTERS));
+        assert_eq!(session.quality(), None, "通話基盤の指標は受け取らない");
+        // 開始と同じ時刻にも終わらせられる
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        session.end_by_headquarters(HEADQUARTERS, at(600)).unwrap();
+        assert_eq!(session.duration(), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn a_session_ended_by_participants_has_no_headquarters() {
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        assert_eq!(session.ended_by_headquarters(), None);
+        session.end(COACH, at(650), quality()).unwrap();
+        assert_eq!(session.ended_by_headquarters(), None);
+    }
+
+    #[test]
+    fn headquarters_end_failures_change_nothing() {
+        let started =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        let mut ended = started.clone();
+        ended.end(STUDENT, at(650), quality()).unwrap();
+        let mut ended_by_headquarters = started.clone();
+        ended_by_headquarters
+            .end_by_headquarters(HEADQUARTERS, at(900))
+            .unwrap();
+
+        for (mut session, now, expected) in [
+            (
+                started.clone(),
+                at(599),
+                DomainError::SessionEndsBeforeItStarts,
+            ),
+            (ended, at(900), DomainError::LiveLessonSessionAlreadyEnded),
+            (
+                ended_by_headquarters,
+                at(901),
+                DomainError::LiveLessonSessionAlreadyEnded,
+            ),
+        ] {
+            let before = session.clone();
+            assert_eq!(
+                session.end_by_headquarters(HEADQUARTERS, now),
+                Err(expected)
+            );
+            assert_eq!(session, before);
+        }
+    }
+
+    #[test]
+    fn participants_cannot_end_a_session_ended_by_headquarters_but_can_complete_it() {
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        session.end_by_headquarters(HEADQUARTERS, at(900)).unwrap();
+        assert_eq!(
+            session.end(COACH, at(901), quality()),
+            Err(DomainError::LiveLessonSessionAlreadyEnded)
+        );
+        assert_eq!(session.ended_by_headquarters(), Some(HEADQUARTERS));
+        // 終わった後なので、今までどおり完了を記録できる（記録は本部が終わらせた時刻の後）
+        assert_eq!(
+            session.complete(LESSON, COACH, &[], at(899)),
+            Err(DomainError::CompletionBeforeLessonEnded)
+        );
+        session.complete(LESSON, COACH, &[], at(900)).unwrap();
+    }
 
     fn ended() -> LiveLessonSession {
         let mut session =

@@ -1,6 +1,7 @@
 //! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
 //! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）と、期間とコーチで
-//! 見るセッションの記録の読み取り（ある期間に開始したもの）。
+//! 見るセッションの記録の読み取り（ある期間に開始したもの）と、本部が終わらせたセッション（`session_headquarters_ends`）の
+//! 往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -10,6 +11,7 @@ mod support;
 use application::live_lesson::{InsertSessionError, LiveLessonSessionRepository};
 use domain::{
     DomainError,
+    identity::Role,
     live_lesson::{LiveLessonSession, SessionStatus},
 };
 use infra::PgLiveLessonSessionRepository;
@@ -289,4 +291,159 @@ async fn reads_sessions_started_in_the_period_ended_or_not(pool: PgPool) {
             .unwrap()
             .is_empty()
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_session_ended_by_headquarters_round_trips_without_changing_the_session_row(
+    pool: PgPool,
+) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let mut started = Vec::new();
+    for hour in [1, 2] {
+        let booking = support::new_confirmed_booking(&pool).await;
+        let session = LiveLessonSession::start(
+            sessions.next_id(),
+            booking.student_id(),
+            &booking,
+            &[],
+            None,
+            at(hour),
+        )
+        .unwrap();
+        sessions.insert(session.clone()).await.unwrap();
+        started.push(session);
+    }
+
+    let ended = sessions
+        .update(started[0].id(), |s| {
+            s.end_by_headquarters(headquarters, at(6))
+        })
+        .await
+        .unwrap();
+    assert_eq!(ended.status(), SessionStatus::Ended);
+    assert_eq!(ended.ended_by_headquarters(), Some(headquarters));
+    assert_eq!(ended.quality(), None);
+    assert_eq!(
+        sessions.find(ended.id()).await.unwrap(),
+        Some(ended.clone())
+    );
+    let booking_id = started[0].booking_id();
+    assert_eq!(
+        sessions.find_by_booking(booking_id).await.unwrap(),
+        Some(ended.clone())
+    );
+
+    // sessions の行は変えない（古い版のアプリは通話中として読む）。終了は別の表の 1 行
+    let (ended_at, loss): (Option<sqlx::types::time::OffsetDateTime>, Option<f64>) =
+        sqlx::query_as(
+            "SELECT ended_at, packet_loss_rate FROM live_lesson.sessions WHERE session_id = $1",
+        )
+        .bind(application::live_lesson::session_id_uuid::to_uuid(
+            ended.id(),
+        ))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((ended_at, loss), (None, None));
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM live_lesson.session_headquarters_ends WHERE session_id = $1",
+    )
+    .bind(application::live_lesson::session_id_uuid::to_uuid(
+        ended.id(),
+    ))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, 1);
+
+    // 終わっていないセッションの一覧には出ず、期間の記録には終了の時刻ごと出る
+    assert_eq!(
+        sessions
+            .find_in_progress_started_at_or_before(at(5))
+            .await
+            .unwrap(),
+        [started[1].clone()]
+    );
+    let found = sessions
+        .find_started_between(at(0), at(5), None)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 2);
+    assert!(found.contains(&ended), "{found:?}");
+
+    // 2 回目（本部・参加者とも）は拒否し、最初の記録を残す
+    let result = sessions
+        .update(ended.id(), |s| s.end_by_headquarters(headquarters, at(7)))
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(application::live_lesson::UpdateSessionError::Rejected(
+                DomainError::LiveLessonSessionAlreadyEnded
+            ))
+        ),
+        "{result:?}"
+    );
+    let result = sessions
+        .update(ended.id(), |s| {
+            s.end(s.coach_id(), at(7), support::quality())
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(application::live_lesson::UpdateSessionError::Rejected(
+                DomainError::LiveLessonSessionAlreadyEnded
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(sessions.find(ended.id()).await.unwrap(), Some(ended));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_participant_end_written_by_an_older_version_wins_over_the_headquarters_end(
+    pool: PgPool,
+) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let booking = support::new_confirmed_booking(&pool).await;
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        booking.student_id(),
+        &booking,
+        &[],
+        None,
+        at(1),
+    )
+    .unwrap();
+    sessions.insert(session.clone()).await.unwrap();
+    sessions
+        .update(session.id(), |s| s.end_by_headquarters(headquarters, at(6)))
+        .await
+        .unwrap();
+    // 古い版に戻した間に、参加者が終了した（古い版は本部の記録を読まずに sessions の行を書く）
+    let quality = support::quality();
+    sqlx::query(
+        "UPDATE live_lesson.sessions
+         SET ended_at = $2, packet_loss_rate = $3, jitter_ms = $4, round_trip_ms = $5, disconnect_count = $6
+         WHERE session_id = $1",
+    )
+    .bind(application::live_lesson::session_id_uuid::to_uuid(session.id()))
+    .bind(sqlx::types::time::OffsetDateTime::from(at(7)))
+    .bind(quality.packet_loss_rate())
+    .bind(i32::try_from(quality.jitter_ms()).unwrap())
+    .bind(i32::try_from(quality.round_trip_ms()).unwrap())
+    .bind(i32::try_from(quality.disconnect_count()).unwrap())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let found = sessions.find(session.id()).await.unwrap().unwrap();
+    assert_eq!(found.ended_at(), Some(at(7)));
+    assert_eq!(found.quality(), Some(quality));
+    assert_eq!(found.ended_by_headquarters(), None);
 }
