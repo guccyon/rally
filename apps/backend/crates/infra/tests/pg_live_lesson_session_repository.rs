@@ -1,4 +1,5 @@
-//! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否。
+//! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
+//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -174,5 +175,62 @@ async fn a_session_without_linked_rows_reads_as_its_starting_booking(pool: PgPoo
     assert_eq!(
         sessions.find_by_booking(booking.id()).await.unwrap(),
         Some(session)
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let mut started = Vec::new();
+    for hour in [5, 2, 3, 4] {
+        let booking = support::new_confirmed_booking(&pool).await;
+        let session = LiveLessonSession::start(
+            sessions.next_id(),
+            booking.student_id(),
+            &booking,
+            &[],
+            None,
+            at(hour),
+        )
+        .unwrap();
+        sessions.insert(session.clone()).await.unwrap();
+        started.push(session);
+    }
+    // 4 時に開始したものは終了した
+    let ended = sessions
+        .update(started[3].id(), |s| {
+            s.end(s.coach_id(), at(6), support::quality())
+        })
+        .await
+        .unwrap();
+    assert_eq!(ended.status(), SessionStatus::Ended);
+    // 終了したセッション（support の 10 時開始・11 時終了）も混ぜる
+    support::ended_session(&pool, 11).await;
+
+    // 4 時（含む）までに開始した通話中のもの: 2 時・3 時（4 時は終了済み、5 時は後）
+    let found = sessions
+        .find_in_progress_started_at_or_before(at(4))
+        .await
+        .unwrap();
+    let mut found_ids: Vec<_> = found.iter().map(LiveLessonSession::id).collect();
+    found_ids.sort();
+    let mut expected = vec![started[1].id(), started[2].id()];
+    expected.sort();
+    assert_eq!(found_ids, expected);
+    assert!(found.contains(&started[1]), "結び付いた予約ごと読む");
+
+    // 境界の時刻ちょうどに開始したものは含む
+    let found = sessions
+        .find_in_progress_started_at_or_before(at(5))
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 3, "{found:?}");
+    assert!(
+        sessions
+            .find_in_progress_started_at_or_before(at(1))
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

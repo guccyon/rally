@@ -74,6 +74,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LessonMenuDescriptionTooLong { max } => {
             format!("レッスンメニューの説明は {max} 文字まで")
         }
+        DomainError::OverdueSessionHoursOutOfRange { min, max } => {
+            format!("開始からの時間は {min}〜{max} 時間")
+        }
         DomainError::LessonDurationOutOfRange { min, max, step } => {
             format!("1 回の時間は {min}〜{max} 分の {step} 分刻み")
         }
@@ -292,6 +295,10 @@ mod tests {
                 step: 15
             }),
             "1 回の時間は 15〜120 分の 15 分刻み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::OverdueSessionHoursOutOfRange { min: 1, max: 168 }),
+            "開始からの時間は 1〜168 時間"
         );
         assert_eq!(
             domain_error(&DomainError::LessonDurationMismatchesType {
