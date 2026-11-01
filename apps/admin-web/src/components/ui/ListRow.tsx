@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Icon } from "./Icon";
+
 /**
  * 一覧の行（specs/design/components.yaml の list_row）。押すと詳細へ移る。
  * 未読は左に primary の 4px の線と、題の前の「未読」のしるしで示す（文字なので読み上げでも「未読」と読む）。
@@ -29,7 +31,7 @@ export function ListRow({
         {subtitle && <span className="block text-sm text-text-muted">{subtitle}</span>}
       </span>
       {trailing}
-      {onClick && !trailing && <span aria-hidden="true">›</span>}
+      {onClick && !trailing && <Icon name="chevron_right" size={24} className="text-text-muted" />}
     </>
   );
   const className = `flex min-h-14 w-full items-center gap-2 border-b px-4 py-2 text-left ${

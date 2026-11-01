@@ -1,5 +1,7 @@
 import { useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 
+import { Icon } from "./Icon";
+
 // 入力欄（specs/design/components.yaml の text_field）。見えるラベルを必ず付ける（placeholder で代えない）。
 
 type FieldProps = {
@@ -37,7 +39,7 @@ function FieldFrame({
       )}
       {error && (
         <p id={`${id}-error`} className="flex items-start gap-1 text-sm text-danger">
-          <span aria-hidden="true">⚠</span>
+          <Icon name="error" size={20} />
           {error}
         </p>
       )}

@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { STATUS_CONTAINER_CLASSES, STATUS_ICON_CLASSES, STATUS_ICONS, type Status } from "./status";
 
 /**
@@ -10,9 +11,7 @@ export function Notice({ message, status }: { message: string; status: Status })
       role={status === "danger" ? "alert" : "status"}
       className={`flex items-start gap-2 rounded-md p-4 ${STATUS_CONTAINER_CLASSES[status]}`}
     >
-      <span aria-hidden="true" className={STATUS_ICON_CLASSES[status]}>
-        {STATUS_ICONS[status]}
-      </span>
+      <Icon name={STATUS_ICONS[status]} size={20} className={STATUS_ICON_CLASSES[status]} />
       <p>{message}</p>
     </div>
   );

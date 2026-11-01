@@ -1,3 +1,5 @@
+import type { IconName } from "./icons/paths";
+
 // 状態の色（specs/design/tokens.yaml の color.status と booking_state の neutral）。
 // 状態は色と一緒に必ずアイコンか文字を出す。
 
@@ -21,11 +23,11 @@ export const STATUS_ICON_CLASSES: Record<Status, string> = {
   neutral: "text-text-muted",
 };
 
-/** 状態のアイコン（文字の記号。SVG を同梱するまでの代わり）。 */
-export const STATUS_ICONS: Record<Status, string> = {
-  info: "ℹ",
-  success: "✓",
-  warning: "◷",
-  danger: "⚠",
-  neutral: "–",
+/** 状態のアイコン（icons/ の Material Symbols Rounded）。 */
+export const STATUS_ICONS: Record<Status, IconName> = {
+  info: "info",
+  success: "check_circle",
+  warning: "schedule",
+  danger: "error",
+  neutral: "do_not_disturb_on",
 };

@@ -31,6 +31,7 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 
 - `src/app/globals.css` の `@theme` に `specs/design/tokens.yaml` の色・角丸・書体を写した。Tailwind の既定の色・角丸・影は消してあり、色は役割の名前（`bg-primary`・`text-text-muted`・`bg-danger-container` など）、角丸は `rounded-sm` / `rounded-md` / `rounded-pill` だけを使う。値が正本と同じことを `tests/designTokens.test.ts` が確かめる
 - 基本の部品（`specs/design/components.yaml`）は `src/components/ui/`（`Button`・`TextField` / `TextArea`・`Card`・`ListRow`・`Badge`・`StatusTag`・`Notice`・`EmptyState`・`Loading`・`ConfirmDialog`）。score_panel は admin-web では使わない
+- アイコンは Material Symbols Rounded の SVG を使う分だけ `src/components/ui/icons/` に同梱し（Apache License 2.0。出どころと一覧は同じフォルダの `README.md`）、`Icon` で描く。文字の記号でアイコンを代えない
 
 ## API
 
