@@ -45,6 +45,8 @@ export function headquartersApi(client: ApiClient) {
         }),
       ),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
+    listPendingVideoReviews: (filter: { sport?: Schemas["Sport"]; min_elapsed_hours?: number }) =>
+      call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
@@ -75,6 +77,28 @@ export function headquartersApi(client: ApiClient) {
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
     listAnnouncements: () => call(() => client.GET("/announcements")),
+    createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
+      call(() => client.POST("/announcement-drafts", { body })),
+    listAnnouncementDrafts: () => call(() => client.GET("/announcement-drafts")),
+    updateAnnouncementDraft: (announcementDraftId: string, body: Schemas["AnnouncementDraftRequest"]) =>
+      call(() =>
+        client.PUT("/announcement-drafts/{announcement_draft_id}", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
+          body,
+        }),
+      ),
+    deleteAnnouncementDraft: (announcementDraftId: string) =>
+      call(() =>
+        client.DELETE("/announcement-drafts/{announcement_draft_id}", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
+        }),
+      ),
+    sendAnnouncementDraft: (announcementDraftId: string) =>
+      call(() =>
+        client.POST("/announcement-drafts/{announcement_draft_id}/send", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
+        }),
+      ),
   };
 }
 
