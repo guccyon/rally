@@ -163,6 +163,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
 
 ### 変更
+- admin-web の本部の「生徒の利用の様子」で、これからの予約の「状態」を本部の「予約」と同じ色の札にした（確定待ちは琥珀、確定済みは緑）。色の対応は 2 つの画面で共通。API と契約の変更はない（#528）
 - backend の内部の整理: コーチの自己紹介文を identity の `Coach` から外し、profile のポート `CoachProfileRepository` で読み書きするようにした（保存先は今までどおり `identity.coaches.bio`）。API・契約・振る舞いと DB の変更はない（#388）
 - 生徒のメッセージの未読と既読: student-app の `GET /message-threads` の `unread_count` と `POST /message-threads/{thread_id}/read`（`markMessageThreadRead`）は #90 から admin-web と同じ操作・同じ形（当事者でないスレッドは 404）で使えることを確かめ、生徒が既読にすると未読が 0 になることのテスト（ユースケースとハンドラ）を足した。API と契約と DB の変更はない（#342）
 - API のエラー文言（`message`）の予約と枠の状態の呼び名を画面に揃えた: 予約の `pending` を「確定前」から「確定待ち」に（例: 「確定待ちの予約でない（確定済み）」）、枠の `closed` を「閉じている」から「終了」にした。呼び名は `specs/glossary.yaml` の `booking`・`slot` の `states` に置いた。エラーのコード・契約の enum・DB の変更はない（#309）
