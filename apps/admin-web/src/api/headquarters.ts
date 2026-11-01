@@ -30,6 +30,7 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>

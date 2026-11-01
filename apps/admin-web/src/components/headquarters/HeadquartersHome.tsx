@@ -16,6 +16,11 @@ export function HeadquartersHome() {
           評価の件数と平均を見る
         </Link>
       </Section>
+      <Section title="低い評価">
+        <Link href="/headquarters/low-reviews" className="text-blue-600 underline">
+          低い評価の一覧を見る
+        </Link>
+      </Section>
       <Section title="コーチの受付">
         <Link href="/headquarters/coaches" className="text-blue-600 underline">
           受付を止める・再開する
