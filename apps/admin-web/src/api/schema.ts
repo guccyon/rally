@@ -549,8 +549,8 @@ export interface paths {
         };
         /**
          * コーチ 1 人の様子（本部）
-         * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・今月と先月の完了したレッスンの数・公開中のレッスンメニューの
-         *     数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
+         *     レッスンの数・公開中のレッスンメニューの数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
          *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
@@ -558,6 +558,11 @@ export interface paths {
          *     - `acceptance_status`: `listCoaches` の 1 件と同じ受付の状態（一度も止めていないコーチは `accepting`）
          *     - `review_count` / `average_rating`: `getCoachReviewSummary` と同じ（期間で絞らない、これまでのすべての評価。0 件なら
          *       `average_rating` は null）
+         *     - `low_rated_review_count`: そのコーチへの評価のうち、`listLowRatedLessonReviews` と同じしきい値と期間の低い評価
+         *       （点 `rating` が 2 以下で、照会した時刻の 30 日前（含む）から照会した時刻（含む）までに送られたもの）の件数。
+         *       本部の対応済みの印を問わない
+         *     - `unhandled_low_rated_review_count`: `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない
+         *       （`markLowRatedLessonReviewHandled` をしていない。`listLowRatedLessonReviews` の `handled=false` に載る）件数
          *     - `current_month` / `previous_month`: `getMyLessonStats` の同じ名前の項目と同じ（日本時間の暦月。月ごとの評価の件数と
          *       平均も載る）。金額は返さない
          *     - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
@@ -1805,8 +1810,8 @@ export interface components {
             coaches: components["schemas"]["IncompleteCoachProfile"][];
         };
         /**
-         * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・今月と先月の
-         *     レッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+         * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
+         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -1821,6 +1826,10 @@ export interface components {
             review_count: number;
             /** @description 点（1〜5）の平均。小数第 3 位で四捨五入した小数第 2 位まで。評価が 0 件なら null */
             average_rating: number | null;
+            /** @description 直近 30 日の低い評価（★2 以下。`listLowRatedLessonReviews` と同じ線）の件数。対応済みかを問わない */
+            low_rated_review_count: number;
+            /** @description `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない件数（`low_rated_review_count` 以下） */
+            unhandled_low_rated_review_count: number;
             current_month: components["schemas"]["MonthlyLessonStats"];
             previous_month: components["schemas"]["MonthlyLessonStats"];
             /** @description 公開中のレッスンメニューの数（スポーツを問わない） */

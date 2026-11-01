@@ -1,7 +1,7 @@
 //! 本部がコーチ 1 人の様子（admin-web の `getCoachOverview`）を読むことを、保存先を Postgres にした組み立て
-//! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・今月と先月の
-//! 実績・公開中のレッスンメニューの数を、それぞれの保存先（scheduling・review・lesson・catalog）から読むこと、照会のあとも
-//! 何も変わらないこと、ないコーチは 404・本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
+//! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・直近の低い評価の
+//! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
+//! レッスンメニューの数を、それぞれの保存先（scheduling・review・lesson・catalog）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -15,7 +15,7 @@ use application::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
     },
     in_memory::{FixedClock, RecordingAnalyticsSink},
-    review::LessonReviewRepository,
+    review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
     Router,
@@ -26,7 +26,7 @@ use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
     lesson::LessonCompletionId,
-    review::{LessonReview, LessonReviewComment, Rating},
+    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
 use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository};
 use serde_json::{Value, json};
@@ -88,7 +88,8 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
     (account.id(), token)
 }
 
-/// 生徒 `student` がコーチ `coach` に `submitted_at` に付けた評価を保存先に書く（`lesson_id` には外部キーがない）。
+/// 生徒 `student` がコーチ `coach` に `submitted_at` に付けた評価を保存先に書き、評価の ID を返す（`lesson_id` には外部キーが
+/// ない）。
 async fn review(
     reviews: &PgLessonReviewRepository,
     student: AccountId,
@@ -96,10 +97,11 @@ async fn review(
     lesson: u128,
     rating: i64,
     submitted_at: SystemTime,
-) {
+) -> LessonReviewId {
+    let review_id = reviews.next_id();
     reviews
         .insert(LessonReview::restore(
-            reviews.next_id(),
+            review_id,
             LessonCompletionId::from_u128(lesson),
             student,
             coach,
@@ -109,6 +111,7 @@ async fn review(
         ))
         .await
         .unwrap();
+    review_id
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -125,6 +128,10 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     // 2026-09-30T00:00:00Z（日本時間の 9 月 30 日 9 時）は先月
     review(&reviews, taro, tanaka, 2, 5, now - HOUR * 24 * 26).await;
     review(&reviews, taro, ito, 3, 1, now - HOUR).await;
+    // 直近 30 日の低い評価は★2 と★1 の 2 件（★2 には本部があとで対応済みの印を付ける）。31 日前の★1 は数えない
+    let handled = review(&reviews, taro, tanaka, 4, 2, now - HOUR * 2).await;
+    review(&reviews, taro, tanaka, 5, 1, now - HOUR * 3).await;
+    review(&reviews, taro, tanaka, 6, 1, now - HOUR * 24 * 31).await;
     let router =
         server::router_with_postgres(pool, FixedClock(now), RecordingAnalyticsSink::default());
 
@@ -171,25 +178,50 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     let path = format!("/coaches/{tanaka_id}/overview");
     let (status, body) = send(&router, "GET", &path, &hq_token, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (
+            &body["low_rated_review_count"],
+            &body["unhandled_low_rated_review_count"]
+        ),
+        (&json!(2), &json!(2)),
+        "印を付ける前は 2 件とも未対応"
+    );
+    let (status, body) = send(
+        &router,
+        "PUT",
+        &format!(
+            "/lesson-reviews/{}/handling",
+            lesson_review_id_uuid::format(handled)
+        ),
+        &hq_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = send(&router, "GET", &path, &hq_token, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
     let expected = json!({
         "coach_id": tanaka_id,
         "display_name": "tanaka",
         "acceptance_status": "suspended",
-        "review_count": 2,
-        "average_rating": 4.5,
+        "review_count": 5,
+        "average_rating": 2.6,
+        "low_rated_review_count": 2,
+        "unhandled_low_rated_review_count": 1,
         "current_month": {
             "month": "2026-10",
             "live_lesson_count": 0,
             "async_lesson_count": 0,
-            "review_count": 1,
-            "average_rating": 4.0
+            "review_count": 3,
+            "average_rating": 2.33
         },
         "previous_month": {
             "month": "2026-09",
             "live_lesson_count": 0,
             "async_lesson_count": 0,
-            "review_count": 1,
-            "average_rating": 5.0
+            "review_count": 2,
+            "average_rating": 3.0
         },
         "published_lesson_menu_count": 2
     });
@@ -209,6 +241,8 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["acceptance_status"], "accepting");
     assert_eq!(body["review_count"], 1);
+    assert_eq!(body["low_rated_review_count"], 1);
+    assert_eq!(body["unhandled_low_rated_review_count"], 1);
     assert_eq!(body["published_lesson_menu_count"], 0);
 
     let student_path = format!("/coaches/{}/overview", account_id_uuid::format(taro));

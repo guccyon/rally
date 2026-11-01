@@ -115,6 +115,8 @@ describe("headquartersApi", () => {
       acceptance_status: "accepting",
       review_count: 0,
       average_rating: null,
+      low_rated_review_count: 0,
+      unhandled_low_rated_review_count: 0,
       current_month: { month: "2026-11", ...month },
       previous_month: { month: "2026-10", ...month },
       published_lesson_menu_count: 2,
