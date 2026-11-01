@@ -29,7 +29,7 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 
 ## デザインシステムの部品
 
-- 部品は `src/components/ui/`（`specs/design/components.yaml` の id ごと: `Button`・`TextInput` / `TextArea` / `Select`・`Card`・`List` / `ListRow`・`Section`・`ResultMessage`・`EmptyState`・`Loading`・`ConfirmStep`）。画面の型は `specs/design/patterns.yaml`
+- 部品は `src/components/ui/`（`specs/design/components.yaml` の id ごと: `Button`・`TextInput` / `TextArea` / `Select`（入力の見出しと誤りの並びは共通の `Field`）・`Card`・`List` / `ListRow`・`Section`・`ResultMessage`・`EmptyState`・`Loading`・`ConfirmStep`）。1 ファイルに公開する部品は 1 つで、ファイル名は部品の名前（`TextInput.tsx` なら `TextInput`）。画面の型は `specs/design/patterns.yaml`
 - 部品 × 種類 × 状態の全部を `src/components/ui/catalog.tsx` に並べ、`/design` で見られる（本番のメニューには出さない）。画面のキャプチャの `design-catalog` なので、部品を変えると PR のキャプチャに出る
 - components.yaml に部品・種類・状態を足したら、部品と `catalog.tsx` にも足す（`tests/designSystem.test.tsx` が突き合わせる）
 

@@ -4,11 +4,14 @@ import { Button } from "./Button";
 import { Card } from "./Card";
 import { ConfirmStep } from "./ConfirmStep";
 import { EmptyState } from "./EmptyState";
-import { Select, TextArea, TextInput } from "./Input";
-import { List, ListRow } from "./ListRow";
+import { List } from "./List";
+import { ListRow } from "./ListRow";
 import { Loading } from "./Loading";
 import { ResultMessage } from "./ResultMessage";
 import { Section } from "./Section";
+import { Select } from "./Select";
+import { TextArea } from "./TextArea";
+import { TextInput } from "./TextInput";
 
 /** カタログの 1 枠。component・variant・state は specs/design/components.yaml の id（対応はテストで確かめる）。 */
 export type CatalogEntry = {

@@ -11,7 +11,7 @@ import { parse } from "yaml";
 import { Button } from "@/components/ui/Button";
 import { ConfirmStep } from "@/components/ui/ConfirmStep";
 import { DesignCatalog } from "@/components/ui/DesignCatalog";
-import { TextInput } from "@/components/ui/Input";
+import { TextInput } from "@/components/ui/TextInput";
 import { CATALOG, catalogEntryName } from "@/components/ui/catalog";
 
 type Spec = {
