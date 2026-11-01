@@ -18,6 +18,7 @@
 //! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
 //! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
 //! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
+//! 本部の一覧には、受け取った生徒のうち既読にした数が載る。
 
 use std::time::{Duration, SystemTime};
 
@@ -937,6 +938,20 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
     assert_eq!(read["notifications"][0]["kind"], "announcement");
     assert_eq!(read["notifications"][0]["body"], "題\n本文");
     assert_eq!(read["notifications"][0]["is_read"], true);
+    let list = call(
+        &router,
+        "GET",
+        "/announcements",
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(sent["read_count"], 0, "送ったばかりは誰も読んでいない");
+    assert_eq!(
+        list["announcements"][0]["read_count"], 1,
+        "受け取った生徒のうち既読にした数"
+    );
 
     let withdraw = format!(
         "/announcements/{}/withdraw",
@@ -958,6 +973,7 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
             "withdrawn_at": "2026-10-05T00:00:00Z"
         })
     );
+    assert_eq!(withdrawn["read_count"], 1, "取り下げても既読にした数は残る");
     let listed = call(
         &router,
         "GET",

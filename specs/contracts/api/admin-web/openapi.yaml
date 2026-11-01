@@ -15,7 +15,8 @@ info:
     コーチへのお知らせ（新しい予約・添削の依頼・生徒からのメッセージのプッシュ通知を残したもの）の一覧と既読
     （`listMyNotifications` / `markMyNotificationsRead`）も student-app と同じ操作・同じ形で、コーチが自分の分を呼ぶ。
     本部は生徒全員か、あるスポーツの生徒全員にお知らせ（メンテナンスやキャンペーンの知らせ）を送り（`sendAnnouncement`）、
-    送ったお知らせを一覧で見る（`listAnnouncements`）。生徒は student-app の `listMyNotifications` で受け取る。
+    送ったお知らせを、受け取った生徒のうち既読にした数（`read_count`）とともに一覧で見る（`listAnnouncements`）。生徒は
+    student-app の `listMyNotifications` で受け取り、`markMyNotificationsRead` で既読にする。
     誤って送ったお知らせは本部が取り下げられ（`withdrawAnnouncement`）、取り下げたお知らせは生徒の一覧に出なくなる
     （本部の一覧には `withdrawal` つきで残る）。
     コーチのレッスンメニュー（catalog）は、コーチが自分の分を作り（`createMyLessonMenu`）・直し・非公開にし
@@ -1584,6 +1585,7 @@ paths:
           true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
         - 予約送信はない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる。誤って送ったものは
           `withdrawAnnouncement` で取り下げる（届いたプッシュ通知は取り消せない）
+        - 送ったばかりの記録の `read_count` は 0（生徒ごとのお知らせは読んでいないまま作る）
 
         行動イベントは発火しない。
       tags: [notification]
@@ -1619,6 +1621,9 @@ paths:
         空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
         取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
         （取り下げていなければ null）。
+        1 件ごとの `read_count` は、そのお知らせを受け取った生徒のうち既読にした（student-app の `markMyNotificationsRead`）
+        生徒の数で、呼んだ時点の値。取り下げたお知らせも同じに数える（取り下げても既読の扱いは変えないので、取り下げたあとに
+        既読にした生徒も数える）。生徒 1 人ずつの既読は返さない。
 
         行動イベントは発火しない。
       tags: [notification]
@@ -1647,7 +1652,7 @@ paths:
         リクエストの本文は読まない。
 
         - 取り下げた本部のアカウントと時刻（サーバーの現在時刻）を `withdrawal` に残す。題・本文・対象のスポーツ・
-          受け取った生徒の数・送った時刻は変えない
+          受け取った生徒の数・送った時刻は変えない。`read_count` は `listAnnouncements` と同じ数え方で、呼んだ時点の値
         - 取り下げたお知らせは、生徒のお知らせの一覧（student-app の `listMyNotifications`・`markMyNotificationsRead` の応答）に
           出なくなる。既読の扱いは変えない（`markMyNotificationsRead` は今までどおりすべてを既読にする）。すでに届いた
           プッシュ通知（Gen1 はモック）は取り消せず、取り下げたことの知らせも送らない
@@ -3220,7 +3225,7 @@ components:
     Announcement:
       type: object
       description: glossary の announcement（本部が生徒に送ったお知らせの記録）
-      required: [announcement_id, sender_id, title, body, sport, recipient_count, sent_at, withdrawal]
+      required: [announcement_id, sender_id, title, body, sport, recipient_count, read_count, sent_at, withdrawal]
       properties:
         announcement_id:
           type: string
@@ -3248,6 +3253,12 @@ components:
           type: integer
           minimum: 1
           description: お知らせを受け取った生徒の数（送った時点の対象の生徒の数。プッシュ通知を送らなかった生徒も数える）
+        read_count:
+          type: integer
+          minimum: 0
+          description: |
+            受け取った生徒のうち、お知らせを既読にした生徒の数（`recipient_count` 以下。応答を作った時点の値）。
+            取り下げたお知らせも同じに数える。数え方は `listAnnouncements` の説明
         sent_at:
           type: string
           format: date-time
