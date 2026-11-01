@@ -1,5 +1,6 @@
 //! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
-//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）。
+//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）と、期間とコーチで
+//! 見るセッションの記録の読み取り（ある期間に開始したもの）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -229,6 +230,61 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
     assert!(
         sessions
             .find_in_progress_started_at_or_before(at(1))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_sessions_started_in_the_period_ended_or_not(pool: PgPool) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let mut started = Vec::new();
+    for hour in [1, 2, 3, 4] {
+        let booking = support::new_confirmed_booking(&pool).await;
+        let session = LiveLessonSession::start(
+            sessions.next_id(),
+            booking.student_id(),
+            &booking,
+            &[],
+            None,
+            at(hour),
+        )
+        .unwrap();
+        sessions.insert(session.clone()).await.unwrap();
+        started.push(session);
+    }
+    // 2 時に開始したものは終了した
+    let ended = sessions
+        .update(started[1].id(), |s| {
+            s.end(s.coach_id(), at(5), support::quality())
+        })
+        .await
+        .unwrap();
+
+    // 2 時（含む）から 4 時（含まない）までに開始したもの: 終了した 2 時と通話中の 3 時
+    let found = sessions
+        .find_started_between(at(2), at(4), None)
+        .await
+        .unwrap();
+    let mut found_ids: Vec<_> = found.iter().map(LiveLessonSession::id).collect();
+    found_ids.sort();
+    let mut expected = vec![started[1].id(), started[2].id()];
+    expected.sort();
+    assert_eq!(found_ids, expected);
+    assert!(found.contains(&ended), "終了の時刻と接続品質ごと読む");
+    assert!(found.contains(&started[2]), "結び付いた予約ごと読む");
+
+    // コーチで絞る（new_confirmed_booking はセッションごとに別のコーチ）
+    let found = sessions
+        .find_started_between(at(0), at(10), Some(started[2].coach_id()))
+        .await
+        .unwrap();
+    assert_eq!(found, [started[2].clone()]);
+    assert!(
+        sessions
+            .find_started_between(at(5), at(10), None)
             .await
             .unwrap()
             .is_empty()

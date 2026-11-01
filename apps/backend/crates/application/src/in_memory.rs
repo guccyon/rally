@@ -823,6 +823,26 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .collect())
     }
 
+    async fn find_started_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+        coach_id: Option<AccountId>,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| {
+                starts_at <= s.started_at()
+                    && s.started_at() < ends_at
+                    && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.iter().any(|s| {
