@@ -226,6 +226,134 @@ describe("本部のコーチの受付", () => {
   });
 });
 
+describe("本部のコーチの受付の絞り込み", () => {
+  test("開いたときは条件を付けずに読み、絞り込みの既定は「すべて」", async () => {
+    const listCoaches = listOf(COACHES);
+    renderList({ listCoaches });
+
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledWith({});
+    expect(screen.getByRole("combobox", { name: "受付の状態" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("");
+    const statusOptions = within(screen.getByRole("combobox", { name: "受付の状態" }))
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(statusOptions).toEqual(["すべて", "受付中", "停止中"]);
+    const sportOptions = within(screen.getByRole("combobox", { name: "スポーツ" }))
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(sportOptions).toEqual(["すべて", "テニス", "ゴルフ", "野球", "サッカー", "バスケットボール", "水泳"]);
+  });
+
+  test("受付の状態とスポーツを変えるたびに、組み合わせた条件で読み直して返った行を出す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [TAKAHASHI], [TAKAHASHI], [SUZUKI]);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended" }));
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeDefined());
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended", sport: "tennis" }),
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "すべて");
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "tennis" }));
+    const table = await screen.findByRole("table", { name: "コーチの一覧" });
+    await waitFor(() =>
+      expect(
+        within(table)
+          .getAllByRole("row")
+          .slice(1)
+          .map((row) => within(row).getAllByRole("cell")[0]!.textContent),
+      ).toEqual(["鈴木 コーチ"]),
+    );
+    expect(listCoaches).toHaveBeenCalledTimes(4);
+  });
+
+  test("続けて変えたときは、最後の条件の結果だけを出す", async () => {
+    const user = userEvent.setup();
+    let resolveSlow: (value: Awaited<ReturnType<HeadquartersApi["listCoaches"]>>) => void = () => {};
+    const listCoaches = vi
+      .fn<HeadquartersApi["listCoaches"]>()
+      .mockResolvedValueOnce({ ok: true, data: { coaches: COACHES } })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSlow = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, data: { coaches: [SUZUKI] } });
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    await waitFor(async () => expect(await rowOf("鈴木 コーチ")).toBeDefined());
+
+    // 前の条件（停止中）の応答が遅れて返っても上書きしない。
+    resolveSlow({ ok: true, data: { coaches: [TAKAHASHI] } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await rowOf("鈴木 コーチ")).toBeDefined();
+    expect(await rowOf("高橋 コーチ")).toBeUndefined();
+  });
+
+  test("絞り込んで 0 件なら「条件に合うコーチはいません」を出し、表は出さない", async () => {
+    const user = userEvent.setup();
+    renderList({ listCoaches: listOf(COACHES, []) });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "水泳");
+
+    expect(await screen.findByText("条件に合うコーチはいません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("コーチがまだいません")).not.toBeInTheDocument();
+  });
+
+  test("絞り込んだ読み直しが失敗したときはその文言だけを出す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES);
+    listCoaches.mockResolvedValueOnce({
+      ok: false,
+      code: "validation_failed",
+      message: "入力内容を確かめてください。",
+    });
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("入力内容を確かめてください。");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("条件に合うコーチはいません")).not.toBeInTheDocument();
+  });
+
+  test("絞り込んだまま 409 で取り直すときは、今の条件で読む", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI], [{ ...SUZUKI, acceptance_status: "suspended" }]);
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: false,
+      code: "coach_already_suspended",
+      message: "このコーチの受付はすでに停止しています。",
+    }));
+    renderList({ listCoaches, suspendCoach });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeUndefined());
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.click(within(row).getByRole("button", { name: "停止を確定" }));
+
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(3));
+    expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting" });
+    await waitFor(async () => expect(statusOf(await rowOf("鈴木 コーチ"))).toBe("停止中"));
+  });
+});
+
 describe("画面への配置", () => {
   test("本部の画面からコーチの受付の画面へ移れる", () => {
     render(<HeadquartersHome />);
