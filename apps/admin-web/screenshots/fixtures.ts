@@ -10,6 +10,7 @@ const COACH_ID_2 = "22222222-2222-4222-8222-222222222223";
 const STUDENT_ID = "11111111-1111-4111-8111-111111111111";
 const STUDENT_ID_2 = "11111111-1111-4111-8111-111111111112";
 const THREAD_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const HEADQUARTERS_ID = "44444444-4444-4444-8444-444444444444";
 
 /** NOW から hours 時間後（負なら前）の時刻。 */
 function at(hours: number): string {
@@ -410,6 +411,17 @@ export const FIXTURES: Fixture[] = [
     method: "GET",
     path: "/live-lesson-sessions/overdue",
     body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/acceptance-changes",
+    body: {
+      coach_id: COACH_ID,
+      changes: [
+        { acceptance_status: "accepting", changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
+        { acceptance_status: "suspended", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+      ],
+    } satisfies Schemas["CoachAcceptanceChangeList"],
   },
   {
     method: "GET",
