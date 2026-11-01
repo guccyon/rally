@@ -1026,7 +1026,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * 通話セッションの記録を期間とコーチで見る（本部）
+         * @description 通話セッション（glossary の live_lesson_session）のうち、開始した日付（日本時間）が `from` から `to` まで（両端を含む）の
+         *     ものを、終了の有無を問わずコーチを問わず横断で返す。本部が問い合わせを受けたときに、ライブレッスンがいつ始まり
+         *     いつ終わったかを引くための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     期間・範囲・並べ方はここが正本（実装は backend の domain `SessionHistoryCriteria` の 1 か所。日付の区切りは
+         *     `listBookings` と同じ）。レスポンスの `from` / `to` にも使った期間を載せる。
+         *
+         *     - 期間: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに開始 `started_at` したセッション。
+         *       `from` と `to` は必須
+         *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`from` / `to` がない・`YYYY-MM-DD` の日付でない・
+         *       `to` が `from` より前・31 日を超えるときは 422 `validation_failed`（`message` に理由）
+         *     - 任意の `coach_id` で、そのコーチのセッションだけに絞れる。省けばすべてのコーチ。`coach_id` が UUID でなければ
+         *       422 `validation_failed`。コーチでない ID・ない ID・期間にセッションがないコーチは、404 にせず `sessions` が空の配列
+         *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件
+         *     - 並べ方: 開始 `started_at` の新しい順。同じ時刻は `session_id` の順
+         *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
+         *       開始の時刻 `started_at`・終了の時刻 `ended_at`（通話中は null）・長さ `duration_minutes`（開始から終了までの分。
+         *       切り捨て。通話中は null）を載せる。コーチと生徒の表示名（`coach_display_name` / `student_display_name`）は
+         *       今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当するセッションがなければ `sessions` は空の配列
+         *     - 通話の中身（接続品質の指標・通話のトークン）は返さない。照会だけで、何も保存しない
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listLiveLessonSessions"];
         put?: never;
         /**
          * 通話セッションの開始（コーチ）
@@ -2290,6 +2316,54 @@ export interface components {
             /** @description 照会した時刻までの開始からの経過時間（秒。切り捨て） */
             elapsed_sec: number;
         };
+        /** @description 本部が期間とコーチで見る通話セッションの記録の一覧（期間・並べ方は `listLiveLessonSessions` の説明） */
+        LiveLessonSessionRecordList: {
+            /**
+             * Format: date
+             * @description 使った期間の始まりの日付（日本時間。含む）
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description 使った期間の終わりの日付（日本時間。含む）
+             */
+            to: string;
+            /** @description 開始の新しい順（同じ時刻は `session_id` の順）。通話中のセッションも含む */
+            sessions: components["schemas"]["LiveLessonSessionRecord"][];
+        };
+        /** @description 通話セッションの記録 1 件（`listLiveLessonSessions`）。いつ始まり、いつ終わったか */
+        LiveLessonSessionRecord: {
+            /** Format: uuid */
+            session_id: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約（`LiveLessonSession` の `booking_id` と同じ）
+             */
+            booking_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /** @description コーチの今の表示名。アカウントが引けなければ載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約の生徒（`LiveLessonSession` の `student_id` と同じ）
+             */
+            student_id: string;
+            /** @description 生徒の今の表示名。アカウントが引けなければ載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 開始の時刻
+             */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description 終了の時刻。通話中（終了の記録がない）は null
+             */
+            ended_at: string | null;
+            /** @description 開始から終了までの長さ（分。切り捨て）。通話中は null */
+            duration_minutes: number | null;
+        };
         StartLiveLessonSessionRequest: {
             /**
              * Format: uuid
@@ -3498,6 +3572,39 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listLiveLessonSessions: {
+        parameters: {
+            query: {
+                /** @description 期間の始まりの日付（日本時間。含む） */
+                from: string;
+                /** @description 期間の終わりの日付（日本時間。含む）。`from` から 31 日まで */
+                to: string;
+                /**
+                 * @description あればこのコーチのセッションだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 期間に開始した通話セッションの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveLessonSessionRecordList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     startLiveLessonSession: {
