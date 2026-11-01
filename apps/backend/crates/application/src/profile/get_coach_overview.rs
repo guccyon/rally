@@ -5,6 +5,7 @@ use domain::{identity::AccountId, scheduling::CoachAcceptanceStatus};
 use super::{CoachAcceptanceLookup, CoachOverview};
 use crate::{
     Unavailable,
+    async_lesson::{GetCoachVideoReviewLeadTime, VideoRepository},
     catalog::{LessonMenuRepository, ListCoachLessonMenus},
     clock::Clock,
     identity::AccountRepository,
@@ -15,21 +16,23 @@ use crate::{
 /// 本部が見るコーチ 1 人の様子のユースケース（admin-web の `getCoachOverview`。本部だけが呼ぶ）。照会だけで、何も保存しない。
 ///
 /// 表示名はアカウントの保存先から読み、受付の状態は scheduling に問い合わせる（[`CoachAcceptanceLookup`]。`ListCoaches` と
-/// 同じポート）。評価の件数と平均・今月と先月のレッスンの実績・公開中のレッスンメニューは、それぞれ既存のユースケース
-/// （[`GetCoachReviewSummary`]・[`GetMyLessonStats`]・[`ListCoachLessonMenus`]）を呼んで、その結果をそのまま使う
-/// （数え方・暦月の区切り・公開中の判定はここで書かない）。
+/// 同じポート）。評価の件数と平均・今月と先月のレッスンの実績・公開中のレッスンメニュー・直近 30 日の動画添削の返却までの
+/// 時間は、それぞれ既存のユースケース（[`GetCoachReviewSummary`]・[`GetMyLessonStats`]・[`ListCoachLessonMenus`]・
+/// [`GetCoachVideoReviewLeadTime`]）を呼んで、その結果をそのまま使う（数え方・暦月の区切り・公開中の判定・期間はここで
+/// 書かない）。
 ///
 /// `coach_id` がコーチのアカウントでなければ（生徒・本部のアカウントや、ないアカウント）`None`。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
-pub struct GetCoachOverview<R, A, V, M, W, C, N> {
+pub struct GetCoachOverview<R, A, V, M, W, C, N, D> {
     accounts: R,
     acceptances: A,
     review_summary: GetCoachReviewSummary<V>,
     lesson_stats: GetMyLessonStats<M, W, C>,
     lesson_menus: ListCoachLessonMenus<N>,
+    video_review_lead_time: GetCoachVideoReviewLeadTime<D, C>,
 }
 
-impl<R, A, V, M, W, C, N> GetCoachOverview<R, A, V, M, W, C, N>
+impl<R, A, V, M, W, C, N, D> GetCoachOverview<R, A, V, M, W, C, N, D>
 where
     R: AccountRepository,
     A: CoachAcceptanceLookup,
@@ -38,6 +41,7 @@ where
     W: MonthlyReviewSummaryLookup,
     C: Clock,
     N: LessonMenuRepository,
+    D: VideoRepository,
 {
     pub fn new(
         accounts: R,
@@ -45,6 +49,7 @@ where
         review_summary: GetCoachReviewSummary<V>,
         lesson_stats: GetMyLessonStats<M, W, C>,
         lesson_menus: ListCoachLessonMenus<N>,
+        video_review_lead_time: GetCoachVideoReviewLeadTime<D, C>,
     ) -> Self {
         Self {
             accounts,
@@ -52,6 +57,7 @@ where
             review_summary,
             lesson_stats,
             lesson_menus,
+            video_review_lead_time,
         }
     }
 
@@ -72,6 +78,7 @@ where
         let reviews = self.review_summary.execute(coach_id).await?;
         let lesson_stats = self.lesson_stats.execute(coach_id).await?;
         let published_lesson_menus = self.lesson_menus.execute(coach_id, None).await?;
+        let video_review_lead_time = self.video_review_lead_time.execute(coach_id).await?;
         Ok(Some(CoachOverview {
             display_name: account.display_name().clone(),
             acceptance,
@@ -79,6 +86,7 @@ where
             lesson_stats,
             published_lesson_menu_count: u32::try_from(published_lesson_menus.len())
                 .unwrap_or(u32::MAX),
+            video_review_lead_time,
         }))
     }
 }
@@ -88,7 +96,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        async_lesson::VideoId,
+        async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
         catalog::{
             LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
             LessonMenuName, Sport,
@@ -106,7 +114,7 @@ mod tests {
         in_memory::{
             FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
             InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-            InMemoryLessonReviewRepository,
+            InMemoryLessonReviewRepository, InMemoryVideoRepository,
         },
         review::ReviewMonthlyReviewSummaryLookup,
         scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
@@ -190,6 +198,29 @@ mod tests {
         )
     }
 
+    /// `coach_id` に `returned_at` の `lead_hours` 時間前に送られ、`returned_at` に添削を返した動画。
+    fn returned_video(
+        id: u128,
+        coach_id: AccountId,
+        returned_at: SystemTime,
+        lead_hours: u64,
+    ) -> Video {
+        Video::restore(
+            VideoId::from_u128(id),
+            STUDENT,
+            coach_id,
+            Sport::Tennis,
+            returned_at - Duration::from_secs(lead_hours * 3600),
+            Some((
+                VideoReviewId::from_u128(id),
+                ReviewComment::new("よい").unwrap(),
+                returned_at,
+            )),
+            None,
+        )
+        .unwrap()
+    }
+
     type UseCase = GetCoachOverview<
         InMemoryAccountRepository,
         SchedulingCoachAcceptanceLookup<InMemoryCoachAcceptanceRepository>,
@@ -198,11 +229,13 @@ mod tests {
         ReviewMonthlyReviewSummaryLookup<InMemoryLessonReviewRepository>,
         FixedClock,
         InMemoryLessonMenuRepository,
+        InMemoryVideoRepository,
     >;
 
     /// 今は日本時間の 11 月 1 日 1 時。コーチ `COACH` は受付を止められていて、11 月に通話 1、10 月に通話 1・添削 1、
     /// 9 月に添削 1 を完了し、評価は 5（11 月）・4（10 月）・2（9 月）を受け、公開中のメニューはテニス 1・ゴルフ 1
-    /// （ほかに非公開 1）。`OTHER_COACH` の分は混ぜない。
+    /// （ほかに非公開 1）。動画添削は直近 30 日に 3 本（送付から 3・5・40 時間）を返し、それより前に 1 本を返している。
+    /// `OTHER_COACH` の分は混ぜない。
     async fn use_case() -> UseCase {
         let accounts = InMemoryAccountRepository::default();
         for account in [
@@ -219,6 +252,8 @@ mod tests {
             .await
             .unwrap();
         let second = Duration::from_secs(1);
+        let now = nov1() + Duration::from_secs(3600);
+        let day = Duration::from_secs(24 * 3600);
         let reviews = InMemoryLessonReviewRepository::with_reviews([
             review(1, COACH, 5, nov1()),
             review(2, COACH, 4, nov1() - second),
@@ -238,7 +273,7 @@ mod tests {
                     completion(5, OTHER_COACH, true, nov1()),
                 ]),
                 ReviewMonthlyReviewSummaryLookup::new(reviews),
-                FixedClock(nov1() + Duration::from_secs(3600)),
+                FixedClock(now),
             ),
             ListCoachLessonMenus::new(InMemoryLessonMenuRepository::with_menus([
                 menu(1, COACH, Sport::Tennis, true),
@@ -246,6 +281,16 @@ mod tests {
                 menu(3, COACH, Sport::Tennis, false),
                 menu(4, OTHER_COACH, Sport::Tennis, true),
             ])),
+            GetCoachVideoReviewLeadTime::new(
+                InMemoryVideoRepository::with_videos([
+                    returned_video(1, COACH, now - day, 3),
+                    returned_video(2, COACH, now - day * 10, 40),
+                    returned_video(3, COACH, now - day * 20, 5),
+                    returned_video(4, COACH, now - day * 31, 1),
+                    returned_video(5, OTHER_COACH, now - day, 9),
+                ]),
+                FixedClock(now),
+            ),
         )
     }
 
@@ -284,6 +329,14 @@ mod tests {
             overview.published_lesson_menu_count, 2,
             "公開中だけをスポーツを問わず数える"
         );
+        assert_eq!(
+            (
+                overview.video_review_lead_time.returned_count(),
+                overview.video_review_lead_time.median_hours()
+            ),
+            (3, Some(5.0)),
+            "直近 30 日に返した分だけ"
+        );
     }
 
     #[tokio::test]
@@ -298,6 +351,7 @@ mod tests {
         assert_eq!(overview.acceptance, CoachAcceptanceStatus::Accepting);
         assert_eq!(overview.reviews.review_count(), 1);
         assert_eq!(overview.published_lesson_menu_count, 1);
+        assert_eq!(overview.video_review_lead_time.returned_count(), 1);
 
         let accounts = InMemoryAccountRepository::default();
         accounts
@@ -315,6 +369,10 @@ mod tests {
                 FixedClock(nov1()),
             ),
             ListCoachLessonMenus::new(InMemoryLessonMenuRepository::default()),
+            GetCoachVideoReviewLeadTime::new(
+                InMemoryVideoRepository::default(),
+                FixedClock(nov1()),
+            ),
         )
         .execute(COACH)
         .await
@@ -335,6 +393,13 @@ mod tests {
             );
         }
         assert_eq!(empty.published_lesson_menu_count, 0);
+        assert_eq!(
+            (
+                empty.video_review_lead_time.returned_count(),
+                empty.video_review_lead_time.median_hours()
+            ),
+            (0, None)
+        );
     }
 
     #[tokio::test]

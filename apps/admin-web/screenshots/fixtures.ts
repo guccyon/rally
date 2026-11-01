@@ -407,6 +407,8 @@ export const FIXTURES: Fixture[] = [
         average_rating: 4.5,
       },
       published_lesson_menu_count: 3,
+      returned_video_review_count: 7,
+      median_video_review_lead_time_hours: 18.5,
     } satisfies Schemas["CoachOverview"],
   },
   {
