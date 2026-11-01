@@ -281,6 +281,36 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listLowRatedLessonReviews は handled をクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { max_rating: 2, period_days: 30, reviews: [] }));
+    await api.listLowRatedLessonReviews({ handled: false });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/lesson-reviews/low");
+    expect(url.searchParams.get("handled")).toBe("false");
+  });
+
+  test("markLowRatedLessonReviewHandled は本文なしで PUT /api/lesson-reviews/{id}/handling を呼び、印を返す", async () => {
+    const reviewId = "33333333-3333-4333-8333-333333333333";
+    const handling = { handled_by: "55555555-5555-4555-8555-555555555555", handled_at: "2026-10-31T03:00:00Z" };
+    const { api, fetchMock } = setup(json(200, handling));
+    const result = await api.markLowRatedLessonReviewHandled(reviewId);
+    expect(result).toEqual({ ok: true, data: handling });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-reviews/${reviewId}/handling`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("markLowRatedLessonReviewHandled の 409 は ErrorCode の文言と code にする", async () => {
+    const { api } = setup(json(409, { code: "lesson_review_not_low_rated", message: "conflict" }));
+    const result = await api.markLowRatedLessonReviewHandled("33333333-3333-4333-8333-333333333333");
+    expect(result).toEqual({
+      ok: false,
+      code: "lesson_review_not_low_rated",
+      message: "低い評価ではないため、対応済みにできません。",
+    });
+  });
+
   test("listBookings は期間をクエリにして GET /api/bookings を呼ぶ", async () => {
     const list = { from: "2026-10-26", to: "2026-11-01", bookings: [] };
     const { api, fetchMock } = setup(json(200, list));
