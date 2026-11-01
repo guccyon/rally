@@ -69,6 +69,20 @@ void main() {
     expect(find.text('評価なし・レッスンメニュー 0 件'), findsOneWidget);
   });
 
+  testWidgets('お気に入りのコーチの行にだけハートのしるしを付ける', (tester) async {
+    final api = FakeStudentApi(favoriteCoaches: [Fixtures.favoriteCoach()]);
+    await openCoachSearch(tester, api);
+
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.ancestor(of: find.text('鈴木'), matching: find.byType(ListTile)),
+        matching: find.byIcon(Icons.favorite),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('読み込みの間は読み込み中の旨を出す', (tester) async {
     final gate = Completer<void>();
     final api = FakeStudentApi()..coachListingsGate = gate;

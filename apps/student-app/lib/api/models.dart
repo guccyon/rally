@@ -1277,6 +1277,17 @@ class CoachListing {
     publishedLessonMenuCount: json['published_lesson_menu_count'] as int,
     isFavorite: json['is_favorite'] as bool? ?? false,
   );
+
+  /// お気に入りかだけを [isFavorite] にした写し（お気に入りを切り替えたあと、一覧を読み直さずに合わせる）
+  CoachListing withFavorite(bool isFavorite) => CoachListing(
+    coachId: coachId,
+    displayName: displayName,
+    sport: sport,
+    reviewCount: reviewCount,
+    averageRating: averageRating,
+    publishedLessonMenuCount: publishedLessonMenuCount,
+    isFavorite: isFavorite,
+  );
 }
 
 /// `CoachListingList`。一覧をコンストラクタで写して持つので const では作らない。
@@ -1333,6 +1344,77 @@ class CoachProfile {
     ],
     isFavorite: json['is_favorite'] as bool? ?? false,
   );
+
+  /// お気に入りかだけを [isFavorite] にした写し（お気に入りを切り替えたあと、紹介を読み直さずに合わせる）
+  CoachProfile withFavorite(bool isFavorite) => CoachProfile(
+    coachId: coachId,
+    displayName: displayName,
+    bio: bio,
+    sports: sports,
+    isFavorite: isFavorite,
+  );
+}
+
+/// `FavoriteCoach`（glossary の favorite_coach。お気に入りのコーチの一覧 `listFavoriteCoaches` の 1 件。表示名・提供スポーツ・
+/// 評価の件数と平均・お気に入りに入れた時刻）。一覧をコンストラクタで写して持つので const では作らない。
+class FavoriteCoach {
+  // 渡した元のリストを後で変えても値が変わらないよう、読み取り専用の写しを持つ
+  FavoriteCoach({
+    required this.coachId,
+    required this.displayName,
+    required List<Sport> sports,
+    required this.reviewCount,
+    required this.averageRating,
+    required this.favoritedAt,
+  }) : sports = List.unmodifiable(sports);
+
+  final String coachId;
+
+  /// コーチの表示名
+  final String displayName;
+
+  /// 提供するスポーツ（`Sport` の enum の順。[CoachProfile.sports] と同じ。ゴルフは載らない）。読み取り専用
+  final List<Sport> sports;
+
+  /// 評価の件数（[CoachReviewSummary.reviewCount] と同じ）
+  final int reviewCount;
+
+  /// 点（1〜5）の平均（[CoachReviewSummary.averageRating] と同じ）。評価が 0 件なら null
+  final double? averageRating;
+
+  /// お気に入りに入れた時刻（入れ直しても最初の時刻）
+  final DateTime favoritedAt;
+
+  factory FavoriteCoach.fromJson(Map<String, dynamic> json) => FavoriteCoach(
+    coachId: json['coach_id'] as String,
+    displayName: json['display_name'] as String,
+    sports: [
+      for (final e in json['sports'] as List<dynamic>)
+        Sport.fromWire(e as String),
+    ],
+    reviewCount: json['review_count'] as int,
+    averageRating: (json['average_rating'] as num?)?.toDouble(),
+    favoritedAt: _dateTime(json['favorited_at']),
+  );
+}
+
+/// `FavoriteCoachList`（`listFavoriteCoaches` / `addFavoriteCoach` / `removeFavoriteCoach` の応答）。
+/// 一覧をコンストラクタで写して持つので const では作らない。
+class FavoriteCoachList {
+  // 渡した元のリストを後で変えても値が変わらないよう、読み取り専用の写しを持つ
+  FavoriteCoachList({required List<FavoriteCoach> favoriteCoaches})
+    : favoriteCoaches = List.unmodifiable(favoriteCoaches);
+
+  /// お気に入りに入れた時刻の新しい順（同じ時刻は `coach_id` の順。サーバーが並べる）。読み取り専用
+  final List<FavoriteCoach> favoriteCoaches;
+
+  factory FavoriteCoachList.fromJson(Map<String, dynamic> json) =>
+      FavoriteCoachList(
+        favoriteCoaches: [
+          for (final e in json['favorite_coaches'] as List<dynamic>)
+            FavoriteCoach.fromJson(e as Map<String, dynamic>),
+        ],
+      );
 }
 
 /// `CoachReview`（コーチが受けた lesson_review 1 件。評価した生徒は載らない）

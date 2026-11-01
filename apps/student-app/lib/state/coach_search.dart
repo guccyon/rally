@@ -64,6 +64,19 @@ class CoachSearchNotifier extends Notifier<CoachSearchState> {
   });
 
   /// 一覧の行を押したとき。そのコーチの紹介を開く
-  Future<void> select(CoachListing coach) =>
-      ref.read(coachProfileProvider.notifier).open(coach);
+  Future<void> select(CoachListing coach) => ref
+      .read(coachProfileProvider.notifier)
+      .open(SelectedCoach.fromListing(coach));
+
+  /// コーチの紹介でお気に入りを切り替えたあと、一覧のそのコーチのしるしを [isFavorite] に合わせる（読み直さない）
+  void markFavorite(String coachId, bool isFavorite) {
+    final coaches = state.coaches;
+    if (coaches == null) return;
+    state = CoachSearchState(
+      coaches: [
+        for (final coach in coaches)
+          coach.coachId == coachId ? coach.withFavorite(isFavorite) : coach,
+      ],
+    );
+  }
 }
