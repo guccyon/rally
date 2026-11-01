@@ -10,7 +10,12 @@ import {
   coachAcceptanceFilterFrom,
   coachAcceptancePath,
 } from "@/components/headquarters/CoachAcceptanceHome";
-import { type CoachAcceptanceFilter, CoachAcceptanceList } from "@/components/headquarters/CoachAcceptanceList";
+import {
+  ACCEPTANCE_STATUSES,
+  type CoachAcceptanceFilter,
+  CoachAcceptanceList,
+  SPORTS,
+} from "@/components/headquarters/CoachAcceptanceList";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
 
@@ -450,6 +455,11 @@ describe("コーチの受付の絞り込みと URL", () => {
       acceptanceStatus: "",
       sport: "",
     });
+  });
+
+  test("クエリの確かめに使う選択肢は凍結してあり、import した側から書き換えられない", () => {
+    expect(Object.isFrozen(ACCEPTANCE_STATUSES)).toBe(true);
+    expect(Object.isFrozen(SPORTS)).toBe(true);
   });
 
   test("画面で絞り込みを変えると、履歴を積まずに URL のクエリを置き換える", async () => {

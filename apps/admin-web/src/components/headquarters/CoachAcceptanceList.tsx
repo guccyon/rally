@@ -27,9 +27,11 @@ type Filter = CoachAcceptanceFilter;
 
 const NO_FILTER: Filter = { acceptanceStatus: "", sport: "" };
 
-/** 絞り込みの選択肢（契約の値）。 */
-export const ACCEPTANCE_STATUSES = Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[];
-export const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
+/** 絞り込みの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
+export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
+  Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[],
+);
+export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
