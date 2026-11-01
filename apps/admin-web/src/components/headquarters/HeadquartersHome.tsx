@@ -61,6 +61,11 @@ export function HeadquartersHome() {
           返却の遅れている添削を見る
         </Link>
       </Section>
+      <Section title="返した動画添削">
+        <Link href="/headquarters/returned-video-reviews" className="text-blue-600 underline">
+          返した添削とかかった時間を見る
+        </Link>
+      </Section>
       <Section title="完了記録の一覧">
         <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>
