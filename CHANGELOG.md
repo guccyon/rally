@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部の「お知らせ」（`/headquarters/announcements`）で、書きかけのお知らせを下書きとして残し、あとで送れるようにした: 入力欄の下の「下書きに保存」で保存し（題・本文は空でもよく、長すぎるときだけ理由を出す。`createAnnouncementDraft` / `updateAnnouncementDraft`）、新しい「下書き」の欄に保存した下書きを最後に直した時刻の新しい順に題・対象・最後に直した日時で出す（`listAnnouncementDrafts`）。行から開いて直す・消す（行の中で確かめる。`deleteAnnouncementDraft`）・送る（今と同じページの中の確認を経て、確かめた中身で下書きを直してから `sendAnnouncementDraft`。送れたら下書きは一覧から消え、送ったお知らせの先頭に出る）ができる。下書きは生徒に届かないことを画面に書く。読み込み中・0 件（「保存した下書きはありません」）・失敗の表示を出す。API と契約の変更はない（#574）
 - admin-web の本部の「コーチの様子」（`/headquarters/coach-overview?coach_id=…`）の評価の欄に「直近 30 日の低い評価」を足した: そのコーチへの直近 30 日の★2 以下の評価の件数と未対応の件数を「N 件（未対応 M 件）」で出し（`getCoachOverview` の `low_rated_review_count` / `unhandled_low_rated_review_count`）、0 件なら「ありません」と出す。横の「低い評価を見る」から「低い評価」（`/headquarters/low-reviews`）を開ける。読み込み中・読み込めなかったときの表示は画面の今までの表示のまま。API と契約の変更はない（#557）
 - 本部の予約の一覧を体験予約かで絞る: admin-web の `GET /bookings`（`listBookings`）に任意のクエリ `trial`（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ）を足した。付けなければ今までどおり体験予約かを問わない。状態を問わないのでキャンセルされた体験予約も出る。期間・`coach_id`・`status` と組み合わせられ、期間の規則と並べ方は変わらない。`true` / `false` でなければ 422 `validation_failed`。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#553）
 - 本部がコーチ 1 人の様子で直近の低い評価の数を見る API: admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）に `low_rated_review_count`（そのコーチへの直近 30 日の★2 以下の評価の件数。`listLowRatedLessonReviews` と同じしきい値と期間）と `unhandled_low_rated_review_count`（そのうち本部がまだ対応済みの印を付けていない件数）を足した。既存の項目と、本部以外は 403 の振る舞いは変わらない。DB の変更はない。admin-web は型を生成し直してテストの固定データに足しただけで、画面は変えない（#556）

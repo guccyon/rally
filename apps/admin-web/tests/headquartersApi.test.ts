@@ -460,4 +460,50 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe("/api/announcements");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
+  test("お知らせの下書きの作成・一覧・書き直し・削除・送信は契約のパスとメソッドを呼ぶ", async () => {
+    const draftId = "eeeeeeee-0000-4000-8000-000000000001";
+    const draft = {
+      announcement_draft_id: draftId,
+      created_by: "99999999-9999-4999-8999-999999999999",
+      title: "",
+      body: "書きかけ",
+      sport: null,
+      created_at: "2026-10-30T01:00:00Z",
+      updated_at: "2026-10-30T01:00:00Z",
+    };
+    const request = { title: "", body: "書きかけ", sport: null };
+    type Api = ReturnType<typeof setup>["api"];
+    const cases: { run: (api: Api) => Promise<unknown>; method: string; path: string; body?: unknown }[] = [
+      { run: (api) => api.createAnnouncementDraft(request), method: "POST", path: "/api/announcement-drafts", body: request },
+      { run: (api) => api.listAnnouncementDrafts(), method: "GET", path: "/api/announcement-drafts" },
+      {
+        run: (api) => api.updateAnnouncementDraft(draftId, request),
+        method: "PUT",
+        path: `/api/announcement-drafts/${draftId}`,
+        body: request,
+      },
+      { run: (api) => api.deleteAnnouncementDraft(draftId), method: "DELETE", path: `/api/announcement-drafts/${draftId}` },
+      {
+        run: (api) => api.sendAnnouncementDraft(draftId),
+        method: "POST",
+        path: `/api/announcement-drafts/${draftId}/send`,
+      },
+    ];
+    for (const { run, method, path, body } of cases) {
+      const { api, fetchMock } = setup(json(200, draft));
+      const result = await run(api);
+      expect(result).toEqual({ ok: true, data: draft });
+      const sent = fetchMock.mock.calls[0]![0];
+      expect(sent.method).toBe(method);
+      expect(new URL(sent.url).pathname).toBe(path);
+      expect(sent.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+      if (body) expect(await sent.json()).toEqual(body);
+    }
+  });
+
+  test("sendAnnouncementDraft の 404 は code を付けて返す", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "no draft" }));
+    const result = await api.sendAnnouncementDraft("eeeeeeee-0000-4000-8000-000000000001");
+    expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
+  });
 });
