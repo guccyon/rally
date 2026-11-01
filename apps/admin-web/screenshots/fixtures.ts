@@ -432,6 +432,8 @@ export const FIXTURES: Fixture[] = [
       acceptance_status: "accepting",
       review_count: 3,
       average_rating: 4.67,
+      low_rated_review_count: 0,
+      unhandled_low_rated_review_count: 0,
       current_month: {
         month: "2026-10",
         live_lesson_count: 12,
