@@ -41,6 +41,11 @@ export function HeadquartersHome() {
           予約の一覧を見る
         </Link>
       </Section>
+      <Section title="お知らせ">
+        <Link href="/headquarters/announcements" className="text-blue-600 underline">
+          生徒にお知らせを送る
+        </Link>
+      </Section>
       <Section title="完了記録の一覧">
         <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>

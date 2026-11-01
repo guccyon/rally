@@ -537,4 +537,32 @@ export const FIXTURES: Fixture[] = [
       bookings: HQ_BOOKINGS,
     } satisfies Schemas["HeadquartersBookingList"],
   },
+  {
+    method: "GET",
+    path: "/announcements",
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 2),
+          sender_id: "99999999-9999-4999-8999-999999999999",
+          title: "水泳の体験予約キャンペーン",
+          body: "今月中に体験予約すると、2 回目のレッスンが無料になります。\nこの機会にぜひお試しください。",
+          sport: "swimming",
+          recipient_count: 8,
+          sent_at: at(-24),
+          withdrawal: null,
+        },
+        {
+          announcement_id: id("8888", 1),
+          sender_id: "99999999-9999-4999-8999-999999999999",
+          title: "メンテナンスのお知らせ",
+          body: "10月30日（木）2:00〜4:00 はメンテナンスのため、アプリを使えません。",
+          sport: null,
+          recipient_count: 120,
+          sent_at: at(-24 * 4),
+          withdrawal: null,
+        },
+      ],
+    } satisfies Schemas["AnnouncementList"],
+  },
 ];
