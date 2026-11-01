@@ -43,6 +43,7 @@ pub struct ListBookingsQuery {
     pub trial: Option<bool>,
 }
 
+/// 本部が見る予約の一覧（[`ListBookings`]）と、キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）の失敗。
 #[derive(Debug)]
 pub enum ListBookingsError {
     /// 期間が規則を満たさない（[`BookingPeriod::new`] の違反）

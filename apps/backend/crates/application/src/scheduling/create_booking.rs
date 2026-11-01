@@ -566,6 +566,14 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn bookings_cancelled_between(
+            &self,
+            _from: SystemTime,
+            _until: SystemTime,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn bookings_of_student(
             &self,
             _student_id: AccountId,

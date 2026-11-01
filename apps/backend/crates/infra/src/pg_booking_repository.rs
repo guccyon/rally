@@ -306,6 +306,23 @@ impl BookingRepository for PgBookingRepository {
         Ok((slots, bookings))
     }
 
+    async fn bookings_cancelled_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        // キャンセルした時刻を持つのはキャンセル済みの予約だけ（DB の `bookings_status_timestamps`）
+        let rows: Vec<BookingRow> = sqlx::query_as(select_bookings!(
+            "WHERE b.cancelled_at >= $1 AND b.cancelled_at < $2"
+        ))
+        .bind(timestamp(from))
+        .bind(timestamp(until))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(booking_from_row).collect()
+    }
+
     async fn bookings_of_student(
         &self,
         student_id: AccountId,
