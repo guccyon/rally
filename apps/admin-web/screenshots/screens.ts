@@ -109,6 +109,20 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
   {
+    id: "hq-bookings-by-coach",
+    title: "本部: コーチ 1 人の予約",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page
+        .getByRole("navigation", { name: "このコーチで開く画面" })
+        .getByRole("link", { name: "予約", exact: true })
+        .click();
+      await page.getByText(/^このコーチの枠への予約を/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",
