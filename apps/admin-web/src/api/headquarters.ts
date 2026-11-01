@@ -44,6 +44,7 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),

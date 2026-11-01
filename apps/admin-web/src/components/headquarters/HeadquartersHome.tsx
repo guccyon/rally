@@ -26,6 +26,11 @@ export function HeadquartersHome() {
           受付を止める・再開する
         </Link>
       </Section>
+      <Section title="自己紹介の足りないコーチ">
+        <Link href="/headquarters/coaches/incomplete-profiles" className="text-blue-600 underline">
+          自己紹介が書きかけのコーチを見る
+        </Link>
+      </Section>
       <Section title="レッスンメニュー">
         <Link href="/headquarters/lesson-menus" className="text-blue-600 underline">
           コーチのメニューを見る

@@ -333,6 +333,29 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listIncompleteCoachProfiles は GET /api/coaches/incomplete-profiles を呼ぶ", async () => {
+    const list = {
+      coaches: [
+        {
+          coach_id: "22222222-2222-4222-8222-222222222222",
+          display_name: "鈴木 コーチ",
+          missing_fields: ["bio"],
+          updated_at: null,
+          registered_at: "2026-10-01T00:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listIncompleteCoachProfiles();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
+    expect(url.search).toBe("");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
   test("listOverdueLiveLessonSessions は経過時間の下限をクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {
     const list = {
       older_than_hours: 24,
