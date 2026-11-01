@@ -5,6 +5,7 @@ use std::{
 };
 
 use domain::{
+    catalog::LessonMenuId,
     identity::AccountId,
     scheduling::{Booking, BookingId, CoachAcceptance, SchedulingError, Slot, SlotId},
 };
@@ -95,4 +96,14 @@ pub trait BookingRepository: Send + Sync {
         &self,
         coach_id: AccountId,
     ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
+
+    /// 予約した時点のレッスンメニューの写しが `lesson_menu_ids` のどれかで、作った時刻が `created_since`（含む）以後の予約
+    /// （状態を問わない）。並びは決めない。読むだけで何も変えない。本部が見るメニューごとの直近の予約の数
+    /// （[`super::SchedulingLessonMenuRecentBookingCountLookup`]）が読み、数えるかの判定は domain の
+    /// [`domain::scheduling::RecentLessonMenuBookings`] が行う。
+    fn bookings_of_lesson_menus_created_since(
+        &self,
+        lesson_menu_ids: &BTreeSet<LessonMenuId>,
+        created_since: SystemTime,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
 }

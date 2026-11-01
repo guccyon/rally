@@ -586,6 +586,14 @@ mod tests {
         ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
+
+        async fn bookings_of_lesson_menus_created_since(
+            &self,
+            _lesson_menu_ids: &std::collections::BTreeSet<domain::catalog::LessonMenuId>,
+            _created_since: SystemTime,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
     }
 
     #[tokio::test]

@@ -518,6 +518,25 @@ impl BookingRepository for InMemoryBookingRepository {
             })
             .collect()
     }
+
+    async fn bookings_of_lesson_menus_created_since(
+        &self,
+        lesson_menu_ids: &BTreeSet<LessonMenuId>,
+        created_since: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| {
+                b.lesson_menu()
+                    .is_some_and(|menu| lesson_menu_ids.contains(&menu.id()))
+                    && b.created_at() >= created_since
+            })
+            .cloned()
+            .collect())
+    }
 }
 
 /// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID（ないコーチは受付中）と、止めた・再開した

@@ -468,8 +468,8 @@ export const FIXTURES: Fixture[] = [
     path: "/lesson-menus",
     body: {
       lesson_menus: [
-        { ...MENU_FORE, coach_display_name: "鈴木 コーチ" },
-        { ...MENU_SERVE, coach_display_name: "鈴木 コーチ" },
+        { ...MENU_FORE, coach_display_name: "鈴木 コーチ", recent_booking_count: 12 },
+        { ...MENU_SERVE, coach_display_name: "鈴木 コーチ", recent_booking_count: 3 },
         {
           ...MENU_FORE,
           lesson_menu_id: id("aaaa", 9),
@@ -478,6 +478,7 @@ export const FIXTURES: Fixture[] = [
           name: "スイングの見直し",
           duration_minutes: 90,
           coach_display_name: "高橋 コーチ",
+          recent_booking_count: 7,
         },
         {
           ...MENU_FORE,
@@ -489,6 +490,7 @@ export const FIXTURES: Fixture[] = [
           is_published: false,
           coach_display_name: "高橋 コーチ",
           headquarters_unpublish: { unpublished_at: at(-3), reason: "料金の表記が誤っている" },
+          recent_booking_count: 0,
         },
       ],
     } satisfies Schemas["CoachLessonMenuList"],

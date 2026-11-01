@@ -12,8 +12,12 @@ use application::{
         RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
     },
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
-    in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLessonMenuRepository},
+    in_memory::{
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryLessonMenuRepository, InMemorySlotRepository,
+    },
     profile::ProfileCoachDisplayNameLookup,
+    scheduling::SchedulingLessonMenuRecentBookingCountLookup,
 };
 use axum::{
     Router,
@@ -111,7 +115,14 @@ async fn app() -> Router {
         UpdateLessonMenu::new(menus.clone(), accounts.clone()),
         ListMyLessonMenus::new(menus.clone()),
         ListCoachLessonMenus::new(menus.clone()),
-        ListLessonMenus::new(menus.clone(), ProfileCoachDisplayNameLookup::new(accounts)),
+        ListLessonMenus::new(
+            menus.clone(),
+            ProfileCoachDisplayNameLookup::new(accounts),
+            SchedulingLessonMenuRecentBookingCountLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
+            FixedClock(now()),
+        ),
         FakeTokens,
     )
     .merge(interface::lesson_menu_publication_router(

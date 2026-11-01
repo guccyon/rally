@@ -18,6 +18,7 @@ use application::{
     },
     in_memory::FixedClock,
     profile::ProfileCoachDisplayNameLookup,
+    scheduling::SchedulingLessonMenuRecentBookingCountLookup,
 };
 use domain::{
     DomainError,
@@ -29,7 +30,7 @@ use domain::{
     identity::{AccountId, Role},
     lesson::LessonType,
 };
-use infra::{PgAccountRepository, PgLessonMenuRepository};
+use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository};
 use sqlx::PgPool;
 use support::at;
 
@@ -235,6 +236,8 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     let use_case = ListLessonMenus::new(
         PgLessonMenuRepository::new(pool.clone()),
         ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
+        SchedulingLessonMenuRecentBookingCountLookup::new(PgBookingRepository::new(pool.clone())),
+        FixedClock(at(100)),
     );
     let list = use_case.execute(None, None, None).await.unwrap();
     assert_eq!(

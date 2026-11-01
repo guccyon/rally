@@ -771,6 +771,10 @@ export interface paths {
          *       （その行は同じスポーツの中で最後に、`coach_id` の順で並べる）
          *     - 本部が非公開にしたメニュー（`unpublishLessonMenu`）の行には、非公開にした時刻と理由 `headquarters_unpublish` を載せる
          *       （`published=false` の絞り込みには、コーチが自分で非公開にしたものと本部が非公開にしたものの両方が入る）
+         *     - 各行には、どのメニューが選ばれているかを見るための直近の予約の数 `recent_booking_count` を載せる。照会した時刻
+         *       （サーバーの現在時刻）の 30 日前（含む）から照会した時刻（含む）までに作られた予約（`createBooking`）のうち、今キャンセル
+         *       されていない（`pending` か `confirmed`）もので、予約した時点の枠のレッスンメニューがその行のメニューのものを数える
+         *       （予約した後にメニューが直されても予約は数え直さない。メニューのない枠への予約は数えない）。予約がなければ 0。並べ方には使わない
          *     - 集計（件数の表）・ページングはしない。メニューがなければ `lesson_menus` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -1928,6 +1932,8 @@ export interface components {
              */
             created_at: string;
             headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
+            /** @description 直近 30 日に作られた、キャンセルされていない予約の数（数え方は `listLessonMenus` の説明）。予約がなければ 0 */
+            recent_booking_count: number;
         };
         /** @description コーチのレッスンメニューの横断の一覧（並べ方は `listLessonMenus` の説明） */
         CoachLessonMenuList: {
