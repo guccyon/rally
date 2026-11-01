@@ -16,7 +16,12 @@ export async function mockApi(page: Page): Promise<string[]> {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/api/, "");
-    const fixture = FIXTURES.find((f) => f.method === request.method() && matches(f.path, path));
+    const fixture = FIXTURES.find(
+      (f) =>
+        f.method === request.method() &&
+        matches(f.path, path) &&
+        Object.entries(f.query ?? {}).every(([key, value]) => url.searchParams.get(key) === value),
+    );
     if (!fixture) {
       unmatched.push(`${request.method()} ${path}`);
       await route.fulfill({

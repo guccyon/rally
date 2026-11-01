@@ -389,6 +389,48 @@ describe("headquartersApi", () => {
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
 
+  test("listLiveLessonSessions は期間とコーチをクエリにして GET /api/live-lesson-sessions を呼ぶ", async () => {
+    const list = {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: [
+        {
+          session_id: "55555555-5555-4555-8555-555555555555",
+          booking_id: "66666666-6666-4666-8666-666666666666",
+          coach_id: "22222222-2222-4222-8222-222222222222",
+          coach_display_name: "鈴木 コーチ",
+          student_id: "11111111-1111-4111-8111-111111111111",
+          student_display_name: "山田 花子",
+          started_at: "2026-10-20T03:00:00Z",
+          ended_at: "2026-10-20T04:00:30Z",
+          duration_minutes: 60,
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLiveLessonSessions({
+      from: "2026-10-20",
+      to: "2026-10-26",
+      coach_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/live-lesson-sessions");
+    expect(url.searchParams.get("from")).toBe("2026-10-20");
+    expect(url.searchParams.get("to")).toBe("2026-10-26");
+    expect(url.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listLiveLessonSessions はコーチがなければ coach_id を付けず、422 は code を添えて返す", async () => {
+    const { api, fetchMock } = setup(json(422, { code: "validation_failed", message: "period too long" }));
+    const result = await api.listLiveLessonSessions({ from: "2026-09-01", to: "2026-10-26" });
+    expect(result).toEqual({ ok: false, message: "入力の内容が正しくありません。", code: "validation_failed" });
+    expect(new URL(fetchMock.mock.calls[0]![0].url).searchParams.has("coach_id")).toBe(false);
+  });
+
   test("listPendingVideoReviews は絞り込みをクエリにして GET /api/video-reviews/pending を呼ぶ", async () => {
     const list = { as_of: "2026-10-26T03:00:00Z", videos: [] };
     const { api, fetchMock } = setup(json(200, list));

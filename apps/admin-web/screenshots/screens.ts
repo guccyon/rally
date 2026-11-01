@@ -120,6 +120,23 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions",
   },
+  {
+    id: "hq-live-sessions",
+    title: "本部: ライブレッスンの記録",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+  },
+  {
+    id: "hq-live-sessions-empty",
+    title: "本部: ライブレッスンの記録（0 件）",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+    open: async (page) => {
+      await page.getByLabel("コーチ").selectOption({ label: "高橋 コーチ" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText("この条件の通話の記録はありません").waitFor();
+    },
+  },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
     id: "hq-announcement-confirm",

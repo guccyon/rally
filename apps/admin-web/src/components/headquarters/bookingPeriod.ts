@@ -1,10 +1,11 @@
-// 本部の予約の一覧（listBookings）の期間と、開始が近い確定待ちの見分け。日付は日本時間（契約の `from` / `to` と同じ）。
+// 本部の日付の期間（予約の一覧 listBookings・通話セッションの記録 listLiveLessonSessions）と、開始が近い確定待ちの見分け。
+// 日付は日本時間（契約の `from` / `to` と同じ）。
 
 import { toJstDate } from "@/components/labels";
 
 const DAY = 86_400_000;
 
-/** 期間の日数の上限（契約の `listBookings`。`from` と `to` を含めて数える）。 */
+/** 期間の日数の上限（契約の `listBookings` / `listLiveLessonSessions`。`from` と `to` を含めて数える）。 */
 export const MAX_PERIOD_DAYS = 31;
 
 /** 既定の期間の日数（契約で `to` を省いたときと同じく、`from` を含めて 7 日）。 */
@@ -19,6 +20,11 @@ export type Period = { from: string; to: string };
 export function defaultPeriod(now: number): Period {
   // 日本時間に夏時間はないので、24 時間ずつ進めれば日本時間の日付も 1 日ずつ進む。
   return { from: toJstDate(now), to: toJstDate(now + (DEFAULT_PERIOD_DAYS - 1) * DAY) };
+}
+
+/** 既定の振り返りの期間: 今日（日本時間）までの 7 日（今日を含む）。 */
+export function recentPeriod(now: number): Period {
+  return { from: toJstDate(now - (DEFAULT_PERIOD_DAYS - 1) * DAY), to: toJstDate(now) };
 }
 
 /**
