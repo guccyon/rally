@@ -1,7 +1,8 @@
 //! 本部が予約の一覧を日付で見る（admin-web の `listBookings`）ことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の予約を日本時間の日付で絞って
 //! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でそのコーチの予約だけに絞れること、
-//! 本部以外は 403 になることを確かめる。
+//! `status` で Postgres に保存した状態（確定待ち・確定済み・キャンセル済み）の予約だけに絞れること、本部以外は 403 になることを
+//! 確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_bookings.rs`、期間に開始する予約の読み取りは
 //! infra の `tests/pg_booking_repository.rs`。
 //!
@@ -222,8 +223,100 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
 
+    // 状態で絞る。1 件目（10 月 26 日）を確定し、2 件目（10 月 27 日）をキャンセルして、3 件目（11 月 2 日）は確定待ちのまま
+    for (booking, action) in [(&booked[0], "confirm"), (&booked[1], "cancel")] {
+        let (status, body) = send(
+            &router,
+            post_json(
+                &format!(
+                    "/bookings/{}/{action}",
+                    booking["booking_id"].as_str().unwrap()
+                ),
+                &taro_token,
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{action}: {body}");
+    }
+    let statuses_of = |body: &Value| -> Vec<(Value, Value)> {
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["booking"]["booking_id"].clone(),
+                    row["booking"]["status"].clone(),
+                )
+            })
+            .collect()
+    };
+    let id = |i: usize| booked[i]["booking_id"].clone();
+    for (query, expected) in [
+        ("&status=confirmed", vec![(id(0), json!("confirmed"))]),
+        ("&status=cancelled", vec![(id(1), json!("cancelled"))]),
+        ("&status=pending", vec![(id(2), json!("pending"))]),
+        (
+            "&status=pending&status=cancelled",
+            vec![(id(1), json!("cancelled")), (id(2), json!("pending"))],
+        ),
+        (
+            "",
+            vec![
+                (id(0), json!("confirmed")),
+                (id(1), json!("cancelled")),
+                (id(2), json!("pending")),
+            ],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings?from=2026-10-26&to=2026-11-02{query}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(statuses_of(&body), expected, "{query}: {body}");
+    }
+    let (status, body) = send(&router, get("/bookings?status=done", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 体験予約かで絞る。体験予約は 1 件目（確定済み）だけ。状態と組み合わせられる
+    for (query, expected) in [
+        ("&trial=true", vec![(id(0), json!("confirmed"))]),
+        (
+            "&trial=false",
+            vec![(id(1), json!("cancelled")), (id(2), json!("pending"))],
+        ),
+        (
+            "&trial=false&status=pending",
+            vec![(id(2), json!("pending"))],
+        ),
+        ("&trial=true&status=pending", vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings?from=2026-10-26&to=2026-11-02{query}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(statuses_of(&body), expected, "{query}: {body}");
+    }
+    let (status, body) = send(&router, get("/bookings?trial=yes", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
     for token in [&tanaka_token, &taro_token] {
-        let (status, _) = send(&router, get("/bookings", token)).await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        for path in ["/bookings", "/bookings?trial=true"] {
+            let (status, _) = send(&router, get(path, token)).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+        }
     }
 }

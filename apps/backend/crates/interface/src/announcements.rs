@@ -185,7 +185,7 @@ where
     }))
 }
 
-fn announcement_body(
+pub(crate) fn announcement_body(
     AnnouncementWithReadCount {
         announcement,
         read_count,

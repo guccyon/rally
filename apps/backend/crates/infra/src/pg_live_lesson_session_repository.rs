@@ -13,6 +13,8 @@ use domain::{
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
     scheduling::BookingId,
 };
+use std::time::SystemTime;
+
 use sqlx::{
     PgConnection, PgPool,
     types::{Uuid, time::OffsetDateTime},
@@ -124,6 +126,25 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
             Some(row) => session_with_bookings(&mut conn, row).await.map(Some),
             None => Ok(None),
         }
+    }
+
+    async fn find_in_progress_started_at_or_before(
+        &self,
+        started_at_or_before: SystemTime,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
+        let rows: Vec<SessionRow> = sqlx::query_as(select_sessions!(
+            "WHERE ended_at IS NULL AND started_at <= $1 ORDER BY started_at, session_id"
+        ))
+        .bind(timestamp(started_at_or_before))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(Unavailable::new)?;
+        let mut sessions = Vec::with_capacity(rows.len());
+        for row in rows {
+            sessions.push(session_with_bookings(&mut conn, row).await?);
+        }
+        Ok(sessions)
     }
 
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {

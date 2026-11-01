@@ -1,6 +1,7 @@
 //! scheduling のユースケースとポート。
 
 mod booking_coach_display_name_lookup;
+mod booking_detail;
 pub mod booking_id_uuid;
 mod booking_list;
 mod booking_repository;
@@ -14,6 +15,7 @@ mod coach_introduction_lookup;
 mod coach_slot_list;
 mod confirm_booking;
 mod create_booking;
+mod get_booking;
 mod get_slot_supply;
 mod lesson_menu_lookup;
 mod list_bookings;
@@ -29,6 +31,7 @@ mod reserve_slot_error;
 mod resume_coach;
 mod scheduling_booking_lookup;
 mod scheduling_coach_acceptance_lookup;
+mod scheduling_lesson_menu_recent_booking_count_lookup;
 mod scheduling_student_booking_activity_lookup;
 mod scheduling_student_last_booking_lookup;
 mod search_slots;
@@ -45,6 +48,7 @@ mod update_slot_error;
 mod withdraw_slot;
 
 pub use booking_coach_display_name_lookup::BookingCoachDisplayNameLookup;
+pub use booking_detail::BookingDetail;
 pub use booking_list::BookingList;
 pub use booking_repository::BookingRepository;
 pub use cancel_booking::{CancelBooking, CancelBookingCommand, CancelBookingError};
@@ -56,6 +60,7 @@ pub use coach_introduction_lookup::CoachIntroductionLookup;
 pub use coach_slot_list::CoachSlotList;
 pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError};
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
+pub use get_booking::{GetBooking, GetBookingError};
 pub use get_slot_supply::GetSlotSupply;
 pub use lesson_menu_lookup::LessonMenuLookup;
 pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
@@ -71,6 +76,7 @@ pub use reserve_slot_error::ReserveSlotError;
 pub use resume_coach::ResumeCoach;
 pub use scheduling_booking_lookup::SchedulingBookingLookup;
 pub use scheduling_coach_acceptance_lookup::SchedulingCoachAcceptanceLookup;
+pub use scheduling_lesson_menu_recent_booking_count_lookup::SchedulingLessonMenuRecentBookingCountLookup;
 pub use scheduling_student_booking_activity_lookup::SchedulingStudentBookingActivityLookup;
 pub use scheduling_student_last_booking_lookup::SchedulingStudentLastBookingLookup;
 pub use search_slots::{SearchSlots, SearchSlotsQuery};
