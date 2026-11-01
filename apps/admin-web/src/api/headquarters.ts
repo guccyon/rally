@@ -5,7 +5,9 @@ import type { ApiClient, Schemas } from "./client";
 export function headquartersApi(client: ApiClient) {
   return {
     getSlotSupply: () => call(() => client.GET("/slot-supply")),
-    listCoaches: () => call(() => client.GET("/coaches")),
+    listCoaches: (
+      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"] } = {},
+    ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/review-summary", {
@@ -30,6 +32,12 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listCoachAcceptanceChanges: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/acceptance-changes", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
     getCoachOverview: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/overview", {
@@ -44,6 +52,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { review_id: reviewId } },
         }),
       ),
+    listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
+      call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>

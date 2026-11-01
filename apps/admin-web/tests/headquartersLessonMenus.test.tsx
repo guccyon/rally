@@ -31,6 +31,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     coach_id: COACH_A,
     coach_display_name: "山田コーチ",
     created_at: "2026-10-01T00:00:00Z",
+    recent_booking_count: 4,
   },
   {
     lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000002",
@@ -42,6 +43,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     coach_id: COACH_B,
     coach_display_name: "佐藤コーチ",
     created_at: "2026-10-02T00:00:00Z",
+    recent_booking_count: 0,
   },
   {
     lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000003",
@@ -52,6 +54,7 @@ const MENUS: Schemas["CoachLessonMenu"][] = [
     is_published: true,
     coach_id: COACH_A,
     created_at: "2026-10-03T00:00:00Z",
+    recent_booking_count: 1,
   },
 ];
 
@@ -62,12 +65,23 @@ function listOf(menus: Schemas["CoachLessonMenu"][]) {
   }));
 }
 
+const COACHES: Schemas["Coach"][] = [
+  { coach_id: COACH_A, display_name: "山田コーチ", acceptance_status: "accepting" },
+  { coach_id: COACH_B, display_name: "佐藤コーチ", acceptance_status: "suspended" },
+];
+
 function apiOf(
   listLessonMenus: HeadquartersApi["listLessonMenus"],
-  actions: Partial<Pick<HeadquartersApi, "unpublishLessonMenu" | "republishLessonMenu">> = {},
+  actions: Partial<
+    Pick<HeadquartersApi, "listCoaches" | "unpublishLessonMenu" | "republishLessonMenu">
+  > = {},
 ) {
   return {
     listLessonMenus,
+    listCoaches: vi.fn<HeadquartersApi["listCoaches"]>(async () => ({
+      ok: true,
+      data: { coaches: COACHES },
+    })),
     unpublishLessonMenu: vi.fn<HeadquartersApi["unpublishLessonMenu"]>(),
     republishLessonMenu: vi.fn<HeadquartersApi["republishLessonMenu"]>(),
     ...actions,
@@ -183,6 +197,94 @@ describe("本部のレッスンメニュー", () => {
   });
 });
 
+describe("本部のレッスンメニューをコーチで絞る", () => {
+  test("コーチは「すべて」とコーチの一覧の返った順から選べ、選ぶと API の coach_id に渡して読み直す", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [MENUS[1]!] } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [] } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [MENUS[1]!] } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } });
+    const api = apiOf(listLessonMenus);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={api} />);
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+
+    const options = within(screen.getByLabelText("コーチ")).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["すべて", "山田コーチ", "佐藤コーチ"]);
+    expect(screen.getByLabelText("コーチ")).toHaveValue("");
+    expect(api.listCoaches).toHaveBeenCalledWith();
+
+    await user.selectOptions(screen.getByLabelText("コーチ"), "佐藤コーチ");
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ coach_id: COACH_B });
+    // 公開中も非公開もまとめて出る（非公開の行も残す）
+    expect(cellsOf(rowOf("サーブのフォーム添削"))[5]).toBe("非公開");
+
+    // ほかの絞り込みと重ねられる。0 件なら表を出さない
+    await user.click(screen.getByLabelText("公開中だけ"));
+    expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ published: true, coach_id: COACH_B });
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("公開中だけ"));
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ coach_id: COACH_B });
+    await user.selectOptions(screen.getByLabelText("コーチ"), "すべて");
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(4));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({});
+  });
+
+  test("initialCoachId があれば、そのコーチで絞って開き、コーチを選んだ状態にする", async () => {
+    const listLessonMenus = listOf([MENUS[0]!, MENUS[2]!]);
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={COACH_A} />);
+
+    await screen.findByRole("table");
+    expect(listLessonMenus).toHaveBeenCalledTimes(1);
+    expect(listLessonMenus).toHaveBeenCalledWith({ coach_id: COACH_A });
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toHaveDisplayValue("山田コーチ"));
+  });
+
+  test("コーチの一覧にない initialCoachId でもそのまま API に渡し、0 件の表示と「（一覧にないコーチ）」を出す", async () => {
+    const unknown = "44444444-4444-4444-8444-444444444444";
+    const listLessonMenus = listOf([]);
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={unknown} />);
+
+    expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
+    expect(listLessonMenus).toHaveBeenCalledWith({ coach_id: unknown });
+    await waitFor(() =>
+      expect(screen.getByLabelText("コーチ")).toHaveDisplayValue("（一覧にないコーチ）"),
+    );
+  });
+
+  test("コーチの一覧を読めなければ文言を出し、メニューの一覧は出す（コーチの絞り込みは選べない）", async () => {
+    const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(<LessonMenuCatalog api={apiOf(listOf(MENUS), { listCoaches })} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "コーチの一覧を読めませんでした。サーバーに接続できません。",
+    );
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByLabelText("コーチ")).toBeDisabled();
+  });
+
+  test("メニューの一覧を読めなければ、コーチで絞っていてもその文言を出し、一覧は出さない", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "入力が正しくありません。",
+    }));
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={COACH_A} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("入力が正しくありません。");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
 const HQ_UNPUBLISHED: Schemas["CoachLessonMenu"] = {
   lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000004",
   name: "ボレーの基礎",
@@ -194,6 +296,7 @@ const HQ_UNPUBLISHED: Schemas["CoachLessonMenu"] = {
   coach_display_name: "山田コーチ",
   created_at: "2026-10-04T00:00:00Z",
   headquarters_unpublish: { unpublished_at: "2026-10-26T03:00:00Z", reason: "料金の表記が誤っている" },
+  recent_booking_count: 0,
 };
 
 /** unpublishLessonMenu / republishLessonMenu の応答（LessonMenu。説明つき・表示名なし）。 */

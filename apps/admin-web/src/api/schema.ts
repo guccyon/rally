@@ -89,8 +89,12 @@ export interface paths {
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
          *       `from`（今日）より前なので 422
-         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
+         *     - `status` を省けば、予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
          *       予約がなければ `bookings` は空の配列（404 にはしない）
+         *     - 任意の `status`（`BookingStatus` の値）で、その状態の予約だけに絞れる（確定待ちのまま残っている予約や、キャンセルされた
+         *       予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
+         *       期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
+         *       `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
          *     - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
          *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
@@ -104,6 +108,41 @@ export interface paths {
          *     行動イベントは発火しない。
          */
         get: operations["listBookings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bookings/{booking_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 予約 1 件の詳細（本部）
+         * @description 予約（glossary の booking。体験予約を含む）1 件の中身と状態の移り変わりを 1 回の照会で返す。本部が生徒やコーチから
+         *     問い合わせを受けたときに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - `booking`: 予約（`listBookings` の 1 件と同じ `Booking`。予約した時点のレッスンメニュー `lesson_menu`・体験予約か
+         *       `is_trial`・今の状態 `status`・作った時刻 `created_at` を含む）。状態を問わない（キャンセル済みも返す）
+         *     - `slot`: 予約したスロット（枠の開始 `starts_at` と終わり `ends_at`。`lesson_menu` は載せない。予約した時点のメニューは
+         *       `booking.lesson_menu`）
+         *     - `status_changes`: 状態が変わった記録（確定 `confirmed`・キャンセル `cancelled`）を時刻の古い順に。予約が持つ確定・
+         *       キャンセルの時刻（`booking.confirmed_at` / `booking.cancelled_at`）から組み立て、時刻の記録がない変化は載せない
+         *       （確定せずにキャンセルした予約はキャンセルだけ、作ったばかりの予約は空の配列）。作った時刻は `booking.created_at`
+         *     - コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
+         *       その表示名を載せない
+         *     - `booking_id` がない予約・UUID でないときは 404 `not_found`
+         *     - 決済の情報は返さない。照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getBooking"];
         put?: never;
         post?: never;
         delete?: never;
@@ -182,7 +221,11 @@ export interface paths {
          *     student-app の `listCoachesForStudent`（スポーツでコーチを探す）の形で返す（student-app の契約）。
          *
          *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
-         *     - 絞り込み・ページングはしない。コーチがいなければ `coaches` は空の配列
+         *     - 絞り込み（任意）: `acceptance_status` を付ければその受付の状態（受付中 `accepting` / 停止中 `suspended`）のコーチだけ、
+         *       `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる）。両方付ければ両方を
+         *       満たすもの。付けなければ今までどおりすべてのコーチ。絞っても並べ方は変わらない
+         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でないときは 422 `validation_failed`
+         *     - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
          *
          *     受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える（`x-context` が 2 つなのはそのため）。
          *     行動イベントは発火しない。
@@ -753,14 +796,20 @@ export interface paths {
          *     本部が、どのスポーツにどんなメニューがどれだけあるかを把握するのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
-         *       非公開（`false`）のメニューだけ。両方付ければ両方を満たすもの。付けなければすべて（ゴルフも含む）
-         *     - `sport` が `Sport` の値でない・`published` が `true` / `false` でないときは 422 `validation_failed`
+         *       非公開（`false`）のメニューだけ、`coach_id` を付ければそのコーチのメニューだけ（公開中も非公開もまとめて。コーチ 1 人が
+         *       出しているメニューを見るのに使う）。いくつ付けてもすべてを満たすもの。付けなければすべて（ゴルフも含む）
+         *     - `sport` が `Sport` の値でない・`published` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
+         *     - コーチでない ID・ない ID・メニューのないコーチの `coach_id` は、404 にせず `lesson_menus` が空の配列
          *     - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
          *       同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
          *     - 各行には作ったコーチの表示名 `coach_display_name` を載せる。コーチのアカウントが引けないときは載せない
          *       （その行は同じスポーツの中で最後に、`coach_id` の順で並べる）
          *     - 本部が非公開にしたメニュー（`unpublishLessonMenu`）の行には、非公開にした時刻と理由 `headquarters_unpublish` を載せる
          *       （`published=false` の絞り込みには、コーチが自分で非公開にしたものと本部が非公開にしたものの両方が入る）
+         *     - 各行には、どのメニューが選ばれているかを見るための直近の予約の数 `recent_booking_count` を載せる。照会した時刻
+         *       （サーバーの現在時刻）の 30 日前（含む）から照会した時刻（含む）までに作られた予約（`createBooking`）のうち、今キャンセル
+         *       されていない（`pending` か `confirmed`）もので、予約した時点の枠のレッスンメニューがその行のメニューのものを数える
+         *       （予約した後にメニューが直されても予約は数え直さない。メニューのない枠への予約は数えない）。予約がなければ 0。並べ方には使わない
          *     - 集計（件数の表）・ページングはしない。メニューがなければ `lesson_menus` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -970,6 +1019,43 @@ export interface paths {
          *     終了済みのセッションは 409 `invalid_session_state`。終了後の `room_token` は null。
          */
         post: operations["endLiveLessonSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/live-lesson-sessions/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 終わっていないまま時間の過ぎた通話セッションの一覧（本部）
+         * @description 始まったまま終了の記録がなく（`endLiveLessonSession` が呼ばれていない）、開始から一定の時間が過ぎた通話セッション
+         *     （glossary の live_lesson_session）を、コーチを問わず横断で返す。本部が、終了し忘れや通話の切断で残ったセッションを
+         *     見つけるための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     既定・範囲・境界はここが正本（実装は backend の domain `OverdueSessionCriteria` の 1 か所）。レスポンスの
+         *     `older_than_hours` にも実際に使った時間を載せる。
+         *
+         *     - 対象: 終了していない（`status` が `in_progress`）セッションのうち、照会した時刻に開始 `started_at` から
+         *       `older_than_hours` 時間以上たったもの（ちょうどその時間のものを含む）。グループレッスンのセッションも 1 件
+         *     - `older_than_hours`: 開始からの時間（時間単位の整数）。省けば 3。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 並べ方: 開始 `started_at` の古い順。同じ時刻は `session_id` の順
+         *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
+         *       開始の時刻 `started_at`・照会した時刻までの開始からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の
+         *       表示名（`coach_display_name` / `student_display_name`）は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当するセッションがなければ `sessions` は空の配列
+         *     - 照会だけで、何も保存しない（セッションを終了させない）
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listOverdueLiveLessonSessions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1397,6 +1483,23 @@ export interface components {
             to: string;
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["HeadquartersBooking"][];
+        };
+        /** @description 本部が見る予約 1 件の詳細（`getBooking`）。予約（glossary の booking）と予約したスロット（glossary の slot）と、状態の移り変わりと、コーチと予約した生徒の表示名 */
+        HeadquartersBookingDetail: {
+            booking: components["schemas"]["Booking"];
+            slot: components["schemas"]["Slot"];
+            /** @description 状態が変わった記録（確定・キャンセル）。時刻の古い順。記録のない変化は載せない */
+            status_changes: components["schemas"]["BookingStatusChange"][];
+            /** @description 予約された枠のコーチのアカウントの表示名。コーチのアカウントが引けないときは載らない */
+            coach_display_name?: string;
+            /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description 予約の状態が変わった記録 1 件。`status` は変えた後の状態（確定 `confirmed` かキャンセル `cancelled`）で、`changed_at` は変わった時刻 */
+        BookingStatusChange: {
+            status: components["schemas"]["BookingStatus"];
+            /** Format: date-time */
+            changed_at: string;
         };
         /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
         CoachSlot: {
@@ -1881,6 +1984,8 @@ export interface components {
              */
             created_at: string;
             headquarters_unpublish?: components["schemas"]["HeadquartersUnpublish"];
+            /** @description 直近 30 日に作られた、キャンセルされていない予約の数（数え方は `listLessonMenus` の説明）。予約がなければ 0 */
+            recent_booking_count: number;
         };
         /** @description コーチのレッスンメニューの横断の一覧（並べ方は `listLessonMenus` の説明） */
         CoachLessonMenuList: {
@@ -1954,6 +2059,41 @@ export interface components {
             booking_id: string;
             /** Format: uuid */
             student_id: string;
+        };
+        /** @description 本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧（対象・並べ方は `listOverdueLiveLessonSessions` の説明） */
+        OverdueLiveLessonSessionList: {
+            /** @description 使った開始からの時間（時間単位）。省いたときは 3 */
+            older_than_hours: number;
+            /** @description 開始の古い順（同じ時刻は `session_id` の順） */
+            sessions: components["schemas"]["OverdueLiveLessonSession"][];
+        };
+        /** @description 終わっていないまま時間の過ぎた通話セッション 1 件（`listOverdueLiveLessonSessions`） */
+        OverdueLiveLessonSession: {
+            /** Format: uuid */
+            session_id: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約（`LiveLessonSession` の `booking_id` と同じ）
+             */
+            booking_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /** @description コーチの今の表示名。アカウントが引けなければ載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description セッションを開始した予約の生徒（`LiveLessonSession` の `student_id` と同じ）
+             */
+            student_id: string;
+            /** @description 生徒の今の表示名。アカウントが引けなければ載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 開始の時刻
+             */
+            started_at: string;
+            /** @description 照会した時刻までの開始からの経過時間（秒。切り捨て） */
+            elapsed_sec: number;
         };
         StartLiveLessonSessionRequest: {
             /**
@@ -2394,6 +2534,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの状態の予約だけに絞る。繰り返して付ければ（`status=pending&status=cancelled`）どれかの状態の予約。
+                 *     省けば状態を問わない。`BookingStatus` にない値は 422 `validation_failed`
+                 */
+                status?: components["schemas"]["BookingStatus"][];
             };
             header?: never;
             path?: never;
@@ -2413,6 +2558,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    getBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 予約 1 件の詳細 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadquartersBookingDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getMyAccount: {
@@ -2465,7 +2635,12 @@ export interface operations {
     };
     listCoaches: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 受付の状態（付ければその状態のコーチだけ） */
+                acceptance_status?: components["schemas"]["CoachAcceptanceStatus"];
+                /** @description スポーツ（付ければそのスポーツを提供するコーチだけ） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2483,6 +2658,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCoachReviewSummary: {
@@ -2921,6 +3097,11 @@ export interface operations {
                 sport?: components["schemas"]["Sport"];
                 /** @description 公開中か（`true` なら公開中だけ、`false` なら非公開だけ） */
                 published?: boolean;
+                /**
+                 * @description あればこのコーチのメニューだけに絞る（公開中も非公開も）。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
@@ -3108,6 +3289,32 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listOverdueLiveLessonSessions: {
+        parameters: {
+            query?: {
+                /** @description 開始からこの時間（時間単位）以上たった通話中のセッションを返す。省けば 3 */
+                older_than_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 終わっていないまま時間の過ぎた通話セッションの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverdueLiveLessonSessionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listPendingVideoReviews: {

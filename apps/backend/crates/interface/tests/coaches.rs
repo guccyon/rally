@@ -8,6 +8,7 @@ use application::{
     catalog::CatalogPublishedLessonMenuCountLookup,
     identity::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
+        account_id_uuid,
     },
     in_memory::{
         InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
@@ -275,6 +276,99 @@ async fn suspended_coaches_are_listed_to_headquarters_with_their_status_but_not_
         ["00000000-0000-0000-0000-000000000002"],
         "受付を止めたテニスのコーチ（4）は生徒の一覧に出ない"
     );
+}
+
+/// コーチ 4（野球とテニス）の受付を止めた [`app_with`]。
+async fn app_with_coach_4_suspended() -> Router {
+    let acceptances = InMemoryCoachAcceptanceRepository::default();
+    acceptances
+        .update(AccountId::from_u128(4), |a| {
+            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+        })
+        .await
+        .unwrap();
+    app_with(accounts().await, acceptances)
+}
+
+/// 一覧の `coach_id` を、並びのまま ID の数値にする。
+fn coach_ids(body: &Value) -> Vec<u128> {
+    body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            account_id_uuid::parse(c["coach_id"].as_str().unwrap())
+                .unwrap()
+                .as_u128()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn headquarters_filters_by_acceptance_status_and_sport_keeping_the_order() {
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?acceptance_status=suspended", vec![4]),
+        ("?acceptance_status=accepting", vec![5, 2]),
+        // 提供スポーツのどれかが一致すれば載る。ゴルフも絞れる
+        ("?sport=tennis", vec![4, 2]),
+        ("?sport=golf", vec![5]),
+        ("?sport=swimming", vec![]),
+        ("?sport=tennis&acceptance_status=accepting", vec![2]),
+        ("?acceptance_status=suspended&sport=soccer", vec![]),
+        ("", vec![4, 5, 2]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+
+    let (_, body) = list_coaches(
+        &router,
+        "admin-web",
+        "?acceptance_status=suspended",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [{
+                "coach_id": "00000000-0000-0000-0000-000000000004",
+                "display_name": "いとう",
+                "acceptance_status": "suspended",
+            }],
+        })
+    );
+}
+
+#[tokio::test]
+async fn headquarters_unknown_acceptance_status_or_sport_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?acceptance_status=paused",
+        "?acceptance_status=",
+        "?sport=cricket",
+        "?sport=tennis&acceptance_status=Suspended",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_acceptance_status_as_before() {
+    let router = app_with_coach_4_suspended().await;
+    let (_, before) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    for query in ["?acceptance_status=suspended", "?acceptance_status=paused"] {
+        let (status, body) = list_coaches(&router, "student-app", query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(
+            body, before,
+            "{query}: 生徒の一覧は受付の状態の条件で変わらない"
+        );
+    }
 }
 
 #[tokio::test]

@@ -87,9 +87,20 @@ export const SCREENS: Screen[] = [
     open: async (page) => {
       await page.getByRole("link", { name: "鈴木 コーチ" }).click();
       await page.getByRole("heading", { name: "鈴木 コーチ" }).waitFor();
+      await page.getByRole("table", { name: "受付の記録" }).waitFor();
     },
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
+  {
+    id: "hq-lesson-menus-by-coach",
+    title: "本部: コーチ 1 人のレッスンメニュー",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("link", { name: "このコーチのレッスンメニューを見る" }).click();
+      await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
+    },
+  },
   {
     id: "hq-lesson-menu-unpublish",
     title: "本部: レッスンメニューの非公開の確認",
@@ -107,6 +118,12 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
+  {
+    id: "hq-overdue-live-sessions",
+    title: "本部: 終わっていない通話",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions",
+  },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
     id: "hq-announcement-confirm",

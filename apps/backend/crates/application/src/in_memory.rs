@@ -518,6 +518,25 @@ impl BookingRepository for InMemoryBookingRepository {
             })
             .collect()
     }
+
+    async fn bookings_of_lesson_menus_created_since(
+        &self,
+        lesson_menu_ids: &BTreeSet<LessonMenuId>,
+        created_since: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| {
+                b.lesson_menu()
+                    .is_some_and(|menu| lesson_menu_ids.contains(&menu.id()))
+                    && b.created_at() >= created_since
+            })
+            .cloned()
+            .collect())
+    }
 }
 
 /// [`CoachAcceptanceRepository`] のインメモリ実装。受付を止めているコーチの ID（ないコーチは受付中）と、止めた・再開した
@@ -771,6 +790,20 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .iter()
             .find(|s| s.bookings().iter().any(|b| b.booking_id() == booking_id))
             .cloned())
+    }
+
+    async fn find_in_progress_started_at_or_before(
+        &self,
+        started_at_or_before: SystemTime,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| s.ended_at().is_none() && s.started_at() <= started_at_or_before)
+            .cloned()
+            .collect())
     }
 
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {

@@ -96,6 +96,16 @@ pub(crate) const fn coach_acceptance_status_to_contract(
     }
 }
 
+/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` のクエリ `acceptance_status`）。値でなければ 422。
+pub(crate) fn coach_acceptance_status_from_contract(
+    value: &str,
+) -> Result<CoachAcceptanceStatus, ApiError> {
+    CoachAcceptanceStatus::ALL
+        .into_iter()
+        .find(|status| coach_acceptance_status_to_contract(*status) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の受付の状態: {value}")))
+}
+
 /// admin-web の `SlotSupplyStatus` の値。
 pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> &'static str {
     match status {
@@ -120,6 +130,14 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
     }
+}
+
+/// admin-web の `listBookings` の `status` を読む。契約の enum にない値は 422。
+pub(crate) fn booking_status_from_contract(value: &str) -> Result<BookingStatus, ApiError> {
+    BookingStatus::ALL
+        .into_iter()
+        .find(|status| booking_status_to_contract(*status) == value)
+        .ok_or_else(|| ApiError::validation_failed(format!("未知の予約の状態: {value}")))
 }
 
 /// student-app の `LiveLessonSessionStatus` の値。
@@ -374,6 +392,19 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn booking_statuses_are_pending_confirmed_and_cancelled() {
+        for status in BookingStatus::ALL {
+            assert_eq!(
+                booking_status_from_contract(booking_status_to_contract(status)).unwrap(),
+                status
+            );
+        }
+        for value in ["", "canceled", "PENDING", "pending,cancelled"] {
+            assert!(booking_status_from_contract(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]
