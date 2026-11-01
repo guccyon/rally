@@ -68,6 +68,16 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222",
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
+  {
+    id: "hq-low-reviews-handling-confirm",
+    title: "本部: 低い評価（対応済みにする前の確認）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("button", { name: /を対応済みにする$/ }).first().click();
+      await page.getByRole("button", { name: "対応済みを確定" }).waitFor();
+    },
+  },
   { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
   {
     id: "hq-coach-overview",

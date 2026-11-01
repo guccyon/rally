@@ -302,7 +302,11 @@ const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
 const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
   lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
-  lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+  {
+    // 本部が対応済みにした行（対応済みの日時を出し、「対応済みにする」は出ない）。
+    ...lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+    handling: { handled_by: id("5555", 1), handled_at: at(-24 * 3) },
+  },
 ];
 
 // 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
