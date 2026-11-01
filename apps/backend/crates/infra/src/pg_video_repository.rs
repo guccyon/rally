@@ -117,6 +117,22 @@ impl VideoRepository for PgVideoRepository {
         rows.into_iter().map(video_from_row).collect()
     }
 
+    async fn videos_awaiting_review(&self) -> Result<Vec<Video>, Unavailable> {
+        let rows: Vec<VideoRow> = sqlx::query_as(
+            "SELECT v.video_id, v.student_id, v.coach_id, v.sport, v.submitted_at,
+                    r.review_id, r.comment, r.returned_at,
+                    v.ai_feedback_comment, v.ai_feedback_created_at,
+                    v.lesson_menu_id, v.lesson_menu_name
+             FROM async_lesson.videos v
+             LEFT JOIN async_lesson.video_reviews r ON r.video_id = v.video_id
+             WHERE r.review_id IS NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(video_from_row).collect()
+    }
+
     async fn insert(&self, video: Video) -> Result<(), Unavailable> {
         sqlx::query(
             "INSERT INTO async_lesson.videos
