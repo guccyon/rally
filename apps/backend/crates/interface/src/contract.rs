@@ -14,7 +14,7 @@ use domain::{
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
-    profile::CoachProfileField,
+    profile::{CoachProfileField, DisplayNameQuery},
     scheduling::{
         BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus,
     },
@@ -330,6 +330,14 @@ pub(crate) fn date_to_contract(date: Date) -> String {
         u8::from(date.month()),
         date.day()
     )
+}
+
+/// admin-web の一覧の `q`（表示名の検索語。`listStudents`・`listCoaches`）。付けない・空・空白だけなら `None`
+/// （絞り込まない）。一致の規則と長さの上限は domain の [`DisplayNameQuery`] で、長すぎれば 422 `validation_failed`。
+pub(crate) fn display_name_query_from_contract(
+    value: Option<&str>,
+) -> Result<Option<DisplayNameQuery>, ApiError> {
+    Ok(value.map(DisplayNameQuery::new).transpose()?.flatten())
 }
 
 /// `format: date`（RFC 3339 の full-date。`YYYY-MM-DD`）を読む。`field` は 422 の文言に使う項目名。

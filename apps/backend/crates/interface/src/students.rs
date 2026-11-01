@@ -11,14 +11,14 @@ use axum::{
     extract::{Query, State, rejection::QueryRejection},
     routing::get,
 };
-use domain::{identity::Role, profile::DisplayNameQuery};
+use domain::identity::Role;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
     contract::{
         admin_web_sport, contract_type_to_contract, date_from_contract, date_time_to_contract,
-        sport_to_contract, subscription_plan_to_contract,
+        display_name_query_from_contract, sport_to_contract, subscription_plan_to_contract,
     },
     error::ApiError,
 };
@@ -89,14 +89,8 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    let name = params
-        .q
-        .as_deref()
-        .map(DisplayNameQuery::new)
-        .transpose()?
-        .flatten();
     let query = ListStudentsQuery {
-        name,
+        name: display_name_query_from_contract(params.q.as_deref())?,
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
         not_booked_since: params
             .not_booked_since
