@@ -16,13 +16,13 @@ use axum::{
     extract::{Query, State, rejection::QueryRejection},
     routing::get,
 };
-use domain::identity::Role;
+use domain::{identity::Role, scheduling::BookingStatus};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
-    contract::{date_from_contract, date_to_contract},
+    contract::{booking_status_from_contract, date_from_contract, date_to_contract},
     error::ApiError,
 };
 
@@ -31,7 +31,7 @@ pub struct HeadquartersBookingsState<B, K, D, C> {
     pub list_bookings: ListBookings<B, K, D, C>,
 }
 
-/// admin-web の `listBookings` のクエリ。
+/// admin-web の `listBookings` のクエリ（繰り返せる `status` は除く。[`statuses_from_query`] が読む）。
 #[derive(Deserialize)]
 pub struct ListBookingsParams {
     from: Option<String>,
@@ -57,12 +57,27 @@ pub struct HeadquartersBookingBody {
     student_display_name: Option<String>,
 }
 
+/// `listBookings` の `status`（`status=pending&status=cancelled` のように繰り返せる）を読む。重ねて付けた同じ値は 1 つに
+/// まとめる。契約の `BookingStatus` にない値は 422。
+fn statuses_from_query(pairs: &[(String, String)]) -> Result<Vec<BookingStatus>, ApiError> {
+    let mut statuses = Vec::new();
+    for (_, value) in pairs.iter().filter(|(key, _)| key == "status") {
+        let status = booking_status_from_contract(value)?;
+        if !statuses.contains(&status) {
+            statuses.push(status);
+        }
+    }
+    Ok(statuses)
+}
+
 /// `GET /bookings`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の日付で
-/// ないとき・`coach_id` が UUID でないときと、期間の違反は 422（失敗の応答は [`crate::scheduling_error`] が決める）。
+/// ないとき・`coach_id` が UUID でないとき・`status` が予約の状態でないときと、期間の違反は 422（失敗の応答は
+/// [`crate::scheduling_error`] が決める）。
 pub async fn list_bookings<B, K, D, C>(
     State(state): State<Arc<HeadquartersBookingsState<B, K, D, C>>>,
     _account: AuthenticatedAccount,
     params: Result<Query<ListBookingsParams>, QueryRejection>,
+    pairs: Result<Query<Vec<(String, String)>>, QueryRejection>,
 ) -> Result<Json<HeadquartersBookingListBody>, ApiError>
 where
     B: BookingRepository,
@@ -72,6 +87,8 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let Query(pairs) =
+        pairs.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let query = ListBookingsQuery {
         from: params
             .from
@@ -91,6 +108,7 @@ where
                     .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
             })
             .transpose()?,
+        statuses: statuses_from_query(&pairs)?,
     };
     let list = state
         .list_bookings

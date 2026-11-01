@@ -89,8 +89,12 @@ export interface paths {
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。`to` だけを付けて今日より前の日付なら
          *       `from`（今日）より前なので 422
-         *     - 予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
+         *     - `status` を省けば、予約の状態（未確定・確定・キャンセル済み）を問わず返す（状態は各予約の `status`）。ページングはしない。
          *       予約がなければ `bookings` は空の配列（404 にはしない）
+         *     - 任意の `status`（`BookingStatus` の値）で、その状態の予約だけに絞れる（確定待ちのまま残っている予約や、キャンセルされた
+         *       予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
+         *       期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
+         *       `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
          *     - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
          *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
@@ -2335,6 +2339,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの状態の予約だけに絞る。繰り返して付ければ（`status=pending&status=cancelled`）どれかの状態の予約。
+                 *     省けば状態を問わない。`BookingStatus` にない値は 422 `validation_failed`
+                 */
+                status?: components["schemas"]["BookingStatus"][];
             };
             header?: never;
             path?: never;

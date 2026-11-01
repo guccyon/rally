@@ -1,7 +1,8 @@
 //! `GET /bookings`（admin-web の `listBookings`。本部が見る予約の一覧）の統合テスト。レスポンスの形を admin-web の
 //! OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付（日本時間）で絞って開始の古い順に返すこと、
 //! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
-//! 期間の違反と日付でない値・UUID でない `coach_id` が 422 であることを確かめる。期間の規則の境界は
+//! `status`（繰り返せる）でその状態の予約だけに絞れること、期間の違反と日付でない値・UUID でない `coach_id`・
+//! 予約の状態でない `status` が 422 であることを確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -372,6 +373,63 @@ async fn coach_id_lists_only_bookings_of_that_coach() {
 }
 
 #[tokio::test]
+async fn status_lists_only_bookings_in_those_statuses() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, made) = bookings().await;
+    // 11 月 1 日〜7 日の予約（枠 3・2・4・6）のうち、枠 2 を確定し、枠 4 をキャンセルする
+    let student = AccountId::from_u128(3);
+    bookings
+        .update(made[0].id(), |booking, slot| {
+            booking.confirm(student, slot, nov1(Duration::ZERO) - HOUR)
+        })
+        .await
+        .unwrap();
+    bookings
+        .update(made[3].id(), |booking, slot| {
+            booking
+                .cancel(student, slot, nov1(Duration::ZERO) - HOUR)
+                .map(|_| ())
+        })
+        .await
+        .unwrap();
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+
+    for (query, expected) in [
+        ("?status=pending", vec![slot_uuid(3), slot_uuid(6)]),
+        ("?status=confirmed", vec![slot_uuid(2)]),
+        ("?status=cancelled", vec![slot_uuid(4)]),
+        // 繰り返せば、どれかの状態のもの。並べ方は変わらない
+        (
+            "?status=cancelled&status=pending",
+            vec![slot_uuid(3), slot_uuid(4), slot_uuid(6)],
+        ),
+        // 同じ値を重ねても同じ
+        ("?status=confirmed&status=confirmed", vec![slot_uuid(2)]),
+        // 付けなければ状態を問わない（今までと同じ）
+        (
+            "",
+            vec![slot_uuid(3), slot_uuid(2), slot_uuid(4), slot_uuid(6)],
+        ),
+        // 期間・コーチと組み合わせる
+        (
+            "?from=2026-11-01&to=2026-11-01&status=pending&status=confirmed",
+            vec![slot_uuid(3), slot_uuid(2)],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-00000000002a&status=pending",
+            vec![],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = get(&app, &format!("{PATH}?status=confirmed"), HEADQUARTERS).await;
+    assert_eq!(body["bookings"][0]["booking"]["status"], "confirmed");
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -411,6 +469,16 @@ async fn invalid_days_are_422() {
         ("?to=tomorrow", "to は YYYY-MM-DD の日付でない"),
         ("?coach_id=42", "coach_id が UUID でない"),
         ("?coach_id=", "coach_id が UUID でない"),
+        ("?status=canceled", "未知の予約の状態: canceled"),
+        (
+            "?status=pending&status=PENDING",
+            "未知の予約の状態: PENDING",
+        ),
+        (
+            "?status=pending,cancelled",
+            "未知の予約の状態: pending,cancelled",
+        ),
+        ("?status=", "未知の予約の状態: "),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
