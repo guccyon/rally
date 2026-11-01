@@ -109,6 +109,12 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
   {
+    id: "hq-incomplete-coach-profiles",
+    title: "本部: 自己紹介の足りないコーチ",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",
