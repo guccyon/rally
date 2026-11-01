@@ -226,6 +226,21 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listStudents は絞り込みをクエリにして GET /api/students を呼ぶ", async () => {
+    const { api, fetchMock } = setup(json(200, { students: [] }));
+    await api.listStudents({ sport: "golf", not_booked_since: "2026-10-01" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/students");
+    expect(url.searchParams.get("sport")).toBe("golf");
+    expect(url.searchParams.get("not_booked_since")).toBe("2026-10-01");
+  });
+
+  test("listStudents は条件がなければクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { students: [] }));
+    await api.listStudents({});
+    expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
+
   test("getStudentActivity は GET /api/students/{student_id}/activity を呼び、生徒 1 人の利用の様子を返す", async () => {
     const studentId = "11111111-1111-4111-8111-111111111111";
     const activity = {
