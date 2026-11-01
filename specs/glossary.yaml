@@ -128,11 +128,12 @@ terms:
     ja: "本部からのお知らせ"
     definition: "本部が生徒全員か、あるスポーツの生徒全員に送る知らせ（メンテナンスやキャンペーンなど）の記録で、題（1〜50 文字）・本文（1〜2000 文字）・対象のスポーツ・受け取った生徒の数・送った時刻を持ち、受け取る生徒ごとにお知らせ（notification）を 1 件作る。"
     context: notification
-    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, notification.announcements, sendAnnouncement, listAnnouncements]
+    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, AnnouncementWithReadCount, notification.announcements, sendAnnouncement, listAnnouncements]
     note: >-
       送るのも一覧を見るのも本部だけ（admin-web）。受け取る生徒がいなければ送らない。プッシュ通知は生徒の通知の受け取り設定
       （notification_settings の announcement）に従い、オフの生徒にもお知らせは作る。予約送信は Gen1 では扱わない（D124）。
-      誤って送ったものは本部が取り下げられる（announcement_withdrawal。D141）。
+      誤って送ったものは本部が取り下げられる（announcement_withdrawal。D141）。本部の一覧には 1 件ごとに、受け取った生徒のうち
+      お知らせを既読にした生徒の数（read_count。取り下げたものも同じに数える）を添える（D161）。
   - id: announcement_withdrawal
     ja: "お知らせの取り下げ"
     definition: "誤って送った本部からのお知らせ（announcement）を本部が取り下げたことで、取り下げた本部のアカウントと時刻を持ち、取り下げたお知らせは生徒のお知らせの一覧に出さない。"

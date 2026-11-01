@@ -720,6 +720,16 @@ mod tests {
         ) -> Result<(), Unavailable> {
             self.notifications.mark_all_read(recipient, at).await
         }
+
+        async fn count_read_by_announcement(
+            &self,
+            ids: &std::collections::BTreeSet<domain::notification::AnnouncementId>,
+        ) -> Result<
+            std::collections::BTreeMap<domain::notification::AnnouncementId, u32>,
+            Unavailable,
+        > {
+            self.notifications.count_read_by_announcement(ids).await
+        }
     }
 
     #[tokio::test]

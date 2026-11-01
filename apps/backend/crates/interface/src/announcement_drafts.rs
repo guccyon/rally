@@ -14,9 +14,10 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     notification::{
         AnnouncementDraftError, AnnouncementDraftRepository, AnnouncementRecipientLookup,
-        AnnouncementRepository, CreateAnnouncementDraft, DeleteAnnouncementDraft,
-        ListAnnouncementDrafts, NotificationRepository, NotificationSettingsRepository, PushSender,
-        SendAnnouncementDraft, UpdateAnnouncementDraft, announcement_draft_id_uuid,
+        AnnouncementRepository, AnnouncementWithReadCount, CreateAnnouncementDraft,
+        DeleteAnnouncementDraft, ListAnnouncementDrafts, NotificationRepository,
+        NotificationSettingsRepository, PushSender, SendAnnouncementDraft, UpdateAnnouncementDraft,
+        announcement_draft_id_uuid,
     },
 };
 use axum::{
@@ -234,7 +235,13 @@ where
         .execute(draft_id, account.account_id())
         .await
         .map_err(draft_error)?;
-    Ok((StatusCode::CREATED, Json(announcement_body(&announcement)?)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(announcement_body(&AnnouncementWithReadCount::just_sent(
+            announcement,
+        ))?),
+    )
+        .into_response())
 }
 
 fn draft_body(draft: &AnnouncementDraft) -> Result<AnnouncementDraftBody, ApiError> {

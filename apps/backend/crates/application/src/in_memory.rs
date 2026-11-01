@@ -1544,6 +1544,21 @@ impl NotificationRepository for InMemoryNotificationRepository {
         }
         Ok(())
     }
+
+    async fn count_read_by_announcement(
+        &self,
+        ids: &BTreeSet<AnnouncementId>,
+    ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
+        let mut counts = BTreeMap::new();
+        for notification in self.all().iter().filter(|n| n.is_read()) {
+            if let Some(id) = notification.push().announcement_id()
+                && ids.contains(&id)
+            {
+                *counts.entry(id).or_insert(0) += 1;
+            }
+        }
+        Ok(counts)
+    }
 }
 
 /// [`AnnouncementRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。

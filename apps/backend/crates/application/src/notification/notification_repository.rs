@@ -1,8 +1,12 @@
-use std::{future::Future, time::SystemTime};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    time::SystemTime,
+};
 
 use domain::{
     identity::AccountId,
-    notification::{Notification, NotificationId},
+    notification::{AnnouncementId, Notification, NotificationId},
 };
 
 use crate::Unavailable;
@@ -35,4 +39,11 @@ pub trait NotificationRepository: Send + Sync {
         recipient: AccountId,
         at: SystemTime,
     ) -> impl Future<Output = Result<(), Unavailable>> + Send;
+
+    /// 本部からのお知らせ `ids` ごとの、生徒ごとのお知らせのうち既読のもの（[`Notification::is_read`]）の数。既読のものが
+    /// ない ID は結果に入れない（0 件）。
+    fn count_read_by_announcement(
+        &self,
+        ids: &BTreeSet<AnnouncementId>,
+    ) -> impl Future<Output = Result<BTreeMap<AnnouncementId, u32>, Unavailable>> + Send;
 }
