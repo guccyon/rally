@@ -504,7 +504,11 @@ async fn booking_a_slot_of_a_suspended_coach_is_409_until_resumed_and_keeps_exis
     let acceptances = app.slots.coach_acceptances();
     acceptances
         .update(COACH, |a| {
-            a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            a.suspend(
+                HEADQUARTERS_ID,
+                domain::scheduling::CoachSuspensionReason::default(),
+                SystemTime::UNIX_EPOCH,
+            )
         })
         .await
         .unwrap();

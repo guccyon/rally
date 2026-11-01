@@ -14,14 +14,15 @@ use application::{
 };
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, State},
     routing::{get, post},
 };
 use domain::{
     identity::{AccountId, Role},
-    scheduling::CoachAcceptance,
+    scheduling::{CoachAcceptance, CoachSuspensionReason},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
@@ -45,12 +46,22 @@ pub struct CoachAcceptanceBody {
     acceptance_status: &'static str,
 }
 
+/// admin-web の `SuspendCoachRequest`。本文ごと省いてよい。
+#[derive(Deserialize, Default)]
+pub struct SuspendCoachRequest {
+    #[serde(default)]
+    reason: Option<String>,
+}
+
 /// `POST /coaches/{coach_id}/suspend`。本部だけが呼べ（役割は `require_role` の層が確かめる）、停止中にした受付を返す。
-/// 止めた記録には、トークンのアカウントを操作した本部として残す。リクエストの本文は読まない。失敗の応答は [`crate::scheduling_error`] が決める。
+/// 本文（任意の `reason`）は省いてよく、空の本文は理由なし（空文字列）として扱う（`unpublishLessonMenu` と同じ）。止めた記録には、
+/// トークンのアカウントを操作した本部として残す。失敗の応答は [`crate::scheduling_error`] が決める（長すぎる理由・JSON でない
+/// 本文は 422）。
 pub async fn suspend_coach<R, I, C>(
     State(state): State<Arc<CoachAcceptancesState<R, I, C>>>,
     account: AuthenticatedAccount,
     Path(coach_id): Path<String>,
+    body: Bytes,
 ) -> Result<Json<CoachAcceptanceBody>, ApiError>
 where
     R: CoachAcceptanceRepository,
@@ -58,9 +69,16 @@ where
     C: Clock,
 {
     let coach_id = parse_coach_id(&coach_id)?;
+    let request: SuspendCoachRequest = if body.iter().all(u8::is_ascii_whitespace) {
+        SuspendCoachRequest::default()
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|error| ApiError::validation_failed(error.to_string()))?
+    };
+    let reason = CoachSuspensionReason::new(request.reason.unwrap_or_default())?;
     let acceptance = state
         .suspend_coach
-        .execute(coach_id, account.account_id())
+        .execute(coach_id, account.account_id(), reason)
         .await?;
     Ok(Json(coach_acceptance_body(&acceptance)))
 }
@@ -84,7 +102,7 @@ where
     Ok(Json(coach_acceptance_body(&acceptance)))
 }
 
-/// 契約の 3 つの操作に 422 はないので、UUID でない ID はいないコーチとして扱う。
+/// UUID でない ID はいないコーチとして 404 で扱う（422 は `suspendCoach` の本文の誤りだけ）。
 pub(crate) fn parse_coach_id(coach_id: &str) -> Result<AccountId, ApiError> {
     account_id_uuid::parse(coach_id).map_err(|_| coach_not_found())
 }

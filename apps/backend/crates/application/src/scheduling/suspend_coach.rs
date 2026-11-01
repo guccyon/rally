@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
-use domain::{identity::AccountId, scheduling::CoachAcceptance};
+use domain::{
+    identity::AccountId,
+    scheduling::{CoachAcceptance, CoachSuspensionReason},
+};
 
 use super::{ChangeCoachAcceptanceError, CoachAcceptanceRepository, CoachIntroductionLookup};
 use crate::{Unavailable, clock::Clock};
@@ -10,7 +13,7 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// コーチがいるかを profile に問い合わせ（[`CoachIntroductionLookup`]。コーチでないアカウントとないアカウントは
 /// [`ChangeCoachAcceptanceError::CoachNotFound`]）、domain の [`CoachAcceptance::suspend`] で止めて、止めた記録（操作した
-/// 本部のアカウントと時刻）とともに保存する。ここでは判定しない。入っている予約と枠は変えない（停止中のコーチの枠は生徒の検索に出ず、新しい予約を受けない）。
+/// 本部のアカウントと理由と時刻）とともに保存する。ここでは判定しない。入っている予約と枠は変えない（停止中のコーチの枠は生徒の検索に出ず、新しい予約を受けない）。
 /// 行動イベントも境界間イベントも発火しない（他のコンテキストは受付の状態をポートで読む）。
 pub struct SuspendCoach<R, I, C> {
     acceptances: R,
@@ -32,18 +35,20 @@ where
         }
     }
 
-    /// `changed_by` は操作した本部のアカウント（トークンのアカウント）。変えた時刻は時計の今。
+    /// `changed_by` は操作した本部のアカウント（トークンのアカウント）、`reason` は止める理由（書かなければ空）。変えた時刻は
+    /// 時計の今。
     pub async fn execute(
         &self,
         coach_id: AccountId,
         changed_by: AccountId,
+        reason: CoachSuspensionReason,
     ) -> Result<CoachAcceptance, ChangeCoachAcceptanceError> {
         ensure_coach_exists(&self.coaches, coach_id).await?;
         let changed_at = self.clock.now();
         Ok(self
             .acceptances
             .update(coach_id, |acceptance| {
-                acceptance.suspend(changed_by, changed_at)
+                acceptance.suspend(changed_by, reason, changed_at)
             })
             .await?)
     }
@@ -103,6 +108,10 @@ mod tests {
     const STUDENT: AccountId = AccountId::from_u128(1);
     const HEADQUARTERS: AccountId = AccountId::from_u128(2);
 
+    fn reason(text: &str) -> CoachSuspensionReason {
+        CoachSuspensionReason::new(text).unwrap()
+    }
+
     fn now() -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(3_600)
     }
@@ -139,9 +148,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn suspends_an_accepting_coach_and_records_who_and_when() {
+    async fn suspends_an_accepting_coach_and_records_who_why_and_when() {
         let use_case = use_case().await;
-        let acceptance = use_case.execute(COACH, HEADQUARTERS).await.unwrap();
+        let acceptance = use_case
+            .execute(COACH, HEADQUARTERS, reason("休業の申し出"))
+            .await
+            .unwrap();
         assert_eq!(acceptance.coach_id(), COACH);
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Suspended);
         assert_eq!(
@@ -153,6 +165,7 @@ mod tests {
             vec![CoachAcceptanceChange::restore(
                 COACH,
                 CoachAcceptanceStatus::Suspended,
+                Some(reason("休業の申し出")),
                 HEADQUARTERS,
                 now()
             )]
@@ -160,11 +173,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn suspends_without_a_reason_as_an_empty_reason() {
+        let use_case = use_case().await;
+        use_case
+            .execute(COACH, HEADQUARTERS, CoachSuspensionReason::default())
+            .await
+            .unwrap();
+        let changes = use_case.acceptances().changes(COACH).await.unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].reason(), Some(&CoachSuspensionReason::default()));
+    }
+
+    #[tokio::test]
     async fn suspending_a_suspended_coach_is_rejected_without_a_second_record() {
         let use_case = use_case().await;
-        use_case.execute(COACH, HEADQUARTERS).await.unwrap();
+        use_case
+            .execute(COACH, HEADQUARTERS, reason("最初"))
+            .await
+            .unwrap();
         assert!(matches!(
-            use_case.execute(COACH, HEADQUARTERS).await,
+            use_case
+                .execute(COACH, HEADQUARTERS, reason("二度目"))
+                .await,
             Err(ChangeCoachAcceptanceError::Invalid(
                 SchedulingError::CoachAlreadySuspended
             ))
@@ -174,8 +204,12 @@ mod tests {
             BTreeSet::from([COACH])
         );
         assert_eq!(
-            use_case.acceptances().changes(COACH).await.unwrap().len(),
-            1
+            use_case.acceptances().changes(COACH).await.unwrap()[..]
+                .iter()
+                .map(|change| change.reason())
+                .collect::<Vec<_>>(),
+            vec![Some(&reason("最初"))],
+            "断った操作は記録せず、最初の理由を残す"
         );
     }
 
@@ -184,7 +218,9 @@ mod tests {
         let use_case = use_case().await;
         for id in [STUDENT, AccountId::from_u128(99)] {
             assert!(matches!(
-                use_case.execute(id, HEADQUARTERS).await,
+                use_case
+                    .execute(id, HEADQUARTERS, CoachSuspensionReason::default())
+                    .await,
                 Err(ChangeCoachAcceptanceError::CoachNotFound)
             ));
         }

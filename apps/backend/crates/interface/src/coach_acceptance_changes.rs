@@ -28,10 +28,12 @@ pub struct CoachAcceptanceChangeListBody {
     changes: Vec<CoachAcceptanceChangeBody>,
 }
 
-/// admin-web の `CoachAcceptanceChange`。`acceptance_status` は変えた後の状態。
+/// admin-web の `CoachAcceptanceChange`。`acceptance_status` は変えた後の状態。`reason` は止めた記録の理由（再開した記録と、
+/// 理由を残し始める前の記録は null）。
 #[derive(Serialize)]
 struct CoachAcceptanceChangeBody {
     acceptance_status: &'static str,
+    reason: Option<String>,
     changed_by: String,
     changed_at: String,
 }
@@ -61,6 +63,7 @@ where
             .map(|change| {
                 Ok(CoachAcceptanceChangeBody {
                     acceptance_status: coach_acceptance_status_to_contract(change.status()),
+                    reason: change.reason().map(|reason| reason.as_str().to_string()),
                     changed_by: account_id_uuid::format(change.changed_by()),
                     changed_at: date_time_to_contract(change.changed_at())?,
                 })

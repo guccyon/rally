@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use super::{CoachAcceptanceChange, CoachAcceptanceStatus, SchedulingError};
+use super::{CoachAcceptanceChange, CoachAcceptanceStatus, CoachSuspensionReason, SchedulingError};
 use crate::identity::AccountId;
 
 /// コーチの受付（glossary の coach_acceptance）。コーチが新しい予約を受け付けるか（受付中・停止中）を持つ集約。
@@ -37,17 +37,23 @@ impl CoachAcceptance {
         self.status
     }
 
-    /// 受付を止める（受付中 → 停止中）。止めた本部のアカウント `changed_by` と時刻 `changed_at` の記録を返す。
-    /// すでに停止中なら [`SchedulingError::CoachAlreadySuspended`] で、何も変えず記録も作らない。
+    /// 受付を止める（受付中 → 停止中）。止めた本部のアカウント `changed_by` と理由 `reason`（書かなければ空）と時刻
+    /// `changed_at` の記録を返す。すでに停止中なら [`SchedulingError::CoachAlreadySuspended`] で、何も変えず記録も作らない。
     pub fn suspend(
         &mut self,
         changed_by: AccountId,
+        reason: CoachSuspensionReason,
         changed_at: SystemTime,
     ) -> Result<CoachAcceptanceChange, SchedulingError> {
         if self.status == CoachAcceptanceStatus::Suspended {
             return Err(SchedulingError::CoachAlreadySuspended);
         }
-        Ok(self.change_to(CoachAcceptanceStatus::Suspended, changed_by, changed_at))
+        Ok(self.change_to(
+            CoachAcceptanceStatus::Suspended,
+            Some(reason),
+            changed_by,
+            changed_at,
+        ))
     }
 
     /// 受付を再開する（停止中 → 受付中）。再開した本部のアカウント `changed_by` と時刻 `changed_at` の記録を返す。
@@ -60,17 +66,23 @@ impl CoachAcceptance {
         if self.status != CoachAcceptanceStatus::Suspended {
             return Err(SchedulingError::CoachNotSuspended);
         }
-        Ok(self.change_to(CoachAcceptanceStatus::Accepting, changed_by, changed_at))
+        Ok(self.change_to(
+            CoachAcceptanceStatus::Accepting,
+            None,
+            changed_by,
+            changed_at,
+        ))
     }
 
     fn change_to(
         &mut self,
         status: CoachAcceptanceStatus,
+        reason: Option<CoachSuspensionReason>,
         changed_by: AccountId,
         changed_at: SystemTime,
     ) -> CoachAcceptanceChange {
         self.status = status;
-        CoachAcceptanceChange::restore(self.coach_id, status, changed_by, changed_at)
+        CoachAcceptanceChange::restore(self.coach_id, status, reason, changed_by, changed_at)
     }
 
     /// 新しい予約を受けられるか。停止中なら [`SchedulingError::CoachNotAcceptingBookings`]。
@@ -93,6 +105,10 @@ mod tests {
         SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs)
     }
 
+    fn reason(text: &str) -> CoachSuspensionReason {
+        CoachSuspensionReason::new(text).unwrap()
+    }
+
     #[test]
     fn a_coach_accepts_bookings_until_suspended() {
         let acceptance = CoachAcceptance::accepting(COACH);
@@ -102,13 +118,14 @@ mod tests {
     }
 
     #[test]
-    fn suspending_stops_new_bookings() {
+    fn suspending_stops_new_bookings_and_records_the_reason() {
         let mut acceptance = CoachAcceptance::accepting(COACH);
         assert_eq!(
-            acceptance.suspend(HEADQUARTERS, at(10)),
+            acceptance.suspend(HEADQUARTERS, reason(" 休業の申し出 "), at(10)),
             Ok(CoachAcceptanceChange::restore(
                 COACH,
                 CoachAcceptanceStatus::Suspended,
+                Some(reason(" 休業の申し出 ")),
                 HEADQUARTERS,
                 at(10)
             ))
@@ -124,7 +141,7 @@ mod tests {
     fn suspending_a_suspended_coach_is_rejected_without_change() {
         let mut acceptance = CoachAcceptance::restore(COACH, CoachAcceptanceStatus::Suspended);
         assert_eq!(
-            acceptance.suspend(HEADQUARTERS, at(10)),
+            acceptance.suspend(HEADQUARTERS, reason("二度目"), at(10)),
             Err(SchedulingError::CoachAlreadySuspended)
         );
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Suspended);
@@ -136,6 +153,7 @@ mod tests {
         let change = acceptance.resume(HEADQUARTERS, at(20)).unwrap();
         assert_eq!(change.coach_id(), COACH);
         assert_eq!(change.status(), CoachAcceptanceStatus::Accepting);
+        assert_eq!(change.reason(), None, "再開した記録は理由を持たない");
         assert_eq!(change.changed_by(), HEADQUARTERS);
         assert_eq!(change.changed_at(), at(20));
         assert_eq!(acceptance.status(), CoachAcceptanceStatus::Accepting);

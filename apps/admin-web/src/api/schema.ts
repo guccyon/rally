@@ -513,15 +513,18 @@ export interface paths {
          * コーチの受付の停止（本部）
          * @description コーチ 1 人の受付（glossary の coach_acceptance。新しい予約を受け付けるか）を止め、停止中（`suspended`）にした受付を返す。
          *     問題のあるコーチや休業中のコーチの新しい予約を止めるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
-         *     リクエストの本文は読まない。
          *
+         *     - 本文は省いてよい。`reason`（止める理由。0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに保存する）
+         *       を任意で書け、省けば空文字列（理由なし）。201 文字以上・JSON でない本文は 422 `validation_failed`（何も変えない）。
+         *       扱いは `unpublishLessonMenu` の `reason` と同じ。理由は止めた記録（`listCoachAcceptanceChanges`）に残り、本部の別の
+         *       担当者があとからなぜ止めたかをたどれる。コーチには知らせない
          *     - 停止中のコーチの枠は生徒の検索（student-app の `searchSlots`）に出ず、コーチは生徒のコーチを探す一覧
          *       （student-app の `listCoachesForStudent`）に出ない。そのコーチの枠への予約の作成（student-app の `createBooking`）は
          *       409 `coach_not_accepting_bookings`
          *     - 入っている予約（未確定・確定）と枠はそのまま（確定・キャンセル・通話は今までどおり。予約のキャンセルやコーチへの
          *       通知はしない）。コーチは枠の公開・取り下げも今までどおりできる（公開した枠は再開するまで検索に出ない）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
-         *     - すでに停止中のコーチは 409 `coach_already_suspended`（何も変えない）
+         *     - すでに停止中のコーチは 409 `coach_already_suspended`（何も変えない。最初に止めたときの理由を残す）
          *     - 本部のコーチの一覧（`listCoaches`）の `acceptance_status` が `suspended` になる。一度も止めていないコーチは受付中
          *
          *     受付の状態は scheduling の持ち物で、matching・profile はそれを読むだけなので境界間イベントは発行しない。
@@ -578,6 +581,8 @@ export interface paths {
          *     - 記録は `suspendCoach`・`resumeCoach` が受付を変えたとき 1 回につき 1 件で、書き換えない。409 で断られた操作は残らない
          *     - 各記録の `acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）。`changed_by` は
          *       操作した本部のアカウントの ID、`changed_at` は変えた時刻
+         *     - 各記録の `reason` は止めたときに書いた理由（`suspendCoach` の `reason`。書かなければ空文字列）。再開した記録と、理由を
+         *       残し始める前に止めた記録は null
          *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
          *     - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
          *     - 絞り込み・ページング・件数の上限はない
@@ -2008,6 +2013,11 @@ export interface components {
         CoachAcceptanceChange: {
             acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
             /**
+             * @description 止めたときに書いた理由（書かなければ空文字列）。再開した記録（`acceptance_status` が `accepting`）と、理由を残し始める前に
+             *     止めた記録は null
+             */
+            reason: string | null;
+            /**
              * Format: uuid
              * @description 止めた・再開した本部のアカウントの ID
              */
@@ -2517,6 +2527,11 @@ export interface components {
             duration_minutes?: number | null;
             /** @description 公開中か。省けば true */
             is_published?: boolean;
+        };
+        /** @description 本部によるコーチの受付の停止（`suspendCoach`）。本文ごと省いてよい */
+        SuspendCoachRequest: {
+            /** @description 止める理由（0〜200 文字。書いたとおりに保存する）。省けば空文字列 */
+            reason?: string;
         };
         /** @description 本部によるレッスンメニューの非公開（`unpublishLessonMenu`）。本文ごと省いてよい */
         UnpublishLessonMenuRequest: {
@@ -3513,7 +3528,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SuspendCoachRequest"];
+            };
+        };
         responses: {
             /** @description 停止中にしたコーチの受付 */
             200: {
@@ -3528,6 +3547,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     resumeCoach: {

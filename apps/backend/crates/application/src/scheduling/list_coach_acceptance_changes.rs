@@ -45,7 +45,7 @@ mod tests {
         catalog::Sport,
         identity::{Account, Email, Role},
         profile::DisplayName,
-        scheduling::CoachAcceptanceStatus,
+        scheduling::{CoachAcceptanceStatus, CoachSuspensionReason},
     };
 
     use super::*;
@@ -63,6 +63,10 @@ mod tests {
 
     fn at(secs: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(secs)
+    }
+
+    fn reason(text: &str) -> CoachSuspensionReason {
+        CoachSuspensionReason::new(text).unwrap()
     }
 
     type UseCase = ListCoachAcceptanceChanges<
@@ -96,14 +100,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_the_changes_of_the_coach_newest_first() {
+    async fn lists_the_changes_of_the_coach_newest_first_with_the_reasons() {
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
-            .update(COACH, |a| a.suspend(HEADQUARTERS, at(10)))
+            .update(COACH, |a| {
+                a.suspend(HEADQUARTERS, reason("無断欠席が続いた"), at(10))
+            })
             .await
             .unwrap();
         acceptances
-            .update(OTHER_COACH, |a| a.suspend(HEADQUARTERS, at(15)))
+            .update(OTHER_COACH, |a| {
+                a.suspend(HEADQUARTERS, CoachSuspensionReason::default(), at(15))
+            })
             .await
             .unwrap();
         acceptances
@@ -112,7 +120,9 @@ mod tests {
             .unwrap();
         // 同じ時刻なら後に保存した方が先
         acceptances
-            .update(COACH, |a| a.suspend(HEADQUARTERS, at(20)))
+            .update(COACH, |a| {
+                a.suspend(HEADQUARTERS, CoachSuspensionReason::default(), at(20))
+            })
             .await
             .unwrap();
 
@@ -128,18 +138,21 @@ mod tests {
                 CoachAcceptanceChange::restore(
                     COACH,
                     CoachAcceptanceStatus::Suspended,
+                    Some(CoachSuspensionReason::default()),
                     HEADQUARTERS,
                     at(20)
                 ),
                 CoachAcceptanceChange::restore(
                     COACH,
                     CoachAcceptanceStatus::Accepting,
+                    None,
                     OTHER_HEADQUARTERS,
                     at(20)
                 ),
                 CoachAcceptanceChange::restore(
                     COACH,
                     CoachAcceptanceStatus::Suspended,
+                    Some(reason("無断欠席が続いた")),
                     HEADQUARTERS,
                     at(10)
                 ),

@@ -223,7 +223,13 @@ mod tests {
         }
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
-            .update(COACH, |a| a.suspend(HEADQUARTERS, SystemTime::UNIX_EPOCH))
+            .update(COACH, |a| {
+                a.suspend(
+                    HEADQUARTERS,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
+            })
             .await
             .unwrap();
         let second = Duration::from_secs(1);
