@@ -1301,8 +1301,9 @@ export interface paths {
          *     取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
          *     （取り下げていなければ null）。
          *     1 件ごとの `read_count` は、そのお知らせを受け取った生徒のうち既読にした（student-app の `markMyNotificationsRead`）
-         *     生徒の数で、呼んだ時点の値。取り下げたお知らせも同じに数える（取り下げても既読の扱いは変えないので、取り下げたあとに
-         *     既読にした生徒も数える）。生徒 1 人ずつの既読は返さない。
+         *     生徒の数で、呼んだ時点の値。取り下げたお知らせは、取り下げた時刻（`withdrawal.withdrawn_at`）までに既読になった生徒だけを
+         *     数える（取り下げた時点の数で止まる）。取り下げたあとに `markMyNotificationsRead` で既読になった生徒は、既読にはなるが
+         *     （D141 の既読の扱いは変えない）数えない。生徒 1 人ずつの既読は返さない。
          *
          *     行動イベントは発火しない。
          */
@@ -1352,7 +1353,7 @@ export interface paths {
          *     リクエストの本文は読まない。
          *
          *     - 取り下げた本部のアカウントと時刻（サーバーの現在時刻）を `withdrawal` に残す。題・本文・対象のスポーツ・
-         *       受け取った生徒の数・送った時刻は変えない。`read_count` は `listAnnouncements` と同じ数え方で、呼んだ時点の値
+         *       受け取った生徒の数・送った時刻は変えない。`read_count` は `listAnnouncements` と同じ数え方で、取り下げた時刻までに既読になった生徒の数
          *     - 取り下げたお知らせは、生徒のお知らせの一覧（student-app の `listMyNotifications`・`markMyNotificationsRead` の応答）に
          *       出なくなる。既読の扱いは変えない（`markMyNotificationsRead` は今までどおりすべてを既読にする）。すでに届いた
          *       プッシュ通知（Gen1 はモック）は取り消せず、取り下げたことの知らせも送らない
@@ -2580,7 +2581,7 @@ export interface components {
             recipient_count: number;
             /**
              * @description 受け取った生徒のうち、お知らせを既読にした生徒の数（`recipient_count` 以下。応答を作った時点の値）。
-             *     取り下げたお知らせも同じに数える。数え方は `listAnnouncements` の説明
+             *     取り下げたお知らせは取り下げた時刻までに既読になった生徒の数。数え方は `listAnnouncements` の説明
              */
             read_count: number;
             /**

@@ -1,9 +1,6 @@
 //! お知らせの保存先（Postgres の `notification.notifications`）。
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::SystemTime,
-};
+use std::{collections::BTreeMap, time::SystemTime};
 
 use application::{
     Unavailable,
@@ -39,7 +36,8 @@ use crate::{
 /// 本部からのお知らせは `notifications_one_per_announcement`。残すときは `ON CONFLICT DO NOTHING`）。新しい順は
 /// 作った時刻（`created_at`）と残した順（`seq`）で並べる。既読は、受け取る人のまだ読んでいない行をロック（`FOR UPDATE`）
 /// して domain の [`Notification::mark_read`] に通してから書く。本部からのお知らせごとの既読の数は、送った記録を指す
-/// 行（`kind = 'announcement'`）のうち `read_at` のあるものを数える（`notifications_one_per_announcement` の索引で引く）。
+/// 行（`kind = 'announcement'`）のうち `read_at` のあるもの（上限の時刻があればそれまでのもの）を数える
+/// （`notifications_one_per_announcement` の索引で引く）。
 #[derive(Debug, Clone)]
 pub struct PgNotificationRepository {
     pool: PgPool,
@@ -86,11 +84,15 @@ const UNREAD_NOTIFICATIONS_OF_FOR_UPDATE: &str =
      ORDER BY created_at DESC, seq DESC
      FOR UPDATE";
 
-/// 本部からのお知らせ `$1` のどれかを指す（種類が `$2`）お知らせのうち、既読のものの数（本部からのお知らせごと）。
-const READ_COUNTS_OF_ANNOUNCEMENTS: &str = "SELECT announcement_id, count(*)
-     FROM notification.notifications
-     WHERE kind = $2 AND announcement_id = ANY($1) AND read_at IS NOT NULL
-     GROUP BY announcement_id";
+/// 本部からのお知らせ `$1` のどれかを指す（種類が `$3`）お知らせのうち、既読のものの数（本部からのお知らせごと）。
+/// `$2` は `$1` と同じ並びの、数えに入れる既読の時刻の上限（NULL なら上限なし）。
+const READ_COUNTS_OF_ANNOUNCEMENTS: &str = "SELECT n.announcement_id, count(*)
+     FROM notification.notifications n
+     JOIN unnest($1::uuid[], $2::timestamptz[]) AS c (announcement_id, read_until)
+         ON n.announcement_id = c.announcement_id
+     WHERE n.kind = $3 AND n.read_at IS NOT NULL
+         AND (c.read_until IS NULL OR n.read_at <= c.read_until)
+     GROUP BY n.announcement_id";
 
 /// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id）。
 type PushColumns = (
@@ -175,15 +177,15 @@ impl NotificationRepository for PgNotificationRepository {
 
     async fn count_read_by_announcement(
         &self,
-        ids: &BTreeSet<AnnouncementId>,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
     ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
-        let ids: Vec<Uuid> = ids
+        let (ids, untils): (Vec<Uuid>, Vec<Option<OffsetDateTime>>) = read_until
             .iter()
-            .copied()
-            .map(announcement_id_uuid::to_uuid)
-            .collect();
+            .map(|(id, until)| (announcement_id_uuid::to_uuid(*id), until.map(timestamp)))
+            .unzip();
         let rows: Vec<(Uuid, i64)> = sqlx::query_as(READ_COUNTS_OF_ANNOUNCEMENTS)
             .bind(&ids)
+            .bind(&untils)
             .bind(ANNOUNCEMENT)
             .fetch_all(&self.pool)
             .await

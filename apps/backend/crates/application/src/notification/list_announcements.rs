@@ -31,7 +31,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{BTreeMap, BTreeSet},
+        collections::BTreeMap,
         time::{Duration, SystemTime},
     };
 
@@ -162,23 +162,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_withdrawn_announcement_is_listed_with_its_reads() {
+    async fn a_withdrawn_announcement_counts_only_the_reads_until_the_withdrawal() {
         let mut withdrawn = announcement(1, 10);
         withdrawn.withdraw(HEADQUARTERS, at(20)).unwrap();
         let notifications = InMemoryNotificationRepository::with_notifications([
             received(1, &withdrawn, 11, Some(15)),
-            // 取り下げたあとに `markMyNotificationsRead` で既読になったものも数える（既読の扱いは変えない）
-            received(2, &withdrawn, 12, Some(30)),
-            received(3, &withdrawn, 13, None),
+            // 取り下げた時刻ちょうどに読んだものは数える
+            received(2, &withdrawn, 12, Some(20)),
+            // 取り下げたあとに `markMyNotificationsRead` で既読になったものは数えない（生徒の一覧に出ていない）
+            received(3, &withdrawn, 13, Some(30)),
+            received(4, &withdrawn, 14, None),
         ]);
         let listed_now = ListAnnouncements::new(
             InMemoryAnnouncementRepository::with_announcements([withdrawn.clone()]),
-            notifications,
+            notifications.clone(),
         )
         .execute()
         .await
         .unwrap();
-        assert_eq!(listed_now, [listed(&withdrawn, 2)]);
+        assert_eq!(
+            listed_now,
+            [listed(&withdrawn, 2)],
+            "取り下げた時刻までに既読になったものだけ"
+        );
+        assert_eq!(
+            notifications.all().iter().filter(|n| n.is_read()).count(),
+            3,
+            "既読そのものは変えない"
+        );
     }
 
     #[tokio::test]
@@ -222,7 +233,7 @@ mod tests {
 
         async fn count_read_by_announcement(
             &self,
-            _ids: &BTreeSet<AnnouncementId>,
+            _read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
         ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
             Err(Unavailable::new("壊れている"))
         }

@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    future::Future,
-    time::SystemTime,
-};
+use std::{collections::BTreeMap, future::Future, time::SystemTime};
 
 use domain::{
     identity::AccountId,
@@ -40,10 +36,11 @@ pub trait NotificationRepository: Send + Sync {
         at: SystemTime,
     ) -> impl Future<Output = Result<(), Unavailable>> + Send;
 
-    /// 本部からのお知らせ `ids` ごとの、生徒ごとのお知らせのうち既読のもの（[`Notification::is_read`]）の数。既読のものが
-    /// ない ID は結果に入れない（0 件）。
+    /// 本部からのお知らせごとの、生徒ごとのお知らせのうち既読のもの（[`Notification::is_read`]）の数。`read_until` の
+    /// キーが数えるお知らせで、値が数えに入れる既読の時刻の上限（その時刻ちょうどまでを含む。`None` なら上限なし。決めるのは
+    /// [`domain::notification::Announcement::reads_counted_until`]）。数えるものがない ID は結果に入れない（0 件）。
     fn count_read_by_announcement(
         &self,
-        ids: &BTreeSet<AnnouncementId>,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
     ) -> impl Future<Output = Result<BTreeMap<AnnouncementId, u32>, Unavailable>> + Send;
 }

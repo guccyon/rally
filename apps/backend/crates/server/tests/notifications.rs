@@ -18,7 +18,7 @@
 //! 本部が送ったお知らせ（`POST /announcements`）は、対象の生徒ごとにお知らせとして残り、受け取り設定で本部からの
 //! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
 //! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
-//! 本部の一覧には、受け取った生徒のうち既読にした数が載る。
+//! 本部の一覧には、受け取った生徒のうち既読にした数が載る（取り下げたお知らせは取り下げた時刻まで）。
 //! 本部が書きかけで残した下書き（`/announcement-drafts`）は生徒に届かず、下書きから送る
 //! （`POST /announcement-drafts/{announcement_draft_id}/send`）と生徒のお知らせに届いて下書きは消える（Postgres の組み立て）。
 
@@ -881,11 +881,9 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
             role: Role::Headquarters,
         })
         .into_string();
-    let router = server::router_with_postgres(
-        pool,
-        ManualClock::new(oct5()),
-        RecordingAnalyticsSink::default(),
-    );
+    let clock = ManualClock::new(oct5());
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
     call(
         &router,
         "POST",
@@ -905,6 +903,17 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
     )
     .await;
     let student = account["access_token"].as_str().unwrap();
+    // 取り下げたあとに既読にする生徒
+    let late = call(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        json!({ "email": "jiro@example.com", "display_name": "じろう", "sport": "soccer" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let late = late["access_token"].as_str().unwrap();
 
     let sent = call(
         &router,
@@ -976,6 +985,30 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
         })
     );
     assert_eq!(withdrawn["read_count"], 1, "取り下げても既読にした数は残る");
+    // 取り下げたあとに「すべて既読にする」を押した生徒は数えない（既読にはなる）
+    clock.set(oct5() + Duration::from_secs(60));
+    call(
+        &router,
+        "POST",
+        "/notifications/me/read",
+        Some(late),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    let list = call(
+        &router,
+        "GET",
+        "/announcements",
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        list["announcements"][0]["read_count"], 1,
+        "取り下げた時刻までに既読になったものだけ"
+    );
     let listed = call(
         &router,
         "GET",

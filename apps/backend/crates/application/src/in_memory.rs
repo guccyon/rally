@@ -1547,12 +1547,15 @@ impl NotificationRepository for InMemoryNotificationRepository {
 
     async fn count_read_by_announcement(
         &self,
-        ids: &BTreeSet<AnnouncementId>,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
     ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
         let mut counts = BTreeMap::new();
-        for notification in self.all().iter().filter(|n| n.is_read()) {
-            if let Some(id) = notification.push().announcement_id()
-                && ids.contains(&id)
+        for notification in self.all() {
+            if let (Some(id), Some(read_at)) = (
+                notification.push().announcement_id(),
+                notification.read_at(),
+            ) && let Some(until) = read_until.get(&id)
+                && until.is_none_or(|until| read_at <= until)
             {
                 *counts.entry(id).or_insert(0) += 1;
             }

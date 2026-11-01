@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use domain::notification::Announcement;
 
@@ -9,8 +9,8 @@ use crate::Unavailable;
 /// [`super::WithdrawAnnouncement`] が返す）。
 ///
 /// 既読にした数は、そのお知らせの生徒ごとのお知らせ（[`domain::notification::Notification`]）のうち既読のもの
-/// （[`domain::notification::Notification::is_read`]）の数。取り下げたお知らせも同じに数える（取り下げても既読の扱いは
-/// 変えない。D141）。
+/// （[`domain::notification::Notification::is_read`]）の数。取り下げたお知らせは取り下げた時刻までに既読になったものだけを
+/// 数える（[`Announcement::reads_counted_until`]。取り下げたあとに「すべて既読にする」で既読になったものは数えない）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnnouncementWithReadCount {
     pub announcement: Announcement,
@@ -34,11 +34,16 @@ impl AnnouncementWithReadCount {
     where
         N: NotificationRepository,
     {
-        let ids: BTreeSet<_> = announcements.iter().map(Announcement::id).collect();
-        let counts = if ids.is_empty() {
+        let read_until: BTreeMap<_, _> = announcements
+            .iter()
+            .map(|announcement| (announcement.id(), announcement.reads_counted_until()))
+            .collect();
+        let counts = if read_until.is_empty() {
             Default::default()
         } else {
-            notifications.count_read_by_announcement(&ids).await?
+            notifications
+                .count_read_by_announcement(&read_until)
+                .await?
         };
         Ok(announcements
             .into_iter()

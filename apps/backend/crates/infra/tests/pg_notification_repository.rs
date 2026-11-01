@@ -1,14 +1,14 @@
 //! `PgNotificationRepository`（`notification.notifications`）の検証。プッシュ通知の変種ごとの往復・受け取る人ごとの
 //! 新しい順・同じプッシュ通知（同じ動画の添削の依頼を含む）を 2 件にしないこと・すべて既読（最初に読んだ時刻のまま、
 //! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復・
-//! 本部からのお知らせごとの既読の数（ほかの種類と、ほかのお知らせは数えない）。
+//! 本部からのお知らせごとの既読の数（ほかの種類と、ほかのお知らせは数えない。上限の時刻があればそれまでに既読になったものだけ）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{collections::BTreeMap, time::SystemTime};
 
 use application::notification::{AnnouncementRepository, NotificationRepository};
 use domain::{
@@ -346,10 +346,12 @@ async fn read_notifications_are_counted_per_announcement(pool: PgPool) {
         .await
         .unwrap();
 
-    let ids = BTreeSet::from([maintenance.id(), campaign.id(), unread.id()]);
+    let no_limit = |ids: &[_]| -> BTreeMap<_, Option<SystemTime>> {
+        ids.iter().map(|id| (*id, None)).collect()
+    };
     assert_eq!(
         notifications
-            .count_read_by_announcement(&ids)
+            .count_read_by_announcement(&no_limit(&[maintenance.id(), campaign.id(), unread.id()]))
             .await
             .unwrap(),
         BTreeMap::from([(maintenance.id(), 2), (campaign.id(), 1)]),
@@ -357,15 +359,27 @@ async fn read_notifications_are_counted_per_announcement(pool: PgPool) {
     );
     assert_eq!(
         notifications
-            .count_read_by_announcement(&BTreeSet::from([campaign.id()]))
+            .count_read_by_announcement(&no_limit(&[campaign.id()]))
             .await
             .unwrap(),
         BTreeMap::from([(campaign.id(), 1)]),
         "求めた ID だけを数える"
     );
+    // 取り下げたお知らせは上限の時刻（取り下げた時刻）までに既読になったものだけ。ちょうどの時刻は数える
+    assert_eq!(
+        notifications
+            .count_read_by_announcement(&BTreeMap::from([
+                (maintenance.id(), Some(at(1))),
+                (campaign.id(), Some(at(1))),
+            ]))
+            .await
+            .unwrap(),
+        BTreeMap::from([(maintenance.id(), 1)]),
+        "上限より後に既読になったものは数えない"
+    );
     assert!(
         notifications
-            .count_read_by_announcement(&BTreeSet::new())
+            .count_read_by_announcement(&BTreeMap::new())
             .await
             .unwrap()
             .is_empty()

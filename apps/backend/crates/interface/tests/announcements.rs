@@ -2,7 +2,7 @@
 //! （`listAnnouncements`）と `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`）のレスポンスの形を
 //! admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った生徒にお知らせを送れること（生徒ごとに
 //! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること
-//! （1 件ごとに受け取った生徒のうち既読にした数。取り下げたものも数える）・対象の生徒がいなければ 404・
+//! （1 件ごとに受け取った生徒のうち既読にした数。取り下げたものは取り下げた時刻まで）・対象の生徒がいなければ 404・
 //! 題と本文とスポーツの規則違反は 422・送ったお知らせを取り下げられること（一覧で取り下げ済みと分かる。二度目は 409、
 //! ないものは 404）・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
@@ -381,7 +381,7 @@ async fn the_list_counts_the_students_who_read_each_announcement() {
         "受け取った生徒のうち既読にした数"
     );
 
-    // 取り下げても一覧に残り、既読にした数はそのまま数える
+    // 取り下げても一覧に残り、既読にした数は取り下げた時刻までのもの
     let id = everyone["announcement_id"].as_str().unwrap();
     let (status, withdrawn) = withdraw(&app.router(at(50)).await, Some(HEADQUARTERS), id).await;
     assert_eq!(status, StatusCode::OK, "{withdrawn}");
@@ -393,8 +393,18 @@ async fn the_list_counts_the_students_who_read_each_announcement() {
     let (_, listed) = send(&app.router(at(70)).await, "GET", Some(HEADQUARTERS), None).await;
     assert_eq!(listed["announcements"][1]["announcement_id"], id);
     assert_eq!(
-        listed["announcements"][1]["read_count"], 3,
-        "取り下げたあとに既読にした生徒も数える（既読の扱いは変えない）"
+        listed["announcements"][1]["read_count"], 2,
+        "取り下げたあとに「すべて既読にする」を押した生徒は数えない"
+    );
+    assert_eq!(
+        app.notifications
+            .all()
+            .iter()
+            .filter(|n| n.recipient() == QUIET_STUDENT)
+            .map(|n| n.is_read())
+            .collect::<Vec<_>>(),
+        [true],
+        "既読そのものは変えない（D141）"
     );
 }
 

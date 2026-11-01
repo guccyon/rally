@@ -723,12 +723,17 @@ mod tests {
 
         async fn count_read_by_announcement(
             &self,
-            ids: &std::collections::BTreeSet<domain::notification::AnnouncementId>,
+            read_until: &std::collections::BTreeMap<
+                domain::notification::AnnouncementId,
+                Option<SystemTime>,
+            >,
         ) -> Result<
             std::collections::BTreeMap<domain::notification::AnnouncementId, u32>,
             Unavailable,
         > {
-            self.notifications.count_read_by_announcement(ids).await
+            self.notifications
+                .count_read_by_announcement(read_until)
+                .await
         }
     }
 
