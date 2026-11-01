@@ -454,6 +454,30 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/coaches/incomplete-profiles",
+    body: {
+      // 登録の古い順。鈴木 コーチは /me で自己紹介を書いているので載せない。更新の時刻は今は常に null だが、
+      // 記録するようになったときの表示も撮るため、記録のある行を 1 つ混ぜる。
+      coaches: [
+        {
+          coach_id: COACH_ID_2,
+          display_name: "高橋 コーチ",
+          missing_fields: ["bio"],
+          updated_at: null,
+          registered_at: at(-24 * 60),
+        },
+        {
+          coach_id: id("2222", 3),
+          display_name: "伊藤 コーチ",
+          missing_fields: ["bio"],
+          updated_at: at(-24 * 3),
+          registered_at: at(-24 * 30),
+        },
+      ],
+    } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    method: "GET",
     path: "/coaches",
     body: {
       coaches: [
