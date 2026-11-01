@@ -8,7 +8,8 @@ use crate::Unavailable;
 /// コーチのレッスンメニューの横断の一覧のユースケース（admin-web の `listLessonMenus`。本部だけが呼ぶ）。
 /// 照会だけで、何も保存しない。
 ///
-/// すべてのコーチのメニューを、`sport` があればそのスポーツに、`is_published` があれば公開中か非公開に絞って返す。
+/// すべてのコーチのメニューを、`sport` があればそのスポーツに、`is_published` があれば公開中か非公開に、`coach_id` が
+/// あればそのコーチのメニューに絞って返す（いないコーチなら空の一覧）。
 /// 並べ方はスポーツの順（[`Sport`] の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。引けないコーチは
 /// 同じスポーツの中で最後）→ コーチの ID → 作った時刻の古い順 → メニューの ID の順。コーチの表示名は profile に
 /// 問い合わせて（[`LessonMenuCoachDisplayNameLookup`]）添える。
@@ -30,11 +31,13 @@ where
         &self,
         sport: Option<Sport>,
         is_published: Option<bool>,
+        coach_id: Option<AccountId>,
     ) -> Result<CoachLessonMenuList, Unavailable> {
-        let mut menus: Vec<LessonMenu> = self
-            .menus
-            .find_all()
-            .await?
+        let menus = match coach_id {
+            Some(coach_id) => self.menus.find_by_coach(coach_id).await?,
+            None => self.menus.find_all().await?,
+        };
+        let mut menus: Vec<LessonMenu> = menus
             .into_iter()
             .filter(|menu| {
                 sport.is_none_or(|sport| menu.sport() == sport)
@@ -174,7 +177,7 @@ mod tests {
     #[tokio::test]
     async fn lists_every_menu_by_sport_then_coach_name_then_created_at() {
         let use_case = ListLessonMenus::new(repository(), FakeNames::default());
-        let list = use_case.execute(None, None).await.unwrap();
+        let list = use_case.execute(None, None, None).await.unwrap();
         assert_eq!(
             ids(&list),
             // テニス（いとう 2 → いとう 3 → たなか → 表示名のないコーチ）→ ゴルフ → サッカー
@@ -194,12 +197,15 @@ mod tests {
     #[tokio::test]
     async fn filters_by_sport_and_published() {
         let use_case = ListLessonMenus::new(repository(), FakeNames::default());
-        let list = use_case.execute(Some(Sport::Tennis), None).await.unwrap();
+        let list = use_case
+            .execute(Some(Sport::Tennis), None, None)
+            .await
+            .unwrap();
         assert_eq!(
             ids(&list),
             [4, 3, 6, 1, 8, 9, 5].map(LessonMenuId::from_u128)
         );
-        let list = use_case.execute(None, Some(false)).await.unwrap();
+        let list = use_case.execute(None, Some(false), None).await.unwrap();
         assert_eq!(ids(&list), [3, 7].map(LessonMenuId::from_u128));
         assert_eq!(
             list.coaches.keys().copied().collect::<Vec<_>>(),
@@ -207,7 +213,7 @@ mod tests {
             "絞り込んだメニューのコーチの表示名だけ"
         );
         let list = use_case
-            .execute(Some(Sport::Tennis), Some(true))
+            .execute(Some(Sport::Tennis), Some(true), None)
             .await
             .unwrap();
         assert_eq!(ids(&list), [4, 6, 1, 8, 9, 5].map(LessonMenuId::from_u128));
@@ -217,7 +223,44 @@ mod tests {
     async fn no_menus_is_an_empty_list_without_asking_names() {
         let names = FakeNames::default();
         let use_case = ListLessonMenus::new(repository(), names);
-        let list = use_case.execute(Some(Sport::Swimming), None).await.unwrap();
+        let list = use_case
+            .execute(Some(Sport::Swimming), None, None)
+            .await
+            .unwrap();
+        assert!(list.lesson_menus.is_empty());
+        assert!(list.coaches.is_empty());
+        assert!(use_case.coaches.asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn filters_by_coach_together_with_sport_and_published() {
+        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let list = use_case.execute(None, None, Some(TANAKA)).await.unwrap();
+        assert_eq!(
+            ids(&list),
+            [1, 8, 9, 7].map(LessonMenuId::from_u128),
+            "公開中も非公開もまとめて、並べ方は変わらない"
+        );
+        assert_eq!(list.coaches.keys().copied().collect::<Vec<_>>(), [TANAKA]);
+        let list = use_case
+            .execute(Some(Sport::Tennis), None, Some(TANAKA))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [1, 8, 9].map(LessonMenuId::from_u128));
+        let list = use_case
+            .execute(None, Some(false), Some(ITO))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [3].map(LessonMenuId::from_u128));
+    }
+
+    #[tokio::test]
+    async fn unknown_coach_is_an_empty_list() {
+        let use_case = ListLessonMenus::new(repository(), FakeNames::default());
+        let list = use_case
+            .execute(None, None, Some(AccountId::from_u128(99)))
+            .await
+            .unwrap();
         assert!(list.lesson_menus.is_empty());
         assert!(list.coaches.is_empty());
         assert!(use_case.coaches.asked.lock().unwrap().is_empty());

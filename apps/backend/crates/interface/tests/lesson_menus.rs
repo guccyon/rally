@@ -2,7 +2,7 @@
 //! `PUT /coaches/me/lesson-menus/{lesson_menu_id}`（コーチだけ）、student-app の `GET /coaches/{coach_id}/lesson-menus`
 //! （生徒だけ・公開中だけ）を、レスポンスの形をそれぞれの OpenAPI のスキーマで検査しながら通す。
 //! 生徒・本部がメニューを作る・直すことができないこと（403）、他のコーチのメニューを直せないこと（404）を確かめる。
-//! admin-web の `GET /lesson-menus`（本部だけ・すべてのコーチの横断）の絞り込みと並べ方、コーチ・生徒が読めないこと（403）も確かめる。
+//! admin-web の `GET /lesson-menus`（本部だけ・すべてのコーチの横断）の絞り込み（スポーツ・公開中か・コーチ）と並べ方、コーチ・生徒が読めないこと（403）も確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -540,6 +540,22 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         ("?published=true", vec!["フォア", "スイング"]),
         ("?sport=tennis&published=true", vec!["フォア"]),
         ("?sport=swimming", vec![]),
+        // コーチで絞ると公開中も非公開もまとめて。sport・published と組み合わせられる
+        (&format!("?coach_id={COACH_ID}"), vec!["フォア", "スイング"]),
+        (
+            &format!("?coach_id={OTHER_COACH_ID}"),
+            vec!["フォームの添削"],
+        ),
+        (
+            &format!("?coach_id={COACH_ID}&sport=golf"),
+            vec!["スイング"],
+        ),
+        (
+            &format!("?coach_id={OTHER_COACH_ID}&published=true"),
+            vec![],
+        ),
+        // いないコーチは 404 にせず空の一覧
+        ("?coach_id=00000000-0000-0000-0000-000000000063", vec![]),
     ] {
         let (status, body) = send(
             &app,
@@ -554,7 +570,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         assert_eq!(names(&body), expected, "{query}");
     }
 
-    for query in ["?sport=cricket", "?published=yes"] {
+    for query in ["?sport=cricket", "?published=yes", "?coach_id=not-a-uuid"] {
         let (status, body) = send(
             &app,
             "GET",

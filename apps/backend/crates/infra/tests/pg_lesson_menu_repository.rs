@@ -1,6 +1,6 @@
 //! `PgLessonMenuRepository`（`catalog.lesson_menus`）の検証。コーチのアカウントを `PgAccountRepository` で読んで
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
-//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込みと並べ方。
+//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（スポーツ・公開中か・コーチ）と並べ方。
 //! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
 //! 公開し直せないこと。
 //!
@@ -236,7 +236,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
         PgLessonMenuRepository::new(pool.clone()),
         ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
     );
-    let list = use_case.execute(None, None).await.unwrap();
+    let list = use_case.execute(None, None, None).await.unwrap();
     assert_eq!(
         list.lesson_menus,
         vec![
@@ -258,7 +258,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
 
     assert_eq!(
         use_case
-            .execute(Some(Sport::Soccer), None)
+            .execute(Some(Sport::Soccer), None, None)
             .await
             .unwrap()
             .lesson_menus,
@@ -266,28 +266,66 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(None, Some(false))
+            .execute(None, Some(false), None)
             .await
             .unwrap()
             .lesson_menus,
-        vec![ito_later]
+        vec![ito_later.clone()]
     );
     assert_eq!(
         use_case
-            .execute(Some(Sport::Tennis), Some(true))
+            .execute(Some(Sport::Tennis), Some(true), None)
             .await
             .unwrap()
             .lesson_menus,
-        vec![ito_earlier, tanaka_tennis]
+        vec![ito_earlier.clone(), tanaka_tennis.clone()]
     );
     assert!(
         use_case
-            .execute(Some(Sport::Swimming), None)
+            .execute(Some(Sport::Swimming), None, None)
             .await
             .unwrap()
             .lesson_menus
             .is_empty()
     );
+
+    // コーチで絞ると、公開中も非公開もまとめて返し、sport・published と組み合わせられる
+    assert_eq!(
+        use_case
+            .execute(None, None, Some(ito))
+            .await
+            .unwrap()
+            .lesson_menus,
+        vec![ito_earlier.clone(), ito_later.clone()]
+    );
+    assert_eq!(
+        use_case
+            .execute(None, Some(false), Some(ito))
+            .await
+            .unwrap()
+            .lesson_menus,
+        vec![ito_later]
+    );
+    let tanaka_tennis_only = use_case
+        .execute(Some(Sport::Tennis), None, Some(tanaka))
+        .await
+        .unwrap();
+    assert_eq!(tanaka_tennis_only.lesson_menus, vec![tanaka_tennis]);
+    assert_eq!(
+        tanaka_tennis_only
+            .coaches
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        [tanaka]
+    );
+    // いないコーチは空の一覧
+    let unknown = use_case
+        .execute(None, None, Some(AccountId::from_u128(0xdead)))
+        .await
+        .unwrap();
+    assert!(unknown.lesson_menus.is_empty());
+    assert!(unknown.coaches.is_empty());
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

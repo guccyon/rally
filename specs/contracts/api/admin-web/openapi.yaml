@@ -984,8 +984,10 @@ paths:
         本部が、どのスポーツにどんなメニューがどれだけあるかを把握するのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
 
         - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
-          非公開（`false`）のメニューだけ。両方付ければ両方を満たすもの。付けなければすべて（ゴルフも含む）
-        - `sport` が `Sport` の値でない・`published` が `true` / `false` でないときは 422 `validation_failed`
+          非公開（`false`）のメニューだけ、`coach_id` を付ければそのコーチのメニューだけ（公開中も非公開もまとめて。コーチ 1 人が
+          出しているメニューを見るのに使う）。いくつ付けてもすべてを満たすもの。付けなければすべて（ゴルフも含む）
+        - `sport` が `Sport` の値でない・`published` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
+        - コーチでない ID・ない ID・メニューのないコーチの `coach_id` は、404 にせず `lesson_menus` が空の配列
         - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
           同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
         - 各行には作ったコーチの表示名 `coach_display_name` を載せる。コーチのアカウントが引けないときは載せない
@@ -1011,6 +1013,15 @@ paths:
           description: 公開中か（`true` なら公開中だけ、`false` なら非公開だけ）
           schema:
             type: boolean
+        - name: coach_id
+          in: query
+          required: false
+          description: |
+            あればこのコーチのメニューだけに絞る（公開中も非公開も）。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: コーチのレッスンメニューの横断の一覧

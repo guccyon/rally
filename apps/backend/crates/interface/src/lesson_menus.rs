@@ -94,6 +94,7 @@ pub struct ListCoachLessonMenusParams {
 pub struct ListLessonMenusParams {
     sport: Option<String>,
     published: Option<bool>,
+    coach_id: Option<String>,
 }
 
 /// admin-web・student-app の `LessonMenu`。
@@ -288,7 +289,8 @@ where
 }
 
 /// `GET /lesson-menus`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// すべてのコーチのメニューを、`sport`・`published` があればそれで絞って返す（ゴルフも載せる）。
+/// すべてのコーチのメニューを、`sport`・`published`・`coach_id` があればそれで絞って返す（ゴルフも載せる）。
+/// `coach_id` が UUID でなければ 422。いないコーチの ID なら空の一覧（404 にしない）。
 pub async fn list_lesson_menus<M, R, C, D>(
     State(state): State<Shared<M, R, C, D>>,
     params: Result<Query<ListLessonMenusParams>, QueryRejection>,
@@ -302,9 +304,17 @@ where
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
+    let coach_id = params
+        .coach_id
+        .as_deref()
+        .map(|id| {
+            account_id_uuid::parse(id)
+                .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+        })
+        .transpose()?;
     let list = state
         .list_lesson_menus
-        .execute(sport, params.published)
+        .execute(sport, params.published, coach_id)
         .await
         .map_err(ApiError::internal)?;
     coach_lesson_menu_list_body(&list).map(Json)
