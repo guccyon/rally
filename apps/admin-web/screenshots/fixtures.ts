@@ -634,4 +634,43 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["AnnouncementList"],
   },
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 21),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-101.5),
+          elapsed_hours: 101,
+        },
+        {
+          video_id: id("5555", 22),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-52.25),
+          elapsed_hours: 52,
+        },
+        {
+          video_id: id("5555", 23),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          student_display_name: "田中 美咲",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-5),
+          elapsed_hours: 5,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
+  },
 ];

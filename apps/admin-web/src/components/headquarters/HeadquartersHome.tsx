@@ -56,6 +56,11 @@ export function HeadquartersHome() {
           生徒にお知らせを送る
         </Link>
       </Section>
+      <Section title="返却待ちの動画添削">
+        <Link href="/headquarters/pending-video-reviews" className="text-blue-600 underline">
+          返却の遅れている添削を見る
+        </Link>
+      </Section>
       <Section title="完了記録の一覧">
         <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>
