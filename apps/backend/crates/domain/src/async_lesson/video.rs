@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use super::{
     AiFeedback, ReviewComment, VideoId, VideoLessonMenu, VideoReview, VideoReviewId, VideoStatus,
@@ -220,6 +220,19 @@ impl Video {
             history,
             now,
         )
+    }
+
+    /// 送付から添削の返却まで（返していなければ `now` まで）の時間（時間。1 時間に満たない端数は切り捨てる）。
+    ///
+    /// KPI「添削の返却リードタイム」（`specs/analytics/kpi.yaml` の `video_review_lead_time`。返却の時刻 − 送付の時刻、
+    /// 返されていない動画は集計時点までの経過）の動画 1 本分で、数え方はここ 1 か所に置く。返却済みの動画では `now` を
+    /// 使わない。終わりが送付より前（時計のずれ）なら 0。
+    pub fn review_lead_hours(&self, now: SystemTime) -> u64 {
+        const HOUR: Duration = Duration::from_secs(3600);
+        let ends_at = self.review.as_ref().map_or(now, VideoReview::returned_at);
+        ends_at
+            .duration_since(self.submitted_at)
+            .map_or(0, |lead| lead.as_secs() / HOUR.as_secs())
     }
 
     pub const fn id(&self) -> VideoId {
@@ -663,5 +676,48 @@ mod tests {
                 Some(returned_at)
             );
         }
+    }
+
+    #[test]
+    fn review_lead_hours_count_whole_hours_from_submission_to_return() {
+        let returned_after = |secs: u64| {
+            Video::restore(
+                VIDEO,
+                STUDENT,
+                COACH,
+                Sport::Tennis,
+                NOW,
+                Some((REVIEW, comment(), NOW + Duration::from_secs(secs))),
+                None,
+            )
+            .unwrap()
+        };
+        for (secs, hours) in [
+            (0, 0),
+            (3599, 0),
+            (3600, 1),
+            (48 * 3600 - 1, 47),
+            (48 * 3600, 48),
+        ] {
+            // 返却済みは照会の時刻（ここでは 1000 時間後）を使わない
+            assert_eq!(
+                returned_after(secs).review_lead_hours(at(1000)),
+                hours,
+                "返却が送付の {secs} 秒後"
+            );
+        }
+    }
+
+    #[test]
+    fn review_lead_hours_of_an_unreturned_video_count_up_to_now() {
+        let video = submitted();
+        assert_eq!(video.review_lead_hours(at(5)), 5);
+        assert_eq!(
+            video.review_lead_hours(at(5) - Duration::from_secs(1)),
+            4,
+            "端数は切り捨て"
+        );
+        // 照会が送付より前（時計のずれ）は 0
+        assert_eq!(video.review_lead_hours(NOW - Duration::from_secs(10)), 0);
     }
 }
