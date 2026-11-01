@@ -38,7 +38,7 @@ info:
     コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
-    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチと予約の状態でも絞れる）。
+    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチと予約の状態、体験予約かでも絞れる）。
     問い合わせを受けたときは、予約 1 件の中身（生徒・コーチ・レッスンメニュー・枠の開始と終わり・体験予約か・今の状態）と
     状態の移り変わり（確定・キャンセルの時刻）を 1 回で読む（`getBooking`）。
     本部はコーチの受付（新しい予約を受け付けるか）を止め（`suspendCoach`）・再開する（`resumeCoach`）。受付の状態は
@@ -192,6 +192,10 @@ paths:
           予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
           期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
           `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
+        - 任意の `trial`（`true` / `false`）で、体験予約か（各予約の `is_trial`）で絞れる。`true` なら体験予約だけ、`false` なら
+          体験予約でない予約だけ（本部が体験予約がどれだけ入っているかを拾う）。省けば今までどおり体験予約かを問わない。
+          状態を問わないので、キャンセルされた体験予約も `true` で出る。期間・`coach_id`・`status` と組み合わせられ、期間の規則と
+          並べ方は変わらない。`true` / `false` でない値（空文字列・`1`・`TRUE` を含む）は 422 `validation_failed`
         - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
           期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
           422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
@@ -242,6 +246,14 @@ paths:
             type: array
             items:
               $ref: "#/components/schemas/BookingStatus"
+        - name: trial
+          in: query
+          required: false
+          description: |
+            体験予約か（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ。省けば問わない）。
+            `true` / `false` でない値は 422 `validation_failed`
+          schema:
+            type: boolean
       responses:
         "200":
           description: 期間に開始する予約の一覧
