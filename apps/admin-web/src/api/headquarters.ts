@@ -52,7 +52,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { lesson_menu_id: lessonMenuId } },
         }),
       ),
-    listStudents: () => call(() => client.GET("/students")),
+    listStudents: (filter: { sport?: Schemas["Sport"]; not_booked_since?: string } = {}) =>
+      call(() => client.GET("/students", { params: { query: filter } })),
     listBookings: (period: { from?: string; to?: string }) =>
       call(() => client.GET("/bookings", { params: { query: period } })),
   };
