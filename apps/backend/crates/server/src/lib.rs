@@ -19,7 +19,8 @@ use application::{
     entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
     identity::AccountRepository,
     in_memory::{
-        InMemoryAccountRepository, InMemoryAnnouncementRepository, InMemoryBookingRepository,
+        InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
+        InMemoryAnnouncementRepository, InMemoryBookingRepository,
         InMemoryCoachAcceptanceRepository, InMemoryEntitlementRepository,
         InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
         InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
@@ -32,8 +33,8 @@ use application::{
     matching::FavoriteCoachRepository,
     messaging::{MessageThreadRepository, MessageThreadSubscriber},
     notification::{
-        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository,
-        PushNotificationSubscriber, PushSender,
+        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
+        NotificationSettingsRepository, PushNotificationSubscriber, PushSender,
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
@@ -41,12 +42,12 @@ use application::{
 };
 use axum::Router;
 use infra::{
-    InMemoryDomainEventBus, MockPushSender, PgAccountRepository, PgAnnouncementRepository,
-    PgBookingRepository, PgCoachAcceptanceRepository, PgEntitlementRepository,
-    PgFavoriteCoachRepository, PgLessonCompletionRepository, PgLessonMenuRepository,
-    PgLessonReviewRepository, PgLiveLessonSessionRepository, PgMessageThreadRepository,
-    PgNotificationRepository, PgNotificationSettingsRepository, PgSlotRepository,
-    PgVideoRepository,
+    InMemoryDomainEventBus, MockPushSender, PgAccountRepository, PgAnnouncementDraftRepository,
+    PgAnnouncementRepository, PgBookingRepository, PgCoachAcceptanceRepository,
+    PgEntitlementRepository, PgFavoriteCoachRepository, PgLessonCompletionRepository,
+    PgLessonMenuRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
+    PgMessageThreadRepository, PgNotificationRepository, PgNotificationSettingsRepository,
+    PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -71,7 +72,8 @@ pub fn router() -> Router {
 /// お知らせの保存先も当面インメモリ。本部は生徒全員か、あるスポーツの生徒全員にお知らせを送り（`POST /announcements`）、
 /// 送った記録を一覧で見る（`GET /announcements`）。受け取る生徒はアカウントの保存先から読み
 /// （`ProfileAnnouncementRecipientLookup`）、生徒ごとにお知らせを残して、受け取り設定に従って同じ送り先にプッシュ通知を送る。
-/// 送った記録の保存先も当面インメモリ。
+/// 送った記録の保存先も当面インメモリ。本部は送る前のお知らせを下書きとして残し（`/announcement-drafts`。保存先は当面
+/// インメモリ）、下書きから送る（送るのは `POST /announcements` と同じ組み立てで、送ったら下書きを消す）。
 ///
 /// チャットの送信は entitlement にその生徒がチャットを送ってよいか（月額は送り放題）を問い合わせて
 /// （`EntitlementChatGate`。照会だけで回数を消費しない）組み立てる。スレッドの保存先も当面インメモリ。
@@ -196,6 +198,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryCoachAcceptanceRepository,
     InMemoryFavoriteCoachRepository,
     InMemoryAnnouncementRepository,
+    InMemoryAnnouncementDraftRepository,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
@@ -214,6 +217,7 @@ fn in_memory_repositories() -> Repositories<
         lesson_menus: InMemoryLessonMenuRepository::default(),
         favorite_coaches: InMemoryFavoriteCoachRepository::default(),
         announcements: InMemoryAnnouncementRepository::default(),
+        announcement_drafts: InMemoryAnnouncementDraftRepository::default(),
     }
 }
 
@@ -257,7 +261,8 @@ where
             coach_acceptances: PgCoachAcceptanceRepository::new(pool.clone()),
             lesson_menus: PgLessonMenuRepository::new(pool.clone()),
             favorite_coaches: PgFavoriteCoachRepository::new(pool.clone()),
-            announcements: PgAnnouncementRepository::new(pool),
+            announcements: PgAnnouncementRepository::new(pool.clone()),
+            announcement_drafts: PgAnnouncementDraftRepository::new(pool),
         },
         clock,
         analytics,
@@ -277,7 +282,7 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。コーチの受付の保存先も、スロットの検索と
 /// 予約の作成が読むのと同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -293,13 +298,14 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H> {
     coach_acceptances: Q,
     favorite_coaches: G,
     announcements: H,
+    announcement_drafts: F,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
 /// ポートの実装をまとめて渡す。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, P, V>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     clock: C,
     analytics: A,
     push: P,
@@ -321,6 +327,7 @@ where
     Q: CoachAcceptanceRepository + Clone + 'static,
     G: FavoriteCoachRepository + Clone + 'static,
     H: AnnouncementRepository + Clone + 'static,
+    F: AnnouncementDraftRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + Clone + 'static,
