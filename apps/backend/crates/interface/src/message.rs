@@ -77,6 +77,12 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::OverdueSessionHoursOutOfRange { min, max } => {
             format!("開始からの時間は {min}〜{max} 時間")
         }
+        DomainError::SessionPeriodEndsBeforeItStarts => {
+            "to は from と同じ日か、それより後の日付にする".to_string()
+        }
+        DomainError::SessionPeriodTooLong { max_days } => {
+            format!("from から to までは {max_days} 日まで")
+        }
         DomainError::LessonDurationOutOfRange { min, max, step } => {
             format!("1 回の時間は {min}〜{max} 分の {step} 分刻み")
         }
@@ -299,6 +305,14 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::OverdueSessionHoursOutOfRange { min: 1, max: 168 }),
             "開始からの時間は 1〜168 時間"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SessionPeriodEndsBeforeItStarts),
+            "to は from と同じ日か、それより後の日付にする"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SessionPeriodTooLong { max_days: 31 }),
+            "from から to までは 31 日まで"
         );
         assert_eq!(
             domain_error(&DomainError::LessonDurationMismatchesType {

@@ -17,6 +17,7 @@ mod entitlements;
 mod favorite_coaches;
 mod headquarters_booking_details;
 mod headquarters_bookings;
+mod headquarters_live_lesson_sessions;
 mod healthz;
 mod lesson_menu_publications;
 mod lesson_menus;
@@ -67,6 +68,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(favorite_coaches::router(ports))
         .merge(headquarters_booking_details::router(ports))
         .merge(headquarters_bookings::router(ports))
+        .merge(headquarters_live_lesson_sessions::router(ports))
         .merge(healthz::router(ports))
         .merge(lesson_menu_publications::router(ports))
         .merge(lesson_menus::router(ports))
