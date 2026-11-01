@@ -581,6 +581,16 @@ export const FIXTURES: Fixture[] = [
           withdrawal: null,
         },
         {
+          announcement_id: id("8888", 3),
+          sender_id: "99999999-9999-4999-8999-999999999999",
+          title: "テニスのコートの案内（誤り）",
+          body: "11月からコートの予約はアプリの「予約」から行えます。",
+          sport: "tennis",
+          recipient_count: 15,
+          sent_at: at(-24 * 2),
+          withdrawal: { withdrawn_by: "99999999-9999-4999-8999-999999999999", withdrawn_at: at(-24 * 2 + 1) },
+        },
+        {
           announcement_id: id("8888", 1),
           sender_id: "99999999-9999-4999-8999-999999999999",
           title: "メンテナンスのお知らせ",
