@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部が通話セッションの記録を期間とコーチで見る API: admin-web の契約に `GET /live-lesson-sessions`（`listLiveLessonSessions`）を足した。開始した日付（日本時間）の `from` から `to` まで（必須。31 日まで）に始まったセッションを、終了の有無を問わず開始の新しい順に、セッションの ID・開始した予約の ID・コーチと生徒の ID と表示名・開始の時刻・終了の時刻 `ended_at`（通話中は null）・長さ `duration_minutes`（分。切り捨て。通話中は null）で返す。任意の `coach_id` でそのコーチだけに絞れる。期間の不正・UUID でない `coach_id` は 422 `validation_failed`、本部以外は 403。照会だけで、DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#551）
 - 本部がプロフィール（自己紹介）の書きかけのコーチを拾う API: admin-web の契約に `GET /coaches/incomplete-profiles`（`listIncompleteCoachProfiles`）を足した。プロフィールに空の項目があるコーチを、空の項目の名前 `missing_fields`（今は自己紹介文 `bio` が空か空白だけのとき）・最後に更新した時刻 `updated_at`（更新の時刻をまだ記録していないので今は常に null）・登録した時刻 `registered_at` とともに、登録の古い順に返す。受付を止めているコーチも載る。本部以外は 403。照会だけで何も保存しない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#554）
 - admin-web の本部の「コーチの様子」（`/headquarters/coach-overview?coach_id=…`）の評価の欄に「直近 30 日の低い評価」を足した: そのコーチへの直近 30 日の★2 以下の評価の件数と未対応の件数を「N 件（未対応 M 件）」で出し（`getCoachOverview` の `low_rated_review_count` / `unhandled_low_rated_review_count`）、0 件なら「ありません」と出す。横の「低い評価を見る」から「低い評価」（`/headquarters/low-reviews`）を開ける。読み込み中・読み込めなかったときの表示は画面の今までの表示のまま。API と契約の変更はない（#557）
 - 本部の予約の一覧を体験予約かで絞る: admin-web の `GET /bookings`（`listBookings`）に任意のクエリ `trial`（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ）を足した。付けなければ今までどおり体験予約かを問わない。状態を問わないのでキャンセルされた体験予約も出る。期間・`coach_id`・`status` と組み合わせられ、期間の規則と並べ方は変わらない。`true` / `false` でなければ 422 `validation_failed`。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#553）
