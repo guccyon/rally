@@ -11,6 +11,11 @@ export const SPORT_LABELS: Record<Schemas["Sport"], string> = {
   swimming: "水泳",
 };
 
+/** glossary の announcement（本部からのお知らせ）の対象。スポーツがなければ生徒全員（ゴルフの生徒も含む）。 */
+export function announcementTargetLabel(sport: Schemas["Sport"] | null): string {
+  return sport === null ? "生徒全員" : `${SPORT_LABELS[sport]}の生徒`;
+}
+
 export const SLOT_STATUS_LABELS: Record<Schemas["SlotStatus"], string> = {
   open: "公開中",
   booked: "予約済み",

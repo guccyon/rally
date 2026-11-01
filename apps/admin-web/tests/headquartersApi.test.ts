@@ -274,4 +274,49 @@ describe("headquartersApi", () => {
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/resume`);
   });
+
+  test("sendAnnouncement は題・本文・スポーツを本文にして POST /api/announcements を呼び、送った記録を返す", async () => {
+    const announcement = {
+      announcement_id: "dddddddd-0000-4000-8000-000000000001",
+      sender_id: "99999999-9999-4999-8999-999999999999",
+      title: "メンテナンスのお知らせ",
+      body: "11月3日 2:00〜4:00 は使えません。",
+      sport: "tennis",
+      recipient_count: 12,
+      sent_at: "2026-10-26T03:00:00Z",
+    };
+    const { api, fetchMock } = setup(json(201, announcement));
+    const result = await api.sendAnnouncement({
+      title: announcement.title,
+      body: announcement.body,
+      sport: "tennis",
+    });
+    expect(result).toEqual({ ok: true, data: announcement });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("POST");
+    expect(new URL(request.url).pathname).toBe("/api/announcements");
+    expect(await request.json()).toEqual({
+      title: announcement.title,
+      body: announcement.body,
+      sport: "tennis",
+    });
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("sendAnnouncement の 404（対象の生徒がいない）は code を付けて返す", async () => {
+    const { api } = setup(json(404, { code: "not_found", message: "no students" }));
+    const result = await api.sendAnnouncement({ title: "題", body: "本文", sport: null });
+    expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
+  });
+
+  test("listAnnouncements は GET /api/announcements を呼び、送ったお知らせの一覧を返す", async () => {
+    const list = { announcements: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listAnnouncements();
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe("/api/announcements");
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
 });

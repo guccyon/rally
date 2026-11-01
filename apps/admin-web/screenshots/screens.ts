@@ -81,4 +81,17 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
+  { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
+  {
+    id: "hq-announcement-confirm",
+    title: "本部: お知らせの送る前の確認",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("対象").selectOption({ label: "テニスの生徒" });
+      await page.getByLabel("題").fill("コートの予約方法が変わります");
+      await page.getByLabel("本文").fill("11月から、コートの予約はアプリの「予約」から行えます。\n詳しくはお知らせの一覧をご覧ください。");
+      await page.getByRole("button", { name: "内容を確かめる" }).click();
+    },
+  },
 ];
