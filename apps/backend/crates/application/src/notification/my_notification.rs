@@ -16,6 +16,7 @@ pub struct MyNotification {
 
 impl MyNotification {
     /// お知らせ `notifications` に、本部からのお知らせの送った記録を `announcements` から読んで添える（並びはそのまま）。
+    /// 本部が取り下げた（[`Announcement::is_withdrawn`]）お知らせは外す（お知らせそのものと既読は保存先に残る）。
     /// 送った記録が見つからないお知らせがあれば、保存先が壊れているとして障害にする。
     pub(crate) async fn attach<A>(
         notifications: Vec<Notification>,
@@ -49,6 +50,9 @@ impl MyNotification {
                     notification,
                     announcement,
                 })
+            })
+            .filter(|mine: &Result<Self, Unavailable>| {
+                !matches!(mine, Ok(Self { announcement: Some(a), .. }) if a.is_withdrawn())
             })
             .collect()
     }
