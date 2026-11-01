@@ -251,6 +251,13 @@ impl Video {
         self.sport
     }
 
+    /// 本部の一覧の任意のスポーツの絞り込み `sport` にこの動画が入るか。動画のスポーツは送ったときの [`Self::sport`]
+    /// （コーチやレッスンメニューのスポーツからは決めない）。`None` ならスポーツを問わない。返却待ち
+    /// （[`super::PendingVideoReviewFilter`]）と返却済み（[`super::ReturnedVideoReviewFilter`]）の絞り込みはこの 1 か所を使う。
+    pub fn is_in_sport(&self, sport: Option<Sport>) -> bool {
+        sport.is_none_or(|sport| self.sport == sport)
+    }
+
     pub const fn submitted_at(&self) -> SystemTime {
         self.submitted_at
     }
@@ -314,6 +321,14 @@ mod tests {
         assert_eq!(video.submitted_at(), NOW);
         assert_eq!(video.status(), VideoStatus::Submitted);
         assert_eq!(video.review(), None);
+    }
+
+    #[test]
+    fn a_video_is_in_its_own_sport_or_any_sport() {
+        let video = submitted();
+        assert!(video.is_in_sport(None), "絞らなければスポーツを問わない");
+        assert!(video.is_in_sport(Some(Sport::Tennis)));
+        assert!(!video.is_in_sport(Some(Sport::Golf)));
     }
 
     fn menu(

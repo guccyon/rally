@@ -178,6 +178,41 @@ async fn headquarters_reads_returned_video_reviews_from_postgres(pool: PgPool) {
     assert_eq!(body["reviews"].as_array().unwrap().len(), 1);
     assert_eq!(body["reviews"][0]["video_id"], video_id(&slow_golf));
 
+    // スポーツは動画を送ったときのスポーツで絞る。コーチと組み合わせられる
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/returned?sport=golf", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (body["from"].as_str(), body["to"].as_str()),
+        (Some("2026-10-25"), Some("2026-10-31"))
+    );
+    assert_eq!(body["reviews"].as_array().unwrap().len(), 1);
+    assert_eq!(body["reviews"][0]["video_id"], video_id(&slow_golf));
+    assert_eq!(body["reviews"][0]["lead_time_hours"], 48);
+    let (status, body) = send(
+        &router,
+        get(
+            &format!(
+                "/video-reviews/returned?sport=tennis&coach_id={}",
+                account_id_uuid::format(ito)
+            ),
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"], json!([]));
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/returned?sport=pingpong", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
     // 返却はどれも日本時間の 10-31 なので、10-30 までの期間には入らない
     let (status, body) = send(
         &router,

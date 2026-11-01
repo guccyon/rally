@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部が返した動画添削の記録をスポーツで絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `sport` を足した。付ければ動画を送ったときのスポーツがそれの返却済みの動画だけを返す（値と動画のスポーツの決め方は `listPendingVideoReviews` の `sport` と同じ）。付けなければ今までどおりスポーツを問わない。期間・`coach_id` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#607）
 - admin-web の本部の「生徒の利用の様子」（`/headquarters/students/activity?student_id=…`）に「受け取ったお知らせ」の欄を足した: その生徒が受け取った本部からのお知らせを、送った新しい順に最大 50 件、題・送った日時・既読／未読・取り下げ済みか（取り下げたものも載り「取り下げ済み」と出す）で表にする（`listStudentAnnouncements`。契約に読んだ時刻はないので既読は日時なしで出す）。0 件なら「受け取ったお知らせはありません」、読み込めなければこの欄の中にその文言を出し、利用の様子の欄は出し続ける。照会だけで既読にはしない。API と契約の変更はない（#595）
 - 本部がコーチの一覧で直近のレッスンの数を見る API: admin-web の `GET /coaches`（`listCoaches`）の各行に `recent_lesson_count`（照会した時刻の 30 日前（含む）から照会した時刻までに完了したレッスンの数。同期・非同期の合計で、数え方は `getCoachOverview` の月ごとのレッスンの数と同じ。なければ 0）を足した。既存の項目・絞り込み・並べ方と、本部以外の振る舞い（生徒には student-app の形で返し、コーチは 403）は変わらない。DB の変更はない。admin-web は型を生成し直してテストの固定データに足しただけで、画面は変えない（#576）
 - 本部がレッスンメニューを非公開にした・公開に戻した記録を見る API: admin-web の契約に `GET /lesson-menus/{lesson_menu_id}/publication-changes`（`listLessonMenuPublicationChanges`）を足した。メニュー 1 件を本部が非公開にした（`unpublishLessonMenu`）・公開に戻した（`republishLessonMenu`）記録を新しい順に、操作 `action`（`unpublished` / `republished`）・非公開にしたときの理由 `reason`（公開に戻した記録は null）・操作した本部のアカウントの ID `changed_by`・時刻 `changed_at` で返す。本部以外は 403、ないメニューは 404。記録はこの版から残し、それより前の操作は載らない。DB は `catalog.lesson_menu_publication_changes` の追加だけ（expand）。admin-web は型を足しただけで、画面は変えない
