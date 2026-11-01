@@ -75,6 +75,13 @@ describe("本部のコーチの様子", () => {
     expect(link).toHaveAttribute("href", `/headquarters/coach-review-summary?coach_id=${COACH_ID}`);
   });
 
+  test("「このコーチのレッスンメニューを見る」は、そのコーチで絞ったレッスンメニューへのリンク", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    const link = await screen.findByRole("link", { name: "このコーチのレッスンメニューを見る" });
+    expect(link).toHaveAttribute("href", `/headquarters/lesson-menus?coach_id=${COACH_ID}`);
+  });
+
   test("評価が 0 件なら平均は「評価はまだありません」、受付中なら「受付中」", async () => {
     const data = { ...OVERVIEW, acceptance_status: "accepting", review_count: 0, average_rating: null } as const;
     render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
