@@ -400,6 +400,71 @@ async fn headquarters_unknown_acceptance_status_or_sport_is_422() {
 }
 
 #[tokio::test]
+async fn headquarters_searches_by_display_name_combined_with_other_filters_keeping_the_order() {
+    let router = app_with_coach_4_suspended().await;
+    // いと = %E3%81%84%E3%81%A8、た = %E3%81%9F、全角の空白 = %E3%80%80
+    for (query, expected) in [
+        ("?q=%E3%81%84%E3%81%A8", vec![4, 5]),
+        ("?q=%E3%81%9F", vec![2]),
+        // 前後の空白（全角を含む）は除く
+        ("?q=%E3%80%80%E3%81%84%E3%81%A8+", vec![4, 5]),
+        ("?q=%E3%81%84%E3%81%AA%E3%81%84", vec![]),
+        // 空・空白だけは絞らない
+        ("?q=", vec![4, 5, 2]),
+        ("?q=+%E3%80%80+", vec![4, 5, 2]),
+        // ほかの絞り込みと組み合わせる
+        ("?q=%E3%81%84%E3%81%A8&sport=tennis", vec![4]),
+        ("?q=%E3%81%84%E3%81%A8&acceptance_status=accepting", vec![5]),
+        ("?q=%E3%81%9F&acceptance_status=suspended", vec![]),
+        // 生徒（あおき）は表示名が一致しても載らない
+        ("?q=%E3%81%82%E3%81%8A%E3%81%8D", vec![]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_query_longer_than_50_characters_is_422() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        &format!("?q=+{}+", "a".repeat(50)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "前後の空白を除いて 50 文字まで: {body}"
+    );
+    assert_eq!(coach_ids(&body), Vec::<u128>::new());
+
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        &format!("?q={}", "a".repeat(51)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+#[tokio::test]
+async fn students_ignore_q_as_before() {
+    let router = app(accounts().await);
+    let (_, before) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    for query in ["?q=%E3%81%9F".to_string(), format!("?q={}", "a".repeat(51))] {
+        let (status, body) = list_coaches(&router, "student-app", &query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, before, "{query}: 生徒の一覧は q で変わらない");
+    }
+}
+
+#[tokio::test]
 async fn students_ignore_acceptance_status_as_before() {
     let router = app_with_coach_4_suspended().await;
     let (_, before) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
