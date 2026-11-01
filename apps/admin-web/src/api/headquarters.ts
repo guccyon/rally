@@ -48,6 +48,8 @@ export function headquartersApi(client: ApiClient) {
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
     listPendingVideoReviews: (filter: { sport?: Schemas["Sport"]; min_elapsed_hours?: number }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
+    listReturnedVideoReviews: (filter: { from?: string; to?: string; coach_id?: string }) =>
+      call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
