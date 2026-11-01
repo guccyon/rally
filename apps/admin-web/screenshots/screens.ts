@@ -151,4 +151,10 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/pending-video-reviews",
   },
+  {
+    id: "hq-returned-video-reviews",
+    title: "本部: 返した動画添削",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews",
+  },
 ];
