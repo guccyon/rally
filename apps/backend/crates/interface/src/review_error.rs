@@ -1,6 +1,7 @@
 //! review（評価）の不変条件の違反（[`ReviewError`]）を、OpenAPI の `Error` の応答に写す。
 //!
-//! 文言と HTTP の状態・`code` はここだけで決める（`/lesson-reviews` と `/lesson-reviews/{review_id}/reply` のハンドラーは
+//! 文言と HTTP の状態・`code` はここだけで決める（`/lesson-reviews`・`/lesson-reviews/{review_id}/reply`・
+//! `/lesson-reviews/{review_id}/handling` のハンドラーは
 //! 変種を個別に拾わない）。
 //!
 //! - 評価済み（`LessonAlreadyReviewed`）は 409 `lesson_already_reviewed`
@@ -10,6 +11,7 @@
 //! - 評価されたコーチでない（`NotTheReviewedCoach`）は 403 `forbidden`（評価はコーチが受けた評価の一覧で誰でも読めるので、
 //!   あることは隠さない）
 //! - 返信の文の違反（`EmptyLessonReviewReply`・`LessonReviewReplyTooLong`）は 422 `validation_failed`
+//! - 低い評価でない評価への本部の対応済みの印（`NotLowRated`）は 409 `lesson_review_not_low_rated`
 
 use domain::review::ReviewError;
 
@@ -41,6 +43,10 @@ impl From<ReviewError> for ApiError {
             ReviewError::LessonReviewReplyTooLong { max } => {
                 Self::validation_failed(format!("評価への返信は {max} 文字まで"))
             }
+            ReviewError::NotLowRated => Self::conflict(
+                "lesson_review_not_low_rated",
+                "低い評価でないので対応済みにできない",
+            ),
         }
     }
 }
@@ -101,6 +107,12 @@ mod tests {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "validation_failed",
                 "評価への返信は 200 文字まで",
+            ),
+            (
+                ReviewError::NotLowRated,
+                StatusCode::CONFLICT,
+                "lesson_review_not_low_rated",
+                "低い評価でないので対応済みにできない",
             ),
         ] {
             let api_error = ApiError::from(error.clone());

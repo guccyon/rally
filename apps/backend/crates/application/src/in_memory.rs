@@ -22,7 +22,7 @@ use domain::{
         PushNotification,
     },
     profile::{CoachBio, DisplayName, DisplayNameQuery},
-    review::{LessonReview, LessonReviewId, LessonReviewReply},
+    review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
     scheduling::{
         Booking, BookingId, CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus,
         CoachCalendar, SchedulingError, Slot, SlotId,
@@ -1260,6 +1260,23 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
             .find(|r| r.id() == review_id)
         {
             *review = review.clone().with_reply(Some(reply.clone()));
+        }
+        Ok(())
+    }
+
+    async fn save_handling(
+        &self,
+        review_id: LessonReviewId,
+        handling: &LowRatedReviewHandling,
+    ) -> Result<(), Unavailable> {
+        if let Some(review) = self
+            .reviews
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r.id() == review_id && r.handling().is_none())
+        {
+            *review = review.clone().with_handling(Some(handling.clone()));
         }
         Ok(())
     }
