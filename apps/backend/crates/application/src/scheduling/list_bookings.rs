@@ -2,22 +2,21 @@ use std::{cmp::Reverse, collections::BTreeSet};
 
 use domain::{
     identity::AccountId,
-    scheduling::{BookingPeriod, BookingStatus, SchedulingError},
+    scheduling::{BookingStatus, SchedulingError},
 };
-use time::{Date, Duration};
+use time::Date;
 
 use super::{
-    BookingCoachDisplayNameLookup, BookingList, BookingRepository, StudentDisplayNameLookup,
-    calendar_day,
+    BookingCoachDisplayNameLookup, BookingDates, BookingList, BookingRepository,
+    StudentDisplayNameLookup, calendar_day,
 };
 use crate::{Unavailable, clock::Clock};
 
 /// 本部が見る予約の一覧のユースケース（admin-web の `listBookings`。本部だけが呼ぶ）。
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始する予約を読み、開始時刻の古い順に並べる
-/// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
-/// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
-/// domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧）。
+/// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。省いた日付の決め方と期間の規則は
+/// [`BookingDates`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧）。
 /// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
@@ -46,10 +45,11 @@ pub struct ListBookingsQuery {
     pub trial: Option<bool>,
 }
 
-/// 本部が見る予約の一覧（[`ListBookings`]）と、キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）の失敗。
+/// 本部が見る予約の一覧（[`ListBookings`]）・キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）・コーチの自分の
+/// 予約の一覧（[`super::ListCoachBookings`]）の失敗。
 #[derive(Debug)]
 pub enum ListBookingsError {
-    /// 期間が規則を満たさない（[`BookingPeriod::new`] の違反）
+    /// 期間が規則を満たさない（[`BookingPeriod::new`](domain::scheduling::BookingPeriod::new) の違反）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -87,13 +87,8 @@ where
         &self,
         query: ListBookingsQuery,
     ) -> Result<BookingList, ListBookingsError> {
-        let from = query
-            .from
-            .unwrap_or_else(|| calendar_day::of(self.clock.now()));
-        let to = query.to.unwrap_or_else(|| {
-            from.saturating_add(Duration::days(i64::from(BookingPeriod::DEFAULT_DAYS) - 1))
-        });
-        let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
+        let BookingDates { from, to, period } =
+            BookingDates::resolve(query.from, query.to, calendar_day::of(self.clock.now()))?;
 
         let (_, mut bookings) = self
             .bookings

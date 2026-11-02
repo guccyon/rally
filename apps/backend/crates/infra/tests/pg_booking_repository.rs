@@ -1,6 +1,6 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
-//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
+//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧。枠の開始の期間で絞るものを含む）。
 //! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
 //! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数）。
 //!
@@ -563,8 +563,9 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
         application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
+        FixedClock(at(0)),
     )
-    .execute(coach)
+    .execute(coach, Default::default())
     .await
     .unwrap();
     let statuses: Vec<_> = list.items.iter().map(|(b, _)| b.status()).collect();
@@ -581,6 +582,57 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
 
     let nobody = support::coach(&pool).await;
     assert!(bookings.bookings_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_coach_starting_between_reads_only_own_bookings_starting_in_the_period(
+    pool: PgPool,
+) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let before = support::open_slot(&pool, coach, 9, 10).await;
+    let start = support::open_slot(&pool, coach, 10, 11).await;
+    let inside = support::open_slot(&pool, coach, 20, 21).await;
+    let end = support::open_slot(&pool, coach, 30, 31).await;
+    let others = support::open_slot(&pool, other_coach, 15, 16).await;
+    reserve(&bookings, student, &before, false).await.unwrap();
+    let cancelled = reserve(&bookings, other, &start, false).await.unwrap();
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(other, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &inside).await;
+    reserve(&bookings, student, &end, false).await.unwrap();
+    reserve(&bookings, other, &others, false).await.unwrap();
+
+    // 始まりは含み、終わりは含まない。状態を問わず、別のコーチの枠への予約は読まない
+    let mut found = bookings
+        .bookings_of_coach_starting_between(coach, at(10), at(30))
+        .await
+        .unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let found: Vec<_> = found
+        .iter()
+        .map(|(booking, slot)| (booking.id(), booking.status(), slot.id()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (cancelled.id(), BookingStatus::Cancelled, start.id()),
+            (confirmed.id(), BookingStatus::Confirmed, inside.id()),
+        ]
+    );
+    assert!(
+        bookings
+            .bookings_of_coach_starting_between(other_coach, at(20), at(30))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// コーチ `coach` のテニスの 1 回 60 分のメニューを保存する。
@@ -735,8 +787,9 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
         application::profile::ProfileStudentDisplayNameLookup::new(PgAccountRepository::new(
             pool.clone(),
         )),
+        FixedClock(at(0)),
     )
-    .execute(coach)
+    .execute(coach, Default::default())
     .await
     .unwrap();
     for items in [&mine.items, &of_coach.items] {

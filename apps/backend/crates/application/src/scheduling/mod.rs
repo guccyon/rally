@@ -1,6 +1,7 @@
 //! scheduling のユースケースとポート。
 
 mod booking_coach_display_name_lookup;
+mod booking_dates;
 mod booking_detail;
 pub mod booking_id_uuid;
 mod booking_list;
@@ -50,6 +51,7 @@ mod update_slot_error;
 mod withdraw_slot;
 
 pub use booking_coach_display_name_lookup::BookingCoachDisplayNameLookup;
+pub use booking_dates::BookingDates;
 pub use booking_detail::BookingDetail;
 pub use booking_list::BookingList;
 pub use booking_repository::BookingRepository;
@@ -69,7 +71,7 @@ pub use lesson_menu_lookup::LessonMenuLookup;
 pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
 pub use list_cancelled_bookings::{ListCancelledBookings, ListCancelledBookingsQuery};
 pub use list_coach_acceptance_changes::ListCoachAcceptanceChanges;
-pub use list_coach_bookings::ListCoachBookings;
+pub use list_coach_bookings::{ListCoachBookings, ListCoachBookingsQuery};
 pub use list_coach_slots::ListCoachSlots;
 pub use list_my_bookings::ListMyBookings;
 pub use my_booking_list::MyBookingList;
