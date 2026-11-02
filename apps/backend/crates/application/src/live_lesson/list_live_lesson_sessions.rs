@@ -9,13 +9,14 @@ use super::{
 };
 use crate::{Unavailable, scheduling::calendar_day};
 
-/// 本部が期間とコーチで見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
+/// 本部が期間とコーチ・生徒で見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
 /// 呼ぶ）。問い合わせを受けたときに、ライブレッスンがいつ始まりいつ終わったかを引くための照会で、何も保存しない。
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始したセッションを、終了の有無を問わず読む。期間の規則
 /// （`to` が `from` より前でない・[`SessionHistoryCriteria::MAX_DAYS`] 日まで）と選び方・並べ方（開始の新しい順）は
 /// domain の [`SessionHistoryCriteria`]。日付の区切りは予約の一覧と同じ [`calendar_day`]。`coach_id` があればその
-/// コーチのセッションだけ（いないコーチなら空の一覧）。各セッションには、コーチと開始した予約の生徒の表示名
+/// コーチのセッションだけ（いないコーチなら空の一覧）、`student_id` があればその生徒の予約が結び付いたセッションだけ
+/// （グループレッスンでは開始した予約の生徒に限らない。いない生徒・生徒でない ID なら空の一覧）。各セッションには、コーチと開始した予約の生徒の表示名
 /// （[`SessionCoachDisplayNameLookup`]・[`SessionStudentDisplayNameLookup`]）を引いて添える。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
 pub struct ListLiveLessonSessions<L, D, S> {
@@ -33,6 +34,8 @@ pub struct ListLiveLessonSessionsQuery {
     pub to: Date,
     /// あればこのコーチのセッションだけ
     pub coach_id: Option<AccountId>,
+    /// あればこの生徒の予約が結び付いたセッションだけ
+    pub student_id: Option<AccountId>,
 }
 
 #[derive(Debug)]
@@ -77,6 +80,7 @@ where
             calendar_day::start(query.from),
             calendar_day::end(query.to),
             query.coach_id,
+            query.student_id,
         )?;
         let found = self
             .sessions
@@ -84,6 +88,7 @@ where
                 criteria.starts_at(),
                 criteria.ends_at(),
                 criteria.coach_id(),
+                criteria.student_id(),
             )
             .await?;
         let sessions = criteria.select(found);
@@ -121,7 +126,7 @@ mod tests {
     };
 
     use domain::{
-        live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+        live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
         profile::DisplayName,
         scheduling::BookingId,
     };
@@ -236,6 +241,7 @@ mod tests {
             from: date(Month::November, from),
             to: date(Month::November, to),
             coach_id,
+            student_id: None,
         }
     }
 
@@ -284,12 +290,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_student_narrows_the_sessions_including_group_lessons_they_joined() {
+        // 通話を始めたのは STUDENT で、OTHER_STUDENT の予約も結び付いたグループレッスン（11 月 2 日）
+        let group = LiveLessonSession::restore(
+            SessionId::from_u128(6),
+            BookingId::from_u128(106),
+            STUDENT,
+            COACH,
+            vec![SessionBooking::new(
+                BookingId::from_u128(107),
+                OTHER_STUDENT,
+            )],
+            at(2, 12),
+            None,
+        )
+        .unwrap();
+        let use_case = ListLiveLessonSessions::new(
+            InMemoryLiveLessonSessionRepository::with_sessions(
+                sessions().into_iter().chain([group]),
+            ),
+            RecordingLookup::default(),
+            RecordingLookup::default(),
+        );
+        for (student_id, coach_id, expected) in [
+            (STUDENT, None, vec![4, 6, 1]),
+            (OTHER_STUDENT, None, vec![6, 3]),
+            // コーチの指定と組み合わさる
+            (OTHER_STUDENT, Some(OTHER_COACH), vec![3]),
+            // 生徒でない ID・ない ID は空の一覧
+            (COACH, None, vec![]),
+            (AccountId::from_u128(99), None, vec![]),
+        ] {
+            let history = use_case
+                .execute(ListLiveLessonSessionsQuery {
+                    student_id: Some(student_id),
+                    ..query(1, 3, coach_id)
+                })
+                .await
+                .unwrap();
+            assert_eq!(ids(&history), expected, "{student_id:?} {coach_id:?}");
+        }
+    }
+
+    #[tokio::test]
     async fn a_single_day_is_from_midnight_to_midnight_in_japan() {
         let history = use_case(RecordingLookup::default())
             .execute(ListLiveLessonSessionsQuery {
                 from: date(Month::October, 31),
                 to: date(Month::October, 31),
                 coach_id: None,
+                student_id: None,
             })
             .await
             .unwrap();
@@ -321,6 +371,7 @@ mod tests {
                     from: date(Month::November, 1),
                     to: date(Month::December, 2),
                     coach_id: None,
+                    student_id: None,
                 },
                 DomainError::SessionPeriodTooLong { max_days: 31 },
             ),
@@ -337,6 +388,7 @@ mod tests {
                     from: date(Month::November, 1),
                     to: date(Month::December, 1),
                     coach_id: None,
+                    student_id: None,
                 })
                 .await
                 .is_ok()
