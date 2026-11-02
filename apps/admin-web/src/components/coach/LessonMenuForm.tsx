@@ -22,7 +22,7 @@ const LESSON_TYPES = Object.keys(LESSON_TYPE_LABELS) as Schemas["LessonType"][];
 function Remaining({ max, length }: { max: number; length: number }) {
   const remaining = max - length;
   return (
-    <span className={remaining < 0 ? "text-sm text-red-600" : "text-sm text-gray-500"}>
+    <span className={remaining < 0 ? "text-sm text-danger" : "text-sm text-text-muted"}>
       {remaining < 0 ? `${max} 文字を ${-remaining} 文字超えています` : `あと ${remaining} 文字`}
     </span>
   );
@@ -31,7 +31,7 @@ function Remaining({ max, length }: { max: number; length: number }) {
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-sm text-red-600">
+    <p id={id} className="text-sm text-danger">
       {message}
     </p>
   );
@@ -75,7 +75,7 @@ export function LessonMenuForm({
         <label className="flex flex-col">
           スポーツ
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={input.sport}
             onChange={(event) => update({ sport: event.target.value as Schemas["Sport"] })}
           >
@@ -89,7 +89,7 @@ export function LessonMenuForm({
         <label className="flex flex-col">
           レッスンの種類
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={input.lessonType}
             onChange={(event) =>
               update({ lessonType: event.target.value as Schemas["LessonType"] })
@@ -106,7 +106,7 @@ export function LessonMenuForm({
           <label className="flex flex-col">
             1 回の時間
             <select
-              className="rounded border px-2 py-1"
+              className="rounded-md border px-2 py-1"
               value={input.durationMinutes}
               aria-invalid={errors.durationMinutes ? true : undefined}
               aria-describedby={errors.durationMinutes ? "lesson-menu-duration-error" : undefined}
@@ -121,7 +121,7 @@ export function LessonMenuForm({
           </label>
         )}
       </div>
-      <p className="text-xs text-gray-600">
+      <p className="text-xs text-text-muted">
         スポーツは、あなたが提供しているスポーツから選んでください（提供していないスポーツのメニューは登録できません）。
       </p>
       <FieldError id="lesson-menu-duration-error" message={errors.durationMinutes} />
@@ -130,7 +130,7 @@ export function LessonMenuForm({
           名前
           <input
             type="text"
-            className="mt-1 block w-full rounded border px-2 py-1"
+            className="mt-1 block w-full rounded-md border px-2 py-1"
             value={input.name}
             aria-invalid={errors.name ? true : undefined}
             aria-describedby={errors.name ? "lesson-menu-name-error" : undefined}
@@ -144,7 +144,7 @@ export function LessonMenuForm({
         <label className="block">
           説明（任意）
           <textarea
-            className="mt-1 block w-full rounded border px-2 py-1"
+            className="mt-1 block w-full rounded-md border px-2 py-1"
             rows={4}
             value={input.description}
             aria-invalid={errors.description ? true : undefined}
@@ -167,12 +167,12 @@ export function LessonMenuForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
         >
           {submitLabel}
         </button>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="rounded border px-4 py-1">
+          <button type="button" onClick={onCancel} className="rounded-pill border px-4 py-1">
             やめる
           </button>
         )}

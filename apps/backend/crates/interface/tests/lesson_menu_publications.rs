@@ -1,20 +1,22 @@
-//! `POST /lesson-menus/{lesson_menu_id}/unpublish`・`POST /lesson-menus/{lesson_menu_id}/republish`（admin-web の
-//! `unpublishLessonMenu`・`republishLessonMenu`）の統合テスト。応答を admin-web の OpenAPI のスキーマで検査する。
+//! `POST /lesson-menus/{lesson_menu_id}/unpublish`・`POST /lesson-menus/{lesson_menu_id}/republish`・
+//! `GET /lesson-menus/{lesson_menu_id}/publication-changes`（admin-web の `unpublishLessonMenu`・`republishLessonMenu`・
+//! `listLessonMenuPublicationChanges`）の統合テスト。応答を admin-web の OpenAPI のスキーマで検査する。
 //! 本部だけが呼べること（コーチ・生徒は 403）、ないメニューは 404、二度目は 409、本部が非公開にしたことと理由が
 //! 本部の横断の一覧（`GET /lesson-menus`）に出ること、そのあいだコーチが `PUT /coaches/me/lesson-menus/{lesson_menu_id}`
-//! で公開し直せないこと（409）と、生徒の一覧（`GET /coaches/{coach_id}/lesson-menus`）に出ないことを確かめる。
+//! で公開し直せないこと（409）と、生徒の一覧（`GET /coaches/{coach_id}/lesson-menus`）に出ないこと、非公開にした・公開に
+//! 戻した記録（誰が・いつ・理由）が新しい順に読めること（断った操作とコーチ自身の変更は載らない）を確かめる。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
     catalog::{
-        CreateLessonMenu, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
+        CreateLessonMenu, ListCoachLessonMenus, ListLessonMenuPublicationChanges, ListLessonMenus,
+        ListMyLessonMenus, RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu,
     },
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryLessonMenuRepository, InMemorySlotRepository,
+        InMemoryLessonMenuRepository, InMemorySlotRepository, ManualClock,
     },
     profile::ProfileCoachDisplayNameLookup,
     scheduling::SchedulingLessonMenuRecentBookingCountLookup,
@@ -62,6 +64,9 @@ impl TokenVerifier for FakeTokens {
 }
 
 const HEADQUARTERS: &str = "headquarters:1";
+const HEADQUARTERS_ID: &str = "00000000-0000-0000-0000-000000000001";
+const OTHER_HEADQUARTERS: &str = "headquarters:4";
+const OTHER_HEADQUARTERS_ID: &str = "00000000-0000-0000-0000-000000000004";
 const COACH: &str = "coach:2";
 const COACH_ID: &str = "00000000-0000-0000-0000-000000000002";
 const STUDENT: &str = "student:3";
@@ -88,6 +93,11 @@ fn menu() -> LessonMenu {
 
 /// 本部 1・コーチ 2・生徒 3 と、コーチ 2 の公開中のメニュー 1 件で組み立てた、catalog と本部の非公開のルーター。
 async fn app() -> Router {
+    app_with_clock(ManualClock::new(now())).await
+}
+
+/// [`app`] の、本部の非公開・公開に戻す操作の時刻を `clock` にしたもの。
+async fn app_with_clock(clock: ManualClock) -> Router {
     let accounts = InMemoryAccountRepository::default();
     for (id, role, sports) in [
         (1, Role::Headquarters, vec![]),
@@ -126,8 +136,9 @@ async fn app() -> Router {
         FakeTokens,
     )
     .merge(interface::lesson_menu_publication_router(
-        UnpublishLessonMenu::new(menus.clone(), FixedClock(now())),
-        RepublishLessonMenu::new(menus),
+        UnpublishLessonMenu::new(menus.clone(), clock.clone()),
+        RepublishLessonMenu::new(menus.clone(), clock),
+        ListLessonMenuPublicationChanges::new(menus),
         FakeTokens,
     ))
 }
@@ -188,6 +199,25 @@ async fn republish(
         "POST",
         &format!("/lesson-menus/{lesson_menu_id}/republish"),
         ("admin-web", "/lesson-menus/{lesson_menu_id}/republish"),
+        token,
+        None,
+    )
+    .await
+}
+
+async fn changes(
+    router: &Router,
+    lesson_menu_id: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    send(
+        router,
+        "GET",
+        &format!("/lesson-menus/{lesson_menu_id}/publication-changes"),
+        (
+            "admin-web",
+            "/lesson-menus/{lesson_menu_id}/publication-changes",
+        ),
         token,
         None,
     )
@@ -424,4 +454,83 @@ async fn only_headquarters_may_call_and_a_token_is_required() {
         true,
         "何も変えない"
     );
+}
+
+#[tokio::test]
+async fn the_changes_are_listed_newest_first_with_who_when_and_the_reason() {
+    let clock = ManualClock::new(now());
+    let router = app_with_clock(clock.clone()).await;
+
+    // 一度も非公開にしていないメニューは空
+    let (status, body) = changes(&router, MENU_ID, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "lesson_menu_id": MENU_ID, "changes": [] }));
+
+    unpublish(
+        &router,
+        MENU_ID,
+        Some(HEADQUARTERS),
+        json_body(json!({ "reason": "料金の記載が誤っている" })),
+    )
+    .await;
+    // 断った操作（二度目の非公開）とコーチ自身の変更は載らない
+    let (status, _) = unpublish(&router, MENU_ID, Some(OTHER_HEADQUARTERS), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = coach_update(&router, false).await;
+    assert_eq!(status, StatusCode::OK);
+    clock.set(now() + Duration::from_secs(60));
+    republish(&router, MENU_ID, Some(OTHER_HEADQUARTERS)).await;
+    // 同じ時刻なら後に記録した方が先
+    unpublish(&router, MENU_ID, Some(HEADQUARTERS), None).await;
+
+    let (status, body) = changes(&router, MENU_ID, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "lesson_menu_id": MENU_ID,
+            "changes": [
+                {
+                    "action": "unpublished",
+                    "reason": "",
+                    "changed_by": HEADQUARTERS_ID,
+                    "changed_at": "2026-10-26T00:01:00Z",
+                },
+                {
+                    "action": "republished",
+                    "reason": null,
+                    "changed_by": OTHER_HEADQUARTERS_ID,
+                    "changed_at": "2026-10-26T00:01:00Z",
+                },
+                {
+                    "action": "unpublished",
+                    "reason": "料金の記載が誤っている",
+                    "changed_by": HEADQUARTERS_ID,
+                    "changed_at": NOW_TEXT,
+                },
+            ],
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_changes_of_a_missing_or_malformed_menu_are_404() {
+    let router = app().await;
+    for lesson_menu_id in ["00000000-0000-0000-0000-000000000099", "not-a-uuid"] {
+        let (status, body) = changes(&router, lesson_menu_id, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{lesson_menu_id}: {body}");
+        assert_eq!(body["code"], "not_found");
+    }
+}
+
+#[tokio::test]
+async fn only_headquarters_may_read_the_changes() {
+    let router = app().await;
+    for token in [COACH, STUDENT] {
+        let (status, body) = changes(&router, MENU_ID, Some(token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {body}");
+        assert_eq!(body["code"], "forbidden");
+    }
+    let (status, body) = changes(&router, MENU_ID, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
 }

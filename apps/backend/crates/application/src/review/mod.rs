@@ -14,6 +14,7 @@
 
 mod coach_review_list;
 mod completed_lesson_lookup;
+mod get_coach_low_rated_review_count;
 mod get_coach_review_summary;
 mod insert_review_error;
 pub mod lesson_review_id_uuid;
@@ -34,6 +35,7 @@ mod submit_lesson_review;
 
 pub use coach_review_list::CoachReviewList;
 pub use completed_lesson_lookup::CompletedLessonLookup;
+pub use get_coach_low_rated_review_count::GetCoachLowRatedReviewCount;
 pub use get_coach_review_summary::GetCoachReviewSummary;
 pub use insert_review_error::InsertReviewError;
 pub use list_coach_reviews::ListCoachReviews;

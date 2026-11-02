@@ -9,6 +9,7 @@
 //! 本部は生徒全員か、あるスポーツの生徒全員にお知らせを送れる（[`Announcement`]。送った記録）。受け取る生徒ごとに
 //! お知らせを作り、プッシュ通知は受け取り設定に従う（種類は [`NotificationKind::Announcement`]）。誤って送ったお知らせは
 //! 本部が取り下げられ（[`AnnouncementWithdrawal`]）、取り下げたお知らせは生徒のお知らせの一覧に出さない。
+//! 本部は生徒 1 人が受け取ったお知らせ（[`ReceivedAnnouncement`]。既読と取り下げ）を、問い合わせで確かめられる。
 //! 本部は送る前のお知らせを下書き（[`AnnouncementDraft`]）として残し、あとで直してから送れる。下書きは生徒に届かない。
 
 mod announcement;
@@ -25,6 +26,7 @@ mod notification_id;
 mod notification_kind;
 mod notification_settings;
 mod push_notification;
+mod received_announcement;
 
 pub use announcement::Announcement;
 pub use announcement_body::AnnouncementBody;
@@ -39,3 +41,4 @@ pub use notification_id::NotificationId;
 pub use notification_kind::NotificationKind;
 pub use notification_settings::NotificationSettings;
 pub use push_notification::PushNotification;
+pub use received_announcement::ReceivedAnnouncement;

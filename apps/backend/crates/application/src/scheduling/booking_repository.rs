@@ -74,6 +74,14 @@ pub trait BookingRepository: Send + Sync {
         until: SystemTime,
     ) -> impl Future<Output = Result<(Vec<Slot>, Vec<Booking>), Unavailable>> + Send;
 
+    /// キャンセルした時刻が `from`（含む）から `until`（含まない）までの予約（キャンセル済みの予約だけ）。並びは決めない。
+    /// 読むだけで何も変えない。本部が見るキャンセルされた予約の一覧（[`super::ListCancelledBookings`]）が読む。
+    fn bookings_cancelled_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
+
     /// `student_id` の生徒の予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
     /// 読むだけで何も変えない。本人の予約の一覧（[`super::ListMyBookings`]）と、本部が見る生徒 1 人の利用の様子
     /// （[`super::SchedulingStudentBookingActivityLookup`]）が読む。

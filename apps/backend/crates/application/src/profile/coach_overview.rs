@@ -1,4 +1,8 @@
-use domain::{profile::DisplayName, review::CoachReviewSummary, scheduling::CoachAcceptanceStatus};
+use domain::{
+    profile::DisplayName,
+    review::{CoachLowRatedReviewCount, CoachReviewSummary},
+    scheduling::CoachAcceptanceStatus,
+};
 
 use crate::lesson::CoachLessonStats;
 
@@ -11,6 +15,8 @@ pub struct CoachOverview {
     pub acceptance: CoachAcceptanceStatus,
     /// これまでのすべての評価の件数と平均（review の `GetCoachReviewSummary`）
     pub reviews: CoachReviewSummary,
+    /// 直近の低い評価の件数と、そのうち本部が未対応の件数（review の `GetCoachLowRatedReviewCount`）
+    pub low_rated_reviews: CoachLowRatedReviewCount,
     /// 今月と先月のレッスンの実績（lesson の `GetMyLessonStats`）
     pub lesson_stats: CoachLessonStats,
     /// 公開中のレッスンメニューの数（catalog の `ListCoachLessonMenus`。スポーツで絞らない）

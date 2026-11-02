@@ -389,6 +389,53 @@ async fn coach_bio_is_empty_at_first_and_replaced_by_update(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bios_of_all_coaches_are_listed_and_non_coaches_are_not(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let accounts = PgAccountRepository::new(pool.clone());
+    assert!(accounts.list_coach_bios().await.unwrap().is_empty());
+
+    let written = use_case
+        .execute(command(
+            "written@example.com",
+            Role::Coach,
+            vec![Sport::Tennis],
+        ))
+        .await
+        .unwrap();
+    let blank = use_case
+        .execute(command("blank@example.com", Role::Coach, vec![Sport::Golf]))
+        .await
+        .unwrap();
+    use_case
+        .execute(command(
+            "taro@example.com",
+            Role::Student,
+            vec![Sport::Soccer],
+        ))
+        .await
+        .unwrap();
+    use_case
+        .execute(command("hq@example.com", Role::Headquarters, vec![]))
+        .await
+        .unwrap();
+    let bio = CoachBio::new("テニス歴 20 年").unwrap();
+    accounts
+        .update_coach_bio(written.id(), bio.clone())
+        .await
+        .unwrap();
+
+    let bios = accounts.list_coach_bios().await.unwrap();
+    assert_eq!(
+        bios,
+        [(written.id(), bio), (blank.id(), CoachBio::default())]
+            .into_iter()
+            .collect(),
+        "書いていないコーチは空で載り、生徒・本部は載らない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn bio_of_non_coach_or_unknown_account_is_neither_read_nor_updated(pool: PgPool) {
     let use_case = register_account(&pool);
     let student = use_case

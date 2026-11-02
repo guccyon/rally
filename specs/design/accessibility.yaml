@@ -1,0 +1,64 @@
+# アクセシビリティ。基準は WCAG 2.2 AA
+schema_version: "0.1"
+status: draft
+section: accessibility
+standard: WCAG 2.2 AA
+
+rules:
+  - id: contrast-text
+    level: must
+    statement: 文字と背景の組み合わせは tokens.yaml の contrast_checked にあるものだけを使う（文字 4.5 以上、24px 以上か 19px 700 以上の文字は 3 以上）
+    why: 屋外のまぶしい場所や、見えにくさのある生徒も読める
+    check: deterministic
+    examples:
+      good: text_muted（#4A5163）を surface（#F1F3F8）の上に。7.14
+      bad: secondary（#D4F53C）の文字を白の上に。1.24
+  - id: contrast-non-text
+    level: should
+    statement: 入力欄の輪郭・アイコン・フォーカスの輪は、隣の色と 3 以上の比にする（border_strong・focus_ring を使う）
+    why: どこが押せるか、どこを入れるかが見える
+    check: deterministic
+  - id: target-size
+    level: must
+    statement: 押せる部品は 48×48px 以上（iOS 44pt・Android 48dp を両方満たす）、隣とのあいだは 8px 以上
+    why: 練習の後の汗をかいた指や、片手でも押し間違えない
+    check: deterministic
+  - id: focus-visible
+    level: should
+    statement: キーボードとスイッチの操作で、フォーカスを focus_ring 2px（濃い面では secondary）で見せ、ほかの部品で隠さない
+    why: admin-web をキーボードで使う人が、今どこにいるか分かる
+    check: design_inspector
+  - id: focus-order
+    level: should
+    statement: フォーカスの順は見た目の順（上から下、左から右）。ダイアログを開いたら中に閉じ込め、閉じたら開いた元に戻す
+    why: 読み上げとキーボードで、話の流れが崩れない
+    check: design_inspector
+  - id: labels
+    level: must
+    statement: アイコンだけの押せる部品・画像・入力欄に、読み上げのラベルを付ける（tooltip・Semantics・aria-label・label）
+    why: 読み上げで「ボタン」としか聞こえないと、生徒は予約もチャットも開けない
+    check: deterministic
+  - id: not-color-only
+    level: should
+    statement: 状態・未読・誤りは、色に加えて文字かアイコンで示す
+    why: 色の見分けが難しい生徒も同じ情報を得られる
+    check: design_inspector
+  - id: text-resize
+    level: should
+    statement: 端末の文字の大きさを 200% にしても、文字が切れず重ならず、横に動かさずに読める（display は 1 行に収まらなければ折り返す）
+    why: 大きな文字で使う生徒や保護者も、残りの回数と規定を読める
+    check: design_inspector
+  - id: motion
+    level: should
+    statement: 動きを減らす設定では、tokens.yaml の motion.reduced_motion に従う
+    why: 動きで気分が悪くなる人を守る
+    check: design_inspector
+  - id: live-region
+    level: should
+    statement: 成功は role=status、失敗は role=alert（Flutter は Semantics の liveRegion）で読み上げに伝える
+    why: 画面を見ていなくても結果が分かる
+    check: deterministic
+
+platform_notes:
+  student_app: Semantics を部品に付ける。textScaler は端末の値のまま（上限を付けない）
+  admin_web: 見出しは h1→h2 の順。Section は aria-label に題。表は th と scope
