@@ -74,6 +74,7 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
  * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
+ * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約の正本）を右寄せ・等幅の数字で出し、隣の「公開」の列との間をあける（並び替えには使わない）。
  * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
  * 操作の列のボタンの後ろに、そのメニューの「公開の記録」の画面への「記録」を置く。
  */
@@ -315,6 +316,7 @@ export function LessonMenuCatalog({
               <th className="py-1">名前</th>
               <th className="py-1">種類</th>
               <th className="py-1">時間</th>
+              <th className="py-1 pr-4 text-right">直近 30 日の予約</th>
               <th className="py-1">公開</th>
               <th className="py-1">操作</th>
             </tr>
@@ -327,6 +329,7 @@ export function LessonMenuCatalog({
                 <td className="py-1">{menu.name}</td>
                 <td className="py-1">{LESSON_TYPE_LABELS[menu.lesson_type]}</td>
                 <td className="py-1">{durationLabel(menu)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{menu.recent_booking_count} 件</td>
                 <td className="py-1">
                   <PublicationCell menu={menu} />
                 </td>
@@ -363,6 +366,10 @@ export function LessonMenuCatalog({
             ))}
           </tbody>
         </table>
+      )}
+      {state.kind === "loaded" && state.menus.length > 0 && (
+        // 数え方は契約の listLessonMenus（照会した時刻の 30 日前から、キャンセルされていない予約）に合わせる。
+        <p className="text-xs text-text-muted">この 30 日間に入った予約（キャンセルされていないもの）の数です。</p>
       )}
     </div>
   );
