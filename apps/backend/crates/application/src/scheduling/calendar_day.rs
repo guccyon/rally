@@ -1,7 +1,8 @@
-//! 時刻がどの日付か（`time::Date`）と、日付の始まりと終わりの時刻。本部が見る予約の一覧（[`super::ListBookings`]）と
-//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と予約枠の需給（[`super::GetSlotSupply`]）と、本部が
-//! 送ったお知らせの一覧（[`crate::notification::ListAnnouncements`]）の日付は、ユースケースがここだけを通して決める。
-//! 省いた日付の決め方が `listBookings` と同じ照会（`listBookings`・`getSlotSupply`）は [`period`] を通す。
+//! 時刻がどの日付か（`time::Date`）と、日付の始まりと終わりの時刻。本部が見る予約の一覧（[`super::ListBookings`]）・
+//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）・予約枠の需給（[`super::GetSlotSupply`]）・コーチの自分の
+//! 予約の一覧（[`super::ListCoachBookings`]）・本部が送ったお知らせの一覧（[`crate::notification::ListAnnouncements`]）の
+//! 日付は、ユースケースがここだけを通して決める。省いた日付の決め方が `listBookings` と同じ照会（`listBookings`・
+//! `getSlotSupply`・`listMyCoachBookings`）は [`period`] を通す。
 //!
 //! 日付は暦月と同じく日本時間（UTC+9。夏時間はない）で区切る（[`crate::entitlement::calendar_month`] のタイムゾーン）。
 

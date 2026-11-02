@@ -551,6 +551,20 @@ impl BookingRepository for InMemoryBookingRepository {
             .collect()
     }
 
+    async fn bookings_of_coach_starting_between(
+        &self,
+        coach_id: AccountId,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        Ok(self
+            .bookings_of_coach(coach_id)
+            .await?
+            .into_iter()
+            .filter(|(_, slot)| from <= slot.starts_at() && slot.starts_at() < until)
+            .collect())
+    }
+
     async fn bookings_of_lesson_menus_created_since(
         &self,
         lesson_menu_ids: &BTreeSet<LessonMenuId>,
