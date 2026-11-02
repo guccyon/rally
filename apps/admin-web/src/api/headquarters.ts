@@ -89,6 +89,8 @@ export function headquartersApi(client: ApiClient) {
       ),
     listBookings: (period: { from?: string; to?: string }) =>
       call(() => client.GET("/bookings", { params: { query: period } })),
+    listCancelledBookings: (period: { from?: string; to?: string }) =>
+      call(() => client.GET("/bookings/cancelled", { params: { query: period } })),
     getBooking: (bookingId: string) =>
       call(() =>
         client.GET("/bookings/{booking_id}", {
