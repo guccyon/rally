@@ -721,6 +721,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["StudentAnnouncementList"],
   },
   {
+    // 生徒で絞った予約の一覧。mockApi は先に一致した応答を返すので、絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { student_id: STUDENT_ID },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter((item) => item.booking.student_id === STUDENT_ID),
+    } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
     method: "GET",
     path: "/bookings",
     body: {
