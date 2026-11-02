@@ -216,6 +216,16 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/coaches/incomplete-profiles",
   },
   {
+    id: "hq-incomplete-coach-profiles-empty",
+    title: "本部: 自己紹介の足りないコーチ（絞り込んで 0 件）",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+    open: async (page) => {
+      await page.getByLabel("スポーツ").selectOption({ label: "水泳" });
+      await page.getByText("条件に合うコーチはいません").waitFor();
+    },
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",
