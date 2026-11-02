@@ -1,6 +1,7 @@
 //! `POST /coaches/{coach_id}/suspend`・`POST /coaches/{coach_id}/resume`（admin-web の `suspendCoach`・`resumeCoach`）と
 //! `GET /coaches/{coach_id}/acceptance-changes`（`listCoachAcceptanceChanges`）の統合テスト。応答を admin-web の OpenAPI の
-//! スキーマで検査する。どれも本部だけが呼べる（コーチ・生徒は 403）。
+//! スキーマで検査する。どれも本部だけが呼べる（コーチ・生徒は 403）。停止の本文（任意の `reason`）は省いてよく、記録の一覧の
+//! 1 件ごとに理由が載る（再開した記録は null）。
 
 use std::{
     collections::BTreeSet,
@@ -128,20 +129,38 @@ async fn get_changes(router: &Router, coach_id: &str, token: Option<&str>) -> (S
     (status, body)
 }
 
-/// `POST /coaches/{coach_id}/<action>`。レスポンスを admin-web の契約で検査する。
+/// `POST /coaches/{coach_id}/<action>`（本文なし）。レスポンスを admin-web の契約で検査する。
 async fn post(
     router: &Router,
     coach_id: &str,
     action: &str,
     token: Option<&str>,
 ) -> (StatusCode, Value) {
+    post_with_body(router, coach_id, action, token, None).await
+}
+
+/// `POST /coaches/{coach_id}/<action>`。`body` があれば JSON の本文として送る。レスポンスを admin-web の契約で検査する。
+async fn post_with_body(
+    router: &Router,
+    coach_id: &str,
+    action: &str,
+    token: Option<&str>,
+    body: Option<Body>,
+) -> (StatusCode, Value) {
     let mut request = Request::post(format!("/coaches/{coach_id}/{action}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
+    let body = match body {
+        Some(body) => {
+            request = request.header(header::CONTENT_TYPE, "application/json");
+            body
+        }
+        None => Body::empty(),
+    };
     let response = router
         .clone()
-        .oneshot(request.body(Body::empty()).unwrap())
+        .oneshot(request.body(body).unwrap())
         .await
         .unwrap();
     let status = response.status();
@@ -178,6 +197,66 @@ async fn headquarters_suspends_and_resumes_a_coach() {
         json!({ "coach_id": COACH_ID, "acceptance_status": "accepting" })
     );
     assert!(acceptances.suspended_coaches().await.unwrap().is_empty());
+}
+
+fn json_body(value: Value) -> Option<Body> {
+    Some(Body::from(value.to_string()))
+}
+
+/// 本部 1 が `body` を本文にしてコーチ 2 の受付を止め、記録の一覧の最新の `reason` を返す。
+async fn suspend_and_read_reason(body: Option<Body>) -> Value {
+    let (router, _, _) = app().await;
+    let (status, response) =
+        post_with_body(&router, COACH_ID, "suspend", Some(HEADQUARTERS), body).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["acceptance_status"], "suspended");
+    let (_, changes) = get_changes(&router, COACH_ID, Some(HEADQUARTERS)).await;
+    changes["changes"][0]["reason"].clone()
+}
+
+#[tokio::test]
+async fn headquarters_suspends_with_a_reason_kept_as_written() {
+    assert_eq!(
+        suspend_and_read_reason(json_body(json!({ "reason": " 無断欠席が続いた " }))).await,
+        " 無断欠席が続いた ",
+        "前後の空白も削らない"
+    );
+    assert_eq!(
+        suspend_and_read_reason(json_body(json!({ "reason": "あ".repeat(200) }))).await,
+        "あ".repeat(200),
+        "200 文字までは通る"
+    );
+}
+
+#[tokio::test]
+async fn the_body_and_the_reason_may_be_omitted_as_an_empty_reason() {
+    for body in [
+        None,
+        Some(Body::from(" ")),
+        json_body(json!({})),
+        json_body(json!({ "reason": null })),
+        json_body(json!({ "reason": "" })),
+    ] {
+        assert_eq!(suspend_and_read_reason(body).await, "");
+    }
+}
+
+#[tokio::test]
+async fn a_too_long_reason_or_a_broken_body_is_422_and_changes_nothing() {
+    let (router, acceptances, _) = app().await;
+    for body in [
+        json_body(json!({ "reason": "あ".repeat(201) })),
+        Some(Body::from("{")),
+        json_body(json!({ "reason": 1 })),
+    ] {
+        let (status, body) =
+            post_with_body(&router, COACH_ID, "suspend", Some(HEADQUARTERS), body).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+    assert!(acceptances.suspended_coaches().await.unwrap().is_empty());
+    let (_, changes) = get_changes(&router, COACH_ID, Some(HEADQUARTERS)).await;
+    assert_eq!(changes["changes"], json!([]), "断った操作は記録しない");
 }
 
 #[tokio::test]
@@ -233,7 +312,7 @@ async fn only_headquarters_may_call_and_a_token_is_required() {
 }
 
 #[tokio::test]
-async fn headquarters_lists_who_suspended_and_resumed_a_coach_and_when_newest_first() {
+async fn headquarters_lists_who_suspended_and_resumed_a_coach_why_and_when_newest_first() {
     let (router, _, clock) = app().await;
 
     // 一度も止めていないコーチは空の一覧
@@ -241,7 +320,14 @@ async fn headquarters_lists_who_suspended_and_resumed_a_coach_and_when_newest_fi
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "coach_id": COACH_ID, "changes": [] }));
 
-    post(&router, COACH_ID, "suspend", Some(HEADQUARTERS)).await;
+    post_with_body(
+        &router,
+        COACH_ID,
+        "suspend",
+        Some(HEADQUARTERS),
+        json_body(json!({ "reason": "休業の申し出" })),
+    )
+    .await;
     clock.set(start() + Duration::from_secs(90 * 60));
     post(&router, COACH_ID, "resume", Some(OTHER_HEADQUARTERS)).await;
     // 断られた操作は残らない
@@ -256,11 +342,13 @@ async fn headquarters_lists_who_suspended_and_resumed_a_coach_and_when_newest_fi
             "changes": [
                 {
                     "acceptance_status": "accepting",
+                    "reason": null,
                     "changed_by": OTHER_HEADQUARTERS_ID,
                     "changed_at": "2026-11-01T01:30:00Z",
                 },
                 {
                     "acceptance_status": "suspended",
+                    "reason": "休業の申し出",
                     "changed_by": HEADQUARTERS_ID,
                     "changed_at": "2026-11-01T00:00:00Z",
                 },

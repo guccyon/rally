@@ -220,6 +220,9 @@ enum ErrorCode {
   chatNotEntitled('chat_not_entitled'),
   lessonAlreadyReviewed('lesson_already_reviewed'),
   coachNotAcceptingBookings('coach_not_accepting_bookings'),
+  liveLessonSessionEndedByHeadquarters(
+    'live_lesson_session_ended_by_headquarters',
+  ),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。
   unknown('');

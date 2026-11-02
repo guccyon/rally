@@ -10,7 +10,7 @@ use std::{
 use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
-    catalog::{LessonMenu, LessonMenuId},
+    catalog::{LessonMenu, LessonMenuId, LessonMenuPublicationChange},
     entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonCompletionId},
@@ -36,7 +36,7 @@ use crate::{
         AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
         video_id_uuid, video_review_id_uuid,
     },
-    catalog::{LessonMenuRepository, lesson_menu_id_uuid},
+    catalog::{ChangeLessonMenuPublicationError, LessonMenuRepository, lesson_menu_id_uuid},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
     entitlement::{
@@ -482,6 +482,21 @@ impl BookingRepository for InMemoryBookingRepository {
         Ok((found, booked))
     }
 
+    async fn bookings_cancelled_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| b.cancelled_at().is_some_and(|at| from <= at && at < until))
+            .cloned()
+            .collect())
+    }
+
     async fn bookings_of_student(
         &self,
         student_id: AccountId,
@@ -828,6 +843,7 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
         starts_at: SystemTime,
         ends_at: SystemTime,
         coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         Ok(self
             .sessions
@@ -838,6 +854,7 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
                 starts_at <= s.started_at()
                     && s.started_at() < ends_at
                     && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+                    && student_id.is_none_or(|student_id| s.booking_of(student_id).is_some())
             })
             .cloned()
             .collect())
@@ -1381,10 +1398,12 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
     }
 }
 
-/// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+/// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。本部が非公開にした・公開に戻した記録を保存した順に持つ。
+/// 複製は同じ中身を共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryLessonMenuRepository {
     menus: Arc<Mutex<Vec<LessonMenu>>>,
+    publication_changes: Arc<Mutex<Vec<LessonMenuPublicationChange>>>,
 }
 
 impl InMemoryLessonMenuRepository {
@@ -1392,6 +1411,7 @@ impl InMemoryLessonMenuRepository {
     pub fn with_menus(menus: impl IntoIterator<Item = LessonMenu>) -> Self {
         Self {
             menus: Arc::new(Mutex::new(menus.into_iter().collect())),
+            publication_changes: Arc::default(),
         }
     }
 
@@ -1442,6 +1462,44 @@ impl LessonMenuRepository for InMemoryLessonMenuRepository {
 
     async fn find_all(&self) -> Result<Vec<LessonMenu>, Unavailable> {
         Ok(self.all())
+    }
+
+    async fn change_publication<F>(
+        &self,
+        id: LessonMenuId,
+        change: F,
+    ) -> Result<LessonMenu, ChangeLessonMenuPublicationError>
+    where
+        F: FnOnce(&mut LessonMenu) -> Result<LessonMenuPublicationChange, DomainError> + Send,
+    {
+        let mut menus = self.menus.lock().unwrap();
+        let saved = menus
+            .iter_mut()
+            .find(|m| m.id() == id)
+            .ok_or(ChangeLessonMenuPublicationError::LessonMenuNotFound)?;
+        let mut menu = saved.clone();
+        let record = change(&mut menu).map_err(ChangeLessonMenuPublicationError::Invalid)?;
+        *saved = menu.clone();
+        self.publication_changes.lock().unwrap().push(record);
+        Ok(menu)
+    }
+
+    async fn publication_changes(
+        &self,
+        id: LessonMenuId,
+    ) -> Result<Vec<LessonMenuPublicationChange>, Unavailable> {
+        // 保存した順の逆にしてから時刻で安定に並べるので、同じ時刻は後に保存した方が先
+        let mut changes: Vec<_> = self
+            .publication_changes
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .filter(|change| change.lesson_menu_id() == id)
+            .cloned()
+            .collect();
+        changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
+        Ok(changes)
     }
 }
 

@@ -180,7 +180,8 @@ impl LiveLessonSession {
     /// 本部のアカウント `headquarters` が `now` に、終了の記録がないまま残ったセッションを終わったことにする（D188）。
     ///
     /// 終わった時刻は `now`（操作の時刻）で、終わらせた本部のアカウントを残す。通話基盤からは指標を受け取らないので
-    /// 接続品質は持たない（[`LiveLessonSession::quality`] は `None`）。`headquarters` が本部の役割かは境界が確かめる
+    /// 接続品質は持たない（[`LiveLessonSession::quality`] は `None`）。本部の終了は完了として数えず、終わらせた後は
+    /// 完了したレッスンを記録できない（[`LiveLessonSession::complete_for`]）。`headquarters` が本部の役割かは境界が確かめる
     /// （domain はアカウントの役割を持たない）。終了済みなら [`DomainError::LiveLessonSessionAlreadyEnded`]、`now` が
     /// 開始より前なら [`DomainError::SessionEndsBeforeItStarts`]。失敗したときはセッションを変えない。
     ///
@@ -229,6 +230,8 @@ impl LiveLessonSession {
     /// - 記録できるのはコーチか、その生徒本人だけ（[`DomainError::NotASessionParticipant`]。`student` が結び付いた
     ///   予約の生徒でないときも）
     /// - 終了したセッションだけ（[`DomainError::LiveLessonSessionNotEnded`]）
+    /// - 本部が終わらせたセッションは記録できない（[`DomainError::LiveLessonSessionEndedByHeadquarters`]。本部の終了は
+    ///   完了として数えない）
     /// - 記録は終了の後（同じ時刻は許す。[`DomainError::CompletionBeforeLessonEnded`]）
     /// - 同じセッションの同じ生徒の完了は 1 回（[`DomainError::LessonAlreadyCompleted`]）
     pub fn complete_for(
@@ -246,6 +249,9 @@ impl LiveLessonSession {
         let ended_at = self
             .ended_at
             .ok_or(DomainError::LiveLessonSessionNotEnded)?;
+        if self.ended_by_headquarters.is_some() {
+            return Err(DomainError::LiveLessonSessionEndedByHeadquarters);
+        }
         if now < ended_at {
             return Err(DomainError::CompletionBeforeLessonEnded);
         }
@@ -620,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn participants_cannot_end_a_session_ended_by_headquarters_but_can_complete_it() {
+    fn a_session_ended_by_headquarters_cannot_be_ended_or_completed() {
         let mut session =
             LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
         session.end_by_headquarters(HEADQUARTERS, at(900)).unwrap();
@@ -629,12 +635,22 @@ mod tests {
             Err(DomainError::LiveLessonSessionAlreadyEnded)
         );
         assert_eq!(session.ended_by_headquarters(), Some(HEADQUARTERS));
-        // 終わった後なので、今までどおり完了を記録できる（記録は本部が終わらせた時刻の後）
+        // 本部の終了は完了として数えない。コーチも生徒も記録できない
+        for participant in [COACH, STUDENT] {
+            assert_eq!(
+                session.complete(LESSON, participant, &[], at(901)),
+                Err(DomainError::LiveLessonSessionEndedByHeadquarters)
+            );
+            assert_eq!(
+                session.complete_for(LESSON, participant, STUDENT, &[], at(901)),
+                Err(DomainError::LiveLessonSessionEndedByHeadquarters)
+            );
+        }
+        // 参加者でなければ今までどおり参加者でないことを先に返す（セッションがあることを知らせない）
         assert_eq!(
-            session.complete(LESSON, COACH, &[], at(899)),
-            Err(DomainError::CompletionBeforeLessonEnded)
+            session.complete(LESSON, OTHER_STUDENT, &[], at(901)),
+            Err(DomainError::NotASessionParticipant)
         );
-        session.complete(LESSON, COACH, &[], at(900)).unwrap();
     }
 
     fn ended() -> LiveLessonSession {

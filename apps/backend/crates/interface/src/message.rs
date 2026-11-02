@@ -57,6 +57,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::EmptyReviewComment => "添削コメントが空".to_string(),
         DomainError::ReviewCommentTooLong { max } => format!("添削コメントは {max} 文字まで"),
         DomainError::LiveLessonSessionNotEnded => "通話セッションがまだ終了していない".to_string(),
+        DomainError::LiveLessonSessionEndedByHeadquarters => {
+            "本部が終わらせた通話セッションは完了として記録できない".to_string()
+        }
         DomainError::EmptyAiFeedback => "AI の一次フィードバックが空".to_string(),
         DomainError::AiFeedbackAlreadyRecorded => "AI の一次フィードバックは付与済み".to_string(),
         DomainError::AiFeedbackBeforeSubmission => {
@@ -76,6 +79,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::EmptyLessonMenuName => "レッスンメニューの名前が空".to_string(),
         DomainError::LessonMenuNameTooLong { max } => {
             format!("レッスンメニューの名前は {max} 文字まで")
+        }
+        DomainError::LessonMenuNameQueryTooLong { max } => {
+            format!("レッスンメニューの名前の検索語は {max} 文字まで")
         }
         DomainError::LessonMenuDescriptionTooLong { max } => {
             format!("レッスンメニューの説明は {max} 文字まで")
@@ -280,6 +286,10 @@ mod tests {
             "通話セッションがまだ終了していない"
         );
         assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionEndedByHeadquarters),
+            "本部が終わらせた通話セッションは完了として記録できない"
+        );
+        assert_eq!(
             domain_error(&DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts),
             "to は from と同じ日か、それより後の日付にする"
         );
@@ -306,6 +316,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LessonMenuNameTooLong { max: 40 }),
             "レッスンメニューの名前は 40 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LessonMenuNameQueryTooLong { max: 40 }),
+            "レッスンメニューの名前の検索語は 40 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::LessonMenuDescriptionTooLong { max: 400 }),

@@ -66,8 +66,8 @@ function listOf(menus: Schemas["CoachLessonMenu"][]) {
 }
 
 const COACHES: Schemas["Coach"][] = [
-  { coach_id: COACH_A, display_name: "山田コーチ", acceptance_status: "accepting" },
-  { coach_id: COACH_B, display_name: "佐藤コーチ", acceptance_status: "suspended" },
+  { coach_id: COACH_A, display_name: "山田コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+  { coach_id: COACH_B, display_name: "佐藤コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
 ];
 
 function apiOf(

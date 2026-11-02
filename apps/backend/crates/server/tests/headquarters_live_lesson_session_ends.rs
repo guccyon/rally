@@ -1,7 +1,7 @@
 //! 本部が通話セッションを本部の判断で終わらせる（admin-web の `endLiveLessonSessionByHeadquarters`）ことを、保存先を
 //! Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で開始したまま
 //! 残った Postgres のセッションを操作の時刻で終わらせ、本部のアカウントを残すこと、終わらせた後は終わっていないセッションの
-//! 一覧に出ず期間の記録に終了の時刻つきで載ること、参加者の終了と 2 回目が 409 になること、月額の生徒のビデオ通話の暦月の枠
+//! 一覧に出ず期間の記録に終了の時刻つきで載ること、参加者の終了と 2 回目と完了の記録が 409 になること、月額の生徒のビデオ通話の暦月の枠
 //! （`getMyEntitlement` の `live_lesson_quota.used`）が変わらないこと、本部以外は 403 になることを確かめる。
 //! 契約の形の細かい検査は interface の `tests/headquarters_live_lesson_session_ends.rs`、保存の往復は infra の
 //! `tests/pg_live_lesson_session_repository.rs`。
@@ -228,6 +228,21 @@ async fn headquarters_ends_a_postgres_session_left_in_progress(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "invalid_session_state");
+
+    // 本部の終了は完了として数えない（Postgres から読んだセッションでも、生徒もコーチも記録できない）
+    for token in [&taro_token, &tanaka_token] {
+        let (status, body) = send(
+            &router,
+            post_json(
+                "/lessons/completions",
+                token,
+                json!({ "lesson_type": "live_lesson", "session_id": session_id }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "live_lesson_session_ended_by_headquarters");
+    }
 
     // ないセッションは 404
     let (status, body) = send(

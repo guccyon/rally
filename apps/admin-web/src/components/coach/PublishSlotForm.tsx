@@ -95,7 +95,7 @@ function SlotTable({
               {item.has_active_booking ? "予約あり" : "予約なし"}
               {/* 定員 1 の枠（マンツーマン）は今までどおり予約の有無だけを出す。 */}
               {item.slot.capacity > 1 && (
-                <span className="block text-xs text-gray-600">
+                <span className="block text-xs text-text-muted">
                   定員 {item.slot.capacity} 人・残り {item.slot.remaining_seats} 席
                 </span>
               )}
@@ -253,7 +253,7 @@ export function PublishSlotForm({
         <label className="flex flex-col">
           スポーツ
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={sport}
             onChange={(event) => changeSport(event.target.value as Schemas["Sport"])}
           >
@@ -267,7 +267,7 @@ export function PublishSlotForm({
         <label className="flex flex-col">
           レッスンメニュー
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={selectedMenu ? lessonMenuId : ""}
             disabled={menus.kind !== "loaded" || options.length === 0}
             aria-describedby="slot-lesson-menu-note"
@@ -285,7 +285,7 @@ export function PublishSlotForm({
           開始
           <input
             type="datetime-local"
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={startsAt}
             onChange={(event) => setStartsAt(event.target.value)}
           />
@@ -294,7 +294,7 @@ export function PublishSlotForm({
           終了
           <input
             type="datetime-local"
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={effectiveEndsAt}
             readOnly={selectedMenu !== undefined}
             onChange={(event) => setEndsAt(event.target.value)}
@@ -303,7 +303,7 @@ export function PublishSlotForm({
         <label className="flex flex-col">
           定員
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border px-2 py-1"
             value={capacity}
             onChange={(event) => setCapacity(Number(event.target.value))}
           >
@@ -317,12 +317,12 @@ export function PublishSlotForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
         >
           枠を公開
         </button>
       </form>
-      <p id="slot-lesson-menu-note" className="text-sm text-gray-600">
+      <p id="slot-lesson-menu-note" className="text-sm text-text-muted">
         {menus.kind === "loading" && "レッスンメニューを読み込み中…"}
         {menus.kind === "failed" &&
           `レッスンメニューを読み込めませんでした（${menus.message}）。メニューを指定せずに公開できます。`}
@@ -334,7 +334,7 @@ export function PublishSlotForm({
               : "レッスンメニューを選ぶと、終了はメニューの時間で決まります。")}
       </p>
       <ResultMessage result={result} />
-      {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
       {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
         <p className="text-sm">まだ枠を公開していません。</p>

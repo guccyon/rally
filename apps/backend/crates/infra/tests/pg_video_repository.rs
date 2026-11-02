@@ -411,18 +411,52 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
         .execute(PendingVideoReviewFilter {
             sport: None,
             min_elapsed_hours: 48,
+            coach_id: None,
         })
         .await
         .unwrap();
     assert_eq!(
         list.videos,
-        [golf.clone(), tennis],
+        [golf.clone(), tennis.clone()],
         "48 時間ちょうど（tennis）は含む"
     );
     let list = list_pending
         .execute(PendingVideoReviewFilter {
             sport: Some(Sport::Golf),
             min_elapsed_hours: 49,
+            coach_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&golf));
+    // コーチで絞ると、そのコーチ宛ての返却待ちだけ（返却した動画は出ない）。スポーツ・経過時間の下限と組み合わせられる
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            coach_id: Some(coach),
+            ..PendingVideoReviewFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&tennis));
+    assert_eq!(
+        list.coaches.keys().copied().collect::<Vec<_>>(),
+        [coach],
+        "表示名は絞った後の動画のコーチだけ引く"
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 0,
+            coach_id: Some(coach),
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 49,
+            coach_id: Some(other_coach),
         })
         .await
         .unwrap();
@@ -496,6 +530,7 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
             from: Some(nov(1)),
             to: Some(nov(2)),
             coach_id: None,
+            sport: None,
         })
         .await
         .unwrap();
@@ -528,6 +563,7 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
             from: Some(nov(1)),
             to: Some(nov(1)),
             coach_id: Some(coach),
+            sport: None,
         })
         .await
         .unwrap();
@@ -536,4 +572,33 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
         [returned[0].clone()],
         "11-01 の日本時間のうちに返したコーチの動画だけ"
     );
+    // スポーツは保存した動画のスポーツで絞り、期間・コーチと組み合わせられる
+    let by_sport = |sport, coach_id| ListReturnedVideoReviewsQuery {
+        from: Some(nov(1)),
+        to: Some(nov(2)),
+        coach_id,
+        sport: Some(sport),
+    };
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, None))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[2].clone()]);
+    let list = list_returned
+        .execute(by_sport(Sport::Tennis, Some(coach)))
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [
+            returned[3].clone(),
+            returned[1].clone(),
+            returned[0].clone()
+        ]
+    );
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, Some(coach)))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
 }

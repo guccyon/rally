@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    BookingId, BookingLessonMenu, BookingStatus, BookingStatusChange, CancellationDecision,
-    CancellationPolicy, SchedulingError, Slot, SlotId,
+    BookingCanceller, BookingId, BookingLessonMenu, BookingStatus, BookingStatusChange,
+    CancellationDecision, CancellationPolicy, SchedulingError, Slot, SlotId,
 };
 use crate::{catalog::LessonMenu, identity::AccountId};
 
@@ -209,6 +209,13 @@ impl Booking {
         self.coach_id
     }
 
+    /// 一覧を絞るコーチの指定に当てはまるか。指定があればその ID が予約された枠のコーチのときだけ、なければどの予約も
+    /// 当てはまる。コーチでない ID・ない ID はどの予約にも当てはまらない（一覧は空になる）。本部が見る予約の一覧と
+    /// キャンセルされた予約の一覧が共に使う。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
     pub const fn is_trial(&self) -> bool {
         self.is_trial
     }
@@ -234,6 +241,18 @@ impl Booking {
     /// キャンセルした時刻。キャンセルするまでは `None`。
     pub const fn cancelled_at(&self) -> Option<SystemTime> {
         self.cancelled_at
+    }
+
+    /// キャンセルした人。キャンセルしていなければ `None`。
+    ///
+    /// キャンセルできるのは予約した生徒だけ（[`Self::cancel`]）なので、キャンセル済みの予約は
+    /// [`BookingCanceller::Student`]。保存先はキャンセルした人を持たず、ここが状態から決める唯一の場所（コーチ・本部が
+    /// キャンセルできるようにするときは、キャンセルした人を保存して読み戻す形に変える）。
+    pub const fn cancelled_by(&self) -> Option<BookingCanceller> {
+        match self.status {
+            BookingStatus::Cancelled => Some(BookingCanceller::Student),
+            BookingStatus::Pending | BookingStatus::Confirmed => None,
+        }
     }
 
     /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
@@ -355,6 +374,36 @@ mod tests {
         assert_eq!(booking.cancelled_at(), Some(at(1)));
         assert_eq!(slot.status(), SlotStatus::Open);
         assert_eq!(slot.remaining_seats(), 1);
+    }
+
+    #[test]
+    fn only_a_cancelled_booking_has_the_student_as_its_canceller() {
+        let mut slot = slot(100, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert_eq!(booking.cancelled_by(), None, "作ったばかり");
+        booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
+        assert_eq!(booking.cancelled_by(), None, "確定済み");
+
+        booking.cancel(STUDENT, &mut slot, at(2)).unwrap();
+        assert_eq!(booking.cancelled_by(), Some(BookingCanceller::Student));
+
+        // 失敗したキャンセルは変えない
+        let mut pending = reserve(2, OTHER_STUDENT, false, &mut slot, &[booking.clone()]).unwrap();
+        assert!(pending.cancel(STUDENT, &mut slot, at(3)).is_err());
+        assert_eq!(pending.cancelled_by(), None);
+
+        // 保存先から読み戻したキャンセル済みの予約も同じ
+        let restored = Booking::restore(
+            booking.id(),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            NOW,
+            None,
+            Some(at(2)),
+        );
+        assert_eq!(restored.cancelled_by(), Some(BookingCanceller::Student));
     }
 
     #[test]
@@ -856,6 +905,22 @@ mod tests {
             .unwrap()
             .with_lesson_menu(&other, Some(&lesson_menu(50, COACH, true)));
         assert_eq!(booking.lesson_menu(), None);
+    }
+
+    #[test]
+    fn matches_coach_only_the_coach_of_the_slot_or_any_without_a_coach() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.matches_coach(None),
+            "指定がなければどのコーチの予約も"
+        );
+        assert!(booking.matches_coach(Some(COACH)));
+        // 別のコーチ・予約した生徒（コーチでない ID）には当てはまらない
+        assert!(!booking.matches_coach(Some(AccountId::from_u128(99))));
+        assert!(!booking.matches_coach(Some(STUDENT)));
+        // キャンセルしても枠のコーチは変わらない
+        assert!(cancelled(booking).matches_coach(Some(COACH)));
     }
 
     #[test]
