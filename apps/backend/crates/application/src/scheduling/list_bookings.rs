@@ -53,7 +53,8 @@ pub struct ListBookingsQuery {
 }
 
 /// 本部が見る予約の一覧（[`ListBookings`]）・キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）・コーチの自分の
-/// 予約の一覧（[`super::ListCoachBookings`]）・予約枠の需給（[`super::GetSlotSupply`]）の失敗。
+/// 予約の一覧（[`super::ListCoachBookings`]）・予約枠の需給（[`super::GetSlotSupply`]）・コーチの自分の枠の一覧
+/// （[`super::ListCoachSlots`]）の失敗。
 #[derive(Debug)]
 pub enum ListBookingsError {
     /// 期間が規則を満たさない（[`domain::scheduling::BookingPeriod::new`] の違反）
