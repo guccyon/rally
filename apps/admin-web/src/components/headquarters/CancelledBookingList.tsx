@@ -4,7 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { BOOKING_CANCELLER_LABELS, formatDateTime, formatDay } from "@/components/labels";
 
 import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";

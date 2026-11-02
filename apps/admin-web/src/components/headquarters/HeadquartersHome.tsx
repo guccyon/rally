@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { NotImplemented, Section } from "@/components/Section";
+import { NotImplemented, Section } from "@/components/ui/Section";
 
 /** 本部の画面（読むだけ）。完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
 export function HeadquartersHome() {
