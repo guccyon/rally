@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.1.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.1.1     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -61,3 +61,9 @@ changelog:
         - student-app は ThemeData を tokens.yaml から作り（colorSchemeSeed をやめる）、Noto Sans CJK JP を同梱する
         - admin-web は globals.css の @theme に tokens.yaml の色・角丸・余白を写し、gray・green・red の class を役割の名前に置き換える
         - 今の文言は変えない（content.yaml は今の文言に合わせて書いた）
+    - version: 0.1.1
+      date: "2026-11-02"
+      change: tokens.yaml の typography.families に bundling_status（student-app の書体の同梱がまだであること）を書き足した。admin-web の @theme に書体の段の字間（letter_spacing）を写した
+      reason: 正本は student-app に Noto Sans CJK JP を同梱すると書くが、pubspec に fonts がなく、正本と実際がずれていた。admin-web は書体の段の大きさと行間だけを写し、字間が抜けていた
+      affects: admin-web の全画面（text-xs・text-sm・text-base・text-xl・text-headline の字間が変わる）。student-app は変わらない
+      approved_by: 工場（文の直しとトークンの写し）
