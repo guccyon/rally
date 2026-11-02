@@ -123,6 +123,12 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-cancelled-bookings",
+    title: "本部: キャンセルされた予約",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+  },
+  {
     id: "hq-booking-detail",
     title: "本部: 予約の詳細",
     role: "headquarters",
