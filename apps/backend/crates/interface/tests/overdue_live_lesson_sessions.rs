@@ -1,7 +1,8 @@
 //! `GET /live-lesson-sessions/overdue`（admin-web の `listOverdueLiveLessonSessions`。本部が見る、終わっていないまま
 //! 時間の過ぎた通話セッションの一覧）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが
 //! 呼べること（403）、開始から既定の 3 時間以上たった通話中のセッションを開始の古い順に返すこと、`older_than_hours` で
-//! 時間を変えられること、整数でない・範囲の外の `older_than_hours` が 422 であることを確かめる。基準の境界は domain の
+//! 時間を変えられること、`coach_id` でコーチを絞れること（時間と組み合わせられる）、整数でない・範囲の外の
+//! `older_than_hours` と UUID でない `coach_id` が 422 であることを確かめる。基準の境界は domain の
 //! `OverdueSessionCriteria`、選び方の細部はユースケース `ListOverdueLiveLessonSessions` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -226,6 +227,48 @@ async fn older_than_hours_changes_the_threshold() {
         admin.assert_response("get", PATH, status, &body);
         assert_eq!(body["older_than_hours"], hours);
         assert_eq!(session_ids(&body), expected, "{hours} 時間");
+    }
+}
+
+#[tokio::test]
+async fn coach_id_narrows_the_sessions_with_older_than_hours() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for (query, expected) in [
+        (format!("coach_id={}", uuid(42)), vec![uuid(5), uuid(1)]),
+        (format!("coach_id={}", uuid(99)), vec![uuid(4)]),
+        (
+            format!("coach_id={}&older_than_hours=1", uuid(42)),
+            vec![uuid(5), uuid(1), uuid(2)],
+        ),
+        (
+            format!("older_than_hours=4&coach_id={}", uuid(42)),
+            vec![uuid(5)],
+        ),
+        // コーチでない ID（生徒）・ない ID は空の一覧
+        (format!("coach_id={}", uuid(3)), vec![]),
+        (format!("coach_id={}", uuid(12345)), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(session_ids(&body), expected, "{query}");
+    }
+    // 時間を省けば既定の 3 時間のまま
+    let (_, body) = get(&app, &format!("{PATH}?coach_id={}", uuid(42)), HEADQUARTERS).await;
+    assert_eq!(body["older_than_hours"], 3);
+}
+
+#[tokio::test]
+async fn invalid_coach_id_is_422() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for value in ["42", "not-a-uuid", ""] {
+        let (status, body) = get(&app, &format!("{PATH}?coach_id={value}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["code"], "validation_failed", "{value}");
+        assert_eq!(body["message"], "coach_id が UUID でない", "{value}");
     }
 }
 
