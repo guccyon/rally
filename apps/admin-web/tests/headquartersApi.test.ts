@@ -191,6 +191,18 @@ describe("headquartersApi", () => {
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/reviews`);
+    expect(new URL(request.url).search).toBe("");
+  });
+
+  test("listCoachReviews は点の絞り込みを max_rating のクエリにして呼ぶ", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const list = { coach_id: coachId, reviews: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listCoachReviews(coachId, { max_rating: 2 });
+    expect(result).toEqual({ ok: true, data: list });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe(`/api/coaches/${coachId}/reviews`);
+    expect(url.searchParams.get("max_rating")).toBe("2");
   });
 
   test("listLessonMenus は絞り込みをクエリにして GET /api/lesson-menus を呼ぶ", async () => {
