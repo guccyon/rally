@@ -123,6 +123,12 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-booking-detail",
+    title: "本部: 予約の詳細",
+    role: "headquarters",
+    path: "/headquarters/bookings/detail?booking_id=44440010-0000-4000-8000-000000000000",
+  },
+  {
     id: "hq-incomplete-coach-profiles",
     title: "本部: 自己紹介の足りないコーチ",
     role: "headquarters",
