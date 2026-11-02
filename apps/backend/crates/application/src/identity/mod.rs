@@ -18,6 +18,8 @@ mod student_contract_lookup;
 mod student_last_booking_lookup;
 mod student_lesson_history_lookup;
 mod student_overview;
+mod student_video_activity;
+mod student_video_activity_lookup;
 mod token;
 
 pub use get_account::GetAccount;
@@ -36,4 +38,6 @@ pub use student_contract_lookup::StudentContractLookup;
 pub use student_last_booking_lookup::StudentLastBookingLookup;
 pub use student_lesson_history_lookup::StudentLessonHistoryLookup;
 pub use student_overview::StudentOverview;
+pub use student_video_activity::StudentVideoActivity;
+pub use student_video_activity_lookup::StudentVideoActivityLookup;
 pub use token::{AccessToken, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier};
