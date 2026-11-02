@@ -100,6 +100,16 @@ export const SCREENS: Screen[] = [
       await page.getByRole("button", { name: "「スイングの見直し」を非公開にする" }).click();
     },
   },
+  {
+    id: "hq-lesson-menu-history",
+    title: "本部: レッスンメニューの公開の記録",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("link", { name: "「パターの距離感」の公開の記録を見る" }).click();
+      await page.getByRole("table", { name: "公開の記録" }).waitFor();
+    },
+  },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
   {
     id: "hq-student-activity",

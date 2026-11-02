@@ -595,6 +595,19 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/lesson-menus/{lesson_menu_id}/publication-changes",
+    // 一覧の「パターの距離感」（本部が非公開にしている）の記録。一度公開に戻したあと、また非公開にした。
+    body: {
+      lesson_menu_id: id("aaaa", 10),
+      changes: [
+        { action: "unpublished", reason: "料金の表記が誤っている", changed_by: HEADQUARTERS_ID, changed_at: at(-3) },
+        { action: "republished", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 2) },
+        { action: "unpublished", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 4) },
+      ],
+    } satisfies Schemas["LessonMenuPublicationChangeList"],
+  },
+  {
+    method: "GET",
     path: "/students",
     body: {
       students: [
