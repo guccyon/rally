@@ -145,6 +145,21 @@ impl MessageThreadRepository for PgMessageThreadRepository {
         assemble(rows, messages)
     }
 
+    async fn list_all(&self) -> Result<Vec<MessageThread>, Unavailable> {
+        let rows: Vec<ThreadRow> = sqlx::query_as(
+            "SELECT thread_id, student_id, coach_id, opened_at
+             FROM messaging.threads",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        let ids: Vec<Uuid> = rows.iter().map(|row| row.0).collect();
+        let messages = messages_of(&self.pool, &ids)
+            .await
+            .map_err(Unavailable::new)?;
+        assemble(rows, messages)
+    }
+
     async fn update<F>(
         &self,
         thread_id: MessageThreadId,
