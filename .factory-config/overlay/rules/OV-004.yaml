@@ -1,0 +1,19 @@
+id: OV-004
+title: "画面に出す一覧を読んでから既読にしない（既読にする呼び出しを先にし、表示していないものを既読にしない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#102"
+  - "github:guccyon/rally#108"
+signature: "judgment:ui"
+check:
+  kind: rubric
+  text: >-
+    画面を開いたときや読み直したときに、一覧を取る呼び出し（`listMessages` など）の後でスレッドや対象をまるごと既読にする呼び出し（`markMessageThreadRead` など）を別に呼んでいる差分は、
+    2 つの呼び出しの間に届いたものが画面に出ないまま既読になり、相手に「既読」と見えてしまうので欠陥とする。
+    既読にする呼び出しを一覧の取得より前に置いている（既読にしたものが必ず一覧に入る）差分や、表示した最後の項目の id・時刻までに限って既読にしている差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-004/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-004/negative-1.diff" }
