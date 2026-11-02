@@ -5,7 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Schemas } from "@/api/client";
 import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, formatDay } from "@/components/labels";
 
 import { type Period, periodError, recentPeriod } from "./bookingPeriod";
