@@ -93,7 +93,7 @@ export function PendingVideoReviewList({
         <label className="block">
           スポーツ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
               void changeFilter({ ...filter, sport: event.target.value as Sport | "" })
@@ -110,7 +110,7 @@ export function PendingVideoReviewList({
         <label className="block">
           送ってからの経過
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.minElapsedHours === null ? "" : String(filter.minElapsedHours)}
             onChange={(event) =>
               void changeFilter({
@@ -128,15 +128,15 @@ export function PendingVideoReviewList({
           </select>
         </label>
       </div>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-text-muted">
           {formatDateTime(state.list.as_of)} 時点の経過時間です（1 時間に満たない端数は切り捨て）。
         </p>
       )}
       {overdueCount > 0 && (
-        <p className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-700">
+        <p className="rounded-md border border-danger bg-danger-container p-2 text-sm text-danger">
           {OVERDUE_ELAPSED_HOURS} 時間以上たったものが {overdueCount} 件あります。
         </p>
       )}
@@ -160,7 +160,7 @@ export function PendingVideoReviewList({
             {state.list.videos.map((video) => {
               const overdue = isOverdue(video);
               return (
-                <tr key={video.video_id} className={`border-t ${overdue ? "bg-red-50" : ""}`}>
+                <tr key={video.video_id} className={`border-t ${overdue ? "bg-danger-container" : ""}`}>
                   <td className="py-1">{video.student_display_name ?? "（名前を表示できません）"}</td>
                   <td className="py-1">{video.coach_display_name ?? "（名前を表示できません）"}</td>
                   <td className="py-1">{SPORT_LABELS[video.sport]}</td>
@@ -168,7 +168,7 @@ export function PendingVideoReviewList({
                   <td className="py-1">
                     {video.elapsed_hours} 時間
                     {overdue && (
-                      <span className="ml-2 rounded bg-red-600 px-2 text-xs text-white">
+                      <span className="ml-2 rounded-md bg-danger px-2 text-xs text-on-primary">
                         {OVERDUE_ELAPSED_HOURS} 時間超
                       </span>
                     )}

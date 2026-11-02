@@ -45,18 +45,18 @@ export function LoginForm() {
       <label className="block">
         <span className="font-medium">アクセストークン</span>
         <input
-          className="mt-1 block w-full rounded border px-2 py-1 font-mono"
+          className="mt-1 block w-full rounded-md border px-2 py-1 font-mono"
           value={token}
           onChange={(event) => setToken(event.target.value)}
           placeholder="POST /accounts の access_token"
         />
       </label>
       {error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {error}
         </p>
       )}
-      <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+      <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
         ログイン
       </button>
     </form>
