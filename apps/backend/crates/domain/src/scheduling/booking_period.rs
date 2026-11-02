@@ -2,8 +2,8 @@ use std::time::{Duration, SystemTime};
 
 use super::SchedulingError;
 
-/// 本部が見る予約の一覧（admin-web の `listBookings` は枠の開始で、`listCancelledBookings` はキャンセルした時刻で絞る）の
-/// 期間。開始 `starts_at`（含む）から終了 `ends_at`（含まない）まで。
+/// 予約の一覧（admin-web の本部の `listBookings` とコーチの `listMyCoachBookings` は枠の開始で、本部の
+/// `listCancelledBookings` はキャンセルした時刻で絞る）の期間。開始 `starts_at`（含む）から終了 `ends_at`（含まない）まで。
 ///
 /// 日付（日本時間）の `from` の 0 時から `to` の翌日 0 時までにあたる。日付から時刻への変換（タイムゾーン）は
 /// application が決め、ここは期間の長さの規則だけを持つ。期間は 1 日以上 [`Self::MAX_DAYS`] 日まで。日付を省いたときの
@@ -64,6 +64,15 @@ mod tests {
         let one = BookingPeriod::new(day(10), day(11)).unwrap();
         assert_eq!((one.starts_at(), one.ends_at()), (day(10), day(11)));
         assert!(BookingPeriod::new(day(10), day(10 + u64::from(BookingPeriod::MAX_DAYS))).is_ok());
+    }
+
+    #[test]
+    fn default_days_satisfy_the_rule() {
+        // 日付を省いたときの長さ（本部の予約の一覧とコーチの自分の予約の一覧で同じ）は、それだけで規則を満たす
+        let ends_at = day(10 + u64::from(BookingPeriod::DEFAULT_DAYS));
+        let period = BookingPeriod::new(day(10), ends_at).unwrap();
+        assert!(period.includes(ends_at - Duration::from_nanos(1)));
+        assert!(!period.includes(ends_at));
     }
 
     #[test]
