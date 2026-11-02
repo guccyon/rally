@@ -302,7 +302,11 @@ const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
 const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
   lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
-  lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+  {
+    // 本部が対応済みにした行（対応済みの日時を出し、「対応済みにする」は出ない）。
+    ...lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+    handling: { handled_by: id("5555", 1), handled_at: at(-24 * 3) },
+  },
 ];
 
 // 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
@@ -478,7 +482,12 @@ export const FIXTURES: Fixture[] = [
       coach_id: COACH_ID,
       changes: [
         { acceptance_status: "accepting", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
-        { acceptance_status: "suspended", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+        {
+          acceptance_status: "suspended",
+          reason: "連絡がつかないため、確認できるまで止める",
+          changed_by: HEADQUARTERS_ID,
+          changed_at: at(-72),
+        },
       ],
     } satisfies Schemas["CoachAcceptanceChangeList"],
   },
@@ -509,7 +518,18 @@ export const FIXTURES: Fixture[] = [
         average_rating: 4.5,
       },
       published_lesson_menu_count: 3,
+      returned_video_review_count: 7,
+      median_video_review_lead_time_hours: 18.5,
+      pending_video_review_count: 2,
+      overdue_pending_video_review_count: 1,
     } satisfies Schemas["CoachOverview"],
+  },
+  {
+    // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { sport: "swimming" },
+    body: { coaches: [] } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
     method: "GET",
@@ -536,6 +556,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
+    // 表示名で「鈴木」を探したとき（hq-coaches-search）。
+    method: "GET",
+    path: "/coaches",
+    query: { q: "鈴木" },
+    body: {
+      coaches: [
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+      ],
+    } satisfies Schemas["CoachList"],
+  },
+  {
     method: "GET",
     path: "/coaches",
     body: {
@@ -560,6 +591,25 @@ export const FIXTURES: Fixture[] = [
         { sport: "swimming", status: "sufficient", published_slots: 10, booking_students: 7 },
       ],
     } satisfies Schemas["SlotSupplyReport"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
+    query: { q: "スイング" },
+    body: {
+      lesson_menus: [
+        {
+          ...MENU_FORE,
+          lesson_menu_id: id("aaaa", 9),
+          coach_id: COACH_ID_2,
+          sport: "golf",
+          name: "スイングの見直し",
+          duration_minutes: 90,
+          coach_display_name: "高橋 コーチ",
+          recent_booking_count: 7,
+        },
+      ],
+    } satisfies Schemas["CoachLessonMenuList"],
   },
   {
     method: "GET",
@@ -592,6 +642,19 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus/{lesson_menu_id}/publication-changes",
+    // 一覧の「パターの距離感」（本部が非公開にしている）の記録。一度公開に戻したあと、また非公開にした。
+    body: {
+      lesson_menu_id: id("aaaa", 10),
+      changes: [
+        { action: "unpublished", reason: "料金の表記が誤っている", changed_by: HEADQUARTERS_ID, changed_at: at(-3) },
+        { action: "republished", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 2) },
+        { action: "unpublished", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 4) },
+      ],
+    } satisfies Schemas["LessonMenuPublicationChangeList"],
   },
   {
     method: "GET",
@@ -654,6 +717,8 @@ export const FIXTURES: Fixture[] = [
         },
       ],
       cancelled_booking_count: 1,
+      submitted_video_count: 2,
+      pending_video_review_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {
@@ -684,6 +749,17 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    // 生徒で絞った予約の一覧。mockApi は先に一致した応答を返すので、絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { student_id: STUDENT_ID },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter((item) => item.booking.student_id === STUDENT_ID),
+    } satisfies Schemas["HeadquartersBookingList"],
   },
   {
     method: "GET",
@@ -758,8 +834,20 @@ export const FIXTURES: Fixture[] = [
           body: "今月中に体験予約すると、2 回目のレッスンが無料になります。\nこの機会にぜひお試しください。",
           sport: "swimming",
           recipient_count: 8,
+          read_count: 5,
           sent_at: at(-24),
           withdrawal: null,
+        },
+        {
+          announcement_id: id("8888", 5),
+          sender_id: "99999999-9999-4999-8999-999999999999",
+          title: "テニスのコートの案内（誤り）",
+          body: "11月からコートの予約はアプリの「予約」から行えます。",
+          sport: "tennis",
+          recipient_count: 15,
+          read_count: 3,
+          sent_at: at(-24 * 2),
+          withdrawal: { withdrawn_by: "99999999-9999-4999-8999-999999999999", withdrawn_at: at(-24 * 2 + 1) },
         },
         {
           announcement_id: id("8888", 1),
@@ -768,6 +856,7 @@ export const FIXTURES: Fixture[] = [
           body: "10月30日（木）2:00〜4:00 はメンテナンスのため、アプリを使えません。",
           sport: null,
           recipient_count: 120,
+          read_count: 87,
           sent_at: at(-24 * 4),
           withdrawal: null,
         },

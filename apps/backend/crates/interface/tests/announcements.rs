@@ -1,7 +1,9 @@
 //! `/announcements` の統合テスト。admin-web の `POST /announcements`（`sendAnnouncement`）と `GET /announcements`
 //! （`listAnnouncements`）と `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`）のレスポンスの形を
 //! admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った生徒にお知らせを送れること（生徒ごとに
-//! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること・対象の生徒がいなければ 404・
+//! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること
+//! （1 件ごとに受け取った生徒のうち既読にした数。取り下げたものは取り下げた時刻まで）・送った日付（日本時間）の
+//! `from`・`to` で絞れること（日付でない・期間の規則違反は 422）・対象の生徒がいなければ 404・
 //! 題と本文とスポーツの規則違反は 422・送ったお知らせを取り下げられること（一覧で取り下げ済みと分かる。二度目は 409、
 //! ないものは 404）・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
@@ -17,7 +19,9 @@ use application::{
         InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
         RecordingPushSender,
     },
-    notification::{ListAnnouncements, SendAnnouncement, WithdrawAnnouncement},
+    notification::{
+        ListAnnouncements, NotificationRepository, SendAnnouncement, WithdrawAnnouncement,
+    },
     profile::ProfileAnnouncementRecipientLookup,
 };
 use axum::{
@@ -126,8 +130,12 @@ impl App {
                 self.push.clone(),
                 FixedClock(now),
             ),
-            ListAnnouncements::new(self.announcements.clone()),
-            WithdrawAnnouncement::new(self.announcements.clone(), FixedClock(now)),
+            ListAnnouncements::new(self.announcements.clone(), self.notifications.clone()),
+            WithdrawAnnouncement::new(
+                self.announcements.clone(),
+                self.notifications.clone(),
+                FixedClock(now),
+            ),
             FakeTokens,
         )
     }
@@ -233,6 +241,7 @@ async fn headquarters_sends_to_every_student_and_respects_the_settings() {
             "body": "11/3 の 2:00〜4:00 は使えません。\nご不便をおかけします。",
             "sport": null,
             "recipient_count": 3,
+            "read_count": 0,
             "sent_at": "2026-11-01T00:10:00Z",
             "withdrawal": null
         }),
@@ -319,6 +328,157 @@ async fn headquarters_lists_what_was_sent_newest_first() {
         "新しい順。ほかの本部のアカウントが送った分も出す"
     );
     assert_eq!(app.announcements.all().len(), 2, "照会では何も変えない");
+}
+
+/// `token` で `GET /announcements?{query}` を呼び、レスポンスを admin-web の契約で検査する。
+async fn list(router: &Router, query: &str) -> (StatusCode, Value) {
+    call(
+        router,
+        "GET",
+        &format!("/announcements?{query}"),
+        "/announcements",
+        Some(HEADQUARTERS),
+        None,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn the_sent_date_in_japan_narrows_the_list() {
+    let app = App::new().await;
+    // 2026-11-01T00:10:00Z は日本時間の 11/1、2026-11-01T15:00:00Z は日本時間の 11/2 の始まり
+    let (_, nov1) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let (_, nov2) = send(
+        &app.router(at(15 * 60)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let router = app.router(at(16 * 60)).await;
+
+    for (query, expected) in [
+        ("", json!([nov2, nov1])),
+        ("from=2026-11-01&to=2026-11-01", json!([nov1])),
+        ("from=2026-11-01&to=2026-11-02", json!([nov2, nov1])),
+        ("from=2026-11-02", json!([nov2])),
+        ("to=2026-11-01", json!([nov1])),
+        ("from=2026-11-03", json!([])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+}
+
+#[tokio::test]
+async fn an_invalid_period_is_rejected() {
+    let app = App::new().await;
+    let router = app.router(at(0)).await;
+    for (query, message) in [
+        (
+            "from=2026-11-03&to=2026-11-02",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        (
+            "from=2026-11-01&to=2026-12-02",
+            "from から to までは 31 日まで",
+        ),
+        ("from=2026/11/01", "from は YYYY-MM-DD の日付でない"),
+        ("to=", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
+    }
+    let (status, _) = list(&router, "from=2026-11-01&to=2026-12-01").await;
+    assert_eq!(status, StatusCode::OK, "31 日まではよい");
+}
+
+#[tokio::test]
+async fn the_list_counts_the_students_who_read_each_announcement() {
+    let app = App::new().await;
+    let (_, everyone) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let (_, swimming) = send(
+        &app.router(at(20)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(
+            json!({ "title": "キャンペーン", "body": "水泳の生徒へ", "sport": "swimming" }),
+        )),
+    )
+    .await;
+    // 生徒 1 は全員へのお知らせだけを、生徒 2 は両方を読む（生徒 3 は読まない）
+    app.notifications
+        .mark_all_read(TENNIS_STUDENT, at(30))
+        .await
+        .unwrap();
+    app.notifications
+        .mark_all_read(SWIMMING_STUDENT, at(30))
+        .await
+        .unwrap();
+
+    let (status, body) = send(&app.router(at(40)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counts: Vec<_> = body["announcements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            (
+                a["announcement_id"].clone(),
+                a["recipient_count"].clone(),
+                a["read_count"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [
+            (swimming["announcement_id"].clone(), json!(1), json!(1)),
+            (everyone["announcement_id"].clone(), json!(3), json!(2)),
+        ],
+        "受け取った生徒のうち既読にした数"
+    );
+
+    // 取り下げても一覧に残り、既読にした数は取り下げた時刻までのもの
+    let id = everyone["announcement_id"].as_str().unwrap();
+    let (status, withdrawn) = withdraw(&app.router(at(50)).await, Some(HEADQUARTERS), id).await;
+    assert_eq!(status, StatusCode::OK, "{withdrawn}");
+    assert_eq!(withdrawn["read_count"], 2, "取り下げの応答にも載る");
+    app.notifications
+        .mark_all_read(QUIET_STUDENT, at(60))
+        .await
+        .unwrap();
+    let (_, listed) = send(&app.router(at(70)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(listed["announcements"][1]["announcement_id"], id);
+    assert_eq!(
+        listed["announcements"][1]["read_count"], 2,
+        "取り下げたあとに「すべて既読にする」を押した生徒は数えない"
+    );
+    assert_eq!(
+        app.notifications
+            .all()
+            .iter()
+            .filter(|n| n.recipient() == QUIET_STUDENT)
+            .map(|n| n.is_read())
+            .collect::<Vec<_>>(),
+        [true],
+        "既読そのものは変えない（D141）"
+    );
 }
 
 #[tokio::test]

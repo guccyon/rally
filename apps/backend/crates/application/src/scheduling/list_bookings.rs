@@ -1,10 +1,11 @@
 use std::{cmp::Reverse, collections::BTreeSet};
 
 use domain::{
+    catalog::LessonMenuId,
     identity::AccountId,
-    scheduling::{BookingPeriod, BookingStatus, SchedulingError},
+    scheduling::{BookingStatus, SchedulingError},
 };
-use time::{Date, Duration};
+use time::Date;
 
 use super::{
     BookingCoachDisplayNameLookup, BookingList, BookingRepository, StudentDisplayNameLookup,
@@ -16,13 +17,21 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始する予約を読み、開始時刻の古い順に並べる
 /// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
-/// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
-/// domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧。
-/// 規則は domain の [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
+/// [`BookingPeriod::DEFAULT_DAYS`] 日目（省いた日付の決め方は [`calendar_day::period`] の 1 か所）。期間の規則（`to` が
+/// `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。`coach_id` があればそのコーチの
+/// 枠への予約だけに絞る（いないコーチなら空の一覧。規則は domain の
+/// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
 /// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
+/// `lesson_menu_id` があれば、予約した時点のレッスンメニューの写しがそのメニューの予約だけに絞る（メニューのない予約は出ない。
+/// ないメニューなら空の一覧。規則は domain の
+/// [`Booking::matches_lesson_menu`](domain::scheduling::Booking::matches_lesson_menu)）。
 /// 一覧に出るコーチと生徒の表示名は profile に問い合わせて添える。読むだけで何も変えない。
+///
+/// [`BookingPeriod`]: domain::scheduling::BookingPeriod
+/// [`BookingPeriod::DEFAULT_DAYS`]: domain::scheduling::BookingPeriod::DEFAULT_DAYS
+/// [`BookingPeriod::MAX_DAYS`]: domain::scheduling::BookingPeriod::MAX_DAYS
 pub struct ListBookings<B, K, D, C> {
     bookings: B,
     coaches: K,
@@ -45,12 +54,16 @@ pub struct ListBookingsQuery {
     pub statuses: Vec<BookingStatus>,
     /// あれば体験予約か（`true` なら体験予約だけ、`false` なら体験予約でない予約だけ。なければ問わない）
     pub trial: Option<bool>,
+    /// あれば予約した時点のレッスンメニューの写しがこのメニューの予約だけ
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
-/// 本部が見る予約の一覧（[`ListBookings`]）と、キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）の失敗。
+/// 本部が見る予約の一覧（[`ListBookings`]）・キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）・コーチの自分の
+/// 予約の一覧（[`super::ListCoachBookings`]）・予約枠の需給（[`super::GetSlotSupply`]）・コーチの自分の枠の一覧
+/// （[`super::ListCoachSlots`]）の失敗。
 #[derive(Debug)]
 pub enum ListBookingsError {
-    /// 期間が規則を満たさない（[`BookingPeriod::new`] の違反）
+    /// 期間が規則を満たさない（[`domain::scheduling::BookingPeriod::new`] の違反）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -88,13 +101,7 @@ where
         &self,
         query: ListBookingsQuery,
     ) -> Result<BookingList, ListBookingsError> {
-        let from = query
-            .from
-            .unwrap_or_else(|| calendar_day::of(self.clock.now()));
-        let to = query.to.unwrap_or_else(|| {
-            from.saturating_add(Duration::days(i64::from(BookingPeriod::DEFAULT_DAYS) - 1))
-        });
-        let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
+        let (from, to, period) = calendar_day::period(query.from, query.to, self.clock.now())?;
 
         let (_, mut bookings) = self
             .bookings
@@ -108,6 +115,7 @@ where
                     .is_none_or(|student_id| booking.student_id() == student_id)
                 && (query.statuses.is_empty() || query.statuses.contains(&booking.status()))
                 && query.trial.is_none_or(|trial| booking.is_trial() == trial)
+                && booking.matches_lesson_menu(query.lesson_menu_id)
         });
         bookings.sort_by_key(|booking| {
             (
@@ -148,9 +156,11 @@ mod tests {
     };
 
     use domain::{
-        catalog::Sport,
+        catalog::{LessonMenuName, Sport},
         profile::DisplayName,
-        scheduling::{Booking, BookingStatus, Slot, SlotId, SlotSeats, SlotStatus},
+        scheduling::{
+            Booking, BookingLessonMenu, BookingStatus, Slot, SlotId, SlotSeats, SlotStatus,
+        },
     };
     use time::Month;
 
@@ -307,6 +317,7 @@ mod tests {
                 student_id: None,
                 statuses: Vec::new(),
                 trial: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -371,6 +382,7 @@ mod tests {
             student_id: None,
             statuses: Vec::new(),
             trial: None,
+            lesson_menu_id: None,
         })
         .await
         .unwrap();
@@ -394,6 +406,7 @@ mod tests {
                     student_id: None,
                     statuses: Vec::new(),
                     trial: None,
+                    lesson_menu_id: None,
                 },
                 SchedulingError::BookingPeriodEndsBeforeItStarts,
             ),
@@ -406,6 +419,7 @@ mod tests {
                     student_id: None,
                     statuses: Vec::new(),
                     trial: None,
+                    lesson_menu_id: None,
                 },
                 SchedulingError::BookingPeriodEndsBeforeItStarts,
             ),
@@ -418,6 +432,7 @@ mod tests {
                     student_id: None,
                     statuses: Vec::new(),
                     trial: None,
+                    lesson_menu_id: None,
                 },
                 SchedulingError::BookingPeriodTooLong { max_days: 31 },
             ),
@@ -438,6 +453,7 @@ mod tests {
                     student_id: None,
                     statuses: Vec::new(),
                     trial: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .is_ok()
@@ -468,6 +484,7 @@ mod tests {
                 student_id: None,
                 statuses: Vec::new(),
                 trial: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -565,6 +582,7 @@ mod tests {
                     student_id: None,
                     statuses: statuses.clone(),
                     trial: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .unwrap();
@@ -580,6 +598,7 @@ mod tests {
                 student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -675,6 +694,7 @@ mod tests {
                 student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: Some(true),
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -687,6 +707,7 @@ mod tests {
                 student_id: None,
                 statuses: vec![BookingStatus::Pending],
                 trial: Some(true),
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -820,6 +841,176 @@ mod tests {
             assert_eq!((list.from, list.to), (date(1), date(7)));
             assert!(list.bookings.is_empty(), "{student_id:?}");
         }
+        assert!(lookup.students_asked.lock().unwrap().is_empty());
+    }
+
+    /// `slot` に、予約した時点のレッスンメニューの写し `menu` のある予約を作る。
+    async fn reserve_with_menu(
+        bookings: &InMemoryBookingRepository,
+        student: AccountId,
+        slot: u128,
+        menu: u128,
+        created_at: SystemTime,
+    ) -> Booking {
+        bookings
+            .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+                Booking::reserve(
+                    bookings.next_id(),
+                    student,
+                    false,
+                    slot,
+                    existing,
+                    created_at,
+                )
+                .map(|booking| {
+                    booking.with_restored_lesson_menu(Some(BookingLessonMenu::restore(
+                        LessonMenuId::from_u128(menu),
+                        LessonMenuName::new("フォア改善").unwrap(),
+                        None,
+                    )))
+                })
+            })
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn with_lesson_menu_lists_only_bookings_of_that_menu_in_the_days() {
+        const MENU: u128 = 50;
+        const OTHER_MENU: u128 = 51;
+        let slots = InMemorySlotRepository::with_slots([
+            slot(1, COACH, at(2, 10)),
+            slot(2, COACH, at(2, 9)),
+            slot(3, OTHER_COACH, at(3, 18)),
+            // メニューのない予約
+            slot(4, COACH, at(3, 12)),
+            // 期間（11 月 2 日〜3 日）の後
+            slot(5, COACH, at(4, 0)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        let cancelled = reserve_with_menu(&bookings, OTHER_STUDENT, 2, MENU, at(1, 0)).await;
+        reserve_with_menu(&bookings, STUDENT, 1, MENU, at(1, 0)).await;
+        reserve_with_menu(&bookings, STUDENT, 3, OTHER_MENU, at(1, 0)).await;
+        book(&bookings, STUDENT, 4, at(1, 0)).await;
+        reserve_with_menu(&bookings, STUDENT, 5, MENU, at(1, 0)).await;
+        // キャンセルされた予約もメニューの写しのまま出る
+        bookings
+            .update(cancelled.id(), |booking, slot| {
+                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+            })
+            .await
+            .unwrap();
+
+        let lookup = RecordingLookup::default();
+        let use_case = list_bookings(bookings, lookup.clone(), at(1, 0));
+        let list = use_case
+            .execute(ListBookingsQuery {
+                from: Some(date(2)),
+                to: Some(date(3)),
+                lesson_menu_id: Some(LessonMenuId::from_u128(MENU)),
+                ..ListBookingsQuery::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(
+            rows(&list),
+            [(2, BookingStatus::Cancelled), (1, BookingStatus::Pending)]
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])],
+            "絞った後の予約の生徒だけを問い合わせる"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH])]
+        );
+
+        // 期間・コーチ・生徒・状態・体験予約かとも組み合わせられる。なければメニューを問わない（今までと同じ）
+        let menu = Some(LessonMenuId::from_u128(MENU));
+        for (query, expected) in [
+            (
+                ListBookingsQuery {
+                    lesson_menu_id: Some(LessonMenuId::from_u128(OTHER_MENU)),
+                    ..ListBookingsQuery::default()
+                },
+                vec![(3, BookingStatus::Pending)],
+            ),
+            (
+                ListBookingsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    lesson_menu_id: menu,
+                    ..ListBookingsQuery::default()
+                },
+                vec![],
+            ),
+            (
+                ListBookingsQuery {
+                    student_id: Some(STUDENT),
+                    lesson_menu_id: menu,
+                    ..ListBookingsQuery::default()
+                },
+                vec![(1, BookingStatus::Pending)],
+            ),
+            (
+                ListBookingsQuery {
+                    coach_id: Some(COACH),
+                    statuses: vec![BookingStatus::Cancelled],
+                    lesson_menu_id: menu,
+                    ..ListBookingsQuery::default()
+                },
+                vec![(2, BookingStatus::Cancelled)],
+            ),
+            (
+                ListBookingsQuery {
+                    trial: Some(true),
+                    lesson_menu_id: menu,
+                    ..ListBookingsQuery::default()
+                },
+                vec![],
+            ),
+            (
+                ListBookingsQuery::default(),
+                vec![
+                    (2, BookingStatus::Cancelled),
+                    (1, BookingStatus::Pending),
+                    (4, BookingStatus::Pending),
+                    (3, BookingStatus::Pending),
+                ],
+            ),
+        ] {
+            let list = use_case
+                .execute(ListBookingsQuery {
+                    from: Some(date(2)),
+                    to: Some(date(3)),
+                    ..query.clone()
+                })
+                .await
+                .unwrap();
+            assert_eq!(rows(&list), expected, "{query:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn with_unknown_lesson_menu_is_an_empty_list() {
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
+            slot(1, COACH, at(2, 10)),
+            slot(2, COACH, at(2, 11)),
+        ]));
+        reserve_with_menu(&bookings, STUDENT, 1, 50, at(1, 0)).await;
+        book(&bookings, STUDENT, 2, at(1, 0)).await;
+        let lookup = RecordingLookup::default();
+        let list = list_bookings(bookings, lookup.clone(), at(1, 0))
+            .execute(ListBookingsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..ListBookingsQuery::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(1), date(7)));
+        assert!(list.bookings.is_empty());
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
         assert!(lookup.students_asked.lock().unwrap().is_empty());
     }
 

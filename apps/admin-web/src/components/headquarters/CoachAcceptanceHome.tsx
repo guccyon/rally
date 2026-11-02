@@ -6,7 +6,7 @@ import { useCallback, useMemo } from "react";
 
 import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
-import { Section } from "@/components/Section";
+import { Section } from "@/components/ui/Section";
 
 import { ACCEPTANCE_STATUSES, type CoachAcceptanceFilter, CoachAcceptanceList, SPORTS } from "./CoachAcceptanceList";
 
@@ -16,29 +16,35 @@ export const COACH_ACCEPTANCE_PATH = "/headquarters/coaches";
 /** URL に絞り込みを残すクエリの名前（契約の `listCoaches` のクエリと同じ）。 */
 const STATUS_QUERY = "acceptance_status";
 const SPORT_QUERY = "sport";
+const NAME_QUERY = "q";
 
 /** 絞り込みを残した「コーチの受付」の URL。「すべて」の条件はクエリに出さない。 */
 export function coachAcceptancePath(filter: CoachAcceptanceFilter): string {
   const query = new URLSearchParams();
   if (filter.acceptanceStatus !== "") query.set(STATUS_QUERY, filter.acceptanceStatus);
   if (filter.sport !== "") query.set(SPORT_QUERY, filter.sport);
+  if (filter.q !== "") query.set(NAME_QUERY, filter.q);
   const search = query.toString();
   return search === "" ? COACH_ACCEPTANCE_PATH : `${COACH_ACCEPTANCE_PATH}?${search}`;
 }
 
-/** URL のクエリから絞り込みを読む。契約の値でなければ「すべて」として扱う。 */
+/**
+ * URL のクエリから絞り込みを読む。契約の値でなければ「すべて」として扱う。
+ * 検索語は前後の空白を除いてそのまま使う（長すぎる語はサーバーの 422 の理由を一覧に出す）。
+ */
 export function coachAcceptanceFilterFrom(params: Pick<URLSearchParams, "get">): CoachAcceptanceFilter {
   const status = params.get(STATUS_QUERY);
   const sport = params.get(SPORT_QUERY);
   return {
     acceptanceStatus: ACCEPTANCE_STATUSES.find((value) => value === status) ?? "",
     sport: SPORTS.find((value) => value === sport) ?? "",
+    q: params.get(NAME_QUERY)?.trim() ?? "",
   };
 }
 
 /**
  * 本部の画面: コーチの一覧で受付の状態を見て、受付を止める・再開する。
- * 絞り込みは URL のクエリ（`?acceptance_status=&sport=`）に残し、再読み込み・共有で同じ一覧を開く。
+ * 絞り込みは URL のクエリ（`?acceptance_status=&sport=&q=`）に残し、再読み込み・共有で同じ一覧を開く。
  */
 export function CoachAcceptanceHome({
   token,
