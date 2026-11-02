@@ -4,7 +4,7 @@ use super::{BookingStatus, SlotId, SlotStatus};
 use crate::catalog::Sport;
 
 /// scheduling（予約と枠）の不変条件の違反。枠・定員・席・コーチのカレンダー・予約の生成と操作と、枠へのレッスン
-/// メニューの結びつけと、コーチによる枠の取り下げと、本部が見る予約の一覧の期間と、コーチの受付の停止・再開で返す。
+/// メニューの結びつけと、コーチによる枠の取り下げと、本部が見る予約の一覧の期間と、コーチの受付の停止・再開（停止の理由の長さを含む）で返す。
 ///
 /// 表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`] に置く。予約の確定で entitlement が
 /// 「枠が残っていない」と答えたときの拒否は [`Self::LiveLessonQuotaExceeded`]（受講権の枠を使うときの違反は
@@ -70,6 +70,8 @@ pub enum SchedulingError {
     CoachNotSuspended,
     /// コーチの受付が止まっているので、そのコーチの枠に新しい予約はできない
     CoachNotAcceptingBookings,
+    /// コーチの受付を止める理由が `max` 文字より長い
+    CoachSuspensionReasonTooLong { max: usize },
 }
 
 impl fmt::Display for SchedulingError {

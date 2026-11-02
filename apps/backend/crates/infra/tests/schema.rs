@@ -952,6 +952,57 @@ async fn coach_acceptance_changes_are_by_headquarters_for_coaches_and_match_the_
     );
 }
 
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_acceptance_change_reasons_are_only_on_suspensions_and_up_to_200_chars(pool: PgPool) {
+    let insert = "INSERT INTO scheduling.coach_acceptance_changes
+                      (coach_id, status, reason, changed_by, changed_at)
+                  VALUES ($1::uuid, $2, $3, $4::uuid, now())";
+    let coach_id = coach(&pool).await;
+    let headquarters_id = account(&pool, "headquarters", None).await;
+    let reason_200 = "あ".repeat(200);
+    // 止めた記録は理由を持て（空文字列も）、理由の列を足す前の形（NULL）も入る。再開した記録は理由なし
+    for (status, reason) in [
+        ("suspended", Some(reason_200.as_str())),
+        ("suspended", Some("")),
+        ("suspended", None),
+        ("accepting", None),
+    ] {
+        sqlx::query(insert)
+            .bind(&coach_id)
+            .bind(status)
+            .bind(reason)
+            .bind(&headquarters_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    let reason_201 = "あ".repeat(201);
+    for (status, reason, expected) in [
+        ("accepting", "", "coach_acceptance_changes_reason_shape"),
+        (
+            "suspended",
+            reason_201.as_str(),
+            "coach_acceptance_changes_reason_check",
+        ),
+    ] {
+        let (code, constraint) = violation(
+            sqlx::query(insert)
+                .bind(&coach_id)
+                .bind(status)
+                .bind(reason)
+                .bind(&headquarters_id)
+                .execute(&pool)
+                .await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected)
+        );
+    }
+}
+
 /// 通話セッションを `started_at` に始めた行を入れ、session_id を返す。
 async fn start_session(
     pool: &PgPool,
