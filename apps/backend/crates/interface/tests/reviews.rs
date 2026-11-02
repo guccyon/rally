@@ -313,6 +313,17 @@ async fn get(
     template: &str,
     token: Option<&str>,
 ) -> (StatusCode, Value) {
+    get_in(&["admin-web", "student-app"], router, path, template, token).await
+}
+
+/// `GET <path>` を送り、レスポンスの形を `apps` の契約で検査する。
+async fn get_in(
+    apps: &[&str],
+    router: &Router,
+    path: &str,
+    template: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
     let mut request = Request::get(path);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
@@ -325,7 +336,7 @@ async fn get(
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap();
-    for app in ["admin-web", "student-app"] {
+    for app in apps {
         support::Contract::load(app).assert_response("get", template, status, &body);
     }
     (status, body)
@@ -513,5 +524,106 @@ async fn a_coach_id_that_is_not_a_uuid_is_not_found() {
         let (status, body) = get_coach_review_summary(&router, "not-a-uuid", Some(token)).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{token}: {body}");
         assert_eq!(body["code"], "not_found");
+    }
+}
+
+/// コーチ（`COACH_ID`）の `GET /coaches/{coach_id}/reviews?<query>` を送り、`apps` の契約で検査する。
+async fn list_coach_reviews_with(
+    apps: &[&str],
+    router: &Router,
+    query: &str,
+    token: &str,
+) -> (StatusCode, Value) {
+    get_in(
+        apps,
+        router,
+        &format!("/coaches/{COACH_ID}/reviews?{query}"),
+        "/coaches/{coach_id}/reviews",
+        Some(token),
+    )
+    .await
+}
+
+/// 一覧の評価の ID の末尾 2 桁。
+fn review_ids(body: &Value) -> Vec<String> {
+    body["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|review| review["review_id"].as_str().unwrap()[34..].to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn headquarters_and_the_coach_read_only_reviews_rated_at_most_the_max_rating() {
+    let router = app(reviews());
+    // コーチの評価は ★5（2）・★4（4）・★3（1）
+    for token in [HEADQUARTERS, COACH] {
+        for (max_rating, ids) in [
+            ("3", vec!["01"]),
+            ("4", vec!["04", "01"]),
+            ("5", vec!["02", "04", "01"]),
+            ("2", vec![]),
+            ("1", vec![]),
+        ] {
+            let (status, body) = list_coach_reviews_with(
+                &["admin-web"],
+                &router,
+                &format!("max_rating={max_rating}"),
+                token,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{token} {max_rating}: {body}");
+            assert_eq!(body["coach_id"], COACH_ID);
+            assert_eq!(
+                review_ids(&body),
+                ids,
+                "{token} {max_rating}: その点以下だけを、新しい順で"
+            );
+        }
+    }
+    let (status, body) =
+        list_coach_reviews_with(&["admin-web"], &router, "max_rating=4", HEADQUARTERS).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"][0]["rating"], 4);
+    assert_eq!(body["reviews"][0]["lesson_menu"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_max_rating_that_is_not_an_integer_from_one_to_five_is_rejected() {
+    let router = app(reviews());
+    for token in [HEADQUARTERS, COACH] {
+        for max_rating in ["0", "6", "-1", "2.5", "abc", "", "256"] {
+            let (status, body) = list_coach_reviews_with(
+                &["admin-web"],
+                &router,
+                &format!("max_rating={max_rating}"),
+                token,
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{token} {max_rating:?}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn students_read_every_review_whatever_the_max_rating() {
+    // student-app の契約に max_rating はないので、付けても変わらない（範囲外でも 422 にしない）
+    let router = app(reviews());
+    for max_rating in ["3", "0", "abc"] {
+        let (status, body) = list_coach_reviews_with(
+            &["student-app"],
+            &router,
+            &format!("max_rating={max_rating}"),
+            STUDENT,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{max_rating}: {body}");
+        assert_eq!(review_ids(&body), ["02", "04", "01"], "{max_rating}");
     }
 }
