@@ -43,7 +43,7 @@ export function StudentAnnouncements({
     };
   }, [api, studentId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (state.kind === "failed") {
     return (
       <ResultMessage result={{ ok: false, message: `受け取ったお知らせを読めませんでした。${state.message}` }} />
@@ -53,7 +53,7 @@ export function StudentAnnouncements({
 
   return (
     <>
-      <p className="mb-2 text-sm text-gray-600">
+      <p className="mb-2 text-sm text-text-muted">
         送った新しい順に、最大 50 件まで出します。取り下げたお知らせは生徒のアプリの一覧には出ていません。
       </p>
       <table aria-label="受け取ったお知らせ" className="w-full text-left text-sm">
