@@ -563,7 +563,7 @@ export const FIXTURES: Fixture[] = [
     query: { q: "鈴木" },
     body: {
       coaches: [
-        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 12 },
       ],
     } satisfies Schemas["CoachList"],
   },
@@ -572,7 +572,7 @@ export const FIXTURES: Fixture[] = [
     path: "/coaches",
     body: {
       coaches: [
-        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 12 },
         { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
       ],
     } satisfies Schemas["CoachList"],

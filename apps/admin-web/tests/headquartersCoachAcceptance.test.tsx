@@ -36,7 +36,7 @@ const SUZUKI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000001",
   display_name: "鈴木 コーチ",
   acceptance_status: "accepting",
-  recent_lesson_count: 0,
+  recent_lesson_count: 12,
 };
 const TAKAHASHI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000002",
@@ -79,6 +79,13 @@ async function rowOf(name: string) {
 function statusOf(row: HTMLElement) {
   return within(row).getAllByRole("cell")[1]!.textContent;
 }
+
+function recentLessonsOf(row: HTMLElement) {
+  return within(row).getAllByRole("cell")[2]!.textContent;
+}
+
+const RECENT_LESSON_COUNT_NOTE =
+  "直近 30 日のレッスンは、今日までの 30 日に完了した通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
 
 describe("本部のコーチの受付", () => {
   test("読み込み中を出し、読めたら API の順で各行に表示名と受付の状態と、状態に応じたボタンを出す", async () => {
@@ -300,11 +307,22 @@ describe("本部のコーチの受付", () => {
     expect(listCoaches).toHaveBeenCalledTimes(1);
   });
 
-  test("コーチが 0 人なら「コーチがまだいません」を出し、表は出さない", async () => {
+  test("各行に直近 30 日のレッスンの数を「n 回」で出し（0 も「0 回」）、表の上に数え方を添える", async () => {
+    renderList({});
+
+    const table = await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(within(table).getByRole("columnheader", { name: "直近 30 日のレッスン" })).toBeInTheDocument();
+    expect(recentLessonsOf(await rowOf("鈴木 コーチ"))).toBe("12 回");
+    expect(recentLessonsOf(await rowOf("高橋 コーチ"))).toBe("0 回");
+    expect(screen.getByText(RECENT_LESSON_COUNT_NOTE)).toBeInTheDocument();
+  });
+
+  test("コーチが 0 人なら「コーチがまだいません」を出し、表と数え方の説明は出さない", async () => {
     renderList({ listCoaches: listOf([]) });
 
     expect(await screen.findByText("コーチがまだいません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(RECENT_LESSON_COUNT_NOTE)).not.toBeInTheDocument();
   });
 
   test("一覧の API が失敗したときはその文言だけを出す", async () => {
