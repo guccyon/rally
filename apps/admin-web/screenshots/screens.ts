@@ -70,6 +70,16 @@ export const SCREENS: Screen[] = [
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
   {
+    // 表示名で探した状態（URL のクエリ q に残した検索語で開く）。
+    id: "hq-coaches-search",
+    title: "本部: コーチの受付（表示名で探す）",
+    role: "headquarters",
+    path: "/headquarters/coaches?q=%E9%88%B4%E6%9C%A8",
+    open: async (page) => {
+      await page.getByRole("table", { name: "コーチの一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",
