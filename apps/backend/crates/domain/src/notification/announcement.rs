@@ -99,6 +99,13 @@ impl Announcement {
         self.withdrawal.is_some()
     }
 
+    /// 受け取った生徒のうち既読にした数に入れる既読の時刻の上限（その時刻ちょうどまでを含む）。取り下げたお知らせは
+    /// 取り下げた時刻まで（取り下げたあとに既読になったものは数えない。生徒の一覧に出ないので読まれていない）、
+    /// 取り下げていなければ上限なし（`None`）。
+    pub fn reads_counted_until(&self) -> Option<SystemTime> {
+        self.withdrawal.map(|w| w.withdrawn_at())
+    }
+
     /// 本部のアカウント `withdrawn_by` が時刻 `now` にお知らせを取り下げる。送った中身と受け取った生徒の数は変えない。
     ///
     /// すでに取り下げてあれば [`NotificationError::AnnouncementAlreadyWithdrawn`] で、何も変えない（最初の取り下げを残す）。
@@ -207,6 +214,22 @@ mod tests {
             Err(NotificationError::AnnouncementAlreadyWithdrawn)
         );
         assert_eq!(announcement, first, "何も変えない");
+    }
+
+    #[test]
+    fn reads_are_counted_until_the_withdrawal() {
+        let mut announcement = sent(None, 1).unwrap();
+        assert_eq!(
+            announcement.reads_counted_until(),
+            None,
+            "取り下げていなければ上限なし"
+        );
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert_eq!(
+            announcement.reads_counted_until(),
+            Some(at(20)),
+            "取り下げた時刻まで"
+        );
     }
 
     #[test]
