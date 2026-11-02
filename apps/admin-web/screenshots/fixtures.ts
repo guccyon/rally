@@ -695,6 +695,46 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // mockApi は先に一致した応答を返すので、`/bookings/{booking_id}` より前に置く（でないと cancelled を ID として拾う）。
+    method: "GET",
+    path: "/bookings/cancelled",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 21),
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 2),
+          cancelled_at: at(-3),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 22),
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          starts_at: at(-24 * 1 + 6),
+          cancelled_at: at(-24 * 2 - 4.5),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 23),
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(-24 * 4),
+          cancelled_at: at(-24 * 5 - 1),
+          cancelled_by: null,
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
     // 予約の詳細は、一覧のキャンセル済みの予約（確定待ちのままキャンセル）を返す。
     method: "GET",
     path: "/bookings/{booking_id}",
