@@ -7,6 +7,7 @@
 
 mod ai_feedback;
 mod pending_video_review_filter;
+mod returned_video_review_filter;
 mod review_comment;
 mod video;
 mod video_content_type;
@@ -18,6 +19,7 @@ mod video_status;
 
 pub use ai_feedback::AiFeedback;
 pub use pending_video_review_filter::PendingVideoReviewFilter;
+pub use returned_video_review_filter::ReturnedVideoReviewFilter;
 pub use review_comment::ReviewComment;
 pub use video::Video;
 pub use video_content_type::VideoContentType;

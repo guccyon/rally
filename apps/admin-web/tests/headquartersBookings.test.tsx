@@ -6,7 +6,7 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { BookingList } from "@/components/headquarters/BookingList";
-import { BookingListHome } from "@/components/headquarters/BookingListHome";
+import { BookingListHome, bookingListPath } from "@/components/headquarters/BookingListHome";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
 
@@ -132,15 +132,15 @@ describe("本部の予約", () => {
     expect(screen.getByText("確定待ちのまま 24 時間以内に始まる予約が 1 件あります。")).toBeInTheDocument();
     const [soon, confirmed] = bodyRows("2026年10月26日（月） の予約") as [HTMLElement, HTMLElement];
     const [laterPending, cancelled] = bodyRows("2026年10月28日（水） の予約") as [HTMLElement, HTMLElement];
-    expect(soon).toHaveClass("bg-red-50");
+    expect(soon).toHaveClass("bg-danger-container");
     for (const row of [confirmed, laterPending, cancelled]) {
-      expect(row).not.toHaveClass("bg-red-50");
+      expect(row).not.toHaveClass("bg-danger-container");
       expect(within(row).queryByText("開始まで 24 時間以内")).not.toBeInTheDocument();
     }
-    expect(within(soon).getByText("確定待ち")).toHaveClass("bg-amber-100");
-    expect(within(laterPending).getByText("確定待ち")).toHaveClass("bg-amber-100");
-    expect(within(confirmed).getByText("確定済み")).toHaveClass("bg-green-100");
-    expect(within(cancelled).getByText("キャンセル済み")).toHaveClass("bg-gray-100");
+    expect(within(soon).getByText("確定待ち")).toHaveClass("bg-warning-container");
+    expect(within(laterPending).getByText("確定待ち")).toHaveClass("bg-warning-container");
+    expect(within(confirmed).getByText("確定済み")).toHaveClass("bg-success-container");
+    expect(within(cancelled).getByText("キャンセル済み")).toHaveClass("bg-surface");
   });
 
   test("始まってしまった確定待ちと、確定済みで近いものは目立たせない", async () => {
@@ -272,5 +272,62 @@ describe("画面への配置", () => {
 
     expect(screen.queryByRole("region", { name: "予約" })).not.toBeInTheDocument();
     expect(replace).toHaveBeenCalledWith("/");
+  });
+});
+
+describe("本部の予約（コーチで絞る）", () => {
+  const COACH_ID = "22222222-2222-4222-8222-000000000001";
+
+  test("coachId があれば listBookings に coach_id を付けて読み、期間を変えても絞り込みは残る", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+
+    expect(screen.getByText(/^このコーチの枠への予約を/)).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", coach_id: COACH_ID });
+    await screen.findByText("この期間の予約はありません");
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-28");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    await waitFor(() =>
+      expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-28", coach_id: COACH_ID }),
+    );
+  });
+
+  test("coachId がなければ coach_id を付けない", () => {
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} />);
+
+    expect(screen.getByText(/^すべてのコーチの枠への予約を/)).toBeInTheDocument();
+    expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("coach_id");
+  });
+
+  test("絞ったときの失敗はその文言を出す", async () => {
+    const listBookings = vi.fn<HeadquartersApi["listBookings"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力の内容が正しくありません。",
+    }));
+    render(<BookingList api={{ listBookings }} coachId="not-a-uuid" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("入力の内容が正しくありません。");
+  });
+
+  test("絞った画面には「すべてのコーチの予約を見る」があり、絞らない画面にはない", () => {
+    const { unmount } = render(<BookingListHome token="mock.headquarters.abc" coachId={COACH_ID} />);
+    expect(screen.getByRole("link", { name: "すべてのコーチの予約を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/bookings",
+    );
+    unmount();
+
+    render(<BookingListHome token="mock.headquarters.abc" />);
+    expect(screen.queryByRole("link", { name: "すべてのコーチの予約を見る" })).not.toBeInTheDocument();
+  });
+
+  test("bookingListPath はコーチの ID をクエリに入れる", () => {
+    expect(bookingListPath(COACH_ID)).toBe(`/headquarters/bookings?coach_id=${COACH_ID}`);
   });
 });

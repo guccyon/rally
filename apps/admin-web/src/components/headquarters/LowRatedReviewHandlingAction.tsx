@@ -29,7 +29,7 @@ export function LowRatedReviewHandlingAction({
       <button
         type="button"
         aria-label={`${label}を対応済みにする`}
-        className="rounded border border-blue-600 px-2 py-0.5 text-blue-700"
+        className="rounded-pill border border-primary px-2 py-0.5 text-primary"
         onClick={() => setConfirming(true)}
       >
         対応済みにする
@@ -45,7 +45,7 @@ export function LowRatedReviewHandlingAction({
         <button
           type="button"
           disabled={busy}
-          className="rounded bg-blue-600 px-2 py-0.5 text-white disabled:opacity-50"
+          className="rounded-pill bg-primary px-2 py-0.5 text-on-primary disabled:opacity-50"
           onClick={() => void confirm()}
         >
           {busy ? "対応済みにしています…" : "対応済みを確定"}
@@ -53,7 +53,7 @@ export function LowRatedReviewHandlingAction({
         <button
           type="button"
           disabled={busy}
-          className="rounded border px-2 py-0.5 disabled:opacity-50"
+          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
           onClick={() => setConfirming(false)}
         >
           やめる

@@ -120,10 +120,10 @@ export function LowRatedReviewList({
         未対応だけ
       </label>
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-text-muted">
           直近 {state.list.period_days} 日に送られた、{state.list.max_rating} 点以下の評価です。
         </p>
       )}
@@ -133,7 +133,7 @@ export function LowRatedReviewList({
         </p>
       )}
       {state.kind === "loaded" && state.list.reviews.length > 0 && (
-        <ul aria-label="低い評価の一覧" className="divide-y rounded border text-sm">
+        <ul aria-label="低い評価の一覧" className="divide-y rounded-md border text-sm">
           {state.list.reviews.map((review) => {
             const coachName = review.coach_display_name ?? NO_COACH_NAME;
             const handled = review.handling !== undefined && review.handling !== null;
@@ -141,20 +141,20 @@ export function LowRatedReviewList({
               <li key={review.review_id} className="space-y-1 px-3 py-2">
                 <p>
                   <span className="font-semibold">{review.rating} 点</span>
-                  <span className="text-gray-500">（5 点満点）</span>
+                  <span className="text-text-muted">（5 点満点）</span>
                 </p>
                 <p>
                   コーチ:{" "}
                   <Link
                     href={coachReviewSummaryPath(review.coach_id)}
-                    className="text-blue-600 underline"
+                    className="text-primary underline"
                   >
                     {coachName}
                   </Link>
                 </p>
                 {review.lesson_menu && <p>メニュー: {review.lesson_menu.name}</p>}
                 <p>{review.comment}</p>
-                <p className="text-gray-500">{formatDateTime(review.submitted_at)}</p>
+                <p className="text-text-muted">{formatDateTime(review.submitted_at)}</p>
                 <HandlingStatus review={review} />
                 {!handled && (
                   <LowRatedReviewHandlingAction
