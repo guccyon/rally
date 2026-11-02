@@ -587,6 +587,24 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         ),
         // いないコーチは 404 にせず空の一覧
         ("?coach_id=00000000-0000-0000-0000-000000000063", vec![]),
+        // 名前に部分一致（「フォ」）。並べ方は変わらず、ほかの絞り込みと組み合わせられる
+        ("?q=%E3%83%95%E3%82%A9", vec!["フォームの添削", "フォア"]),
+        ("?q=%E3%83%95%E3%82%A9&published=true", vec!["フォア"]),
+        (
+            &format!("?q=%E3%83%95%E3%82%A9&coach_id={COACH_ID}&sport=golf"),
+            vec![],
+        ),
+        // 前後の空白（全角を含む）は除いて比べる
+        ("?q=%E3%80%80%E3%82%A4%E3%83%B3%E3%82%B0+", vec!["スイング"]),
+        ("?q=%E3%81%84%E3%81%AA%E3%81%84", vec![]),
+        // 空・空白だけなら絞り込まない
+        ("?q=", vec!["フォームの添削", "フォア", "スイング"]),
+        (
+            "?q=+%E3%80%80+",
+            vec!["フォームの添削", "フォア", "スイング"],
+        ),
+        // 前後の空白を除いて 40 文字までは受け付ける
+        (&format!("?q=+{}+", "a".repeat(40)), vec![]),
     ] {
         let (status, body) = send(
             &app,
@@ -601,7 +619,13 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         assert_eq!(names(&body), expected, "{query}");
     }
 
-    for query in ["?sport=cricket", "?published=yes", "?coach_id=not-a-uuid"] {
+    let too_long = format!("?q={}", "a".repeat(41));
+    for query in [
+        "?sport=cricket",
+        "?published=yes",
+        "?coach_id=not-a-uuid",
+        too_long.as_str(),
+    ] {
         let (status, body) = send(
             &app,
             "GET",
@@ -614,6 +638,18 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         assert_eq!(body["code"], "validation_failed", "{query}");
         admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
     }
+    let (_, body) = send(
+        &app,
+        "GET",
+        &format!("{HEADQUARTERS_MENUS}{too_long}"),
+        HEADQUARTERS,
+        None,
+    )
+    .await;
+    assert_eq!(
+        body["message"],
+        "レッスンメニューの名前の検索語は 40 文字まで"
+    );
 }
 
 #[tokio::test]
