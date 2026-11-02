@@ -1,16 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ui/ResultMessage";
-import { COACH_PROFILE_FIELD_LABELS, formatDateTime } from "@/components/labels";
+import { COACH_PROFILE_FIELD_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
+import { SPORTS } from "./CoachAcceptanceList";
 import { coachOverviewPath } from "./CoachOverviewHome";
 
 type IncompleteCoachProfile = Schemas["IncompleteCoachProfile"];
+type Sport = Schemas["Sport"];
+
+/** 絞り込みの条件。空なら絞らない。 */
+export type IncompleteCoachProfileFilter = { sport: Sport | "" };
+
+const NO_FILTER: IncompleteCoachProfileFilter = { sport: "" };
 
 type State =
   | { kind: "loading" }
@@ -29,39 +36,85 @@ function updatedAtLabel(coach: IncompleteCoachProfile): string {
  * （listIncompleteCoachProfiles）を読み、コーチ（そのコーチの様子へのリンク）・空の項目・最後に更新した日時を出す。
  * 「足りない」の判定と並べ方は契約の正本どおり API が済ませているので、返った順（登録の古い順）のまま出す。
  * 照会だけで、コーチへの連絡はしない。
+ * 一覧の上の絞り込み（スポーツ）は API の `sport` に渡して読み直す。`initialFilter`（URL のクエリ）の条件で開き、
+ * 変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
 export function IncompleteCoachProfileList({
   api,
+  initialFilter = NO_FILTER,
+  onFilterChange,
 }: {
   api: Pick<HeadquartersApi, "listIncompleteCoachProfiles">;
+  initialFilter?: IncompleteCoachProfileFilter;
+  onFilterChange?: (filter: IncompleteCoachProfileFilter) => void;
 }) {
+  const [filter, setFilter] = useState<IncompleteCoachProfileFilter>(initialFilter);
   const [state, setState] = useState<State>({ kind: "loading" });
+  // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
+  const latestRequest = useRef(0);
 
-  // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
+  const fetchCoaches = useCallback(
+    async (next: IncompleteCoachProfileFilter): Promise<State> => {
+      const response = await api.listIncompleteCoachProfiles(next.sport === "" ? {} : { sport: next.sport });
+      return response.ok
+        ? { kind: "loaded", coaches: response.data.coaches }
+        : { kind: "failed", message: response.message };
+    },
+    [api],
+  );
+
+  // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
+  const initialSport = initialFilter.sport;
   useEffect(() => {
     let active = true;
-    void api.listIncompleteCoachProfiles().then((response) => {
-      if (!active) return;
-      setState(
-        response.ok
-          ? { kind: "loaded", coaches: response.data.coaches }
-          : { kind: "failed", message: response.message },
-      );
+    const request = ++latestRequest.current;
+    void fetchCoaches({ sport: initialSport }).then((next) => {
+      if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [api]);
+  }, [fetchCoaches, initialSport]);
+
+  async function changeFilter(next: IncompleteCoachProfileFilter) {
+    setFilter(next);
+    onFilterChange?.(next);
+    setState({ kind: "loading" });
+    const request = ++latestRequest.current;
+    const loaded = await fetchCoaches(next);
+    if (request === latestRequest.current) setState(loaded);
+  }
+
+  const filtered = filter.sport !== "";
 
   return (
     <div className="space-y-4">
       <p className="text-sm">
         自己紹介に空の項目があるコーチを、登録の古い順に見られます。書きかけのままのコーチを見つけて声をかけるための一覧です。
       </p>
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="block">
+          スポーツ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.sport}
+            onChange={(event) => void changeFilter({ sport: event.target.value as Sport | "" })}
+          >
+            <option value="">すべて</option>
+            {SPORTS.map((value) => (
+              <option key={value} value={value}>
+                {SPORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
-        <p className="text-sm">自己紹介の足りないコーチはいません</p>
+        <p className="text-sm">
+          {filtered ? "条件に合うコーチはいません" : "自己紹介の足りないコーチはいません"}
+        </p>
       )}
       {state.kind === "loaded" && state.coaches.length > 0 && (
         <table aria-label="自己紹介の足りないコーチの一覧" className="w-full text-left text-sm">
