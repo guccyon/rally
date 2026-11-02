@@ -790,6 +790,11 @@ export interface paths {
          *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
          *     - 各項目の `lesson_menu` は、生徒が動画を送った時点で選んだ自分の非同期レッスンのレッスンメニュー（ID・名前の写し。
          *       `VideoLessonMenu`）。メニューの今の中身ではない。メニューを選ばずに送られた動画は null
+         *     - 絞り込み（任意）: `pending_only` が `true` なら、添削をまだ返していない（`returnVideoReview` していない。
+         *       `review_status` が `in_progress`）動画だけを返す。「返却待ち」の判定は `listPendingVideoReviews` と同じ（実装は
+         *       backend の domain `Video::is_awaiting_review` の 1 か所）。並べ方は変わらない（送られた時刻の古い順）。
+         *       付けないとき・`false` のときは絞らない（添削待ちも返却済みもすべて）
+         *     - `pending_only` が `true` / `false` でないときは 422 `validation_failed`
          *     - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -3872,7 +3877,10 @@ export interface operations {
     };
     listMyCoachVideos: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `true` なら添削をまだ返していない動画だけを返す（付けないとき・`false` は絞らない） */
+                pending_only?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3890,6 +3898,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getMyLessonStats: {
