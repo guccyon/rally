@@ -2,7 +2,8 @@
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の予約を日本時間の日付で絞って
 //! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でそのコーチの予約だけに絞れること、
 //! `status` で Postgres に保存した状態（確定待ち・確定済み・キャンセル済み）の予約だけに絞れること、`student_id` でその生徒の
-//! 予約だけに絞れること、本部以外は 403 になることを確かめる。
+//! 予約だけに絞れること、`lesson_menu_id` で Postgres に保存した予約した時点のメニューの写しがそのメニューの予約だけに
+//! 絞れること、本部以外は 403 になることを確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_bookings.rs`、期間に開始する予約の読み取りは
 //! infra の `tests/pg_booking_repository.rs`。
 //!
@@ -383,6 +384,123 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
         assert_eq!(statuses_of(&body), expected, "{query}: {body}");
     }
     let (status, body) = send(&router, get("/bookings?student_id=taro", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // レッスンメニューで絞る。たなかが同期レッスンのメニューを作って枠（10 月 29 日）に結びつけ、じろうが予約する
+    // （予約がメニューの写しを残す）。メニューのない予約は出ず、期間・コーチ・生徒・状態・体験予約かと組み合わせられ、
+    // ないメニューは空の一覧
+    let (status, menu) = send(
+        &router,
+        post_json(
+            "/coaches/me/lesson-menus",
+            &tanaka_token,
+            json!({
+                "sport": "tennis",
+                "lesson_type": "live_lesson",
+                "name": "フォア改善",
+                "description": "ラリーが続かない人向け",
+                "duration_minutes": 60,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{menu}");
+    let menu_id = menu["lesson_menu_id"].as_str().unwrap().to_string();
+    let (status, slot) = send(
+        &router,
+        post_json(
+            "/slots",
+            &tanaka_token,
+            json!({
+                "sport": "tennis",
+                "starts_at": "2026-10-29T03:00:00Z",
+                "ends_at": "2026-10-29T04:00:00Z",
+                "lesson_menu_id": menu_id,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, menu_booking) = send(
+        &router,
+        post_json(
+            "/bookings",
+            &jiro_token,
+            json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{menu_booking}");
+    let menu_row = (menu_booking["booking_id"].clone(), json!("pending"));
+    let tanaka_id = account_id_uuid::format(tanaka);
+    for (query, expected) in [
+        (format!("&lesson_menu_id={menu_id}"), vec![menu_row.clone()]),
+        (
+            format!("&lesson_menu_id={menu_id}&coach_id={tanaka_id}&student_id={jiro_id}"),
+            vec![menu_row.clone()],
+        ),
+        (
+            format!("&lesson_menu_id={menu_id}&status=pending&trial=false"),
+            vec![menu_row.clone()],
+        ),
+        (
+            format!("&lesson_menu_id={menu_id}&coach_id={ito_id}"),
+            vec![],
+        ),
+        (
+            format!("&lesson_menu_id={menu_id}&student_id={taro_id}"),
+            vec![],
+        ),
+        (
+            format!("&lesson_menu_id={menu_id}&status=confirmed"),
+            vec![],
+        ),
+        (format!("&lesson_menu_id={menu_id}&trial=true"), vec![]),
+        (
+            "&lesson_menu_id=00000000-0000-0000-0000-0000000003e7".to_string(),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings?from=2026-10-26&to=2026-11-02{query}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(statuses_of(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = send(
+        &router,
+        get(&format!("/bookings?lesson_menu_id={menu_id}"), &hq_token),
+    )
+    .await;
+    assert_eq!(
+        body["bookings"][0]["booking"]["lesson_menu"]["lesson_menu_id"], menu_id,
+        "{body}"
+    );
+    // 期間と組み合わせる（10 月 30 日からは、メニューの予約の 10 月 29 日を含まない）
+    let (status, body) = send(
+        &router,
+        get(
+            &format!("/bookings?from=2026-10-30&to=2026-11-02&lesson_menu_id={menu_id}"),
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["bookings"], json!([]), "{body}");
+    // 付けなければ今までどおりメニューを問わない
+    let (_, body) = send(
+        &router,
+        get("/bookings?from=2026-10-26&to=2026-11-02", &hq_token),
+    )
+    .await;
+    assert_eq!(body["bookings"].as_array().unwrap().len(), 5, "{body}");
+    let (status, body) = send(&router, get("/bookings?lesson_menu_id=menu", &hq_token)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
 
