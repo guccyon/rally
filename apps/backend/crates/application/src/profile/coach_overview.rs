@@ -1,4 +1,5 @@
 use domain::{
+    async_lesson::VideoReviewLeadTime,
     profile::DisplayName,
     review::{CoachLowRatedReviewCount, CoachReviewSummary},
     scheduling::CoachAcceptanceStatus,
@@ -21,4 +22,7 @@ pub struct CoachOverview {
     pub lesson_stats: CoachLessonStats,
     /// 公開中のレッスンメニューの数（catalog の `ListCoachLessonMenus`。スポーツで絞らない）
     pub published_lesson_menu_count: u32,
+    /// 直近 30 日に送られた動画の返却までの時間の中央値と、そのうち返した動画添削の件数（async-lesson の
+    /// `GetCoachVideoReviewLeadTime`）
+    pub video_review_lead_time: VideoReviewLeadTime,
 }

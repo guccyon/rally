@@ -120,6 +120,8 @@ describe("headquartersApi", () => {
       current_month: { month: "2026-11", ...month },
       previous_month: { month: "2026-10", ...month },
       published_lesson_menu_count: 2,
+      returned_video_review_count: 0,
+      median_video_review_lead_time_hours: null,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);
@@ -522,6 +524,20 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("from")).toBe("2026-10-26");
     expect(url.searchParams.get("to")).toBe("2026-11-01");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listBookings は体験予約だけの絞り込みを trial=true のクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01", trial: true });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/bookings");
+    expect(url.searchParams.get("trial")).toBe("true");
+  });
+
+  test("listBookings は trial を渡さなければクエリに付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01" });
+    expect(new URL(fetchMock.mock.calls[0]![0].url).searchParams.has("trial")).toBe(false);
   });
 
   test("listBookings は coach_id を付ければクエリに入れる", async () => {

@@ -48,8 +48,16 @@ export interface paths {
          *
          *     判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
          *
-         *     - 期間: 集計した時刻（サーバーの現在時刻）の 30 日前（含む）から集計した時刻（含まない）まで。
-         *       枠の開始時刻（`starts_at`）がこの期間に入る枠だけを数える（`window_start` / `window_end`）
+         *     - 期間: 枠の開始時刻（`starts_at`）が期間に入る枠だけを数える（`window_start` / `window_end`）。
+         *       `from` / `to` を両方省けば今までどおり、集計した時刻（サーバーの現在時刻）の 30 日前（含む）から集計した時刻
+         *       （含まない）まで（応答に `from` / `to` は載せない）
+         *     - 任意の `from` / `to`（日本時間の日付）で期間を指定できる（来週・来月の枠の足りなさを先回りして見る）。日付の扱いは
+         *       `listBookings` と同じ: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）まで。`from` を省けば
+         *       今日（サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。応答の
+         *       `from` / `to` は省いたほうを決めた日付を含めて実際に使った期間で、`window_start` / `window_end` はその時刻
+         *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+         *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）。`to` だけを
+         *       付けて今日より前の日付なら `from`（今日）より前なので 422
          *     - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
          *       コーチが閉じた枠（`closed`）は数えない
          *     - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
@@ -624,7 +632,8 @@ export interface paths {
         /**
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
-         *     レッスンの数・公開中のレッスンメニューの数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を
+         *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
          *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
@@ -641,6 +650,13 @@ export interface paths {
          *       平均も載る）。金額は返さない
          *     - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
          *       メニューの数。スポーツで絞らず、ゴルフのメニューも数える）
+         *     - `median_video_review_lead_time_hours` / `returned_video_review_count`: KPI「添削の返却リードタイム」
+         *       （`specs/analytics/kpi.yaml` の `video_review_lead_time`）の定義どおり、照会した時刻から遡る 30 日（両端を含む）に
+         *       そのコーチに送られた動画（`submitVideo`）を母集団にし、1 本ごとの時間（時間）の中央値を返す。1 本の時間は、添削を
+         *       返していれば（`returnVideoReview`）送付から返却まで、まだ返していなければ送付から照会した時刻までの経過時間
+         *       （遅れを隠さない）。期間は送った時刻で絞る（30 日より前に送った動画は、返却が期間内でも数えない）。本数が偶数なら
+         *       真ん中の 2 つの平均。`returned_video_review_count` は母集団のうち添削を返した件数。期間内に送られた動画がなければ
+         *       件数 0・中央値 null（まだ返していない動画だけなら件数 0 で中央値は出る）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -774,6 +790,11 @@ export interface paths {
          *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
          *     - 各項目の `lesson_menu` は、生徒が動画を送った時点で選んだ自分の非同期レッスンのレッスンメニュー（ID・名前の写し。
          *       `VideoLessonMenu`）。メニューの今の中身ではない。メニューを選ばずに送られた動画は null
+         *     - 絞り込み（任意）: `pending_only` が `true` なら、添削をまだ返していない（`returnVideoReview` していない。
+         *       `review_status` が `in_progress`）動画だけを返す。「返却待ち」の判定は `listPendingVideoReviews` と同じ（実装は
+         *       backend の domain `Video::is_awaiting_review` の 1 か所）。並べ方は変わらない（送られた時刻の古い順）。
+         *       付けないとき・`false` のときは絞らない（添削待ちも返却済みもすべて）
+         *     - `pending_only` が `true` / `false` でないときは 422 `validation_failed`
          *     - 期間で絞らず、ページングもしない。動画がなければ `videos` は空の配列
          *     - 照会だけで、何も保存しない
          *
@@ -1439,6 +1460,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/message-threads/unanswered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 返信のないまま時間の過ぎたスレッドの一覧（本部）
+         * @description 最後の発言が生徒のもので、それから一定の時間（既定 24 時間）コーチが返していないチャットのスレッド
+         *     （glossary の message_thread）を、コーチを問わず横断で、経過の長い順に返す。本部が、生徒からのメッセージに
+         *     返していないコーチに気づくための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     本部は件数と時間だけを見るので、**メッセージの本文・種類・スタンプは返さない**（本部がメッセージを読む・送る操作もない）。
+         *
+         *     既定・範囲・境界と、何を発言と数えるかはここが正本（実装は backend の domain `UnansweredThreadCriteria` と
+         *     `MessageThread::awaiting_coach_reply_since` の 1 か所）。レスポンスの `older_than_hours` にも実際に使った時間を載せる。
+         *
+         *     - 発言: 当事者（生徒・担当コーチ）がチャットとして送ったメッセージ（`kind` が `text` か `stamp`）。添削依頼・添削の返却
+         *       （`video_review_request` / `video_review_returned`。返却待ちの添削は `listPendingVideoReviews` で見る）と送り手が
+         *       システムのメッセージは数えない（コーチの添削の返却はチャットの返信に数えない）
+         *     - 待ち始め `waiting_since`: コーチの最後の発言（なければスレッドの始まり）のあとに生徒が送った、最初の発言の送信時刻。
+         *       生徒が続けて送っても・催促しても変わらない（経過はリセットされない）。コーチが発言すると、次の生徒の発言から数え直す
+         *     - 対象: 最後の発言が生徒のもので、照会した時刻に待ち始め `waiting_since` から `older_than_hours` 時間以上たったスレッド
+         *       （ちょうどその時間のものを含む）。コーチが最後に発言したスレッドと、発言がまだないスレッドは載らない。既読かどうかは問わない
+         *     - `older_than_hours`: 返信を待ち始めてからの時間（時間単位の整数）。省けば 24。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 並べ方: 経過の長い順（`waiting_since` の古い順）。同じ時刻は `thread_id` の順
+         *     - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・待ち始め `waiting_since`・
+         *       照会した時刻までの待ち始めからの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
+         *       （`coach_display_name` / `student_display_name`）は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
+         *     - ページング・件数の上限はない。該当するスレッドがなければ `threads` は空の配列
+         *     - 照会だけで、何も保存しない（既読にしない・コーチに催促の通知をしない）
+         *
+         *     パスパラメータを受けないので 404 はない。行動イベントは発火しない。
+         */
+        get: operations["listUnansweredMessageThreads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/message-threads/{thread_id}/messages": {
         parameters: {
             query?: never;
@@ -1975,14 +2039,24 @@ export interface components {
         SlotSupplyReport: {
             /**
              * Format: date-time
-             * @description 数えた期間の始まり（含む。集計した時刻の 30 日前）
+             * @description 数えた期間の始まり（含む。日付を指定しなければ集計した時刻の 30 日前、指定すれば `from` の日本時間 0 時）
              */
             window_start: string;
             /**
              * Format: date-time
-             * @description 数えた期間の終わり（含まない。集計した時刻）
+             * @description 数えた期間の終わり（含まない。日付を指定しなければ集計した時刻、指定すれば `to` の翌日の日本時間 0 時）
              */
             window_end: string;
+            /**
+             * Format: date
+             * @description 日付で期間を指定したときに実際に使った始まりの日付（日本時間。含む。省いたときに決めた日付を含む）。`from` / `to` を両方省いたときは載せない
+             */
+            from?: string;
+            /**
+             * Format: date
+             * @description 日付で期間を指定したときに実際に使った終わりの日付（日本時間。含む。省いたときに決めた日付を含む）。`from` / `to` を両方省いたときは載せない
+             */
+            to?: string;
             /** @description スポーツ 6 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
         };
@@ -2116,7 +2190,8 @@ export interface components {
         };
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
-         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間を
+         *     添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2139,6 +2214,14 @@ export interface components {
             previous_month: components["schemas"]["MonthlyLessonStats"];
             /** @description 公開中のレッスンメニューの数（スポーツを問わない） */
             published_lesson_menu_count: number;
+            /** @description 照会した時刻から遡る 30 日に送られた動画のうち、添削を返した件数 */
+            returned_video_review_count: number;
+            /**
+             * @description 照会した時刻から遡る 30 日に送られた動画の、送付から返却（まだ返していなければ照会した時刻）までの時間（時間）の
+             *     中央値（KPI `video_review_lead_time` と同じ数え方）。小数第 3 位で四捨五入した小数第 2 位まで。期間内に送られた
+             *     動画がなければ null
+             */
+            median_video_review_lead_time_hours: number | null;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -2973,6 +3056,42 @@ export interface components {
             /** @description 最後の出来事の新しい順 */
             threads: components["schemas"]["MessageThread"][];
         };
+        /** @description 本部が見る、返信のないまま時間の過ぎたスレッドの一覧（対象・並べ方は `listUnansweredMessageThreads` の説明）。メッセージの本文は含まない */
+        UnansweredMessageThreadList: {
+            /** @description 使った、返信を待ち始めてからの時間（時間単位）。省いたときは 24 */
+            older_than_hours: number;
+            /** @description 経過の長い順（`waiting_since` の古い順。同じ時刻は `thread_id` の順） */
+            threads: components["schemas"]["UnansweredMessageThread"][];
+        };
+        /** @description 返信のないまま時間の過ぎたスレッド 1 件（`listUnansweredMessageThreads`）。件数と時間だけで、メッセージの本文は含まない */
+        UnansweredMessageThread: {
+            /**
+             * Format: uuid
+             * @description スレッド（`MessageThread` の `thread_id` と同じ）
+             */
+            thread_id: string;
+            /**
+             * Format: uuid
+             * @description スレッドの担当コーチ
+             */
+            coach_id: string;
+            /** @description コーチの今の表示名。アカウントが引けなければ載らない */
+            coach_display_name?: string;
+            /**
+             * Format: uuid
+             * @description スレッドの生徒
+             */
+            student_id: string;
+            /** @description 生徒の今の表示名。アカウントが引けなければ載らない */
+            student_display_name?: string;
+            /**
+             * Format: date-time
+             * @description 返信を待ち始めた時刻（コーチの最後の発言のあとの、最初の生徒の発言（本文かスタンプ）の送信時刻。催促しても変わらない）
+             */
+            waiting_since: string;
+            /** @description 照会した時刻までの、待ち始め `waiting_since` からの経過時間（秒。切り捨て） */
+            elapsed_sec: number;
+        };
         MessageList: {
             /** Format: uuid */
             thread_id: string;
@@ -3201,7 +3320,12 @@ export interface operations {
     };
     getSlotSupply: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 期間の始まりの日付（日本時間。含む）。`to` も省けば集計した時刻の 30 日前から。`to` だけなら今日 */
+                from?: string;
+                /** @description 期間の終わりの日付（日本時間。含む）。`from` も省けば集計した時刻まで。`from` だけなら `from` から 7 日目 */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3219,6 +3343,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listBookings: {
@@ -3744,7 +3869,10 @@ export interface operations {
     };
     listMyCoachVideos: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `true` なら添削をまだ返していない動画だけを返す（付けないとき・`false` は絞らない） */
+                pending_only?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3762,6 +3890,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getMyLessonStats: {
@@ -4301,6 +4430,32 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listUnansweredMessageThreads: {
+        parameters: {
+            query?: {
+                /** @description 返信を待ち始めてから（コーチの返信のあとの最初の生徒の発言から）この時間（時間単位）以上コーチが返していないスレッドを返す。省けば 24 */
+                older_than_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 返信のないまま時間の過ぎたスレッドの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnansweredMessageThreadList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listMessages: {
