@@ -37,9 +37,16 @@ function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: Head
 /**
  * 本部の「予約」。すべてのコーチの枠への予約を、開始する日付（日本時間）の期間で出す（listBookings）。
  * 既定の期間は今日から 7 日。並びは契約の正本どおり返った順（開始時刻の古い順）のまま、日付ごとに分けて出す。
+ * `coachId` があれば、そのコーチの枠への予約だけに絞る（`coach_id`）。期間を変えても絞り込みは残る。
  * 各行の開始の時刻から、その予約の詳細へ移る。
  */
-export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"> }) {
+export function BookingList({
+  api,
+  coachId,
+}: {
+  api: Pick<HeadquartersApi, "listBookings">;
+  coachId?: string;
+}) {
   const [draft, setDraft] = useState<Period>(() => defaultPeriod(Date.now()));
   const [draftError, setDraftError] = useState<string | null>(null);
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -49,7 +56,7 @@ export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"
 
   const fetchBookings = useCallback(
     async (period: Period): Promise<State> => {
-      const response = await api.listBookings(period);
+      const response = await api.listBookings(coachId === undefined ? period : { ...period, coach_id: coachId });
       return response.ok
         ? {
             kind: "loaded",
@@ -59,7 +66,7 @@ export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"
           }
         : { kind: "failed", message: response.message };
     },
-    [api],
+    [api, coachId],
   );
 
   // 開いたときの読み込み（既定の期間）。初期の状態が loading なので、ここでは結果だけを入れる。
@@ -88,7 +95,7 @@ export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        すべてのコーチの枠への予約を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。
+        {`${coachId === undefined ? "すべてのコーチ" : "このコーチ"}の枠への予約を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。`}
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">
