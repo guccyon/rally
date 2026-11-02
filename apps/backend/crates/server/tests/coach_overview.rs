@@ -1,7 +1,8 @@
 //! 本部がコーチ 1 人の様子（admin-web の `getCoachOverview`）を読むことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
-//! レッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を、それぞれの保存先
+//! レッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・返却待ちの動画添削の件数と
+//! そのうち 48 時間以上たった件数を、それぞれの保存先
 //! （scheduling・review・lesson・catalog・async-lesson）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・
 //! 本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
@@ -193,6 +194,9 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
         .await;
     }
     video(&videos, taro, tanaka, now - HOUR * 10, None).await;
+    // 返却待ちは 10 時間前の 1 本と、31 日前に送られてまだ返していない 1 本（返却までの時間の期間の外なので中央値には入らない
+    // が、返却待ちには数え、48 時間以上たっている）
+    video(&videos, taro, tanaka, now - day * 31, None).await;
     video(&videos, taro, ito, now - HOUR * 5, Some(now - HOUR)).await;
     let router =
         server::router_with_postgres(pool, FixedClock(now), RecordingAnalyticsSink::default());
@@ -287,7 +291,9 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
         },
         "published_lesson_menu_count": 2,
         "returned_video_review_count": 3,
-        "median_video_review_lead_time_hours": 8.5
+        "median_video_review_lead_time_hours": 8.5,
+        "pending_video_review_count": 2,
+        "overdue_pending_video_review_count": 1
     });
     assert_eq!(body, expected);
     // 照会だけで何も変えない（2 回目も同じ）
@@ -310,6 +316,14 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     assert_eq!(body["published_lesson_menu_count"], 0);
     assert_eq!(body["returned_video_review_count"], 1);
     assert_eq!(body["median_video_review_lead_time_hours"], 4.0);
+    assert_eq!(
+        (
+            &body["pending_video_review_count"],
+            &body["overdue_pending_video_review_count"]
+        ),
+        (&json!(0), &json!(0)),
+        "返却済みの動画は数えない"
+    );
 
     let student_path = format!("/coaches/{}/overview", account_id_uuid::format(taro));
     let (status, _) = send(&router, "GET", &student_path, &hq_token, None).await;
