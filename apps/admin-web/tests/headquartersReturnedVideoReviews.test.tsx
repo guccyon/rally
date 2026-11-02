@@ -430,6 +430,7 @@ describe("画面への配置", () => {
         ok: true,
         data: { as_of: "2026-10-26T03:00:00Z", videos: [] },
       })),
+      listCoaches: coachesOf(),
     });
     render(<PendingVideoReviewsHome token="mock.headquarters.x" />);
 

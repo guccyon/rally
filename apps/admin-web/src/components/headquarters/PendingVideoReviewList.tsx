@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
+import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime } from "@/components/labels";
@@ -14,15 +15,39 @@ type State =
   | { kind: "loaded"; list: Schemas["PendingVideoReviewList"] }
   | { kind: "failed"; message: string };
 
-/** minElapsedHours が null なら経過時間で絞らない。 */
-type Filter = { sport: Sport | ""; minElapsedHours: number | null };
+type CoachesState =
+  | { kind: "loading" }
+  | { kind: "loaded"; coaches: Schemas["Coach"][] }
+  | { kind: "failed"; message: string };
 
-const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
+/** sport・coachId が空なら、minElapsedHours が null なら、それで絞らない。 */
+export type PendingVideoReviewFilter = { sport: Sport | ""; minElapsedHours: number | null; coachId: string };
+type Filter = PendingVideoReviewFilter;
 
-/** 経過時間の下限の選択肢（時間）。 */
-const MIN_ELAPSED_HOURS_OPTIONS = [24, 48, 72, 168] as const;
+/** スポーツの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
+export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
-const NO_FILTER: Filter = { sport: "", minElapsedHours: null };
+/** 経過時間の下限の選択肢（時間）。URL のクエリの確かめにも使う。 */
+export const MIN_ELAPSED_HOURS_OPTIONS = [24, 48, 72, 168] as const;
+
+const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "" };
+
+/**
+ * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（スポーツ・経過時間・コーチの指定）を添えて直す場所を伝える。
+ * 選択肢から選んでいればふつうは来ない（URL のクエリを手で書き換えたときなど）。
+ */
+const VALIDATION_HINT = "スポーツ・送ってからの経過・コーチは一覧から選び直してください。";
+
+function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
+  return response.code === "validation_failed" ? `${response.message}${VALIDATION_HINT}` : response.message;
+}
+
+/** 0 件のときの文言。コーチだけで絞っていればそのコーチと言い、ほかの条件もあれば「条件に合う」と言う。 */
+function emptyMessageOf(filter: Filter): string {
+  if (filter.sport !== "" || filter.minElapsedHours !== null) return "条件に合う返却待ちの動画添削はありません";
+  if (filter.coachId !== "") return "このコーチの返却待ちの動画添削はありません";
+  return "返却を待っている動画添削はありません";
+}
 
 /** 送ってからの経過がこの時間以上の行を目立たせる（時間。API の `elapsed_hours` と比べる）。 */
 export const OVERDUE_ELAPSED_HOURS = 48;
@@ -33,39 +58,48 @@ function isOverdue(video: { elapsed_hours: number }): boolean {
 
 /**
  * 本部の「返却待ちの動画添削」。コーチがまだ返していない動画添削の一覧（listPendingVideoReviews）を出す。
- * 絞り込み（スポーツ・経過時間の下限）は API の `sport` / `min_elapsed_hours` に渡し、経過時間の数え方と並び
+ * 絞り込み（スポーツ・経過時間の下限・コーチ）は API の `sport` / `min_elapsed_hours` / `coach_id` に渡し、経過時間の数え方と並び
  * （送った時刻の古い順）は契約の正本どおり API が済ませているので、返った順と値のまま出す。
  * 経過が 48 時間以上の行は、予約の画面の「開始まで 24 時間以内」と同じやり方（行の薄い赤と札）で目立たせ、
  * 一覧の上にその件数を出す（今出している一覧の中で数える）。
+ * コーチの選択肢はライブレッスンの記録と同じくコーチの一覧（listCoaches）の返った順。
+ * `initialFilter`（URL のクエリ）の条件で開き、絞り込みを変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
 export function PendingVideoReviewList({
   api,
+  initialFilter = NO_FILTER,
+  onFilterChange,
 }: {
-  api: Pick<HeadquartersApi, "listPendingVideoReviews">;
+  api: Pick<HeadquartersApi, "listPendingVideoReviews" | "listCoaches">;
+  initialFilter?: Filter;
+  onFilterChange?: (filter: Filter) => void;
 }) {
-  const [filter, setFilter] = useState<Filter>(NO_FILTER);
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
+  const initialFilterRef = useRef(initialFilter);
 
   const fetchList = useCallback(
     async (next: Filter): Promise<State> => {
       const response = await api.listPendingVideoReviews({
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.minElapsedHours === null ? {} : { min_elapsed_hours: next.minElapsedHours }),
+        ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
       });
       return response.ok
         ? { kind: "loaded", list: response.data }
-        : { kind: "failed", message: response.message };
+        : { kind: "failed", message: failureMessage(response) };
     },
     [api],
   );
 
-  // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（渡された条件。なければ条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchList(NO_FILTER).then((next) => {
+    void fetchList(initialFilterRef.current).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
@@ -73,15 +107,31 @@ export function PendingVideoReviewList({
     };
   }, [fetchList]);
 
+  // コーチの選択肢。読めなくても一覧はスポーツと経過時間で引けるようにし、コーチの絞り込みだけを使えなくする。
+  useEffect(() => {
+    let active = true;
+    void api.listCoaches().then((response) => {
+      if (!active) return;
+      setCoaches(
+        response.ok
+          ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
   async function changeFilter(next: Filter) {
     setFilter(next);
+    onFilterChange?.(next);
     const request = ++latestRequest.current;
     setState({ kind: "loading" });
     const loaded = await fetchList(next);
     if (request === latestRequest.current) setState(loaded);
   }
 
-  const filtered = filter.sport !== "" || filter.minElapsedHours !== null;
   const overdueCount = state.kind === "loaded" ? state.list.videos.filter(isOverdue).length : 0;
 
   return (
@@ -127,7 +177,29 @@ export function PendingVideoReviewList({
             ))}
           </select>
         </label>
+        <label className="block">
+          コーチ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.coachId}
+            disabled={coaches.kind !== "loaded"}
+            onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {coaches.kind === "loaded" &&
+              coaches.coaches.map((coach) => (
+                <option key={coach.coach_id} value={coach.coach_id}>
+                  {coach.display_name}
+                </option>
+              ))}
+          </select>
+        </label>
       </div>
+      {coaches.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
+        />
+      )}
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
@@ -141,9 +213,7 @@ export function PendingVideoReviewList({
         </p>
       )}
       {state.kind === "loaded" && state.list.videos.length === 0 && (
-        <p className="text-sm">
-          {filtered ? "条件に合う返却待ちの動画添削はありません" : "返却を待っている動画添削はありません"}
-        </p>
+        <p className="text-sm">{emptyMessageOf(filter)}</p>
       )}
       {state.kind === "loaded" && state.list.videos.length > 0 && (
         <table aria-label="返却待ちの動画添削の一覧" className="w-full text-left text-sm">
