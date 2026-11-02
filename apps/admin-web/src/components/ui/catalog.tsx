@@ -162,10 +162,23 @@ export const CATALOG: CatalogEntry[] = [
   })),
   {
     component: "empty_state",
+    variant: "screen",
     render: () => (
       <EmptyState
+        variant="screen"
+        message="まだお知らせを送っていません。最初のお知らせを書いて生徒に届けましょう。"
+        action={{ label: "お知らせを書く", onClick: noop }}
+      />
+    ),
+  },
+  {
+    component: "empty_state",
+    variant: "section",
+    render: () => (
+      <EmptyState
+        variant="section"
         message="まだ低い評価はありません。評価が届くと、ここに新しい順に出ます。"
-        action={<Button variant="secondary">評価の一覧を見る</Button>}
+        action={{ label: "評価の一覧を見る", onClick: noop }}
       />
     ),
   },
