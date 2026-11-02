@@ -25,7 +25,7 @@ function DeleteDraftAction({ onDelete }: { onDelete: () => Promise<void> }) {
     return (
       <button
         type="button"
-        className="rounded border border-red-600 px-2 py-0.5 text-red-700"
+        className="rounded-pill border border-danger px-2 py-0.5 text-danger"
         onClick={() => setConfirming(true)}
       >
         消す
@@ -39,7 +39,7 @@ function DeleteDraftAction({ onDelete }: { onDelete: () => Promise<void> }) {
         <button
           type="button"
           disabled={busy}
-          className="rounded bg-red-600 px-2 py-0.5 text-white disabled:opacity-50"
+          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
           onClick={() => void confirm()}
         >
           消すのを確定
@@ -47,7 +47,7 @@ function DeleteDraftAction({ onDelete }: { onDelete: () => Promise<void> }) {
         <button
           type="button"
           disabled={busy}
-          className="rounded border px-2 py-0.5 disabled:opacity-50"
+          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
           onClick={() => setConfirming(false)}
         >
           やめる
@@ -74,23 +74,23 @@ export function AnnouncementDraftList({ drafts, openedId, onOpen, onSend, onDele
   return (
     <ul aria-label="下書きの一覧" className="space-y-3">
       {drafts.map((draft) => (
-        <li key={draft.announcement_draft_id} className="rounded border p-3">
+        <li key={draft.announcement_draft_id} className="rounded-md border p-3">
           <p className="font-semibold">
             {draftTitleOf(draft)}
             {draft.announcement_draft_id === openedId && (
-              <span className="ml-2 text-xs font-normal text-blue-700">（開いています）</span>
+              <span className="ml-2 text-xs font-normal text-primary">（開いています）</span>
             )}
           </p>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-text-muted">
             {announcementTargetLabel(draft.sport)}・最後に直した日時 {formatDateTime(draft.updated_at)}
           </p>
           <div className="mt-2 flex flex-wrap items-start gap-2">
-            <button type="button" className="rounded border px-2 py-0.5" onClick={() => onOpen(draft)}>
+            <button type="button" className="rounded-pill border px-2 py-0.5" onClick={() => onOpen(draft)}>
               開いて直す
             </button>
             <button
               type="button"
-              className="rounded border border-blue-600 px-2 py-0.5 text-blue-700"
+              className="rounded-pill border border-primary px-2 py-0.5 text-primary"
               onClick={() => onSend(draft)}
             >
               送る

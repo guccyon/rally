@@ -58,7 +58,7 @@ export function IncompleteCoachProfileList({
       <p className="text-sm">
         自己紹介に空の項目があるコーチを、登録の古い順に見られます。書きかけのままのコーチを見つけて声をかけるための一覧です。
       </p>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
         <p className="text-sm">自己紹介の足りないコーチはいません</p>
@@ -76,7 +76,7 @@ export function IncompleteCoachProfileList({
             {state.coaches.map((coach) => (
               <tr key={coach.coach_id} className="border-t">
                 <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-blue-600 underline">
+                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
                     {coach.display_name}
                   </Link>
                 </td>
