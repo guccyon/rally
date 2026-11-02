@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
+import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
@@ -21,11 +22,30 @@ type State =
   | { kind: "loaded"; coaches: Coach[] }
   | { kind: "failed"; message: string };
 
-/** 絞り込みの条件。空なら絞らない。 */
-export type CoachAcceptanceFilter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | "" };
+/** 絞り込みの条件。空なら絞らない。`q` は表示名の検索語（前後の空白を除いた値）。 */
+export type CoachAcceptanceFilter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | ""; q: string };
 type Filter = CoachAcceptanceFilter;
 
-const NO_FILTER: Filter = { acceptanceStatus: "", sport: "" };
+const NO_FILTER: Filter = { acceptanceStatus: "", sport: "", q: "" };
+
+/** 契約の `listCoaches` の `q` の上限（前後の空白を除いた Unicode のコードポイントの数。表示名の上限と同じ）。 */
+const QUERY_MAX_LENGTH = 50;
+const QUERY_TOO_LONG = `表示名は ${QUERY_MAX_LENGTH} 文字までで探してください。`;
+
+/** 検索欄の値を送る形にする。前後の空白（全角を含む）を除き、上限を超えていれば理由を返す。 */
+export function coachNameQuery(input: string): { ok: true; q: string } | { ok: false; message: string } {
+  const q = input.trim();
+  // 契約と同じくコードポイントで数える（input の maxLength は UTF-16 の単位で数えるので使わない）。
+  return [...q].length > QUERY_MAX_LENGTH ? { ok: false, message: QUERY_TOO_LONG } : { ok: true, q };
+}
+
+/**
+ * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（検索語の長さ）を添えて直す場所を伝える。
+ * 検索欄からは送る前に確かめているので、ふつうは URL のクエリに長い `q` を書いて開いたときだけここに来る。
+ */
+function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
+  return response.code === "validation_failed" ? `${response.message}${QUERY_TOO_LONG}` : response.message;
+}
 
 /** 絞り込みの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
@@ -38,6 +58,8 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
  * 受付中の行は「受付を止める」（suspendCoach）、停止中の行は「再開する」（resumeCoach）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
+ * 表示名の検索欄は「探す」（または Enter）で確定し、前後の空白を除いた語を `q` に渡して読み直す（空なら絞らない）。
+ * 上限を超える語は送らずに理由を出す。受付の状態・スポーツを変えたときは、確定済みの検索語と組み合わせる。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
  */
@@ -51,6 +73,9 @@ export function CoachAcceptanceList({
   onFilterChange?: (filter: Filter) => void;
 }) {
   const [filter, setFilter] = useState<Filter>(initialFilter);
+  // 検索欄の入力中の値。確定する（探す・Enter）までは一覧を読み直さない。
+  const [queryDraft, setQueryDraft] = useState(initialFilter.q);
+  const [queryError, setQueryError] = useState<string | null>(null);
   const [state, setState] = useState<State>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
@@ -61,10 +86,11 @@ export function CoachAcceptanceList({
       const response = await api.listCoaches({
         ...(next.acceptanceStatus === "" ? {} : { acceptance_status: next.acceptanceStatus }),
         ...(next.sport === "" ? {} : { sport: next.sport }),
+        ...(next.q === "" ? {} : { q: next.q }),
       });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
-        : { kind: "failed", message: response.message };
+        : { kind: "failed", message: failureMessage(response) };
     },
     [api],
   );
@@ -80,24 +106,36 @@ export function CoachAcceptanceList({
   );
 
   // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
-  const { acceptanceStatus: initialAcceptanceStatus, sport: initialSport } = initialFilter;
+  const { acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ } = initialFilter;
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchCoaches({ acceptanceStatus: initialAcceptanceStatus, sport: initialSport }).then((next) => {
+    void fetchCoaches({ acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches, initialAcceptanceStatus, initialSport]);
+  }, [fetchCoaches, initialAcceptanceStatus, initialSport, initialQ]);
 
   async function changeFilter(next: Filter) {
     setFilter(next);
+    setQueryError(null);
     onFilterChange?.(next);
     setResult(null);
     setState({ kind: "loading" });
     await reload(next);
+  }
+
+  async function submitQuery(event: FormEvent) {
+    event.preventDefault();
+    const query = coachNameQuery(queryDraft);
+    if (!query.ok) {
+      setQueryError(query.message);
+      return;
+    }
+    setQueryDraft(query.q);
+    await changeFilter({ ...filter, q: query.q });
   }
 
   async function changeAcceptance(coach: Coach) {
@@ -132,14 +170,26 @@ export function CoachAcceptanceList({
     if (response.code !== undefined) await reload(filter);
   }
 
-  const filtered = filter.acceptanceStatus !== "" || filter.sport !== "";
+  const filtered = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
 
   return (
     <div className="space-y-4">
       <p className="text-sm">
         受付を止めたコーチの枠は生徒の検索に出ず、新しい予約を受け付けません。入っている予約と枠はそのままです。
       </p>
-      <div className="flex flex-wrap items-end gap-4">
+      <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submitQuery(event)}>
+        <label className="block">
+          表示名
+          <input
+            type="text"
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={queryDraft}
+            onChange={(event) => setQueryDraft(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+          探す
+        </button>
         <label className="block">
           受付の状態
           <select
@@ -180,7 +230,8 @@ export function CoachAcceptanceList({
             ))}
           </select>
         </label>
-      </div>
+      </form>
+      {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
       <ResultMessage result={result} />
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
