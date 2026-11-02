@@ -114,6 +114,12 @@ export interface paths {
          *       見る）。期間・`coach_id`・`status`・`trial` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての
          *       生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・期間に予約がない生徒は、404 にせず
          *       `bookings` が空の配列
+         *     - 任意の `lesson_menu_id` で、予約した時点のレッスンメニュー（各予約の `lesson_menu` の `lesson_menu_id`）がそのメニューの
+         *       予約だけに絞れる（レッスンメニューの見直しを考える本部が、そのメニューの予約だけを見る）。予約した後にメニューが直されても、
+         *       枠のメニューが変わっても、予約した時点のメニューで絞る。メニューのない予約（`lesson_menu` のない予約）は、`lesson_menu_id` を
+         *       付ければ出ない。状態を問わないので、キャンセルされた予約も出る。期間・`coach_id`・`student_id`・`status`・`trial` と組み合わせられ、
+         *       期間の規則と並べ方は変わらない。省けば今までどおりメニューを問わない。`lesson_menu_id` が UUID でなければ 422
+         *       `validation_failed`。ないメニューの ID・期間に予約がないメニューは、`coach_id` と同じく 404 にせず `bookings` が空の配列
          *     - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
          *       キャンセル済みの予約より上）、それも同じなら `booking_id` の順
          *     - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
@@ -401,6 +407,12 @@ export interface paths {
          *     メニューの写しで、元にメニューがなければ null。評価されたコーチの返信 `reply`（`LessonReviewReply`。
          *     `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
          *
+         *     絞り込み（任意）: `max_rating`（1〜5 の整数）を付ければ、点 `rating` がその値以下（含む）の評価だけを返す（本部が
+         *     コーチ 1 人の低い評価だけを読む。`listLowRatedLessonReviews` の線なら `max_rating=2`）。期間では絞らず、並べ方も
+         *     付けても変わらない。付けなければ点を問わない。本部とコーチ（自分の分）のどちらも付けられる。1〜5 の整数でない
+         *     ときは 422 `validation_failed`。student-app の同じ操作にはこの絞り込みはない（生徒の役割のトークンでは付けても
+         *     変わらない）。
+         *
          *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
          *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
          */
@@ -632,7 +644,8 @@ export interface paths {
         /**
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
-         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を
+         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を
          *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
@@ -657,6 +670,11 @@ export interface paths {
          *       （遅れを隠さない）。期間は送った時刻で絞る（30 日より前に送った動画は、返却が期間内でも数えない）。本数が偶数なら
          *       真ん中の 2 つの平均。`returned_video_review_count` は母集団のうち添削を返した件数。期間内に送られた動画がなければ
          *       件数 0・中央値 null（まだ返していない動画だけなら件数 0 で中央値は出る）
+         *     - `pending_video_review_count`: そのコーチの返却待ちの動画添削の件数。`listPendingVideoReviews` に `coach_id` だけを
+         *       付けたときの `videos` の件数と同じ（返却していない動画すべて。スポーツを問わず、ゴルフの動画も数える）
+         *     - `overdue_pending_video_review_count`: `pending_video_review_count` のうち、送付からの経過時間が 48 時間以上（含む）の
+         *       件数。`listPendingVideoReviews` に `coach_id` と `min_elapsed_hours=48` を付けたときの件数と同じ（経過時間の数え方も
+         *       同じで、照会した時刻から数え、1 時間に満たない端数は切り捨てる）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -728,7 +746,13 @@ export interface paths {
          *       キャンセル済みの予約しかない枠は `false`。予約の中身は自分の予約の一覧（`listMyCoachBookings`）で見る
          *     - 各項目の枠には、結びついたレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
          *       メニューのない枠は null。メニューは今の中身で、非公開にしたメニューも載せる
-         *     - 期間で絞らず、ページングもしない。枠がなければ `slots` は空の配列
+         *     - 期間: 任意の `from`・`to`（枠の開始の日付。日本時間）で、`from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時
+         *       （含まない）までに開始する枠だけに絞れる（来週の空き枠の出し具合だけを確かめる）。両方を省けば今までどおり期間で絞らず、
+         *       すべての枠を返す。どちらかを付けたときの省いた側の決め方と期間の規則は `listBookings` と同じ: `from` を省けば今日
+         *       （サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。期間は 1 日以上 31 日まで。
+         *       `to` が `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`
+         *       （`message` に理由）。`to` だけを付けて今日より前の日付なら `from`（今日）より前なので 422
+         *     - ページングはしない。枠がなければ（期間に枠がなくても）`slots` は空の配列
          *     - 照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
@@ -1155,6 +1179,12 @@ export interface paths {
          *       student-app の `listMyLessonCompletions` と同じもの）を、完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に
          *       最大 20 件。21 件目より古いものは載せない
          *     - `cancelled_booking_count`: 生徒がキャンセルした予約（状態が `cancelled`）の件数。期間で絞らず、これまでのすべて
+         *     - `submitted_video_count`: 生徒が送った動画（student-app の `submitVideo`。glossary の async_lesson）の数。添削待ちも
+         *       返却済みも含め、期間で絞らず、これまでのすべて（student-app の `listMyVideos` に載る動画の数と同じ）
+         *     - `pending_video_review_count`: 生徒が送った動画のうち、いま返却を待っている（コーチがまだ添削を返していない）動画の数。
+         *       返却待ちの判定は `listPendingVideoReviews` と同じ（スポーツ・コーチ・経過時間で絞らない。backend の domain
+         *       `PendingVideoReviewFilter` の 1 か所）で、その一覧に載るこの生徒の動画の数と一致する。動画の一覧や ID は返さない
+         *       （返却待ちの中身は `listPendingVideoReviews` で見る）
          *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
          *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
          *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -1613,14 +1643,22 @@ export interface paths {
         /**
          * 送ったお知らせの一覧（本部）
          * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
-         *     どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
-         *     空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *     どの本部のアカウントが送ったかで絞らない。ページングはしない。送ったお知らせがなければ（期間に送ったものがなければ）
+         *     `announcements` は空の配列（404 にはしない）。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
          *     取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
-         *     （取り下げていなければ null）。
+         *     （取り下げていなければ null）。期間で絞っても取り下げたお知らせの扱いは変わらない（送った日付で決まる）。
          *     1 件ごとの `read_count` は、そのお知らせを受け取った生徒のうち既読にした（student-app の `markMyNotificationsRead`）
          *     生徒の数で、呼んだ時点の値。取り下げたお知らせは、取り下げた時刻（`withdrawal.withdrawn_at`）までに既読になった生徒だけを
          *     数える（取り下げた時点の数で止まる）。取り下げたあとに `markMyNotificationsRead` で既読になった生徒は、既読にはなるが
          *     （D141 の既読の扱いは変えない）数えない。生徒 1 人ずつの既読は返さない。
+         *
+         *     - 任意の `from`・`to` で、送った日付（日本時間）が `from` から `to` まで（両端を含む）のお知らせだけに絞れる（本部が先月
+         *       送ったものなどを引く）。`from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに送ったもの。
+         *       両方を省けば今までどおりすべて。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の 6 日前から（どちらも
+         *       7 日。`listCancelledBookings` と同じ）
+         *     - 期間の規則は `listBookings` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を
+         *       超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+         *     - 並べ方と `read_count` の数え方は期間で絞っても変わらない
          *
          *     行動イベントは発火しない。
          */
@@ -2218,8 +2256,8 @@ export interface components {
         };
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
-         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間を
-         *     添える。金額は持たない
+         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2250,6 +2288,13 @@ export interface components {
              *     動画がなければ null
              */
             median_video_review_lead_time_hours: number | null;
+            /** @description 返却待ちの動画添削の件数（`listPendingVideoReviews` を `coach_id` で絞った件数と同じ。スポーツを問わない） */
+            pending_video_review_count: number;
+            /**
+             * @description `pending_video_review_count` のうち、送付から 48 時間以上（含む）たった件数（`listPendingVideoReviews` の
+             *     `min_elapsed_hours=48` と同じ線。`pending_video_review_count` 以下）
+             */
+            overdue_pending_video_review_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -2297,7 +2342,7 @@ export interface components {
         };
         /**
          * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-         *     キャンセルの件数を添える。生徒を特定する情報は表示名と ID だけ
+         *     キャンセルの件数・送った動画の数と返却待ちの数を添える。生徒を特定する情報は表示名と ID だけ
          */
         StudentActivity: {
             /**
@@ -2313,6 +2358,13 @@ export interface components {
             recent_lessons: components["schemas"]["StudentActivityLesson"][];
             /** @description 生徒がキャンセルした予約の件数（これまでのすべて） */
             cancelled_booking_count: number;
+            /** @description 生徒が送った動画の数（添削待ちも返却済みも含め、これまでのすべて） */
+            submitted_video_count: number;
+            /**
+             * @description 生徒が送った動画のうち、いま返却を待っている動画の数（判定は `listPendingVideoReviews` と同じ）。
+             *     `submitted_video_count` 以下
+             */
+            pending_video_review_count: number;
         };
         /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
         StudentActivityBooking: {
@@ -3406,6 +3458,12 @@ export interface operations {
                  *     `true` / `false` でない値は 422 `validation_failed`
                  */
                 trial?: boolean;
+                /**
+                 * @description あれば予約した時点のレッスンメニュー（`lesson_menu` の `lesson_menu_id`）がこのメニューの予約だけに絞る。
+                 *     省けばメニューを問わない。メニューのない予約は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
@@ -3616,7 +3674,10 @@ export interface operations {
     };
     listCoachReviews: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description この点以下（含む）の評価だけを返す（付けなければ点を問わない） */
+                max_rating?: number;
+            };
             header?: never;
             path: {
                 coach_id: string;
@@ -3637,6 +3698,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listLowRatedLessonReviews: {
@@ -3860,7 +3922,12 @@ export interface operations {
     };
     listMyCoachSlots: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 期間の始まりの日付（枠の開始。日本時間。含む）。`to` だけを付けて省けば今日。両方を省けば期間で絞らない */
+                from?: string;
+                /** @description 期間の終わりの日付（枠の開始。日本時間。含む）。`from` だけを付けて省けば `from` から 7 日目。両方を省けば期間で絞らない */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3878,6 +3945,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     withdrawMySlot: {
@@ -4604,7 +4672,12 @@ export interface operations {
     };
     listAnnouncements: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 送った期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4622,6 +4695,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     sendAnnouncement: {

@@ -520,7 +520,16 @@ export const FIXTURES: Fixture[] = [
       published_lesson_menu_count: 3,
       returned_video_review_count: 7,
       median_video_review_lead_time_hours: 18.5,
+      pending_video_review_count: 2,
+      overdue_pending_video_review_count: 1,
     } satisfies Schemas["CoachOverview"],
+  },
+  {
+    // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { sport: "swimming" },
+    body: { coaches: [] } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
     method: "GET",
@@ -708,6 +717,8 @@ export const FIXTURES: Fixture[] = [
         },
       ],
       cancelled_booking_count: 1,
+      submitted_video_count: 2,
+      pending_video_review_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {

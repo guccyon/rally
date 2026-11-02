@@ -432,6 +432,77 @@ describe("本部のレッスンメニューを名前で探す", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  test("入力中の語は、ほかの絞り込みを変えると一緒に確定する（欄の語と一覧に効いている条件を一致させる）", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} onQueryChange={onQueryChange} />);
+    await screen.findByRole("table");
+    const input = screen.getByLabelText("名前で探す");
+
+    await user.type(input, " フォア\u3000");
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "フォア", sport: "tennis" }),
+    );
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: "", q: "フォア" });
+    expect(input).toHaveValue("フォア");
+
+    await user.clear(input);
+    await user.type(input, "基礎");
+    await user.click(screen.getByLabelText("公開中だけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "基礎",
+        sport: "tennis",
+        published: true,
+      }),
+    );
+
+    await user.clear(input);
+    await user.type(input, "サーブ");
+    await user.selectOptions(screen.getByLabelText("コーチ"), "佐藤コーチ");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        sport: "tennis",
+        published: true,
+        coach_id: COACH_B,
+      }),
+    );
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: COACH_B, q: "サーブ" });
+
+    // 欄を空にしてから変えたら、名前の条件も外す
+    await user.clear(input);
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "すべて");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ published: true, coach_id: COACH_B }),
+    );
+    expect(listLessonMenus).toHaveBeenCalledTimes(5);
+  });
+
+  test("検索欄の語が 40 文字を超えたままほかの絞り込みを変えたら、理由を出して条件を変えない", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} onQueryChange={onQueryChange} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), "あ".repeat(41));
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "名前の検索語は 40 文字までにしてください（前後の空白は数えません）。",
+    );
+    expect(screen.getByLabelText("スポーツ")).toHaveValue("");
+    await user.click(screen.getByLabelText("公開中だけ"));
+    expect(screen.getByLabelText("公開中だけ")).not.toBeChecked();
+    expect(listLessonMenus).toHaveBeenCalledTimes(1);
+    expect(onQueryChange).not.toHaveBeenCalled();
+    // 一覧は前の条件のまま出し続ける
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
   test("422 validation_failed なら直し方の文言を出し、一覧は出さない", async () => {
     const listLessonMenus = vi
       .fn<HeadquartersApi["listLessonMenus"]>()

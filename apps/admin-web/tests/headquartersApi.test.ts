@@ -122,6 +122,8 @@ describe("headquartersApi", () => {
       published_lesson_menu_count: 2,
       returned_video_review_count: 0,
       median_video_review_lead_time_hours: null,
+      pending_video_review_count: 1,
+      overdue_pending_video_review_count: 0,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);
@@ -311,6 +313,8 @@ describe("headquartersApi", () => {
       upcoming_bookings: [],
       recent_lessons: [],
       cancelled_booking_count: 0,
+      submitted_video_count: 0,
+      pending_video_review_count: 0,
     };
     const { api, fetchMock } = setup(json(200, activity));
     const result = await api.getStudentActivity(studentId);
@@ -409,6 +413,14 @@ describe("headquartersApi", () => {
     expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
     expect(url.search).toBe("");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listIncompleteCoachProfiles はスポーツを渡せばクエリ sport に載せる", async () => {
+    const { api, fetchMock } = setup(json(200, { coaches: [] }));
+    await api.listIncompleteCoachProfiles({ sport: "golf" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
+    expect(url.search).toBe("?sport=golf");
   });
 
   test("listOverdueLiveLessonSessions は経過時間の下限をクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {

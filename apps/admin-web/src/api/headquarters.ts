@@ -45,7 +45,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
+    listIncompleteCoachProfiles: (filter: { sport?: Schemas["Sport"] } = {}) =>
+      call(() => client.GET("/coaches/incomplete-profiles", { params: { query: filter } })),
     listLowRatedLessonReviews: (filter: { handled?: boolean } = {}) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
     markLowRatedLessonReviewHandled: (reviewId: string) =>

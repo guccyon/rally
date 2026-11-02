@@ -12,14 +12,18 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     notification::{
         AnnouncementRecipientLookup, AnnouncementRepository, AnnouncementWithReadCount,
-        ListAnnouncements, NotificationRepository, NotificationSettingsRepository, PushSender,
-        SendAnnouncement, SendAnnouncementCommand, SendAnnouncementError, WithdrawAnnouncement,
-        WithdrawAnnouncementError, announcement_id_uuid,
+        ListAnnouncements, ListAnnouncementsError, ListAnnouncementsQuery, NotificationRepository,
+        NotificationSettingsRepository, PushSender, SendAnnouncement, SendAnnouncementCommand,
+        SendAnnouncementError, WithdrawAnnouncement, WithdrawAnnouncementError,
+        announcement_id_uuid,
     },
 };
 use axum::{
     Json, Router,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{
+        Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::post,
@@ -32,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
+    contract::{admin_web_sport, date_from_contract, date_time_to_contract, sport_to_contract},
     error::ApiError,
     message::notification_error,
 };
@@ -74,6 +78,13 @@ pub struct AnnouncementBodyJson {
 pub struct AnnouncementWithdrawalBody {
     withdrawn_by: String,
     withdrawn_at: String,
+}
+
+/// admin-web の `listAnnouncements` のクエリ。
+#[derive(Deserialize)]
+pub struct ListAnnouncementsParams {
+    from: Option<String>,
+    to: Option<String>,
 }
 
 /// admin-web の `AnnouncementList`。
@@ -161,8 +172,11 @@ where
 
 /// `GET /announcements`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。送ったお知らせを
 /// 送った時刻の新しい順で、受け取った生徒のうち既読にした数とともに返す（どの本部のアカウントが送ったかで絞らない）。
+/// `from`・`to` を両方省けばすべて、どちらかがあれば送った日付（日本時間）の期間で絞る。`from`・`to` が `YYYY-MM-DD` の
+/// 日付でないときと、期間の違反は 422（期間の違反の応答は `listBookings` と同じく [`crate::scheduling_error`] が決める）。
 pub async fn list_announcements<A, L, N, S, P, C>(
     State(state): State<Shared<A, L, N, S, P, C>>,
+    params: Result<Query<ListAnnouncementsParams>, QueryRejection>,
 ) -> Result<Json<AnnouncementListBody>, ApiError>
 where
     A: AnnouncementRepository,
@@ -172,11 +186,29 @@ where
     P: PushSender,
     C: Clock,
 {
-    let announcements = state
-        .list_announcements
-        .execute()
-        .await
-        .map_err(ApiError::internal)?;
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let query = ListAnnouncementsQuery {
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+    };
+    let announcements =
+        state
+            .list_announcements
+            .execute(query)
+            .await
+            .map_err(|error| match error {
+                ListAnnouncementsError::Invalid(error) => ApiError::from(error),
+                ListAnnouncementsError::Unavailable(error) => ApiError::internal(error),
+            })?;
     Ok(Json(AnnouncementListBody {
         announcements: announcements
             .iter()

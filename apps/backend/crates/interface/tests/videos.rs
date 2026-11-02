@@ -287,6 +287,7 @@ fn app() -> App {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock.clone(),
         ),
         StartSubscription::new(
             entitlements.clone(),

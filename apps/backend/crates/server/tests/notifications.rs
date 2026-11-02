@@ -19,6 +19,7 @@
 //! お知らせをオフにしていない生徒にだけプッシュ通知が届く。送った記録は `GET /announcements` で読める。本部が取り下げた
 //! お知らせ（`POST /announcements/{announcement_id}/withdraw`）は生徒のお知らせに出なくなり、本部の一覧には取り下げ済みとして残る。
 //! 本部の一覧には、受け取った生徒のうち既読にした数が載る（取り下げたお知らせは取り下げた時刻まで）。
+//! 本部の一覧は送った日付（日本時間）の `from`・`to` で絞れる（Postgres の組み立て）。
 //! 本部は生徒 1 人が受け取ったお知らせと既読・取り下げ済みかを読める（`GET /students/{student_id}/announcements`。Postgres の組み立て）。
 //! 本部が書きかけで残した下書き（`/announcement-drafts`）は生徒に届かず、下書きから送る
 //! （`POST /announcement-drafts/{announcement_draft_id}/send`）と生徒のお知らせに届いて下書きは消える（Postgres の組み立て）。
@@ -937,6 +938,36 @@ async fn an_announcement_is_saved_in_postgres(pool: sqlx::PgPool) {
         .await,
         json!({ "announcements": [sent] })
     );
+    // 送った日付（日本時間の 10/5）の期間で絞れる。期間の規則は `listBookings` と同じ
+    for (query, expected) in [
+        ("from=2026-10-05&to=2026-10-05", json!([sent])),
+        ("to=2026-10-05", json!([sent])),
+        ("from=2026-10-06", json!([])),
+        ("to=2026-10-04", json!([])),
+    ] {
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                &format!("/announcements?{query}"),
+                Some(&headquarters),
+                Value::Null,
+                StatusCode::OK,
+            )
+            .await,
+            json!({ "announcements": expected }),
+            "{query}"
+        );
+    }
+    call(
+        &router,
+        "GET",
+        "/announcements?from=2026-10-05&to=2026-10-04",
+        Some(&headquarters),
+        Value::Null,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
     let read = call(
         &router,
         "POST",

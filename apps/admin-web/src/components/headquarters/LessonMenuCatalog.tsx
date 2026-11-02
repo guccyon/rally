@@ -69,6 +69,8 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
  * 絞り込み（名前・スポーツ・公開中だけ・コーチ）は API の `q` / `sport` / `published` / `coach_id` に渡し、並びは契約の正本どおり返った順のまま出す。
  * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・公開中だけ・コーチは選んだときに読み直す。
+ * スポーツ・公開中だけ・コーチを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
  * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
@@ -96,7 +98,7 @@ export function LessonMenuCatalog({
     publishedOnly: false,
     coachId: initialCoachId ?? "",
   });
-  // 名前の検索欄の入力中の値（「探す」で確定するまで一覧は読み直さない）。
+  // 名前の検索欄の入力中の値（確定する（探す・Enter・ほかの絞り込みを変える）までは一覧を読み直さない）。
   const [queryDraft, setQueryDraft] = useState(initialQ);
   const [queryDraftError, setQueryDraftError] = useState<string | null>(null);
   const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
@@ -170,18 +172,27 @@ export function LessonMenuCatalog({
 
   async function changeFilter(next: Filter) {
     setFilter(next);
+    setQueryDraftError(null);
     setResult(null);
     onQueryChange?.({ coachId: next.coachId, q: next.q });
     await reload(next);
   }
 
-  async function submitQuery(event: FormEvent) {
-    event.preventDefault();
+  // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
+  async function commitFilter(change: Partial<Omit<Filter, "q">>) {
     const q = queryDraft.trim();
     const error = queryError(q);
-    setQueryDraftError(error);
-    if (error !== null) return;
-    await changeFilter({ ...filter, q });
+    if (error !== null) {
+      setQueryDraftError(error);
+      return;
+    }
+    setQueryDraft(q);
+    await changeFilter({ ...filter, ...change, q });
+  }
+
+  async function submitQuery(event: FormEvent) {
+    event.preventDefault();
+    await commitFilter({});
   }
 
   async function changePublication(
@@ -240,7 +251,7 @@ export function LessonMenuCatalog({
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
-              void changeFilter({ ...filter, sport: event.target.value as Sport | "" })
+              void commitFilter({ sport: event.target.value as Sport | "" })
             }
           >
             <option value="">すべて</option>
@@ -256,7 +267,7 @@ export function LessonMenuCatalog({
             type="checkbox"
             checked={filter.publishedOnly}
             onChange={(event) =>
-              void changeFilter({ ...filter, publishedOnly: event.target.checked })
+              void commitFilter({ publishedOnly: event.target.checked })
             }
           />
           公開中だけ
@@ -267,7 +278,7 @@ export function LessonMenuCatalog({
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.coachId}
             disabled={coaches.kind !== "loaded" && !unknownCoachSelected}
-            onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
+            onChange={(event) => void commitFilter({ coachId: event.target.value })}
           >
             <option value="">すべて</option>
             {unknownCoachSelected && (

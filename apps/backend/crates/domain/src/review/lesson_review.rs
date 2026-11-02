@@ -150,6 +150,11 @@ impl LessonReview {
         self.rating
     }
 
+    /// 点が `max_rating` 以下（含む）か（admin-web の `listCoachReviews` の `max_rating` の絞り込み）。
+    pub fn is_rated_at_most(&self, max_rating: Rating) -> bool {
+        self.rating <= max_rating
+    }
+
     pub const fn comment(&self) -> &LessonReviewComment {
         &self.comment
     }
@@ -332,6 +337,24 @@ mod tests {
             at(3),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_review_is_rated_at_most_the_given_rating_including_it() {
+        for (rating, max_rating, at_most) in [
+            (1, 1, true),
+            (2, 1, false),
+            (2, 2, true),
+            (2, 3, true),
+            (5, 4, false),
+            (5, 5, true),
+        ] {
+            assert_eq!(
+                rated(rating).is_rated_at_most(Rating::new(max_rating).unwrap()),
+                at_most,
+                "★{rating} は {max_rating} 以下か"
+            );
+        }
     }
 
     #[test]
