@@ -458,7 +458,11 @@ mod tests {
         let acceptances = use_case.bookings().slots().coach_acceptances();
         acceptances
             .update(COACH, |a| {
-                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
             })
             .await
             .unwrap();
