@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部の生徒の一覧をコーチで絞る: admin-web の `GET /students`（`listStudents`）に任意のクエリ `coach_id` を足した。付ければそのコーチの枠を一度でも予約した生徒だけを返す（コーチの休業時にその生徒にだけ連絡するため）。予約の状態は問わず、キャンセル済みの予約しかない生徒も載る（`getStudentActivity` がキャンセル済みの予約も数えるのに揃えた）。`q`・`sport`・`not_booked_since` と組み合わせられ、並べ方は変わらない。UUID でなければ 422 `validation_failed`、ない ID・コーチでない ID は 404 にせず空の配列。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#626）
 - 本部が返した動画添削の記録をスポーツで絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `sport` を足した。付ければ動画を送ったときのスポーツがそれの返却済みの動画だけを返す（値と動画のスポーツの決め方は `listPendingVideoReviews` の `sport` と同じ）。付けなければ今までどおりスポーツを問わない。期間・`coach_id` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#607）
 - 本部がレッスンメニューを名前で探す API: admin-web の `GET /lesson-menus`（`listLessonMenus`）に任意のクエリ `q` を足した。付ければ名前に部分一致するメニューだけを今までと同じ並びで返し、`sport`・`published`・`coach_id` と組み合わせられる。一致のしかた（前後の空白を除く・ASCII の英字だけ大文字と小文字を区別しない・空や空白だけなら絞り込まない）は `listStudents` の `q` と同じで、前後の空白を除いて 40 文字（メニューの名前の上限）を超えたら 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#604）
 - admin-web の本部の「コーチの様子」（`/headquarters/coach-overview?coach_id=…`）の上に、そのコーチで開く画面へのリンクの並び（評価・低い評価・レッスンメニュー・予約）を置いた: 評価・レッスンメニューはそのコーチを選んだ状態で、「予約」（`/headquarters/bookings?coach_id=…`）はそのコーチの枠への予約だけに絞った状態で開く（`listBookings` の `coach_id`。期間を変えても絞り込みは残り、「すべてのコーチの予約を見る」で外せる）。低い評価は一覧をそのまま開く。リンクは様子の読み込み中・読み込めなかったときも出す。API と契約の変更はない（#575）

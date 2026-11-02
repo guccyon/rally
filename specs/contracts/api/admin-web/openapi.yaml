@@ -28,7 +28,8 @@ info:
     本部が公開に戻すまでコーチが自分で公開し直せない（`updateMyLessonMenu` の 409 `lesson_menu_unpublished_by_headquarters`）。
     非公開にした・公開に戻した記録（いつ・どの本部のアカウントが）は、メニューごとに新しい順に読む（`listLessonMenuPublicationChanges`）。
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・登録した時刻）を読む（`listStudents`）。
-    スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。
+    スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。コーチが休業するときにそのコーチの
+    生徒にだけ連絡できるよう、そのコーチを予約したことがある生徒にも絞れる。
     本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数）を
     読む（`getStudentActivity`）。「お知らせが届いていない」という問い合わせには、生徒 1 人が受け取った本部からのお知らせと
     既読・取り下げ済みかを読む（`listStudentAnnouncements`）。
@@ -1545,7 +1546,12 @@ paths:
         - 最後に予約した日で絞る（任意）: `not_booked_since`（`YYYY-MM-DD`。日本時間）を付ければ、その日の始まり（日本時間の 0 時）
           以降に予約を作っていない生徒、つまり `last_booked_at` がその時刻より前か null の生徒だけを返す（一度も予約していない
           生徒も載る）。`last_booked_at` と同じく予約の状態は問わない。日付でなければ 422 `validation_failed`
-        - `q`・`sport`・`not_booked_since` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
+        - 予約したことのあるコーチで絞る（任意）: `coach_id` を付ければ、そのコーチの枠を一度でも予約した（glossary の booking。
+          体験予約を含む）生徒だけを返す。予約の状態（確定待ち・確定済み・キャンセル済み）は問わず、キャンセル済みの予約しかない
+          生徒も載る（`getStudentActivity` がキャンセル済みの予約も生徒の予約として `cancelled_booking_count` に数え、
+          `last_booked_at` も状態を問わないのに揃える。実装は backend の domain `CoachBookedStudents` の 1 か所）。
+          `coach_id` が UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は 404 にせず `students` が空の配列
+        - `q`・`sport`・`not_booked_since`・`coach_id` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
           どれも付けなければ今までどおりすべての生徒
         - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
         - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
@@ -1578,6 +1584,15 @@ paths:
           schema:
             type: string
             format: date
+        - name: coach_id
+          in: query
+          required: false
+          description: |
+            このコーチの枠を一度でも予約した生徒だけを返す（予約の状態を問わない。キャンセル済みの予約も数える）。
+            付けなければコーチで絞らない。UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は空の一覧
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 生徒の一覧
