@@ -216,6 +216,13 @@ impl Booking {
         coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
     }
 
+    /// 一覧を絞る生徒の指定に当てはまるか。指定があればその ID が予約した生徒のときだけ、なければどの予約も当てはまる。
+    /// 生徒でない ID・ない ID はどの予約にも当てはまらない（一覧は空になる）。本部が見る予約の一覧とキャンセルされた
+    /// 予約の一覧が共に使う。
+    pub fn matches_student(&self, student_id: Option<AccountId>) -> bool {
+        student_id.is_none_or(|student_id| self.student_id == student_id)
+    }
+
     pub const fn is_trial(&self) -> bool {
         self.is_trial
     }
@@ -921,6 +928,22 @@ mod tests {
         assert!(!booking.matches_coach(Some(STUDENT)));
         // キャンセルしても枠のコーチは変わらない
         assert!(cancelled(booking).matches_coach(Some(COACH)));
+    }
+
+    #[test]
+    fn matches_student_only_the_student_who_booked_or_any_without_a_student() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.matches_student(None),
+            "指定がなければどの生徒の予約も"
+        );
+        assert!(booking.matches_student(Some(STUDENT)));
+        // 別の生徒・枠のコーチ（生徒でない ID）には当てはまらない
+        assert!(!booking.matches_student(Some(AccountId::from_u128(99))));
+        assert!(!booking.matches_student(Some(COACH)));
+        // キャンセルしても予約した生徒は変わらない
+        assert!(cancelled(booking).matches_student(Some(STUDENT)));
     }
 
     #[test]

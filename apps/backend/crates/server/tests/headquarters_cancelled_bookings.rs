@@ -2,7 +2,8 @@
 //! Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること（同じ階層の
 //! `GET /bookings/{booking_id}` と並んでも当たること）、生徒が student-app の `cancelBooking` でキャンセルした予約を
 //! Postgres からキャンセルした日本時間の日付で絞ってキャンセルの新しい順に読み、生徒・コーチの表示名とキャンセルした人を
-//! 添えること、キャンセルしていない予約は出ないこと、本部以外は 403 になることを確かめる。
+//! 添えること、キャンセルしていない予約は出ないこと、コーチ・生徒（期間と組み合わせて）で絞れること、本部以外は 403 に
+//! なることを確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_cancelled_bookings.rs`、期間にキャンセルした予約の
 //! 読み取りは infra の `tests/pg_booking_repository.rs`。
 //!
@@ -254,4 +255,137 @@ async fn headquarters_reads_cancelled_bookings_by_cancellation_date_from_postgre
         let (status, body) = send(&router, get("/bookings/cancelled", token)).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_narrows_cancelled_bookings_to_a_student_from_postgres(pool: PgPool) {
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, ito_token) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+    let (hanako, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
+    let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let clock = ManualClock::new(at(Duration::ZERO));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    // 4 つの枠を予約し、日本時間の 10 月 26 日〜27 日に 3 つをキャンセルする（たろうのたなかの 2 つ目はキャンセルしない）
+    let mut booking_ids = Vec::new();
+    for (coach, student, starts_at, cancelled_at) in [
+        (
+            &tanaka_token,
+            &taro_token,
+            "2026-11-10T01:00:00Z",
+            Some(at(HOUR)),
+        ),
+        (
+            &ito_token,
+            &taro_token,
+            "2026-11-11T01:00:00Z",
+            Some(at(24 * HOUR)),
+        ),
+        (
+            &tanaka_token,
+            &hanako_token,
+            "2026-11-12T01:00:00Z",
+            Some(at(2 * HOUR)),
+        ),
+        (&tanaka_token, &taro_token, "2026-11-13T01:00:00Z", None),
+    ] {
+        clock.set(at(Duration::ZERO));
+        let ends_at = starts_at.replace("T01:", "T02:");
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                coach,
+                json!({ "sport": "tennis", "starts_at": starts_at, "ends_at": ends_at }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        let (status, booking) = send(
+            &router,
+            post_json(
+                "/bookings",
+                student,
+                json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{booking}");
+        let booking_id = booking["booking_id"].as_str().unwrap().to_string();
+        if let Some(cancelled_at) = cancelled_at {
+            clock.set(cancelled_at);
+            let (status, body) = send(
+                &router,
+                post_json(
+                    &format!("/bookings/{booking_id}/cancel"),
+                    student,
+                    json!({}),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+        booking_ids.push(booking_id);
+    }
+    // 今日は日本時間の 10 月 27 日
+    clock.set(at(24 * HOUR));
+
+    let taro_id = account_id_uuid::format(taro);
+    let hanako_id = account_id_uuid::format(hanako);
+    for (query, expected) in [
+        // 期間は省いたときと同じ今日までの 7 日。キャンセルの新しい順で、キャンセルしていない予約は出ない
+        (
+            format!("student_id={taro_id}"),
+            vec![&booking_ids[1], &booking_ids[0]],
+        ),
+        (format!("student_id={hanako_id}"), vec![&booking_ids[2]]),
+        // 期間・コーチと組み合わせる
+        (
+            format!("student_id={taro_id}&from=2026-10-26&to=2026-10-26"),
+            vec![&booking_ids[0]],
+        ),
+        (
+            format!(
+                "student_id={taro_id}&coach_id={}",
+                account_id_uuid::format(tanaka)
+            ),
+            vec![&booking_ids[0]],
+        ),
+        (
+            format!(
+                "student_id={hanako_id}&coach_id={}",
+                account_id_uuid::format(ito)
+            ),
+            vec![],
+        ),
+        // 生徒でない ID（コーチ）は 404 にせず空の配列
+        (
+            format!("student_id={}", account_id_uuid::format(tanaka)),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/bookings/cancelled?{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        let ids: Vec<&str> = body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["booking_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, expected, "{query}: {body}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/bookings/cancelled?student_id=taro", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["message"], "student_id が UUID でない");
 }

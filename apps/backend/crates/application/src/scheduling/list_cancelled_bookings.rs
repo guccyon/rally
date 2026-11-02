@@ -16,7 +16,9 @@ use crate::clock::Clock;
 /// （省いた日付の決め方は [`calendar_day::period_ending`]）。期間の規則（`to` が `from` より前でない・31 日まで）は domain の
 /// [`BookingPeriod`](domain::scheduling::BookingPeriod)。`coach_id` があればそのコーチの枠への予約だけに
 /// 絞る（いないコーチなら空の一覧。規則は [`super::ListBookings`] と同じ domain の
-/// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。キャンセルした人は domain の
+/// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。`student_id` があればその生徒が予約した
+/// 予約だけに絞る（いない生徒なら空の一覧。規則は [`super::ListBookings`] と同じ domain の
+/// [`Booking::matches_student`](domain::scheduling::Booking::matches_student)）。キャンセルした人は domain の
 /// [`Booking::cancelled_by`](domain::scheduling::Booking::cancelled_by)。一覧に出るコーチと生徒の表示名は profile に
 /// 問い合わせて添える。読むだけで何も変えない。
 pub struct ListCancelledBookings<B, K, D, C> {
@@ -35,6 +37,8 @@ pub struct ListCancelledBookingsQuery {
     pub to: Option<Date>,
     /// あればこのコーチの枠への予約だけ
     pub coach_id: Option<AccountId>,
+    /// あればこの生徒が予約した予約だけ
+    pub student_id: Option<AccountId>,
 }
 
 impl<B, K, D, C> ListCancelledBookings<B, K, D, C>
@@ -68,6 +72,7 @@ where
         bookings.retain(|booking| {
             booking.cancelled_at().is_some_and(|at| period.includes(at))
                 && booking.matches_coach(query.coach_id)
+                && booking.matches_student(query.student_id)
         });
         bookings.sort_by_key(|booking| (Reverse(booking.cancelled_at()), booking.id()));
 
@@ -232,6 +237,7 @@ mod tests {
             from,
             to,
             coach_id: None,
+            student_id: None,
         }
     }
 
@@ -353,6 +359,94 @@ mod tests {
         let error = use_case
             .execute(ListCancelledBookingsQuery {
                 coach_id: Some(COACH),
+                ..query(Some(date(3)), Some(date(2)))
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ListBookingsError::Invalid(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        ));
+    }
+
+    #[tokio::test]
+    async fn student_id_narrows_to_the_student_combined_with_the_days_and_the_coach() {
+        let slots = InMemorySlotRepository::with_slots(
+            [
+                (1, COACH),
+                (2, COACH),
+                (3, OTHER_COACH),
+                (4, COACH),
+                (5, COACH),
+            ]
+            .map(|(id, coach)| slot(id, coach)),
+        );
+        let bookings = InMemoryBookingRepository::new(slots);
+        for (student, slot, cancelled_at) in [
+            (STUDENT, 1, at(2, 9)),
+            (OTHER_STUDENT, 2, at(2, 10)),
+            (STUDENT, 3, at(3, 8)),
+            (STUDENT, 4, at(3, 9)),
+            // 期間（11 月 2 日〜3 日）の外
+            (STUDENT, 5, at(4, 0)),
+        ] {
+            let booking = book(&bookings, student, slot).await;
+            cancel(&bookings, &booking, cancelled_at).await;
+        }
+
+        let lookup = RecordingLookup::default();
+        let use_case = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0));
+        let with_student = |student_id, coach_id| ListCancelledBookingsQuery {
+            student_id: Some(student_id),
+            coach_id,
+            ..query(Some(date(2)), Some(date(3)))
+        };
+        let list = use_case.execute(with_student(STUDENT, None)).await.unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(rows(&list), [4, 3, 1]);
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT])],
+            "絞ったあとの生徒だけを問い合わせる"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])]
+        );
+
+        let list = use_case
+            .execute(with_student(OTHER_STUDENT, None))
+            .await
+            .unwrap();
+        assert_eq!(rows(&list), [2]);
+
+        // コーチと組み合わせると両方に当てはまる予約だけ
+        let list = use_case
+            .execute(with_student(STUDENT, Some(COACH)))
+            .await
+            .unwrap();
+        assert_eq!(rows(&list), [4, 1]);
+        let list = use_case
+            .execute(with_student(OTHER_STUDENT, Some(OTHER_COACH)))
+            .await
+            .unwrap();
+        assert!(list.bookings.is_empty());
+
+        // ない ID・生徒でない ID（コーチ）は空の一覧で、表示名を問い合わせない
+        let asked = lookup.students_asked.lock().unwrap().len();
+        for student_id in [AccountId::from_u128(99), COACH] {
+            let list = use_case
+                .execute(with_student(student_id, None))
+                .await
+                .unwrap();
+            assert!(list.bookings.is_empty(), "{student_id:?}");
+        }
+        assert_eq!(lookup.students_asked.lock().unwrap().len(), asked);
+
+        // 期間の規則は生徒で絞っても同じ
+        let error = use_case
+            .execute(ListCancelledBookingsQuery {
+                student_id: Some(STUDENT),
                 ..query(Some(date(3)), Some(date(2)))
             })
             .await
