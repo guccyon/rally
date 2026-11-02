@@ -1743,6 +1743,16 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
         Ok(all)
     }
 
+    async fn find_sent_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Announcement>, Unavailable> {
+        let mut sent = self.find_all().await?;
+        sent.retain(|a| starts_at <= a.sent_at() && a.sent_at() < ends_at);
+        Ok(sent)
+    }
+
     async fn find_by_ids(
         &self,
         ids: &BTreeSet<AnnouncementId>,

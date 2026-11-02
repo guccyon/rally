@@ -1637,14 +1637,22 @@ export interface paths {
         /**
          * 送ったお知らせの一覧（本部）
          * @description 本部が送ったお知らせ（`sendAnnouncement` の記録）を、送った時刻 `sent_at` の新しい順に返す（同じ時刻なら後に送ったものが先）。
-         *     どの本部のアカウントが送ったかで絞らない。絞り込み・ページングはしない。送ったお知らせがなければ `announcements` は
-         *     空の配列。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *     どの本部のアカウントが送ったかで絞らない。ページングはしない。送ったお知らせがなければ（期間に送ったものがなければ）
+         *     `announcements` は空の配列（404 にはしない）。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
          *     取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
-         *     （取り下げていなければ null）。
+         *     （取り下げていなければ null）。期間で絞っても取り下げたお知らせの扱いは変わらない（送った日付で決まる）。
          *     1 件ごとの `read_count` は、そのお知らせを受け取った生徒のうち既読にした（student-app の `markMyNotificationsRead`）
          *     生徒の数で、呼んだ時点の値。取り下げたお知らせは、取り下げた時刻（`withdrawal.withdrawn_at`）までに既読になった生徒だけを
          *     数える（取り下げた時点の数で止まる）。取り下げたあとに `markMyNotificationsRead` で既読になった生徒は、既読にはなるが
          *     （D141 の既読の扱いは変えない）数えない。生徒 1 人ずつの既読は返さない。
+         *
+         *     - 任意の `from`・`to` で、送った日付（日本時間）が `from` から `to` まで（両端を含む）のお知らせだけに絞れる（本部が先月
+         *       送ったものなどを引く）。`from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに送ったもの。
+         *       両方を省けば今までどおりすべて。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の 6 日前から（どちらも
+         *       7 日。`listCancelledBookings` と同じ）
+         *     - 期間の規則は `listBookings` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を
+         *       超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+         *     - 並べ方と `read_count` の数え方は期間で絞っても変わらない
          *
          *     行動イベントは発火しない。
          */
@@ -4652,7 +4660,12 @@ export interface operations {
     };
     listAnnouncements: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 送った期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4670,6 +4683,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     sendAnnouncement: {

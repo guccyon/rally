@@ -212,6 +212,14 @@ mod tests {
             unreachable!()
         }
 
+        async fn find_sent_between(
+            &self,
+            _starts_at: std::time::SystemTime,
+            _ends_at: std::time::SystemTime,
+        ) -> Result<Vec<Announcement>, Unavailable> {
+            unreachable!()
+        }
+
         async fn find_by_ids(
             &self,
             _ids: &std::collections::BTreeSet<AnnouncementId>,
