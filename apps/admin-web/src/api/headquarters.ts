@@ -46,7 +46,11 @@ export function headquartersApi(client: ApiClient) {
       ),
     listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
-    listPendingVideoReviews: (filter: { sport?: Schemas["Sport"]; min_elapsed_hours?: number }) =>
+    listPendingVideoReviews: (filter: {
+      sport?: Schemas["Sport"];
+      min_elapsed_hours?: number;
+      coach_id?: string;
+    }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
     listReturnedVideoReviews: (filter: {
       from?: string;
