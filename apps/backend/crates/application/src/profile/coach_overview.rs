@@ -1,4 +1,5 @@
 use domain::{
+    async_lesson::CoachPendingVideoReviewCount,
     profile::DisplayName,
     review::{CoachLowRatedReviewCount, CoachReviewSummary},
     scheduling::CoachAcceptanceStatus,
@@ -21,4 +22,7 @@ pub struct CoachOverview {
     pub lesson_stats: CoachLessonStats,
     /// 公開中のレッスンメニューの数（catalog の `ListCoachLessonMenus`。スポーツで絞らない）
     pub published_lesson_menu_count: u32,
+    /// 返却待ちの動画添削の件数と、そのうち送付から 48 時間以上たった件数（async-lesson の
+    /// `GetCoachPendingVideoReviewCount`）
+    pub pending_video_reviews: CoachPendingVideoReviewCount,
 }

@@ -509,6 +509,8 @@ export const FIXTURES: Fixture[] = [
         average_rating: 4.5,
       },
       published_lesson_menu_count: 3,
+      pending_video_review_count: 2,
+      overdue_pending_video_review_count: 1,
     } satisfies Schemas["CoachOverview"],
   },
   {

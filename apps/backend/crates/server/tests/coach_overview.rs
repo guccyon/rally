@@ -1,7 +1,8 @@
 //! 本部がコーチ 1 人の様子（admin-web の `getCoachOverview`）を読むことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
-//! レッスンメニューの数を、それぞれの保存先（scheduling・review・lesson・catalog）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
+//! レッスンメニューの数・返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を、それぞれの保存先（scheduling・review・
+//! lesson・catalog・async-lesson）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -10,6 +11,7 @@
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::VideoRepository,
     clock::SystemClock,
     identity::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
@@ -23,12 +25,13 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    async_lesson::{ReviewComment, Video},
     catalog::Sport,
     identity::{AccountId, Role},
     lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
-use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository};
+use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgVideoRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -132,6 +135,39 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     let handled = review(&reviews, taro, tanaka, 4, 2, now - HOUR * 2).await;
     review(&reviews, taro, tanaka, 5, 1, now - HOUR * 3).await;
     review(&reviews, taro, tanaka, 6, 1, now - HOUR * 24 * 31).await;
+    // 動画の送付は契約の操作を通すと時刻を選べないので、保存先に直に入れる。たなか宛ての返却待ちは 5 時間前・48 時間ちょうど前・
+    // 50 時間前の 3 本（うち 48 時間以上は 2 本）で、100 時間前の 1 本は返却済み。いとう宛ては返却済みの 1 本だけ
+    let videos = PgVideoRepository::new(pool.clone());
+    for (coach, hours_ago, returned) in [
+        (tanaka, 5, false),
+        (tanaka, 48, false),
+        (tanaka, 50, false),
+        (tanaka, 100, true),
+        (ito, 72, true),
+    ] {
+        let video = Video::submit(
+            videos.next_video_id(),
+            taro,
+            coach,
+            Sport::Tennis,
+            now - HOUR * hours_ago,
+        );
+        videos.insert(video.clone()).await.unwrap();
+        if returned {
+            videos
+                .update(video.id(), |v| {
+                    v.return_review(
+                        videos.next_review_id(),
+                        coach,
+                        ReviewComment::new("テイクバックが早い").unwrap(),
+                        true,
+                        now - HOUR,
+                    )
+                })
+                .await
+                .unwrap();
+        }
+    }
     let router =
         server::router_with_postgres(pool, FixedClock(now), RecordingAnalyticsSink::default());
 
@@ -223,7 +259,9 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
             "review_count": 2,
             "average_rating": 3.0
         },
-        "published_lesson_menu_count": 2
+        "published_lesson_menu_count": 2,
+        "pending_video_review_count": 3,
+        "overdue_pending_video_review_count": 2
     });
     assert_eq!(body, expected);
     // 照会だけで何も変えない（2 回目も同じ）
@@ -244,6 +282,14 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     assert_eq!(body["low_rated_review_count"], 1);
     assert_eq!(body["unhandled_low_rated_review_count"], 1);
     assert_eq!(body["published_lesson_menu_count"], 0);
+    assert_eq!(
+        (
+            &body["pending_video_review_count"],
+            &body["overdue_pending_video_review_count"]
+        ),
+        (&json!(0), &json!(0)),
+        "返却済みの動画は数えない"
+    );
 
     let student_path = format!("/coaches/{}/overview", account_id_uuid::format(taro));
     let (status, _) = send(&router, "GET", &student_path, &hq_token, None).await;

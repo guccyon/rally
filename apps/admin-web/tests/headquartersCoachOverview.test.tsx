@@ -35,6 +35,8 @@ const OVERVIEW: Schemas["CoachOverview"] = {
     average_rating: null,
   },
   published_lesson_menu_count: 5,
+  pending_video_review_count: 0,
+  overdue_pending_video_review_count: 0,
 };
 
 function apiOf(result: Result<Schemas["CoachOverview"]>) {

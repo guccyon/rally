@@ -6,6 +6,7 @@
 //! [`crate::entitlement::ContractType::may_start_review`] の 1 か所に置く。
 
 mod ai_feedback;
+mod coach_pending_video_review_count;
 mod pending_video_review_filter;
 mod returned_video_review_filter;
 mod review_comment;
@@ -18,6 +19,7 @@ mod video_review_id;
 mod video_status;
 
 pub use ai_feedback::AiFeedback;
+pub use coach_pending_video_review_count::CoachPendingVideoReviewCount;
 pub use pending_video_review_filter::PendingVideoReviewFilter;
 pub use returned_video_review_filter::ReturnedVideoReviewFilter;
 pub use review_comment::ReviewComment;

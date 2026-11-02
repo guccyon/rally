@@ -120,6 +120,8 @@ describe("headquartersApi", () => {
       current_month: { month: "2026-11", ...month },
       previous_month: { month: "2026-10", ...month },
       published_lesson_menu_count: 2,
+      pending_video_review_count: 1,
+      overdue_pending_video_review_count: 0,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);

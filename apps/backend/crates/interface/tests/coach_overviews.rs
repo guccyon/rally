@@ -1,12 +1,14 @@
 //! `/coaches/{coach_id}/overview` の統合テスト。admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）の
 //! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の
-//! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数を 1 回で読めること、コーチでない ID・ない ID・UUID でない
+//! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数・返却待ちの動画添削の件数と
+//! そのうち 48 時間以上たった件数を 1 回で読めること、コーチでない ID・ない ID・UUID でない
 //! ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の細かい検査は各操作の
-//! テスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`）。
+//! テスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`・`pending_video_reviews.rs`）。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::GetCoachPendingVideoReviewCount,
     catalog::ListCoachLessonMenus,
     identity::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
@@ -15,7 +17,7 @@ use application::{
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
         InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository,
+        InMemoryLessonReviewRepository, InMemoryVideoRepository,
     },
     lesson::GetMyLessonStats,
     profile::GetCoachOverview,
@@ -30,7 +32,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::VideoId,
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
     catalog::{
         LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
         LessonMenuName, Sport,
@@ -155,9 +157,29 @@ fn menu(id: u128, sport: Sport, is_published: bool) -> LessonMenu {
     )
 }
 
+/// 生徒が `COACH` に `submitted_at` に送った動画。`returned_at` があればその時刻に返却済み。
+fn video(id: u128, submitted_at: SystemTime, returned_at: Option<SystemTime>) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        STUDENT,
+        COACH,
+        Sport::Tennis,
+        submitted_at,
+        returned_at.map(|at| {
+            (
+                VideoReviewId::from_u128(id + 100),
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                at,
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
 /// 今は日本時間の 11 月 1 日 2 時。コーチ `COACH`（たなか）は受付を止められていて、11 月に通話 1・添削 1、10 月に通話 1 を
 /// 完了し、評価は 5（11 月）と 4・1・2（10 月。★2 は本部が対応済み）と 2（9 月。30 日より前）を受け、公開中のメニューは
-/// テニス 1・ゴルフ 1（ほかに非公開 1）。
+/// テニス 1・ゴルフ 1（ほかに非公開 1）。返却待ちの動画は 3 本（うち 48 時間以上が 2 本。ほかに返却済み 1 本）。
 /// `NEW_COACH`（いとう）は何もない。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
@@ -180,8 +202,9 @@ async fn app() -> Router {
         })
         .await
         .unwrap();
-    let day = Duration::from_secs(24 * 3600);
-    let now = nov1() + Duration::from_secs(2 * 3600);
+    let hour = Duration::from_secs(3600);
+    let day = 24 * hour;
+    let now = nov1() + 2 * hour;
     let reviews = InMemoryLessonReviewRepository::with_reviews([
         review(1, 5, nov1()),
         review(2, 4, nov1() - SECOND),
@@ -210,6 +233,15 @@ async fn app() -> Router {
                 menu(2, Sport::Golf, true),
                 menu(3, Sport::Tennis, false),
             ])),
+            GetCoachPendingVideoReviewCount::new(
+                InMemoryVideoRepository::with_videos([
+                    video(1, now - 72 * hour, None),
+                    video(2, now - 48 * hour, None),
+                    video(3, now - 47 * hour, None),
+                    video(4, now - 100 * hour, Some(now - hour)),
+                ]),
+                FixedClock(now),
+            ),
         ),
         FakeTokens,
     )
@@ -273,6 +305,8 @@ async fn headquarters_reads_the_overview_of_a_coach() {
             "current_month": month("2026-11", (1, 1), 1, json!(5.0)),
             "previous_month": month("2026-10", (1, 0), 3, json!(2.33)),
             "published_lesson_menu_count": 2,
+            "pending_video_review_count": 3,
+            "overdue_pending_video_review_count": 2,
         })
     );
 }
@@ -298,6 +332,8 @@ async fn a_coach_without_anything_is_accepting_with_zero_counts() {
             "current_month": month("2026-11", (0, 0), 0, Value::Null),
             "previous_month": month("2026-10", (0, 0), 0, Value::Null),
             "published_lesson_menu_count": 0,
+            "pending_video_review_count": 0,
+            "overdue_pending_video_review_count": 0,
         })
     );
 }
