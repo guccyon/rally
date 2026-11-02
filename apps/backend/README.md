@@ -226,8 +226,9 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 ## scheduling: スポーツごとの予約枠の需給
 
 - `GET /slot-supply`（admin-web の `getSlotSupply`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの採用計画に使う。スポーツ 6 種類すべてについて、公開した枠の数 `published_slots`・予約しようとした生徒の数 `booking_students` と、足りているか `status`（`sufficient` / `insufficient`）を返す。行動イベントは発火しない
+- 任意の `from`・`to`（日本時間の日付）で期間を指定できる。省いた日付の決め方と期間の規則は `listBookings` と同じ `application::scheduling::calendar_day::period` の 1 か所（違反は `ListBookingsError` で 422）。両方省けば今までどおり `SlotSupply::default_period`（集計した時刻までの `WINDOW`）で、応答に `from`・`to` を載せない
 - 判定の式と期間の正本は契約（`specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。実装は `domain::scheduling::SlotSupply` の 1 か所だけ（期間 `WINDOW` = 30 日、閾値 `SHORTAGE_PERCENT` = 60）で、数え方（`tally`）も domain が持つ。保存先は期間に開始する枠とその予約を読むだけ（`BookingRepository::slots_starting_between`）で、数えない。閾値と期間を application・interface・infra に写さない
-- 期間は現在時刻の 30 日前（含む）から現在時刻（含まない）に開始する枠。`published_slots` は `open` / `booked` の枠、`booking_students` は（閉じた枠を含む）その枠に予約を作った生徒（予約の状態を問わず、同じ生徒は 1 人）。生徒が 1 人以上で、`booking_students >= published_slots × 0.6` なら `insufficient`
+- 期間（指定しなければ）は現在時刻の 30 日前（含む）から現在時刻（含まない）に開始する枠。`published_slots` は `open` / `booked` の枠、`booking_students` は（閉じた枠を含む）その枠に予約を作った生徒（予約の状態を問わず、同じ生徒は 1 人）。生徒が 1 人以上で、`booking_students >= published_slots × 0.6` なら `insufficient`
 - スロットの検索は記録していない（行動イベントにも DB にもない）ので、需要は予約の作成だけから数える
 - テスト: `domain::scheduling::slot_supply`（閾値の境界・0 の扱い・数え方）、`application::scheduling::get_slot_supply`（期間の端）、`crates/interface/tests/slot_supply.rs`（契約の形・期間の外を数えないこと・403 / 401）、`crates/server/tests/slot_supply.rs`（モックのトークンで通す）、`crates/infra/tests/pg_booking_repository.rs`（Postgres。期間の枠と予約の読み取り。`--include-ignored`）、`crates/seed/tests/slot_supply.rs`（合成シードの種 42 で `insufficient` のスポーツがあり、すべてではないこと。Postgres。`cargo test -p seed -- --include-ignored`）
 

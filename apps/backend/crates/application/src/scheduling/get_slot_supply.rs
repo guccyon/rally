@@ -1,15 +1,28 @@
 use domain::{catalog::Sport, scheduling::SlotSupply};
+use time::Date;
 
-use super::{BookingRepository, SlotSupplyReport};
-use crate::{Unavailable, clock::Clock};
+use super::{BookingRepository, ListBookingsError, SlotSupplyReport, calendar_day};
+use crate::clock::Clock;
 
 /// スポーツごとの予約枠の需給のユースケース（admin-web の `getSlotSupply`。本部だけが呼ぶ）。
 ///
-/// 現在時刻の [`SlotSupply::WINDOW`] 前（含む）から現在時刻（含まない）までに開始する枠と、それらへの予約を
-/// 読み、スポーツ 6 種類すべてについて [`SlotSupply::tally`] で数える。数え方と判定は domain の [`SlotSupply`] だけ。
+/// 期間に開始する枠と、それらへの予約を読み、スポーツ 6 種類すべてについて [`SlotSupply::tally`] で数える。数え方と
+/// 判定は domain の [`SlotSupply`] だけ。期間は、日付（日本時間）の `from`・`to` を両方省けば今までどおり
+/// [`SlotSupply::default_period`]（現在時刻までの [`SlotSupply::WINDOW`]）。どちらかを付ければ予約の一覧
+/// （[`super::ListBookings`]）と同じ規則（[`calendar_day::period`]。`from` を省けば今日、`to` を省けば `from` から 7 日目、
+/// 両端を含み 31 日まで）で、違反は [`ListBookingsError::Invalid`]。
 pub struct GetSlotSupply<B, C> {
     bookings: B,
     clock: C,
+}
+
+/// 予約枠の需給の条件。どれも省ける。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GetSlotSupplyQuery {
+    /// 期間の始まりの日付（日本時間。含む）
+    pub from: Option<Date>,
+    /// 期間の終わりの日付（日本時間。含む）
+    pub to: Option<Date>,
 }
 
 impl<B, C> GetSlotSupply<B, C>
@@ -21,16 +34,25 @@ where
         Self { bookings, clock }
     }
 
-    pub async fn execute(&self) -> Result<SlotSupplyReport, Unavailable> {
-        let window_end = self.clock.now();
-        let window_start = window_end - SlotSupply::WINDOW;
+    pub async fn execute(
+        &self,
+        query: GetSlotSupplyQuery,
+    ) -> Result<SlotSupplyReport, ListBookingsError> {
+        let now = self.clock.now();
+        let (dates, period) = if query.from.is_none() && query.to.is_none() {
+            (None, SlotSupply::default_period(now))
+        } else {
+            let (from, to, period) = calendar_day::period(query.from, query.to, now)?;
+            (Some((from, to)), period)
+        };
         let (slots, bookings) = self
             .bookings
-            .slots_starting_between(window_start, window_end)
+            .slots_starting_between(period.starts_at(), period.ends_at())
             .await?;
         Ok(SlotSupplyReport {
-            window_start,
-            window_end,
+            window_start: period.starts_at(),
+            window_end: period.ends_at(),
+            dates,
             sports: Sport::ALL
                 .into_iter()
                 .map(|sport| SlotSupply::tally(sport, &slots, &bookings))
@@ -47,6 +69,9 @@ mod tests {
         identity::AccountId,
         scheduling::{Booking, Slot, SlotId, SlotStatus, SlotSupplyStatus},
     };
+
+    use domain::scheduling::SchedulingError;
+    use time::Duration as Days;
 
     use super::*;
     use crate::in_memory::{FixedClock, InMemoryBookingRepository, InMemorySlotRepository};
@@ -103,13 +128,14 @@ mod tests {
         book(&bookings, 10, 4).await;
 
         let report = GetSlotSupply::new(bookings, FixedClock(now))
-            .execute()
+            .execute(GetSlotSupplyQuery::default())
             .await
             .unwrap();
         assert_eq!(
             (report.window_start, report.window_end),
             (window_start, now)
         );
+        assert_eq!(report.dates, None);
         assert_eq!(
             report.sports,
             [
@@ -132,6 +158,112 @@ mod tests {
                 SlotSupplyStatus::Sufficient,
                 SlotSupplyStatus::Sufficient,
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn counts_slots_starting_on_the_dates_in_japan_both_ends_included() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        // 来週の 7 日（今日の日本時間の日付の 7 日後から 13 日後まで）
+        let from = calendar_day::of(now) + Days::days(7);
+        let to = from + Days::days(6);
+        let (start, end) = (calendar_day::start(from), calendar_day::end(to));
+        let slots = InMemorySlotRepository::with_slots([
+            // 期間の始まり（from の日本時間 0 時）ちょうどと、終わり（to の翌日 0 時）の直前
+            slot(1, Sport::Tennis, start),
+            slot(2, Sport::Tennis, end - Duration::from_secs(1)),
+            // 期間の外（始まりの直前と、終わりちょうど）。今日の枠も入らない
+            slot(3, Sport::Tennis, start - Duration::from_secs(1)),
+            slot(4, Sport::Tennis, end),
+            slot(5, Sport::Tennis, now - Duration::from_secs(DAY)),
+            slot(6, Sport::Swimming, start + Duration::from_secs(DAY)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+        book(&bookings, 8, 4).await;
+        book(&bookings, 9, 5).await;
+
+        let report = GetSlotSupply::new(bookings, FixedClock(now))
+            .execute(GetSlotSupplyQuery {
+                from: Some(from),
+                to: Some(to),
+            })
+            .await
+            .unwrap();
+        assert_eq!((report.window_start, report.window_end), (start, end));
+        assert_eq!(report.dates, Some((from, to)));
+        assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 2, 1));
+        assert_eq!(report.sports[5], SlotSupply::new(Sport::Swimming, 1, 0));
+        assert_eq!(report.sports.len(), Sport::ALL.len());
+    }
+
+    #[tokio::test]
+    async fn a_missing_date_is_decided_like_list_bookings() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let today = calendar_day::of(now);
+        let supply = GetSlotSupply::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            FixedClock(now),
+        );
+        let dates = |from, to| {
+            let supply = &supply;
+            async move {
+                supply
+                    .execute(GetSlotSupplyQuery { from, to })
+                    .await
+                    .map(|report| (report.dates, report.window_start, report.window_end))
+            }
+        };
+        // from だけなら from から 7 日目まで、to だけなら今日から to まで
+        let from = today + Days::days(10);
+        let (got, start, end) = dates(Some(from), None).await.unwrap();
+        assert_eq!(got, Some((from, from + Days::days(6))));
+        assert_eq!(start, calendar_day::start(from));
+        assert_eq!(end, calendar_day::end(from + Days::days(6)));
+        let to = today + Days::days(30);
+        let (got, ..) = dates(None, Some(to)).await.unwrap();
+        assert_eq!(got, Some((today, to)));
+    }
+
+    #[tokio::test]
+    async fn dates_breaking_the_rule_are_invalid() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let today = calendar_day::of(now);
+        let supply = GetSlotSupply::new(
+            InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            FixedClock(now),
+        );
+        let invalid = |from, to| {
+            let supply = &supply;
+            async move {
+                match supply.execute(GetSlotSupplyQuery { from, to }).await {
+                    Err(ListBookingsError::Invalid(error)) => error,
+                    other => panic!("期間の違反にならない: {other:?}"),
+                }
+            }
+        };
+        // 31 日（両端を含む）までは通り、32 日は通らない
+        assert!(
+            supply
+                .execute(GetSlotSupplyQuery {
+                    from: Some(today),
+                    to: Some(today + Days::days(30)),
+                })
+                .await
+                .is_ok()
+        );
+        assert_eq!(
+            invalid(Some(today), Some(today + Days::days(31))).await,
+            SchedulingError::BookingPeriodTooLong { max_days: 31 }
+        );
+        assert_eq!(
+            invalid(Some(today), Some(today - Days::days(1))).await,
+            SchedulingError::BookingPeriodEndsBeforeItStarts
+        );
+        // to だけで今日より前は from（今日）より前
+        assert_eq!(
+            invalid(None, Some(today - Days::days(1))).await,
+            SchedulingError::BookingPeriodEndsBeforeItStarts
         );
     }
 }
