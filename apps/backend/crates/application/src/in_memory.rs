@@ -841,13 +841,18 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
     async fn find_in_progress_started_at_or_before(
         &self,
         started_at_or_before: SystemTime,
+        coach_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         Ok(self
             .sessions
             .lock()
             .unwrap()
             .iter()
-            .filter(|s| s.ended_at().is_none() && s.started_at() <= started_at_or_before)
+            .filter(|s| {
+                s.ended_at().is_none()
+                    && s.started_at() <= started_at_or_before
+                    && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+            })
             .cloned()
             .collect())
     }
