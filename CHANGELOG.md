@@ -6,6 +6,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 
 ### 追加
 - 本部の返却待ちの動画添削の一覧をコーチで絞る: admin-web の `GET /video-reviews/pending`（`listPendingVideoReviews`）に任意のクエリ `coach_id` を足した。付ければそのコーチ宛ての返却待ちだけを返し、`sport`・`min_elapsed_hours` と組み合わせられる（経過時間の数え方と並べ方は変わらない）。UUID でなければ 422 `validation_failed`、該当がなければ `videos` は空の配列（#620）
+- 本部が返した動画添削の記録をスポーツで絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `sport` を足した。付ければ動画を送ったときのスポーツがそれの返却済みの動画だけを返す（値と動画のスポーツの決め方は `listPendingVideoReviews` の `sport` と同じ）。付けなければ今までどおりスポーツを問わない。期間・`coach_id` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#607）
 - 本部がレッスンメニューを名前で探す API: admin-web の `GET /lesson-menus`（`listLessonMenus`）に任意のクエリ `q` を足した。付ければ名前に部分一致するメニューだけを今までと同じ並びで返し、`sport`・`published`・`coach_id` と組み合わせられる。一致のしかた（前後の空白を除く・ASCII の英字だけ大文字と小文字を区別しない・空や空白だけなら絞り込まない）は `listStudents` の `q` と同じで、前後の空白を除いて 40 文字（メニューの名前の上限）を超えたら 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#604）
 - admin-web の本部の「コーチの様子」（`/headquarters/coach-overview?coach_id=…`）の上に、そのコーチで開く画面へのリンクの並び（評価・低い評価・レッスンメニュー・予約）を置いた: 評価・レッスンメニューはそのコーチを選んだ状態で、「予約」（`/headquarters/bookings?coach_id=…`）はそのコーチの枠への予約だけに絞った状態で開く（`listBookings` の `coach_id`。期間を変えても絞り込みは残り、「すべてのコーチの予約を見る」で外せる）。低い評価は一覧をそのまま開く。リンクは様子の読み込み中・読み込めなかったときも出す。API と契約の変更はない（#575）
 - デザインシステムの正本 `specs/design/`（コンセプト rally-court）を置き、student-app と admin-web の見た目をそのトークンに合わせた: 色（主の青 `#1E3FD0`・副のライム・状態の色）、書体（Noto Sans CJK JP。Web フォントは読まない）、角丸（6・12px とボタンの丸）、影なし。admin-web は Tailwind の既定の色を消して役割の名前（`text-text-muted`・`bg-primary` など）に置き換え、欄（Section）を面の色で囲むようにした。基本の部品（ボタン・入力欄・カード・一覧の行・しるし・状態のタグ・スコアの面・知らせ・空の表示・読み込み中・確認のダイアログ）を両アプリに足したが、画面への置き換えは別のタスク。文言・API・契約の変更はない（#496）
@@ -191,6 +192,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 - セマンティック層 `specs/analytics/kpi.yaml`（north star「初回レッスン後の 1 ヶ月継続率」を含む KPI 6 件の式。通話品質スコアは ADR 0002 Q1 の減点式）と、行動イベントのモックの配信先: `ANALYTICS_SINK=object_store` でサーバーを起動すると、行動イベントを JSON Lines で S3 API のオブジェクトストア（compose の `objectstore`）に書く（既定は従来どおりプロセス内）（#40）
 
 ### 変更
+- admin-web の文字の字間をデザインシステムのトークン（`specs/design/tokens.yaml` の `typography.scale`）に合わせた: 小さい文字（12px）は 0.02em、14px と本文は 0.01em、欄の見出し（20px）と画面の見出し（24px）は -0.01em。色・大きさ・行間・文言は変えない。student-app は変わらない（#495）
 - admin-web の本部の「生徒の利用の様子」で、これからの予約の「状態」を本部の「予約」と同じ色の札にした（確定待ちは琥珀、確定済みは緑）。色の対応は 2 つの画面で共通。API と契約の変更はない（#528）
 - backend の内部の整理: コーチの自己紹介文を identity の `Coach` から外し、profile のポート `CoachProfileRepository` で読み書きするようにした（保存先は今までどおり `identity.coaches.bio`）。API・契約・振る舞いと DB の変更はない（#388）
 - 生徒のメッセージの未読と既読: student-app の `GET /message-threads` の `unread_count` と `POST /message-threads/{thread_id}/read`（`markMessageThreadRead`）は #90 から admin-web と同じ操作・同じ形（当事者でないスレッドは 404）で使えることを確かめ、生徒が既読にすると未読が 0 になることのテスト（ユースケースとハンドラ）を足した。API と契約と DB の変更はない（#342）

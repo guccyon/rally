@@ -30,7 +30,7 @@ impl PendingVideoReviewFilter {
     /// 経過時間が下限以上）。
     pub fn matches(&self, video: &Video, now: SystemTime) -> bool {
         video.review().is_none()
-            && self.sport.is_none_or(|sport| video.sport() == sport)
+            && video.is_in_sport(self.sport)
             && self
                 .coach_id
                 .is_none_or(|coach_id| video.coach_id() == coach_id)
