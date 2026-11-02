@@ -2,7 +2,7 @@ use crate::{DomainError, NameQuery};
 
 use super::DisplayName;
 
-/// 表示名の検索語（本部の生徒の一覧の `q`）。表示名に部分一致するものを探す。
+/// 表示名の検索語（本部の生徒の一覧・コーチの一覧の `q`）。表示名に部分一致するものを探す。どちらの一覧もこれで比べる。
 ///
 /// 一致のしかた（前後の空白・大文字と小文字・空白だけのとき）は名前の検索語の共通の規則 [`NameQuery`] のとおりで、
 /// 前後の空白を除いたあとに [`DisplayNameQuery::MAX_CHARS`] 文字まで。
@@ -63,6 +63,14 @@ mod tests {
         assert!(!q.matches(&name("ＹＡＭＡＤＡ")));
         assert!(query("ろう").matches(&name("じろう先生")));
         assert!(!query("ろう").matches(&name("はなこ")));
+    }
+
+    #[test]
+    fn percent_and_underscore_are_compared_as_characters() {
+        assert!(query("%").matches(&name("100% コーチ")));
+        assert!(!query("%").matches(&name("たろう")));
+        assert!(query("a_b").matches(&name("a_b")));
+        assert!(!query("a_b").matches(&name("axb")));
     }
 
     #[test]
