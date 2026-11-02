@@ -1,12 +1,16 @@
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime},
+};
 
-use super::{Booking, Slot, SlotStatus, SlotSupplyStatus};
+use super::{Booking, BookingPeriod, Slot, SlotStatus, SlotSupplyStatus};
 use crate::catalog::Sport;
 
 /// スポーツ 1 つの予約枠の需給（admin-web の `getSlotSupply`。式と期間の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。
 ///
-/// 期間（[`SlotSupply::WINDOW`]）に開始する枠について、次の 2 つを数えて比べる。
+/// 期間に開始する枠について、次の 2 つを数えて比べる。期間は本部が日付で指定でき（日付の規則は予約の一覧と同じ
+/// [`BookingPeriod`]）、指定しなければ [`SlotSupply::default_period`]（集計した時刻までの [`SlotSupply::WINDOW`]）。
 ///
 /// - 公開した枠の数（`published_slots`）: そのスポーツの枠のうち、公開中（`open`）か予約で埋まっている（`booked`）もの。
 ///   コーチが閉じた枠（`closed`）は数えない
@@ -23,7 +27,8 @@ pub struct SlotSupply {
 }
 
 impl SlotSupply {
-    /// 数える期間の長さ。集計した時刻の 30 日前（含む）から集計した時刻（含まない）までに開始する枠を数える
+    /// 期間を指定しないときに数える期間の長さ。集計した時刻の 30 日前（含む）から集計した時刻（含まない）までに開始する
+    /// 枠を数える
     pub const WINDOW: Duration = Duration::from_secs(30 * 24 * 3600);
 
     /// 公開した枠に対する、予約しようとした生徒の数の割合（%）がこれ以上なら「足りていない」。
@@ -36,6 +41,13 @@ impl SlotSupply {
             published_slots,
             booking_students,
         }
+    }
+
+    /// 期間を指定しないときの期間。集計した時刻 `now` の [`Self::WINDOW`] 前（含む）から `now`（含まない）まで。
+    /// [`Self::WINDOW`] は [`BookingPeriod::MAX_DAYS`] 日に収まるので、期間の規則を満たす。
+    pub fn default_period(now: SystemTime) -> BookingPeriod {
+        BookingPeriod::new(now - Self::WINDOW, now)
+            .expect("WINDOW（30 日）は BookingPeriod の上限（31 日）に収まる")
     }
 
     /// `slots`（期間に開始する枠）と `bookings`（それらの枠への予約）から `sport` の需給を数える。
@@ -144,6 +156,19 @@ mod tests {
     fn the_window_is_thirty_days_and_the_threshold_is_sixty_percent() {
         assert_eq!(SlotSupply::WINDOW, Duration::from_secs(2_592_000));
         assert_eq!(SlotSupply::SHORTAGE_PERCENT, 60);
+    }
+
+    #[test]
+    fn the_default_period_is_the_thirty_days_before_now() {
+        let now = at(24 * 100);
+        let period = SlotSupply::default_period(now);
+        assert_eq!(period.starts_at(), now - SlotSupply::WINDOW);
+        assert_eq!(period.ends_at(), now);
+        assert!(period.includes(now - SlotSupply::WINDOW));
+        assert!(period.includes(now - Duration::from_nanos(1)));
+        assert!(!period.includes(now));
+        // 日付で指定できる期間の上限に収まる
+        assert!(SlotSupply::WINDOW <= BookingPeriod::DAY * u32::from(BookingPeriod::MAX_DAYS));
     }
 
     #[test]

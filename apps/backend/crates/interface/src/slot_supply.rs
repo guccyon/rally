@@ -5,15 +5,22 @@ use std::sync::Arc;
 use application::{
     clock::Clock,
     identity::TokenVerifier,
-    scheduling::{BookingRepository, GetSlotSupply},
+    scheduling::{BookingRepository, GetSlotSupply, GetSlotSupplyQuery},
 };
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Query, State, rejection::QueryRejection},
+    routing::get,
+};
 use domain::{identity::Role, scheduling::SlotSupply};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::{date_time_to_contract, slot_supply_status_to_contract, sport_to_contract},
+    contract::{
+        date_from_contract, date_time_to_contract, date_to_contract,
+        slot_supply_status_to_contract, sport_to_contract,
+    },
     error::ApiError,
 };
 
@@ -22,11 +29,22 @@ pub struct SlotSupplyState<B, C> {
     pub get_slot_supply: GetSlotSupply<B, C>,
 }
 
-/// admin-web の `SlotSupplyReport`。
+/// admin-web の `getSlotSupply` のクエリ。
+#[derive(Deserialize)]
+pub struct GetSlotSupplyParams {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+/// admin-web の `SlotSupplyReport`。`from`・`to` は日付で期間を指定したときだけ載せる。
 #[derive(Serialize)]
 pub struct SlotSupplyReportBody {
     window_start: String,
     window_end: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to: Option<String>,
     sports: Vec<SlotSupplyBody>,
 }
 
@@ -39,23 +57,41 @@ pub struct SlotSupplyBody {
     booking_students: u32,
 }
 
-/// `GET /slot-supply`。本部だけが呼べる（役割は `require_role` の層が確かめる）。
+/// `GET /slot-supply`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
+/// 日付でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が決める。`listBookings` と同じ）。
 pub async fn get_slot_supply<B, C>(
     State(state): State<Arc<SlotSupplyState<B, C>>>,
     _account: AuthenticatedAccount,
+    params: Result<Query<GetSlotSupplyParams>, QueryRejection>,
 ) -> Result<Json<SlotSupplyReportBody>, ApiError>
 where
     B: BookingRepository,
     C: Clock,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let query = GetSlotSupplyQuery {
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+    };
     let report = state
         .get_slot_supply
-        .execute()
+        .execute(query)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(ApiError::from)?;
     Ok(Json(SlotSupplyReportBody {
         window_start: date_time_to_contract(report.window_start)?,
         window_end: date_time_to_contract(report.window_end)?,
+        from: report.dates.map(|(from, _)| date_to_contract(from)),
+        to: report.dates.map(|(_, to)| date_to_contract(to)),
         sports: report.sports.iter().map(slot_supply_body).collect(),
     }))
 }
