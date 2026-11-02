@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部の「キャンセルされた予約」（`/headquarters/cancelled-bookings`）に、期間の並びでコーチの絞り込み（既定は「すべて」。選択肢はライブレッスンの記録と同じくコーチの一覧の順）を足した: 「この条件で見る」（「この期間で見る」から改めた）で期間と組み合わせて `listCancelledBookings` の `coach_id` に渡して読み直す。選んだコーチは URL のクエリ（`?coach_id=`）に残し、再読み込み・共有で同じコーチの一覧を開く（期間は残さない）。コーチで絞って 0 件なら「この期間にこのコーチの枠でキャンセルされた予約はありません」、422 には期間とコーチの直し方を出し、コーチの一覧が読めなければコーチの欄だけを使えなくする。一覧の列と API・契約は変えない（#660）
 - 本部が送ったお知らせの一覧を期間で絞る: admin-web の `GET /announcements`（`listAnnouncements`）に任意のクエリ `from`・`to`（送った日付。日本時間、両端を含む）を足した。両方省けば今までどおりすべて、`from` だけなら `from` から、`to` だけなら `to` までの 7 日。期間の規則は `listBookings` と同じ（31 日まで。`to` が `from` より前・31 日超・日付でないときは 422 `validation_failed`）。取り下げたお知らせも今までどおり載り、並べ方は変わらない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#647）
 - 本部が見るコーチ 1 人の様子に返却待ちの動画添削の数を足した: admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）に、そのコーチの返却待ちの動画添削の件数 `pending_video_review_count` と、そのうち送付から 48 時間以上（含む）たった件数 `overdue_pending_video_review_count` を足した。数え方は `listPendingVideoReviews` を `coach_id`（と `min_elapsed_hours=48`）で絞ったときと同じ（domain の 1 か所）。既存の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#648）
 - 本部が生徒 1 人の様子で動画添削の送付数と返却待ちを見られる: admin-web の `GET /students/{student_id}/activity`（`getStudentActivity`）に `submitted_video_count`（生徒が送った動画の数。添削待ちも返却済みも含め、これまでのすべて）と `pending_video_review_count`（いま返却を待っている数。判定は `listPendingVideoReviews` と同じ）を足した。既存の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#649）
