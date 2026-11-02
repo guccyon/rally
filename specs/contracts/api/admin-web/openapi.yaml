@@ -36,7 +36,7 @@ info:
     「対応済み」の印を付け（`markLowRatedLessonReviewHandled`。いつ・どの本部のアカウントが）、一覧をまだ対応していない
     ものだけに絞れる（`listLowRatedLessonReviews` の `handled=false`）。
     本部はコーチがまだ返していない動画添削をコーチを問わず横断で、送付からの経過の長い順に読む（`listPendingVideoReviews`。
-    スポーツと経過時間の下限で絞れる）。返した動画添削は、返却の日付（日本時間）の期間と任意のコーチと任意のスポーツで絞って、送付から返却までに
+    スポーツと経過時間の下限とコーチで絞れる）。返した動画添削は、返却の日付（日本時間）の期間と任意のコーチと任意のスポーツで絞って、送付から返却までに
     かかった時間とともに返却の新しい順に読む（`listReturnedVideoReviews`。KPI「添削の返却リードタイム」を 1 件ずつたどる）。
     コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
@@ -1916,8 +1916,10 @@ paths:
           1 時間に満たない端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない
         - 並べ方: 送った時刻 `submitted_at` の古い順（経過時間の長い順）。同じ時刻は `video_id` の順
         - 絞り込み（任意）: `sport` を付ければそのスポーツの動画だけ。`min_elapsed_hours` を付ければ経過時間がその時間以上
-          （含む）の動画だけ（例: `48` で 48 時間以上）。両方を組み合わせられ、並べ方は変わらない。付けなければ絞らない
-        - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）ときは 422 `validation_failed`
+          （含む）の動画だけ（例: `48` で 48 時間以上）。`coach_id` を付ければそのコーチ（動画の送り先のコーチ）の動画だけ。
+          どれも組み合わせられ、経過時間の数え方と並べ方は変わらない。付けなければ絞らない
+        - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）・`coach_id` が
+          UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、404 にせず `videos` が空の配列
         - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
           表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
         - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
@@ -1942,6 +1944,15 @@ paths:
             type: integer
             minimum: 0
             maximum: 2147483647
+        - name: coach_id
+          in: query
+          required: false
+          description: |
+            あればこのコーチの動画だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 返却を待っている動画添削の一覧

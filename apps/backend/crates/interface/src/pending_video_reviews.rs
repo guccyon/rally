@@ -1,7 +1,8 @@
 //! `/video-reviews/pending`。admin-web の `GET /video-reviews/pending`（`listPendingVideoReviews`。本部が横断で見る
 //! 返却を待っている動画添削の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツの動画だけ（`Sport` の値で
 //! なければ 422）、`min_elapsed_hours` があれば送付からの経過時間がその時間以上の動画だけ（0〜2147483647 の整数でなければ
-//! 422）。経過時間の数え方と並べ方は domain の [`PendingVideoReviewFilter`]。
+//! 422）、`coach_id` があればそのコーチの動画だけ（UUID でなければ 422）。経過時間の数え方と並べ方は domain の
+//! [`PendingVideoReviewFilter`]。
 
 use std::sync::Arc;
 
@@ -43,6 +44,7 @@ pub struct PendingVideoReviewsState<V, K, D, C> {
 pub struct ListPendingVideoReviewsParams {
     sport: Option<String>,
     min_elapsed_hours: Option<String>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `PendingVideoReviewList`。
@@ -88,6 +90,14 @@ where
             .map(min_elapsed_hours)
             .transpose()?
             .unwrap_or(0),
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+            })
+            .transpose()?,
     };
     let list = state
         .list_pending_video_reviews
