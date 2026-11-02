@@ -9,7 +9,7 @@ evidence:
   - case: C-0001
   - pr: 395
   - event: "case.analyzed:40376"
-status: active
+status: draft
 verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
