@@ -1617,6 +1617,10 @@ export interface paths {
          *     `announcements` は空の配列（404 にはしない）。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
          *     取り下げたお知らせ（`withdrawAnnouncement`）も同じ並びで載り、`withdrawal` に取り下げた本部のアカウントと時刻が入る
          *     （取り下げていなければ null）。期間で絞っても取り下げたお知らせの扱いは変わらない（送った日付で決まる）。
+         *     1 件ごとの `read_count` は、そのお知らせを受け取った生徒のうち既読にした（student-app の `markMyNotificationsRead`）
+         *     生徒の数で、呼んだ時点の値。取り下げたお知らせは、取り下げた時刻（`withdrawal.withdrawn_at`）までに既読になった生徒だけを
+         *     数える（取り下げた時点の数で止まる）。取り下げたあとに `markMyNotificationsRead` で既読になった生徒は、既読にはなるが
+         *     （D141 の既読の扱いは変えない）数えない。生徒 1 人ずつの既読は返さない。
          *
          *     - 任意の `from`・`to` で、送った日付（日本時間）が `from` から `to` まで（両端を含む）のお知らせだけに絞れる（本部が先月
          *       送ったものなどを引く）。`from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに送ったもの。
@@ -1624,7 +1628,7 @@ export interface paths {
          *       7 日。`listCancelledBookings` と同じ）
          *     - 期間の規則は `listBookings` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を
          *       超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
-         *     - 並べ方は期間で絞っても変わらない
+         *     - 並べ方と `read_count` の数え方は期間で絞っても変わらない
          *
          *     行動イベントは発火しない。
          */
@@ -1646,6 +1650,7 @@ export interface paths {
          *       true の生徒にだけ送る。false の生徒にもお知らせは作る。プッシュ通知を送れなくても送信は失敗にしない
          *     - 予約送信はない（送った時刻に送り終える）。同じ内容をもう一度送れば別のお知らせになる。誤って送ったものは
          *       `withdrawAnnouncement` で取り下げる（届いたプッシュ通知は取り消せない）
+         *     - 送ったばかりの記録の `read_count` は 0（生徒ごとのお知らせは読んでいないまま作る）
          *
          *     行動イベントは発火しない。
          */
@@ -1673,7 +1678,7 @@ export interface paths {
          *     リクエストの本文は読まない。
          *
          *     - 取り下げた本部のアカウントと時刻（サーバーの現在時刻）を `withdrawal` に残す。題・本文・対象のスポーツ・
-         *       受け取った生徒の数・送った時刻は変えない
+         *       受け取った生徒の数・送った時刻は変えない。`read_count` は `listAnnouncements` と同じ数え方で、取り下げた時刻までに既読になった生徒の数
          *     - 取り下げたお知らせは、生徒のお知らせの一覧（student-app の `listMyNotifications`・`markMyNotificationsRead` の応答）に
          *       出なくなる。既読の扱いは変えない（`markMyNotificationsRead` は今までどおりすべてを既読にする）。すでに届いた
          *       プッシュ通知（Gen1 はモック）は取り消せず、取り下げたことの知らせも送らない
@@ -3188,6 +3193,11 @@ export interface components {
             sport: components["schemas"]["Sport"] | null;
             /** @description お知らせを受け取った生徒の数（送った時点の対象の生徒の数。プッシュ通知を送らなかった生徒も数える） */
             recipient_count: number;
+            /**
+             * @description 受け取った生徒のうち、お知らせを既読にした生徒の数（`recipient_count` 以下。応答を作った時点の値）。
+             *     取り下げたお知らせは取り下げた時刻までに既読になった生徒の数。数え方は `listAnnouncements` の説明
+             */
+            read_count: number;
             /**
              * Format: date-time
              * @description 送った時刻

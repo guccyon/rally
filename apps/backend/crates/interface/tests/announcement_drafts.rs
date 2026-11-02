@@ -132,8 +132,12 @@ impl App {
         )
         .merge(interface::announcements_router(
             send(),
-            ListAnnouncements::new(self.announcements.clone()),
-            WithdrawAnnouncement::new(self.announcements.clone(), FixedClock(now)),
+            ListAnnouncements::new(self.announcements.clone(), self.notifications.clone()),
+            WithdrawAnnouncement::new(
+                self.announcements.clone(),
+                self.notifications.clone(),
+                FixedClock(now),
+            ),
             FakeTokens,
         ))
     }
@@ -364,6 +368,7 @@ async fn sending_a_draft_delivers_it_like_send_announcement_and_removes_the_draf
             "body": "プールの日程",
             "sport": "swimming",
             "recipient_count": 1,
+            "read_count": 0,
             "sent_at": "2026-11-01T00:30:00Z",
             "withdrawal": null
         }),
