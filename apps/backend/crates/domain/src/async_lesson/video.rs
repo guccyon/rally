@@ -269,6 +269,13 @@ impl Video {
         }
     }
 
+    /// コーチがまだ添削を返していない（返却待ちの）動画か。本部の返却待ちの一覧（[`super::PendingVideoReviewFilter`]）と
+    /// コーチの自分に届いた動画の一覧の返却待ちだけの絞り込み（admin-web の `listMyCoachVideos` の `pending_only`）は
+    /// この 1 か所を使う。
+    pub const fn is_awaiting_review(&self) -> bool {
+        self.review.is_none()
+    }
+
     /// 返却した添削。返却するまでは `None`。
     pub const fn review(&self) -> Option<&VideoReview> {
         self.review.as_ref()
@@ -417,6 +424,16 @@ mod tests {
             .return_review(REVIEW, COACH, comment(), true, at(1))
             .unwrap();
         assert_eq!(video.lesson_menu(), Some(&copy));
+    }
+
+    #[test]
+    fn a_video_awaits_its_review_until_the_review_is_returned() {
+        let mut video = submitted();
+        assert!(video.is_awaiting_review());
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(1))
+            .unwrap();
+        assert!(!video.is_awaiting_review(), "返却した動画は返却待ちでない");
     }
 
     #[test]
