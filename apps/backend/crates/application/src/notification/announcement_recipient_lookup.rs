@@ -4,7 +4,7 @@ use domain::{catalog::Sport, identity::AccountId};
 
 use crate::Unavailable;
 
-/// notification が本部からのお知らせを受け取る生徒を問い合わせるポート。
+/// notification が本部からのお知らせを受け取る生徒（受け取る生徒すべてと、あるアカウントが生徒か）を問い合わせるポート。
 ///
 /// 生徒のアカウントとスポーツの持ち主は identity / profile（データは当面 identity の表）で、notification は読むだけ。
 /// 実装は [`crate::profile::ProfileAnnouncementRecipientLookup`]。
@@ -14,4 +14,10 @@ pub trait AnnouncementRecipientLookup: Send + Sync {
         &self,
         sport: Option<Sport>,
     ) -> impl Future<Output = Result<Vec<AccountId>, Unavailable>> + Send;
+
+    /// `account_id` が生徒のアカウントか（アカウントがない・コーチ・本部なら false）。
+    fn is_student(
+        &self,
+        account_id: AccountId,
+    ) -> impl Future<Output = Result<bool, Unavailable>> + Send;
 }

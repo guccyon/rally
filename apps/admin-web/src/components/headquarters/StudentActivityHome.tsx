@@ -8,6 +8,7 @@ import { headquartersApi } from "@/api/headquarters";
 import { Section } from "@/components/Section";
 
 import { StudentActivity } from "./StudentActivity";
+import { StudentAnnouncements } from "./StudentAnnouncements";
 
 /** URL で生徒を指すクエリの名前（`?student_id=`）。 */
 export const STUDENT_ID_QUERY = "student_id";
@@ -17,7 +18,11 @@ export function studentActivityPath(studentId: string): string {
   return `/headquarters/students/activity?${new URLSearchParams({ [STUDENT_ID_QUERY]: studentId })}`;
 }
 
-/** 本部の画面: 生徒の一覧の行から開き、生徒 1 人の利用の様子（予約・受けたレッスン・キャンセルの件数）を見る。 */
+/**
+ * 本部の画面: 生徒の一覧の行から開き、生徒 1 人の利用の様子（予約・受けたレッスン・キャンセルの件数）と
+ * 受け取ったお知らせを見る。欄ごとに別に読むので、片方が読めなくてももう片方は出る。
+ * 生徒の ID がなければ受け取ったお知らせの欄は出さない（利用の様子の欄が「見つかりません」を出す）。
+ */
 export function StudentActivityHome({ token, studentId }: { token: string; studentId: string | undefined }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
@@ -30,6 +35,11 @@ export function StudentActivityHome({ token, studentId }: { token: string; stude
       <Section title="生徒の利用の様子">
         <StudentActivity api={api} studentId={studentId} />
       </Section>
+      {studentId !== undefined && (
+        <Section title="受け取ったお知らせ">
+          <StudentAnnouncements api={api} studentId={studentId} />
+        </Section>
+      )}
     </>
   );
 }

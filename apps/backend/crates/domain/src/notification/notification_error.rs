@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成と、本部からのお知らせの取り下げで返す。
+/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成と、本部からのお知らせの取り下げと、受け取ったお知らせの組み立てで返す。
 ///
 /// 利用者に見せる文言は境界が変種から決める。[`fmt::Display`] はデバッグ用。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +19,8 @@ pub enum NotificationError {
     AnnouncementWithoutRecipients,
     /// 本部からのお知らせはすでに取り下げてある
     AnnouncementAlreadyWithdrawn,
+    /// 受け取ったお知らせのお知らせが、組にした本部からのお知らせを指していない
+    ReceivedAnnouncementMismatch,
 }
 
 impl fmt::Display for NotificationError {

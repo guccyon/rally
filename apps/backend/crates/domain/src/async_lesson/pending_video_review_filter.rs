@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use super::Video;
 use crate::catalog::Sport;
@@ -18,12 +18,10 @@ pub struct PendingVideoReviewFilter {
 }
 
 impl PendingVideoReviewFilter {
-    const HOUR: Duration = Duration::from_secs(3600);
-
     /// `video` の送付から `now` までの経過時間（時間。1 時間に満たない端数は切り捨てる）。送付が `now` より後なら 0。
+    /// 返却待ちの動画の [`Video::review_lead_hours`]（数え方はそこ 1 か所）。
     pub fn elapsed_hours(video: &Video, now: SystemTime) -> u64 {
-        now.duration_since(video.submitted_at())
-            .map_or(0, |elapsed| elapsed.as_secs() / Self::HOUR.as_secs())
+        video.review_lead_hours(now)
     }
 
     /// `video` が `now` に照会したときにこの条件の返却待ちの動画か（添削を返していない・スポーツが合う・経過時間が下限以上）。
@@ -46,6 +44,8 @@ impl PendingVideoReviewFilter {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{
         async_lesson::{ReviewComment, VideoId, VideoReviewId},

@@ -26,6 +26,11 @@ export function HeadquartersHome() {
           受付を止める・再開する
         </Link>
       </Section>
+      <Section title="自己紹介の足りないコーチ">
+        <Link href="/headquarters/coaches/incomplete-profiles" className="text-primary underline">
+          自己紹介が書きかけのコーチを見る
+        </Link>
+      </Section>
       <Section title="レッスンメニュー">
         <Link href="/headquarters/lesson-menus" className="text-primary underline">
           コーチのメニューを見る
@@ -41,14 +46,34 @@ export function HeadquartersHome() {
           予約の一覧を見る
         </Link>
       </Section>
+      <Section title="キャンセルされた予約">
+        <Link href="/headquarters/cancelled-bookings" className="text-primary underline">
+          キャンセルされた予約を見る
+        </Link>
+      </Section>
       <Section title="終わっていない通話">
         <Link href="/headquarters/overdue-live-sessions" className="text-primary underline">
           時間の過ぎた通話を見る
         </Link>
       </Section>
+      <Section title="ライブレッスンの記録">
+        <Link href="/headquarters/live-sessions" className="text-primary underline">
+          通話の開始と終了の記録を見る
+        </Link>
+      </Section>
       <Section title="お知らせ">
         <Link href="/headquarters/announcements" className="text-primary underline">
           生徒にお知らせを送る
+        </Link>
+      </Section>
+      <Section title="返却待ちの動画添削">
+        <Link href="/headquarters/pending-video-reviews" className="text-primary underline">
+          返却の遅れている添削を見る
+        </Link>
+      </Section>
+      <Section title="返した動画添削">
+        <Link href="/headquarters/returned-video-reviews" className="text-primary underline">
+          返した添削とかかった時間を見る
         </Link>
       </Section>
       <Section title="完了記録の一覧">
