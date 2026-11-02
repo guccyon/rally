@@ -54,3 +54,24 @@ test("角丸と書体は tokens.yaml と同じで、Tailwind の既定の色・�
   // Web フォントを読まない
   expect(css).not.toMatch(/@import url|fonts\.googleapis/);
 });
+
+test("書体の段は tokens.yaml の typography.scale と同じ大きさ・行間・字間（admin-web の headline は 24px）", () => {
+  const scale = Object.fromEntries(
+    [
+      ...section("  scale:   # 大きさ", "  admin_web:").matchAll(
+        /^ {4}(\w+): +\{size: (\d+), weight: \d+, line_height: ([\d.]+), +letter_spacing: "(-?[\d.]+em)",/gm,
+      ),
+    ].map(([, name, size, lineHeight, letterSpacing]) => [name, { size, lineHeight, letterSpacing }]),
+  );
+  expect(Object.keys(scale)).toEqual(["display", "headline", "title", "body", "small", "caption"]);
+  // display は admin-web では使わない（typography.admin_web）
+  const steps = { xs: "caption", sm: "small", base: "body", xl: "title", headline: "headline" } as const;
+  for (const [step, name] of Object.entries(steps)) {
+    const token = scale[name];
+    if (step !== "headline") expect(cssVar(`text-${step}`), name).toBe(`${token?.size}px`);
+    expect(cssVar(`text-${step}--line-height`), name).toBe(token?.lineHeight);
+    expect(cssVar(`text-${step}--letter-spacing`), name).toBe(token?.letterSpacing);
+  }
+  expect(tokens).toMatch(/admin_web: admin-web は display を使わず、headline を 24px/);
+  expect(cssVar("text-headline")).toBe("24px");
+});
