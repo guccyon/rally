@@ -1,0 +1,63 @@
+# 運用（ガイドラインの育て方）
+schema_version: "0.1"
+status: draft
+section: governance
+version: 0.1.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+
+lifecycle:
+  stages:
+    - {id: proposed, ja: 提案, meaning: 案だけ。画面では使わない（例 ダークモードの配色、下のタブ）}
+    - {id: trial, ja: 試用, meaning: 画面で使ってよい。名前と値は変わりうる。オンボーディングの部品はここから}
+    - {id: stable, ja: 安定, meaning: 名前と値を守る。変えるときは major の版と移行}
+    - {id: deprecated, ja: 廃止, meaning: 新しい画面で使わない。代わりの部品と消す版を書く}
+  promote_to_stable: 3 つ以上の画面で使い、デザイン検査役の指摘が 2 回続けてない部品
+
+intake:   # 変更の入り口
+  - source: design_inspector
+    what: デザイン検査役の指摘（トークン外の値・部品外の要素・原則に合わない画面）
+  - source: human_flag
+    what: 人の違和感の印（見本・キャプチャを見て「熱すぎる」「読みにくい」など）
+  - source: screen_task
+    what: プロダクトデザイナー役が画面のタスクで足りなかった部品・型（Issue に「部品が足りない」と書く）
+
+approval:
+  factory: 新しい部品・新しい基準（should と may）・トークンの段の追加・試用から安定への昇格
+  human: must の追加と変更、principles と concept_tone の変更、色の役割の値の変更、ダークモードの採用、廃止
+  rule: 既存の名前と値を壊さない。変えるときは理由を changelog に書く
+
+lint:   # 決定論の検査に移す基準（check が deterministic のもの）
+  - id: token-only-color
+    target: student-app の lib/、admin-web の src/
+    detect: tokens.yaml にない色コード（Color(0x…)、Colors.*、#xxxxxx、Tailwind の色の class（text-gray-500 など））
+  - id: token-only-spacing
+    detect: spacing の段（4・8・16・24・40）と、その組み合わせにない余白（EdgeInsets・SizedBox・p-/m-/gap- の class）
+  - id: token-only-radius
+    detect: radius の段（6・12・999）にない角丸
+  - id: no-shadow
+    detect: elevation が 0 でない・box-shadow
+  - id: font-family
+    detect: Noto Sans CJK JP 以外の font-family と、Web フォントの読み込み（@import url・fonts.googleapis）
+  - id: one-score-panel
+    detect: 1 画面に score_panel が 2 つ以上
+  - id: a11y-labels
+    detect: tooltip のない IconButton、aria-label のないアイコンだけのボタン、label のない入力欄
+  - id: target-size
+    detect: 48px 未満の押せる部品
+  - id: glossary-terms
+    detect: 文言の中の glossary にない言い換え（例「予約枠」を画面の題に使う。glossary は「スロット」）
+lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
+
+changelog:
+  file: specs/design/CHANGELOG.md
+  format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
+  entries:
+    - version: 0.1.0
+      date: "2026-11-01"
+      change: デザインシステムの最初の正本。コンセプト rally-court（人が選んだ）から principles・concept_tone・tokens・components・patterns・content・accessibility を作った
+      reason: rally にはデザインシステムがなかった。Issue の言う既存のトークン（#398）はリポジトリに見当たらず、今のアプリは student-app が ThemeData(colorSchemeSeed teal)、admin-web が Tailwind の既定の色（gray・green-700・red-600）だけだった。壊す名前はないので、コンセプトの値をそのまま正本にした
+      affects: student-app と admin-web の全画面（テーマの色・書体・角丸・余白が変わる。キャプチャ #401 は全画面で差分が出る）
+      approved_by: 人（コンセプトの選択）、工場（基準）
+      migration:
+        - student-app は ThemeData を tokens.yaml から作り（colorSchemeSeed をやめる）、Noto Sans CJK JP を同梱する
+        - admin-web は globals.css の @theme に tokens.yaml の色・角丸・余白を写し、gray・green・red の class を役割の名前に置き換える
+        - 今の文言は変えない（content.yaml は今の文言に合わせて書いた）

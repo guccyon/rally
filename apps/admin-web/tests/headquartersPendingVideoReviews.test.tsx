@@ -102,11 +102,11 @@ describe("本部の返却待ちの動画添削", () => {
       HTMLElement,
     ];
     for (const row of [h89, h48]) {
-      expect(row).toHaveClass("bg-red-50");
-      expect(within(row).getByText("48 時間超")).toHaveClass("bg-red-600");
+      expect(row).toHaveClass("bg-danger-container");
+      expect(within(row).getByText("48 時間超")).toHaveClass("bg-danger");
     }
     for (const row of [h47, h6]) {
-      expect(row).not.toHaveClass("bg-red-50");
+      expect(row).not.toHaveClass("bg-danger-container");
       expect(within(row).queryByText("48 時間超")).not.toBeInTheDocument();
     }
   });

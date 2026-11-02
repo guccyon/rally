@@ -86,7 +86,7 @@ export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "list
           開始日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={period.from}
             onChange={(event) => setDraft({ ...period, from: event.target.value })}
           />
@@ -95,17 +95,17 @@ export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "list
           終了日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={period.to}
             onChange={(event) => setDraft({ ...period, to: event.target.value })}
           />
         </label>
-        <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
           この期間で見る
         </button>
       </form>
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && <LoadedBookings list={state.list} />}
     </div>
