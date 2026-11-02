@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 
 type State =
   | { kind: "loading" }
