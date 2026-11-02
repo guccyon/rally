@@ -24,6 +24,7 @@ mod lesson_menu_recent_booking_count_lookup;
 mod list_coach_lesson_menus;
 mod list_lesson_menu_publication_changes;
 mod list_lesson_menus;
+mod list_lesson_menus_query;
 mod list_my_lesson_menus;
 mod repository;
 mod republish_lesson_menu;
@@ -40,6 +41,7 @@ pub use lesson_menu_recent_booking_count_lookup::LessonMenuRecentBookingCountLoo
 pub use list_coach_lesson_menus::ListCoachLessonMenus;
 pub use list_lesson_menu_publication_changes::ListLessonMenuPublicationChanges;
 pub use list_lesson_menus::ListLessonMenus;
+pub use list_lesson_menus_query::ListLessonMenusQuery;
 pub use list_my_lesson_menus::ListMyLessonMenus;
 pub use repository::LessonMenuRepository;
 pub use republish_lesson_menu::RepublishLessonMenu;
