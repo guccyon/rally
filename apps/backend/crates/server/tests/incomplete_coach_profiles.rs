@@ -1,6 +1,7 @@
 //! 本部が見る、プロフィールに足りない項目のあるコーチの一覧（admin-web の `GET /coaches/incomplete-profiles`）を、保存先を
 //! Postgres にした組み立て（`server::router_with_postgres`）で通す。自己紹介文を書いていない・空白だけのコーチが載り、
-//! 書き終えたコーチ（`PUT /me/profile`）は載らず、消せばまた載ること、コーチ・生徒は 403 であることを確かめる。
+//! 書き終えたコーチ（`PUT /me/profile`）は載らず、消せばまた載ること、`sport` で提供スポーツの合うコーチだけに絞れる
+//! （保存先の提供スポーツの読み方まで通す）こと、コーチ・生徒は 403 であることを確かめる。
 //! 契約の形の細かい検査は interface の `tests/incomplete_coach_profiles.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -135,7 +136,8 @@ async fn headquarters_finds_coaches_whose_bio_is_missing_in_postgres(pool: PgPoo
         2,
     )
     .await;
-    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+    let router =
+        server::router_with_postgres(pool.clone(), SystemClock, RecordingAnalyticsSink::default());
 
     // 書き終えたコーチ・空白だけのコーチ
     for (token, bio) in [(&written, "テニス歴 20 年"), (&blank, "\u{3000}\n")] {
@@ -194,8 +196,53 @@ async fn headquarters_finds_coaches_whose_bio_is_missing_in_postgres(pool: PgPoo
         .collect();
     assert_eq!(names, ["written", "fresh", "blank"]);
 
+    // 競技で絞る。提供スポーツが複数のコーチも、どれかが合えば載る
+    let multi = register(
+        &pool,
+        "multi@example.com",
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Golf],
+        4,
+    )
+    .await;
+    let names_in = |body: &Value| -> Vec<String> {
+        body["coaches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["display_name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for (query, expected) in [
+        ("golf", &["blank", "multi"][..]),
+        ("tennis", &["written", "multi"][..]),
+        ("baseball", &["fresh"][..]),
+        ("swimming", &[][..]),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches/incomplete-profiles?sport={query}"),
+            &headquarters,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(names_in(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches/incomplete-profiles?sport=curling",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
     // コーチ・生徒は 403
-    for token in [&written, &fresh, &student] {
+    for token in [&written, &fresh, &multi, &student] {
         let (status, body) =
             send(&router, "GET", "/coaches/incomplete-profiles", token, None).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
