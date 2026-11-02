@@ -57,14 +57,19 @@
   --font-sans: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
   --text-xs: 12px; /* caption */
   --text-xs--line-height: 1.5;
+  --text-xs--letter-spacing: 0.02em;
   --text-sm: 14px; /* small */
   --text-sm--line-height: 1.6;
+  --text-sm--letter-spacing: 0.01em;
   --text-base: 16px; /* body */
   --text-base--line-height: 1.65;
+  --text-base--letter-spacing: 0.01em;
   --text-xl: 20px; /* title */
   --text-xl--line-height: 1.25;
+  --text-xl--letter-spacing: -0.01em;
   --text-headline: 24px;
   --text-headline--line-height: 1.25;
+  --text-headline--letter-spacing: -0.01em;
 
   /* spacing.base_unit（p-2 = 8px、p-4 = 16px、p-6 = 24px、p-10 = 40px） */
   --spacing: 4px;

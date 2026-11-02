@@ -98,6 +98,7 @@ typography:
     sans: "'Noto Sans CJK JP', 'Noto Sans JP', sans-serif"   # 同梱の書体。Web フォントは読まない
     serif: 使わない（Noto Serif CJK JP は同梱されているが、このコンセプトでは使わない）
     bundling: student-app はアプリに同梱（pubspec の fonts）、admin-web は端末の書体を font-family で指定するだけ
+    bundling_status: student-app の同梱はまだ（pubspec に fonts がない）。今は RallyTypography.family の名前で指定し、端末に Noto Sans CJK JP があればそれ（Android の既定）、なければ端末の既定のゴシックで出る。同梱は別のタスク
   weights: {regular: 400, bold: 700, black: 900}
   scale:   # 大きさ px / 太さ / 行間 / 字間
     display:  {size: 44, weight: 900, line_height: 1.1,  letter_spacing: "-0.02em", use: 残りの回数・次のレッスンの日時。1 画面 1 か所}
