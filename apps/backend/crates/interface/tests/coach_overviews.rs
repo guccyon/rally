@@ -2,10 +2,11 @@
 //! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数・直近 30 日に送られた動画の
 //! 返却までの時間の中央値（まだ返していない動画は今までの経過時間）とそのうち返した件数・返却待ちの動画添削の件数とそのうち
-//! 48 時間以上たった件数を 1 回で読めること、コーチでない
+//! 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を 1 回で読めること、コーチでない
 //! ID・ない ID・UUID でない ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の
 //! 細かい検査は各操作のテスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`・
-//! `pending_video_reviews.rs`）と、domain の `VideoReviewLeadTime`・`CoachPendingVideoReviewCount` の単体テスト。
+//! `pending_video_reviews.rs`）と、domain の `VideoReviewLeadTime`・`CoachPendingVideoReviewCount`・
+//! `CoachRecentCancelledBookingCount` の単体テスト。
 
 use std::time::{Duration, SystemTime};
 
@@ -17,16 +18,20 @@ use application::{
         account_id_uuid,
     },
     in_memory::{
-        FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
-        InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-        InMemoryLessonReviewRepository, InMemoryVideoRepository,
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryCoachAcceptanceRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository, InMemorySlotRepository,
+        InMemoryVideoRepository,
     },
     lesson::GetMyLessonStats,
     profile::GetCoachOverview,
     review::{
         GetCoachLowRatedReviewCount, GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup,
     },
-    scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
+    scheduling::{
+        BookingRepository, CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup,
+        SchedulingCoachRecentCancelledBookingCountLookup,
+    },
 };
 use axum::{
     Router,
@@ -44,6 +49,7 @@ use domain::{
     live_lesson::SessionId,
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
+    scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -181,8 +187,58 @@ fn returned_video(id: u128, returned_at: SystemTime, lead_minutes: u64) -> Video
 /// 完了し、評価は 5（11 月）と 4・1・2（10 月。★2 は本部が対応済み）と 2（9 月。30 日より前）を受け、公開中のメニューは
 /// テニス 1・ゴルフ 1（ほかに非公開 1）。直近 30 日に送られた動画は、送付から 1 時間 30 分と 2 時間 10 分で返した 2 本と、
 /// まだ返していない 2 本（今までの経過 24 時間と 72 時間）で、40 日前に返した 1 本は数えない。返却待ちはこの 2 本で、
-/// 48 時間以上たったのは 72 時間の 1 本。
+/// 48 時間以上たったのは 72 時間の 1 本。キャンセルされた予約は 1 時間前と 30 日前ちょうどの 2 件で、30 日と 1 秒前の
+/// 1 件は数えない。
 /// `NEW_COACH`（いとう）は何もない。
+/// 生徒 `STUDENT` がコーチ `COACH` のスロット（開始は 2099 年）を予約し、`cancelled_at` の時刻にキャンセルした予約の保存先。
+async fn cancelled_bookings(cancelled_at: &[SystemTime]) -> InMemoryBookingRepository {
+    // 2099-01-01T00:00:00Z
+    let starts_at = SystemTime::UNIX_EPOCH + Duration::from_secs(4_070_908_800);
+    let hour = Duration::from_secs(3600);
+    let slots: Vec<Slot> = (1u32..)
+        .take(cancelled_at.len())
+        .map(|i| {
+            Slot::restore(
+                SlotId::from_u128(u128::from(i)),
+                COACH,
+                Sport::Tennis,
+                starts_at + hour * 2 * i,
+                starts_at + hour * (2 * i + 1),
+                SlotStatus::Open,
+                SlotSeats::default(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots(slots));
+    for (&at, i) in cancelled_at.iter().zip(1u32..) {
+        let booking = bookings
+            .reserve(
+                SlotId::from_u128(u128::from(i)),
+                STUDENT,
+                |slot, existing| {
+                    Booking::reserve(
+                        bookings.next_id(),
+                        STUDENT,
+                        false,
+                        slot,
+                        existing,
+                        SystemTime::UNIX_EPOCH,
+                    )
+                },
+            )
+            .await
+            .unwrap();
+        bookings
+            .update(booking.id(), |booking, slot| {
+                booking.cancel(STUDENT, slot, at).map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+    bookings
+}
+
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
     for account in [
@@ -255,6 +311,15 @@ async fn app() -> Router {
             ])),
             GetCoachVideoReviewLeadTime::new(videos.clone(), FixedClock(now)),
             GetCoachPendingVideoReviewCount::new(videos, FixedClock(now)),
+            SchedulingCoachRecentCancelledBookingCountLookup::new(
+                cancelled_bookings(&[
+                    now - Duration::from_secs(3600),
+                    now - day * 30,
+                    now - day * 30 - SECOND,
+                ])
+                .await,
+                FixedClock(now),
+            ),
         ),
         FakeTokens,
     )
@@ -322,6 +387,7 @@ async fn headquarters_reads_the_overview_of_a_coach() {
             "median_video_review_lead_time_hours": 13.08,
             "pending_video_review_count": 2,
             "overdue_pending_video_review_count": 1,
+            "recent_cancelled_booking_count": 2,
         })
     );
 }
@@ -351,6 +417,7 @@ async fn a_coach_without_anything_is_accepting_with_zero_counts() {
             "median_video_review_lead_time_hours": null,
             "pending_video_review_count": 0,
             "overdue_pending_video_review_count": 0,
+            "recent_cancelled_booking_count": 0,
         })
     );
 }
