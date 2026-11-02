@@ -443,7 +443,12 @@ describe("headquartersApi", () => {
   test("listPendingVideoReviews は絞り込みをクエリにして GET /api/video-reviews/pending を呼ぶ", async () => {
     const list = { as_of: "2026-10-26T03:00:00Z", videos: [] };
     const { api, fetchMock } = setup(json(200, list));
-    const result = await api.listPendingVideoReviews({ sport: "golf", min_elapsed_hours: 48 });
+    const coachId = "cccccccc-cccc-4ccc-8ccc-000000000001";
+    const result = await api.listPendingVideoReviews({
+      sport: "golf",
+      min_elapsed_hours: 48,
+      coach_id: coachId,
+    });
     expect(result).toEqual({ ok: true, data: list });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
@@ -451,6 +456,7 @@ describe("headquartersApi", () => {
     expect(url.pathname).toBe("/api/video-reviews/pending");
     expect(url.searchParams.get("sport")).toBe("golf");
     expect(url.searchParams.get("min_elapsed_hours")).toBe("48");
+    expect(url.searchParams.get("coach_id")).toBe(coachId);
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
