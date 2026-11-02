@@ -119,6 +119,12 @@ export function headquartersApi(client: ApiClient) {
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
     listAnnouncements: () => call(() => client.GET("/announcements")),
+    withdrawAnnouncement: (announcementId: string) =>
+      call(() =>
+        client.POST("/announcements/{announcement_id}/withdraw", {
+          params: { path: { announcement_id: announcementId } },
+        }),
+      ),
     createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
       call(() => client.POST("/announcement-drafts", { body })),
     listAnnouncementDrafts: () => call(() => client.GET("/announcement-drafts")),
