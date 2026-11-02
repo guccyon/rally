@@ -71,7 +71,7 @@ describe("本部の返却待ちの動画添削", () => {
     expect(listPendingVideoReviews).toHaveBeenCalledWith({});
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map(cellsOf)).toEqual([
-      ["佐藤 太郎", "高橋 コーチ", "ゴルフ", formatDateTime("2026-10-22T09:30:00Z"), "89 時間"],
+      ["佐藤 太郎", "高橋 コーチ", "ゴルフ", formatDateTime("2026-10-22T09:30:00Z"), "89 時間48 時間超"],
       [
         "（名前を表示できません）",
         "（名前を表示できません）",
@@ -81,6 +81,56 @@ describe("本部の返却待ちの動画添削", () => {
       ],
     ]);
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+  });
+
+  test("経過が 48 時間以上の行だけを薄い赤と「48 時間超」の札で目立たせ、一覧の上に件数を出す", async () => {
+    const videos = [
+      { ...VIDEOS[0]!, video_id: "55555555-5555-4555-8555-000000000011", elapsed_hours: 89 },
+      // ちょうど 48 時間は含める
+      { ...VIDEOS[0]!, video_id: "55555555-5555-4555-8555-000000000012", elapsed_hours: 48 },
+      { ...VIDEOS[1]!, video_id: "55555555-5555-4555-8555-000000000013", elapsed_hours: 47 },
+      { ...VIDEOS[1]!, video_id: "55555555-5555-4555-8555-000000000014", elapsed_hours: 6 },
+    ];
+    render(<PendingVideoReviewList api={{ listPendingVideoReviews: listOf(videos) }} />);
+    const table = await screen.findByRole("table", { name: "返却待ちの動画添削の一覧" });
+
+    expect(screen.getByText("48 時間以上たったものが 2 件あります。")).toBeInTheDocument();
+    const [h89, h48, h47, h6] = within(table).getAllByRole("row").slice(1) as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    for (const row of [h89, h48]) {
+      expect(row).toHaveClass("bg-red-50");
+      expect(within(row).getByText("48 時間超")).toHaveClass("bg-red-600");
+    }
+    for (const row of [h47, h6]) {
+      expect(row).not.toHaveClass("bg-red-50");
+      expect(within(row).queryByText("48 時間超")).not.toBeInTheDocument();
+    }
+  });
+
+  test("48 時間以上たったものがなければ、件数の注意は出さない", async () => {
+    render(<PendingVideoReviewList api={{ listPendingVideoReviews: listOf([VIDEOS[1]!]) }} />);
+    await screen.findByRole("table");
+
+    expect(screen.queryByText(/時間以上たったものが/)).not.toBeInTheDocument();
+    expect(screen.queryByText("48 時間超")).not.toBeInTheDocument();
+  });
+
+  test("絞り込んで読み直したら、件数の注意も読み直した一覧で数え直す", async () => {
+    const listPendingVideoReviews = vi
+      .fn<HeadquartersApi["listPendingVideoReviews"]>()
+      .mockResolvedValueOnce({ ok: true, data: { as_of: AS_OF, videos: VIDEOS } })
+      .mockResolvedValueOnce({ ok: true, data: { as_of: AS_OF, videos: [VIDEOS[1]!] } });
+    const user = userEvent.setup();
+    render(<PendingVideoReviewList api={{ listPendingVideoReviews }} />);
+    expect(await screen.findByText("48 時間以上たったものが 1 件あります。")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(screen.queryByText(/時間以上たったものが/)).not.toBeInTheDocument();
   });
 
   test("経過時間がいつ時点のものかを応答の as_of で添える", async () => {
@@ -153,6 +203,7 @@ describe("本部の返却待ちの動画添削", () => {
 
     expect(await screen.findByText("返却を待っている動画添削はありません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(/時間以上たったものが/)).not.toBeInTheDocument();
   });
 
   test("絞り込んで 0 件なら「条件に合う返却待ちの動画添削はありません」と出す", async () => {
