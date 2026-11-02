@@ -20,8 +20,8 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.push(),
             ports.clock(),
         ),
-        ListAnnouncements::new(ports.announcements()),
-        WithdrawAnnouncement::new(ports.announcements(), ports.clock()),
+        ListAnnouncements::new(ports.announcements(), ports.notifications()),
+        WithdrawAnnouncement::new(ports.announcements(), ports.notifications(), ports.clock()),
         MockTokenService,
     )
 }
