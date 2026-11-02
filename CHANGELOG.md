@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部の「返した動画添削」（`/headquarters/returned-video-reviews`）に、期間・コーチの絞り込みの並びでスポーツの絞り込み（既定は「すべて」）を足した: 「この条件で見る」で `listReturnedVideoReviews` の `sport` に渡して読み直す。読み直した条件（期間・コーチ・スポーツ）は URL のクエリ（`?from=&to=&coach_id=&sport=`）に残し、再読み込み・共有で同じ条件で開く。かかった時間の数え方と出し方、API と契約の変更はない（#643）
 - 本部のキャンセルされた予約の一覧をコーチで絞る: admin-web の `GET /bookings/cancelled`（`listCancelledBookings`）に任意のクエリ `coach_id` を足した。付ければそのコーチの枠へのキャンセルされた予約だけを返し、付けなければ今までどおりすべてのコーチ。期間の規則と並べ方は変わらない。UUID でなければ 422 `validation_failed`、コーチでない ID・ない ID は 404 にせず空の配列（`listBookings` の `coach_id` と同じ）。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#618）
 - 本部が自己紹介の足りないコーチを競技で絞る: admin-web の `GET /coaches/incomplete-profiles`（`listIncompleteCoachProfiles`）に任意のクエリ `sport` を足した。付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけを返す。付けなければ今までどおり。「足りない」の判定と並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`（`listCoaches` の `sport` と同じ）。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#605）
 - 本部が返した動画添削の記録をスポーツで絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `sport` を足した。付ければ動画を送ったときのスポーツがそれの返却済みの動画だけを返す（値と動画のスポーツの決め方は `listPendingVideoReviews` の `sport` と同じ）。付けなければ今までどおりスポーツを問わない。期間・`coach_id` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#607）
