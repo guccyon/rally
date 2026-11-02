@@ -9,15 +9,16 @@ use crate::{
     clock::Clock,
     identity::AccountRepository,
     lesson::{GetMyLessonStats, LessonCompletionRepository, MonthlyReviewSummaryLookup},
-    review::{GetCoachReviewSummary, LessonReviewRepository},
+    review::{GetCoachLowRatedReviewCount, GetCoachReviewSummary, LessonReviewRepository},
 };
 
 /// 本部が見るコーチ 1 人の様子のユースケース（admin-web の `getCoachOverview`。本部だけが呼ぶ）。照会だけで、何も保存しない。
 ///
 /// 表示名はアカウントの保存先から読み、受付の状態は scheduling に問い合わせる（[`CoachAcceptanceLookup`]。`ListCoaches` と
-/// 同じポート）。評価の件数と平均・今月と先月のレッスンの実績・公開中のレッスンメニューは、それぞれ既存のユースケース
-/// （[`GetCoachReviewSummary`]・[`GetMyLessonStats`]・[`ListCoachLessonMenus`]）を呼んで、その結果をそのまま使う
-/// （数え方・暦月の区切り・公開中の判定はここで書かない）。
+/// 同じポート）。評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューは、
+/// それぞれ review などのユースケース（[`GetCoachReviewSummary`]・[`GetCoachLowRatedReviewCount`]・[`GetMyLessonStats`]・
+/// [`ListCoachLessonMenus`]）を呼んで、その結果をそのまま使う（数え方・低い評価の線・暦月の区切り・公開中の判定はここで
+/// 書かない）。
 ///
 /// `coach_id` がコーチのアカウントでなければ（生徒・本部のアカウントや、ないアカウント）`None`。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
@@ -25,6 +26,7 @@ pub struct GetCoachOverview<R, A, V, M, W, C, N> {
     accounts: R,
     acceptances: A,
     review_summary: GetCoachReviewSummary<V>,
+    low_rated_reviews: GetCoachLowRatedReviewCount<V, C>,
     lesson_stats: GetMyLessonStats<M, W, C>,
     lesson_menus: ListCoachLessonMenus<N>,
 }
@@ -43,6 +45,7 @@ where
         accounts: R,
         acceptances: A,
         review_summary: GetCoachReviewSummary<V>,
+        low_rated_reviews: GetCoachLowRatedReviewCount<V, C>,
         lesson_stats: GetMyLessonStats<M, W, C>,
         lesson_menus: ListCoachLessonMenus<N>,
     ) -> Self {
@@ -50,6 +53,7 @@ where
             accounts,
             acceptances,
             review_summary,
+            low_rated_reviews,
             lesson_stats,
             lesson_menus,
         }
@@ -70,12 +74,14 @@ where
             .copied()
             .unwrap_or(CoachAcceptanceStatus::Accepting);
         let reviews = self.review_summary.execute(coach_id).await?;
+        let low_rated_reviews = self.low_rated_reviews.execute(coach_id).await?;
         let lesson_stats = self.lesson_stats.execute(coach_id).await?;
         let published_lesson_menus = self.lesson_menus.execute(coach_id, None).await?;
         Ok(Some(CoachOverview {
             display_name: account.display_name().clone(),
             acceptance,
             reviews,
+            low_rated_reviews,
             lesson_stats,
             published_lesson_menu_count: u32::try_from(published_lesson_menus.len())
                 .unwrap_or(u32::MAX),
@@ -98,7 +104,9 @@ mod tests {
         lesson::{LessonCompletion, LessonCompletionId, LessonSource},
         live_lesson::SessionId,
         profile::DisplayName,
-        review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+        review::{
+            LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating,
+        },
     };
 
     use super::*;
@@ -201,8 +209,8 @@ mod tests {
     >;
 
     /// 今は日本時間の 11 月 1 日 1 時。コーチ `COACH` は受付を止められていて、11 月に通話 1、10 月に通話 1・添削 1、
-    /// 9 月に添削 1 を完了し、評価は 5（11 月）・4（10 月）・2（9 月）を受け、公開中のメニューはテニス 1・ゴルフ 1
-    /// （ほかに非公開 1）。`OTHER_COACH` の分は混ぜない。
+    /// 9 月に添削 1 を完了し、評価は 5（11 月）・4・2（本部が対応済み）・1（10 月）・2（9 月）を受け、公開中のメニューは
+    /// テニス 1・ゴルフ 1（ほかに非公開 1）。`OTHER_COACH` の分は混ぜない。
     async fn use_case() -> UseCase {
         let accounts = InMemoryAccountRepository::default();
         for account in [
@@ -219,16 +227,23 @@ mod tests {
             .await
             .unwrap();
         let second = Duration::from_secs(1);
+        let day = Duration::from_secs(24 * 3600);
+        let now = nov1() + Duration::from_secs(3600);
         let reviews = InMemoryLessonReviewRepository::with_reviews([
             review(1, COACH, 5, nov1()),
             review(2, COACH, 4, nov1() - second),
+            // 9 月 30 日の★2 は照会した時刻の 30 日より前
             review(3, COACH, 2, oct1() - second),
             review(4, OTHER_COACH, 1, nov1()),
+            review(5, COACH, 2, nov1() - day)
+                .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS, nov1()))),
+            review(6, COACH, 1, nov1() - 2 * day),
         ]);
         GetCoachOverview::new(
             accounts,
             SchedulingCoachAcceptanceLookup::new(acceptances),
             GetCoachReviewSummary::new(reviews.clone()),
+            GetCoachLowRatedReviewCount::new(reviews.clone(), FixedClock(now)),
             GetMyLessonStats::new(
                 InMemoryLessonCompletionRepository::with_completions([
                     completion(1, COACH, true, nov1()),
@@ -238,7 +253,7 @@ mod tests {
                     completion(5, OTHER_COACH, true, nov1()),
                 ]),
                 ReviewMonthlyReviewSummaryLookup::new(reviews),
-                FixedClock(nov1() + Duration::from_secs(3600)),
+                FixedClock(now),
             ),
             ListCoachLessonMenus::new(InMemoryLessonMenuRepository::with_menus([
                 menu(1, COACH, Sport::Tennis, true),
@@ -261,8 +276,17 @@ mod tests {
                 overview.reviews.review_count(),
                 overview.reviews.average_rating()
             ),
-            (3, Some(3.67)),
+            (5, Some(2.8)),
             "評価は期間で絞らずこれまでのすべて"
+        );
+        assert_eq!(overview.low_rated_reviews.coach_id(), COACH);
+        assert_eq!(
+            (
+                overview.low_rated_reviews.low_rated_count(),
+                overview.low_rated_reviews.unhandled_count()
+            ),
+            (2, 1),
+            "低い評価は直近 30 日の★2 以下で、未対応は対応済みの印のないもの"
         );
         let current = &overview.lesson_stats.current_month;
         let previous = &overview.lesson_stats.previous_month;
@@ -297,6 +321,13 @@ mod tests {
 
         assert_eq!(overview.acceptance, CoachAcceptanceStatus::Accepting);
         assert_eq!(overview.reviews.review_count(), 1);
+        assert_eq!(
+            (
+                overview.low_rated_reviews.low_rated_count(),
+                overview.low_rated_reviews.unhandled_count()
+            ),
+            (1, 1)
+        );
         assert_eq!(overview.published_lesson_menu_count, 1);
 
         let accounts = InMemoryAccountRepository::default();
@@ -309,6 +340,7 @@ mod tests {
             accounts,
             SchedulingCoachAcceptanceLookup::new(InMemoryCoachAcceptanceRepository::default()),
             GetCoachReviewSummary::new(reviews.clone()),
+            GetCoachLowRatedReviewCount::new(reviews.clone(), FixedClock(nov1())),
             GetMyLessonStats::new(
                 InMemoryLessonCompletionRepository::default(),
                 ReviewMonthlyReviewSummaryLookup::new(reviews),
@@ -324,6 +356,13 @@ mod tests {
         assert_eq!(
             (empty.reviews.review_count(), empty.reviews.average_rating()),
             (0, None)
+        );
+        assert_eq!(
+            (
+                empty.low_rated_reviews.low_rated_count(),
+                empty.low_rated_reviews.unhandled_count()
+            ),
+            (0, 0)
         );
         for month in [
             &empty.lesson_stats.current_month,

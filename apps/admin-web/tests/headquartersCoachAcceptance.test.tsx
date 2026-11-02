@@ -21,11 +21,13 @@ const SUZUKI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000001",
   display_name: "鈴木 コーチ",
   acceptance_status: "accepting",
+  recent_lesson_count: 0,
 };
 const TAKAHASHI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000002",
   display_name: "高橋 コーチ",
   acceptance_status: "suspended",
+  recent_lesson_count: 0,
 };
 // API の並び（表示名のコードポイントの順）。
 const COACHES = [TAKAHASHI, SUZUKI];

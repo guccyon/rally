@@ -713,6 +713,16 @@ mod tests {
             self.notifications.find_by_recipient(recipient).await
         }
 
+        async fn find_announcements_by_recipient(
+            &self,
+            recipient: AccountId,
+            limit: usize,
+        ) -> Result<Vec<Notification>, Unavailable> {
+            self.notifications
+                .find_announcements_by_recipient(recipient, limit)
+                .await
+        }
+
         async fn mark_all_read(
             &self,
             recipient: AccountId,

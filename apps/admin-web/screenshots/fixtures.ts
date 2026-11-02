@@ -432,6 +432,9 @@ export const FIXTURES: Fixture[] = [
       acceptance_status: "accepting",
       review_count: 3,
       average_rating: 4.67,
+      // 低い評価の一覧（LOW_REVIEWS）の鈴木 コーチの 2 件。どちらも対応済みの印はない。
+      low_rated_review_count: 2,
+      unhandled_low_rated_review_count: 2,
       current_month: {
         month: "2026-10",
         live_lesson_count: 12,
@@ -451,11 +454,35 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/coaches/incomplete-profiles",
+    body: {
+      // 登録の古い順。鈴木 コーチは /me で自己紹介を書いているので載せない。更新の時刻は今は常に null だが、
+      // 記録するようになったときの表示も撮るため、記録のある行を 1 つ混ぜる。
+      coaches: [
+        {
+          coach_id: COACH_ID_2,
+          display_name: "高橋 コーチ",
+          missing_fields: ["bio"],
+          updated_at: null,
+          registered_at: at(-24 * 60),
+        },
+        {
+          coach_id: id("2222", 3),
+          display_name: "伊藤 コーチ",
+          missing_fields: ["bio"],
+          updated_at: at(-24 * 3),
+          registered_at: at(-24 * 30),
+        },
+      ],
+    } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    method: "GET",
     path: "/coaches",
     body: {
       coaches: [
-        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting" },
-        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended" },
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
       ],
     } satisfies Schemas["CoachList"],
   },
@@ -572,6 +599,35 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/students/{student_id}/announcements",
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 3),
+          title: "年末年始の営業について",
+          sent_at: at(-12),
+          is_read: false,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 1),
+          title: "メンテナンスのお知らせ",
+          sent_at: at(-24 * 4),
+          is_read: true,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 4),
+          title: "テニスの新しいコーチのご紹介",
+          sent_at: at(-24 * 5),
+          is_read: false,
+          is_withdrawn: true,
+        },
+      ],
+    } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    method: "GET",
     path: "/bookings",
     body: {
       from: "2026-10-26",
@@ -618,5 +674,86 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["AnnouncementList"],
+  },
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 21),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-101.5),
+          elapsed_hours: 101,
+        },
+        {
+          video_id: id("5555", 22),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-52.25),
+          elapsed_hours: 52,
+        },
+        {
+          video_id: id("5555", 23),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          student_display_name: "田中 美咲",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-5),
+          elapsed_hours: 5,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/video-reviews/returned",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      reviews: [
+        {
+          video_id: id("5555", 31),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-20.5),
+          returned_at: at(-2),
+          lead_time_hours: 18,
+        },
+        {
+          video_id: id("5555", 32),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-24 * 5 - 3.25),
+          returned_at: at(-24 * 2),
+          lead_time_hours: 75,
+        },
+        {
+          video_id: id("5555", 33),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-24 * 6 - 6),
+          returned_at: at(-24 * 6 + 0.75),
+          lead_time_hours: 6,
+        },
+      ],
+    } satisfies Schemas["ReturnedVideoReviewList"],
   },
 ];

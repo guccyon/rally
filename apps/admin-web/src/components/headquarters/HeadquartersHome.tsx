@@ -26,6 +26,11 @@ export function HeadquartersHome() {
           受付を止める・再開する
         </Link>
       </Section>
+      <Section title="自己紹介の足りないコーチ">
+        <Link href="/headquarters/coaches/incomplete-profiles" className="text-blue-600 underline">
+          自己紹介が書きかけのコーチを見る
+        </Link>
+      </Section>
       <Section title="レッスンメニュー">
         <Link href="/headquarters/lesson-menus" className="text-blue-600 underline">
           コーチのメニューを見る
@@ -49,6 +54,16 @@ export function HeadquartersHome() {
       <Section title="お知らせ">
         <Link href="/headquarters/announcements" className="text-blue-600 underline">
           生徒にお知らせを送る
+        </Link>
+      </Section>
+      <Section title="返却待ちの動画添削">
+        <Link href="/headquarters/pending-video-reviews" className="text-blue-600 underline">
+          返却の遅れている添削を見る
+        </Link>
+      </Section>
+      <Section title="返した動画添削">
+        <Link href="/headquarters/returned-video-reviews" className="text-blue-600 underline">
+          返した添削とかかった時間を見る
         </Link>
       </Section>
       <Section title="完了記録の一覧">

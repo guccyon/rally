@@ -102,6 +102,14 @@ impl VideoRepository for BrokenVideos {
         ))
     }
 
+    async fn videos_returned_between(
+        &self,
+        _starts_at: SystemTime,
+        _ends_at: SystemTime,
+    ) -> Result<Vec<Video>, Unavailable> {
+        unreachable!("返却待ちの一覧では読まない")
+    }
+
     async fn insert(&self, _video: Video) -> Result<(), Unavailable> {
         unreachable!("一覧では保存しない")
     }

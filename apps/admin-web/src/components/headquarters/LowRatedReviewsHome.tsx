@@ -9,6 +9,9 @@ import { Section } from "@/components/Section";
 
 import { LowRatedReviewList } from "./LowRatedReviewList";
 
+/** 「低い評価」の画面の URL。 */
+export const LOW_RATED_REVIEWS_PATH = "/headquarters/low-reviews";
+
 /** 本部の画面: 生徒が付けた点の低いレッスンの評価を、コーチを問わず新しい順に見る。 */
 export function LowRatedReviewsHome({ token }: { token: string }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
