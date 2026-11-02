@@ -357,11 +357,11 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## async-lesson: 本部が見る返した動画添削の記録（D174）
 
-- `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）: 本部だけが呼べる（`interface::returned_video_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。返却の日付（日本時間）が `from`〜`to`（両端を含む）の返却済みの動画を、コーチを問わず返却の新しい順（同じ時刻は `video_id`）に返し、各行に動画の ID・スポーツ・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・送った時刻・返した時刻・かかった時間 `lead_time_hours` を載せる。任意の `coach_id` でそのコーチの動画だけ。添削のコメントは載せない。行動イベントは発火しない
+- `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）: 本部だけが呼べる（`interface::returned_video_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。返却の日付（日本時間）が `from`〜`to`（両端を含む）の返却済みの動画を、コーチを問わず返却の新しい順（同じ時刻は `video_id`）に返し、各行に動画の ID・スポーツ・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・送った時刻・返した時刻・かかった時間 `lead_time_hours` を載せる。任意の `coach_id` でそのコーチの動画だけ、任意の `sport` でそのスポーツの動画だけ（D198。期間・`coach_id` と組み合わせられる）。添削のコメントは載せない。行動イベントは発火しない
 - かかった時間（送付から返却まで。時間で端数は切り捨て）は KPI `video_review_lead_time`（`specs/analytics/kpi.yaml`）の 1 件分で、数え方は `domain::async_lesson::Video::review_lead_hours` の 1 か所（返却待ちの一覧の経過時間 `PendingVideoReviewFilter::elapsed_hours` も同じ関数を通す）
-- 期間の規則（1 日以上 31 日まで）と絞り込み・並べ方は `domain::async_lesson::ReturnedVideoReviewFilter`、日付と時刻の変換は予約の一覧と同じ `application::scheduling::calendar_day`。両方を省けば今日までの 7 日、片方だけならもう片方はそこから 7 日目。違反と `YYYY-MM-DD` でない値・UUID でない `coach_id` は 422 `validation_failed`。該当がなければ空の配列（404 はない）
+- 期間の規則（1 日以上 31 日まで）と絞り込み・並べ方は `domain::async_lesson::ReturnedVideoReviewFilter`、日付と時刻の変換は予約の一覧と同じ `application::scheduling::calendar_day`。両方を省けば今日までの 7 日、片方だけならもう片方はそこから 7 日目。動画のスポーツ（送ったときのスポーツ）での絞り込みは返却待ちの一覧と同じ `Video::is_in_sport` の 1 か所、`sport` の値の読み方も同じ `interface` の `admin_web_sport`。違反と `YYYY-MM-DD` でない値・UUID でない `coach_id`・`Sport` の値でない `sport` は 422 `validation_failed`。該当がなければ空の配列（404 はない）
 - 保存先は `VideoRepository::videos_returned_between`（Postgres は `async_lesson.video_reviews.returned_at` で期間を絞って `videos` と結ぶ）。DB の変更はない
-- テスト: `domain::async_lesson::video`（かかった時間の端）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/pg_video_repository.rs`・`crates/server/tests/returned_video_reviews.rs`（Postgres。`--include-ignored`）
+- テスト: `domain::async_lesson::video`（かかった時間の端・スポーツ）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・スポーツ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・スポーツと期間・コーチの組み合わせ・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/pg_video_repository.rs`・`crates/server/tests/returned_video_reviews.rs`（Postgres。`--include-ignored`）
 
 ## レッスンの完了記録（is_first_lesson と LessonCompleted）
 

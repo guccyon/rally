@@ -496,6 +496,7 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
             from: Some(nov(1)),
             to: Some(nov(2)),
             coach_id: None,
+            sport: None,
         })
         .await
         .unwrap();
@@ -528,6 +529,7 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
             from: Some(nov(1)),
             to: Some(nov(1)),
             coach_id: Some(coach),
+            sport: None,
         })
         .await
         .unwrap();
@@ -536,4 +538,33 @@ async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coac
         [returned[0].clone()],
         "11-01 の日本時間のうちに返したコーチの動画だけ"
     );
+    // スポーツは保存した動画のスポーツで絞り、期間・コーチと組み合わせられる
+    let by_sport = |sport, coach_id| ListReturnedVideoReviewsQuery {
+        from: Some(nov(1)),
+        to: Some(nov(2)),
+        coach_id,
+        sport: Some(sport),
+    };
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, None))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[2].clone()]);
+    let list = list_returned
+        .execute(by_sport(Sport::Tennis, Some(coach)))
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [
+            returned[3].clone(),
+            returned[1].clone(),
+            returned[0].clone()
+        ]
+    );
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, Some(coach)))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
 }
