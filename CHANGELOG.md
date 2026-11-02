@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部が見るコーチ 1 人の様子に返却待ちの動画添削の数を足した: admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）に、そのコーチの返却待ちの動画添削の件数 `pending_video_review_count` と、そのうち送付から 48 時間以上（含む）たった件数 `overdue_pending_video_review_count` を足した。数え方は `listPendingVideoReviews` を `coach_id`（と `min_elapsed_hours=48`）で絞ったときと同じ（domain の 1 か所）。既存の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#648）
 - 本部が生徒 1 人の様子で動画添削の送付数と返却待ちを見られる: admin-web の `GET /students/{student_id}/activity`（`getStudentActivity`）に `submitted_video_count`（生徒が送った動画の数。添削待ちも返却済みも含め、これまでのすべて）と `pending_video_review_count`（いま返却を待っている数。判定は `listPendingVideoReviews` と同じ）を足した。既存の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#649）
 - コーチが自分の枠の一覧を期間で絞る: admin-web の `GET /coaches/me/slots`（`listMyCoachSlots`）に任意のクエリ `from`・`to`（枠の開始の日付。日本時間。両端を含む）を足した。両方を省けば今までどおりすべての枠を返す。どちらかを付けたときの省いた側の決め方（`from` は今日、`to` は `from` から 7 日目）と 422 `validation_failed` の条件（`to` が `from` より前・31 日を超える・日付でない）は `listBookings` と同じ。並べ方は変わらない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#625）
 - 本部がコーチの評価を点で絞る API: admin-web の `GET /coaches/{coach_id}/reviews`（`listCoachReviews`）に任意のクエリ `max_rating`（1〜5 の整数）を足した。付ければ点がその値以下（含む）の評価だけを返し、付けなければ今までどおりすべて。並べ方（送った時刻の新しい順）は変わらない。本部とコーチ（自分の分）が付けられ、1〜5 の整数でないときは 422 `validation_failed`。student-app の同じ操作は変えない（生徒の役割では付けても変わらない）。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#621）

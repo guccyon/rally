@@ -638,7 +638,8 @@ export interface paths {
         /**
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
-         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を
+         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を
          *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
@@ -663,6 +664,11 @@ export interface paths {
          *       （遅れを隠さない）。期間は送った時刻で絞る（30 日より前に送った動画は、返却が期間内でも数えない）。本数が偶数なら
          *       真ん中の 2 つの平均。`returned_video_review_count` は母集団のうち添削を返した件数。期間内に送られた動画がなければ
          *       件数 0・中央値 null（まだ返していない動画だけなら件数 0 で中央値は出る）
+         *     - `pending_video_review_count`: そのコーチの返却待ちの動画添削の件数。`listPendingVideoReviews` に `coach_id` だけを
+         *       付けたときの `videos` の件数と同じ（返却していない動画すべて。スポーツを問わず、ゴルフの動画も数える）
+         *     - `overdue_pending_video_review_count`: `pending_video_review_count` のうち、送付からの経過時間が 48 時間以上（含む）の
+         *       件数。`listPendingVideoReviews` に `coach_id` と `min_elapsed_hours=48` を付けたときの件数と同じ（経過時間の数え方も
+         *       同じで、照会した時刻から数え、1 時間に満たない端数は切り捨てる）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -2236,8 +2242,8 @@ export interface components {
         };
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
-         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間を
-         *     添える。金額は持たない
+         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2268,6 +2274,13 @@ export interface components {
              *     動画がなければ null
              */
             median_video_review_lead_time_hours: number | null;
+            /** @description 返却待ちの動画添削の件数（`listPendingVideoReviews` を `coach_id` で絞った件数と同じ。スポーツを問わない） */
+            pending_video_review_count: number;
+            /**
+             * @description `pending_video_review_count` のうち、送付から 48 時間以上（含む）たった件数（`listPendingVideoReviews` の
+             *     `min_elapsed_hours=48` と同じ線。`pending_video_review_count` 以下）
+             */
+            overdue_pending_video_review_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）

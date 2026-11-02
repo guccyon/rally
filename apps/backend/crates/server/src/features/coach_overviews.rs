@@ -1,9 +1,9 @@
 //! 本部が見るコーチ 1 人の様子（`GET /coaches/{coach_id}/overview`）。受付の状態は scheduling に問い合わせ
 //! （`SchedulingCoachAcceptanceLookup`）、評価の件数と平均・直近の低い評価の件数・月ごとのレッスンの数・メニュー・動画添削の
-//! 返却までの時間はそれぞれの保存先から読む。
+//! 返却までの時間・返却待ちの動画添削の件数はそれぞれの保存先から読む。
 
 use application::{
-    async_lesson::GetCoachVideoReviewLeadTime,
+    async_lesson::{GetCoachPendingVideoReviewCount, GetCoachVideoReviewLeadTime},
     catalog::ListCoachLessonMenus,
     lesson::GetMyLessonStats,
     profile::GetCoachOverview,
@@ -31,6 +31,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ),
             ListCoachLessonMenus::new(ports.lesson_menus()),
             GetCoachVideoReviewLeadTime::new(ports.videos(), ports.clock()),
+            GetCoachPendingVideoReviewCount::new(ports.videos(), ports.clock()),
         ),
         MockTokenService,
     )
