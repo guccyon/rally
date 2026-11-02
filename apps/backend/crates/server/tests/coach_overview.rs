@@ -1,7 +1,9 @@
 //! 本部がコーチ 1 人の様子（admin-web の `getCoachOverview`）を読むことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
-//! レッスンメニューの数を、それぞれの保存先（scheduling・review・lesson・catalog）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
+//! レッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を、それぞれの保存先
+//! （scheduling・review・lesson・catalog・async-lesson）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・
+//! 本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -10,6 +12,7 @@
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::VideoRepository,
     clock::SystemClock,
     identity::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
@@ -23,12 +26,13 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    async_lesson::{ReviewComment, Video},
     catalog::Sport,
     identity::{AccountId, Role},
     lesson::LessonCompletionId,
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
-use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository};
+use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgVideoRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -114,6 +118,43 @@ async fn review(
     review_id
 }
 
+/// 生徒 `student` が `submitted_at` にコーチ `coach` に送った動画を保存先に書き、`returned_at` が `Some` ならその時刻に
+/// コーチが添削を返したことにする。
+async fn video(
+    videos: &PgVideoRepository,
+    student: AccountId,
+    coach: AccountId,
+    submitted_at: SystemTime,
+    returned_at: Option<SystemTime>,
+) {
+    let video_id = videos.next_video_id();
+    videos
+        .insert(Video::submit(
+            video_id,
+            student,
+            coach,
+            Sport::Tennis,
+            submitted_at,
+        ))
+        .await
+        .unwrap();
+    if let Some(returned_at) = returned_at {
+        let review_id = videos.next_review_id();
+        videos
+            .update(video_id, |video| {
+                video.return_review(
+                    review_id,
+                    coach,
+                    ReviewComment::new("よい").unwrap(),
+                    true,
+                    returned_at,
+                )
+            })
+            .await
+            .unwrap();
+    }
+}
+
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) {
@@ -132,6 +173,27 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     let handled = review(&reviews, taro, tanaka, 4, 2, now - HOUR * 2).await;
     review(&reviews, taro, tanaka, 5, 1, now - HOUR * 3).await;
     review(&reviews, taro, tanaka, 6, 1, now - HOUR * 24 * 31).await;
+    // 直近 30 日に送られた動画は、送付から 2・7・30 時間で返した 3 本と、10 時間前に送られてまだ返していない 1 本（中央値は
+    // 2・7・10・30 時間の真ん中の 2 つの平均で 8.5 時間）。30 日と 1 時間前に送られた 1 本は、返却が期間内でも数えない
+    let videos = PgVideoRepository::new(pool.clone());
+    let day = HOUR * 24;
+    for (submitted_at, lead) in [
+        (now - HOUR * 3, HOUR * 2),
+        (now - day * 3 - HOUR * 7, HOUR * 7),
+        (now - day * 29, HOUR * 30),
+        (now - day * 30 - HOUR, day),
+    ] {
+        video(
+            &videos,
+            taro,
+            tanaka,
+            submitted_at,
+            Some(submitted_at + lead),
+        )
+        .await;
+    }
+    video(&videos, taro, tanaka, now - HOUR * 10, None).await;
+    video(&videos, taro, ito, now - HOUR * 5, Some(now - HOUR)).await;
     let router =
         server::router_with_postgres(pool, FixedClock(now), RecordingAnalyticsSink::default());
 
@@ -223,7 +285,9 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
             "review_count": 2,
             "average_rating": 3.0
         },
-        "published_lesson_menu_count": 2
+        "published_lesson_menu_count": 2,
+        "returned_video_review_count": 3,
+        "median_video_review_lead_time_hours": 8.5
     });
     assert_eq!(body, expected);
     // 照会だけで何も変えない（2 回目も同じ）
@@ -244,6 +308,8 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
     assert_eq!(body["low_rated_review_count"], 1);
     assert_eq!(body["unhandled_low_rated_review_count"], 1);
     assert_eq!(body["published_lesson_menu_count"], 0);
+    assert_eq!(body["returned_video_review_count"], 1);
+    assert_eq!(body["median_video_review_lead_time_hours"], 4.0);
 
     let student_path = format!("/coaches/{}/overview", account_id_uuid::format(taro));
     let (status, _) = send(&router, "GET", &student_path, &hq_token, None).await;
