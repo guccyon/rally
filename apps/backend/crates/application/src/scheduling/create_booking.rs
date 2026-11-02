@@ -599,6 +599,15 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn bookings_of_coach_starting_between(
+            &self,
+            _coach_id: AccountId,
+            _from: SystemTime,
+            _until: SystemTime,
+        ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn bookings_of_lesson_menus_created_since(
             &self,
             _lesson_menu_ids: &std::collections::BTreeSet<domain::catalog::LessonMenuId>,
