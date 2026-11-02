@@ -4,13 +4,15 @@
 //! 判定する集約（[`CoachCalendar`]）。枠に結びつけられるレッスンメニュー（catalog）の判定は [`Slot::with_lesson_menu`] の 1 か所。生徒によるスロットの確保（glossary の booking。[`Booking`]）。
 //! 体験予約も予約の 1 つ（`is_trial`）。予約の状態が変わった記録（確定・キャンセル）は [`BookingStatusChange`]。予約は予約した時点の枠のレッスンメニューの写し（[`BookingLessonMenu`]）を持つ。キャンセルで回数を消費するかの判定（キャンセル規定）と、
 //! キャンセルする前の見込み（[`CancellationPreview`]）は [`CancellationPolicy`] の 1 か所だけに置く（docs/adr/0002 Q2）。スポーツごとの予約枠の需給
-//! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧の期間の規則は [`BookingPeriod`]。本部が見るレッスンメニューごとの直近の予約の数の数え方は
+//! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧（開始の日付で・キャンセルした日付で）の期間の規則は [`BookingPeriod`]。キャンセルした人は
+//! [`BookingCanceller`]（[`Booking::cancelled_by`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
 //! [`RecentLessonMenuBookings`] の 1 か所。
 //! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
 //! [`CoachAcceptanceChange`]。不変条件の違反は
 //! [`SchedulingError`]。
 
 mod booking;
+mod booking_canceller;
 mod booking_id;
 mod booking_lesson_menu;
 mod booking_period;
@@ -34,6 +36,7 @@ mod slot_supply;
 mod slot_supply_status;
 
 pub use booking::Booking;
+pub use booking_canceller::BookingCanceller;
 pub use booking_id::BookingId;
 pub use booking_lesson_menu::BookingLessonMenu;
 pub use booking_period::BookingPeriod;

@@ -2,6 +2,8 @@
 //! 生徒の表示名（`accounts.display_name`）を書き換える。profile のコーチの自己紹介文の保存先（[`CoachProfileRepository`]）も
 //! 兼ね、当面は identity の表の `coaches.bio` を読み書きする（表を分けるのは後の段。docs/adr/0009-subdomain-types.md）。
 
+use std::collections::BTreeMap;
+
 use application::{
     Unavailable,
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
@@ -214,6 +216,23 @@ impl CoachProfileRepository for PgAccountRepository {
             return Ok(None);
         }
         Ok(Some(bio))
+    }
+
+    async fn list_coach_bios(&self) -> Result<BTreeMap<AccountId, CoachBio>, Unavailable> {
+        // coaches に行があるのはコーチのアカウントだけ（coaches_account_fkey）
+        let rows: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT coach_id, bio FROM identity.coaches")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(Unavailable::new)?;
+        rows.into_iter()
+            .map(|(coach_id, bio)| {
+                Ok((
+                    account_id_uuid::from_uuid(coach_id),
+                    CoachBio::new(bio).map_err(Unavailable::new)?,
+                ))
+            })
+            .collect()
     }
 }
 

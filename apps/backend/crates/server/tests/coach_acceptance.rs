@@ -150,7 +150,12 @@ async fn suspended_coach_is_hidden_from_students_and_takes_no_new_booking_until_
     let (_, coaches) = send(&router, "GET", "/coaches", &headquarters, None).await;
     assert_eq!(
         coaches["coaches"],
-        json!([{ "coach_id": coach_id, "display_name": "テスト", "acceptance_status": "suspended" }])
+        json!([{
+            "coach_id": coach_id,
+            "display_name": "テスト",
+            "acceptance_status": "suspended",
+            "recent_lesson_count": 0
+        }])
     );
     let (_, slots) = send(&router, "GET", "/slots?sport=tennis", &other_student, None).await;
     assert!(ids(&slots, "items", "slot_id").is_empty(), "{slots}");
