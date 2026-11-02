@@ -658,6 +658,35 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/students/{student_id}/announcements",
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 3),
+          title: "年末年始の営業について",
+          sent_at: at(-12),
+          is_read: false,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 1),
+          title: "メンテナンスのお知らせ",
+          sent_at: at(-24 * 4),
+          is_read: true,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 4),
+          title: "テニスの新しいコーチのご紹介",
+          sent_at: at(-24 * 5),
+          is_read: false,
+          is_withdrawn: true,
+        },
+      ],
+    } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    method: "GET",
     path: "/bookings",
     body: {
       from: "2026-10-26",
@@ -731,5 +760,47 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["PendingVideoReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/video-reviews/returned",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      reviews: [
+        {
+          video_id: id("5555", 31),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-20.5),
+          returned_at: at(-2),
+          lead_time_hours: 18,
+        },
+        {
+          video_id: id("5555", 32),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-24 * 5 - 3.25),
+          returned_at: at(-24 * 2),
+          lead_time_hours: 75,
+        },
+        {
+          video_id: id("5555", 33),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-24 * 6 - 6),
+          returned_at: at(-24 * 6 + 0.75),
+          lead_time_hours: 6,
+        },
+      ],
+    } satisfies Schemas["ReturnedVideoReviewList"],
   },
 ];

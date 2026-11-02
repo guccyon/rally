@@ -93,15 +93,19 @@ export interface paths {
          *       予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 任意の `status`（`BookingStatus` の値）で、その状態の予約だけに絞れる（確定待ちのまま残っている予約や、キャンセルされた
          *       予約だけを拾う）。`status=pending&status=cancelled` のように繰り返して付ければ、どれかの状態の予約（同じ値を重ねても同じ）。
-         *       期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
+         *       期間・`coach_id`・`student_id` と組み合わせられ、期間の規則と並べ方は変わらない。`BookingStatus` にない値（空文字列・
          *       `pending,cancelled` のようなカンマ区切りを含む）は 422 `validation_failed`
          *     - 任意の `trial`（`true` / `false`）で、体験予約か（各予約の `is_trial`）で絞れる。`true` なら体験予約だけ、`false` なら
          *       体験予約でない予約だけ（本部が体験予約がどれだけ入っているかを拾う）。省けば今までどおり体験予約かを問わない。
-         *       状態を問わないので、キャンセルされた体験予約も `true` で出る。期間・`coach_id`・`status` と組み合わせられ、期間の規則と
+         *       状態を問わないので、キャンセルされた体験予約も `true` で出る。期間・`coach_id`・`student_id`・`status` と組み合わせられ、期間の規則と
          *       並べ方は変わらない。`true` / `false` でない値（空文字列・`1`・`TRUE` を含む）は 422 `validation_failed`
          *     - 任意の `coach_id` で、そのコーチの枠への予約だけに絞れる（コーチから問い合わせを受けたときに、そのコーチの予約だけを見る）。
          *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間に予約がないコーチは、404 にせず `bookings` が空の配列
+         *     - 任意の `student_id` で、その生徒が予約した予約だけに絞れる（生徒から問い合わせを受けたときに、その生徒の予約だけを期間で
+         *       見る）。期間・`coach_id`・`status`・`trial` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての
+         *       生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・期間に予約がない生徒は、404 にせず
+         *       `bookings` が空の配列
          *     - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
          *       キャンセル済みの予約より上）、それも同じなら `booking_id` の順
          *     - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
@@ -266,9 +270,16 @@ export interface paths {
          *
          *     - 並べ方: 表示名の Unicode のコードポイントの順（言語ごとの照合はしない）。同じ表示名は `coach_id` の順
          *     - 絞り込み（任意）: `acceptance_status` を付ければその受付の状態（受付中 `accepting` / 停止中 `suspended`）のコーチだけ、
-         *       `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる）。両方付ければ両方を
-         *       満たすもの。付けなければ今までどおりすべてのコーチ。絞っても並べ方は変わらない
-         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でないときは 422 `validation_failed`
+         *       `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる）
+         *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含むコーチだけを返す。一致のしかたは `listStudents` の
+         *       `q` と同じ（実装は backend の domain `DisplayNameQuery` の 1 か所）: `q` の前後の空白（全角の空白を含む）は除いて比べ、
+         *       途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなと
+         *       カタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。`q` を付けない・空・
+         *       空白だけのときは絞り込まない。表示名以外では探さない
+         *     - `q`・`acceptance_status`・`sport` は組み合わせられ、付けたものをすべて満たすコーチだけを返す。どれも付けなければ今までどおり
+         *       すべてのコーチ。絞っても並べ方は変わらない
+         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でない・`q` が前後の空白を除いて
+         *       50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422 `validation_failed`
          *     - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
          *     - `recent_lesson_count`: 照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスン（glossary の
          *       lesson_completion）の数。同期レッスン（通話）と非同期レッスン（動画添削）の合計で、数え方は `getCoachOverview` の
@@ -3180,6 +3191,11 @@ export interface operations {
                  */
                 coach_id?: string;
                 /**
+                 * @description あればこの生徒が予約した予約だけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+                 *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                student_id?: string;
+                /**
                  * @description あればこの状態の予約だけに絞る。繰り返して付ければ（`status=pending&status=cancelled`）どれかの状態の予約。
                  *     省けば状態を問わない。`BookingStatus` にない値は 422 `validation_failed`
                  */
@@ -3314,6 +3330,8 @@ export interface operations {
     listCoaches: {
         parameters: {
             query?: {
+                /** @description 表示名の検索語。表示名に部分一致するコーチだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
+                q?: string;
                 /** @description 受付の状態（付ければその状態のコーチだけ） */
                 acceptance_status?: components["schemas"]["CoachAcceptanceStatus"];
                 /** @description スポーツ（付ければそのスポーツを提供するコーチだけ） */
