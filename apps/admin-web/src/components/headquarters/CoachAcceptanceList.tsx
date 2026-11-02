@@ -47,6 +47,10 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>): stri
   return response.code === "validation_failed" ? `${response.message}${QUERY_TOO_LONG}` : response.message;
 }
 
+/** 「直近 30 日のレッスン」の数え方（契約の `listCoaches` の `recent_lesson_count` の説明を短くしたもの）。 */
+const RECENT_LESSON_COUNT_NOTE =
+  "直近 30 日のレッスンは、今日までの 30 日に完了した通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
+
 /** 絞り込みの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
   Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[],
@@ -54,7 +58,8 @@ export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
 /**
- * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
+ * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態と直近 30 日のレッスンの数
+ * （`recent_lesson_count`。数え方は契約が正本で、画面は返った値を「n 回」で出すだけ。0 も「0 回」）を出す。
  * 受付中の行は「受付を止める」（suspendCoach。確かめるときに書いた理由（任意）を付ける）、停止中の行は「再開する」
  * （resumeCoach。理由は付けない）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
@@ -244,37 +249,42 @@ export function CoachAcceptanceList({
         <p className="text-sm">{filtered ? "条件に合うコーチはいません" : "コーチがまだいません"}</p>
       )}
       {state.kind === "loaded" && state.coaches.length > 0 && (
-        <table aria-label="コーチの一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">表示名</th>
-              <th className="py-1">受付</th>
-              <th className="py-1">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.coaches.map((coach) => (
-              <tr key={coach.coach_id} className="border-t align-top">
-                <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
-                    {coach.display_name}
-                  </Link>
-                </td>
-                <td className="py-1">
-                  <CoachAcceptanceBadge status={coach.acceptance_status} />
-                </td>
-                <td className="py-1">
-                  <CoachAcceptanceAction
-                    // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
-                    key={coach.acceptance_status}
-                    status={coach.acceptance_status}
-                    onConfirm={(reason) => changeAcceptance(coach, reason)}
-                  />
-                </td>
+        <>
+          <p className="text-sm">{RECENT_LESSON_COUNT_NOTE}</p>
+          <table aria-label="コーチの一覧" className="w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th className="py-1">表示名</th>
+                <th className="py-1">受付</th>
+                <th className="py-1">直近 30 日のレッスン</th>
+                <th className="py-1">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {state.coaches.map((coach) => (
+                <tr key={coach.coach_id} className="border-t align-top">
+                  <td className="py-1">
+                    <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+                      {coach.display_name}
+                    </Link>
+                  </td>
+                  <td className="py-1">
+                    <CoachAcceptanceBadge status={coach.acceptance_status} />
+                  </td>
+                  <td className="py-1">{coach.recent_lesson_count} 回</td>
+                  <td className="py-1">
+                    <CoachAcceptanceAction
+                      // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
+                      key={coach.acceptance_status}
+                      status={coach.acceptance_status}
+                      onConfirm={(reason) => changeAcceptance(coach, reason)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
