@@ -23,7 +23,7 @@ export function BookingDetailHome({ token, bookingId }: { token: string; booking
   return (
     <>
       <p className="mb-4 text-sm">
-        <Link href="/headquarters/bookings" className="text-blue-600 underline">
+        <Link href="/headquarters/bookings" className="text-primary underline">
           予約の一覧へ戻る
         </Link>
       </p>

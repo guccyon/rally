@@ -143,7 +143,7 @@ export function CoachAcceptanceList({
         <label className="block">
           受付の状態
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.acceptanceStatus}
             onChange={(event) =>
               void changeFilter({
@@ -163,7 +163,7 @@ export function CoachAcceptanceList({
         <label className="block">
           スポーツ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
               void changeFilter({
@@ -182,7 +182,7 @@ export function CoachAcceptanceList({
         </label>
       </div>
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
         <p className="text-sm">{filtered ? "条件に合うコーチはいません" : "コーチがまだいません"}</p>
@@ -200,7 +200,7 @@ export function CoachAcceptanceList({
             {state.coaches.map((coach) => (
               <tr key={coach.coach_id} className="border-t align-top">
                 <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-blue-600 underline">
+                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
                     {coach.display_name}
                   </Link>
                 </td>
