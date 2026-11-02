@@ -7,7 +7,9 @@ import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
 import { Section } from "@/components/Section";
 
+import { CoachAcceptanceHistory } from "./CoachAcceptanceHistory";
 import { CoachOverview } from "./CoachOverview";
+import { CoachRelatedLinks } from "./CoachRelatedLinks";
 
 /** コーチを指すクエリの名前（`?coach_id=`）。 */
 export const COACH_OVERVIEW_QUERY = "coach_id";
@@ -17,22 +19,32 @@ export function coachOverviewPath(coachId: string): string {
   return `/headquarters/coach-overview?${new URLSearchParams({ [COACH_OVERVIEW_QUERY]: coachId })}`;
 }
 
-/** 本部の画面: コーチの受付の一覧の行から開く、コーチ 1 人の様子。 */
+/**
+ * 本部の画面: コーチの受付の一覧の行から開く、コーチ 1 人の様子と受付の記録。
+ * 上にそのコーチで開く画面（評価・低い評価・レッスンメニュー・予約）へのリンクの並びを置く。
+ * コーチの ID がなければリンクの並びと受付の記録の欄は出さない（様子の欄が「見つかりません」を出す）。
+ */
 export function CoachOverviewHome({ token, coachId }: { token: string; coachId: string | undefined }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
     <>
       <p className="mb-4 space-x-4 text-sm">
-        <Link href="/headquarters/coaches" className="text-blue-600 underline">
+        <Link href="/headquarters/coaches" className="text-primary underline">
           コーチの一覧へ戻る
         </Link>
-        <Link href="/headquarters" className="text-blue-600 underline">
+        <Link href="/headquarters" className="text-primary underline">
           本部の画面へ戻る
         </Link>
       </p>
+      {coachId !== undefined && <CoachRelatedLinks coachId={coachId} />}
       <Section title="コーチの様子">
         <CoachOverview api={api} coachId={coachId} />
       </Section>
+      {coachId !== undefined && (
+        <Section title="受付の記録">
+          <CoachAcceptanceHistory api={api} coachId={coachId} />
+        </Section>
+      )}
     </>
   );
 }

@@ -1,6 +1,7 @@
 //! 本部が返却を待っている動画添削の一覧を見る（admin-web の `listPendingVideoReviews`）ことを、保存先を Postgres にした
 //! 組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の動画のうち添削を返していない
-//! ものをコーチを問わず送付の古い順に読み、経過時間とコーチ・生徒の表示名を添えること、`sport`・`min_elapsed_hours` で絞れること、
+//! ものをコーチを問わず送付の古い順に読み、経過時間とコーチ・生徒の表示名を添えること、`sport`・`min_elapsed_hours`・`coach_id`
+//! で絞れること、
 //! 本部以外は 403 になることを確かめる。
 //! 契約の形・クエリの検証の細かい検査は interface の `tests/pending_video_reviews.rs`、返却待ちの動画の読み取りは
 //! infra の `tests/pg_video_repository.rs`。
@@ -175,6 +176,40 @@ async fn headquarters_reads_pending_video_reviews_from_postgres(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["videos"].as_array().unwrap().len(), 1);
     assert_eq!(body["videos"][0]["video_id"], video_id(&recent));
+
+    // コーチで絞ると、そのコーチ宛ての返却待ちだけ（返却した動画は出ない）。ほかの絞り込みと組み合わせられる
+    let by_coach = |coach: AccountId, rest: &str| {
+        get(
+            &format!(
+                "/video-reviews/pending?coach_id={}{rest}",
+                account_id_uuid::format(coach)
+            ),
+            &hq_token,
+        )
+    };
+    let (status, body) = send(&router, by_coach(tanaka, "")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["videos"].as_array().unwrap().len(), 1);
+    assert_eq!(body["videos"][0]["video_id"], video_id(&recent));
+    assert_eq!(body["videos"][0]["coach_display_name"], "tanaka");
+    let (status, body) = send(&router, by_coach(tanaka, "&min_elapsed_hours=48")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["videos"], json!([]));
+    let (status, body) = send(&router, by_coach(ito, "&sport=golf&min_elapsed_hours=48")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["videos"].as_array().unwrap().len(), 1);
+    assert_eq!(body["videos"][0]["video_id"], video_id(&old_golf));
+    // 生徒の ID は 404 にせず空、UUID でなければ 422
+    let (status, body) = send(&router, by_coach(taro, "")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["videos"], json!([]));
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/pending?coach_id=tanaka", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 
     for token in [&tanaka_token, &taro_token] {
         let (status, body) = send(&router, get("/video-reviews/pending", token)).await;

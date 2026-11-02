@@ -10,6 +10,7 @@ const COACH_ID_2 = "22222222-2222-4222-8222-222222222223";
 const STUDENT_ID = "11111111-1111-4111-8111-111111111111";
 const STUDENT_ID_2 = "11111111-1111-4111-8111-111111111112";
 const THREAD_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const HEADQUARTERS_ID = "44444444-4444-4444-8444-444444444444";
 
 /** NOW から hours 時間後（負なら前）の時刻。 */
 function at(hours: number): string {
@@ -330,7 +331,51 @@ const NOTIFICATIONS: Schemas["Notification"][] = [
 ];
 
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
-export type Fixture = { method: "GET" | "POST" | "PUT"; path: string; status?: number; body: unknown };
+/** `query` があれば、そのクエリの値がすべて一致するときだけ使う（同じパスの `query` のない応答より前に置く）。 */
+// ライブレッスンの記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
+// 既定の期間（今日までの 7 日）の応答。高橋 コーチで絞ったときは 0 件を返す（0 件の表示を撮る）。
+const LIVE_SESSION_RECORDS: Schemas["LiveLessonSessionRecord"][] = [
+  {
+    session_id: id("5555", 11),
+    booking_id: id("6666", 11),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID_2,
+    student_display_name: "佐藤 一郎",
+    started_at: at(-0.5),
+    ended_at: null,
+    duration_minutes: null,
+  },
+  {
+    session_id: id("5555", 12),
+    booking_id: id("6666", 12),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 - 2),
+    ended_at: at(-24 - 1),
+    duration_minutes: 60,
+  },
+  {
+    session_id: id("5555", 13),
+    booking_id: id("6666", 13),
+    coach_id: id("2222", 3),
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 * 4 - 3),
+    ended_at: at(-24 * 4 - 3 + 0.75),
+    duration_minutes: 45,
+  },
+];
+
+export type Fixture = {
+  method: "GET" | "POST" | "PUT";
+  path: string;
+  query?: Record<string, string>;
+  status?: number;
+  body: unknown;
+};
 
 export const FIXTURES: Fixture[] = [
   {
@@ -408,8 +453,34 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/live-lesson-sessions",
+    query: { coach_id: COACH_ID_2 },
+    body: { from: "2026-10-20", to: "2026-10-26", sessions: [] } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: LIVE_SESSION_RECORDS,
+    } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
+    method: "GET",
     path: "/live-lesson-sessions/overdue",
     body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/acceptance-changes",
+    body: {
+      coach_id: COACH_ID,
+      changes: [
+        { acceptance_status: "accepting", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
+        { acceptance_status: "suspended", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+      ],
+    } satisfies Schemas["CoachAcceptanceChangeList"],
   },
   {
     method: "GET",
@@ -420,6 +491,9 @@ export const FIXTURES: Fixture[] = [
       acceptance_status: "accepting",
       review_count: 3,
       average_rating: 4.67,
+      // 低い評価の一覧（LOW_REVIEWS）の鈴木 コーチの 2 件。どちらも対応済みの印はない。
+      low_rated_review_count: 2,
+      unhandled_low_rated_review_count: 2,
       current_month: {
         month: "2026-10",
         live_lesson_count: 12,
@@ -439,11 +513,35 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/coaches/incomplete-profiles",
+    body: {
+      // 登録の古い順。鈴木 コーチは /me で自己紹介を書いているので載せない。更新の時刻は今は常に null だが、
+      // 記録するようになったときの表示も撮るため、記録のある行を 1 つ混ぜる。
+      coaches: [
+        {
+          coach_id: COACH_ID_2,
+          display_name: "高橋 コーチ",
+          missing_fields: ["bio"],
+          updated_at: null,
+          registered_at: at(-24 * 60),
+        },
+        {
+          coach_id: id("2222", 3),
+          display_name: "伊藤 コーチ",
+          missing_fields: ["bio"],
+          updated_at: at(-24 * 3),
+          registered_at: at(-24 * 30),
+        },
+      ],
+    } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    method: "GET",
     path: "/coaches",
     body: {
       coaches: [
-        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting" },
-        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended" },
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+        { coach_id: COACH_ID_2, display_name: "高橋 コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
       ],
     } satisfies Schemas["CoachList"],
   },
@@ -468,8 +566,8 @@ export const FIXTURES: Fixture[] = [
     path: "/lesson-menus",
     body: {
       lesson_menus: [
-        { ...MENU_FORE, coach_display_name: "鈴木 コーチ" },
-        { ...MENU_SERVE, coach_display_name: "鈴木 コーチ" },
+        { ...MENU_FORE, coach_display_name: "鈴木 コーチ", recent_booking_count: 12 },
+        { ...MENU_SERVE, coach_display_name: "鈴木 コーチ", recent_booking_count: 3 },
         {
           ...MENU_FORE,
           lesson_menu_id: id("aaaa", 9),
@@ -478,6 +576,7 @@ export const FIXTURES: Fixture[] = [
           name: "スイングの見直し",
           duration_minutes: 90,
           coach_display_name: "高橋 コーチ",
+          recent_booking_count: 7,
         },
         {
           ...MENU_FORE,
@@ -489,6 +588,7 @@ export const FIXTURES: Fixture[] = [
           is_published: false,
           coach_display_name: "高橋 コーチ",
           headquarters_unpublish: { unpublished_at: at(-3), reason: "料金の表記が誤っている" },
+          recent_booking_count: 0,
         },
       ],
     } satisfies Schemas["CoachLessonMenuList"],
@@ -558,12 +658,93 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/students/{student_id}/announcements",
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 3),
+          title: "年末年始の営業について",
+          sent_at: at(-12),
+          is_read: false,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 1),
+          title: "メンテナンスのお知らせ",
+          sent_at: at(-24 * 4),
+          is_read: true,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 4),
+          title: "テニスの新しいコーチのご紹介",
+          sent_at: at(-24 * 5),
+          is_read: false,
+          is_withdrawn: true,
+        },
+      ],
+    } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    method: "GET",
     path: "/bookings",
     body: {
       from: "2026-10-26",
       to: "2026-11-01",
       bookings: HQ_BOOKINGS,
     } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
+    // mockApi は先に一致した応答を返すので、`/bookings/{booking_id}` より前に置く（でないと cancelled を ID として拾う）。
+    method: "GET",
+    path: "/bookings/cancelled",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 21),
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 2),
+          cancelled_at: at(-3),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 22),
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          starts_at: at(-24 * 1 + 6),
+          cancelled_at: at(-24 * 2 - 4.5),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 23),
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(-24 * 4),
+          cancelled_at: at(-24 * 5 - 1),
+          cancelled_by: null,
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
+    // 予約の詳細は、一覧のキャンセル済みの予約（確定待ちのままキャンセル）を返す。
+    method: "GET",
+    path: "/bookings/{booking_id}",
+    body: {
+      booking: HQ_BOOKINGS[3]!.booking,
+      slot: { ...BOOKINGS[1]!.slot, starts_at: HQ_BOOKINGS[3]!.booking.starts_at, ends_at: at(49), status: "open" },
+      status_changes: [{ status: "cancelled", changed_at: at(-2) }],
+      coach_display_name: HQ_BOOKINGS[3]!.coach_display_name,
+      student_display_name: HQ_BOOKINGS[3]!.student_display_name,
+    } satisfies Schemas["HeadquartersBookingDetail"],
   },
   {
     method: "GET",
@@ -581,7 +762,7 @@ export const FIXTURES: Fixture[] = [
           withdrawal: null,
         },
         {
-          announcement_id: id("8888", 3),
+          announcement_id: id("8888", 5),
           sender_id: "99999999-9999-4999-8999-999999999999",
           title: "テニスのコートの案内（誤り）",
           body: "11月からコートの予約はアプリの「予約」から行えます。",
@@ -602,5 +783,86 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["AnnouncementList"],
+  },
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 21),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-101.5),
+          elapsed_hours: 101,
+        },
+        {
+          video_id: id("5555", 22),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-52.25),
+          elapsed_hours: 52,
+        },
+        {
+          video_id: id("5555", 23),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          student_display_name: "田中 美咲",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-5),
+          elapsed_hours: 5,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/video-reviews/returned",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      reviews: [
+        {
+          video_id: id("5555", 31),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-20.5),
+          returned_at: at(-2),
+          lead_time_hours: 18,
+        },
+        {
+          video_id: id("5555", 32),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-24 * 5 - 3.25),
+          returned_at: at(-24 * 2),
+          lead_time_hours: 75,
+        },
+        {
+          video_id: id("5555", 33),
+          sport: "tennis",
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-24 * 6 - 6),
+          returned_at: at(-24 * 6 + 0.75),
+          lead_time_hours: 6,
+        },
+      ],
+    } satisfies Schemas["ReturnedVideoReviewList"],
   },
 ];

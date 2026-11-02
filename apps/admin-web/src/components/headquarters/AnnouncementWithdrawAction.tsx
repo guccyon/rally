@@ -30,7 +30,7 @@ export function AnnouncementWithdrawAction({ announcement, onWithdraw }: Props) 
       <button
         type="button"
         aria-label={`「${announcement.title}」を取り下げる`}
-        className="rounded border border-red-600 px-2 py-0.5 text-red-700"
+        className="rounded-pill border border-danger px-2 py-0.5 text-danger"
         onClick={() => setConfirming(true)}
       >
         取り下げる
@@ -47,7 +47,7 @@ export function AnnouncementWithdrawAction({ announcement, onWithdraw }: Props) 
         <button
           type="button"
           disabled={busy}
-          className="rounded bg-red-600 px-2 py-0.5 text-white disabled:opacity-50"
+          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
           onClick={() => void confirm()}
         >
           {busy ? "取り下げています…" : "取り下げを確定"}
@@ -55,7 +55,7 @@ export function AnnouncementWithdrawAction({ announcement, onWithdraw }: Props) 
         <button
           type="button"
           disabled={busy}
-          className="rounded border px-2 py-0.5 disabled:opacity-50"
+          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
           onClick={() => setConfirming(false)}
         >
           やめる

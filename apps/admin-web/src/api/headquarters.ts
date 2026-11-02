@@ -32,15 +32,32 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listCoachAcceptanceChanges: (coachId: string) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/acceptance-changes", {
+          params: { path: { coach_id: coachId } },
+        }),
+      ),
     getCoachOverview: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/overview", {
           params: { path: { coach_id: coachId } },
         }),
       ),
+    listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
     listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
+    listPendingVideoReviews: (filter: {
+      sport?: Schemas["Sport"];
+      min_elapsed_hours?: number;
+      coach_id?: string;
+    }) =>
+      call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
+    listReturnedVideoReviews: (filter: { from?: string; to?: string; coach_id?: string }) =>
+      call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
+    listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string }) =>
+      call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
     listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
@@ -64,8 +81,22 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listBookings: (period: { from?: string; to?: string }) =>
-      call(() => client.GET("/bookings", { params: { query: period } })),
+    listStudentAnnouncements: (studentId: string) =>
+      call(() =>
+        client.GET("/students/{student_id}/announcements", {
+          params: { path: { student_id: studentId } },
+        }),
+      ),
+    listBookings: (query: { from?: string; to?: string; coach_id?: string }) =>
+      call(() => client.GET("/bookings", { params: { query } })),
+    listCancelledBookings: (period: { from?: string; to?: string }) =>
+      call(() => client.GET("/bookings/cancelled", { params: { query: period } })),
+    getBooking: (bookingId: string) =>
+      call(() =>
+        client.GET("/bookings/{booking_id}", {
+          params: { path: { booking_id: bookingId } },
+        }),
+      ),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
     listAnnouncements: () => call(() => client.GET("/announcements")),
@@ -73,6 +104,28 @@ export function headquartersApi(client: ApiClient) {
       call(() =>
         client.POST("/announcements/{announcement_id}/withdraw", {
           params: { path: { announcement_id: announcementId } },
+        }),
+      ),
+    createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
+      call(() => client.POST("/announcement-drafts", { body })),
+    listAnnouncementDrafts: () => call(() => client.GET("/announcement-drafts")),
+    updateAnnouncementDraft: (announcementDraftId: string, body: Schemas["AnnouncementDraftRequest"]) =>
+      call(() =>
+        client.PUT("/announcement-drafts/{announcement_draft_id}", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
+          body,
+        }),
+      ),
+    deleteAnnouncementDraft: (announcementDraftId: string) =>
+      call(() =>
+        client.DELETE("/announcement-drafts/{announcement_draft_id}", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
+        }),
+      ),
+    sendAnnouncementDraft: (announcementDraftId: string) =>
+      call(() =>
+        client.POST("/announcement-drafts/{announcement_draft_id}/send", {
+          params: { path: { announcement_draft_id: announcementDraftId } },
         }),
       ),
   };

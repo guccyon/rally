@@ -8,13 +8,13 @@ import { headquartersApi } from "@/api/headquarters";
 
 import { Announcements } from "./Announcements";
 
-/** 本部の画面: 生徒にお知らせを送り、送ったお知らせを見る。 */
+/** 本部の画面: 生徒にお知らせを送り（下書きに残してあとで送ることもできる）、送ったお知らせを見る。 */
 export function AnnouncementsHome({ token }: { token: string }) {
   const api = useMemo(() => headquartersApi(createApiClient(token)), [token]);
   return (
     <>
       <p className="mb-4 text-sm">
-        <Link href="/headquarters" className="text-blue-600 underline">
+        <Link href="/headquarters" className="text-primary underline">
           本部の画面へ戻る
         </Link>
       </p>

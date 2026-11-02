@@ -22,18 +22,20 @@
 //!   `not_found`、有効な予約が入っている（`SlotHasActiveBookings`）は 409 `slot_has_active_booking`、始まった
 //!   （`SlotAlreadyStarted`）は 409 `slot_already_started`、すでに閉じた（`SlotNotOpen` の `closed`）は 409
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
-//! - 本部が見る予約の一覧（`listBookings`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
+//! - 本部が見る予約の一覧（`listBookings`）とキャンセルされた予約の一覧（`listCancelledBookings`。同じ `ListBookingsError`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
 //!   422 `validation_failed`、それ以外は一覧では起きないので 500
+//! - 本部が見る予約 1 件の詳細（`getBooking`）: ない予約は 404 `not_found`、保存先の障害は 500
 //! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
 //!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開
-//!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500
+//!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500（停止の理由が長すぎる
+//!   `CoachSuspensionReasonTooLong` は境界で理由を作るときに `From<SchedulingError>` で 422 にする）
 //! - 境界で値を作るとき（定員の検証など。`From<SchedulingError>`）は、どの変種も 422 `validation_failed`
 //!
 //! 403 に当たる失敗はない（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
 
 use application::scheduling::{
     CancelBookingError, ChangeCoachAcceptanceError, ConfirmBookingError, CreateBookingError,
-    ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
+    GetBookingError, ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -117,7 +119,8 @@ impl From<CreateBookingError> for ApiError {
             | SchedulingError::BookingPeriodEndsBeforeItStarts
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
-            | SchedulingError::CoachNotSuspended => Self::from(error),
+            | SchedulingError::CoachNotSuspended
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::from(error),
         }
     }
 }
@@ -161,7 +164,8 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -204,7 +208,8 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -248,7 +253,8 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachNotAcceptingBookings => Self::from(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::from(error),
         }
     }
 }
@@ -296,7 +302,17 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
+        }
+    }
+}
+
+impl From<GetBookingError> for ApiError {
+    fn from(error: GetBookingError) -> Self {
+        match error {
+            GetBookingError::NotFound => booking_not_found(),
+            GetBookingError::Unavailable(error) => Self::internal(error),
         }
     }
 }
@@ -335,7 +351,8 @@ impl From<ListBookingsError> for ApiError {
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -379,7 +396,8 @@ impl From<ChangeCoachAcceptanceError> for ApiError {
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
             | SchedulingError::BookingPeriodTooLong { .. }
-            | SchedulingError::CoachNotAcceptingBookings => Self::internal(error),
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -455,6 +473,9 @@ fn describe(error: &SchedulingError) -> String {
         SchedulingError::CoachNotSuspended => "コーチの受付は止めていない".to_string(),
         SchedulingError::CoachNotAcceptingBookings => {
             "このコーチは今、新しい予約を受け付けていない".to_string()
+        }
+        SchedulingError::CoachSuspensionReasonTooLong { max } => {
+            format!("受付を止める理由は {max} 文字まで")
         }
     }
 }
@@ -616,6 +637,10 @@ mod tests {
                 SchedulingError::CoachNotAcceptingBookings,
                 "このコーチは今、新しい予約を受け付けていない",
             ),
+            (
+                SchedulingError::CoachSuspensionReasonTooLong { max: 200 },
+                "受付を止める理由は 200 文字まで",
+            ),
         ];
         // 変種を足したらここで止まる（上の一覧にも足す）
         for (error, _) in &all {
@@ -647,7 +672,8 @@ mod tests {
                 | SchedulingError::BookingPeriodTooLong { .. }
                 | SchedulingError::CoachAlreadySuspended
                 | SchedulingError::CoachNotSuspended
-                | SchedulingError::CoachNotAcceptingBookings => {}
+                | SchedulingError::CoachNotAcceptingBookings
+                | SchedulingError::CoachSuspensionReasonTooLong { .. } => {}
             }
         }
         all

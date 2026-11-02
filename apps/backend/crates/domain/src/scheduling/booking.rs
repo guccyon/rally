@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    BookingId, BookingLessonMenu, BookingStatus, CancellationDecision, CancellationPolicy,
-    SchedulingError, Slot, SlotId,
+    BookingCanceller, BookingId, BookingLessonMenu, BookingStatus, BookingStatusChange,
+    CancellationDecision, CancellationPolicy, SchedulingError, Slot, SlotId,
 };
 use crate::{catalog::LessonMenu, identity::AccountId};
 
@@ -209,6 +209,13 @@ impl Booking {
         self.coach_id
     }
 
+    /// 一覧を絞るコーチの指定に当てはまるか。指定があればその ID が予約された枠のコーチのときだけ、なければどの予約も
+    /// 当てはまる。コーチでない ID・ない ID はどの予約にも当てはまらない（一覧は空になる）。本部が見る予約の一覧と
+    /// キャンセルされた予約の一覧が共に使う。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
     pub const fn is_trial(&self) -> bool {
         self.is_trial
     }
@@ -236,9 +243,36 @@ impl Booking {
         self.cancelled_at
     }
 
+    /// キャンセルした人。キャンセルしていなければ `None`。
+    ///
+    /// キャンセルできるのは予約した生徒だけ（[`Self::cancel`]）なので、キャンセル済みの予約は
+    /// [`BookingCanceller::Student`]。保存先はキャンセルした人を持たず、ここが状態から決める唯一の場所（コーチ・本部が
+    /// キャンセルできるようにするときは、キャンセルした人を保存して読み戻す形に変える）。
+    pub const fn cancelled_by(&self) -> Option<BookingCanceller> {
+        match self.status {
+            BookingStatus::Cancelled => Some(BookingCanceller::Student),
+            BookingStatus::Pending | BookingStatus::Confirmed => None,
+        }
+    }
+
     /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
     pub const fn lesson_menu(&self) -> Option<&BookingLessonMenu> {
         self.lesson_menu.as_ref()
+    }
+
+    /// 状態が変わった記録（確定・キャンセル）を時刻の古い順に返す（同じ時刻は確定、キャンセルの順）。予約が持つ確定・
+    /// キャンセルの時刻から組み立て、時刻のない変化（確定せずにキャンセルした予約の確定など）は含めない。作ったばかりの
+    /// 予約は空。作った時刻は [`Self::created_at`]。
+    pub fn status_changes(&self) -> Vec<BookingStatusChange> {
+        let mut changes: Vec<BookingStatusChange> = [
+            (BookingStatus::Confirmed, self.confirmed_at),
+            (BookingStatus::Cancelled, self.cancelled_at),
+        ]
+        .into_iter()
+        .filter_map(|(status, at)| at.map(|at| BookingStatusChange::new(status, at)))
+        .collect();
+        changes.sort_by_key(BookingStatusChange::changed_at);
+        changes
     }
 }
 
@@ -343,6 +377,36 @@ mod tests {
     }
 
     #[test]
+    fn only_a_cancelled_booking_has_the_student_as_its_canceller() {
+        let mut slot = slot(100, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert_eq!(booking.cancelled_by(), None, "作ったばかり");
+        booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
+        assert_eq!(booking.cancelled_by(), None, "確定済み");
+
+        booking.cancel(STUDENT, &mut slot, at(2)).unwrap();
+        assert_eq!(booking.cancelled_by(), Some(BookingCanceller::Student));
+
+        // 失敗したキャンセルは変えない
+        let mut pending = reserve(2, OTHER_STUDENT, false, &mut slot, &[booking.clone()]).unwrap();
+        assert!(pending.cancel(STUDENT, &mut slot, at(3)).is_err());
+        assert_eq!(pending.cancelled_by(), None);
+
+        // 保存先から読み戻したキャンセル済みの予約も同じ
+        let restored = Booking::restore(
+            booking.id(),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            NOW,
+            None,
+            Some(at(2)),
+        );
+        assert_eq!(restored.cancelled_by(), Some(BookingCanceller::Student));
+    }
+
+    #[test]
     fn cancel_failures_change_nothing() {
         let mut open = slot(10, SlotStatus::Open);
         let pending = reserve(1, STUDENT, false, &mut open, &[]).unwrap();
@@ -404,6 +468,20 @@ mod tests {
         let mut slot = slot(10, SlotStatus::Open);
         let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
         assert!(!booking.is_trial());
+    }
+
+    #[test]
+    fn trial_stays_a_trial_after_it_is_confirmed_or_cancelled() {
+        for cancel in [false, true] {
+            let mut slot = slot(10, SlotStatus::Open);
+            let mut booking = reserve(1, STUDENT, true, &mut slot, &[]).unwrap();
+            if cancel {
+                booking.cancel(STUDENT, &mut slot, at(1)).unwrap();
+            } else {
+                booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
+            }
+            assert!(booking.is_trial(), "状態が変わっても体験予約のまま");
+        }
     }
 
     #[test]
@@ -630,6 +708,84 @@ mod tests {
     }
 
     #[test]
+    fn status_changes_list_confirmation_and_cancellation_oldest_first() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.status_changes().is_empty(),
+            "作っただけでは変化はない"
+        );
+
+        booking.confirm(STUDENT, &mut slot, at(2)).unwrap();
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Confirmed, at(2))]
+        );
+
+        booking.cancel(STUDENT, &mut slot, at(5)).unwrap();
+        let changes = booking.status_changes();
+        assert_eq!(
+            changes
+                .iter()
+                .map(|change| (change.status(), change.changed_at()))
+                .collect::<Vec<_>>(),
+            [
+                (BookingStatus::Confirmed, at(2)),
+                (BookingStatus::Cancelled, at(5)),
+            ]
+        );
+    }
+
+    #[test]
+    fn status_changes_of_a_booking_cancelled_before_confirmation_have_only_the_cancellation() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        booking.cancel(STUDENT, &mut slot, at(3)).unwrap();
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Cancelled, at(3))]
+        );
+    }
+
+    #[test]
+    fn status_changes_of_a_restored_booking_use_only_the_recorded_times() {
+        let slot = slot(10, SlotStatus::Open);
+        // 確定の時刻の記録がないままキャンセル済み（記録のない変化は出さない）
+        let booking = Booking::restore(
+            BookingId::from_u128(1),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            at(0),
+            None,
+            Some(at(4)),
+        );
+        assert_eq!(
+            booking.status_changes(),
+            [BookingStatusChange::new(BookingStatus::Cancelled, at(4))]
+        );
+        // 記録の時刻が前後していても古い順に並べる
+        let booking = Booking::restore(
+            BookingId::from_u128(2),
+            STUDENT,
+            &slot,
+            false,
+            BookingStatus::Cancelled,
+            at(0),
+            Some(at(6)),
+            Some(at(4)),
+        );
+        assert_eq!(
+            booking.status_changes(),
+            [
+                BookingStatusChange::new(BookingStatus::Cancelled, at(4)),
+                BookingStatusChange::new(BookingStatus::Confirmed, at(6)),
+            ]
+        );
+    }
+
+    #[test]
     fn restore_round_trips_a_confirmed_booking() {
         let mut slot = slot(10, SlotStatus::Open);
         let mut booking = reserve(1, STUDENT, true, &mut slot, &[]).unwrap();
@@ -749,6 +905,22 @@ mod tests {
             .unwrap()
             .with_lesson_menu(&other, Some(&lesson_menu(50, COACH, true)));
         assert_eq!(booking.lesson_menu(), None);
+    }
+
+    #[test]
+    fn matches_coach_only_the_coach_of_the_slot_or_any_without_a_coach() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(
+            booking.matches_coach(None),
+            "指定がなければどのコーチの予約も"
+        );
+        assert!(booking.matches_coach(Some(COACH)));
+        // 別のコーチ・予約した生徒（コーチでない ID）には当てはまらない
+        assert!(!booking.matches_coach(Some(AccountId::from_u128(99))));
+        assert!(!booking.matches_coach(Some(STUDENT)));
+        // キャンセルしても枠のコーチは変わらない
+        assert!(cancelled(booking).matches_coach(Some(COACH)));
     }
 
     #[test]

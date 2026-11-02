@@ -78,7 +78,7 @@ export function OverdueLiveSessionList({
       <label className="block">
         開始からの経過
         <select
-          className="mt-1 block rounded border px-2 py-1"
+          className="mt-1 block rounded-md border px-2 py-1"
           value={hours}
           onChange={(event) => void changeHours(Number(event.target.value))}
         >
@@ -89,10 +89,10 @@ export function OverdueLiveSessionList({
           ))}
         </select>
       </label>
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-text-muted">
           開始から {state.list.older_than_hours} 時間以上たって、まだ終わっていない通話です。経過は読み込んだ時点のものです。
         </p>
       )}
