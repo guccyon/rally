@@ -105,6 +105,16 @@ pub trait BookingRepository: Send + Sync {
         coach_id: AccountId,
     ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
 
+    /// `coach_id` のコーチのスロットのうち開始が `from`（含む）から `until`（含まない）までのものへの予約（状態を問わない）と、
+    /// それぞれの予約したスロット。並びは決めない。読むだけで何も変えない。コーチの自分の予約の一覧を期間で絞るとき
+    /// （[`super::ListCoachBookings`]）に読む。
+    fn bookings_of_coach_starting_between(
+        &self,
+        coach_id: AccountId,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> impl Future<Output = Result<Vec<(Booking, Slot)>, Unavailable>> + Send;
+
     /// 予約した時点のレッスンメニューの写しが `lesson_menu_ids` のどれかで、作った時刻が `created_since`（含む）以後の予約
     /// （状態を問わない）。並びは決めない。読むだけで何も変えない。本部が見るメニューごとの直近の予約の数
     /// （[`super::SchedulingLessonMenuRecentBookingCountLookup`]）が読み、数えるかの判定は domain の

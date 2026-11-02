@@ -279,6 +279,7 @@ fn app() -> App {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock.clone(),
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),

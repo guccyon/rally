@@ -370,6 +370,24 @@ impl BookingRepository for PgBookingRepository {
         rows.into_iter().map(booking_and_slot_from_row).collect()
     }
 
+    async fn bookings_of_coach_starting_between(
+        &self,
+        coach_id: AccountId,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        let rows: Vec<BookingRow> = sqlx::query_as(select_bookings!(
+            "WHERE s.coach_id = $1 AND s.starts_at >= $2 AND s.starts_at < $3"
+        ))
+        .bind(account_id_uuid::to_uuid(coach_id))
+        .bind(timestamp(from))
+        .bind(timestamp(until))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        rows.into_iter().map(booking_and_slot_from_row).collect()
+    }
+
     async fn bookings_of_lesson_menus_created_since(
         &self,
         lesson_menu_ids: &BTreeSet<LessonMenuId>,

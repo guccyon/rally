@@ -142,6 +142,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),

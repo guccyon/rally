@@ -7,7 +7,7 @@ info:
     （ADR 0002 Q3）。コーチ側の最小操作（予約枠の登録・添削の返却・通話参加）もここに載せる。
     Gen1 の P1 で実装済みの操作だけを書き、残りは実装する段で足す。通話への参加（`startLiveLessonSession` /
     `endLiveLessonSession`）は student-app と同じ操作・同じ形で、予約の参加者であるコーチが呼ぶ。参加する予約は
-    コーチの自分の予約の一覧（`listMyCoachBookings`）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
+    コーチの自分の予約の一覧（`listMyCoachBookings`。枠の開始の日付で絞れる）から選ぶ。添削を返す動画は、コーチに届いた動画の一覧
     （`listMyCoachVideos`）から選ぶ。公開した枠は、コーチの自分の枠の一覧（`listMyCoachSlots`。枠の開始の日付で絞れる）で見て、予約の入っていない
     まだ始まっていない枠は取り下げられる（`withdrawMySlot`）。
     生徒と担当コーチのチャット（`listMessageThreads` / `listMessages` / `sendMessage` / `markMessageThreadRead`）も
@@ -1062,13 +1062,36 @@ paths:
           予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
         - 各項目の予約には、予約した時点のレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を
           載せる。生徒が予約したときに枠に結びついていた公開中のメニューの写しで、その後にメニューを直しても変わらない
-        - 期間で絞らず、ページングもしない。予約がなければ `bookings` は空の配列
+        - 期間: 任意の `from`・`to`（予約されたスロットが開始する日付。日本時間。両端を含む）で絞れる（「来週の予約」だけを見る）。
+          どちらも省けば今までどおり期間で絞らず、応答に `from` / `to` を載せない。どちらかを付けたときの日付の扱いと 422 の条件は
+          `listBookings` と同じ: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに開始する予約。
+          `from` を省けば今日（サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。
+          期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+          `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）。`to` だけを付けて
+          今日より前の日付なら `from`（今日）より前なので 422。応答の `from` / `to` は省いたときに決めた日付を含めて、実際に使った期間
+        - 期間で絞っても、返すのは本人のスロットへの予約だけで、状態を問わないことと並べ方は変わらない。ページングはしない。
+          予約がなければ `bookings` は空の配列
         - 照会だけで、何も保存しない
 
         行動イベントは発火しない。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: 期間の始まりの日付（日本時間。含む）。`to` も省けば期間で絞らない。`to` だけを付けたときは今日
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: 期間の終わりの日付（日本時間。含む）。`from` も省けば期間で絞らない。`from` だけを付けたときは `from` から 7 日目
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: コーチの予約の一覧
@@ -1080,6 +1103,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /coaches/me/slots:
     get:
@@ -2946,9 +2971,17 @@ components:
 
     CoachBookingList:
       type: object
-      description: コーチの自分の予約の一覧（並べ方は `listMyCoachBookings` の説明）
+      description: コーチの自分の予約の一覧（期間と並べ方は `listMyCoachBookings` の説明）
       required: [bookings]
       properties:
+        from:
+          type: string
+          format: date
+          description: 実際に使った期間の始まりの日付（日本時間。含む）。`from`・`to` をどちらも省いて期間で絞らなかったときは載らない
+        to:
+          type: string
+          format: date
+          description: 実際に使った期間の終わりの日付（日本時間。含む）。`from`・`to` をどちらも省いて期間で絞らなかったときは載らない
         bookings:
           type: array
           description: 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
