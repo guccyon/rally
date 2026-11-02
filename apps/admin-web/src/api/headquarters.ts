@@ -66,7 +66,12 @@ export function headquartersApi(client: ApiClient) {
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
-    listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
+    listLessonMenus: (filter: {
+      q?: string;
+      sport?: Schemas["Sport"];
+      published?: boolean;
+      coach_id?: string;
+    }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
       call(() =>
