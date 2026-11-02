@@ -6,7 +6,7 @@ import { useCallback, useMemo } from "react";
 
 import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
-import { Section } from "@/components/Section";
+import { Section } from "@/components/ui/Section";
 
 import { periodError } from "./bookingPeriod";
 import { ReturnedVideoReviewList, type ReturnedVideoReviewFilter, SPORTS } from "./ReturnedVideoReviewList";
