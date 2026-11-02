@@ -62,6 +62,12 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::AiFeedbackBeforeSubmission => {
             "AI の一次フィードバックの作成が動画の送付より前".to_string()
         }
+        DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts => {
+            "to は from と同じ日か、それより後の日付にする".to_string()
+        }
+        DomainError::ReturnedVideoReviewPeriodTooLong { max_days } => {
+            format!("from から to までは {max_days} 日まで")
+        }
         DomainError::VideoReviewNotReturned => "動画の添削がまだ返されていない".to_string(),
         DomainError::CompletionBeforeLessonEnded => {
             "レッスンの完了の記録がレッスンの終わりより前".to_string()
@@ -272,6 +278,14 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionNotEnded),
             "通話セッションがまだ終了していない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts),
+            "to は from と同じ日か、それより後の日付にする"
+        );
+        assert_eq!(
+            domain_error(&DomainError::ReturnedVideoReviewPeriodTooLong { max_days: 31 }),
+            "from から to までは 31 日まで"
         );
         assert_eq!(
             domain_error(&DomainError::VideoReviewNotReturned),
