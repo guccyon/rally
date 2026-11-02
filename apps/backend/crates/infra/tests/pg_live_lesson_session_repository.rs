@@ -1,6 +1,6 @@
 //! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
-//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）と、期間とコーチで
-//! 見るセッションの記録の読み取り（ある期間に開始したもの）。
+//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）と、期間とコーチ・生徒で
+//! 見るセッションの記録の読み取り（ある期間に開始したもの。コーチ・生徒で絞る）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -265,7 +265,7 @@ async fn reads_sessions_started_in_the_period_ended_or_not(pool: PgPool) {
 
     // 2 時（含む）から 4 時（含まない）までに開始したもの: 終了した 2 時と通話中の 3 時
     let found = sessions
-        .find_started_between(at(2), at(4), None)
+        .find_started_between(at(2), at(4), None, None)
         .await
         .unwrap();
     let mut found_ids: Vec<_> = found.iter().map(LiveLessonSession::id).collect();
@@ -278,13 +278,79 @@ async fn reads_sessions_started_in_the_period_ended_or_not(pool: PgPool) {
 
     // コーチで絞る（new_confirmed_booking はセッションごとに別のコーチ）
     let found = sessions
-        .find_started_between(at(0), at(10), Some(started[2].coach_id()))
+        .find_started_between(at(0), at(10), Some(started[2].coach_id()), None)
         .await
         .unwrap();
     assert_eq!(found, [started[2].clone()]);
     assert!(
         sessions
-            .find_started_between(at(5), at(10), None)
+            .find_started_between(at(5), at(10), None, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_sessions_started_in_the_period_by_student_including_group_lessons(pool: PgPool) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    // マンツーマンの通話（3 時）
+    let one_on_one = support::new_confirmed_booking(&pool).await;
+    let alone = LiveLessonSession::start(
+        sessions.next_id(),
+        one_on_one.student_id(),
+        &one_on_one,
+        &[],
+        None,
+        at(3),
+    )
+    .unwrap();
+    sessions.insert(alone.clone()).await.unwrap();
+    // 2 人のグループレッスン（10 時）。通話を始めたのは 1 人目の予約
+    let coach = support::coach(&pool).await;
+    let slot = support::open_slot_with_capacity(&pool, coach, 10, 11, 2).await;
+    let mut bookings = Vec::new();
+    for _ in 0..2 {
+        let student = support::student(&pool).await;
+        bookings.push(support::confirmed_booking(&pool, student, &slot).await);
+    }
+    let group = LiveLessonSession::start(
+        sessions.next_id(),
+        coach,
+        &bookings[0],
+        &bookings,
+        None,
+        at(10),
+    )
+    .unwrap();
+    sessions.insert(group.clone()).await.unwrap();
+
+    let find =
+        |coach_id, student_id| sessions.find_started_between(at(0), at(12), coach_id, student_id);
+    assert_eq!(
+        find(None, Some(one_on_one.student_id())).await.unwrap(),
+        std::slice::from_ref(&alone)
+    );
+    // 開始した予約の生徒でも、結び付いただけの予約の生徒でもグループレッスンのセッションが出る
+    for booking in &bookings {
+        assert_eq!(
+            find(None, Some(booking.student_id())).await.unwrap(),
+            std::slice::from_ref(&group)
+        );
+    }
+    // コーチと組み合わさる。生徒でない ID は空
+    assert!(
+        find(Some(one_on_one.coach_id()), Some(bookings[1].student_id()))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(find(None, Some(coach)).await.unwrap().is_empty());
+    // 期間と組み合わさる
+    assert!(
+        sessions
+            .find_started_between(at(4), at(12), None, Some(one_on_one.student_id()))
             .await
             .unwrap()
             .is_empty()
