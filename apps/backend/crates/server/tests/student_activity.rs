@@ -102,7 +102,9 @@ async fn register(
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of_a_student(pool: PgPool) {
+async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of_a_student(
+    pool: PgPool,
+) {
     let (coach_id, coach) = register(
         &pool,
         "coach@example.com",
