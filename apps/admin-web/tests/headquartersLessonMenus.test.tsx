@@ -7,14 +7,31 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { LessonMenuCatalog } from "@/components/headquarters/LessonMenuCatalog";
-import { LessonMenuCatalogHome } from "@/components/headquarters/LessonMenuCatalogHome";
+import {
+  LessonMenuCatalogHome,
+  lessonMenuCatalogPath,
+  lessonMenuCatalogQueryPath,
+} from "@/components/headquarters/LessonMenuCatalogHome";
 import { saveSession } from "@/session/session";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
 
+// URL のテストでは LessonMenuCatalogHome が作る API を差し替える（Node の Request は相対 URL の "/api" を解決しない）。
+// 差し替えを決めていないテストでは本物を使う。
+const { headquartersApiMock } = vi.hoisted(() => ({ headquartersApiMock: vi.fn() }));
+vi.mock("@/api/headquarters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/headquarters")>();
+  return {
+    ...actual,
+    headquartersApi: (...args: Parameters<typeof actual.headquartersApi>) =>
+      headquartersApiMock(...args) ?? actual.headquartersApi(...args),
+  };
+});
+
 beforeEach(() => {
   replace.mockReset();
+  headquartersApiMock.mockReset();
 });
 
 const COACH_A = "22222222-2222-4222-8222-222222222222";
@@ -282,6 +299,173 @@ describe("本部のレッスンメニューをコーチで絞る", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("入力が正しくありません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+describe("本部のレッスンメニューを名前で探す", () => {
+  test("検索欄は入力しただけでは読み直さず、「探す」で前後の空白を除いた検索語を API の q に渡す", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [MENUS[0]!] } });
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} onQueryChange={onQueryChange} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), "  フォア ");
+    expect(listLessonMenus).toHaveBeenCalledTimes(1);
+    expect(onQueryChange).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "探す" }));
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "フォア" });
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: "", q: "フォア" });
+  });
+
+  test("Enter でも確定でき、ほかの絞り込みと組み合わせられる。空にして確定すれば名前では絞らない", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <LessonMenuCatalog
+        api={apiOf(listLessonMenus)}
+        initialCoachId={COACH_A}
+        onQueryChange={onQueryChange}
+      />,
+    );
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), "基礎{Enter}");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "基礎", coach_id: COACH_A }),
+    );
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: COACH_A, q: "基礎" });
+
+    // 確定した検索語はほかの絞り込みを変えても残る
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "基礎",
+        sport: "tennis",
+        coach_id: COACH_A,
+      }),
+    );
+    await user.click(screen.getByLabelText("公開中だけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "基礎",
+        sport: "tennis",
+        published: true,
+        coach_id: COACH_A,
+      }),
+    );
+
+    await user.clear(screen.getByLabelText("名前で探す"));
+    await user.type(screen.getByLabelText("名前で探す"), "   {Enter}");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        sport: "tennis",
+        published: true,
+        coach_id: COACH_A,
+      }),
+    );
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: COACH_A, q: "" });
+  });
+
+  test("initialQuery があれば、その名前で絞って開き、検索欄に入れておく", async () => {
+    const listLessonMenus = listOf([MENUS[1]!]);
+    render(
+      <LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={COACH_B} initialQuery="サーブ" />,
+    );
+
+    await screen.findByRole("table");
+    expect(listLessonMenus).toHaveBeenCalledTimes(1);
+    expect(listLessonMenus).toHaveBeenCalledWith({ q: "サーブ", coach_id: COACH_B });
+    expect(screen.getByLabelText("名前で探す")).toHaveValue("サーブ");
+  });
+
+  test("合うメニューがなければ「条件に合うメニューはありません」と出し、表は出さない", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [] } });
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), "バタフライ{Enter}");
+
+    expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("名前で探す")).toHaveValue("バタフライ");
+  });
+
+  test("前後の空白を除いて 40 文字を超える検索語は送らずに理由を出す（40 文字までは送る）", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), `${"あ".repeat(41)}{Enter}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "名前の検索語は 40 文字までにしてください（前後の空白は数えません）。",
+    );
+    expect(listLessonMenus).toHaveBeenCalledTimes(1);
+    // 一覧は前の条件のまま出し続ける
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("名前で探す"));
+    await user.type(screen.getByLabelText("名前で探す"), ` ${"あ".repeat(40)} {Enter}`);
+    await waitFor(() => expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "あ".repeat(40) }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("422 validation_failed なら直し方の文言を出し、一覧は出さない", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({
+        ok: false,
+        message: "入力の内容が正しくありません。",
+        code: "validation_failed",
+      });
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), "フォア{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "絞り込みの指定が正しくありません。名前の検索語は 40 文字まで、コーチは一覧から選んでください。",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("画面は確定した検索語とコーチを URL のクエリに残す（履歴は積まない）", async () => {
+    const listLessonMenus = listOf([]);
+    headquartersApiMock.mockReturnValue(apiOf(listLessonMenus));
+    const user = userEvent.setup();
+    render(<LessonMenuCatalogHome token="mock.headquarters.x" initialCoachId={COACH_A} />);
+    await screen.findByText("条件に合うメニューはありません");
+
+    await user.type(screen.getByLabelText("名前で探す"), "フォア 基礎{Enter}");
+
+    expect(replace).toHaveBeenLastCalledWith(
+      `/headquarters/lesson-menus?coach_id=${COACH_A}&q=%E3%83%95%E3%82%A9%E3%82%A2+%E5%9F%BA%E7%A4%8E`,
+      { scroll: false },
+    );
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "フォア 基礎", coach_id: COACH_A }),
+    );
+  });
+
+  test("URL はコーチと検索語のうち空でないものだけをクエリにする", () => {
+    expect(lessonMenuCatalogQueryPath({ coachId: "", q: "" })).toBe("/headquarters/lesson-menus");
+    expect(lessonMenuCatalogQueryPath({ coachId: "", q: "サーブ" })).toBe(
+      "/headquarters/lesson-menus?q=%E3%82%B5%E3%83%BC%E3%83%96",
+    );
+    expect(lessonMenuCatalogPath(COACH_A)).toBe(`/headquarters/lesson-menus?coach_id=${COACH_A}`);
   });
 });
 
