@@ -1,6 +1,7 @@
 //! 時刻がどの日付か（`time::Date`）と、日付の始まりと終わりの時刻。本部が見る予約の一覧（[`super::ListBookings`]）と
-//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と、コーチの自分の枠の一覧（[`super::ListCoachSlots`]）の
-//! 日付は、ユースケースがここだけを通して決める。
+//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と予約枠の需給（[`super::GetSlotSupply`]）と、コーチの自分の
+//! 枠の一覧（[`super::ListCoachSlots`]）の日付は、ユースケースがここだけを通して決める。省いた日付の決め方が `listBookings` と
+//! 同じ照会（`listBookings`・`getSlotSupply`・`listMyCoachSlots`）は [`period`] を通す。
 //!
 //! 日付は暦月と同じく日本時間（UTC+9。夏時間はない）で区切る（[`crate::entitlement::calendar_month`] のタイムゾーン）。
 
@@ -26,11 +27,11 @@ pub fn end(date: Date) -> SystemTime {
     start(date) + BookingPeriod::DAY
 }
 
-/// 開始の日付で絞る一覧（admin-web の `listBookings`・`listMyCoachSlots`）の期間。日付（日本時間）の `from` から `to`
-/// まで（両端を含む）で、`from` を省けば今日（`now` の日付）、`to` を省けば `from` から [`BookingPeriod::DEFAULT_DAYS`]
-/// 日目。決めた `from`・`to` と、その期間を返す。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`]
-/// 日まで）に反すれば domain の [`BookingPeriod::new`] の失敗。
-pub fn forward_period(
+/// 日付（日本時間）の `from` から `to` まで（両端を含む）の期間と、実際に使った `from`・`to`（admin-web の
+/// `listBookings` の規則）。`from` を省けば `now` の日付（今日）、`to` を省けば `from` から
+/// [`BookingPeriod::DEFAULT_DAYS`] 日目。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は
+/// domain の [`BookingPeriod::new`] で、違反はその [`SchedulingError`]。
+pub fn period(
     from: Option<Date>,
     to: Option<Date>,
     now: SystemTime,
@@ -77,46 +78,70 @@ mod tests {
     }
 
     #[test]
-    fn forward_period_defaults_to_today_and_the_default_days_from_from() {
-        let nov1 = SystemTime::UNIX_EPOCH + NOV1_JST;
-        let today = date(Month::November, 1);
-        let (from, to, period) = forward_period(None, None, nov1).unwrap();
-        assert_eq!((from, to), (today, date(Month::November, 7)));
+    fn period_defaults_to_seven_days_from_today_in_japan() {
+        // 日本時間の 11 月 1 日 0 時の 1 ナノ秒前は 10 月 31 日
+        let now = SystemTime::UNIX_EPOCH + NOV1_JST - Duration::from_nanos(1);
+        let (from, to, period) = super::period(None, None, now).unwrap();
         assert_eq!(
-            (period.starts_at(), period.ends_at()),
-            (start(today), end(date(Month::November, 7)))
+            (from, to),
+            (date(Month::October, 31), date(Month::November, 6))
         );
-        let (from, to, _) = forward_period(Some(date(Month::November, 10)), None, nov1).unwrap();
+        assert_eq!(period.starts_at(), start(from));
+        assert_eq!(period.ends_at(), end(to));
+
+        let (from, to, _) = super::period(Some(date(Month::November, 10)), None, now).unwrap();
         assert_eq!(
             (from, to),
             (date(Month::November, 10), date(Month::November, 16))
         );
-        let (from, to, _) = forward_period(None, Some(date(Month::November, 3)), nov1).unwrap();
-        assert_eq!((from, to), (today, date(Month::November, 3)));
-        let (from, to, _) = forward_period(
-            Some(date(Month::November, 1)),
-            Some(date(Month::December, 1)),
-            nov1,
-        )
-        .unwrap();
-        assert_eq!((from, to), (today, date(Month::December, 1)));
+        let (from, to, _) = super::period(None, Some(date(Month::November, 2)), now).unwrap();
+        assert_eq!(
+            (from, to),
+            (date(Month::October, 31), date(Month::November, 2))
+        );
     }
 
     #[test]
-    fn forward_period_follows_the_period_rules() {
-        let nov1 = SystemTime::UNIX_EPOCH + NOV1_JST;
-        assert_eq!(
-            forward_period(None, Some(date(Month::October, 31)), nov1),
-            Err(SchedulingError::BookingPeriodEndsBeforeItStarts),
-            "to だけで今日より前なら from（今日）より前"
+    fn period_includes_both_dates_and_follows_the_domain_rule() {
+        let now = SystemTime::UNIX_EPOCH + NOV1_JST;
+        let one_day = super::period(
+            Some(date(Month::November, 1)),
+            Some(date(Month::November, 1)),
+            now,
+        )
+        .unwrap()
+        .2;
+        assert_eq!(one_day.starts_at(), now);
+        assert_eq!(one_day.ends_at(), now + BookingPeriod::DAY);
+        // 31 日（11 月 1 日から 12 月 1 日）までは通り、32 日は通らない
+        assert!(
+            super::period(
+                Some(date(Month::November, 1)),
+                Some(date(Month::December, 1)),
+                now
+            )
+            .is_ok()
         );
         assert_eq!(
-            forward_period(
+            super::period(
                 Some(date(Month::November, 1)),
                 Some(date(Month::December, 2)),
-                nov1
+                now
             ),
             Err(SchedulingError::BookingPeriodTooLong { max_days: 31 })
+        );
+        assert_eq!(
+            super::period(
+                Some(date(Month::November, 2)),
+                Some(date(Month::November, 1)),
+                now
+            ),
+            Err(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        );
+        // `to` だけで今日より前は `from`（今日）より前
+        assert_eq!(
+            super::period(None, Some(date(Month::October, 31)), now),
+            Err(SchedulingError::BookingPeriodEndsBeforeItStarts)
         );
     }
 }

@@ -16,14 +16,18 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始する予約を読み、開始時刻の古い順に並べる
 /// （同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。`from` を省けば今日、`to` を省けば `from` から
-/// [`BookingPeriod::DEFAULT_DAYS`](domain::scheduling::BookingPeriod::DEFAULT_DAYS) 日目（[`calendar_day::forward_period`]）。期間の規則（`to` が `from` より前でない・
-/// [`BookingPeriod::MAX_DAYS`](domain::scheduling::BookingPeriod::MAX_DAYS) 日まで）は domain の [`BookingPeriod`](domain::scheduling::BookingPeriod)。
-/// `coach_id` があればそのコーチの枠への予約だけに絞る（いないコーチなら空の一覧。
-/// 規則は domain の [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
+/// [`BookingPeriod::DEFAULT_DAYS`] 日目（省いた日付の決め方は [`calendar_day::period`] の 1 か所）。期間の規則（`to` が
+/// `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。`coach_id` があればそのコーチの
+/// 枠への予約だけに絞る（いないコーチなら空の一覧。規則は domain の
+/// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
 /// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
 /// 一覧に出るコーチと生徒の表示名は profile に問い合わせて添える。読むだけで何も変えない。
+///
+/// [`BookingPeriod`]: domain::scheduling::BookingPeriod
+/// [`BookingPeriod::DEFAULT_DAYS`]: domain::scheduling::BookingPeriod::DEFAULT_DAYS
+/// [`BookingPeriod::MAX_DAYS`]: domain::scheduling::BookingPeriod::MAX_DAYS
 pub struct ListBookings<B, K, D, C> {
     bookings: B,
     coaches: K,
@@ -48,11 +52,11 @@ pub struct ListBookingsQuery {
     pub trial: Option<bool>,
 }
 
-/// 本部が見る予約の一覧（[`ListBookings`]）と、キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と、
-/// コーチの自分の枠の一覧（[`super::ListCoachSlots`]）の失敗。
+/// 本部が見る予約の一覧（[`ListBookings`]）と、キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と、予約枠の需給
+/// （[`super::GetSlotSupply`]）と、コーチの自分の枠の一覧（[`super::ListCoachSlots`]）の失敗。
 #[derive(Debug)]
 pub enum ListBookingsError {
-    /// 期間が規則を満たさない（[`BookingPeriod::new`](domain::scheduling::BookingPeriod::new) の違反）
+    /// 期間が規則を満たさない（[`domain::scheduling::BookingPeriod::new`] の違反）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -90,8 +94,7 @@ where
         &self,
         query: ListBookingsQuery,
     ) -> Result<BookingList, ListBookingsError> {
-        let (from, to, period) =
-            calendar_day::forward_period(query.from, query.to, self.clock.now())?;
+        let (from, to, period) = calendar_day::period(query.from, query.to, self.clock.now())?;
 
         let (_, mut bookings) = self
             .bookings

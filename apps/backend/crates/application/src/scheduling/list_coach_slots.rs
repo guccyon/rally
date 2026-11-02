@@ -14,7 +14,7 @@ use crate::clock::Clock;
 /// コーチ `coach_id` の枠を、状態を問わず（終わった枠も含めて）読み、開始時刻の古い順に並べる（同じ開始時刻は枠の ID の
 /// 順）。条件の `from`・`to` を両方省けば期間で絞らない。どちらかがあれば、日付（日本時間）の `from` から `to` まで
 /// （両端を含む）に開始する枠だけに絞る。省いた側の決め方と期間の規則は本部が見る予約の一覧（[`super::ListBookings`]）と
-/// 同じ [`calendar_day::forward_period`]（`from` を省けば今日、`to` を省けば `from` から 7 日目。31 日まで）。
+/// 同じ [`calendar_day::period`]（`from` を省けば今日、`to` を省けば `from` から 7 日目。31 日まで）。
 /// それぞれの枠に有効な予約（[`domain::scheduling::BookingStatus::is_active`]。未確定か確定）が入っているかを、
 /// コーチの枠への予約（[`BookingRepository::bookings_of_coach`]）から添える。枠に結びついたレッスンメニュー（名前と時間）は
 /// catalog に問い合わせて（[`LessonMenuLookup`]）、公開中かを問わずに添える。読むだけで何も変えない。
@@ -57,7 +57,7 @@ where
     ) -> Result<CoachSlotList, ListBookingsError> {
         let period = match (query.from, query.to) {
             (None, None) => None,
-            (from, to) => Some(calendar_day::forward_period(from, to, self.clock.now())?.2),
+            (from, to) => Some(calendar_day::period(from, to, self.clock.now())?.2),
         };
         let mut slots = self.slots.slots_of_coach(coach_id).await?;
         if let Some(period) = period {

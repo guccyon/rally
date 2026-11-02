@@ -1,5 +1,6 @@
 //! `GET /slot-supply`（admin-web の `getSlotSupply`）の統合テスト。レスポンスの形を admin-web の OpenAPI の
-//! スキーマで検査し、本部だけが呼べることと、期間に開始する枠だけを数えることを確かめる。判定の式の境界は
+//! スキーマで検査し、本部だけが呼べることと、期間に開始する枠だけを数えることと、日付（`from`・`to`）で期間を指定できる
+//! ことを確かめる。判定の式の境界は
 //! domain の `SlotSupply` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -306,7 +307,16 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
 }
 
 async fn get_slot_supply(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/slot-supply");
+    get_slot_supply_at(router, "/slot-supply", token).await
+}
+
+/// `uri` はクエリ（`from`・`to`）を付けた `/slot-supply`。
+async fn get_slot_supply_at(
+    router: &Router,
+    uri: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(uri);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -357,4 +367,98 @@ async fn only_headquarters_may_read_the_supply() {
     let (status, body) = get_slot_supply(&router, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(body["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn headquarters_reads_the_supply_of_the_dates_in_japan() {
+    let router = app(bookings().await);
+    // 明日（日本時間の 10 月 27 日）だけ。テニスの枠 1 つ（10 月 27 日 9 時）に 1 人
+    let (status, body) = get_slot_supply_at(
+        &router,
+        "/slot-supply?from=2026-10-27&to=2026-10-27",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["window_start"], "2026-10-26T15:00:00Z");
+    assert_eq!(body["window_end"], "2026-10-27T15:00:00Z");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-10-27"), &json!("2026-10-27"))
+    );
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    assert_eq!(body["sports"][3]["published_slots"], 0, "{body}");
+
+    // 両方省けば今までどおり（`from`・`to` は載せない）
+    let (_, body) = get_slot_supply(&router, Some(HEADQUARTERS)).await;
+    assert!(
+        body.get("from").is_none() && body.get("to").is_none(),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn a_missing_date_is_decided_like_list_bookings() {
+    let router = app(bookings().await);
+    // from だけなら from から 7 日目まで
+    let (status, body) =
+        get_slot_supply_at(&router, "/slot-supply?from=2026-10-27", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-10-27"), &json!("2026-11-02"))
+    );
+    assert_eq!(body["window_end"], "2026-11-02T15:00:00Z");
+    // to だけなら今日（日本時間の 10 月 26 日）から。今日の 9 時より前に始まった枠も今日なら入る
+    let (status, body) =
+        get_slot_supply_at(&router, "/slot-supply?to=2026-10-27", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-10-26"), &json!("2026-10-27"))
+    );
+    assert_eq!(body["window_start"], "2026-10-25T15:00:00Z");
+}
+
+#[tokio::test]
+async fn dates_breaking_the_rule_are_unprocessable() {
+    let router = app(bookings().await);
+    for (query, message) in [
+        (
+            "from=2026-10-28&to=2026-10-27",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        (
+            "from=2026-10-01&to=2026-11-01",
+            "from から to までは 31 日まで",
+        ),
+        // to だけで今日より前は from（今日）より前
+        (
+            "to=2026-10-25",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        ("from=2026/10/27", "from は YYYY-MM-DD の日付でない"),
+        ("to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = get_slot_supply_at(
+            &router,
+            &format!("/slot-supply?{query}"),
+            Some(HEADQUARTERS),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
+    }
+    // 31 日（両端を含む）は通る
+    let (status, body) = get_slot_supply_at(
+        &router,
+        "/slot-supply?from=2026-10-01&to=2026-10-31",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }
