@@ -438,6 +438,8 @@ describe("本部の予約（生徒で絞る）", () => {
         upcoming_bookings: [],
         recent_lessons: [],
         cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
       },
     }));
   }

@@ -46,6 +46,15 @@ impl PendingVideoReviewFilter {
         pending.sort_by_key(|video| (video.submitted_at(), video.id()));
         pending
     }
+
+    /// `videos` のうち条件に合う返却待ちの動画の数（[`Self::matches`] で数える。本部が見る生徒 1 人の利用の様子の
+    /// 返却待ちの数も、既定の条件でここを使う）。
+    pub fn count(&self, videos: &[Video], now: SystemTime) -> usize {
+        videos
+            .iter()
+            .filter(|video| self.matches(video, now))
+            .count()
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +217,28 @@ mod tests {
             })
             .is_empty()
         );
+    }
+
+    #[test]
+    fn count_is_the_number_of_videos_select_keeps() {
+        let videos = vec![
+            pending(1, Sport::Tennis, hours_ago(10)),
+            returned(2, hours_ago(200)),
+            pending(3, Sport::Golf, hours_ago(72)),
+            returned(4, hours_ago(1)),
+        ];
+        let filter = PendingVideoReviewFilter::default();
+        assert_eq!(filter.count(&videos, now()), 2, "返却済みは数えない");
+        assert_eq!(
+            filter.count(&videos, now()),
+            filter.select(videos.clone(), now()).len()
+        );
+        let filter = PendingVideoReviewFilter {
+            min_elapsed_hours: 48,
+            ..PendingVideoReviewFilter::default()
+        };
+        assert_eq!(filter.count(&videos, now()), 1);
+        assert_eq!(PendingVideoReviewFilter::default().count(&[], now()), 0);
     }
 
     #[test]
