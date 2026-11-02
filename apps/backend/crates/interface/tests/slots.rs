@@ -158,6 +158,7 @@ fn app() -> App {
             InMemorySlotRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),

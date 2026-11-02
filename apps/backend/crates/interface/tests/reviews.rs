@@ -210,6 +210,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),

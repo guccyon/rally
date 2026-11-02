@@ -1,38 +1,68 @@
 use std::collections::BTreeSet;
 
 use domain::{catalog::LessonMenuId, identity::AccountId, scheduling::SlotId};
+use time::Date;
 
-use super::{BookingRepository, CoachSlotList, LessonMenuLookup, SlotRepository};
-use crate::Unavailable;
+use super::{
+    BookingRepository, CoachSlotList, LessonMenuLookup, ListBookingsError, SlotRepository,
+    calendar_day,
+};
+use crate::clock::Clock;
 
 /// コーチの自分の枠の一覧のユースケース（admin-web の `listMyCoachSlots`。コーチだけが呼ぶ）。
 ///
 /// コーチ `coach_id` の枠を、状態を問わず（終わった枠も含めて）読み、開始時刻の古い順に並べる（同じ開始時刻は枠の ID の
-/// 順）。それぞれの枠に有効な予約（[`domain::scheduling::BookingStatus::is_active`]。未確定か確定）が入っているかを、
+/// 順）。条件の `from`・`to` を両方省けば期間で絞らない。どちらかがあれば、日付（日本時間）の `from` から `to` まで
+/// （両端を含む）に開始する枠だけに絞る。省いた側の決め方と期間の規則は本部が見る予約の一覧（[`super::ListBookings`]）と
+/// 同じ [`calendar_day::forward_period`]（`from` を省けば今日、`to` を省けば `from` から 7 日目。31 日まで）。
+/// それぞれの枠に有効な予約（[`domain::scheduling::BookingStatus::is_active`]。未確定か確定）が入っているかを、
 /// コーチの枠への予約（[`BookingRepository::bookings_of_coach`]）から添える。枠に結びついたレッスンメニュー（名前と時間）は
 /// catalog に問い合わせて（[`LessonMenuLookup`]）、公開中かを問わずに添える。読むだけで何も変えない。
-pub struct ListCoachSlots<S, M, B> {
+pub struct ListCoachSlots<S, M, B, C> {
     slots: S,
     lesson_menus: M,
     bookings: B,
+    clock: C,
 }
 
-impl<S, M, B> ListCoachSlots<S, M, B>
+/// コーチの自分の枠の一覧の条件。どれも省ける（両方省けば期間で絞らない）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListCoachSlotsQuery {
+    /// 期間の始まりの日付（日本時間。含む）
+    pub from: Option<Date>,
+    /// 期間の終わりの日付（日本時間。含む）
+    pub to: Option<Date>,
+}
+
+impl<S, M, B, C> ListCoachSlots<S, M, B, C>
 where
     S: SlotRepository,
     M: LessonMenuLookup,
     B: BookingRepository,
+    C: Clock,
 {
-    pub fn new(slots: S, lesson_menus: M, bookings: B) -> Self {
+    pub fn new(slots: S, lesson_menus: M, bookings: B, clock: C) -> Self {
         Self {
             slots,
             lesson_menus,
             bookings,
+            clock,
         }
     }
 
-    pub async fn execute(&self, coach_id: AccountId) -> Result<CoachSlotList, Unavailable> {
+    pub async fn execute(
+        &self,
+        coach_id: AccountId,
+        query: ListCoachSlotsQuery,
+    ) -> Result<CoachSlotList, ListBookingsError> {
+        let period = match (query.from, query.to) {
+            (None, None) => None,
+            (from, to) => Some(calendar_day::forward_period(from, to, self.clock.now())?.2),
+        };
         let mut slots = self.slots.slots_of_coach(coach_id).await?;
+        if let Some(period) = period {
+            slots.retain(|slot| period.includes(slot.starts_at()));
+        }
         slots.sort_by_key(|slot| (slot.starts_at(), slot.id()));
         let booked: BTreeSet<SlotId> = self
             .bookings
@@ -82,7 +112,8 @@ mod tests {
     use crate::{
         catalog::CatalogLessonMenuLookup,
         in_memory::{
-            InMemoryBookingRepository, InMemoryLessonMenuRepository, InMemorySlotRepository,
+            FixedClock, InMemoryBookingRepository, InMemoryLessonMenuRepository,
+            InMemorySlotRepository,
         },
     };
 
@@ -163,8 +194,8 @@ mod tests {
         // 別のコーチの枠は出ない
         book(&bookings, STUDENT, 9).await;
 
-        let list = ListCoachSlots::new(slots, no_menus(), bookings)
-            .execute(COACH)
+        let list = ListCoachSlots::new(slots, no_menus(), bookings, FixedClock(at(0)))
+            .execute(COACH, ListCoachSlotsQuery::default())
             .await
             .unwrap();
         assert_eq!(
@@ -220,8 +251,8 @@ mod tests {
             menu(51, false),
             menu(53, true),
         ]));
-        let list = ListCoachSlots::new(slots, menus, bookings)
-            .execute(COACH)
+        let list = ListCoachSlots::new(slots, menus, bookings, FixedClock(at(0)))
+            .execute(COACH, ListCoachSlotsQuery::default())
             .await
             .unwrap();
         assert_eq!(
@@ -246,10 +277,135 @@ mod tests {
         let slots =
             InMemorySlotRepository::with_slots([slot(1, OTHER_COACH, 10, SlotStatus::Open)]);
         let bookings = InMemoryBookingRepository::new(slots.clone());
-        let list = ListCoachSlots::new(slots, no_menus(), bookings)
-            .execute(COACH)
+        let list = ListCoachSlots::new(slots, no_menus(), bookings, FixedClock(at(0)))
+            .execute(COACH, ListCoachSlotsQuery::default())
             .await
             .unwrap();
         assert!(list.items.is_empty());
+    }
+
+    /// 2026 年 11 月 `day` 日の日本時間 `hour` 時
+    fn jst(day: u8, hour: u8) -> SystemTime {
+        calendar_day::start(nov(day)) + Duration::from_secs(u64::from(hour) * 3600)
+    }
+
+    fn nov(day: u8) -> Date {
+        Date::from_calendar_date(2026, time::Month::November, day).unwrap()
+    }
+
+    fn slot_at(id: u128, coach: AccountId, starts_at: SystemTime) -> Slot {
+        Slot::restore(
+            SlotId::from_u128(id),
+            coach,
+            Sport::Tennis,
+            starts_at,
+            starts_at + Duration::from_secs(3600),
+            SlotStatus::Open,
+            domain::scheduling::SlotSeats::default(),
+        )
+        .unwrap()
+    }
+
+    /// 11 月 1 日の 0 時の直前・0 時・3 日の終わりの直前・4 日の 0 時・10 日の昼に始まる枠（開始の古い順に 1〜5）と、
+    /// 別のコーチの 2 日の枠
+    fn slots_around_november() -> InMemorySlotRepository {
+        InMemorySlotRepository::with_slots([
+            slot_at(1, COACH, jst(1, 0) - Duration::from_secs(1)),
+            slot_at(2, COACH, jst(1, 0)),
+            slot_at(3, COACH, jst(4, 0) - Duration::from_secs(1)),
+            slot_at(4, COACH, jst(4, 0)),
+            slot_at(5, COACH, jst(10, 12)),
+            slot_at(9, OTHER_COACH, jst(2, 0)),
+        ])
+    }
+
+    async fn list_with(
+        now: SystemTime,
+        query: ListCoachSlotsQuery,
+    ) -> Result<Vec<u128>, ListBookingsError> {
+        let slots = slots_around_november();
+        let bookings = InMemoryBookingRepository::new(slots.clone());
+        let list = ListCoachSlots::new(slots, no_menus(), bookings, FixedClock(now))
+            .execute(COACH, query)
+            .await?;
+        Ok(list
+            .items
+            .iter()
+            .map(|(slot, _)| slot.id().as_u128())
+            .collect())
+    }
+
+    #[tokio::test]
+    async fn without_dates_lists_every_slot_as_before() {
+        assert_eq!(
+            list_with(jst(2, 9), ListCoachSlotsQuery::default())
+                .await
+                .unwrap(),
+            [1, 2, 3, 4, 5]
+        );
+    }
+
+    #[tokio::test]
+    async fn narrows_to_slots_starting_from_from_to_to_in_japan_time() {
+        let query = ListCoachSlotsQuery {
+            from: Some(nov(1)),
+            to: Some(nov(3)),
+        };
+        assert_eq!(
+            list_with(jst(20, 9), query).await.unwrap(),
+            [2, 3],
+            "1 日の日本時間 0 時（含む）から 4 日の 0 時（含まない）まで"
+        );
+    }
+
+    #[tokio::test]
+    async fn omitted_dates_follow_the_same_rule_as_the_bookings_list() {
+        // from だけなら from から 7 日目まで（1〜7 日）
+        let from_only = ListCoachSlotsQuery {
+            from: Some(nov(1)),
+            to: None,
+        };
+        assert_eq!(list_with(jst(20, 9), from_only).await.unwrap(), [2, 3, 4]);
+        // to だけなら今日（4 日）から
+        let to_only = ListCoachSlotsQuery {
+            from: None,
+            to: Some(nov(10)),
+        };
+        assert_eq!(list_with(jst(4, 9), to_only).await.unwrap(), [4, 5]);
+    }
+
+    #[tokio::test]
+    async fn rejects_periods_that_break_the_period_rules() {
+        let reversed = ListCoachSlotsQuery {
+            from: Some(nov(3)),
+            to: Some(nov(2)),
+        };
+        assert!(matches!(
+            list_with(jst(1, 9), reversed).await,
+            Err(ListBookingsError::Invalid(
+                domain::scheduling::SchedulingError::BookingPeriodEndsBeforeItStarts
+            ))
+        ));
+        // to だけで今日より前
+        let before_today = ListCoachSlotsQuery {
+            from: None,
+            to: Some(nov(1)),
+        };
+        assert!(matches!(
+            list_with(jst(2, 9), before_today).await,
+            Err(ListBookingsError::Invalid(
+                domain::scheduling::SchedulingError::BookingPeriodEndsBeforeItStarts
+            ))
+        ));
+        let too_long = ListCoachSlotsQuery {
+            from: Some(nov(1)),
+            to: Some(Date::from_calendar_date(2026, time::Month::December, 2).unwrap()),
+        };
+        assert!(matches!(
+            list_with(jst(1, 9), too_long).await,
+            Err(ListBookingsError::Invalid(
+                domain::scheduling::SchedulingError::BookingPeriodTooLong { max_days: 31 }
+            ))
+        ));
     }
 }

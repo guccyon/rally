@@ -149,6 +149,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             entitlements.clone(),
