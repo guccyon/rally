@@ -6,7 +6,7 @@ export function headquartersApi(client: ApiClient) {
   return {
     getSlotSupply: () => call(() => client.GET("/slot-supply")),
     listCoaches: (
-      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"] } = {},
+      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
