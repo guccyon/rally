@@ -12,6 +12,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         ListCoachBookings::new(
             ports.bookings(),
             ProfileStudentDisplayNameLookup::new(ports.accounts()),
+            ports.clock(),
         ),
         MockTokenService,
     )
