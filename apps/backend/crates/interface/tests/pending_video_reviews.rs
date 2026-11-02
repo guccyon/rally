@@ -1,7 +1,7 @@
 //! `GET /video-reviews/pending`（admin-web の `listPendingVideoReviews`）の統合テスト。本部にはコーチがまだ返していない
 //! 動画添削をコーチを問わず送付の古い順に、生徒と担当のコーチの ID と表示名・送った時刻・経過時間（時間。端数は切り捨て）
-//! とともに返すことを OpenAPI のスキーマで検査する。クエリの `sport` でスポーツを、`min_elapsed_hours` で経過時間の下限を
-//! 絞り、値が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
+//! とともに返すことを OpenAPI のスキーマで検査する。クエリの `sport` でスポーツを、`min_elapsed_hours` で経過時間の下限を、
+//! `coach_id` でコーチを絞り、値が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
 //! （経過時間の数え方の境目は domain の `PendingVideoReviewFilter` のテスト）。
 
 use std::time::{Duration, SystemTime};
@@ -299,7 +299,7 @@ async fn headquarters_lists_pending_video_reviews_oldest_first() {
 }
 
 #[tokio::test]
-async fn sport_and_min_elapsed_hours_narrow_the_list() {
+async fn sport_min_elapsed_hours_and_coach_id_narrow_the_list() {
     let router = app().await;
     for (query, expected) in [
         (
@@ -331,6 +331,32 @@ async fn sport_and_min_elapsed_hours_narrow_the_list() {
         ),
         ("?sport=golf", vec!["00000000-0000-0000-0000-00000000000b"]),
         ("?sport=soccer", vec![]),
+        (
+            "?coach_id=00000000-0000-0000-0000-000000000003",
+            vec![
+                "00000000-0000-0000-0000-00000000000b",
+                "00000000-0000-0000-0000-00000000000c",
+            ],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-000000000002",
+            vec!["00000000-0000-0000-0000-00000000000a"],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-000000000003&sport=tennis",
+            vec!["00000000-0000-0000-0000-00000000000c"],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-000000000003&min_elapsed_hours=48",
+            vec!["00000000-0000-0000-0000-00000000000b"],
+        ),
+        (
+            "?coach_id=00000000-0000-0000-0000-000000000003&sport=tennis&min_elapsed_hours=48",
+            vec![],
+        ),
+        // 生徒の ID・ない ID は 404 にせず空
+        ("?coach_id=00000000-0000-0000-0000-000000000004", vec![]),
+        ("?coach_id=00000000-0000-0000-0000-000000000099", vec![]),
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
@@ -350,6 +376,9 @@ async fn invalid_query_is_422_validation_failed() {
         "?min_elapsed_hours=abc",
         "?min_elapsed_hours=",
         "?min_elapsed_hours=2147483648",
+        "?coach_id=not-a-uuid",
+        "?coach_id=",
+        "?coach_id=00000000-0000-0000-0000-00000000000",
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
