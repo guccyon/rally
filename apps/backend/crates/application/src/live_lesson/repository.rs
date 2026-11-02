@@ -43,13 +43,15 @@ pub trait LiveLessonSessionRepository: Send + Sync {
     ) -> impl Future<Output = Result<Vec<LiveLessonSession>, Unavailable>> + Send;
 
     /// `starts_at`（含む）から `ends_at`（含まない）までに開始したセッション（終了の有無を問わない。本部が見る通話
-    /// セッションの記録の一覧）。`coach_id` があればそのコーチのセッションだけ。並びは問わない（選び方と並べ方は domain の
+    /// セッションの記録の一覧）。`coach_id` があればそのコーチの、`student_id` があればその生徒の予約が結び付いた
+    /// （グループレッスンでは開始した予約の生徒に限らない）セッションだけ。並びは問わない（選び方と並べ方は domain の
     /// [`domain::live_lesson::SessionHistoryCriteria`]）。
     fn find_started_between(
         &self,
         starts_at: SystemTime,
         ends_at: SystemTime,
         coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> impl Future<Output = Result<Vec<LiveLessonSession>, Unavailable>> + Send;
 
     /// 新しいセッションを、結び付いた予約とともに保存する。結び付いた予約のどれかのセッションがすでにあれば
