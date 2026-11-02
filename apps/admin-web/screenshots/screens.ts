@@ -261,6 +261,18 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
+    id: "hq-announcements-period",
+    title: "本部: お知らせ（送ったお知らせを期間で絞る）",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("開始日").fill("2026-09-01");
+      await page.getByLabel("終了日").fill("2026-09-30");
+      await page.getByRole("button", { name: "この期間で見る" }).click();
+      await page.getByText("この期間に送ったお知らせはありません").waitFor();
+    },
+  },
+  {
     id: "hq-announcement-confirm",
     title: "本部: お知らせの送る前の確認",
     role: "headquarters",

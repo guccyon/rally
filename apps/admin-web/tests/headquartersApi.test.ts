@@ -712,15 +712,26 @@ describe("headquartersApi", () => {
     expect(result).toEqual({ ok: false, code: "not_found", message: "対象が見つかりません（ID を確かめてください）。" });
   });
 
-  test("listAnnouncements は GET /api/announcements を呼び、送ったお知らせの一覧を返す", async () => {
+  test("listAnnouncements は期間をクエリにして GET /api/announcements を呼び、送ったお知らせの一覧を返す", async () => {
     const list = { announcements: [] };
     const { api, fetchMock } = setup(json(200, list));
-    const result = await api.listAnnouncements();
+    const result = await api.listAnnouncements({ from: "2026-10-20", to: "2026-10-26" });
     expect(result).toEqual({ ok: true, data: list });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
-    expect(new URL(request.url).pathname).toBe("/api/announcements");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/announcements");
+    expect(url.searchParams.get("from")).toBe("2026-10-20");
+    expect(url.searchParams.get("to")).toBe("2026-10-26");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listAnnouncements は期間を省けばクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { announcements: [] }));
+    await api.listAnnouncements({});
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/announcements");
+    expect(url.search).toBe("");
   });
 
   test("withdrawAnnouncement は本文なしで POST /api/announcements/{id}/withdraw を呼び、409 は code を付けて返す", async () => {
