@@ -548,6 +548,15 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("from")).toBe("2026-10-26");
   });
 
+  test("listBookings は student_id を付ければクエリに入れる", async () => {
+    const studentId = "11111111-1111-4111-8111-111111111111";
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-26", to: "2026-11-01", bookings: [] }));
+    await api.listBookings({ from: "2026-10-26", to: "2026-11-01", student_id: studentId });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.searchParams.get("student_id")).toBe(studentId);
+    expect(url.searchParams.has("coach_id")).toBe(false);
+  });
+
   test("getBooking は GET /api/bookings/{booking_id} を呼び、予約 1 件の詳細を返す", async () => {
     const bookingId = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
     const slotId = "55555555-5555-4555-8555-000000000001";
