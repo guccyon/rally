@@ -6,7 +6,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { COACH_ACCEPTANCE_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import { CoachAcceptanceAction } from "./CoachAcceptanceAction";
