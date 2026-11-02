@@ -132,12 +132,15 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
     async fn find_in_progress_started_at_or_before(
         &self,
         started_at_or_before: SystemTime,
+        coach_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         let mut conn = self.pool.acquire().await.map_err(Unavailable::new)?;
         let rows: Vec<SessionRow> = sqlx::query_as(select_sessions!(
-            "WHERE ended_at IS NULL AND started_at <= $1 ORDER BY started_at, session_id"
+            "WHERE ended_at IS NULL AND started_at <= $1 AND ($2::uuid IS NULL OR coach_id = $2)
+             ORDER BY started_at, session_id"
         ))
         .bind(timestamp(started_at_or_before))
+        .bind(coach_id.map(account_id_uuid::to_uuid))
         .fetch_all(&mut *conn)
         .await
         .map_err(Unavailable::new)?;
