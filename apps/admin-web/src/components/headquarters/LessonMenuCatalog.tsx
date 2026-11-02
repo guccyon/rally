@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
@@ -8,6 +9,7 @@ import { ResultMessage } from "@/components/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
 import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
+import { lessonMenuPublicationHistoryPath } from "./LessonMenuPublicationHistoryHome";
 
 type Sport = Schemas["Sport"];
 type LessonMenu = Schemas["CoachLessonMenu"];
@@ -71,6 +73,7 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
  * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
  * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
+ * 操作の列のボタンの後ろに、そのメニューの「公開の記録」の画面への「記録」を置く。
  */
 export function LessonMenuCatalog({
   api,
@@ -337,6 +340,13 @@ export function LessonMenuCatalog({
                       )
                     }
                   />
+                  <Link
+                    href={lessonMenuPublicationHistoryPath(menu.lesson_menu_id)}
+                    aria-label={`「${menu.name}」の公開の記録を見る`}
+                    className="ml-2 text-primary underline"
+                  >
+                    記録
+                  </Link>
                 </td>
               </tr>
             ))}
