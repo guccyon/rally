@@ -117,20 +117,22 @@ async fn videos_of_coach_reads_videos_sent_to_the_coach_with_their_reviews(pool:
     );
 
     // ユースケースを通すと、添削待ちが送られた時刻の古い順で先、返却済みが後で、生徒の表示名が添わる
-    let list = application::async_lesson::ListCoachVideos::new(
+    let list_coach_videos = application::async_lesson::ListCoachVideos::new(
         videos.clone(),
         application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
-    )
-    .execute(coach)
-    .await
-    .unwrap();
-    assert_eq!(list.videos, [older, newer, returned]);
+    );
+    let list = list_coach_videos.execute(coach, false).await.unwrap();
+    assert_eq!(list.videos, [older.clone(), newer.clone(), returned]);
     assert_eq!(
         list.students.get(&student).map(|name| name.as_str()),
         Some("テスト")
     );
+
+    // 返却待ちだけに絞ると、返却済みは出ず並べ方は変わらない
+    let list = list_coach_videos.execute(coach, true).await.unwrap();
+    assert_eq!(list.videos, [older, newer]);
 
     let nobody = support::coach(&pool).await;
     assert!(videos.videos_of_coach(nobody).await.unwrap().is_empty());

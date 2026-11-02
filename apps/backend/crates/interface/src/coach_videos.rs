@@ -1,5 +1,5 @@
 //! `/coaches/me/videos`。admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`。コーチに届いた動画の一覧）。
-//! コーチだけが呼べる。
+//! コーチだけが呼べる。クエリの `pending_only` が `true` なら添削を返していない動画だけ（`true` / `false` でなければ 422）。
 
 use std::sync::Arc;
 
@@ -9,9 +9,13 @@ use application::{
     },
     identity::TokenVerifier,
 };
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Query, State, rejection::QueryRejection},
+    routing::get,
+};
 use domain::identity::Role;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
@@ -23,6 +27,12 @@ use crate::{
 /// `/coaches/me/videos` のハンドラーが使うユースケース。
 pub struct CoachVideosState<V, D> {
     pub list_coach_videos: ListCoachVideos<V, D>,
+}
+
+/// admin-web の `listMyCoachVideos` のクエリ。
+#[derive(Deserialize)]
+pub struct ListMyCoachVideosParams {
+    pending_only: Option<bool>,
 }
 
 /// admin-web の `CoachVideoList`。
@@ -47,18 +57,21 @@ pub struct CoachVideoBody {
 }
 
 /// `GET /coaches/me/videos`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
-/// アカウントに送られた動画。
+/// アカウントに送られた動画。`pending_only` が `true` なら添削を返していない動画だけ（省いたとき・`false` は絞らない）。
 pub async fn list_my_coach_videos<V, D>(
     State(state): State<Arc<CoachVideosState<V, D>>>,
     account: AuthenticatedAccount,
+    params: Result<Query<ListMyCoachVideosParams>, QueryRejection>,
 ) -> Result<Json<CoachVideoListBody>, ApiError>
 where
     V: VideoRepository,
     D: VideoStudentDisplayNameLookup,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let list = state
         .list_coach_videos
-        .execute(account.account_id())
+        .execute(account.account_id(), params.pending_only.unwrap_or(false))
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(CoachVideoListBody {
