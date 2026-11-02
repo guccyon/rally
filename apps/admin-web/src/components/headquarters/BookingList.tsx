@@ -34,18 +34,28 @@ function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: Head
   return groups;
 }
 
+/** 一覧の上の説明の主語（何の予約を見ているか）。 */
+function subjectOf(coachId: string | undefined, studentId: string | undefined): string {
+  const coach = coachId === undefined ? "すべてのコーチの枠への" : "このコーチの枠への";
+  if (studentId === undefined) return `${coach}予約`;
+  return coachId === undefined ? "この生徒の予約" : `${coach}、この生徒の予約`;
+}
+
 /**
  * 本部の「予約」。すべてのコーチの枠への予約を、開始する日付（日本時間）の期間で出す（listBookings）。
  * 既定の期間は今日から 7 日。並びは契約の正本どおり返った順（開始時刻の古い順）のまま、日付ごとに分けて出す。
- * `coachId` があれば、そのコーチの枠への予約だけに絞る（`coach_id`）。期間を変えても絞り込みは残る。
+ * `coachId` があれば、そのコーチの枠への予約だけに絞る（`coach_id`）。`studentId` があれば、その生徒が予約した予約だけに
+ * 絞る（`student_id`）。両方あれば両方で絞る。期間を変えても絞り込みは残る。
  * 各行の開始の時刻から、その予約の詳細へ移る。
  */
 export function BookingList({
   api,
   coachId,
+  studentId,
 }: {
   api: Pick<HeadquartersApi, "listBookings">;
   coachId?: string;
+  studentId?: string;
 }) {
   const [draft, setDraft] = useState<Period>(() => defaultPeriod(Date.now()));
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -56,7 +66,11 @@ export function BookingList({
 
   const fetchBookings = useCallback(
     async (period: Period): Promise<State> => {
-      const response = await api.listBookings(coachId === undefined ? period : { ...period, coach_id: coachId });
+      const response = await api.listBookings({
+        ...period,
+        ...(coachId === undefined ? {} : { coach_id: coachId }),
+        ...(studentId === undefined ? {} : { student_id: studentId }),
+      });
       return response.ok
         ? {
             kind: "loaded",
@@ -66,7 +80,7 @@ export function BookingList({
           }
         : { kind: "failed", message: response.message };
     },
-    [api, coachId],
+    [api, coachId, studentId],
   );
 
   // 開いたときの読み込み（既定の期間）。初期の状態が loading なので、ここでは結果だけを入れる。
@@ -95,7 +109,7 @@ export function BookingList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        {`${coachId === undefined ? "すべてのコーチ" : "このコーチ"}の枠への予約を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。`}
+        {`${subjectOf(coachId, studentId)}を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。`}
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">

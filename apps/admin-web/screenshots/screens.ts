@@ -123,6 +123,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-bookings-by-student",
+    title: "本部: 生徒 1 人の予約",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "この生徒の予約を見る" }).click();
+      await page.getByText(/^この生徒の予約を/).waitFor();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-cancelled-bookings",
     title: "本部: キャンセルされた予約",
     role: "headquarters",
