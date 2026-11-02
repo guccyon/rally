@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- 本部が送ったお知らせの一覧を期間で絞る: admin-web の `GET /announcements`（`listAnnouncements`）に任意のクエリ `from`・`to`（送った日付。日本時間、両端を含む）を足した。両方省けば今までどおりすべて、`from` だけなら `from` から、`to` だけなら `to` までの 7 日。期間の規則は `listBookings` と同じ（31 日まで。`to` が `from` より前・31 日超・日付でないときは 422 `validation_failed`）。取り下げたお知らせも今までどおり載り、並べ方は変わらない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#647）
 - 本部の返却待ちの動画添削の一覧をコーチで絞る: admin-web の `GET /video-reviews/pending`（`listPendingVideoReviews`）に任意のクエリ `coach_id` を足した。付ければそのコーチ宛ての返却待ちだけを返し、`sport`・`min_elapsed_hours` と組み合わせられる（経過時間の数え方と並べ方は変わらない）。UUID でなければ 422 `validation_failed`、該当がなければ `videos` は空の配列（#620）
 - 本部のキャンセルされた予約の一覧をコーチで絞る: admin-web の `GET /bookings/cancelled`（`listCancelledBookings`）に任意のクエリ `coach_id` を足した。付ければそのコーチの枠へのキャンセルされた予約だけを返し、付けなければ今までどおりすべてのコーチ。期間の規則と並べ方は変わらない。UUID でなければ 422 `validation_failed`、コーチでない ID・ない ID は 404 にせず空の配列（`listBookings` の `coach_id` と同じ）。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#618）
 - 本部が自己紹介の足りないコーチを競技で絞る: admin-web の `GET /coaches/incomplete-profiles`（`listIncompleteCoachProfiles`）に任意のクエリ `sport` を足した。付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけを返す。付けなければ今までどおり。「足りない」の判定と並べ方は変わらない。`Sport` の値でなければ 422 `validation_failed`（`listCoaches` の `sport` と同じ）。本部以外は 403。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#605）

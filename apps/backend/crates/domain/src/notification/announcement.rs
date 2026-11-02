@@ -4,7 +4,7 @@ use super::{
     AnnouncementBody, AnnouncementId, AnnouncementTitle, AnnouncementWithdrawal, NotificationError,
     PushNotification,
 };
-use crate::{catalog::Sport, identity::AccountId};
+use crate::{catalog::Sport, identity::AccountId, scheduling::BookingPeriod};
 
 /// 本部からのお知らせ（glossary の announcement）。本部が生徒全員か、あるスポーツの生徒全員に送った知らせの記録で、
 /// 送った本部のアカウント・題・本文・対象のスポーツ（全員なら `None`）・受け取った生徒の数・送った時刻を持つ。
@@ -87,6 +87,13 @@ impl Announcement {
 
     pub fn sent_at(&self) -> SystemTime {
         self.sent_at
+    }
+
+    /// 送った時刻が期間 `period` に入るか（開始を含み、終了を含まない）。本部の一覧（admin-web の `listAnnouncements`）を
+    /// 送った日付で絞るのに使う。期間の規則（1 日以上・上限の日数）は本部が見る予約の一覧と同じ [`BookingPeriod`] だけが
+    /// 持つ。取り下げたかは問わない。
+    pub fn is_sent_in(&self, period: &BookingPeriod) -> bool {
+        period.includes(self.sent_at)
     }
 
     /// 取り下げ。取り下げていなければ `None`。
@@ -215,6 +222,26 @@ mod tests {
         let restored = sent(None, 1).unwrap().with_withdrawal(Some(withdrawal));
         assert_eq!(restored.withdrawal(), Some(&withdrawal));
         assert!(restored.is_withdrawn());
+    }
+
+    #[test]
+    fn sent_in_a_period_includes_the_start_and_excludes_the_end() {
+        let announcement = sent(None, 1).unwrap();
+        let period = |from: u64, to: u64| BookingPeriod::new(at(from), at(to)).unwrap();
+        assert!(announcement.is_sent_in(&period(10, 11)), "開始を含む");
+        assert!(announcement.is_sent_in(&period(9, 11)));
+        assert!(!announcement.is_sent_in(&period(9, 10)), "終了を含まない");
+        assert!(!announcement.is_sent_in(&period(11, 12)));
+    }
+
+    #[test]
+    fn a_withdrawn_announcement_is_still_sent_in_its_period() {
+        let mut announcement = sent(None, 1).unwrap();
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert!(
+            announcement.is_sent_in(&BookingPeriod::new(at(10), at(11)).unwrap()),
+            "取り下げても送った時刻で決まる"
+        );
     }
 
     #[test]

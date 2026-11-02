@@ -1,5 +1,6 @@
 //! `PgAnnouncementRepository`（`notification.announcements`）の検証。送った記録の往復（全員とスポーツを絞ったもの）・
-//! 送った時刻の新しい順（同じ時刻は後に残したものが先）・ID で引くこと・取り下げの往復（最初の取り下げを上書きしない）。
+//! 送った時刻の新しい順（同じ時刻は後に残したものが先）・送った時刻の期間で引くこと（開始を含み終了を含まない。取り下げた
+//! ものも含む）・ID で引くこと・取り下げの往復（最初の取り下げを上書きしない）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -137,5 +138,36 @@ async fn a_withdrawal_round_trips_and_the_first_one_stays(pool: PgPool) {
         announcements.find(kept.id()).await.unwrap(),
         Some(kept),
         "ほかの記録は変えない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn announcements_sent_in_a_period_newest_first(pool: PgPool) {
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+
+    let before = announcement(&announcements, headquarters, "前", None, 1);
+    let first = announcement(&announcements, headquarters, "始まり", None, 2);
+    let same_time = announcement(&announcements, headquarters, "同じ時刻", None, 2);
+    let mut withdrawn = announcement(&announcements, headquarters, "取り下げた", None, 3);
+    let end = announcement(&announcements, headquarters, "終わり", None, 4);
+    for announcement in [&before, &first, &same_time, &withdrawn, &end] {
+        announcements.insert(announcement.clone()).await.unwrap();
+    }
+    withdrawn.withdraw(headquarters, at(5)).unwrap();
+    announcements.update(withdrawn.clone()).await.unwrap();
+
+    assert_eq!(
+        announcements.find_sent_between(at(2), at(4)).await.unwrap(),
+        [withdrawn, same_time, first],
+        "開始を含み終了を含まない。新しい順（同じ時刻は後に残したものが先）で、取り下げたものも含む"
+    );
+    assert!(
+        announcements
+            .find_sent_between(at(5), at(6))
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

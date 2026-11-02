@@ -24,6 +24,8 @@
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
 //! - 本部が見る予約の一覧（`listBookings`）とキャンセルされた予約の一覧（`listCancelledBookings`。同じ `ListBookingsError`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
 //!   422 `validation_failed`、それ以外は一覧では起きないので 500
+//! - 本部が送ったお知らせの一覧（`listAnnouncements`。notification の `ListAnnouncementsError`）: 期間は同じ
+//!   `BookingPeriod` の規則なので、違反は `From<SchedulingError>` で同じ文言の 422 `validation_failed`
 //! - 本部が見る予約 1 件の詳細（`getBooking`）: ない予約は 404 `not_found`、保存先の障害は 500
 //! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
 //!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開

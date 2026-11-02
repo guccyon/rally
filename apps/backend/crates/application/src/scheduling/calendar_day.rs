@@ -1,5 +1,6 @@
 //! 時刻がどの日付か（`time::Date`）と、日付の始まりと終わりの時刻。本部が見る予約の一覧（[`super::ListBookings`]）と
-//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）の日付は、ユースケースがここだけを通して決める。
+//! キャンセルされた予約の一覧（[`super::ListCancelledBookings`]）と、本部が送ったお知らせの一覧
+//! （[`crate::notification::ListAnnouncements`]）の日付は、ユースケースがここだけを通して決める。
 //!
 //! 日付は暦月と同じく日本時間（UTC+9。夏時間はない）で区切る（[`crate::entitlement::calendar_month`] のタイムゾーン）。
 

@@ -3,7 +3,8 @@ use std::time::{Duration, SystemTime};
 use super::SchedulingError;
 
 /// 本部が見る予約の一覧（admin-web の `listBookings` は枠の開始で、`listCancelledBookings` はキャンセルした時刻で絞る）の
-/// 期間。開始 `starts_at`（含む）から終了 `ends_at`（含まない）まで。
+/// 期間。本部が送ったお知らせの一覧（`listAnnouncements`）も送った時刻を同じ規則の期間で絞る
+/// （[`crate::notification::Announcement::is_sent_in`]）。開始 `starts_at`（含む）から終了 `ends_at`（含まない）まで。
 ///
 /// 日付（日本時間）の `from` の 0 時から `to` の翌日 0 時までにあたる。日付から時刻への変換（タイムゾーン）は
 /// application が決め、ここは期間の長さの規則だけを持つ。期間は 1 日以上 [`Self::MAX_DAYS`] 日まで。日付を省いたときの
