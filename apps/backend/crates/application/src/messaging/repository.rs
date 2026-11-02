@@ -40,6 +40,10 @@ pub trait MessageThreadRepository: Send + Sync {
         account_id: AccountId,
     ) -> impl Future<Output = Result<Vec<MessageThread>, Unavailable>> + Send;
 
+    /// すべてのスレッド（メッセージを含む。順序は問わない）。本部が見る、返信のないまま時間の過ぎたスレッドの一覧
+    /// （[`super::ListUnansweredMessageThreads`]）が読む。ページングはしない（docs/adr/0007 の決定 6）。
+    fn list_all(&self) -> impl Future<Output = Result<Vec<MessageThread>, Unavailable>> + Send;
+
     /// `thread_id` のスレッドを読み、`update` に渡す。`update` が `Ok` なら保存して返す（`Err` なら何も保存しない）。
     fn update<F>(
         &self,
