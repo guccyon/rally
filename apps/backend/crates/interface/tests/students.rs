@@ -1,7 +1,8 @@
 //! `GET /students`（admin-web の `listStudents`）の統合テスト。本部には生徒の一覧を、受講権の契約種別と契約プラン・
 //! 最後に予約した時刻とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
 //! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。`sport`・`not_booked_since` を付ければ
-//! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。この操作はパスパラメータを受けないので、
+//! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。`coach_id` を付ければ
+//! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。この操作はパスパラメータを受けないので、
 //! 404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
@@ -16,7 +17,9 @@ use application::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
         InMemorySlotRepository,
     },
-    scheduling::{BookingRepository, SchedulingStudentLastBookingLookup},
+    scheduling::{
+        BookingRepository, SchedulingStudentCoachBookingLookup, SchedulingStudentLastBookingLookup,
+    },
 };
 use axum::{
     Router,
@@ -165,7 +168,8 @@ fn router(
         ListStudents::new(
             accounts,
             EntitlementStudentContractLookup::new(entitlements),
-            SchedulingStudentLastBookingLookup::new(bookings),
+            SchedulingStudentLastBookingLookup::new(bookings.clone()),
+            SchedulingStudentCoachBookingLookup::new(bookings),
         ),
         FakeTokens,
     )
@@ -409,6 +413,59 @@ async fn q_sport_and_not_booked_since_are_combined() {
 }
 
 #[tokio::test]
+async fn coach_id_lists_only_students_who_booked_the_coach() {
+    let router = app().await;
+    for (uri, expected) in [
+        // 月額の生徒だけがコーチ 2 の枠を予約した
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000002",
+            vec!["3"],
+        ),
+        // ない ID・コーチでない ID（本部・生徒）は 404 にせず空の一覧
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000009",
+            vec![],
+        ),
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000001",
+            vec![],
+        ),
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000003",
+            vec![],
+        ),
+        // ほかの条件と組み合わせられる
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000002&sport=tennis&not_booked_since=2026-10-02",
+            vec!["3"],
+        ),
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000002&not_booked_since=2026-10-01",
+            vec![],
+        ),
+        (
+            "/students?coach_id=00000000-0000-0000-0000-000000000002&sport=golf",
+            vec![],
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) = list_students_at(
+        &router,
+        "/students?coach_id=00000000-0000-0000-0000-000000000002",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(body["students"][0]["contract_type"], "subscription");
+    assert_eq!(
+        body["students"][0]["last_booked_at"], "2026-10-01T12:00:00Z",
+        "絞り込んでも契約と最後に予約した時刻を添える"
+    );
+}
+
+#[tokio::test]
 async fn unknown_sport_or_malformed_date_is_422() {
     let router = app().await;
     for (uri, message) in [
@@ -426,6 +483,8 @@ async fn unknown_sport_or_malformed_date_is_422() {
             "/students?not_booked_since=2026-10-01T00:00:00Z",
             "not_booked_since は YYYY-MM-DD の日付でない",
         ),
+        ("/students?coach_id=coach-2", "coach_id が UUID でない"),
+        ("/students?coach_id=", "coach_id が UUID でない"),
     ] {
         let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
@@ -499,6 +558,9 @@ async fn lookup_failure_is_500_internal_without_the_reason() {
             accounts,
             EntitlementStudentContractLookup::new(InMemoryEntitlementRepository::default()),
             BrokenBookings,
+            SchedulingStudentCoachBookingLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
         ),
         FakeTokens,
     );
