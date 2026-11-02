@@ -1,0 +1,21 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: 実装役の報告がそのまま PR 本文になる流れでは、報告の書式と検査役の rubric が求める PR テンプレートの見出しが揃っていないと、本文の見出しの不足（「背景」「問題」がない）や、続きのジョブの報告が同じ「##」レベルで足されていく重複が毎回の指摘になる
+scope:
+  roles: [implementer, inspector, judge]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "guccyon/rally#548"
+  - issue: "guccyon/rally#543"
+  - event: "case.analyzed:113678"
+status: draft
+verified_at: 2026-11-02
+review_by: 2026-12-02
+invalidate_when:
+  - "実装役への指示の報告の書式が PR テンプレートの見出しと揃えられた"
+  - "PR テンプレートの見出しが変わった"
+  - "Engine が続きのジョブの報告を本文に足すやり方を変えた"
+confidentiality: product
+related: [K-0002]

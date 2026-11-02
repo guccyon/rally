@@ -1,0 +1,20 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: 並列のチケットがみな CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用では、既定ブランチにマージが入るたびに決まった衝突が起き、機械的に直せる追記の衝突にも tier-large の続きのジョブが走って費用が最初の実装を上回り、その報告が PR 本文に足されていく
+scope:
+  roles: [implementer, supervisor]
+  paths: ["CHANGELOG.md"]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: "guccyon/rally#548"
+  - event: "case.analyzed:113678"
+status: draft
+verified_at: 2026-11-02
+review_by: 2026-12-02
+invalidate_when:
+  - "CHANGELOG がチケットごとの断片ファイルに分けられた、または CHANGELOG.md に union マージが設定された"
+  - "CHANGELOG.md の追記だけの衝突を tier-small のジョブか supervisor の自動解消に回すようになった"
+confidentiality: product
+related: [K-0001]
