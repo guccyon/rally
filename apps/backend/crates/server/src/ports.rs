@@ -13,7 +13,8 @@ use application::{
     matching::FavoriteCoachRepository,
     messaging::MessageThreadRepository,
     notification::{
-        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
+        NotificationSettingsRepository, PushSender,
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
@@ -39,6 +40,7 @@ pub(crate) trait Ports {
     type CoachAcceptances: CoachAcceptanceRepository + Clone + 'static;
     type FavoriteCoaches: FavoriteCoachRepository + Clone + 'static;
     type Announcements: AnnouncementRepository + Clone + 'static;
+    type AnnouncementDrafts: AnnouncementDraftRepository + Clone + 'static;
     type Clock: Clock + Clone + 'static;
     type Analytics: AnalyticsSink + Clone + 'static;
     type VideoCall: VideoCallProvider + Clone + 'static;
@@ -61,6 +63,8 @@ pub(crate) trait Ports {
     fn favorite_coaches(&self) -> Self::FavoriteCoaches;
     /// 本部が送ったお知らせの記録。
     fn announcements(&self) -> Self::Announcements;
+    /// 本部が書きかけで残したお知らせの下書き。
+    fn announcement_drafts(&self) -> Self::AnnouncementDrafts;
     fn clock(&self) -> Self::Clock;
     fn analytics(&self) -> Self::Analytics;
     /// 通話基盤。

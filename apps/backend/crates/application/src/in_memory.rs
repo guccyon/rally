@@ -10,7 +10,7 @@ use std::{
 use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
-    catalog::{LessonMenu, LessonMenuId},
+    catalog::{LessonMenu, LessonMenuId, LessonMenuPublicationChange},
     entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
     identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonCompletionId},
@@ -18,8 +18,8 @@ use domain::{
     matching::FavoriteCoach,
     messaging::{MessageId, MessageThread, MessageThreadId, MessagingError},
     notification::{
-        Announcement, AnnouncementId, Notification, NotificationId, NotificationSettings,
-        PushNotification,
+        Announcement, AnnouncementDraft, AnnouncementDraftId, AnnouncementId, Notification,
+        NotificationId, NotificationKind, NotificationSettings, PushNotification,
     },
     profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
@@ -36,7 +36,7 @@ use crate::{
         AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
         video_id_uuid, video_review_id_uuid,
     },
-    catalog::{LessonMenuRepository, lesson_menu_id_uuid},
+    catalog::{ChangeLessonMenuPublicationError, LessonMenuRepository, lesson_menu_id_uuid},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
     entitlement::{
@@ -54,7 +54,8 @@ use crate::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     notification::{
-        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
+        NotificationSettingsRepository, PushSender, announcement_draft_id_uuid,
         announcement_id_uuid, notification_id_uuid,
     },
     profile::CoachProfileRepository,
@@ -195,6 +196,22 @@ impl CoachProfileRepository for InMemoryAccountRepository {
             .unwrap()
             .insert(coach_id, bio.clone());
         Ok(Some(bio))
+    }
+
+    async fn list_coach_bios(&self) -> Result<BTreeMap<AccountId, CoachBio>, Unavailable> {
+        let coach_ids: Vec<AccountId> = self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a.as_coach().is_some())
+            .map(|a| a.id())
+            .collect();
+        let bios = self.coach_bios.lock().unwrap();
+        Ok(coach_ids
+            .into_iter()
+            .map(|id| (id, bios.get(&id).cloned().unwrap_or_default()))
+            .collect())
     }
 }
 
@@ -463,6 +480,21 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned()
             .collect();
         Ok((found, booked))
+    }
+
+    async fn bookings_cancelled_between(
+        &self,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| b.cancelled_at().is_some_and(|at| from <= at && at < until))
+            .cloned()
+            .collect())
     }
 
     async fn bookings_of_student(
@@ -806,6 +838,28 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
             .collect())
     }
 
+    async fn find_started_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+        coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
+    ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| {
+                starts_at <= s.started_at()
+                    && s.started_at() < ends_at
+                    && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+                    && student_id.is_none_or(|student_id| s.booking_of(student_id).is_some())
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn insert(&self, session: LiveLessonSession) -> Result<(), InsertSessionError> {
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.iter().any(|s| {
@@ -971,6 +1025,24 @@ impl VideoRepository for InMemoryVideoRepository {
             .unwrap()
             .iter()
             .filter(|v| v.review().is_none())
+            .cloned()
+            .collect())
+    }
+
+    async fn videos_returned_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Video>, Unavailable> {
+        Ok(self
+            .videos
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| {
+                v.review()
+                    .is_some_and(|r| starts_at <= r.returned_at() && r.returned_at() < ends_at)
+            })
             .cloned()
             .collect())
     }
@@ -1326,10 +1398,12 @@ impl LessonReviewRepository for InMemoryLessonReviewRepository {
     }
 }
 
-/// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+/// [`LessonMenuRepository`] のインメモリ実装。ID は UUID v4。本部が非公開にした・公開に戻した記録を保存した順に持つ。
+/// 複製は同じ中身を共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryLessonMenuRepository {
     menus: Arc<Mutex<Vec<LessonMenu>>>,
+    publication_changes: Arc<Mutex<Vec<LessonMenuPublicationChange>>>,
 }
 
 impl InMemoryLessonMenuRepository {
@@ -1337,6 +1411,7 @@ impl InMemoryLessonMenuRepository {
     pub fn with_menus(menus: impl IntoIterator<Item = LessonMenu>) -> Self {
         Self {
             menus: Arc::new(Mutex::new(menus.into_iter().collect())),
+            publication_changes: Arc::default(),
         }
     }
 
@@ -1387,6 +1462,44 @@ impl LessonMenuRepository for InMemoryLessonMenuRepository {
 
     async fn find_all(&self) -> Result<Vec<LessonMenu>, Unavailable> {
         Ok(self.all())
+    }
+
+    async fn change_publication<F>(
+        &self,
+        id: LessonMenuId,
+        change: F,
+    ) -> Result<LessonMenu, ChangeLessonMenuPublicationError>
+    where
+        F: FnOnce(&mut LessonMenu) -> Result<LessonMenuPublicationChange, DomainError> + Send,
+    {
+        let mut menus = self.menus.lock().unwrap();
+        let saved = menus
+            .iter_mut()
+            .find(|m| m.id() == id)
+            .ok_or(ChangeLessonMenuPublicationError::LessonMenuNotFound)?;
+        let mut menu = saved.clone();
+        let record = change(&mut menu).map_err(ChangeLessonMenuPublicationError::Invalid)?;
+        *saved = menu.clone();
+        self.publication_changes.lock().unwrap().push(record);
+        Ok(menu)
+    }
+
+    async fn publication_changes(
+        &self,
+        id: LessonMenuId,
+    ) -> Result<Vec<LessonMenuPublicationChange>, Unavailable> {
+        // 保存した順の逆にしてから時刻で安定に並べるので、同じ時刻は後に保存した方が先
+        let mut changes: Vec<_> = self
+            .publication_changes
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .filter(|change| change.lesson_menu_id() == id)
+            .cloned()
+            .collect();
+        changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
+        Ok(changes)
     }
 }
 
@@ -1519,6 +1632,17 @@ impl NotificationRepository for InMemoryNotificationRepository {
         Ok(mine)
     }
 
+    async fn find_announcements_by_recipient(
+        &self,
+        recipient: AccountId,
+        limit: usize,
+    ) -> Result<Vec<Notification>, Unavailable> {
+        let mut announcements = self.find_by_recipient(recipient).await?;
+        announcements.retain(|n| n.kind() == NotificationKind::Announcement);
+        announcements.truncate(limit);
+        Ok(announcements)
+    }
+
     async fn mark_all_read(&self, recipient: AccountId, at: SystemTime) -> Result<(), Unavailable> {
         for notification in self.notifications.lock().unwrap().iter_mut() {
             if notification.recipient() == recipient {
@@ -1593,6 +1717,77 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
             .filter(|a| ids.contains(&a.id()))
             .map(|a| (a.id(), a))
             .collect())
+    }
+}
+
+/// [`AnnouncementDraftRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAnnouncementDraftRepository {
+    drafts: Arc<Mutex<Vec<AnnouncementDraft>>>,
+}
+
+impl InMemoryAnnouncementDraftRepository {
+    /// 既存の下書きを入れて作る（テストの準備用）。
+    pub fn with_drafts(drafts: impl IntoIterator<Item = AnnouncementDraft>) -> Self {
+        Self {
+            drafts: Arc::new(Mutex::new(drafts.into_iter().collect())),
+        }
+    }
+
+    /// 残っている下書き（作った順）。
+    pub fn all(&self) -> Vec<AnnouncementDraft> {
+        self.drafts.lock().unwrap().clone()
+    }
+}
+
+impl AnnouncementDraftRepository for InMemoryAnnouncementDraftRepository {
+    fn next_id(&self) -> AnnouncementDraftId {
+        announcement_draft_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn insert(&self, draft: AnnouncementDraft) -> Result<(), Unavailable> {
+        self.drafts.lock().unwrap().push(draft);
+        Ok(())
+    }
+
+    async fn find(
+        &self,
+        id: AnnouncementDraftId,
+    ) -> Result<Option<AnnouncementDraft>, Unavailable> {
+        Ok(self.all().into_iter().find(|d| d.id() == id))
+    }
+
+    async fn update(&self, draft: AnnouncementDraft) -> Result<bool, Unavailable> {
+        let mut drafts = self.drafts.lock().unwrap();
+        let Some(saved) = drafts.iter_mut().find(|d| d.id() == draft.id()) else {
+            return Ok(false);
+        };
+        // 作った本部のアカウントと作った時刻は保存してあるものを残す
+        let mut revised = saved.clone();
+        revised
+            .revise(
+                draft.title(),
+                draft.body(),
+                draft.sport(),
+                draft.updated_at(),
+            )
+            .map_err(Unavailable::new)?;
+        *saved = revised;
+        Ok(true)
+    }
+
+    async fn delete(&self, id: AnnouncementDraftId) -> Result<bool, Unavailable> {
+        let mut drafts = self.drafts.lock().unwrap();
+        let before = drafts.len();
+        drafts.retain(|d| d.id() != id);
+        Ok(drafts.len() != before)
+    }
+
+    async fn find_all(&self) -> Result<Vec<AnnouncementDraft>, Unavailable> {
+        let mut all: Vec<AnnouncementDraft> = self.all().into_iter().rev().collect();
+        // 後に作ったものから並べてあるので、安定な並べ替えで同じ時刻は後に作ったものが先になる
+        all.sort_by_key(|d| std::cmp::Reverse(d.updated_at()));
+        Ok(all)
     }
 }
 

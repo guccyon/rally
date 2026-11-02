@@ -63,7 +63,9 @@ mod tests {
 
     use domain::{
         profile::{CoachBio, DisplayName},
-        scheduling::{CoachAcceptanceChange, CoachAcceptanceStatus, SchedulingError},
+        scheduling::{
+            CoachAcceptanceChange, CoachAcceptanceStatus, CoachSuspensionReason, SchedulingError,
+        },
     };
 
     use super::*;
@@ -118,7 +120,13 @@ mod tests {
         let suspended_at = SystemTime::UNIX_EPOCH;
         use_case
             .acceptances()
-            .update(COACH, |a| a.suspend(HEADQUARTERS, suspended_at))
+            .update(COACH, |a| {
+                a.suspend(
+                    HEADQUARTERS,
+                    CoachSuspensionReason::new("休業").unwrap(),
+                    suspended_at,
+                )
+            })
             .await
             .unwrap();
 
@@ -138,17 +146,19 @@ mod tests {
                 CoachAcceptanceChange::restore(
                     COACH,
                     CoachAcceptanceStatus::Accepting,
+                    None,
                     HEADQUARTERS,
                     now()
                 ),
                 CoachAcceptanceChange::restore(
                     COACH,
                     CoachAcceptanceStatus::Suspended,
+                    Some(CoachSuspensionReason::new("休業").unwrap()),
                     HEADQUARTERS,
                     suspended_at
                 ),
             ],
-            "新しい順"
+            "新しい順。再開した記録は理由を持たない"
         );
     }
 

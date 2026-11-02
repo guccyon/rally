@@ -1,11 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { CoachOverview } from "@/components/headquarters/CoachOverview";
 import { CoachOverviewHome, coachOverviewPath } from "@/components/headquarters/CoachOverviewHome";
+import { CoachRelatedLinks } from "@/components/headquarters/CoachRelatedLinks";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
 
@@ -17,6 +18,8 @@ const OVERVIEW: Schemas["CoachOverview"] = {
   acceptance_status: "suspended",
   review_count: 12,
   average_rating: 4.5,
+  low_rated_review_count: 2,
+  unhandled_low_rated_review_count: 1,
   current_month: {
     month: "2026-11",
     live_lesson_count: 3,
@@ -49,6 +52,7 @@ describe("本部のコーチの様子", () => {
     render(<CoachOverview api={api} coachId={COACH_ID} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.queryByText("直近 30 日の低い評価")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "鈴木 コーチ" })).toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
     expect(api.getCoachOverview).toHaveBeenCalledTimes(1);
@@ -80,6 +84,37 @@ describe("本部のコーチの様子", () => {
 
     const link = await screen.findByRole("link", { name: "このコーチのレッスンメニューを見る" });
     expect(link).toHaveAttribute("href", `/headquarters/lesson-menus?coach_id=${COACH_ID}`);
+  });
+
+  test("直近 30 日の低い評価の件数と未対応の件数を出し、「低い評価を見る」は低い評価の画面へのリンク", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("直近 30 日の低い評価");
+    expect(value).toHaveTextContent("2 件（未対応 1 件）");
+    expect(within(value).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/low-reviews",
+    );
+  });
+
+  test("低い評価がすべて対応済みなら未対応は 0 件と出す", async () => {
+    const data = { ...OVERVIEW, low_rated_review_count: 3, unhandled_low_rated_review_count: 0 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    expect(valueOf("直近 30 日の低い評価")).toHaveTextContent("3 件（未対応 0 件）");
+  });
+
+  test("直近 30 日の低い評価が 0 件なら「ありません」と出し、リンクは残す", async () => {
+    const data = { ...OVERVIEW, low_rated_review_count: 0, unhandled_low_rated_review_count: 0 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("直近 30 日の低い評価");
+    expect(value).toHaveTextContent("ありません");
+    expect(value).not.toHaveTextContent("件");
+    expect(within(value).getByRole("link", { name: "低い評価を見る" })).toBeInTheDocument();
   });
 
   test("評価が 0 件なら平均は「評価はまだありません」、受付中なら「受付中」", async () => {
@@ -126,6 +161,7 @@ describe("本部のコーチの様子", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("heading", { name: "鈴木 コーチ" })).not.toBeInTheDocument();
+    expect(screen.queryByText("直近 30 日の低い評価")).not.toBeInTheDocument();
   });
 
   test("接続できないときもその文言を出す", async () => {
@@ -143,5 +179,51 @@ describe("本部のコーチの様子", () => {
 
   test("coachOverviewPath はコーチの ID をクエリに入れる", () => {
     expect(coachOverviewPath(COACH_ID)).toBe(`/headquarters/coach-overview?coach_id=${COACH_ID}`);
+  });
+});
+
+describe("コーチの様子の上のリンクの並び", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function linksOf() {
+    const nav = screen.getByRole("navigation", { name: "このコーチで開く画面" });
+    return within(nav)
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+  }
+
+  test("評価・低い評価・レッスンメニュー・予約の順に並び、評価・メニュー・予約はそのコーチで開く", () => {
+    render(<CoachRelatedLinks coachId={COACH_ID} />);
+
+    expect(linksOf()).toEqual([
+      ["評価", `/headquarters/coach-review-summary?coach_id=${COACH_ID}`],
+      ["低い評価", "/headquarters/low-reviews"],
+      ["レッスンメニュー", `/headquarters/lesson-menus?coach_id=${COACH_ID}`],
+      ["予約", `/headquarters/bookings?coach_id=${COACH_ID}`],
+    ]);
+  });
+
+  test("画面では様子の読み込み中からリンクの並びを出す", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
+
+    expect(screen.getAllByText("読み込み中…").length).toBeGreaterThan(0);
+    expect(linksOf()).toHaveLength(4);
+  });
+
+  test("様子が読み込めなくてもリンクの並びは残る", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
+
+    expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
+    expect(linksOf()).toHaveLength(4);
+  });
+
+  test("コーチの ID がなければリンクの並びは出さない", () => {
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={undefined} />);
+
+    expect(screen.queryByRole("navigation", { name: "このコーチで開く画面" })).not.toBeInTheDocument();
   });
 });

@@ -66,8 +66,8 @@ function listOf(menus: Schemas["CoachLessonMenu"][]) {
 }
 
 const COACHES: Schemas["Coach"][] = [
-  { coach_id: COACH_A, display_name: "山田コーチ", acceptance_status: "accepting" },
-  { coach_id: COACH_B, display_name: "佐藤コーチ", acceptance_status: "suspended" },
+  { coach_id: COACH_A, display_name: "山田コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+  { coach_id: COACH_B, display_name: "佐藤コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
 ];
 
 function apiOf(
@@ -112,19 +112,19 @@ describe("本部のレッスンメニュー", () => {
     expect(screen.getByLabelText("公開中だけ")).not.toBeChecked();
   });
 
-  test("直近 30 日の予約の数を「N 件」で右寄せ・等幅の数字で出し、表の下に数え方を書く", async () => {
+  test("直近 30 日の予約の数を「N 件」で右寄せ・等幅の数字で出し、「公開」の列との間をあけ、表の下に数え方を書く", async () => {
     const menus = [{ ...MENUS[0]!, recent_booking_count: 128 }, MENUS[1]!];
     render(<LessonMenuCatalog api={apiOf(listOf(menus))} />);
 
     const table = await screen.findByRole("table", { name: "レッスンメニューの一覧" });
     const header = within(table).getByRole("columnheader", { name: "直近 30 日の予約" });
-    expect(header).toHaveClass("text-right");
+    expect(header).toHaveClass("text-right", "pr-4");
     const counts = within(table)
       .getAllByRole("row")
       .slice(1)
       .map((row) => within(row).getAllByRole("cell")[5]!);
     expect(counts.map((cell) => cell.textContent)).toEqual(["128 件", "0 件"]);
-    for (const cell of counts) expect(cell).toHaveClass("text-right", "tabular-nums");
+    for (const cell of counts) expect(cell).toHaveClass("text-right", "tabular-nums", "pr-4");
     expect(
       screen.getByText(
         "直近 30 日の予約は、今から 30 日前までに入った予約のうち、キャンセルされていないものの数です。",
