@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
 import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
@@ -24,9 +24,27 @@ type CoachesState =
   | { kind: "loaded"; coaches: Schemas["Coach"][] }
   | { kind: "failed"; message: string };
 
-type Filter = { sport: Sport | ""; publishedOnly: boolean; coachId: string };
+/** URL に残す絞り込み（コーチと確定した名前の検索語。空なら絞らない）。 */
+export type LessonMenuCatalogQuery = { coachId: string; q: string };
+
+/** 絞り込みの条件。`q` は確定した名前の検索語（前後の空白を除いた値。空なら絞らない）。 */
+type Filter = { q: string; sport: Sport | ""; publishedOnly: boolean; coachId: string };
 
 const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
+
+/** 名前の検索語の上限（契約の `listLessonMenus` の `q`。前後の空白を除いて数える）。 */
+const MAX_QUERY_LENGTH = 40;
+
+const QUERY_TOO_LONG = `名前の検索語は ${MAX_QUERY_LENGTH} 文字までにしてください（前後の空白は数えません）。`;
+
+// 送る前の確かめをすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
+// URL の `?coach_id=` が UUID でないときもここに来る。
+const VALIDATION_FAILED = `絞り込みの指定が正しくありません。名前の検索語は ${MAX_QUERY_LENGTH} 文字まで、コーチは一覧から選んでください。`;
+
+/** 検索語の文字数（Unicode のコードポイントで数える）が上限を超えていれば理由を返す。 */
+function queryError(q: string): string | null {
+  return [...q].length > MAX_QUERY_LENGTH ? QUERY_TOO_LONG : null;
+}
 
 function durationLabel(menu: LessonMenu): string {
   return menu.duration_minutes === null ? "—" : `${menu.duration_minutes} 分`;
@@ -49,27 +67,40 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
 
 /**
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
- * 絞り込み（スポーツ・公開中だけ・コーチ）は API の `sport` / `published` / `coach_id` に渡し、並びは契約の正本どおり返った順のまま出す。
+ * 絞り込み（名前・スポーツ・公開中だけ・コーチ）は API の `q` / `sport` / `published` / `coach_id` に渡し、並びは契約の正本どおり返った順のまま出す。
+ * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・公開中だけ・コーチは選んだときに読み直す。
+ * スポーツ・公開中だけ・コーチを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
- * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。
+ * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
+ * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
  * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
  * 操作の列のボタンの後ろに、そのメニューの「公開の記録」の画面への「記録」を置く。
  */
 export function LessonMenuCatalog({
   api,
   initialCoachId,
+  initialQuery,
+  onQueryChange,
 }: {
   api: Pick<
     HeadquartersApi,
     "listLessonMenus" | "listCoaches" | "unpublishLessonMenu" | "republishLessonMenu"
   >;
   initialCoachId?: string;
+  initialQuery?: string;
+  onQueryChange?: (query: LessonMenuCatalogQuery) => void;
 }) {
+  const initialQ = (initialQuery ?? "").trim();
   const [filter, setFilter] = useState<Filter>({
+    q: initialQ,
     sport: "",
     publishedOnly: false,
     coachId: initialCoachId ?? "",
   });
+  // 名前の検索欄の入力中の値（確定する（探す・Enter・ほかの絞り込みを変える）までは一覧を読み直さない）。
+  const [queryDraft, setQueryDraft] = useState(initialQ);
+  const [queryDraftError, setQueryDraftError] = useState<string | null>(null);
   const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   const [state, setState] = useState<State>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -79,30 +110,37 @@ export function LessonMenuCatalog({
   const fetchMenus = useCallback(
     async (next: Filter): Promise<State> => {
       const response = await api.listLessonMenus({
+        ...(next.q === "" ? {} : { q: next.q }),
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.publishedOnly ? { published: true } : {}),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
       });
       return response.ok
         ? { kind: "loaded", menus: response.data.lesson_menus }
-        : { kind: "failed", message: response.message };
+        : {
+            kind: "failed",
+            message: response.code === "validation_failed" ? VALIDATION_FAILED : response.message,
+          };
     },
     [api],
   );
 
-  // 開いたときの読み込み（URL のコーチだけで絞る）。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（URL のコーチと名前の検索語だけで絞る）。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchMenus({ sport: "", publishedOnly: false, coachId: initialCoachId ?? "" }).then(
-      (next) => {
-        if (active && request === latestRequest.current) setState(next);
-      },
-    );
+    void fetchMenus({
+      q: initialQ,
+      sport: "",
+      publishedOnly: false,
+      coachId: initialCoachId ?? "",
+    }).then((next) => {
+      if (active && request === latestRequest.current) setState(next);
+    });
     return () => {
       active = false;
     };
-  }, [fetchMenus, initialCoachId]);
+  }, [fetchMenus, initialCoachId, initialQ]);
 
   // コーチの選択肢。読めなくてもメニューの一覧は出し、コーチの絞り込みだけを使えなくする。
   useEffect(() => {
@@ -134,8 +172,27 @@ export function LessonMenuCatalog({
 
   async function changeFilter(next: Filter) {
     setFilter(next);
+    setQueryDraftError(null);
     setResult(null);
+    onQueryChange?.({ coachId: next.coachId, q: next.q });
     await reload(next);
+  }
+
+  // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
+  async function commitFilter(change: Partial<Omit<Filter, "q">>) {
+    const q = queryDraft.trim();
+    const error = queryError(q);
+    if (error !== null) {
+      setQueryDraftError(error);
+      return;
+    }
+    setQueryDraft(q);
+    await changeFilter({ ...filter, ...change, q });
+  }
+
+  async function submitQuery(event: FormEvent) {
+    event.preventDefault();
+    await commitFilter({});
   }
 
   async function changePublication(
@@ -174,13 +231,27 @@ export function LessonMenuCatalog({
     <div className="space-y-4">
       <p className="text-sm">コーチが登録したレッスンメニューを、コーチをまたいで見られます。</p>
       <div className="flex flex-wrap items-end gap-4">
+        <form className="flex items-end gap-2" onSubmit={(event) => void submitQuery(event)}>
+          <label className="block">
+            名前で探す
+            <input
+              type="search"
+              className="mt-1 block rounded-md border px-2 py-1"
+              value={queryDraft}
+              onChange={(event) => setQueryDraft(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+            探す
+          </button>
+        </form>
         <label className="block">
           スポーツ
           <select
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
-              void changeFilter({ ...filter, sport: event.target.value as Sport | "" })
+              void commitFilter({ sport: event.target.value as Sport | "" })
             }
           >
             <option value="">すべて</option>
@@ -196,7 +267,7 @@ export function LessonMenuCatalog({
             type="checkbox"
             checked={filter.publishedOnly}
             onChange={(event) =>
-              void changeFilter({ ...filter, publishedOnly: event.target.checked })
+              void commitFilter({ publishedOnly: event.target.checked })
             }
           />
           公開中だけ
@@ -207,7 +278,7 @@ export function LessonMenuCatalog({
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.coachId}
             disabled={coaches.kind !== "loaded" && !unknownCoachSelected}
-            onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
+            onChange={(event) => void commitFilter({ coachId: event.target.value })}
           >
             <option value="">すべて</option>
             {unknownCoachSelected && (
@@ -223,6 +294,7 @@ export function LessonMenuCatalog({
           </select>
         </label>
       </div>
+      {queryDraftError !== null && <ResultMessage result={{ ok: false, message: queryDraftError }} />}
       {coaches.kind === "failed" && (
         <ResultMessage
           result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}

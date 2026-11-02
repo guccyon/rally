@@ -2,7 +2,8 @@
 //! した組み立て（`server::router_with_postgres`）で通す。評価していない生徒でも、どのコーチの分も読めること、一覧が送った
 //! 時刻の新しい順で評価した生徒を載せないこと、評価のないコーチは 0 件になることを確かめる。
 //! 評価されたコーチが `PUT /lesson-reviews/{review_id}/reply` で付けた返信（2 回目は上書き）が、生徒の読む一覧に載ることも
-//! 確かめる。契約の形の細かい検査は interface の `tests/reviews.rs`・`tests/review_replies.rs`。
+//! 本部とコーチ（admin-web）が `max_rating` でその点以下の評価だけを読めること（生徒は付けても変わらないこと）も確かめる。
+//! 契約の形の細かい検査は interface の `tests/reviews.rs`・`tests/review_replies.rs`。
 //!
 //! 評価は完了したレッスンが要り、そこまでの流れは `lessons.rs` で通しているので、ここでは評価を保存先に直に書く
 //! （`review.lesson_reviews` の `lesson_id` には外部キーがない）。
@@ -63,7 +64,7 @@ async fn put(router: &Router, path: &str, token: &str, body: Value) -> (StatusCo
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
-/// アカウントを登録して ID とトークンを返す。契約にコーチの登録の操作がないので、ユースケースを直に呼ぶ。
+/// アカウントを登録して ID とトークンを返す（本部以外はテニス）。契約にコーチの登録の操作がないので、ユースケースを直に呼ぶ。
 async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
@@ -74,7 +75,12 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
         email: email.to_string(),
         display_name: email.split('@').next().unwrap().to_string(),
         role,
-        sports: vec![Sport::Tennis],
+        // 本部はスポーツを持たない
+        sports: if role == Role::Headquarters {
+            vec![]
+        } else {
+            vec![Sport::Tennis]
+        },
     })
     .await
     .unwrap();
@@ -231,4 +237,65 @@ async fn the_reviewed_coach_replies_and_students_read_the_latest_reply_from_post
     // 応答の時刻は時計の精度、Postgres はマイクロ秒までなので、秒までを比べる
     let seconds = |value: &Value| value.as_str().unwrap()[..19].to_string();
     assert_eq!(seconds(&reply["replied_at"]), seconds(&replied_at));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_reads_only_reviews_rated_at_most_the_max_rating_from_postgres(pool: PgPool) {
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, _) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (_, headquarters) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    let low_older = review(&reviews, taro, tanaka, 1, 1, "合わなかった", 48).await;
+    let high = review(&reviews, taro, tanaka, 2, 5, "とてもよい", 1).await;
+    let low_newer = review(&reviews, taro, tanaka, 3, 2, "いまひとつ", 24).await;
+    let middle = review(&reviews, taro, tanaka, 4, 3, "ふつう", 12).await;
+    // 他のコーチの低い評価は載らない
+    review(&reviews, taro, ito, 5, 1, "別のコーチ", 2).await;
+    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let path = |max_rating: &str| format!("/coaches/{tanaka_id}/reviews?max_rating={max_rating}");
+
+    for token in [&headquarters, &tanaka_token] {
+        let (status, body) = get(&router, &path("2"), token).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["coach_id"], tanaka_id);
+        assert_eq!(
+            ids(&body),
+            [low_newer.clone(), low_older.clone()],
+            "★2 以下だけを、送った時刻の新しい順"
+        );
+        let (status, body) = get(&router, &path("3"), token).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            ids(&body),
+            [middle.clone(), low_newer.clone(), low_older.clone()]
+        );
+
+        for invalid in ["0", "6", "2.5", "low"] {
+            let (status, body) = get(&router, &path(invalid), token).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{invalid}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+        }
+    }
+
+    // 生徒（student-app）は付けても変わらない
+    let (status, body) = get(&router, &path("2"), &taro_token).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), [high, middle, low_newer, low_older]);
 }

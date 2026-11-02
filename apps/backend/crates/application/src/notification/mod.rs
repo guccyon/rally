@@ -1,7 +1,8 @@
 //! notification のユースケースとポート。
 //!
 //! 境界間イベントの購読でプッシュ通知を送ってお知らせを残すもの（[`PushNotificationSubscriber`]）のほか、本部が生徒に
-//! お知らせを送る（[`SendAnnouncement`]）・送った記録を一覧で見る（[`ListAnnouncements`]）・誤って送ったものを取り下げる
+//! お知らせを送る（[`SendAnnouncement`]）・送った記録を、受け取った生徒のうち既読にした数とともに一覧で見る
+//! （[`ListAnnouncements`]）・誤って送ったものを取り下げる
 //! （[`WithdrawAnnouncement`]。取り下げたものは生徒のお知らせの一覧に出さない）。生徒 1 人が受け取ったお知らせと既読を
 //! 問い合わせで確かめる（[`ListStudentAnnouncements`]）。本部からのお知らせを受け取る
 //! 生徒は profile に問い合わせる（[`AnnouncementRecipientLookup`]）。
@@ -16,11 +17,14 @@ mod announcement_draft_repository;
 pub mod announcement_id_uuid;
 mod announcement_recipient_lookup;
 mod announcement_repository;
+mod announcement_with_read_count;
 mod create_announcement_draft;
 mod delete_announcement_draft;
 mod get_notification_settings;
 mod list_announcement_drafts;
 mod list_announcements;
+mod list_announcements_error;
+mod list_announcements_query;
 mod list_my_notifications;
 mod list_student_announcements;
 mod list_student_announcements_error;
@@ -42,11 +46,14 @@ pub use announcement_draft_error::AnnouncementDraftError;
 pub use announcement_draft_repository::AnnouncementDraftRepository;
 pub use announcement_recipient_lookup::AnnouncementRecipientLookup;
 pub use announcement_repository::AnnouncementRepository;
+pub use announcement_with_read_count::AnnouncementWithReadCount;
 pub use create_announcement_draft::CreateAnnouncementDraft;
 pub use delete_announcement_draft::DeleteAnnouncementDraft;
 pub use get_notification_settings::GetNotificationSettings;
 pub use list_announcement_drafts::ListAnnouncementDrafts;
 pub use list_announcements::ListAnnouncements;
+pub use list_announcements_error::ListAnnouncementsError;
+pub use list_announcements_query::ListAnnouncementsQuery;
 pub use list_my_notifications::ListMyNotifications;
 pub use list_student_announcements::ListStudentAnnouncements;
 pub use list_student_announcements_error::ListStudentAnnouncementsError;

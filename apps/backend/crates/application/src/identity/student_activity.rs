@@ -16,6 +16,10 @@ pub struct StudentActivity {
     pub recent_lessons: Vec<LessonCompletion>,
     /// キャンセルした予約の件数（これまでのすべて）
     pub cancelled_booking_count: u32,
+    /// 送った動画の数（[`super::StudentVideoActivity::submitted_count`]。これまでのすべて）
+    pub submitted_video_count: u32,
+    /// 今返却を待っている動画の数（[`super::StudentVideoActivity::pending_review_count`]）
+    pub pending_video_review_count: u32,
     /// `upcoming_bookings` と `recent_lessons` のコーチの表示名（コーチの ID ごと）。表示名が引けないコーチは含まない
     pub coaches: BTreeMap<AccountId, DisplayName>,
 }

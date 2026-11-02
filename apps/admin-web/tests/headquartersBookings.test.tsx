@@ -6,7 +6,8 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { BookingList } from "@/components/headquarters/BookingList";
-import { BookingListHome, bookingListPath } from "@/components/headquarters/BookingListHome";
+import { BookingListHome, bookingListPath, studentBookingListPath } from "@/components/headquarters/BookingListHome";
+import { BookingStudentFilter } from "@/components/headquarters/BookingStudentFilter";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
 
@@ -237,6 +238,81 @@ describe("本部の予約", () => {
     expect(screen.getByText("2026年10月27日（火） 〜 2026年10月27日（火）・0 件")).toBeInTheDocument();
   });
 
+  test("「体験予約だけ」を入れると選んでいる期間で trial=true を付けて読み直し、絞った件数を出す", async () => {
+    const listBookings = listOf(BOOKINGS);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件");
+    expect(screen.getByRole("checkbox", { name: "体験予約だけ" })).not.toBeChecked();
+
+    listBookings.mockResolvedValueOnce({
+      ok: true,
+      data: { from: "2026-10-26", to: "2026-11-01", bookings: [BOOKINGS[0]!] },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01", trial: true });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・体験予約 1 件")).toBeInTheDocument();
+    expect(bodyRows("2026年10月26日（月） の予約").map((row) => cellsOf(row)[5])).toEqual(["体験予約"]);
+
+    // 切ると trial を付けずに読み直す
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01" });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件")).toBeInTheDocument();
+  });
+
+  test("「体験予約だけ」のまま期間を変えて「この期間で見る」でも trial=true を付ける", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-27");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-27", trial: true });
+  });
+
+  test("「体験予約だけ」で読み込み中は「読み込み中…」、0 件なら「この期間の体験予約はありません」と出す", async () => {
+    let resolveTrial: (value: Awaited<ReturnType<HeadquartersApi["listBookings"]>>) => void = () => {};
+    const listBookings = vi
+      .fn<HeadquartersApi["listBookings"]>()
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-26", to: "2026-11-01", bookings: BOOKINGS } })
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveTrial = resolve)));
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findAllByRole("table");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    resolveTrial({ ok: true, data: { from: "2026-10-26", to: "2026-11-01", bookings: [] } });
+    expect(await screen.findByText("この期間の体験予約はありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・体験予約 0 件")).toBeInTheDocument();
+    expect(screen.queryByText("この期間の予約はありません")).not.toBeInTheDocument();
+  });
+
+  test("「体験予約だけ」で読めなければその文言を出し、期間が正しくなければ送らずに理由を出す", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    listBookings.mockResolvedValueOnce({ ok: false, message: "通信できませんでした。" });
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("通信できませんでした。");
+    expect(screen.queryByText("この期間の体験予約はありません")).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-25");
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(screen.getByText("終了日は開始日と同じか、それより後の日付にしてください。")).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledTimes(2);
+  });
+
   test("API のエラー（本部以外のトークンの 403 など）の文言を出し、一覧は出さない", async () => {
     const listBookings = vi.fn<HeadquartersApi["listBookings"]>(async () => ({
       ok: false,
@@ -296,6 +372,23 @@ describe("本部の予約（コーチで絞る）", () => {
     );
   });
 
+  test("コーチで絞ったまま「体験予約だけ」を入れると coach_id と trial=true の両方を付ける", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      trial: true,
+    });
+    expect(await screen.findByText("この期間の体験予約はありません")).toBeInTheDocument();
+  });
+
   test("coachId がなければ coach_id を付けない", () => {
     const listBookings = listOf([]);
     render(<BookingList api={{ listBookings }} />);
@@ -329,5 +422,128 @@ describe("本部の予約（コーチで絞る）", () => {
 
   test("bookingListPath はコーチの ID をクエリに入れる", () => {
     expect(bookingListPath(COACH_ID)).toBe(`/headquarters/bookings?coach_id=${COACH_ID}`);
+  });
+});
+
+describe("本部の予約（生徒で絞る）", () => {
+  const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
+  const COACH_ID = "22222222-2222-4222-8222-000000000001";
+
+  function activityOf(displayName: string) {
+    return vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: true,
+      data: {
+        student_id: STUDENT_ID,
+        display_name: displayName,
+        upcoming_bookings: [],
+        recent_lessons: [],
+        cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
+      },
+    }));
+  }
+
+  test("studentId があれば listBookings に student_id を付けて読み、期間を変えても絞り込みは残る", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} studentId={STUDENT_ID} />);
+
+    expect(screen.getByText(/^この生徒の予約を/)).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", student_id: STUDENT_ID });
+    expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("coach_id");
+    await screen.findByText("この期間の予約はありません");
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-28");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    await waitFor(() =>
+      expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-28", student_id: STUDENT_ID }),
+    );
+  });
+
+  test("コーチと生徒の両方があれば両方で絞る", () => {
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} />);
+
+    expect(screen.getByText(/^このコーチの枠への、この生徒の予約を/)).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      student_id: STUDENT_ID,
+    });
+  });
+
+  test("生徒で絞ったまま「体験予約だけ」を入れると student_id と trial=true を両方付ける", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} studentId={STUDENT_ID} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+
+    await waitFor(() =>
+      expect(listBookings).toHaveBeenLastCalledWith({
+        from: "2026-10-26",
+        to: "2026-11-01",
+        student_id: STUDENT_ID,
+        trial: true,
+      }),
+    );
+  });
+
+  test("絞っている生徒の名前を getStudentActivity で読んで出す", async () => {
+    const getStudentActivity = activityOf("山田 花子");
+    render(<BookingStudentFilter api={{ getStudentActivity }} studentId={STUDENT_ID} />);
+
+    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(getStudentActivity).toHaveBeenCalledWith(STUDENT_ID);
+    expect(await screen.findByText("山田 花子")).toBeInTheDocument();
+    expect(screen.getByText(/^生徒で絞っています:/)).toBeInTheDocument();
+  });
+
+  test("生徒が読めなければ名前の代わりに「名前を表示できません」を出す", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: false,
+      code: "not_found",
+      message: "見つかりません。",
+    }));
+    render(<BookingStudentFilter api={{ getStudentActivity }} studentId={STUDENT_ID} />);
+
+    expect(await screen.findByText("（名前を表示できません）")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞った画面には「すべての生徒の予約を見る」があり、コーチの絞り込みは残す", () => {
+    const { unmount } = render(<BookingListHome token="mock.headquarters.abc" studentId={STUDENT_ID} />);
+    expect(screen.getByRole("link", { name: "すべての生徒の予約を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/bookings",
+    );
+    expect(screen.getByText(/^生徒で絞っています:/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "すべてのコーチの予約を見る" })).not.toBeInTheDocument();
+    unmount();
+
+    render(<BookingListHome token="mock.headquarters.abc" coachId={COACH_ID} studentId={STUDENT_ID} />);
+    expect(screen.getByRole("link", { name: "すべての生徒の予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?coach_id=${COACH_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "すべてのコーチの予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("生徒で絞らない画面には生徒の絞り込みの表示がない", () => {
+    render(<BookingListHome token="mock.headquarters.abc" />);
+    expect(screen.queryByRole("link", { name: "すべての生徒の予約を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
+  });
+
+  test("studentBookingListPath は生徒の ID をクエリに入れる", () => {
+    expect(studentBookingListPath(STUDENT_ID)).toBe(`/headquarters/bookings?student_id=${STUDENT_ID}`);
   });
 });

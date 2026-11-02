@@ -551,6 +551,20 @@ impl BookingRepository for InMemoryBookingRepository {
             .collect()
     }
 
+    async fn bookings_of_coach_starting_between(
+        &self,
+        coach_id: AccountId,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        Ok(self
+            .bookings_of_coach(coach_id)
+            .await?
+            .into_iter()
+            .filter(|(_, slot)| from <= slot.starts_at() && slot.starts_at() < until)
+            .collect())
+    }
+
     async fn bookings_of_lesson_menus_created_since(
         &self,
         lesson_menu_ids: &BTreeSet<LessonMenuId>,
@@ -1255,6 +1269,10 @@ impl MessageThreadRepository for InMemoryMessageThreadRepository {
             .collect())
     }
 
+    async fn list_all(&self) -> Result<Vec<MessageThread>, Unavailable> {
+        Ok(self.all())
+    }
+
     async fn update<F>(
         &self,
         thread_id: MessageThreadId,
@@ -1651,6 +1669,24 @@ impl NotificationRepository for InMemoryNotificationRepository {
         }
         Ok(())
     }
+
+    async fn count_read_by_announcement(
+        &self,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
+    ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
+        let mut counts = BTreeMap::new();
+        for notification in self.all() {
+            if let (Some(id), Some(read_at)) = (
+                notification.push().announcement_id(),
+                notification.read_at(),
+            ) && let Some(until) = read_until.get(&id)
+                && until.is_none_or(|until| read_at <= until)
+            {
+                *counts.entry(id).or_insert(0) += 1;
+            }
+        }
+        Ok(counts)
+    }
 }
 
 /// [`AnnouncementRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
@@ -1705,6 +1741,16 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
         // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
         all.sort_by_key(|a| std::cmp::Reverse(a.sent_at()));
         Ok(all)
+    }
+
+    async fn find_sent_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Announcement>, Unavailable> {
+        let mut sent = self.find_all().await?;
+        sent.retain(|a| starts_at <= a.sent_at() && a.sent_at() < ends_at);
+        Ok(sent)
     }
 
     async fn find_by_ids(

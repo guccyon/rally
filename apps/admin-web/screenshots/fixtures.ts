@@ -518,7 +518,18 @@ export const FIXTURES: Fixture[] = [
         average_rating: 4.5,
       },
       published_lesson_menu_count: 3,
+      returned_video_review_count: 7,
+      median_video_review_lead_time_hours: 18.5,
+      pending_video_review_count: 2,
+      overdue_pending_video_review_count: 1,
     } satisfies Schemas["CoachOverview"],
+  },
+  {
+    // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { sport: "swimming" },
+    body: { coaches: [] } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
     method: "GET",
@@ -580,6 +591,25 @@ export const FIXTURES: Fixture[] = [
         { sport: "swimming", status: "sufficient", published_slots: 10, booking_students: 7 },
       ],
     } satisfies Schemas["SlotSupplyReport"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
+    query: { q: "スイング" },
+    body: {
+      lesson_menus: [
+        {
+          ...MENU_FORE,
+          lesson_menu_id: id("aaaa", 9),
+          coach_id: COACH_ID_2,
+          sport: "golf",
+          name: "スイングの見直し",
+          duration_minutes: 90,
+          coach_display_name: "高橋 コーチ",
+          recent_booking_count: 7,
+        },
+      ],
+    } satisfies Schemas["CoachLessonMenuList"],
   },
   {
     method: "GET",
@@ -687,6 +717,8 @@ export const FIXTURES: Fixture[] = [
         },
       ],
       cancelled_booking_count: 1,
+      submitted_video_count: 2,
+      pending_video_review_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {
@@ -717,6 +749,17 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
+    // 生徒で絞った予約の一覧。mockApi は先に一致した応答を返すので、絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { student_id: STUDENT_ID },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter((item) => item.booking.student_id === STUDENT_ID),
+    } satisfies Schemas["HeadquartersBookingList"],
   },
   {
     method: "GET",
@@ -791,6 +834,7 @@ export const FIXTURES: Fixture[] = [
           body: "今月中に体験予約すると、2 回目のレッスンが無料になります。\nこの機会にぜひお試しください。",
           sport: "swimming",
           recipient_count: 8,
+          read_count: 5,
           sent_at: at(-24),
           withdrawal: null,
         },
@@ -801,6 +845,7 @@ export const FIXTURES: Fixture[] = [
           body: "11月からコートの予約はアプリの「予約」から行えます。",
           sport: "tennis",
           recipient_count: 15,
+          read_count: 3,
           sent_at: at(-24 * 2),
           withdrawal: { withdrawn_by: "99999999-9999-4999-8999-999999999999", withdrawn_at: at(-24 * 2 + 1) },
         },
@@ -811,6 +856,7 @@ export const FIXTURES: Fixture[] = [
           body: "10月30日（木）2:00〜4:00 はメンテナンスのため、アプリを使えません。",
           sport: null,
           recipient_count: 120,
+          read_count: 87,
           sent_at: at(-24 * 4),
           withdrawal: null,
         },

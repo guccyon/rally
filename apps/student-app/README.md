@@ -42,6 +42,8 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 
 - テーマは `lib/ui/theme/rally_theme.dart` の `buildRallyTheme()`。色・書体・余白・角丸は `lib/ui/theme/rally_tokens.dart`（`RallyColors` など）で、正本は `specs/design/tokens.yaml`。値が正本と同じことを `test/ui/theme/rally_tokens_test.dart` が確かめる
 - 基本の部品（`specs/design/components.yaml`）は `lib/ui/components/`（`RallyButton`・`StatusTag`・`ScorePanel`・`Notice`・`EmptyState`・`SectionLoading`・`RallyCard`・`ListRow`・`showConfirmDialog`）。入力欄・しるし・読み込み中の bar はテーマ（`InputDecorationTheme` など）で合わせる
+- 部品の種類と状態の見本を `lib/ui/design_catalog.dart` に並べ、`lib/screens/design_catalog_screen.dart` で見る（アプリの流れからは開けない）。画面のキャプチャの `design-catalog`（縦に伸ばして下まで 1 枚）なので、部品を変えると PR のキャプチャに出る
+- components.yaml に部品・種類を足したら `design_catalog.dart` にも見本を足す。置けないものは `notInStudentCatalog` に理由とともに書く（`test/ui/design_catalog_test.dart` が突き合わせる）
 
 ## 画面のキャプチャ
 

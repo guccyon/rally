@@ -68,6 +68,8 @@ const ACTIVITY: Schemas["StudentActivity"] = {
     },
   ],
   cancelled_booking_count: 3,
+  submitted_video_count: 4,
+  pending_video_review_count: 1,
 };
 
 function activityOf(activity: Schemas["StudentActivity"]) {
@@ -121,6 +123,8 @@ describe("本部の生徒の利用の様子", () => {
             upcoming_bookings: [],
             recent_lessons: [],
             cancelled_booking_count: 0,
+            submitted_video_count: 0,
+            pending_video_review_count: 0,
           }),
         }}
         studentId={STUDENT_ID}
@@ -206,6 +210,21 @@ describe("画面への配置", () => {
     );
 
     expect(screen.getByRole("link", { name: "生徒の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/students");
+    expect(screen.queryByRole("link", { name: "この生徒の予約を見る" })).not.toBeInTheDocument();
+  });
+
+  test("利用の様子から、その生徒で絞った予約の一覧を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒の予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?student_id=${STUDENT_ID}`,
+    );
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {

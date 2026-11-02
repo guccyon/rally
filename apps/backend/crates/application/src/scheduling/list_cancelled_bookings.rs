@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, collections::BTreeSet};
 
-use domain::{identity::AccountId, scheduling::BookingPeriod};
-use time::{Date, Duration};
+use domain::identity::AccountId;
+use time::Date;
 
 use super::{
     BookingCoachDisplayNameLookup, BookingRepository, CancelledBookingList, ListBookingsError,
@@ -12,9 +12,9 @@ use crate::clock::Clock;
 /// 本部が見るキャンセルされた予約の一覧のユースケース（admin-web の `listCancelledBookings`。本部だけが呼ぶ）。
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）にキャンセルした予約を読み、キャンセルした時刻の新しい順に並べる
-/// （同じ時刻は予約 ID の順）。日付を両方省けば今日までの [`BookingPeriod::DEFAULT_DAYS`] 日、`from` だけなら `from` から、
-/// `to` だけなら `to` までの [`BookingPeriod::DEFAULT_DAYS`] 日。期間の規則（`to` が `from` より前でない・
-/// [`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。`coach_id` があればそのコーチの枠への予約だけに
+/// （同じ時刻は予約 ID の順）。日付を両方省けば今日までの 7 日、`from` だけなら `from` から、`to` だけなら `to` までの 7 日
+/// （省いた日付の決め方は [`calendar_day::period_ending`]）。期間の規則（`to` が `from` より前でない・31 日まで）は domain の
+/// [`BookingPeriod`](domain::scheduling::BookingPeriod)。`coach_id` があればそのコーチの枠への予約だけに
 /// 絞る（いないコーチなら空の一覧。規則は [`super::ListBookings`] と同じ domain の
 /// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。キャンセルした人は domain の
 /// [`Booking::cancelled_by`](domain::scheduling::Booking::cancelled_by)。一覧に出るコーチと生徒の表示名は profile に
@@ -57,17 +57,9 @@ where
         &self,
         query: ListCancelledBookingsQuery,
     ) -> Result<CancelledBookingList, ListBookingsError> {
-        let span = Duration::days(i64::from(BookingPeriod::DEFAULT_DAYS) - 1);
-        let (from, to) = match (query.from, query.to) {
-            (Some(from), Some(to)) => (from, to),
-            (Some(from), None) => (from, from.saturating_add(span)),
-            (None, Some(to)) => (to.saturating_sub(span), to),
-            (None, None) => {
-                let today = calendar_day::of(self.clock.now());
-                (today.saturating_sub(span), today)
-            }
-        };
-        let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
+        let (from, to, period) = calendar_day::period_ending(query.from, query.to, || {
+            calendar_day::of(self.clock.now())
+        })?;
 
         let mut bookings = self
             .bookings

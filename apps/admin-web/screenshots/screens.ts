@@ -21,6 +21,8 @@ const coachTab = (name: string) => async (page: Page) => {
 
 export const SCREENS: Screen[] = [
   { id: "login", title: "ログイン", path: "/" },
+  // デザインシステムの部品のカタログ（本番のメニューには出さない）。部品が変わるとここに出る
+  { id: "design-catalog", title: "デザインシステム: 部品のカタログ", path: "/design" },
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
   { id: "coach-slots", title: "コーチ: 予約枠", role: "coach", path: "/coach", open: coachTab("予約枠") },
   {
@@ -112,6 +114,15 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   {
+    id: "hq-lesson-menus-search",
+    title: "本部: レッスンメニューを名前で探す",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus?q=%E3%82%B9%E3%82%A4%E3%83%B3%E3%82%B0",
+    open: async (page) => {
+      await page.getByRole("row", { name: /スイングの見直し/ }).waitFor();
+    },
+  },
+  {
     id: "hq-lesson-menus-by-coach",
     title: "本部: コーチ 1 人のレッスンメニュー",
     role: "headquarters",
@@ -175,6 +186,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-bookings-by-student",
+    title: "本部: 生徒 1 人の予約",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "この生徒の予約を見る" }).click();
+      await page.getByText(/^この生徒の予約を/).waitFor();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-cancelled-bookings",
     title: "本部: キャンセルされた予約",
     role: "headquarters",
@@ -191,6 +214,16 @@ export const SCREENS: Screen[] = [
     title: "本部: 自己紹介の足りないコーチ",
     role: "headquarters",
     path: "/headquarters/coaches/incomplete-profiles",
+  },
+  {
+    id: "hq-incomplete-coach-profiles-empty",
+    title: "本部: 自己紹介の足りないコーチ（絞り込んで 0 件）",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+    open: async (page) => {
+      await page.getByLabel("スポーツ").selectOption({ label: "水泳" });
+      await page.getByText("条件に合うコーチはいません").waitFor();
+    },
   },
   {
     id: "hq-overdue-live-sessions",

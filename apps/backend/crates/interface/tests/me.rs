@@ -156,6 +156,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -163,6 +164,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),

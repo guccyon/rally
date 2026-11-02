@@ -45,7 +45,8 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
+    listIncompleteCoachProfiles: (filter: { sport?: Schemas["Sport"] } = {}) =>
+      call(() => client.GET("/coaches/incomplete-profiles", { params: { query: filter } })),
     listLowRatedLessonReviews: (filter: { handled?: boolean } = {}) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
     markLowRatedLessonReviewHandled: (reviewId: string) =>
@@ -60,13 +61,23 @@ export function headquartersApi(client: ApiClient) {
       coach_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
-    listReturnedVideoReviews: (filter: { from?: string; to?: string; coach_id?: string }) =>
+    listReturnedVideoReviews: (filter: {
+      from?: string;
+      to?: string;
+      coach_id?: string;
+      sport?: Schemas["Sport"];
+    }) =>
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
-    listLessonMenus: (filter: { sport?: Schemas["Sport"]; published?: boolean }) =>
+    listLessonMenus: (filter: {
+      q?: string;
+      sport?: Schemas["Sport"];
+      published?: boolean;
+      coach_id?: string;
+    }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
       call(() =>
@@ -101,7 +112,7 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listBookings: (query: { from?: string; to?: string; coach_id?: string }) =>
+    listBookings: (query: { from?: string; to?: string; coach_id?: string; student_id?: string; trial?: boolean }) =>
       call(() => client.GET("/bookings", { params: { query } })),
     listCancelledBookings: (period: { from?: string; to?: string }) =>
       call(() => client.GET("/bookings/cancelled", { params: { query: period } })),

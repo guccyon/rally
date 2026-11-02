@@ -101,6 +101,8 @@ describe("本部の生徒の受け取ったお知らせ", () => {
         upcoming_bookings: [],
         recent_lessons: [],
         cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
       },
     }));
     render(

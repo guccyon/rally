@@ -1,17 +1,18 @@
 //! `GET /students/{student_id}/activity`（admin-web の `getStudentActivity`）の統合テスト。本部には生徒 1 人の表示名・
-//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数を返すことを OpenAPI のスキーマで検査する。
+//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数・送った動画の数と返却待ちの数を返すことを OpenAPI のスキーマで検査する。
 //! コーチ・生徒は 403、トークンがなければ 401、生徒でない・ない・UUID でない ID は 404。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::AsyncLessonStudentVideoActivityLookup,
     identity::{
         AccessToken, AccountRepository, GetStudentActivity, InvalidToken, TokenClaims, TokenIssuer,
         TokenVerifier,
     },
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryLessonCompletionRepository,
-        InMemorySlotRepository, ManualClock,
+        InMemorySlotRepository, InMemoryVideoRepository, ManualClock,
     },
     lesson::LessonStudentLessonHistoryLookup,
     profile::ProfileCoachDisplayNameLookup,
@@ -23,7 +24,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::VideoId,
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
@@ -122,8 +123,29 @@ fn lesson(id: u128, coach: AccountId, hour: u64) -> LessonCompletion {
     )
 }
 
+/// `student` が `COACH` に `hour` 時に送った動画 `id`。`returned` なら 1 時間後に添削が返っている。
+fn video(id: u128, student: AccountId, hour: u64, returned: bool) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        student,
+        COACH,
+        Sport::Tennis,
+        at(hour),
+        returned.then(|| {
+            (
+                VideoReviewId::from_u128(id),
+                ReviewComment::new("フォロースルーを大きく").unwrap(),
+                at(hour + 1),
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
 /// 今は 100 時。生徒 `STUDENT` は 200 時の枠（`COACH`）と 150 時の枠（`GONE_COACH`）をこれから受け、50 時の枠は
-/// 始まっていて、300 時の枠はキャンセルした。完了したレッスンは 22 件（1〜22 時）。
+/// 始まっていて、300 時の枠はキャンセルした。完了したレッスンは 22 件（1〜22 時）。動画は 3 本送り、1 本は添削が
+/// 返っていて 2 本は返却待ち（ほかに別の生徒の返却待ちが 1 本ある）。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
     for account in [
@@ -160,19 +182,27 @@ async fn app() -> Router {
         let coach = if id == 22 { GONE_COACH } else { COACH };
         lesson(id, coach, id as u64)
     }));
-    router(accounts, bookings, completions)
+    let videos = InMemoryVideoRepository::with_videos([
+        video(40, STUDENT, 30, true),
+        video(41, STUDENT, 40, false),
+        video(42, STUDENT, 90, false),
+        video(43, AccountId::from_u128(99), 40, false),
+    ]);
+    router(accounts, bookings, completions, videos)
 }
 
 fn router(
     accounts: InMemoryAccountRepository,
     bookings: InMemoryBookingRepository,
     completions: InMemoryLessonCompletionRepository,
+    videos: InMemoryVideoRepository,
 ) -> Router {
     interface::student_activity_router(
         GetStudentActivity::new(
             accounts.clone(),
             SchedulingStudentBookingActivityLookup::new(bookings),
             LessonStudentLessonHistoryLookup::new(completions),
+            AsyncLessonStudentVideoActivityLookup::new(videos),
             ProfileCoachDisplayNameLookup::new(accounts),
             ManualClock::new(at(100)),
         ),
@@ -212,12 +242,17 @@ fn uuid(id: u128) -> String {
 }
 
 #[tokio::test]
-async fn headquarters_sees_upcoming_bookings_recent_lessons_and_cancelled_count() {
+async fn headquarters_sees_upcoming_bookings_recent_lessons_cancelled_count_and_videos() {
     let (status, body) = get_activity(&app().await, &uuid(3), Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["student_id"], uuid(3));
     assert_eq!(body["display_name"], "なまえ3");
     assert_eq!(body["cancelled_booking_count"], 1);
+    assert_eq!(body["submitted_video_count"], 3, "返却済みも数える");
+    assert_eq!(
+        body["pending_video_review_count"], 2,
+        "別の生徒の動画は数えない"
+    );
 
     let upcoming = body["upcoming_bookings"].as_array().unwrap();
     assert_eq!(
@@ -281,6 +316,8 @@ async fn student_without_bookings_or_lessons_is_empty() {
             "upcoming_bookings": [],
             "recent_lessons": [],
             "cancelled_booking_count": 0,
+            "submitted_video_count": 0,
+            "pending_video_review_count": 0,
         })
     );
 }
