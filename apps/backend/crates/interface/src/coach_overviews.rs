@@ -28,12 +28,13 @@ use crate::{
 };
 
 /// `/coaches/{coach_id}/overview` のハンドラーが使うユースケース。
-pub struct CoachOverviewsState<R, A, V, M, W, C, N, P> {
-    pub get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N, P>,
+pub struct CoachOverviewsState<R, A, V, M, W, C, N, D> {
+    pub get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N, D>,
 }
 
-/// admin-web の `CoachOverview`。評価の平均は評価が 0 件なら null。直近の低い評価の件数と、そのうち本部が未対応の件数、
-/// 返却待ちの動画添削の件数と、そのうち送付から 48 時間以上たった件数を添える。金額は載せない。
+/// admin-web の `CoachOverview`。評価の平均は評価が 0 件なら null。直近の低い評価の件数と、そのうち本部が未対応の件数と、
+/// 直近 30 日に送られた動画添削の件数と返却までの時間の中央値（送られたものがなければ null）と、返却待ちの動画添削の件数と
+/// そのうち送付から 48 時間以上たった件数を添える。金額は載せない。
 #[derive(Serialize)]
 pub struct CoachOverviewBody {
     coach_id: String,
@@ -46,6 +47,8 @@ pub struct CoachOverviewBody {
     current_month: MonthlyLessonStatsBody,
     previous_month: MonthlyLessonStatsBody,
     published_lesson_menu_count: u32,
+    returned_video_review_count: u32,
+    median_video_review_lead_time_hours: Option<f64>,
     pending_video_review_count: u32,
     overdue_pending_video_review_count: u32,
 }
@@ -53,8 +56,8 @@ pub struct CoachOverviewBody {
 /// `GET /coaches/{coach_id}/overview`。本部だけが呼べる（役割は `require_role` の層が確かめる）。コーチでない ID・ない ID・
 /// UUID でない ID は 404。
 #[allow(clippy::type_complexity)]
-pub async fn get_coach_overview<R, A, V, M, W, C, N, P>(
-    State(state): State<Arc<CoachOverviewsState<R, A, V, M, W, C, N, P>>>,
+pub async fn get_coach_overview<R, A, V, M, W, C, N, D>(
+    State(state): State<Arc<CoachOverviewsState<R, A, V, M, W, C, N, D>>>,
     Path(coach_id): Path<String>,
 ) -> Result<Json<CoachOverviewBody>, ApiError>
 where
@@ -65,7 +68,7 @@ where
     W: MonthlyReviewSummaryLookup,
     C: Clock,
     N: LessonMenuRepository,
-    P: VideoRepository,
+    D: VideoRepository,
 {
     // 契約の getCoachOverview では、UUID でない ID はないものとして 404
     let coach_id =
@@ -87,6 +90,8 @@ where
         current_month: monthly_lesson_stats_body(&overview.lesson_stats.current_month),
         previous_month: monthly_lesson_stats_body(&overview.lesson_stats.previous_month),
         published_lesson_menu_count: overview.published_lesson_menu_count,
+        returned_video_review_count: overview.video_review_lead_time.returned_count(),
+        median_video_review_lead_time_hours: overview.video_review_lead_time.median_hours(),
         pending_video_review_count: overview.pending_video_reviews.pending_count(),
         overdue_pending_video_review_count: overview.pending_video_reviews.overdue_count(),
     }))
@@ -97,8 +102,8 @@ where
 ///
 /// 本部だけ（コーチ・生徒は 403）。
 #[allow(clippy::type_complexity)]
-pub fn coach_overview_router<R, A, V, M, W, C, N, P, T>(
-    get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N, P>,
+pub fn coach_overview_router<R, A, V, M, W, C, N, D, T>(
+    get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N, D>,
     tokens: T,
 ) -> Router
 where
@@ -109,14 +114,14 @@ where
     W: MonthlyReviewSummaryLookup + 'static,
     C: Clock + 'static,
     N: LessonMenuRepository + 'static,
-    P: VideoRepository + 'static,
+    D: VideoRepository + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
         .route(
             "/coaches/{coach_id}/overview",
-            get(self::get_coach_overview::<R, A, V, M, W, C, N, P>),
+            get(self::get_coach_overview::<R, A, V, M, W, C, N, D>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(CoachOverviewsState { get_coach_overview }))

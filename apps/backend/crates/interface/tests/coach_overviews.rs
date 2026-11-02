@@ -1,14 +1,16 @@
 //! `/coaches/{coach_id}/overview` の統合テスト。admin-web の `GET /coaches/{coach_id}/overview`（`getCoachOverview`）の
 //! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の
-//! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数・返却待ちの動画添削の件数と
-//! そのうち 48 時間以上たった件数を 1 回で読めること、コーチでない ID・ない ID・UUID でない
-//! ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の細かい検査は各操作の
-//! テスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`・`pending_video_reviews.rs`）。
+//! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数・直近 30 日に送られた動画の
+//! 返却までの時間の中央値（まだ返していない動画は今までの経過時間）とそのうち返した件数・返却待ちの動画添削の件数とそのうち
+//! 48 時間以上たった件数を 1 回で読めること、コーチでない
+//! ID・ない ID・UUID でない ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の
+//! 細かい検査は各操作のテスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`・
+//! `pending_video_reviews.rs`）と、domain の `VideoReviewLeadTime`・`CoachPendingVideoReviewCount` の単体テスト。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
-    async_lesson::GetCoachPendingVideoReviewCount,
+    async_lesson::{GetCoachPendingVideoReviewCount, GetCoachVideoReviewLeadTime},
     catalog::ListCoachLessonMenus,
     identity::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
@@ -157,21 +159,19 @@ fn menu(id: u128, sport: Sport, is_published: bool) -> LessonMenu {
     )
 }
 
-/// 生徒が `COACH` に `submitted_at` に送った動画。`returned_at` があればその時刻に返却済み。
-fn video(id: u128, submitted_at: SystemTime, returned_at: Option<SystemTime>) -> Video {
+/// コーチ `COACH` に `returned_at` の `lead_minutes` 分前に送られ、`returned_at` に添削を返した動画。
+fn returned_video(id: u128, returned_at: SystemTime, lead_minutes: u64) -> Video {
     Video::restore(
         VideoId::from_u128(id),
         STUDENT,
         COACH,
         Sport::Tennis,
-        submitted_at,
-        returned_at.map(|at| {
-            (
-                VideoReviewId::from_u128(id + 100),
-                ReviewComment::new("テイクバックが早い").unwrap(),
-                at,
-            )
-        }),
+        returned_at - Duration::from_secs(lead_minutes * 60),
+        Some((
+            VideoReviewId::from_u128(id),
+            ReviewComment::new("よい").unwrap(),
+            returned_at,
+        )),
         None,
     )
     .unwrap()
@@ -179,7 +179,9 @@ fn video(id: u128, submitted_at: SystemTime, returned_at: Option<SystemTime>) ->
 
 /// 今は日本時間の 11 月 1 日 2 時。コーチ `COACH`（たなか）は受付を止められていて、11 月に通話 1・添削 1、10 月に通話 1 を
 /// 完了し、評価は 5（11 月）と 4・1・2（10 月。★2 は本部が対応済み）と 2（9 月。30 日より前）を受け、公開中のメニューは
-/// テニス 1・ゴルフ 1（ほかに非公開 1）。返却待ちの動画は 3 本（うち 48 時間以上が 2 本。ほかに返却済み 1 本）。
+/// テニス 1・ゴルフ 1（ほかに非公開 1）。直近 30 日に送られた動画は、送付から 1 時間 30 分と 2 時間 10 分で返した 2 本と、
+/// まだ返していない 2 本（今までの経過 24 時間と 72 時間）で、40 日前に返した 1 本は数えない。返却待ちはこの 2 本で、
+/// 48 時間以上たったのは 72 時間の 1 本。
 /// `NEW_COACH`（いとう）は何もない。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
@@ -202,9 +204,8 @@ async fn app() -> Router {
         })
         .await
         .unwrap();
-    let hour = Duration::from_secs(3600);
-    let day = 24 * hour;
-    let now = nov1() + 2 * hour;
+    let day = Duration::from_secs(24 * 3600);
+    let now = nov1() + Duration::from_secs(2 * 3600);
     let reviews = InMemoryLessonReviewRepository::with_reviews([
         review(1, 5, nov1()),
         review(2, 4, nov1() - SECOND),
@@ -212,6 +213,25 @@ async fn app() -> Router {
         review(4, 1, nov1() - day),
         review(5, 2, nov1() - 2 * day)
             .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS_ID, nov1()))),
+    ]);
+    let videos = InMemoryVideoRepository::with_videos([
+        returned_video(1, now - day, 90),
+        returned_video(2, now - day * 29, 130),
+        returned_video(3, now - day * 40, 10),
+        Video::submit(
+            VideoId::from_u128(4),
+            STUDENT,
+            COACH,
+            Sport::Tennis,
+            now - day,
+        ),
+        Video::submit(
+            VideoId::from_u128(5),
+            STUDENT,
+            COACH,
+            Sport::Tennis,
+            now - day * 3,
+        ),
     ]);
     interface::coach_overview_router(
         GetCoachOverview::new(
@@ -233,15 +253,8 @@ async fn app() -> Router {
                 menu(2, Sport::Golf, true),
                 menu(3, Sport::Tennis, false),
             ])),
-            GetCoachPendingVideoReviewCount::new(
-                InMemoryVideoRepository::with_videos([
-                    video(1, now - 72 * hour, None),
-                    video(2, now - 48 * hour, None),
-                    video(3, now - 47 * hour, None),
-                    video(4, now - 100 * hour, Some(now - hour)),
-                ]),
-                FixedClock(now),
-            ),
+            GetCoachVideoReviewLeadTime::new(videos.clone(), FixedClock(now)),
+            GetCoachPendingVideoReviewCount::new(videos, FixedClock(now)),
         ),
         FakeTokens,
     )
@@ -305,8 +318,10 @@ async fn headquarters_reads_the_overview_of_a_coach() {
             "current_month": month("2026-11", (1, 1), 1, json!(5.0)),
             "previous_month": month("2026-10", (1, 0), 3, json!(2.33)),
             "published_lesson_menu_count": 2,
-            "pending_video_review_count": 3,
-            "overdue_pending_video_review_count": 2,
+            "returned_video_review_count": 2,
+            "median_video_review_lead_time_hours": 13.08,
+            "pending_video_review_count": 2,
+            "overdue_pending_video_review_count": 1,
         })
     );
 }
@@ -332,6 +347,8 @@ async fn a_coach_without_anything_is_accepting_with_zero_counts() {
             "current_month": month("2026-11", (0, 0), 0, Value::Null),
             "previous_month": month("2026-10", (0, 0), 0, Value::Null),
             "published_lesson_menu_count": 0,
+            "returned_video_review_count": 0,
+            "median_video_review_lead_time_hours": null,
             "pending_video_review_count": 0,
             "overdue_pending_video_review_count": 0,
         })

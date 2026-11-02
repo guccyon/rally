@@ -120,6 +120,8 @@ describe("headquartersApi", () => {
       current_month: { month: "2026-11", ...month },
       previous_month: { month: "2026-10", ...month },
       published_lesson_menu_count: 2,
+      returned_video_review_count: 0,
+      median_video_review_lead_time_hours: null,
       pending_video_review_count: 1,
       overdue_pending_video_review_count: 0,
     };
