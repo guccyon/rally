@@ -7,6 +7,7 @@ import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
 import { Section } from "@/components/Section";
 
+import { LessonMenuNameHeading } from "./LessonMenuNameHeading";
 import { LessonMenuPublicationHistory } from "./LessonMenuPublicationHistory";
 
 /** URL でレッスンメニューを指すクエリの名前（`?lesson_menu_id=`）。 */
@@ -19,7 +20,8 @@ export function lessonMenuPublicationHistoryPath(lessonMenuId: string): string {
 
 /**
  * 本部の画面: レッスンメニューの一覧の行の「記録」から開き、メニュー 1 件を本部がいつ・なぜ非公開にし、
- * いつ公開に戻したかをたどる。
+ * いつ公開に戻したかをたどる。記録の上にメニューの名前の見出しを出す（URL を共有したときもどのメニューか分かるように）。
+ * メニューの ID がなければ見出しは出さない（記録の欄が「見つかりません」を出す）。
  */
 export function LessonMenuPublicationHistoryHome({
   token,
@@ -37,6 +39,7 @@ export function LessonMenuPublicationHistoryHome({
         </Link>
       </p>
       <Section title="公開の記録">
+        {lessonMenuId !== undefined && <LessonMenuNameHeading api={api} lessonMenuId={lessonMenuId} />}
         <LessonMenuPublicationHistory api={api} lessonMenuId={lessonMenuId} />
       </Section>
     </>

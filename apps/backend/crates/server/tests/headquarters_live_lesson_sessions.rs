@@ -1,7 +1,7 @@
-//! 本部が期間とコーチで通話セッションの記録を見る（admin-web の `listLiveLessonSessions`）ことを、保存先を Postgres に
+//! 本部が期間とコーチ・生徒で通話セッションの記録を見る（admin-web の `listLiveLessonSessions`）ことを、保存先を Postgres に
 //! した組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていて同じパスの開始（`POST`）と共存する
 //! こと、API で開始・終了した Postgres のセッションを日付（日本時間）の期間で開始の新しい順に返し、終了の時刻と長さ（分）・
-//! コーチと生徒の表示名を添えること、`coach_id` で絞れること、期間の不正が 422・本部以外が 403 になることを確かめる。
+//! コーチと生徒の表示名を添えること、`coach_id`・`student_id` で絞れること、期間の不正が 422・本部以外が 403 になることを確かめる。
 //! 契約の形・期間の細かい検査は interface の `tests/headquarters_live_lesson_sessions.rs`、期間の読み取りは infra の
 //! `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -298,6 +298,43 @@ async fn headquarters_reads_session_records_from_postgres(pool: PgPool) {
         next_day_session["session_id"]
     );
     assert_eq!(body["sessions"][0]["coach_display_name"], "suzuki");
+
+    // 生徒で絞れる。生徒でない ID は空の一覧
+    for (student, expected) in [
+        (taro, vec![&open_session["session_id"]]),
+        (hanako, vec![&ended_session["session_id"]]),
+        (tanaka, vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!(
+                    "/live-lesson-sessions?from=2026-11-01&to=2026-11-02&student_id={}",
+                    account_id_uuid::format(student)
+                ),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let ids: Vec<&Value> = body["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| &s["session_id"])
+            .collect();
+        assert_eq!(ids, expected, "{body}");
+    }
+    let (status, body) = send(
+        &router,
+        get(
+            "/live-lesson-sessions?from=2026-11-01&to=2026-11-02&student_id=nope",
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 
     // 期間の不正は 422
     let (status, body) = send(

@@ -456,7 +456,12 @@ describe("headquartersApi", () => {
   test("listPendingVideoReviews は絞り込みをクエリにして GET /api/video-reviews/pending を呼ぶ", async () => {
     const list = { as_of: "2026-10-26T03:00:00Z", videos: [] };
     const { api, fetchMock } = setup(json(200, list));
-    const result = await api.listPendingVideoReviews({ sport: "golf", min_elapsed_hours: 48 });
+    const coachId = "cccccccc-cccc-4ccc-8ccc-000000000001";
+    const result = await api.listPendingVideoReviews({
+      sport: "golf",
+      min_elapsed_hours: 48,
+      coach_id: coachId,
+    });
     expect(result).toEqual({ ok: true, data: list });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
@@ -464,6 +469,7 @@ describe("headquartersApi", () => {
     expect(url.pathname).toBe("/api/video-reviews/pending");
     expect(url.searchParams.get("sport")).toBe("golf");
     expect(url.searchParams.get("min_elapsed_hours")).toBe("48");
+    expect(url.searchParams.get("coach_id")).toBe(coachId);
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
@@ -577,15 +583,16 @@ describe("headquartersApi", () => {
     expect(url.search).toBe("");
   });
 
-  test("suspendCoach は POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
+  test("suspendCoach は理由を本文にして POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const acceptance = { coach_id: coachId, acceptance_status: "suspended" };
     const { api, fetchMock } = setup(json(200, acceptance));
-    const result = await api.suspendCoach(coachId);
+    const result = await api.suspendCoach(coachId, { reason: "連絡がつかない" });
     expect(result).toEqual({ ok: true, data: acceptance });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/suspend`);
+    expect(await request.json()).toEqual({ reason: "連絡がつかない" });
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 

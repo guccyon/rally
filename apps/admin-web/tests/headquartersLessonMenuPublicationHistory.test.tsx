@@ -5,6 +5,7 @@ import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
+import { LessonMenuNameHeading } from "@/components/headquarters/LessonMenuNameHeading";
 import { LessonMenuPublicationHistory } from "@/components/headquarters/LessonMenuPublicationHistory";
 import { LessonMenuPublicationHistoryHome } from "@/components/headquarters/LessonMenuPublicationHistoryHome";
 import { formatDateTime } from "@/components/labels";
@@ -140,6 +141,69 @@ describe("本部のレッスンメニューの公開の記録", () => {
   });
 });
 
+function menuListOf(result: Awaited<ReturnType<HeadquartersApi["listLessonMenus"]>>) {
+  return { listLessonMenus: vi.fn<HeadquartersApi["listLessonMenus"]>(async () => result) };
+}
+
+const MENU: Schemas["CoachLessonMenu"] = {
+  lesson_menu_id: LESSON_MENU_ID,
+  name: "パターの距離感",
+  sport: "golf",
+  lesson_type: "live_lesson",
+  duration_minutes: 30,
+  is_published: false,
+  coach_id: "22222222-2222-4222-8222-000000000001",
+  coach_display_name: "高橋 コーチ",
+  created_at: "2026-10-01T00:00:00Z",
+  recent_booking_count: 0,
+};
+
+describe("公開の記録の見出し（メニューの名前）", () => {
+  test("レッスンメニューの一覧を絞り込みなしで一度だけ読み、その ID のメニューの名前を見出しにする", async () => {
+    const other = { ...MENU, lesson_menu_id: "aaaaaaaa-0000-4000-8000-000000000002", name: "別のメニュー" };
+    const api = menuListOf({ ok: true, data: { lesson_menus: [other, MENU] } });
+    render(<LessonMenuNameHeading api={api} lessonMenuId={LESSON_MENU_ID} />);
+
+    expect(await screen.findByRole("heading", { name: "パターの距離感" })).toBeInTheDocument();
+    expect(api.listLessonMenus).toHaveBeenCalledTimes(1);
+    expect(api.listLessonMenus).toHaveBeenCalledWith({});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("一覧にないメニューなら「（名前を表示できません）」を見出しにする", async () => {
+    render(
+      <LessonMenuNameHeading
+        api={menuListOf({ ok: true, data: { lesson_menus: [] } })}
+        lessonMenuId={LESSON_MENU_ID}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "（名前を表示できません）" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("一覧を読めなければ「（名前を表示できません）」とその文言を出す", async () => {
+    render(
+      <LessonMenuNameHeading
+        api={menuListOf({ ok: false, code: "forbidden", message: "権限がないためアクセスできません。" })}
+        lessonMenuId={LESSON_MENU_ID}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "（名前を表示できません）" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "レッスンメニューの名前を読めませんでした。権限がないためアクセスできません。",
+    );
+  });
+
+  test("読み込み中は見出しを出さない", () => {
+    const api = { listLessonMenus: vi.fn<HeadquartersApi["listLessonMenus"]>(() => new Promise(() => {})) };
+    render(<LessonMenuNameHeading api={api} lessonMenuId={LESSON_MENU_ID} />);
+
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  });
+});
+
 describe("画面への配置", () => {
   test("「公開の記録」の欄と、レッスンメニューの一覧へ戻るリンクがある", () => {
     render(<LessonMenuPublicationHistoryHome token="mock.headquarters.abc" lessonMenuId={LESSON_MENU_ID} />);
@@ -149,6 +213,13 @@ describe("画面への配置", () => {
       "href",
       "/headquarters/lesson-menus",
     );
+  });
+
+  test("メニューの ID がなければ名前の見出しを出さない", () => {
+    render(<LessonMenuPublicationHistoryHome token="mock.headquarters.abc" lessonMenuId={undefined} />);
+
+    expect(screen.getByRole("region", { name: "公開の記録" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
