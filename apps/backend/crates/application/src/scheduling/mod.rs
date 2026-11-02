@@ -64,7 +64,7 @@ pub use coach_slot_list::CoachSlotList;
 pub use confirm_booking::{ConfirmBooking, ConfirmBookingCommand, ConfirmBookingError};
 pub use create_booking::{CreateBooking, CreateBookingCommand, CreateBookingError};
 pub use get_booking::{GetBooking, GetBookingError};
-pub use get_slot_supply::GetSlotSupply;
+pub use get_slot_supply::{GetSlotSupply, GetSlotSupplyQuery};
 pub use lesson_menu_lookup::LessonMenuLookup;
 pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
 pub use list_cancelled_bookings::{ListCancelledBookings, ListCancelledBookingsQuery};
