@@ -51,6 +51,11 @@ export function HeadquartersHome() {
           時間の過ぎた通話を見る
         </Link>
       </Section>
+      <Section title="ライブレッスンの記録">
+        <Link href="/headquarters/live-sessions" className="text-blue-600 underline">
+          通話の開始と終了の記録を見る
+        </Link>
+      </Section>
       <Section title="お知らせ">
         <Link href="/headquarters/announcements" className="text-blue-600 underline">
           生徒にお知らせを送る
