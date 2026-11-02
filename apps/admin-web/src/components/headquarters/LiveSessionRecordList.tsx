@@ -127,7 +127,7 @@ export function LiveSessionRecordList({
           開始日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.from}
             onChange={(event) => setDraft({ ...draft, from: event.target.value })}
           />
@@ -136,7 +136,7 @@ export function LiveSessionRecordList({
           終了日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.to}
             onChange={(event) => setDraft({ ...draft, to: event.target.value })}
           />
@@ -144,7 +144,7 @@ export function LiveSessionRecordList({
         <label className="block">
           コーチ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.coachId}
             disabled={coaches.kind !== "loaded"}
             onChange={(event) => setDraft({ ...draft, coachId: event.target.value })}
@@ -158,7 +158,7 @@ export function LiveSessionRecordList({
               ))}
           </select>
         </label>
-        <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
           この条件で見る
         </button>
       </form>
@@ -168,7 +168,7 @@ export function LiveSessionRecordList({
         />
       )}
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && <LoadedSessions list={state.list} />}
     </div>
@@ -198,7 +198,7 @@ function LoadedSessions({ list }: { list: Schemas["LiveLessonSessionRecordList"]
                 <td className="py-1">{session.coach_display_name ?? NO_NAME}</td>
                 <td className="py-1">{session.student_display_name ?? NO_NAME}</td>
                 <td className="py-1">{formatDateTime(session.started_at)}</td>
-                <td className={`py-1 ${session.ended_at === null ? "text-gray-500" : ""}`}>
+                <td className={`py-1 ${session.ended_at === null ? "text-text-muted" : ""}`}>
                   {endLabel(session)}
                 </td>
               </tr>

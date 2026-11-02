@@ -27,10 +27,10 @@ export function CoachOverviewHome({ token, coachId }: { token: string; coachId: 
   return (
     <>
       <p className="mb-4 space-x-4 text-sm">
-        <Link href="/headquarters/coaches" className="text-blue-600 underline">
+        <Link href="/headquarters/coaches" className="text-primary underline">
           コーチの一覧へ戻る
         </Link>
-        <Link href="/headquarters" className="text-blue-600 underline">
+        <Link href="/headquarters" className="text-primary underline">
           本部の画面へ戻る
         </Link>
       </p>
