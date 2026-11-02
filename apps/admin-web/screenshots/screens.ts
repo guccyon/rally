@@ -204,6 +204,17 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/cancelled-bookings",
   },
   {
+    id: "hq-cancelled-bookings-coach",
+    title: "本部: キャンセルされた予約（コーチで絞る）",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+    open: async (page) => {
+      await page.getByLabel("コーチ").selectOption({ label: "高橋 コーチ" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText("・1 件").waitFor();
+    },
+  },
+  {
     id: "hq-booking-detail",
     title: "本部: 予約の詳細",
     role: "headquarters",
