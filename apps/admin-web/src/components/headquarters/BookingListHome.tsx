@@ -29,11 +29,11 @@ export function BookingListHome({ token, coachId }: { token: string; coachId?: s
   return (
     <>
       <p className="mb-4 space-x-4 text-sm">
-        <Link href="/headquarters" className="text-blue-600 underline">
+        <Link href="/headquarters" className="text-primary underline">
           本部の画面へ戻る
         </Link>
         {coachId !== undefined && (
-          <Link href={BOOKINGS_PATH} className="text-blue-600 underline">
+          <Link href={BOOKINGS_PATH} className="text-primary underline">
             すべてのコーチの予約を見る
           </Link>
         )}

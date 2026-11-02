@@ -22,7 +22,7 @@ export function CoachRelatedLinks({ coachId }: { coachId: string }) {
       <ul className="flex flex-wrap gap-2">
         {links.map(({ label, href }) => (
           <li key={label}>
-            <Link href={href} className="inline-block rounded border px-3 py-1 text-blue-600 hover:bg-blue-50">
+            <Link href={href} className="inline-block rounded-sm border border-border-strong px-3 py-1 text-primary hover:bg-primary-container">
               {label}
             </Link>
           </li>

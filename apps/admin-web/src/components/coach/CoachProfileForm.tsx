@@ -75,7 +75,7 @@ export function CoachProfileForm({
     }
   }
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (state.kind === "failed") return <ResultMessage result={{ ok: false, message: state.message }} />;
 
   return (
@@ -87,13 +87,13 @@ export function CoachProfileForm({
         <label className="block">
           自己紹介文
           <textarea
-            className="mt-1 block w-full rounded border px-2 py-1"
+            className="mt-1 block w-full rounded-md border px-2 py-1"
             rows={6}
             value={bio}
             onChange={(event) => setBio(event.target.value)}
           />
         </label>
-        <p className={remaining < 0 ? "text-sm text-red-600" : "text-sm text-gray-500"}>
+        <p className={remaining < 0 ? "text-sm text-danger" : "text-sm text-text-muted"}>
           {remaining < 0
             ? `${BIO_MAX_LENGTH} 文字を ${-remaining} 文字超えています`
             : `あと ${remaining} 文字`}
@@ -101,7 +101,7 @@ export function CoachProfileForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-blue-600 px-4 py-1 text-white disabled:opacity-50"
+          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
         >
           保存する
         </button>

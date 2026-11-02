@@ -106,9 +106,9 @@ describe("本部の予約の詳細", () => {
 
     const table = await screen.findByRole("table", { name: "状態が変わった記録" });
     const current = screen.getAllByRole("definition")[5]!;
-    expect(within(current).getByText("キャンセル済み")).toHaveClass("bg-gray-100", "text-gray-500");
-    expect(within(table).getByText("確定済み")).toHaveClass("bg-green-100", "text-green-800");
-    expect(within(table).getByText("キャンセル済み")).toHaveClass("bg-gray-100", "text-gray-500");
+    expect(within(current).getByText("キャンセル済み")).toHaveClass("bg-surface", "text-text-muted");
+    expect(within(table).getByText("確定済み")).toHaveClass("bg-success-container", "text-success-on-container");
+    expect(within(table).getByText("キャンセル済み")).toHaveClass("bg-surface", "text-text-muted");
   });
 
   test("名前が引けない・メニューがない・体験予約でない・日をまたぐ枠は、それぞれの形で出す", async () => {
