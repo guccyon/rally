@@ -1,0 +1,60 @@
+# デザインの原則（rally）。正本は specs/design/。コンセプトは concept_tone.yaml の rally-court
+schema_version: "0.1"
+status: draft
+section: principles
+concept: rally-court
+
+product:
+  purpose: >-
+    生徒とコーチをつなぐオンラインのスポーツレッスン。生徒はコーチを探してスロットを予約し、
+    同期レッスン（ビデオ通話）か非同期レッスン（動画添削）を受け、チャットで続けて教わる。
+  users:
+    - id: student
+      who: 部活や趣味でテニス・野球・サッカー・バスケットボール・水泳をする生徒（ゴルフは別ブランドの golf-app で、この正本の対象外）
+      scene: 練習の合間や通学中にスマホ（student-app）で、次のレッスン・今月のビデオ通話の残り・コーチの返事を確かめる
+      needs: 次に何をすればよいかがすぐ分かる。残りの回数とキャンセル規定で損をしない
+    - id: coach
+      who: 副業で教えるコーチが多い
+      scene: PC の admin-web で、スロットの公開・添削の返却・チャット・評価への返信をする
+      needs: 少ない手間で枠を開け、添削を返せる
+    - id: headquarters
+      who: 本部の運営担当
+      scene: PC の admin-web で、予約・コーチ・レッスンメニュー・評価を一覧で見て、必要なら止める・非公開にする
+      needs: 正確に読めて、取り消しにくい操作を間違えない
+  representative_screen: student-app のホーム（これからの予約・今月のビデオ通話・コーチとのやり取り・返ってきた添削）
+
+principles:   # 上ほど優先。迷ったら上を取る
+  - rank: 1
+    id: clear-before-hype
+    name: 勢いより正確さ
+    statement: 回数・日時・キャンセル規定・誤りの知らせは、演出より読みやすさと正確さを先にする
+    why: 生徒が残りの回数や規定を読み違えると、お金と練習の機会を失う。熱さは信頼の上でだけ効く
+  - rank: 2
+    id: next-move-first
+    name: 次の一手を一番前に
+    statement: 1 画面の主役は 1 つ。次のレッスン・残りの回数など、いま行動につながるものを大きな数字で先頭に置く
+    why: 練習の合間の数秒で「次に何をするか」が分かれば、予約と練習が途切れない
+  - rank: 3
+    id: one-hot-spot
+    name: 熱い場所は 1 か所
+    statement: 濃い面（inverse_surface）・ライム（secondary）・display の数字は、1 画面に 1 か所ずつまでにする
+    why: 強い色と太い字が多いと疲れて、どこが大事か分からなくなる
+  - rank: 4
+    id: same-for-everyone
+    name: だれでも同じように使える
+    statement: 色だけに頼らず、押せる大きさ 48px 以上、文字を 200% にしても崩れない形にする
+    why: 屋外のまぶしい場所・汗をかいた指・読み上げで使う生徒もいる
+  - rank: 5
+    id: admin-calm
+    name: 管理画面は静かに
+    statement: admin-web は同じトークンを使い、display の数字と濃い面を控えて、一覧と表を読みやすくする
+    why: コーチと本部は長く読み比べる。勢いより疲れにくさが要る
+
+not_doing:
+  - ライム（secondary）を文字の色にしない（白の上で 1.24 で読めない）
+  - 影・ぼかし・グラデーションで重みを出さない（重みは濃い面 1 か所と太さで出す）
+  - 誤りの知らせ・キャンセル・規定の説明に、勢いの言葉や感嘆符を使わない
+  - 条件や注意を小さい字（caption 12px）だけで書かない
+  - Web フォント・外部の画像や CDN を読まない（書体は同梱の Noto Sans CJK JP）
+  - イラストやキャラクターを使わない
+  - ゴルフ（golf-app）の見た目をここで決めない（別ブランド）
