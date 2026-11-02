@@ -401,6 +401,12 @@ export interface paths {
          *     メニューの写しで、元にメニューがなければ null。評価されたコーチの返信 `reply`（`LessonReviewReply`。
          *     `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
          *
+         *     絞り込み（任意）: `max_rating`（1〜5 の整数）を付ければ、点 `rating` がその値以下（含む）の評価だけを返す（本部が
+         *     コーチ 1 人の低い評価だけを読む。`listLowRatedLessonReviews` の線なら `max_rating=2`）。期間では絞らず、並べ方も
+         *     付けても変わらない。付けなければ点を問わない。本部とコーチ（自分の分）のどちらも付けられる。1〜5 の整数でない
+         *     ときは 422 `validation_failed`。student-app の同じ操作にはこの絞り込みはない（生徒の役割のトークンでは付けても
+         *     変わらない）。
+         *
          *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
          *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
          */
@@ -3624,7 +3630,10 @@ export interface operations {
     };
     listCoachReviews: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description この点以下（含む）の評価だけを返す（付けなければ点を問わない） */
+                max_rating?: number;
+            };
             header?: never;
             path: {
                 coach_id: string;
@@ -3645,6 +3654,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listLowRatedLessonReviews: {
