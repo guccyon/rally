@@ -5,6 +5,7 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
+- admin-web の本部の「返した動画添削」（`/headquarters/returned-video-reviews`）に、期間・コーチの絞り込みの並びでスポーツの絞り込み（既定は「すべて」）を足した: 「この条件で見る」で `listReturnedVideoReviews` の `sport` に渡して読み直す。読み直した条件（期間・コーチ・スポーツ）は URL のクエリ（`?from=&to=&coach_id=&sport=`）に残し、再読み込み・共有で同じ条件で開く。かかった時間の数え方と出し方、API と契約の変更はない（#643）
 - 本部が送ったお知らせごとに読んだ生徒の数を見る API: admin-web の `Announcement` に、受け取った生徒のうちお知らせを既読にした（`markMyNotificationsRead`）生徒の数 `read_count` を足した。`listAnnouncements` の 1 件ごとに載り（取り下げたお知らせは取り下げた時刻までに既読になった生徒だけを数え、取り下げたあとに既読にした生徒は数えない）、`withdrawAnnouncement` の応答にも同じ数え方で、`sendAnnouncement` と、下書きから送る `sendAnnouncementDraft` の応答では 0 で載る。既存の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#522）
 - admin-web の本部の「生徒の利用の様子」（`/headquarters/students/activity?student_id=…`）に「この生徒の予約を見る」を置いた: 「予約」（`/headquarters/bookings?student_id=…`）をその生徒の予約だけに絞った状態で開く（`listBookings` の `student_id`）。一覧の上に「生徒で絞っています: <生徒の表示名>」を出し（名前は `getStudentActivity` で読み、読めなければ「（名前を表示できません）」）、期間を変えても絞り込みは残り、「すべての生徒の予約を見る」で外せる。`coach_id` と両方付ければ両方で絞る。API と契約の変更はない（#644）
 - 本部の生徒の一覧をコーチで絞る: admin-web の `GET /students`（`listStudents`）に任意のクエリ `coach_id` を足した。付ければそのコーチの枠を一度でも予約した生徒だけを返す（コーチの休業時にその生徒にだけ連絡するため）。予約の状態は問わず、キャンセル済みの予約しかない生徒も載る（`getStudentActivity` がキャンセル済みの予約も数えるのに揃えた）。`q`・`sport`・`not_booked_since` と組み合わせられ、並べ方は変わらない。UUID でなければ 422 `validation_failed`、ない ID・コーチでない ID は 404 にせず空の配列。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#626）
