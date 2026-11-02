@@ -357,6 +357,13 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | モックのアップロード URL | `infra` の `MockVideoStorage` |
 | モックの AI の一次フィードバックの文（スポーツごと） | `infra` の `MockAiFeedbackGenerator` |
 
+## messaging: 本部が見る、返信のないまま時間の過ぎたスレッド（D169）
+
+- `GET /message-threads/unanswered`（admin-web の `listUnansweredMessageThreads`）: 本部だけが呼べる（`interface::unanswered_message_threads_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。最後の発言が生徒のもので、照会した時刻に返信を待ち始めてから（コーチの最後の発言のあとの最初の生徒の発言から。催促してもリセットされない）`older_than_hours` 時間（省けば 24。1〜168 の外・整数でなければ 422）以上たったスレッドを、経過の長い順（待ち始めの古い順。同じ時刻は `thread_id` の順）に返す。各行はスレッドの ID・担当コーチと生徒の ID と表示名（引けなければ表示名の項目を載せない。ポート `messaging::ThreadCoachDisplayNameLookup` / `ThreadStudentDisplayNameLookup`、実装は profile）・待ち始め `waiting_since`・経過時間 `elapsed_sec`。**メッセージの本文・種類・スタンプは返さない**（本部は件数と時間だけを見る）。照会だけで、既読にしない。DB の変更はない
+- 発言は当事者がチャットとして送ったメッセージ（本文・スタンプ。`MessageKind::is_chat`）だけで、添削依頼・添削の返却とシステムのメッセージは数えない。判定は domain の `MessageThread::awaiting_coach_reply_since`、既定・範囲・境界と並べ方は `messaging::UnansweredThreadCriteria` の 1 か所。範囲の外は `MessagingError::UnansweredThreadHoursOutOfRange`（interface の `messaging_error.rs` で 422）
+- ユースケースは `application::messaging::ListUnansweredMessageThreads`。保存先のポート `MessageThreadRepository::list_all`（すべてのスレッドをメッセージごと読む。ページングなし。docs/adr/0007 の決定 6・10）で読み、domain で選ぶ
+- テスト: `domain::messaging::message_thread`（発言の数え方・待ち始め・催促で変わらないこと）・`unanswered_thread_criteria`（24 時間ちょうどの境界・範囲・並べ方）、`application::messaging::list_unanswered_message_threads`（基準の時間・表示名をまとめて 1 回・空なら問い合わせない・既読にしない）、`crates/interface/tests/unanswered_message_threads.rs`（契約の形・本文を返さない・422・403 / 401）、`crates/infra/tests/pg_message_thread_repository.rs`（`list_all`）、`crates/server/tests/unanswered_message_threads.rs`（Postgres の組み立てで 23 時間 59 分では出ず 24 時間 30 分で出て、コーチが返すと消える。`--include-ignored`）
+
 ## async-lesson: 本部が見る返した動画添削の記録（D174）
 
 - `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）: 本部だけが呼べる（`interface::returned_video_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。返却の日付（日本時間）が `from`〜`to`（両端を含む）の返却済みの動画を、コーチを問わず返却の新しい順（同じ時刻は `video_id`）に返し、各行に動画の ID・スポーツ・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・送った時刻・返した時刻・かかった時間 `lead_time_hours` を載せる。任意の `coach_id` でそのコーチの動画だけ、任意の `sport` でそのスポーツの動画だけ（D198。期間・`coach_id` と組み合わせられる）。添削のコメントは載せない。行動イベントは発火しない
