@@ -10,7 +10,9 @@
 mod support;
 
 use application::{
-    catalog::{CatalogLessonMenuLookup, LessonMenuRepository, ListLessonMenus},
+    catalog::{
+        CatalogLessonMenuLookup, LessonMenuRepository, ListLessonMenus, ListLessonMenusQuery,
+    },
     entitlement::EntitlementQuotaGate,
     in_memory::{FixedClock, RecordingAnalyticsSink},
     profile::ProfileCoachDisplayNameLookup,
@@ -855,7 +857,10 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
         SchedulingLessonMenuRecentBookingCountLookup::new(bookings.clone()),
         FixedClock(at(now)),
     )
-    .execute(None, None, Some(coach))
+    .execute(&ListLessonMenusQuery {
+        coach_id: Some(coach),
+        ..ListLessonMenusQuery::default()
+    })
     .await
     .unwrap();
     assert_eq!(list.lesson_menus.len(), 3);
