@@ -2,7 +2,8 @@
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
 //! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（スポーツ・公開中か・コーチ）と並べ方。
 //! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
-//! 公開し直せないこと。
+//! 公開し直せないこと。非公開にした・公開に戻した記録（`catalog.lesson_menu_publication_changes`）を誰が・いつ・理由とともに
+//! メニューと同じトランザクションで残し、新しい順に読めること（`ListLessonMenuPublicationChanges`）と、並行な非公開は 1 つだけ通ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -12,9 +13,9 @@ mod support;
 use application::{
     catalog::{
         ChangeLessonMenuPublicationError, CreateLessonMenu, CreateLessonMenuCommand,
-        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu, UpdateLessonMenuCommand,
-        UpdateLessonMenuError,
+        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenuPublicationChanges,
+        ListLessonMenus, ListMyLessonMenus, RepublishLessonMenu, UnpublishLessonMenu,
+        UpdateLessonMenu, UpdateLessonMenuCommand, UpdateLessonMenuError,
     },
     in_memory::FixedClock,
     profile::ProfileCoachDisplayNameLookup,
@@ -25,7 +26,8 @@ use domain::{
     catalog::Sport,
     catalog::{
         HeadquartersUnpublish, HeadquartersUnpublishReason, LessonDuration, LessonFormat,
-        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName,
+        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
+        LessonMenuPublicationAction, LessonMenuPublicationChange,
     },
     identity::{AccountId, Role},
     lesson::LessonType,
@@ -335,6 +337,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     let coach = support::coach(&pool).await;
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
     let menu = create(
         &pool,
         coach,
@@ -348,7 +351,10 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
 
     // 本部が非公開にすると、時刻と理由が残り、生徒の公開中の一覧から消える
     let unpublish = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(10)));
-    let unpublished = unpublish.execute(menu.id(), reason.clone()).await.unwrap();
+    let unpublished = unpublish
+        .execute(menu.id(), hq, reason.clone())
+        .await
+        .unwrap();
     assert_eq!(
         menus.find(menu.id()).await.unwrap(),
         Some(unpublished.clone())
@@ -368,7 +374,7 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
 
     // 二度目は断り、最初の時刻と理由を残す
     let result = unpublish
-        .execute(menu.id(), HeadquartersUnpublishReason::default())
+        .execute(menu.id(), hq, HeadquartersUnpublishReason::default())
         .await;
     assert!(
         matches!(
@@ -419,8 +425,8 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     );
 
     // 本部が公開に戻すと、公開中になり、本部が非公開にしたことは消える
-    let republish = RepublishLessonMenu::new(menus.clone());
-    let republished = republish.execute(menu.id()).await.unwrap();
+    let republish = RepublishLessonMenu::new(menus.clone(), FixedClock(at(20)));
+    let republished = republish.execute(menu.id(), hq).await.unwrap();
     assert_eq!(
         menus.find(menu.id()).await.unwrap(),
         Some(republished.clone())
@@ -437,13 +443,201 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     );
 
     // 本部が非公開にしていないメニューは公開に戻せない
-    let result = republish.execute(menu.id()).await;
+    let result = republish.execute(menu.id(), hq).await;
     assert!(
         matches!(
             result,
             Err(ChangeLessonMenuPublicationError::Invalid(
                 DomainError::LessonMenuNotUnpublishedByHeadquarters
             ))
+        ),
+        "{result:?}"
+    );
+}
+
+/// 本部が非公開にした・公開に戻すメニューを、コーチを登録して作る。
+async fn published_menu(pool: &PgPool, name: &str) -> LessonMenu {
+    let coach = support::coach(pool).await;
+    create(pool, coach, 1, content(Sport::Tennis, live(30), name), true).await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn publication_changes_are_recorded_with_who_when_and_reason_and_read_newest_first(
+    pool: PgPool,
+) {
+    let (menu, other_menu) = (
+        published_menu(&pool, "フォア").await,
+        published_menu(&pool, "バック").await,
+    );
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let other_hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let list = ListLessonMenuPublicationChanges::new(menus.clone());
+    let reason = |text: &str| HeadquartersUnpublishReason::new(text).unwrap();
+
+    // 本部が一度も非公開にしていないメニューは空、ないメニューは None
+    assert_eq!(list.execute(menu.id()).await.unwrap(), Some(Vec::new()));
+    assert_eq!(
+        list.execute(LessonMenuId::from_u128(99)).await.unwrap(),
+        None
+    );
+
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(menu.id(), hq, reason("誤った記載"))
+        .await
+        .unwrap();
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(other_menu.id(), hq, reason("他のメニュー"))
+        .await
+        .unwrap();
+    // 断った操作は記録しない
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(3)))
+        .execute(other_menu.id(), other_hq)
+        .await
+        .unwrap();
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(3)))
+        .execute(other_menu.id(), other_hq)
+        .await
+        .unwrap_err();
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(4)))
+        .execute(menu.id(), other_hq)
+        .await
+        .unwrap();
+    // 同じ時刻なら後に保存した方が先
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(4)))
+        .execute(menu.id(), hq, reason(""))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        list.execute(menu.id()).await.unwrap().unwrap(),
+        vec![
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Unpublished { reason: reason("") },
+                hq,
+                at(4)
+            ),
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Republished,
+                other_hq,
+                at(4)
+            ),
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Unpublished {
+                    reason: reason("誤った記載")
+                },
+                hq,
+                at(2)
+            ),
+        ]
+    );
+    assert_eq!(
+        menus.publication_changes(other_menu.id()).await.unwrap(),
+        vec![
+            LessonMenuPublicationChange::restore(
+                other_menu.id(),
+                LessonMenuPublicationAction::Republished,
+                other_hq,
+                at(3)
+            ),
+            LessonMenuPublicationChange::restore(
+                other_menu.id(),
+                LessonMenuPublicationAction::Unpublished {
+                    reason: reason("他のメニュー")
+                },
+                hq,
+                at(2)
+            ),
+        ]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn concurrent_unpublishes_of_a_menu_let_only_one_through(pool: PgPool) {
+    let menu = published_menu(&pool, "フォア").await;
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let menus = menus.clone();
+            let id = menu.id();
+            tokio::spawn(async move {
+                UnpublishLessonMenu::new(menus, FixedClock(at(2)))
+                    .execute(id, hq, HeadquartersUnpublishReason::default())
+                    .await
+            })
+        })
+        .collect();
+    let mut results = Vec::new();
+    for handle in handles {
+        results.push(handle.await.unwrap());
+    }
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    assert!(results.iter().all(|r| matches!(
+        r,
+        Ok(_)
+            | Err(ChangeLessonMenuPublicationError::Invalid(
+                DomainError::LessonMenuAlreadyUnpublishedByHeadquarters
+            ))
+    )));
+    assert_eq!(
+        menus.publication_changes(menu.id()).await.unwrap().len(),
+        1,
+        "通った非公開の記録だけが残る"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_change_that_cannot_be_recorded_leaves_the_menu_as_it_was(pool: PgPool) {
+    let menu = published_menu(&pool, "フォア").await;
+    // 本部でないアカウントの記録は外部キーで入らない。メニューも同じトランザクションなので変わらない
+    let not_headquarters = support::student(&pool).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let result = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(
+            menu.id(),
+            not_headquarters,
+            HeadquartersUnpublishReason::default(),
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::Unavailable(_))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(menus.find(menu.id()).await.unwrap(), Some(menu.clone()));
+    assert!(
+        menus
+            .publication_changes(menu.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // ないメニューは何も書かない
+    let result = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(
+            LessonMenuId::from_u128(99),
+            not_headquarters,
+            HeadquartersUnpublishReason::default(),
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::LessonMenuNotFound)
         ),
         "{result:?}"
     );

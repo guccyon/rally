@@ -2,7 +2,8 @@ use crate::DomainError;
 
 use super::DisplayName;
 
-/// 表示名の検索語（本部の生徒の一覧の `q`）。表示名に部分一致するものを探す。
+/// 表示名の検索語（本部の生徒の一覧・コーチの一覧の `q`）。表示名に部分一致するものを探す。一致の規則はここだけに置き、
+/// どちらの一覧もこれで比べる。
 ///
 /// 前後の空白（全角の空白を含む）は除いて扱い、除いたあとに [`DisplayNameQuery::MAX_CHARS`] 文字まで。大文字・小文字は
 /// ASCII の英字（`A`〜`Z` と `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる。
@@ -110,6 +111,14 @@ mod tests {
             DisplayNameQuery::FOLD_TO.chars().count()
         );
         assert_eq!(fold("Taro ＹＡＭＡＤＡ 山田"), "taro ＹＡＭＡＤＡ 山田");
+    }
+
+    #[test]
+    fn percent_and_underscore_are_compared_as_characters() {
+        assert!(query("%").matches(&name("100% コーチ")));
+        assert!(!query("%").matches(&name("たろう")));
+        assert!(query("a_b").matches(&name("a_b")));
+        assert!(!query("a_b").matches(&name("axb")));
     }
 
     #[test]

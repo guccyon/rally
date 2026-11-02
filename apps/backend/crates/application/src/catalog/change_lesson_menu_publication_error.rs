@@ -3,6 +3,7 @@ use domain::DomainError;
 use crate::Unavailable;
 
 /// 本部によるレッスンメニューの非公開（[`super::UnpublishLessonMenu`]）と公開に戻す操作（[`super::RepublishLessonMenu`]）の失敗。
+/// 保存先の [`super::LessonMenuRepository::change_publication`] の失敗も同じ。
 #[derive(Debug)]
 pub enum ChangeLessonMenuPublicationError {
     /// メニューがない

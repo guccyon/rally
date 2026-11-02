@@ -22,7 +22,7 @@
 //!   `not_found`、有効な予約が入っている（`SlotHasActiveBookings`）は 409 `slot_has_active_booking`、始まった
 //!   （`SlotAlreadyStarted`）は 409 `slot_already_started`、すでに閉じた（`SlotNotOpen` の `closed`）は 409
 //!   `slot_already_closed`、それ以外は取り下げでは起きない（保存した値の破損）ので 500
-//! - 本部が見る予約の一覧（`listBookings`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
+//! - 本部が見る予約の一覧（`listBookings`）とキャンセルされた予約の一覧（`listCancelledBookings`。同じ `ListBookingsError`）: 期間の違反（`BookingPeriodEndsBeforeItStarts`・`BookingPeriodTooLong`）は
 //!   422 `validation_failed`、それ以外は一覧では起きないので 500
 //! - 本部が見る予約 1 件の詳細（`getBooking`）: ない予約は 404 `not_found`、保存先の障害は 500
 //! - コーチの受付の停止・再開（`suspendCoach`・`resumeCoach`）: コーチがいない（コーチでないアカウントも）は 404
