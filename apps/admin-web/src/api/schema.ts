@@ -630,7 +630,8 @@ export interface paths {
         /**
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
-         *     レッスンの数・公開中のレッスンメニューの数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数を
+         *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
          *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
@@ -647,6 +648,13 @@ export interface paths {
          *       平均も載る）。金額は返さない
          *     - `published_lesson_menu_count`: 公開中のレッスンメニューの数（student-app の `listCoachLessonMenus` で生徒に見える
          *       メニューの数。スポーツで絞らず、ゴルフのメニューも数える）
+         *     - `median_video_review_lead_time_hours` / `returned_video_review_count`: KPI「添削の返却リードタイム」
+         *       （`specs/analytics/kpi.yaml` の `video_review_lead_time`）の定義どおり、照会した時刻から遡る 30 日（両端を含む）に
+         *       そのコーチに送られた動画（`submitVideo`）を母集団にし、1 本ごとの時間（時間）の中央値を返す。1 本の時間は、添削を
+         *       返していれば（`returnVideoReview`）送付から返却まで、まだ返していなければ送付から照会した時刻までの経過時間
+         *       （遅れを隠さない）。期間は送った時刻で絞る（30 日より前に送った動画は、返却が期間内でも数えない）。本数が偶数なら
+         *       真ん中の 2 つの平均。`returned_video_review_count` は母集団のうち添削を返した件数。期間内に送られた動画がなければ
+         *       件数 0・中央値 null（まだ返していない動画だけなら件数 0 で中央値は出る）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -2122,7 +2130,8 @@ export interface components {
         };
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
-         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数を添える。金額は持たない
+         *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間を
+         *     添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2145,6 +2154,14 @@ export interface components {
             previous_month: components["schemas"]["MonthlyLessonStats"];
             /** @description 公開中のレッスンメニューの数（スポーツを問わない） */
             published_lesson_menu_count: number;
+            /** @description 照会した時刻から遡る 30 日に送られた動画のうち、添削を返した件数 */
+            returned_video_review_count: number;
+            /**
+             * @description 照会した時刻から遡る 30 日に送られた動画の、送付から返却（まだ返していなければ照会した時刻）までの時間（時間）の
+             *     中央値（KPI `video_review_lead_time` と同じ数え方）。小数第 3 位で四捨五入した小数第 2 位まで。期間内に送られた
+             *     動画がなければ null
+             */
+            median_video_review_lead_time_hours: number | null;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
