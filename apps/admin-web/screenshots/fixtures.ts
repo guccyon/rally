@@ -771,6 +771,28 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // コーチで絞ったとき（hq-cancelled-bookings-coach）。高橋 コーチの枠のキャンセルだけを返す。
+    method: "GET",
+    path: "/bookings/cancelled",
+    query: { coach_id: COACH_ID_2 },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 22),
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          starts_at: at(-24 * 1 + 6),
+          cancelled_at: at(-24 * 2 - 4.5),
+          cancelled_by: "student",
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
     // mockApi は先に一致した応答を返すので、`/bookings/{booking_id}` より前に置く（でないと cancelled を ID として拾う）。
     method: "GET",
     path: "/bookings/cancelled",
