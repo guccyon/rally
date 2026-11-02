@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import type { Result } from "@/api/call";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
 import { bookingLessonMenuLabel } from "./bookingLessonMenu";
