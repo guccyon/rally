@@ -1,5 +1,5 @@
 //! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
-//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの）と、期間とコーチ・生徒で
+//! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの。コーチで絞る）と、期間とコーチ・生徒で
 //! 見るセッションの記録の読み取り（ある期間に開始したもの。コーチ・生徒で絞る）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -211,7 +211,7 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
 
     // 4 時（含む）までに開始した通話中のもの: 2 時・3 時（4 時は終了済み、5 時は後）
     let found = sessions
-        .find_in_progress_started_at_or_before(at(4))
+        .find_in_progress_started_at_or_before(at(4), None)
         .await
         .unwrap();
     let mut found_ids: Vec<_> = found.iter().map(LiveLessonSession::id).collect();
@@ -223,16 +223,47 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
 
     // 境界の時刻ちょうどに開始したものは含む
     let found = sessions
-        .find_in_progress_started_at_or_before(at(5))
+        .find_in_progress_started_at_or_before(at(5), None)
         .await
         .unwrap();
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(
         sessions
-            .find_in_progress_started_at_or_before(at(1))
+            .find_in_progress_started_at_or_before(at(1), None)
             .await
             .unwrap()
             .is_empty()
+    );
+
+    // コーチで絞る（new_confirmed_booking はセッションごとに別のコーチ）。時刻と組み合わさる
+    let found = sessions
+        .find_in_progress_started_at_or_before(at(4), Some(started[2].coach_id()))
+        .await
+        .unwrap();
+    assert_eq!(found, [started[2].clone()]);
+    assert!(
+        sessions
+            .find_in_progress_started_at_or_before(at(4), Some(started[0].coach_id()))
+            .await
+            .unwrap()
+            .is_empty(),
+        "5 時に開始したコーチの通話は 4 時までに入らない"
+    );
+    assert!(
+        sessions
+            .find_in_progress_started_at_or_before(at(10), Some(started[3].coach_id()))
+            .await
+            .unwrap()
+            .is_empty(),
+        "終了したセッションのコーチは空"
+    );
+    assert!(
+        sessions
+            .find_in_progress_started_at_or_before(at(10), Some(started[1].student_id()))
+            .await
+            .unwrap()
+            .is_empty(),
+        "コーチでない ID は空"
     );
 }
 

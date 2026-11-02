@@ -1,17 +1,19 @@
 use std::time::{Duration, SystemTime};
 
 use super::LiveLessonSession;
-use crate::DomainError;
+use crate::{DomainError, identity::AccountId};
 
 /// 本部が見る「終わっていないまま時間の過ぎた」通話セッションの基準（admin-web の `listOverdueLiveLessonSessions`。
 /// 既定・範囲・境界の正本は `specs/contracts/api/admin-web/openapi.yaml` の `listOverdueLiveLessonSessions`）。
 ///
 /// 終了の記録がなく（[`super::SessionStatus::InProgress`]）、照会した時刻に開始から [`Self::hours`] 時間以上たった
 /// セッションを「時間の過ぎた」セッションとする。時間は [`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] 時間で、省いたときは
-/// [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。既定と範囲はこの型の 1 か所だけに置く。
+/// [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。既定と範囲はこの型の 1 か所だけに置く。任意のコーチ [`Self::coach_id`]
+/// で絞れ（[`Self::with_coach_id`]。省けばすべてのコーチ）、時間と組み合わせても時間の規則と並べ方は変わらない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverdueSessionCriteria {
     hours: u16,
+    coach_id: Option<AccountId>,
 }
 
 impl OverdueSessionCriteria {
@@ -31,12 +33,25 @@ impl OverdueSessionCriteria {
                 max: Self::MAX_HOURS,
             });
         }
-        Ok(Self { hours })
+        Ok(Self {
+            hours,
+            coach_id: None,
+        })
+    }
+
+    /// `coach_id` があればそのコーチのセッションだけを選ぶ基準（`None` ならすべてのコーチ）。時間は変えない。
+    pub const fn with_coach_id(self, coach_id: Option<AccountId>) -> Self {
+        Self { coach_id, ..self }
     }
 
     /// 開始からの時間（時間単位）。
     pub const fn hours(&self) -> u16 {
         self.hours
+    }
+
+    /// 絞り込むコーチ。`None` ならすべてのコーチ。
+    pub const fn coach_id(&self) -> Option<AccountId> {
+        self.coach_id
     }
 
     /// 開始からの時間の長さ。
@@ -51,9 +66,14 @@ impl OverdueSessionCriteria {
             .unwrap_or(SystemTime::UNIX_EPOCH)
     }
 
-    /// `session` が `now` に照会したときの、終わっていないまま時間の過ぎたセッションか。
+    /// `session` が `now` に照会したときの、終わっていないまま時間の過ぎたセッションで、コーチの指定があればそのコーチの
+    /// セッションか。
     pub fn matches(&self, session: &LiveLessonSession, now: SystemTime) -> bool {
-        session.ended_at().is_none() && session.started_at() <= self.started_at_or_before(now)
+        session.ended_at().is_none()
+            && session.started_at() <= self.started_at_or_before(now)
+            && self
+                .coach_id
+                .is_none_or(|coach_id| session.coach_id() == coach_id)
     }
 
     /// `sessions` から `now` に照会したときの時間の過ぎたセッションだけを選び、開始の古い順（同じ時刻はセッションの
@@ -76,6 +96,7 @@ impl Default for OverdueSessionCriteria {
     fn default() -> Self {
         Self {
             hours: Self::DEFAULT_HOURS,
+            coach_id: None,
         }
     }
 }
@@ -84,12 +105,13 @@ impl Default for OverdueSessionCriteria {
 mod tests {
     use super::*;
     use crate::{
-        identity::AccountId,
         live_lesson::{ConnectionQuality, SessionId},
         scheduling::BookingId,
     };
 
     const HOUR: Duration = Duration::from_secs(3600);
+    const COACH: AccountId = AccountId::from_u128(2);
+    const OTHER_COACH: AccountId = AccountId::from_u128(8);
 
     fn now() -> SystemTime {
         // 2026-11-01T00:00:00Z
@@ -101,11 +123,20 @@ mod tests {
         started_at: SystemTime,
         ended_at: Option<SystemTime>,
     ) -> LiveLessonSession {
+        coach_session(id, COACH, started_at, ended_at)
+    }
+
+    fn coach_session(
+        id: u128,
+        coach: AccountId,
+        started_at: SystemTime,
+        ended_at: Option<SystemTime>,
+    ) -> LiveLessonSession {
         LiveLessonSession::restore(
             SessionId::from_u128(id),
             BookingId::from_u128(100 + id),
             AccountId::from_u128(1),
-            AccountId::from_u128(2),
+            coach,
             vec![],
             started_at,
             ended_at.map(|ended_at| (ended_at, ConnectionQuality::new(0.0, 0, 0, 0).unwrap())),
@@ -123,6 +154,7 @@ mod tests {
         assert_eq!(criteria.hours(), 3);
         assert_eq!(criteria.threshold(), 3 * HOUR);
         assert_eq!(criteria.started_at_or_before(now()), now() - 3 * HOUR);
+        assert_eq!(criteria.coach_id(), None, "既定はすべてのコーチ");
     }
 
     #[test]
@@ -180,6 +212,61 @@ mod tests {
             ids(&OverdueSessionCriteria::default().select(sessions, now())),
             [4, 5, 1],
             "同じ開始時刻はセッションの ID の順"
+        );
+    }
+
+    #[test]
+    fn with_coach_id_keeps_the_hours() {
+        let criteria = OverdueSessionCriteria::new(24)
+            .unwrap()
+            .with_coach_id(Some(COACH));
+        assert_eq!((criteria.hours(), criteria.coach_id()), (24, Some(COACH)));
+        assert_eq!(
+            OverdueSessionCriteria::default().with_coach_id(None),
+            OverdueSessionCriteria::default()
+        );
+    }
+
+    #[test]
+    fn the_coach_narrows_the_sessions_with_the_hours() {
+        let criteria = OverdueSessionCriteria::default().with_coach_id(Some(COACH));
+        assert!(criteria.matches(&coach_session(1, COACH, now() - 3 * HOUR, None), now()));
+        // 別のコーチのセッションは、時間が過ぎていても含まない
+        assert!(!criteria.matches(
+            &coach_session(1, OTHER_COACH, now() - 30 * HOUR, None),
+            now()
+        ));
+        // そのコーチのセッションでも、時間に足りないもの・終了したものは含まない
+        assert!(!criteria.matches(&coach_session(1, COACH, now() - HOUR, None), now()));
+        assert!(!criteria.matches(
+            &coach_session(1, COACH, now() - 30 * HOUR, Some(now() - 29 * HOUR)),
+            now()
+        ));
+
+        let sessions = vec![
+            coach_session(1, COACH, now() - 4 * HOUR, None),
+            coach_session(2, OTHER_COACH, now() - 10 * HOUR, None),
+            coach_session(3, COACH, now() - 8 * HOUR, None),
+            coach_session(4, COACH, now() - HOUR, None),
+        ];
+        assert_eq!(
+            ids(&OverdueSessionCriteria::new(5)
+                .unwrap()
+                .with_coach_id(Some(COACH))
+                .select(sessions.clone(), now())),
+            [3]
+        );
+        assert_eq!(
+            ids(&criteria.select(sessions.clone(), now())),
+            [3, 1],
+            "開始の古い順のまま"
+        );
+        assert_eq!(
+            ids(&OverdueSessionCriteria::default()
+                .with_coach_id(Some(AccountId::from_u128(99)))
+                .select(sessions, now())),
+            Vec::<u128>::new(),
+            "セッションのないコーチは空"
         );
     }
 }
