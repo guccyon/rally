@@ -688,7 +688,15 @@ export interface paths {
          *       予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
          *     - 各項目の予約には、予約した時点のレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を
          *       載せる。生徒が予約したときに枠に結びついていた公開中のメニューの写しで、その後にメニューを直しても変わらない
-         *     - 期間で絞らず、ページングもしない。予約がなければ `bookings` は空の配列
+         *     - 期間: 任意の `from`・`to`（予約されたスロットが開始する日付。日本時間。両端を含む）で絞れる（「来週の予約」だけを見る）。
+         *       どちらも省けば今までどおり期間で絞らず、応答に `from` / `to` を載せない。どちらかを付けたときの日付の扱いと 422 の条件は
+         *       `listBookings` と同じ: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに開始する予約。
+         *       `from` を省けば今日（サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。
+         *       期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
+         *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）。`to` だけを付けて
+         *       今日より前の日付なら `from`（今日）より前なので 422。応答の `from` / `to` は省いたときに決めた日付を含めて、実際に使った期間
+         *     - 期間で絞っても、返すのは本人のスロットへの予約だけで、状態を問わないことと並べ方は変わらない。ページングはしない。
+         *       予約がなければ `bookings` は空の配列
          *     - 照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
@@ -1921,8 +1929,18 @@ export interface components {
             /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
             student_display_name?: string;
         };
-        /** @description コーチの自分の予約の一覧（並べ方は `listMyCoachBookings` の説明） */
+        /** @description コーチの自分の予約の一覧（期間と並べ方は `listMyCoachBookings` の説明） */
         CoachBookingList: {
+            /**
+             * Format: date
+             * @description 実際に使った期間の始まりの日付（日本時間。含む）。`from`・`to` をどちらも省いて期間で絞らなかったときは載らない
+             */
+            from?: string;
+            /**
+             * Format: date
+             * @description 実際に使った期間の終わりの日付（日本時間。含む）。`from`・`to` をどちらも省いて期間で絞らなかったときは載らない
+             */
+            to?: string;
             /** @description 予約されたスロットの開始時刻の古い順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む */
             bookings: components["schemas"]["CoachBooking"][];
         };
@@ -3812,7 +3830,12 @@ export interface operations {
     };
     listMyCoachBookings: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 期間の始まりの日付（日本時間。含む）。`to` も省けば期間で絞らない。`to` だけを付けたときは今日 */
+                from?: string;
+                /** @description 期間の終わりの日付（日本時間。含む）。`from` も省けば期間で絞らない。`from` だけを付けたときは `from` から 7 日目 */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3830,6 +3853,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listMyCoachSlots: {
