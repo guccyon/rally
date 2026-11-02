@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use domain::identity::AccountId;
 
 use super::{
-    AccountRepository, ListStudentsQuery, StudentContractLookup, StudentLastBookingLookup,
-    StudentOverview,
+    AccountRepository, ListStudentsQuery, StudentCoachBookingLookup, StudentContractLookup,
+    StudentLastBookingLookup, StudentOverview,
 };
 use crate::{Unavailable, scheduling::calendar_day};
 
@@ -12,26 +12,30 @@ use crate::{Unavailable, scheduling::calendar_day};
 ///
 /// 生徒のアカウントを登録の新しい順（同じ時刻は ID の順）に並べ、受講権の契約種別と契約プランを entitlement に
 /// （[`StudentContractLookup`]）、最後に予約した時刻を scheduling に（[`StudentLastBookingLookup`]）問い合わせて添える。
-/// 条件（[`ListStudentsQuery`]）があれば、表示名の検索語に部分一致する・そのスポーツの・その日付（日本時間。
-/// [`calendar_day`] で区切る）の始まり以降に予約を作っていない生徒だけに絞る。条件がなければすべての生徒。
+/// 条件（[`ListStudentsQuery`]）があれば、表示名の検索語に部分一致する・そのスポーツの・そのコーチを予約したことがある
+/// （scheduling に [`StudentCoachBookingLookup`] で問い合わせる）・その日付（日本時間。[`calendar_day`] で区切る）の
+/// 始まり以降に予約を作っていない生徒だけに絞る。絞っても並べ方は変えない。条件がなければすべての生徒。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListStudents<R, C, B> {
+pub struct ListStudents<R, C, B, K> {
     accounts: R,
     contracts: C,
     bookings: B,
+    coach_bookings: K,
 }
 
-impl<R, C, B> ListStudents<R, C, B>
+impl<R, C, B, K> ListStudents<R, C, B, K>
 where
     R: AccountRepository,
     C: StudentContractLookup,
     B: StudentLastBookingLookup,
+    K: StudentCoachBookingLookup,
 {
-    pub fn new(accounts: R, contracts: C, bookings: B) -> Self {
+    pub fn new(accounts: R, contracts: C, bookings: B, coach_bookings: K) -> Self {
         Self {
             accounts,
             contracts,
             bookings,
+            coach_bookings,
         }
     }
 
@@ -55,11 +59,21 @@ where
         if let Some(wanted) = query.sport {
             students.retain(|(_, sport)| *sport == wanted);
         }
-        let student_ids: BTreeSet<AccountId> =
-            students.iter().map(|(account, _)| account.id()).collect();
-        if student_ids.is_empty() {
+        if students.is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(coach_id) = query.coach_id {
+            let booked = self
+                .coach_bookings
+                .find_students_who_booked_coach(coach_id)
+                .await?;
+            students.retain(|(account, _)| booked.contains(&account.id()));
+            if students.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
+        let student_ids: BTreeSet<AccountId> =
+            students.iter().map(|(account, _)| account.id()).collect();
         let last_booked_at = self.bookings.find_last_booked_at(&student_ids).await?;
         if let Some(since) = query.not_booked_since.map(calendar_day::start) {
             students.retain(|(account, _)| {
@@ -165,6 +179,26 @@ mod tests {
         }
     }
 
+    /// コーチ 3 の枠を生徒 2・5・6 が予約したことがある。問い合わせたコーチの ID を記録する。
+    #[derive(Default)]
+    struct FakeCoachBookings {
+        asked: Mutex<Vec<AccountId>>,
+    }
+
+    impl StudentCoachBookingLookup for FakeCoachBookings {
+        async fn find_students_who_booked_coach(
+            &self,
+            coach_id: AccountId,
+        ) -> Result<BTreeSet<AccountId>, Unavailable> {
+            self.asked.lock().unwrap().push(coach_id);
+            Ok(if coach_id == AccountId::from_u128(3) {
+                [2, 5, 6].map(AccountId::from_u128).into()
+            } else {
+                BTreeSet::new()
+            })
+        }
+    }
+
     /// 取り出せない保存先の偽物。
     struct Broken;
 
@@ -197,7 +231,12 @@ mod tests {
     async fn lists_only_students_newest_first_with_contract_and_last_booking() {
         let contracts = FakeContracts::default();
         let bookings = FakeBookings::default();
-        let use_case = ListStudents::new(accounts().await, contracts, bookings);
+        let use_case = ListStudents::new(
+            accounts().await,
+            contracts,
+            bookings,
+            FakeCoachBookings::default(),
+        );
 
         let students = use_case
             .execute(&ListStudentsQuery::default())
@@ -261,8 +300,12 @@ mod tests {
             .unwrap();
             accounts.insert(account).await.unwrap();
         }
-        let use_case =
-            ListStudents::new(accounts, FakeContracts::default(), FakeBookings::default());
+        let use_case = ListStudents::new(
+            accounts,
+            FakeContracts::default(),
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+        );
 
         let listed = |students: Vec<StudentOverview>| -> Vec<u128> {
             students.iter().map(|s| s.student_id.as_u128()).collect()
@@ -301,8 +344,12 @@ mod tests {
             .insert(account(3, Role::Coach, &[Sport::Tennis], 100))
             .await
             .unwrap();
-        let use_case =
-            ListStudents::new(accounts, FakeContracts::default(), FakeBookings::default());
+        let use_case = ListStudents::new(
+            accounts,
+            FakeContracts::default(),
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+        );
 
         assert!(
             use_case
@@ -317,7 +364,12 @@ mod tests {
 
     #[tokio::test]
     async fn unavailable_lookup_is_an_error() {
-        let use_case = ListStudents::new(accounts().await, Broken, FakeBookings::default());
+        let use_case = ListStudents::new(
+            accounts().await,
+            Broken,
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+        );
         assert!(
             use_case
                 .execute(&ListStudentsQuery::default())
@@ -355,6 +407,7 @@ mod tests {
             accounts().await,
             FakeContracts::default(),
             FakeBookings::default(),
+            FakeCoachBookings::default(),
         );
         let query = |sport| ListStudentsQuery {
             sport: Some(sport),
@@ -401,7 +454,12 @@ mod tests {
     #[tokio::test]
     async fn not_booked_since_lists_students_whose_last_booking_is_before_the_date_or_none() {
         let contracts = FakeContracts::default();
-        let use_case = ListStudents::new(accounts().await, contracts, DatedBookings);
+        let use_case = ListStudents::new(
+            accounts().await,
+            contracts,
+            DatedBookings,
+            FakeCoachBookings::default(),
+        );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
         let query = ListStudentsQuery {
             not_booked_since: Some(nov1),
@@ -438,12 +496,18 @@ mod tests {
 
     #[tokio::test]
     async fn conditions_are_combined() {
-        let use_case = ListStudents::new(accounts().await, FakeContracts::default(), DatedBookings);
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            DatedBookings,
+            FakeCoachBookings::default(),
+        );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
         let query = |sport| ListStudentsQuery {
             name: DisplayNameQuery::new("なまえ").unwrap(),
             sport: Some(sport),
             not_booked_since: Some(nov1),
+            coach_id: None,
         };
 
         assert_eq!(
@@ -463,6 +527,118 @@ mod tests {
             use_case.contracts.asked.lock().unwrap().len(),
             asked,
             "残る生徒がいなければ entitlement に問い合わせない"
+        );
+    }
+
+    #[tokio::test]
+    async fn coach_id_lists_only_students_who_booked_the_coach_in_the_same_order() {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+        );
+        let query = |coach: u128| ListStudentsQuery {
+            coach_id: Some(AccountId::from_u128(coach)),
+            ..ListStudentsQuery::default()
+        };
+
+        let students = use_case.execute(&query(3)).await.unwrap();
+        // 登録の新しい順はそのまま。予約したことのない生徒 1 は載らない
+        assert_eq!(listed(&students), [2, 5, 6]);
+        assert_eq!(
+            students[0].last_booked_at,
+            Some(at(500)),
+            "絞り込んでも最後の予約を添える"
+        );
+        let ids: BTreeSet<AccountId> = [2, 5, 6].map(AccountId::from_u128).into();
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            std::slice::from_ref(&ids),
+            "予約したことがある生徒の ID だけを問い合わせる"
+        );
+        assert_eq!(*use_case.contracts.asked.lock().unwrap(), [ids]);
+
+        // ないコーチ・コーチでない ID（本部 4・生徒 1）は空の一覧で、ほかのコンテキストに問い合わせない
+        for coach in [9, 4, 1] {
+            assert!(use_case.execute(&query(coach)).await.unwrap().is_empty());
+        }
+        assert_eq!(
+            *use_case.coach_bookings.asked.lock().unwrap(),
+            [3, 9, 4, 1].map(AccountId::from_u128)
+        );
+        assert_eq!(use_case.bookings.asked.lock().unwrap().len(), 1);
+        assert_eq!(use_case.contracts.asked.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn coach_id_is_combined_with_other_conditions() {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            DatedBookings,
+            FakeCoachBookings::default(),
+        );
+        let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
+        let coach = Some(AccountId::from_u128(3));
+
+        let not_booked_since = ListStudentsQuery {
+            coach_id: coach,
+            not_booked_since: Some(nov1),
+            ..ListStudentsQuery::default()
+        };
+        assert_eq!(
+            listed(&use_case.execute(&not_booked_since).await.unwrap()),
+            [2, 6],
+            "生徒 5 は日付の始まり以降に予約している"
+        );
+
+        let by_sport = |sport| ListStudentsQuery {
+            coach_id: coach,
+            sport: Some(sport),
+            ..ListStudentsQuery::default()
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_sport(Sport::Golf)).await.unwrap()),
+            [6]
+        );
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Tennis))
+                .await
+                .unwrap()
+                .is_empty(),
+            "テニスの生徒 1 はコーチ 3 を予約したことがない"
+        );
+        let asked = use_case.coach_bookings.asked.lock().unwrap().len();
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Baseball))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            use_case.coach_bookings.asked.lock().unwrap().len(),
+            asked,
+            "そのスポーツの生徒がいなければ scheduling に問い合わせない"
+        );
+
+        let by_name = |name: &str| ListStudentsQuery {
+            coach_id: coach,
+            name: DisplayNameQuery::new(name).unwrap(),
+            ..ListStudentsQuery::default()
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_name("なまえ5")).await.unwrap()),
+            [5]
+        );
+        assert!(
+            use_case
+                .execute(&by_name("なまえ1"))
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 }
