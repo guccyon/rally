@@ -1,0 +1,173 @@
+# 基礎（トークン）。アプリのテーマ（student-app の ThemeData、admin-web の Tailwind の @theme）はこの名前と値に合わせる
+# 名前は <分類>.<役割>。アプリでは color-primary（CSS）・RallyColors.primary（Dart）のように写す
+schema_version: "0.1"
+status: draft
+section: foundations
+concept: rally-court
+
+color:
+  roles:   # 明るい配色（Gen1 の既定で、唯一の配色）
+    primary: "#1E3FD0"              # 主。主なボタン・リンク・選択中
+    on_primary: "#FFFFFF"
+    primary_pressed: "#1A2FA8"      # 押下のとき（白の文字と 10.42）
+    primary_container: "#E6EBFF"    # 選択中の行・情報の面
+    on_primary_container: "#14246E"
+    secondary: "#D4F53C"            # 副（ライム）。文字の色にしない
+    on_secondary: "#10131A"
+    text: "#10131A"
+    text_muted: "#4A5163"           # 補足の文字
+    background: "#FFFFFF"
+    surface: "#F1F3F8"              # カード・欄の面
+    inverse_surface: "#10131A"      # 濃い面。1 画面に 1 か所
+    on_inverse_surface: "#FFFFFF"
+    on_inverse_surface_muted: "#B8BFCC"
+    border: "#DDE1EA"               # 飾りの区切り線だけ（1.31。部品の輪郭に使わない）
+    border_strong: "#7D8599"        # 入力欄・押せる部品の輪郭（3.69）
+    focus_ring: "#1E3FD0"           # 濃い面の上では secondary
+    scrim: "rgba(16,19,26,0.56)"    # ダイアログの後ろ
+  status:
+    info:    {fg: "#1E3FD0", container: "#E6EBFF", on_container: "#14246E"}
+    success: {fg: "#0E7A3E", container: "#E2F6EA", on_container: "#0A4F28"}
+    warning: {fg: "#9A5B00", container: "#FFF1D6", on_container: "#5A3500"}
+    danger:  {fg: "#C0182F", container: "#FDE8EB", on_container: "#7A0F1E"}
+  status_rule: 状態は色と一緒に必ずアイコンか文字を出す。fg は文字・アイコン・輪郭、container は面、on_container は面の上の文字
+  booking_state:   # 予約の状態（glossary の booking.states）と色の対応
+    pending: warning      # 確定待ち
+    confirmed: success    # 確定済み
+    cancelled: neutral    # キャンセル済み（text_muted の文字と surface の面）
+  scale:   # 濃淡の段階。roles にない段は使わない（足すときは governance の手順で）
+    blue:  {50: "#E6EBFF", 600: "#1E3FD0", 700: "#1A2FA8", 900: "#14246E"}
+    lime:  {300: "#D4F53C"}
+    ink:   {50: "#F1F3F8", 100: "#DDE1EA", 300: "#B8BFCC", 500: "#7D8599", 700: "#4A5163", 950: "#10131A"}
+  usage_rules:
+    - secondary（ライム）は文字の色にしない。濃い面の上の強調（線・しるし・数字の下線）か、on_secondary の文字の下の面にだけ使う
+    - primary を inverse_surface の上の文字・アイコンに使わない（2.37）。濃い面の上は on_inverse_surface か secondary
+    - border は区切り線だけ。入力欄・ボタンの輪郭は border_strong
+  contrast_checked:   # WCAG 2.2 の比。文字は 4.5 以上、大きな文字と文字でない部品は 3 以上
+    - {fg: primary, bg: background, ratio: 7.84}
+    - {fg: primary, bg: surface, ratio: 7.07}
+    - {fg: primary, bg: primary_container, ratio: 6.61}
+    - {fg: on_primary, bg: primary_pressed, ratio: 10.42}
+    - {fg: on_primary_container, bg: primary_container, ratio: 11.74}
+    - {fg: text, bg: background, ratio: 18.58}
+    - {fg: text, bg: surface, ratio: 16.74}
+    - {fg: text_muted, bg: background, ratio: 7.93}
+    - {fg: text_muted, bg: surface, ratio: 7.14}
+    - {fg: on_secondary, bg: secondary, ratio: 14.98}
+    - {fg: on_inverse_surface, bg: inverse_surface, ratio: 18.58}
+    - {fg: on_inverse_surface_muted, bg: inverse_surface, ratio: 10.05}
+    - {fg: secondary, bg: inverse_surface, ratio: 14.98, note: 文字でない強調と display の数字}
+    - {fg: secondary, bg: primary, ratio: 6.32, note: 文字でない強調だけ}
+    - {fg: border_strong, bg: background, ratio: 3.69, note: 文字でない部品}
+    - {fg: border_strong, bg: surface, ratio: 3.33, note: 文字でない部品}
+    - {fg: danger.fg, bg: background, ratio: 6.15}
+    - {fg: danger.fg, bg: surface, ratio: 5.54}
+    - {fg: danger.fg, bg: danger.container, ratio: 5.25}
+    - {fg: danger.on_container, bg: danger.container, ratio: 9.36}
+    - {fg: on_primary, bg: danger.fg, ratio: 6.15}
+    - {fg: success.fg, bg: background, ratio: 5.42}
+    - {fg: success.fg, bg: surface, ratio: 4.89}
+    - {fg: success.fg, bg: success.container, ratio: 4.80}
+    - {fg: success.on_container, bg: success.container, ratio: 8.61}
+    - {fg: warning.fg, bg: background, ratio: 5.43}
+    - {fg: warning.fg, bg: surface, ratio: 4.89}
+    - {fg: warning.fg, bg: warning.container, ratio: 4.86}
+    - {fg: warning.on_container, bg: warning.container, ratio: 9.67}
+  not_allowed_pairs:   # 比が足りないので使わない
+    - {fg: secondary, bg: background, ratio: 1.24}
+    - {fg: primary, bg: inverse_surface, ratio: 2.37}
+    - {fg: border, bg: background, ratio: 1.31, note: 部品の輪郭として}
+  dark_mode:
+    gen1: 明るい配色だけ。端末がダークでも明るい配色で出す（Flutter は themeMode を ThemeMode.light、admin-web は color-scheme を light）
+    why: 熱い場所 1 か所の設計を、まず明るい配色で確かめるため
+    proposed_roles:   # lifecycle: proposed。入れるときは人の承認と画面の確かめを経る（governance）
+      background: "#10131A"
+      surface: "#1A1F2B"
+      text: "#F1F3F8"          # 16.74 / 14.84
+      text_muted: "#B8BFCC"    # 10.05 / 8.91
+      primary: "#9DB0FF"       # 8.93 / 7.91。on_primary は #10131A
+      secondary: "#D4F53C"
+      border: "#2E3443"
+      border_strong: "#7D8599" # 5.03 / 4.46
+      danger_fg: "#FF8A99"     # 8.27 / 7.33
+      success_fg: "#5BD68F"    # 10.14 / 8.99
+      warning_fg: "#FFC266"    # 11.65 / 10.32
+
+typography:
+  families:
+    sans: "'Noto Sans CJK JP', 'Noto Sans JP', sans-serif"   # 同梱の書体。Web フォントは読まない
+    serif: 使わない（Noto Serif CJK JP は同梱されているが、このコンセプトでは使わない）
+    bundling: student-app はアプリに同梱（pubspec の fonts）、admin-web は端末の書体を font-family で指定するだけ
+  weights: {regular: 400, bold: 700, black: 900}
+  scale:   # 大きさ px / 太さ / 行間 / 字間
+    display:  {size: 44, weight: 900, line_height: 1.1,  letter_spacing: "-0.02em", use: 残りの回数・次のレッスンの日時。1 画面 1 か所}
+    headline: {size: 28, weight: 900, line_height: 1.25, letter_spacing: "-0.01em", use: 画面の見出し}
+    title:    {size: 20, weight: 700, line_height: 1.25, letter_spacing: "-0.01em", use: 欄の見出し・カードの主の行}
+    body:     {size: 16, weight: 400, line_height: 1.65, letter_spacing: "0.01em",  use: 本文・規定・誤りの知らせ}
+    small:    {size: 14, weight: 400, line_height: 1.6,  letter_spacing: "0.01em",  use: カードの補足・ラベル}
+    caption:  {size: 12, weight: 700, line_height: 1.5,  letter_spacing: "0.02em",  use: しるし・タグだけ。文には使わない}
+  admin_web: admin-web は display を使わず、headline を 24px、本文を 16px にする
+  emphasis: 本文の強調は 700。下線は押せるリンクだけ。斜体は使わない
+  max_line_length: 本文の 1 行は 40 字まで（PC の admin-web は 1 段 48rem）
+  punctuation:
+    - 句読点は「、」「。」。全角の約物（「」（）・〜）を使い、行頭に来る約物は詰める（palt を使わない。字間は letter_spacing だけ）
+    - 英数字と和文のあいだは半角スペースを 1 つ（例「残り 2 回」「10/28（水）12:00」）
+    - 感嘆符は全角「！」で、1 つの文言に 1 つまで。疑問符は確認の題だけ
+  numerals:
+    style: 数字は等幅（font-feature-settings "tnum"）。display の数字は 900 で、単位（回・分）は title の大きさで添える
+    example: 「残り [2] 回」の 2 を display、回を title
+
+spacing:   # design_guideline の spacing_layout（余白・グリッド・画面幅・安全領域）
+  base_unit: 4
+  scale_px: {xs: 4, sm: 8, md: 16, lg: 24, xl: 40}
+  rules:
+    - 画面の左右は md 16px（PC の admin-web は lg 24px）
+    - 欄と欄のあいだは xl 40px、欄の中の行と行は sm 8px、カードの中の余白は md 16px
+    - 押せる部品の高さは 48px 以上、押せるもの同士のあいだは sm 8px 以上
+    - 段階にない値（例 12px・20px）を余白に使わない
+  grid:
+    phone: 1 段。幅いっぱい（左右 16px）
+    tablet: 1 段、中身の幅は 600px まで中央寄せ
+    pc: admin-web は 1 段で最大 48rem（768px）、左右 24px。一覧の表は 1 段の幅に収める
+  breakpoints_px: {phone: 0, tablet: 600, pc: 1024}
+  safe_area: student-app は SafeArea の内側に置く。下に固定するボタンは下の安全領域 + 16px 上に置く
+
+shape:   # design_guideline の shape_elevation（角丸・影と重なり）
+  radius_px: {sm: 6, md: 12, pill: 999}
+  usage:
+    pill: 主なボタン・副のボタン・絞り込みのチップ
+    md: カード・欄の面・ダイアログ・入力欄
+    sm: しるし（未読など）・タグ・コーチの顔写真
+  elevation:
+    rule: 影は使わない（box-shadow・Material の elevation は 0）。重なりは面の色と border_strong の線で示す
+    levels:
+      - {level: 0, use: 画面の地, color: background}
+      - {level: 1, use: カード・欄, color: surface}
+      - {level: 2, use: 主役の 1 か所, color: inverse_surface, note: 1 画面に 1 か所}
+      - {level: 3, use: ダイアログ・下から出る面, color: background, note: 後ろに scrim}
+  z_order: [content, sticky_bar, toast, scrim, dialog]
+
+iconography:
+  set: Material Symbols Rounded（Outlined の線の形）。Flutter は同梱の Icons の *_outlined / *_rounded、admin-web は同じ形の SVG を同梱する
+  stroke_px: 2.25
+  size_px: {default: 24, small: 20}
+  touch_target_px: 48
+  color: 文字と同じ色（text か on_inverse_surface）。状態のアイコンだけ status の fg
+  label:
+    - アイコンだけの押せる部品には必ず読み上げのラベル（tooltip / aria-label）を付ける
+    - 画面の主な入口（ホームの「コーチを探す」など）はアイコンと文字を並べる
+    - 大事な入口はアイコンを inverse_surface の面に白抜きで置く（1 画面 1 か所）
+  decoration: 太い直線 4px と斜めの帯（-12°）。inverse_surface の中で secondary の色だけ
+
+motion:
+  durations_ms: {instant: 0, fast: 120, base: 200, slow: 320}
+  easing:
+    standard: "cubic-bezier(0.2, 0, 0, 1)"
+    enter: "cubic-bezier(0, 0, 0, 1)"
+    exit: "cubic-bezier(0.3, 0, 1, 1)"
+  usage:
+    - 押下の色の変化は fast 120ms
+    - 画面の移り・ダイアログ・知らせの出入りは base 200ms
+    - 確定したときの数字の入れ替わりだけ slow 320ms（1 回だけ。くり返さない）
+    - 点滅・3 回以上くり返す動き・自動で流れる動きは使わない
+  reduced_motion: 端末の「視差効果を減らす」（MediaQuery.disableAnimations / prefers-reduced-motion）では、移動と拡大をやめ、色と透明度の変化だけ fast 120ms にする

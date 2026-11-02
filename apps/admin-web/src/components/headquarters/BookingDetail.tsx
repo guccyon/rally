@@ -55,7 +55,7 @@ export function BookingDetail({
     };
   }, [api, bookingId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (state.kind === "not_found") {
     return <ResultMessage result={{ ok: false, message: NOT_FOUND }} />;
   }

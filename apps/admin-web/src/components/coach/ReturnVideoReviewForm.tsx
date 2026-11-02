@@ -37,7 +37,7 @@ function StudentCell({ video }: { video: CoachVideo }) {
   return (
     <td className="py-1">
       {studentName(video)}
-      {menu && <span className="block text-gray-600">{menu}</span>}
+      {menu && <span className="block text-text-muted">{menu}</span>}
     </td>
   );
 }
@@ -103,7 +103,7 @@ export function ReturnVideoReviewForm({
       <p className="text-sm">
         生徒から届いた動画です。添削待ちの動画の「添削する」を押すと、コメントを書いて返却できます。
       </p>
-      {list.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
       {list.kind === "loaded" && list.waiting.length === 0 && list.returned.length === 0 && (
         <p className="text-sm">まだ動画は届いていません。</p>
@@ -130,12 +130,12 @@ export function ReturnVideoReviewForm({
                       <td className="py-1">{formatDateTime(video.submitted_at)}</td>
                       <td className="py-1">
                         {selected?.video_id === video.video_id ? (
-                          <span className="text-gray-500">選択中</span>
+                          <span className="text-text-muted">選択中</span>
                         ) : (
                           <button
                             type="button"
                             onClick={() => onSelect(video)}
-                            className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
+                            className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
                           >
                             添削する
                           </button>
