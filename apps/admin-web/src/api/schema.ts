@@ -143,6 +143,10 @@ export interface paths {
          *       含めて、実際に使った期間
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）
+         *     - 任意の `coach_id` で、そのコーチの枠へのキャンセルされた予約だけに絞れる（コーチ 1 人のキャンセルが多いかを確かめる）。
+         *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。検証と扱いは `listBookings` の
+         *       `coach_id` と同じで、UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・期間にキャンセルがないコーチは、
+         *       404 にせず `bookings` が空の配列
          *     - 並べ方: キャンセルした時刻（`cancelled_at`）の新しい順。同じ時刻は `booking_id` の順。ページングはしない。
          *       キャンセルされた予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 各項目には予約の ID・予約した生徒（`student_id` と表示名 `student_display_name`）・予約された枠のコーチ（`coach_id` と
@@ -323,7 +327,11 @@ export interface paths {
          *       （記録するようになったら値が入る。null の間は `registered_at` を目安にする）
          *     - `registered_at`: コーチのアカウントを登録した時刻
          *     - 並べ方: `registered_at` の古い順（長く書きかけのままのコーチから）。同じ時刻は `coach_id` の順
-         *     - ページングはしない。該当するコーチがいなければ `coaches` は空の配列
+         *     - 絞り込み（任意）: `sport` を付ければそのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ（ゴルフも絞れる。
+         *       コーチの競技の決め方は `listCoaches` の `sport` と同じで、backend の domain `CoachSportFilter` の 1 か所）。付けなければ
+         *       今までどおりすべてのコーチ。絞っても「足りない」の判定と並べ方は変わらない。競技ごとの担当者が自分の競技のコーチだけを見るのに使う
+         *     - `sport` が `Sport` の値でないときは 422 `validation_failed`（`listCoaches` と同じ）
+         *     - ページングはしない。該当するコーチがいなければ（条件に合うコーチがいなければ） `coaches` は空の配列
          *     - 照会だけで、何も保存しない。コーチへの連絡はしない
          *
          *     行動イベントは発火しない。
@@ -520,15 +528,18 @@ export interface paths {
          * コーチの受付の停止（本部）
          * @description コーチ 1 人の受付（glossary の coach_acceptance。新しい予約を受け付けるか）を止め、停止中（`suspended`）にした受付を返す。
          *     問題のあるコーチや休業中のコーチの新しい予約を止めるのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
-         *     リクエストの本文は読まない。
          *
+         *     - 本文は省いてよい。`reason`（止める理由。0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに保存する）
+         *       を任意で書け、省けば空文字列（理由なし）。201 文字以上・JSON でない本文は 422 `validation_failed`（何も変えない）。
+         *       扱いは `unpublishLessonMenu` の `reason` と同じ。理由は止めた記録（`listCoachAcceptanceChanges`）に残り、本部の別の
+         *       担当者があとからなぜ止めたかをたどれる。コーチには知らせない
          *     - 停止中のコーチの枠は生徒の検索（student-app の `searchSlots`）に出ず、コーチは生徒のコーチを探す一覧
          *       （student-app の `listCoachesForStudent`）に出ない。そのコーチの枠への予約の作成（student-app の `createBooking`）は
          *       409 `coach_not_accepting_bookings`
          *     - 入っている予約（未確定・確定）と枠はそのまま（確定・キャンセル・通話は今までどおり。予約のキャンセルやコーチへの
          *       通知はしない）。コーチは枠の公開・取り下げも今までどおりできる（公開した枠は再開するまで検索に出ない）
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
-         *     - すでに停止中のコーチは 409 `coach_already_suspended`（何も変えない）
+         *     - すでに停止中のコーチは 409 `coach_already_suspended`（何も変えない。最初に止めたときの理由を残す）
          *     - 本部のコーチの一覧（`listCoaches`）の `acceptance_status` が `suspended` になる。一度も止めていないコーチは受付中
          *
          *     受付の状態は scheduling の持ち物で、matching・profile はそれを読むだけなので境界間イベントは発行しない。
@@ -585,6 +596,8 @@ export interface paths {
          *     - 記録は `suspendCoach`・`resumeCoach` が受付を変えたとき 1 回につき 1 件で、書き換えない。409 で断られた操作は残らない
          *     - 各記録の `acceptance_status` は変えた後の状態（`suspended` なら止めた、`accepting` なら再開した）。`changed_by` は
          *       操作した本部のアカウントの ID、`changed_at` は変えた時刻
+         *     - 各記録の `reason` は止めたときに書いた理由（`suspendCoach` の `reason`。書かなければ空文字列）。再開した記録と、理由を
+         *       残し始める前に止めた記録は null
          *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
          *     - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
          *     - 絞り込み・ページング・件数の上限はない
@@ -901,6 +914,14 @@ export interface paths {
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
          *       非公開（`false`）のメニューだけ、`coach_id` を付ければそのコーチのメニューだけ（公開中も非公開もまとめて。コーチ 1 人が
          *       出しているメニューを見るのに使う）。いくつ付けてもすべてを満たすもの。付けなければすべて（ゴルフも含む）
+         *     - 名前で探す（任意）: `q` を付ければ、メニューの名前 `name` に `q` を部分文字列として含むメニューだけを返す（問い合わせのあった
+         *       メニューを本部が探すのに使う）。一致のしかたは `listStudents` の `q` と同じ: `q` の前後の空白（全角の空白を含む）は除いて
+         *       比べ、途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・
+         *       ひらがなとカタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。
+         *       `q` を付けない・空・空白だけのときは絞り込まない。`sport`・`published`・`coach_id` と組み合わせられ、並べ方は下と同じ。
+         *       名前以外（説明・コーチの表示名など）では探さない
+         *     - `q` は前後の空白を除いて 40 文字（Unicode のコードポイントの数。メニューの名前の上限と同じ。`listStudents` の `q` が
+         *       表示名の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
          *     - `sport` が `Sport` の値でない・`published` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
          *     - コーチでない ID・ない ID・メニューのないコーチの `coach_id` は、404 にせず `lesson_menus` が空の配列
          *     - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
@@ -1161,7 +1182,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 通話セッションの記録を期間とコーチで見る（本部）
+         * 通話セッションの記録を期間とコーチ・生徒で見る（本部）
          * @description 通話セッション（glossary の live_lesson_session）のうち、開始した日付（日本時間）が `from` から `to` まで（両端を含む）の
          *     ものを、終了の有無を問わずコーチを問わず横断で返す。本部が問い合わせを受けたときに、ライブレッスンがいつ始まり
          *     いつ終わったかを引くための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
@@ -1175,6 +1196,12 @@ export interface paths {
          *       `to` が `from` より前・31 日を超えるときは 422 `validation_failed`（`message` に理由）
          *     - 任意の `coach_id` で、そのコーチのセッションだけに絞れる。省けばすべてのコーチ。`coach_id` が UUID でなければ
          *       422 `validation_failed`。コーチでない ID・ない ID・期間にセッションがないコーチは、404 にせず `sessions` が空の配列
+         *     - 任意の `student_id` で、その生徒の予約が結び付いたセッションだけに絞れる（生徒から「レッスンがつながらなかった」と
+         *       問い合わせを受けたときに、その生徒の通話の記録だけを期間で見る）。グループレッスンでは、通話を始めた予約の生徒に
+         *       限らず、セッションに結び付いた予約の生徒なら載る（そのとき各項目の `student_id` は開始した予約の生徒のままで、
+         *       絞り込みに使った生徒と違うことがある）。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。
+         *       省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・期間に
+         *       セッションがない生徒は、404 にせず `sessions` が空の配列
          *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件
          *     - 並べ方: 開始 `started_at` の新しい順。同じ時刻は `session_id` の順
          *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
@@ -1288,8 +1315,10 @@ export interface paths {
          *       1 時間に満たない端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない
          *     - 並べ方: 送った時刻 `submitted_at` の古い順（経過時間の長い順）。同じ時刻は `video_id` の順
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツの動画だけ。`min_elapsed_hours` を付ければ経過時間がその時間以上
-         *       （含む）の動画だけ（例: `48` で 48 時間以上）。両方を組み合わせられ、並べ方は変わらない。付けなければ絞らない
-         *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）ときは 422 `validation_failed`
+         *       （含む）の動画だけ（例: `48` で 48 時間以上）。`coach_id` を付ければそのコーチ（動画の送り先のコーチ）の動画だけ。
+         *       どれも組み合わせられ、経過時間の数え方と並べ方は変わらない。付けなければ絞らない
+         *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）・`coach_id` が
+         *       UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、404 にせず `videos` が空の配列
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
@@ -1332,11 +1361,15 @@ export interface paths {
          *     - 任意の `coach_id` で、そのコーチ（動画の送り先で、添削を返したコーチ）の動画だけに絞れる。期間と組み合わせられ、期間の規則と
          *       並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・
          *       期間に返却がないコーチは、404 にせず `reviews` が空の配列
+         *     - 任意の `sport` で、そのスポーツの動画だけに絞れる。動画のスポーツと値の検証は `listPendingVideoReviews` の `sport` と同じ
+         *       （動画のスポーツは送ったときのスポーツ `sport`。実装は backend の domain `Video::is_in_sport` の 1 か所）。期間・`coach_id` と
+         *       組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。省けばスポーツを問わない。`sport` が `Sport` の値で
+         *       なければ 422 `validation_failed`。期間にそのスポーツの返却がなければ `reviews` が空の配列
          *     - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
          *       端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
          *       （KPI は小数で、ここは切り捨てた整数）
          *     - 並べ方: 返却の時刻 `returned_at` の新しい順。同じ時刻は `video_id` の順
-         *     - 対象: 返却済みの動画だけ（スポーツを問わない）。返却を待っている動画は `listPendingVideoReviews`
+         *     - 対象: 返却済みの動画だけ（`sport` を付けなければスポーツを問わない）。返却を待っている動画は `listPendingVideoReviews`
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチの ID と表示名・送った時刻・返した時刻・かかった時間を載せる。添削の中身
          *       （コメント）は載せない。表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `reviews` は空の配列（404 にはしない）
@@ -2015,6 +2048,11 @@ export interface components {
         CoachAcceptanceChange: {
             acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
             /**
+             * @description 止めたときに書いた理由（書かなければ空文字列）。再開した記録（`acceptance_status` が `accepting`）と、理由を残し始める前に
+             *     止めた記録は null
+             */
+            reason: string | null;
+            /**
              * Format: uuid
              * @description 止めた・再開した本部のアカウントの ID
              */
@@ -2524,6 +2562,11 @@ export interface components {
             duration_minutes?: number | null;
             /** @description 公開中か。省けば true */
             is_published?: boolean;
+        };
+        /** @description 本部によるコーチの受付の停止（`suspendCoach`）。本文ごと省いてよい */
+        SuspendCoachRequest: {
+            /** @description 止める理由（0〜200 文字。書いたとおりに保存する）。省けば空文字列 */
+            reason?: string;
         };
         /** @description 本部によるレッスンメニューの非公開（`unpublishLessonMenu`）。本文ごと省いてよい */
         UnpublishLessonMenuRequest: {
@@ -3233,6 +3276,11 @@ export interface operations {
                 from?: string;
                 /** @description 期間の終わりの日付（日本時間。含む）。省けば `from` から 7 日目（`from` も省けば今日） */
                 to?: string;
+                /**
+                 * @description あればこのコーチの枠へのキャンセルされた予約だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
@@ -3359,7 +3407,10 @@ export interface operations {
     };
     listIncompleteCoachProfiles: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description スポーツ（付ければそのスポーツを提供するコーチだけ） */
+                sport?: components["schemas"]["Sport"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3377,6 +3428,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCoachReviewSummary: {
@@ -3522,7 +3574,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SuspendCoachRequest"];
+            };
+        };
         responses: {
             /** @description 停止中にしたコーチの受付 */
             200: {
@@ -3537,6 +3593,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     resumeCoach: {
@@ -3812,6 +3869,8 @@ export interface operations {
     listLessonMenus: {
         parameters: {
             query?: {
+                /** @description メニューの名前の検索語。名前に部分一致するメニューだけを返す。前後の空白を除いて 40 文字まで（空白だけなら絞り込まない） */
+                q?: string;
                 sport?: components["schemas"]["Sport"];
                 /** @description 公開中か（`true` なら公開中だけ、`false` なら非公開だけ） */
                 published?: boolean;
@@ -4018,6 +4077,12 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの生徒の予約が結び付いたセッション（グループレッスンでは開始した予約の生徒に限らない）だけに絞る。
+                 *     省けばすべての生徒。UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID は、404 にせず空の一覧を
+                 *     返す（絞り込みの結果が 0 件）
+                 */
+                student_id?: string;
             };
             header?: never;
             path?: never;
@@ -4125,6 +4190,11 @@ export interface operations {
                 sport?: components["schemas"]["Sport"];
                 /** @description 送付からの経過時間（時間。端数は切り捨て）がこの値以上の動画だけを返す（付けなければ絞らない） */
                 min_elapsed_hours?: number;
+                /**
+                 * @description あればこのコーチの動画だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
@@ -4158,6 +4228,8 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /** @description このスポーツの動画だけを返す（付けなければスポーツを問わない。`Sport` の値でなければ 422 `validation_failed`） */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

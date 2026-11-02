@@ -118,7 +118,7 @@ export function ReturnedVideoReviewList({
           開始日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={period.from}
             onChange={(event) => setDraft({ ...draft, period: { ...period, from: event.target.value } })}
           />
@@ -127,7 +127,7 @@ export function ReturnedVideoReviewList({
           終了日
           <input
             type="date"
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={period.to}
             onChange={(event) => setDraft({ ...draft, period: { ...period, to: event.target.value } })}
           />
@@ -135,7 +135,7 @@ export function ReturnedVideoReviewList({
         <label className="block">
           コーチ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={draft.coachId}
             disabled={coaches.kind !== "loaded"}
             onChange={(event) => setDraft({ ...draft, coachId: event.target.value })}
@@ -148,7 +148,7 @@ export function ReturnedVideoReviewList({
             ))}
           </select>
         </label>
-        <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-white">
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
           この条件で見る
         </button>
       </form>
@@ -158,7 +158,7 @@ export function ReturnedVideoReviewList({
         />
       )}
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && <LoadedReviews list={state.list} filtered={state.coachId !== ""} />}
     </div>
@@ -177,7 +177,7 @@ function LoadedReviews({
       <p className="text-sm">
         {formatDay(list.from)} 〜 {formatDay(list.to)}・{list.reviews.length} 件
       </p>
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-text-muted">
         かかった時間は送った時刻から返した時刻までです（1 時間に満たない端数は切り捨て）。
       </p>
       {list.reviews.length === 0 && (

@@ -302,7 +302,11 @@ const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
 const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
   lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
-  lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+  {
+    // 本部が対応済みにした行（対応済みの日時を出し、「対応済みにする」は出ない）。
+    ...lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+    handling: { handled_by: id("5555", 1), handled_at: at(-24 * 3) },
+  },
 ];
 
 // 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
@@ -331,7 +335,51 @@ const NOTIFICATIONS: Schemas["Notification"][] = [
 ];
 
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
-export type Fixture = { method: "GET" | "POST" | "PUT"; path: string; status?: number; body: unknown };
+/** `query` があれば、そのクエリの値がすべて一致するときだけ使う（同じパスの `query` のない応答より前に置く）。 */
+// ライブレッスンの記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
+// 既定の期間（今日までの 7 日）の応答。高橋 コーチで絞ったときは 0 件を返す（0 件の表示を撮る）。
+const LIVE_SESSION_RECORDS: Schemas["LiveLessonSessionRecord"][] = [
+  {
+    session_id: id("5555", 11),
+    booking_id: id("6666", 11),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID_2,
+    student_display_name: "佐藤 一郎",
+    started_at: at(-0.5),
+    ended_at: null,
+    duration_minutes: null,
+  },
+  {
+    session_id: id("5555", 12),
+    booking_id: id("6666", 12),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 - 2),
+    ended_at: at(-24 - 1),
+    duration_minutes: 60,
+  },
+  {
+    session_id: id("5555", 13),
+    booking_id: id("6666", 13),
+    coach_id: id("2222", 3),
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 * 4 - 3),
+    ended_at: at(-24 * 4 - 3 + 0.75),
+    duration_minutes: 45,
+  },
+];
+
+export type Fixture = {
+  method: "GET" | "POST" | "PUT";
+  path: string;
+  query?: Record<string, string>;
+  status?: number;
+  body: unknown;
+};
 
 export const FIXTURES: Fixture[] = [
   {
@@ -409,6 +457,21 @@ export const FIXTURES: Fixture[] = [
   },
   {
     method: "GET",
+    path: "/live-lesson-sessions",
+    query: { coach_id: COACH_ID_2 },
+    body: { from: "2026-10-20", to: "2026-10-26", sessions: [] } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: LIVE_SESSION_RECORDS,
+    } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
+    method: "GET",
     path: "/live-lesson-sessions/overdue",
     body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],
   },
@@ -418,8 +481,13 @@ export const FIXTURES: Fixture[] = [
     body: {
       coach_id: COACH_ID,
       changes: [
-        { acceptance_status: "accepting", changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
-        { acceptance_status: "suspended", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+        { acceptance_status: "accepting", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
+        {
+          acceptance_status: "suspended",
+          reason: "連絡がつかないため、確認できるまで止める",
+          changed_by: HEADQUARTERS_ID,
+          changed_at: at(-72),
+        },
       ],
     } satisfies Schemas["CoachAcceptanceChangeList"],
   },
@@ -475,6 +543,17 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    // 表示名で「鈴木」を探したとき（hq-coaches-search）。
+    method: "GET",
+    path: "/coaches",
+    query: { q: "鈴木" },
+    body: {
+      coaches: [
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+      ],
+    } satisfies Schemas["CoachList"],
   },
   {
     method: "GET",
@@ -533,6 +612,19 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus/{lesson_menu_id}/publication-changes",
+    // 一覧の「パターの距離感」（本部が非公開にしている）の記録。一度公開に戻したあと、また非公開にした。
+    body: {
+      lesson_menu_id: id("aaaa", 10),
+      changes: [
+        { action: "unpublished", reason: "料金の表記が誤っている", changed_by: HEADQUARTERS_ID, changed_at: at(-3) },
+        { action: "republished", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 2) },
+        { action: "unpublished", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 4) },
+      ],
+    } satisfies Schemas["LessonMenuPublicationChangeList"],
   },
   {
     method: "GET",
@@ -634,6 +726,58 @@ export const FIXTURES: Fixture[] = [
       to: "2026-11-01",
       bookings: HQ_BOOKINGS,
     } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
+    // mockApi は先に一致した応答を返すので、`/bookings/{booking_id}` より前に置く（でないと cancelled を ID として拾う）。
+    method: "GET",
+    path: "/bookings/cancelled",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 21),
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 2),
+          cancelled_at: at(-3),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 22),
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          starts_at: at(-24 * 1 + 6),
+          cancelled_at: at(-24 * 2 - 4.5),
+          cancelled_by: "student",
+        },
+        {
+          booking_id: id("4444", 23),
+          student_id: "11111111-1111-4111-8111-111111111113",
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(-24 * 4),
+          cancelled_at: at(-24 * 5 - 1),
+          cancelled_by: null,
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
+    // 予約の詳細は、一覧のキャンセル済みの予約（確定待ちのままキャンセル）を返す。
+    method: "GET",
+    path: "/bookings/{booking_id}",
+    body: {
+      booking: HQ_BOOKINGS[3]!.booking,
+      slot: { ...BOOKINGS[1]!.slot, starts_at: HQ_BOOKINGS[3]!.booking.starts_at, ends_at: at(49), status: "open" },
+      status_changes: [{ status: "cancelled", changed_at: at(-2) }],
+      coach_display_name: HQ_BOOKINGS[3]!.coach_display_name,
+      student_display_name: HQ_BOOKINGS[3]!.student_display_name,
+    } satisfies Schemas["HeadquartersBookingDetail"],
   },
   {
     method: "GET",

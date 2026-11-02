@@ -107,11 +107,11 @@ export function CoachHome({ token }: { token: string }) {
           aria-pressed={tab === "notifications"}
           aria-label={unreadNotifications > 0 ? `お知らせ（未読 ${unreadNotifications} 件）` : undefined}
           onClick={() => open("notifications")}
-          className={`rounded border px-3 py-1 text-sm ${tab === "notifications" ? "bg-gray-100 font-semibold" : ""}`}
+          className={`rounded-pill border px-3 py-1 text-sm ${tab === "notifications" ? "bg-surface font-semibold" : ""}`}
         >
           お知らせ
           {unreadNotifications > 0 && (
-            <span aria-hidden className="ml-1 rounded-full bg-red-600 px-2 text-xs text-white">
+            <span aria-hidden className="ml-1 rounded-sm bg-danger px-2 text-xs text-on-primary">
               {unreadNotifications}
             </span>
           )}
@@ -131,11 +131,11 @@ export function CoachHome({ token }: { token: string }) {
               aria-controls="coach-tab-panel"
               aria-label={badge ? `${item.title}（未対応 ${badge} 件）` : undefined}
               onClick={() => open(item.id)}
-              className={`rounded-t px-3 py-2 text-sm ${selected ? "border border-b-0 bg-white font-semibold" : "text-gray-600"}`}
+              className={`rounded-t-md px-3 py-2 text-sm ${selected ? "border border-b-0 bg-background font-semibold" : "text-text-muted"}`}
             >
               {item.title}
               {badge && (
-                <span aria-hidden className="ml-1 rounded-full bg-red-600 px-2 text-xs text-white">
+                <span aria-hidden className="ml-1 rounded-sm bg-danger px-2 text-xs text-on-primary">
                   {badge}
                 </span>
               )}

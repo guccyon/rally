@@ -1,0 +1,69 @@
+# コンセプトとトーン＆マナー
+schema_version: "0.1"
+status: draft
+section: concept_tone
+concept:
+  id: rally-court
+  name: コートの熱（躍動して前へ）
+  chosen_on: "2026-11-01"
+  chosen_by: 人（HumanChoice concept_tone）
+
+impression:
+  who: 部活や趣味で体を動かすのが好きな生徒
+  feel: 「早く練習したい、次も上手くなれる」と前のめりになってほしい
+  reference_image: スポーツの中継やスコアボードのような、勢いと手応えのある画面
+  tradeoff: 勢いと次の練習への意欲を得るかわりに、強い色と太い字が多いと疲れやすく、落ち着いて読みたい大人や規定の説明には向きにくい。だから principles の 1 と 3 で抑える
+
+mood:
+  - word: 躍動的な
+    opposite: 地味な
+  - word: 前向きな
+    opposite: 重い
+  - word: 力強い
+    opposite: 頼りない
+  - word: 爽快な
+    opposite: 乱雑な
+anti_words: [地味, 重い, 堅苦しい, 乱雑]
+
+voice:
+  base: 短く言い切る、です・ます調。動詞から始め、数字を見出しにする
+  by_scene:
+    - scene: home
+      tone: 次の一手を前に
+      example: 「次のレッスンは 10/28（水）12:00」「残り 2 回」
+    - scene: empty
+      tone: 背中を押す一言と、次の操作
+      example: 「まだこれからの予約はありません。コーチを探して始めましょう」
+    - scene: success
+      tone: 達成を短く強く。感嘆符は 1 つまで
+      example: 「予約が確定しました」
+    - scene: error
+      tone: 勢いの言葉は使わず、落ち着いた文で原因と次の操作
+      example: 「予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。」
+    - scene: money_and_cancel
+      tone: 大きな数字で回数を示し、条件は本文の大きさで省かずに書く
+      example: 「今キャンセルすると、今月のビデオ通話の枠を 1 回使います。」
+    - scene: admin
+      tone: admin-web は事実を短く。呼びかけと感嘆符は使わない
+      example: 「受付を停止しました」
+
+imagery:
+  photo:
+    use: 動きのある練習の写真を、端まで大きく切り抜く（ブレや汗も残す）
+    coach_portrait: コーチの顔写真は角丸 sm 6px の四角
+    rule: 写真の上に文字を置くときは inverse_surface の帯を敷く（写真に直接の文字は置かない）
+    gen1: 写真の素材はまだない。置き場は surface の面で代える
+  illustration:
+    use: 使わない
+    instead: コートのラインを思わせる太い直線（4px）と斜めの帯（傾き -12°）を飾りに使う。飾りは 1 画面 1 か所、inverse_surface の面の中だけ
+  icon:
+    style: 太めの線のアイコン（線 2.25px、24px の枠）
+    emphasis: 大事な入口はアイコンを濃い面に白抜きで置く
+
+difference:
+  - against: よくあるレッスン予約のアプリ（白地に淡い色・カレンダー中心）
+    ours: 残りの回数と次のレッスンをスコアボードの数字で見せ、次の練習へ押し出す
+  - against: スポーツ用品の広告的な見た目（写真いっぱい・情報が少ない）
+    ours: 熱さは 1 画面 1 か所。規定と誤りは静かな本文で、予約の道具として正確に読める
+  - against: golf-app（落ち着いた上質さを目指す別ブランド）
+    ours: 若い生徒向けの勢い。色と書体は golf-app と共有しない

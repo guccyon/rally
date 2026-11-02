@@ -1,59 +1,72 @@
 import type { ReactNode } from "react";
 
-import { Button } from "./Button";
+import { Badge } from "./Badge";
+import { Button, type ButtonVariant } from "./Button";
 import { Card } from "./Card";
-import { ConfirmStep } from "./ConfirmStep";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { EmptyState } from "./EmptyState";
-import { List } from "./List";
 import { ListRow } from "./ListRow";
-import { Loading } from "./Loading";
-import { ResultMessage } from "./ResultMessage";
-import { Section } from "./Section";
-import { Select } from "./Select";
-import { TextArea } from "./TextArea";
-import { TextInput } from "./TextInput";
+import { LoadingBar, SectionLoading, Spinner } from "./Loading";
+import { Notice } from "./Notice";
+import { StatusTag } from "./StatusTag";
+import { TextArea, TextField } from "./TextField";
+import type { Status } from "./status";
 
-/** カタログの 1 枠。component・variant・state は specs/design/components.yaml の id（対応はテストで確かめる）。 */
+/**
+ * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
+ * example は同じ部品・種類・状態の見本を見分ける名前（状態の色など。components.yaml には対応しない）。
+ */
 export type CatalogEntry = {
   component: string;
   variant?: string;
-  state: string;
+  state?: string;
+  example?: string;
   render: () => ReactNode;
 };
 
-const noop = () => {};
-
-const SPORT_OPTIONS = (
-  <>
-    <option value="tennis">テニス</option>
-    <option value="soccer">サッカー</option>
-  </>
-);
-
-const CONFIRM_ITEMS = [
-  { term: "対象", detail: "テニスの生徒" },
-  { term: "題", detail: "コートの予約方法が変わります" },
+/** components.yaml にあるが admin-web では使わない部品と種類（理由は components.yaml の not_for・各部品の注記）。 */
+export const NOT_IN_ADMIN_WEB: { component: string; variant?: string; reason: string }[] = [
+  { component: "score_panel", reason: "components.yaml の not_for に admin-web とある" },
+  { component: "button", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
+  { component: "badge", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
+  { component: "notice", variant: "toast", reason: "admin-web の Notice は inline だけ（toast はまだない）" },
 ];
 
-const BUTTON_LABELS = { primary: "内容を確かめる", secondary: "直す", danger: "非公開にする" } as const;
+const noop = () => {};
 
-const INPUTS = {
-  single_line: (props: { disabled?: boolean; error?: string }) => (
-    <TextInput label="題" defaultValue="コートの予約方法が変わります" {...props} />
-  ),
-  multi_line: (props: { disabled?: boolean; error?: string }) => (
-    <TextArea label="本文" rows={3} defaultValue={"11月から、コートの予約はアプリから行えます。"} {...props} />
-  ),
-  select: (props: { disabled?: boolean; error?: string }) => (
-    <Select label="スポーツ" defaultValue="tennis" {...props}>
-      {SPORT_OPTIONS}
-    </Select>
-  ),
+const BUTTON_LABELS: Record<ButtonVariant, string> = {
+  primary: "予約する",
+  secondary: "保存する",
+  danger: "キャンセルする",
+  text: "予約をすべて見る",
 };
 
-/** 部品 × 種類 × 状態の全部。部品や状態を足したら、ここにも足す。 */
+const STATUS_EXAMPLES: { status: Status; label: string }[] = [
+  { status: "info", label: "お知らせ" },
+  { status: "success", label: "確定済み" },
+  { status: "warning", label: "確定待ち" },
+  { status: "danger", label: "受付停止" },
+  { status: "neutral", label: "キャンセル済み" },
+];
+
+const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
+  info: "11月から、コートの予約はアプリから行えます。",
+  success: "お知らせを 12 人の生徒に送りました。",
+  warning: "開始まで 1 時間を切った確定待ちの予約があります。",
+  danger: "予約を読み込めませんでした。時間をおいてもう一度開いてください。",
+};
+
+/**
+ * 確認のダイアログは画面全体に重ねる部品なので、transform を付けた枠を基準にしてその中だけに重ねる
+ * （transform のある祖先は position: fixed の基準になる）。
+ */
+function DialogFrame({ children }: { children: ReactNode }) {
+  return <div className="relative h-72 overflow-hidden rounded-md border [transform:translateZ(0)]">{children}</div>;
+}
+
+/** 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。 */
 export const CATALOG: CatalogEntry[] = [
-  ...(["primary", "secondary", "danger"] as const).flatMap((variant) => [
+  ...(["primary", "secondary", "danger", "text"] as const).flatMap((variant) => [
     {
       component: "button",
       variant,
@@ -73,99 +86,116 @@ export const CATALOG: CatalogEntry[] = [
     {
       component: "button",
       variant,
-      state: "busy",
+      state: "loading",
       render: () => (
-        <Button variant={variant} busy busyLabel="送っています…">
+        <Button variant={variant} loading>
           {BUTTON_LABELS[variant]}
         </Button>
       ),
     },
   ]),
-  ...(["single_line", "multi_line", "select"] as const).flatMap((variant) => {
-    const Input = INPUTS[variant];
+  ...(["single_line", "multi_line"] as const).flatMap((variant) => {
+    const Field = variant === "single_line" ? TextField : TextArea;
+    const props =
+      variant === "single_line"
+        ? { label: "表示名", helper: "20 文字まで", defaultValue: "鈴木 コーチ" }
+        : {
+            label: "自己紹介",
+            helper: "500 文字まで",
+            counter: "21 / 500",
+            defaultValue: "テニスを教えて 10 年になります。",
+          };
     return [
-      { component: "input", variant, state: "default", render: () => <Input /> },
-      { component: "input", variant, state: "disabled", render: () => <Input disabled /> },
-      { component: "input", variant, state: "invalid", render: () => <Input error="入力を確かめてください。" /> },
+      { component: "text_field", variant, state: "default", render: () => <Field {...props} /> },
+      { component: "text_field", variant, state: "disabled", render: () => <Field {...props} disabled /> },
+      {
+        component: "text_field",
+        variant,
+        state: "error",
+        render: () => <Field {...props} error="1〜20 文字で入れてください。" />,
+      },
     ];
   }),
   {
     component: "card",
-    state: "default",
     render: () => (
-      <Card label="今月の実績">
-        <p className="font-semibold">今月の実績</p>
-        <p className="text-sm">完了したレッスン 12 件</p>
+      <Card>
+        <p className="font-bold">10/28（水）12:00〜12:30</p>
+        <p className="text-sm text-text-muted">テニス・コーチ: 鈴木</p>
+        <StatusTag label="確定済み" status="success" />
       </Card>
     ),
   },
-  ...(["plain", "action"] as const).flatMap((variant) =>
-    (["default", "disabled"] as const).map((state) => ({
-      component: "list_row",
-      variant,
-      state,
-      render: () => (
-        <List label={`一覧の行（${variant}・${state}）`}>
-          <ListRow
-            onOpen={variant === "action" ? noop : undefined}
-            disabled={state === "disabled"}
-            trailing={variant === "action" ? "「予約」へ" : undefined}
-          >
-            <span className="block">10/28（水）12:00 の予約が確定しました。</span>
-            <span className="block text-gray-600">2026/10/26 10:00</span>
-          </ListRow>
-        </List>
-      ),
-    })),
-  ),
   {
-    component: "section",
-    state: "default",
+    component: "card",
+    example: "押せる",
     render: () => (
-      <Section title="お知らせを送る">
-        <p className="text-sm">欄の中身</p>
-      </Section>
+      <Card onClick={noop}>
+        <p className="font-bold">スイングの見直し</p>
+        <p className="text-sm text-text-muted">テニス・1 回 60 分</p>
+      </Card>
     ),
   },
   {
-    component: "result_message",
-    variant: "success",
-    state: "default",
-    render: () => <ResultMessage result={{ ok: true, message: "お知らせを 12 人の生徒に送りました。" }} />,
-  },
-  {
-    component: "result_message",
-    variant: "failure",
-    state: "default",
+    component: "list_row",
     render: () => (
-      <ResultMessage result={{ ok: false, message: "送れませんでした。時間をおいてもう一度お試しください。" }} />
+      <ListRow title="10/28（水）12:00 の予約が確定しました。" subtitle="2026/10/26 10:00" onClick={noop} />
     ),
   },
-  { component: "empty_state", state: "default", render: () => <EmptyState>低い評価はまだありません</EmptyState> },
-  { component: "loading", state: "default", render: () => <Loading /> },
-  ...(["primary", "danger"] as const).flatMap((variant) =>
-    (["default", "busy"] as const).map((state) => ({
-      component: "confirm_step",
-      variant,
-      state,
-      render: () => (
-        <ConfirmStep
-          label={`確認の段（${variant}・${state}）`}
-          message="次の内容でテニスの生徒に送りますか？送るとすぐに生徒に届きます。"
-          items={CONFIRM_ITEMS}
-          confirmLabel={variant === "danger" ? "非公開にする" : "送るのを確定"}
-          busyLabel="送っています…"
-          variant={variant}
-          busy={state === "busy"}
+  {
+    component: "list_row",
+    state: "unread",
+    render: () => <ListRow title="コーチから返事が届きました" subtitle="2026/10/27 18:04" unread onClick={noop} />,
+  },
+  { component: "badge", variant: "count", render: () => <Badge count={3} /> },
+  { component: "badge", variant: "dot", render: () => <Badge /> },
+  ...STATUS_EXAMPLES.map(({ status, label }) => ({
+    component: "status_tag",
+    example: status,
+    render: () => <StatusTag label={label} status={status} />,
+  })),
+  ...(["info", "success", "warning", "danger"] as const).map((state) => ({
+    component: "notice",
+    variant: "inline",
+    state,
+    render: () => <Notice message={NOTICE_MESSAGES[state]} status={state} />,
+  })),
+  {
+    component: "empty_state",
+    render: () => (
+      <EmptyState
+        message="まだ低い評価はありません。評価が届くと、ここに新しい順に出ます。"
+        action={<Button variant="secondary">評価の一覧を見る</Button>}
+      />
+    ),
+  },
+  { component: "loading", variant: "bar", render: () => <LoadingBar /> },
+  { component: "loading", variant: "section_text", render: () => <SectionLoading message="予約を読み込んでいます…" /> },
+  { component: "loading", variant: "spinner", render: () => <Spinner /> },
+  ...([false, true] as const).map((danger) => ({
+    component: "confirm_dialog",
+    example: danger ? "危険な操作" : "送る前の確認",
+    render: () => (
+      <DialogFrame>
+        <ConfirmDialog
+          open
+          title={danger ? "受付を止めますか？" : "お知らせを送りますか？"}
+          body={
+            danger
+              ? "鈴木 コーチの新しい予約の受付を止めます。止めているあいだ、生徒はこのコーチの枠を予約できません。"
+              : "テニスの生徒 12 人に「コートの予約方法が変わります」を送ります。送るとすぐに届き、取り消せません。"
+          }
+          confirmLabel={danger ? "受付を止める" : "送る"}
+          danger={danger}
           onConfirm={noop}
           onCancel={noop}
         />
-      ),
-    })),
-  ),
+      </DialogFrame>
+    ),
+  })),
 ];
 
-/** カタログの枠の名前（見出しと突き合わせに使う）。例: `button / primary / disabled` */
-export function catalogEntryName(entry: Pick<CatalogEntry, "component" | "variant" | "state">): string {
-  return [entry.component, entry.variant, entry.state].filter(Boolean).join(" / ");
+/** カタログの枠の名前（見出しと突き合わせに使う）。例: `button / primary / disabled`、`status_tag / warning` */
+export function catalogEntryName(entry: Pick<CatalogEntry, "component" | "variant" | "state" | "example">): string {
+  return [entry.component, entry.variant, entry.state, entry.example].filter(Boolean).join(" / ");
 }

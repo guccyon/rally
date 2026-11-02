@@ -38,6 +38,13 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 | 自分の予約（登録後はどの画面からもアプリバーの「自分の予約」で開き、閉じると開いた画面に戻る。キャンセル済みも含めて、日時・スポーツ・予約した時点のレッスンメニューの名前と 1 回の時間（`Booking.lesson_menu`。例: `メニュー: フォアハンドの基礎（1 回 60 分）`。時間が null なら名前だけ。メニューのない予約には出さない）・載っていればコーチの名前・状態を出す。まだ始まっていない予約（キャンセル済みを除く）には「この予約をキャンセルする」を出し、その上に、枠を使わずにキャンセルできる境目（`free_cancel_until`）の前なら「10月28日 3時までなら、ビデオ通話の枠を使わずにキャンセルできます。」、過ぎていれば「今キャンセルすると、今月のビデオ通話の枠を 1 回使います。」を出す（境目がなければ `cancel_consumes_quota` が true のときだけ後者。月額の受講権のない生徒の予約などどちらも null・false なら出さない）。押すと確認し、枠を使うなら確認にも同じ文を添える（枠を使うかを決めるのはサーバーで、ここは `listMyBookings` の見込みを出すだけ。一覧を読んだあとで境目を過ぎても合うよう、境目は今の時刻と比べる。今の時刻は `clockProvider` で、テストでは固定する）。キャンセルできたらその予約をキャンセル済みにし、失敗したら状態を変えずに文言を出す） | `listMyBookings` / `cancelBooking` |
 | 自分の動画（登録後はどの画面からもアプリバーの「自分の動画」で開き、閉じると開いた画面に戻る。添削待ちも返却済みも含めて送った時刻の新しい順に、送った日時（例: `10/26 12:00 に送信`）・スポーツ・送った時点のレッスンメニュー（あれば「メニュー: 〇〇」）・載っていればコーチの名前・状態（「添削待ち」/「返却済み」）を出す。返却済みの行の「添削結果を見る」でその動画の添削結果の画面を開き（読むだけで、完了の記録には進まない。閉じると一覧に戻る）、読めなければ一覧に留まって文言を出す。1 本もなければ「まだ動画を送っていません」） | `listMyVideos` / `getVideoReview` |
 
+## テーマと部品
+
+- テーマは `lib/ui/theme/rally_theme.dart` の `buildRallyTheme()`。色・書体・余白・角丸は `lib/ui/theme/rally_tokens.dart`（`RallyColors` など）で、正本は `specs/design/tokens.yaml`。値が正本と同じことを `test/ui/theme/rally_tokens_test.dart` が確かめる
+- 基本の部品（`specs/design/components.yaml`）は `lib/ui/components/`（`RallyButton`・`StatusTag`・`ScorePanel`・`Notice`・`EmptyState`・`SectionLoading`・`RallyCard`・`ListRow`・`showConfirmDialog`）。入力欄・しるし・読み込み中の bar はテーマ（`InputDecorationTheme` など）で合わせる
+- 部品の種類と状態の見本を `lib/ui/design_catalog.dart` に並べ、`lib/screens/design_catalog_screen.dart` で見る（アプリの流れからは開けない）。画面のキャプチャの `design-catalog`（縦に伸ばして下まで 1 枚）なので、部品を変えると PR のキャプチャに出る
+- components.yaml に部品・種類を足したら `design_catalog.dart` にも見本を足す。置けないものは `notInStudentCatalog` に理由とともに書く（`test/ui/design_catalog_test.dart` が突き合わせる）
+
 ## 画面のキャプチャ
 
 PR ごとに CI（`.github/workflows/screenshots.yml`）が前（ベース）と後の画面を撮って比べ、変わった画面を成果物 `screenshots-student-app` にする（PR のチェック「画面のキャプチャ / student-app」の詳細から開ける）。
@@ -47,15 +54,9 @@ SCREENSHOT_DIR=$PWD/screenshots/out flutter test screenshots/   # <id>.png と <
 ```
 
 - 撮る画面とたどり方は `screenshots/capture_test.dart` の `screens`。アプリ全体を `test/support` の `FakeStudentApi` で動かし、登録から押してたどる。時刻は `Fixtures.now` に固定、画面はスマートフォンの縦（390×844 の 3 倍）
-- 日本語は IPA ゴシック（`fonts-ipafont-gothic`。別のフォントは `SCREENSHOT_FONT` で渡す）で描く。絵文字は四角になる
+- 日本語は IPA ゴシック（`fonts-ipafont-gothic`。別のフォントは `SCREENSHOT_FONT` で渡す）を、既定の書体とテーマの書体（`RallyTypography.family`）の両方の名前で読み込んで描く。絵文字は四角になる
 - 画面を足した・押す文言を変えたら `screens` を直す。id は前後の突き合わせに使うので変えない
 - `SCREENSHOT_DIR` がないときは撮らない（`flutter test` の既定の対象 `test/` にも入れていない）
-
-## デザインシステムの部品
-
-- 部品は `lib/ui/rally_*.dart`（`specs/design/components.yaml` の id ごと: `RallyButton`・`RallyTextInput` / `RallySelect`・`RallyCard`・`RallyListRow`・`RallySection`・`RallyResultMessage`・`RallyEmptyState`・`RallyLoading`・`RallyConfirmStep`）。画面の型は `specs/design/patterns.yaml`
-- 部品 × 種類 × 状態の全部を `lib/ui/design_catalog.dart` に並べ、`lib/screens/design_catalog_screen.dart` で見る（アプリの流れからは開けない）。画面のキャプチャの `design-catalog`（縦に伸ばして下まで 1 枚）なので、部品を変えると PR のキャプチャに出る
-- components.yaml に部品・種類・状態を足したら、部品と `design_catalog.dart` にも足す（`test/ui/design_catalog_test.dart` が突き合わせる）
 
 ## API
 

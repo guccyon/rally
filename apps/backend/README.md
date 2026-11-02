@@ -141,11 +141,12 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## profile: 本部が見るプロフィールの書きかけのコーチ（D176）
 
-- `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）: 本部だけが呼べる（`interface::incomplete_coach_profiles_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチのアカウント（受付を止めているコーチも含む）のうち、プロフィールに足りない項目があるものを、`coach_id`・表示名・足りない項目の名前 `missing_fields`・最後に更新した時刻 `updated_at`・登録した時刻 `registered_at` で、登録の古い順（同じ時刻は `coach_id` の順）に返す。照会だけで、行動イベント・境界間イベントは発火しない
+- `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）: 本部だけが呼べる（`interface::incomplete_coach_profiles_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチのアカウント（受付を止めているコーチも含む）のうち、プロフィールに足りない項目があるものを、`coach_id`・表示名・足りない項目の名前 `missing_fields`・最後に更新した時刻 `updated_at`・登録した時刻 `registered_at` で、登録の古い順（同じ時刻は `coach_id` の順）に返す。任意の `sport` でそのスポーツを提供するコーチだけに絞る（D196。`Sport` の値でなければ 422 `validation_failed`）。照会だけで、行動イベント・境界間イベントは発火しない
+- 競技での絞り込みは `listCoaches` の `sport` と同じ規則で、コーチの競技の決め方は domain の `profile::CoachSportFilter` の 1 か所（両方のユースケースが使う）。値の読み取りと 422 は interface の `contract.rs` の `admin_web_sport`
 - 「足りない」の判定は domain の `profile::MissingCoachProfileFields` の 1 か所（今は自己紹介文 `bio` が空か空白だけのとき）。項目は `profile::CoachProfileField`、契約の文字列（`bio`）は interface の `contract.rs` の対応表。表示名と提供スポーツは空にできないので対象にしない
 - `updated_at` は、プロフィールの更新の時刻を保存していない（`identity.coaches` に列がない）ので今は常に null。DB の変更はしていない
 - ユースケースは `application::profile::ListIncompleteCoachProfiles`。コーチは `AccountRepository::list_coaches`、自己紹介文は `CoachProfileRepository::list_coach_bios`（Postgres は `identity.coaches` の `coach_id, bio`）で読む
-- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
+- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`crates/domain/src/profile/coach_sport_filter.rs`（複数の提供スポーツ・生徒と本部・絞らない）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件・競技で絞る）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・競技で絞る・422・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
 
 ## matching: 生徒がスポーツでコーチを探す（D96）
 
@@ -240,7 +241,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## scheduling: 本部が見るキャンセルされた予約の一覧（D185）
 
-- `GET /bookings/cancelled`（admin-web の `listCancelledBookings`）: 本部だけが呼べる（`interface::headquarters_cancelled_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じ階層の `GET /bookings/{booking_id}`（`getBooking`）とは `merge` で並び、固定のパスが先に当たる。キャンセルした時刻が期間に入る予約を、キャンセルの新しい順（同じ時刻は `booking_id` の順）に返し、各行に予約の ID・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・枠の開始・キャンセルした時刻・キャンセルした人 `cancelled_by` を載せる。行動イベントは発火しない
+- `GET /bookings/cancelled`（admin-web の `listCancelledBookings`）: 本部だけが呼べる（`interface::headquarters_cancelled_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じ階層の `GET /bookings/{booking_id}`（`getBooking`）とは `merge` で並び、固定のパスが先に当たる。キャンセルした時刻が期間に入る予約を（任意の `coach_id` でそのコーチの枠への予約だけに絞れる。検証は `listBookings` と同じ `interface::contract::account_id_from_contract`、絞り込みは domain の `Booking::matches_coach`）、キャンセルの新しい順（同じ時刻は `booking_id` の順）に返し、各行に予約の ID・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・枠の開始・キャンセルした時刻・キャンセルした人 `cancelled_by` を載せる。行動イベントは発火しない
 - 期間は日付（日本時間）の `from` から `to` まで（両端を含む）で、規則は `listBookings` と同じ `domain::scheduling::BookingPeriod`（1 日以上 31 日まで。違反と日付でない値は 422）。省いたときは今日までの 7 日（`from` だけなら `from` から、`to` だけなら `to` までの 7 日）。ユースケースは `application::scheduling::ListCancelledBookings`（失敗は `ListBookingsError` を共有）
 - キャンセルした人は domain の `Booking::cancelled_by`（`BookingCanceller`）。DB はキャンセルした人を持たず、今キャンセルできるのは予約した生徒だけ（`Booking::cancel`）なので、キャンセル済みは `student`。契約の値は `interface::contract::booking_canceller_to_contract`
 - 保存先は `BookingRepository::bookings_cancelled_between`（Postgres は `scheduling.bookings.cancelled_at` の範囲で読む）。DB の変更はない
@@ -357,11 +358,11 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## async-lesson: 本部が見る返した動画添削の記録（D174）
 
-- `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）: 本部だけが呼べる（`interface::returned_video_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。返却の日付（日本時間）が `from`〜`to`（両端を含む）の返却済みの動画を、コーチを問わず返却の新しい順（同じ時刻は `video_id`）に返し、各行に動画の ID・スポーツ・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・送った時刻・返した時刻・かかった時間 `lead_time_hours` を載せる。任意の `coach_id` でそのコーチの動画だけ。添削のコメントは載せない。行動イベントは発火しない
+- `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）: 本部だけが呼べる（`interface::returned_video_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。返却の日付（日本時間）が `from`〜`to`（両端を含む）の返却済みの動画を、コーチを問わず返却の新しい順（同じ時刻は `video_id`）に返し、各行に動画の ID・スポーツ・生徒とコーチの ID と表示名（profile から。引けなければ載せない）・送った時刻・返した時刻・かかった時間 `lead_time_hours` を載せる。任意の `coach_id` でそのコーチの動画だけ、任意の `sport` でそのスポーツの動画だけ（D198。期間・`coach_id` と組み合わせられる）。添削のコメントは載せない。行動イベントは発火しない
 - かかった時間（送付から返却まで。時間で端数は切り捨て）は KPI `video_review_lead_time`（`specs/analytics/kpi.yaml`）の 1 件分で、数え方は `domain::async_lesson::Video::review_lead_hours` の 1 か所（返却待ちの一覧の経過時間 `PendingVideoReviewFilter::elapsed_hours` も同じ関数を通す）
-- 期間の規則（1 日以上 31 日まで）と絞り込み・並べ方は `domain::async_lesson::ReturnedVideoReviewFilter`、日付と時刻の変換は予約の一覧と同じ `application::scheduling::calendar_day`。両方を省けば今日までの 7 日、片方だけならもう片方はそこから 7 日目。違反と `YYYY-MM-DD` でない値・UUID でない `coach_id` は 422 `validation_failed`。該当がなければ空の配列（404 はない）
+- 期間の規則（1 日以上 31 日まで）と絞り込み・並べ方は `domain::async_lesson::ReturnedVideoReviewFilter`、日付と時刻の変換は予約の一覧と同じ `application::scheduling::calendar_day`。両方を省けば今日までの 7 日、片方だけならもう片方はそこから 7 日目。動画のスポーツ（送ったときのスポーツ）での絞り込みは返却待ちの一覧と同じ `Video::is_in_sport` の 1 か所、`sport` の値の読み方も同じ `interface` の `admin_web_sport`。違反と `YYYY-MM-DD` でない値・UUID でない `coach_id`・`Sport` の値でない `sport` は 422 `validation_failed`。該当がなければ空の配列（404 はない）
 - 保存先は `VideoRepository::videos_returned_between`（Postgres は `async_lesson.video_reviews.returned_at` で期間を絞って `videos` と結ぶ）。DB の変更はない
-- テスト: `domain::async_lesson::video`（かかった時間の端）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/pg_video_repository.rs`・`crates/server/tests/returned_video_reviews.rs`（Postgres。`--include-ignored`）
+- テスト: `domain::async_lesson::video`（かかった時間の端・スポーツ）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・スポーツ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・スポーツと期間・コーチの組み合わせ・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/pg_video_repository.rs`・`crates/server/tests/returned_video_reviews.rs`（Postgres。`--include-ignored`）
 
 ## レッスンの完了記録（is_first_lesson と LessonCompleted）
 

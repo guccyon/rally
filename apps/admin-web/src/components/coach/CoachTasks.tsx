@@ -11,7 +11,7 @@ import type { PendingTasks } from "./pendingTasks";
 import { UNKNOWN_NAME } from "./studentNames";
 import { videoLessonMenuLabel } from "./videoLessonMenu";
 
-const BUTTON = "rounded bg-blue-600 px-3 py-1 text-white";
+const BUTTON = "rounded-pill bg-primary px-3 py-1 text-on-primary";
 
 /** 対応待ちの 1 種類（見出し・件数・一覧）。一覧の API が失敗したときはその文言だけを出す。 */
 function TaskGroup<T>({
@@ -33,11 +33,11 @@ function TaskGroup<T>({
         {title}
         {part.ok && `（${part.data.length} 件）`}
       </h3>
-      {note && <p className="text-sm text-gray-600">{note}</p>}
+      {note && <p className="text-sm text-text-muted">{note}</p>}
       {!part.ok && <ResultMessage result={{ ok: false, message: part.message }} />}
       {part.ok && part.data.length === 0 && <p className="text-sm">{empty}</p>}
       {part.ok && part.data.length > 0 && (
-        <ul aria-label={title} className="divide-y rounded border text-sm">
+        <ul aria-label={title} className="divide-y rounded-md border text-sm">
           {part.data.map(renderItem)}
         </ul>
       )}
@@ -62,7 +62,7 @@ export function CoachTasks({
   onOpenBookings: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  if (!tasks) return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (!tasks) return <p className="text-sm text-text-muted">読み込み中…</p>;
   return (
     <div className="space-y-6">
       <p className="text-sm">
@@ -76,11 +76,11 @@ export function CoachTasks({
           <li key={video.video_id} className="flex items-center justify-between gap-2 px-3 py-2">
             <span>
               <span className="font-semibold">{video.student_display_name ?? UNKNOWN_NAME}</span>
-              <span className="block text-gray-600">
+              <span className="block text-text-muted">
                 {formatDateTime(video.submitted_at)} に送られました
               </span>
               {video.lesson_menu && (
-                <span className="block text-gray-600">{videoLessonMenuLabel(video.lesson_menu)}</span>
+                <span className="block text-text-muted">{videoLessonMenuLabel(video.lesson_menu)}</span>
               )}
             </span>
             <button type="button" onClick={() => onOpenVideo(video.video_id)} className={BUTTON}>
@@ -101,11 +101,11 @@ export function CoachTasks({
           >
             <span>
               <span className="font-semibold">{item.student_display_name ?? UNKNOWN_NAME}</span>
-              <span className="block text-gray-600">
+              <span className="block text-text-muted">
                 {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
               </span>
               {item.booking.lesson_menu && (
-                <span className="block text-gray-600">
+                <span className="block text-text-muted">
                   メニュー: {bookingLessonMenuLabel(item.booking.lesson_menu)}
                 </span>
               )}
@@ -126,7 +126,7 @@ export function CoachTasks({
               <span className="font-semibold">
                 {tasks.names.get(thread.student_id) ?? UNKNOWN_NAME}
               </span>
-              <span className="ml-2 rounded bg-red-600 px-2 text-xs text-white">
+              <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
                 未読 {thread.unread_count} 件
               </span>
             </span>

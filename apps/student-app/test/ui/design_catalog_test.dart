@@ -4,107 +4,94 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/screens/design_catalog_screen.dart';
 import 'package:rally_student_app/ui/design_catalog.dart';
-import 'package:rally_student_app/ui/rally_button.dart';
-import 'package:rally_student_app/ui/rally_confirm_step.dart';
+import 'package:rally_student_app/ui/theme/rally_theme.dart';
 import 'package:yaml/yaml.dart';
 
-/// デザインシステムの部品（lib/ui/ の Rally〜）とカタログが specs/design/components.yaml と合っていることを確かめる。
-/// components.yaml に部品・種類・状態を足したら、部品とカタログ（lib/ui/design_catalog.dart）にも足す。
+/// デザインシステムのカタログ（lib/ui/design_catalog.dart）が specs/design/components.yaml の部品と合っていることを確かめる。
+/// components.yaml に部品・種類を足したら、カタログにも見本を足す。置けないものは notInStudentCatalog に理由とともに書く。
+/// 部品そのものの振る舞いは test/ui/components/components_test.dart。
 void main() {
   final spec = loadYaml(
     File('../../specs/design/components.yaml').readAsStringSync(),
   ) as YamlMap;
-  final components = (spec['components'] as YamlList).cast<YamlMap>();
+  final components = {
+    for (final component in (spec['components'] as YamlList).cast<YamlMap>())
+      component['id'] as String: component,
+  };
 
-  /// components.yaml から、部品 × 種類 × 状態の名前の全部
-  final expected = [
-    for (final component in components)
-      for (final variant in _variantsOf(component))
-        for (final state in (component['states'] as YamlList).cast<String>())
-          CatalogEntry(
-            component['id'] as String,
-            variant,
-            state,
-            (_) => const SizedBox(),
-          ).name,
-  ];
+  test('部品と種類は、置けないと書いたもの以外すべてカタログに見本がある', () {
+    for (final MapEntry(key: id, value: component) in components.entries) {
+      final entries = designCatalog.where((e) => e.component == id);
+      expect(entries, isNotEmpty, reason: id);
+      for (final variant in _keysOf(component['variants'])) {
+        if (notInStudentCatalog.containsKey('$id / $variant')) continue;
+        expect(
+          entries.any((e) => e.variant == variant),
+          isTrue,
+          reason: '$id / $variant',
+        );
+      }
+    }
+  });
 
-  test('カタログは components.yaml の部品 × 種類 × 状態をちょうど 1 つずつ持つ', () {
-    final actual = designCatalog.map((e) => e.name).toList();
-    expect(actual.toSet().length, actual.length);
-    expect([...actual]..sort(), [...expected]..sort());
+  test('カタログの部品・種類・状態は components.yaml にあるものだけで、枠の名前は重ならない', () {
+    for (final entry in designCatalog) {
+      final component = components[entry.component];
+      expect(component, isNotNull, reason: entry.name);
+      if (entry.variant case final variant?) {
+        expect(_keysOf(component!['variants']), contains(variant));
+      }
+      // default は「状態を付けない見た目」。components.yaml の states に書いていなくてよい
+      if (entry.state case final state? when state != 'default') {
+        expect(_keysOf(component!['states']), contains(state));
+      }
+    }
+    final names = designCatalog.map((e) => e.name).toList();
+    expect(names.toSet().length, names.length);
+  });
+
+  test('置けないと書いた種類は components.yaml にあり、カタログには置かない', () {
+    for (final name in notInStudentCatalog.keys) {
+      final [id, variant] = name.split(' / ');
+      expect(_keysOf(components[id]?['variants']), contains(variant));
+      expect(
+        designCatalog.any((e) => e.component == id && e.variant == variant),
+        isFalse,
+      );
+    }
   });
 
   testWidgets('カタログの画面に、部品ごとの見出しとすべての枠の見出しが出る', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: DesignCatalogScreen()));
-    for (final component in components) {
-      expect(
-        find.text(component['id'] as String, skipOffstage: false),
-        findsOneWidget,
-      );
+    await tester.pumpWidget(
+      MaterialApp(theme: buildRallyTheme(), home: const DesignCatalogScreen()),
+    );
+    await tester.pumpAndSettle();
+    // 種類・状態・見本の名前のない枠は、枠の名前が部品の見出しと同じ文字になる
+    for (final id in components.keys) {
+      final plain = designCatalog.where((e) => e.name == id).length;
+      expect(find.text(id, skipOffstage: false), findsNWidgets(1 + plain));
     }
-    for (final name in expected) {
-      expect(find.text(name, skipOffstage: false), findsOneWidget);
+    for (final entry in designCatalog.where((e) => e.name != e.component)) {
+      expect(find.text(entry.name, skipOffstage: false), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('処理中のボタンは押せず、文言が処理中のものになる', (tester) async {
+  testWidgets('確認のダイアログの見本は、押すとダイアログを開く', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RallyButton(
-            label: '予約を確定する',
-            busy: true,
-            busyLabel: '送っています…',
-            onPressed: () {},
-          ),
-        ),
-      ),
+      MaterialApp(theme: buildRallyTheme(), home: const DesignCatalogScreen()),
     );
-    expect(find.text('予約を確定する'), findsNothing);
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '送っています…'),
-    );
-    expect(button.onPressed, isNull);
-  });
-
-  testWidgets('確認の段は内容を見せ、確定とやめるを呼ぶ。処理中は両方押せない', (tester) async {
-    var confirmed = 0;
-    var cancelled = 0;
-    Widget step({required bool busy}) => MaterialApp(
-      home: Scaffold(
-        body: RallyConfirmStep(
-          title: '予約をキャンセルしますか？',
-          message: '予約をキャンセルします。',
-          items: const [('コーチ', '佐藤 コーチ')],
-          confirmLabel: 'キャンセルする',
-          busyLabel: 'キャンセルしています…',
-          danger: true,
-          busy: busy,
-          onConfirm: () => confirmed++,
-          onCancel: () => cancelled++,
-        ),
-      ),
-    );
-
-    await tester.pumpWidget(step(busy: false));
-    expect(find.text('佐藤 コーチ'), findsOneWidget);
-    await tester.tap(find.text('キャンセルする'));
-    await tester.tap(find.text('やめる'));
-    expect((confirmed, cancelled), (1, 1));
-
-    await tester.pumpWidget(step(busy: true));
-    await tester.tap(find.text('キャンセルしています…'));
-    await tester.tap(find.text('やめる'));
-    expect((confirmed, cancelled), (1, 1));
+    final open = find.text('確認のダイアログを開く');
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
   });
 }
 
-/// 部品の種類の id。種類がなければ null の 1 つ
-List<String?> _variantsOf(YamlMap component) => switch (component['variants']) {
-  final YamlList variants => [
-    for (final variant in variants.cast<YamlMap>()) variant['id'] as String,
-  ],
-  _ => const [null],
+/// components.yaml の variants・states は、辞書ならそのキー、配列ならその要素が名前
+List<String> _keysOf(Object? node) => switch (node) {
+  final YamlMap map => map.keys.cast<String>().toList(),
+  final YamlList list => list.cast<String>().toList(),
+  _ => const [],
 };

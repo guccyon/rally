@@ -17,8 +17,8 @@ const HQ_B = "44444444-4444-4444-8444-00000000000b";
 const CHANGES: Schemas["CoachAcceptanceChangeList"] = {
   coach_id: COACH_ID,
   changes: [
-    { acceptance_status: "accepting", changed_by: HQ_B, changed_at: "2026-10-30T01:00:00Z" },
-    { acceptance_status: "suspended", changed_by: HQ_A, changed_at: "2026-10-28T09:30:00Z" },
+    { acceptance_status: "accepting", reason: null, changed_by: HQ_B, changed_at: "2026-10-30T01:00:00Z" },
+    { acceptance_status: "suspended", reason: "連絡がつかない", changed_by: HQ_A, changed_at: "2026-10-28T09:30:00Z" },
   ],
 };
 
@@ -29,7 +29,7 @@ function apiOf(result: Result<Schemas["CoachAcceptanceChangeList"]>) {
 }
 
 describe("本部のコーチの受付の記録", () => {
-  test("読み込み中を出し、読めたら返った順（新しい順）に止めた・再開した・日時・操作した本部のアカウントを出す", async () => {
+  test("読み込み中を出し、読めたら返った順（新しい順）に止めた・再開した・日時・操作した本部のアカウント・理由を出す", async () => {
     const api = apiOf({ ok: true, data: CHANGES });
     render(<CoachAcceptanceHistory api={api} coachId={COACH_ID} />);
 
@@ -43,12 +43,31 @@ describe("本部のコーチの受付の記録", () => {
       "操作",
       "日時",
       "操作した本部のアカウント",
+      "理由",
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
-      ["再開した", formatDateTime("2026-10-30T01:00:00Z"), HQ_B],
-      ["止めた", formatDateTime("2026-10-28T09:30:00Z"), HQ_A],
+      ["再開した", formatDateTime("2026-10-30T01:00:00Z"), HQ_B, "—"],
+      ["止めた", formatDateTime("2026-10-28T09:30:00Z"), HQ_A, "連絡がつかない"],
     ]);
+  });
+
+  test("理由を書かずに止めた記録（空文字列）と、理由を残し始める前の記録（null）の理由は「—」", async () => {
+    const data: Schemas["CoachAcceptanceChangeList"] = {
+      coach_id: COACH_ID,
+      changes: [
+        { acceptance_status: "suspended", reason: "", changed_by: HQ_A, changed_at: "2026-10-30T01:00:00Z" },
+        { acceptance_status: "suspended", reason: null, changed_by: HQ_B, changed_at: "2026-10-01T01:00:00Z" },
+      ],
+    };
+    render(<CoachAcceptanceHistory api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    const table = await screen.findByRole("table", { name: "受付の記録" });
+    const reasons = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[3]!.textContent);
+    expect(reasons).toEqual(["—", "—"]);
   });
 
   test("同じ時刻の記録も返った順のまま出す", async () => {
@@ -56,8 +75,8 @@ describe("本部のコーチの受付の記録", () => {
     const data: Schemas["CoachAcceptanceChangeList"] = {
       coach_id: COACH_ID,
       changes: [
-        { acceptance_status: "suspended", changed_by: HQ_A, changed_at: at },
-        { acceptance_status: "accepting", changed_by: HQ_B, changed_at: at },
+        { acceptance_status: "suspended", reason: "", changed_by: HQ_A, changed_at: at },
+        { acceptance_status: "accepting", reason: null, changed_by: HQ_B, changed_at: at },
       ],
     };
     render(<CoachAcceptanceHistory api={apiOf({ ok: true, data })} coachId={COACH_ID} />);

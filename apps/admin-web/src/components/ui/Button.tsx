@@ -1,49 +1,45 @@
 import type { ButtonHTMLAttributes } from "react";
 
-/** components.yaml の button の種類。 */
-export type ButtonVariant = "primary" | "secondary" | "danger";
+import { Spinner } from "./Loading";
+
+// ボタン（specs/design/components.yaml の button）。文言は動詞で終える。
+
+export type ButtonVariant = "primary" | "secondary" | "danger" | "text";
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: "bg-blue-600 text-white",
-  secondary: "border",
-  danger: "bg-red-600 text-white",
+  primary: "bg-primary text-on-primary active:bg-primary-pressed",
+  secondary: "border border-border-strong bg-background text-primary active:bg-primary-container",
+  danger: "bg-danger text-on-primary active:bg-danger-on-container",
+  text: "text-primary active:bg-primary-container",
 };
 
-const SIZE_CLASSES = {
-  /** 段の主な操作 */
-  md: "px-4 py-1",
-  /** 一覧の行の中の操作 */
-  sm: "px-2 py-0.5",
-};
+const BASE =
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-pill px-6 text-base font-bold transition-colors disabled:border-transparent disabled:bg-surface disabled:text-text-muted";
 
-type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & {
-  variant?: ButtonVariant;
-  size?: keyof typeof SIZE_CLASSES;
-  /** API の応答を待つ間。押せなくし、`busyLabel` があれば文言をそれにする */
-  busy?: boolean;
-  busyLabel?: string;
-};
-
-/** ボタン（components.yaml の button）。主・副・危険と、通常・無効・処理中。 */
+/**
+ * 主なボタン（primary）は 1 画面に 1 つまで。危険な操作の確認だけ danger。
+ * loading のあいだはラベルを残したまま spinner を前に出し、押せなくする（二度押しで同じ操作を 2 回送らない）。
+ * admin-web は濃い面を使わないので on_dark はない。
+ */
 export function Button({
   variant = "primary",
-  size = "md",
-  busy = false,
-  busyLabel,
+  loading = false,
   disabled,
-  type = "button",
+  className,
   children,
-  ...rest
-}: Props) {
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; loading?: boolean }) {
   return (
     <button
-      {...rest}
       type={type}
-      disabled={disabled || busy}
-      aria-busy={busy || undefined}
-      className={`rounded ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} disabled:opacity-50`}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={[BASE, VARIANT_CLASSES[variant], className].filter(Boolean).join(" ")}
+      {...props}
     >
-      {busy && busyLabel ? busyLabel : children}
+      {loading && <Spinner />}
+      {children}
     </button>
   );
 }

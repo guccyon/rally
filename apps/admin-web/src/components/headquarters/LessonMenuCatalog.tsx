@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
@@ -8,6 +9,7 @@ import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
 import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
+import { lessonMenuPublicationHistoryPath } from "./LessonMenuPublicationHistoryHome";
 
 type Sport = Schemas["Sport"];
 type LessonMenu = Schemas["CoachLessonMenu"];
@@ -37,7 +39,7 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
   return (
     <>
       非公開（本部）
-      <span className="block text-xs text-gray-500">
+      <span className="block text-xs text-text-muted">
         {formatDateTime(unpublish.unpublished_at)}
         {unpublish.reason === "" ? "" : `・理由: ${unpublish.reason}`}
       </span>
@@ -51,6 +53,7 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。
  * 各行は確かめてから本部が非公開にする（unpublishLessonMenu）・本部が非公開にしたものを公開に戻す（republishLessonMenu）。
+ * 操作の列のボタンの後ろに、そのメニューの「公開の記録」の画面への「記録」を置く。
  */
 export function LessonMenuCatalog({
   api,
@@ -174,7 +177,7 @@ export function LessonMenuCatalog({
         <label className="block">
           スポーツ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
               void changeFilter({ ...filter, sport: event.target.value as Sport | "" })
@@ -201,7 +204,7 @@ export function LessonMenuCatalog({
         <label className="block">
           コーチ
           <select
-            className="mt-1 block rounded border px-2 py-1"
+            className="mt-1 block rounded-md border px-2 py-1"
             value={filter.coachId}
             disabled={coaches.kind !== "loaded" && !unknownCoachSelected}
             onChange={(event) => void changeFilter({ ...filter, coachId: event.target.value })}
@@ -226,7 +229,7 @@ export function LessonMenuCatalog({
         />
       )}
       <ResultMessage result={result} />
-      {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+      {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.menus.length === 0 && (
         <p className="text-sm">条件に合うメニューはありません</p>
@@ -276,6 +279,13 @@ export function LessonMenuCatalog({
                       )
                     }
                   />
+                  <Link
+                    href={lessonMenuPublicationHistoryPath(menu.lesson_menu_id)}
+                    aria-label={`「${menu.name}」の公開の記録を見る`}
+                    className="ml-2 text-primary underline"
+                  >
+                    記録
+                  </Link>
                 </td>
               </tr>
             ))}

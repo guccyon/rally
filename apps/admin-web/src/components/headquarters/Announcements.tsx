@@ -206,12 +206,12 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     <>
       <Section title="お知らせを送る">
         {openedId !== null && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded bg-blue-50 p-2 text-sm">
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md bg-primary-container p-2 text-sm">
             <span>
               下書き{opened ? `「${draftTitleOf(opened)}」` : ""}
               を開いています。送ると下書きは消え、送ったお知らせに移ります。
             </span>
-            <button type="button" className="rounded border px-2 py-0.5" onClick={startNew}>
+            <button type="button" className="rounded-pill border px-2 py-0.5" onClick={startNew}>
               新しく書く
             </button>
           </div>
@@ -226,11 +226,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
         />
       </Section>
       <Section title="下書き">
-        <p className="mb-3 text-xs text-gray-600">
+        <p className="mb-3 text-xs text-text-muted">
           下書きは生徒に届きません（お知らせもプッシュ通知も送りません）。「送る」で確かめてから送ったときに初めて届きます。
         </p>
         <ResultMessage result={draftResult} />
-        {drafts.kind === "loading" && <p className="text-sm text-gray-500">下書きを読み込み中…</p>}
+        {drafts.kind === "loading" && <p className="text-sm text-text-muted">下書きを読み込み中…</p>}
         {drafts.kind === "failed" && <ResultMessage result={{ ok: false, message: drafts.message }} />}
         {drafts.kind === "loaded" && drafts.drafts.length === 0 && (
           <p className="text-sm">保存した下書きはありません</p>
@@ -246,7 +246,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
         )}
       </Section>
       <Section title="送ったお知らせ">
-        {state.kind === "loading" && <p className="text-sm text-gray-500">読み込み中…</p>}
+        {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
         {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
         {state.kind === "loaded" && state.announcements.length === 0 && (
           <p className="text-sm">まだお知らせを送っていません</p>
