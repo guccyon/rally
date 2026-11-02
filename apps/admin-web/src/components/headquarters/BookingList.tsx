@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
@@ -8,6 +9,7 @@ import { ResultMessage } from "@/components/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { formatDay, formatTime, toJstDate } from "@/components/labels";
 
+import { bookingDetailPath } from "./BookingDetailHome";
 import { BookingStatusBadge } from "./BookingStatusBadge";
 import { type Period, defaultPeriod, isPendingSoon, periodError } from "./bookingPeriod";
 
@@ -35,6 +37,7 @@ function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: Head
 /**
  * 本部の「予約」。すべてのコーチの枠への予約を、開始する日付（日本時間）の期間で出す（listBookings）。
  * 既定の期間は今日から 7 日。並びは契約の正本どおり返った順（開始時刻の古い順）のまま、日付ごとに分けて出す。
+ * 各行の開始の時刻から、その予約の詳細へ移る。
  */
 export function BookingList({ api }: { api: Pick<HeadquartersApi, "listBookings"> }) {
   const [draft, setDraft] = useState<Period>(() => defaultPeriod(Date.now()));
@@ -163,7 +166,11 @@ function LoadedBookings({
                 const soon = isPendingSoon(booking, now);
                 return (
                   <tr key={booking.booking_id} className={`border-t ${soon ? "bg-red-50" : ""}`}>
-                    <td className="py-1">{formatTime(booking.starts_at)}</td>
+                    <td className="py-1">
+                      <Link href={bookingDetailPath(booking.booking_id)} className="text-blue-600 underline">
+                        {formatTime(booking.starts_at)}
+                      </Link>
+                    </td>
                     <td className="py-1">
                       <BookingStatusBadge status={booking.status} />
                       {soon && (
