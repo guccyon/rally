@@ -8,10 +8,12 @@
 //! コーチの今月と先月のレッスンの実績（[`GetMyLessonStats`]）は完了記録を数え、評価の件数と平均は review に
 //! [`MonthlyReviewSummaryLookup`] で問い合わせる。
 //! 本部が見る生徒 1 人の利用の様子（identity の [`crate::identity::GetStudentActivity`]）には、直近の受けたレッスンを
-//! [`LessonStudentLessonHistoryLookup`] で読ませる。
+//! [`LessonStudentLessonHistoryLookup`] で読ませる。本部が見るコーチの一覧（profile の [`crate::profile::ListCoaches`]）には、
+//! コーチごとの直近 30 日に終わったレッスンの数を [`LessonCoachRecentLessonCountLookup`] で読ませる。
 
 mod coach_lesson_stats;
 mod get_my_lesson_stats;
+mod lesson_coach_recent_lesson_count_lookup;
 mod lesson_completion_coach_display_name_lookup;
 pub mod lesson_completion_id_uuid;
 mod lesson_completion_lookup;
@@ -31,6 +33,7 @@ mod repository;
 
 pub use coach_lesson_stats::CoachLessonStats;
 pub use get_my_lesson_stats::GetMyLessonStats;
+pub use lesson_coach_recent_lesson_count_lookup::LessonCoachRecentLessonCountLookup;
 pub use lesson_completion_coach_display_name_lookup::LessonCompletionCoachDisplayNameLookup;
 pub use lesson_completion_lookup::LessonCompletionLookup;
 pub use lesson_completion_menu_lookup::LessonCompletionMenuLookup;

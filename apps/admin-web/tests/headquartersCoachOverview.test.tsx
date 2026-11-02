@@ -1,11 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { CoachOverview } from "@/components/headquarters/CoachOverview";
 import { CoachOverviewHome, coachOverviewPath } from "@/components/headquarters/CoachOverviewHome";
+import { CoachRelatedLinks } from "@/components/headquarters/CoachRelatedLinks";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
 
@@ -178,5 +179,51 @@ describe("本部のコーチの様子", () => {
 
   test("coachOverviewPath はコーチの ID をクエリに入れる", () => {
     expect(coachOverviewPath(COACH_ID)).toBe(`/headquarters/coach-overview?coach_id=${COACH_ID}`);
+  });
+});
+
+describe("コーチの様子の上のリンクの並び", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function linksOf() {
+    const nav = screen.getByRole("navigation", { name: "このコーチで開く画面" });
+    return within(nav)
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+  }
+
+  test("評価・低い評価・レッスンメニュー・予約の順に並び、評価・メニュー・予約はそのコーチで開く", () => {
+    render(<CoachRelatedLinks coachId={COACH_ID} />);
+
+    expect(linksOf()).toEqual([
+      ["評価", `/headquarters/coach-review-summary?coach_id=${COACH_ID}`],
+      ["低い評価", "/headquarters/low-reviews"],
+      ["レッスンメニュー", `/headquarters/lesson-menus?coach_id=${COACH_ID}`],
+      ["予約", `/headquarters/bookings?coach_id=${COACH_ID}`],
+    ]);
+  });
+
+  test("画面では様子の読み込み中からリンクの並びを出す", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
+
+    expect(screen.getAllByText("読み込み中…").length).toBeGreaterThan(0);
+    expect(linksOf()).toHaveLength(4);
+  });
+
+  test("様子が読み込めなくてもリンクの並びは残る", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
+
+    expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
+    expect(linksOf()).toHaveLength(4);
+  });
+
+  test("コーチの ID がなければリンクの並びは出さない", () => {
+    render(<CoachOverviewHome token="mock.headquarters.abc" coachId={undefined} />);
+
+    expect(screen.queryByRole("navigation", { name: "このコーチで開く画面" })).not.toBeInTheDocument();
   });
 });

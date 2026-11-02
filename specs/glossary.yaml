@@ -128,12 +128,13 @@ terms:
     ja: "本部からのお知らせ"
     definition: "本部が生徒全員か、あるスポーツの生徒全員に送る知らせ（メンテナンスやキャンペーンなど）の記録で、題（1〜50 文字）・本文（1〜2000 文字）・対象のスポーツ・受け取った生徒の数・送った時刻を持ち、受け取る生徒ごとにお知らせ（notification）を 1 件作る。"
     context: notification
-    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, AnnouncementWithReadCount, notification.announcements, sendAnnouncement, listAnnouncements]
+    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, AnnouncementWithReadCount, ReceivedAnnouncement, notification.announcements, sendAnnouncement, listAnnouncements, listStudentAnnouncements]
     note: >-
       送るのも一覧を見るのも本部だけ（admin-web）。受け取る生徒がいなければ送らない。プッシュ通知は生徒の通知の受け取り設定
       （notification_settings の announcement）に従い、オフの生徒にもお知らせは作る。予約送信は Gen1 では扱わない（D124）。
       誤って送ったものは本部が取り下げられる（announcement_withdrawal。D141）。本部の一覧には 1 件ごとに、受け取った生徒のうち
       お知らせを既読にした生徒の数（read_count。取り下げたものは取り下げた時刻までに既読になった生徒だけを数える）を添える（D161）。
+      本部は生徒 1 人が受け取ったものを、既読と取り下げ済みかとともに確かめられる（listStudentAnnouncements。D186）。
   - id: announcement_withdrawal
     ja: "お知らせの取り下げ"
     definition: "誤って送った本部からのお知らせ（announcement）を本部が取り下げたことで、取り下げた本部のアカウントと時刻を持ち、取り下げたお知らせは生徒のお知らせの一覧に出さない。"
@@ -182,14 +183,27 @@ terms:
     context: catalog
     code: [HeadquartersUnpublish, HeadquartersUnpublishReason, unpublishLessonMenu, republishLessonMenu]
     note: >-
-      メニュー 1 件に高々 1 つで、本部が公開に戻す（republishLessonMenu）と消える（履歴は残さない）。本部が非公開にしているあいだも、
+      メニュー 1 件に高々 1 つで、本部が公開に戻す（republishLessonMenu）と消える（非公開にした・公開に戻した履歴は
+      lesson_menu_publication_change に残る）。本部が非公開にしているあいだも、
       コーチは非公開のままなら中身を直せる。コーチが自分で非公開にしたメニューを本部が公開に戻すことはない。
       コーチの受付の停止（coach_acceptance）と同じく、本部の運営の操作は本部だけが解く。判定は domain の LessonMenu の 1 か所。
+  - id: lesson_menu_publication_change
+    ja: "レッスンメニューを非公開にした・公開に戻した記録"
+    definition: "本部がレッスンメニューを非公開にした（unpublishLessonMenu）・公開に戻した（republishLessonMenu）1 回ごとの記録で、どのメニューを、いつ、どの本部のアカウントが、どうしたか（非公開にしたときは理由も）を持ち、書き換えない。"
+    context: catalog
+    code: [LessonMenuPublicationChange, LessonMenuPublicationAction, listLessonMenuPublicationChanges, catalog.lesson_menu_publication_changes]
+    states:
+      unpublished: "非公開にした"
+      republished: "公開に戻した"
+    note: >-
+      作るのは domain の LessonMenu の unpublish_by_headquarters・republish_by_headquarters がメニューを変えたときだけで、断った操作は残らない。
+      本部が listLessonMenuPublicationChanges でメニューごとに新しい順にたどる。コーチの受付を止めた・再開した記録（coach_acceptance の
+      CoachAcceptanceChange）と同じ作り。コーチが自分で公開・非公開を変えたことは記録しない。記録を残し始める前の操作は載らない。
   - id: coach_acceptance
     ja: "コーチの受付"
     definition: "コーチが新しい予約を受け付けるか（受付中・停止中）で、本部が止めて・再開し、停止中のコーチの枠は生徒の検索とコーチを探す一覧に出ず新しい予約を受けないが、入っている予約と枠はそのままである。"
     context: scheduling
-    code: [CoachAcceptance, CoachAcceptanceStatus, CoachAcceptanceChange, suspendCoach, resumeCoach, listCoachAcceptanceChanges, scheduling.coach_acceptances, scheduling.coach_acceptance_changes]
+    code: [CoachAcceptance, CoachAcceptanceStatus, CoachAcceptanceChange, CoachSuspensionReason, suspendCoach, resumeCoach, listCoachAcceptanceChanges, scheduling.coach_acceptances, scheduling.coach_acceptance_changes]
     states:
       accepting: "受付中"
       suspended: "停止中"
@@ -198,6 +212,8 @@ terms:
       （公開した枠は再開するまで検索に出ない）。止める・再開する規則は domain の CoachAcceptance の 1 か所。matching（コーチを探す一覧）と
       profile（本部のコーチの一覧）はポートで読むだけ。止めた・再開したときは、いつ・どの本部のアカウントが変えたかの記録
       （CoachAcceptanceChange。変えた後の状態を持つ）を 1 件残し、本部が listCoachAcceptanceChanges で新しい順にたどる。
+      止めるときは任意の理由（CoachSuspensionReason。200 文字まで、書いたとおりに残し、書かなければ空。レッスンメニューの非公開の理由と
+      同じ扱い）を書け、止めた記録に残る。再開の理由は持たない。
   - id: slot_capacity
     ja: "定員"
     definition: "1 つのスロットに入れる有効な予約（未確定と確定。キャンセルした予約は数えない）の数の上限で、1〜6 の整数（公開で省いたときは 1）であり、1 はマンツーマン、2 以上はグループレッスンである（変更シナリオ cs-004）。"

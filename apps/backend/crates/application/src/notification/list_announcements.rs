@@ -223,6 +223,14 @@ mod tests {
             unreachable!()
         }
 
+        async fn find_announcements_by_recipient(
+            &self,
+            _recipient: AccountId,
+            _limit: usize,
+        ) -> Result<Vec<Notification>, Unavailable> {
+            unreachable!()
+        }
+
         async fn mark_all_read(
             &self,
             _recipient: AccountId,

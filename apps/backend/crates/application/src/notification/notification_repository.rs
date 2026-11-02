@@ -28,6 +28,14 @@ pub trait NotificationRepository: Send + Sync {
         recipient: AccountId,
     ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
 
+    /// `recipient` が受け取る本部からのお知らせのお知らせ（種類が [`domain::notification::NotificationKind::Announcement`]）を、
+    /// 作った時刻の新しい順（同じ時刻は後に残したものが先）に最大 `limit` 件。
+    fn find_announcements_by_recipient(
+        &self,
+        recipient: AccountId,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
+
     /// `recipient` が受け取るお知らせを、時刻 `at` に読んだことにする（[`Notification::mark_read`]。読んだものは最初に
     /// 読んだ時刻のまま、`at` より後に作ったものは読んでいないまま）。
     fn mark_all_read(

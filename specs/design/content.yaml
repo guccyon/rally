@@ -1,0 +1,94 @@
+# 文言と表記。声と調子は concept_tone.yaml の voice
+schema_version: "0.1"
+status: draft
+section: content
+
+notation:
+  kanji_kana:
+    - 常用漢字の範囲で書く。補助の動詞・形式名詞はかなで書く（「事」「時」「出来る」は「こと」「とき」「できる」）
+    - 外来語は glossary の表記に合わせる（スロット・スタンプ・レッスンメニュー）
+  numbers:
+    - 数字は半角のアラビア数字。和文とのあいだに半角スペース（「残り 2 回」「月 2 回」）
+    - 3 桁ごとのカンマ（「1,200 円」）。0 件は「0 件」とせず empty_state の文にする
+  units: [回, 件, 分, 人, 席, 文字, 円, 点]
+  datetime:
+    date: "10/28（水）"
+    time: "12:00（24 時間で、分は 2 桁）"
+    range: "10/28（水）12:00〜12:30（同じ日の終わりは時刻だけ）"
+    in_sentence: "文の中は「10月28日 3時まで」のように月日と時（今の freeCancelUntilLabel の形）"
+    year: 今年でなければ「2027/1/5（火）」と年を足す
+    timezone: 端末のタイムゾーンで出す
+  labels: "ラベルと値は半角のコロンとスペースで「コーチ: 山田」「メニュー: フォーム改善」（今の labels.dart の形）"
+  sport_names: [テニス, 野球, サッカー, バスケットボール, 水泳]
+
+actions:
+  rule: ボタンと操作の名前は動詞で終える。名詞だけ・「OK」・「はい／いいえ」を使わない
+  verbs:
+    book: 予約する
+    cancel_booking: キャンセルする
+    abort: やめる
+    send_video: 動画を送る
+    request_review: 動画の添削を依頼する
+    return_review: 添削を返す
+    send_message: 送る
+    save: 保存する
+    refresh: 〜を更新する（「ホームを更新する」）
+    find_coach: コーチを探す
+    see_all: 〜をすべて見る
+    suspend: 受付を停止する
+    resume: 受付を再開する
+    unpublish: 非公開にする
+    republish: 公開に戻す
+  rules:
+    - level: should
+      statement: 同じ操作には、アプリと admin-web で同じ動詞を使う
+      why: コーチと生徒と本部が、同じ言葉で同じことを話せる
+      check: deterministic
+
+errors:
+  form: 何が起きたか、どうすればよいかを 2 文で。利用者を責めない
+  examples:
+    - 「予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。」
+    - 「このスロットは満席になりました。ほかのスロットを選んでください。」
+    - 「表示名は 1〜20 文字で入れてください。」
+  avoid: [エラーコードだけ, 「不正な値です」, 「問題が発生しました」だけ, 感嘆符, 勢いの言葉（「ドンマイ」など）]
+  server_text: サーバーが返す文言（errorMessage.ts・error_message.dart）はこの決まりで書き、画面では書き換えずに出す
+  rules:
+    - level: should
+      statement: 誤りの知らせは、何が起きたかと次の操作の 2 つを書く
+      why: 生徒が自分で直して、練習の予約を続けられる
+      check: design_inspector
+
+address:
+  polite: です・ます調。尊敬語と謙譲語の重ね（「させていただきます」）は使わない
+  student: ホームのあいさつだけ名前で呼ぶ（「山田さん、こんにちは」）。ほかは呼びかけない
+  coach_admin: admin-web は呼びかけず、事実を短く（「受付を停止しました」）
+  exclamation: 感嘆符は成功の知らせに 1 つまで。admin-web では使わない
+
+glossary_mapping:   # 画面の語は specs/glossary.yaml の ja を使う。言い換えない
+  source: specs/glossary.yaml
+  terms:
+    student: 生徒
+    coach: コーチ
+    booking: 予約（状態は 確定待ち・確定済み・キャンセル済み）
+    slot: スロット（状態は 公開中・予約済み・終了）
+    live_lesson: 同期レッスン（画面では「ビデオ通話」と添えてよい）
+    async_lesson: 非同期レッスン（画面では「動画添削」と添えてよい）
+    video_review: 動画添削
+    lesson_completion: 完了したレッスン（一覧の題は「受けたレッスン」）
+    subscription: 月額
+    subscription_plan: 契約プラン（スタンダード・プラス）
+    cancellation_policy: キャンセル規定
+    lesson_review: レッスンの評価
+    message_thread: スレッド（画面では「チャット」）
+    stamp: スタンプ
+    notification: お知らせ
+    notification_settings: 通知の受け取り設定
+    lesson_menu: "レッスンメニュー（行の中は「メニュー: 名前」）"
+    coach_acceptance: コーチの受付（受付中・停止中）
+    slot_capacity: 定員（残りは「席」）
+  rules:
+    - level: should
+      statement: 画面の語は glossary の ja を使い、同じものを別の語で呼ばない
+      why: 生徒・コーチ・本部とサポートが同じ言葉で話せる
+      check: deterministic

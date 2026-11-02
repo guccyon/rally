@@ -458,7 +458,11 @@ mod tests {
         let acceptances = use_case.bookings().slots().coach_acceptances();
         acceptances
             .update(COACH, |a| {
-                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
             })
             .await
             .unwrap();
@@ -563,6 +567,14 @@ mod tests {
             _from: SystemTime,
             _until: SystemTime,
         ) -> Result<(Vec<Slot>, Vec<Booking>), Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
+        async fn bookings_cancelled_between(
+            &self,
+            _from: SystemTime,
+            _until: SystemTime,
+        ) -> Result<Vec<Booking>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }
 
