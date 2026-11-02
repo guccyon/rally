@@ -843,6 +843,7 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
         starts_at: SystemTime,
         ends_at: SystemTime,
         coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         Ok(self
             .sessions
@@ -853,6 +854,7 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
                 starts_at <= s.started_at()
                     && s.started_at() < ends_at
                     && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+                    && student_id.is_none_or(|student_id| s.booking_of(student_id).is_some())
             })
             .cloned()
             .collect())
