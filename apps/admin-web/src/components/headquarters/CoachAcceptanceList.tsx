@@ -35,7 +35,8 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
 
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
- * 受付中の行は「受付を止める」（suspendCoach）、停止中の行は「再開する」（resumeCoach）を行の中で確かめてから送り、
+ * 受付中の行は「受付を止める」（suspendCoach。確かめるときに書いた理由（任意）を付ける）、停止中の行は「再開する」
+ * （resumeCoach。理由は付けない）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
@@ -100,10 +101,10 @@ export function CoachAcceptanceList({
     await reload(next);
   }
 
-  async function changeAcceptance(coach: Coach) {
+  async function changeAcceptance(coach: Coach, reason: string) {
     const suspending = coach.acceptance_status === "accepting";
     const response = suspending
-      ? await api.suspendCoach(coach.coach_id)
+      ? await api.suspendCoach(coach.coach_id, reason === "" ? {} : { reason })
       : await api.resumeCoach(coach.coach_id);
     if (response.ok) {
       setResult({
@@ -212,7 +213,7 @@ export function CoachAcceptanceList({
                     // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
                     key={coach.acceptance_status}
                     status={coach.acceptance_status}
-                    onConfirm={() => changeAcceptance(coach)}
+                    onConfirm={(reason) => changeAcceptance(coach, reason)}
                   />
                 </td>
               </tr>
