@@ -1,7 +1,7 @@
 //! `PgCoachAcceptanceRepository`（`scheduling.coach_acceptances`）の検証。止める・再開するの往復と、行のないコーチは
 //! 受付中であること、並行な停止の直列化、停止中のコーチの枠を検索（`PgSlotRepository::search`）から除くこと、
 //! 予約の保存先（`PgBookingRepository::find_coach_acceptance`）が同じ状態を読むこと。止めた・再開した記録
-//! （`scheduling.coach_acceptance_changes`）が状態と同じトランザクションで残り、新しい順に読めること。
+//! （`scheduling.coach_acceptance_changes`）が状態と同じトランザクションで残り、止めた理由とともに新しい順に読めること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -17,7 +17,10 @@ use application::scheduling::{
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
-    scheduling::{CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus, SchedulingError},
+    scheduling::{
+        CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus, CoachSuspensionReason,
+        SchedulingError,
+    },
 };
 use infra::{PgBookingRepository, PgCoachAcceptanceRepository, PgSlotRepository};
 use sqlx::PgPool;
@@ -32,6 +35,10 @@ fn criteria() -> SlotCriteria {
         after: None,
         limit: 20,
     }
+}
+
+fn reason(text: &str) -> CoachSuspensionReason {
+    CoachSuspensionReason::new(text).unwrap()
 }
 
 /// 受付を止める・再開する本部のアカウント。
@@ -55,7 +62,9 @@ async fn suspend_and_resume_round_trip(pool: PgPool) {
     assert!(acceptances.suspended_coaches().await.unwrap().is_empty());
 
     let stored = acceptances
-        .update(suspended, |a| a.suspend(hq, at(0)))
+        .update(suspended, |a| {
+            a.suspend(hq, CoachSuspensionReason::default(), at(0))
+        })
         .await
         .unwrap();
     assert_eq!(stored.status(), CoachAcceptanceStatus::Suspended);
@@ -78,7 +87,9 @@ async fn suspend_and_resume_round_trip(pool: PgPool) {
 
     // 判定はクロージャ（domain）。違反なら何も変えない
     let rejected = acceptances
-        .update(suspended, |a| a.suspend(hq, at(0)))
+        .update(suspended, |a| {
+            a.suspend(hq, CoachSuspensionReason::default(), at(0))
+        })
         .await;
     assert!(matches!(
         rejected,
@@ -108,9 +119,13 @@ async fn concurrent_suspensions_of_a_coach_without_a_row_let_only_one_through(po
     let handles: Vec<_> = (0..8)
         .map(|_| {
             let acceptances = acceptances.clone();
-            tokio::spawn(
-                async move { acceptances.update(coach_id, |a| a.suspend(hq, at(0))).await },
-            )
+            tokio::spawn(async move {
+                acceptances
+                    .update(coach_id, |a| {
+                        a.suspend(hq, CoachSuspensionReason::default(), at(0))
+                    })
+                    .await
+            })
         })
         .collect();
     let mut results = Vec::new();
@@ -135,7 +150,7 @@ async fn concurrent_suspensions_of_a_coach_without_a_row_let_only_one_through(po
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn changes_are_recorded_with_who_and_when_and_read_newest_first(pool: PgPool) {
+async fn changes_are_recorded_with_who_why_and_when_and_read_newest_first(pool: PgPool) {
     let (coach_id, other_coach) = (coach(&pool).await, coach(&pool).await);
     let (hq, other_hq) = (headquarters(&pool).await, headquarters(&pool).await);
     let acceptances = PgCoachAcceptanceRepository::new(pool.clone());
@@ -144,11 +159,13 @@ async fn changes_are_recorded_with_who_and_when_and_read_newest_first(pool: PgPo
     assert!(acceptances.changes(coach_id).await.unwrap().is_empty());
 
     acceptances
-        .update(coach_id, |a| a.suspend(hq, at(1)))
+        .update(coach_id, |a| {
+            a.suspend(hq, reason(" 無断欠席が続いた "), at(1))
+        })
         .await
         .unwrap();
     acceptances
-        .update(other_coach, |a| a.suspend(hq, at(2)))
+        .update(other_coach, |a| a.suspend(hq, reason("休業"), at(2)))
         .await
         .unwrap();
     acceptances
@@ -157,35 +174,85 @@ async fn changes_are_recorded_with_who_and_when_and_read_newest_first(pool: PgPo
         .unwrap();
     // 同じ時刻なら後に保存した方が先
     acceptances
-        .update(coach_id, |a| a.suspend(hq, at(3)))
+        .update(coach_id, |a| {
+            a.suspend(hq, CoachSuspensionReason::default(), at(3))
+        })
         .await
         .unwrap();
     // 違反は記録しない
     acceptances
-        .update(coach_id, |a| a.suspend(other_hq, at(4)))
+        .update(coach_id, |a| {
+            a.suspend(other_hq, CoachSuspensionReason::default(), at(4))
+        })
         .await
         .unwrap_err();
 
     assert_eq!(
         acceptances.changes(coach_id).await.unwrap(),
         vec![
-            CoachAcceptanceChange::restore(coach_id, CoachAcceptanceStatus::Suspended, hq, at(3)),
+            CoachAcceptanceChange::restore(
+                coach_id,
+                CoachAcceptanceStatus::Suspended,
+                Some(CoachSuspensionReason::default()),
+                hq,
+                at(3)
+            ),
             CoachAcceptanceChange::restore(
                 coach_id,
                 CoachAcceptanceStatus::Accepting,
+                None,
                 other_hq,
                 at(3)
             ),
-            CoachAcceptanceChange::restore(coach_id, CoachAcceptanceStatus::Suspended, hq, at(1)),
-        ]
+            CoachAcceptanceChange::restore(
+                coach_id,
+                CoachAcceptanceStatus::Suspended,
+                Some(reason(" 無断欠席が続いた ")),
+                hq,
+                at(1)
+            ),
+        ],
+        "理由は書いたとおり（前後の空白も）に残り、書かなければ空文字列、再開した記録は理由を持たない"
     );
     assert_eq!(
         acceptances.changes(other_coach).await.unwrap(),
         vec![CoachAcceptanceChange::restore(
             other_coach,
             CoachAcceptanceStatus::Suspended,
+            Some(reason("休業")),
             hq,
             at(2)
+        )]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn changes_recorded_before_the_reason_column_read_without_a_reason(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    let hq = headquarters(&pool).await;
+    // 理由の列を足す前の行（古い版のアプリが書く行も）は reason が NULL
+    sqlx::query(
+        "INSERT INTO scheduling.coach_acceptance_changes (coach_id, status, changed_by, changed_at)
+         VALUES ($1, 'suspended', $2, $3)",
+    )
+    .bind(application::identity::account_id_uuid::to_uuid(coach_id))
+    .bind(application::identity::account_id_uuid::to_uuid(hq))
+    .bind(sqlx::types::time::OffsetDateTime::from(at(1)))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        PgCoachAcceptanceRepository::new(pool.clone())
+            .changes(coach_id)
+            .await
+            .unwrap(),
+        vec![CoachAcceptanceChange::restore(
+            coach_id,
+            CoachAcceptanceStatus::Suspended,
+            None,
+            hq,
+            at(1)
         )]
     );
 }
@@ -198,7 +265,9 @@ async fn a_change_that_cannot_be_recorded_leaves_the_acceptance_as_it_was(pool: 
     let not_headquarters = student(&pool).await;
     let acceptances = PgCoachAcceptanceRepository::new(pool.clone());
     let result = acceptances
-        .update(coach_id, |a| a.suspend(not_headquarters, at(1)))
+        .update(coach_id, |a| {
+            a.suspend(not_headquarters, CoachSuspensionReason::default(), at(1))
+        })
         .await;
     assert!(
         matches!(result, Err(UpdateCoachAcceptanceError::Unavailable(_))),
@@ -217,7 +286,9 @@ async fn search_leaves_out_slots_of_suspended_coaches(pool: PgPool) {
     let hq = headquarters(&pool).await;
     let acceptances = PgCoachAcceptanceRepository::new(pool.clone());
     acceptances
-        .update(suspended, |a| a.suspend(hq, at(0)))
+        .update(suspended, |a| {
+            a.suspend(hq, CoachSuspensionReason::default(), at(0))
+        })
         .await
         .unwrap();
 
