@@ -159,6 +159,27 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/acceptance-changes`);
   });
 
+  test("listLessonMenuPublicationChanges は GET /api/lesson-menus/{lesson_menu_id}/publication-changes を呼び、公開の記録を返す", async () => {
+    const lessonMenuId = "aaaaaaaa-0000-4000-8000-000000000001";
+    const list = {
+      lesson_menu_id: lessonMenuId,
+      changes: [
+        {
+          action: "unpublished",
+          reason: "料金の表記が誤っている",
+          changed_by: "33333333-3333-4333-8333-333333333333",
+          changed_at: "2026-10-26T03:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLessonMenuPublicationChanges(lessonMenuId);
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-menus/${lessonMenuId}/publication-changes`);
+  });
+
   test("listCoachReviews は指定したコーチの評価の一覧を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const list = { coach_id: coachId, reviews: [] };
