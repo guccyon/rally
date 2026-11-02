@@ -10,7 +10,7 @@ evidence:
   - pr: "guccyon/rally#548"
   - issue: "guccyon/rally#543"
   - event: "case.analyzed:113678"
-status: draft
+status: active
 verified_at: 2026-11-02
 review_by: 2026-12-02
 invalidate_when:
@@ -19,3 +19,4 @@ invalidate_when:
   - "Engine が続きのジョブの報告を本文に足すやり方を変えた"
 confidentiality: product
 related: [K-0002]
+decided_by: committee:D-0001

@@ -10,7 +10,7 @@ evidence:
   - case: C-0001
   - pr: "guccyon/rally#548"
   - event: "case.analyzed:113678"
-status: draft
+status: active
 verified_at: 2026-11-02
 review_by: 2026-12-02
 invalidate_when:
@@ -18,3 +18,4 @@ invalidate_when:
   - "CHANGELOG.md の追記だけの衝突を tier-small のジョブか supervisor の自動解消に回すようになった"
 confidentiality: product
 related: [K-0001]
+decided_by: committee:D-0001
