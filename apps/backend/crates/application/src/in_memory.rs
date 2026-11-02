@@ -1255,6 +1255,10 @@ impl MessageThreadRepository for InMemoryMessageThreadRepository {
             .collect())
     }
 
+    async fn list_all(&self) -> Result<Vec<MessageThread>, Unavailable> {
+        Ok(self.all())
+    }
+
     async fn update<F>(
         &self,
         thread_id: MessageThreadId,
