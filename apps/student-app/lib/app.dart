@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/student_flow_screen.dart';
+import 'ui/theme/rally_theme.dart';
 
 class StudentApp extends StatelessWidget {
   const StudentApp({super.key});
@@ -9,7 +10,9 @@ class StudentApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Rally',
-      theme: ThemeData(colorSchemeSeed: Colors.teal),
+      theme: buildRallyTheme(),
+      // 明るい配色だけ（specs/design/tokens.yaml の color.dark_mode.gen1）
+      themeMode: ThemeMode.light,
       home: const StudentFlowScreen(),
     );
   }
