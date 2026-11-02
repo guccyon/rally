@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use domain::{
     DomainError,
     async_lesson::{ReturnedVideoReviewFilter, Video},
+    catalog::Sport,
     identity::AccountId,
 };
 use time::{Date, Duration};
@@ -17,8 +18,8 @@ use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 /// 照会だけで、何も保存しない。
 ///
 /// 返却の日付（日本時間。[`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の返却済みの動画をすべての
-/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチで絞って返却の新しい順に
-/// 並べる（期間の長さの規則・かかった時間の数え方・並べ方は domain だけ）。どちらも省けば今日までの
+/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチと任意のスポーツで絞って
+/// 返却の新しい順に並べる（期間の長さの規則・かかった時間の数え方・並べ方・動画のスポーツの決め方は domain だけ）。どちらも省けば今日までの
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日、片方だけなら、もう片方はそこから
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日目（両端を含む）。各動画には担当のコーチと生徒の表示名を profile に
 /// 問い合わせて（[`VideoCoachDisplayNameLookup`]・[`VideoStudentDisplayNameLookup`]）添える。誰が呼べるか（本部だけ）は
@@ -39,6 +40,8 @@ pub struct ListReturnedVideoReviewsQuery {
     pub to: Option<Date>,
     /// あればこのコーチの動画だけ
     pub coach_id: Option<AccountId>,
+    /// あればこのスポーツの動画だけ
+    pub sport: Option<Sport>,
 }
 
 #[derive(Debug)]
@@ -94,6 +97,7 @@ where
             calendar_day::start(from),
             calendar_day::end(to),
             query.coach_id,
+            query.sport,
         )?;
         let videos = filter.select(
             self.videos
@@ -159,9 +163,21 @@ mod tests {
         at(31, 12)
     }
 
-    /// `id` の動画を `student` が `coach` に `submitted_at` に送る。`returned_at` があればそのときに返却済み。
+    /// `id` のテニスの動画を `student` が `coach` に `submitted_at` に送る。`returned_at` があればそのときに返却済み。
     fn video(
         id: u128,
+        student: AccountId,
+        coach: AccountId,
+        submitted_at: SystemTime,
+        returned_at: Option<SystemTime>,
+    ) -> Video {
+        video_in(id, Sport::Tennis, student, coach, submitted_at, returned_at)
+    }
+
+    /// `id` の `sport` の動画を `student` が `coach` に `submitted_at` に送る。`returned_at` があればそのときに返却済み。
+    fn video_in(
+        id: u128,
+        sport: Sport,
         student: AccountId,
         coach: AccountId,
         submitted_at: SystemTime,
@@ -171,7 +187,7 @@ mod tests {
             VideoId::from_u128(id),
             student,
             coach,
-            Sport::Tennis,
+            sport,
             submitted_at,
             returned_at.map(|returned_at| {
                 (
@@ -317,6 +333,7 @@ mod tests {
             from: Some(date(Month::October, 24)),
             to: Some(date(Month::October, 24)),
             coach_id: None,
+            sport: None,
         })
         .await;
         assert_eq!(ids(&list), [4]);
@@ -352,6 +369,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_sport_narrows_the_list_with_the_period_and_coach() {
+        let mut all = videos().all();
+        all.extend([
+            video_in(11, Sport::Golf, STUDENT, COACH, at(28, 0), Some(at(30, 9))),
+            video_in(
+                12,
+                Sport::Golf,
+                OTHER_STUDENT,
+                OTHER_COACH,
+                at(20, 0),
+                Some(at(26, 0)),
+            ),
+            // 期間の外（10/24）と返していないゴルフの動画は載らない
+            video_in(13, Sport::Golf, STUDENT, COACH, at(20, 0), Some(at(24, 0))),
+            video_in(14, Sport::Golf, STUDENT, COACH, at(30, 0), None),
+        ]);
+        let run = |query| {
+            let all = all.clone();
+            async move {
+                use_case(
+                    InMemoryVideoRepository::with_videos(all),
+                    RecordingLookup::default(),
+                )
+                .execute(query)
+                .await
+                .unwrap()
+            }
+        };
+        let list = run(ListReturnedVideoReviewsQuery {
+            sport: Some(Sport::Golf),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(
+            (list.from, list.to),
+            (date(Month::October, 25), date(Month::October, 31)),
+            "スポーツで絞っても期間を省けば今日までの 7 日"
+        );
+        assert_eq!(ids(&list), [11, 12], "返却の新しい順のまま");
+        assert_eq!(
+            list.videos
+                .iter()
+                .map(ReturnedVideoReviewFilter::lead_hours)
+                .collect::<Vec<_>>(),
+            [Some(57), Some(144)],
+            "かかった時間の数え方は変わらない"
+        );
+
+        let list = run(ListReturnedVideoReviewsQuery {
+            sport: Some(Sport::Golf),
+            coach_id: Some(OTHER_COACH),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(ids(&list), [12]);
+
+        let list = run(ListReturnedVideoReviewsQuery {
+            from: Some(date(Month::October, 24)),
+            to: Some(date(Month::October, 24)),
+            coach_id: None,
+            sport: Some(Sport::Golf),
+        })
+        .await;
+        assert_eq!(ids(&list), [13]);
+
+        let list = run(ListReturnedVideoReviewsQuery {
+            sport: Some(Sport::Tennis),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(ids(&list), [1, 2, 3]);
+
+        let list = run(ListReturnedVideoReviewsQuery {
+            sport: Some(Sport::Swimming),
+            ..Default::default()
+        })
+        .await;
+        assert!(list.videos.is_empty(), "そのスポーツの返却がなければ空");
+    }
+
+    #[tokio::test]
     async fn periods_breaking_the_rule_are_invalid() {
         for (from, to, expected) in [
             (
@@ -370,6 +468,7 @@ mod tests {
                     from: Some(from),
                     to: Some(to),
                     coach_id: None,
+                    sport: None,
                 })
                 .await
                 .unwrap_err();
@@ -385,6 +484,7 @@ mod tests {
                     from: Some(date(Month::October, 1)),
                     to: Some(date(Month::October, 31)),
                     coach_id: None,
+                    sport: None,
                 })
                 .await
                 .is_ok()
