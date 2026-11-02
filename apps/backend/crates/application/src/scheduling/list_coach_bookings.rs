@@ -4,8 +4,7 @@ use domain::identity::AccountId;
 use time::Date;
 
 use super::{
-    BookingDates, BookingRepository, CoachBookingList, ListBookingsError, StudentDisplayNameLookup,
-    calendar_day,
+    BookingRepository, CoachBookingList, ListBookingsError, StudentDisplayNameLookup, calendar_day,
 };
 use crate::clock::Clock;
 
@@ -13,7 +12,7 @@ use crate::clock::Clock;
 ///
 /// コーチ `coach_id` のスロットへの予約を、キャンセル済みも含めて予約されたスロットと一緒に読み、スロットの開始時刻の
 /// 古い順に並べる（同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。日付の `from`・`to` をどちらも
-/// 省けば期間で絞らない。どちらかがあれば、本部が見る予約の一覧（[`super::ListBookings`]）と同じ規則（[`BookingDates`]）で
+/// 省けば期間で絞らない。どちらかがあれば、本部が見る予約の一覧（[`super::ListBookings`]）と同じ規則（[`calendar_day::period`]）で
 /// 期間にし、スロットの開始がその期間に入る予約だけに絞る。一覧に出る生徒の表示名は profile に問い合わせて
 /// （[`StudentDisplayNameLookup`]）添える。読むだけで何も変えない。
 pub struct ListCoachBookings<B, D, C> {
@@ -53,16 +52,15 @@ where
         let dates = if query.from.is_none() && query.to.is_none() {
             None
         } else {
-            Some(BookingDates::resolve(
+            Some(calendar_day::period(
                 query.from,
                 query.to,
-                calendar_day::of(self.clock.now()),
+                self.clock.now(),
             )?)
         };
         let mut items = match dates {
             None => self.bookings.bookings_of_coach(coach_id).await?,
-            Some(dates) => {
-                let period = dates.period();
+            Some((_, _, period)) => {
                 let mut items = self
                     .bookings
                     .bookings_of_coach_starting_between(
@@ -94,8 +92,8 @@ where
                 .await?
         };
         Ok(CoachBookingList {
-            from: dates.map(|dates| dates.from()),
-            to: dates.map(|dates| dates.to()),
+            from: dates.map(|(from, _, _)| from),
+            to: dates.map(|(_, to, _)| to),
             items,
             students,
         })
