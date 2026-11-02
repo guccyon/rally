@@ -450,7 +450,12 @@ export interface paths {
          *     - 絞り込み（任意）: `handled` を付ければ、`false` なら本部がまだ対応済みにしていない評価（`handling` が null）だけ、
          *       `true` なら対応済みの評価だけ。付けなければ印を問わない。`sport` と合わせて付けられる。しきい値・期間・並べ方は
          *       付けても変わらない
-         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないときは 422 `validation_failed`
+         *     - 絞り込み（任意）: `coach_id` を付ければ、そのコーチが評価された評価だけ（低い評価が続くコーチに本部が連絡する前に、
+         *       そのコーチの分だけを見る）。`sport`・`handled` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
+         *       付けなければコーチを問わずすべて。扱いは `listCancelledBookings` の `coach_id` と同じで、コーチでない ID・ない ID・
+         *       低い評価のないコーチは、404 にせず `reviews` が空の配列
+         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id` が UUID でないときは
+         *       422 `validation_failed`
          *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
@@ -3696,6 +3701,11 @@ export interface operations {
                 sport?: components["schemas"]["Sport"];
                 /** @description 本部の対応済みか（`false` なら未対応だけ、`true` なら対応済みだけ。付けなければ問わない） */
                 handled?: boolean;
+                /**
+                 * @description あればこのコーチが評価された評価だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;

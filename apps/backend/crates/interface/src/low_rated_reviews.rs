@@ -1,6 +1,7 @@
 //! `/lesson-reviews/low`。admin-web の `GET /lesson-reviews/low`（`listLowRatedLessonReviews`。本部が横断で見る
 //! 直近の低い評価の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツのレッスンの評価だけ（`Sport` の値で
 //! なければ 422）。`handled` があれば本部の対応済みの印の有無がそれと同じ評価だけ（`true` / `false` でなければ 422）。
+//! `coach_id` があればそのコーチが評価された評価だけ（UUID でなければ 422。いないコーチは空の一覧）。
 //! 各評価には評価されたコーチの返信と、本部の対応済みの印を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
@@ -28,7 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract},
+    contract::{account_id_from_contract, admin_web_sport, date_time_to_contract},
     error::ApiError,
     low_rated_review_handlings::{LowRatedReviewHandlingBody, low_rated_review_handling_body},
     reviews::{
@@ -50,6 +51,7 @@ type Shared<R, M, P, D, S, C> = Arc<LowRatedReviewsState<R, M, P, D, S, C>>;
 pub struct ListLowRatedReviewsParams {
     sport: Option<String>,
     handled: Option<bool>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `LowRatedLessonReviewList`。
@@ -81,7 +83,8 @@ pub struct LowRatedLessonReviewBody {
 
 /// `GET /lesson-reviews/low`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
 /// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。`handled` があれば対応済みの印の
-/// 有無がそれと同じ評価だけ（`false` で未対応だけ）。
+/// 有無がそれと同じ評価だけ（`false` で未対応だけ）。`coach_id` があればそのコーチの評価だけ（UUID でなければ 422。
+/// 検証と扱いは `listCancelledBookings` の `coach_id` と同じ）。
 pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
     State(state): State<Shared<R, M, P, D, S, C>>,
     params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
@@ -97,9 +100,14 @@ where
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
+    let coach_id = params
+        .coach_id
+        .as_deref()
+        .map(|id| account_id_from_contract("coach_id", id))
+        .transpose()?;
     let list = state
         .list_low_rated_reviews
-        .execute(sport, params.handled)
+        .execute(sport, params.handled, coach_id)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(LowRatedLessonReviewListBody {

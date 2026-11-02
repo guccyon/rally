@@ -201,7 +201,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
 
     let mut found = reviews.find_submitted_since(since).await.unwrap();
     found.sort_by_key(LessonReview::id);
-    let mut expected = vec![edge.clone(), good, latest.clone()];
+    let mut expected = vec![edge.clone(), good.clone(), latest.clone()];
     expected.sort_by_key(LessonReview::id);
     assert_eq!(
         found, expected,
@@ -227,7 +227,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         ProfileStudentDisplayNameLookup::new(accounts),
         FixedClock(now),
     );
-    let list = use_case.execute(None, None).await.unwrap();
+    let list = use_case.execute(None, None, None).await.unwrap();
     assert_eq!(
         list.reviews,
         [latest.clone(), edge.clone()],
@@ -246,9 +246,48 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
     }
 
     // 予約の枠はテニス
-    let tennis = use_case.execute(Some(Sport::Tennis), None).await.unwrap();
-    assert_eq!(tennis.reviews, [latest, edge], "テニスのレッスンの評価");
-    let golf = use_case.execute(Some(Sport::Golf), None).await.unwrap();
+    let tennis = use_case
+        .execute(Some(Sport::Tennis), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        tennis.reviews,
+        [latest.clone(), edge.clone()],
+        "テニスのレッスンの評価"
+    );
+
+    // コーチは完了記録ごとに別（support::ended_session は新しいコーチを作る）
+    let of_coach = use_case
+        .execute(None, None, Some(edge.coach_id()))
+        .await
+        .unwrap();
+    assert_eq!(
+        of_coach.reviews,
+        std::slice::from_ref(&edge),
+        "そのコーチの評価だけ"
+    );
+    assert_eq!(
+        of_coach.coach_display_names.keys().collect::<Vec<_>>(),
+        [&edge.coach_id()]
+    );
+    let of_coach = use_case
+        .execute(Some(Sport::Tennis), Some(false), Some(latest.coach_id()))
+        .await
+        .unwrap();
+    assert_eq!(
+        of_coach.reviews,
+        [latest],
+        "スポーツ・対応済みと合わせて絞れる"
+    );
+    // 低い評価のないコーチ・ない ID は空
+    for coach_id in [good.coach_id(), domain::identity::AccountId::from_u128(99)] {
+        let list = use_case.execute(None, None, Some(coach_id)).await.unwrap();
+        assert!(list.reviews.is_empty(), "{coach_id:?}");
+    }
+    let golf = use_case
+        .execute(Some(Sport::Golf), None, None)
+        .await
+        .unwrap();
     assert!(golf.reviews.is_empty(), "ゴルフのレッスンの評価はない");
 }
 
@@ -464,15 +503,15 @@ async fn headquarters_marks_a_low_review_handled_once_and_lists_only_the_unhandl
         list.reviews.iter().map(LessonReview::id).collect()
     };
     assert_eq!(
-        ids(use_case.execute(None, Some(false)).await.unwrap()),
+        ids(use_case.execute(None, Some(false), None).await.unwrap()),
         [unhandled.id()]
     );
     assert_eq!(
-        ids(use_case.execute(None, Some(true)).await.unwrap()),
+        ids(use_case.execute(None, Some(true), None).await.unwrap()),
         [low.id()]
     );
     assert_eq!(
-        ids(use_case.execute(None, None).await.unwrap()),
+        ids(use_case.execute(None, None, None).await.unwrap()),
         [unhandled.id(), low.id()]
     );
 }
