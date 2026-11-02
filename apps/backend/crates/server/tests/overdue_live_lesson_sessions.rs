@@ -1,7 +1,8 @@
 //! 本部が終わっていないまま時間の過ぎた通話セッションの一覧を見る（admin-web の `listOverdueLiveLessonSessions`）ことを、
 //! 保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で
 //! 開始した Postgres のセッションのうち終了していないものだけを、開始から既定の 3 時間（`older_than_hours` で変えられる）
-//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、本部以外は 403 になることを確かめる。
+//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でコーチを絞れること、本部以外は
+//! 403 になることを確かめる。
 //! 契約の形・時間の範囲の細かい検査は interface の `tests/overdue_live_lesson_sessions.rs`、通話中のセッションの読み取りは
 //! infra の `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -134,7 +135,8 @@ async fn confirmed_booking(
 async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
     let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
     let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
-    let (_, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
+    let (hanako, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
+    let (suzuki, _) = register(&pool, "suzuki@example.com", Role::Coach).await;
     let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
     let clock = ManualClock::new(nov1_10() - 24 * HOUR);
     let router =
@@ -232,6 +234,44 @@ async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "older_than_hours": 4, "sessions": [] }));
+
+    // コーチで絞れる。時間と組み合わさる
+    let overdue = |query: String| {
+        let router = router.clone();
+        let hq_token = hq_token.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                get(&format!("/live-lesson-sessions/overdue?{query}"), &hq_token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            body["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["session_id"].clone())
+                .collect::<Vec<_>>()
+        }
+    };
+    let tanaka_id = account_id_uuid::format(tanaka);
+    assert_eq!(
+        overdue(format!("coach_id={tanaka_id}")).await,
+        std::slice::from_ref(&session_id)
+    );
+    assert!(
+        overdue(format!("coach_id={tanaka_id}&older_than_hours=4"))
+            .await
+            .is_empty()
+    );
+    // 通話のないコーチ・コーチでない ID は空
+    for other in [suzuki, hanako] {
+        assert!(
+            overdue(format!("coach_id={}", account_id_uuid::format(other)))
+                .await
+                .is_empty()
+        );
+    }
 
     // 本部だけ
     for token in [&tanaka_token, &taro_token] {
