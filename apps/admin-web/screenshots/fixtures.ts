@@ -302,7 +302,11 @@ const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
 const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   lowReview(11, 1, "通話が途中で何度も切れて、ほとんど教えてもらえませんでした。", 6, SUZUKI_COACH, YAMADA),
   lowReview(12, 2, "説明が早口で、何を直せばいいのか分かりにくかったです。", 24 * 2, TAKAHASHI_COACH, SATO, false),
-  lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+  {
+    // 本部が対応済みにした行（対応済みの日時を出し、「対応済みにする」は出ない）。
+    ...lowReview(13, 2, "開始が 10 分遅れました。", 24 * 4, SUZUKI_COACH, SATO),
+    handling: { handled_by: id("5555", 1), handled_at: at(-24 * 3) },
+  },
 ];
 
 // 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
@@ -478,7 +482,12 @@ export const FIXTURES: Fixture[] = [
       coach_id: COACH_ID,
       changes: [
         { acceptance_status: "accepting", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
-        { acceptance_status: "suspended", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+        {
+          acceptance_status: "suspended",
+          reason: "連絡がつかないため、確認できるまで止める",
+          changed_by: HEADQUARTERS_ID,
+          changed_at: at(-72),
+        },
       ],
     } satisfies Schemas["CoachAcceptanceChangeList"],
   },
@@ -534,6 +543,17 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    // 表示名で「鈴木」を探したとき（hq-coaches-search）。
+    method: "GET",
+    path: "/coaches",
+    query: { q: "鈴木" },
+    body: {
+      coaches: [
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+      ],
+    } satisfies Schemas["CoachList"],
   },
   {
     method: "GET",
@@ -592,6 +612,19 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus/{lesson_menu_id}/publication-changes",
+    // 一覧の「パターの距離感」（本部が非公開にしている）の記録。一度公開に戻したあと、また非公開にした。
+    body: {
+      lesson_menu_id: id("aaaa", 10),
+      changes: [
+        { action: "unpublished", reason: "料金の表記が誤っている", changed_by: HEADQUARTERS_ID, changed_at: at(-3) },
+        { action: "republished", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 2) },
+        { action: "unpublished", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-24 * 4) },
+      ],
+    } satisfies Schemas["LessonMenuPublicationChangeList"],
   },
   {
     method: "GET",

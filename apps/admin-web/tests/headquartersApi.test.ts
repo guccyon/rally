@@ -157,6 +157,27 @@ describe("headquartersApi", () => {
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/acceptance-changes`);
   });
 
+  test("listLessonMenuPublicationChanges は GET /api/lesson-menus/{lesson_menu_id}/publication-changes を呼び、公開の記録を返す", async () => {
+    const lessonMenuId = "aaaaaaaa-0000-4000-8000-000000000001";
+    const list = {
+      lesson_menu_id: lessonMenuId,
+      changes: [
+        {
+          action: "unpublished",
+          reason: "料金の表記が誤っている",
+          changed_by: "33333333-3333-4333-8333-333333333333",
+          changed_at: "2026-10-26T03:00:00Z",
+        },
+      ],
+    };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listLessonMenuPublicationChanges(lessonMenuId);
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-menus/${lessonMenuId}/publication-changes`);
+  });
+
   test("listCoachReviews は指定したコーチの評価の一覧を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const list = { coach_id: coachId, reviews: [] };
@@ -332,6 +353,36 @@ describe("headquartersApi", () => {
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe("/api/lesson-reviews/low");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listLowRatedLessonReviews は handled をクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { max_rating: 2, period_days: 30, reviews: [] }));
+    await api.listLowRatedLessonReviews({ handled: false });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/lesson-reviews/low");
+    expect(url.searchParams.get("handled")).toBe("false");
+  });
+
+  test("markLowRatedLessonReviewHandled は本文なしで PUT /api/lesson-reviews/{id}/handling を呼び、印を返す", async () => {
+    const reviewId = "33333333-3333-4333-8333-333333333333";
+    const handling = { handled_by: "55555555-5555-4555-8555-555555555555", handled_at: "2026-10-31T03:00:00Z" };
+    const { api, fetchMock } = setup(json(200, handling));
+    const result = await api.markLowRatedLessonReviewHandled(reviewId);
+    expect(result).toEqual({ ok: true, data: handling });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe(`/api/lesson-reviews/${reviewId}/handling`);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("markLowRatedLessonReviewHandled の 409 は ErrorCode の文言と code にする", async () => {
+    const { api } = setup(json(409, { code: "lesson_review_not_low_rated", message: "conflict" }));
+    const result = await api.markLowRatedLessonReviewHandled("33333333-3333-4333-8333-333333333333");
+    expect(result).toEqual({
+      ok: false,
+      code: "lesson_review_not_low_rated",
+      message: "低い評価ではないため、対応済みにできません。",
+    });
   });
 
   test("listIncompleteCoachProfiles は GET /api/coaches/incomplete-profiles を呼ぶ", async () => {
@@ -562,15 +613,16 @@ describe("headquartersApi", () => {
     expect(url.search).toBe("");
   });
 
-  test("suspendCoach は POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
+  test("suspendCoach は理由を本文にして POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const acceptance = { coach_id: coachId, acceptance_status: "suspended" };
     const { api, fetchMock } = setup(json(200, acceptance));
-    const result = await api.suspendCoach(coachId);
+    const result = await api.suspendCoach(coachId, { reason: "連絡がつかない" });
     expect(result).toEqual({ ok: true, data: acceptance });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/suspend`);
+    expect(await request.json()).toEqual({ reason: "連絡がつかない" });
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 

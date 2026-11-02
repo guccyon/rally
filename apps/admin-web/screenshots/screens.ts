@@ -68,7 +68,37 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222",
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
+  {
+    id: "hq-low-reviews-handling-confirm",
+    title: "本部: 低い評価（対応済みにする前の確認）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("button", { name: /を対応済みにする$/ }).first().click();
+      await page.getByRole("button", { name: "対応済みを確定" }).waitFor();
+    },
+  },
   { id: "hq-coaches", title: "本部: コーチの受付", role: "headquarters", path: "/headquarters/coaches" },
+  {
+    // 表示名で探した状態（URL のクエリ q に残した検索語で開く）。
+    id: "hq-coaches-search",
+    title: "本部: コーチの受付（表示名で探す）",
+    role: "headquarters",
+    path: "/headquarters/coaches?q=%E9%88%B4%E6%9C%A8",
+    open: async (page) => {
+      await page.getByRole("table", { name: "コーチの一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-suspend",
+    title: "本部: コーチの受付の停止の確認",
+    role: "headquarters",
+    path: "/headquarters/coaches",
+    open: async (page) => {
+      await page.getByRole("button", { name: "受付を止める" }).click();
+      await page.getByLabel("理由（任意）").waitFor();
+    },
+  },
   {
     id: "hq-coach-overview",
     title: "本部: コーチの様子",
@@ -98,6 +128,28 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/lesson-menus",
     open: async (page) => {
       await page.getByRole("button", { name: "「スイングの見直し」を非公開にする" }).click();
+    },
+  },
+  {
+    id: "hq-lesson-menu-history",
+    title: "本部: レッスンメニューの公開の記録",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("link", { name: "「パターの距離感」の公開の記録を見る" }).click();
+      await page.getByRole("heading", { name: "パターの距離感" }).waitFor();
+      await page.getByRole("table", { name: "公開の記録" }).waitFor();
+    },
+  },
+  {
+    id: "hq-lesson-menu-history-no-name",
+    title: "本部: レッスンメニューの公開の記録（名前を引けないとき）",
+    role: "headquarters",
+    // レッスンメニューの一覧（fixtures の /lesson-menus）にない ID。記録の応答は ID を問わず同じものが返る。
+    path: "/headquarters/lesson-menus/history?lesson_menu_id=aaaa0099-0000-4000-8000-000000000000",
+    open: async (page) => {
+      await page.getByRole("heading", { name: "（名前を表示できません）" }).waitFor();
+      await page.getByRole("table", { name: "公開の記録" }).waitFor();
     },
   },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },

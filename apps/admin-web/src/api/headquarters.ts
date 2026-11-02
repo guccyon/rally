@@ -6,7 +6,7 @@ export function headquartersApi(client: ApiClient) {
   return {
     getSlotSupply: () => call(() => client.GET("/slot-supply")),
     listCoaches: (
-      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"] } = {},
+      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
@@ -20,10 +20,11 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    suspendCoach: (coachId: string) =>
+    suspendCoach: (coachId: string, body: Schemas["SuspendCoachRequest"]) =>
       call(() =>
         client.POST("/coaches/{coach_id}/suspend", {
           params: { path: { coach_id: coachId } },
+          body,
         }),
       ),
     resumeCoach: (coachId: string) =>
@@ -45,7 +46,14 @@ export function headquartersApi(client: ApiClient) {
         }),
       ),
     listIncompleteCoachProfiles: () => call(() => client.GET("/coaches/incomplete-profiles")),
-    listLowRatedLessonReviews: () => call(() => client.GET("/lesson-reviews/low")),
+    listLowRatedLessonReviews: (filter: { handled?: boolean } = {}) =>
+      call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
+    markLowRatedLessonReviewHandled: (reviewId: string) =>
+      call(() =>
+        client.PUT("/lesson-reviews/{review_id}/handling", {
+          params: { path: { review_id: reviewId } },
+        }),
+      ),
     listPendingVideoReviews: (filter: {
       sport?: Schemas["Sport"];
       min_elapsed_hours?: number;
@@ -70,6 +78,12 @@ export function headquartersApi(client: ApiClient) {
     republishLessonMenu: (lessonMenuId: string) =>
       call(() =>
         client.POST("/lesson-menus/{lesson_menu_id}/republish", {
+          params: { path: { lesson_menu_id: lessonMenuId } },
+        }),
+      ),
+    listLessonMenuPublicationChanges: (lessonMenuId: string) =>
+      call(() =>
+        client.GET("/lesson-menus/{lesson_menu_id}/publication-changes", {
           params: { path: { lesson_menu_id: lessonMenuId } },
         }),
       ),
