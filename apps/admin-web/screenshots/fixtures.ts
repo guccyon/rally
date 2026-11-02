@@ -543,6 +543,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
+    // 表示名で「鈴木」を探したとき（hq-coaches-search）。
+    method: "GET",
+    path: "/coaches",
+    query: { q: "鈴木" },
+    body: {
+      coaches: [
+        { coach_id: COACH_ID, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 0 },
+      ],
+    } satisfies Schemas["CoachList"],
+  },
+  {
     method: "GET",
     path: "/coaches",
     body: {
