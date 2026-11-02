@@ -32,6 +32,12 @@ pub enum DomainError {
     LiveLessonSessionAlreadyEnded,
     /// 通話セッションの終了が開始より前
     SessionEndsBeforeItStarts,
+    /// 本部が見る、終わっていないまま時間の過ぎた通話セッションの開始からの時間が `min`〜`max` 時間でない
+    OverdueSessionHoursOutOfRange { min: u16, max: u16 },
+    /// 本部が見る通話セッションの記録の期間の終わりが始まりより後でない
+    SessionPeriodEndsBeforeItStarts,
+    /// 本部が見る通話セッションの記録の期間が長すぎる（`max_days` は日数）
+    SessionPeriodTooLong { max_days: u16 },
     /// パケット損失率が 0〜100（百分率）の有限の値でない
     InvalidPacketLossRate,
     /// 動画の当事者（送った生徒・送り先のコーチ）でないので、その動画を扱えない
@@ -57,6 +63,10 @@ pub enum DomainError {
     AiFeedbackAlreadyRecorded,
     /// AI の一次フィードバックを作った時刻が動画の送付より前
     AiFeedbackBeforeSubmission,
+    /// 本部が見る返した動画添削の記録の期間の終わりが始まりより後でない
+    ReturnedVideoReviewPeriodEndsBeforeItStarts,
+    /// 本部が見る返した動画添削の記録の期間が長すぎる（`max_days` は始まりと終わりの日を含めた日数）
+    ReturnedVideoReviewPeriodTooLong { max_days: u16 },
     /// 動画の添削がまだ返されていないので、レッスンの完了を記録できない
     VideoReviewNotReturned,
     /// レッスンの完了の記録がレッスンの終わり（通話の終了・添削の返却）より前
@@ -67,6 +77,8 @@ pub enum DomainError {
     EmptyLessonMenuName,
     /// レッスンメニューの名前が長すぎる（`max` は文字数）
     LessonMenuNameTooLong { max: usize },
+    /// レッスンメニューの名前の検索語が長すぎる（`max` は前後の空白を除いた文字数）
+    LessonMenuNameQueryTooLong { max: usize },
     /// レッスンメニューの説明が長すぎる（`max` は文字数）
     LessonMenuDescriptionTooLong { max: usize },
     /// 同期レッスンの 1 回の時間が `min`〜`max` 分の `step` 分刻みでない

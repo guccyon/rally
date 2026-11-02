@@ -8,6 +8,7 @@ use crate::{
     catalog::LessonMenuCoachDisplayNameLookup,
     identity::{AccountRepository, StudentActivityCoachDisplayNameLookup},
     lesson::LessonCompletionCoachDisplayNameLookup,
+    live_lesson::SessionCoachDisplayNameLookup,
     review::ReviewedCoachDisplayNameLookup,
     scheduling::BookingCoachDisplayNameLookup,
 };
@@ -15,7 +16,8 @@ use crate::{
 /// async-lesson の [`VideoCoachDisplayNameLookup`] と catalog の [`LessonMenuCoachDisplayNameLookup`] と完了記録の
 /// [`LessonCompletionCoachDisplayNameLookup`] と scheduling の [`BookingCoachDisplayNameLookup`]（本部が見る予約の一覧）と
 /// review の [`ReviewedCoachDisplayNameLookup`]（本部が見る低い評価の一覧）と identity の
-/// [`StudentActivityCoachDisplayNameLookup`]（本部が見る生徒 1 人の利用の様子）の profile による実装。アカウントの保存先
+/// [`StudentActivityCoachDisplayNameLookup`]（本部が見る生徒 1 人の利用の様子）と live-lesson の
+/// [`SessionCoachDisplayNameLookup`]（本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧）の profile による実装。アカウントの保存先
 /// （データは当面 identity の表）から読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
@@ -124,6 +126,18 @@ where
     }
 }
 
+impl<R> SessionCoachDisplayNameLookup for ProfileCoachDisplayNameLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_coach_display_names(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+        self.coach_display_names(coach_ids).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
@@ -191,6 +205,13 @@ mod tests {
                 .unwrap(),
             found,
             "review にも同じ表示名を渡す"
+        );
+        assert_eq!(
+            SessionCoachDisplayNameLookup::find_coach_display_names(&lookup, &ids)
+                .await
+                .unwrap(),
+            found,
+            "live-lesson にも同じ表示名を渡す"
         );
         assert_eq!(
             found,

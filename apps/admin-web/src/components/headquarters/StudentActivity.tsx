@@ -6,7 +6,9 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
-import { BOOKING_STATUS_LABELS, LESSON_TYPE_LABELS, formatDateTime } from "@/components/labels";
+import { LESSON_TYPE_LABELS, formatDateTime } from "@/components/labels";
+
+import { BookingStatusBadge } from "./BookingStatusBadge";
 
 type StudentActivityData = Schemas["StudentActivity"];
 
@@ -47,7 +49,7 @@ export function StudentActivity({
     };
   }, [api, studentId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (state.kind === "not_found") {
     return <ResultMessage result={{ ok: false, message: NOT_FOUND }} />;
   }
@@ -82,7 +84,9 @@ export function StudentActivity({
               {activity.upcoming_bookings.map(({ booking, coach_display_name }) => (
                 <tr key={booking.booking_id} className="border-t">
                   <td className="py-1">{formatDateTime(booking.starts_at)}</td>
-                  <td className="py-1">{BOOKING_STATUS_LABELS[booking.status]}</td>
+                  <td className="py-1">
+                    <BookingStatusBadge status={booking.status} />
+                  </td>
                   <td className="py-1">{coach_display_name ?? NO_NAME}</td>
                   <td className="py-1">{bookingLessonMenuLabel(booking.lesson_menu)}</td>
                   <td className="py-1">{booking.is_trial ? "体験予約" : "—"}</td>
@@ -99,7 +103,7 @@ export function StudentActivity({
           <p className="text-sm">まだ受けたレッスンはありません</p>
         ) : (
           <>
-            <p className="mb-2 text-sm text-gray-600">完了した新しい順に、最大 20 件まで出します。</p>
+            <p className="mb-2 text-sm text-text-muted">完了した新しい順に、最大 20 件まで出します。</p>
             <table aria-label="直近の受けたレッスン" className="w-full text-left text-sm">
               <thead>
                 <tr>

@@ -2,12 +2,15 @@
 //! 生徒の表示名（`accounts.display_name`）を書き換える。profile のコーチの自己紹介文の保存先（[`CoachProfileRepository`]）も
 //! 兼ね、当面は identity の表の `coaches.bio` を読み書きする（表を分けるのは後の段。docs/adr/0009-subdomain-types.md）。
 
+use std::collections::BTreeMap;
+
 use application::{
     Unavailable,
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
     profile::CoachProfileRepository,
 };
 use domain::{
+    NameQuery,
     catalog::Sport,
     identity::{Account, AccountId, Coach, Email, Role, RoleAttributes},
     profile::{CoachBio, DisplayName, DisplayNameQuery},
@@ -145,7 +148,7 @@ impl AccountRepository for PgAccountRepository {
         &self,
         name: Option<&DisplayNameQuery>,
     ) -> Result<Vec<Account>, Unavailable> {
-        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名は DisplayNameQuery のそろえ方の
+        // 生徒は coach_sports・coaches の行を持たない（スポーツは accounts.sport）。表示名は NameQuery のそろえ方の
         // 表（FOLD_FROM → FOLD_TO）で translate してから（照合順序・ロケールに左右されない）、検索語のそろえた形を
         // 部分文字列として探す（strpos なので % や _ も文字のまま）
         let rows: Vec<StudentRow> = sqlx::query_as(
@@ -157,8 +160,8 @@ impl AccountRepository for PgAccountRepository {
         )
         .bind(role_value(Role::Student))
         .bind(name.map(DisplayNameQuery::folded))
-        .bind(DisplayNameQuery::FOLD_FROM)
-        .bind(DisplayNameQuery::FOLD_TO)
+        .bind(NameQuery::FOLD_FROM)
+        .bind(NameQuery::FOLD_TO)
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -214,6 +217,23 @@ impl CoachProfileRepository for PgAccountRepository {
             return Ok(None);
         }
         Ok(Some(bio))
+    }
+
+    async fn list_coach_bios(&self) -> Result<BTreeMap<AccountId, CoachBio>, Unavailable> {
+        // coaches に行があるのはコーチのアカウントだけ（coaches_account_fkey）
+        let rows: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT coach_id, bio FROM identity.coaches")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(Unavailable::new)?;
+        rows.into_iter()
+            .map(|(coach_id, bio)| {
+                Ok((
+                    account_id_uuid::from_uuid(coach_id),
+                    CoachBio::new(bio).map_err(Unavailable::new)?,
+                ))
+            })
+            .collect()
     }
 }
 

@@ -85,6 +85,12 @@ impl application::profile::CoachProfileRepository for BrokenRepository {
     ) -> Result<Option<domain::profile::CoachBio>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
+
+    async fn list_coach_bios(
+        &self,
+    ) -> Result<std::collections::BTreeMap<AccountId, domain::profile::CoachBio>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
 }
 
 struct NoTokens;

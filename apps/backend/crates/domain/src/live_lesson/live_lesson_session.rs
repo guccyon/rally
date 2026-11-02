@@ -305,6 +305,11 @@ impl LiveLessonSession {
         })
     }
 
+    /// 開始から `now` までの時間（終了したかを問わない）。`now` が開始より前なら 0。
+    pub fn elapsed(&self, now: SystemTime) -> Duration {
+        now.duration_since(self.started_at).unwrap_or_default()
+    }
+
     /// 終了時に記録した接続品質の指標。終了するまでは `None`。
     pub const fn quality(&self) -> Option<ConnectionQuality> {
         self.quality
@@ -390,6 +395,16 @@ mod tests {
             assert_eq!(session.duration(), None);
             assert_eq!(session.quality(), None);
         }
+    }
+
+    #[test]
+    fn elapsed_is_the_time_from_the_start() {
+        let session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        assert_eq!(session.elapsed(at(600)), Duration::ZERO);
+        assert_eq!(session.elapsed(at(785)), Duration::from_secs(185 * 60));
+        // 開始より前の時刻は 0
+        assert_eq!(session.elapsed(at(599)), Duration::ZERO);
     }
 
     #[test]

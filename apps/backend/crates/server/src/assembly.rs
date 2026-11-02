@@ -13,7 +13,8 @@ use application::{
     matching::FavoriteCoachRepository,
     messaging::MessageThreadRepository,
     notification::{
-        AnnouncementRepository, NotificationRepository, NotificationSettingsRepository, PushSender,
+        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
+        NotificationSettingsRepository, PushSender,
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
@@ -24,8 +25,8 @@ use crate::{Repositories, ports::Ports};
 
 /// 保存先（[`Repositories`]）と、保存先のほかのポートの実装。
 #[allow(clippy::type_complexity)]
-pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D> {
-    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H>,
+pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D> {
+    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     pub(crate) clock: C,
     pub(crate) analytics: A,
     pub(crate) video_call: V,
@@ -33,8 +34,8 @@ pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V,
     pub(crate) events: D,
 }
 
-impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D> Ports
-    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, C, A, V, P, D>
+impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D> Ports
+    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D>
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -51,6 +52,7 @@ where
     Q: CoachAcceptanceRepository + Clone + 'static,
     G: FavoriteCoachRepository + Clone + 'static,
     H: AnnouncementRepository + Clone + 'static,
+    F: AnnouncementDraftRepository + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
@@ -72,6 +74,7 @@ where
     type CoachAcceptances = Q;
     type FavoriteCoaches = G;
     type Announcements = H;
+    type AnnouncementDrafts = F;
     type Clock = C;
     type Analytics = A;
     type VideoCall = V;
@@ -136,6 +139,10 @@ where
 
     fn announcements(&self) -> H {
         self.repositories.announcements.clone()
+    }
+
+    fn announcement_drafts(&self) -> F {
+        self.repositories.announcement_drafts.clone()
     }
 
     fn clock(&self) -> C {

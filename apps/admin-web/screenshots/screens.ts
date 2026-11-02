@@ -77,9 +77,20 @@ export const SCREENS: Screen[] = [
     open: async (page) => {
       await page.getByRole("link", { name: "鈴木 コーチ" }).click();
       await page.getByRole("heading", { name: "鈴木 コーチ" }).waitFor();
+      await page.getByRole("table", { name: "受付の記録" }).waitFor();
     },
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
+  {
+    id: "hq-lesson-menus-by-coach",
+    title: "本部: コーチ 1 人のレッスンメニュー",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("link", { name: "このコーチのレッスンメニューを見る" }).click();
+      await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
+    },
+  },
   {
     id: "hq-lesson-menu-unpublish",
     title: "本部: レッスンメニューの非公開の確認",
@@ -97,6 +108,61 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
+  {
+    id: "hq-bookings-by-coach",
+    title: "本部: コーチ 1 人の予約",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page
+        .getByRole("navigation", { name: "このコーチで開く画面" })
+        .getByRole("link", { name: "予約", exact: true })
+        .click();
+      await page.getByText(/^このコーチの枠への予約を/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
+    id: "hq-cancelled-bookings",
+    title: "本部: キャンセルされた予約",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+  },
+  {
+    id: "hq-booking-detail",
+    title: "本部: 予約の詳細",
+    role: "headquarters",
+    path: "/headquarters/bookings/detail?booking_id=44440010-0000-4000-8000-000000000000",
+  },
+  {
+    id: "hq-incomplete-coach-profiles",
+    title: "本部: 自己紹介の足りないコーチ",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+  },
+  {
+    id: "hq-overdue-live-sessions",
+    title: "本部: 終わっていない通話",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions",
+  },
+  {
+    id: "hq-live-sessions",
+    title: "本部: ライブレッスンの記録",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+  },
+  {
+    id: "hq-live-sessions-empty",
+    title: "本部: ライブレッスンの記録（0 件）",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+    open: async (page) => {
+      await page.getByLabel("コーチ").selectOption({ label: "高橋 コーチ" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText("この条件の通話の記録はありません").waitFor();
+    },
+  },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
     id: "hq-announcement-confirm",
@@ -109,5 +175,29 @@ export const SCREENS: Screen[] = [
       await page.getByLabel("本文").fill("11月から、コートの予約はアプリの「予約」から行えます。\n詳しくはお知らせの一覧をご覧ください。");
       await page.getByRole("button", { name: "内容を確かめる" }).click();
     },
+  },
+  {
+    id: "hq-announcement-drafts",
+    title: "本部: お知らせの下書き",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("題").fill("年末年始の営業について");
+      await page.getByLabel("本文").fill("12月29日から1月3日は、チャットの返信が遅れます。");
+      await page.getByRole("button", { name: "下書きに保存" }).click();
+      await page.getByRole("list", { name: "下書きの一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-pending-video-reviews",
+    title: "本部: 返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+  },
+  {
+    id: "hq-returned-video-reviews",
+    title: "本部: 返した動画添削",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews",
   },
 ];

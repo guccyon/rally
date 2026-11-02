@@ -62,6 +62,12 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::AiFeedbackBeforeSubmission => {
             "AI の一次フィードバックの作成が動画の送付より前".to_string()
         }
+        DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts => {
+            "to は from と同じ日か、それより後の日付にする".to_string()
+        }
+        DomainError::ReturnedVideoReviewPeriodTooLong { max_days } => {
+            format!("from から to までは {max_days} 日まで")
+        }
         DomainError::VideoReviewNotReturned => "動画の添削がまだ返されていない".to_string(),
         DomainError::CompletionBeforeLessonEnded => {
             "レッスンの完了の記録がレッスンの終わりより前".to_string()
@@ -71,8 +77,20 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LessonMenuNameTooLong { max } => {
             format!("レッスンメニューの名前は {max} 文字まで")
         }
+        DomainError::LessonMenuNameQueryTooLong { max } => {
+            format!("レッスンメニューの名前の検索語は {max} 文字まで")
+        }
         DomainError::LessonMenuDescriptionTooLong { max } => {
             format!("レッスンメニューの説明は {max} 文字まで")
+        }
+        DomainError::OverdueSessionHoursOutOfRange { min, max } => {
+            format!("開始からの時間は {min}〜{max} 時間")
+        }
+        DomainError::SessionPeriodEndsBeforeItStarts => {
+            "to は from と同じ日か、それより後の日付にする".to_string()
+        }
+        DomainError::SessionPeriodTooLong { max_days } => {
+            format!("from から to までは {max_days} 日まで")
         }
         DomainError::LessonDurationOutOfRange { min, max, step } => {
             format!("1 回の時間は {min}〜{max} 分の {step} 分刻み")
@@ -134,6 +152,9 @@ pub(crate) fn notification_error(error: &NotificationError) -> String {
         }
         NotificationError::AnnouncementAlreadyWithdrawn => {
             "お知らせはすでに取り下げてある".to_string()
+        }
+        NotificationError::ReceivedAnnouncementMismatch => {
+            "受け取ったお知らせが本部からのお知らせを指していない".to_string()
         }
     }
 }
@@ -262,6 +283,14 @@ mod tests {
             "通話セッションがまだ終了していない"
         );
         assert_eq!(
+            domain_error(&DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts),
+            "to は from と同じ日か、それより後の日付にする"
+        );
+        assert_eq!(
+            domain_error(&DomainError::ReturnedVideoReviewPeriodTooLong { max_days: 31 }),
+            "from から to までは 31 日まで"
+        );
+        assert_eq!(
             domain_error(&DomainError::VideoReviewNotReturned),
             "動画の添削がまだ返されていない"
         );
@@ -282,6 +311,10 @@ mod tests {
             "レッスンメニューの名前は 40 文字まで"
         );
         assert_eq!(
+            domain_error(&DomainError::LessonMenuNameQueryTooLong { max: 40 }),
+            "レッスンメニューの名前の検索語は 40 文字まで"
+        );
+        assert_eq!(
             domain_error(&DomainError::LessonMenuDescriptionTooLong { max: 400 }),
             "レッスンメニューの説明は 400 文字まで"
         );
@@ -292,6 +325,18 @@ mod tests {
                 step: 15
             }),
             "1 回の時間は 15〜120 分の 15 分刻み"
+        );
+        assert_eq!(
+            domain_error(&DomainError::OverdueSessionHoursOutOfRange { min: 1, max: 168 }),
+            "開始からの時間は 1〜168 時間"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SessionPeriodEndsBeforeItStarts),
+            "to は from と同じ日か、それより後の日付にする"
+        );
+        assert_eq!(
+            domain_error(&DomainError::SessionPeriodTooLong { max_days: 31 }),
+            "from から to までは 31 日まで"
         );
         assert_eq!(
             domain_error(&DomainError::LessonDurationMismatchesType {

@@ -5,7 +5,8 @@ use crate::{Unavailable, identity::AccountRepository, notification::Announcement
 /// notification の [`AnnouncementRecipientLookup`] の profile による実装。アカウントの保存先（データは当面 identity の表）
 /// から生徒を読むだけで、何も変えない。
 ///
-/// 生徒のアカウントだけを返し（コーチ・本部は返さない）、スポーツを渡せばそのスポーツの生徒だけにする。
+/// 生徒のアカウントだけを返し（コーチ・本部は返さない）、スポーツを渡せばそのスポーツの生徒だけにする。生徒かは
+/// アカウントの役割で決める（ないアカウントは生徒でない）。
 #[derive(Debug, Clone)]
 pub struct ProfileAnnouncementRecipientLookup<R> {
     accounts: R,
@@ -34,6 +35,14 @@ where
             })
             .map(|account| account.id())
             .collect())
+    }
+
+    async fn is_student(&self, account_id: AccountId) -> Result<bool, Unavailable> {
+        Ok(self
+            .accounts
+            .find(account_id)
+            .await?
+            .is_some_and(|account| account.as_student().is_some()))
     }
 }
 
@@ -97,5 +106,23 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn only_a_student_account_is_a_student() {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, Role::Student, &[Sport::Tennis]),
+            account(3, Role::Coach, &[Sport::Tennis]),
+            account(4, Role::Headquarters, &[]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let lookup = ProfileAnnouncementRecipientLookup::new(accounts);
+        let is_student = async |id| lookup.is_student(AccountId::from_u128(id)).await.unwrap();
+        assert!(is_student(1).await);
+        assert!(!is_student(3).await, "コーチは生徒でない");
+        assert!(!is_student(4).await, "本部は生徒でない");
+        assert!(!is_student(9).await, "アカウントがない");
     }
 }

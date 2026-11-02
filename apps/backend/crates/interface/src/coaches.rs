@@ -1,4 +1,5 @@
-//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチをすべて受付の状態を添えて返す。student-app の
+//! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチを受付の状態と直近 30 日に終わった
+//! レッスンの数を添えて返す（任意の `q`・`acceptance_status`・`sport` で絞る）。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
@@ -13,7 +14,10 @@ use application::{
         ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
         PublishedLessonMenuCountLookup, StudentSportLookup, SuspendedCoachLookup,
     },
-    profile::{CoachAcceptanceLookup, ListCoaches, ListedCoach},
+    profile::{
+        CoachAcceptanceLookup, CoachRecentLessonCountLookup, ListCoaches, ListCoachesQuery,
+        ListedCoach,
+    },
 };
 use axum::{
     Json, Router,
@@ -26,18 +30,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{self, AuthenticatedAccount, TokenVerification, require_role},
-    contract::{coach_acceptance_status_to_contract, sport_to_contract, student_app_sport},
+    contract::{
+        admin_web_sport, coach_acceptance_status_from_contract,
+        coach_acceptance_status_to_contract, display_name_query_from_contract, sport_to_contract,
+        student_app_sport,
+    },
     error::ApiError,
 };
 
 /// `/coaches` のハンドラーが使うユースケース。
-pub struct CoachesState<R, A, S, C, V, M, F, U> {
-    pub list_coaches: ListCoaches<R, A>,
+pub struct CoachesState<R, A, L, S, C, V, M, F, U> {
+    pub list_coaches: ListCoaches<R, A, L>,
     pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
 }
 
 /// ハンドラーが共有する [`CoachesState`]。
-type Shared<R, A, S, C, V, M, F, U> = Arc<CoachesState<R, A, S, C, V, M, F, U>>;
+type Shared<R, A, L, S, C, V, M, F, U> = Arc<CoachesState<R, A, L, S, C, V, M, F, U>>;
 
 /// admin-web の `CoachList`。
 #[derive(Serialize)]
@@ -51,6 +59,15 @@ pub struct CoachBody {
     coach_id: String,
     display_name: String,
     acceptance_status: &'static str,
+    recent_lesson_count: u32,
+}
+
+/// admin-web の `listCoaches` のクエリ。
+#[derive(Deserialize)]
+pub struct ListCoachesParams {
+    q: Option<String>,
+    acceptance_status: Option<String>,
+    sport: Option<String>,
 }
 
 /// student-app の `listCoachesForStudent` のクエリ。
@@ -78,16 +95,19 @@ pub struct CoachListingBody {
 }
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
-/// （役割は `require_role` の層が確かめる。コーチは 403）。
+/// （役割は `require_role` の層が確かめる。コーチは 403）。本部の `q` は表示名の検索語で、長すぎれば 422（生徒の一覧の
+/// `q` と同じ規則）。生徒は `q` を付けても変わらない。
 #[allow(clippy::type_complexity)]
-pub async fn list_coaches<R, A, S, C, V, M, F, U>(
-    State(state): State<Shared<R, A, S, C, V, M, F, U>>,
+pub async fn list_coaches<R, A, L, S, C, V, M, F, U>(
+    State(state): State<Shared<R, A, L, S, C, V, M, F, U>>,
     account: AuthenticatedAccount,
+    headquarters_params: Result<Query<ListCoachesParams>, QueryRejection>,
     params: Result<Query<ListCoachesForStudentParams>, QueryRejection>,
 ) -> Result<Response, ApiError>
 where
     R: AccountRepository,
     A: CoachAcceptanceLookup,
+    L: CoachRecentLessonCountLookup,
     S: StudentSportLookup,
     C: CoachCandidateLookup,
     V: CoachReviewSummaryLookup,
@@ -97,9 +117,20 @@ where
 {
     match account.role() {
         Role::Headquarters => {
+            let Query(params) = headquarters_params
+                .map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+            let query = ListCoachesQuery {
+                name: display_name_query_from_contract(params.q.as_deref())?,
+                acceptance: params
+                    .acceptance_status
+                    .as_deref()
+                    .map(coach_acceptance_status_from_contract)
+                    .transpose()?,
+                sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+            };
             let coaches = state
                 .list_coaches
-                .execute()
+                .execute(&query)
                 .await
                 .map_err(ApiError::internal)?;
             Ok(Json(CoachListBody {
@@ -143,6 +174,7 @@ fn coach_body(coach: &ListedCoach) -> CoachBody {
         coach_id: account_id_uuid::format(coach.account.id()),
         display_name: coach.account.display_name().as_str().to_string(),
         acceptance_status: coach_acceptance_status_to_contract(coach.acceptance),
+        recent_lesson_count: coach.recent_lessons.total_count(),
     }
 }
 
@@ -163,14 +195,15 @@ fn coach_listing_body(listing: &CoachListing) -> CoachListingBody {
 ///
 /// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
 /// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
-pub fn coaches_router<R, A, S, C, V, M, F, U, T>(
-    list_coaches: ListCoaches<R, A>,
+pub fn coaches_router<R, A, L, S, C, V, M, F, U, T>(
+    list_coaches: ListCoaches<R, A, L>,
     list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
     tokens: T,
 ) -> Router
 where
     R: AccountRepository + 'static,
     A: CoachAcceptanceLookup + 'static,
+    L: CoachRecentLessonCountLookup + 'static,
     S: StudentSportLookup + 'static,
     C: CoachCandidateLookup + 'static,
     V: CoachReviewSummaryLookup + 'static,
@@ -183,7 +216,7 @@ where
     Router::new()
         .route(
             "/coaches",
-            get(self::list_coaches::<R, A, S, C, V, M, F, U>),
+            get(self::list_coaches::<R, A, L, S, C, V, M, F, U>),
         )
         .route_layer(require_role(&[Role::Headquarters, Role::Student]))
         .with_state(Arc::new(CoachesState {

@@ -28,6 +28,13 @@ export const BOOKING_STATUS_LABELS: Record<Schemas["BookingStatus"], string> = {
   cancelled: "キャンセル済み",
 };
 
+/** 予約をキャンセルした人の役割（契約の BookingCanceller）。 */
+export const BOOKING_CANCELLER_LABELS: Record<Schemas["BookingCanceller"], string> = {
+  student: "生徒",
+  coach: "コーチ",
+  headquarters: "本部",
+};
+
 export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], string> = {
   in_progress: "通話中",
   ended: "終了",
@@ -37,6 +44,11 @@ export const SESSION_STATUS_LABELS: Record<Schemas["LiveLessonSessionStatus"], s
 export const COACH_ACCEPTANCE_STATUS_LABELS: Record<Schemas["CoachAcceptanceStatus"], string> = {
   accepting: "受付中",
   suspended: "停止中",
+};
+
+/** コーチのプロフィールの項目のうち、空のままにできる（本部が足りないとみなす）もの。 */
+export const COACH_PROFILE_FIELD_LABELS: Record<Schemas["CoachProfileField"], string> = {
+  bio: "自己紹介文",
 };
 
 /** glossary の live_lesson（同期レッスン）と async_lesson（非同期レッスン）。 */
@@ -121,6 +133,12 @@ export function formatDate(value: string): string {
 export function formatMonth(value: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   return match ? `${match[1]}年${Number(match[2])}月` : value;
+}
+
+/** 経過時間（秒）を「N 時間 M 分」の形で表示する（分未満は切り捨て）。 */
+export function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${Math.floor(minutes / 60)} 時間 ${minutes % 60} 分`;
 }
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
