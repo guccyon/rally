@@ -13,7 +13,8 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// 基準（domain の [`OverdueSessionCriteria`]。開始からの時間）の時刻
 /// （[`OverdueSessionCriteria::started_at_or_before`]）までに開始した通話中のセッションを読み、
-/// [`OverdueSessionCriteria::select`] で選んで並べる（既定・範囲・境界は domain だけ）。各セッションには、コーチと
+/// [`OverdueSessionCriteria::select`] で選んで並べる（既定・範囲・境界は domain だけ）。基準にコーチ
+/// （[`OverdueSessionCriteria::coach_id`]）があればそのコーチのセッションだけ（いないコーチなら空の一覧）。各セッションには、コーチと
 /// 開始した予約の生徒の表示名（[`SessionCoachDisplayNameLookup`]・[`SessionStudentDisplayNameLookup`]）を引いて添える。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListOverdueLiveLessonSessions<L, D, S, C> {
@@ -46,7 +47,10 @@ where
         let now = self.clock.now();
         let in_progress = self
             .sessions
-            .find_in_progress_started_at_or_before(criteria.started_at_or_before(now))
+            .find_in_progress_started_at_or_before(
+                criteria.started_at_or_before(now),
+                criteria.coach_id(),
+            )
             .await?;
         let sessions = criteria.select(in_progress, now);
         if sessions.is_empty() {
@@ -250,6 +254,59 @@ mod tests {
             assert_eq!(list.criteria.hours(), hours);
             assert_eq!(ids(&list), expected, "{hours} 時間");
         }
+    }
+
+    #[tokio::test]
+    async fn the_coach_of_the_criteria_narrows_the_sessions_with_the_hours() {
+        let sessions = [
+            session(1, STUDENT, COACH, now() - 4 * HOUR, None),
+            session(2, OTHER_STUDENT, OTHER_COACH, now() - 26 * HOUR, None),
+            session(3, STUDENT, COACH, now() - 30 * HOUR, None),
+            session(4, STUDENT, COACH, now() - HOUR, None),
+            session(5, STUDENT, COACH, now() - 10 * HOUR, Some(now() - 9 * HOUR)),
+        ];
+        let lookup = RecordingLookup::default();
+        let list = use_case(sessions.clone(), lookup.clone())
+            .execute(OverdueSessionCriteria::default().with_coach_id(Some(COACH)))
+            .await
+            .unwrap();
+        assert_eq!(list.criteria.coach_id(), Some(COACH));
+        assert_eq!(
+            ids(&list),
+            [3, 1],
+            "ほかのコーチ・時間に足りない・終了したものは出ない"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH])],
+            "絞った後のセッションのコーチだけを問い合わせる"
+        );
+        assert_eq!(
+            list.student_display_names,
+            BTreeMap::from([(STUDENT, name("あおき"))])
+        );
+
+        // 時間と組み合わさる
+        let list = use_case(sessions.clone(), RecordingLookup::default())
+            .execute(
+                OverdueSessionCriteria::new(5)
+                    .unwrap()
+                    .with_coach_id(Some(COACH)),
+            )
+            .await
+            .unwrap();
+        assert_eq!((list.criteria.hours(), ids(&list)), (5, vec![3]));
+
+        // セッションのないコーチ・ない ID は空の一覧で、表示名を問い合わせない
+        let lookup = RecordingLookup::default();
+        let list = use_case(sessions, lookup.clone())
+            .execute(
+                OverdueSessionCriteria::default().with_coach_id(Some(AccountId::from_u128(99))),
+            )
+            .await
+            .unwrap();
+        assert!(list.sessions.is_empty());
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
