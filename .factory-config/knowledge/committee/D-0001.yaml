@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/677
+decided_at: '2026-11-03'
+outcome: human
+requires_human: true
+knowledge:
+- K-0001
+- K-0002
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - knowledge/ には K-0001 と K-0002 より前の知見も committee/ の議決も無いので、矛盾や重複になる相手がありません。
+  - specs/ の glossary.yaml と context-map.yaml は製品の業務の言葉（生徒・レッスンなど）を定めたもので、工場の工程を扱う
+    K-0001 と K-0002 とは言葉も範囲も重なりません。
+  - K-0001（テーマ 4、implement の PR 本文の書き方）と K-0002（テーマ 6、supervisor の判断待ちの間の衝突の扱い）は主張も役割も別で、二つの間でも重複はありません。
+  - 最初の知見なので影響を受ける既存の知見は無く、K-0001・K-0002・C-0001・INDEX.md を 1 本の PR にまとめた変更セットの扱いは
+    README.md の決まりに合っており、INDEX.md の行も各 yaml と一致しています。
+  - C-0001 の学びに書かれた作用先（role_line_engine と monitoring_runbook）への変更はこの PR では実装しないと明記されているので知見の下書きとして扱えますが、作用先を変えるときは別に人の判断が要ります。
+  - どちらも事例 1 件からの推測を含むので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0001 と K-0002 は、どちらも根拠として C-0001、events の case.analyzed:113588、guccyon/rally#534
+    を挙げており、一次記録まで辿れます。
+  - K-0001 の元になった出来事は C-0001 に記録されています（job 1439 が報告を本文に追記して見出しが二重になったこと、head の更新 10:03:06
+    と本文の記述が食い違ったこと）が、追記した理由は推測なので、確かさが hypothesis なのは妥当です。
+  - K-0002 の元になった時刻（10:09:21 の衝突、14:28:59 の enqueue）は記録で裏づけられていますが、supervisor が衝突を起こさなかった理由は推測で、事例も
+    1 件なので、確かさが hypothesis なのは妥当です。
+  - C-0001 には、handoff/ と会話の記録が無いことがはっきり書かれており、spec と inspection の観点の推測は知見から外してあるので、根拠の範囲を正しく区切っています。
+  - 知見と事例記録には、利用者の氏名・連絡先・利用者 ID・本文の引用はありません。人の答えも「推奨どおり」とまとめてあるだけなので、個人情報は抽象化で切れています。
+  - confirmed に上げるには、ほかの PR で continue が本文に追記した例や、判断待ちの間に衝突が放置された例を、もう 1 件以上事例として足すのがよいです。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0001 のうち「見出しが二重になる」「必須の見出し（背景・問題）が無い」は PR 本文の見出しを数えるだけで機械的に判定でき、線が引きやすく作る費用も小さいので、決定論の検査で担保すべきです。
+  - K-0001 のうち「取り込みやコミットの状態が head と食い違う」は自由文の意味の判定になり決定論では線が引けないので、この部分は context のまま実装役への指示で扱うのが妥当です。
+  - C-0001 では rubric が shadow で欠陥を見つけても止めず、body_fix の手戻りが起きているので、外したときの痛さは小さくなく、事前の照合を入れる価値があります。
+  - K-0002 は「needs-judgment の停止中に pr.conflicted を検知したら continue（conflict）を enqueue
+    する」という条件と動作がはっきりした規則なので、supervisor の手順を overlay のルールとテストで担保できます。
+  - K-0002 の担保は supervisor の動きを変えるラインの設定にあたるため、入れる前に人が作用先（monitoring_runbook）を確かめる必要があります。
+  - どちらも事例 1 件の hypothesis なので、確かさは hypothesis のままとし、担保の仕組みは同じ形の事例がもう 1 件出て confirmed
+    に上げるときに合わせて入れるのがよいです。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0002 の「衝突のような機械的な手戻り」は、根拠の C-0001 にある main との衝突 1 件より広く、CI の失敗なども含んで読めるので、主張を「main
+    との衝突（pr.conflicted）」に絞ってください。
+  - K-0002 には反例があり、人の判断で PR の中身が変わるときは、判断待ちの間に解いた衝突がやり直しになるので、「判断が PR の差分を変えない見込みのとき」などの条件を
+    statement に足してください。
+  - C-0001 では判断の後の enqueue（14:28:59）から job 1525 の開始（14:54）まで約 26 分しかないので、K-0002 の「待ちが順番に重なる」の痛さは大きくないと書いた上で、hypothesis
+    のままにしてください。
+  - K-0002 の原因（supervisor が衝突を新しい停止として起こさなかった）は C-0001 でも推測なので、仕組みの原因だと言い切らず、観察した順番だけを主張にしてください。
+  - K-0001 は「追記すると見出しが二重になる」と「head を確かめずに状態を書くと食い違う」の 2 つを 1 件にまとめていて、1 件 1 主張の決まりに合わないので、2
+    件に分けるか、どちらか 1 つに絞ってください。
+  - K-0001 の「全体を書き直す」には反例があり、人や前の job が書いた背景・判断の記録を消すおそれがあるので、「既存の節は残して該当の節だけ最新にする」などの限りを足してください。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: PR を開く前と continue の後に PR 本文を検査し、同じ文言の「## 」見出しが 2 回以上ある、または必須の見出し「## 背景」「##
+    問題」が無ければ失敗にする検査を足す（rubric の shadow とは別に、見出しの形だけを止める）。
+- knowledge: K-0001
+  level: checklist
+  solution_kind: overlay_rule
+  proposal: continue（conflict）の job の完了前のチェック項目に「PR 本文は追記せず全体を書き直した」「取り込みとコミットの状態を
+    git で head と照らした」を加える（状態の食い違いは機械判定できないため checklist に留める）。
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: test
+  proposal: supervisor の規則として、factory:needs-judgment のラベルで停止中の PR に pr.conflicted
+    が来たら continue（conflict）を即時に enqueue し停止の記録に衝突中と書く overlay のルールを置き、その事象列を入力にした回帰テストで
+    enqueue が判断の前に起きることを確かめる（ラインの設定なので人の承認の後に入れる）。

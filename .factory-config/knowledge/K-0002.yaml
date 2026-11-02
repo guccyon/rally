@@ -9,7 +9,8 @@ evidence:
   - case: C-0001
   - event: "case.analyzed:113588"
   - pr: "guccyon/rally#534"
-status: draft
+status: active
 verified_at: 2026-11-02
 review_by: 2026-12-02
 confidentiality: product
+decided_by: committee:D-0001
