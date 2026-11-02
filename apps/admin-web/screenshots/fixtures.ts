@@ -418,8 +418,8 @@ export const FIXTURES: Fixture[] = [
     body: {
       coach_id: COACH_ID,
       changes: [
-        { acceptance_status: "accepting", changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
-        { acceptance_status: "suspended", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
+        { acceptance_status: "accepting", reason: null, changed_by: HEADQUARTERS_ID, changed_at: at(-26) },
+        { acceptance_status: "suspended", reason: "", changed_by: HEADQUARTERS_ID, changed_at: at(-72) },
       ],
     } satisfies Schemas["CoachAcceptanceChangeList"],
   },
