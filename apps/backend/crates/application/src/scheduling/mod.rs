@@ -70,7 +70,7 @@ pub use lesson_menu_lookup::LessonMenuLookup;
 pub use list_bookings::{ListBookings, ListBookingsError, ListBookingsQuery};
 pub use list_cancelled_bookings::{ListCancelledBookings, ListCancelledBookingsQuery};
 pub use list_coach_acceptance_changes::ListCoachAcceptanceChanges;
-pub use list_coach_bookings::ListCoachBookings;
+pub use list_coach_bookings::{ListCoachBookings, ListCoachBookingsQuery};
 pub use list_coach_slots::ListCoachSlots;
 pub use list_my_bookings::ListMyBookings;
 pub use my_booking_list::MyBookingList;
