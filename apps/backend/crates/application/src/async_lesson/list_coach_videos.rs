@@ -8,8 +8,9 @@ use crate::Unavailable;
 /// コーチに届いた動画の一覧のユースケース（admin-web の `listMyCoachVideos`。コーチだけが呼ぶ）。
 ///
 /// コーチ `coach_id` に送られた動画を、添削待ち（未返却）を送られた時刻の古い順で先に、その後に返却済みを返却した
-/// 時刻の新しい順に並べる（同じ時刻は動画 ID の順）。一覧に出る生徒の表示名は profile に問い合わせて
-/// （[`VideoStudentDisplayNameLookup`]）添える。読むだけで何も変えない。
+/// 時刻の新しい順に並べる（同じ時刻は動画 ID の順）。`pending_only` なら返却待ちの動画（domain の
+/// [`Video::is_awaiting_review`]。本部の返却待ちの一覧と同じ判定）だけに絞る（並べ方は変えない）。一覧に出る生徒の
+/// 表示名は profile に問い合わせて（[`VideoStudentDisplayNameLookup`]）添える。読むだけで何も変えない。
 pub struct ListCoachVideos<V, D> {
     videos: V,
     students: D,
@@ -24,8 +25,15 @@ where
         Self { videos, students }
     }
 
-    pub async fn execute(&self, coach_id: AccountId) -> Result<CoachVideoList, Unavailable> {
+    pub async fn execute(
+        &self,
+        coach_id: AccountId,
+        pending_only: bool,
+    ) -> Result<CoachVideoList, Unavailable> {
         let mut videos = self.videos.videos_of_coach(coach_id).await?;
+        if pending_only {
+            videos.retain(Video::is_awaiting_review);
+        }
         videos.sort_by(coach_video_order);
         let student_ids: BTreeSet<AccountId> = videos.iter().map(Video::student_id).collect();
         let students = if student_ids.is_empty() {
@@ -146,7 +154,7 @@ mod tests {
         ]);
         let lookup = RecordingLookup::default();
         let list = ListCoachVideos::new(videos, lookup.clone())
-            .execute(COACH)
+            .execute(COACH, false)
             .await
             .unwrap();
         assert_eq!(ids(&list), [3, 1, 2, 6, 5, 7]);
@@ -164,13 +172,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_only_keeps_only_videos_awaiting_review_in_the_same_order() {
+        let videos = InMemoryVideoRepository::with_videos([
+            video(5, STUDENT, COACH, 1, Some(20)),
+            video(2, OTHER_STUDENT, COACH, 4, None),
+            video(1, STUDENT, COACH, 4, None),
+            video(3, STUDENT, COACH, 3, None),
+            video(9, STUDENT, OTHER_COACH, 0, None),
+        ]);
+        let lookup = RecordingLookup::default();
+        let list = ListCoachVideos::new(videos, lookup.clone())
+            .execute(COACH, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [3, 1, 2],
+            "返却済み（5）と別のコーチの動画（9）は出ず、並べ方は絞らないときと同じ"
+        );
+        assert!(list.videos.iter().all(Video::is_awaiting_review));
+        assert_eq!(
+            *lookup.asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])],
+            "絞った後の一覧の生徒だけを問い合わせる"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_only_with_every_video_returned_is_an_empty_list() {
+        let videos = InMemoryVideoRepository::with_videos([
+            video(5, STUDENT, COACH, 1, Some(20)),
+            video(6, OTHER_STUDENT, COACH, 2, Some(30)),
+        ]);
+        let lookup = RecordingLookup::default();
+        let list = ListCoachVideos::new(videos, lookup.clone())
+            .execute(COACH, true)
+            .await
+            .unwrap();
+        assert!(list.videos.is_empty());
+        assert!(list.students.is_empty());
+        assert!(lookup.asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn returned_videos_with_the_same_return_time_are_in_video_id_order() {
         let videos = InMemoryVideoRepository::with_videos([
             video(2, STUDENT, COACH, 0, Some(5)),
             video(1, STUDENT, COACH, 1, Some(5)),
         ]);
         let list = ListCoachVideos::new(videos, RecordingLookup::default())
-            .execute(COACH)
+            .execute(COACH, false)
             .await
             .unwrap();
         assert_eq!(ids(&list), [1, 2]);
@@ -182,7 +233,7 @@ mod tests {
             InMemoryVideoRepository::with_videos([video(1, STUDENT, OTHER_COACH, 0, None)]);
         let lookup = RecordingLookup::default();
         let list = ListCoachVideos::new(videos, lookup.clone())
-            .execute(COACH)
+            .execute(COACH, false)
             .await
             .unwrap();
         assert!(list.videos.is_empty());
