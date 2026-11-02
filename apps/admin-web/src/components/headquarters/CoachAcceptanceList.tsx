@@ -55,11 +55,13 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
 
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
- * 受付中の行は「受付を止める」（suspendCoach）、停止中の行は「再開する」（resumeCoach）を行の中で確かめてから送り、
+ * 受付中の行は「受付を止める」（suspendCoach。確かめるときに書いた理由（任意）を付ける）、停止中の行は「再開する」
+ * （resumeCoach。理由は付けない）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
  * 表示名の検索欄は「探す」（または Enter）で確定し、前後の空白を除いた語を `q` に渡して読み直す（空なら絞らない）。
- * 上限を超える語は送らずに理由を出す。受付の状態・スポーツを変えたときは、確定済みの検索語と組み合わせる。
+ * 上限を超える語は送らずに理由を出す。受付の状態・スポーツを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
  */
@@ -127,21 +129,26 @@ export function CoachAcceptanceList({
     await reload(next);
   }
 
-  async function submitQuery(event: FormEvent) {
-    event.preventDefault();
+  // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
+  async function commitFilter(change: Partial<Pick<Filter, "acceptanceStatus" | "sport">>) {
     const query = coachNameQuery(queryDraft);
     if (!query.ok) {
       setQueryError(query.message);
       return;
     }
     setQueryDraft(query.q);
-    await changeFilter({ ...filter, q: query.q });
+    await changeFilter({ ...filter, ...change, q: query.q });
   }
 
-  async function changeAcceptance(coach: Coach) {
+  async function submitQuery(event: FormEvent) {
+    event.preventDefault();
+    await commitFilter({});
+  }
+
+  async function changeAcceptance(coach: Coach, reason: string) {
     const suspending = coach.acceptance_status === "accepting";
     const response = suspending
-      ? await api.suspendCoach(coach.coach_id)
+      ? await api.suspendCoach(coach.coach_id, reason === "" ? {} : { reason })
       : await api.resumeCoach(coach.coach_id);
     if (response.ok) {
       setResult({
@@ -196,8 +203,7 @@ export function CoachAcceptanceList({
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.acceptanceStatus}
             onChange={(event) =>
-              void changeFilter({
-                ...filter,
+              void commitFilter({
                 acceptanceStatus: event.target.value as AcceptanceStatus | "",
               })
             }
@@ -216,8 +222,7 @@ export function CoachAcceptanceList({
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
             onChange={(event) =>
-              void changeFilter({
-                ...filter,
+              void commitFilter({
                 sport: event.target.value as Sport | "",
               })
             }
@@ -263,7 +268,7 @@ export function CoachAcceptanceList({
                     // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
                     key={coach.acceptance_status}
                     status={coach.acceptance_status}
-                    onConfirm={() => changeAcceptance(coach)}
+                    onConfirm={(reason) => changeAcceptance(coach, reason)}
                   />
                 </td>
               </tr>

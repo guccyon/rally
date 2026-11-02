@@ -80,6 +80,16 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-coach-suspend",
+    title: "本部: コーチの受付の停止の確認",
+    role: "headquarters",
+    path: "/headquarters/coaches",
+    open: async (page) => {
+      await page.getByRole("button", { name: "受付を止める" }).click();
+      await page.getByLabel("理由（任意）").waitFor();
+    },
+  },
+  {
     id: "hq-coach-overview",
     title: "本部: コーチの様子",
     role: "headquarters",

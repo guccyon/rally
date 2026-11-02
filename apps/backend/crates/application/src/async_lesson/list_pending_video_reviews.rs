@@ -15,7 +15,7 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// コーチがまだ添削を返していない動画をすべてのコーチについて読み、domain の [`PendingVideoReviewFilter::select`] で
-/// スポーツと経過時間の下限で絞って送付の古い順に並べる（経過時間の数え方と並べ方は domain だけ）。各動画には担当の
+/// スポーツと経過時間の下限とコーチで絞って送付の古い順に並べる（経過時間の数え方と並べ方は domain だけ）。各動画には担当の
 /// コーチと生徒の表示名を profile に問い合わせて（[`VideoCoachDisplayNameLookup`]・[`VideoStudentDisplayNameLookup`]）
 /// 添える。誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListPendingVideoReviews<V, K, D, C> {
@@ -229,6 +229,7 @@ mod tests {
             .execute(PendingVideoReviewFilter {
                 sport: None,
                 min_elapsed_hours: 48,
+                coach_id: None,
             })
             .await
             .unwrap();
@@ -238,10 +239,57 @@ mod tests {
             .execute(PendingVideoReviewFilter {
                 sport: Some(Sport::Tennis),
                 min_elapsed_hours: 48,
+                coach_id: None,
             })
             .await
             .unwrap();
         assert_eq!(ids(&list), [4]);
+    }
+
+    #[tokio::test]
+    async fn coach_id_narrows_the_list_and_combines_with_the_other_filters() {
+        let lookup = RecordingLookup::default();
+        let list = use_case(videos(), lookup.clone())
+            .execute(PendingVideoReviewFilter {
+                coach_id: Some(COACH),
+                ..PendingVideoReviewFilter::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [4, 1],
+            "COACH 宛ての返却待ちだけ（返却済みの 3 は出ない）"
+        );
+        assert_eq!(
+            *lookup.asked_coaches.lock().unwrap(),
+            [BTreeSet::from([COACH])],
+            "表示名は絞った後の動画のコーチだけ問い合わせる"
+        );
+        assert_eq!(
+            *lookup.asked_students.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])]
+        );
+
+        let list = use_case(videos(), RecordingLookup::default())
+            .execute(PendingVideoReviewFilter {
+                sport: Some(Sport::Tennis),
+                min_elapsed_hours: 48,
+                coach_id: Some(COACH),
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [4]);
+
+        let list = use_case(videos(), RecordingLookup::default())
+            .execute(PendingVideoReviewFilter {
+                sport: Some(Sport::Tennis),
+                min_elapsed_hours: 0,
+                coach_id: Some(OTHER_COACH),
+            })
+            .await
+            .unwrap();
+        assert!(list.videos.is_empty(), "OTHER_COACH の返却待ちはゴルフだけ");
     }
 
     #[tokio::test]
@@ -251,6 +299,7 @@ mod tests {
             .execute(PendingVideoReviewFilter {
                 sport: Some(Sport::Swimming),
                 min_elapsed_hours: 0,
+                coach_id: None,
             })
             .await
             .unwrap();

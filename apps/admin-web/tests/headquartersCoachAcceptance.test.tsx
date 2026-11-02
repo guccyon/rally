@@ -150,7 +150,7 @@ describe("本部のコーチの受付", () => {
     await user.click(within(row).getByRole("button", { name: "受付を止める" }));
     await user.click(within(row).getByRole("button", { name: "停止を確定" }));
 
-    expect(suspendCoach).toHaveBeenCalledWith(SUZUKI.coach_id);
+    expect(suspendCoach).toHaveBeenCalledWith(SUZUKI.coach_id, {});
     expect(await screen.findByRole("status")).toHaveTextContent("鈴木 コーチの受付を止めました。");
     const updated = await rowOf("鈴木 コーチ");
     expect(statusOf(updated)).toBe("停止中");
@@ -190,6 +190,74 @@ describe("本部のコーチの受付", () => {
     expect(within(updated).getByRole("button", { name: "受付を止める" })).toBeInTheDocument();
     await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
     expect(listCoaches).toHaveBeenLastCalledWith({});
+  });
+
+  test("止める確認で理由（任意）を書いて確定すると、理由を付けて送る", async () => {
+    const user = userEvent.setup();
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: true,
+      data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
+    }));
+    renderList({
+      listCoaches: listOf(COACHES, [TAKAHASHI, { ...SUZUKI, acceptance_status: "suspended" }]),
+      suspendCoach,
+    });
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    const group = within(row).getByRole("group", { name: "コーチの受付の確認" });
+    await user.type(within(group).getByLabelText("理由（任意）"), "連絡がつかない");
+    await user.click(within(group).getByRole("button", { name: "停止を確定" }));
+
+    expect(suspendCoach).toHaveBeenCalledWith(SUZUKI.coach_id, { reason: "連絡がつかない" });
+    expect(await screen.findByRole("status")).toHaveTextContent("鈴木 コーチの受付を止めました。");
+  });
+
+  test("「やめる」で送らずに戻り、書いた理由は残さない", async () => {
+    const user = userEvent.setup();
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>();
+    renderList({ suspendCoach });
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.type(within(row).getByLabelText("理由（任意）"), "下書き");
+    await user.click(within(row).getByRole("button", { name: "やめる" }));
+
+    expect(suspendCoach).not.toHaveBeenCalled();
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    expect(within(row).getByLabelText("理由（任意）")).toHaveValue("");
+  });
+
+  test("止める理由は 200 文字（コードポイント）まで。超えたら確定を押せず、超えた文字数を出す", async () => {
+    const user = userEvent.setup();
+    renderList({});
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    const reason = within(row).getByLabelText("理由（任意）");
+    expect(within(row).getByText("あと 200 文字")).toBeInTheDocument();
+
+    // サロゲートペアの絵文字も 1 文字と数える
+    await user.click(reason);
+    await user.paste("🎾".repeat(200));
+    expect(within(row).getByText("あと 0 文字")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "停止を確定" })).toBeEnabled();
+
+    await user.paste("あ");
+    expect(within(row).getByText("200 文字を 1 文字超えています")).toBeInTheDocument();
+    expect(reason).toHaveAttribute("aria-invalid", "true");
+    expect(within(row).getByRole("button", { name: "停止を確定" })).toBeDisabled();
+  });
+
+  test("再開の確認には理由の入力を出さない", async () => {
+    const user = userEvent.setup();
+    renderList({});
+
+    const row = await rowOf("高橋 コーチ");
+    await user.click(within(row).getByRole("button", { name: "再開する" }));
+    expect(within(row).getByRole("group", { name: "コーチの受付の確認" })).toBeInTheDocument();
+    expect(within(row).queryByLabelText("理由（任意）")).not.toBeInTheDocument();
+    expect(within(row).queryByText(/文字/)).not.toBeInTheDocument();
   });
 
   test("409 はサーバーの ErrorCode の文言を出し、一覧を今の状態に取り直す", async () => {
@@ -481,17 +549,49 @@ describe("本部のコーチの受付の表示名の検索", () => {
     expect(listCoaches).toHaveBeenCalledTimes(4);
   });
 
-  test("受付の状態・スポーツを変えたときは、確定していない入力を使わない", async () => {
+  test("受付の状態・スポーツを変えたときは、検索欄に入っている語も一緒に確定して、欄の語と条件を一致させる", async () => {
     const user = userEvent.setup();
-    const listCoaches = listOf(COACHES, [SUZUKI]);
-    renderList({ listCoaches });
+    const onFilterChange = vi.fn();
+    const listCoaches = listOf(COACHES, [SUZUKI], [], [SUZUKI]);
+    renderList({ listCoaches }, { onFilterChange });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    const input = screen.getByRole("textbox", { name: "表示名" });
+
+    await user.type(input, " 鈴木\u3000");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "tennis", q: "鈴木" }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "tennis", q: "鈴木" });
+    expect(input).toHaveValue("鈴木");
+
+    await user.clear(input);
+    await user.type(input, "高橋");
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended", sport: "tennis", q: "高橋" }),
+    );
+    expect(input).toHaveValue("高橋");
+
+    // 欄を空にしてから変えたら、検索語の条件も外す。
+    await user.clear(input);
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "すべて");
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "tennis" }));
+    expect(listCoaches).toHaveBeenCalledTimes(4);
+  });
+
+  test("検索欄の語が上限を超えたまま受付の状態・スポーツを変えたら、理由を出して条件を変えない", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    const listCoaches = listOf(COACHES);
+    renderList({ listCoaches }, { onFilterChange });
     await screen.findByRole("table", { name: "コーチの一覧" });
 
-    await user.type(screen.getByRole("textbox", { name: "表示名" }), "鈴木");
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "あ".repeat(51));
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
 
-    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "tennis" }));
-    expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("鈴木");
+    expect(await screen.findByRole("alert")).toHaveTextContent("表示名は 50 文字までで探してください。");
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("");
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+    expect(onFilterChange).not.toHaveBeenCalled();
   });
 
   test("空にして確定したら q を付けずに読み直す", async () => {
