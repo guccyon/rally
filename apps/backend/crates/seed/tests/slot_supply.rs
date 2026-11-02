@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     in_memory::{FixedClock, RecordingAnalyticsSink},
-    scheduling::GetSlotSupply,
+    scheduling::{GetSlotSupply, GetSlotSupplyQuery},
 };
 use domain::{
     catalog::Sport,
@@ -33,7 +33,7 @@ async fn some_sport_lacks_slots_in_the_synthetic_seed(pool: PgPool) {
         .unwrap();
 
     let report = GetSlotSupply::new(PgBookingRepository::new(pool), FixedClock(now))
-        .execute()
+        .execute(GetSlotSupplyQuery::default())
         .await
         .unwrap();
     let insufficient: Vec<&SlotSupply> = report
