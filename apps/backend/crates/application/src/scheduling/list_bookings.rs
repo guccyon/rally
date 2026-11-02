@@ -87,8 +87,9 @@ where
         &self,
         query: ListBookingsQuery,
     ) -> Result<BookingList, ListBookingsError> {
-        let BookingDates { from, to, period } =
+        let dates =
             BookingDates::resolve(query.from, query.to, calendar_day::of(self.clock.now()))?;
+        let (from, to, period) = (dates.from(), dates.to(), dates.period());
 
         let (_, mut bookings) = self
             .bookings

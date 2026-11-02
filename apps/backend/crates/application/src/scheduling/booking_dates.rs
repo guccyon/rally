@@ -9,14 +9,13 @@ use super::calendar_day;
 ///
 /// `from` を省けば今日、`to` を省けば `from` から [`BookingPeriod::DEFAULT_DAYS`] 日目（`from` を含めて数える）。
 /// 期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。
+///
+/// [`Self::resolve`] で検証してから作り、作った後は日付と期間が食い違わないよう読むだけにする。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BookingDates {
-    /// 期間の始まりの日付（日本時間。含む）。省いたときは今日
-    pub from: Date,
-    /// 期間の終わりの日付（日本時間。含む）。省いたときは `from` から 7 日目
-    pub to: Date,
-    /// `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）まで
-    pub period: BookingPeriod,
+    from: Date,
+    to: Date,
+    period: BookingPeriod,
 }
 
 impl BookingDates {
@@ -34,6 +33,21 @@ impl BookingDates {
         let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
         Ok(Self { from, to, period })
     }
+
+    /// 期間の始まりの日付（日本時間。含む）。省いたときは今日
+    pub const fn from(&self) -> Date {
+        self.from
+    }
+
+    /// 期間の終わりの日付（日本時間。含む）。省いたときは `from` から 7 日目
+    pub const fn to(&self) -> Date {
+        self.to
+    }
+
+    /// `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）まで
+    pub const fn period(&self) -> BookingPeriod {
+        self.period
+    }
 }
 
 #[cfg(test)]
@@ -49,21 +63,21 @@ mod tests {
     #[test]
     fn omitted_dates_default_to_seven_days_from_today() {
         let dates = BookingDates::resolve(None, None, date(2)).unwrap();
-        assert_eq!((dates.from, dates.to), (date(2), date(8)));
-        assert_eq!(dates.period.starts_at(), calendar_day::start(date(2)));
-        assert_eq!(dates.period.ends_at(), calendar_day::end(date(8)));
+        assert_eq!((dates.from(), dates.to()), (date(2), date(8)));
+        assert_eq!(dates.period().starts_at(), calendar_day::start(date(2)));
+        assert_eq!(dates.period().ends_at(), calendar_day::end(date(8)));
     }
 
     #[test]
     fn omitted_to_is_the_seventh_day_from_from() {
         let dates = BookingDates::resolve(Some(date(10)), None, date(2)).unwrap();
-        assert_eq!((dates.from, dates.to), (date(10), date(16)));
+        assert_eq!((dates.from(), dates.to()), (date(10), date(16)));
     }
 
     #[test]
     fn omitted_from_is_today() {
         let dates = BookingDates::resolve(None, Some(date(3)), date(2)).unwrap();
-        assert_eq!((dates.from, dates.to), (date(2), date(3)));
+        assert_eq!((dates.from(), dates.to()), (date(2), date(3)));
     }
 
     #[test]

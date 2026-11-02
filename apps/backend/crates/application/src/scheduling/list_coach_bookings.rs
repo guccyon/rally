@@ -61,7 +61,8 @@ where
         };
         let mut items = match dates {
             None => self.bookings.bookings_of_coach(coach_id).await?,
-            Some(BookingDates { period, .. }) => {
+            Some(dates) => {
+                let period = dates.period();
                 let mut items = self
                     .bookings
                     .bookings_of_coach_starting_between(
@@ -93,8 +94,8 @@ where
                 .await?
         };
         Ok(CoachBookingList {
-            from: dates.map(|dates| dates.from),
-            to: dates.map(|dates| dates.to),
+            from: dates.map(|dates| dates.from()),
+            to: dates.map(|dates| dates.to()),
             items,
             students,
         })
