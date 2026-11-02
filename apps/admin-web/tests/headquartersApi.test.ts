@@ -410,6 +410,14 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listIncompleteCoachProfiles はスポーツを渡せばクエリ sport に載せる", async () => {
+    const { api, fetchMock } = setup(json(200, { coaches: [] }));
+    await api.listIncompleteCoachProfiles({ sport: "golf" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
+    expect(url.search).toBe("?sport=golf");
+  });
+
   test("listOverdueLiveLessonSessions は経過時間の下限をクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {
     const list = {
       older_than_hours: 24,
