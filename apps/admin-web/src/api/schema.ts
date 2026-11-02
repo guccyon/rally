@@ -1341,6 +1341,9 @@ export interface paths {
          *     - 対象: 終了していない（`status` が `in_progress`）セッションのうち、照会した時刻に開始 `started_at` から
          *       `older_than_hours` 時間以上たったもの（ちょうどその時間のものを含む）。グループレッスンのセッションも 1 件
          *     - `older_than_hours`: 開始からの時間（時間単位の整数）。省けば 3。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 任意の `coach_id` で、そのコーチのセッションだけに絞れる（終わっていない通話が残るコーチに連絡するとき、そのコーチの分だけを
+         *       見る）。`older_than_hours` と組み合わせられ、時間の規則と並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID で
+         *       なければ 422 `validation_failed`。コーチでない ID・ない ID・該当するセッションがないコーチは、404 にせず `sessions` が空の配列
          *     - 並べ方: 開始 `started_at` の古い順。同じ時刻は `session_id` の順
          *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
          *       開始の時刻 `started_at`・照会した時刻までの開始からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の
@@ -4407,6 +4410,11 @@ export interface operations {
             query?: {
                 /** @description 開始からこの時間（時間単位）以上たった通話中のセッションを返す。省けば 3 */
                 older_than_hours?: number;
+                /**
+                 * @description あればこのコーチのセッションだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
