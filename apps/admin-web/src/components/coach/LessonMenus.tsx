@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { errorMessage } from "@/api/errorMessage";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import { LessonMenuForm } from "./LessonMenuForm";

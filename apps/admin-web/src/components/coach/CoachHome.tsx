@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createApiClient, type Schemas } from "@/api/client";
 import { coachApi } from "@/api/coach";
-import { Section } from "@/components/Section";
+import { Section } from "@/components/ui/Section";
 
 import { CoachChat } from "./CoachChat";
 import { CoachNotifications, countUnreadNotifications } from "./CoachNotifications";
