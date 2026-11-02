@@ -331,7 +331,51 @@ const NOTIFICATIONS: Schemas["Notification"][] = [
 ];
 
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
-export type Fixture = { method: "GET" | "POST" | "PUT"; path: string; status?: number; body: unknown };
+/** `query` があれば、そのクエリの値がすべて一致するときだけ使う（同じパスの `query` のない応答より前に置く）。 */
+// ライブレッスンの記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
+// 既定の期間（今日までの 7 日）の応答。高橋 コーチで絞ったときは 0 件を返す（0 件の表示を撮る）。
+const LIVE_SESSION_RECORDS: Schemas["LiveLessonSessionRecord"][] = [
+  {
+    session_id: id("5555", 11),
+    booking_id: id("6666", 11),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID_2,
+    student_display_name: "佐藤 一郎",
+    started_at: at(-0.5),
+    ended_at: null,
+    duration_minutes: null,
+  },
+  {
+    session_id: id("5555", 12),
+    booking_id: id("6666", 12),
+    coach_id: COACH_ID,
+    coach_display_name: "鈴木 コーチ",
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 - 2),
+    ended_at: at(-24 - 1),
+    duration_minutes: 60,
+  },
+  {
+    session_id: id("5555", 13),
+    booking_id: id("6666", 13),
+    coach_id: id("2222", 3),
+    student_id: STUDENT_ID,
+    student_display_name: "山田 花子",
+    started_at: at(-24 * 4 - 3),
+    ended_at: at(-24 * 4 - 3 + 0.75),
+    duration_minutes: 45,
+  },
+];
+
+export type Fixture = {
+  method: "GET" | "POST" | "PUT";
+  path: string;
+  query?: Record<string, string>;
+  status?: number;
+  body: unknown;
+};
 
 export const FIXTURES: Fixture[] = [
   {
@@ -406,6 +450,21 @@ export const FIXTURES: Fixture[] = [
     method: "GET",
     path: "/lesson-reviews/low",
     body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions",
+    query: { coach_id: COACH_ID_2 },
+    body: { from: "2026-10-20", to: "2026-10-26", sessions: [] } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions",
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: LIVE_SESSION_RECORDS,
+    } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
     method: "GET",
