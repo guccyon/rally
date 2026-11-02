@@ -11,31 +11,54 @@ import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";
 
 type State =
   | { kind: "loading" }
-  | { kind: "loaded"; list: Schemas["CancelledBookingList"] }
+  | { kind: "loaded"; list: Schemas["CancelledBookingList"]; coachId: string }
   | { kind: "failed"; message: string };
+
+type CoachesState =
+  | { kind: "loading" }
+  | { kind: "loaded"; coaches: Schemas["Coach"][] }
+  | { kind: "failed"; message: string };
+
+/** 期間が空なら API の既定（今日までの 7 日）に任せる。coachId が空ならすべてのコーチ。 */
+export type CancelledBookingFilter = { period: Period | null; coachId: string };
+type Filter = CancelledBookingFilter;
 
 const NO_NAME = "（名前を表示できません）";
 
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
-const VALIDATION_FAILED = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
+const VALIDATION_FAILED = `期間かコーチの指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチは一覧から選び直してください。`;
 
 /**
  * 本部の「キャンセルされた予約」。すべてのコーチの枠への予約のうちキャンセルされたものを、キャンセルした日付（日本時間）の
- * 期間で出す（listCancelledBookings）。開いたときは期間を付けずに読み、API の既定（今日までの 7 日）で実際に使った期間を
- * 入力欄に入れる。並び（キャンセルの新しい順）は契約の正本どおり API が済ませているので、返った順と値のまま出す。
+ * 期間と任意のコーチで出す（listCancelledBookings）。開いたときは期間を付けずに読み、API の既定（今日までの 7 日）で実際に
+ * 使った期間を入力欄に入れる。並び（キャンセルの新しい順）は契約の正本どおり API が済ませているので、返った順と値のまま出す。
+ * コーチの選択肢はコーチの一覧（listCoaches）の返った順（ライブレッスンの記録と同じ）。
+ * `initialCoachId`（URL のクエリ）のコーチで開き、「この条件で見る」で読み直したら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
-export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "listCancelledBookings"> }) {
-  // null なら API の既定の期間に任せる（開いたときの 1 回だけ）。
-  const [draft, setDraft] = useState<Period | null>(null);
+export function CancelledBookingList({
+  api,
+  initialCoachId = "",
+  onFilterChange,
+}: {
+  api: Pick<HeadquartersApi, "listCancelledBookings" | "listCoaches">;
+  initialCoachId?: string;
+  onFilterChange?: (filter: Filter) => void;
+}) {
+  // period が null なら API の既定の期間に任せる（開いたときの 1 回だけ）。
+  const [draft, setDraft] = useState<Filter>({ period: null, coachId: initialCoachId });
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   const [state, setState] = useState<State>({ kind: "loading" });
-  // 期間を続けて変えたときに、前の期間の遅れて返った結果で上書きしないための番号。
+  // 条件を続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
 
   const fetchList = useCallback(
-    async (period: Period | null): Promise<State> => {
-      const response = await api.listCancelledBookings(period ?? {});
-      if (response.ok) return { kind: "loaded", list: response.data };
+    async (filter: Filter): Promise<State> => {
+      const response = await api.listCancelledBookings({
+        ...(filter.period ?? {}),
+        ...(filter.coachId === "" ? {} : { coach_id: filter.coachId }),
+      });
+      if (response.ok) return { kind: "loaded", list: response.data, coachId: filter.coachId };
       return {
         kind: "failed",
         message: response.code === "validation_failed" ? VALIDATION_FAILED : response.message,
@@ -44,41 +67,59 @@ export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "list
     [api],
   );
 
-  // 開いたときの読み込み（API の既定の期間）。読めたら実際に使った期間を入力欄に入れる。
+  // 開いたときの読み込み（API の既定の期間と渡されたコーチ）。読めたら実際に使った期間を入力欄に入れる。
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchList(null).then((next) => {
+    void fetchList({ period: null, coachId: initialCoachId }).then((next) => {
       if (!active || request !== latestRequest.current) return;
       setState(next);
       if (next.kind === "loaded") {
         const used = { from: next.list.from, to: next.list.to };
-        setDraft((current) => current ?? used);
+        setDraft((current) => (current.period === null ? { ...current, period: used } : current));
       }
     });
     return () => {
       active = false;
     };
-  }, [fetchList]);
+  }, [fetchList, initialCoachId]);
+
+  // コーチの選択肢。読めなくても一覧は期間だけで引けるようにし、コーチの絞り込みだけを使えなくする。
+  useEffect(() => {
+    let active = true;
+    void api.listCoaches().then((response) => {
+      if (!active) return;
+      setCoaches(
+        response.ok
+          ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [api]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const period = draft ?? { from: "", to: "" };
+    const period = draft.period ?? { from: "", to: "" };
     const error = periodError(period);
     setDraftError(error);
     if (error !== null) return;
+    const applied = { ...draft, period };
+    onFilterChange?.(applied);
     const request = ++latestRequest.current;
     setState({ kind: "loading" });
-    const result = await fetchList(period);
+    const result = await fetchList(applied);
     if (request === latestRequest.current) setState(result);
   }
 
-  const period = draft ?? { from: "", to: "" };
+  const period = draft.period ?? { from: "", to: "" };
 
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        すべてのコーチの枠への予約のうちキャンセルされたものを、キャンセルした日付（日本時間）で絞って、キャンセルの新しい順に見られます。期間は{" "}
+        すべてのコーチの枠への予約のうちキャンセルされたものを、キャンセルした日付（日本時間）とコーチで絞って、キャンセルの新しい順に見られます。期間は{" "}
         {MAX_PERIOD_DAYS} 日まで選べます。
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
@@ -88,7 +129,7 @@ export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "list
             type="date"
             className="mt-1 block rounded-md border px-2 py-1"
             value={period.from}
-            onChange={(event) => setDraft({ ...period, from: event.target.value })}
+            onChange={(event) => setDraft({ ...draft, period: { ...period, from: event.target.value } })}
           />
         </label>
         <label className="block">
@@ -97,28 +138,57 @@ export function CancelledBookingList({ api }: { api: Pick<HeadquartersApi, "list
             type="date"
             className="mt-1 block rounded-md border px-2 py-1"
             value={period.to}
-            onChange={(event) => setDraft({ ...period, to: event.target.value })}
+            onChange={(event) => setDraft({ ...draft, period: { ...period, to: event.target.value } })}
           />
         </label>
+        <label className="block">
+          コーチ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={draft.coachId}
+            disabled={coaches.kind !== "loaded"}
+            onChange={(event) => setDraft({ ...draft, coachId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {coaches.kind === "loaded" &&
+              coaches.coaches.map((coach) => (
+                <option key={coach.coach_id} value={coach.coach_id}>
+                  {coach.display_name}
+                </option>
+              ))}
+          </select>
+        </label>
         <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
-          この期間で見る
+          この条件で見る
         </button>
       </form>
+      {coaches.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
+        />
+      )}
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
-      {state.kind === "loaded" && <LoadedBookings list={state.list} />}
+      {state.kind === "loaded" && <LoadedBookings list={state.list} emptyMessage={emptyMessageOf(state.coachId)} />}
     </div>
   );
 }
 
-function LoadedBookings({ list }: { list: Schemas["CancelledBookingList"] }) {
+/** 0 件のときの文言。コーチで絞っていれば、そのコーチの枠のことだと言う。 */
+function emptyMessageOf(coachId: string): string {
+  return coachId === ""
+    ? "この期間にキャンセルされた予約はありません"
+    : "この期間にこのコーチの枠でキャンセルされた予約はありません";
+}
+
+function LoadedBookings({ list, emptyMessage }: { list: Schemas["CancelledBookingList"]; emptyMessage: string }) {
   return (
     <div className="space-y-2">
       <p className="text-sm">
         {formatDay(list.from)} 〜 {formatDay(list.to)}・{list.bookings.length} 件
       </p>
-      {list.bookings.length === 0 && <p className="text-sm">この期間にキャンセルされた予約はありません</p>}
+      {list.bookings.length === 0 && <p className="text-sm">{emptyMessage}</p>}
       {list.bookings.length > 0 && (
         <table aria-label="キャンセルされた予約の一覧" className="w-full text-left text-sm">
           <thead>
