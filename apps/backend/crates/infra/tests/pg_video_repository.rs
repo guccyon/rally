@@ -413,18 +413,52 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
         .execute(PendingVideoReviewFilter {
             sport: None,
             min_elapsed_hours: 48,
+            coach_id: None,
         })
         .await
         .unwrap();
     assert_eq!(
         list.videos,
-        [golf.clone(), tennis],
+        [golf.clone(), tennis.clone()],
         "48 時間ちょうど（tennis）は含む"
     );
     let list = list_pending
         .execute(PendingVideoReviewFilter {
             sport: Some(Sport::Golf),
             min_elapsed_hours: 49,
+            coach_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&golf));
+    // コーチで絞ると、そのコーチ宛ての返却待ちだけ（返却した動画は出ない）。スポーツ・経過時間の下限と組み合わせられる
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            coach_id: Some(coach),
+            ..PendingVideoReviewFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&tennis));
+    assert_eq!(
+        list.coaches.keys().copied().collect::<Vec<_>>(),
+        [coach],
+        "表示名は絞った後の動画のコーチだけ引く"
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 0,
+            coach_id: Some(coach),
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 49,
+            coach_id: Some(other_coach),
         })
         .await
         .unwrap();
