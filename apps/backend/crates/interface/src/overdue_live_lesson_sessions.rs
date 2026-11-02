@@ -1,6 +1,7 @@
 //! `/live-lesson-sessions/overdue`。admin-web の `GET /live-lesson-sessions/overdue`（`listOverdueLiveLessonSessions`。
 //! 本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧）。本部だけが呼べる。クエリの `older_than_hours` が
-//! なければ domain の [`OverdueSessionCriteria`] の既定の時間（整数でない・範囲の外なら 422）。同じ接頭辞の
+//! なければ domain の [`OverdueSessionCriteria`] の既定の時間（整数でない・範囲の外なら 422）。任意の `coach_id` で
+//! そのコーチのセッションだけに絞れる（UUID でなければ 422）。同じ接頭辞の
 //! `POST /live-lesson-sessions`（開始）・`POST /live-lesson-sessions/{session_id}/end`（終了）は
 //! [`crate::live_lesson_sessions`] で、予約の参加者だけ。
 
@@ -42,6 +43,7 @@ pub struct OverdueLiveLessonSessionsState<L, D, S, C> {
 #[derive(Deserialize)]
 pub struct ListOverdueLiveLessonSessionsParams {
     older_than_hours: Option<String>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `OverdueLiveLessonSessionList`。
@@ -68,6 +70,7 @@ pub struct OverdueLiveLessonSessionBody {
 
 /// `GET /live-lesson-sessions/overdue`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
 /// `older_than_hours` が整数でなければ 422、範囲の外も 422（範囲は domain の [`OverdueSessionCriteria::new`]）。
+/// `coach_id` が UUID でなければ 422（コーチでない ID・ない ID は空の一覧）。
 pub async fn list_overdue_live_lesson_sessions<L, D, S, C>(
     State(state): State<Arc<OverdueLiveLessonSessionsState<L, D, S, C>>>,
     params: Result<Query<ListOverdueLiveLessonSessionsParams>, QueryRejection>,
@@ -94,6 +97,15 @@ where
             OverdueSessionCriteria::new(hours)?
         }
     };
+    let coach_id = params
+        .coach_id
+        .as_deref()
+        .map(|id| {
+            account_id_uuid::parse(id)
+                .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+        })
+        .transpose()?;
+    let criteria = criteria.with_coach_id(coach_id);
     let list = state
         .list_overdue_live_lesson_sessions
         .execute(criteria)
