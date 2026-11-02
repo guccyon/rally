@@ -31,7 +31,8 @@ pub struct CoachOverviewsState<R, A, V, M, W, C, N> {
     pub get_coach_overview: GetCoachOverview<R, A, V, M, W, C, N>,
 }
 
-/// admin-web の `CoachOverview`。評価の平均は評価が 0 件なら null。金額は載せない。
+/// admin-web の `CoachOverview`。評価の平均は評価が 0 件なら null。直近の低い評価の件数と、そのうち本部が未対応の件数を
+/// 添える。金額は載せない。
 #[derive(Serialize)]
 pub struct CoachOverviewBody {
     coach_id: String,
@@ -39,6 +40,8 @@ pub struct CoachOverviewBody {
     acceptance_status: &'static str,
     review_count: u32,
     average_rating: Option<f64>,
+    low_rated_review_count: u32,
+    unhandled_low_rated_review_count: u32,
     current_month: MonthlyLessonStatsBody,
     previous_month: MonthlyLessonStatsBody,
     published_lesson_menu_count: u32,
@@ -75,6 +78,8 @@ where
         acceptance_status: coach_acceptance_status_to_contract(overview.acceptance),
         review_count: overview.reviews.review_count(),
         average_rating: overview.reviews.average_rating(),
+        low_rated_review_count: overview.low_rated_reviews.low_rated_count(),
+        unhandled_low_rated_review_count: overview.low_rated_reviews.unhandled_count(),
         current_month: monthly_lesson_stats_body(&overview.lesson_stats.current_month),
         previous_month: monthly_lesson_stats_body(&overview.lesson_stats.previous_month),
         published_lesson_menu_count: overview.published_lesson_menu_count,

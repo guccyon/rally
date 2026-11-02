@@ -1,0 +1,198 @@
+# 部品。オンボーディングでは基本の部品だけ。値は tokens.yaml の名前で書く
+# 基準の書き方: level（must | should | may）・statement・why・check（deterministic | design_inspector | human）
+# 状態の共通: pressed は fast 120ms で色を変える / disabled は押せない理由を近くに文で出す / loading は二度押しを止める
+schema_version: "0.1"
+status: draft
+section: components
+lifecycle_default: trial   # オンボーディングの部品は試用から始める（governance）
+
+components:
+  - id: button
+    ja: ボタン
+    lifecycle: trial
+    use: 画面の操作を 1 つ実行する（予約する・送る・保存する）
+    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢 → チップ（未定義。足りなければ提案する）
+    parts: [container, label, leading_icon（任意）, spinner]
+    variants:
+      primary:   {container: primary, label: on_primary, radius: pill, note: 1 画面に 1 つ}
+      secondary: {container: background, border: border_strong, label: primary, radius: pill}
+      on_dark:   {container: secondary, label: on_secondary, radius: pill, note: inverse_surface の面の中だけ}
+      danger:    {container: danger.fg, label: on_primary, radius: pill, note: 取り消せない操作の確認の中だけ}
+      text:      {container: なし, label: primary, note: 補助の操作（「予約をすべて見る」）}
+    size: {height_px: 48, padding_x_px: 24, label: "title 以下。16px・700"}
+    states:
+      default: 上の variants
+      pressed: primary は primary_pressed、secondary と text は primary_container の面
+      disabled: 面 surface・文字 text_muted・輪郭なし
+      loading: ラベルを残したまま spinner を前に出し、押せなくする
+      error: ボタンは変えず、notice で失敗を出す
+    behavior: 押したら結果が出るまで loading。二度押しで同じ操作を 2 回送らない
+    wording: 動詞で終える（「予約する」「動画を送る」）。「OK」「はい」を使わない
+    a11y: 文字のないボタンは読み上げのラベル。押せる範囲は 48×48px 以上
+    rules:
+      - level: should
+        statement: 主なボタン（primary）は 1 画面に 1 つまで
+        why: 次の一手が 2 つあると、生徒が迷って止まる
+        check: design_inspector
+      - level: should
+        statement: ボタンの文言は動詞で終える
+        why: 押すと何が起きるかが文言だけで分かる
+        check: deterministic
+    examples:
+      good: 「スロットを探して予約する」が primary、「予約をすべて見る」が text
+      bad: 「予約する」と「コーチを探す」がどちらも primary で並ぶ
+
+  - id: text_field
+    ja: 入力欄
+    lifecycle: trial
+    use: 文字を 1 行か数行入れる（表示名・チャットの本文・評価の一言・自己紹介）
+    not_for: 決まった選択肢 → 選択欄（select）かラジオ。オンとオフ → スイッチ
+    parts: [label, field, helper, counter（上限のある欄）, error_text]
+    variants: {single_line: 高さ 48px, multi_line: 3 行から伸びる}
+    style: {field: background, border: border_strong 1px, radius: md, label: small 700 text, helper: small text_muted}
+    states:
+      default: border_strong
+      focus: focus_ring 2px
+      disabled: 面 surface・文字 text_muted
+      error: 輪郭 danger.fg 2px と、下に error_text（danger.fg の文字とアイコン）
+    behavior: 検証は欄を離れたときと送るとき。打っている途中には誤りを出さない
+    wording: ラベルは名詞（「表示名」）。helper に上限（「200 文字まで」）
+    a11y: ラベルは field に結び付ける（placeholder だけにしない）。error_text は読み上げで欄と一緒に読む
+    rules:
+      - level: must
+        statement: 入力欄には見えるラベルを付ける（placeholder で代えない）
+        why: 打ち始めると placeholder が消え、何の欄か分からなくなる。読み上げでも欄の名前が要る
+        check: deterministic
+    examples:
+      good: ラベル「一言」・helper「200 文字まで」・counter「12 / 200」
+      bad: placeholder「一言を入力」だけ
+
+  - id: card
+    ja: カード
+    lifecycle: trial
+    use: 1 件のまとまり（予約・コーチ・添削）を面で囲む
+    not_for: 文 1 行だけ → list_row。画面の主役の数字 → score_panel
+    parts: [container, title, meta, status_tag（任意）, action（任意）]
+    style: {container: surface, radius: md, padding_px: 16, gap_px: 8, shadow: なし}
+    states: {pressed: 押せるカードは primary_container の面, disabled: 使わない}
+    behavior: カード全体を押せるときは中にボタンを置かない（押せる場所を 1 つにする）
+    a11y: 押せるカードは 1 つのボタンとして読み上げ、題・日時・状態を 1 つの文で読む
+    examples:
+      good: "題「10/28（水）12:00〜12:30」・meta「テニス・コーチ: 山田」・status_tag「確定済み」"
+      bad: カードの中にカードを重ねる
+
+  - id: list_row
+    ja: 一覧の行
+    lifecycle: trial
+    use: 同じ形のものを並べ、押すと詳細へ移る（お知らせ・スレッド・受けたレッスン・admin-web の一覧）
+    not_for: 1 件に操作が 2 つ以上 → card
+    parts: [leading（アイコンか顔写真。任意）, title, subtitle, trailing（しるし・chevron）]
+    style: {min_height_px: 56, padding_x_px: 16, divider: border, title: body 700, subtitle: small text_muted}
+    states: {pressed: primary_container, unread: 左に primary の 4px の線と、title の前に「未読」のしるし}
+    a11y: 未読は色と線だけでなく、読み上げで「未読」と読む
+    examples:
+      good: 「コーチから返事が届きました」・「10/27 18:04」・未読のしるし
+      bad: 未読を太字だけで示す
+
+  - id: badge
+    ja: しるし
+    lifecycle: trial
+    use: 未読の数・状態の小さな印
+    parts: [container, label]
+    variants:
+      count: {container: danger.fg, label: on_primary, radius: sm, min_size_px: 20}
+      dot: {container: danger.fg, size_px: 8}
+      on_dark: {container: secondary, label: on_secondary, radius: sm}
+    a11y: 入口のラベルに数を足す（「チャット、未読 3 件」）
+
+  - id: status_tag
+    ja: 状態のタグ
+    lifecycle: trial
+    use: 予約・動画添削・スロットの状態を出す（呼び名は glossary の states）
+    style: {container: "status.*.container", label: "status.*.on_container, caption 12px 700", radius: sm, icon: 16px}
+    rules:
+      - level: must
+        statement: 状態は色だけでなく、glossary の呼び名の文字を出す
+        why: 色の見分けが難しい生徒も、読み上げの利用者も状態が分かる
+        check: design_inspector
+    examples:
+      good: 「確定待ち」（warning の面と時計のアイコン）
+      bad: 黄色の点だけ
+
+  - id: score_panel
+    ja: スコアの面
+    lifecycle: trial
+    use: 画面の主役の数字を 1 つ見せる（今月のビデオ通話の残り・次のレッスンの日時）
+    not_for: 一覧・規定の説明・admin-web
+    parts: [container, eyebrow（small）, number（display）, unit（title）, note（small）, decoration（斜めの帯。任意）, action（on_dark のボタン。任意）]
+    style: {container: inverse_surface, text: on_inverse_surface, eyebrow: on_inverse_surface_muted, accent: secondary の 4px の下線, radius: md, padding_px: 24}
+    rules:
+      - level: should
+        statement: score_panel は 1 画面に 1 つまで
+        why: 熱い場所が 2 つあると、どちらが大事か分からず疲れる
+        check: deterministic
+      - level: should
+        statement: 数字の条件（月 2 回のうち、など）は note に本文と同じ言葉で書く
+        why: 大きな数字だけだと、何の残りかを読み違える
+        check: design_inspector
+    a11y: 数字と単位をまとめて 1 つの文で読む（「今月のビデオ通話、残り 2 回、月 2 回のうち」）
+    examples:
+      good: "eyebrow「今月のビデオ通話」・number「2」・unit「回」・note「月 2 回のうち（プラン: スタンダード）」"
+      bad: 「2」だけを大きく、何の数かがない
+
+  - id: notice
+    ja: 知らせ
+    lifecycle: trial
+    use: 操作の結果と、欄が読めなかったことを伝える
+    variants:
+      inline: {container: "status.*.container", text: "status.*.on_container", icon: "status.*.fg", radius: md, note: 欄の中か画面の上。消えない}
+      toast: {container: inverse_surface, text: on_inverse_surface, radius: md, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上}
+    states: [info, success, warning, danger]
+    behavior: 失敗は inline で、直すか閉じるまで残す。toast は失敗に使わない
+    wording: 失敗は「何が起きたか」と「どうすればよいか」の 2 文（content.yaml）
+    a11y: 成功は role=status（Flutter は liveRegion）、失敗は role=alert
+    rules:
+      - level: should
+        statement: 失敗の知らせは自動で消さない
+        why: 読み終わる前に消えると、生徒は何が起きたか分からず同じ操作をくり返す
+        check: design_inspector
+
+  - id: empty_state
+    ja: 空の表示
+    lifecycle: trial
+    use: 一覧や欄に 0 件のとき
+    parts: [message（body）, action（secondary か text のボタン。任意）]
+    style: {container: surface, radius: md, padding_px: 24, text: text_muted}
+    wording: 背中を押す一言と次の操作（「まだこれからの予約はありません。コーチを探して始めましょう」）
+    examples:
+      good: 文と「コーチを探す」のボタン
+      bad: 空白のまま、または「データがありません」
+
+  - id: loading
+    ja: 読み込み中
+    lifecycle: trial
+    use: API を読んでいるあいだ
+    variants:
+      bar: {color: primary, track: primary_container, height_px: 4, note: 画面の上。画面全体の読み込み}
+      section_text: {text: "「〜を読み込んでいます…」small text_muted", note: 欄ごとの読み込み}
+      spinner: {size_px: 20, note: ボタンの中だけ}
+    behavior: 300ms より速く終わるときは出さない。読み込み中も読めた欄はそのまま出す
+    a11y: 読み込みの始まりと終わりを読み上げに伝える
+
+  - id: confirm_dialog
+    ja: 確認のダイアログ
+    lifecycle: trial
+    use: 送る前の確認と、取り消せない操作（予約のキャンセル・受付の停止・メニューの非公開）
+    not_for: 取り消せる操作 → 確認なしで実行し、notice で結果を出す
+    parts: [title（疑問の文）, body（対象と結果と条件）, cancel_action（text）, confirm_action（primary か danger）]
+    style: {container: background, radius: md, padding_px: 24, scrim: scrim, max_width_px: 400}
+    behavior: 開いたらフォーカスを題へ。cancel_action を左、confirm_action を右。外を押す・戻るは cancel と同じ
+    wording: 題「予約をキャンセルしますか？」、confirm は動詞（「キャンセルする」）、cancel は「やめる」
+    rules:
+      - level: must
+        statement: 回数を使う・取り消せない操作は、確認のダイアログの本文に対象と結果を省かずに書く
+        why: 生徒が今月のビデオ通話の枠を知らずに失うのを防ぐ
+        check: design_inspector
+    examples:
+      good: 本文「10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。」
+      bad: 題「よろしいですか？」・ボタン「OK」

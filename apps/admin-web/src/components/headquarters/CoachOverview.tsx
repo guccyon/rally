@@ -12,6 +12,7 @@ import { LessonStatsTable } from "@/components/coach/LessonStats";
 import { CoachAcceptanceBadge } from "./CoachAcceptanceBadge";
 import { coachReviewSummaryPath } from "./CoachReviewSummaryHome";
 import { lessonMenuCatalogPath } from "./LessonMenuCatalogHome";
+import { LOW_RATED_REVIEWS_PATH } from "./LowRatedReviewsHome";
 
 type State =
   | { kind: "loading" }
@@ -21,7 +22,8 @@ type State =
 
 /**
  * 本部の「コーチの様子」。開いたときにコーチ 1 人の様子（getCoachOverview）を一度だけ読み、受付の状態・評価の件数と平均
- * （「コーチの評価」へのリンク）・今月と先月の実績・公開中のレッスンメニューの数（そのコーチで絞った「レッスンメニュー」へのリンク。
+ * （「コーチの評価」へのリンク）・直近 30 日の低い評価の件数と未対応の件数（「低い評価」へのリンク。0 件なら「ありません」）・
+ * 今月と先月の実績・公開中のレッスンメニューの数（そのコーチで絞った「レッスンメニュー」へのリンク。
  * 公開中も非公開もまとめて出る）を出す。数え方は契約が正本で、画面は返った値を
  * 出すだけ。`coachId` がない・404 `not_found` なら「見つかりません」、それ以外の失敗はその文言を出す。受付は変えない。
  */
@@ -50,7 +52,7 @@ export function CoachOverview({
     };
   }, [api, coachId]);
 
-  if (state.kind === "loading") return <p className="text-sm text-gray-500">読み込み中…</p>;
+  if (state.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (state.kind === "failed") return <ResultMessage result={{ ok: false, message: state.message }} />;
   if (state.kind === "not_found") {
     return <p className="text-sm">このコーチは見つかりません。コーチの一覧から選び直してください。</p>;
@@ -70,14 +72,23 @@ export function CoachOverview({
         <dt>点の平均（1〜5）</dt>
         <dd>
           {formatAverageRating(overview.average_rating)}
-          <Link href={coachReviewSummaryPath(overview.coach_id)} className="ml-3 text-blue-600 underline">
+          <Link href={coachReviewSummaryPath(overview.coach_id)} className="ml-3 text-primary underline">
             コーチの評価を見る
+          </Link>
+        </dd>
+        <dt>直近 30 日の低い評価</dt>
+        <dd>
+          {overview.low_rated_review_count === 0
+            ? "ありません"
+            : `${overview.low_rated_review_count} 件（未対応 ${overview.unhandled_low_rated_review_count} 件）`}
+          <Link href={LOW_RATED_REVIEWS_PATH} className="ml-3 text-primary underline">
+            低い評価を見る
           </Link>
         </dd>
         <dt>公開中のレッスンメニュー</dt>
         <dd>
           {overview.published_lesson_menu_count} 件
-          <Link href={lessonMenuCatalogPath(overview.coach_id)} className="ml-3 text-blue-600 underline">
+          <Link href={lessonMenuCatalogPath(overview.coach_id)} className="ml-3 text-primary underline">
             このコーチのレッスンメニューを見る
           </Link>
         </dd>

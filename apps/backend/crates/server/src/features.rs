@@ -18,7 +18,10 @@ mod entitlements;
 mod favorite_coaches;
 mod headquarters_booking_details;
 mod headquarters_bookings;
+mod headquarters_cancelled_bookings;
+mod headquarters_live_lesson_sessions;
 mod healthz;
+mod incomplete_coach_profiles;
 mod lesson_menu_publications;
 mod lesson_menus;
 mod lesson_stats;
@@ -36,12 +39,14 @@ mod notification_settings;
 mod notifications;
 mod overdue_live_lesson_sessions;
 mod pending_video_reviews;
+mod returned_video_reviews;
 mod review_replies;
 mod reviews;
 mod slot_supply;
 mod slot_withdrawals;
 mod slots;
 mod student_activity;
+mod student_announcements;
 mod students;
 mod subscription_plans;
 mod subscriptions;
@@ -69,7 +74,10 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(favorite_coaches::router(ports))
         .merge(headquarters_booking_details::router(ports))
         .merge(headquarters_bookings::router(ports))
+        .merge(headquarters_cancelled_bookings::router(ports))
+        .merge(headquarters_live_lesson_sessions::router(ports))
         .merge(healthz::router(ports))
+        .merge(incomplete_coach_profiles::router(ports))
         .merge(lesson_menu_publications::router(ports))
         .merge(lesson_menus::router(ports))
         .merge(lesson_stats::router(ports))
@@ -87,12 +95,14 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(notifications::router(ports))
         .merge(overdue_live_lesson_sessions::router(ports))
         .merge(pending_video_reviews::router(ports))
+        .merge(returned_video_reviews::router(ports))
         .merge(review_replies::router(ports))
         .merge(reviews::router(ports))
         .merge(slot_supply::router(ports))
         .merge(slot_withdrawals::router(ports))
         .merge(slots::router(ports))
         .merge(student_activity::router(ports))
+        .merge(student_announcements::router(ports))
         .merge(students::router(ports))
         .merge(subscription_plans::router(ports))
         .merge(subscriptions::router(ports))
