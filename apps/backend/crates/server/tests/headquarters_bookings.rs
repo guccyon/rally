@@ -1,8 +1,8 @@
 //! 本部が予約の一覧を日付で見る（admin-web の `listBookings`）ことを、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の予約を日本時間の日付で絞って
 //! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でそのコーチの予約だけに絞れること、
-//! `status` で Postgres に保存した状態（確定待ち・確定済み・キャンセル済み）の予約だけに絞れること、本部以外は 403 になることを
-//! 確かめる。
+//! `status` で Postgres に保存した状態（確定待ち・確定済み・キャンセル済み）の予約だけに絞れること、`student_id` でその生徒の
+//! 予約だけに絞れること、本部以外は 403 になることを確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_bookings.rs`、期間に開始する予約の読み取りは
 //! infra の `tests/pg_booking_repository.rs`。
 //!
@@ -89,8 +89,9 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
     let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
-    let (_, ito_token) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (ito, ito_token) = register(&pool, "ito@example.com", Role::Coach).await;
     let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+    let (jiro, jiro_token) = register(&pool, "jiro@example.com", Role::Student).await;
     let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
     let router = server::router_with_postgres(
         pool,
@@ -310,6 +311,78 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
         assert_eq!(statuses_of(&body), expected, "{query}: {body}");
     }
     let (status, body) = send(&router, get("/bookings?trial=yes", &hq_token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 生徒で絞る。別の生徒（じろう）がいとうの枠（10 月 28 日）を体験予約する。期間・コーチ・状態・体験予約かと組み合わせられ、
+    // 生徒でない ID・ない ID は空の一覧
+    let (status, slot) = send(
+        &router,
+        post_json(
+            "/slots",
+            &ito_token,
+            json!({ "sport": "tennis", "starts_at": "2026-10-28T03:00:00Z", "ends_at": "2026-10-28T04:00:00Z" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, jiro_booking) = send(
+        &router,
+        post_json(
+            "/bookings",
+            &jiro_token,
+            json!({ "slot_id": slot["slot_id"], "is_trial": true }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{jiro_booking}");
+    let jiro_row = (jiro_booking["booking_id"].clone(), json!("pending"));
+    let taro_id = account_id_uuid::format(taro);
+    let jiro_id = account_id_uuid::format(jiro);
+    let ito_id = account_id_uuid::format(ito);
+    for (query, expected) in [
+        (
+            format!("&student_id={taro_id}"),
+            vec![
+                (id(0), json!("confirmed")),
+                (id(1), json!("cancelled")),
+                (id(2), json!("pending")),
+            ],
+        ),
+        (format!("&student_id={jiro_id}"), vec![jiro_row.clone()]),
+        (
+            format!("&student_id={taro_id}&coach_id={ito_id}"),
+            vec![(id(1), json!("cancelled"))],
+        ),
+        (
+            format!("&student_id={jiro_id}&status=pending&trial=true"),
+            vec![jiro_row.clone()],
+        ),
+        (format!("&student_id={jiro_id}&status=confirmed"), vec![]),
+        (
+            format!("&student_id={}", account_id_uuid::format(tanaka)),
+            vec![],
+        ),
+        (
+            format!(
+                "&student_id={}",
+                account_id_uuid::format(AccountId::from_u128(999))
+            ),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(
+                &format!("/bookings?from=2026-10-26&to=2026-11-02{query}"),
+                &hq_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(statuses_of(&body), expected, "{query}: {body}");
+    }
+    let (status, body) = send(&router, get("/bookings?student_id=taro", &hq_token)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
 

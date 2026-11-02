@@ -109,6 +109,12 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
   {
+    id: "hq-incomplete-coach-profiles",
+    title: "本部: 自己紹介の足りないコーチ",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",
@@ -126,5 +132,29 @@ export const SCREENS: Screen[] = [
       await page.getByLabel("本文").fill("11月から、コートの予約はアプリの「予約」から行えます。\n詳しくはお知らせの一覧をご覧ください。");
       await page.getByRole("button", { name: "内容を確かめる" }).click();
     },
+  },
+  {
+    id: "hq-announcement-drafts",
+    title: "本部: お知らせの下書き",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("題").fill("年末年始の営業について");
+      await page.getByLabel("本文").fill("12月29日から1月3日は、チャットの返信が遅れます。");
+      await page.getByRole("button", { name: "下書きに保存" }).click();
+      await page.getByRole("list", { name: "下書きの一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-pending-video-reviews",
+    title: "本部: 返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+  },
+  {
+    id: "hq-returned-video-reviews",
+    title: "本部: 返した動画添削",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews",
   },
 ];

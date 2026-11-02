@@ -8,13 +8,16 @@ use std::{collections::BTreeSet, time::SystemTime};
 use application::scheduling::{SlotCursor, slot_id_uuid};
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
-    catalog::Sport,
+    catalog::{LessonMenuPublicationAction, Sport},
     entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
     identity::Role,
     lesson::LessonType,
     live_lesson::SessionStatus,
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
-    scheduling::{BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus},
+    profile::{CoachProfileField, DisplayNameQuery},
+    scheduling::{
+        BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus,
+    },
 };
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -106,6 +109,23 @@ pub(crate) fn coach_acceptance_status_from_contract(
         .ok_or_else(|| ApiError::validation_failed(format!("未知の受付の状態: {value}")))
 }
 
+/// admin-web の `LessonMenuPublicationAction` の値（本部がレッスンメニューにした操作）。理由は値に含めない。
+pub(crate) const fn lesson_menu_publication_action_to_contract(
+    action: &LessonMenuPublicationAction,
+) -> &'static str {
+    match action {
+        LessonMenuPublicationAction::Unpublished { .. } => "unpublished",
+        LessonMenuPublicationAction::Republished => "republished",
+    }
+}
+
+/// admin-web の `CoachProfileField` の値（`listIncompleteCoachProfiles` の `missing_fields`）。
+pub(crate) const fn coach_profile_field_to_contract(field: CoachProfileField) -> &'static str {
+    match field {
+        CoachProfileField::Bio => "bio",
+    }
+}
+
 /// admin-web の `SlotSupplyStatus` の値。
 pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> &'static str {
     match status {
@@ -129,6 +149,15 @@ pub(crate) const fn booking_status_to_contract(status: BookingStatus) -> &'stati
         BookingStatus::Pending => "pending",
         BookingStatus::Confirmed => "confirmed",
         BookingStatus::Cancelled => "cancelled",
+    }
+}
+
+/// admin-web の `BookingCanceller` の値（`CancelledBooking.cancelled_by`）。
+pub(crate) const fn booking_canceller_to_contract(canceller: BookingCanceller) -> &'static str {
+    match canceller {
+        BookingCanceller::Student => "student",
+        BookingCanceller::Coach => "coach",
+        BookingCanceller::Headquarters => "headquarters",
     }
 }
 
@@ -303,6 +332,14 @@ pub(crate) fn date_to_contract(date: Date) -> String {
     )
 }
 
+/// admin-web の一覧の `q`（表示名の検索語。`listStudents`・`listCoaches`）。付けない・空・空白だけなら `None`
+/// （絞り込まない）。一致の規則と長さの上限は domain の [`DisplayNameQuery`] で、長すぎれば 422 `validation_failed`。
+pub(crate) fn display_name_query_from_contract(
+    value: Option<&str>,
+) -> Result<Option<DisplayNameQuery>, ApiError> {
+    Ok(value.map(DisplayNameQuery::new).transpose()?.flatten())
+}
+
 /// `format: date`（RFC 3339 の full-date。`YYYY-MM-DD`）を読む。`field` は 422 の文言に使う項目名。
 pub(crate) fn date_from_contract(field: &str, value: &str) -> Result<Date, ApiError> {
     let invalid = || ApiError::validation_failed(format!("{field} は YYYY-MM-DD の日付でない"));
@@ -392,6 +429,19 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn booking_cancellers_are_student_coach_and_headquarters() {
+        assert_eq!(
+            [
+                BookingCanceller::Student,
+                BookingCanceller::Coach,
+                BookingCanceller::Headquarters,
+            ]
+            .map(booking_canceller_to_contract),
+            ["student", "coach", "headquarters"]
+        );
     }
 
     #[test]
