@@ -525,6 +525,13 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["CoachOverview"],
   },
   {
+    // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { sport: "swimming" },
+    body: { coaches: [] } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
     method: "GET",
     path: "/coaches/incomplete-profiles",
     body: {
