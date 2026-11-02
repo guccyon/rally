@@ -21,7 +21,8 @@ const CHANGE_LABELS: Record<Schemas["CoachAcceptanceStatus"], string> = {
 /**
  * 本部の「コーチの様子」の「受付の記録」。開いたときにコーチ 1 人の受付を止めた・再開した記録
  * （listCoachAcceptanceChanges）を一度だけ読み、返った順（契約どおり新しい順）のまま、止めた・再開した・日時・
- * 操作した本部のアカウント（契約にあるのは ID だけ）を出す。0 件なら「受付を止めたことはありません」、
+ * 操作した本部のアカウント（契約にあるのは ID だけ）・止めたときに書いた理由を出す。理由がない記録（再開した記録、
+ * 理由を書かずに止めた記録、理由を残し始める前の記録）は「—」。0 件なら「受付を止めたことはありません」、
  * 失敗したときはその文言を出す。受付は変えない。
  */
 export function CoachAcceptanceHistory({
@@ -63,6 +64,7 @@ export function CoachAcceptanceHistory({
           <th className="py-1">操作</th>
           <th className="py-1">日時</th>
           <th className="py-1">操作した本部のアカウント</th>
+          <th className="py-1">理由</th>
         </tr>
       </thead>
       <tbody>
@@ -72,6 +74,7 @@ export function CoachAcceptanceHistory({
             <td className="py-1">{CHANGE_LABELS[change.acceptance_status]}</td>
             <td className="py-1">{formatDateTime(change.changed_at)}</td>
             <td className="py-1 font-mono text-xs">{change.changed_by}</td>
+            <td className="py-1">{change.reason || "—"}</td>
           </tr>
         ))}
       </tbody>
