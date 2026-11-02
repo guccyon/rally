@@ -6,7 +6,7 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { CancelledBookingList } from "@/components/headquarters/CancelledBookingList";
-import { CancelledBookingsHome } from "@/components/headquarters/CancelledBookingsHome";
+import { CancelledBookingsHome, cancelledBookingsPath } from "@/components/headquarters/CancelledBookingsHome";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
@@ -22,6 +22,14 @@ beforeEach(() => {
   replace.mockReset();
   headquartersApiMock.mockReset();
 });
+
+const SUZUKI = "22222222-2222-4222-8222-000000000001";
+const TAKAHASHI = "22222222-2222-4222-8222-000000000002";
+
+const COACHES: Schemas["Coach"][] = [
+  { coach_id: SUZUKI, display_name: "鈴木 コーチ", acceptance_status: "accepting", recent_lesson_count: 3 },
+  { coach_id: TAKAHASHI, display_name: "高橋 コーチ", acceptance_status: "suspended", recent_lesson_count: 0 },
+];
 
 // API が返す並び（キャンセルした時刻の新しい順）。画面はこの順と値のまま出す。
 const BOOKINGS: Schemas["CancelledBooking"][] = [
@@ -54,6 +62,10 @@ function listOf(bookings: Schemas["CancelledBooking"][], from = "2026-10-20", to
   }));
 }
 
+function coachesOf(coaches: Schemas["Coach"][] = COACHES) {
+  return vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches } }));
+}
+
 function cellsOf(row: HTMLElement): (string | null)[] {
   return within(row).getAllByRole("cell").map((cell) => cell.textContent);
 }
@@ -68,7 +80,7 @@ async function changePeriod(user: ReturnType<typeof userEvent.setup>, from: stri
 describe("本部のキャンセルされた予約", () => {
   test("読み込み中を出し、開いたときに期間を付けずに読み、各行にキャンセルした日時・枠の開始・コーチ・生徒・キャンセルした人を API の順と値のまま出す", async () => {
     const listCancelledBookings = listOf(BOOKINGS);
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: "キャンセルされた予約の一覧" });
@@ -95,53 +107,53 @@ describe("本部のキャンセルされた予約", () => {
   });
 
   test("API の既定で実際に使った期間を件数とともに出し、期間の欄にも入れる", async () => {
-    render(<CancelledBookingList api={{ listCancelledBookings: listOf(BOOKINGS) }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings: listOf(BOOKINGS), listCoaches: coachesOf() }} />);
 
     expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・2 件")).toBeInTheDocument();
     expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
     expect(screen.getByLabelText("終了日")).toHaveValue("2026-10-26");
   });
 
-  test("期間を選んで「この期間で見る」で API の from / to に渡して読み直す", async () => {
+  test("期間を選んで「この条件で見る」で API の from / to に渡して読み直す", async () => {
     const listCancelledBookings = listOf(BOOKINGS);
     const user = userEvent.setup();
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-10-01", "2026-10-31");
     expect(listCancelledBookings).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     expect(listCancelledBookings).toHaveBeenLastCalledWith({ from: "2026-10-01", to: "2026-10-31" });
   });
 
   test("終了日が開始日より前・31 日を超える期間は送らずに理由を出す", async () => {
     const listCancelledBookings = listOf(BOOKINGS);
     const user = userEvent.setup();
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-10-20", "2026-10-19");
-    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "終了日は開始日と同じか、それより後の日付にしてください。",
     );
 
     await changePeriod(user, "2026-09-01", "2026-10-02");
-    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     expect(screen.getByRole("alert")).toHaveTextContent("期間は 31 日までにしてください。");
     expect(listCancelledBookings).toHaveBeenCalledTimes(1);
   });
 
-  test("API の 422 は、期間のどこを直すかを添えた理由を出し、一覧は出さない", async () => {
+  test("API の 422 は、期間とコーチのどこを直すかを添えた理由を出し、一覧は出さない", async () => {
     const listCancelledBookings = vi.fn<HeadquartersApi["listCancelledBookings"]>(async () => ({
       ok: false,
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。",
+      "期間かコーチの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -157,13 +169,13 @@ describe("本部のキャンセルされた予約", () => {
         data: { from: "2026-10-25", to: "2026-10-26", bookings: [BOOKINGS[0]!] },
       });
     const user = userEvent.setup();
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-10-01", "2026-10-10");
-    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     await changePeriod(user, "2026-10-25", "2026-10-26");
-    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
     resolveSlow({ ok: true, data: { from: "2026-10-01", to: "2026-10-10", bookings: [BOOKINGS[1]!] } });
 
@@ -171,8 +183,83 @@ describe("本部のキャンセルされた予約", () => {
     expect(screen.getByRole("row", { name: /佐藤 太郎/ })).toBeInTheDocument();
   });
 
+  test("コーチの選択肢はコーチの一覧の順で、期間とコーチを選んで「この条件で見る」で API の from / to / coach_id に渡して読み直す", async () => {
+    const listCancelledBookings = listOf(BOOKINGS);
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CancelledBookingList
+        api={{ listCancelledBookings, listCoaches: coachesOf() }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    await screen.findByRole("table");
+
+    const select = screen.getByRole("combobox", { name: "コーチ" });
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "鈴木 コーチ",
+      "高橋 コーチ",
+    ]);
+    await user.selectOptions(select, "高橋 コーチ");
+    await changePeriod(user, "2026-10-01", "2026-10-31");
+    // 選んだだけでは読み直さない。
+    expect(listCancelledBookings).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listCancelledBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      coach_id: TAKAHASHI,
+    });
+    expect(onFilterChange).toHaveBeenCalledWith({
+      period: { from: "2026-10-01", to: "2026-10-31" },
+      coachId: TAKAHASHI,
+    });
+
+    await user.selectOptions(select, "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listCancelledBookings).toHaveBeenLastCalledWith({ from: "2026-10-01", to: "2026-10-31" });
+  });
+
+  test("渡されたコーチ（URL のクエリ）で開き、期間は付けずに読んでコーチの欄にも入れる", async () => {
+    const listCancelledBookings = listOf([BOOKINGS[0]!]);
+    render(
+      <CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} initialCoachId={SUZUKI} />,
+    );
+
+    await screen.findByRole("table");
+    expect(listCancelledBookings).toHaveBeenCalledWith({ coach_id: SUZUKI });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue(SUZUKI));
+    expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
+  });
+
+  test("コーチで絞って 0 件なら「この期間にこのコーチの枠でキャンセルされた予約はありません」と出す", async () => {
+    render(
+      <CancelledBookingList
+        api={{ listCancelledBookings: listOf([]), listCoaches: coachesOf() }}
+        initialCoachId={TAKAHASHI}
+      />,
+    );
+
+    expect(await screen.findByText("この期間にこのコーチの枠でキャンセルされた予約はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("コーチの一覧が読めなくても期間だけで一覧を出し、コーチの絞り込みだけを使えなくする", async () => {
+    const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(<CancelledBookingList api={{ listCancelledBookings: listOf(BOOKINGS), listCoaches }} />);
+
+    expect(await screen.findByRole("table", { name: "キャンセルされた予約の一覧" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("コーチの一覧を読めませんでした。サーバーに接続できません。");
+    expect(screen.getByRole("combobox", { name: "コーチ" })).toBeDisabled();
+  });
+
   test("0 件なら「この期間にキャンセルされた予約はありません」と出し、表は出さない", async () => {
-    render(<CancelledBookingList api={{ listCancelledBookings: listOf([]) }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings: listOf([]), listCoaches: coachesOf() }} />);
 
     expect(await screen.findByText("この期間にキャンセルされた予約はありません")).toBeInTheDocument();
     expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・0 件")).toBeInTheDocument();
@@ -185,12 +272,21 @@ describe("本部のキャンセルされた予約", () => {
       code: "forbidden",
       message: "権限がないためアクセスできません。",
     }));
-    render(<CancelledBookingList api={{ listCancelledBookings }} />);
+    render(<CancelledBookingList api={{ listCancelledBookings, listCoaches: coachesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText("この期間にキャンセルされた予約はありません")).not.toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+  });
+});
+
+describe("絞り込みの URL", () => {
+  test("コーチを契約のクエリの名前で URL に残し、「すべて」のコーチと期間は出さない", () => {
+    expect(cancelledBookingsPath({ coachId: "" })).toBe("/headquarters/cancelled-bookings");
+    expect(cancelledBookingsPath({ coachId: TAKAHASHI })).toBe(
+      `/headquarters/cancelled-bookings?coach_id=${TAKAHASHI}`,
+    );
   });
 });
 
@@ -206,7 +302,7 @@ describe("画面への配置", () => {
   });
 
   test("キャンセルされた予約の画面は開いたときに一覧を読み、本部の画面へ戻れる", async () => {
-    headquartersApiMock.mockReturnValue({ listCancelledBookings: listOf(BOOKINGS) });
+    headquartersApiMock.mockReturnValue({ listCancelledBookings: listOf(BOOKINGS), listCoaches: coachesOf() });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
       <RoleGate role="headquarters">
@@ -222,8 +318,20 @@ describe("画面への配置", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
+  test("キャンセルされた予約の画面で「この条件で見る」を押すと、選んだコーチを URL のクエリに残す（履歴は積まない）", async () => {
+    headquartersApiMock.mockReturnValue({ listCancelledBookings: listOf(BOOKINGS), listCoaches: coachesOf() });
+    const user = userEvent.setup();
+    render(<CancelledBookingsHome token="mock.headquarters.x" />);
+    await screen.findByRole("table", { name: "キャンセルされた予約の一覧" });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("コーチ"), "鈴木 コーチ");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(replace).toHaveBeenCalledWith(`/headquarters/cancelled-bookings?coach_id=${SUZUKI}`, { scroll: false });
+  });
+
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
-    headquartersApiMock.mockReturnValue({ listCancelledBookings: listOf(BOOKINGS) });
+    headquartersApiMock.mockReturnValue({ listCancelledBookings: listOf(BOOKINGS), listCoaches: coachesOf() });
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
       <RoleGate role="headquarters">
