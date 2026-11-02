@@ -556,15 +556,16 @@ describe("headquartersApi", () => {
     expect(url.search).toBe("");
   });
 
-  test("suspendCoach は POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
+  test("suspendCoach は理由を本文にして POST /api/coaches/{coach_id}/suspend を呼び、停止中にした受付を返す", async () => {
     const coachId = "22222222-2222-4222-8222-222222222222";
     const acceptance = { coach_id: coachId, acceptance_status: "suspended" };
     const { api, fetchMock } = setup(json(200, acceptance));
-    const result = await api.suspendCoach(coachId);
+    const result = await api.suspendCoach(coachId, { reason: "連絡がつかない" });
     expect(result).toEqual({ ok: true, data: acceptance });
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/suspend`);
+    expect(await request.json()).toEqual({ reason: "連絡がつかない" });
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
