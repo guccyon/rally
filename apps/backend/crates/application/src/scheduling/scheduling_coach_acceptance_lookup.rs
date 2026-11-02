@@ -67,7 +67,11 @@ mod tests {
         let acceptances = InMemoryCoachAcceptanceRepository::default();
         acceptances
             .update(SUSPENDED, |a| {
-                a.suspend(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
             })
             .await
             .unwrap();
