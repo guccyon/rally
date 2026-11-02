@@ -1,6 +1,7 @@
 //! 本部が見る生徒の一覧（admin-web の `GET /students`）を、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。生徒が student-app の操作で登録し・月額契約を始め・予約したことが、
 //! 一覧の契約種別と契約プラン・最後に予約した時刻に出ること、スポーツと最後に予約した日（日本時間）で絞れること、
+//! 予約したことのあるコーチで絞れること（キャンセルした予約も数える）、
 //! コーチ・生徒は 403 であることを確かめる。契約の形の
 //! 細かい検査は interface の `tests/students.rs`。
 //!
@@ -10,7 +11,9 @@
 use std::time::{Duration, SystemTime};
 
 use application::{
-    identity::{RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer},
+    identity::{
+        RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
+    },
     in_memory::{ManualClock, RecordingAnalyticsSink},
 };
 use axum::{
@@ -56,6 +59,16 @@ async fn send(
 
 /// 役割 `role` のアカウントをユースケースを直に呼んで登録し（契約にコーチ・本部の登録の操作がない）、トークンを返す。
 async fn register(pool: &PgPool, email: &str, role: Role, sports: Vec<Sport>) -> String {
+    register_with_id(pool, email, role, sports).await.1
+}
+
+/// [`register`] と同じく登録し、アカウントの ID（UUID の文字列）とトークンを返す。
+async fn register_with_id(
+    pool: &PgPool,
+    email: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (String, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -69,12 +82,13 @@ async fn register(pool: &PgPool, email: &str, role: Role, sports: Vec<Sport>) ->
     })
     .await
     .unwrap();
-    MockTokenService
+    let token = MockTokenService
         .issue(TokenClaims {
             account_id: account.id(),
             role,
         })
-        .into_string()
+        .into_string();
+    (account_id_uuid::format(account.id()), token)
 }
 
 /// student-app の `POST /accounts` で生徒を登録し、生徒の ID とトークンを返す。
@@ -224,4 +238,119 @@ async fn headquarters_sees_contract_and_last_booking_of_students(pool: PgPool) {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     }
+}
+
+/// 生徒 `student` が月額（standard）を始め、コーチ `coach` が 2099-01-01 の `hour` 時（UTC）から 1 時間の枠を公開し、
+/// 生徒がその枠を予約する。予約の ID を返す。
+async fn book_new_slot(router: &Router, student: &str, coach: &str, hour: u32) -> String {
+    let (status, body) = send(
+        router,
+        "POST",
+        "/subscriptions",
+        Some(student),
+        Some(json!({ "sport": "tennis", "plan": "standard", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, slot) = send(
+        router,
+        "POST",
+        "/slots",
+        Some(coach),
+        Some(json!({
+            "sport": "tennis",
+            "starts_at": format!("2099-01-01T{hour:02}:00:00Z"),
+            "ends_at": format!("2099-01-01T{:02}:00:00Z", hour + 1),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, body) = send(
+        router,
+        "POST",
+        "/bookings",
+        Some(student),
+        Some(json!({ "slot_id": slot["slot_id"], "is_trial": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["booking_id"].as_str().unwrap().to_string()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_students_who_booked_the_coach_including_cancelled_bookings(
+    pool: PgPool,
+) {
+    let (coach_id, coach) =
+        register_with_id(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let other_coach = register(&pool, "other@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let headquarters = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let clock = ManualClock::new(at(60));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let (booked_id, booked) = register_student(&router, "taro@example.com", "tennis").await;
+    clock.set(at(120));
+    let (cancelled_id, cancelled) = register_student(&router, "jiro@example.com", "tennis").await;
+    clock.set(at(180));
+    let (other_id, other) = register_student(&router, "saburo@example.com", "tennis").await;
+    clock.set(at(240));
+    register_student(&router, "hanako@example.com", "tennis").await;
+
+    // 3 人は月額を始め、コーチの枠・ほかのコーチの枠を予約する。1 人はあとでキャンセルする
+    book_new_slot(&router, &booked, &coach, 10).await;
+    let booking_id = book_new_slot(&router, &cancelled, &coach, 12).await;
+    book_new_slot(&router, &other, &other_coach, 14).await;
+    let (status, body) = send(
+        &router,
+        "POST",
+        &format!("/bookings/{booking_id}/cancel"),
+        Some(&cancelled),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let listed = |body: &Value| -> Vec<String> {
+        body["students"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["student_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // 登録の新しい順はそのまま。キャンセルした生徒も載り、ほかのコーチだけを予約した生徒・予約のない生徒は載らない
+    let path = format!("/students?coach_id={coach_id}");
+    let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(listed(&body), [cancelled_id.clone(), booked_id.clone()]);
+    assert_eq!(body["students"][0]["contract_type"], "subscription");
+
+    let path = format!("/students?coach_id={coach_id}&not_booked_since=2026-10-06&sport=tennis");
+    let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(listed(&body), [cancelled_id, booked_id]);
+    let path = format!("/students?coach_id={coach_id}&sport=swimming");
+    let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(listed(&body).is_empty());
+
+    // ない ID・コーチでない ID（生徒）は空の一覧。UUID でなければ 422
+    for id in ["00000000-0000-0000-0000-000000000009", other_id.as_str()] {
+        let path = format!("/students?coach_id={id}");
+        let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(listed(&body).is_empty(), "{id}: {body}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/students?coach_id=coach",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 }
