@@ -68,6 +68,8 @@ const ACTIVITY: Schemas["StudentActivity"] = {
     },
   ],
   cancelled_booking_count: 3,
+  submitted_video_count: 4,
+  pending_video_review_count: 1,
 };
 
 function activityOf(activity: Schemas["StudentActivity"]) {
@@ -121,6 +123,8 @@ describe("本部の生徒の利用の様子", () => {
             upcoming_bookings: [],
             recent_lessons: [],
             cancelled_booking_count: 0,
+            submitted_video_count: 0,
+            pending_video_review_count: 0,
           }),
         }}
         studentId={STUDENT_ID}

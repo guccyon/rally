@@ -654,6 +654,8 @@ export const FIXTURES: Fixture[] = [
         },
       ],
       cancelled_booking_count: 1,
+      submitted_video_count: 2,
+      pending_video_review_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {

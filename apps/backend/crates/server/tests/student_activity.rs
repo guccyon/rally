@@ -1,6 +1,7 @@
 //! 本部が生徒 1 人の利用の様子を見る（admin-web の `GET /students/{student_id}/activity`）ことを、保存先を Postgres にした
 //! 組み立て（`server::router_with_postgres`）で通す。生徒が student-app の操作で予約し・キャンセルし・動画添削を受けて
-//! 完了を記録したことが、これからの予約・キャンセルの件数・直近の受けたレッスンに出ること、何も保存しないこと、
+//! 完了を記録したことが、これからの予約・キャンセルの件数・直近の受けたレッスンに出ること、送った動画の数と返却待ちの数が
+//! 本部の返却待ちの一覧（`GET /video-reviews/pending`）と同じ判定で数えられること、何も保存しないこと、
 //! コーチ・生徒は 403、生徒でない ID は 404 であることを確かめる。契約の形の細かい検査は interface の
 //! `tests/student_activity.rs`。
 //!
@@ -101,7 +102,7 @@ async fn register(
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
-async fn headquarters_sees_upcoming_bookings_cancellations_and_lessons_of_a_student(pool: PgPool) {
+async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of_a_student(pool: PgPool) {
     let (coach_id, coach) = register(
         &pool,
         "coach@example.com",
@@ -195,12 +196,45 @@ async fn headquarters_sees_upcoming_bookings_cancellations_and_lessons_of_a_stud
     )
     .await;
 
+    // もう 2 本送り、どちらも返却を待っている
+    for _ in 0..2 {
+        post_ok(
+            &router,
+            "/videos",
+            &student,
+            json!({ "coach_id": coach_id, "sport": "tennis", "content_type": "video/mp4" }),
+            StatusCode::CREATED,
+        )
+        .await;
+    }
+
     let path = format!("/students/{student_id}/activity");
     let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["student_id"], student_id);
     assert_eq!(body["display_name"], "たろう");
     assert_eq!(body["cancelled_booking_count"], 1);
+    assert_eq!(body["submitted_video_count"], 3, "返却済みも数える");
+    assert_eq!(body["pending_video_review_count"], 2);
+    let (status, pending) = send(
+        &router,
+        "GET",
+        "/video-reviews/pending",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    assert_eq!(
+        pending["videos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|video| video["student_id"] == student_id)
+            .count(),
+        2,
+        "返却待ちの一覧に載るこの生徒の動画の数と同じ"
+    );
     let upcoming = body["upcoming_bookings"].as_array().unwrap();
     assert_eq!(upcoming.len(), 1, "キャンセルした予約は載せない: {body}");
     assert_eq!(upcoming[0]["booking"]["booking_id"], booking_ids[0]);
