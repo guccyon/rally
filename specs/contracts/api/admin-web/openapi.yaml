@@ -43,7 +43,7 @@ info:
     コーチは自分が受けた評価 1 件に返信を 1 つだけ付けられ、付け直すと上書きする（`replyToLessonReview`）。返信は
     評価の一覧（`listCoachReviews`・`listLowRatedLessonReviews`）の評価ごとに載る。
     コーチは自分の今月と先月の完了したレッスンの数と評価の件数と平均を読む（`getMyLessonStats`。金額は返さない）。
-    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチ・生徒と予約の状態、体験予約かでも絞れる）。
+    本部はすべてのコーチの枠への予約を、開始する日付（日本時間）で絞って読む（`listBookings`。確定待ちのまま残っていないかを見る。コーチ・生徒と予約の状態、体験予約か、レッスンメニューでも絞れる）。
     問い合わせを受けたときは、予約 1 件の中身（生徒・コーチ・レッスンメニュー・枠の開始と終わり・体験予約か・今の状態）と
     状態の移り変わり（確定・キャンセルの時刻）を 1 回で読む（`getBooking`）。キャンセルが多い時期やコーチを見つけるため、
     キャンセルされた予約をキャンセルした日付（日本時間）で絞って、キャンセルの新しい順に読む（`listCancelledBookings`。コーチ・生徒でも絞れる）。
@@ -240,6 +240,12 @@ paths:
           見る）。期間・`coach_id`・`status`・`trial` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての
           生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・期間に予約がない生徒は、404 にせず
           `bookings` が空の配列
+        - 任意の `lesson_menu_id` で、予約した時点のレッスンメニュー（各予約の `lesson_menu` の `lesson_menu_id`）がそのメニューの
+          予約だけに絞れる（レッスンメニューの見直しを考える本部が、そのメニューの予約だけを見る）。予約した後にメニューが直されても、
+          枠のメニューが変わっても、予約した時点のメニューで絞る。メニューのない予約（`lesson_menu` のない予約）は、`lesson_menu_id` を
+          付ければ出ない。状態を問わないので、キャンセルされた予約も出る。期間・`coach_id`・`student_id`・`status`・`trial` と組み合わせられ、
+          期間の規則と並べ方は変わらない。省けば今までどおりメニューを問わない。`lesson_menu_id` が UUID でなければ 422
+          `validation_failed`。ないメニューの ID・期間に予約がないメニューは、`coach_id` と同じく 404 にせず `bookings` が空の配列
         - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
           キャンセル済みの予約より上）、それも同じなら `booking_id` の順
         - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
@@ -304,6 +310,16 @@ paths:
             `true` / `false` でない値は 422 `validation_failed`
           schema:
             type: boolean
+        - name: lesson_menu_id
+          in: query
+          required: false
+          description: |
+            あれば予約した時点のレッスンメニュー（`lesson_menu` の `lesson_menu_id`）がこのメニューの予約だけに絞る。
+            省けばメニューを問わない。メニューのない予約は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+            ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 期間に開始する予約の一覧
