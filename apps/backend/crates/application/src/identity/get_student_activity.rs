@@ -4,7 +4,7 @@ use domain::identity::AccountId;
 
 use super::{
     AccountRepository, StudentActivity, StudentActivityCoachDisplayNameLookup,
-    StudentBookingActivityLookup, StudentLessonHistoryLookup,
+    StudentBookingActivityLookup, StudentLessonHistoryLookup, StudentVideoActivityLookup,
 };
 use crate::{Unavailable, clock::Clock};
 
@@ -13,13 +13,15 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// 生徒のアカウントの表示名に、これからの予約とキャンセルした予約の件数を scheduling に
 /// （[`StudentBookingActivityLookup`]。今は [`Clock`] から読む）、直近の受けたレッスンを完了記録に
-/// （[`StudentLessonHistoryLookup`]。最大 [`Self::RECENT_LESSON_LIMIT`] 件）問い合わせて添え、予約とレッスンの
+/// （[`StudentLessonHistoryLookup`]。最大 [`Self::RECENT_LESSON_LIMIT`] 件）、送った動画の数と今の返却待ちの数を
+/// async-lesson に（[`StudentVideoActivityLookup`]。今は [`Clock`] から読む）問い合わせて添え、予約とレッスンの
 /// コーチの表示名を profile に問い合わせて（[`StudentActivityCoachDisplayNameLookup`]）添える。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
-pub struct GetStudentActivity<R, B, L, D, C> {
+pub struct GetStudentActivity<R, B, L, V, D, C> {
     accounts: R,
     bookings: B,
     lessons: L,
+    videos: V,
     coaches: D,
     clock: C,
 }
@@ -38,22 +40,24 @@ impl From<Unavailable> for GetStudentActivityError {
     }
 }
 
-impl<R, B, L, D, C> GetStudentActivity<R, B, L, D, C>
+impl<R, B, L, V, D, C> GetStudentActivity<R, B, L, V, D, C>
 where
     R: AccountRepository,
     B: StudentBookingActivityLookup,
     L: StudentLessonHistoryLookup,
+    V: StudentVideoActivityLookup,
     D: StudentActivityCoachDisplayNameLookup,
     C: Clock,
 {
     /// 直近の受けたレッスンの件数の上限（admin-web の契約の `StudentActivity.recent_lessons` の `maxItems`）。
     pub const RECENT_LESSON_LIMIT: usize = 20;
 
-    pub fn new(accounts: R, bookings: B, lessons: L, coaches: D, clock: C) -> Self {
+    pub fn new(accounts: R, bookings: B, lessons: L, videos: V, coaches: D, clock: C) -> Self {
         Self {
             accounts,
             bookings,
             lessons,
+            videos,
             coaches,
             clock,
         }
@@ -69,14 +73,13 @@ where
             .await?
             .filter(|account| account.as_student().is_some())
             .ok_or(GetStudentActivityError::StudentNotFound)?;
-        let bookings = self
-            .bookings
-            .find_booking_activity(student_id, self.clock.now())
-            .await?;
+        let now = self.clock.now();
+        let bookings = self.bookings.find_booking_activity(student_id, now).await?;
         let recent_lessons = self
             .lessons
             .find_recent_lessons(student_id, Self::RECENT_LESSON_LIMIT)
             .await?;
+        let videos = self.videos.find_video_activity(student_id, now).await?;
 
         let coach_ids: BTreeSet<AccountId> = bookings
             .upcoming
@@ -95,6 +98,8 @@ where
             upcoming_bookings: bookings.upcoming,
             recent_lessons,
             cancelled_booking_count: bookings.cancelled_count,
+            submitted_video_count: videos.submitted_count,
+            pending_video_review_count: videos.pending_review_count,
             coaches,
         })
     }
@@ -119,7 +124,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        identity::StudentBookingActivity,
+        identity::{StudentBookingActivity, StudentVideoActivity},
         in_memory::{InMemoryAccountRepository, ManualClock},
     };
 
@@ -218,6 +223,24 @@ mod tests {
         }
     }
 
+    /// 問い合わせ（生徒と時刻）を記録し、決まった動画添削の様子を返す。
+    #[derive(Clone, Default)]
+    struct FakeVideos {
+        activity: StudentVideoActivity,
+        asked: Arc<Mutex<Vec<(AccountId, SystemTime)>>>,
+    }
+
+    impl StudentVideoActivityLookup for FakeVideos {
+        async fn find_video_activity(
+            &self,
+            student_id: AccountId,
+            now: SystemTime,
+        ) -> Result<StudentVideoActivity, Unavailable> {
+            self.asked.lock().unwrap().push((student_id, now));
+            Ok(self.activity)
+        }
+    }
+
     /// `COACH` の表示名だけを知っていて（`OTHER_COACH` は引けない）、問い合わせた ID を記録する。
     #[derive(Clone, Default)]
     struct RecordingCoaches {
@@ -251,6 +274,16 @@ mod tests {
         }
     }
 
+    impl StudentVideoActivityLookup for Broken {
+        async fn find_video_activity(
+            &self,
+            _student_id: AccountId,
+            _now: SystemTime,
+        ) -> Result<StudentVideoActivity, Unavailable> {
+            Err(Unavailable::new("壊れている"))
+        }
+    }
+
     async fn accounts() -> InMemoryAccountRepository {
         let accounts = InMemoryAccountRepository::default();
         for account in [
@@ -264,7 +297,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn returns_display_name_bookings_lessons_and_coach_names() {
+    async fn returns_display_name_bookings_lessons_videos_and_coach_names() {
         let bookings = FakeBookings {
             activity: StudentBookingActivity {
                 upcoming: vec![booking(20, COACH, 100)],
@@ -276,11 +309,19 @@ mod tests {
             lessons: vec![lesson(30, OTHER_COACH, 50), lesson(31, COACH, 40)],
             ..Default::default()
         };
+        let videos = FakeVideos {
+            activity: StudentVideoActivity {
+                submitted_count: 4,
+                pending_review_count: 2,
+            },
+            ..Default::default()
+        };
         let coaches = RecordingCoaches::default();
         let use_case = GetStudentActivity::new(
             accounts().await,
             bookings.clone(),
             lessons.clone(),
+            videos.clone(),
             coaches.clone(),
             ManualClock::new(at(60)),
         );
@@ -294,6 +335,8 @@ mod tests {
                 upcoming_bookings: vec![booking(20, COACH, 100)],
                 recent_lessons: vec![lesson(30, OTHER_COACH, 50), lesson(31, COACH, 40)],
                 cancelled_booking_count: 3,
+                submitted_video_count: 4,
+                pending_video_review_count: 2,
                 coaches: BTreeMap::from([(COACH, DisplayName::new("たなか").unwrap())]),
             }
         );
@@ -306,6 +349,11 @@ mod tests {
             *lessons.asked.lock().unwrap(),
             [(STUDENT, 20)],
             "直近の受けたレッスンは上限の件数で問い合わせる"
+        );
+        assert_eq!(
+            *videos.asked.lock().unwrap(),
+            [(STUDENT, at(60))],
+            "動画添削の様子は予約と同じ今の時刻で問い合わせる"
         );
         assert_eq!(
             *coaches.asked.lock().unwrap(),
@@ -321,6 +369,7 @@ mod tests {
             accounts().await,
             FakeBookings::default(),
             FakeLessons::default(),
+            FakeVideos::default(),
             coaches.clone(),
             ManualClock::new(at(60)),
         );
@@ -329,6 +378,8 @@ mod tests {
         assert!(activity.upcoming_bookings.is_empty());
         assert!(activity.recent_lessons.is_empty());
         assert_eq!(activity.cancelled_booking_count, 0);
+        assert_eq!(activity.submitted_video_count, 0);
+        assert_eq!(activity.pending_video_review_count, 0);
         assert!(activity.coaches.is_empty());
         assert!(coaches.asked.lock().unwrap().is_empty());
     }
@@ -337,10 +388,12 @@ mod tests {
     async fn missing_account_and_non_student_are_not_found_without_asking_other_contexts() {
         let bookings = FakeBookings::default();
         let lessons = FakeLessons::default();
+        let videos = FakeVideos::default();
         let use_case = GetStudentActivity::new(
             accounts().await,
             bookings.clone(),
             lessons.clone(),
+            videos.clone(),
             RecordingCoaches::default(),
             ManualClock::new(at(60)),
         );
@@ -354,6 +407,7 @@ mod tests {
         }
         assert!(bookings.asked.lock().unwrap().is_empty());
         assert!(lessons.asked.lock().unwrap().is_empty());
+        assert!(videos.asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -361,6 +415,19 @@ mod tests {
         let use_case = GetStudentActivity::new(
             accounts().await,
             FakeBookings::default(),
+            Broken,
+            FakeVideos::default(),
+            RecordingCoaches::default(),
+            ManualClock::new(at(60)),
+        );
+        assert!(matches!(
+            use_case.execute(STUDENT).await,
+            Err(GetStudentActivityError::Unavailable(_))
+        ));
+        let use_case = GetStudentActivity::new(
+            accounts().await,
+            FakeBookings::default(),
+            FakeLessons::default(),
             Broken,
             RecordingCoaches::default(),
             ManualClock::new(at(60)),

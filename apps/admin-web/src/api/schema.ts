@@ -1173,6 +1173,12 @@ export interface paths {
          *       student-app の `listMyLessonCompletions` と同じもの）を、完了した時刻の新しい順（同じ時刻は `lesson_id` の順）に
          *       最大 20 件。21 件目より古いものは載せない
          *     - `cancelled_booking_count`: 生徒がキャンセルした予約（状態が `cancelled`）の件数。期間で絞らず、これまでのすべて
+         *     - `submitted_video_count`: 生徒が送った動画（student-app の `submitVideo`。glossary の async_lesson）の数。添削待ちも
+         *       返却済みも含め、期間で絞らず、これまでのすべて（student-app の `listMyVideos` に載る動画の数と同じ）
+         *     - `pending_video_review_count`: 生徒が送った動画のうち、いま返却を待っている（コーチがまだ添削を返していない）動画の数。
+         *       返却待ちの判定は `listPendingVideoReviews` と同じ（スポーツ・コーチ・経過時間で絞らない。backend の domain
+         *       `PendingVideoReviewFilter` の 1 か所）で、その一覧に載るこの生徒の動画の数と一致する。動画の一覧や ID は返さない
+         *       （返却待ちの中身は `listPendingVideoReviews` で見る）
          *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
          *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
          *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -2322,7 +2328,7 @@ export interface components {
         };
         /**
          * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-         *     キャンセルの件数を添える。生徒を特定する情報は表示名と ID だけ
+         *     キャンセルの件数・送った動画の数と返却待ちの数を添える。生徒を特定する情報は表示名と ID だけ
          */
         StudentActivity: {
             /**
@@ -2338,6 +2344,13 @@ export interface components {
             recent_lessons: components["schemas"]["StudentActivityLesson"][];
             /** @description 生徒がキャンセルした予約の件数（これまでのすべて） */
             cancelled_booking_count: number;
+            /** @description 生徒が送った動画の数（添削待ちも返却済みも含め、これまでのすべて） */
+            submitted_video_count: number;
+            /**
+             * @description 生徒が送った動画のうち、いま返却を待っている動画の数（判定は `listPendingVideoReviews` と同じ）。
+             *     `submitted_video_count` 以下
+             */
+            pending_video_review_count: number;
         };
         /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
         StudentActivityBooking: {

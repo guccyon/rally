@@ -2,6 +2,7 @@
 
 mod ai_feedback_generator;
 mod ai_feedback_request;
+mod async_lesson_student_video_activity_lookup;
 mod coach_video_list;
 mod get_coach_pending_video_review_count;
 mod get_coach_video_review_lead_time;
@@ -27,6 +28,7 @@ mod video_student_display_name_lookup;
 
 pub use ai_feedback_generator::AiFeedbackGenerator;
 pub use ai_feedback_request::AiFeedbackRequest;
+pub use async_lesson_student_video_activity_lookup::AsyncLessonStudentVideoActivityLookup;
 pub use coach_video_list::CoachVideoList;
 pub use get_coach_pending_video_review_count::GetCoachPendingVideoReviewCount;
 pub use get_coach_video_review_lead_time::GetCoachVideoReviewLeadTime;
