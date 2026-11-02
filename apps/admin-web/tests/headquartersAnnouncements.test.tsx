@@ -68,6 +68,18 @@ function sendOk() {
   }));
 }
 
+const WITHDRAWN_AT = "2026-10-27T05:15:00Z";
+
+function withdrawOk() {
+  return vi.fn<HeadquartersApi["withdrawAnnouncement"]>(async (announcementId) => {
+    const announcement = SENT.find((a) => a.announcement_id === announcementId)!;
+    return {
+      ok: true,
+      data: { ...announcement, withdrawal: { withdrawn_by: SENDER_ID, withdrawn_at: WITHDRAWN_AT } },
+    };
+  });
+}
+
 function draftListOf(drafts: Schemas["AnnouncementDraft"][]) {
   return vi.fn<HeadquartersApi["listAnnouncementDrafts"]>(async () => ({
     ok: true,
@@ -81,6 +93,7 @@ function apiOf(overrides: Partial<AnnouncementsApi>): AnnouncementsApi {
   return {
     listAnnouncements: listOf([]),
     sendAnnouncement: sendOk(),
+    withdrawAnnouncement: withdrawOk(),
     listAnnouncementDrafts: draftListOf([]),
     createAnnouncementDraft: vi.fn(unexpected),
     updateAnnouncementDraft: vi.fn(unexpected),
@@ -144,6 +157,147 @@ describe("送ったお知らせの一覧", () => {
     expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
     expect(screen.queryByText("まだお知らせを送っていません")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument());
+  });
+});
+
+describe("送ったお知らせの取り下げ", () => {
+  test("取り下げていない行には「取り下げる」を出し、取り下げた行は「取り下げ済み（日時）」で操作を出さない", async () => {
+    const withdrawn: Schemas["Announcement"] = {
+      ...SENT[1]!,
+      withdrawal: { withdrawn_by: SENDER_ID, withdrawn_at: WITHDRAWN_AT },
+    };
+    render(
+      <Announcements
+        api={apiOf({
+          listAnnouncements: listOf([SENT[0]!, withdrawn]),
+          sendAnnouncement: sendOk(),
+          withdrawAnnouncement: withdrawOk(),
+        })}
+      />,
+    );
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    const [first, second] = items();
+    expect(
+      within(first!).getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }),
+    ).toBeInTheDocument();
+    expect(first).not.toHaveTextContent("取り下げ済み");
+    expect(second).toHaveTextContent("取り下げ済み（2026/10/27 14:15:00）");
+    expect(within(second!).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  test("押したら行の中で戻せないことを確かめ、確定で送り、行を「取り下げ済み」にする", async () => {
+    const user = userEvent.setup();
+    const withdrawAnnouncement = withdrawOk();
+    const listAnnouncements = listOf(SENT);
+    render(
+      <Announcements api={apiOf({ listAnnouncements, sendAnnouncement: sendOk(), withdrawAnnouncement })} />,
+    );
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.click(screen.getByRole("button", { name: "「メンテナンスのお知らせ」を取り下げる" }));
+
+    // 確かめている間は送らない
+    expect(withdrawAnnouncement).not.toHaveBeenCalled();
+    const confirm = within(items()[1]!).getByRole("group", {
+      name: "「メンテナンスのお知らせ」の取り下げの確認",
+    });
+    expect(confirm).toHaveTextContent("取り下げは戻せず");
+    // 他の行は確かめにならない
+    expect(within(items()[0]!).queryByRole("group")).not.toBeInTheDocument();
+
+    await user.click(within(confirm).getByRole("button", { name: "取り下げを確定" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "お知らせ「メンテナンスのお知らせ」を取り下げました。",
+    );
+    expect(withdrawAnnouncement).toHaveBeenCalledWith("dddddddd-0000-4000-8000-000000000001");
+    expect(items()[1]).toHaveTextContent("取り下げ済み（2026/10/27 14:15:00）");
+    expect(within(items()[1]!).queryByRole("button")).not.toBeInTheDocument();
+    // 他の行はそのまま、一覧は取り直さない
+    expect(
+      within(items()[0]!).getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }),
+    ).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+  });
+
+  test("「やめる」で確かめを閉じ、送らない", async () => {
+    const user = userEvent.setup();
+    const withdrawAnnouncement = withdrawOk();
+    render(
+      <Announcements
+        api={apiOf({ listAnnouncements: listOf(SENT), sendAnnouncement: sendOk(), withdrawAnnouncement })}
+      />,
+    );
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "やめる" }));
+
+    expect(
+      screen.queryByRole("group", { name: "「水泳のキャンペーン」の取り下げの確認" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" })).toBeInTheDocument();
+    expect(withdrawAnnouncement).not.toHaveBeenCalled();
+  });
+
+  test("送っている間は確定とやめるを押せず「取り下げています…」と出し、接続できなければ文言を出して行を残す", async () => {
+    const user = userEvent.setup();
+    let resolve: (value: Awaited<ReturnType<HeadquartersApi["withdrawAnnouncement"]>>) => void =
+      () => {};
+    const withdrawAnnouncement = vi.fn<HeadquartersApi["withdrawAnnouncement"]>(
+      () => new Promise((r) => (resolve = r)),
+    );
+    const listAnnouncements = listOf(SENT);
+    render(
+      <Announcements api={apiOf({ listAnnouncements, sendAnnouncement: sendOk(), withdrawAnnouncement })} />,
+    );
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "取り下げを確定" }));
+
+    expect(screen.getByRole("button", { name: "取り下げています…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "やめる" })).toBeDisabled();
+    resolve({ ok: false, message: "サーバーに接続できません。" });
+
+    const list = screen.getByRole("region", { name: "送ったお知らせ" });
+    expect(await within(list).findByRole("alert")).toHaveTextContent("サーバーに接続できません。");
+    expect(items()[0]).not.toHaveTextContent("取り下げ済み");
+    expect(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+  });
+
+  test("すでに取り下げられていた（409）ときはその文言を出し、一覧を取り直す", async () => {
+    const user = userEvent.setup();
+    const withdrawn: Schemas["Announcement"] = {
+      ...SENT[0]!,
+      withdrawal: { withdrawn_by: SENDER_ID, withdrawn_at: WITHDRAWN_AT },
+    };
+    const listAnnouncements = vi
+      .fn<HeadquartersApi["listAnnouncements"]>()
+      .mockResolvedValueOnce({ ok: true, data: { announcements: SENT } })
+      .mockResolvedValueOnce({ ok: true, data: { announcements: [withdrawn, SENT[1]!] } });
+    const withdrawAnnouncement = vi.fn<HeadquartersApi["withdrawAnnouncement"]>(async () => ({
+      ok: false,
+      code: "announcement_already_withdrawn",
+      message: "このお知らせはすでに取り下げられています。",
+    }));
+    render(
+      <Announcements api={apiOf({ listAnnouncements, sendAnnouncement: sendOk(), withdrawAnnouncement })} />,
+    );
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "取り下げを確定" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "このお知らせはすでに取り下げられています。",
+    );
+    await waitFor(() =>
+      expect(items()[0]).toHaveTextContent("取り下げ済み（2026/10/27 14:15:00）"),
+    );
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
   });
 });
 
