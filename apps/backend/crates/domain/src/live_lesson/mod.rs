@@ -3,7 +3,7 @@
 //! 同期レッスン（glossary の live_lesson）の通話セッション（[`LiveLessonSession`]。結び付いた予約は [`SessionBooking`]）と、終了時に記録する
 //! 接続品質の生の指標（[`ConnectionQuality`]）。通話品質スコアの式はここに置かない（セマンティック層の
 //! 1 か所。docs/adr/0002 Q1）。本部が見る、終わっていないまま時間の過ぎたセッションの基準は [`OverdueSessionCriteria`]、
-//! 期間とコーチで見るセッションの記録の条件は [`SessionHistoryCriteria`]。
+//! 期間とコーチ・生徒で見るセッションの記録の条件は [`SessionHistoryCriteria`]。
 
 mod connection_quality;
 mod live_lesson_session;
