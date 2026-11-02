@@ -3,7 +3,9 @@
 //! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
 //! `student_id` でその生徒の予約だけに絞れること（いない生徒は空の一覧）、
 //! `status`（繰り返せる）でその状態の予約だけに絞れること、`trial` で体験予約だけ・体験予約でない予約だけに絞れること、
-//! 期間の違反と日付でない値・UUID でない `coach_id`・`student_id`・予約の状態でない `status`・真偽値でない `trial` が 422 であることを
+//! `lesson_menu_id` で予約した時点のメニューがそのメニューの予約だけに絞れること（ないメニューは空の一覧）、
+//! 期間の違反と日付でない値・UUID でない `coach_id`・`student_id`・`lesson_menu_id`・予約の状態でない `status`・真偽値でない
+//! `trial` が 422 であることを
 //! 確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
@@ -590,6 +592,58 @@ async fn trial_lists_only_trial_or_only_regular_bookings() {
 }
 
 #[tokio::test]
+async fn lesson_menu_id_lists_only_bookings_of_that_menu() {
+    let admin = support::Contract::load("admin-web");
+    // 11 月 1 日〜7 日の予約は枠 3・2・4・6 で、メニュー 9 の写しがあるのは枠 2（コーチ 42・生徒 3・体験予約）だけ
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+    let menu = "00000000-0000-0000-0000-000000000009";
+
+    for (query, expected) in [
+        (format!("?lesson_menu_id={menu}"), vec![slot_uuid(2)]),
+        // ないメニュー・メニューでない ID（コーチ）は 404 にせず空の一覧
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-0000000003e8".to_string(),
+            vec![],
+        ),
+        (format!("?lesson_menu_id={}", account_uuid(42)), vec![]),
+        // 期間・コーチ・生徒・状態・体験予約かと組み合わせる
+        (
+            format!("?from=2026-11-02&to=2026-11-07&lesson_menu_id={menu}"),
+            vec![],
+        ),
+        (
+            format!("?coach_id={}&lesson_menu_id={menu}", account_uuid(42)),
+            vec![slot_uuid(2)],
+        ),
+        (
+            format!("?coach_id={}&lesson_menu_id={menu}", account_uuid(43)),
+            vec![],
+        ),
+        (
+            format!("?student_id={}&lesson_menu_id={menu}", account_uuid(3)),
+            vec![slot_uuid(2)],
+        ),
+        (
+            format!("?status=pending&trial=true&lesson_menu_id={menu}"),
+            vec![slot_uuid(2)],
+        ),
+        (format!("?status=cancelled&lesson_menu_id={menu}"), vec![]),
+        (format!("?trial=false&lesson_menu_id={menu}"), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = get(&app, &format!("{PATH}?lesson_menu_id={menu}"), HEADQUARTERS).await;
+    assert_eq!(
+        body["bookings"][0]["booking"]["lesson_menu"]["lesson_menu_id"],
+        menu
+    );
+}
+
+#[tokio::test]
 async fn trial_that_is_not_a_boolean_is_422() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -646,6 +700,8 @@ async fn invalid_days_are_422() {
         ("?coach_id=", "coach_id が UUID でない"),
         ("?student_id=3", "student_id が UUID でない"),
         ("?student_id=", "student_id が UUID でない"),
+        ("?lesson_menu_id=9", "lesson_menu_id が UUID でない"),
+        ("?lesson_menu_id=", "lesson_menu_id が UUID でない"),
         ("?status=canceled", "未知の予約の状態: canceled"),
         (
             "?status=pending&status=PENDING",
