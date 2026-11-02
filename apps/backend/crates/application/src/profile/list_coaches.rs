@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
-use domain::{identity::AccountId, lesson::CoachLessonCount, scheduling::CoachAcceptanceStatus};
+use domain::{
+    identity::AccountId, lesson::CoachLessonCount, profile::CoachSportFilter,
+    scheduling::CoachAcceptanceStatus,
+};
 
 use super::{CoachAcceptanceLookup, CoachRecentLessonCountLookup, ListCoachesQuery, ListedCoach};
 use crate::{Unavailable, identity::AccountRepository};
@@ -13,7 +16,8 @@ use crate::{Unavailable, identity::AccountRepository};
 /// 添えて返す。受付を止めているコーチも載せる。
 /// 任意の条件（[`ListCoachesQuery`]）で絞れる: 表示名の検索語（`name`。部分一致の規則は domain の
 /// [`domain::profile::DisplayNameQuery`] で、ここでは比べ方を持たない）・受付の状態（`acceptance`）・競技（`sport`。コーチの
-/// 提供スポーツに含むもの）。付けたものをすべて満たすもの、どれも `None` なら絞らない。並べ方は絞っても変わらない。
+/// 提供スポーツに含むもの。判定は domain の [`CoachSportFilter`]）。付けたものをすべて満たすもの、どれも `None` なら絞らない。
+/// 並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListCoaches<R, A, L> {
     accounts: R,
@@ -50,10 +54,7 @@ where
                 name.as_ref()
                     .is_none_or(|name| name.matches(account.display_name()))
             })
-            .filter(|account| {
-                sport
-                    .is_none_or(|sport| account.as_coach().is_some_and(|coach| coach.offers(sport)))
-            })
+            .filter(|account| CoachSportFilter::new(*sport).matches(account))
             .collect();
         let coach_ids: BTreeSet<AccountId> = coaches.iter().map(|account| account.id()).collect();
         let acceptances = if coach_ids.is_empty() {
