@@ -20,10 +20,11 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    suspendCoach: (coachId: string) =>
+    suspendCoach: (coachId: string, body: Schemas["SuspendCoachRequest"]) =>
       call(() =>
         client.POST("/coaches/{coach_id}/suspend", {
           params: { path: { coach_id: coachId } },
+          body,
         }),
       ),
     resumeCoach: (coachId: string) =>
