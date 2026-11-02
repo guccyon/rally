@@ -595,6 +595,25 @@ export const FIXTURES: Fixture[] = [
   {
     method: "GET",
     path: "/lesson-menus",
+    query: { q: "スイング" },
+    body: {
+      lesson_menus: [
+        {
+          ...MENU_FORE,
+          lesson_menu_id: id("aaaa", 9),
+          coach_id: COACH_ID_2,
+          sport: "golf",
+          name: "スイングの見直し",
+          duration_minutes: 90,
+          coach_display_name: "高橋 コーチ",
+          recent_booking_count: 7,
+        },
+      ],
+    } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
     body: {
       lesson_menus: [
         { ...MENU_FORE, coach_display_name: "鈴木 コーチ", recent_booking_count: 12 },
