@@ -230,7 +230,7 @@ async fn headquarters_lists_threads_unanswered_for_twenty_four_hours_or_more_lon
             "thread_id": uuid(4),
             "coach_id": uuid(99),
             "student_id": uuid(4),
-            "last_student_message_at": "2026-10-31T05:30:00Z",
+            "waiting_since": "2026-10-31T05:30:00Z",
             "elapsed_sec": 30 * 3600 + 30 * 60,
         })
     );
@@ -242,7 +242,7 @@ async fn headquarters_lists_threads_unanswered_for_twenty_four_hours_or_more_lon
             "coach_display_name": "たなか",
             "student_id": uuid(3),
             "student_display_name": "あおき",
-            "last_student_message_at": "2026-10-31T12:00:00Z",
+            "waiting_since": "2026-10-31T12:00:00Z",
             "elapsed_sec": 24 * 3600,
         })
     );
@@ -294,10 +294,10 @@ async fn invalid_older_than_hours_is_422() {
     let admin = support::Contract::load("admin-web");
     let app = app().await;
     for (value, message) in [
-        ("0", "生徒の最後の発言からの時間は 1〜168 時間"),
-        ("169", "生徒の最後の発言からの時間は 1〜168 時間"),
-        ("-1", "生徒の最後の発言からの時間は 1〜168 時間"),
-        ("100000", "生徒の最後の発言からの時間は 1〜168 時間"),
+        ("0", "返信を待ち始めてからの時間は 1〜168 時間"),
+        ("169", "返信を待ち始めてからの時間は 1〜168 時間"),
+        ("-1", "返信を待ち始めてからの時間は 1〜168 時間"),
+        ("100000", "返信を待ち始めてからの時間は 1〜168 時間"),
         ("24.5", "older_than_hours が整数でない"),
         ("day", "older_than_hours が整数でない"),
         ("", "older_than_hours が整数でない"),

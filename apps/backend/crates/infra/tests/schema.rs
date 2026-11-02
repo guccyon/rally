@@ -126,6 +126,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "matching.favorite_coaches",
             "messaging.messages",
             "messaging.threads",
+            "notification.announcement_drafts",
             "notification.announcements",
             "notification.notification_settings",
             "notification.notifications",
@@ -949,6 +950,57 @@ async fn coach_acceptance_changes_are_by_headquarters_for_coaches_and_match_the_
             "coach_acceptance_changes_coach_id_fkey"
         )
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn coach_acceptance_change_reasons_are_only_on_suspensions_and_up_to_200_chars(pool: PgPool) {
+    let insert = "INSERT INTO scheduling.coach_acceptance_changes
+                      (coach_id, status, reason, changed_by, changed_at)
+                  VALUES ($1::uuid, $2, $3, $4::uuid, now())";
+    let coach_id = coach(&pool).await;
+    let headquarters_id = account(&pool, "headquarters", None).await;
+    let reason_200 = "あ".repeat(200);
+    // 止めた記録は理由を持て（空文字列も）、理由の列を足す前の形（NULL）も入る。再開した記録は理由なし
+    for (status, reason) in [
+        ("suspended", Some(reason_200.as_str())),
+        ("suspended", Some("")),
+        ("suspended", None),
+        ("accepting", None),
+    ] {
+        sqlx::query(insert)
+            .bind(&coach_id)
+            .bind(status)
+            .bind(reason)
+            .bind(&headquarters_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    let reason_201 = "あ".repeat(201);
+    for (status, reason, expected) in [
+        ("accepting", "", "coach_acceptance_changes_reason_shape"),
+        (
+            "suspended",
+            reason_201.as_str(),
+            "coach_acceptance_changes_reason_check",
+        ),
+    ] {
+        let (code, constraint) = violation(
+            sqlx::query(insert)
+                .bind(&coach_id)
+                .bind(status)
+                .bind(reason)
+                .bind(&headquarters_id)
+                .execute(&pool)
+                .await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected)
+        );
+    }
 }
 
 /// 通話セッションを `started_at` に始めた行を入れ、session_id を返す。
@@ -2628,6 +2680,89 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
     assert_eq!(code, FOREIGN_KEY_VIOLATION, "{constraint}");
 }
 
+/// 本部 `created_by` の下書きを入れる。
+async fn insert_announcement_draft(
+    pool: &PgPool,
+    created_by: &str,
+    title: &str,
+    body: &str,
+    sport: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification.announcement_drafts
+             (announcement_draft_id, created_by, title, body, sport, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, '2026-11-01T10:00:00Z', '2026-11-01T10:00:00Z')",
+    )
+    .bind(created_by)
+    .bind(title)
+    .bind(body)
+    .bind(sport)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn announcement_drafts_may_be_empty_but_keep_the_limits_and_a_known_sport(pool: PgPool) {
+    use domain::catalog::Sport;
+    use infra::identity_values::sport_value;
+
+    let sports: Vec<&str> = Sport::ALL.into_iter().map(sport_value).collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.announcement_drafts",
+            "announcement_drafts_sport_check"
+        )
+        .await,
+        sports
+    );
+
+    let headquarters = account(&pool, "headquarters", None).await;
+    for (title, body, sport) in [
+        ("", "", None),
+        (" ", "\n", None),
+        (&*"あ".repeat(50), &*"あ".repeat(2000), Some("swimming")),
+    ] {
+        insert_announcement_draft(&pool, &headquarters, title, body, sport)
+            .await
+            .unwrap();
+    }
+
+    for (title, body, sport, constraint) in [
+        (
+            &*"あ".repeat(51),
+            "",
+            None,
+            "announcement_drafts_title_check",
+        ),
+        (
+            "",
+            &*"あ".repeat(2001),
+            None,
+            "announcement_drafts_body_check",
+        ),
+        ("", "", Some("cricket"), "announcement_drafts_sport_check"),
+    ] {
+        let (code, actual) =
+            violation(insert_announcement_draft(&pool, &headquarters, title, body, sport).await);
+        assert_eq!(
+            (code.as_str(), actual.as_str()),
+            (CHECK_VIOLATION, constraint)
+        );
+    }
+
+    let (code, constraint) = violation(
+        insert_announcement_draft(&pool, "00000000-0000-4000-8000-000000000001", "", "", None)
+            .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (FOREIGN_KEY_VIOLATION, "announcement_drafts_created_by_fkey")
+    );
+}
+
 /// 本部 `sender_id` の送った記録を入れて ID を返す。
 async fn insert_announcement(
     pool: &PgPool,
@@ -3076,6 +3211,149 @@ async fn lesson_menu_headquarters_unpublish_has_both_time_and_reason_or_neither(
             (CHECK_VIOLATION, constraint_name)
         );
     }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_publication_changes_are_by_headquarters_and_match_the_catalog_values(
+    pool: PgPool,
+) {
+    use domain::catalog::{HeadquartersUnpublishReason, LessonMenuPublicationAction};
+    use infra::catalog_values::lesson_menu_publication_action_value;
+
+    assert_eq!(
+        check_values(
+            &pool,
+            "catalog.lesson_menu_publication_changes",
+            "lesson_menu_publication_changes_action_check"
+        )
+        .await,
+        [
+            LessonMenuPublicationAction::Unpublished {
+                reason: HeadquartersUnpublishReason::default()
+            },
+            LessonMenuPublicationAction::Republished,
+        ]
+        .iter()
+        .map(lesson_menu_publication_action_value)
+        .collect::<Vec<_>>()
+    );
+
+    let coach_id = coach(&pool).await;
+    sqlx::query("INSERT INTO identity.coach_sports (coach_id, sport) VALUES ($1::uuid, 'tennis')")
+        .bind(&coach_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    insert_lesson_menu(&pool, &coach_id, "tennis", "async_lesson", "添削", "", None)
+        .await
+        .unwrap();
+    let menu_id: String =
+        sqlx::query_scalar("SELECT lesson_menu_id::text FROM catalog.lesson_menus")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let headquarters_id = account(&pool, "headquarters", None).await;
+    let insert = |menu_id: String, action: &'static str, reason: Option<String>, by: String| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO catalog.lesson_menu_publication_changes
+                     (lesson_menu_id, action, reason, changed_by, changed_at)
+                 VALUES ($1::uuid, $2, $3, $4::uuid, now())",
+            )
+            .bind(menu_id)
+            .bind(action)
+            .bind(reason)
+            .bind(by)
+            .execute(&pool)
+            .await
+            .map(|_| ())
+        }
+    };
+
+    // 非公開にした記録は理由（空でも 200 文字でもよい）を持ち、公開に戻した記録は持たない
+    for reason in [String::new(), "あ".repeat(200)] {
+        insert(
+            menu_id.clone(),
+            "unpublished",
+            Some(reason),
+            headquarters_id.clone(),
+        )
+        .await
+        .unwrap();
+    }
+    insert(
+        menu_id.clone(),
+        "republished",
+        None,
+        headquarters_id.clone(),
+    )
+    .await
+    .unwrap();
+
+    for (action, reason, code_name, constraint_name) in [
+        (
+            "withdrawn",
+            None,
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_action_check",
+        ),
+        (
+            "unpublished",
+            None,
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_shape",
+        ),
+        (
+            "republished",
+            Some(String::new()),
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_shape",
+        ),
+        (
+            "unpublished",
+            Some("あ".repeat(201)),
+            CHECK_VIOLATION,
+            "lesson_menu_publication_changes_reason_check",
+        ),
+    ] {
+        let (code, constraint) =
+            violation(insert(menu_id.clone(), action, reason, headquarters_id.clone()).await);
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (code_name, constraint_name)
+        );
+    }
+
+    // 操作したのは本部のアカウントだけ
+    let (code, constraint) =
+        violation(insert(menu_id.clone(), "republished", None, coach_id.clone()).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "lesson_menu_publication_changes_changed_by_fkey"
+        )
+    );
+
+    // ないメニューの記録は入らない
+    let (code, constraint) = violation(
+        insert(
+            "00000000-0000-4000-8000-000000000001".to_string(),
+            "republished",
+            None,
+            headquarters_id,
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (
+            FOREIGN_KEY_VIOLATION,
+            "lesson_menu_publication_changes_lesson_menu_id_fkey"
+        )
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

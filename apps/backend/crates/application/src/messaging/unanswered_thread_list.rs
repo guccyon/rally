@@ -12,7 +12,7 @@ use domain::{
 /// 本文を返さない）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnansweredThreadList {
-    /// 使った基準（生徒の最後の発言からの時間。省いたときは既定の時間）
+    /// 使った基準（返信を待ち始めてからの時間。省いたときは既定の時間）
     pub criteria: UnansweredThreadCriteria,
     /// 照会した時刻（経過時間はこの時刻までで数える。[`UnansweredThreadCriteria::elapsed`]）
     pub listed_at: SystemTime,

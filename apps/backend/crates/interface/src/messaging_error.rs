@@ -31,7 +31,7 @@ impl From<MessagingError> for ApiError {
                 Self::validation_failed(format!("メッセージの本文は {max} 文字まで"))
             }
             MessagingError::UnansweredThreadHoursOutOfRange { min, max } => {
-                Self::validation_failed(format!("生徒の最後の発言からの時間は {min}〜{max} 時間"))
+                Self::validation_failed(format!("返信を待ち始めてからの時間は {min}〜{max} 時間"))
             }
             MessagingError::MessageThreadWithOneself
             | MessagingError::MessageSentBeforeLastActivity
@@ -79,7 +79,7 @@ mod tests {
                 MessagingError::UnansweredThreadHoursOutOfRange { min: 1, max: 168 },
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "validation_failed",
-                "生徒の最後の発言からの時間は 1〜168 時間",
+                "返信を待ち始めてからの時間は 1〜168 時間",
             ),
             (
                 MessagingError::MessageThreadWithOneself,

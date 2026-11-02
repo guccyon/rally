@@ -218,7 +218,11 @@ async fn list_all_returns_every_thread_with_its_messages(pool: PgPool) {
         })
         .await
         .unwrap();
-    assert_eq!(talked.awaiting_coach_reply_since(), Some(at(3)));
+    assert_eq!(
+        talked.awaiting_coach_reply_since(),
+        Some(at(2)),
+        "続けて送っても待ち始めは最初の 1 通"
+    );
 
     let mut all = threads.list_all().await.unwrap();
     all.sort_by_key(MessageThread::id);

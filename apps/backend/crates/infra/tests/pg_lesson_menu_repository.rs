@@ -1,8 +1,9 @@
 //! `PgLessonMenuRepository`（`catalog.lesson_menus`）の検証。コーチのアカウントを `PgAccountRepository` で読んで
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
-//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（スポーツ・公開中か・コーチ）と並べ方。
+//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（名前・スポーツ・公開中か・コーチ）と並べ方。
 //! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
-//! 公開し直せないこと。
+//! 公開し直せないこと。非公開にした・公開に戻した記録（`catalog.lesson_menu_publication_changes`）を誰が・いつ・理由とともに
+//! メニューと同じトランザクションで残し、新しい順に読めること（`ListLessonMenuPublicationChanges`）と、並行な非公開は 1 つだけ通ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -12,26 +13,42 @@ mod support;
 use application::{
     catalog::{
         ChangeLessonMenuPublicationError, CreateLessonMenu, CreateLessonMenuCommand,
-        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenus, ListMyLessonMenus,
-        RepublishLessonMenu, UnpublishLessonMenu, UpdateLessonMenu, UpdateLessonMenuCommand,
-        UpdateLessonMenuError,
+        LessonMenuRepository, ListCoachLessonMenus, ListLessonMenuPublicationChanges,
+        ListLessonMenus, ListLessonMenusQuery, ListMyLessonMenus, RepublishLessonMenu,
+        UnpublishLessonMenu, UpdateLessonMenu, UpdateLessonMenuCommand, UpdateLessonMenuError,
     },
     in_memory::FixedClock,
     profile::ProfileCoachDisplayNameLookup,
+    scheduling::SchedulingLessonMenuRecentBookingCountLookup,
 };
 use domain::{
     DomainError,
     catalog::Sport,
     catalog::{
         HeadquartersUnpublish, HeadquartersUnpublishReason, LessonDuration, LessonFormat,
-        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuName,
+        LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId, LessonMenuName,
+        LessonMenuNameQuery, LessonMenuPublicationAction, LessonMenuPublicationChange,
     },
     identity::{AccountId, Role},
     lesson::LessonType,
 };
-use infra::{PgAccountRepository, PgLessonMenuRepository};
+use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository};
 use sqlx::PgPool;
 use support::at;
+
+/// 横断の一覧の条件（名前の検索語なし）。
+fn query(
+    sport: Option<Sport>,
+    is_published: Option<bool>,
+    coach_id: Option<AccountId>,
+) -> ListLessonMenusQuery {
+    ListLessonMenusQuery {
+        name: None,
+        sport,
+        is_published,
+        coach_id,
+    }
+}
 
 fn content(sport: Sport, format: LessonFormat, name: &str) -> LessonMenuContent {
     LessonMenuContent {
@@ -235,8 +252,10 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     let use_case = ListLessonMenus::new(
         PgLessonMenuRepository::new(pool.clone()),
         ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
+        SchedulingLessonMenuRecentBookingCountLookup::new(PgBookingRepository::new(pool.clone())),
+        FixedClock(at(100)),
     );
-    let list = use_case.execute(None, None, None).await.unwrap();
+    let list = use_case.execute(&query(None, None, None)).await.unwrap();
     assert_eq!(
         list.lesson_menus,
         vec![
@@ -258,7 +277,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
 
     assert_eq!(
         use_case
-            .execute(Some(Sport::Soccer), None, None)
+            .execute(&query(Some(Sport::Soccer), None, None))
             .await
             .unwrap()
             .lesson_menus,
@@ -266,7 +285,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(None, Some(false), None)
+            .execute(&query(None, Some(false), None))
             .await
             .unwrap()
             .lesson_menus,
@@ -274,7 +293,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(Some(Sport::Tennis), Some(true), None)
+            .execute(&query(Some(Sport::Tennis), Some(true), None))
             .await
             .unwrap()
             .lesson_menus,
@@ -282,7 +301,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert!(
         use_case
-            .execute(Some(Sport::Swimming), None, None)
+            .execute(&query(Some(Sport::Swimming), None, None))
             .await
             .unwrap()
             .lesson_menus
@@ -292,7 +311,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     // コーチで絞ると、公開中も非公開もまとめて返し、sport・published と組み合わせられる
     assert_eq!(
         use_case
-            .execute(None, None, Some(ito))
+            .execute(&query(None, None, Some(ito)))
             .await
             .unwrap()
             .lesson_menus,
@@ -300,14 +319,14 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     assert_eq!(
         use_case
-            .execute(None, Some(false), Some(ito))
+            .execute(&query(None, Some(false), Some(ito)))
             .await
             .unwrap()
             .lesson_menus,
         vec![ito_later]
     );
     let tanaka_tennis_only = use_case
-        .execute(Some(Sport::Tennis), None, Some(tanaka))
+        .execute(&query(Some(Sport::Tennis), None, Some(tanaka)))
         .await
         .unwrap();
     assert_eq!(tanaka_tennis_only.lesson_menus, vec![tanaka_tennis]);
@@ -321,7 +340,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     );
     // いないコーチは空の一覧
     let unknown = use_case
-        .execute(None, None, Some(AccountId::from_u128(0xdead)))
+        .execute(&query(None, None, Some(AccountId::from_u128(0xdead))))
         .await
         .unwrap();
     assert!(unknown.lesson_menus.is_empty());
@@ -330,8 +349,112 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lists_menus_whose_name_contains_the_query(pool: PgPool) {
+    let tanaka = support::register_named(
+        &pool,
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Soccer],
+        "たなか",
+    )
+    .await;
+    let ito = support::register_named(&pool, Role::Coach, vec![Sport::Tennis], "いとう").await;
+    let serve = create(
+        &pool,
+        tanaka,
+        0,
+        content(Sport::Tennis, live(60), "Serve の基礎"),
+        true,
+    )
+    .await;
+    let wide = create(
+        &pool,
+        tanaka,
+        1,
+        content(Sport::Soccer, LessonFormat::Async, "ＳＥＲＶＥ（全角）"),
+        true,
+    )
+    .await;
+    let ito_serve = create(
+        &pool,
+        ito,
+        2,
+        content(Sport::Tennis, LessonFormat::Async, "サーブとserveの添削"),
+        false,
+    )
+    .await;
+    let percent = create(
+        &pool,
+        ito,
+        3,
+        content(Sport::Tennis, live(30), "100%_フォア"),
+        true,
+    )
+    .await;
+
+    let use_case = ListLessonMenus::new(
+        PgLessonMenuRepository::new(pool.clone()),
+        ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
+        SchedulingLessonMenuRecentBookingCountLookup::new(PgBookingRepository::new(pool.clone())),
+        FixedClock(at(100)),
+    );
+    let search = |q: &str, base: ListLessonMenusQuery| ListLessonMenusQuery {
+        name: LessonMenuNameQuery::new(q).unwrap(),
+        ..base
+    };
+    let found = |query: ListLessonMenusQuery| {
+        let use_case = &use_case;
+        async move { use_case.execute(&query).await.unwrap().lesson_menus }
+    };
+
+    // ASCII の英字は大文字・小文字を区別せず、全角の英字は書いたとおりに比べる。並べ方（テニス（いとう → たなか）→
+    // サッカー）は変わらない
+    assert_eq!(
+        found(search(" SERVE ", ListLessonMenusQuery::default())).await,
+        vec![ito_serve.clone(), serve.clone()]
+    );
+    assert_eq!(
+        found(search("ＳＥＲＶＥ", ListLessonMenusQuery::default())).await,
+        vec![wide]
+    );
+    // % と _ はワイルドカードでなく文字のまま
+    assert_eq!(
+        found(search("%_", ListLessonMenusQuery::default())).await,
+        vec![percent.clone()]
+    );
+    // 空白だけなら絞り込まない
+    assert_eq!(
+        found(search("\u{3000} ", ListLessonMenusQuery::default()))
+            .await
+            .len(),
+        4
+    );
+    // ほかの絞り込みと組み合わせられる
+    assert_eq!(
+        found(search("serve", query(None, Some(true), None))).await,
+        vec![serve.clone()]
+    );
+    assert_eq!(
+        found(search("serve", query(Some(Sport::Tennis), None, Some(ito)))).await,
+        vec![ito_serve]
+    );
+    assert!(
+        found(search("フォア", query(None, None, Some(tanaka))))
+            .await
+            .is_empty()
+    );
+    let none = use_case
+        .execute(&search("いない", ListLessonMenusQuery::default()))
+        .await
+        .unwrap();
+    assert!(none.lesson_menus.is_empty());
+    assert!(none.coaches.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     let coach = support::coach(&pool).await;
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
     let menu = create(
         &pool,
         coach,
@@ -345,7 +468,10 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
 
     // 本部が非公開にすると、時刻と理由が残り、生徒の公開中の一覧から消える
     let unpublish = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(10)));
-    let unpublished = unpublish.execute(menu.id(), reason.clone()).await.unwrap();
+    let unpublished = unpublish
+        .execute(menu.id(), hq, reason.clone())
+        .await
+        .unwrap();
     assert_eq!(
         menus.find(menu.id()).await.unwrap(),
         Some(unpublished.clone())
@@ -365,7 +491,7 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
 
     // 二度目は断り、最初の時刻と理由を残す
     let result = unpublish
-        .execute(menu.id(), HeadquartersUnpublishReason::default())
+        .execute(menu.id(), hq, HeadquartersUnpublishReason::default())
         .await;
     assert!(
         matches!(
@@ -416,8 +542,8 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     );
 
     // 本部が公開に戻すと、公開中になり、本部が非公開にしたことは消える
-    let republish = RepublishLessonMenu::new(menus.clone());
-    let republished = republish.execute(menu.id()).await.unwrap();
+    let republish = RepublishLessonMenu::new(menus.clone(), FixedClock(at(20)));
+    let republished = republish.execute(menu.id(), hq).await.unwrap();
     assert_eq!(
         menus.find(menu.id()).await.unwrap(),
         Some(republished.clone())
@@ -434,13 +560,201 @@ async fn headquarters_unpublishes_and_republishes_a_menu(pool: PgPool) {
     );
 
     // 本部が非公開にしていないメニューは公開に戻せない
-    let result = republish.execute(menu.id()).await;
+    let result = republish.execute(menu.id(), hq).await;
     assert!(
         matches!(
             result,
             Err(ChangeLessonMenuPublicationError::Invalid(
                 DomainError::LessonMenuNotUnpublishedByHeadquarters
             ))
+        ),
+        "{result:?}"
+    );
+}
+
+/// 本部が非公開にした・公開に戻すメニューを、コーチを登録して作る。
+async fn published_menu(pool: &PgPool, name: &str) -> LessonMenu {
+    let coach = support::coach(pool).await;
+    create(pool, coach, 1, content(Sport::Tennis, live(30), name), true).await
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn publication_changes_are_recorded_with_who_when_and_reason_and_read_newest_first(
+    pool: PgPool,
+) {
+    let (menu, other_menu) = (
+        published_menu(&pool, "フォア").await,
+        published_menu(&pool, "バック").await,
+    );
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let other_hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let list = ListLessonMenuPublicationChanges::new(menus.clone());
+    let reason = |text: &str| HeadquartersUnpublishReason::new(text).unwrap();
+
+    // 本部が一度も非公開にしていないメニューは空、ないメニューは None
+    assert_eq!(list.execute(menu.id()).await.unwrap(), Some(Vec::new()));
+    assert_eq!(
+        list.execute(LessonMenuId::from_u128(99)).await.unwrap(),
+        None
+    );
+
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(menu.id(), hq, reason("誤った記載"))
+        .await
+        .unwrap();
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(other_menu.id(), hq, reason("他のメニュー"))
+        .await
+        .unwrap();
+    // 断った操作は記録しない
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(3)))
+        .execute(other_menu.id(), other_hq)
+        .await
+        .unwrap();
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(3)))
+        .execute(other_menu.id(), other_hq)
+        .await
+        .unwrap_err();
+    RepublishLessonMenu::new(menus.clone(), FixedClock(at(4)))
+        .execute(menu.id(), other_hq)
+        .await
+        .unwrap();
+    // 同じ時刻なら後に保存した方が先
+    UnpublishLessonMenu::new(menus.clone(), FixedClock(at(4)))
+        .execute(menu.id(), hq, reason(""))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        list.execute(menu.id()).await.unwrap().unwrap(),
+        vec![
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Unpublished { reason: reason("") },
+                hq,
+                at(4)
+            ),
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Republished,
+                other_hq,
+                at(4)
+            ),
+            LessonMenuPublicationChange::restore(
+                menu.id(),
+                LessonMenuPublicationAction::Unpublished {
+                    reason: reason("誤った記載")
+                },
+                hq,
+                at(2)
+            ),
+        ]
+    );
+    assert_eq!(
+        menus.publication_changes(other_menu.id()).await.unwrap(),
+        vec![
+            LessonMenuPublicationChange::restore(
+                other_menu.id(),
+                LessonMenuPublicationAction::Republished,
+                other_hq,
+                at(3)
+            ),
+            LessonMenuPublicationChange::restore(
+                other_menu.id(),
+                LessonMenuPublicationAction::Unpublished {
+                    reason: reason("他のメニュー")
+                },
+                hq,
+                at(2)
+            ),
+        ]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn concurrent_unpublishes_of_a_menu_let_only_one_through(pool: PgPool) {
+    let menu = published_menu(&pool, "フォア").await;
+    let hq = support::register(&pool, Role::Headquarters, vec![]).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let menus = menus.clone();
+            let id = menu.id();
+            tokio::spawn(async move {
+                UnpublishLessonMenu::new(menus, FixedClock(at(2)))
+                    .execute(id, hq, HeadquartersUnpublishReason::default())
+                    .await
+            })
+        })
+        .collect();
+    let mut results = Vec::new();
+    for handle in handles {
+        results.push(handle.await.unwrap());
+    }
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    assert!(results.iter().all(|r| matches!(
+        r,
+        Ok(_)
+            | Err(ChangeLessonMenuPublicationError::Invalid(
+                DomainError::LessonMenuAlreadyUnpublishedByHeadquarters
+            ))
+    )));
+    assert_eq!(
+        menus.publication_changes(menu.id()).await.unwrap().len(),
+        1,
+        "通った非公開の記録だけが残る"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_change_that_cannot_be_recorded_leaves_the_menu_as_it_was(pool: PgPool) {
+    let menu = published_menu(&pool, "フォア").await;
+    // 本部でないアカウントの記録は外部キーで入らない。メニューも同じトランザクションなので変わらない
+    let not_headquarters = support::student(&pool).await;
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let result = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(
+            menu.id(),
+            not_headquarters,
+            HeadquartersUnpublishReason::default(),
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::Unavailable(_))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(menus.find(menu.id()).await.unwrap(), Some(menu.clone()));
+    assert!(
+        menus
+            .publication_changes(menu.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // ないメニューは何も書かない
+    let result = UnpublishLessonMenu::new(menus.clone(), FixedClock(at(2)))
+        .execute(
+            LessonMenuId::from_u128(99),
+            not_headquarters,
+            HeadquartersUnpublishReason::default(),
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(ChangeLessonMenuPublicationError::LessonMenuNotFound)
         ),
         "{result:?}"
     );

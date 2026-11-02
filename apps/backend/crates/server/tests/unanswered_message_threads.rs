@@ -189,11 +189,25 @@ async fn headquarters_reads_unanswered_threads_from_postgres(pool: PgPool) {
                 "coach_display_name": "tanaka",
                 "student_id": account_id_uuid::format(taro),
                 "student_display_name": "taro",
-                "last_student_message_at": "2026-10-30T01:00:00Z",
+                "waiting_since": "2026-10-30T01:00:00Z",
                 "elapsed_sec": 24 * 3600 + 30 * 60,
             }],
         })
     );
+
+    // 生徒が催促しても、待ち始めと経過はリセットされない
+    post(
+        &router,
+        &messages_path,
+        &taro_token,
+        json!({ "body": "まだでしょうか" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let (status, body) = send(&router, get(PATH, &hq_token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["threads"][0]["waiting_since"], "2026-10-30T01:00:00Z");
+    assert_eq!(body["threads"][0]["elapsed_sec"], 24 * 3600 + 30 * 60);
 
     // 時間を変えられる
     let (status, body) = send(

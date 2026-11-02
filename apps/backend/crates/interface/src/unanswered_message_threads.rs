@@ -59,7 +59,7 @@ pub struct UnansweredMessageThreadBody {
     student_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     student_display_name: Option<String>,
-    last_student_message_at: String,
+    waiting_since: String,
     elapsed_sec: u64,
 }
 
@@ -112,7 +112,7 @@ fn unanswered_thread_body(
     thread: &MessageThread,
     list: &UnansweredThreadList,
 ) -> Result<UnansweredMessageThreadBody, ApiError> {
-    // 一覧のスレッドは domain の基準で選んだものなので、生徒の最後の発言は必ずある
+    // 一覧のスレッドは domain の基準で選んだものなので、待ち始めは必ずある
     let since = thread
         .awaiting_coach_reply_since()
         .ok_or_else(|| ApiError::internal("返信を待っていないスレッドが一覧にある"))?;
@@ -129,7 +129,7 @@ fn unanswered_thread_body(
             .student_display_names
             .get(&thread.student_id())
             .map(|name| name.as_str().to_string()),
-        last_student_message_at: date_time_to_contract(since)?,
+        waiting_since: date_time_to_contract(since)?,
         elapsed_sec: elapsed.as_secs(),
     })
 }

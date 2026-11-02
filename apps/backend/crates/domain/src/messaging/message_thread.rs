@@ -242,22 +242,27 @@ impl MessageThread {
             .map_or(self.opened_at, Message::sent_at)
     }
 
-    /// 生徒がコーチの返信を待っているなら、待ち始めた生徒の最後の発言の送信時刻。待っていなければ `None`。
+    /// 生徒がコーチの返信を待っているなら、待ち始めた時刻（コーチの最後の発言のあとの、最初の生徒の発言の送信時刻）。
+    /// 待っていなければ `None`。
     ///
     /// 発言は当事者がチャットとして送ったメッセージ（本文・スタンプ。[`MessageKind::is_chat`]）だけを見る。最後の発言が
-    /// 生徒のものなら、その送信時刻を返す（生徒が続けて送ったなら最後の 1 通）。最後の発言がコーチのもの・発言が
-    /// まだないなら `None`。添削依頼・添削の返却（async-lesson の出来事の写し）とシステムのメッセージは発言に数えない。
+    /// 生徒のものなら、コーチの最後の発言（なければスレッドの始まり）のあとに生徒が送った最初の発言の時刻を返す（生徒が
+    /// 続けて送っても・催促しても、待ち始めは変わらない）。最後の発言がコーチのもの・発言がまだないなら `None`。
+    /// 添削依頼・添削の返却（async-lesson の出来事の写し）とシステムのメッセージは発言に数えない。
     pub fn awaiting_coach_reply_since(&self) -> Option<SystemTime> {
         self.messages
             .iter()
-            .rev()
-            .find(|message| {
-                message.content().kind().is_chat() && message.author().participant().is_some()
+            .filter(|message| message.content().kind().is_chat())
+            .filter_map(|message| {
+                message
+                    .author()
+                    .participant()
+                    .map(|sender| (sender, message))
             })
-            .filter(|message| {
-                message.author() == MessageAuthor::Participant(MessageSender::Student)
+            .fold(None, |since, (sender, message)| match sender {
+                MessageSender::Coach => None,
+                MessageSender::Student => since.or(Some(message.sent_at())),
             })
-            .map(Message::sent_at)
     }
 
     /// 当事者 `sender` のアカウント。
@@ -829,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn a_thread_awaits_the_coach_after_the_last_chat_message_of_the_student() {
+    fn a_thread_awaits_the_coach_since_the_first_student_message_after_the_coach() {
         let mut thread = opened();
         assert_eq!(thread.awaiting_coach_reply_since(), None, "発言がまだない");
         thread
@@ -846,8 +851,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             thread.awaiting_coach_reply_since(),
-            Some(at(2)),
-            "生徒が続けて送ったら最後の 1 通の時刻（スタンプも発言）"
+            Some(at(1)),
+            "生徒が続けて送っても（スタンプも発言）、待ち始めは最初の 1 通の時刻"
         );
         thread
             .send(
@@ -867,6 +872,15 @@ mod tests {
                 true,
                 at(4),
             )
+            .unwrap();
+        assert_eq!(
+            thread.awaiting_coach_reply_since(),
+            Some(at(4)),
+            "コーチの返信のあとの最初の発言から待ち始める"
+        );
+        // 催促しても待ち始めは変わらない（経過がリセットされない）
+        thread
+            .send(message(5), STUDENT, text("まだでしょうか"), true, at(5))
             .unwrap();
         assert_eq!(thread.awaiting_coach_reply_since(), Some(at(4)));
     }

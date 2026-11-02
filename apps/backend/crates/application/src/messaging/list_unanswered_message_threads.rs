@@ -204,6 +204,8 @@ mod tests {
             ),
             // 発言がまだない
             thread(5, OTHER_STUDENT, OTHER_COACH, &[]),
+            // 30 時間前に送り、1 時間前に催促した（待ち始めは 30 時間前のまま）
+            thread(6, OTHER_STUDENT, COACH, &[(true, 30), (true, 1)]),
         ])
     }
 
@@ -220,7 +222,7 @@ mod tests {
             .unwrap();
         assert_eq!(list.criteria.hours(), 24);
         assert_eq!(list.listed_at, now());
-        assert_eq!(ids(&list), [4, 1]);
+        assert_eq!(ids(&list), [4, 6, 1], "催促（6）で経過はリセットされない");
         assert_eq!(
             UnansweredThreadCriteria::elapsed(&list.threads[0], list.listed_at),
             Some(50 * HOUR)
@@ -240,13 +242,17 @@ mod tests {
         );
         assert_eq!(
             *lookup.students_asked.lock().unwrap(),
-            [BTreeSet::from([STUDENT, AccountId::from_u128(4)])]
+            [BTreeSet::from([
+                STUDENT,
+                OTHER_STUDENT,
+                AccountId::from_u128(4)
+            ])]
         );
     }
 
     #[tokio::test]
     async fn the_hours_of_the_criteria_change_the_threshold() {
-        for (hours, expected) in [(1, vec![4, 1, 3]), (25, vec![4]), (168, vec![])] {
+        for (hours, expected) in [(1, vec![4, 6, 1, 3]), (25, vec![4, 6]), (168, vec![])] {
             let list = use_case(threads(), RecordingLookup::default())
                 .execute(UnansweredThreadCriteria::new(hours).unwrap())
                 .await

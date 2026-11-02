@@ -5,8 +5,8 @@ use super::{MessageThread, MessagingError};
 /// 本部が見る「返信のないまま時間の過ぎた」スレッドの基準（admin-web の `listUnansweredMessageThreads`。
 /// 既定・範囲・境界の正本は `specs/contracts/api/admin-web/openapi.yaml` の `listUnansweredMessageThreads`）。
 ///
-/// 最後の発言が生徒のもので（[`MessageThread::awaiting_coach_reply_since`]）、照会した時刻にその発言から
-/// [`Self::hours`] 時間以上たったスレッドを「返信のないまま時間の過ぎた」スレッドとする。時間は
+/// 最後の発言が生徒のもので、照会した時刻に返信を待ち始めてから（コーチの最後の発言のあとの最初の生徒の発言から。
+/// [`MessageThread::awaiting_coach_reply_since`]）[`Self::hours`] 時間以上たったスレッドを「返信のないまま時間の過ぎた」スレッドとする。時間は
 /// [`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] 時間で、省いたときは [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。
 /// 既定・範囲と並べ方はこの型の 1 か所だけに置く。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,14 +15,14 @@ pub struct UnansweredThreadCriteria {
 }
 
 impl UnansweredThreadCriteria {
-    /// 時間を省いたときの、生徒の最後の発言からの時間（24 時間）
+    /// 時間を省いたときの、返信を待ち始めてからの時間（24 時間）
     pub const DEFAULT_HOURS: u16 = 24;
     /// 指定できる時間の下限（1 時間）
     pub const MIN_HOURS: u16 = 1;
     /// 指定できる時間の上限（7 日 = 168 時間）
     pub const MAX_HOURS: u16 = 168;
 
-    /// 生徒の最後の発言から `hours` 時間以上たったスレッドを見る基準。[`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] の外なら
+    /// 返信を待ち始めてから `hours` 時間以上たったスレッドを見る基準。[`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] の外なら
     /// [`MessagingError::UnansweredThreadHoursOutOfRange`]。
     pub fn new(hours: u16) -> Result<Self, MessagingError> {
         if !(Self::MIN_HOURS..=Self::MAX_HOURS).contains(&hours) {
@@ -34,18 +34,18 @@ impl UnansweredThreadCriteria {
         Ok(Self { hours })
     }
 
-    /// 生徒の最後の発言からの時間（時間単位）。
+    /// 返信を待ち始めてからの時間（時間単位）。
     pub const fn hours(&self) -> u16 {
         self.hours
     }
 
-    /// 生徒の最後の発言からの時間の長さ。
+    /// 返信を待ち始めてからの時間の長さ。
     pub const fn threshold(&self) -> Duration {
         Duration::from_secs(self.hours as u64 * 3600)
     }
 
-    /// `thread` が `now` に照会したときに返信を待っているなら、生徒の最後の発言から `now` までの経過時間。
-    /// 待っていなければ `None`。発言が `now` より後（時計のずれ）なら 0。
+    /// `thread` が `now` に照会したときに返信を待っているなら、返信を待ち始めてから `now` までの経過時間。
+    /// 待っていなければ `None`。待ち始めが `now` より後（時計のずれ）なら 0。
     pub fn elapsed(thread: &MessageThread, now: SystemTime) -> Option<Duration> {
         thread
             .awaiting_coach_reply_since()
@@ -57,8 +57,8 @@ impl UnansweredThreadCriteria {
         Self::elapsed(thread, now).is_some_and(|elapsed| elapsed >= self.threshold())
     }
 
-    /// `threads` から `now` に照会したときの返信のないまま時間の過ぎたスレッドだけを選び、経過の長い順（生徒の最後の
-    /// 発言の古い順。同じ時刻はスレッドの ID の順）に並べる。
+    /// `threads` から `now` に照会したときの返信のないまま時間の過ぎたスレッドだけを選び、経過の長い順（待ち始めの
+    /// 古い順。同じ時刻はスレッドの ID の順）に並べる。
     pub fn select(&self, threads: Vec<MessageThread>, now: SystemTime) -> Vec<MessageThread> {
         let mut unanswered: Vec<MessageThread> = threads
             .into_iter()
@@ -173,6 +173,35 @@ mod tests {
             UnansweredThreadCriteria::elapsed(&thread(1, &[(STUDENT, now() + HOUR)]), now()),
             Some(Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn a_reminder_from_the_student_does_not_reset_the_elapsed_time() {
+        // 30 時間前に送り、2 時間前に催促した
+        let reminded = thread(
+            1,
+            &[(STUDENT, now() - 30 * HOUR), (STUDENT, now() - 2 * HOUR)],
+        );
+        assert_eq!(
+            UnansweredThreadCriteria::elapsed(&reminded, now()),
+            Some(30 * HOUR)
+        );
+        assert!(UnansweredThreadCriteria::default().matches(&reminded, now()));
+        // コーチが返したあとの発言からは数え直す
+        let answered = thread(
+            2,
+            &[
+                (STUDENT, now() - 30 * HOUR),
+                (COACH, now() - 20 * HOUR),
+                (STUDENT, now() - 10 * HOUR),
+                (STUDENT, now() - HOUR),
+            ],
+        );
+        assert_eq!(
+            UnansweredThreadCriteria::elapsed(&answered, now()),
+            Some(10 * HOUR)
+        );
+        assert!(!UnansweredThreadCriteria::default().matches(&answered, now()));
     }
 
     #[test]
