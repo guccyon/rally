@@ -1,0 +1,15 @@
+id: K-0001
+theme: 4
+kind: causal
+statement: 続きの job（continue）が自分の報告を PR 本文の末尾に追記すると、見出しが二重になり、取り込みやコミットの状態も head と食い違いやすい。本文は追記せず、head を確かめてから全体を最新の状態に書き直す方がよいと見られる
+scope:
+  roles: [implement]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - event: "case.analyzed:113588"
+  - pr: "guccyon/rally#534"
+status: draft
+verified_at: 2026-11-02
+review_by: 2026-12-02
+confidentiality: product
