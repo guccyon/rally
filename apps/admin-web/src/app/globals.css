@@ -1,1 +1,122 @@
 @import "tailwindcss";
+
+/*
+ * デザインシステムの基礎（トークン）の写し。正本は specs/design/tokens.yaml（コンセプト rally-court）。
+ * 名前は tokens.yaml の役割を kebab-case にしたもの（color.roles.text_muted → --color-text-muted → text-text-muted）。
+ * Tailwind の既定の色・角丸・影は消し、トークンの名前だけを使えるようにする。値を変えるときは tokens.yaml を先に直す。
+ */
+@theme {
+  --color-*: initial;
+  --color-primary: #1e3fd0;
+  --color-on-primary: #ffffff;
+  --color-primary-pressed: #1a2fa8;
+  --color-primary-container: #e6ebff;
+  --color-on-primary-container: #14246e;
+  --color-secondary: #d4f53c; /* 文字の色にしない */
+  --color-on-secondary: #10131a;
+  --color-text: #10131a;
+  --color-text-muted: #4a5163;
+  --color-background: #ffffff;
+  --color-surface: #f1f3f8;
+  --color-inverse-surface: #10131a;
+  --color-on-inverse-surface: #ffffff;
+  --color-on-inverse-surface-muted: #b8bfcc;
+  --color-border: #dde1ea; /* 飾りの区切り線だけ */
+  --color-border-strong: #7d8599; /* 入力欄・押せる部品の輪郭 */
+  --color-focus-ring: #1e3fd0;
+  --color-scrim: rgba(16, 19, 26, 0.56);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* color.status。fg は文字・アイコン・輪郭、container は面、on-container は面の上の文字 */
+  --color-info: #1e3fd0;
+  --color-info-container: #e6ebff;
+  --color-info-on-container: #14246e;
+  --color-success: #0e7a3e;
+  --color-success-container: #e2f6ea;
+  --color-success-on-container: #0a4f28;
+  --color-warning: #9a5b00;
+  --color-warning-container: #fff1d6;
+  --color-warning-on-container: #5a3500;
+  --color-danger: #c0182f;
+  --color-danger-container: #fde8eb;
+  --color-danger-on-container: #7a0f1e;
+
+  /* shape.radius_px */
+  --radius-*: initial;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-pill: 999px;
+
+  /* 影は使わない（shape.elevation.rule） */
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+
+  /* typography。admin-web は display を使わず、headline を 24px にする */
+  --font-sans: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+  --text-xs: 12px; /* caption */
+  --text-xs--line-height: 1.5;
+  --text-sm: 14px; /* small */
+  --text-sm--line-height: 1.6;
+  --text-base: 16px; /* body */
+  --text-base--line-height: 1.65;
+  --text-xl: 20px; /* title */
+  --text-xl--line-height: 1.25;
+  --text-headline: 24px;
+  --text-headline--line-height: 1.25;
+
+  /* spacing.base_unit（p-2 = 8px、p-4 = 16px、p-6 = 24px、p-10 = 40px） */
+  --spacing: 4px;
+
+  /* motion */
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@layer base {
+  :root {
+    /* 明るい配色だけ（color.dark_mode.gen1） */
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    /* 数字は等幅 */
+    font-feature-settings: "tnum";
+  }
+
+  /* 区切り線は border、入力欄と押せる部品の輪郭は border-strong */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    border-color: var(--color-border-strong);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation: none !important;
+      transition-property: color, background-color, border-color, opacity !important;
+      transition-duration: 120ms !important;
+    }
+  }
+}
