@@ -99,7 +99,8 @@ pub trait BookingRepository: Send + Sync {
     ) -> impl Future<Output = Result<BTreeMap<AccountId, SystemTime>, Unavailable>> + Send;
 
     /// `coach_id` のコーチのスロットへの予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
-    /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）が読む。
+    /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）と、本部が見る生徒の一覧をコーチで
+    /// 絞るとき（[`super::SchedulingStudentCoachBookingLookup`]）が読む。
     fn bookings_of_coach(
         &self,
         coach_id: AccountId,

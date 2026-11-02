@@ -1119,7 +1119,12 @@ export interface paths {
          *     - 最後に予約した日で絞る（任意）: `not_booked_since`（`YYYY-MM-DD`。日本時間）を付ければ、その日の始まり（日本時間の 0 時）
          *       以降に予約を作っていない生徒、つまり `last_booked_at` がその時刻より前か null の生徒だけを返す（一度も予約していない
          *       生徒も載る）。`last_booked_at` と同じく予約の状態は問わない。日付でなければ 422 `validation_failed`
-         *     - `q`・`sport`・`not_booked_since` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
+         *     - 予約したことのあるコーチで絞る（任意）: `coach_id` を付ければ、そのコーチの枠を一度でも予約した（glossary の booking。
+         *       体験予約を含む）生徒だけを返す。予約の状態（確定待ち・確定済み・キャンセル済み）は問わず、キャンセル済みの予約しかない
+         *       生徒も載る（`getStudentActivity` がキャンセル済みの予約も生徒の予約として `cancelled_booking_count` に数え、
+         *       `last_booked_at` も状態を問わないのに揃える。実装は backend の domain `CoachBookedStudents` の 1 か所）。
+         *       `coach_id` が UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は 404 にせず `students` が空の配列
+         *     - `q`・`sport`・`not_booked_since`・`coach_id` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
          *       どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
@@ -4160,6 +4165,11 @@ export interface operations {
                  *     付けなければ最後に予約した時刻で絞らない
                  */
                 not_booked_since?: string;
+                /**
+                 * @description このコーチの枠を一度でも予約した生徒だけを返す（予約の状態を問わない。キャンセル済みの予約も数える）。
+                 *     付けなければコーチで絞らない。UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は空の一覧
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
