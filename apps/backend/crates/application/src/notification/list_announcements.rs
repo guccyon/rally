@@ -1,6 +1,3 @@
-use domain::scheduling::BookingPeriod;
-use time::Duration;
-
 use super::{
     AnnouncementRepository, AnnouncementWithReadCount, ListAnnouncementsError,
     ListAnnouncementsQuery, NotificationRepository,
@@ -14,9 +11,9 @@ use crate::scheduling::calendar_day;
 ///
 /// 条件（[`ListAnnouncementsQuery`]）の日付を両方省けば今までどおりすべて。どちらかがあれば、送った日付（日本時間。
 /// [`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）のものだけに絞る（既読にした数は絞ったものにだけ添える）。
-/// `from` だけなら `from` から、`to` だけなら `to` までの [`BookingPeriod::DEFAULT_DAYS`] 日（キャンセルされた予約の一覧と
-/// 同じ）。期間の規則（`to` が `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は本部が見る予約の一覧と同じ
-/// domain の [`BookingPeriod`]。
+/// `from` だけなら `from` から、`to` だけなら `to` までの 7 日（キャンセルされた予約の一覧と同じ
+/// [`calendar_day::period_ending`]）。期間の規則（`to` が `from` より前でない・31 日まで）は本部が見る予約の一覧と同じ
+/// domain の [`domain::scheduling::BookingPeriod`]。
 pub struct ListAnnouncements<A, N> {
     announcements: A,
     notifications: N,
@@ -38,17 +35,12 @@ where
         &self,
         query: ListAnnouncementsQuery,
     ) -> Result<Vec<AnnouncementWithReadCount>, ListAnnouncementsError> {
-        let span = Duration::days(i64::from(BookingPeriod::DEFAULT_DAYS) - 1);
-        let period = match (query.from, query.to) {
-            (None, None) => None,
-            (Some(from), Some(to)) => Some((from, to)),
-            (Some(from), None) => Some((from, from.saturating_add(span))),
-            (None, Some(to)) => Some((to.saturating_sub(span), to)),
-        };
-        let announcements = match period {
-            None => self.announcements.find_all().await?,
-            Some((from, to)) => {
-                let period = BookingPeriod::new(calendar_day::start(from), calendar_day::end(to))?;
+        let announcements = match (query.from, query.to) {
+            (None, None) => self.announcements.find_all().await?,
+            (from, to) => {
+                let (_, _, period) = calendar_day::period_ending(from, to, || {
+                    unreachable!("from か to のどちらかがあるので今日は読まない")
+                })?;
                 let mut announcements = self
                     .announcements
                     .find_sent_between(period.starts_at(), period.ends_at())
