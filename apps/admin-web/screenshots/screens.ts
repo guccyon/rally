@@ -114,6 +114,15 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   {
+    id: "hq-lesson-menus-search",
+    title: "本部: レッスンメニューを名前で探す",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus?q=%E3%82%B9%E3%82%A4%E3%83%B3%E3%82%B0",
+    open: async (page) => {
+      await page.getByRole("row", { name: /スイングの見直し/ }).waitFor();
+    },
+  },
+  {
     id: "hq-lesson-menus-by-coach",
     title: "本部: コーチ 1 人のレッスンメニュー",
     role: "headquarters",
