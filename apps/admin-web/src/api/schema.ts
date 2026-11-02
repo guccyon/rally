@@ -740,7 +740,13 @@ export interface paths {
          *       キャンセル済みの予約しかない枠は `false`。予約の中身は自分の予約の一覧（`listMyCoachBookings`）で見る
          *     - 各項目の枠には、結びついたレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
          *       メニューのない枠は null。メニューは今の中身で、非公開にしたメニューも載せる
-         *     - 期間で絞らず、ページングもしない。枠がなければ `slots` は空の配列
+         *     - 期間: 任意の `from`・`to`（枠の開始の日付。日本時間）で、`from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時
+         *       （含まない）までに開始する枠だけに絞れる（来週の空き枠の出し具合だけを確かめる）。両方を省けば今までどおり期間で絞らず、
+         *       すべての枠を返す。どちらかを付けたときの省いた側の決め方と期間の規則は `listBookings` と同じ: `from` を省けば今日
+         *       （サーバーの現在時刻の日本時間の日付）、`to` を省けば `from` から 7 日目（`from` を含めて 7 日）。期間は 1 日以上 31 日まで。
+         *       `to` が `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`
+         *       （`message` に理由）。`to` だけを付けて今日より前の日付なら `from`（今日）より前なので 422
+         *     - ページングはしない。枠がなければ（期間に枠がなくても）`slots` は空の配列
          *     - 照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
@@ -3883,7 +3889,12 @@ export interface operations {
     };
     listMyCoachSlots: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 期間の始まりの日付（枠の開始。日本時間。含む）。`to` だけを付けて省けば今日。両方を省けば期間で絞らない */
+                from?: string;
+                /** @description 期間の終わりの日付（枠の開始。日本時間。含む）。`from` だけを付けて省けば `from` から 7 日目。両方を省けば期間で絞らない */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3901,6 +3912,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     withdrawMySlot: {

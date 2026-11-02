@@ -17,9 +17,9 @@ use application::{
     in_memory::{FixedClock, RecordingAnalyticsSink},
     profile::ProfileCoachIntroductionLookup,
     scheduling::{
-        BookingRepository, ListCoachSlots, PublishSlot, PublishSlotCommand, PublishSlotError,
-        ReserveSlotError, SearchSlots, SearchSlotsQuery, SlotRepository, WithdrawSlot,
-        WithdrawSlotCommand, WithdrawSlotError,
+        BookingRepository, ListCoachSlots, ListCoachSlotsQuery, PublishSlot, PublishSlotCommand,
+        PublishSlotError, ReserveSlotError, SearchSlots, SearchSlotsQuery, SlotRepository,
+        WithdrawSlot, WithdrawSlotCommand, WithdrawSlotError,
     },
 };
 use domain::{
@@ -536,8 +536,14 @@ async fn slots_of_coach_reads_own_slots_of_any_status(pool: PgPool) {
     assert_eq!(found[0], open);
 
     // ユースケースを通すと、開始時刻の古い順で、有効な予約が入っているかが添わる
-    let list = ListCoachSlots::new(slots.clone(), lesson_menus(&pool), bookings)
-        .execute(coach_id)
+    let list_coach_slots = ListCoachSlots::new(
+        slots.clone(),
+        lesson_menus(&pool),
+        bookings,
+        FixedClock(at(0)),
+    );
+    let list = list_coach_slots
+        .execute(coach_id, ListCoachSlotsQuery::default())
         .await
         .unwrap();
     let listed: Vec<_> = list
@@ -554,6 +560,27 @@ async fn slots_of_coach_reads_own_slots_of_any_status(pool: PgPool) {
             (cancelled.id(), false),
             (closed.id(), false),
         ]
+    );
+
+    // 日付（日本時間）で絞ると、その日に開始する枠だけ。2026 年 11 月 2 日の日本時間 0 時は `at(15)`、
+    // 3 日の 0 時は `at(39)` なので、2 日に開始するのは `at(20)` と `at(30)` の枠
+    let nov2 = time::Date::from_calendar_date(2026, time::Month::November, 2).unwrap();
+    let list = list_coach_slots
+        .execute(
+            coach_id,
+            ListCoachSlotsQuery {
+                from: Some(nov2),
+                to: Some(nov2),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        list.items
+            .iter()
+            .map(|(slot, has_active_booking)| (slot.id(), *has_active_booking))
+            .collect::<Vec<_>>(),
+        [(pending.id(), true), (confirmed.id(), true)]
     );
 
     let nobody = coach(&pool).await;
@@ -659,8 +686,12 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
         PgSlotRepository::new(pool.clone()),
         lesson_menus(&pool),
         PgBookingRepository::new(pool.clone()),
+        FixedClock(at(0)),
     );
-    let list = list_coach_slots.execute(coach_id).await.unwrap();
+    let list = list_coach_slots
+        .execute(coach_id, ListCoachSlotsQuery::default())
+        .await
+        .unwrap();
     assert_eq!(list.lesson_menus[&sixty.id()], sixty);
 
     // メニューを非公開にすると、検索には添わず（生徒には見せない）、コーチの一覧には添わる
@@ -680,7 +711,10 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
     let page = search.execute(query(20)).await.unwrap();
     assert_eq!(page.items[0].lesson_menu_id(), Some(sixty.id()));
     assert!(page.lesson_menus.is_empty());
-    let list = list_coach_slots.execute(coach_id).await.unwrap();
+    let list = list_coach_slots
+        .execute(coach_id, ListCoachSlotsQuery::default())
+        .await
+        .unwrap();
     assert_eq!(list.lesson_menus[&sixty.id()], unpublished);
 }
 
