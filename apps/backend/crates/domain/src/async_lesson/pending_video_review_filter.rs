@@ -24,9 +24,10 @@ impl PendingVideoReviewFilter {
         video.review_lead_hours(now)
     }
 
-    /// `video` が `now` に照会したときにこの条件の返却待ちの動画か（添削を返していない・スポーツが合う・経過時間が下限以上）。
+    /// `video` が `now` に照会したときにこの条件の返却待ちの動画か（添削を返していない（[`Video::is_awaiting_review`]）・
+    /// スポーツが合う・経過時間が下限以上）。
     pub fn matches(&self, video: &Video, now: SystemTime) -> bool {
-        video.review().is_none()
+        video.is_awaiting_review()
             && video.is_in_sport(self.sport)
             && Self::elapsed_hours(video, now) >= u64::from(self.min_elapsed_hours)
     }
