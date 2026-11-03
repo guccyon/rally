@@ -230,7 +230,7 @@ impl Booking {
     /// 一覧を絞る競技の指定に当てはまるか。予約した枠のコーチのアカウント `coach`（引けなければ `None`）の提供スポーツで
     /// 決め（判定は [`CoachSportFilter`] の 1 か所。予約枠の需給の [`Slot::matches_coach_sport`] と同じ）、指定がなければ
     /// どの予約も当てはまる。指定があるときは、`coach` が予約した枠のコーチのアカウントで競技を提供するときだけ当てはまる
-    /// （アカウントが引けない予約は当てはまらない）。本部が見る予約の一覧が使う。
+    /// （アカウントが引けない予約は当てはまらない）。本部が見る予約の一覧とキャンセルされた予約の一覧が共に使う。
     pub fn matches_coach_sport(&self, sport: CoachSportFilter, coach: Option<&Account>) -> bool {
         sport.sport().is_none()
             || coach.is_some_and(|coach| coach.id() == self.coach_id && sport.matches(coach))
@@ -1005,6 +1005,30 @@ mod tests {
         assert!(!booking.matches_coach_sport(filter(Sport::Tennis), Some(&student)));
         // キャンセルしても枠のコーチは変わらない
         assert!(cancelled(booking).matches_coach_sport(filter(Sport::Golf), Some(&coach)));
+    }
+
+    #[test]
+    fn matches_coach_sport_of_a_cancelled_booking_is_the_same_as_before_the_cancellation() {
+        use crate::identity::Role;
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        let before = booking.clone();
+        booking.cancel(STUDENT, &mut slot, at(8)).unwrap();
+        assert_eq!(booking.status(), BookingStatus::Cancelled);
+        let coach = account(COACH, Role::Coach, &[Sport::Golf]);
+        // キャンセルされた予約の一覧が使う。枠のスポーツ（テニス）でなく、キャンセルの前と同じくコーチの提供スポーツで決める
+        for sport in [Sport::Tennis, Sport::Golf, Sport::Soccer, Sport::Swimming] {
+            let filter = CoachSportFilter::new(Some(sport));
+            assert_eq!(
+                booking.matches_coach_sport(filter, Some(&coach)),
+                before.matches_coach_sport(filter, Some(&coach)),
+                "{sport:?}"
+            );
+            assert!(!booking.matches_coach_sport(filter, None));
+        }
+        assert!(
+            booking.matches_coach_sport(CoachSportFilter::new(Some(Sport::Golf)), Some(&coach))
+        );
     }
 
     #[test]

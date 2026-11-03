@@ -1,7 +1,9 @@
 //! `GET /bookings/cancelled`（admin-web の `listCancelledBookings`。本部が見るキャンセルされた予約の一覧）の統合テスト。
 //! レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、キャンセルした日付（日本時間）で
 //! 絞ってキャンセルの新しい順に返すこと（枠の開始の日付は問わない）、キャンセルした人が載ること、日付を省いたときは今日までの
-//! 7 日であること、コーチ・生徒・レッスンメニュー（予約した時点の写し。ないメニューは空の一覧）で絞れること、期間の違反と日付でない値・UUID でない ID が 422 であること、同じ階層の
+//! 7 日であること、コーチ・生徒・レッスンメニュー（予約した時点の写し。ないメニューは空の一覧）で絞れること、`sport` で
+//! 予約した枠のコーチがその競技を提供する予約だけに絞れること（ほかの条件と組み合わせられる）、期間の違反と日付でない値・
+//! UUID でない ID・`Sport` の値でない `sport` が 422 であること、同じ階層の
 //! `GET /bookings/{booking_id}` と並べても固定のパスが当たることを確かめる。期間の規則の境界は domain の `BookingPeriod`、並べ方の細部はユースケース
 //! `ListCancelledBookings` のテスト。
 
@@ -12,7 +14,9 @@ use application::{
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
     },
-    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
+    profile::{
+        ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
+    },
     scheduling::{BookingRepository, GetBooking, ListCancelledBookings, booking_id_uuid},
 };
 use axum::{
@@ -72,7 +76,7 @@ async fn accounts() -> InMemoryAccountRepository {
         (1, "本部", Role::Headquarters, vec![]),
         (3, "あおき", Role::Student, vec![Sport::Tennis]),
         (42, "たなか", Role::Coach, vec![Sport::Tennis]),
-        (43, "いとう", Role::Coach, vec![Sport::Tennis]),
+        (43, "いとう", Role::Coach, vec![Sport::Soccer]),
     ] {
         accounts
             .insert(
@@ -137,7 +141,7 @@ async fn book(
         .unwrap()
 }
 
-/// コーチ「たなか」（42）・「いとう」（43）・アカウントのないコーチ（99）の枠へ、生徒「あおき」（3）とアカウントのない生徒（4）が
+/// コーチ「たなか」（42。テニス）・「いとう」（43。サッカー）・アカウントのないコーチ（99）の枠（どれもテニスの枠）へ、生徒「あおき」（3）とアカウントのない生徒（4）が
 /// 予約し、日本時間の 10 月 31 日 23 時〜11 月 8 日 0 時にキャンセルした。枠の開始（11 月 20 日〜）は期間の外。
 async fn bookings() -> (InMemoryBookingRepository, Vec<Booking>) {
     let later = nov1(19 * DAY);
@@ -170,6 +174,7 @@ async fn app_at(now: SystemTime, bookings: InMemoryBookingRepository) -> Router 
     interface::headquarters_cancelled_bookings_router(
         ListCancelledBookings::new(
             bookings.clone(),
+            ProfileCoachAccountLookup::new(accounts.clone()),
             ProfileCoachDisplayNameLookup::new(accounts.clone()),
             ProfileStudentDisplayNameLookup::new(accounts.clone()),
             FixedClock(now),
@@ -541,6 +546,57 @@ async fn lesson_menu_id_narrows_to_the_menu_combined_with_the_days_the_coach_and
 }
 
 #[tokio::test]
+async fn sport_narrows_to_bookings_of_coaches_offering_it_combined_with_the_other_conditions() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, made) = bookings().await;
+    let app = app_at(nov1(10 * DAY), bookings).await;
+    let days = "from=2026-10-31&to=2026-11-08";
+
+    for (query, expected) in [
+        // 枠はどれもテニスだが、コーチの提供スポーツで決める。アカウントのないコーチ（99）の予約は載らない
+        ("sport=tennis".to_string(), vec![4, 1, 0]),
+        ("sport=soccer".to_string(), vec![5, 2]),
+        // キャンセルがない競技は 404 にせず空の配列
+        ("sport=golf".to_string(), vec![]),
+        // ほかの条件と組み合わせられる
+        (
+            "sport=soccer&student_id=00000000-0000-0000-0000-000000000003".to_string(),
+            vec![5],
+        ),
+        (
+            "sport=soccer&coach_id=00000000-0000-0000-0000-00000000002a".to_string(),
+            vec![],
+        ),
+        (
+            "sport=tennis&lesson_menu_id=00000000-0000-0000-0000-000000000032".to_string(),
+            vec![],
+        ),
+        ("sport=tennis&to=2026-11-01".to_string(), vec![1, 0]),
+    ] {
+        let uri = if query.contains("to=") {
+            format!("{PATH}?from=2026-10-31&{query}")
+        } else {
+            format!("{PATH}?{days}&{query}")
+        };
+        let (status, body) = get(&app, &uri, HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(booking_ids(&body), ids(&made, &expected), "{query}: {body}");
+    }
+
+    // 表示名は今までどおり載る
+    let (_, body) = get(&app, &format!("{PATH}?{days}&sport=soccer"), HEADQUARTERS).await;
+    assert!(
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["coach_display_name"] == "いとう"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_cancelled_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -582,6 +638,10 @@ async fn invalid_days_are_422() {
         // lesson_menu_id の検証も listBookings と同じ
         ("?lesson_menu_id=menu", "lesson_menu_id が UUID でない"),
         ("?lesson_menu_id=", "lesson_menu_id が UUID でない"),
+        // sport の検証も listBookings と同じ
+        ("?sport=cricket", "未知のスポーツ: cricket"),
+        ("?sport=Tennis", "未知のスポーツ: Tennis"),
+        ("?sport=", "未知のスポーツ: "),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
