@@ -188,6 +188,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 「直近 30 日に予約のないメニューだけ」を入れた状態（URL には残さないので、開いてから切り替える）。
+    id: "hq-lesson-menus-unbooked",
+    title: "本部: レッスンメニュー（直近 30 日に予約のないメニューだけ）",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
+      await page.getByLabel("直近 30 日に予約のないメニューだけ").check();
+      await page.getByRole("row", { name: /パターの距離感/ }).waitFor();
+      await page.getByRole("row", { name: /フォアハンドの基礎/ }).waitFor({ state: "detached" });
+    },
+  },
+  {
     id: "hq-lesson-menus-by-coach",
     title: "本部: コーチ 1 人のレッスンメニュー",
     role: "headquarters",

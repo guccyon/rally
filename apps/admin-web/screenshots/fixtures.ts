@@ -722,6 +722,28 @@ export const FIXTURES: Fixture[] = [
   {
     method: "GET",
     path: "/lesson-menus",
+    // 直近 30 日に予約のないメニューだけ（下の一覧のうち予約が 0 件の「パターの距離感」）。
+    query: { unbooked: "true" },
+    body: {
+      lesson_menus: [
+        {
+          ...MENU_FORE,
+          lesson_menu_id: id("aaaa", 10),
+          coach_id: COACH_ID_2,
+          sport: "golf",
+          name: "パターの距離感",
+          duration_minutes: 30,
+          is_published: false,
+          coach_display_name: "高橋 コーチ",
+          headquarters_unpublish: { unpublished_at: at(-3), reason: "料金の表記が誤っている" },
+          recent_booking_count: 0,
+        },
+      ],
+    } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
     body: {
       lesson_menus: [
         { ...MENU_FORE, coach_display_name: "鈴木 コーチ", recent_booking_count: 12 },
