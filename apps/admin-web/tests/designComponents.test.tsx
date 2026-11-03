@@ -93,14 +93,26 @@ test("押せるカードは全体で 1 つのボタン、空の表示は一言�
       <Card onClick={() => {}}>
         <span>10/28（水）12:00〜12:30</span>
       </Card>
-      <EmptyState message="まだお知らせはありません" action={<Button variant="secondary">ホームを更新する</Button>} />
+      <EmptyState message="まだお知らせはありません" action={{ label: "お知らせを書く", onClick: () => {} }} />
+      <EmptyState
+        variant="section"
+        message="まだ低い評価はありません"
+        action={{ label: "評価の一覧を見る", onClick: () => {} }}
+      />
       <SectionLoading message="予約を読み込んでいます…" />
       <LoadingBar />
       <Badge count={3} />
     </>,
   );
   expect(screen.getByRole("button", { name: "10/28（水）12:00〜12:30" })).toHaveClass("bg-surface", "rounded-md");
-  expect(screen.getByText("まだお知らせはありません")).toBeInTheDocument();
+  // 空の表示：screen は surface の面と primary、section は background の面と border の線と secondary。文は text の色
+  const screenEmpty = screen.getByText("まだお知らせはありません").parentElement;
+  expect(screenEmpty).toHaveClass("bg-surface", "text-text");
+  expect(screen.getByRole("button", { name: "お知らせを書く" })).toHaveClass("bg-primary");
+  const sectionEmpty = screen.getByText("まだ低い評価はありません").parentElement;
+  expect(sectionEmpty).toHaveClass("bg-background", "border-border", "text-text");
+  expect(sectionEmpty).not.toHaveClass("bg-surface");
+  expect(screen.getByRole("button", { name: "評価の一覧を見る" })).toHaveClass("border-border-strong", "bg-background");
   expect(screen.getByRole("status")).toHaveTextContent("予約を読み込んでいます…");
   expect(screen.getByRole("progressbar")).toBeInTheDocument();
   expect(screen.getByText("3")).toHaveClass("bg-danger");

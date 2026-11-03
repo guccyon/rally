@@ -219,13 +219,21 @@ final designCatalog = <CatalogEntry>[
   CatalogEntry(
     'empty_state',
     (_) => const EmptyState(
-      message: 'まだこれからの予約はありません。コーチを探して始めましょう。',
-      action: RallyButton(
-        label: 'コーチを探す',
-        variant: RallyButtonVariant.secondary,
-        onPressed: _noop,
-      ),
+      message: 'まだこれからの予約はありません。コーチを探して始めましょう',
+      actionLabel: 'コーチを探す',
+      onAction: _noop,
     ),
+    variant: 'screen',
+  ),
+  CatalogEntry(
+    'empty_state',
+    (_) => const EmptyState(
+      message: 'まだこれからの予約はありません。',
+      actionLabel: 'コーチを探す',
+      onAction: _noop,
+      variant: EmptyStateVariant.section,
+    ),
+    variant: 'section',
   ),
   // 画面全体の読み込みはテーマ（ProgressIndicatorThemeData）で写した LinearProgressIndicator
   CatalogEntry(

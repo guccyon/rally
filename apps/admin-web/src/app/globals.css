@@ -7,11 +7,11 @@
  */
 @theme {
   --color-*: initial;
-  --color-primary: #1e3fd0;
+  --color-primary: #3a54b0;
   --color-on-primary: #ffffff;
-  --color-primary-pressed: #1a2fa8;
-  --color-primary-container: #e6ebff;
-  --color-on-primary-container: #14246e;
+  --color-primary-pressed: #2e4590;
+  --color-primary-container: #e9edf8;
+  --color-on-primary-container: #1e2a5c;
   --color-secondary: #d4f53c; /* 文字の色にしない */
   --color-on-secondary: #10131a;
   --color-text: #10131a;
@@ -23,15 +23,15 @@
   --color-on-inverse-surface-muted: #b8bfcc;
   --color-border: #dde1ea; /* 飾りの区切り線だけ */
   --color-border-strong: #7d8599; /* 入力欄・押せる部品の輪郭 */
-  --color-focus-ring: #1e3fd0;
+  --color-focus-ring: #3a54b0;
   --color-scrim: rgba(16, 19, 26, 0.56);
   --color-transparent: transparent;
   --color-current: currentColor;
 
   /* color.status。fg は文字・アイコン・輪郭、container は面、on-container は面の上の文字 */
-  --color-info: #1e3fd0;
-  --color-info-container: #e6ebff;
-  --color-info-on-container: #14246e;
+  --color-info: #3a54b0;
+  --color-info-container: #e9edf8;
+  --color-info-on-container: #1e2a5c;
   --color-success: #0e7a3e;
   --color-success-container: #e2f6ea;
   --color-success-on-container: #0a4f28;
