@@ -2,10 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use domain::identity::{Account, AccountId};
 
-use crate::{Unavailable, identity::AccountRepository, live_lesson::SessionCoachAccountLookup};
+use crate::{
+    Unavailable, identity::AccountRepository, live_lesson::SessionCoachAccountLookup,
+    scheduling::SlotCoachAccountLookup,
+};
 
 /// live-lesson の [`SessionCoachAccountLookup`]（本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧を
-/// 競技で絞る）の profile による実装。アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
+/// 競技で絞る）と、scheduling の [`SlotCoachAccountLookup`]（本部が見る予約枠の需給を競技で絞る）の profile による
+/// 実装。アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
 #[derive(Debug, Clone)]
@@ -37,6 +41,18 @@ where
             }
         }
         Ok(coaches)
+    }
+}
+
+impl<R> SlotCoachAccountLookup for ProfileCoachAccountLookup<R>
+where
+    R: AccountRepository,
+{
+    async fn find_slot_coach_accounts(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, Account>, Unavailable> {
+        self.find_coach_accounts(coach_ids).await
     }
 }
 
@@ -85,5 +101,23 @@ mod tests {
             BTreeMap::from([(AccountId::from_u128(1), coach)]),
             "生徒・ないアカウントは含めない"
         );
+    }
+
+    #[tokio::test]
+    async fn slot_coach_accounts_are_the_same_coach_accounts() {
+        let accounts = InMemoryAccountRepository::default();
+        let coach = account(1, Role::Coach);
+        for account in [coach.clone(), account(2, Role::Student)] {
+            accounts.insert(account).await.unwrap();
+        }
+        let found = ProfileCoachAccountLookup::new(accounts)
+            .find_slot_coach_accounts(&BTreeSet::from([
+                AccountId::from_u128(1),
+                AccountId::from_u128(2),
+                AccountId::from_u128(3),
+            ]))
+            .await
+            .unwrap();
+        assert_eq!(found, BTreeMap::from([(AccountId::from_u128(1), coach)]));
     }
 }

@@ -40,6 +40,7 @@ mod scheduling_student_coach_booking_lookup;
 mod scheduling_student_last_booking_lookup;
 mod scheduling_student_recent_booking_count_lookup;
 mod search_slots;
+mod slot_coach_account_lookup;
 mod slot_criteria;
 mod slot_cursor;
 pub mod slot_id_uuid;
@@ -90,6 +91,7 @@ pub use scheduling_student_coach_booking_lookup::SchedulingStudentCoachBookingLo
 pub use scheduling_student_last_booking_lookup::SchedulingStudentLastBookingLookup;
 pub use scheduling_student_recent_booking_count_lookup::SchedulingStudentRecentBookingCountLookup;
 pub use search_slots::{SearchSlots, SearchSlotsQuery};
+pub use slot_coach_account_lookup::SlotCoachAccountLookup;
 pub use slot_criteria::SlotCriteria;
 pub use slot_cursor::SlotCursor;
 pub use slot_page::SlotPage;

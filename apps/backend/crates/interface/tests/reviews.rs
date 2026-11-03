@@ -189,7 +189,13 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
-        GetSlotSupply::new(bookings, clock),
+        GetSlotSupply::new(
+            bookings,
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(

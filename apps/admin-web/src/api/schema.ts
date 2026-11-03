@@ -63,6 +63,13 @@ export interface paths {
          *       教えていないスポーツは 0）。省けば今までどおりすべてのコーチ。扱いは `listBookings` の `coach_id` と同じ: UUID で
          *       なければ 422 `validation_failed`（`message` は `coach_id が UUID でない`）。コーチでない ID・ない ID は、404 にせず
          *       どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+         *     - 任意の `sport` で、その競技を提供するコーチ（コーチの提供スポーツのどれかが一致するもの。ゴルフも絞れる）の枠と、
+         *       それらの枠への予約だけを数える（競技ごとにコーチの募集や枠の呼びかけを決める）。競技は枠のコーチの提供スポーツで
+         *       決め、枠そのもののスポーツでは決めない（決め方は backend の domain `CoachSportFilter` の 1 か所。`listCoaches` の
+         *       `sport` と同じ）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す（その競技のコーチが
+         *       枠を出していないスポーツは 0）。`coach_id`・`from` / `to` と組み合わせられる。省けば今までどおりすべてのコーチ。
+         *       `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない
+         *       競技は、どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
          *     - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
          *       コーチが閉じた枠（`closed`）は数えない
          *     - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
@@ -3613,6 +3620,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせずどのスポーツも 0 を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの競技を提供するコーチ（コーチの提供スポーツのどれかが一致するもの）の枠と、それらの枠への予約だけを数える。
+                 *     省けばすべてのコーチ。`Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

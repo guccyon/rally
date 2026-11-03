@@ -90,7 +90,8 @@ pub fn router() -> Router {
 /// docs/adr/0006）、完了記録の保存先も当面インメモリ。境界間イベント `LessonCompleted` は同じイベントバスで発行する
 /// （billing・review の購読はまだない）。
 ///
-/// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読む（`GetSlotSupply`）。
+/// スポーツごとの予約枠の需給（本部の `GET /slot-supply`）は予約の保存先から期間の枠と予約を読み、競技で絞るときは
+/// コーチの提供スポーツをアカウントの保存先から読む（`GetSlotSupply`。`ProfileCoachAccountLookup`）。
 /// 本部が見る予約の一覧（`GET /bookings`）も同じく予約の保存先から期間に開始する予約を読み、コーチと生徒の表示名を
 /// アカウントの保存先から読んで添える（`ListBookings`。`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）。
 /// 本部が見るキャンセルされた予約の一覧（`GET /bookings/cancelled`）は予約の保存先から期間にキャンセルした予約を読み、

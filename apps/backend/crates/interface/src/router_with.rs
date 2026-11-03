@@ -34,7 +34,8 @@ use application::{
     scheduling::{
         BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
         GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
-        PublishSlot, QuotaGate, SearchSlots, SlotRepository, StudentDisplayNameLookup,
+        PublishSlot, QuotaGate, SearchSlots, SlotCoachAccountLookup, SlotRepository,
+        StudentDisplayNameLookup,
     },
 };
 use axum::Router;
@@ -58,6 +59,7 @@ pub fn router_with<
     I,
     D,
     B,
+    Sc,
     G,
     E,
     L,
@@ -89,7 +91,7 @@ pub fn router_with<
     create_booking: CreateBooking<B, J, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
-    get_slot_supply: GetSlotSupply<B, C>,
+    get_slot_supply: GetSlotSupply<B, Sc, C>,
     list_my_bookings: ListMyBookings<B, I, G, C>,
     list_coach_bookings: ListCoachBookings<B, D, C>,
     list_coach_slots: ListCoachSlots<S, J, B, C>,
@@ -120,6 +122,7 @@ where
     I: CoachIntroductionLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     B: BookingRepository + 'static,
+    Sc: SlotCoachAccountLookup + 'static,
     G: QuotaGate + 'static,
     E: EntitlementRepository + 'static,
     L: LiveLessonSessionRepository + 'static,
