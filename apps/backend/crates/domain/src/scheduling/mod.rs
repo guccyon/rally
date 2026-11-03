@@ -6,7 +6,8 @@
 //! キャンセルする前の見込み（[`CancellationPreview`]）は [`CancellationPolicy`] の 1 か所だけに置く（docs/adr/0002 Q2）。スポーツごとの予約枠の需給
 //! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧（開始の日付で・キャンセルした日付で）の期間の規則は [`BookingPeriod`]。キャンセルした人は
 //! [`BookingCanceller`]（[`Booking::cancelled_by`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
-//! [`RecentLessonMenuBookings`] の 1 か所（生徒ごとの数 [`RecentStudentBookings`] も同じ期間を使う）。本部が見る生徒の一覧で、生徒がそのコーチを予約したことがあるかの数え方は
+//! [`RecentLessonMenuBookings`] の 1 か所（生徒ごとの数 [`RecentStudentBookings`] も同じ期間を使う）。直近に予約のないメニューに絞る条件は
+//! [`UnbookedLessonMenuFilter`]。本部が見る生徒の一覧で、生徒がそのコーチを予約したことがあるかの数え方は
 //! [`CoachBookedStudents`] の 1 か所。本部が見るコーチ 1 人の直近にキャンセルされた予約の数の数え方は
 //! [`CoachRecentCancelledBookingCount`] の 1 か所。
 //! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
@@ -40,6 +41,7 @@ mod slot_seats;
 mod slot_status;
 mod slot_supply;
 mod slot_supply_status;
+mod unbooked_lesson_menu_filter;
 
 pub use booking::Booking;
 pub use booking_canceller::BookingCanceller;
@@ -68,3 +70,4 @@ pub use slot_seats::SlotSeats;
 pub use slot_status::SlotStatus;
 pub use slot_supply::SlotSupply;
 pub use slot_supply_status::SlotSupplyStatus;
+pub use unbooked_lesson_menu_filter::UnbookedLessonMenuFilter;

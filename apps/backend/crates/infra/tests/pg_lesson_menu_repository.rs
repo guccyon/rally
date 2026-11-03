@@ -47,6 +47,7 @@ fn query(
         sport,
         is_published,
         coach_id,
+        unbooked: false,
     }
 }
 
