@@ -301,6 +301,187 @@ describe("本部の低い評価の対応済み", () => {
   });
 });
 
+describe("本部の低い評価の期間", () => {
+  async function itemsOf() {
+    return within(await screen.findByRole("list", { name: "低い評価の一覧" })).getAllByRole("listitem");
+  }
+
+  async function choosePeriod(user: ReturnType<typeof userEvent.setup>, from: string, to: string) {
+    const fromInput = screen.getByLabelText("開始日");
+    const toInput = screen.getByLabelText("終了日");
+    await user.clear(fromInput);
+    if (from !== "") await user.type(fromInput, from);
+    await user.clear(toInput);
+    if (to !== "") await user.type(toInput, to);
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+  }
+
+  test("期間を付けずに開き、期間の欄は空で「期間を外す」は出さない", async () => {
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+
+    await itemsOf();
+    expect(listLowRatedLessonReviews).toHaveBeenCalledWith({});
+    expect(screen.getByLabelText("開始日")).toHaveValue("");
+    expect(screen.getByLabelText("終了日")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "期間を外す" })).not.toBeInTheDocument();
+  });
+
+  test("期間を入れて「この期間で見る」で from・to を付けて読み直し、期間を添える。「期間を外す」で期間なしに戻す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(
+      async (filter) => ({
+        ok: true,
+        data: { max_rating: 2, period_days: 30, reviews: filter?.from === undefined ? REVIEWS : [REVIEWS[0]!] },
+      }),
+    );
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    // 欄を変えただけでは読み直さない。
+    await user.type(screen.getByLabelText("開始日"), "2026-10-26");
+    expect(listLowRatedLessonReviews).toHaveBeenCalledTimes(1);
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01" });
+    expect(
+      await screen.findByText(
+        "直近 30 日に送られた、2 点以下の評価のうち、2026年10月26日（月） 〜 2026年11月1日（日） に送られたものです。",
+      ),
+    ).toBeInTheDocument();
+    expect(await itemsOf()).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "期間を外す" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({});
+    expect(await screen.findByText("直近 30 日に送られた、2 点以下の評価です。")).toBeInTheDocument();
+    expect(await itemsOf()).toHaveLength(2);
+    expect(screen.getByLabelText("開始日")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "期間を外す" })).not.toBeInTheDocument();
+  });
+
+  test("期間と「未対応だけ」は組み合わせられ、どちらを変えてももう一方の確定した条件を残す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    await itemsOf();
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      handled: false,
+      from: "2026-10-26",
+      to: "2026-11-01",
+    });
+    await itemsOf();
+
+    await choosePeriod(user, "2026-10-20", "2026-10-25");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      handled: false,
+      from: "2026-10-20",
+      to: "2026-10-25",
+    });
+    await itemsOf();
+
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-25" });
+  });
+
+  test("対応済みにするのを断られて取り直すときも、確定した期間と「未対応だけ」で読む", async () => {
+    const user = userEvent.setup();
+    const markLowRatedLessonReviewHandled = vi.fn<HeadquartersApi["markLowRatedLessonReviewHandled"]>(
+      async () => ({ ok: false, code: "not_found", message: "見つかりません。" }),
+    );
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled }} />);
+    await itemsOf();
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    await itemsOf();
+    // 欄だけ変えて確定していない期間は使わない。
+    await user.clear(screen.getByLabelText("開始日"));
+
+    const label = `佐藤 健への${formatDateTime("2026-10-30T12:14:05Z")}の評価`;
+    await user.click(await screen.findByRole("button", { name: `${label}を対応済みにする` }));
+    await user.click(screen.getByRole("button", { name: "対応済みを確定" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("見つかりません。");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      handled: false,
+      from: "2026-10-26",
+      to: "2026-11-01",
+    });
+  });
+
+  test("終了日が開始日より前なら、送らずにほかの期間の欄と同じ文言を出す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    await choosePeriod(user, "2026-11-01", "2026-10-26");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("終了日は開始日と同じか、それより後の日付にしてください。");
+    expect(listLowRatedLessonReviews).toHaveBeenCalledTimes(1);
+    // 前の一覧はそのまま。
+    expect(await itemsOf()).toHaveLength(2);
+  });
+
+  test("31 日を超える期間・片方だけの期間は送らずに文言を出し、直せば文言を消して読み直す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    await choosePeriod(user, "2026-10-01", "2026-11-01");
+    expect(screen.getByRole("alert")).toHaveTextContent("期間は 31 日までにしてください。");
+    await choosePeriod(user, "2026-10-01", "");
+    expect(screen.getByRole("alert")).toHaveTextContent("開始日と終了日を選んでください。");
+    expect(listLowRatedLessonReviews).toHaveBeenCalledTimes(1);
+
+    await choosePeriod(user, "2026-10-02", "2026-11-01");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ from: "2026-10-02", to: "2026-11-01" });
+    await itemsOf();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("期間で絞って 0 件なら、その期間のことだと言う（未対応だけでも）", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(
+      async (filter) => ({
+        ok: true,
+        data: { max_rating: 2, period_days: 30, reviews: filter?.from === undefined ? REVIEWS : [] },
+      }),
+    );
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    expect(await screen.findByText("この期間に低い評価はありません")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(await screen.findByText("この期間に未対応の低い評価はありません")).toBeInTheDocument();
+  });
+
+  test("期間で絞って 422 が返ったら、直す場所（期間の規則）を出す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(async (filter) =>
+      filter?.from === undefined
+        ? { ok: true, data: { max_rating: 2, period_days: 30, reviews: REVIEWS } }
+        : { ok: false, code: "validation_failed", message: "入力内容を確認してください。" },
+    );
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} />);
+    await itemsOf();
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。",
+    );
+    expect(screen.queryByRole("list", { name: "低い評価の一覧" })).not.toBeInTheDocument();
+  });
+});
+
 describe("画面への配置", () => {
   test("本部の画面の「コーチの評価」のすぐ下から低い評価の画面へ移れる", () => {
     render(<HeadquartersHome />);

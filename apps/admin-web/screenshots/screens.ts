@@ -152,6 +152,20 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   {
+    // 期間を入れて「この期間で見る」で読み直した状態。
+    id: "hq-low-reviews-period",
+    title: "本部: 低い評価（期間で絞る）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByText(/点以下の評価です。$/).waitFor();
+      await page.getByLabel("開始日").fill("2026-10-26");
+      await page.getByLabel("終了日").fill("2026-11-01");
+      await page.getByRole("button", { name: "この期間で見る" }).click();
+      await page.getByText("2026年10月26日（月） 〜 2026年11月1日（日） に送られたものです。", { exact: false }).waitFor();
+    },
+  },
+  {
     id: "hq-low-reviews-handling-confirm",
     title: "本部: 低い評価（対応済みにする前の確認）",
     role: "headquarters",

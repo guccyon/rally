@@ -407,6 +407,16 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("handled")).toBe("false");
   });
 
+  test("listLowRatedLessonReviews は from・to を handled と合わせてクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { max_rating: 2, period_days: 30, reviews: [] }));
+    await api.listLowRatedLessonReviews({ handled: false, from: "2026-10-26", to: "2026-11-01" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/lesson-reviews/low");
+    expect(url.searchParams.get("handled")).toBe("false");
+    expect(url.searchParams.get("from")).toBe("2026-10-26");
+    expect(url.searchParams.get("to")).toBe("2026-11-01");
+  });
+
   test("markLowRatedLessonReviewHandled は本文なしで PUT /api/lesson-reviews/{id}/handling を呼び、印を返す", async () => {
     const reviewId = "33333333-3333-4333-8333-333333333333";
     const handling = { handled_by: "55555555-5555-4555-8555-555555555555", handled_at: "2026-10-31T03:00:00Z" };
