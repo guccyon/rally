@@ -83,6 +83,14 @@ function rowsOf(name: string) {
     .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
 }
 
+/** 利用の様子の項目（dt）の値（dd）。 */
+function valueOf(term: string) {
+  const dt = screen.getByText(term, { selector: "dt" });
+  const dd = dt.nextElementSibling;
+  if (!(dd instanceof HTMLElement) || dd.tagName !== "DD") throw new Error(`${term} の値がありません`);
+  return dd;
+}
+
 describe("本部の生徒の利用の様子", () => {
   test("読み込み中を出し、読めたら表示名・キャンセルの件数・これからの予約・直近の受けたレッスンを API の順で出す", async () => {
     const getStudentActivity = activityOf(ACTIVITY);
@@ -95,7 +103,7 @@ describe("本部の生徒の利用の様子", () => {
     expect(getStudentActivity).toHaveBeenCalledTimes(1);
 
     expect(screen.getByText("山田 花子")).toBeInTheDocument();
-    expect(screen.getByText("3 件（これまでのすべて）")).toBeInTheDocument();
+    expect(valueOf("キャンセルした予約")).toHaveTextContent(/^3 件（これまでのすべて）$/);
     expect(rowsOf("これからの予約")).toEqual([
       ["2026/10/27 10:00:00", "確定待ち", "鈴木 コーチ", "フォアハンドの基礎（60 分）", "体験予約"],
       ["2026/10/28 18:00:00", "確定済み", "（名前を表示できません）", "—", "—"],
@@ -133,8 +141,40 @@ describe("本部の生徒の利用の様子", () => {
 
     expect(await screen.findByText("これからの予約はありません")).toBeInTheDocument();
     expect(screen.getByText("まだ受けたレッスンはありません")).toBeInTheDocument();
-    expect(screen.getByText("0 件（これまでのすべて）")).toBeInTheDocument();
+    expect(valueOf("キャンセルした予約")).toHaveTextContent(/^0 件（これまでのすべて）$/);
+    expect(valueOf("送った動画")).toHaveTextContent(/^0 件（これまでのすべて）$/);
+    expect(valueOf("返却待ち")).toHaveTextContent(/^0 件（いま返却を待っている動画）$/);
+    expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあれば一覧への入口を添える", async () => {
+    render(<StudentActivity api={{ getStudentActivity: activityOf(ACTIVITY) }} studentId={STUDENT_ID} />);
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("送った動画")).toHaveTextContent(/^4 件（これまでのすべて）$/);
+    const pending = valueOf("返却待ち");
+    expect(pending).toHaveTextContent(/^1 件（いま返却を待っている動画）返却待ちの動画添削を見る$/);
+    // 一覧には生徒の絞り込みがないので、入口は一覧そのもの
+    expect(within(pending).getByRole("link", { name: "返却待ちの動画添削を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/pending-video-reviews",
+    );
+    expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, submitted_video_count: 2, pending_video_review_count: 2 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("送った動画")).toHaveTextContent(/^2 件（これまでのすべて）$/);
+    expect(valueOf("返却待ち")).toHaveTextContent(/^2 件（いま返却を待っている動画）/);
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
   });
 
   test("API が 404 なら「見つからない」を出す", async () => {
@@ -157,6 +197,20 @@ describe("本部の生徒の利用の様子", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("この生徒は見つかりません。");
     expect(getStudentActivity).not.toHaveBeenCalled();
+  });
+
+  test("422 `validation_failed` が返れば、その理由の文言を出し、件数も入口も出さない", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "student_id が正しくありません。",
+    }));
+    render(<StudentActivity api={{ getStudentActivity }} studentId={STUDENT_ID} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("student_id が正しくありません。");
+    expect(screen.queryByText("送った動画")).not.toBeInTheDocument();
+    expect(screen.queryByText("返却待ち")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
   });
 
   test("404 以外の失敗（403 など）はその文言を出し、中身は出さない", async () => {
