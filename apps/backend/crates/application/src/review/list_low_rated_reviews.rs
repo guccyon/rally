@@ -1,23 +1,30 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use domain::{catalog::Sport, identity::AccountId, review::LowRatedReviewCriteria};
+use domain::{identity::AccountId, review::LowRatedReviewCriteria};
 
 use super::{
-    LessonReviewRepository, LowRatedReviewList, ReviewedCoachDisplayNameLookup,
-    ReviewedLessonMenuLookup, ReviewedLessonSportLookup, ReviewerDisplayNameLookup,
+    LessonReviewRepository, ListLowRatedReviewsError, ListLowRatedReviewsQuery, LowRatedReviewList,
+    ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup, ReviewedLessonSportLookup,
+    ReviewerDisplayNameLookup,
 };
-use crate::{Unavailable, clock::Clock};
+use crate::{clock::Clock, scheduling::calendar_day};
 
 /// 本部が見る低い評価の一覧のユースケース（admin-web の `listLowRatedLessonReviews`。本部だけが呼ぶ）。
 /// 照会だけで、何も保存しない。
 ///
 /// 期間の始まり（domain の [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み、低い評価を domain の
-/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。本部の対応済みかを指定されたら、
+/// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。条件（[`ListLowRatedReviewsQuery`]）で
+/// 本部の対応済みかを指定されたら、
 /// 対応済みの印（domain の [`domain::review::LowRatedReviewHandling`]）の有無がそれと同じ評価だけを残す。コーチを指定されたら、
 /// 評価されたコーチがそれと同じ評価だけを残す（いないコーチなら空の一覧。規則は domain の
 /// [`LessonReview::matches_coach`](domain::review::LessonReview::matches_coach)）。スポーツを指定されたら、評価した
 /// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
-/// （スポーツが引けない評価は残さない）。各評価には、評価した完了した
+/// （スポーツが引けない評価は残さない）。日付 `from`・`to` のどちらかを指定されたら、送った日付（日本時間。
+/// [`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の評価だけを残す（規則は domain の
+/// [`LessonReview::matches_period`](domain::review::LessonReview::matches_period)）。直近の期間（30 日）の外は期間を
+/// 指定しても載らない。`from` だけなら `from` から、`to` だけなら `to` までの 7 日で、期間の規則（`to` が `from` より前で
+/// ない・31 日まで）は本部が送ったお知らせの一覧（[`crate::notification::ListAnnouncements`]）と同じ
+/// [`calendar_day::period_ending`]・domain の [`domain::scheduling::BookingPeriod`]。各評価には、評価した完了した
 /// レッスンの元が持つレッスンメニューの写し（[`ReviewedLessonMenuLookup`]）と、コーチ・生徒の表示名
 /// （[`ReviewedCoachDisplayNameLookup`]・[`ReviewerDisplayNameLookup`]）を引いて添える。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
@@ -57,22 +64,39 @@ where
         }
     }
 
-    /// `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
+    /// `query` の `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
     /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。`coach_id` があれば、
-    /// そのコーチが評価された評価だけ。なければコーチを問わない。
+    /// そのコーチが評価された評価だけ。なければコーチを問わない。`from`・`to` のどちらかがあれば、送った日付がその期間の
+    /// 評価だけ。両方なければ期間で絞らない。期間が規則を満たさなければ [`ListLowRatedReviewsError::Invalid`]（評価は読まない）。
     pub async fn execute(
         &self,
-        sport: Option<Sport>,
-        handled: Option<bool>,
-        coach_id: Option<AccountId>,
-    ) -> Result<LowRatedReviewList, Unavailable> {
+        query: ListLowRatedReviewsQuery,
+    ) -> Result<LowRatedReviewList, ListLowRatedReviewsError> {
+        let ListLowRatedReviewsQuery {
+            sport,
+            handled,
+            coach_id,
+            from,
+            to,
+        } = query;
+        let period = match (from, to) {
+            (None, None) => None,
+            (from, to) => {
+                let (_, _, period) = calendar_day::period_ending(from, to, || {
+                    unreachable!("from か to のどちらかがあるので今日は読まない")
+                })?;
+                Some(period)
+            }
+        };
         let now = self.clock.now();
         let submitted = self
             .reviews
             .find_submitted_since(LowRatedReviewCriteria::since(now))
             .await?;
         let mut reviews = LowRatedReviewCriteria::select(submitted, now);
-        reviews.retain(|review| review.matches_coach(coach_id));
+        reviews.retain(|review| {
+            review.matches_coach(coach_id) && review.matches_period(period.as_ref())
+        });
         if let Some(handled) = handled {
             reviews.retain(|review| review.handling().is_some() == handled);
         }
@@ -143,10 +167,15 @@ mod tests {
             LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating,
             ReviewLessonMenu,
         },
+        scheduling::SchedulingError,
     };
+    use time::{Date, Month};
 
     use super::*;
-    use crate::in_memory::{FixedClock, InMemoryLessonReviewRepository};
+    use crate::{
+        Unavailable,
+        in_memory::{FixedClock, InMemoryLessonReviewRepository},
+    };
 
     const DAY: Duration = Duration::from_secs(24 * 3600);
     const COACH: AccountId = AccountId::from_u128(3);
@@ -286,7 +315,10 @@ mod tests {
             review(5, OTHER_COACH, 2, now() - 30 * DAY),
         ]);
 
-        let list = use_case.execute(None, None, None).await.unwrap();
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery::default())
+            .await
+            .unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
         assert_eq!(ids, [2, 1, 5], "コーチ・スポーツを問わず、新しい順");
         assert!(
@@ -322,7 +354,10 @@ mod tests {
     async fn no_low_reviews_is_an_empty_list_without_asking_names() {
         let use_case = use_case([review(1, COACH, 5, now())]);
 
-        let list = use_case.execute(None, None, None).await.unwrap();
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery::default())
+            .await
+            .unwrap();
         assert!(list.reviews.is_empty());
         assert!(list.lesson_menus.is_empty());
         assert!(list.coach_display_names.is_empty());
@@ -344,7 +379,10 @@ mod tests {
         ]);
 
         let list = use_case
-            .execute(Some(Sport::Tennis), None, None)
+            .execute(ListLowRatedReviewsQuery {
+                sport: Some(Sport::Tennis),
+                ..Default::default()
+            })
             .await
             .unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
@@ -368,7 +406,10 @@ mod tests {
         );
 
         let list = use_case
-            .execute(Some(Sport::Golf), None, None)
+            .execute(ListLowRatedReviewsQuery {
+                sport: Some(Sport::Golf),
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert!(list.reviews.is_empty(), "そのスポーツの評価がなければ空");
@@ -394,29 +435,54 @@ mod tests {
             list.reviews.iter().map(|r| r.id().as_u128()).collect()
         };
         assert_eq!(
-            ids(use_case.execute(None, Some(false), None).await.unwrap()),
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    handled: Some(false),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
             [2, 5],
             "未対応だけを、新しい順"
         );
         assert_eq!(
-            ids(use_case.execute(None, Some(true), None).await.unwrap()),
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    handled: Some(true),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
             [1],
             "対応済みだけ"
         );
         assert_eq!(
-            ids(use_case.execute(None, None, None).await.unwrap()),
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery::default())
+                .await
+                .unwrap()),
             [2, 1, 5],
             "指定しなければ印を問わない"
         );
         // スポーツと合わせて絞れる（レッスン 1・5 はテニス、2 は水泳）
         assert_eq!(
             ids(use_case
-                .execute(Some(Sport::Tennis), Some(false), None)
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    handled: Some(false),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [5]
         );
-        let list = use_case.execute(None, Some(true), None).await.unwrap();
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                handled: Some(true),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert_eq!(
             list.student_display_names
                 .keys()
@@ -449,7 +515,13 @@ mod tests {
         let ids = |list: LowRatedReviewList| -> Vec<u128> {
             list.reviews.iter().map(|r| r.id().as_u128()).collect()
         };
-        let list = use_case.execute(None, None, Some(COACH)).await.unwrap();
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                coach_id: Some(COACH),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert_eq!(
             use_case.coach_names.asked.lock().unwrap().clone(),
             [BTreeSet::from([COACH])],
@@ -458,7 +530,10 @@ mod tests {
         assert_eq!(ids(list), [2, 1, 5], "そのコーチの評価だけを、新しい順");
         assert_eq!(
             ids(use_case
-                .execute(None, None, Some(OTHER_COACH))
+                .execute(ListLowRatedReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [6]
@@ -466,28 +541,45 @@ mod tests {
         // 競技・対応済みと合わせて絞れる
         assert_eq!(
             ids(use_case
-                .execute(Some(Sport::Tennis), None, Some(COACH))
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    coach_id: Some(COACH),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [1, 5]
         );
         assert_eq!(
             ids(use_case
-                .execute(Some(Sport::Tennis), Some(false), Some(COACH))
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    handled: Some(false),
+                    coach_id: Some(COACH),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [5]
         );
         assert_eq!(
             ids(use_case
-                .execute(None, Some(true), Some(OTHER_COACH))
+                .execute(ListLowRatedReviewsQuery {
+                    handled: Some(true),
+                    coach_id: Some(OTHER_COACH),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [] as [u128; 0]
         );
         assert_eq!(
             ids(use_case
-                .execute(Some(Sport::Tennis), None, Some(OTHER_COACH))
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    coach_id: Some(OTHER_COACH),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()),
             [] as [u128; 0],
@@ -497,9 +589,181 @@ mod tests {
         // ない ID・コーチでない ID（生徒）は空の一覧で、表示名を問い合わせない
         let asked = use_case.coach_names.asked.lock().unwrap().len();
         for coach_id in [AccountId::from_u128(99), AccountId::from_u128(101)] {
-            let list = use_case.execute(None, None, Some(coach_id)).await.unwrap();
+            let list = use_case
+                .execute(ListLowRatedReviewsQuery {
+                    coach_id: Some(coach_id),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
             assert!(list.reviews.is_empty(), "{coach_id:?}");
         }
         assert_eq!(use_case.coach_names.asked.lock().unwrap().len(), asked);
+    }
+
+    fn date(month: Month, day: u8) -> Date {
+        Date::from_calendar_date(2026, month, day).unwrap()
+    }
+
+    #[tokio::test]
+    async fn from_and_to_keep_only_low_reviews_submitted_in_the_days_in_japan() {
+        // 照会した時刻は日本時間の 10 月 31 日 9 時
+        let oct24 = calendar_day::start(date(Month::October, 24));
+        let oct31 = calendar_day::start(date(Month::October, 31));
+        let use_case = use_case([
+            // 10 月 24 日の日本時間 0 時ちょうどは含む（レッスン 1 はテニス）
+            review(1, COACH, 1, oct24),
+            // 10 月 23 日の終わりは含まない
+            review(2, COACH, 2, oct24 - Duration::from_nanos(1)),
+            // 10 月 30 日の終わりの間際は含む（レッスン 5 はテニス）
+            review(5, OTHER_COACH, 2, oct31 - Duration::from_secs(1)),
+            // 10 月 31 日（翌日）の日本時間 0 時は含まない
+            review(6, COACH, 1, oct31),
+            // ★3 は期間の中でも載らない
+            review(3, COACH, 3, oct24 + DAY),
+        ]);
+        let ids = |list: LowRatedReviewList| -> Vec<u128> {
+            list.reviews.iter().map(|r| r.id().as_u128()).collect()
+        };
+        let week = ListLowRatedReviewsQuery {
+            from: Some(date(Month::October, 24)),
+            to: Some(date(Month::October, 30)),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            ids(use_case.execute(week).await.unwrap()),
+            [5, 1],
+            "両端の日付を含み、新しい順"
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery { to: None, ..week })
+                .await
+                .unwrap()),
+            [5, 1],
+            "from だけなら from から 7 日"
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery { from: None, ..week })
+                .await
+                .unwrap()),
+            [5, 1],
+            "to だけなら to までの 7 日"
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery::default())
+                .await
+                .unwrap()),
+            [6, 5, 1, 2],
+            "指定しなければ今までどおり"
+        );
+        // ほかの絞り込みと合わせて絞れる
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    coach_id: Some(COACH),
+                    ..week
+                })
+                .await
+                .unwrap()),
+            [1]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    handled: Some(false),
+                    ..week
+                })
+                .await
+                .unwrap()),
+            [5, 1]
+        );
+        let list = use_case.execute(week).await.unwrap();
+        assert_eq!(
+            list.student_display_names
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [101, 105].map(AccountId::from_u128),
+            "絞ったあとの評価の生徒だけ"
+        );
+    }
+
+    #[tokio::test]
+    async fn from_and_to_do_not_widen_the_last_thirty_days() {
+        // 照会した時刻の 30 日前は 10 月 1 日 0 時（UTC。日本時間の 9 時）
+        let since = now() - 30 * DAY;
+        let use_case = use_case([
+            review(1, COACH, 1, since),
+            review(2, COACH, 1, since - Duration::from_secs(1)),
+            review(5, COACH, 1, since - 5 * DAY),
+        ]);
+
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                from: Some(date(Month::September, 20)),
+                to: Some(date(Month::October, 1)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
+        assert_eq!(ids, [1], "30 日より前は期間に入っても載らない");
+    }
+
+    #[tokio::test]
+    async fn to_before_from_or_more_than_thirty_one_days_is_invalid() {
+        let use_case = use_case([review(1, COACH, 1, now() - DAY)]);
+
+        let result = use_case
+            .execute(ListLowRatedReviewsQuery {
+                from: Some(date(Month::October, 30)),
+                to: Some(date(Month::October, 29)),
+                ..Default::default()
+            })
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(ListLowRatedReviewsError::Invalid(
+                    SchedulingError::BookingPeriodEndsBeforeItStarts
+                ))
+            ),
+            "{result:?}"
+        );
+
+        let result = use_case
+            .execute(ListLowRatedReviewsQuery {
+                from: Some(date(Month::October, 1)),
+                to: Some(date(Month::November, 1)),
+                ..Default::default()
+            })
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(ListLowRatedReviewsError::Invalid(
+                    SchedulingError::BookingPeriodTooLong { max_days: 31 }
+                ))
+            ),
+            "{result:?}"
+        );
+        // 31 日ちょうどは通る
+        use_case
+            .execute(ListLowRatedReviewsQuery {
+                from: Some(date(Month::October, 1)),
+                to: Some(date(Month::October, 31)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(
+            use_case.coach_names.asked.lock().unwrap().len() == 1,
+            "期間が規則を満たさなければ表示名も引かない"
+        );
     }
 }

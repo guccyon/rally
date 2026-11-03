@@ -20,6 +20,8 @@ mod insert_review_error;
 pub mod lesson_review_id_uuid;
 mod list_coach_reviews;
 mod list_low_rated_reviews;
+mod list_low_rated_reviews_error;
+mod list_low_rated_reviews_query;
 mod low_rated_review_list;
 mod mark_low_rated_review_handled;
 mod reply_to_lesson_review;
@@ -40,6 +42,8 @@ pub use get_coach_review_summary::GetCoachReviewSummary;
 pub use insert_review_error::InsertReviewError;
 pub use list_coach_reviews::ListCoachReviews;
 pub use list_low_rated_reviews::ListLowRatedReviews;
+pub use list_low_rated_reviews_error::ListLowRatedReviewsError;
+pub use list_low_rated_reviews_query::ListLowRatedReviewsQuery;
 pub use low_rated_review_list::LowRatedReviewList;
 pub use mark_low_rated_review_handled::{
     MarkLowRatedReviewHandled, MarkLowRatedReviewHandledCommand, MarkLowRatedReviewHandledError,

@@ -3,6 +3,8 @@
 //! OpenAPI のスキーマで検査する。クエリの `handled` を付ければ印の有無で絞り（`false` で未対応だけ）、`true` / `false` で
 //! なければ 422 `validation_failed`。
 //! クエリの `sport` を付ければそのスポーツのレッスンの評価だけを返し、`Sport` の値でなければ 422 `validation_failed`。
+//! クエリの `from`・`to` を付ければ送った日付（日本時間）がその期間の評価だけを返し、日付でない・`to` が `from` より前・
+//! 31 日を超えるときは 422 `validation_failed`。
 //! コーチ・生徒は 403、トークンがなければ 401。この操作はパスパラメータを受けないので、404（見つからない）の応答はない
 //! （しきい値・期間の規則の境目は domain の `LowRatedReviewCriteria` のテストと、ここの一覧に載らない評価で確かめる）。
 
@@ -535,6 +537,76 @@ async fn coach_id_that_is_not_a_uuid_is_422_validation_failed() {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed", "{query}");
     }
+}
+
+#[tokio::test]
+async fn from_and_to_keep_only_low_reviews_submitted_in_the_days_in_japan() {
+    let router = app().await;
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // 照会した時刻は日本時間の 10 月 31 日 9 時。10 は 10 月 28 日 9 時、11 は 10 月 30 日 9 時、14 は 10 月 1 日 9 時に送った
+    for (query, expected) in [
+        ("?from=2026-10-28&to=2026-10-30", vec!["0b", "0a"]),
+        ("?from=2026-10-29&to=2026-10-29", vec![]),
+        ("?from=2026-10-29", vec!["0b"]),
+        ("?to=2026-10-01", vec!["0e"]),
+        // 30 日より前（13）は期間に入っても載らない
+        ("?from=2026-09-20&to=2026-10-01", vec!["0e"]),
+        // ほかの絞り込みと合わせて絞れる
+        (
+            "?from=2026-10-28&to=2026-10-30&coach_id=00000000-0000-0000-0000-000000000002",
+            vec!["0a"],
+        ),
+        ("?from=2026-10-01&to=2026-10-30&handled=true", vec!["0e"]),
+        ("?from=2026-10-01&to=2026-10-30&sport=tennis", vec!["0a"]),
+    ] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        let expected: Vec<String> = expected
+            .iter()
+            .map(|id| format!("00000000-0000-0000-0000-0000000000{id}"))
+            .collect();
+        assert_eq!(ids(&body), expected, "{query}");
+        assert_eq!(
+            body["period_days"], 30,
+            "期間で絞っても載せる値は変わらない"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_invalid_period_is_422_validation_failed() {
+    let router = app().await;
+    for (query, message) in [
+        (
+            "?from=2026-10-30&to=2026-10-29",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        (
+            "?from=2026-10-01&to=2026-11-01",
+            "from から to までは 31 日まで",
+        ),
+        ("?from=2026/10/01", "from は YYYY-MM-DD の日付でない"),
+        ("?to=", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
+    }
+    let (status, _) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        "?from=2026-10-01&to=2026-10-31",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "31 日まではよい");
 }
 
 #[tokio::test]

@@ -468,8 +468,16 @@ export interface paths {
          *       そのコーチの分だけを見る）。`sport`・`handled` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
          *       付けなければコーチを問わずすべて。扱いは `listCancelledBookings` の `coach_id` と同じで、コーチでない ID・ない ID・
          *       低い評価のないコーチは、404 にせず `reviews` が空の配列
-         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id` が UUID でないときは
-         *       422 `validation_failed`
+         *     - 絞り込み（任意）: `from`・`to` を付ければ、送った日付（`submitted_at` の日本時間の日付）が `from` から `to` まで
+         *       （両端を含む）の評価だけ（週ごとの振り返りで、その期間に付いた低い評価だけを見る）。`from` の日本時間 0 時（含む）から
+         *       `to` の翌日の日本時間 0 時（含まない）までに送ったもの。境界と期間の規則は `listAnnouncements` の `from`・`to` と同じ:
+         *       両方を省けば今までどおり期間（30 日）の評価すべて。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の
+         *       6 日前から（どちらも 7 日）。1 日以上 31 日まで（`from` と `to` を含めて数える）。期間（照会した時刻から 30 日）の中を
+         *       さらに絞るだけで、30 日より前の評価は `from`・`to` に入っても載らない。`sport`・`handled`・`coach_id` と合わせて
+         *       付けられる。しきい値・並べ方とレスポンスの `period_days` は付けても変わらない
+         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id` が UUID でないとき・
+         *       `to` が `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`
+         *       （`message` に理由。期間の理由は `listAnnouncements` と同じ）
          *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
@@ -3845,6 +3853,10 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /** @description 送った期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
             };
             header?: never;
             path?: never;
