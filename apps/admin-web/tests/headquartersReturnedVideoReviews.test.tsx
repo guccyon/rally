@@ -75,6 +75,41 @@ function coachesOf(coaches = COACHES) {
   return vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches } }));
 }
 
+const MENU_SERVE = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+const MENU_SWING = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
+const MENU_LIVE = "aaaaaaaa-aaaa-4aaa-8aaa-000000000003";
+
+function menu(
+  lessonMenuId: string,
+  name: string,
+  lessonType: Schemas["LessonType"],
+  coachDisplayName?: string,
+): Schemas["CoachLessonMenu"] {
+  return {
+    lesson_menu_id: lessonMenuId,
+    name,
+    sport: "tennis",
+    lesson_type: lessonType,
+    duration_minutes: lessonType === "live_lesson" ? 60 : null,
+    is_published: true,
+    coach_id: COACH_2,
+    ...(coachDisplayName === undefined ? {} : { coach_display_name: coachDisplayName }),
+    created_at: "2026-10-01T00:00:00Z",
+    recent_booking_count: 0,
+  };
+}
+
+// レッスンメニューの一覧（listLessonMenus）が返す並び。非同期のメニューだけを、この順のまま選択肢に出す。
+const MENUS: Schemas["CoachLessonMenu"][] = [
+  menu(MENU_SWING, "スイングの添削", "async_lesson"),
+  menu(MENU_LIVE, "フォアハンドの基礎", "live_lesson", "鈴木 コーチ"),
+  menu(MENU_SERVE, "サーブの添削", "async_lesson", "鈴木 コーチ"),
+];
+
+function menusOf(menus = MENUS) {
+  return vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({ ok: true, data: { lesson_menus: menus } }));
+}
+
 function cellsOf(row: HTMLElement): (string | null)[] {
   return within(row).getAllByRole("cell").map((cell) => cell.textContent);
 }
@@ -89,7 +124,7 @@ async function changePeriod(user: ReturnType<typeof userEvent.setup>, from: stri
 describe("本部の返した動画添削", () => {
   test("読み込み中を出し、開いたときに期間を付けずに読み、各行に生徒・コーチ・スポーツ・送った日時・返した日時・かかった時間を API の順と値のまま出す", async () => {
     const listReturnedVideoReviews = listOf(REVIEWS);
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: "返した動画添削の一覧" });
@@ -120,7 +155,7 @@ describe("本部の返した動画添削", () => {
   test("API の既定で実際に使った期間を件数とともに出し、期間の欄にも入れる", async () => {
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
       />,
     );
 
@@ -132,7 +167,7 @@ describe("本部の返した動画添削", () => {
   test("コーチの選択肢は「すべて」とコーチの一覧の返った順", async () => {
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
       />,
     );
     await screen.findByRole("table");
@@ -145,7 +180,7 @@ describe("本部の返した動画添削", () => {
   test("期間とコーチを選んで「この条件で見る」で API の from / to / coach_id に渡して読み直す", async () => {
     const listReturnedVideoReviews = listOf(REVIEWS);
     const user = userEvent.setup();
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
 
@@ -167,7 +202,7 @@ describe("本部の返した動画添削", () => {
   test("スポーツの選択肢は「すべて」と契約の値で、既定は「すべて」", async () => {
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
       />,
     );
     await screen.findByRole("table");
@@ -183,7 +218,7 @@ describe("本部の返した動画添削", () => {
     const user = userEvent.setup();
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
         onFilterChange={onFilterChange}
       />,
     );
@@ -205,6 +240,7 @@ describe("本部の返した動画添削", () => {
       coachId: COACH_1,
       sport: "golf",
       studentId: "",
+      lessonMenuId: "",
     });
 
     await user.selectOptions(screen.getByLabelText("スポーツ"), "すべて");
@@ -220,12 +256,13 @@ describe("本部の返した動画添削", () => {
     const listReturnedVideoReviews = listOf(REVIEWS, "2026-10-01", "2026-10-31");
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
         initialFilter={{
           period: { from: "2026-10-01", to: "2026-10-31" },
           coachId: COACH_2,
           sport: "tennis",
           studentId: "",
+          lessonMenuId: "",
         }}
       />,
     );
@@ -250,7 +287,7 @@ describe("本部の返した動画添削", () => {
     const user = userEvent.setup();
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
         onFilterChange={onFilterChange}
       />,
     );
@@ -275,10 +312,10 @@ describe("本部の返した動画添削", () => {
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間かコーチの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。",
+      "期間・コーチ・レッスンメニューのどれかの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチとレッスンメニューは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -294,7 +331,7 @@ describe("本部の返した動画添削", () => {
         data: { from: "2026-10-20", to: "2026-10-26", reviews: [REVIEWS[0]!] },
       });
     const user = userEvent.setup();
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
 
@@ -311,7 +348,7 @@ describe("本部の返した動画添削", () => {
 
   test("0 件なら「この期間に返した動画添削はありません」と出し、表は出さない", async () => {
     render(
-      <ReturnedVideoReviewList api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf() }} />,
+      <ReturnedVideoReviewList api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }} />,
     );
 
     expect(await screen.findByText("この期間に返した動画添削はありません")).toBeInTheDocument();
@@ -325,7 +362,7 @@ describe("本部の返した動画添削", () => {
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: REVIEWS } })
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: [] } });
     const user = userEvent.setup();
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
 
@@ -343,7 +380,7 @@ describe("本部の返した動画添削", () => {
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: REVIEWS } })
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: [] } });
     const user = userEvent.setup();
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
@@ -358,7 +395,7 @@ describe("本部の返した動画添削", () => {
       code: "forbidden",
       message: "権限がないためアクセスできません。",
     }));
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf() }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -371,7 +408,7 @@ describe("本部の返した動画添削", () => {
       ok: false,
       message: "サーバーに接続できません。",
     }));
-    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches }} />);
+    render(<ReturnedVideoReviewList api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches, listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("table", { name: "返した動画添削の一覧" })).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -388,8 +425,8 @@ describe("本部の返した動画添削（生徒で絞る）", () => {
     const user = userEvent.setup();
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
-        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1, lessonMenuId: "" }}
         onFilterChange={onFilterChange}
       />,
     );
@@ -413,14 +450,15 @@ describe("本部の返した動画添削（生徒で絞る）", () => {
       coachId: COACH_1,
       sport: "golf",
       studentId: STUDENT_1,
+      lessonMenuId: "",
     });
   });
 
   test("生徒だけで絞って 0 件なら「この期間にこの生徒に返した動画添削はありません」と出す", async () => {
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf() }}
-        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1, lessonMenuId: "" }}
       />,
     );
 
@@ -431,8 +469,8 @@ describe("本部の返した動画添削（生徒で絞る）", () => {
   test("生徒とコーチの両方で絞って 0 件なら「この期間に条件に合う返した動画添削はありません」と出す", async () => {
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf() }}
-        initialFilter={{ period: null, coachId: COACH_1, sport: "", studentId: STUDENT_1 }}
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: COACH_1, sport: "", studentId: STUDENT_1, lessonMenuId: "" }}
       />,
     );
 
@@ -447,24 +485,233 @@ describe("本部の返した動画添削（生徒で絞る）", () => {
     }));
     render(
       <ReturnedVideoReviewList
-        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
-        initialFilter={{ period: null, coachId: "", sport: "", studentId: "not-a-uuid" }}
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: "not-a-uuid", lessonMenuId: "" }}
       />,
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間・コーチ・生徒のどれかの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。生徒は生徒の一覧から選び直してください。",
+      "期間・コーチ・レッスンメニュー・生徒のどれかの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチとレッスンメニューは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });
 
+describe("レッスンメニューの絞り込み", () => {
+  test("選択肢は「すべて」とレッスンメニューの一覧の非同期のメニューを返った順で出し、読めるまでは選べない", async () => {
+    const listLessonMenus = menusOf();
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf(), listLessonMenus }}
+      />,
+    );
+
+    expect(screen.getByLabelText("レッスンメニュー")).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText("レッスンメニュー")).toBeEnabled());
+    expect(listLessonMenus).toHaveBeenCalledWith({});
+    const options = within(screen.getByLabelText("レッスンメニュー")).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["すべて", "スイングの添削", "サーブの添削（鈴木 コーチ）"]);
+  });
+
+  test("選んだメニューを「この条件で見る」で API の lesson_menu_id に渡して読み直し、期間・コーチ・スポーツと組み合わせられる", async () => {
+    const listReturnedVideoReviews = listOf(REVIEWS);
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByLabelText("レッスンメニュー")).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("レッスンメニュー"), "サーブの添削（鈴木 コーチ）");
+    // 選んだだけでは読み直さず、一覧の上の名前も出さない（「この条件で見る」で読む）。
+    expect(listReturnedVideoReviews).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/^レッスンメニューで絞っています:/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listReturnedVideoReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-20",
+      to: "2026-10-26",
+      lesson_menu_id: MENU_SERVE,
+    });
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: サーブの添削",
+    );
+
+    await changePeriod(user, "2026-10-01", "2026-10-31");
+    await user.selectOptions(screen.getByLabelText("コーチ"), "鈴木 コーチ");
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listReturnedVideoReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      coach_id: COACH_2,
+      sport: "tennis",
+      lesson_menu_id: MENU_SERVE,
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      period: { from: "2026-10-01", to: "2026-10-31" },
+      coachId: COACH_2,
+      sport: "tennis",
+      studentId: "",
+      lessonMenuId: MENU_SERVE,
+    });
+
+    await user.selectOptions(screen.getByLabelText("レッスンメニュー"), "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listReturnedVideoReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      coach_id: COACH_2,
+      sport: "tennis",
+    });
+    expect(listReturnedVideoReviews).toHaveBeenCalledTimes(4);
+    expect(screen.queryByText(/^レッスンメニューで絞っています:/)).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞って開いても、メニューを選べば lesson_menu_id と student_id の両方を渡す", async () => {
+    const listReturnedVideoReviews = listOf([REVIEWS[0]!]);
+    const user = userEvent.setup();
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1, lessonMenuId: "" }}
+      />,
+    );
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByLabelText("レッスンメニュー")).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("レッスンメニュー"), "スイングの添削");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listReturnedVideoReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-20",
+      to: "2026-10-26",
+      student_id: STUDENT_1,
+      lesson_menu_id: MENU_SWING,
+    });
+  });
+
+  test("渡された条件（URL のクエリ）のメニューで開き、選択欄と一覧の上に選んだメニューを出す", async () => {
+    const listReturnedVideoReviews = listOf(REVIEWS);
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: "", lessonMenuId: MENU_SERVE }}
+      />,
+    );
+    await screen.findByRole("table");
+
+    expect(listReturnedVideoReviews).toHaveBeenCalledTimes(1);
+    expect(listReturnedVideoReviews).toHaveBeenCalledWith({ lesson_menu_id: MENU_SERVE });
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: サーブの添削",
+    );
+    await waitFor(() => expect(screen.getByLabelText("レッスンメニュー")).toHaveValue(MENU_SERVE));
+  });
+
+  test("メニューだけで絞って 0 件なら、選んだメニューの名前と「この期間にこのレッスンメニューの返した動画添削はありません」を出す", async () => {
+    const listReturnedVideoReviews = vi
+      .fn<HeadquartersApi["listReturnedVideoReviews"]>()
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: REVIEWS } })
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", reviews: [] } });
+    const user = userEvent.setup();
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+      />,
+    );
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByLabelText("レッスンメニュー")).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("レッスンメニュー"), "スイングの添削");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(await screen.findByText("この期間にこのレッスンメニューの返した動画添削はありません")).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: スイングの添削",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("メニューとほかの条件で絞って 0 件なら、選んだメニューの名前と「この期間に条件に合う返した動画添削はありません」を出す", async () => {
+    const { unmount } = render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: COACH_2, sport: "", studentId: "", lessonMenuId: MENU_SERVE }}
+      />,
+    );
+    expect(await screen.findByText("この期間に条件に合う返した動画添削はありません")).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: サーブの添削",
+    );
+    unmount();
+
+    const second = render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "golf", studentId: "", lessonMenuId: MENU_SERVE }}
+      />,
+    );
+    expect(await screen.findByText("この期間に条件に合う返した動画添削はありません")).toBeInTheDocument();
+    second.unmount();
+
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus: menusOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1, lessonMenuId: MENU_SERVE }}
+      />,
+    );
+    expect(await screen.findByText("この期間に条件に合う返した動画添削はありません")).toBeInTheDocument();
+  });
+
+  test("一覧にない（または読めない）メニューで絞っていれば、名前の代わりに「名前を表示できません」を出す", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf(), listLessonMenus }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: "", lessonMenuId: MENU_SERVE }}
+      />,
+    );
+
+    expect(await screen.findByText("この期間にこのレッスンメニューの返した動画添削はありません")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+        "レッスンメニューで絞っています: （名前を表示できません）",
+      ),
+    );
+  });
+
+  test("レッスンメニューの一覧が読めなくても記録は出し、レッスンメニューの絞り込みだけを使えなくする", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf(REVIEWS), listCoaches: coachesOf(), listLessonMenus }}
+      />,
+    );
+
+    expect(await screen.findByRole("table", { name: "返した動画添削の一覧" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "レッスンメニューの一覧を読めませんでした。サーバーに接続できません。",
+    );
+    expect(screen.getByLabelText("レッスンメニュー")).toBeDisabled();
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+  });
+});
+
 describe("絞り込みの URL", () => {
   test("期間・コーチ・スポーツを契約のクエリの名前で URL に残し、期間がない・「すべて」の条件は出さない", () => {
-    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "", studentId: "" })).toBe(
+    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "", studentId: "", lessonMenuId: "" })).toBe(
       "/headquarters/returned-video-reviews",
     );
-    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "golf", studentId: "" })).toBe(
+    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "golf", studentId: "", lessonMenuId: "" })).toBe(
       "/headquarters/returned-video-reviews?sport=golf",
     );
     expect(
@@ -473,6 +720,7 @@ describe("絞り込みの URL", () => {
         coachId: COACH_1,
         sport: "tennis",
         studentId: "",
+        lessonMenuId: "",
       }),
     ).toBe(`/headquarters/returned-video-reviews?from=2026-10-01&to=2026-10-31&coach_id=${COACH_1}&sport=tennis`);
     expect(
@@ -481,10 +729,20 @@ describe("絞り込みの URL", () => {
         coachId: COACH_1,
         sport: "tennis",
         studentId: STUDENT_1,
+        lessonMenuId: "",
       }),
     ).toBe(
       `/headquarters/returned-video-reviews?from=2026-10-01&to=2026-10-31&coach_id=${COACH_1}&sport=tennis&student_id=${STUDENT_1}`,
     );
+    expect(
+      returnedVideoReviewsPath({
+        period: null,
+        coachId: COACH_1,
+        sport: "",
+        studentId: STUDENT_1,
+        lessonMenuId: MENU_SERVE,
+      }),
+    ).toBe(`/headquarters/returned-video-reviews?coach_id=${COACH_1}&student_id=${STUDENT_1}&lesson_menu_id=${MENU_SERVE}`);
     expect(studentReturnedVideoReviewsPath(STUDENT_1)).toBe(
       `/headquarters/returned-video-reviews?student_id=${STUDENT_1}`,
     );
@@ -495,30 +753,37 @@ describe("絞り込みの URL", () => {
       returnedVideoReviewFilterFrom(
         new URLSearchParams(`from=2026-10-01&to=2026-10-31&coach_id=${COACH_2}&sport=tennis`),
       ),
-    ).toEqual({ period: { from: "2026-10-01", to: "2026-10-31" }, coachId: COACH_2, sport: "tennis", studentId: "" });
+    ).toEqual({ period: { from: "2026-10-01", to: "2026-10-31" }, coachId: COACH_2, sport: "tennis", studentId: "", lessonMenuId: "" });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams(`student_id=${STUDENT_1}&coach_id=${COACH_1}`))).toEqual({
       period: null,
       coachId: COACH_1,
       sport: "",
       studentId: STUDENT_1,
+      lessonMenuId: "",
     });
+    expect(
+      returnedVideoReviewFilterFrom(new URLSearchParams(`lesson_menu_id=${MENU_SERVE}&sport=tennis`)),
+    ).toEqual({ period: null, coachId: "", sport: "tennis", studentId: "", lessonMenuId: MENU_SERVE });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams(""))).toEqual({
       period: null,
       coachId: "",
       sport: "",
       studentId: "",
+      lessonMenuId: "",
     });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams("from=2026-10-01&sport=cricket"))).toEqual({
       period: null,
       coachId: "",
       sport: "",
       studentId: "",
+      lessonMenuId: "",
     });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams("from=2026-09-01&to=2026-10-31"))).toEqual({
       period: null,
       coachId: "",
       sport: "",
       studentId: "",
+      lessonMenuId: "",
     });
   });
 });
@@ -554,6 +819,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf(REVIEWS),
       listCoaches: coachesOf(),
+      listLessonMenus: menusOf(),
     });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
@@ -578,6 +844,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf(REVIEWS),
       listCoaches: coachesOf(),
+      listLessonMenus: menusOf(),
     });
     const user = userEvent.setup();
     render(<ReturnedVideoReviewsHome token="mock.headquarters.x" />);
@@ -610,13 +877,14 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf([REVIEWS[0]!]),
       listCoaches: coachesOf(),
+      listLessonMenus: menusOf(),
       getStudentActivity,
     });
     const user = userEvent.setup();
     render(
       <ReturnedVideoReviewsHome
         token="mock.headquarters.x"
-        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1, lessonMenuId: "" }}
       />,
     );
 
@@ -646,6 +914,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf(REVIEWS),
       listCoaches: coachesOf(),
+      listLessonMenus: menusOf(),
     });
     render(<ReturnedVideoReviewsHome token="mock.headquarters.x" />);
     await screen.findByRole("table", { name: "返した動画添削の一覧" });
@@ -658,6 +927,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf(REVIEWS),
       listCoaches: coachesOf(),
+      listLessonMenus: menusOf(),
     });
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(

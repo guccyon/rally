@@ -89,6 +89,7 @@ export function headquartersApi(client: ApiClient) {
       coach_id?: string;
       sport?: Schemas["Sport"];
       student_id?: string;
+      lesson_menu_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (
