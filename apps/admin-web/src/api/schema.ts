@@ -544,7 +544,9 @@ export interface paths {
          *     - 絞り込み（任意）: `student_id` を付ければ、その生徒が評価した評価だけ（同じ生徒から低い評価が続いていないかを本部が
          *       確かめる）。`sport`・`handled`・`coach_id`・`from`・`to` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
          *       付けなければ生徒を問わずすべて。扱いは `listCancelledBookings` の `student_id` と同じで、生徒でない ID・ない ID・
-         *       低い評価のない生徒は、404 にせず `reviews` が空の配列
+         *       低い評価のない生徒は、404 にせず `reviews` が空の配列。`student_id` だけを付けたときの件数は生徒 1 人の利用の様子
+         *       （`getStudentActivity`）の `low_rated_review_count` と、`handled=false` も付けたときの件数は
+         *       `unhandled_low_rated_review_count` と同じ
          *     - 絞り込み（任意）: `from`・`to` を付ければ、送った日付（`submitted_at` の日本時間の日付）が `from` から `to` まで
          *       （両端を含む）の評価だけ（週ごとの振り返りで、その期間に付いた低い評価だけを見る）。`from` の日本時間 0 時（含む）から
          *       `to` の翌日の日本時間 0 時（含まない）までに送ったもの。境界と期間の規則は `listAnnouncements` の `from`・`to` と同じ:
@@ -1312,6 +1314,16 @@ export interface paths {
          *       境界（ちょうど 24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は
          *       backend の domain `UnansweredThreadCriteria` の既定の 1 か所で、数は `StudentUnansweredMessageThreadCount`）。件数だけで、
          *       メッセージの本文やスレッドの ID は返さない（中身は `listUnansweredMessageThreads` で見る）。該当するスレッドがなければ 0
+         *     - `low_rated_review_count`: その生徒がつけた評価（glossary の lesson_review）のうち、`listLowRatedLessonReviews` に載る
+         *       低い評価の数。**その生徒で絞った低い評価の一覧と同じ数**で、`listLowRatedLessonReviews` に `student_id` だけを付けたとき
+         *       （既定のしきい値と期間。点 `rating` が 2 以下で、照会した時刻の 30 日前（含む）から照会した時刻（含む）までに送られた
+         *       もの。コーチ・スポーツ・送った日付・対応済みかで絞らない）の `reviews` の件数と同じ。しきい値と期間は
+         *       `listLowRatedLessonReviews` の説明のとおり（実装は backend の domain `LowRatedReviewCriteria` の 1 か所で、数は
+         *       `StudentLowRatedReviewCount`）。評価されたコーチを問わない。該当する評価がなければ 0
+         *     - `unhandled_low_rated_review_count`: `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない
+         *       （`markLowRatedLessonReviewHandled` をしていない）評価の数。`listLowRatedLessonReviews` に `student_id` と
+         *       `handled=false` だけを付けたときの `reviews` の件数と同じ。`low_rated_review_count` 以下
+         *     - 低い評価は件数だけで、評価の本文・点・評価の ID は返さない（中身は `listLowRatedLessonReviews` の `student_id` で見る）
          *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
          *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
          *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -2623,8 +2635,8 @@ export interface components {
         };
         /**
          * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-         *     キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま時間の過ぎたスレッドの数を添える。生徒を特定する情報は
-         *     表示名と ID だけ
+         *     キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま時間の過ぎたスレッドの数・その生徒がつけた直近の低い評価の
+         *     件数と未対応の件数を添える。生徒を特定する情報は表示名と ID だけ
          */
         StudentActivity: {
             /**
@@ -2652,6 +2664,16 @@ export interface components {
              *     （`listUnansweredMessageThreads` に `student_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
              */
             unanswered_message_thread_count: number;
+            /**
+             * @description その生徒がつけた直近 30 日の低い評価（★2 以下。`listLowRatedLessonReviews` と同じ線）の件数。対応済みかを問わない。
+             *     その生徒で絞った低い評価の一覧と同じ数（`listLowRatedLessonReviews` に `student_id` だけを付けたときの `reviews` の件数と同じ）
+             */
+            low_rated_review_count: number;
+            /**
+             * @description `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない件数（`listLowRatedLessonReviews` に `student_id` と
+             *     `handled=false` を付けたときの `reviews` の件数と同じ。`low_rated_review_count` 以下）
+             */
+            unhandled_low_rated_review_count: number;
         };
         /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
         StudentActivityBooking: {

@@ -1023,6 +1023,8 @@ export const FIXTURES: Fixture[] = [
       pending_video_review_count: 1,
       // 生徒で絞った返事のないメッセージの応答（1 件）と揃える。0 件だと一覧への入口が出ず hq-unanswered-messages-by-student が撮れない
       unanswered_message_thread_count: 1,
+      low_rated_review_count: 0,
+      unhandled_low_rated_review_count: 0,
     } satisfies Schemas["StudentActivity"],
   },
   {

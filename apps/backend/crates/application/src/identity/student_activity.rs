@@ -23,6 +23,12 @@ pub struct StudentActivity {
     /// 返信のないまま既定の時間の過ぎたスレッドの数（[`super::StudentUnansweredMessageThreadCountLookup`]。
     /// `listUnansweredMessageThreads` に `student_id` だけを付けたときの一覧の件数と同じ）
     pub unanswered_message_thread_count: u32,
+    /// その生徒がつけた直近の低い評価の件数（[`super::StudentLowRatedReviewCountLookup`]。`listLowRatedLessonReviews` に
+    /// `student_id` だけを付けたときの一覧の件数と同じ。対応済みかを問わない）
+    pub low_rated_review_count: u32,
+    /// `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない件数（`listLowRatedLessonReviews` に
+    /// `student_id` と `handled=false` を付けたときの一覧の件数と同じ）
+    pub unhandled_low_rated_review_count: u32,
     /// `upcoming_bookings` と `recent_lessons` のコーチの表示名（コーチの ID ごと）。表示名が引けないコーチは含まない
     pub coaches: BTreeMap<AccountId, DisplayName>,
 }
