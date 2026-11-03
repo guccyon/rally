@@ -89,6 +89,20 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-slot-supply-sport",
+    title: "本部: 予約枠の需給（期間とスポーツを指定）",
+    role: "headquarters",
+    path: "/headquarters/slot-supply",
+    open: async (page) => {
+      await page.getByRole("table").waitFor();
+      await page.getByLabel("開始日").fill("2026-11-02");
+      await page.getByLabel("終了日").fill("2026-11-08");
+      await page.getByRole("combobox", { name: "スポーツ" }).selectOption({ label: "ゴルフ" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByRole("heading", { name: "ゴルフを提供するコーチの予約枠の需給" }).waitFor();
+    },
+  },
+  {
     id: "hq-slot-supply-empty",
     title: "本部: 予約枠の需給（期間を指定して 0 件）",
     role: "headquarters",

@@ -4,7 +4,9 @@ import type { ApiClient, Schemas } from "./client";
 /** 本部の操作（契約の operationId と 1 対 1）。 */
 export function headquartersApi(client: ApiClient) {
   return {
-    getSlotSupply: (filter: { from?: string; to?: string; coach_id?: string } = {}) =>
+    getSlotSupply: (
+      filter: { from?: string; to?: string; coach_id?: string; sport?: Schemas["Sport"] } = {},
+    ) =>
       call(() => client.GET("/slot-supply", { params: { query: filter } })),
     listCoaches: (
       filter: {
