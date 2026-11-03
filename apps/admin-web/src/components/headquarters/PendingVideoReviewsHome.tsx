@@ -15,7 +15,7 @@ import {
   SPORTS,
 } from "./PendingVideoReviewList";
 
-/** 「返却待ちの動画添削」の画面の URL。 */
+/** 本部の「返却待ちの動画添削」の画面の URL。 */
 export const PENDING_VIDEO_REVIEWS_PATH = "/headquarters/pending-video-reviews";
 
 /** URL に絞り込みを残すクエリの名前（契約の `listPendingVideoReviews` のクエリと同じ）。 */
