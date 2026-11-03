@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
@@ -47,6 +47,7 @@ function StudentCell({ video }: { video: CoachVideo }) {
  * 添削コメントの欄（VideoReviewCommentForm。AI の一次フィードバックも欄の上に出す）を開いて返却（returnVideoReview）する。
  * 添削待ち・返却済みの行には、動画を送った時点のレッスンメニューがあれば「メニュー: 〇〇」を出す。
  * 返却したら一覧を取り直す。`initialVideoId`（対応待ちから移ったときの動画）が添削待ちにあれば、その欄を開いた状態で出す。
+ * 「返却待ちだけ」は API の `pending_only=true` に渡す。開いたときは条件なしで読み、切り替えたときと返却後の取り直しは選んだ条件で読む。
  */
 export function ReturnVideoReviewForm({
   api,
@@ -55,21 +56,28 @@ export function ReturnVideoReviewForm({
   api: Pick<CoachApi, "listMyCoachVideos" | "returnVideoReview">;
   initialVideoId?: string;
 }) {
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selected, setSelected] = useState<CoachVideo | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // 切り替えを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
+  const latestRequest = useRef(0);
 
-  const fetchVideos = useCallback(async (): Promise<ListState> => {
-    const response = await api.listMyCoachVideos();
-    if (!response.ok) return { kind: "failed", message: response.message };
-    return { kind: "loaded", ...splitVideos(response.data.videos) };
-  }, [api]);
+  const fetchVideos = useCallback(
+    async (onlyPending: boolean): Promise<ListState> => {
+      const response = await api.listMyCoachVideos(onlyPending ? { pending_only: true } : {});
+      if (!response.ok) return { kind: "failed", message: response.message };
+      return { kind: "loaded", ...splitVideos(response.data.videos) };
+    },
+    [api],
+  );
 
-  // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
-    void fetchVideos().then((next) => {
-      if (!active) return;
+    const request = ++latestRequest.current;
+    void fetchVideos(false).then((next) => {
+      if (!active || request !== latestRequest.current) return;
       setList(next);
       if (next.kind === "loaded") {
         setSelected(next.waiting.find((video) => video.video_id === initialVideoId) ?? null);
@@ -79,6 +87,20 @@ export function ReturnVideoReviewForm({
       active = false;
     };
   }, [fetchVideos, initialVideoId]);
+
+  async function reload(onlyPending: boolean) {
+    const request = ++latestRequest.current;
+    const loaded = await fetchVideos(onlyPending);
+    if (request === latestRequest.current) setList(loaded);
+  }
+
+  async function changePendingOnly(next: boolean) {
+    setPendingOnly(next);
+    setResult(null);
+    setSelected(null);
+    setList({ kind: "loading" });
+    await reload(next);
+  }
 
   function onSelect(video: CoachVideo) {
     setSelected(video);
@@ -95,7 +117,7 @@ export function ReturnVideoReviewForm({
         : `${studentName(selected)}に添削を返却しました。`,
     });
     setSelected(null);
-    setList(await fetchVideos());
+    await reload(pendingOnly);
   }
 
   return (
@@ -103,10 +125,20 @@ export function ReturnVideoReviewForm({
       <p className="text-sm">
         生徒から届いた動画です。添削待ちの動画の「添削する」を押すと、コメントを書いて返却できます。
       </p>
+      <label className="flex items-center gap-1 text-sm">
+        <input
+          type="checkbox"
+          checked={pendingOnly}
+          onChange={(event) => void changePendingOnly(event.target.checked)}
+        />
+        返却待ちだけ
+      </label>
       {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
       {list.kind === "loaded" && list.waiting.length === 0 && list.returned.length === 0 && (
-        <p className="text-sm">まだ動画は届いていません。</p>
+        <p className="text-sm">
+          {pendingOnly ? "返却待ちの動画はありません。" : "まだ動画は届いていません。"}
+        </p>
       )}
       {list.kind === "loaded" && (list.waiting.length > 0 || list.returned.length > 0) && (
         <>

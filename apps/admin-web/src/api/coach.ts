@@ -23,7 +23,8 @@ export function coachApi(client: ApiClient) {
           params: { path: { slot_id: slotId } },
         }),
       ),
-    listMyCoachVideos: () => call(() => client.GET("/coaches/me/videos")),
+    listMyCoachVideos: (filter: { pending_only?: boolean } = {}) =>
+      call(() => client.GET("/coaches/me/videos", { params: { query: filter } })),
     listMyCoachBookings: () => call(() => client.GET("/coaches/me/bookings")),
     startLiveLessonSession: (body: Schemas["StartLiveLessonSessionRequest"]) =>
       call(() => client.POST("/live-lesson-sessions", { body })),
