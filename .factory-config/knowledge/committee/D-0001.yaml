@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0001
+pr: https://github.com/guccyon/rally/pull/825
+decided_at: '2026-11-04'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0001
+- K-0002
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - knowledge/ にはこれまで知見も議決もないので、K-0001 と K-0002 が既存の知見と矛盾したり重なったりすることはなく、影響を受ける既存の知見の扱いを添える必要もありません。
+  - specs/ の glossary.yaml と context-map.yaml はプロダクトの領域（予約・権限など）の規範で、工場の工程についての K-0001
+    と K-0002 とは用語も主張もぶつかりません。
+  - K-0001（PR 本文の見出しの重なり）と K-0002（CHANGELOG の衝突）は同じ C-0001 から出ていますが、真因と作用先が別なので 1
+    件 1 主張に分かれています。K-0002 が本文の追記による次の欠陥に触れている部分は、K-0001 へのつながりとして読めば重複ではありません。
+  - K-0002 の enforcement には、すでに入っている changelog.d/ の断片方式（Engine ADR 0027）が担保として書かれていて、効き目をまだ確かめていない点も明記されています。確かさを
+    hypothesis にしておくことと矛盾しません。
+  - INDEX.md の 2 行は README の決まりどおり knowledge_check.py --index で作った形になっていて、K-*.yaml
+    の id・テーマ・確かさ・期限と食い違っていません。
+  - C-0001 で見つかった検査の rubric と CLAUDE.md の PR の決まりのずれは、まだ知見になっていません。別の変更セットで知見にするかどうか検討するとよいでしょう。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0001 と K-0002 は、どちらも根拠として case C-0001、pr 546、event case.analyzed:113682 を指しています。C-0001
+    には job 1499・1504・1507・1508・1509 と、時刻つきの events（pr.conflicted 12:38:32、handoff.saved
+    12:41:09、pr.body_amended 12:49:33 など）が書かれていて、一次記録まで辿れます。
+  - 'K-0001 のなぜなぜの 3 段目と 4 段目は、指示文が材料にないため推測だと C-0001 自身が書いています。根拠は 1 件の事例だけなので、confidence:
+    hypothesis のままが妥当です。'
+  - K-0001 を confirmed に上げるのは、続きのジョブへの実際の指示文と、Engine が本文を組み込む処理を確かめ、推測の部分が裏づけられてからにすべきです。
+  - K-0002 の衝突、tier-large の続きのジョブ、cost_usd 2.59、本文への追記による次の欠陥という因果は、C-0001 の process
+    の項に記録が揃っています。ただし「起きやすい」と言える根拠は 1 件だけなので、hypothesis が妥当です。
+  - K-0002 の enforcement.solutions は、効き目をまだ確かめていないと正直に書いています。changelog.d/ を入れたあとに
+    CHANGELOG だけの衝突が減ったかを数えれば、確かさを上げる根拠になります。
+  - 利用者の氏名・連絡先・利用者 ID・本文の引用は見当たりません。題材の getBooking も「本部が予約 1 件の詳細を見る」と機能の言葉に抽象化されていて、残っているのは
+    PR・Issue・job の番号だけです。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'K-0001 の欠陥（PR 本文で同じレベルの ## 見出しが 2 回出る）は機械で線が引きやすく、続きのジョブのたびに繰り返しそうなので、context
+    のままにせず決定論の検査で担保すべきです。'
+  - K-0001 の検査は本文の見出しを数えるだけで作る費用が小さく、外すと tier-judge の 2 ジョブと body_fix の 1 ジョブが無駄になるので、作る値打ちがあります。
+  - 'K-0001 の Engine で ## を ### に下げる直し方は Engine に作用するので人の承認が要りますが、本文の検査はそれとは別に先に入れられます。'
+  - K-0002 はすでに changelog.d/ の断片方式（config）で決定論の担保が書かれていて妥当ですが、効き目は確かめていないので confidence
+    は hypothesis のままがよいです。
+  - K-0002 は断片方式が守られ続けるよう、PR が CHANGELOG.md の [Unreleased] を直接書き換えたら止める CI の検査を足すと、より確かに担保できます。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - '反対の観点で探しましたが、K-0001 と K-0002 はどちらも hypothesis の draft で、「〜だと」「〜しやすい」という条件つきの言い方なので、PR
+    #546 の 1 件から言い過ぎてはおらず、採らない理由にはなりません。'
+  - K-0001 の scope.roles は judge まで含んでいて少し広く、主張が直接効くのは implement と body_fix、見つける側として
+    inspect なので、確かさを上げる前に judge を外すかどうか見直してください。
+  - K-0001 の主張は実装役への伝達不足と Engine が見出しを下げないことの 2 つの原因をまとめており、C-0001 でもどちらも推測なので、confirmed
+    に上げる前に続きのジョブへの指示文を確かめて、どちらが効いているかを分けてください。
+  - K-0002 は ADR 0027 の changelog.d/ 断片方式ですでに手が打たれているので、反例として断片方式にしたあとも続きのジョブが CHANGELOG
+    以外の衝突で走り、同じ見出しの重なりが起きていないかを review_by までに確かめてください。
+  - K-0002 の enforcement.level は deterministic ですが、効き目はまだ確かめていないと書いてあるので、衝突が減ったことを記録で示せるまでは確かさを
+    hypothesis のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'PR 本文の更新（pr.head_updated・handoff.saved のあと）に、同じ ## 見出しが 2 回以上ないこと、および続きのジョブの記録が「##
+    工場の記録」の下の ### に収まっていることを見る検査を core-gates に足し、外れたら検査役に回す前に止める。'
+- knowledge: K-0002
+  level: deterministic
+  solution_kind: ci_check
+  proposal: PR の差分が CHANGELOG.md の [Unreleased] を直接変えていて changelog.d/<Issue 番号>.md
+    を足していなければ失敗にする CI の検査を足し、取りまとめの工程（core-gates/changelog_compile.py）だけを例外にする。
