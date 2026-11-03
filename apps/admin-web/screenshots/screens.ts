@@ -35,6 +35,19 @@ export const SCREENS: Screen[] = [
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
   { id: "coach-slots", title: "コーチ: 予約枠", role: "coach", path: "/coach", open: coachTab("予約枠") },
   {
+    id: "coach-slots-period-empty",
+    title: "コーチ: 予約枠（期間を指定して 0 件）",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await coachTab("予約枠")(page);
+      await page.getByLabel("開始日").fill("2026-12-21");
+      await page.getByLabel("終了日").fill("2026-12-27");
+      await page.getByRole("button", { name: "この期間で見る" }).click();
+      await page.getByText("に始まる枠はありません。").waitFor();
+    },
+  },
+  {
     id: "coach-lesson-menus",
     title: "コーチ: レッスンメニュー",
     role: "coach",
