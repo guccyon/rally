@@ -114,7 +114,14 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listBookings: (query: { from?: string; to?: string; coach_id?: string; student_id?: string; trial?: boolean }) =>
+    listBookings: (query: {
+      from?: string;
+      to?: string;
+      coach_id?: string;
+      student_id?: string;
+      trial?: boolean;
+      lesson_menu_id?: string;
+    }) =>
       call(() => client.GET("/bookings", { params: { query } })),
     listCancelledBookings: (filter: { from?: string; to?: string; coach_id?: string }) =>
       call(() => client.GET("/bookings/cancelled", { params: { query: filter } })),

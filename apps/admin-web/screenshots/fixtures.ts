@@ -807,6 +807,19 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // レッスンメニュー「フォアハンドの基礎」で絞った予約の一覧（hq-bookings-by-lesson-menu）。絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter(
+        (item) => item.booking.lesson_menu?.lesson_menu_id === MENU_FORE.lesson_menu_id,
+      ),
+    } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
     method: "GET",
     path: "/bookings",
     body: {

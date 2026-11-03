@@ -6,7 +6,13 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { BookingList } from "@/components/headquarters/BookingList";
-import { BookingListHome, bookingListPath, studentBookingListPath } from "@/components/headquarters/BookingListHome";
+import { BookingLessonMenuFilter } from "@/components/headquarters/BookingLessonMenuFilter";
+import {
+  BookingListHome,
+  bookingListPath,
+  lessonMenuBookingListPath,
+  studentBookingListPath,
+} from "@/components/headquarters/BookingListHome";
 import { BookingStudentFilter } from "@/components/headquarters/BookingStudentFilter";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
@@ -545,5 +551,181 @@ describe("本部の予約（生徒で絞る）", () => {
 
   test("studentBookingListPath は生徒の ID をクエリに入れる", () => {
     expect(studentBookingListPath(STUDENT_ID)).toBe(`/headquarters/bookings?student_id=${STUDENT_ID}`);
+  });
+});
+
+describe("本部の予約（レッスンメニューで絞る）", () => {
+  const MENU_ID = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+  const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
+  const COACH_ID = "22222222-2222-4222-8222-000000000001";
+
+  function menu(lessonMenuId: string, name: string): Schemas["CoachLessonMenu"] {
+    return {
+      lesson_menu_id: lessonMenuId,
+      name,
+      sport: "tennis",
+      lesson_type: "live_lesson",
+      duration_minutes: 60,
+      is_published: true,
+      coach_id: COACH_ID,
+      coach_display_name: "鈴木 コーチ",
+      created_at: "2026-10-01T00:00:00Z",
+      recent_booking_count: 1,
+    };
+  }
+
+  test("lessonMenuId があれば listBookings に lesson_menu_id を付けて読み、期間を変えても絞り込みは残る", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([BOOKINGS[0]!]);
+    render(<BookingList api={{ listBookings }} lessonMenuId={MENU_ID} />);
+
+    expect(screen.getByText(/^このレッスンメニューの予約を/)).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", lesson_menu_id: MENU_ID });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・1 件")).toBeInTheDocument();
+    expect(bodyRows("2026年10月26日（月） の予約").map((row) => cellsOf(row)[4])).toEqual(["フォアハンドの基礎（60 分）"]);
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-28");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    await waitFor(() =>
+      expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-28", lesson_menu_id: MENU_ID }),
+    );
+  });
+
+  test("コーチ・生徒・「体験予約だけ」と組み合わせると、すべてを付けて読む", async () => {
+    const user = userEvent.setup();
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
+
+    expect(screen.getByText(/^このコーチの枠への、この生徒の、このレッスンメニューの予約を/)).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      student_id: STUDENT_ID,
+      lesson_menu_id: MENU_ID,
+    });
+    await screen.findByText("この期間に、このレッスンメニューの予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(listBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      student_id: STUDENT_ID,
+      trial: true,
+      lesson_menu_id: MENU_ID,
+    });
+    expect(await screen.findByText("この期間に、このレッスンメニューの体験予約はありません")).toBeInTheDocument();
+  });
+
+  test("0 件なら「この期間に、このレッスンメニューの予約はありません」と出し、表は出さない", async () => {
+    render(<BookingList api={{ listBookings: listOf([]) }} lessonMenuId={MENU_ID} />);
+
+    expect(await screen.findByText("この期間に、このレッスンメニューの予約はありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間の予約はありません")).not.toBeInTheDocument();
+  });
+
+  test("lessonMenuId がなければ lesson_menu_id を付けない", () => {
+    const listBookings = listOf([]);
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+
+    expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("lesson_menu_id");
+  });
+
+  test("422 validation_failed なら開き直す場所を出し、一覧は出さない", async () => {
+    const listBookings = vi.fn<HeadquartersApi["listBookings"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力の内容が正しくありません。",
+    }));
+    render(<BookingList api={{ listBookings }} lessonMenuId="not-a-uuid" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "絞り込みの指定が正しくありません。レッスンメニューの一覧の「直近 30 日の予約」から開き直してください。",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(/予約はありません$/)).not.toBeInTheDocument();
+  });
+
+  test("422 以外の失敗はその文言を出す", async () => {
+    const listBookings = vi.fn<HeadquartersApi["listBookings"]>(async () => ({
+      ok: false,
+      code: "forbidden",
+      message: "権限がないためアクセスできません。",
+    }));
+    render(<BookingList api={{ listBookings }} lessonMenuId={MENU_ID} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
+  });
+
+  test("絞っているメニューの名前を listLessonMenus で読んで出す", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: true,
+      data: { lesson_menus: [menu("aaaaaaaa-aaaa-4aaa-8aaa-000000000009", "サーブの添削"), menu(MENU_ID, "フォアハンドの基礎")] },
+    }));
+    render(<BookingLessonMenuFilter api={{ listLessonMenus }} lessonMenuId={MENU_ID} />);
+
+    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(listLessonMenus).toHaveBeenCalledWith({});
+    expect(await screen.findByText("フォアハンドの基礎")).toBeInTheDocument();
+    expect(screen.getByText(/^レッスンメニューで絞っています:/)).toBeInTheDocument();
+  });
+
+  test("メニューが一覧にない・読めなければ名前の代わりに「名前を表示できません」を出す", async () => {
+    const missing = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: true,
+      data: { lesson_menus: [menu("aaaaaaaa-aaaa-4aaa-8aaa-000000000009", "サーブの添削")] },
+    }));
+    const { unmount } = render(<BookingLessonMenuFilter api={{ listLessonMenus: missing }} lessonMenuId={MENU_ID} />);
+    expect(await screen.findByText("（名前を表示できません）")).toBeInTheDocument();
+    unmount();
+
+    const failed = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(<BookingLessonMenuFilter api={{ listLessonMenus: failed }} lessonMenuId={MENU_ID} />);
+    expect(await screen.findByText("（名前を表示できません）")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("メニューで絞った画面には「すべてのレッスンメニューの予約を見る」があり、ほかの絞り込みは残す", () => {
+    const { unmount } = render(<BookingListHome token="mock.headquarters.abc" lessonMenuId={MENU_ID} />);
+    expect(screen.getByRole("link", { name: "すべてのレッスンメニューの予約を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/bookings",
+    );
+    expect(screen.getByText(/^レッスンメニューで絞っています:/)).toBeInTheDocument();
+    unmount();
+
+    render(
+      <BookingListHome token="mock.headquarters.abc" coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />,
+    );
+    expect(screen.getByRole("link", { name: "すべてのレッスンメニューの予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?coach_id=${COACH_ID}&student_id=${STUDENT_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "すべてのコーチの予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?student_id=${STUDENT_ID}&lesson_menu_id=${MENU_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "すべての生徒の予約を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/bookings?coach_id=${COACH_ID}&lesson_menu_id=${MENU_ID}`,
+    );
+  });
+
+  test("メニューで絞らない画面にはメニューの絞り込みの表示がない", () => {
+    render(<BookingListHome token="mock.headquarters.abc" />);
+    expect(screen.queryByRole("link", { name: "すべてのレッスンメニューの予約を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^レッスンメニューで絞っています:/)).not.toBeInTheDocument();
+  });
+
+  test("lessonMenuBookingListPath はメニューの ID をクエリに入れる", () => {
+    expect(lessonMenuBookingListPath(MENU_ID)).toBe(`/headquarters/bookings?lesson_menu_id=${MENU_ID}`);
   });
 });
