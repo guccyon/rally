@@ -1316,7 +1316,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 通話セッションの記録を期間とコーチ・生徒で見る（本部）
+         * 通話セッションの記録を期間とコーチ・生徒・競技で見る（本部）
          * @description 通話セッション（glossary の live_lesson_session）のうち、開始した日付（日本時間）が `from` から `to` まで（両端を含む）の
          *     ものを、終了の有無を問わずコーチを問わず横断で返す。本部が問い合わせを受けたときに、ライブレッスンがいつ始まり
          *     いつ終わったかを引くための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
@@ -1336,6 +1336,13 @@ export interface paths {
          *       絞り込みに使った生徒と違うことがある）。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。
          *       省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・期間に
          *       セッションがない生徒は、404 にせず `sessions` が空の配列
+         *     - 任意の `sport` で、その競技のセッションだけに絞れる（競技ごとの担当が自分の競技のライブレッスンの記録だけを見る）。
+         *       セッションの競技はセッションのコーチの競技で、コーチの提供スポーツのどれかが `sport` と一致するセッションだけを返す
+         *       （決め方は `listCoaches`・`listOverdueLiveLessonSessions` の `sport` と同じ。実装は backend の domain `CoachSportFilter` の
+         *       1 か所。ゴルフも絞れる）。アカウントの引けないコーチのセッションは、`sport` を付けると載らない。期間・`coach_id`・
+         *       `student_id` と組み合わせられ、期間の規則と並べ方は変わらない。省けばすべての競技。`sport` が `Sport` の値でなければ
+         *       422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。期間に該当するセッションがない競技は
+         *       `sessions` が空の配列
          *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件。
          *       本部が終わらせたセッション（`endLiveLessonSessionByHeadquarters`）は、本部が操作した時刻を `ended_at` にして載る
          *     - 並べ方: 開始 `started_at` の新しい順。同じ時刻は `session_id` の順
@@ -4570,6 +4577,11 @@ export interface operations {
                  *     返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あればこの競技を提供するコーチのセッションだけに絞る（コーチの提供スポーツのどれかが一致するもの）。省けばすべての競技。
+                 *     `Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;
