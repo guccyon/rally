@@ -2761,12 +2761,28 @@ paths:
         - 期間の規則は `listBookings` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を
           超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
         - 並べ方と `read_count` の数え方は期間で絞っても変わらない
+        - 題で探す（任意）: `q` を付ければ、題 `title` に `q` を部分文字列として含むお知らせだけを返す（以前に送ったお知らせを
+          本部がすぐ見つけるのに使う）。一致のしかた・上限は `listAnnouncementDrafts` の `q` と同じ（domain の同じ 1 か所で
+          照合する）: `q` の前後の空白（全角の空白を含む）は除いて比べ、途中の空白はそのまま比べる。大文字・小文字は ASCII の
+          英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなとカタカナなどは書いたとおりに比べる。`%` や `_` も
+          ワイルドカードでなく文字のまま。`q` を付けない・空・空白だけのときは絞り込まない（今までどおり）。本文・対象の
+          スポーツでは探さない。取り下げたお知らせも題が一致すれば載る
+        - `q` は `from`・`to` と組み合わせられる（期間に送ったもののうち題が一致するもの）。並べ方と `read_count` の数え方は
+          `q` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列
+        - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ）まで。超えたら 422
+          `validation_failed`（`message` に理由）
 
         行動イベントは発火しない。
       tags: [notification]
       x-context: notification
       x-analytics-events: []
       parameters:
+        - name: q
+          in: query
+          required: false
+          description: 題の検索語。題に部分一致するお知らせだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない）
+          schema:
+            type: string
         - name: from
           in: query
           required: false
