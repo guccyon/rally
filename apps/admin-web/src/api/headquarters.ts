@@ -86,6 +86,7 @@ export function headquartersApi(client: ApiClient) {
       sport?: Schemas["Sport"];
       published?: boolean;
       coach_id?: string;
+      unbooked?: boolean;
     }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
