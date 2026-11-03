@@ -658,7 +658,7 @@ export interface paths {
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
          *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を
          *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
@@ -688,6 +688,11 @@ export interface paths {
          *     - `overdue_pending_video_review_count`: `pending_video_review_count` のうち、送付からの経過時間が 48 時間以上（含む）の
          *       件数。`listPendingVideoReviews` に `coach_id` と `min_elapsed_hours=48` を付けたときの件数と同じ（経過時間の数え方も
          *       同じで、照会した時刻から数え、1 時間に満たない端数は切り捨てる）
+         *     - `recent_cancelled_booking_count`: そのコーチの枠への予約のうち、今の状態が `cancelled` で、キャンセルした時刻が
+         *       照会した時刻の 30 日前（含む）から照会した時刻（含む）までのものの数。期間の境界は `listCoaches` の
+         *       `recent_lesson_count` と同じ（実装は backend の domain `CoachRecentCancelledBookingCount` の 1 か所で、期間は
+         *       `RecentLessonPeriod`）。誰がキャンセルしたか（`getBooking` の `cancelled_by`）では分けない合計で、予約した枠の
+         *       開始時刻や体験予約かは問わない。キャンセルされた予約がなければ 0
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -2335,7 +2340,7 @@ export interface components {
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
          *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を添える。金額は持たない
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2373,6 +2378,11 @@ export interface components {
              *     `min_elapsed_hours=48` と同じ線。`pending_video_review_count` 以下）
              */
             overdue_pending_video_review_count: number;
+            /**
+             * @description 照会した時刻の 30 日前（含む）から照会した時刻（含む）までにキャンセルされた、そのコーチの枠への予約の数（誰が
+             *     キャンセルしたかを分けない合計。期間の境界は `listCoaches` の `recent_lesson_count` と同じ）
+             */
+            recent_cancelled_booking_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）

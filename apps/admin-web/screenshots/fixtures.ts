@@ -574,6 +574,7 @@ export const FIXTURES: Fixture[] = [
       median_video_review_lead_time_hours: 18.5,
       pending_video_review_count: 2,
       overdue_pending_video_review_count: 1,
+      recent_cancelled_booking_count: 2,
     } satisfies Schemas["CoachOverview"],
   },
   {

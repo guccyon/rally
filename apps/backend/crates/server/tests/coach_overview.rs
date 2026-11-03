@@ -2,7 +2,7 @@
 //! （`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
 //! レッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・返却待ちの動画添削の件数と
-//! そのうち 48 時間以上たった件数を、それぞれの保存先
+//! そのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を、それぞれの保存先
 //! （scheduling・review・lesson・catalog・async-lesson）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・
 //! 本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
@@ -18,7 +18,7 @@ use application::{
     identity::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
     },
-    in_memory::{FixedClock, RecordingAnalyticsSink},
+    in_memory::{FixedClock, ManualClock, RecordingAnalyticsSink},
     review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
@@ -293,7 +293,8 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
         "returned_video_review_count": 3,
         "median_video_review_lead_time_hours": 8.5,
         "pending_video_review_count": 2,
-        "overdue_pending_video_review_count": 1
+        "overdue_pending_video_review_count": 1,
+        "recent_cancelled_booking_count": 0
     });
     assert_eq!(body, expected);
     // 照会だけで何も変えない（2 回目も同じ）
@@ -333,4 +334,89 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
         let (status, _) = send(&router, "GET", &path, token, None).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn counts_bookings_of_the_coach_cancelled_in_the_last_30_days_from_postgres(pool: PgPool) {
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (_, ito_token) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (_, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+    let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let start = SystemTime::UNIX_EPOCH + NOW;
+    let clock = ManualClock::new(start);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    // たなかの枠を 4 つ、いとうの枠を 1 つ開け、生徒がすべて予約する（枠の開始は 2099 年）
+    let mut bookings = Vec::new();
+    for (i, token) in [
+        &tanaka_token,
+        &tanaka_token,
+        &tanaka_token,
+        &tanaka_token,
+        &ito_token,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (status, slot) = send(
+            &router,
+            "POST",
+            "/slots",
+            token,
+            Some(json!({
+                "sport": "tennis",
+                "starts_at": format!("2099-01-0{}T10:00:00Z", i + 1),
+                "ends_at": format!("2099-01-0{}T11:00:00Z", i + 1),
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        let (status, booking) = send(
+            &router,
+            "POST",
+            "/bookings",
+            &taro_token,
+            Some(json!({ "slot_id": slot["slot_id"], "is_trial": false })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{booking}");
+        bookings.push(booking["booking_id"].as_str().unwrap().to_string());
+    }
+    // たなかの予約は、照会の 30 日と 1 秒前・30 日前ちょうど・1 時間前にキャンセルし、1 件は残す。いとうの予約もキャンセルする
+    let day = HOUR * 24;
+    let query_at = start + Duration::from_secs(1) + day * 30;
+    for (booking, cancelled_at) in [
+        (&bookings[0], start),
+        (&bookings[1], start + Duration::from_secs(1)),
+        (&bookings[2], query_at - HOUR),
+        (&bookings[4], query_at - HOUR),
+    ] {
+        clock.set(cancelled_at);
+        let (status, body) = send(
+            &router,
+            "POST",
+            &format!("/bookings/{booking}/cancel"),
+            &taro_token,
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    clock.set(query_at);
+    let path = format!("/coaches/{}/overview", account_id_uuid::format(tanaka));
+    let (status, body) = send(&router, "GET", &path, &hq_token, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["recent_cancelled_booking_count"], 2,
+        "30 日前ちょうどは含み、それより前のキャンセル・有効な予約・他のコーチの予約は数えない"
+    );
+
+    // 期間は照会した時刻から数える（1 秒後には 30 日前ちょうどだったキャンセルが外れる）
+    clock.set(query_at + Duration::from_secs(1));
+    let (status, body) = send(&router, "GET", &path, &hq_token, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["recent_cancelled_booking_count"], 1);
 }
