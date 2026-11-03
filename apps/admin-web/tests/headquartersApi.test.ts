@@ -42,13 +42,19 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
-  test("getSlotSupply は期間をクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
+  test("getSlotSupply は期間とコーチをクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, REPORT));
     await api.getSlotSupply({ from: "2026-11-02", to: "2026-11-08" });
     const url = new URL(fetchMock.mock.calls[0]![0].url);
     expect(url.pathname).toBe("/api/slot-supply");
     expect(url.searchParams.get("from")).toBe("2026-11-02");
     expect(url.searchParams.get("to")).toBe("2026-11-08");
+
+    const byCoach = setup(json(200, REPORT));
+    await byCoach.api.getSlotSupply({ from: "2026-11-02", to: "2026-11-08", coach_id: "22222222-2222-4222-8222-222222222222" });
+    const byCoachUrl = new URL(byCoach.fetchMock.mock.calls[0]![0].url);
+    expect(byCoachUrl.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
+    expect(byCoachUrl.searchParams.get("from")).toBe("2026-11-02");
 
     const omitted = setup(json(200, REPORT));
     await omitted.api.getSlotSupply({});

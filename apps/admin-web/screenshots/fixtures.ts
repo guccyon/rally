@@ -646,6 +646,26 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["CoachList"],
   },
+  // 期間とコーチ（鈴木 コーチ）を指定したとき（hq-slot-supply-coach）。クエリは部分一致で引くので、期間だけの応答より先に置く。
+  {
+    method: "GET",
+    path: "/slot-supply",
+    query: { from: "2026-11-02", to: "2026-11-08", coach_id: COACH_ID },
+    body: {
+      window_start: "2026-11-01T15:00:00Z",
+      window_end: "2026-11-08T15:00:00Z",
+      from: "2026-11-02",
+      to: "2026-11-08",
+      sports: [
+        { sport: "tennis", status: "insufficient", published_slots: 3, booking_students: 4 },
+        { sport: "golf", status: "sufficient", published_slots: 0, booking_students: 0 },
+        { sport: "baseball", status: "sufficient", published_slots: 0, booking_students: 0 },
+        { sport: "soccer", status: "sufficient", published_slots: 0, booking_students: 0 },
+        { sport: "basketball", status: "sufficient", published_slots: 0, booking_students: 0 },
+        { sport: "swimming", status: "sufficient", published_slots: 0, booking_students: 0 },
+      ],
+    } satisfies Schemas["SlotSupplyReport"],
+  },
   // 期間を指定したとき（来週。hq-slot-supply-period）
   {
     method: "GET",
