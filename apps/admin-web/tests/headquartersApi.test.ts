@@ -409,6 +409,15 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("handled")).toBe("false");
   });
 
+  test("listStudentAnnouncements は GET /api/students/{id}/announcements を呼び、unread_only をクエリにする", async () => {
+    const studentId = "11111111-1111-4111-8111-111111111111";
+    const { api, fetchMock } = setup(json(200, { announcements: [] }));
+    await api.listStudentAnnouncements(studentId, { unread_only: true });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe(`/api/students/${studentId}/announcements`);
+    expect(url.searchParams.get("unread_only")).toBe("true");
+  });
+
   test("markLowRatedLessonReviewHandled は本文なしで PUT /api/lesson-reviews/{id}/handling を呼び、印を返す", async () => {
     const reviewId = "33333333-3333-4333-8333-333333333333";
     const handling = { handled_by: "55555555-5555-4555-8555-555555555555", handled_at: "2026-10-31T03:00:00Z" };

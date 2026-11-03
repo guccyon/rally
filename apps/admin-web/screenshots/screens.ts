@@ -320,6 +320,17 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
   },
+  {
+    id: "hq-student-announcements-unread",
+    title: "本部: 生徒の受け取ったお知らせ（未読だけ）",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("checkbox", { name: "未読だけ" }).check();
+      await page.getByText(/^未読のものだけを、送った新しい順に/).waitFor();
+      await page.getByRole("table", { name: "受け取ったお知らせ" }).waitFor();
+    },
+  },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
   {
     id: "hq-bookings-by-coach",
