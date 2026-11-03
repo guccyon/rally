@@ -338,6 +338,7 @@ const NOTIFICATIONS: Schemas["Notification"][] = [
 /** `query` があれば、そのクエリの値がすべて一致するときだけ使う（同じパスの `query` のない応答より前に置く）。 */
 // ライブレッスンの記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
 // 既定の期間（今日までの 7 日）の応答。高橋 コーチで絞ったときは 0 件を返す（0 件の表示を撮る）。
+// 山田 花子で絞ったとき（生徒の利用の様子から開く）は山田 花子の行だけを返す。
 const LIVE_SESSION_RECORDS: Schemas["LiveLessonSessionRecord"][] = [
   {
     session_id: id("5555", 11),
@@ -454,6 +455,16 @@ export const FIXTURES: Fixture[] = [
     method: "GET",
     path: "/lesson-reviews/low",
     body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/live-lesson-sessions",
+    query: { student_id: STUDENT_ID },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: LIVE_SESSION_RECORDS.filter((session) => session.student_id === STUDENT_ID),
+    } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
     method: "GET",
