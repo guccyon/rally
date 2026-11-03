@@ -482,6 +482,31 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // 鈴木 コーチで絞ったとき（hq-overdue-live-sessions-by-coach）は、そのコーチのセッションだけを返す。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: COACH_ID },
+    body: {
+      older_than_hours: 3,
+      sessions: OVERDUE_SESSIONS.filter((session) => session.coach_id === COACH_ID),
+    } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    // 高橋 コーチで絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る。hq-overdue-live-sessions-by-coach-empty）。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: COACH_ID_2 },
+    body: { older_than_hours: 3, sessions: [] } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    // URL のコーチの ID が UUID でないとき（hq-overdue-live-sessions-invalid-coach）は 422。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "coach_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
     method: "GET",
     path: "/live-lesson-sessions/overdue",
     body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],
@@ -891,6 +916,14 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingDetail"],
   },
   {
+    // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。
+    // mockApi は先に一致した応答を返すので、既定の期間の `/announcements` より前に置く。
+    method: "GET",
+    path: "/announcements",
+    query: { from: "2026-09-01", to: "2026-09-30" },
+    body: { announcements: [] } satisfies Schemas["AnnouncementList"],
+  },
+  {
     method: "GET",
     path: "/announcements",
     body: {
@@ -969,6 +1002,50 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["PendingVideoReviewList"],
+  },
+  {
+    // 生徒の ID が UUID でないとき（hq-returned-video-reviews-invalid-student）は 422。生徒の名前も読めない。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
+    method: "GET",
+    path: "/students/not-a-uuid/activity",
+    status: 422,
+    body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
+    // 山田 花子と高橋 コーチの両方で絞ったとき（hq-returned-video-reviews-by-student-empty）は 0 件。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: YAMADA.id, coach_id: COACH_ID_2 },
+    body: { from: "2026-10-20", to: "2026-10-26", reviews: [] } satisfies Schemas["ReturnedVideoReviewList"],
+  },
+  {
+    // 山田 花子で絞ったとき（hq-returned-video-reviews-by-student）は、山田 花子が送った動画の記録だけ。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: YAMADA.id },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      reviews: [
+        {
+          video_id: id("5555", 31),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-20.5),
+          returned_at: at(-2),
+          lead_time_hours: 18,
+        },
+      ],
+    } satisfies Schemas["ReturnedVideoReviewList"],
   },
   {
     method: "GET",

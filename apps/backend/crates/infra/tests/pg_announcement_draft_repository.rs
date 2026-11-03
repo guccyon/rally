@@ -1,17 +1,17 @@
 //! `PgAnnouncementDraftRepository`（`notification.announcement_drafts`）の検証。下書きの往復（書きかけの空の題・本文と
 //! スポーツを絞ったもの）・最後に直した時刻の新しい順（同じ時刻は後に作ったものが先）・書き直し（作った本部と作った
-//! 時刻は変えない）・削除（ないものは `false`）。
+//! 時刻は変えない）・削除（ないものは `false`）・一覧のユースケース（`ListAnnouncementDrafts`）が題の検索語で絞ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
-use application::notification::AnnouncementDraftRepository;
+use application::notification::{AnnouncementDraftRepository, ListAnnouncementDrafts};
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
-    notification::AnnouncementDraft,
+    notification::{AnnouncementDraft, AnnouncementTitleQuery},
 };
 use infra::PgAnnouncementDraftRepository;
 use sqlx::PgPool;
@@ -104,4 +104,49 @@ async fn deleting_removes_only_that_draft(pool: PgPool) {
         "二度目は消すものがない"
     );
     assert_eq!(drafts.find_all().await.unwrap(), [second]);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn listing_by_a_title_query_keeps_matching_drafts_in_the_same_order(pool: PgPool) {
+    let drafts = PgAnnouncementDraftRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let maintenance = draft(&drafts, headquarters, "メンテナンスのお知らせ", None, 1);
+    let app = draft(&drafts, headquarters, "App の更新", Some(Sport::Tennis), 2);
+    let untitled = draft(&drafts, headquarters, "", None, 3);
+    let night = draft(&drafts, headquarters, "夜間メンテナンス_100%", None, 4);
+    for draft in [&maintenance, &app, &untitled, &night] {
+        drafts.insert(draft.clone()).await.unwrap();
+    }
+
+    let list = ListAnnouncementDrafts::new(drafts.clone());
+    let found = |q: &str| {
+        let list = &list;
+        let query = AnnouncementTitleQuery::new(q).unwrap();
+        async move { list.execute(query.as_ref()).await.unwrap() }
+    };
+    assert_eq!(
+        found(" メンテナンス ").await,
+        [night.clone(), maintenance.clone()],
+        "題に部分一致するものだけ。最後に直した時刻の新しい順は変わらない"
+    );
+    assert_eq!(
+        found("aPP").await,
+        std::slice::from_ref(&app),
+        "ASCII の英字は大文字・小文字を区別しない"
+    );
+    assert_eq!(
+        found("_1").await,
+        std::slice::from_ref(&night),
+        "_ と % は文字のまま"
+    );
+    assert!(
+        found("ＡＰＰ").await.is_empty(),
+        "全角の英字は書いたとおりに比べる"
+    );
+    assert_eq!(
+        found("\u{3000} ").await,
+        [night, untitled, app, maintenance],
+        "空白だけなら絞り込まない"
+    );
 }

@@ -4,7 +4,7 @@
 //! （`sendAnnouncementDraft`）のレスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部が書きかけの下書きを作り・
 //! 直し・消し・一覧で読めること（生徒には届かない）・下書きから送ると `sendAnnouncement` と同じく生徒にお知らせが届き、
 //! 下書きが消えて送った記録の一覧に出ること・空の題や本文は送れず 422・対象の生徒がいなければ 404（どちらも下書きは残る）・
-//! 長すぎる中身と不正なスポーツは 422・ない下書きは 404・コーチと生徒の 403・トークンなしの 401 を確かめる。
+//! 長すぎる中身と不正なスポーツは 422・題の一部で一覧を探せること（長すぎる検索語は 422）・ない下書きは 404・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -503,6 +503,76 @@ async fn an_invalid_draft_is_rejected_and_changes_nothing() {
         json!({ "title": "あ".repeat(50), "body": "あ".repeat(2000) }),
     )
     .await;
+}
+
+/// 本部が時刻 `minute` に、題の検索語のクエリ `query`（`?q=...`）で読む下書きの一覧の題。
+async fn search(app: &App, minute: u64, query: &str) -> (StatusCode, Value) {
+    call(
+        &app.router(at(minute)).await,
+        "GET",
+        &format!("{DRAFTS}{query}"),
+        DRAFTS,
+        Some(HEADQUARTERS),
+        None,
+    )
+    .await
+}
+
+fn titles(body: &Value) -> Vec<&str> {
+    body["announcement_drafts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|draft| draft["title"].as_str().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn headquarters_finds_drafts_by_a_part_of_the_title() {
+    let app = App::default();
+    for (minute, title) in [
+        (10, "メンテナンスのお知らせ"),
+        (20, "App の更新"),
+        (30, ""),
+        (40, "夜間メンテナンス 100%"),
+    ] {
+        create(&app, minute, json!({ "title": title, "body": "本文" })).await;
+    }
+
+    let all = vec![
+        "夜間メンテナンス 100%",
+        "",
+        "App の更新",
+        "メンテナンスのお知らせ",
+    ];
+    for (query, expected) in [
+        // 題に部分一致するものだけ。並べ方（最後に直した時刻の新しい順）は変わらない
+        (
+            "?q=%E3%83%A1%E3%83%B3%E3%83%86",
+            vec!["夜間メンテナンス 100%", "メンテナンスのお知らせ"],
+        ),
+        // 前後の空白（全角を含む）を除き、ASCII の英字は大文字・小文字を区別しない
+        ("?q=+%E3%80%80APP+", vec!["App の更新"]),
+        // % はワイルドカードでなく文字のまま
+        ("?q=0%25", vec!["夜間メンテナンス 100%"]),
+        // 本文では探さない
+        ("?q=%E6%9C%AC%E6%96%87", vec![]),
+        // 付けない・空・空白だけなら絞り込まない
+        ("", all.clone()),
+        ("?q=", all.clone()),
+        ("?q=+%E3%80%80+", all.clone()),
+        // 前後の空白を除いて 50 文字までは受け付ける
+        (&format!("?q=+{}+", "a".repeat(50)), vec![]),
+    ] {
+        let (status, body) = search(&app, 50, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(titles(&body), expected, "{query}");
+    }
+
+    let (status, body) = search(&app, 50, &format!("?q={}", "a".repeat(51))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    assert_eq!(body["message"], "お知らせの題の検索語は 50 文字まで");
 }
 
 #[tokio::test]
