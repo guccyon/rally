@@ -241,6 +241,7 @@ describe("画面への配置", () => {
             contract_type: null,
             plan: null,
             last_booked_at: null,
+            recent_booking_count: 0,
             registered_at: "2026-10-20T00:00:00Z",
           },
         ],

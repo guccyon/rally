@@ -39,6 +39,7 @@ const STUDENTS: Schemas["Student"][] = [
     contract_type: "subscription",
     plan: "plus",
     last_booked_at: "2026-10-25T01:30:00Z",
+    recent_booking_count: 3,
     registered_at: "2026-10-20T15:30:00Z",
   },
   {
@@ -48,6 +49,7 @@ const STUDENTS: Schemas["Student"][] = [
     contract_type: "one_shot",
     plan: null,
     last_booked_at: null,
+    recent_booking_count: 0,
     registered_at: "2026-10-10T00:00:00Z",
   },
   {
@@ -57,6 +59,7 @@ const STUDENTS: Schemas["Student"][] = [
     contract_type: null,
     plan: null,
     last_booked_at: "2026-10-01T09:00:00Z",
+    recent_booking_count: 1,
     registered_at: "2026-09-30T00:00:00Z",
   },
 ];

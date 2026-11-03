@@ -706,6 +706,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "subscription",
           plan: "standard",
           last_booked_at: at(-24),
+          recent_booking_count: 4,
           registered_at: at(-24 * 5),
         },
       ],
@@ -738,6 +739,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "subscription",
           plan: "standard",
           last_booked_at: at(-24),
+          recent_booking_count: 4,
           registered_at: at(-24 * 5),
         },
         {
@@ -747,6 +749,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "one_shot",
           plan: null,
           last_booked_at: at(-24 * 3),
+          recent_booking_count: 1,
           registered_at: at(-24 * 12),
         },
         {
@@ -756,6 +759,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: null,
           plan: null,
           last_booked_at: null,
+          recent_booking_count: 0,
           registered_at: at(-24 * 20),
         },
       ],
