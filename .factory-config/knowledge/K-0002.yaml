@@ -1,0 +1,21 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  同じ PR の本文を書き換えるジョブ（衝突解消の implement の continue と body_fix）を順に並べずに動かすと、
+  片方の直しを片方が上書き・追記して打ち消し合い、差し戻しが per_pr_limit に達するまで同じ流れが回る。
+scope:
+  roles: [implement, body_fix, judge]
+confidence: hypothesis
+status: draft
+verified_at: 2026-11-03
+review_by: 2026-12-03
+confidentiality: product
+evidence:
+  - case: C-0001
+  - pr: 657
+  - issue: 646
+  - event: "case.analyzed:274311"
+related: [K-0001]
+invalidate_when:
+  - "同じ PR の本文を書き換えるジョブを PR ごとに順に並べる決まりがラインに入った"

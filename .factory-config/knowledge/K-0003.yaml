@@ -1,0 +1,21 @@
+id: K-0003
+theme: 6
+kind: causal
+statement: >-
+  長く開いた PR の衝突解消（continue、reason=conflict）には回数の上限も人への引き継ぎもないため、
+  既定ブランチが動き続けると衝突解消が繰り返され、費用と待ちが静かに膨らむ。
+scope:
+  roles: [implement, judge]
+confidence: hypothesis
+status: draft
+verified_at: 2026-11-03
+review_by: 2026-12-03
+confidentiality: product
+evidence:
+  - case: C-0001
+  - pr: 657
+  - issue: 646
+  - event: "case.analyzed:274311"
+related: [K-0002]
+invalidate_when:
+  - "同じ PR の衝突解消の回数に上限と人への引き継ぎの手順が入った"
