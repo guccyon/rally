@@ -2235,6 +2235,10 @@ paths:
           （動画のスポーツは送ったときのスポーツ `sport`。実装は backend の domain `Video::is_in_sport` の 1 か所）。期間・`coach_id` と
           組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。省けばスポーツを問わない。`sport` が `Sport` の値で
           なければ 422 `validation_failed`。期間にそのスポーツの返却がなければ `reviews` が空の配列
+        - 任意の `student_id` で、その生徒（動画を送った生徒。各項目の `student_id`）の動画だけに絞れる（生徒から返却の内容について
+          問い合わせを受けたときに、その生徒の記録だけを見る）。期間・`coach_id`・`sport` と組み合わせられ、期間の規則・かかった時間の
+          数え方・並べ方は変わらない。省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・
+          ない ID・期間に返却がない生徒は、404 にせず `reviews` が空の配列
         - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
           端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
           （KPI は小数で、ここは切り捨てた整数）
@@ -2279,6 +2283,15 @@ paths:
           description: このスポーツの動画だけを返す（付けなければスポーツを問わない。`Sport` の値でなければ 422 `validation_failed`）
           schema:
             $ref: "#/components/schemas/Sport"
+        - name: student_id
+          in: query
+          required: false
+          description: |
+            あればこの生徒が送った動画だけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+            生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 期間に返した動画添削の記録
