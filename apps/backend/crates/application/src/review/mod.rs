@@ -8,7 +8,8 @@
 //! [`ReviewCoachReviewSummaryLookup`] で、本部が見るコーチの一覧を絞る直近の低い評価の件数は
 //! [`ReviewCoachLowRatedReviewCountLookup`] で、コーチの月ごとのレッスンの実績に添える暦月ごとの評価の件数と平均は
 //! [`ReviewMonthlyReviewSummaryLookup`] で渡す。生徒が受けたレッスンの一覧に添える評価済みの印は
-//! [`ReviewLessonCompletionReviewLookup`] で渡す。本部が見る低い評価の一覧（[`ListLowRatedReviews`]）に添えるコーチ・生徒の
+//! [`ReviewLessonCompletionReviewLookup`] で渡す。本部が見る生徒 1 人の利用の様子に添える、その生徒がつけた直近の低い評価の件数は
+//! [`ReviewStudentLowRatedReviewCountLookup`] で渡す。本部が見る低い評価の一覧（[`ListLowRatedReviews`]）に添えるコーチ・生徒の
 //! 表示名は profile から [`ReviewedCoachDisplayNameLookup`]・[`ReviewerDisplayNameLookup`] で読むだけ。一覧をスポーツで
 //! 絞るときの評価したレッスンのスポーツも、完了したレッスンの元（枠・動画）から [`ReviewedLessonSportLookup`] で読むだけ
 //! （実装は [`crate::lesson::LessonCompletionSportLookup`]）。
@@ -33,6 +34,7 @@ mod review_coach_low_rated_review_count_lookup;
 mod review_coach_review_summary_lookup;
 mod review_lesson_completion_review_lookup;
 mod review_monthly_review_summary_lookup;
+mod review_student_low_rated_review_count_lookup;
 mod reviewed_coach_display_name_lookup;
 mod reviewed_lesson_menu_lookup;
 mod reviewed_lesson_sport_lookup;
@@ -62,6 +64,7 @@ pub use review_coach_low_rated_review_count_lookup::ReviewCoachLowRatedReviewCou
 pub use review_coach_review_summary_lookup::ReviewCoachReviewSummaryLookup;
 pub use review_lesson_completion_review_lookup::ReviewLessonCompletionReviewLookup;
 pub use review_monthly_review_summary_lookup::ReviewMonthlyReviewSummaryLookup;
+pub use review_student_low_rated_review_count_lookup::ReviewStudentLowRatedReviewCountLookup;
 pub use reviewed_coach_display_name_lookup::ReviewedCoachDisplayNameLookup;
 pub use reviewed_lesson_menu_lookup::ReviewedLessonMenuLookup;
 pub use reviewed_lesson_sport_lookup::ReviewedLessonSportLookup;

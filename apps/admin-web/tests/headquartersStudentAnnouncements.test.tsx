@@ -164,6 +164,8 @@ describe("本部の生徒の受け取ったお知らせ", () => {
         submitted_video_count: 0,
         pending_video_review_count: 0,
         unanswered_message_thread_count: 0,
+        low_rated_review_count: 0,
+        unhandled_low_rated_review_count: 0,
       },
     }));
     render(
