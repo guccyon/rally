@@ -103,7 +103,8 @@ pub(crate) const fn coach_acceptance_status_to_contract(
     }
 }
 
-/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` のクエリ `acceptance_status`）。値でなければ 422。
+/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` と `listIncompleteCoachProfiles` のクエリ
+/// `acceptance_status`）。値でなければ 422。
 pub(crate) fn coach_acceptance_status_from_contract(
     value: &str,
 ) -> Result<CoachAcceptanceStatus, ApiError> {
