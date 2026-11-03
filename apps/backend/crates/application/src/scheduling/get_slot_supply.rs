@@ -1,4 +1,4 @@
-use domain::{catalog::Sport, scheduling::SlotSupply};
+use domain::{catalog::Sport, identity::AccountId, scheduling::SlotSupply};
 use time::Date;
 
 use super::{BookingRepository, ListBookingsError, SlotSupplyReport, calendar_day};
@@ -10,7 +10,9 @@ use crate::clock::Clock;
 /// 判定は domain の [`SlotSupply`] だけ。期間は、日付（日本時間）の `from`・`to` を両方省けば今までどおり
 /// [`SlotSupply::default_period`]（現在時刻までの [`SlotSupply::WINDOW`]）。どちらかを付ければ予約の一覧
 /// （[`super::ListBookings`]）と同じ規則（[`calendar_day::period`]。`from` を省けば今日、`to` を省けば `from` から 7 日目、
-/// 両端を含み 31 日まで）で、違反は [`ListBookingsError::Invalid`]。
+/// 両端を含み 31 日まで）で、違反は [`ListBookingsError::Invalid`]。`coach_id` があれば、そのコーチの枠とそれらへの予約だけを
+/// 同じ数え方で数える（いないコーチ・コーチでない ID ならどのスポーツも 0。規則は domain の
+/// [`Slot::matches_coach`](domain::scheduling::Slot::matches_coach)。予約の一覧の `coach_id` と同じ扱い）。
 pub struct GetSlotSupply<B, C> {
     bookings: B,
     clock: C,
@@ -23,6 +25,8 @@ pub struct GetSlotSupplyQuery {
     pub from: Option<Date>,
     /// 期間の終わりの日付（日本時間。含む）
     pub to: Option<Date>,
+    /// あればこのコーチの枠（とそれらへの予約）だけを数える
+    pub coach_id: Option<AccountId>,
 }
 
 impl<B, C> GetSlotSupply<B, C>
@@ -45,10 +49,12 @@ where
             let (from, to, period) = calendar_day::period(query.from, query.to, now)?;
             (Some((from, to)), period)
         };
-        let (slots, bookings) = self
+        let (mut slots, bookings) = self
             .bookings
             .slots_starting_between(period.starts_at(), period.ends_at())
             .await?;
+        // 絞った枠にない枠への予約は SlotSupply::tally が数えないので、予約はそのまま渡す
+        slots.retain(|slot| slot.matches_coach(query.coach_id));
         Ok(SlotSupplyReport {
             window_start: period.starts_at(),
             window_end: period.ends_at(),
@@ -85,9 +91,13 @@ mod tests {
     }
 
     fn slot(id: u128, sport: Sport, starts_at: SystemTime) -> Slot {
+        slot_of(id, AccountId::from_u128(1000 + id), sport, starts_at)
+    }
+
+    fn slot_of(id: u128, coach: AccountId, sport: Sport, starts_at: SystemTime) -> Slot {
         Slot::restore(
             SlotId::from_u128(id),
-            AccountId::from_u128(1000 + id),
+            coach,
             sport,
             starts_at,
             starts_at + Duration::from_secs(3600),
@@ -187,6 +197,7 @@ mod tests {
             .execute(GetSlotSupplyQuery {
                 from: Some(from),
                 to: Some(to),
+                coach_id: None,
             })
             .await
             .unwrap();
@@ -195,6 +206,121 @@ mod tests {
         assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 2, 1));
         assert_eq!(report.sports[5], SlotSupply::new(Sport::Swimming, 1, 0));
         assert_eq!(report.sports.len(), Sport::ALL.len());
+    }
+
+    #[tokio::test]
+    async fn with_coach_counts_only_the_slots_of_that_coach_and_their_bookings() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let (coach, other) = (AccountId::from_u128(500), AccountId::from_u128(501));
+        let in_window = |days: u64| now - Duration::from_secs(days * DAY);
+        let slots = InMemorySlotRepository::with_slots([
+            slot_of(1, coach, Sport::Tennis, in_window(1)),
+            slot_of(2, coach, Sport::Tennis, in_window(2)),
+            slot_of(3, coach, Sport::Swimming, in_window(3)),
+            // 別のコーチの枠と、期間の外のそのコーチの枠
+            slot_of(4, other, Sport::Tennis, in_window(1)),
+            slot_of(5, other, Sport::Soccer, in_window(1)),
+            slot_of(6, coach, Sport::Tennis, now),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+        // 別のコーチの枠への予約と、期間の外の枠への予約は数えない
+        book(&bookings, 8, 4).await;
+        book(&bookings, 9, 5).await;
+        book(&bookings, 10, 6).await;
+
+        let supply = GetSlotSupply::new(bookings, FixedClock(now));
+        let report = supply
+            .execute(GetSlotSupplyQuery {
+                coach_id: Some(coach),
+                ..GetSlotSupplyQuery::default()
+            })
+            .await
+            .unwrap();
+        // 期間はコーチを付けても変わらない
+        assert_eq!(
+            (report.window_start, report.window_end, report.dates),
+            (now - SlotSupply::WINDOW, now, None)
+        );
+        assert_eq!(
+            report.sports,
+            [
+                SlotSupply::new(Sport::Tennis, 2, 1),
+                SlotSupply::new(Sport::Golf, 0, 0),
+                SlotSupply::new(Sport::Baseball, 0, 0),
+                SlotSupply::new(Sport::Soccer, 0, 0),
+                SlotSupply::new(Sport::Basketball, 0, 0),
+                SlotSupply::new(Sport::Swimming, 1, 0),
+            ]
+        );
+        // 付けなければ今までどおりすべてのコーチ
+        let all = supply.execute(GetSlotSupplyQuery::default()).await.unwrap();
+        assert_eq!(all.sports[0], SlotSupply::new(Sport::Tennis, 3, 2));
+        assert_eq!(all.sports[3], SlotSupply::new(Sport::Soccer, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn with_coach_and_dates_counts_that_coach_in_the_days() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let coach = AccountId::from_u128(500);
+        let from = calendar_day::of(now) + Days::days(7);
+        let to = from + Days::days(6);
+        let start = calendar_day::start(from);
+        let slots = InMemorySlotRepository::with_slots([
+            slot_of(1, coach, Sport::Tennis, start),
+            slot_of(2, AccountId::from_u128(501), Sport::Tennis, start),
+            // そのコーチの、期間の外の枠
+            slot_of(3, coach, Sport::Tennis, start - Duration::from_secs(1)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+        book(&bookings, 8, 2).await;
+        book(&bookings, 9, 3).await;
+
+        let report = GetSlotSupply::new(bookings, FixedClock(now))
+            .execute(GetSlotSupplyQuery {
+                from: Some(from),
+                to: Some(to),
+                coach_id: Some(coach),
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.dates, Some((from, to)));
+        assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn with_unknown_coach_every_sport_is_zero() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let slots = InMemorySlotRepository::with_slots([slot(
+            1,
+            Sport::Tennis,
+            now - Duration::from_secs(DAY),
+        )]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+
+        let report = GetSlotSupply::new(bookings, FixedClock(now))
+            .execute(GetSlotSupplyQuery {
+                // ない ID と、予約した生徒（コーチでない ID）
+                coach_id: Some(AccountId::from_u128(99)),
+                ..GetSlotSupplyQuery::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.sports.len(), Sport::ALL.len());
+        assert!(
+            report
+                .sports
+                .iter()
+                .all(|supply| supply.published_slots() == 0 && supply.booking_students() == 0)
+        );
+        assert!(
+            report
+                .sports
+                .iter()
+                .all(|supply| supply.status() == SlotSupplyStatus::Sufficient)
+        );
     }
 
     #[tokio::test]
@@ -209,7 +335,11 @@ mod tests {
             let supply = &supply;
             async move {
                 supply
-                    .execute(GetSlotSupplyQuery { from, to })
+                    .execute(GetSlotSupplyQuery {
+                        from,
+                        to,
+                        coach_id: None,
+                    })
                     .await
                     .map(|report| (report.dates, report.window_start, report.window_end))
             }
@@ -236,7 +366,14 @@ mod tests {
         let invalid = |from, to| {
             let supply = &supply;
             async move {
-                match supply.execute(GetSlotSupplyQuery { from, to }).await {
+                match supply
+                    .execute(GetSlotSupplyQuery {
+                        from,
+                        to,
+                        coach_id: None,
+                    })
+                    .await
+                {
                     Err(ListBookingsError::Invalid(error)) => error,
                     other => panic!("期間の違反にならない: {other:?}"),
                 }
@@ -248,6 +385,7 @@ mod tests {
                 .execute(GetSlotSupplyQuery {
                     from: Some(today),
                     to: Some(today + Days::days(30)),
+                    coach_id: None,
                 })
                 .await
                 .is_ok()
