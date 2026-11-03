@@ -292,11 +292,16 @@ describe("headquartersApi", () => {
 
   test("listStudents は絞り込みをクエリにして GET /api/students を呼ぶ", async () => {
     const { api, fetchMock } = setup(json(200, { students: [] }));
-    await api.listStudents({ sport: "golf", not_booked_since: "2026-10-01" });
+    await api.listStudents({
+      sport: "golf",
+      not_booked_since: "2026-10-01",
+      coach_id: "22222222-2222-4222-8222-222222222222",
+    });
     const url = new URL(fetchMock.mock.calls[0]![0].url);
     expect(url.pathname).toBe("/api/students");
     expect(url.searchParams.get("sport")).toBe("golf");
     expect(url.searchParams.get("not_booked_since")).toBe("2026-10-01");
+    expect(url.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
   });
 
   test("listStudents は条件がなければクエリを付けない", async () => {
