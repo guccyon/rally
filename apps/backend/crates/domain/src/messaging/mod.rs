@@ -9,7 +9,8 @@
 //! [`crate::entitlement::ContractType::unlimited_video_and_chat`] の 1 か所に置き、スレッドは答えに従う。
 //! 不変条件の違反は [`MessagingError`] で返す（表示名など複数のコンテキストが共有する値の違反は [`crate::DomainError`]）。
 //! 本部が見る、返信のないまま時間の過ぎたスレッドの基準は [`UnansweredThreadCriteria`]（本部はメッセージを読まない）で、
-//! コーチ 1 人の様子に添えるその数（[`CoachUnansweredMessageThreadCount`]）も同じ基準で数える。
+//! コーチ 1 人の様子に添えるその数（[`CoachUnansweredMessageThreadCount`]）と生徒 1 人の利用の様子に添えるその数
+//! （[`StudentUnansweredMessageThreadCount`]）も同じ基準で数える。
 //! 通知（notification）と添付ファイルは扱わない。
 
 mod coach_unanswered_message_thread_count;
@@ -24,6 +25,7 @@ mod message_thread;
 mod message_thread_id;
 mod messaging_error;
 mod stamp;
+mod student_unanswered_message_thread_count;
 mod unanswered_thread_criteria;
 
 pub use coach_unanswered_message_thread_count::CoachUnansweredMessageThreadCount;
@@ -38,4 +40,5 @@ pub use message_thread::MessageThread;
 pub use message_thread_id::MessageThreadId;
 pub use messaging_error::MessagingError;
 pub use stamp::Stamp;
+pub use student_unanswered_message_thread_count::StudentUnansweredMessageThreadCount;
 pub use unanswered_thread_criteria::UnansweredThreadCriteria;

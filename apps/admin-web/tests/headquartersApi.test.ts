@@ -353,6 +353,7 @@ describe("headquartersApi", () => {
       cancelled_booking_count: 0,
       submitted_video_count: 0,
       pending_video_review_count: 0,
+      unanswered_message_thread_count: 0,
     };
     const { api, fetchMock } = setup(json(200, activity));
     const result = await api.getStudentActivity(studentId);

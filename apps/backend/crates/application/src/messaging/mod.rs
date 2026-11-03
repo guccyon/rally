@@ -10,6 +10,7 @@ pub mod message_thread_id_uuid;
 mod message_thread_subscriber;
 mod message_thread_subscriber_error;
 mod messaging_coach_unanswered_message_thread_count_lookup;
+mod messaging_student_unanswered_message_thread_count_lookup;
 mod open_message_thread;
 mod repository;
 mod send_message;
@@ -30,6 +31,7 @@ pub use mark_message_thread_read::{
 pub use message_thread_subscriber::MessageThreadSubscriber;
 pub use message_thread_subscriber_error::MessageThreadSubscriberError;
 pub use messaging_coach_unanswered_message_thread_count_lookup::MessagingCoachUnansweredMessageThreadCountLookup;
+pub use messaging_student_unanswered_message_thread_count_lookup::MessagingStudentUnansweredMessageThreadCountLookup;
 pub use open_message_thread::{
     OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
 };

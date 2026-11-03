@@ -593,6 +593,7 @@ describe("画面への配置", () => {
         cancelled_booking_count: 0,
         submitted_video_count: 1,
         pending_video_review_count: 1,
+        unanswered_message_thread_count: 0,
       },
     }));
     headquartersApiMock.mockReturnValue({

@@ -1,7 +1,9 @@
 //! 本部が生徒 1 人の利用の様子を見る（admin-web の `GET /students/{student_id}/activity`）ことを、保存先を Postgres にした
 //! 組み立て（`server::router_with_postgres`）で通す。生徒が student-app の操作で予約し・キャンセルし・動画添削を受けて
 //! 完了を記録したことが、これからの予約・キャンセルの件数・直近の受けたレッスンに出ること、送った動画の数と返却待ちの数が
-//! 本部の返却待ちの一覧（`GET /video-reviews/pending`）と同じ判定で数えられること、何も保存しないこと、
+//! 本部の返却待ちの一覧（`GET /video-reviews/pending`）と同じ判定で数えられること、返信のないまま既定の時間の過ぎた
+//! スレッドの数を messaging の保存先から読み、`listUnansweredMessageThreads` に `student_id` だけを付けた一覧と同じ数に
+//! なること、何も保存しないこと、
 //! コーチ・生徒は 403、生徒でない ID は 404 であることを確かめる。契約の形の細かい検査は interface の
 //! `tests/student_activity.rs`。
 //!
@@ -15,14 +17,19 @@ use application::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
     },
     in_memory::{ManualClock, RecordingAnalyticsSink},
+    messaging::MessageThreadRepository,
 };
 use axum::{
     Router,
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::{catalog::Sport, identity::Role};
-use infra::{MockTokenService, PgAccountRepository};
+use domain::{
+    catalog::Sport,
+    identity::{AccountId, Role},
+    messaging::{MessageBody, MessageContent, MessageThread},
+};
+use infra::{MockTokenService, PgAccountRepository, PgMessageThreadRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -271,5 +278,146 @@ async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND, "生徒でない: {body}");
+    }
+}
+
+/// 生徒 `student` とコーチ `coach` のスレッドを `opened_at` に開いて保存先に書き、`exchange` の順に（生徒が送ったか, 送信時刻）で
+/// 本文を送る。
+async fn thread(
+    threads: &PgMessageThreadRepository,
+    student: AccountId,
+    coach: AccountId,
+    opened_at: SystemTime,
+    exchange: &[(bool, SystemTime)],
+) {
+    let thread = threads
+        .open(MessageThread::open(threads.next_thread_id(), student, coach, opened_at).unwrap())
+        .await
+        .unwrap();
+    for &(by_student, at) in exchange {
+        let message_id = threads.next_message_id();
+        threads
+            .update(thread.id(), |t| {
+                t.send(
+                    message_id,
+                    if by_student { student } else { coach },
+                    MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+                    true,
+                    at,
+                )
+                .map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn counts_unanswered_message_threads_of_the_student_as_the_default_list_from_postgres(
+    pool: PgPool,
+) {
+    let mut coaches = Vec::new();
+    for (email, name) in [
+        ("tanaka@example.com", "たなか"),
+        ("ito@example.com", "いとう"),
+        ("sato@example.com", "さとう"),
+        ("kato@example.com", "かとう"),
+    ] {
+        let (coach_id, _) = register(&pool, email, name, Role::Coach, vec![Sport::Tennis]).await;
+        coaches.push(account_id_uuid::parse(&coach_id).unwrap());
+    }
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let mut students = Vec::new();
+    for (email, name) in [
+        ("taro@example.com", "たろう"),
+        ("jiro@example.com", "じろう"),
+    ] {
+        let (student_id, _) =
+            register(&pool, email, name, Role::Student, vec![Sport::Tennis]).await;
+        students.push(student_id);
+    }
+    let taro = account_id_uuid::parse(&students[0]).unwrap();
+    let jiro = account_id_uuid::parse(&students[1]).unwrap();
+    let start = at(30 * 24 * 3600);
+    let hour = Duration::from_secs(3600);
+    let opened_at = at(0);
+    let threads = PgMessageThreadRepository::new(pool.clone());
+    // たろうのスレッドは、照会の 24 時間ちょうど前に送った 1 件（たなか）・23 時間前に送った 1 件（いとう）・
+    // コーチが返した 1 件（さとう）・発言のない 1 件（かとう）。じろうのスレッドは 72 時間前に送った 1 件（たなか）
+    thread(
+        &threads,
+        taro,
+        coaches[0],
+        opened_at,
+        &[(true, start - hour * 24)],
+    )
+    .await;
+    thread(
+        &threads,
+        taro,
+        coaches[1],
+        opened_at,
+        &[(true, start - hour * 23)],
+    )
+    .await;
+    thread(
+        &threads,
+        taro,
+        coaches[2],
+        opened_at,
+        &[(true, start - hour * 50), (false, start - hour)],
+    )
+    .await;
+    thread(&threads, taro, coaches[3], opened_at, &[]).await;
+    thread(
+        &threads,
+        jiro,
+        coaches[0],
+        opened_at,
+        &[(true, start - hour * 72)],
+    )
+    .await;
+    let clock = ManualClock::new(start);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    for (now, expected) in [(start, 1), (start + hour, 2)] {
+        clock.set(now);
+        for (student_id, expected) in [(&students[0], expected), (&students[1], 1)] {
+            let (status, activity) = send(
+                &router,
+                "GET",
+                &format!("/students/{student_id}/activity"),
+                Some(&headquarters),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{activity}");
+            assert_eq!(
+                activity["unanswered_message_thread_count"], expected,
+                "{student_id}: 24 時間ちょうどは含み、それに満たない・コーチが返した・発言のない・他の生徒のスレッドは数えない"
+            );
+            assert!(
+                !activity.to_string().contains("本部には見せない本文"),
+                "メッセージの本文は載せない: {activity}"
+            );
+            // 既定の条件の一覧と同じ数
+            let (status, list) = send(
+                &router,
+                "GET",
+                &format!("/message-threads/unanswered?student_id={student_id}"),
+                Some(&headquarters),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{list}");
+            assert_eq!(
+                list["threads"].as_array().unwrap().len(),
+                expected,
+                "{student_id}: {list}"
+            );
+        }
     }
 }

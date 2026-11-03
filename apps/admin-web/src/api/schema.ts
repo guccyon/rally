@@ -1289,6 +1289,12 @@ export interface paths {
          *       返却待ちの判定は `listPendingVideoReviews` と同じ（スポーツ・コーチ・経過時間で絞らない。backend の domain
          *       `PendingVideoReviewFilter` の 1 か所）で、その一覧に載るこの生徒の動画の数と一致する。動画の一覧や ID は返さない
          *       （返却待ちの中身は `listPendingVideoReviews` で見る）
+         *     - `unanswered_message_thread_count`: その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。
+         *       **既定の条件の一覧と同じ数**で、`listUnansweredMessageThreads` に `student_id` だけを付けたとき（`older_than_hours` を
+         *       省いた既定の 24 時間・`coach_id` なし。担当コーチを問わない）の `threads` の件数と同じ。何を発言と数えるか・待ち始め・
+         *       境界（ちょうど 24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は
+         *       backend の domain `UnansweredThreadCriteria` の既定の 1 か所で、数は `StudentUnansweredMessageThreadCount`）。件数だけで、
+         *       メッセージの本文やスレッドの ID は返さない（中身は `listUnansweredMessageThreads` で見る）。該当するスレッドがなければ 0
          *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
          *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
          *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -2562,7 +2568,8 @@ export interface components {
         };
         /**
          * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-         *     キャンセルの件数・送った動画の数と返却待ちの数を添える。生徒を特定する情報は表示名と ID だけ
+         *     キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま時間の過ぎたスレッドの数を添える。生徒を特定する情報は
+         *     表示名と ID だけ
          */
         StudentActivity: {
             /**
@@ -2585,6 +2592,11 @@ export interface components {
              *     `submitted_video_count` 以下
              */
             pending_video_review_count: number;
+            /**
+             * @description その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。既定の条件の一覧と同じ数
+             *     （`listUnansweredMessageThreads` に `student_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
+             */
+            unanswered_message_thread_count: number;
         };
         /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
         StudentActivityBooking: {
