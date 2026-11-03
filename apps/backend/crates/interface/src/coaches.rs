@@ -1,6 +1,6 @@
 //! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチを受付の状態と直近 30 日に終わった
 //! レッスンの数を添えて返す（任意の `q`・`acceptance_status`・`sport`・`inactive`・
-//! `has_unhandled_low_rated` で絞る）。student-app の
+//! `has_unhandled_low_rated`・`has_unanswered` で絞る）。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
@@ -17,7 +17,7 @@ use application::{
     },
     profile::{
         CoachAcceptanceLookup, CoachLowRatedReviewCountLookup, CoachRecentLessonCountLookup,
-        ListCoaches, ListCoachesQuery, ListedCoach,
+        CoachUnansweredMessageThreadCountsLookup, ListCoaches, ListCoachesQuery, ListedCoach,
     },
 };
 use axum::{
@@ -40,13 +40,13 @@ use crate::{
 };
 
 /// `/coaches` のハンドラーが使うユースケース。
-pub struct CoachesState<R, A, L, N, S, C, V, M, F, U> {
-    pub list_coaches: ListCoaches<R, A, L, N>,
+pub struct CoachesState<R, A, L, N, W, S, C, V, M, F, U> {
+    pub list_coaches: ListCoaches<R, A, L, N, W>,
     pub list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
 }
 
 /// ハンドラーが共有する [`CoachesState`]。
-type Shared<R, A, L, N, S, C, V, M, F, U> = Arc<CoachesState<R, A, L, N, S, C, V, M, F, U>>;
+type Shared<R, A, L, N, W, S, C, V, M, F, U> = Arc<CoachesState<R, A, L, N, W, S, C, V, M, F, U>>;
 
 /// admin-web の `CoachList`。
 #[derive(Serialize)]
@@ -71,6 +71,7 @@ pub struct ListCoachesParams {
     sport: Option<String>,
     inactive: Option<bool>,
     has_unhandled_low_rated: Option<bool>,
+    has_unanswered: Option<bool>,
 }
 
 /// student-app の `listCoachesForStudent` のクエリ。
@@ -99,11 +100,11 @@ pub struct CoachListingBody {
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
 /// （役割は `require_role` の層が確かめる。コーチは 403）。本部の `q` は表示名の検索語で、長すぎれば 422（生徒の一覧の
-/// `q` と同じ規則）。本部の `inactive`・`has_unhandled_low_rated` が `true` / `false` でなければ
+/// `q` と同じ規則）。本部の `inactive`・`has_unhandled_low_rated`・`has_unanswered` が `true` / `false` でなければ
 /// 422。生徒は `q` を付けても変わらない。
 #[allow(clippy::type_complexity)]
-pub async fn list_coaches<R, A, L, N, S, C, V, M, F, U>(
-    State(state): State<Shared<R, A, L, N, S, C, V, M, F, U>>,
+pub async fn list_coaches<R, A, L, N, W, S, C, V, M, F, U>(
+    State(state): State<Shared<R, A, L, N, W, S, C, V, M, F, U>>,
     account: AuthenticatedAccount,
     headquarters_params: Result<Query<ListCoachesParams>, QueryRejection>,
     params: Result<Query<ListCoachesForStudentParams>, QueryRejection>,
@@ -113,6 +114,7 @@ where
     A: CoachAcceptanceLookup,
     L: CoachRecentLessonCountLookup,
     N: CoachLowRatedReviewCountLookup,
+    W: CoachUnansweredMessageThreadCountsLookup,
     S: StudentSportLookup,
     C: CoachCandidateLookup,
     V: CoachReviewSummaryLookup,
@@ -135,6 +137,7 @@ where
                 // 付けないときは false と同じ（絞らない）
                 inactive: params.inactive.unwrap_or(false),
                 has_unhandled_low_rated: params.has_unhandled_low_rated.unwrap_or(false),
+                has_unanswered: params.has_unanswered.unwrap_or(false),
             };
             let coaches = state
                 .list_coaches
@@ -203,8 +206,8 @@ fn coach_listing_body(listing: &CoachListing) -> CoachListingBody {
 ///
 /// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
 /// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
-pub fn coaches_router<R, A, L, N, S, C, V, M, F, U, T>(
-    list_coaches: ListCoaches<R, A, L, N>,
+pub fn coaches_router<R, A, L, N, W, S, C, V, M, F, U, T>(
+    list_coaches: ListCoaches<R, A, L, N, W>,
     list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
     tokens: T,
 ) -> Router
@@ -213,6 +216,7 @@ where
     A: CoachAcceptanceLookup + 'static,
     L: CoachRecentLessonCountLookup + 'static,
     N: CoachLowRatedReviewCountLookup + 'static,
+    W: CoachUnansweredMessageThreadCountsLookup + 'static,
     S: StudentSportLookup + 'static,
     C: CoachCandidateLookup + 'static,
     V: CoachReviewSummaryLookup + 'static,
@@ -225,7 +229,7 @@ where
     Router::new()
         .route(
             "/coaches",
-            get(self::list_coaches::<R, A, L, N, S, C, V, M, F, U>),
+            get(self::list_coaches::<R, A, L, N, W, S, C, V, M, F, U>),
         )
         .route_layer(require_role(&[Role::Headquarters, Role::Student]))
         .with_state(Arc::new(CoachesState {

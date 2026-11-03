@@ -1,12 +1,19 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use domain::{identity::AccountId, messaging::CoachUnansweredMessageThreadCount};
 
 use super::MessageThreadRepository;
-use crate::{Unavailable, clock::Clock, profile::CoachUnansweredMessageThreadCountLookup};
+use crate::{
+    Unavailable,
+    clock::Clock,
+    profile::{CoachUnansweredMessageThreadCountLookup, CoachUnansweredMessageThreadCountsLookup},
+};
 
-/// profile の [`CoachUnansweredMessageThreadCountLookup`] の messaging による実装。スレッドの保存先からコーチが当事者の
-/// スレッドを読み（[`MessageThreadRepository::list_for`]。`ListUnansweredMessageThreads` に `coach_id` を付けたときと同じ
-/// 読み方）、照会した時刻（[`Clock`]）で domain の [`CoachUnansweredMessageThreadCount::tally`] で数える。何も変えない
-/// （既読にしない）。
+/// profile の [`CoachUnansweredMessageThreadCountLookup`] と [`CoachUnansweredMessageThreadCountsLookup`] の messaging
+/// による実装。コーチ 1 人ならスレッドの保存先からコーチが当事者のスレッドを読み（[`MessageThreadRepository::list_for`]。
+/// `ListUnansweredMessageThreads` に `coach_id` を付けたときと同じ読み方）、複数のコーチならすべてのスレッドを 1 回で読み
+/// （[`MessageThreadRepository::list_all`]。`ListUnansweredMessageThreads` と同じ読み方）コーチごとに分けて、照会した時刻
+/// （[`Clock`]）で domain の [`CoachUnansweredMessageThreadCount::tally`] で数える。何も変えない（既読にしない）。
 #[derive(Debug, Clone)]
 pub struct MessagingCoachUnansweredMessageThreadCountLookup<R, C> {
     threads: R,
@@ -37,12 +44,42 @@ where
     }
 }
 
+impl<R, C> CoachUnansweredMessageThreadCountsLookup
+    for MessagingCoachUnansweredMessageThreadCountLookup<R, C>
+where
+    R: MessageThreadRepository,
+    C: Clock,
+{
+    async fn find_unanswered_message_thread_counts(
+        &self,
+        coach_ids: &BTreeSet<AccountId>,
+    ) -> Result<BTreeMap<AccountId, CoachUnansweredMessageThreadCount>, Unavailable> {
+        if coach_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let now = self.clock.now();
+        let mut threads_of: BTreeMap<AccountId, Vec<_>> =
+            coach_ids.iter().map(|id| (*id, Vec::new())).collect();
+        for thread in self.threads.list_all().await? {
+            if let Some(threads) = threads_of.get_mut(&thread.coach_id()) {
+                threads.push(thread);
+            }
+        }
+        Ok(threads_of
+            .into_iter()
+            .map(|(coach_id, threads)| {
+                (
+                    coach_id,
+                    CoachUnansweredMessageThreadCount::tally(coach_id, &threads, now),
+                )
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeMap, BTreeSet},
-        time::{Duration, SystemTime},
-    };
+    use std::time::{Duration, SystemTime};
 
     use domain::{
         messaging::{
@@ -198,5 +235,51 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn counts_of_the_asked_coaches_are_the_same_as_each_count() {
+        let asked: BTreeSet<AccountId> = [COACH, NO_THREADS_COACH, STUDENT].into();
+        for at in [now(), now() + SECOND, now() - 48 * HOUR] {
+            let lookup =
+                MessagingCoachUnansweredMessageThreadCountLookup::new(threads(), FixedClock(at));
+            let counts = lookup
+                .find_unanswered_message_thread_counts(&asked)
+                .await
+                .unwrap();
+            assert_eq!(
+                counts.keys().copied().collect::<BTreeSet<_>>(),
+                asked,
+                "聞いたコーチだけをすべて返す（スレッドのないコーチも含め、聞いていないコーチ 8 は含めない）"
+            );
+            for (coach_id, count) in &counts {
+                assert_eq!(count.coach_id(), *coach_id);
+                let each = lookup
+                    .find_unanswered_message_thread_count(*coach_id)
+                    .await
+                    .unwrap();
+                assert_eq!(*count, each, "{coach_id:?} {at:?}");
+            }
+        }
+        let counts =
+            MessagingCoachUnansweredMessageThreadCountLookup::new(threads(), FixedClock(now()))
+                .find_unanswered_message_thread_counts(&asked)
+                .await
+                .unwrap();
+        assert_eq!(counts[&COACH].unanswered_count(), 1);
+        assert_eq!(counts[&NO_THREADS_COACH].unanswered_count(), 0);
+        assert_eq!(
+            counts[&STUDENT].unanswered_count(),
+            0,
+            "生徒の ID では数えない"
+        );
+
+        assert!(
+            MessagingCoachUnansweredMessageThreadCountLookup::new(threads(), FixedClock(now()))
+                .find_unanswered_message_thread_counts(&BTreeSet::new())
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
