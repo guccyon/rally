@@ -574,6 +574,7 @@ export const FIXTURES: Fixture[] = [
       median_video_review_lead_time_hours: 18.5,
       pending_video_review_count: 2,
       overdue_pending_video_review_count: 1,
+      recent_cancelled_booking_count: 2,
     } satisfies Schemas["CoachOverview"],
   },
   {
@@ -984,6 +985,13 @@ export const FIXTURES: Fixture[] = [
       coach_display_name: HQ_BOOKINGS[3]!.coach_display_name,
       student_display_name: HQ_BOOKINGS[3]!.student_display_name,
     } satisfies Schemas["HeadquartersBookingDetail"],
+  },
+  {
+    // 下書きを題で探して見つからないとき（hq-announcement-drafts-search）。0 件の表示（語を含めた文言）を撮る。
+    method: "GET",
+    path: "/announcement-drafts",
+    query: { q: "夏休み" },
+    body: { announcement_drafts: [] } satisfies Schemas["AnnouncementDraftList"],
   },
   {
     // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。

@@ -7,7 +7,8 @@
 //! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧（開始の日付で・キャンセルした日付で）の期間の規則は [`BookingPeriod`]。キャンセルした人は
 //! [`BookingCanceller`]（[`Booking::cancelled_by`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
 //! [`RecentLessonMenuBookings`] の 1 か所（生徒ごとの数 [`RecentStudentBookings`] も同じ期間を使う）。本部が見る生徒の一覧で、生徒がそのコーチを予約したことがあるかの数え方は
-//! [`CoachBookedStudents`] の 1 か所。
+//! [`CoachBookedStudents`] の 1 か所。本部が見るコーチ 1 人の直近にキャンセルされた予約の数の数え方は
+//! [`CoachRecentCancelledBookingCount`] の 1 か所。
 //! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
 //! [`CoachAcceptanceChange`]（止めた記録は理由 [`CoachSuspensionReason`] を持つ）。不変条件の違反は
 //! [`SchedulingError`]。
@@ -27,6 +28,7 @@ mod coach_acceptance_change;
 mod coach_acceptance_status;
 mod coach_booked_students;
 mod coach_calendar;
+mod coach_recent_cancelled_booking_count;
 mod coach_suspension_reason;
 mod recent_lesson_menu_bookings;
 mod recent_student_bookings;
@@ -54,6 +56,7 @@ pub use coach_acceptance_change::CoachAcceptanceChange;
 pub use coach_acceptance_status::CoachAcceptanceStatus;
 pub use coach_booked_students::CoachBookedStudents;
 pub use coach_calendar::CoachCalendar;
+pub use coach_recent_cancelled_booking_count::CoachRecentCancelledBookingCount;
 pub use coach_suspension_reason::CoachSuspensionReason;
 pub use recent_lesson_menu_bookings::RecentLessonMenuBookings;
 pub use recent_student_bookings::RecentStudentBookings;

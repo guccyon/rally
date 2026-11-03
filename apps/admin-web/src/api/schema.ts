@@ -407,8 +407,8 @@ export interface paths {
         /**
          * コーチが受けた評価の一覧（本部・コーチ・生徒）
          * @description コーチ 1 人が受けたレッスンの評価（student-app の `submitLessonReview`。完了したレッスン 1 件につき 1 回）の
-         *     点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。期間で絞らず、これまでのすべてを返す
-         *     （ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
+         *     点と一言を、送った時刻の新しい順に返す（同じ時刻は `review_id` の順）。`from`・`to` を省けば期間で絞らず、これまでの
+         *     すべてを返す（ページングはしない）。本部はどのコーチの分も読め、コーチは自分の分だけを読める（他のコーチの分は 403）。
          *     生徒の役割のトークンもどのコーチの分も読める（コーチを選ぶ手がかり。student-app の同じ操作）。
          *     各評価には、評価した生徒を特定できる項目（`student_id` など）を載せない。評価した完了したレッスンのレッスンメニュー
          *     `lesson_menu`（ID・名前。`ReviewLessonMenu`）を載せる。中身はレッスンの元（同期は予約、非同期は動画）が持つ
@@ -416,10 +416,21 @@ export interface paths {
          *     `replyToLessonReview`。付け直していれば最後の返信だけ）も載せ、返信がなければ null。
          *
          *     絞り込み（任意）: `max_rating`（1〜5 の整数）を付ければ、点 `rating` がその値以下（含む）の評価だけを返す（本部が
-         *     コーチ 1 人の低い評価だけを読む。`listLowRatedLessonReviews` の線なら `max_rating=2`）。期間では絞らず、並べ方も
-         *     付けても変わらない。付けなければ点を問わない。本部とコーチ（自分の分）のどちらも付けられる。1〜5 の整数でない
+         *     コーチ 1 人の低い評価だけを読む。`listLowRatedLessonReviews` の線なら `max_rating=2`）。並べ方は付けても
+         *     変わらない。付けなければ点を問わない。本部とコーチ（自分の分）のどちらも付けられる。1〜5 の整数でない
          *     ときは 422 `validation_failed`。student-app の同じ操作にはこの絞り込みはない（生徒の役割のトークンでは付けても
          *     変わらない）。
+         *
+         *     絞り込み（任意）: `from`・`to` で、評価の付いた日付（送った時刻 `submitted_at` の日本時間の日付）が `from` から `to`
+         *     まで（両端を含む）の評価だけに絞れる（本部がコーチとの面談の前に直近の期間の評価だけを読む）。境界の扱いは
+         *     `listAnnouncements` と同じ:
+         *     - `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに送った評価。両方を省けば今までどおり
+         *       期間で絞らない。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の 6 日前から（どちらも 7 日）
+         *     - 期間の規則は `listBookings` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を
+         *       超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+         *     - `max_rating` と合わせて付けられる（期間に入り、かつその点以下の評価）。並べ方は付けても変わらない
+         *     - 本部とコーチ（自分の分）のどちらも付けられる。student-app の同じ操作にはこの絞り込みはない（生徒の役割の
+         *       トークンでは付けても変わらない）
          *
          *     `coach_id` に評価がなければ（コーチでないアカウントや、ない ID を含む）`reviews` は空の配列。
          *     `coach_id` が UUID でなければ 404。行動イベントは発火しない。
@@ -658,7 +669,7 @@ export interface paths {
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
          *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を
          *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
@@ -688,6 +699,11 @@ export interface paths {
          *     - `overdue_pending_video_review_count`: `pending_video_review_count` のうち、送付からの経過時間が 48 時間以上（含む）の
          *       件数。`listPendingVideoReviews` に `coach_id` と `min_elapsed_hours=48` を付けたときの件数と同じ（経過時間の数え方も
          *       同じで、照会した時刻から数え、1 時間に満たない端数は切り捨てる）
+         *     - `recent_cancelled_booking_count`: そのコーチの枠への予約のうち、今の状態が `cancelled` で、キャンセルした時刻が
+         *       照会した時刻の 30 日前（含む）から照会した時刻（含む）までのものの数。期間の境界は `listCoaches` の
+         *       `recent_lesson_count` と同じ（実装は backend の domain `CoachRecentCancelledBookingCount` の 1 か所で、期間は
+         *       `RecentLessonPeriod`）。誰がキャンセルしたか（`getBooking` の `cancelled_by`）では分けない合計で、予約した枠の
+         *       開始時刻や体験予約かは問わない。キャンセルされた予約がなければ 0
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -1597,6 +1613,10 @@ export interface paths {
          *     - 対象: 最後の発言が生徒のもので、照会した時刻に待ち始め `waiting_since` から `older_than_hours` 時間以上たったスレッド
          *       （ちょうどその時間のものを含む）。コーチが最後に発言したスレッドと、発言がまだないスレッドは載らない。既読かどうかは問わない
          *     - `older_than_hours`: 返信を待ち始めてからの時間（時間単位の整数）。省けば 24。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 任意の `coach_id` で、そのコーチが担当する（スレッドの `coach_id` がそのコーチの）スレッドだけに絞れる（返事の遅れている
+         *       コーチに個別に声をかけるとき、そのコーチの分だけを見る）。`older_than_hours` と組み合わせられ、時間の規則・何を発言と
+         *       数えるか・並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない
+         *       ID（生徒の ID を含む）・ない ID・該当するスレッドがないコーチは、404 にせず `threads` が空の配列
          *     - 並べ方: 経過の長い順（`waiting_since` の古い順）。同じ時刻は `thread_id` の順
          *     - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・待ち始め `waiting_since`・
          *       照会した時刻までの待ち始めからの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
@@ -2335,7 +2355,7 @@ export interface components {
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
          *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数を添える。金額は持たない
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を添える。金額は持たない
          */
         CoachOverview: {
             /**
@@ -2373,6 +2393,11 @@ export interface components {
              *     `min_elapsed_hours=48` と同じ線。`pending_video_review_count` 以下）
              */
             overdue_pending_video_review_count: number;
+            /**
+             * @description 照会した時刻の 30 日前（含む）から照会した時刻（含む）までにキャンセルされた、そのコーチの枠への予約の数（誰が
+             *     キャンセルしたかを分けない合計。期間の境界は `listCoaches` の `recent_lesson_count` と同じ）
+             */
+            recent_cancelled_booking_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -3799,6 +3824,10 @@ export interface operations {
             query?: {
                 /** @description この点以下（含む）の評価だけを返す（付けなければ点を問わない） */
                 max_rating?: number;
+                /** @description 評価の付いた期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 評価の付いた期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
             };
             header?: never;
             path: {
@@ -4712,6 +4741,11 @@ export interface operations {
             query?: {
                 /** @description 返信を待ち始めてから（コーチの返信のあとの最初の生徒の発言から）この時間（時間単位）以上コーチが返していないスレッドを返す。省けば 24 */
                 older_than_hours?: number;
+                /**
+                 * @description あればこのコーチが担当するスレッドだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;

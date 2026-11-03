@@ -7,7 +7,12 @@ export function headquartersApi(client: ApiClient) {
     getSlotSupply: (filter: { from?: string; to?: string } = {}) =>
       call(() => client.GET("/slot-supply", { params: { query: filter } })),
     listCoaches: (
-      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
+      filter: {
+        acceptance_status?: Schemas["CoachAcceptanceStatus"];
+        sport?: Schemas["Sport"];
+        q?: string;
+        inactive?: boolean;
+      } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
@@ -145,7 +150,8 @@ export function headquartersApi(client: ApiClient) {
       ),
     createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
       call(() => client.POST("/announcement-drafts", { body })),
-    listAnnouncementDrafts: () => call(() => client.GET("/announcement-drafts")),
+    listAnnouncementDrafts: (filter: { q?: string } = {}) =>
+      call(() => client.GET("/announcement-drafts", { params: { query: filter } })),
     updateAnnouncementDraft: (announcementDraftId: string, body: Schemas["AnnouncementDraftRequest"]) =>
       call(() =>
         client.PUT("/announcement-drafts/{announcement_draft_id}", {

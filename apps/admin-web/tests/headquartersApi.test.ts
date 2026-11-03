@@ -137,6 +137,7 @@ describe("headquartersApi", () => {
       median_video_review_lead_time_hours: null,
       pending_video_review_count: 1,
       overdue_pending_video_review_count: 0,
+      recent_cancelled_booking_count: 0,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);
@@ -831,6 +832,16 @@ describe("headquartersApi", () => {
       expect(sent.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
       if (body) expect(await sent.json()).toEqual(body);
     }
+  });
+
+  test("listAnnouncementDrafts は題の検索語を q にして GET /api/announcement-drafts を呼ぶ", async () => {
+    const list = { announcement_drafts: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listAnnouncementDrafts({ q: "年末" });
+    expect(result).toEqual({ ok: true, data: list });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/announcement-drafts");
+    expect(url.searchParams.get("q")).toBe("年末");
   });
 
   test("sendAnnouncementDraft の 404 は code を付けて返す", async () => {

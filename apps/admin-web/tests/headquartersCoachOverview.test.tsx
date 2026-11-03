@@ -39,6 +39,7 @@ const OVERVIEW: Schemas["CoachOverview"] = {
   median_video_review_lead_time_hours: 12.25,
   pending_video_review_count: 0,
   overdue_pending_video_review_count: 0,
+  recent_cancelled_booking_count: 0,
 };
 
 function apiOf(result: Result<Schemas["CoachOverview"]>) {

@@ -1,6 +1,7 @@
 //! `/message-threads/unanswered`。admin-web の `GET /message-threads/unanswered`（`listUnansweredMessageThreads`。
 //! 本部が見る、返信のないまま時間の過ぎたスレッドの一覧）。本部だけが呼べる。クエリの `older_than_hours` がなければ
-//! domain の [`UnansweredThreadCriteria`] の既定の時間（整数でない・範囲の外なら 422）。本部は件数と時間だけを見るので、
+//! domain の [`UnansweredThreadCriteria`] の既定の時間（整数でない・範囲の外なら 422）。任意の `coach_id` でそのコーチが
+//! 担当するスレッドだけに絞れる（UUID でなければ 422）。本部は件数と時間だけを見るので、
 //! メッセージの本文・種類・スタンプは返さない。同じ接頭辞のスレッドの一覧・メッセージ・送信・既読は
 //! [`crate::messaging`] で、スレッドの当事者だけ。
 
@@ -40,6 +41,7 @@ pub struct UnansweredMessageThreadsState<R, D, S, C> {
 #[derive(Deserialize)]
 pub struct ListUnansweredMessageThreadsParams {
     older_than_hours: Option<String>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `UnansweredMessageThreadList`。
@@ -65,6 +67,7 @@ pub struct UnansweredMessageThreadBody {
 
 /// `GET /message-threads/unanswered`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
 /// `older_than_hours` が整数でなければ 422、範囲の外も 422（範囲は domain の [`UnansweredThreadCriteria::new`]）。
+/// `coach_id` が UUID でなければ 422（コーチでない ID・ない ID は空の一覧）。
 pub async fn list_unanswered_message_threads<R, D, S, C>(
     State(state): State<Arc<UnansweredMessageThreadsState<R, D, S, C>>>,
     params: Result<Query<ListUnansweredMessageThreadsParams>, QueryRejection>,
@@ -92,6 +95,15 @@ where
             UnansweredThreadCriteria::new(hours)?
         }
     };
+    let coach_id = params
+        .coach_id
+        .as_deref()
+        .map(|id| {
+            account_id_uuid::parse(id)
+                .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
+        })
+        .transpose()?;
+    let criteria = criteria.with_coach_id(coach_id);
     let list = state
         .list_unanswered_message_threads
         .execute(criteria)

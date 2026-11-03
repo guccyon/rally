@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use domain::{identity::AccountId, scheduling::CoachAcceptanceStatus};
 
-use super::{CoachAcceptanceLookup, CoachOverview};
+use super::{CoachAcceptanceLookup, CoachOverview, CoachRecentCancelledBookingCountLookup};
 use crate::{
     Unavailable,
     async_lesson::{GetCoachPendingVideoReviewCount, GetCoachVideoReviewLeadTime, VideoRepository},
@@ -16,7 +16,8 @@ use crate::{
 /// 本部が見るコーチ 1 人の様子のユースケース（admin-web の `getCoachOverview`。本部だけが呼ぶ）。照会だけで、何も保存しない。
 ///
 /// 表示名はアカウントの保存先から読み、受付の状態は scheduling に問い合わせる（[`CoachAcceptanceLookup`]。`ListCoaches` と
-/// 同じポート）。評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニュー・
+/// 同じポート）。直近 30 日にキャンセルされた予約の数も scheduling に問い合わせる（[`CoachRecentCancelledBookingCountLookup`]。
+/// 数え方と期間は domain の [`domain::scheduling::CoachRecentCancelledBookingCount`]）。評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニュー・
 /// 直近 30 日の動画添削の返却までの時間・返却待ちの動画添削の件数は、それぞれ review などのユースケース
 /// （[`GetCoachReviewSummary`]・[`GetCoachLowRatedReviewCount`]・[`GetMyLessonStats`]・[`ListCoachLessonMenus`]・
 /// [`GetCoachVideoReviewLeadTime`]・[`GetCoachPendingVideoReviewCount`]）を呼んで、その結果をそのまま使う（数え方・
@@ -24,7 +25,7 @@ use crate::{
 ///
 /// `coach_id` がコーチのアカウントでなければ（生徒・本部のアカウントや、ないアカウント）`None`。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
-pub struct GetCoachOverview<R, A, V, M, W, C, N, D> {
+pub struct GetCoachOverview<R, A, V, M, W, C, N, D, K> {
     accounts: R,
     acceptances: A,
     review_summary: GetCoachReviewSummary<V>,
@@ -33,9 +34,10 @@ pub struct GetCoachOverview<R, A, V, M, W, C, N, D> {
     lesson_menus: ListCoachLessonMenus<N>,
     video_review_lead_time: GetCoachVideoReviewLeadTime<D, C>,
     pending_video_reviews: GetCoachPendingVideoReviewCount<D, C>,
+    cancelled_bookings: K,
 }
 
-impl<R, A, V, M, W, C, N, D> GetCoachOverview<R, A, V, M, W, C, N, D>
+impl<R, A, V, M, W, C, N, D, K> GetCoachOverview<R, A, V, M, W, C, N, D, K>
 where
     R: AccountRepository,
     A: CoachAcceptanceLookup,
@@ -45,6 +47,7 @@ where
     C: Clock,
     N: LessonMenuRepository,
     D: VideoRepository,
+    K: CoachRecentCancelledBookingCountLookup,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -56,6 +59,7 @@ where
         lesson_menus: ListCoachLessonMenus<N>,
         video_review_lead_time: GetCoachVideoReviewLeadTime<D, C>,
         pending_video_reviews: GetCoachPendingVideoReviewCount<D, C>,
+        cancelled_bookings: K,
     ) -> Self {
         Self {
             accounts,
@@ -66,6 +70,7 @@ where
             lesson_menus,
             video_review_lead_time,
             pending_video_reviews,
+            cancelled_bookings,
         }
     }
 
@@ -89,6 +94,10 @@ where
         let published_lesson_menus = self.lesson_menus.execute(coach_id, None).await?;
         let video_review_lead_time = self.video_review_lead_time.execute(coach_id).await?;
         let pending_video_reviews = self.pending_video_reviews.execute(coach_id).await?;
+        let recent_cancelled_bookings = self
+            .cancelled_bookings
+            .find_recent_cancelled_booking_count(coach_id)
+            .await?;
         Ok(Some(CoachOverview {
             display_name: account.display_name().clone(),
             acceptance,
@@ -99,6 +108,7 @@ where
                 .unwrap_or(u32::MAX),
             video_review_lead_time,
             pending_video_reviews,
+            recent_cancelled_bookings,
         }))
     }
 }
@@ -121,17 +131,22 @@ mod tests {
         review::{
             LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating,
         },
+        scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
     };
 
     use super::*;
     use crate::{
         in_memory::{
-            FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
-            InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
-            InMemoryLessonReviewRepository, InMemoryVideoRepository,
+            FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+            InMemoryCoachAcceptanceRepository, InMemoryLessonCompletionRepository,
+            InMemoryLessonMenuRepository, InMemoryLessonReviewRepository, InMemorySlotRepository,
+            InMemoryVideoRepository,
         },
         review::ReviewMonthlyReviewSummaryLookup,
-        scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
+        scheduling::{
+            BookingRepository, CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup,
+            SchedulingCoachRecentCancelledBookingCountLookup,
+        },
     };
 
     const COACH: AccountId = AccountId::from_u128(1);
@@ -260,6 +275,60 @@ mod tests {
         .unwrap()
     }
 
+    /// 生徒がコーチ `coach_id` のスロット（開始は 2099 年）を予約し、`cancelled_at` があればその時刻にキャンセルした予約の
+    /// 保存先。
+    async fn bookings(
+        entries: impl IntoIterator<Item = (AccountId, Option<SystemTime>)>,
+    ) -> InMemoryBookingRepository {
+        let entries: Vec<_> = entries.into_iter().collect();
+        // 2099-01-01T00:00:00Z
+        let starts_at = SystemTime::UNIX_EPOCH + Duration::from_secs(4_070_908_800);
+        let hour = Duration::from_secs(3600);
+        let slots = entries.iter().zip(1u32..).map(|((coach_id, _), i)| {
+            Slot::restore(
+                SlotId::from_u128(u128::from(i)),
+                *coach_id,
+                Sport::Tennis,
+                starts_at + hour * 2 * i,
+                starts_at + hour * (2 * i + 1),
+                SlotStatus::Open,
+                SlotSeats::default(),
+            )
+            .unwrap()
+        });
+        let repository = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots(
+            slots.collect::<Vec<_>>(),
+        ));
+        for ((_, cancelled_at), i) in entries.into_iter().zip(1u32..) {
+            let booking = repository
+                .reserve(
+                    SlotId::from_u128(u128::from(i)),
+                    STUDENT,
+                    |slot, existing| {
+                        Booking::reserve(
+                            repository.next_id(),
+                            STUDENT,
+                            false,
+                            slot,
+                            existing,
+                            SystemTime::UNIX_EPOCH,
+                        )
+                    },
+                )
+                .await
+                .unwrap();
+            if let Some(at) = cancelled_at {
+                repository
+                    .update(booking.id(), |booking, slot| {
+                        booking.cancel(STUDENT, slot, at).map(|_| ())
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+        repository
+    }
+
     type UseCase = GetCoachOverview<
         InMemoryAccountRepository,
         SchedulingCoachAcceptanceLookup<InMemoryCoachAcceptanceRepository>,
@@ -269,13 +338,15 @@ mod tests {
         FixedClock,
         InMemoryLessonMenuRepository,
         InMemoryVideoRepository,
+        SchedulingCoachRecentCancelledBookingCountLookup<InMemoryBookingRepository, FixedClock>,
     >;
 
     /// 今は日本時間の 11 月 1 日 1 時。コーチ `COACH` は受付を止められていて、11 月に通話 1、10 月に通話 1・添削 1、
     /// 9 月に添削 1 を完了し、評価は 5（11 月）・4・2（本部が対応済み）・1（10 月）・2（9 月）を受け、公開中のメニューは
     /// テニス 1・ゴルフ 1（ほかに非公開 1）。直近 30 日に送られた動画は、送付から 3・5・40 時間で返した 3 本と、2 日前に
     /// 送られてまだ返していない 1 本（今までの経過 48 時間）で、それより前に送られた 1 本もある。返却待ちの件数は別の保存先で、
-    /// 返却待ちの動画は 48 時間ちょうど前と 1 時間前に送られた 2 本（ほかに返却済み 1 本）。`OTHER_COACH` の分は混ぜない。
+    /// 返却待ちの動画は 48 時間ちょうど前と 1 時間前に送られた 2 本（ほかに返却済み 1 本）。キャンセルされた予約は 1 時間前と
+    /// 30 日前ちょうどの 2 件（ほかに 30 日と 1 秒前のキャンセル 1 件と、有効な予約 1 件）。`OTHER_COACH` の分は混ぜない。
     async fn use_case() -> UseCase {
         let accounts = InMemoryAccountRepository::default();
         for account in [
@@ -359,6 +430,17 @@ mod tests {
                 ]),
                 FixedClock(now),
             ),
+            SchedulingCoachRecentCancelledBookingCountLookup::new(
+                bookings([
+                    (COACH, Some(now - hour)),
+                    (COACH, Some(now - 30 * day)),
+                    (COACH, Some(now - 30 * day - second)),
+                    (COACH, None),
+                    (OTHER_COACH, Some(now - day)),
+                ])
+                .await,
+                FixedClock(now),
+            ),
         )
     }
 
@@ -423,6 +505,12 @@ mod tests {
             (2, 1),
             "返却済みは数えず、48 時間ちょうど前の 1 本が 48 時間以上"
         );
+        assert_eq!(overview.recent_cancelled_bookings.coach_id(), COACH);
+        assert_eq!(
+            overview.recent_cancelled_bookings.cancelled_count(),
+            2,
+            "30 日前ちょうどのキャンセルは含み、それより前と有効な予約は数えない"
+        );
     }
 
     #[tokio::test]
@@ -452,6 +540,7 @@ mod tests {
             ),
             (1, 1)
         );
+        assert_eq!(overview.recent_cancelled_bookings.cancelled_count(), 1);
 
         let accounts = InMemoryAccountRepository::default();
         accounts
@@ -476,6 +565,10 @@ mod tests {
             ),
             GetCoachPendingVideoReviewCount::new(
                 InMemoryVideoRepository::default(),
+                FixedClock(nov1()),
+            ),
+            SchedulingCoachRecentCancelledBookingCountLookup::new(
+                bookings([]).await,
                 FixedClock(nov1()),
             ),
         )
@@ -519,6 +612,7 @@ mod tests {
             ),
             (0, 0)
         );
+        assert_eq!(empty.recent_cancelled_bookings.cancelled_count(), 0);
     }
 
     #[tokio::test]

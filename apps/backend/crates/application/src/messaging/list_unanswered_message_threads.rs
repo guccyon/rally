@@ -15,7 +15,9 @@ use crate::{Unavailable, clock::Clock};
 /// 本部だけが呼ぶ）。照会だけで、何も保存しない（既読にしない・コーチに催促しない）。
 ///
 /// すべてのスレッドを読み、domain の [`UnansweredThreadCriteria::select`] で、最後の発言が生徒のもので基準の時間以上
-/// たったものを選んで経過の長い順に並べる（何を発言と数えるか・既定・範囲・境界は domain だけ）。各スレッドには、
+/// たったものを選んで経過の長い順に並べる（何を発言と数えるか・既定・範囲・境界は domain だけ）。基準に担当コーチ
+/// （[`UnansweredThreadCriteria::coach_id`]）があれば、そのアカウントが当事者のスレッドだけを読み（[`MessageThreadRepository::list_for`]）、
+/// domain がそのコーチの担当のものだけを選ぶ（いないコーチ・コーチでないアカウントなら空の一覧）。各スレッドには、
 /// 担当コーチと生徒の表示名（[`ThreadCoachDisplayNameLookup`]・[`ThreadStudentDisplayNameLookup`]）を引いて添える。
 /// 誰が呼べるか（本部だけ）と、本文を返さないことは境界（interface）が守る。
 pub struct ListUnansweredMessageThreads<R, D, S, C> {
@@ -46,7 +48,11 @@ where
         criteria: UnansweredThreadCriteria,
     ) -> Result<UnansweredThreadList, Unavailable> {
         let now = self.clock.now();
-        let threads = criteria.select(self.threads.list_all().await?, now);
+        let candidates = match criteria.coach_id() {
+            Some(coach_id) => self.threads.list_for(coach_id).await?,
+            None => self.threads.list_all().await?,
+        };
+        let threads = criteria.select(candidates, now);
         if threads.is_empty() {
             return Ok(UnansweredThreadList {
                 criteria,
@@ -259,6 +265,40 @@ mod tests {
                 .unwrap();
             assert_eq!(list.criteria.hours(), hours);
             assert_eq!(ids(&list), expected, "{hours} 時間");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_coach_of_the_criteria_narrows_to_the_threads_the_coach_is_in_charge_of() {
+        for (coach, hours, expected) in [
+            (COACH, 24, vec![6, 1]),
+            (COACH, 25, vec![6]),
+            (OTHER_COACH, 1, vec![3]),
+            (OTHER_COACH, 24, vec![]),
+            // アカウントのないコーチも、担当のスレッドがあれば載る
+            (AccountId::from_u128(99), 24, vec![4]),
+            // 生徒の ID・どのスレッドにもいない ID は空の一覧
+            (STUDENT, 1, vec![]),
+            (AccountId::from_u128(1000), 1, vec![]),
+        ] {
+            let lookup = RecordingLookup::default();
+            let list = use_case(threads(), lookup.clone())
+                .execute(
+                    UnansweredThreadCriteria::new(hours)
+                        .unwrap()
+                        .with_coach_id(Some(coach)),
+                )
+                .await
+                .unwrap();
+            assert_eq!(list.criteria.hours(), hours);
+            assert_eq!(list.criteria.coach_id(), Some(coach));
+            assert_eq!(ids(&list), expected, "{coach:?} の {hours} 時間");
+            let asked = lookup.coaches_asked.lock().unwrap().clone();
+            if expected.is_empty() {
+                assert!(asked.is_empty(), "空なら表示名を引かない");
+            } else {
+                assert_eq!(asked, [BTreeSet::from([coach])]);
+            }
         }
     }
 
