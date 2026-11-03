@@ -1,26 +1,31 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use domain::{DomainError, identity::AccountId, live_lesson::SessionHistoryCriteria};
+use domain::{
+    DomainError, catalog::Sport, identity::AccountId, live_lesson::SessionHistoryCriteria,
+};
 use time::Date;
 
 use super::{
-    LiveLessonSessionHistory, LiveLessonSessionRepository, SessionCoachDisplayNameLookup,
-    SessionStudentDisplayNameLookup,
+    LiveLessonSessionHistory, LiveLessonSessionRepository, SessionCoachAccountLookup,
+    SessionCoachDisplayNameLookup, SessionStudentDisplayNameLookup,
 };
 use crate::{Unavailable, scheduling::calendar_day};
 
-/// 本部が期間とコーチ・生徒で見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
+/// 本部が期間とコーチ・生徒・競技で見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
 /// 呼ぶ）。問い合わせを受けたときに、ライブレッスンがいつ始まりいつ終わったかを引くための照会で、何も保存しない。
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始したセッションを、終了の有無を問わず読む。期間の規則
 /// （`to` が `from` より前でない・[`SessionHistoryCriteria::MAX_DAYS`] 日まで）と選び方・並べ方（開始の新しい順）は
 /// domain の [`SessionHistoryCriteria`]。日付の区切りは予約の一覧と同じ [`calendar_day`]。`coach_id` があればその
 /// コーチのセッションだけ（いないコーチなら空の一覧）、`student_id` があればその生徒の予約が結び付いたセッションだけ
-/// （グループレッスンでは開始した予約の生徒に限らない。いない生徒・生徒でない ID なら空の一覧）。各セッションには、コーチと開始した予約の生徒の表示名
+/// （グループレッスンでは開始した予約の生徒に限らない。いない生徒・生徒でない ID なら空の一覧）。`sport` があれば、選んだ
+/// セッションのコーチのアカウント（[`SessionCoachAccountLookup`]）を引き、[`SessionHistoryCriteria::matches_coach_sport`]
+/// に合うセッションだけを残す（並べ方は変わらない。`listOverdueLiveLessonSessions` と同じ）。各セッションには、コーチと開始した予約の生徒の表示名
 /// （[`SessionCoachDisplayNameLookup`]・[`SessionStudentDisplayNameLookup`]）を引いて添える。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
-pub struct ListLiveLessonSessions<L, D, S> {
+pub struct ListLiveLessonSessions<L, A, D, S> {
     sessions: L,
+    coach_accounts: A,
     coach_names: D,
     student_names: S,
 }
@@ -36,6 +41,8 @@ pub struct ListLiveLessonSessionsQuery {
     pub coach_id: Option<AccountId>,
     /// あればこの生徒の予約が結び付いたセッションだけ
     pub student_id: Option<AccountId>,
+    /// あればこの競技を提供するコーチのセッションだけ
+    pub sport: Option<Sport>,
 }
 
 #[derive(Debug)]
@@ -58,15 +65,17 @@ impl From<Unavailable> for ListLiveLessonSessionsError {
     }
 }
 
-impl<L, D, S> ListLiveLessonSessions<L, D, S>
+impl<L, A, D, S> ListLiveLessonSessions<L, A, D, S>
 where
     L: LiveLessonSessionRepository,
+    A: SessionCoachAccountLookup,
     D: SessionCoachDisplayNameLookup,
     S: SessionStudentDisplayNameLookup,
 {
-    pub fn new(sessions: L, coach_names: D, student_names: S) -> Self {
+    pub fn new(sessions: L, coach_accounts: A, coach_names: D, student_names: S) -> Self {
         Self {
             sessions,
+            coach_accounts,
             coach_names,
             student_names,
         }
@@ -81,7 +90,8 @@ where
             calendar_day::end(query.to),
             query.coach_id,
             query.student_id,
-        )?;
+        )?
+        .with_sport(query.sport);
         let found = self
             .sessions
             .find_started_between(
@@ -91,7 +101,13 @@ where
                 criteria.student_id(),
             )
             .await?;
-        let sessions = criteria.select(found);
+        let mut sessions = criteria.select(found);
+        if criteria.sport().is_some() && !sessions.is_empty() {
+            let coach_ids: BTreeSet<AccountId> = sessions.iter().map(|s| s.coach_id()).collect();
+            let coaches = self.coach_accounts.find_coach_accounts(&coach_ids).await?;
+            sessions
+                .retain(|session| criteria.matches_coach_sport(coaches.get(&session.coach_id())));
+        }
 
         let (coach_display_names, student_display_names) = if sessions.is_empty() {
             (BTreeMap::new(), BTreeMap::new())
@@ -126,6 +142,7 @@ mod tests {
     };
 
     use domain::{
+        identity::{Account, Email, Role},
         live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
         profile::DisplayName,
         scheduling::BookingId,
@@ -173,11 +190,45 @@ mod tests {
         DisplayName::new(value).unwrap()
     }
 
-    /// `COACH` と `STUDENT` の表示名だけを知っていて、問い合わせた ID を記録する。
+    /// `COACH`（テニス・ゴルフ）と `OTHER_COACH`（サッカー）のアカウント、`COACH` と `STUDENT` の表示名だけを知っていて、
+    /// 問い合わせた ID を記録する。
     #[derive(Clone, Default)]
     struct RecordingLookup {
+        coach_accounts_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         coaches_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         students_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
+    }
+
+    fn coach_account(id: AccountId, sports: &[Sport]) -> Account {
+        Account::new(
+            id,
+            Email::new(format!("coach{}@example.com", id.as_u128())).unwrap(),
+            name("コーチ"),
+            Role::Coach,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    impl SessionCoachAccountLookup for RecordingLookup {
+        async fn find_coach_accounts(
+            &self,
+            coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, Account>, Unavailable> {
+            self.coach_accounts_asked
+                .lock()
+                .unwrap()
+                .push(coach_ids.clone());
+            Ok(coach_ids
+                .iter()
+                .filter_map(|id| match *id {
+                    COACH => Some((*id, coach_account(*id, &[Sport::Tennis, Sport::Golf]))),
+                    OTHER_COACH => Some((*id, coach_account(*id, &[Sport::Soccer]))),
+                    _ => None,
+                })
+                .collect())
+        }
     }
 
     impl SessionCoachDisplayNameLookup for RecordingLookup {
@@ -225,15 +276,24 @@ mod tests {
         ]
     }
 
-    fn use_case(
-        lookup: RecordingLookup,
-    ) -> ListLiveLessonSessions<InMemoryLiveLessonSessionRepository, RecordingLookup, RecordingLookup>
-    {
+    type UseCase = ListLiveLessonSessions<
+        InMemoryLiveLessonSessionRepository,
+        RecordingLookup,
+        RecordingLookup,
+        RecordingLookup,
+    >;
+
+    fn use_case_with(sessions: Vec<LiveLessonSession>, lookup: RecordingLookup) -> UseCase {
         ListLiveLessonSessions::new(
-            InMemoryLiveLessonSessionRepository::with_sessions(sessions()),
+            InMemoryLiveLessonSessionRepository::with_sessions(sessions),
+            lookup.clone(),
             lookup.clone(),
             lookup,
         )
+    }
+
+    fn use_case(lookup: RecordingLookup) -> UseCase {
+        use_case_with(sessions(), lookup)
     }
 
     fn query(from: u8, to: u8, coach_id: Option<AccountId>) -> ListLiveLessonSessionsQuery {
@@ -242,6 +302,7 @@ mod tests {
             to: date(Month::November, to),
             coach_id,
             student_id: None,
+            sport: None,
         }
     }
 
@@ -290,6 +351,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_sport_of_the_coach_narrows_the_sessions() {
+        // アカウントの引けないコーチのセッション（11 月 2 日）
+        let unknown_coach = AccountId::from_u128(9);
+        let sessions: Vec<LiveLessonSession> = sessions()
+            .into_iter()
+            .chain([session(6, STUDENT, unknown_coach, at(2, 12), None)])
+            .collect();
+        let lookup = RecordingLookup::default();
+        let history = use_case_with(sessions.clone(), lookup.clone())
+            .execute(ListLiveLessonSessionsQuery {
+                sport: Some(Sport::Golf),
+                ..query(1, 3, None)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&history),
+            [4, 1],
+            "ほかの競技のコーチ・アカウントの引けないコーチ・期間の外は出ない。開始の新しい順のまま"
+        );
+        assert_eq!(
+            *lookup.coach_accounts_asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH, unknown_coach])],
+            "期間で選んだ後のセッションのコーチを重ねずに 1 回で問い合わせる"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH])],
+            "競技で絞った後のセッションのコーチだけ表示名を問い合わせる"
+        );
+
+        for (sport, coach_id, student_id, expected) in [
+            (Sport::Tennis, None, None, vec![4, 1]),
+            (Sport::Soccer, None, None, vec![3]),
+            // コーチ・生徒の指定と組み合わさる
+            (Sport::Soccer, Some(OTHER_COACH), None, vec![3]),
+            (Sport::Soccer, Some(COACH), None, vec![]),
+            (Sport::Golf, None, Some(STUDENT), vec![4, 1]),
+            (Sport::Golf, None, Some(OTHER_STUDENT), vec![]),
+            // 該当するセッションのない競技は空の一覧
+            (Sport::Swimming, None, None, vec![]),
+        ] {
+            let history = use_case_with(sessions.clone(), RecordingLookup::default())
+                .execute(ListLiveLessonSessionsQuery {
+                    student_id,
+                    sport: Some(sport),
+                    ..query(1, 3, coach_id)
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                ids(&history),
+                expected,
+                "{sport:?} {coach_id:?} {student_id:?}"
+            );
+        }
+
+        // 競技で 1 件も残らなければ、表示名を問い合わせない
+        let lookup = RecordingLookup::default();
+        let history = use_case_with(sessions, lookup.clone())
+            .execute(ListLiveLessonSessionsQuery {
+                sport: Some(Sport::Baseball),
+                ..query(1, 3, None)
+            })
+            .await
+            .unwrap();
+        assert!(history.sessions.is_empty());
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
+        assert!(lookup.students_asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn without_sport_the_coach_accounts_are_not_asked() {
+        let lookup = RecordingLookup::default();
+        use_case(lookup.clone())
+            .execute(query(1, 3, None))
+            .await
+            .unwrap();
+        assert!(lookup.coach_accounts_asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn the_student_narrows_the_sessions_including_group_lessons_they_joined() {
         // 通話を始めたのは STUDENT で、OTHER_STUDENT の予約も結び付いたグループレッスン（11 月 2 日）
         let group = LiveLessonSession::restore(
@@ -305,11 +448,8 @@ mod tests {
             None,
         )
         .unwrap();
-        let use_case = ListLiveLessonSessions::new(
-            InMemoryLiveLessonSessionRepository::with_sessions(
-                sessions().into_iter().chain([group]),
-            ),
-            RecordingLookup::default(),
+        let use_case = use_case_with(
+            sessions().into_iter().chain([group]).collect(),
             RecordingLookup::default(),
         );
         for (student_id, coach_id, expected) in [
@@ -340,6 +480,7 @@ mod tests {
                 to: date(Month::October, 31),
                 coach_id: None,
                 student_id: None,
+                sport: None,
             })
             .await
             .unwrap();
@@ -372,6 +513,7 @@ mod tests {
                     to: date(Month::December, 2),
                     coach_id: None,
                     student_id: None,
+                    sport: None,
                 },
                 DomainError::SessionPeriodTooLong { max_days: 31 },
             ),
@@ -389,6 +531,7 @@ mod tests {
                     to: date(Month::December, 1),
                     coach_id: None,
                     student_id: None,
+                    sport: None,
                 })
                 .await
                 .is_ok()
