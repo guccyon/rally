@@ -475,6 +475,17 @@ export const FIXTURES: Fixture[] = [
     body: { coach_id: COACH_ID, reviews: REVIEWS } satisfies Schemas["CoachReviewList"],
   },
   {
+    // 山田 花子で絞ったとき（生徒の利用の様子から開く。hq-low-reviews-by-student）は山田 花子の行だけを返す。
+    method: "GET",
+    path: "/lesson-reviews/low",
+    query: { student_id: STUDENT_ID },
+    body: {
+      max_rating: 2,
+      period_days: 30,
+      reviews: LOW_REVIEWS.filter((review) => review.student_id === STUDENT_ID),
+    } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
     method: "GET",
     path: "/lesson-reviews/low",
     body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],
@@ -1023,8 +1034,10 @@ export const FIXTURES: Fixture[] = [
       pending_video_review_count: 1,
       // 生徒で絞った返事のないメッセージの応答（1 件）と揃える。0 件だと一覧への入口が出ず hq-unanswered-messages-by-student が撮れない
       unanswered_message_thread_count: 1,
-      low_rated_review_count: 0,
-      unhandled_low_rated_review_count: 0,
+      // 生徒で絞った低い評価の応答（山田 花子の 1 件。対応済みの印はない）と揃える。0 件だと一覧への入口が出ず
+      // hq-low-reviews-by-student が撮れない
+      low_rated_review_count: 1,
+      unhandled_low_rated_review_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {

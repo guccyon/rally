@@ -778,6 +778,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-low-reviews-by-student",
+    title: "本部: 生徒 1 人のつけた低い評価",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "低い評価を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-returned-video-reviews",
     title: "本部: 返した動画添削",
     role: "headquarters",

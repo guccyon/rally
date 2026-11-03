@@ -31,11 +31,14 @@ function HandlingStatus({ review }: { review: LowRatedReview }) {
  * メニュー（あれば）・一言・送った時刻・対応の状況を出す。しきい値・期間・並べ方は契約の正本どおり API が済ませているので、
  * 返った順のまま出し、しきい値と期間は応答の値を添える。コーチの名前からそのコーチの評価の画面へ移れる。
  * 「未対応だけ」は API の `handled=false` に渡す。未対応の行は確かめてから対応済みにする（markLowRatedLessonReviewHandled）。
+ * `studentId` があれば、その生徒がつけた評価だけを読む（API の `student_id`。「未対応だけ」と合わせて付ける）。
  */
 export function LowRatedReviewList({
   api,
+  studentId,
 }: {
   api: Pick<HeadquartersApi, "listLowRatedLessonReviews" | "markLowRatedLessonReviewHandled">;
+  studentId?: string;
 }) {
   const [unhandledOnly, setUnhandledOnly] = useState(false);
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -45,14 +48,15 @@ export function LowRatedReviewList({
 
   const fetchReviews = useCallback(
     async (onlyUnhandled: boolean): Promise<State> => {
-      const response = await api.listLowRatedLessonReviews(
-        onlyUnhandled ? { handled: false } : {},
-      );
+      const response = await api.listLowRatedLessonReviews({
+        ...(onlyUnhandled ? { handled: false } : {}),
+        ...(studentId ? { student_id: studentId } : {}),
+      });
       return response.ok
         ? { kind: "loaded", list: response.data }
         : { kind: "failed", message: response.message };
     },
-    [api],
+    [api, studentId],
   );
 
   // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。
