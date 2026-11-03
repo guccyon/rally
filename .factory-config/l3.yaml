@@ -34,6 +34,7 @@ weak: [student, coach, lesson]   # 至る所に出る語。ほかの語が当た
 ignore:
   - "CHANGELOG.md"
   - "**/CHANGELOG.md"
+  - "changelog.d/**"
   - "**/package-lock.json"
   - "**/pubspec.lock"
   - "**/Cargo.lock"
