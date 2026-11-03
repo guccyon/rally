@@ -461,6 +461,15 @@ describe("headquartersApi", () => {
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
 
+  test("listOverdueLiveLessonSessions は下限とコーチをクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {
+    const { api, fetchMock } = setup(json(200, { older_than_hours: 6, sessions: [] }));
+    await api.listOverdueLiveLessonSessions({ older_than_hours: 6, coach_id: "22222222-2222-4222-8222-222222222222" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/live-lesson-sessions/overdue");
+    expect(url.searchParams.get("older_than_hours")).toBe("6");
+    expect(url.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
+  });
+
   test("listLiveLessonSessions は期間とコーチ・生徒をクエリにして GET /api/live-lesson-sessions を呼ぶ", async () => {
     const list = {
       from: "2026-10-20",
