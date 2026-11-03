@@ -6,7 +6,11 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { formatAverageRating } from "@/components/CoachReviewSummaryView";
 import { RoleGate } from "@/components/RoleGate";
 import { CoachReviewPicker } from "@/components/headquarters/CoachReviewPicker";
-import { CoachReviewSummaryHome } from "@/components/headquarters/CoachReviewSummaryHome";
+import {
+  CoachReviewSummaryHome,
+  coachReviewSummaryPath,
+  initialMaxRatingFrom,
+} from "@/components/headquarters/CoachReviewSummaryHome";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
 
@@ -223,10 +227,122 @@ describe("本部のコーチの評価", () => {
     expect(api.listCoachReviews).not.toHaveBeenCalled();
   });
 
+  test("点数の選択肢は「すべて」と 1〜4 点以下で、既定は「すべて」", async () => {
+    const api = mockApi();
+    render(<CoachReviewPicker api={api} />);
+
+    const select = await screen.findByLabelText("点数");
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "1 点以下",
+      "2 点以下",
+      "3 点以下",
+      "4 点以下",
+    ]);
+  });
+
+  test("点数を選ぶと、選んでいるコーチの評価をその点以下で読み直し、見出しに点を添える（件数と平均は絞らない）", async () => {
+    const low = { ...REVIEW, review_id: "55555555-5555-4555-8555-555555555555", rating: 2, comment: "音声が途切れました" };
+    const api = mockApi({
+      listCoachReviews: vi.fn<HeadquartersApi["listCoachReviews"]>(async (coachId, filter) => ({
+        ok: true,
+        data: { coach_id: coachId, reviews: filter?.max_rating === undefined ? [REVIEW, low] : [low] },
+      })),
+    });
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(<CoachReviewPicker api={api} onFilterChange={onFilterChange} />);
+
+    await user.selectOptions(await screen.findByLabelText("コーチ"), "山田コーチ");
+    await screen.findByText("受けた評価（新しい順）");
+    await user.selectOptions(screen.getByLabelText("点数"), "2 点以下");
+
+    expect(await screen.findByText("受けた評価（2 点以下・新しい順）")).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID, { max_rating: 2 });
+    expect(api.getCoachReviewSummary).toHaveBeenLastCalledWith(COACH_ID);
+    const items = within(screen.getByRole("list", { name: "評価の一覧" })).getAllByRole("listitem");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("音声が途切れました");
+    expect(summaryOf(screen.getByLabelText("評価の件数と平均"))).toContainEqual(["評価の件数", "12 件"]);
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: 2 });
+
+    await user.selectOptions(screen.getByLabelText("点数"), "すべて");
+    expect(await screen.findByText("受けた評価（新しい順）")).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID);
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: null });
+  });
+
+  test("点数を選んだままコーチを選び直すと、そのコーチもその点以下で読む", async () => {
+    const api = mockApi();
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(<CoachReviewPicker api={api} onFilterChange={onFilterChange} />);
+
+    await user.selectOptions(await screen.findByLabelText("点数"), "3 点以下");
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: "", maxRating: 3 });
+    expect(api.listCoachReviews).not.toHaveBeenCalled();
+    await user.selectOptions(screen.getByLabelText("コーチ"), "佐藤コーチ");
+
+    expect(await screen.findByText("受けた評価（3 点以下・新しい順）")).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenCalledWith(OTHER_COACH_ID, { max_rating: 3 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: OTHER_COACH_ID, maxRating: 3 });
+  });
+
+  test("点数で絞って 0 件なら、その点以下の評価がないと出す", async () => {
+    const api = mockApi({
+      listCoachReviews: vi.fn<HeadquartersApi["listCoachReviews"]>(async (coachId) => ({
+        ok: true,
+        data: { coach_id: coachId, reviews: [] },
+      })),
+    });
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} initialMaxRating={1} />);
+
+    expect(await screen.findByText("1 点以下の評価はありません")).toBeInTheDocument();
+    expect(screen.queryByText("まだ評価はありません")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("点数")).toHaveValue("1");
+    expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID, { max_rating: 1 });
+  });
+
+  test("点数の指定が 422 なら、サーバーの文言ではなく直し方を出す", async () => {
+    const api = mockApi({
+      listCoachReviews: vi.fn<HeadquartersApi["listCoachReviews"]>(async () => ({
+        ok: false,
+        message: "入力が正しくありません。",
+        code: "validation_failed",
+      })),
+    });
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} initialMaxRating={4} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "点数の指定が正しくありません。点数を選び直してください。",
+    );
+    expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
+  });
+
   test("平均は API が丸めた値を小数第 2 位まで揃えて出す", () => {
     expect(formatAverageRating(4)).toBe("4.00");
     expect(formatAverageRating(3.67)).toBe("3.67");
     expect(formatAverageRating(null)).toBe("評価はまだありません");
+  });
+});
+
+describe("URL のクエリ", () => {
+  test("選んだコーチと点数をクエリに残し、選んでいない・「すべて」の条件は出さない", () => {
+    expect(coachReviewSummaryPath(COACH_ID)).toBe(`/headquarters/coach-review-summary?coach_id=${COACH_ID}`);
+    expect(coachReviewSummaryPath(COACH_ID, 2)).toBe(
+      `/headquarters/coach-review-summary?coach_id=${COACH_ID}&max_rating=2`,
+    );
+    expect(coachReviewSummaryPath("", 4)).toBe("/headquarters/coach-review-summary?max_rating=4");
+    expect(coachReviewSummaryPath("", null)).toBe("/headquarters/coach-review-summary");
+  });
+
+  test("クエリの点数は選択肢の点（1〜4）だけを使い、それ以外は「すべて」として扱う", () => {
+    expect(initialMaxRatingFrom(new URLSearchParams("max_rating=3"))).toBe(3);
+    for (const value of ["", "0", "5", "2.5", "abc"]) {
+      expect(initialMaxRatingFrom(new URLSearchParams({ max_rating: value }))).toBeNull();
+    }
+    expect(initialMaxRatingFrom(new URLSearchParams())).toBeNull();
   });
 });
 
@@ -254,6 +370,28 @@ describe("画面への配置", () => {
     expect(within(region).queryByLabelText("コーチ ID")).not.toBeInTheDocument();
     expect(within(region).queryByText(/未実装/)).not.toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("本部のコーチの評価の画面は、選び直したコーチと点数を履歴を積まずに URL に残す", async () => {
+    headquartersApiMock.mockReturnValue(mockApi());
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    const user = userEvent.setup();
+    render(
+      <RoleGate role="headquarters">
+        {(session) => (
+          <CoachReviewSummaryHome token={session.token} initialCoachId={COACH_ID} initialMaxRating={2} />
+        )}
+      </RoleGate>,
+    );
+
+    expect(await screen.findByText("受けた評価（2 点以下・新しい順）")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    await user.selectOptions(screen.getByLabelText("点数"), "4 点以下");
+
+    expect(replace).toHaveBeenLastCalledWith(
+      `/headquarters/coach-review-summary?coach_id=${COACH_ID}&max_rating=4`,
+      { scroll: false },
+    );
   });
 
   test("本部以外のロールでは本部のコーチの評価の画面に入れず、ログイン画面へ戻す", () => {

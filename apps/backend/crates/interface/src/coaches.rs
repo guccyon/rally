@@ -1,5 +1,5 @@
 //! `/coaches`。admin-web の `GET /coaches`（`listCoaches`）は本部だけで、コーチを受付の状態と直近 30 日に終わった
-//! レッスンの数を添えて返す（任意の `q`・`acceptance_status`・`sport` で絞る）。student-app の
+//! レッスンの数を添えて返す（任意の `q`・`acceptance_status`・`sport`・`inactive` で絞る）。student-app の
 //! `GET /coaches`（`listCoachesForStudent`）は生徒だけで、スポーツ（省いたら生徒自身のスポーツ）を提供するコーチを、
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
@@ -68,6 +68,7 @@ pub struct ListCoachesParams {
     q: Option<String>,
     acceptance_status: Option<String>,
     sport: Option<String>,
+    inactive: Option<bool>,
 }
 
 /// student-app の `listCoachesForStudent` のクエリ。
@@ -96,7 +97,7 @@ pub struct CoachListingBody {
 
 /// `GET /coaches`。本部（admin-web の `listCoaches`）と生徒（student-app の `listCoachesForStudent`）が呼べる
 /// （役割は `require_role` の層が確かめる。コーチは 403）。本部の `q` は表示名の検索語で、長すぎれば 422（生徒の一覧の
-/// `q` と同じ規則）。生徒は `q` を付けても変わらない。
+/// `q` と同じ規則）。本部の `inactive` が `true` / `false` でなければ 422。生徒は `q` を付けても変わらない。
 #[allow(clippy::type_complexity)]
 pub async fn list_coaches<R, A, L, S, C, V, M, F, U>(
     State(state): State<Shared<R, A, L, S, C, V, M, F, U>>,
@@ -127,6 +128,8 @@ where
                     .map(coach_acceptance_status_from_contract)
                     .transpose()?,
                 sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+                // 付けないときは false と同じ（絞らない）
+                inactive: params.inactive.unwrap_or(false),
             };
             let coaches = state
                 .list_coaches

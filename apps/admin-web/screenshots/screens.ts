@@ -69,6 +69,25 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222",
   },
+  {
+    // 点数で絞った状態（URL のクエリ max_rating に残した点で開く）。
+    id: "hq-coach-reviews-max-rating",
+    title: "本部: コーチの評価（点数で絞る）",
+    role: "headquarters",
+    path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222&max_rating=4",
+    open: async (page) => {
+      await page.getByText("受けた評価（4 点以下・新しい順）").waitFor();
+    },
+  },
+  {
+    id: "hq-coach-reviews-max-rating-empty",
+    title: "本部: コーチの評価（点数で絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222&max_rating=3",
+    open: async (page) => {
+      await page.getByText("3 点以下の評価はありません").waitFor();
+    },
+  },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   {
     id: "hq-low-reviews-handling-confirm",
@@ -381,6 +400,12 @@ export const SCREENS: Screen[] = [
     title: "本部: 返却待ちの動画添削",
     role: "headquarters",
     path: "/headquarters/pending-video-reviews",
+  },
+  {
+    id: "hq-pending-video-reviews-coach",
+    title: "本部: 返却待ちの動画添削（コーチで絞ったとき）",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews?coach_id=22222222-2222-4222-8222-222222222223",
   },
   {
     id: "hq-returned-video-reviews",

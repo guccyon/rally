@@ -21,7 +21,8 @@ use crate::{Unavailable, clock::Clock};
 /// `from` より前でない・[`BookingPeriod::MAX_DAYS`] 日まで）は domain の [`BookingPeriod`]。`coach_id` があればそのコーチの
 /// 枠への予約だけに絞る（いないコーチなら空の一覧。規則は domain の
 /// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。
-/// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧）。
+/// `student_id` があればその生徒が予約した予約だけに絞る（いない生徒なら空の一覧。規則は domain の
+/// [`Booking::matches_student`](domain::scheduling::Booking::matches_student)）。
 /// `statuses` が空でなければ、そのどれかの状態の予約だけに絞る（空なら状態を問わない）。`trial` があれば、体験予約か
 /// （[`Booking::is_trial`](domain::scheduling::Booking::is_trial)）がそれと同じ予約だけに絞る（なければ問わない）。
 /// `lesson_menu_id` があれば、予約した時点のレッスンメニューの写しがそのメニューの予約だけに絞る（メニューのない予約は出ない。
@@ -110,9 +111,7 @@ where
         bookings.retain(|booking| {
             period.includes(booking.starts_at())
                 && booking.matches_coach(query.coach_id)
-                && query
-                    .student_id
-                    .is_none_or(|student_id| booking.student_id() == student_id)
+                && booking.matches_student(query.student_id)
                 && (query.statuses.is_empty() || query.statuses.contains(&booking.status()))
                 && query.trial.is_none_or(|trial| booking.is_trial() == trial)
                 && booking.matches_lesson_menu(query.lesson_menu_id)
