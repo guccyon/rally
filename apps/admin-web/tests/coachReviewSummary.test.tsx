@@ -10,6 +10,7 @@ import {
   CoachReviewSummaryHome,
   coachReviewSummaryPath,
   initialMaxRatingFrom,
+  initialPeriodFrom,
 } from "@/components/headquarters/CoachReviewSummaryHome";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { saveSession } from "@/session/session";
@@ -265,12 +266,12 @@ describe("本部のコーチの評価", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toHaveTextContent("音声が途切れました");
     expect(summaryOf(screen.getByLabelText("評価の件数と平均"))).toContainEqual(["評価の件数", "12 件"]);
-    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: 2 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: 2, period: null });
 
     await user.selectOptions(screen.getByLabelText("点数"), "すべて");
     expect(await screen.findByText("受けた評価（新しい順）")).toBeInTheDocument();
     expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID);
-    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: null });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: null, period: null });
   });
 
   test("点数を選んだままコーチを選び直すと、そのコーチもその点以下で読む", async () => {
@@ -280,13 +281,13 @@ describe("本部のコーチの評価", () => {
     render(<CoachReviewPicker api={api} onFilterChange={onFilterChange} />);
 
     await user.selectOptions(await screen.findByLabelText("点数"), "3 点以下");
-    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: "", maxRating: 3 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: "", maxRating: 3, period: null });
     expect(api.listCoachReviews).not.toHaveBeenCalled();
     await user.selectOptions(screen.getByLabelText("コーチ"), "佐藤コーチ");
 
     expect(await screen.findByText("受けた評価（3 点以下・新しい順）")).toBeInTheDocument();
     expect(api.listCoachReviews).toHaveBeenCalledWith(OTHER_COACH_ID, { max_rating: 3 });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: OTHER_COACH_ID, maxRating: 3 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: OTHER_COACH_ID, maxRating: 3, period: null });
   });
 
   test("点数で絞って 0 件なら、その点以下の評価がないと出す", async () => {
@@ -320,6 +321,139 @@ describe("本部のコーチの評価", () => {
     expect(screen.queryByLabelText("評価の件数と平均")).not.toBeInTheDocument();
   });
 
+  test("期間を選んで「この期間で見る」を押すと、その期間を付けて一覧だけを読み直し、見出しに期間を添える（件数と平均は絞らない）", async () => {
+    const api = mockApi();
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} onFilterChange={onFilterChange} />);
+
+    await screen.findByText("受けた評価（新しい順）");
+    expect(screen.getByLabelText("開始日")).toHaveValue("");
+    expect(screen.getByLabelText("終了日")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "期間を外す" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.type(screen.getByLabelText("終了日"), "2026-10-31");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    expect(
+      await screen.findByText("受けた評価（2026年10月1日（木） 〜 2026年10月31日（土）・新しい順）"),
+    ).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID, { from: "2026-10-01", to: "2026-10-31" });
+    expect(api.getCoachReviewSummary).toHaveBeenLastCalledWith(COACH_ID);
+    expect(screen.getByRole("heading", { name: "受けた評価（2026年10月1日（木） 〜 2026年10月31日（土）・新しい順）" })).toBeInTheDocument();
+    expect(summaryOf(screen.getByLabelText("評価の件数と平均"))).toContainEqual(["評価の件数", "12 件"]);
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      coachId: COACH_ID,
+      maxRating: null,
+      period: { from: "2026-10-01", to: "2026-10-31" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "期間を外す" }));
+    expect(await screen.findByText("受けた評価（新しい順）")).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID);
+    expect(screen.getByLabelText("開始日")).toHaveValue("");
+    expect(onFilterChange).toHaveBeenLastCalledWith({ coachId: COACH_ID, maxRating: null, period: null });
+  });
+
+  test("期間と点数は組み合わせられ、どちらを変えてももう一方を付けたまま読み直す", async () => {
+    const api = mockApi();
+    const user = userEvent.setup();
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} initialMaxRating={2} />);
+
+    await screen.findByText("受けた評価（2 点以下・新しい順）");
+    await user.type(screen.getByLabelText("開始日"), "2026-10-25");
+    await user.type(screen.getByLabelText("終了日"), "2026-10-31");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    expect(
+      await screen.findByText("受けた評価（2026年10月25日（日） 〜 2026年10月31日（土）・2 点以下・新しい順）"),
+    ).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID, {
+      max_rating: 2,
+      from: "2026-10-25",
+      to: "2026-10-31",
+    });
+
+    await user.selectOptions(screen.getByLabelText("点数"), "4 点以下");
+    expect(await screen.findByText(/・4 点以下・新しい順）$/)).toBeInTheDocument();
+    expect(api.listCoachReviews).toHaveBeenLastCalledWith(COACH_ID, {
+      max_rating: 4,
+      from: "2026-10-25",
+      to: "2026-10-31",
+    });
+
+    await user.selectOptions(screen.getByLabelText("コーチ"), "佐藤コーチ");
+    await waitFor(() =>
+      expect(api.listCoachReviews).toHaveBeenLastCalledWith(OTHER_COACH_ID, {
+        max_rating: 4,
+        from: "2026-10-25",
+        to: "2026-10-31",
+      }),
+    );
+  });
+
+  test("initialPeriod の期間で開き、期間の欄に入れて読む。絞って 0 件ならその期間の評価がないと出す", async () => {
+    const api = mockApi({
+      listCoachReviews: vi.fn<HeadquartersApi["listCoachReviews"]>(async (coachId) => ({
+        ok: true,
+        data: { coach_id: coachId, reviews: [] },
+      })),
+    });
+    render(
+      <CoachReviewPicker
+        api={api}
+        initialCoachId={COACH_ID}
+        initialMaxRating={3}
+        initialPeriod={{ from: "2026-10-01", to: "2026-10-07" }}
+      />,
+    );
+
+    expect(await screen.findByText("この期間に付いた 3 点以下の評価はありません")).toBeInTheDocument();
+    expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("終了日")).toHaveValue("2026-10-07");
+    expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID, {
+      max_rating: 3,
+      from: "2026-10-01",
+      to: "2026-10-07",
+    });
+  });
+
+  test("期間が正しくなければ送らずに直し方を出す（31 日まで・終了日は開始日以後）", async () => {
+    const api = mockApi();
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} onFilterChange={onFilterChange} />);
+    await screen.findByText("受けた評価（新しい順）");
+
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("開始日と終了日を選んでください。");
+
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.type(screen.getByLabelText("終了日"), "2026-11-01");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("期間は 31 日までにしてください。");
+
+    expect(api.listCoachReviews).toHaveBeenCalledTimes(1);
+    expect(onFilterChange).not.toHaveBeenCalled();
+  });
+
+  test("期間を付けて 422 なら、サーバーの文言ではなく期間の直し方も出す", async () => {
+    const api = mockApi({
+      listCoachReviews: vi.fn<HeadquartersApi["listCoachReviews"]>(async () => ({
+        ok: false,
+        message: "入力が正しくありません。",
+        code: "validation_failed",
+      })),
+    });
+    render(
+      <CoachReviewPicker api={api} initialCoachId={COACH_ID} initialPeriod={{ from: "2026-10-01", to: "2026-10-07" }} />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "点数か期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。",
+    );
+  });
+
   test("平均は API が丸めた値を小数第 2 位まで揃えて出す", () => {
     expect(formatAverageRating(4)).toBe("4.00");
     expect(formatAverageRating(3.67)).toBe("3.67");
@@ -335,6 +469,22 @@ describe("URL のクエリ", () => {
     );
     expect(coachReviewSummaryPath("", 4)).toBe("/headquarters/coach-review-summary?max_rating=4");
     expect(coachReviewSummaryPath("", null)).toBe("/headquarters/coach-review-summary");
+    expect(coachReviewSummaryPath(COACH_ID, 2, { from: "2026-10-01", to: "2026-10-31" })).toBe(
+      `/headquarters/coach-review-summary?coach_id=${COACH_ID}&max_rating=2&from=2026-10-01&to=2026-10-31`,
+    );
+    expect(coachReviewSummaryPath(COACH_ID, null, null)).toBe(
+      `/headquarters/coach-review-summary?coach_id=${COACH_ID}`,
+    );
+  });
+
+  test("クエリの期間は開始日と終了日がそろって正しいときだけ使い、それ以外は期間で絞らない", () => {
+    expect(initialPeriodFrom(new URLSearchParams("from=2026-10-01&to=2026-10-31"))).toEqual({
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    for (const query of ["", "from=2026-10-01", "to=2026-10-31", "from=2026-10-31&to=2026-10-01", "from=2026-10-01&to=2026-11-01", "from=abc&to=def"]) {
+      expect(initialPeriodFrom(new URLSearchParams(query))).toBeNull();
+    }
   });
 
   test("クエリの点数は選択肢の点（1〜4）だけを使い、それ以外は「すべて」として扱う", () => {
@@ -390,6 +540,14 @@ describe("画面への配置", () => {
 
     expect(replace).toHaveBeenLastCalledWith(
       `/headquarters/coach-review-summary?coach_id=${COACH_ID}&max_rating=4`,
+      { scroll: false },
+    );
+
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.type(screen.getByLabelText("終了日"), "2026-10-07");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(replace).toHaveBeenLastCalledWith(
+      `/headquarters/coach-review-summary?coach_id=${COACH_ID}&max_rating=4&from=2026-10-01&to=2026-10-07`,
       { scroll: false },
     );
   });

@@ -111,6 +111,16 @@ export const SCREENS: Screen[] = [
       await page.getByText("3 点以下の評価はありません").waitFor();
     },
   },
+  {
+    // 期間で絞った状態（URL のクエリ from・to に残した期間で開く）。件数と平均は絞らない。
+    id: "hq-coach-reviews-period",
+    title: "本部: コーチの評価（期間で絞る）",
+    role: "headquarters",
+    path: "/headquarters/coach-review-summary?coach_id=22222222-2222-4222-8222-222222222222&from=2026-10-26&to=2026-11-01",
+    open: async (page) => {
+      await page.getByText("受けた評価（2026年10月26日（月） 〜 2026年11月1日（日）・新しい順）").waitFor();
+    },
+  },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   {
     id: "hq-low-reviews-handling-confirm",
