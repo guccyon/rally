@@ -385,6 +385,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-incomplete-coach-profiles-accepting",
+    title: "本部: 自己紹介の足りないコーチ（受付中で絞る）",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+    open: async (page) => {
+      await page.getByLabel("受付の状態").selectOption({ label: "受付中" });
+      await page.getByRole("link", { name: "伊藤 コーチ" }).waitFor();
+      await page.getByRole("link", { name: "高橋 コーチ" }).waitFor({ state: "detached" });
+    },
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",
