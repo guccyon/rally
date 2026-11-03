@@ -186,6 +186,15 @@ paths:
           枠を出していないスポーツは 0）。`coach_id`・`from` / `to` と組み合わせられる。省けば今までどおりすべてのコーチ。
           `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない
           競技は、どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+        - 任意の `lesson_menu_id` で、そのレッスンメニューに結びついた枠（コーチが `publishSlot` の `lesson_menu_id` で
+          結びつけたメニュー。`listMyCoachSlots` の `lesson_menu` と同じもの）と、それらの枠への予約だけを数える（人気のメニューの枠が足りているかを
+          見る）。メニューに結びついていない枠と、それらの枠への予約は、`lesson_menu_id` を付ければ数えない。予約の側の
+          メニューの写し（`listBookings` の `lesson_menu`）では決めず、枠のメニューで決める（決め方は backend の domain
+          `Slot::matches_lesson_menu` の 1 か所）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す
+          （そのメニューの枠がないスポーツは 0）。`from` / `to`・`coach_id`・`sport` と組み合わせられる。省けば今までどおり
+          メニューを問わない（メニューのない枠も数える）。扱いは `listBookings` の `lesson_menu_id` と同じ: UUID でなければ
+          422 `validation_failed`（`message` は `lesson_menu_id が UUID でない`）。ないメニューの ID・期間に枠がないメニューは、
+          404 にせずどのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
         - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
           コーチが閉じた枠（`closed`）は数えない
         - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
@@ -231,6 +240,16 @@ paths:
             省けばすべてのコーチ。`Sport` の値でなければ 422 `validation_failed`
           schema:
             $ref: "#/components/schemas/Sport"
+        - name: lesson_menu_id
+          in: query
+          required: false
+          description: |
+            あればこのレッスンメニューに結びついた枠と、それらの枠への予約だけを数える（メニューのない枠は数えない）。
+            省けばメニューを問わない。UUID でなければ 422 `validation_failed`。ないメニューの ID は、404 にせずどのスポーツも
+            0 を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: スポーツごとの予約枠の需給

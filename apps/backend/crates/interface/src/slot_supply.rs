@@ -19,7 +19,8 @@ use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         account_id_from_contract, admin_web_sport, date_from_contract, date_time_to_contract,
-        date_to_contract, slot_supply_status_to_contract, sport_to_contract,
+        date_to_contract, lesson_menu_id_from_contract, slot_supply_status_to_contract,
+        sport_to_contract,
     },
     error::ApiError,
 };
@@ -36,6 +37,7 @@ pub struct GetSlotSupplyParams {
     to: Option<String>,
     coach_id: Option<String>,
     sport: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `SlotSupplyReport`。`from`・`to` は日付で期間を指定したときだけ載せる。
@@ -63,7 +65,8 @@ pub struct SlotSupplyBody {
 /// 日付でないとき・`coach_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が
 /// 決める。`listBookings` と同じ）。ない・コーチでない `coach_id` は 404 にせず、どのスポーツも 0 の需給。`sport` が
 /// `Sport` の値でなければ 422（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない競技も、どのスポーツも
-/// 0 の需給。
+/// 0 の需給。`lesson_menu_id` が UUID でなければ 422、ないメニューの ID は 404 にせずどのスポーツも 0 の需給
+/// （`listBookings` の `lesson_menu_id` と同じ）。
 pub async fn get_slot_supply<B, A, C>(
     State(state): State<Arc<SlotSupplyState<B, A, C>>>,
     _account: AuthenticatedAccount,
@@ -93,6 +96,11 @@ where
             .map(|id| account_id_from_contract("coach_id", id))
             .transpose()?,
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
+            .transpose()?,
     };
     let report = state
         .get_slot_supply
