@@ -4,7 +4,8 @@
 //! （`sendAnnouncementDraft`）のレスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部が書きかけの下書きを作り・
 //! 直し・消し・一覧で読めること（生徒には届かない）・下書きから送ると `sendAnnouncement` と同じく生徒にお知らせが届き、
 //! 下書きが消えて送った記録の一覧に出ること・空の題や本文は送れず 422・対象の生徒がいなければ 404（どちらも下書きは残る）・
-//! 長すぎる中身と不正なスポーツは 422・題の一部で一覧を探せること（長すぎる検索語は 422）・ない下書きは 404・コーチと生徒の 403・トークンなしの 401 を確かめる。
+//! 長すぎる中身と不正なスポーツは 422・題の一部で一覧を探せること（長すぎる検索語は 422）・最後に直した日付の
+//! `from`・`to` で絞れること（日付でない・期間の規則違反は 422）・ない下書きは 404・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -624,6 +625,78 @@ async fn headquarters_narrows_drafts_by_sport() {
         let (status, body) = search(&app, 50, query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_narrows_drafts_by_the_date_of_the_last_update() {
+    let app = App::default();
+    // 11/1 の 9 時（日本時間）に 2 つ作り、片方を 11/2 の 0 時に直す。11/3 の 0 時にもう 1 つ作る
+    create(&app, 10, json!({ "title": "古い下書き", "body": "本文" })).await;
+    let revised = create(&app, 20, json!({ "title": "直す下書き", "body": "本文" })).await;
+    let (status, body) = call(
+        &app.router(at(900)).await,
+        "PUT",
+        &uri(DRAFT, revised["announcement_draft_id"].as_str().unwrap()),
+        DRAFT,
+        Some(HEADQUARTERS),
+        Some(Ok(json!({ "title": "直した下書き", "body": "本文" }))),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    create(
+        &app,
+        2340,
+        json!({ "title": "新しい下書き", "body": "本文" }),
+    )
+    .await;
+
+    for (query, expected) in [
+        // 最後に直した日付（日本時間）で絞る。直した下書きは作った日付では入らない
+        ("?from=2026-11-01&to=2026-11-01", vec!["古い下書き"]),
+        (
+            "?from=2026-11-02&to=2026-11-03",
+            vec!["新しい下書き", "直した下書き"],
+        ),
+        // 片方だけなら、もう片方から 7 日
+        ("?from=2026-11-02", vec!["新しい下書き", "直した下書き"]),
+        ("?to=2026-11-02", vec!["直した下書き", "古い下書き"]),
+        ("?from=2026-11-04", vec![]),
+        // q と sport と組み合わせられる
+        (
+            "?from=2026-11-01&to=2026-11-03&q=%E7%9B%B4%E3%81%97%E3%81%9F",
+            vec!["直した下書き"],
+        ),
+        ("?from=2026-11-01&to=2026-11-03&sport=tennis", vec![]),
+        // 付けなければ今までどおり
+        ("", vec!["新しい下書き", "直した下書き", "古い下書き"]),
+        // 31 日まではよい
+        (
+            "?from=2026-11-01&to=2026-12-01",
+            vec!["新しい下書き", "直した下書き", "古い下書き"],
+        ),
+    ] {
+        let (status, body) = search(&app, 3000, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(titles(&body), expected, "{query}");
+    }
+
+    for (query, message) in [
+        (
+            "?from=2026-11-03&to=2026-11-02",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        (
+            "?from=2026-11-01&to=2026-12-02",
+            "from から to までは 31 日まで",
+        ),
+        ("?from=2026/11/01", "from は YYYY-MM-DD の日付でない"),
+        ("?to=", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = search(&app, 3000, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
     }
 }
 

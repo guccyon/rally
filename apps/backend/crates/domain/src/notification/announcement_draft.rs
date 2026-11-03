@@ -4,7 +4,7 @@ use super::{
     AnnouncementBody, AnnouncementDraftId, AnnouncementSportFilter, AnnouncementTitle,
     NotificationError,
 };
-use crate::{catalog::Sport, identity::AccountId};
+use crate::{catalog::Sport, identity::AccountId, scheduling::BookingPeriod};
 
 /// 本部からのお知らせの下書き（glossary の announcement_draft）。本部が書きかけで残したお知らせで、作った本部の
 /// アカウント・題・本文・対象のスポーツ（全員なら `None`）・作った時刻・最後に直した時刻を持つ。
@@ -95,6 +95,13 @@ impl AnnouncementDraft {
         self.updated_at
     }
 
+    /// 最後に直した時刻（[`Self::updated_at`]）が期間 `period` に入るか（開始を含み、終了を含まない）。本部の下書きの
+    /// 一覧（admin-web の `listAnnouncementDrafts`）を最後に直した日付で絞るのに使う。期間の規則（上限の日数など）は
+    /// 送ったお知らせ（[`super::Announcement::is_sent_in`]）と同じ [`BookingPeriod`] だけが持つ。
+    pub fn is_updated_in(&self, period: &BookingPeriod) -> bool {
+        period.includes(self.updated_at)
+    }
+
     /// 時刻 `now` に題・本文・対象のスポーツをまとめて書き換える。作った本部のアカウントと作った時刻は変えない。
     ///
     /// 題・本文が上限を超えれば [`Self::new`] と同じ誤りで、何も変えない。
@@ -182,6 +189,31 @@ mod tests {
         assert!(tennis.is_in_sport(None), "絞らなければスポーツを問わない");
         assert!(tennis.is_in_sport(Some(Sport::Tennis)));
         assert!(!tennis.is_in_sport(Some(Sport::Golf)));
+    }
+
+    #[test]
+    fn updated_in_a_period_includes_the_start_and_excludes_the_end() {
+        let draft = draft("題", "").unwrap();
+        let period = |from: u64, to: u64| BookingPeriod::new(at(from), at(to)).unwrap();
+        assert!(draft.is_updated_in(&period(10, 11)), "開始を含む");
+        assert!(draft.is_updated_in(&period(9, 11)));
+        assert!(!draft.is_updated_in(&period(9, 10)), "終了を含まない");
+        assert!(!draft.is_updated_in(&period(11, 12)));
+    }
+
+    #[test]
+    fn a_revised_draft_is_in_the_period_of_its_last_revision() {
+        let mut revised = draft("題", "").unwrap();
+        revised.revise("直した題", "", None, at(30)).unwrap();
+        let period = |from: u64, to: u64| BookingPeriod::new(at(from), at(to)).unwrap();
+        assert!(
+            revised.is_updated_in(&period(30, 31)),
+            "最後に直した時刻で決まる"
+        );
+        assert!(
+            !revised.is_updated_in(&period(10, 11)),
+            "作った時刻では決まらない"
+        );
     }
 
     #[test]
