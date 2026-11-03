@@ -1,11 +1,15 @@
 use std::{cmp::Reverse, collections::BTreeSet};
 
-use domain::{catalog::LessonMenuId, identity::AccountId};
+use domain::{
+    catalog::{LessonMenuId, Sport},
+    identity::AccountId,
+    profile::CoachSportFilter,
+};
 use time::Date;
 
 use super::{
     BookingCoachDisplayNameLookup, BookingRepository, CancelledBookingList, ListBookingsError,
-    StudentDisplayNameLookup, calendar_day,
+    SlotCoachAccountLookup, StudentDisplayNameLookup, calendar_day,
 };
 use crate::clock::Clock;
 
@@ -21,11 +25,16 @@ use crate::clock::Clock;
 /// [`Booking::matches_student`](domain::scheduling::Booking::matches_student)）。`lesson_menu_id` があれば予約した時点の
 /// レッスンメニューの写しがそのメニューの予約だけに絞る（メニューのない予約は出ない。ないメニューなら空の一覧。規則は
 /// [`super::ListBookings`] と同じ domain の
-/// [`Booking::matches_lesson_menu`](domain::scheduling::Booking::matches_lesson_menu)）。キャンセルした人は domain の
+/// [`Booking::matches_lesson_menu`](domain::scheduling::Booking::matches_lesson_menu)）。`sport` があれば、ほかの条件で
+/// 残った予約の枠のコーチのアカウント（[`SlotCoachAccountLookup`]）を引き、その競技を提供するコーチの予約だけに絞る（規則は
+/// [`super::ListBookings`] と同じ domain の
+/// [`Booking::matches_coach_sport`](domain::scheduling::Booking::matches_coach_sport)。コーチの競技の決め方は
+/// [`CoachSportFilter`] の 1 か所）。キャンセルした人は domain の
 /// [`Booking::cancelled_by`](domain::scheduling::Booking::cancelled_by)。一覧に出るコーチと生徒の表示名は profile に
 /// 問い合わせて添える。読むだけで何も変えない。
-pub struct ListCancelledBookings<B, K, D, C> {
+pub struct ListCancelledBookings<B, A, K, D, C> {
     bookings: B,
+    coach_accounts: A,
     coaches: K,
     students: D,
     clock: C,
@@ -44,18 +53,22 @@ pub struct ListCancelledBookingsQuery {
     pub student_id: Option<AccountId>,
     /// あれば予約した時点のレッスンメニューの写しがこのメニューの予約だけ
     pub lesson_menu_id: Option<LessonMenuId>,
+    /// あればこの競技を提供するコーチの枠への予約だけ
+    pub sport: Option<Sport>,
 }
 
-impl<B, K, D, C> ListCancelledBookings<B, K, D, C>
+impl<B, A, K, D, C> ListCancelledBookings<B, A, K, D, C>
 where
     B: BookingRepository,
+    A: SlotCoachAccountLookup,
     K: BookingCoachDisplayNameLookup,
     D: StudentDisplayNameLookup,
     C: Clock,
 {
-    pub fn new(bookings: B, coaches: K, students: D, clock: C) -> Self {
+    pub fn new(bookings: B, coach_accounts: A, coaches: K, students: D, clock: C) -> Self {
         Self {
             bookings,
+            coach_accounts,
             coaches,
             students,
             clock,
@@ -80,6 +93,17 @@ where
                 && booking.matches_student(query.student_id)
                 && booking.matches_lesson_menu(query.lesson_menu_id)
         });
+        let sport = CoachSportFilter::new(query.sport);
+        if sport.sport().is_some() && !bookings.is_empty() {
+            let coach_ids: BTreeSet<AccountId> = bookings.iter().map(|b| b.coach_id()).collect();
+            let coach_accounts = self
+                .coach_accounts
+                .find_slot_coach_accounts(&coach_ids)
+                .await?;
+            bookings.retain(|booking| {
+                booking.matches_coach_sport(sport, coach_accounts.get(&booking.coach_id()))
+            });
+        }
         bookings.sort_by_key(|booking| (Reverse(booking.cancelled_at()), booking.id()));
 
         let coach_ids: BTreeSet<AccountId> = bookings.iter().map(|b| b.coach_id()).collect();
@@ -113,7 +137,8 @@ mod tests {
     };
 
     use domain::{
-        catalog::{LessonMenuName, Sport},
+        catalog::LessonMenuName,
+        identity::{Account, Email, Role},
         profile::DisplayName,
         scheduling::{
             Booking, BookingCanceller, BookingId, BookingLessonMenu, SchedulingError, Slot, SlotId,
@@ -161,11 +186,56 @@ mod tests {
         DisplayName::new(value).unwrap()
     }
 
-    /// `COACH` と `STUDENT` の表示名だけを知っていて、問い合わせた ID を記録する。
+    /// `COACH` と `STUDENT` の表示名だけを知っていて、問い合わせた ID を記録する。コーチのアカウントは
+    /// `coach_accounts` に入れたものだけを知っている（既定は空）。
     #[derive(Clone, Default)]
     struct RecordingLookup {
+        coach_accounts: BTreeMap<AccountId, Account>,
+        accounts_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         coaches_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         students_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
+    }
+
+    impl RecordingLookup {
+        /// `coaches`（ID・役割・提供スポーツ）のアカウントを知っている問い合わせ先。
+        fn with_accounts(coaches: &[(AccountId, Role, &[Sport])]) -> Self {
+            Self {
+                coach_accounts: coaches
+                    .iter()
+                    .map(|(id, role, sports)| {
+                        let account = Account::new(
+                            *id,
+                            Email::new(format!("{}@example.com", id.as_u128())).unwrap(),
+                            name("コーチ"),
+                            *role,
+                            sports.iter().copied(),
+                            SystemTime::UNIX_EPOCH,
+                        )
+                        .unwrap();
+                        (*id, account)
+                    })
+                    .collect(),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl SlotCoachAccountLookup for RecordingLookup {
+        async fn find_slot_coach_accounts(
+            &self,
+            coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, Account>, Unavailable> {
+            self.accounts_asked.lock().unwrap().push(coach_ids.clone());
+            Ok(coach_ids
+                .iter()
+                .filter_map(|id| {
+                    self.coach_accounts
+                        .get(id)
+                        .filter(|account| account.as_coach().is_some())
+                        .map(|account| (*id, account.clone()))
+                })
+                .collect())
+        }
     }
 
     impl BookingCoachDisplayNameLookup for RecordingLookup {
@@ -262,9 +332,16 @@ mod tests {
         InMemoryBookingRepository,
         RecordingLookup,
         RecordingLookup,
+        RecordingLookup,
         FixedClock,
     > {
-        ListCancelledBookings::new(bookings, lookup.clone(), lookup, FixedClock(now))
+        ListCancelledBookings::new(
+            bookings,
+            lookup.clone(),
+            lookup.clone(),
+            lookup,
+            FixedClock(now),
+        )
     }
 
     fn query(from: Option<Date>, to: Option<Date>) -> ListCancelledBookingsQuery {
@@ -274,6 +351,7 @@ mod tests {
             coach_id: None,
             student_id: None,
             lesson_menu_id: None,
+            sport: None,
         }
     }
 
@@ -624,6 +702,161 @@ mod tests {
             error,
             ListBookingsError::Invalid(SchedulingError::BookingPeriodEndsBeforeItStarts)
         ));
+    }
+
+    /// テニスとゴルフを提供する `COACH`・サッカーを提供する `OTHER_COACH`・生徒の ID（`STUDENT`）・アカウントのないコーチ（99）
+    /// の枠への予約を、11 月 2 日にキャンセルした（枠 1 が 9 時、枠 2 が 10 時…）。枠のスポーツはどれもテニス。枠 5 の予約は
+    /// `STUDENT`、ほかは `OTHER_STUDENT`。枠 6（`COACH`）の予約はキャンセルしていない。
+    async fn cancelled_bookings_of_coaches_with_sports()
+    -> (InMemoryBookingRepository, RecordingLookup) {
+        let slots = InMemorySlotRepository::with_slots(
+            [
+                (1, COACH),
+                (2, OTHER_COACH),
+                (3, STUDENT),
+                (4, AccountId::from_u128(99)),
+                (5, COACH),
+                (6, COACH),
+            ]
+            .map(|(id, coach)| slot(id, coach)),
+        );
+        let bookings = InMemoryBookingRepository::new(slots);
+        for (slot, student) in [
+            (1, OTHER_STUDENT),
+            (2, OTHER_STUDENT),
+            (3, OTHER_STUDENT),
+            (4, OTHER_STUDENT),
+            (5, STUDENT),
+        ] {
+            let booking = book(&bookings, student, slot).await;
+            cancel(&bookings, &booking, at(2, 8 + slot as u8)).await;
+        }
+        book(&bookings, OTHER_STUDENT, 6).await;
+        let lookup = RecordingLookup::with_accounts(&[
+            (COACH, Role::Coach, &[Sport::Tennis, Sport::Golf]),
+            (OTHER_COACH, Role::Coach, &[Sport::Soccer]),
+            (STUDENT, Role::Student, &[Sport::Golf]),
+        ]);
+        (bookings, lookup)
+    }
+
+    #[tokio::test]
+    async fn sport_narrows_to_bookings_of_coaches_offering_it() {
+        let (bookings, lookup) = cancelled_bookings_of_coaches_with_sports().await;
+        let use_case = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0));
+        let with_sport = |sport| ListCancelledBookingsQuery {
+            sport: Some(sport),
+            ..query(Some(date(2)), Some(date(2)))
+        };
+
+        let golf = use_case.execute(with_sport(Sport::Golf)).await.unwrap();
+        assert_eq!(
+            rows(&golf),
+            [5, 1],
+            "枠のスポーツでなくコーチの提供スポーツで決める。生徒のスポーツ・アカウントのないコーチは合わない。並べ方は変わらない"
+        );
+        assert_eq!(
+            golf.coaches,
+            BTreeMap::from([(COACH, name("たなか"))]),
+            "表示名は絞った後の予約のコーチだけ"
+        );
+        assert_eq!(
+            *lookup.accounts_asked.lock().unwrap(),
+            [BTreeSet::from([
+                STUDENT,
+                COACH,
+                OTHER_COACH,
+                AccountId::from_u128(99)
+            ])],
+            "キャンセルされた予約のコーチを重ねずに 1 回で問い合わせる"
+        );
+        assert_eq!(
+            rows(&use_case.execute(with_sport(Sport::Soccer)).await.unwrap()),
+            [2]
+        );
+        assert_eq!(
+            rows(&use_case.execute(with_sport(Sport::Tennis)).await.unwrap()),
+            [5, 1]
+        );
+        let swimming = use_case.execute(with_sport(Sport::Swimming)).await.unwrap();
+        assert!(swimming.bookings.is_empty());
+        assert!(swimming.coaches.is_empty() && swimming.students.is_empty());
+
+        // 期間の規則は競技で絞っても同じ
+        let error = use_case
+            .execute(ListCancelledBookingsQuery {
+                sport: Some(Sport::Golf),
+                ..query(Some(date(3)), Some(date(2)))
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ListBookingsError::Invalid(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        ));
+    }
+
+    #[tokio::test]
+    async fn sport_combines_with_the_other_conditions() {
+        let (bookings, lookup) = cancelled_bookings_of_coaches_with_sports().await;
+        let use_case = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0));
+        let golf = ListCancelledBookingsQuery {
+            sport: Some(Sport::Golf),
+            ..query(Some(date(2)), Some(date(2)))
+        };
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                student_id: Some(STUDENT),
+                ..golf.clone()
+            })
+            .await
+            .unwrap();
+        assert_eq!(rows(&list), [5]);
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                coach_id: Some(OTHER_COACH),
+                ..golf.clone()
+            })
+            .await
+            .unwrap();
+        assert!(
+            list.bookings.is_empty(),
+            "サッカーのコーチの予約はゴルフに合わない"
+        );
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(50)),
+                ..golf.clone()
+            })
+            .await
+            .unwrap();
+        assert!(list.bookings.is_empty(), "メニューのない予約は出ない");
+        // 期間の外（11 月 3 日）にはキャンセルがない
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                from: Some(date(3)),
+                to: Some(date(3)),
+                ..golf
+            })
+            .await
+            .unwrap();
+        assert!(list.bookings.is_empty());
+        assert_eq!(
+            *lookup.accounts_asked.lock().unwrap(),
+            [BTreeSet::from([COACH]), BTreeSet::from([OTHER_COACH])],
+            "ほかの条件で残った予約のコーチだけを問い合わせ、残らなければ問い合わせない"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_sport_does_not_ask_for_coach_accounts() {
+        let (bookings, lookup) = cancelled_bookings_of_coaches_with_sports().await;
+        let list = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0))
+            .execute(query(Some(date(2)), Some(date(2))))
+            .await
+            .unwrap();
+        assert_eq!(rows(&list), [5, 4, 3, 2, 1], "指定しなければ今までどおり");
+        assert!(lookup.accounts_asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
