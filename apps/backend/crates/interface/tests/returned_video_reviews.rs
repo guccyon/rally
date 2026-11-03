@@ -1,7 +1,7 @@
 //! `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）の統合テスト。本部にはコーチが返した動画添削を
 //! コーチを問わず返却の新しい順に、生徒と担当のコーチの ID と表示名・送った時刻・返した時刻・かかった時間（時間。端数は
 //! 切り捨て）とともに返すことを OpenAPI のスキーマで検査する。クエリの `from`・`to`（返却の日付。日本時間）で期間を、
-//! `coach_id` でコーチを絞り、値や期間が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
+//! `coach_id` でコーチを、`sport` でスポーツを、`student_id` で生徒を絞り、値や期間が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
 //! （かかった時間の数え方の境目は domain の `Video::review_lead_hours` のテスト）。
 
 use std::time::{Duration, SystemTime};
@@ -304,7 +304,7 @@ async fn headquarters_lists_returned_video_reviews_of_the_last_seven_days_latest
 }
 
 #[tokio::test]
-async fn the_period_and_coach_narrow_the_list() {
+async fn the_period_coach_sport_and_student_narrow_the_list() {
     let router = app().await;
     let (a, b, c) = (
         "00000000-0000-0000-0000-00000000000a",
@@ -369,6 +369,51 @@ async fn the_period_and_coach_narrow_the_list() {
             vec![c],
         ),
         ("?sport=soccer", "2026-10-25", "2026-10-31", vec![]),
+        // 生徒は動画を送った生徒で絞る。期間・コーチ・スポーツと組み合わせられ、並べ方は変わらない
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004",
+            "2026-10-25",
+            "2026-10-31",
+            vec![a],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![a, c],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&coach_id=00000000-0000-0000-0000-000000000003&sport=tennis&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![c],
+        ),
+        // アカウントが引けない生徒の動画も ID で絞れる
+        (
+            "?student_id=00000000-0000-0000-0000-000000000005",
+            "2026-10-25",
+            "2026-10-31",
+            vec![b],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&sport=golf",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
+        // いない生徒・生徒でない ID は空
+        (
+            "?student_id=00000000-0000-0000-0000-000000000063",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000002",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
@@ -397,6 +442,13 @@ async fn invalid_query_is_422_validation_failed() {
         ("?to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
         ("?from=", "from は YYYY-MM-DD の日付でない"),
         ("?coach_id=coach-2", "coach_id が UUID でない"),
+        ("?student_id=student-4", "student_id が UUID でない"),
+        ("?student_id=", "student_id が UUID でない"),
+        // 生徒が正しくても期間の規則は変わらない
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&from=2026-10-01&to=2026-11-01",
+            "from から to までは 31 日まで",
+        ),
         ("?sport=pingpong", "未知のスポーツ: pingpong"),
         ("?sport=", "未知のスポーツ: "),
         ("?sport=Tennis", "未知のスポーツ: Tennis"),
