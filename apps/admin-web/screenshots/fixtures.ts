@@ -613,6 +613,23 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["CoachOverview"],
   },
   {
+    // 受付中で絞ったときは、受付を止めている高橋 コーチを除いた伊藤 コーチだけを返す（hq-incomplete-coach-profiles-accepting）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { acceptance_status: "accepting" },
+    body: {
+      coaches: [
+        {
+          coach_id: id("2222", 3),
+          display_name: "伊藤 コーチ",
+          missing_fields: ["bio"],
+          updated_at: at(-24 * 3),
+          registered_at: at(-24 * 30),
+        },
+      ],
+    } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
     // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
     method: "GET",
     path: "/coaches/incomplete-profiles",
