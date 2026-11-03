@@ -54,7 +54,7 @@ export function headquartersApi(client: ApiClient) {
         }),
       ),
     listIncompleteCoachProfiles: (
-      filter: { sport?: Schemas["Sport"]; acceptance_status?: Schemas["CoachAcceptanceStatus"] } = {},
+      filter: { sport?: Schemas["Sport"]; acceptance_status?: Schemas["CoachAcceptanceStatus"]; q?: string } = {},
     ) =>
       call(() => client.GET("/coaches/incomplete-profiles", { params: { query: filter } })),
     listLowRatedLessonReviews: (filter: { handled?: boolean } = {}) =>

@@ -61,8 +61,9 @@ export function coachNameQuery(input: string): { ok: true; q: string } | { ok: f
 /**
  * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（検索語の長さ）を添えて直す場所を伝える。
  * 検索欄からは送る前に確かめているので、ふつうは URL のクエリに長い `q` を書いて開いたときだけここに来る。
+ * 自己紹介の足りないコーチの一覧（`listIncompleteCoachProfiles` の `q` も同じ上限）でも使う。
  */
-function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
+export function coachNameQueryFailureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
   return response.code === "validation_failed" ? `${response.message}${QUERY_TOO_LONG}` : response.message;
 }
 
@@ -118,7 +119,7 @@ export function CoachAcceptanceList({
       });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
-        : { kind: "failed", message: failureMessage(response) };
+        : { kind: "failed", message: coachNameQueryFailureMessage(response) };
     },
     [api],
   );

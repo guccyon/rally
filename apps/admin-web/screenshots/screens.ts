@@ -433,6 +433,29 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 表示名で探した状態（URL のクエリ q に残した検索語で開く）。
+    id: "hq-incomplete-coach-profiles-search",
+    title: "本部: 自己紹介の足りないコーチ（表示名で探す）",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles?q=%E9%AB%98%E6%A9%8B",
+    open: async (page) => {
+      await page.getByRole("link", { name: "高橋 コーチ" }).waitFor();
+      await page.getByRole("link", { name: "伊藤 コーチ" }).waitFor({ state: "detached" });
+    },
+  },
+  {
+    id: "hq-incomplete-coach-profiles-search-empty",
+    title: "本部: 自己紹介の足りないコーチ（表示名で探して 0 件）",
+    role: "headquarters",
+    path: "/headquarters/coaches/incomplete-profiles",
+    open: async (page) => {
+      await page.getByRole("link", { name: "伊藤 コーチ" }).waitFor();
+      await page.getByRole("textbox", { name: "表示名" }).fill("山本");
+      await page.getByRole("button", { name: "探す" }).click();
+      await page.getByText("表示名に「山本」を含む、自己紹介の足りないコーチはいません").waitFor();
+    },
+  },
+  {
     id: "hq-overdue-live-sessions",
     title: "本部: 終わっていない通話",
     role: "headquarters",

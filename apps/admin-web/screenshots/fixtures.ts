@@ -641,6 +641,30 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["IncompleteCoachProfileList"],
   },
   {
+    // 表示名で「高橋」を探したとき（hq-incomplete-coach-profiles-search）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { q: "高橋" },
+    body: {
+      coaches: [
+        {
+          coach_id: COACH_ID_2,
+          display_name: "高橋 コーチ",
+          missing_fields: ["bio"],
+          updated_at: null,
+          registered_at: at(-24 * 60),
+        },
+      ],
+    } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
+    // 表示名で「山本」を探したときは 0 件を返す（検索語を含めた空の表示を撮る。hq-incomplete-coach-profiles-search-empty）。
+    method: "GET",
+    path: "/coaches/incomplete-profiles",
+    query: { q: "山本" },
+    body: { coaches: [] } satisfies Schemas["IncompleteCoachProfileList"],
+  },
+  {
     // 水泳で絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る）。
     method: "GET",
     path: "/coaches/incomplete-profiles",
