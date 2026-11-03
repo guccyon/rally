@@ -959,6 +959,50 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["PendingVideoReviewList"],
   },
   {
+    // 生徒の ID が UUID でないとき（hq-returned-video-reviews-invalid-student）は 422。生徒の名前も読めない。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
+    method: "GET",
+    path: "/students/not-a-uuid/activity",
+    status: 422,
+    body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
+    // 山田 花子と高橋 コーチの両方で絞ったとき（hq-returned-video-reviews-by-student-empty）は 0 件。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: YAMADA.id, coach_id: COACH_ID_2 },
+    body: { from: "2026-10-20", to: "2026-10-26", reviews: [] } satisfies Schemas["ReturnedVideoReviewList"],
+  },
+  {
+    // 山田 花子で絞ったとき（hq-returned-video-reviews-by-student）は、山田 花子が送った動画の記録だけ。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { student_id: YAMADA.id },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      reviews: [
+        {
+          video_id: id("5555", 31),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-20.5),
+          returned_at: at(-2),
+          lead_time_hours: 18,
+        },
+      ],
+    } satisfies Schemas["ReturnedVideoReviewList"],
+  },
+  {
     method: "GET",
     path: "/video-reviews/returned",
     body: {
