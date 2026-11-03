@@ -188,6 +188,36 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-students", title: "本部: 生徒", role: "headquarters", path: "/headquarters/students" },
   {
+    id: "hq-students-by-coach",
+    title: "本部: 生徒（コーチで絞る）",
+    role: "headquarters",
+    path: "/headquarters/students?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "コーチ" }).and(page.locator(":enabled")).waitFor();
+      await page.getByRole("table", { name: "生徒の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-students-by-coach-empty",
+    title: "本部: 生徒（コーチで絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      // 選択肢（コーチの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
+      await page.getByText("条件に合う生徒はいません").waitFor();
+    },
+  },
+  {
+    id: "hq-students-invalid-coach",
+    title: "本部: 生徒（コーチの指定が正しくない 422）",
+    role: "headquarters",
+    path: "/headquarters/students?coach_id=not-a-uuid",
+    open: async (page) => {
+      await page.getByRole("alert").filter({ hasText: "コーチは一覧から選び直してください。" }).waitFor();
+    },
+  },
+  {
     id: "hq-student-activity",
     title: "本部: 生徒の利用の様子",
     role: "headquarters",

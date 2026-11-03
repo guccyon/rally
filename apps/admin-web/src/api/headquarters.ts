@@ -99,7 +99,9 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { lesson_menu_id: lessonMenuId } },
         }),
       ),
-    listStudents: (filter: { sport?: Schemas["Sport"]; not_booked_since?: string } = {}) =>
+    listStudents: (
+      filter: { sport?: Schemas["Sport"]; not_booked_since?: string; coach_id?: string } = {},
+    ) =>
       call(() => client.GET("/students", { params: { query: filter } })),
     getStudentActivity: (studentId: string) =>
       call(() =>
