@@ -5,7 +5,6 @@ Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の�
 ## [Unreleased]
 
 ### 追加
-- 本部のキャンセルされた予約の一覧を生徒で絞る: admin-web の `GET /bookings/cancelled`（`listCancelledBookings`）に任意のクエリ `student_id` を足した。付ければその生徒が予約したキャンセルされた予約だけを返し、付けなければ今までどおりすべての生徒。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。UUID でなければ 422 `validation_failed`、生徒でない ID・ない ID は 404 にせず空の配列（`listBookings` の `student_id` と同じ）。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#665）
 - admin-web の本部の「生徒」（`/headquarters/students`）の絞り込みの並びに「コーチ」（既定は「すべて」。選択肢はコーチの一覧の返った順）を足した: 選ぶとそのコーチの枠を一度でも予約した（キャンセル済みを含む）生徒だけに絞り（`listStudents` の `coach_id`）、スポーツ・「この日以降に予約していない」と組み合わせられる。選んだコーチは URL のクエリ（`?coach_id=`）に残し、再読み込み・共有で同じ条件で開く（一覧にない ID は「（一覧にないコーチ）」と出す）。0 件なら「条件に合う生徒はいません」、422 には直し方を添える。一覧の列と API・契約は変えない（#681）
 - 本部が返した動画添削の記録を生徒で絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `student_id` を足した。付ければその生徒が送った動画だけを返す（生徒から返却の内容について問い合わせを受けたときに、その生徒の記録だけを見る）。期間・`coach_id`・`sport` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。UUID でなければ 422 `validation_failed`、ない ID・生徒でない ID は 404 にせず空の配列。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#666）
 - 本部が終わっていない通話セッションの一覧をコーチで絞る: admin-web の `GET /live-lesson-sessions/overdue`（`listOverdueLiveLessonSessions`）に任意のクエリ `coach_id` を足した。付ければそのコーチのセッションだけを返す（終わっていない通話が残るコーチに連絡するため）。`older_than_hours` と組み合わせられ、時間の規則と並べ方は変わらない。付けなければ今までどおりすべてのコーチ。UUID でなければ 422 `validation_failed`、ない ID・コーチでない ID は 404 にせず空の配列（`listLiveLessonSessions` の `coach_id` と同じ扱い）。応答の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#667）
