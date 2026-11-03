@@ -388,6 +388,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-cancelled-bookings-by-sport",
+    title: "本部: キャンセルされた予約（スポーツで絞る）",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+    open: async (page) => {
+      await page.getByText(/・\d+ 件$/).waitFor();
+      await page.getByRole("combobox", { name: "スポーツ" }).selectOption({ label: "テニス" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/・テニス 2 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-booking-detail",
     title: "本部: 予約の詳細",
     role: "headquarters",
