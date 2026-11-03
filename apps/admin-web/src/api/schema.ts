@@ -1744,9 +1744,18 @@ export interface paths {
         /**
          * お知らせの下書きの一覧（本部）
          * @description 本部のお知らせの下書き（`createAnnouncementDraft` で作ったもの）を、最後に直した時刻 `updated_at` の新しい順に返す
-         *     （同じ時刻なら後に作ったものが先）。どの本部のアカウントが作ったかで絞らない。絞り込み・ページングはしない。
+         *     （同じ時刻なら後に作ったものが先）。どの本部のアカウントが作ったかで絞らない。ページングはしない。
          *     送った下書き・消した下書きは載らない。下書きがなければ `announcement_drafts` は空の配列。本部の役割のトークンだけが
          *     呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     - 題で探す（任意）: `q` を付ければ、題 `title` に `q` を部分文字列として含む下書きだけを返す（下書きが増えても送る前の
+         *       下書きを本部がすぐ見つけるのに使う）。一致のしかたは `listLessonMenus` の `q` と同じ: `q` の前後の空白（全角の空白を
+         *       含む）は除いて比べ、途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。
+         *       全角の英字・ひらがなとカタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。
+         *       `q` を付けない・空・空白だけのときは絞り込まない（今までどおりすべて）。題が空の下書きは、`q` を付けると載らない。
+         *       本文・対象のスポーツでは探さない。並べ方は上と同じ。一致する下書きがなければ `announcement_drafts` は空の配列
+         *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ。`listLessonMenus` の `q` が
+         *       メニューの名前の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
          *
          *     行動イベントは発火しない。
          */
@@ -4771,7 +4780,10 @@ export interface operations {
     };
     listAnnouncementDrafts: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 題の検索語。題に部分一致する下書きだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4789,6 +4801,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     createAnnouncementDraft: {
