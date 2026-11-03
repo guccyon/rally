@@ -495,9 +495,23 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/announcements",
     open: async (page) => {
-      await page.getByLabel("題で探す").fill("夏休み");
-      await page.getByRole("button", { name: "探す", exact: true }).click();
+      // 「題で探す」と「探す」は送ったお知らせの欄にもあるので、下書きの欄の中で探す
+      const drafts = page.getByRole("region", { name: "下書き", exact: true });
+      await drafts.getByLabel("題で探す").fill("夏休み");
+      await drafts.getByRole("button", { name: "探す", exact: true }).click();
       await page.getByText("題に「夏休み」を含む下書きはありません").waitFor();
+    },
+  },
+  {
+    id: "hq-announcements-search",
+    title: "本部: 送ったお知らせを題で探す（見つからないとき）",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      const sent = page.getByRole("region", { name: "送ったお知らせ", exact: true });
+      await sent.getByLabel("題で探す").fill("夏休み");
+      await sent.getByRole("button", { name: "探す", exact: true }).click();
+      await page.getByText("この期間に送った、題に「夏休み」を含むお知らせはありません").waitFor();
     },
   },
   {

@@ -28,7 +28,7 @@ type AnnouncementDraft = Schemas["AnnouncementDraft"];
 
 type State =
   | { kind: "loading" }
-  | { kind: "loaded"; announcements: Announcement[]; period: Period }
+  | { kind: "loaded"; announcements: Announcement[]; period: Period; q: string }
   | { kind: "failed"; message: string };
 
 type DraftState =
@@ -77,6 +77,9 @@ export type AnnouncementsApi = Pick<
  * キャンセルされた予約の一覧と同じで、「この期間で見る」で読み直す。送ったお知らせは期間に入るときだけ一覧の先頭に足す。
  * 送ったお知らせの各行は確かめてから取り下げ（withdrawAnnouncement）、取り下げられたらその行を応答の記録で置き換える
  * （断られたら送ったお知らせの一覧だけを取り直す）。
+ * 送ったお知らせの一覧の「題で探す」は下書きの一覧の検索と同じ部品・同じ確かめで、listAnnouncements の `q` に渡す。
+ * 期間と題はそれぞれのボタンで確定し、確定したもう一方の条件と組み合わせて読み直す。題で絞っている間に送ったお知らせは、
+ * 題が語に合うかを画面で決めず、今の期間と語で一覧を読み直す。
  *
  * 下書きを開くとフォームに中身を入れ、「下書きに保存」はその下書きを直す。開いたまま送ると、書いた中身で下書きを直して
  * から下書きから送り（sendAnnouncementDraft）、送れたら下書きは一覧から消える。一覧の「送る」は開いてすぐに確かめに進む。
@@ -102,26 +105,29 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   const [draftPeriod, setDraftPeriod] = useState<Period>(() => recentPeriod(Date.now()));
   const [periodDraftError, setPeriodDraftError] = useState<string | null>(null);
   const appliedPeriod = useRef(draftPeriod);
+  // 送ったお知らせの題の検索欄の入力中の値と、今の一覧を読んだ語（確定した語。空なら絞らない）。
+  const [queryDraft, setQueryDraft] = useState("");
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const appliedQuery = useRef("");
   // 期間を続けて変えたときに、前の期間の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
 
   const fetchAnnouncements = useCallback(
-    async (period: Period): Promise<State> => {
-      const response = await api.listAnnouncements(period);
-      if (response.ok) return { kind: "loaded", announcements: response.data.announcements, period };
-      return {
-        kind: "failed",
-        message: response.code === "validation_failed" ? VALIDATION_FAILED : response.message,
-      };
+    async (period: Period, q: string): Promise<State> => {
+      const response = await api.listAnnouncements(q === "" ? period : { ...period, q });
+      if (response.ok) return { kind: "loaded", announcements: response.data.announcements, period, q };
+      if (response.code !== "validation_failed") return { kind: "failed", message: response.message };
+      // 期間も語も送る前に確かめているので、422 はふつう来ない。来たら直す場所（期間と、語で探していれば語の長さ）を添える。
+      return { kind: "failed", message: q === "" ? VALIDATION_FAILED : `${VALIDATION_FAILED}${DRAFT_QUERY_TOO_LONG}` };
     },
     [api],
   );
 
-  /** 今の期間で送ったお知らせの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
+  /** 期間と語 q で送ったお知らせの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
   const reload = useCallback(
-    async (period: Period) => {
+    async (period: Period, q: string) => {
       const request = ++latestRequest.current;
-      const next = await fetchAnnouncements(period);
+      const next = await fetchAnnouncements(period, q);
       if (request === latestRequest.current) setState(next);
     },
     [fetchAnnouncements],
@@ -153,7 +159,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchAnnouncements(appliedPeriod.current).then((next) => {
+    void fetchAnnouncements(appliedPeriod.current, appliedQuery.current).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     const draftRequest = ++latestDraftRequest.current;
@@ -184,11 +190,15 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     // 409（すでに取り下げ済み）・404 などは ErrorCode の文言を出し、一覧を今の状態に取り直す。
     // 接続できなかったとき（code がない）は取り直さず、行はそのまま（もう一度押せる）。
     setResult(response);
-    if (response.code !== undefined) await reload(appliedPeriod.current);
+    if (response.code !== undefined) await reload(appliedPeriod.current, appliedQuery.current);
   }
 
   function prepend(announcement: Announcement) {
     setResult(null);
+    if (appliedQuery.current !== "") {
+      void reload(appliedPeriod.current, appliedQuery.current);
+      return;
+    }
     setState((current) =>
       current.kind === "loaded" && sentWithin(announcement, current.period)
         ? { ...current, announcements: [announcement, ...current.announcements] }
@@ -204,7 +214,22 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     appliedPeriod.current = draftPeriod;
     setResult(null);
     setState({ kind: "loading" });
-    await reload(draftPeriod);
+    await reload(draftPeriod, appliedQuery.current);
+  }
+
+  async function submitQuery(event: FormEvent) {
+    event.preventDefault();
+    const query = draftTitleQuery(queryDraft);
+    if (!query.ok) {
+      setQueryError(query.message);
+      return;
+    }
+    setQueryError(null);
+    setQueryDraft(query.q);
+    appliedQuery.current = query.q;
+    setResult(null);
+    setState({ kind: "loading" });
+    await reload(appliedPeriod.current, query.q);
   }
 
   async function submitDraftQuery(event: FormEvent) {
@@ -430,15 +455,37 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
             </button>
           </form>
           {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}
+          <form className="flex items-end gap-2" onSubmit={(event) => void submitQuery(event)}>
+            <label className="block">
+              題で探す
+              <input
+                type="search"
+                className="mt-1 block rounded-md border px-2 py-1"
+                value={queryDraft}
+                onChange={(event) => setQueryDraft(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+              探す
+            </button>
+          </form>
+          {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
           <ResultMessage result={result} />
           {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
           {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
           {state.kind === "loaded" && (
             <div className="space-y-2">
               <p className="text-sm">
-                {formatDay(state.period.from)} 〜 {formatDay(state.period.to)}・{state.announcements.length} 件
+                {formatDay(state.period.from)} 〜 {formatDay(state.period.to)}
+                {state.q !== "" && `・題に「${state.q}」を含む`}・{state.announcements.length} 件
               </p>
-              {state.announcements.length === 0 && <p className="text-sm">この期間に送ったお知らせはありません</p>}
+              {state.announcements.length === 0 && (
+                <p className="text-sm">
+                  {state.q === ""
+                    ? "この期間に送ったお知らせはありません"
+                    : `この期間に送った、題に「${state.q}」を含むお知らせはありません`}
+                </p>
+              )}
               {state.announcements.length > 0 && (
                 <AnnouncementList announcements={state.announcements} onWithdraw={withdraw} />
               )}

@@ -75,10 +75,13 @@ export function draftTitleOf(draft: Schemas["AnnouncementDraft"]): string {
   return draft.title.trim() === "" ? "（題なし）" : draft.title;
 }
 
-/** 下書きの題の検索語が長すぎるときの理由（契約の `listAnnouncementDrafts` の `q` は前後の空白を除いて題の上限まで）。 */
+/** 題の検索語が長すぎるときの理由（契約の `listAnnouncementDrafts`・`listAnnouncements` の `q` は前後の空白を除いて題の上限まで）。 */
 export const DRAFT_QUERY_TOO_LONG = `題は ${TITLE_MAX_LENGTH} 文字までで探してください。`;
 
-/** 下書きの題の検索欄の値を送る形にする。前後の空白（全角を含む）を除き、上限を超えていれば理由を返す。 */
+/**
+ * 題の検索欄（下書きの一覧と送ったお知らせの一覧。契約の `q` の上限はどちらも同じ）の値を送る形にする。
+ * 前後の空白（全角を含む）を除き、上限を超えていれば理由を返す。
+ */
 export function draftTitleQuery(input: string): { ok: true; q: string } | { ok: false; message: string } {
   const q = input.trim();
   return lengthOf(q) > TITLE_MAX_LENGTH ? { ok: false, message: DRAFT_QUERY_TOO_LONG } : { ok: true, q };

@@ -143,7 +143,7 @@ export function headquartersApi(client: ApiClient) {
       ),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
-    listAnnouncements: (filter: { from?: string; to?: string }) =>
+    listAnnouncements: (filter: { from?: string; to?: string; q?: string }) =>
       call(() => client.GET("/announcements", { params: { query: filter } })),
     withdrawAnnouncement: (announcementId: string) =>
       call(() =>
