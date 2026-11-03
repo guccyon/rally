@@ -473,7 +473,7 @@ describe("headquartersApi", () => {
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
 
-  test("listLiveLessonSessions は期間とコーチをクエリにして GET /api/live-lesson-sessions を呼ぶ", async () => {
+  test("listLiveLessonSessions は期間とコーチ・生徒をクエリにして GET /api/live-lesson-sessions を呼ぶ", async () => {
     const list = {
       from: "2026-10-20",
       to: "2026-10-26",
@@ -496,6 +496,7 @@ describe("headquartersApi", () => {
       from: "2026-10-20",
       to: "2026-10-26",
       coach_id: "22222222-2222-4222-8222-222222222222",
+      student_id: "11111111-1111-4111-8111-111111111111",
     });
     expect(result).toEqual({ ok: true, data: list });
     const request = fetchMock.mock.calls[0]![0];
@@ -505,6 +506,7 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("from")).toBe("2026-10-20");
     expect(url.searchParams.get("to")).toBe("2026-10-26");
     expect(url.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
+    expect(url.searchParams.get("student_id")).toBe("11111111-1111-4111-8111-111111111111");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 

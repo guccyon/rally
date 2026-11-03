@@ -298,6 +298,17 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/live-sessions",
   },
   {
+    id: "hq-live-sessions-by-student",
+    title: "本部: 生徒 1 人のライブレッスンの記録",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "この生徒のライブレッスンの記録を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("table", { name: "ライブレッスンの記録の一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-live-sessions-empty",
     title: "本部: ライブレッスンの記録（0 件）",
     role: "headquarters",
