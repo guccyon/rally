@@ -3118,12 +3118,35 @@ paths:
         - `sport` は `q` と組み合わせられる（題が一致し、そのスポーツに向けた下書き）。並べ方は `sport` で絞っても変わらない。
           一致する下書きがなければ `announcement_drafts` は空の配列。`sport` が `Sport` の値でなければ 422 `validation_failed`
           （`message` に理由。値の読み方は `createAnnouncementDraft` の `sport` と同じ）
+        - 最後に直した期間で絞る（任意）: `from`・`to` で、最後に直した日付（`updated_at` の日本時間の日付）が `from` から `to`
+          まで（両端を含む）の下書きだけに絞れる（古いまま残った下書きを見つけて片付けるのに使う）。`from` の日本時間 0 時（含む）
+          から `to` の翌日の日本時間 0 時（含まない）までに最後に直したもの。直していない下書きは作った時刻が `updated_at`。
+          両方を省けば今までどおりすべて。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の 6 日前から（どちらも
+          7 日）。境界と省いたときの扱いは `listAnnouncements` の `from`・`to` と同じ（backend の同じ 1 か所で決める）
+        - 期間の規則も `listAnnouncements` の `from`・`to` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が
+          `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+        - `from`・`to` は `q`・`sport` と組み合わせられる（期間に最後に直したもののうち、題が一致し、そのスポーツに向けた下書き）。
+          並べ方は期間で絞っても変わらない。一致する下書きがなければ `announcement_drafts` は空の配列
 
         行動イベントは発火しない。
       tags: [notification]
       x-context: notification
       x-analytics-events: []
       parameters:
+        - name: from
+          in: query
+          required: false
+          description: 最後に直した期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: 最後に直した期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない
+          schema:
+            type: string
+            format: date
         - name: q
           in: query
           required: false

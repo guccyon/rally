@@ -15,9 +15,9 @@ use application::{
     notification::{
         AnnouncementDraftError, AnnouncementDraftRepository, AnnouncementRecipientLookup,
         AnnouncementRepository, AnnouncementWithReadCount, CreateAnnouncementDraft,
-        DeleteAnnouncementDraft, ListAnnouncementDrafts, NotificationRepository,
-        NotificationSettingsRepository, PushSender, SendAnnouncementDraft, UpdateAnnouncementDraft,
-        announcement_draft_id_uuid,
+        DeleteAnnouncementDraft, ListAnnouncementDrafts, ListAnnouncementDraftsError,
+        ListAnnouncementDraftsQuery, NotificationRepository, NotificationSettingsRepository,
+        PushSender, SendAnnouncementDraft, UpdateAnnouncementDraft, announcement_draft_id_uuid,
     },
 };
 use axum::{
@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     announcements::announcement_body,
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
+    contract::{admin_web_sport, date_from_contract, date_time_to_contract, sport_to_contract},
     error::ApiError,
     message::notification_error,
 };
@@ -70,6 +70,8 @@ pub struct AnnouncementDraftRequest {
 /// admin-web の `listAnnouncementDrafts` のクエリ。
 #[derive(Deserialize)]
 pub struct ListAnnouncementDraftsParams {
+    from: Option<String>,
+    to: Option<String>,
     q: Option<String>,
     sport: Option<String>,
 }
@@ -155,6 +157,9 @@ where
 /// 一致のしかたは `listLessonMenus` の `q` と同じ（[`AnnouncementTitleQuery`]）。長すぎる `q` は 422。`sport` があれば
 /// そのスポーツの生徒に向けた下書きだけに絞る（生徒全員に向けた下書きは入らない。照合は `listAnnouncements` の `sport` と
 /// 同じ。`q` と組み合わせられる。`Sport` の値でなければ 422。値の読み方は下書きの `sport` と同じ [`admin_web_sport`]）。
+/// `from`・`to` を両方省けばすべて、どちらかがあれば最後に直した日付（日本時間）の期間で絞る（`q`・`sport` と組み合わせ
+/// られる）。`from`・`to` が `YYYY-MM-DD` の日付でないときと、期間の違反は 422 で、読み方・期間の規則・応答は
+/// `listAnnouncements` の `from`・`to` と同じ（[`date_from_contract`]・[`crate::scheduling_error`]）。
 pub async fn list_announcement_drafts<D, A, L, N, S, P, C>(
     State(state): State<Shared<D, A, L, N, S, P, C>>,
     params: Result<Query<ListAnnouncementDraftsParams>, QueryRejection>,
@@ -170,19 +175,34 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    let title = params
-        .q
-        .as_deref()
-        .map(AnnouncementTitleQuery::new)
-        .transpose()
-        .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
-        .flatten();
-    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
+    let query = ListAnnouncementDraftsQuery {
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        title: params
+            .q
+            .as_deref()
+            .map(AnnouncementTitleQuery::new)
+            .transpose()
+            .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
+            .flatten(),
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+    };
     let drafts = state
         .list_announcement_drafts
-        .execute(title.as_ref(), sport)
+        .execute(query)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(|error| match error {
+            ListAnnouncementDraftsError::Invalid(error) => ApiError::from(error),
+            ListAnnouncementDraftsError::Unavailable(error) => ApiError::internal(error),
+        })?;
     draft_list_body(&drafts).map(Json)
 }
 
