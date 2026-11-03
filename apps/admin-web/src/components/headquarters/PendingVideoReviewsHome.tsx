@@ -9,7 +9,7 @@ import { Section } from "@/components/ui/Section";
 
 import { PendingVideoReviewList } from "./PendingVideoReviewList";
 
-/** 「返却待ちの動画添削」の画面の URL。 */
+/** 本部の「返却待ちの動画添削」の画面の URL。 */
 export const PENDING_VIDEO_REVIEWS_PATH = "/headquarters/pending-video-reviews";
 
 /** 本部の画面: コーチがまだ返していない動画添削を、コーチを問わず送った時刻の古い順に見る。 */
