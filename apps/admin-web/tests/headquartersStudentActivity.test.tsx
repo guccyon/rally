@@ -163,6 +163,22 @@ describe("本部の生徒の利用の様子", () => {
     expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
   });
 
+  test("この生徒で絞った「返事のないメッセージ」への入口を、返却待ちの数によらず出す", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const messages = valueOf("メッセージ");
+    expect(within(messages).getByRole("link", { name: "返事のないメッセージを見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/unanswered-messages?student_id=${STUDENT_ID}`,
+    );
+  });
+
   test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
     render(
       <StudentActivity

@@ -72,6 +72,8 @@ export function headquartersApi(client: ApiClient) {
       student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
+    listUnansweredMessageThreads: (filter: { older_than_hours?: number; coach_id?: string; student_id?: string } = {}) =>
+      call(() => client.GET("/message-threads/unanswered", { params: { query: filter } })),
     listReturnedVideoReviews: (filter: {
       from?: string;
       to?: string;

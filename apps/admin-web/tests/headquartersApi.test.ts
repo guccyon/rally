@@ -572,6 +572,33 @@ describe("headquartersApi", () => {
     expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
   });
 
+  test("listUnansweredMessageThreads は絞り込みをクエリにして GET /api/message-threads/unanswered を呼ぶ", async () => {
+    const list = { older_than_hours: 48, threads: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const coachId = "cccccccc-cccc-4ccc-8ccc-000000000001";
+    const studentId = "11111111-1111-4111-8111-000000000001";
+    const result = await api.listUnansweredMessageThreads({
+      older_than_hours: 48,
+      coach_id: coachId,
+      student_id: studentId,
+    });
+    expect(result).toEqual({ ok: true, data: list });
+    const request = fetchMock.mock.calls[0]![0];
+    expect(request.method).toBe("GET");
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/api/message-threads/unanswered");
+    expect(url.searchParams.get("older_than_hours")).toBe("48");
+    expect(url.searchParams.get("coach_id")).toBe(coachId);
+    expect(url.searchParams.get("student_id")).toBe(studentId);
+    expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listUnansweredMessageThreads は条件がなければクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { older_than_hours: 24, threads: [] }));
+    await api.listUnansweredMessageThreads();
+    expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
+
   test("listBookings は期間をクエリにして GET /api/bookings を呼ぶ", async () => {
     const list = { from: "2026-10-26", to: "2026-11-01", bookings: [] };
     const { api, fetchMock } = setup(json(200, list));
