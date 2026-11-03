@@ -215,7 +215,7 @@ describe("スポーツ別の予約枠の需給", () => {
     render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間・コーチの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチは一覧から選び直してください。",
+      "期間・コーチ・スポーツの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチとスポーツは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -317,6 +317,101 @@ describe("スポーツ別の予約枠の需給", () => {
     await screen.findByRole("heading", { name: "高橋 コーチ の予約枠の需給" });
     expect(getSlotSupply).toHaveBeenCalledTimes(3);
     expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-11-02", to: "2026-11-08", coach_id: TAKAHASHI });
+  });
+
+  test("スポーツの選択肢は契約の順で、スポーツを選んで「この条件で見る」で API の sport に渡して読み直し、どの競技の需給かを見出しに出す", async () => {
+    const getSlotSupply = reportOf(REPORT);
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+    const select = screen.getByRole("combobox", { name: "スポーツ" });
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "テニス",
+      "ゴルフ",
+      "野球",
+      "サッカー",
+      "バスケットボール",
+      "水泳",
+    ]);
+
+    await user.selectOptions(select, "ゴルフ");
+    expect(getSlotSupply).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(await screen.findByRole("heading", { name: "ゴルフを提供するコーチの予約枠の需給" })).toBeInTheDocument();
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-09-27", to: "2026-10-27", sport: "golf" });
+    // 表は今までどおり 6 種類すべてを出す（契約）
+    expect(screen.getAllByRole("row")).toHaveLength(7);
+
+    // 「すべて」に戻すと sport を付けずに読み直し、見出しを消す
+    await user.selectOptions(select, "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    await waitFor(() => expect(getSlotSupply).toHaveBeenCalledTimes(3));
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-09-27", to: "2026-10-27" });
+    await screen.findByRole("table");
+    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
+  });
+
+  test("スポーツだけで絞って 0 件なら、その競技のコーチの枠のことだと言う", async () => {
+    const getSlotSupply = vi
+      .fn<HeadquartersApi["getSlotSupply"]>()
+      .mockResolvedValueOnce({ ok: true, data: REPORT })
+      .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+
+    await changePeriod(user, "2026-11-02", "2026-11-08");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "水泳");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-11-02", to: "2026-11-08", sport: "swimming" });
+    expect(await screen.findByRole("heading", { name: "水泳を提供するコーチの予約枠の需給" })).toBeInTheDocument();
+    expect(
+      screen.getByText("この期間に開始するこのスポーツのコーチの予約枠はなく、予約しようとした生徒もいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("期間・コーチ・スポーツを組み合わせて API の from / to / coach_id / sport に渡し、再集計も同じ条件で読み直す", async () => {
+    const getSlotSupply = vi
+      .fn<HeadquartersApi["getSlotSupply"]>()
+      .mockResolvedValueOnce({ ok: true, data: REPORT })
+      .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
+
+    await changePeriod(user, "2026-11-02", "2026-11-08");
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(getSlotSupply).toHaveBeenLastCalledWith({
+      from: "2026-11-02",
+      to: "2026-11-08",
+      coach_id: SUZUKI,
+      sport: "tennis",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "鈴木 コーチ の予約枠の需給（テニスを提供するコーチに限る）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("この期間に開始する条件に合う予約枠はなく、予約しようとした生徒もいません"),
+    ).toBeInTheDocument();
+
+    // 欄を変えただけでは再集計の条件は変わらない
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "すべて");
+    await user.click(screen.getByRole("button", { name: "再集計" }));
+    await screen.findByRole("heading", { name: "鈴木 コーチ の予約枠の需給（テニスを提供するコーチに限る）" });
+    expect(getSlotSupply).toHaveBeenCalledTimes(3);
+    expect(getSlotSupply).toHaveBeenLastCalledWith({
+      from: "2026-11-02",
+      to: "2026-11-08",
+      coach_id: SUZUKI,
+      sport: "tennis",
+    });
   });
 
   test("コーチの一覧が読めなくても期間だけで需給を出し、コーチの絞り込みだけを使えなくする", async () => {
