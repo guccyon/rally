@@ -15,7 +15,7 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// コーチがまだ添削を返していない動画をすべてのコーチについて読み、domain の [`PendingVideoReviewFilter::select`] で
-/// スポーツと経過時間の下限とコーチと生徒で絞って送付の古い順に並べる（経過時間の数え方と並べ方は domain だけ）。各動画には担当の
+/// スポーツと経過時間の下限とコーチと生徒と送った時点のレッスンメニューで絞って送付の古い順に並べる（経過時間の数え方と並べ方は domain だけ）。各動画には担当の
 /// コーチと生徒の表示名を profile に問い合わせて（[`VideoCoachDisplayNameLookup`]・[`VideoStudentDisplayNameLookup`]）
 /// 添える。誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListPendingVideoReviews<V, K, D, C> {
@@ -79,8 +79,8 @@ mod tests {
     };
 
     use domain::{
-        async_lesson::{ReviewComment, VideoId, VideoReviewId},
-        catalog::Sport,
+        async_lesson::{ReviewComment, VideoId, VideoLessonMenu, VideoReviewId},
+        catalog::{LessonMenuId, LessonMenuName, Sport},
         profile::DisplayName,
     };
 
@@ -231,6 +231,7 @@ mod tests {
                 min_elapsed_hours: 48,
                 coach_id: None,
                 student_id: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -242,6 +243,7 @@ mod tests {
                 min_elapsed_hours: 48,
                 coach_id: None,
                 student_id: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -279,6 +281,7 @@ mod tests {
                 min_elapsed_hours: 48,
                 coach_id: Some(COACH),
                 student_id: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -290,6 +293,7 @@ mod tests {
                 min_elapsed_hours: 0,
                 coach_id: Some(OTHER_COACH),
                 student_id: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -327,6 +331,7 @@ mod tests {
                 min_elapsed_hours: 48,
                 coach_id: Some(COACH),
                 student_id: Some(OTHER_STUDENT),
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -347,6 +352,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lesson_menu_id_narrows_the_list_and_combines_with_the_other_filters() {
+        const FORM: LessonMenuId = LessonMenuId::from_u128(50);
+        let with_menu = |video: Video, menu: Option<LessonMenuId>| {
+            Video::restore(
+                video.id(),
+                video.student_id(),
+                video.coach_id(),
+                video.sport(),
+                video.submitted_at(),
+                None,
+                menu.map(|id| VideoLessonMenu::restore(id, LessonMenuName::new("添削").unwrap())),
+            )
+            .unwrap()
+        };
+        let videos = || {
+            InMemoryVideoRepository::with_videos([
+                with_menu(
+                    video(1, STUDENT, COACH, Sport::Tennis, 10, false),
+                    Some(FORM),
+                ),
+                // メニューを選ばずに送った動画
+                with_menu(
+                    video(2, OTHER_STUDENT, COACH, Sport::Tennis, 72, false),
+                    None,
+                ),
+                with_menu(
+                    video(4, OTHER_STUDENT, OTHER_COACH, Sport::Tennis, 48, false),
+                    Some(FORM),
+                ),
+                with_menu(
+                    video(5, STUDENT, COACH, Sport::Tennis, 60, false),
+                    Some(LessonMenuId::from_u128(51)),
+                ),
+            ])
+        };
+
+        let lookup = RecordingLookup::default();
+        let list = use_case(videos(), lookup.clone())
+            .execute(PendingVideoReviewFilter {
+                lesson_menu_id: Some(FORM),
+                ..PendingVideoReviewFilter::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [4, 1],
+            "FORM で送った返却待ちだけ（メニューのない 2 は出ない）"
+        );
+        assert_eq!(
+            *lookup.asked_coaches.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "表示名は絞った後の動画のコーチだけ問い合わせる"
+        );
+
+        let list = use_case(videos(), RecordingLookup::default())
+            .execute(PendingVideoReviewFilter {
+                sport: Some(Sport::Tennis),
+                min_elapsed_hours: 48,
+                coach_id: Some(OTHER_COACH),
+                student_id: Some(OTHER_STUDENT),
+                lesson_menu_id: Some(FORM),
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [4]);
+
+        let lookup = RecordingLookup::default();
+        let list = use_case(videos(), lookup.clone())
+            .execute(PendingVideoReviewFilter {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..PendingVideoReviewFilter::default()
+            })
+            .await
+            .unwrap();
+        assert!(list.videos.is_empty(), "ないメニューの ID は空");
+        assert!(lookup.asked_coaches.lock().unwrap().is_empty());
+
+        let list = use_case(videos(), RecordingLookup::default())
+            .execute(PendingVideoReviewFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [2, 5, 4, 1], "付けなければメニューを問わない");
+    }
+
+    #[tokio::test]
     async fn no_pending_videos_is_an_empty_list_without_asking_for_display_names() {
         let lookup = RecordingLookup::default();
         let list = use_case(videos(), lookup.clone())
@@ -355,6 +446,7 @@ mod tests {
                 min_elapsed_hours: 0,
                 coach_id: None,
                 student_id: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();

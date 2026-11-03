@@ -1593,10 +1593,16 @@ export interface paths {
          *       （含む）の動画だけ（例: `48` で 48 時間以上）。`coach_id` を付ければそのコーチ（動画の送り先のコーチ）の動画だけ。
          *       `student_id` を付ければその生徒（動画を送った生徒。各項目の `student_id`）の動画だけ（生徒から添削が返ってこないと
          *       問い合わせを受けたときに、その生徒の返却待ちだけを見る。扱いは `listReturnedVideoReviews` の `student_id` と同じ）。
+         *       `lesson_menu_id` を付ければ、動画を送った時点のレッスンメニュー（生徒が送るときに選んだ非同期のメニューの写し。コーチの
+         *       `listMyCoachVideos` の各項目の `lesson_menu` の `lesson_menu_id`）がそのメニューの動画だけ（特定のメニューの添削が滞って
+         *       いないかを確かめる）。送った後にメニューが直されても・非公開にされても、送った時点のメニューで絞る。メニューを選ばずに
+         *       送った動画（`lesson_menu` のない動画）は、`lesson_menu_id` を付ければ出ない（実装は backend の domain
+         *       `Video::matches_lesson_menu` の 1 か所。扱いは `listBookings` の `lesson_menu_id` と同じ）。
          *       どれも組み合わせられ、経過時間の数え方と並べ方は変わらない。付けなければ絞らない
          *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）・`coach_id` が
-         *       UUID でない・`student_id` が UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、
-         *       404 にせず `videos` が空の配列。`student_id` も同じく、生徒でない ID・ない ID・返却待ちの動画がない生徒は 404 にせず空の配列
+         *       UUID でない・`student_id` が UUID でない・`lesson_menu_id` が UUID でないときは 422 `validation_failed`。コーチでない ID・
+         *       ない ID・返却待ちの動画がないコーチは、404 にせず `videos` が空の配列。`student_id` も同じく、生徒でない ID・ない ID・返却待ちの動画がない生徒は 404 にせず空の配列。
+         *       `lesson_menu_id` も `listBookings` と同じく、ないメニューの ID・返却待ちの動画がないメニューは 404 にせず空の配列
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
@@ -4904,6 +4910,12 @@ export interface operations {
                  *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あれば動画を送った時点のレッスンメニューがこのメニューの動画だけに絞る。省けばメニューを問わない。
+                 *     メニューを選ばずに送った動画は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
