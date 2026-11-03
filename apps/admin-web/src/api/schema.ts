@@ -1860,6 +1860,14 @@ export interface paths {
          *       `q` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ）まで。超えたら 422
          *       `validation_failed`（`message` に理由）
+         *     - 競技で絞る（任意）: `sport` を付ければ、そのスポーツの生徒に向けて送ったお知らせ（`sport` がその値のもの）だけを返す
+         *       （テニス向け・ゴルフ向けなど、競技ごとに送ったお知らせを振り返るのに使う）。生徒全員に向けて送ったお知らせ
+         *       （`sport` が null のもの）は、そのスポーツの生徒も受け取っているが、`sport` を付けたときは載せない（競技を問わず
+         *       送ったものは `sport` を付けずに見る）。判定は backend の domain `Announcement::is_in_sport` の 1 か所。取り下げた
+         *       お知らせも対象のスポーツが一致すれば載る。`sport` を付けなければ今までどおりスポーツを問わない
+         *     - `sport` は `from`・`to`・`q` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送ったもの）。
+         *       並べ方と `read_count` の数え方は `sport` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列。
+         *       `sport` が `Sport` の値でなければ 422 `validation_failed`（`message` に理由。値の読み方は `sendAnnouncement` の `sport` と同じ）
          *
          *     行動イベントは発火しない。
          */
@@ -5067,6 +5075,11 @@ export interface operations {
                 from?: string;
                 /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
                 to?: string;
+                /**
+                 * @description あればこのスポーツの生徒に向けて送ったお知らせだけを返す（生徒全員に向けて送ったものは載せない）。省けばスポーツを
+                 *     問わない。`Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

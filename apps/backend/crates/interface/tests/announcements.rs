@@ -436,6 +436,60 @@ async fn headquarters_finds_sent_announcements_by_a_part_of_the_title() {
 }
 
 #[tokio::test]
+async fn headquarters_narrows_sent_announcements_by_sport() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に生徒全員・テニス・水泳へ 1 件ずつ、11/2 にテニスへ 1 件
+    let mut sent = Vec::new();
+    for (minute, title, sport) in [
+        (10, "メンテナンスのお知らせ", None),
+        (20, "テニスの大会", Some("tennis")),
+        (30, "水泳の大会", Some("swimming")),
+        (15 * 60, "テニスの大会の結果", Some("tennis")),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(
+                json!({ "title": title, "body": "本文", "sport": sport }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let [everyone, tennis, swimming, tennis_result] = <[Value; 4]>::try_from(sent).unwrap();
+    let router = app.router(at(16 * 60)).await;
+
+    for (query, expected) in [
+        // そのスポーツの生徒に向けて送ったものだけ。生徒全員に送ったものは入らない。並べ方は変わらない
+        ("sport=tennis", json!([tennis_result, tennis])),
+        ("sport=swimming", json!([swimming])),
+        // 送ったものがなければ空の一覧
+        ("sport=golf", json!([])),
+        // 期間・題と組み合わせられる
+        (
+            "sport=tennis&from=2026-11-01&to=2026-11-01",
+            json!([tennis]),
+        ),
+        ("sport=tennis&q=%E7%B5%90%E6%9E%9C", json!([tennis_result])),
+        ("sport=swimming&q=%E3%83%86%E3%83%8B%E3%82%B9", json!([])),
+        // 付けなければ今までどおりすべて
+        ("", json!([tennis_result, swimming, tennis, everyone])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    for query in ["sport=ski", "sport=", "sport=Tennis"] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn an_invalid_period_is_rejected() {
     let app = App::new().await;
     let router = app.router(at(0)).await;
