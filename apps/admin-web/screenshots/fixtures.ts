@@ -1212,6 +1212,13 @@ export const FIXTURES: Fixture[] = [
     body: { announcement_drafts: [] } satisfies Schemas["AnnouncementDraftList"],
   },
   {
+    // 下書きを最後に直した期間とスポーツで絞って見つからないとき（hq-announcement-drafts-filter）。0 件の表示（期間と競技を含めた文言）を撮る。
+    method: "GET",
+    path: "/announcement-drafts",
+    query: { from: "2026-09-01", to: "2026-09-30", sport: "golf" },
+    body: { announcement_drafts: [] } satisfies Schemas["AnnouncementDraftList"],
+  },
+  {
     // 送ったお知らせを題で探して見つからないとき（hq-announcements-search）。0 件の表示（語を含めた文言）を撮る。
     // 期間は既定（今日までの 7 日）のまま。既定の期間の `/announcements` より前に置く。
     method: "GET",

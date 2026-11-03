@@ -173,7 +173,7 @@ export function headquartersApi(client: ApiClient) {
       ),
     createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
       call(() => client.POST("/announcement-drafts", { body })),
-    listAnnouncementDrafts: (filter: { q?: string } = {}) =>
+    listAnnouncementDrafts: (filter: { from?: string; to?: string; q?: string; sport?: Schemas["Sport"] } = {}) =>
       call(() => client.GET("/announcement-drafts", { params: { query: filter } })),
     updateAnnouncementDraft: (announcementDraftId: string, body: Schemas["AnnouncementDraftRequest"]) =>
       call(() =>
