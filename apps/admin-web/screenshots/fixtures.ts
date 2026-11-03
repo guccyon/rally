@@ -1187,6 +1187,60 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["AnnouncementList"],
   },
+  // 高橋 コーチで絞った返事のないメッセージ（hq-unanswered-messages-coach-empty）は 0 件。条件なしの応答より前に置く。
+  {
+    method: "GET",
+    path: "/message-threads/unanswered",
+    query: { coach_id: COACH_ID_2 },
+    body: { older_than_hours: 24, threads: [] } satisfies Schemas["UnansweredMessageThreadList"],
+  },
+  // 生徒で絞った返事のないメッセージ（山田 花子）。条件なしの応答より前に置く（先に合ったものを返す）。
+  {
+    method: "GET",
+    path: "/message-threads/unanswered",
+    query: { student_id: YAMADA.id },
+    body: {
+      older_than_hours: 24,
+      threads: [
+        {
+          thread_id: THREAD_ID,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          waiting_since: at(-30.5),
+          elapsed_sec: 30.5 * 3600,
+        },
+      ],
+    } satisfies Schemas["UnansweredMessageThreadList"],
+  },
+  {
+    method: "GET",
+    path: "/message-threads/unanswered",
+    body: {
+      older_than_hours: 24,
+      threads: [
+        {
+          thread_id: id("cccc", 1),
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          waiting_since: at(-75.25),
+          elapsed_sec: 75.25 * 3600,
+        },
+        {
+          thread_id: THREAD_ID,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          waiting_since: at(-30.5),
+          elapsed_sec: 30.5 * 3600,
+        },
+      ],
+    } satisfies Schemas["UnansweredMessageThreadList"],
+  },
   // コーチで絞った返却待ち（高橋 コーチ）。条件なしの応答より前に置く（先に合ったものを返す）。
   {
     method: "GET",
