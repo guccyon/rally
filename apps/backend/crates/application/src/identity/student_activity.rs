@@ -20,6 +20,9 @@ pub struct StudentActivity {
     pub submitted_video_count: u32,
     /// 今返却を待っている動画の数（[`super::StudentVideoActivity::pending_review_count`]）
     pub pending_video_review_count: u32,
+    /// 返信のないまま既定の時間の過ぎたスレッドの数（[`super::StudentUnansweredMessageThreadCountLookup`]。
+    /// `listUnansweredMessageThreads` に `student_id` だけを付けたときの一覧の件数と同じ）
+    pub unanswered_message_thread_count: u32,
     /// `upcoming_bookings` と `recent_lessons` のコーチの表示名（コーチの ID ごと）。表示名が引けないコーチは含まない
     pub coaches: BTreeMap<AccountId, DisplayName>,
 }

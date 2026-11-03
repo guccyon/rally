@@ -31,8 +31,9 @@ info:
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・直近 30 日の予約の数・登録した時刻）を読む（`listStudents`）。
     スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。コーチが休業するときにそのコーチの
     生徒にだけ連絡できるよう、そのコーチを予約したことがある生徒にも絞れる。
-    本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数）を
-    読む（`getStudentActivity`）。「お知らせが届いていない」という問い合わせには、生徒 1 人が受け取った本部からのお知らせと
+    本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数・
+    返信のないまま時間の過ぎたチャットのスレッドの数）を読む（`getStudentActivity`。「コーチから返事が来ない」という
+    問い合わせには、返事のないメッセージの多さを確かめる）。「お知らせが届いていない」という問い合わせには、生徒 1 人が受け取った本部からのお知らせと
     既読・取り下げ済みかを読む（`listStudentAnnouncements`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。確認した低い評価には
     「対応済み」の印を付け（`markLowRatedLessonReviewHandled`。いつ・どの本部のアカウントが）、一覧をまだ対応していない
@@ -2023,6 +2024,12 @@ paths:
           返却待ちの判定は `listPendingVideoReviews` と同じ（スポーツ・コーチ・経過時間で絞らない。backend の domain
           `PendingVideoReviewFilter` の 1 か所）で、その一覧に載るこの生徒の動画の数と一致する。動画の一覧や ID は返さない
           （返却待ちの中身は `listPendingVideoReviews` で見る）
+        - `unanswered_message_thread_count`: その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。
+          **既定の条件の一覧と同じ数**で、`listUnansweredMessageThreads` に `student_id` だけを付けたとき（`older_than_hours` を
+          省いた既定の 24 時間・`coach_id` なし。担当コーチを問わない）の `threads` の件数と同じ。何を発言と数えるか・待ち始め・
+          境界（ちょうど 24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は
+          backend の domain `UnansweredThreadCriteria` の既定の 1 か所で、数は `StudentUnansweredMessageThreadCount`）。件数だけで、
+          メッセージの本文やスレッドの ID は返さない（中身は `listUnansweredMessageThreads` で見る）。該当するスレッドがなければ 0
         - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
         - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
           （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -2031,7 +2038,7 @@ paths:
 
         行動イベントは発火しない。
       tags: [identity, scheduling]
-      x-context: [identity, profile, scheduling, live-lesson, async-lesson]
+      x-context: [identity, profile, scheduling, live-lesson, async-lesson, messaging]
       x-analytics-events: []
       parameters:
         - name: student_id
@@ -4062,7 +4069,8 @@ components:
       type: object
       description: |
         本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-        キャンセルの件数・送った動画の数と返却待ちの数を添える。生徒を特定する情報は表示名と ID だけ
+        キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま時間の過ぎたスレッドの数を添える。生徒を特定する情報は
+        表示名と ID だけ
       required:
         - student_id
         - display_name
@@ -4071,6 +4079,7 @@ components:
         - cancelled_booking_count
         - submitted_video_count
         - pending_video_review_count
+        - unanswered_message_thread_count
       properties:
         student_id:
           type: string
@@ -4106,6 +4115,12 @@ components:
           description: |
             生徒が送った動画のうち、いま返却を待っている動画の数（判定は `listPendingVideoReviews` と同じ）。
             `submitted_video_count` 以下
+        unanswered_message_thread_count:
+          type: integer
+          minimum: 0
+          description: |
+            その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。既定の条件の一覧と同じ数
+            （`listUnansweredMessageThreads` に `student_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
 
     StudentActivityBooking:
       type: object

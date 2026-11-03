@@ -1,5 +1,6 @@
 //! `GET /students/{student_id}/activity`（admin-web の `getStudentActivity`）の統合テスト。本部には生徒 1 人の表示名・
-//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数・送った動画の数と返却待ちの数を返すことを OpenAPI のスキーマで検査する。
+//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま既定の
+//! 時間の過ぎたスレッドの数を返すことを OpenAPI のスキーマで検査する。
 //! コーチ・生徒は 403、トークンがなければ 401、生徒でない・ない・UUID でない ID は 404。
 
 use std::time::{Duration, SystemTime};
@@ -12,9 +13,11 @@ use application::{
     },
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryLessonCompletionRepository,
-        InMemorySlotRepository, InMemoryVideoRepository, ManualClock,
+        InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
+        ManualClock,
     },
     lesson::LessonStudentLessonHistoryLookup,
+    messaging::MessagingStudentUnansweredMessageThreadCountLookup,
     profile::ProfileCoachDisplayNameLookup,
     scheduling::{BookingRepository, SchedulingStudentBookingActivityLookup},
 };
@@ -29,6 +32,7 @@ use domain::{
     identity::{Account, AccountId, Email, Role},
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     live_lesson::SessionId,
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
     scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
@@ -143,9 +147,26 @@ fn video(id: u128, student: AccountId, hour: u64, returned: bool) -> Video {
     .unwrap()
 }
 
+/// `student` と `coach` のスレッド `id` を 0 時に開き、生徒が `hour` 時に本文を送ったまま返信がない。
+fn waiting_thread(id: u128, student: AccountId, coach: AccountId, hour: u64) -> MessageThread {
+    let mut thread =
+        MessageThread::open(MessageThreadId::from_u128(id), student, coach, at(0)).unwrap();
+    thread
+        .send(
+            MessageId::from_u128(id),
+            student,
+            MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+            true,
+            at(hour),
+        )
+        .unwrap();
+    thread
+}
+
 /// 今は 100 時。生徒 `STUDENT` は 200 時の枠（`COACH`）と 150 時の枠（`GONE_COACH`）をこれから受け、50 時の枠は
 /// 始まっていて、300 時の枠はキャンセルした。完了したレッスンは 22 件（1〜22 時）。動画は 3 本送り、1 本は添削が
-/// 返っていて 2 本は返却待ち（ほかに別の生徒の返却待ちが 1 本ある）。
+/// 返っていて 2 本は返却待ち（ほかに別の生徒の返却待ちが 1 本ある）。スレッドは、生徒が 70 時（30 時間前）に送ったまま
+/// 返信のないものと 80 時（20 時間前）に送ったまま返信のないもの（ほかに別の生徒の 30 時間前のものが 1 つある）。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
     for account in [
@@ -188,7 +209,12 @@ async fn app() -> Router {
         video(42, STUDENT, 90, false),
         video(43, AccountId::from_u128(99), 40, false),
     ]);
-    router(accounts, bookings, completions, videos)
+    let threads = InMemoryMessageThreadRepository::with_threads([
+        waiting_thread(60, STUDENT, COACH, 70),
+        waiting_thread(61, STUDENT, GONE_COACH, 80),
+        waiting_thread(62, AccountId::from_u128(99), COACH, 70),
+    ]);
+    router(accounts, bookings, completions, videos, threads)
 }
 
 fn router(
@@ -196,6 +222,7 @@ fn router(
     bookings: InMemoryBookingRepository,
     completions: InMemoryLessonCompletionRepository,
     videos: InMemoryVideoRepository,
+    threads: InMemoryMessageThreadRepository,
 ) -> Router {
     interface::student_activity_router(
         GetStudentActivity::new(
@@ -203,6 +230,7 @@ fn router(
             SchedulingStudentBookingActivityLookup::new(bookings),
             LessonStudentLessonHistoryLookup::new(completions),
             AsyncLessonStudentVideoActivityLookup::new(videos),
+            MessagingStudentUnansweredMessageThreadCountLookup::new(threads),
             ProfileCoachDisplayNameLookup::new(accounts),
             ManualClock::new(at(100)),
         ),
@@ -253,6 +281,10 @@ async fn headquarters_sees_upcoming_bookings_recent_lessons_cancelled_count_and_
         body["pending_video_review_count"], 2,
         "別の生徒の動画は数えない"
     );
+    assert_eq!(
+        body["unanswered_message_thread_count"], 1,
+        "24 時間に満たないスレッド・別の生徒のスレッドは数えない"
+    );
 
     let upcoming = body["upcoming_bookings"].as_array().unwrap();
     assert_eq!(
@@ -302,6 +334,10 @@ async fn headquarters_sees_upcoming_bookings_recent_lessons_cancelled_count_and_
         !body.to_string().contains("@example.com"),
         "メールアドレスは載せない: {body}"
     );
+    assert!(
+        !body.to_string().contains("本部には見せない本文"),
+        "メッセージの本文は載せない: {body}"
+    );
 }
 
 #[tokio::test]
@@ -318,6 +354,7 @@ async fn student_without_bookings_or_lessons_is_empty() {
             "cancelled_booking_count": 0,
             "submitted_video_count": 0,
             "pending_video_review_count": 0,
+            "unanswered_message_thread_count": 0,
         })
     );
 }
