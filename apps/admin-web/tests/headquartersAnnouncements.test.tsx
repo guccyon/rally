@@ -471,6 +471,135 @@ describe("送ったお知らせを題で探す", () => {
   });
 });
 
+describe("送ったお知らせをスポーツで絞る", () => {
+  test("スポーツの欄は「すべて」（既定）と 6 種類のスポーツから選べ、選んだらすぐ今の期間とともに sport に渡して読み直し、「すべて」に戻すと絞らずに読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+
+    const select = sentSection().getByLabelText("スポーツ");
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "テニス",
+      "ゴルフ",
+      "野球",
+      "サッカー",
+      "バスケットボール",
+      "水泳",
+    ]);
+
+    await user.selectOptions(select, "水泳");
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", sport: "swimming" });
+    expect(
+      await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・水泳の生徒向け・2 件"),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "すべて");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+    expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・2 件")).toBeInTheDocument();
+  });
+
+  test("期間・題と組み合わせる: スポーツで絞ったまま期間を変える・題で探すとスポーツを保って読み、スポーツを変えると確定した期間と語を保って読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "テニス");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(2));
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-09-01", to: "2026-09-30", sport: "tennis" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+    await waitFor(() =>
+      expect(listAnnouncements).toHaveBeenLastCalledWith({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        q: "水泳",
+        sport: "tennis",
+      }),
+    );
+    expect(
+      await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・テニスの生徒向け・題に「水泳」を含む・2 件"),
+    ).toBeInTheDocument();
+
+    // 期間を確定しないままスポーツを変えると、今の一覧の期間で読む
+    await changePeriod(user, "2026-08-01", "2026-08-31");
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "ゴルフ");
+    await waitFor(() =>
+      expect(listAnnouncements).toHaveBeenLastCalledWith({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        q: "水泳",
+        sport: "golf",
+      }),
+    );
+  });
+
+  test("見つからなければ選んだスポーツを含めた文言を出し、題でも探していれば語も含める。一覧は出さない", async () => {
+    const listAnnouncements = vi.fn<HeadquartersApi["listAnnouncements"]>(async (filter) => ({
+      ok: true,
+      data: { announcements: filter.sport === undefined ? SENT : [] },
+    }));
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "ゴルフ");
+
+    expect(await screen.findByText("この期間にゴルフの生徒に向けて送ったお知らせはありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・ゴルフの生徒向け・0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間に送ったお知らせはありません")).not.toBeInTheDocument();
+
+    await user.type(sentSection().getByLabelText("題で探す"), "夏休み{Enter}");
+    expect(
+      await screen.findByText("この期間にゴルフの生徒に向けて送った、題に「夏休み」を含むお知らせはありません"),
+    ).toBeInTheDocument();
+  });
+
+  test("スポーツで絞っている間に送ったお知らせは、今の条件で一覧を読み直して出す", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, sendAnnouncement: sendOk() })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "水泳");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(2));
+
+    await fillAndReview(user, { title: "お知らせ", body: "本文" });
+    await user.click(screen.getByRole("button", { name: "送るのを確定" }));
+
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", sport: "swimming" });
+    await waitFor(() => expect(items()).toHaveLength(2));
+  });
+
+  test("取り下げに断られて取り直すときは、今のスポーツで読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const withdrawAnnouncement = vi.fn<HeadquartersApi["withdrawAnnouncement"]>(async () => ({
+      ok: false,
+      code: "announcement_already_withdrawn",
+      message: "このお知らせはすでに取り下げられています。",
+    }));
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, withdrawAnnouncement })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    await user.selectOptions(sentSection().getByLabelText("スポーツ"), "水泳");
+    await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・水泳の生徒向け・2 件");
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "取り下げを確定" }));
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", sport: "swimming" });
+  });
+});
+
 describe("送ったお知らせの取り下げ", () => {
   test("取り下げていない行には「取り下げる」を出し、取り下げた行は「取り下げ済み（日時）」で操作を出さない", async () => {
     const withdrawn: Schemas["Announcement"] = {
