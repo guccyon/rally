@@ -1441,6 +1441,14 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["PendingVideoReviewList"],
   },
+  // レッスンメニューで絞った返却待ち（サーブの添削）。返却待ちがないメニューで、選んだメニューを含めた空の表示を撮る。
+  // 条件なしの応答より前に置く（先に合ったものを返す）。
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    query: { lesson_menu_id: MENU_SERVE.lesson_menu_id },
+    body: { as_of: NOW.toISOString(), videos: [] } satisfies Schemas["PendingVideoReviewList"],
+  },
   // 生徒で絞った返却待ち（山田 花子）。条件なしの応答より前に置く（先に合ったものを返す）。
   {
     method: "GET",

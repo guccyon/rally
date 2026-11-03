@@ -540,6 +540,7 @@ describe("画面への配置", () => {
         data: { as_of: "2026-10-26T03:00:00Z", videos: [] },
       })),
       listCoaches: coachesOf(),
+      listLessonMenus: vi.fn(async () => ({ ok: true, data: { lesson_menus: [] } })),
     });
     render(<PendingVideoReviewsHome token="mock.headquarters.x" />);
 
