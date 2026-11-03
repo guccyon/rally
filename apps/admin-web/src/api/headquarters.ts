@@ -4,7 +4,8 @@ import type { ApiClient, Schemas } from "./client";
 /** 本部の操作（契約の operationId と 1 対 1）。 */
 export function headquartersApi(client: ApiClient) {
   return {
-    getSlotSupply: () => call(() => client.GET("/slot-supply")),
+    getSlotSupply: (filter: { from?: string; to?: string } = {}) =>
+      call(() => client.GET("/slot-supply", { params: { query: filter } })),
     listCoaches: (
       filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
@@ -115,7 +116,14 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listBookings: (query: { from?: string; to?: string; coach_id?: string; student_id?: string; trial?: boolean }) =>
+    listBookings: (query: {
+      from?: string;
+      to?: string;
+      coach_id?: string;
+      student_id?: string;
+      trial?: boolean;
+      lesson_menu_id?: string;
+    }) =>
       call(() => client.GET("/bookings", { params: { query } })),
     listCancelledBookings: (filter: { from?: string; to?: string; coach_id?: string }) =>
       call(() => client.GET("/bookings/cancelled", { params: { query: filter } })),

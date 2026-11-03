@@ -1144,6 +1144,13 @@ export interface paths {
          *       受講権がない（まだ契約していない）生徒はどちらも null。ワンショットの受講権は `plan` が null
          *     - `last_booked_at`: 生徒が最後に予約（glossary の booking。体験予約を含む）を作った時刻。予約の状態（確定待ち・確定済み・
          *       キャンセル済み）を問わない（あとでキャンセルしても予約した時刻は残る）。予約がなければ null
+         *     - `recent_booking_count`: しばらく使っていない生徒や急に増えた生徒に気づけるよう、一覧のまま利用の多さを見比べるための
+         *       直近の予約の数。照会した時刻（サーバーの現在時刻）の 30 日前（含む）から照会した時刻（含む）までにその生徒が作った予約
+         *       （`createBooking`。glossary の booking。体験予約を含む）のうち、今キャンセルされていない（`pending` か `confirmed`）ものを数える。
+         *       期間の境界とキャンセルの扱いは `listLessonMenus` の `recent_booking_count` と同じ（実装は backend の domain
+         *       `RecentStudentBookings` が `RecentLessonMenuBookings` の期間を使う）。ただしメニューのない枠への予約も数える（生徒ごとに
+         *       数えるので、メニューの有無は問わない）。予約がなければ 0。並べ方・絞り込みには使わない（`not_booked_since` は
+         *       `last_booked_at` で絞り、この数とは関係しない）
          *     - メールアドレスは返さない。ゴルフの生徒（golf-app の範囲）も載せる
          *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含む生徒だけを返す
          *       （並べ方は上と同じ）。`q` の前後の空白（全角の空白を含む）は除いて比べ、途中の空白はそのまま比べる。大文字・小文字は
@@ -2348,7 +2355,7 @@ export interface components {
         SubscriptionPlan: "standard" | "plus";
         /**
          * @description 本部が見る生徒 1 人の様子（`listStudents`）。glossary の student の役割のアカウントに、受講権の契約種別と契約プラン、
-         *     最後に予約した時刻を添える。メールアドレスは持たない
+         *     最後に予約した時刻と直近 30 日の予約の数を添える。メールアドレスは持たない
          */
         Student: {
             /**
@@ -2368,6 +2375,11 @@ export interface components {
              * @description 最後に予約を作った時刻（予約の状態を問わない）。予約がなければ null
              */
             last_booked_at: string | null;
+            /**
+             * @description 直近 30 日にその生徒が作った、キャンセルされていない予約の数（数え方は `listStudents` の説明。境界は
+             *     `listLessonMenus` の `recent_booking_count` と同じ）。予約がなければ 0
+             */
+            recent_booking_count: number;
             /**
              * Format: date-time
              * @description アカウントを登録した時刻

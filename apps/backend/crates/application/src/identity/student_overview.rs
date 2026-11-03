@@ -14,5 +14,8 @@ pub struct StudentOverview {
     pub contract: Option<StudentContract>,
     /// 最後に予約した時刻（予約がなければ `None`）
     pub last_booked_at: Option<SystemTime>,
+    /// 直近 30 日に作った、キャンセルされていない予約の数（数え方は [`domain::scheduling::RecentStudentBookings`]。
+    /// 予約がなければ 0）
+    pub recent_booking_count: u32,
     pub registered_at: SystemTime,
 }
