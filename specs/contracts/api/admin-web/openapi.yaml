@@ -62,7 +62,7 @@ info:
     本部の判断で終わったことにできる（`endLiveLessonSessionByHeadquarters`。終わった時刻は操作の時刻で、どの本部のアカウントが
     終わらせたかを残す。通話そのものは切らない）。
     本部は、最後の発言が生徒のもので一定の時間（既定 24 時間）コーチが返していないチャットのスレッドを、コーチを問わず
-    経過の長い順に読む（`listUnansweredMessageThreads`。件数と時間だけで、メッセージの本文は返さない）。
+    経過の長い順に（任意のコーチで絞って）読む（`listUnansweredMessageThreads`。件数と時間だけで、メッセージの本文は返さない）。
     本部は問い合わせを受けたときに、通話セッションを開始した日付（日本時間。31 日まで）と任意のコーチで絞り、いつ始まりいつ終わったか
     （長さの分を含む）を開始の新しい順に読む（`listLiveLessonSessions`。通話中のセッションも載る）。
 
@@ -2447,6 +2447,10 @@ paths:
         - 対象: 最後の発言が生徒のもので、照会した時刻に待ち始め `waiting_since` から `older_than_hours` 時間以上たったスレッド
           （ちょうどその時間のものを含む）。コーチが最後に発言したスレッドと、発言がまだないスレッドは載らない。既読かどうかは問わない
         - `older_than_hours`: 返信を待ち始めてからの時間（時間単位の整数）。省けば 24。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+        - 任意の `coach_id` で、そのコーチが担当する（スレッドの `coach_id` がそのコーチの）スレッドだけに絞れる（返事の遅れている
+          コーチに個別に声をかけるとき、そのコーチの分だけを見る）。`older_than_hours` と組み合わせられ、時間の規則・何を発言と
+          数えるか・並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない
+          ID（生徒の ID を含む）・ない ID・該当するスレッドがないコーチは、404 にせず `threads` が空の配列
         - 並べ方: 経過の長い順（`waiting_since` の古い順）。同じ時刻は `thread_id` の順
         - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・待ち始め `waiting_since`・
           照会した時刻までの待ち始めからの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
@@ -2468,6 +2472,15 @@ paths:
             minimum: 1
             maximum: 168
             default: 24
+        - name: coach_id
+          in: query
+          required: false
+          description: |
+            あればこのコーチが担当するスレッドだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 返信のないまま時間の過ぎたスレッドの一覧
