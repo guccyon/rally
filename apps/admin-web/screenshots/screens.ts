@@ -316,8 +316,21 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/cancelled-bookings",
     open: async (page) => {
-      await page.getByLabel("コーチ").selectOption({ label: "高橋 コーチ" });
+      // ラベルの文字だけで探すと、レッスンメニューの選択肢（「…（鈴木 コーチ）」）にも当たるので、選択欄の名前で探す。
+      await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
       await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText("・1 件").waitFor();
+    },
+  },
+  {
+    id: "hq-cancelled-bookings-lesson-menu",
+    title: "本部: キャンセルされた予約（レッスンメニューで絞る）",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
       await page.getByText("・1 件").waitFor();
     },
   },
