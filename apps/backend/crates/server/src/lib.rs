@@ -94,6 +94,7 @@ pub fn router() -> Router {
 /// コーチの提供スポーツをアカウントの保存先から読む（`GetSlotSupply`。`ProfileCoachAccountLookup`）。
 /// 本部が見る予約の一覧（`GET /bookings`）も同じく予約の保存先から期間に開始する予約を読み、コーチと生徒の表示名を
 /// アカウントの保存先から読んで添える（`ListBookings`。`ProfileCoachDisplayNameLookup`・`ProfileStudentDisplayNameLookup`）。
+/// 競技で絞るときは予約の需給と同じくコーチの提供スポーツをアカウントの保存先から読む（`ProfileCoachAccountLookup`）。
 /// 本部が見るキャンセルされた予約の一覧（`GET /bookings/cancelled`）は予約の保存先から期間にキャンセルした予約を読み、
 /// 表示名を同じように添える（`ListCancelledBookings`）。
 /// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の

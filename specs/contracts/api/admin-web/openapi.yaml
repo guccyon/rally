@@ -279,6 +279,13 @@ paths:
           付ければ出ない。状態を問わないので、キャンセルされた予約も出る。期間・`coach_id`・`student_id`・`status`・`trial` と組み合わせられ、
           期間の規則と並べ方は変わらない。省けば今までどおりメニューを問わない。`lesson_menu_id` が UUID でなければ 422
           `validation_failed`。ないメニューの ID・期間に予約がないメニューは、`coach_id` と同じく 404 にせず `bookings` が空の配列
+        - 任意の `sport` で、その競技の予約だけに絞れる（競技ごとの担当が自分の競技の予約だけを見る）。予約の競技は予約された枠の
+          コーチの競技で、コーチの提供スポーツのどれかが `sport` と一致する予約だけを返す（枠の `sport` では決めない。決め方は
+          `listCoaches`・`getSlotSupply`・`listLiveLessonSessions` の `sport` と同じ。実装は backend の domain `CoachSportFilter` の
+          1 か所。ゴルフも絞れる）。アカウントの引けないコーチの予約は、`sport` を付けると載らない。状態を問わないので、キャンセル
+          された予約も出る。期間・`coach_id`・`student_id`・`status`・`trial`・`lesson_menu_id` と組み合わせられ、期間の規則と
+          並べ方は変わらない。省けば今までどおりすべての競技。`sport` が `Sport` の値でなければ 422 `validation_failed`
+          （`listPendingVideoReviews` の `sport` と同じ）。期間に予約がない競技は 404 にせず `bookings` が空の配列
         - 並べ方: 予約されたスロットの開始時刻の古い順。同じ開始時刻は予約の作成の新しい順（キャンセルされた枠を取り直した予約が、
           キャンセル済みの予約より上）、それも同じなら `booking_id` の順
         - 各項目には予約（`Booking`。予約した時点のレッスンメニュー `lesson_menu` と体験予約か `is_trial` を含む）と、
@@ -353,6 +360,14 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: sport
+          in: query
+          required: false
+          description: |
+            あればこの競技を提供するコーチの枠への予約だけに絞る（コーチの提供スポーツのどれかが一致するもの）。省けばすべての競技。
+            `Sport` の値でなければ 422 `validation_failed`
+          schema:
+            $ref: "#/components/schemas/Sport"
       responses:
         "200":
           description: 期間に開始する予約の一覧
