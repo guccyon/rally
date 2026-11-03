@@ -446,6 +446,13 @@ export const FIXTURES: Fixture[] = [
     path: "/coaches/{coach_id}/review-summary",
     body: { coach_id: COACH_ID, review_count: 3, average_rating: 4.67 } satisfies Schemas["CoachReviewSummary"],
   },
+  // 本部の「コーチの評価」で期間を選んだとき（その期間に付いた評価として新しい 1 件だけを返す）。
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/reviews",
+    query: { from: "2026-10-26", to: "2026-11-01" },
+    body: { coach_id: COACH_ID, reviews: REVIEWS.slice(0, 1) } satisfies Schemas["CoachReviewList"],
+  },
   // 本部の「コーチの評価」で点数を選んだとき（4 点以下は 1 件、3 点以下は 0 件）。
   {
     method: "GET",
