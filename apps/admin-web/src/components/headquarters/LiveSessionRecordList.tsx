@@ -33,8 +33,12 @@ const NO_END_RECORD = "終了の記録なし";
  */
 const VALIDATION_HINT = "期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。コーチは一覧から選び直してください。";
 
-function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
-  return response.code === "validation_failed" ? `${response.message}${VALIDATION_HINT}` : response.message;
+/** 生徒で絞っているときに 422 に添える、生徒の指定（URL の `student_id`。UUID でなければ 422）の直し方。 */
+const STUDENT_VALIDATION_HINT = "生徒は生徒の一覧から選び直してください。";
+
+function failureMessage(response: Extract<Result<unknown>, { ok: false }>, studentId: string | undefined): string {
+  if (response.code !== "validation_failed") return response.message;
+  return `${response.message}${VALIDATION_HINT}${studentId === undefined ? "" : STUDENT_VALIDATION_HINT}`;
 }
 
 /** 「終了」の欄: 終了の日時と長さ（分）。終了の記録がなければ「終了の記録なし」。 */
@@ -49,11 +53,14 @@ function endLabel(session: Schemas["LiveLessonSessionRecord"]): string {
  * （listLiveLessonSessions）を読み、コーチ・生徒・開始・終了を出す。既定の期間は今日までの 7 日でコーチはすべて。
  * 対象・並べ方は契約の正本どおり API が済ませているので、返った順（開始の新しい順）のまま出し、使った期間は応答の値を出す。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。照会だけで、セッションを終わらせる操作はない。
+ * `studentId` があれば、その生徒の予約が結び付いたセッションだけに絞る（`student_id`）。期間・コーチを変えても絞り込みは残る。
  */
 export function LiveSessionRecordList({
   api,
+  studentId,
 }: {
   api: Pick<HeadquartersApi, "listLiveLessonSessions" | "listCoaches">;
+  studentId?: string;
 }) {
   const [draft, setDraft] = useState<Filter>(() => ({ ...recentPeriod(Date.now()), coachId: "" }));
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -69,12 +76,13 @@ export function LiveSessionRecordList({
         from,
         to,
         ...(coachId === "" ? {} : { coach_id: coachId }),
+        ...(studentId === undefined ? {} : { student_id: studentId }),
       });
       return response.ok
         ? { kind: "loaded", list: response.data }
-        : { kind: "failed", message: failureMessage(response) };
+        : { kind: "failed", message: failureMessage(response, studentId) };
     },
-    [api],
+    [api, studentId],
   );
 
   // 開いたときの読み込み（既定の期間・すべてのコーチ）。初期の状態が loading なので、ここでは結果だけを入れる。
@@ -119,8 +127,7 @@ export function LiveSessionRecordList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        通話を開始した日付（日本時間）とコーチで、ライブレッスンがいつ始まりいつ終わったかを開始の新しい順に見られます。期間は 31
-        日まで選べます。
+        {`通話を開始した日付（日本時間）とコーチで、${studentId === undefined ? "" : "この生徒の"}ライブレッスンがいつ始まりいつ終わったかを開始の新しい順に見られます。期間は 31 日まで選べます。`}
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">
