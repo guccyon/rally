@@ -134,6 +134,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 直近 30 日にレッスンのないコーチだけに絞った状態（URL のクエリ inactive=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-inactive",
+    title: "本部: コーチの受付（直近 30 日にレッスンのないコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?inactive=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("直近 30 日にレッスンのないコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",
