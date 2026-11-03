@@ -471,6 +471,31 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // 鈴木 コーチで絞ったとき（hq-overdue-live-sessions-by-coach）は、そのコーチのセッションだけを返す。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: COACH_ID },
+    body: {
+      older_than_hours: 3,
+      sessions: OVERDUE_SESSIONS.filter((session) => session.coach_id === COACH_ID),
+    } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    // 高橋 コーチで絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る。hq-overdue-live-sessions-by-coach-empty）。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: COACH_ID_2 },
+    body: { older_than_hours: 3, sessions: [] } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    // URL のコーチの ID が UUID でないとき（hq-overdue-live-sessions-invalid-coach）は 422。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { coach_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "coach_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
     method: "GET",
     path: "/live-lesson-sessions/overdue",
     body: { older_than_hours: 3, sessions: OVERDUE_SESSIONS } satisfies Schemas["OverdueLiveLessonSessionList"],

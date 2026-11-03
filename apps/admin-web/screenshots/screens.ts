@@ -273,6 +273,36 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/overdue-live-sessions",
   },
   {
+    id: "hq-overdue-live-sessions-by-coach",
+    title: "本部: 終わっていない通話（コーチで絞る）",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "コーチ" }).and(page.locator(":enabled")).waitFor();
+      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-overdue-live-sessions-by-coach-empty",
+    title: "本部: 終わっていない通話（コーチで絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions",
+    open: async (page) => {
+      // 選択肢（コーチの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
+      await page.getByText("このコーチの終わっていない通話はありません").waitFor();
+    },
+  },
+  {
+    id: "hq-overdue-live-sessions-invalid-coach",
+    title: "本部: 終わっていない通話（コーチの指定が正しくない 422）",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions?coach_id=not-a-uuid",
+    open: async (page) => {
+      await page.getByRole("alert").filter({ hasText: "コーチは一覧から選び直してください。" }).waitFor();
+    },
+  },
+  {
     id: "hq-live-sessions",
     title: "本部: ライブレッスンの記録",
     role: "headquarters",
