@@ -2233,6 +2233,13 @@ paths:
           セッションは、`sport` を付けると載らない。`older_than_hours`・`coach_id` と組み合わせられ、時間の規則と並べ方は変わらない。
           省けばすべての競技。`sport` が `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。
           該当するセッションがない競技は `sessions` が空の配列
+        - 任意の `student_id` で、その生徒の予約が結び付いたセッションだけに絞れる（生徒から「レッスンが終わったことになって
+          いない」と問い合わせを受けたときに、その生徒の終わっていない通話だけを確かめる）。扱いは `listLiveLessonSessions` の
+          `student_id` と同じ: グループレッスンでは、通話を始めた予約の生徒に限らず、セッションに結び付いた予約の生徒なら載る
+          （そのとき各項目の `student_id` は開始した予約の生徒のままで、絞り込みに使った生徒と違うことがある）。
+          `older_than_hours`・`coach_id`・`sport` と組み合わせられ、時間の規則と並べ方は変わらない。省けばすべての生徒。
+          `student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID・該当するセッションがない生徒は、
+          404 にせず `sessions` が空の配列
         - 並べ方: 開始 `started_at` の古い順。同じ時刻は `session_id` の順
         - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
           開始の時刻 `started_at`・照会した時刻までの開始からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の
@@ -2271,6 +2278,16 @@ paths:
             `Sport` の値でなければ 422 `validation_failed`
           schema:
             $ref: "#/components/schemas/Sport"
+        - name: student_id
+          in: query
+          required: false
+          description: |
+            あればこの生徒の予約が結び付いたセッションだけに絞る（グループレッスンでは開始した予約の生徒に限らない）。
+            省けばすべての生徒。UUID でなければ 422 `validation_failed`。生徒でない ID・ない ID は、404 にせず空の一覧を返す
+            （絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 終わっていないまま時間の過ぎた通話セッションの一覧

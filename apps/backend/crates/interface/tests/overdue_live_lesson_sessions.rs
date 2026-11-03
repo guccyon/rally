@@ -3,7 +3,9 @@
 //! 呼べること（403）、開始から既定の 3 時間以上たった通話中のセッションを開始の古い順に返すこと、`older_than_hours` で
 //! 時間を変えられること、`coach_id` でコーチを絞れること（時間と組み合わせられる）、整数でない・範囲の外の
 //! `older_than_hours` と UUID でない `coach_id` が 422 であること、`sport` でコーチの競技を絞れること（時間・コーチと
-//! 組み合わせられる）と `Sport` の値でない `sport` が 422 であることを確かめる。基準の境界は domain の
+//! 組み合わせられる）と `Sport` の値でない `sport` が 422 であること、`student_id` で生徒を絞れること（グループレッスンの
+//! 結び付いた予約の生徒も含む。時間・コーチ・競技と組み合わせられる）と UUID でない `student_id` が 422 であることを
+//! 確かめる。基準の境界は domain の
 //! `OverdueSessionCriteria`、選び方の細部はユースケース `ListOverdueLiveLessonSessions` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -24,7 +26,7 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
-    live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+    live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
     profile::DisplayName,
     scheduling::BookingId,
 };
@@ -339,6 +341,111 @@ async fn invalid_sport_is_422() {
             format!("未知のスポーツ: {value}"),
             "{value}"
         );
+    }
+}
+
+#[tokio::test]
+async fn student_id_narrows_the_sessions_with_the_other_filters() {
+    let admin = support::Contract::load("admin-web");
+    // グループレッスン: あおき（3）が開始したセッションに生徒 5 の予約も結び付いている
+    let group = LiveLessonSession::restore(
+        SessionId::from_u128(9),
+        BookingId::from_u128(109),
+        AccountId::from_u128(3),
+        AccountId::from_u128(43),
+        vec![SessionBooking::new(
+            BookingId::from_u128(110),
+            AccountId::from_u128(5),
+        )],
+        now() - 6 * HOUR,
+        None,
+    )
+    .unwrap();
+    let app = app_with(InMemoryLiveLessonSessionRepository::with_sessions([
+        session(1, 3, 42, now() - 3 * HOUR, None),
+        session(4, 4, 99, now() - 26 * HOUR, None),
+        session(5, 3, 42, now() - 5 * HOUR, None),
+        session(6, 5, 42, now() - 8 * HOUR, None),
+        // 時間に足りない・終了した
+        session(7, 5, 42, now() - 2 * HOUR, None),
+        session(8, 5, 42, now() - 10 * HOUR, Some(now() - 9 * HOUR)),
+        group,
+    ]))
+    .await;
+    for (query, expected) in [
+        (
+            format!("student_id={}", uuid(3)),
+            vec![uuid(9), uuid(5), uuid(1)],
+        ),
+        // 結び付いた予約の生徒でもグループレッスンのセッションが出る
+        (format!("student_id={}", uuid(5)), vec![uuid(6), uuid(9)]),
+        (format!("student_id={}", uuid(4)), vec![uuid(4)]),
+        // 時間と組み合わさる
+        (
+            format!("student_id={}&older_than_hours=1", uuid(5)),
+            vec![uuid(6), uuid(9), uuid(7)],
+        ),
+        (
+            format!("older_than_hours=7&student_id={}", uuid(5)),
+            vec![uuid(6)],
+        ),
+        // コーチと組み合わさる
+        (
+            format!("student_id={}&coach_id={}", uuid(5), uuid(43)),
+            vec![uuid(9)],
+        ),
+        (
+            format!("student_id={}&coach_id={}", uuid(4), uuid(42)),
+            vec![],
+        ),
+        // 競技と組み合わさる
+        (format!("student_id={}&sport=golf", uuid(3)), vec![uuid(9)]),
+        (
+            format!("student_id={}&sport=tennis", uuid(3)),
+            vec![uuid(5), uuid(1)],
+        ),
+        // 生徒でない ID（コーチ）・ない ID は空の一覧
+        (format!("student_id={}", uuid(42)), vec![]),
+        (format!("student_id={}", uuid(12345)), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(session_ids(&body), expected, "{query}");
+    }
+    // 生徒を付けても応答の形と時間は変わらない。行の生徒は開始した予約の生徒
+    let (_, body) = get(
+        &app,
+        &format!("{PATH}?student_id={}", uuid(5)),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(body["older_than_hours"], 3);
+    assert_eq!(
+        body["sessions"][1],
+        json!({
+            "session_id": uuid(9),
+            "booking_id": uuid(109),
+            "coach_id": uuid(43),
+            "coach_display_name": "すずき",
+            "student_id": uuid(3),
+            "student_display_name": "あおき",
+            "started_at": "2026-11-01T06:00:00Z",
+            "elapsed_sec": 6 * 3600,
+        })
+    );
+}
+
+#[tokio::test]
+async fn invalid_student_id_is_422() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for value in ["3", "not-a-uuid", ""] {
+        let (status, body) = get(&app, &format!("{PATH}?student_id={value}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["code"], "validation_failed", "{value}");
+        assert_eq!(body["message"], "student_id が UUID でない", "{value}");
     }
 }
 

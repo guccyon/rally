@@ -14,7 +14,8 @@ use crate::{Unavailable, clock::Clock};
 /// 基準（domain の [`OverdueSessionCriteria`]。開始からの時間）の時刻
 /// （[`OverdueSessionCriteria::started_at_or_before`]）までに開始した通話中のセッションを読み、
 /// [`OverdueSessionCriteria::select`] で選んで並べる（既定・範囲・境界は domain だけ）。基準にコーチ
-/// （[`OverdueSessionCriteria::coach_id`]）があればそのコーチのセッションだけ（いないコーチなら空の一覧）。基準に競技
+/// （[`OverdueSessionCriteria::coach_id`]）があればそのコーチのセッションだけ（いないコーチなら空の一覧）。基準に生徒
+/// （[`OverdueSessionCriteria::student_id`]）があればその生徒の予約が結び付いたセッションだけ（いない生徒なら空の一覧）。基準に競技
 /// （[`OverdueSessionCriteria::sport`]）があれば、選んだセッションのコーチのアカウント（[`SessionCoachAccountLookup`]）を引き、
 /// [`OverdueSessionCriteria::matches_coach_sport`] に合うセッションだけを残す（並べ方は変わらない）。各セッションには、コーチと
 /// 開始した予約の生徒の表示名（[`SessionCoachDisplayNameLookup`]・[`SessionStudentDisplayNameLookup`]）を引いて添える。
@@ -55,6 +56,7 @@ where
             .find_in_progress_started_at_or_before(
                 criteria.started_at_or_before(now),
                 criteria.coach_id(),
+                criteria.student_id(),
             )
             .await?;
         let mut sessions = criteria.select(in_progress, now);
@@ -104,7 +106,7 @@ mod tests {
     use domain::{
         catalog::Sport,
         identity::{Account, Email, Role},
-        live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
+        live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
         profile::DisplayName,
         scheduling::BookingId,
     };
@@ -441,6 +443,108 @@ mod tests {
             .unwrap();
         assert!(list.sessions.is_empty());
         assert!(lookup.coaches_asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_student_of_the_criteria_narrows_the_sessions_with_the_other_criteria() {
+        // グループレッスン: STUDENT が開始したセッションに OTHER_STUDENT の予約も結び付いている
+        let group = LiveLessonSession::restore(
+            SessionId::from_u128(6),
+            BookingId::from_u128(106),
+            STUDENT,
+            COACH,
+            vec![SessionBooking::new(
+                BookingId::from_u128(107),
+                OTHER_STUDENT,
+            )],
+            now() - 20 * HOUR,
+            None,
+        )
+        .unwrap();
+        let sessions = [
+            session(1, STUDENT, COACH, now() - 4 * HOUR, None),
+            session(2, OTHER_STUDENT, OTHER_COACH, now() - 26 * HOUR, None),
+            session(3, OTHER_STUDENT, COACH, now() - HOUR, None),
+            session(
+                4,
+                OTHER_STUDENT,
+                COACH,
+                now() - 10 * HOUR,
+                Some(now() - 9 * HOUR),
+            ),
+            group,
+        ];
+        let lookup = RecordingLookup::default();
+        let list = use_case(sessions.clone(), lookup.clone())
+            .execute(OverdueSessionCriteria::default().with_student_id(Some(OTHER_STUDENT)))
+            .await
+            .unwrap();
+        assert_eq!(list.criteria.student_id(), Some(OTHER_STUDENT));
+        assert_eq!(
+            ids(&list),
+            [2, 6],
+            "ほかの生徒・時間に足りない・終了したものは出ない。結び付いた予約の生徒のグループレッスンは出る。開始の古い順のまま"
+        );
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "絞った後のセッションのコーチだけを問い合わせる"
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])],
+            "表示名は一覧のセッションの、開始した予約の生徒で引く"
+        );
+
+        // 時間・コーチ・競技と組み合わさる
+        for (criteria, expected) in [
+            (
+                OverdueSessionCriteria::new(21)
+                    .unwrap()
+                    .with_student_id(Some(OTHER_STUDENT)),
+                vec![2],
+            ),
+            (
+                OverdueSessionCriteria::default()
+                    .with_coach_id(Some(COACH))
+                    .with_student_id(Some(OTHER_STUDENT)),
+                vec![6],
+            ),
+            (
+                OverdueSessionCriteria::default()
+                    .with_sport(Some(Sport::Soccer))
+                    .with_student_id(Some(OTHER_STUDENT)),
+                vec![2],
+            ),
+            (
+                OverdueSessionCriteria::default()
+                    .with_sport(Some(Sport::Soccer))
+                    .with_student_id(Some(STUDENT)),
+                vec![],
+            ),
+            (
+                OverdueSessionCriteria::default().with_student_id(Some(STUDENT)),
+                vec![6, 1],
+            ),
+        ] {
+            let list = use_case(sessions.clone(), RecordingLookup::default())
+                .execute(criteria)
+                .await
+                .unwrap();
+            assert_eq!(ids(&list), expected, "{criteria:?}");
+        }
+
+        // セッションのない生徒・ない ID は空の一覧で、表示名を問い合わせない
+        let lookup = RecordingLookup::default();
+        let list = use_case(sessions, lookup.clone())
+            .execute(
+                OverdueSessionCriteria::default().with_student_id(Some(AccountId::from_u128(99))),
+            )
+            .await
+            .unwrap();
+        assert!(list.sessions.is_empty());
+        assert!(lookup.coaches_asked.lock().unwrap().is_empty());
+        assert!(lookup.students_asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

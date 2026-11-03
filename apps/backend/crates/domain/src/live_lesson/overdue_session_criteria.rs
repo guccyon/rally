@@ -17,11 +17,15 @@ use crate::{
 /// で絞れ（[`Self::with_coach_id`]。省けばすべてのコーチ）、時間と組み合わせても時間の規則と並べ方は変わらない。
 /// 任意の競技 [`Self::sport`] でも絞れる（[`Self::with_sport`]。省けばすべての競技）。セッションの競技はセッションの
 /// コーチの競技で、コーチの提供スポーツに含むかの判定は [`CoachSportFilter`] の 1 か所（[`Self::matches_coach_sport`]）。
+/// 任意の生徒 [`Self::student_id`] でも絞れる（[`Self::with_student_id`]。省けばすべての生徒）。生徒は結び付いた予約の
+/// 生徒（グループレッスンでは開始した予約の生徒に限らない。[`LiveLessonSession::booking_of`]）で見る
+/// （`listLiveLessonSessions` の `student_id` と同じ。[`super::SessionHistoryCriteria`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverdueSessionCriteria {
     hours: u16,
     coach_id: Option<AccountId>,
     coach_sport: CoachSportFilter,
+    student_id: Option<AccountId>,
 }
 
 impl OverdueSessionCriteria {
@@ -45,6 +49,7 @@ impl OverdueSessionCriteria {
             hours,
             coach_id: None,
             coach_sport: CoachSportFilter::new(None),
+            student_id: None,
         })
     }
 
@@ -61,6 +66,12 @@ impl OverdueSessionCriteria {
         }
     }
 
+    /// `student_id` があればその生徒の予約が結び付いたセッションだけを選ぶ基準（`None` ならすべての生徒）。時間・
+    /// コーチ・競技は変えない。
+    pub const fn with_student_id(self, student_id: Option<AccountId>) -> Self {
+        Self { student_id, ..self }
+    }
+
     /// 開始からの時間（時間単位）。
     pub const fn hours(&self) -> u16 {
         self.hours
@@ -69,6 +80,11 @@ impl OverdueSessionCriteria {
     /// 絞り込むコーチ。`None` ならすべてのコーチ。
     pub const fn coach_id(&self) -> Option<AccountId> {
         self.coach_id
+    }
+
+    /// 絞り込む生徒。`None` ならすべての生徒。
+    pub const fn student_id(&self) -> Option<AccountId> {
+        self.student_id
     }
 
     /// 絞り込む競技。`None` ならすべての競技。
@@ -98,14 +114,17 @@ impl OverdueSessionCriteria {
             .unwrap_or(SystemTime::UNIX_EPOCH)
     }
 
-    /// `session` が `now` に照会したときの、終わっていないまま時間の過ぎたセッションで、コーチの指定があればそのコーチの
-    /// セッションか。
+    /// `session` が `now` に照会したときの、終わっていないまま時間の過ぎたセッションで、コーチの指定があればそのコーチの、
+    /// 生徒の指定があればその生徒の予約が結び付いたセッションか。
     pub fn matches(&self, session: &LiveLessonSession, now: SystemTime) -> bool {
         session.ended_at().is_none()
             && session.started_at() <= self.started_at_or_before(now)
             && self
                 .coach_id
                 .is_none_or(|coach_id| session.coach_id() == coach_id)
+            && self
+                .student_id
+                .is_none_or(|student_id| session.booking_of(student_id).is_some())
     }
 
     /// `sessions` から `now` に照会したときの時間の過ぎたセッションだけを選び、開始の古い順（同じ時刻はセッションの
@@ -130,6 +149,7 @@ impl Default for OverdueSessionCriteria {
             hours: Self::DEFAULT_HOURS,
             coach_id: None,
             coach_sport: CoachSportFilter::new(None),
+            student_id: None,
         }
     }
 }
@@ -139,7 +159,7 @@ mod tests {
     use super::*;
     use crate::{
         identity::{Email, Role},
-        live_lesson::{ConnectionQuality, SessionId},
+        live_lesson::{ConnectionQuality, SessionBooking, SessionId},
         profile::DisplayName,
         scheduling::BookingId,
     };
@@ -147,6 +167,8 @@ mod tests {
     const HOUR: Duration = Duration::from_secs(3600);
     const COACH: AccountId = AccountId::from_u128(2);
     const OTHER_COACH: AccountId = AccountId::from_u128(8);
+    const STUDENT: AccountId = AccountId::from_u128(1);
+    const OTHER_STUDENT: AccountId = AccountId::from_u128(3);
 
     fn now() -> SystemTime {
         // 2026-11-01T00:00:00Z
@@ -191,6 +213,7 @@ mod tests {
         assert_eq!(criteria.started_at_or_before(now()), now() - 3 * HOUR);
         assert_eq!(criteria.coach_id(), None, "既定はすべてのコーチ");
         assert_eq!(criteria.sport(), None, "既定はすべての競技");
+        assert_eq!(criteria.student_id(), None, "既定はすべての生徒");
     }
 
     #[test]
@@ -355,5 +378,118 @@ mod tests {
         // コーチでないアカウント・引けないコーチは合わない
         assert!(!criteria.matches_coach_sport(Some(&account(Role::Student, &[Sport::Golf]))));
         assert!(!criteria.matches_coach_sport(None));
+    }
+
+    fn student_session(
+        id: u128,
+        student: AccountId,
+        others: &[AccountId],
+        started_at: SystemTime,
+        ended_at: Option<SystemTime>,
+    ) -> LiveLessonSession {
+        LiveLessonSession::restore(
+            SessionId::from_u128(id),
+            BookingId::from_u128(100 + id),
+            student,
+            COACH,
+            others
+                .iter()
+                .enumerate()
+                .map(|(i, other)| {
+                    SessionBooking::new(BookingId::from_u128(1000 + id * 10 + i as u128), *other)
+                })
+                .collect(),
+            started_at,
+            ended_at.map(|ended_at| (ended_at, ConnectionQuality::new(0.0, 0, 0, 0).unwrap())),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn with_student_id_keeps_the_other_criteria() {
+        let criteria = OverdueSessionCriteria::new(24)
+            .unwrap()
+            .with_coach_id(Some(COACH))
+            .with_sport(Some(Sport::Golf))
+            .with_student_id(Some(STUDENT));
+        assert_eq!(
+            (
+                criteria.hours(),
+                criteria.coach_id(),
+                criteria.sport(),
+                criteria.student_id()
+            ),
+            (24, Some(COACH), Some(Sport::Golf), Some(STUDENT))
+        );
+        assert_eq!(
+            OverdueSessionCriteria::default().with_student_id(None),
+            OverdueSessionCriteria::default()
+        );
+    }
+
+    #[test]
+    fn the_student_narrows_the_sessions_with_the_hours_and_the_coach() {
+        let criteria = OverdueSessionCriteria::default().with_student_id(Some(OTHER_STUDENT));
+        assert!(!criteria.matches(
+            &student_session(1, STUDENT, &[], now() - 30 * HOUR, None),
+            now()
+        ));
+        assert!(criteria.matches(
+            &student_session(2, OTHER_STUDENT, &[], now() - 3 * HOUR, None),
+            now()
+        ));
+        // グループレッスンで、STUDENT が開始したセッションに OTHER_STUDENT の予約も結び付いている
+        let group = student_session(3, STUDENT, &[OTHER_STUDENT], now() - 4 * HOUR, None);
+        assert!(
+            criteria.matches(&group, now()),
+            "結び付いた予約の生徒も含む"
+        );
+        // その生徒のセッションでも、時間に足りないもの・終了したものは含まない
+        assert!(!criteria.matches(
+            &student_session(4, OTHER_STUDENT, &[], now() - HOUR, None),
+            now()
+        ));
+        assert!(!criteria.matches(
+            &student_session(
+                5,
+                OTHER_STUDENT,
+                &[],
+                now() - 30 * HOUR,
+                Some(now() - 29 * HOUR)
+            ),
+            now()
+        ));
+        // 時間・コーチの指定と組み合わさる
+        assert!(
+            !OverdueSessionCriteria::new(5)
+                .unwrap()
+                .with_student_id(Some(OTHER_STUDENT))
+                .matches(&group, now())
+        );
+        assert!(
+            !criteria
+                .with_coach_id(Some(OTHER_COACH))
+                .matches(&group, now())
+        );
+        assert!(criteria.with_coach_id(Some(COACH)).matches(&group, now()));
+
+        let sessions = vec![
+            student_session(1, STUDENT, &[], now() - 30 * HOUR, None),
+            student_session(2, OTHER_STUDENT, &[], now() - 3 * HOUR, None),
+            group,
+            student_session(4, OTHER_STUDENT, &[], now() - HOUR, None),
+        ];
+        assert_eq!(
+            ids(&criteria.select(sessions.clone(), now())),
+            [3, 2],
+            "開始の古い順のまま"
+        );
+        assert_eq!(
+            ids(&OverdueSessionCriteria::default()
+                .with_student_id(Some(AccountId::from_u128(99)))
+                .select(sessions, now())),
+            Vec::<u128>::new(),
+            "セッションのない生徒は空"
+        );
     }
 }
