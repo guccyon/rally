@@ -1486,9 +1486,12 @@ export interface paths {
          *     - 並べ方: 送った時刻 `submitted_at` の古い順（経過時間の長い順）。同じ時刻は `video_id` の順
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツの動画だけ。`min_elapsed_hours` を付ければ経過時間がその時間以上
          *       （含む）の動画だけ（例: `48` で 48 時間以上）。`coach_id` を付ければそのコーチ（動画の送り先のコーチ）の動画だけ。
+         *       `student_id` を付ければその生徒（動画を送った生徒。各項目の `student_id`）の動画だけ（生徒から添削が返ってこないと
+         *       問い合わせを受けたときに、その生徒の返却待ちだけを見る。扱いは `listReturnedVideoReviews` の `student_id` と同じ）。
          *       どれも組み合わせられ、経過時間の数え方と並べ方は変わらない。付けなければ絞らない
          *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）・`coach_id` が
-         *       UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、404 にせず `videos` が空の配列
+         *       UUID でない・`student_id` が UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、
+         *       404 にせず `videos` が空の配列。`student_id` も同じく、生徒でない ID・ない ID・返却待ちの動画がない生徒は 404 にせず空の配列
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
@@ -4686,6 +4689,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの生徒が送った動画だけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+                 *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                student_id?: string;
             };
             header?: never;
             path?: never;

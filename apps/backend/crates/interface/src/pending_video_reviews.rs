@@ -1,7 +1,8 @@
 //! `/video-reviews/pending`。admin-web の `GET /video-reviews/pending`（`listPendingVideoReviews`。本部が横断で見る
 //! 返却を待っている動画添削の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツの動画だけ（`Sport` の値で
 //! なければ 422）、`min_elapsed_hours` があれば送付からの経過時間がその時間以上の動画だけ（0〜2147483647 の整数でなければ
-//! 422）、`coach_id` があればそのコーチの動画だけ（UUID でなければ 422）。経過時間の数え方と並べ方は domain の
+//! 422）、`coach_id` があればそのコーチの動画だけ（UUID でなければ 422）、`student_id` があればその生徒が送った動画だけ
+//! （UUID でなければ 422。扱いは `listReturnedVideoReviews` の `student_id` と同じ）。経過時間の数え方と並べ方は domain の
 //! [`PendingVideoReviewFilter`]。
 
 use std::sync::Arc;
@@ -45,6 +46,7 @@ pub struct ListPendingVideoReviewsParams {
     sport: Option<String>,
     min_elapsed_hours: Option<String>,
     coach_id: Option<String>,
+    student_id: Option<String>,
 }
 
 /// admin-web の `PendingVideoReviewList`。
@@ -82,6 +84,14 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let optional_account_id = |field: &str, value: Option<&str>| {
+        value
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
+            })
+            .transpose()
+    };
     let filter = PendingVideoReviewFilter {
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
         min_elapsed_hours: params
@@ -90,14 +100,8 @@ where
             .map(min_elapsed_hours)
             .transpose()?
             .unwrap_or(0),
-        coach_id: params
-            .coach_id
-            .as_deref()
-            .map(|id| {
-                account_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
-            })
-            .transpose()?,
+        coach_id: optional_account_id("coach_id", params.coach_id.as_deref())?,
+        student_id: optional_account_id("student_id", params.student_id.as_deref())?,
     };
     let list = state
         .list_pending_video_reviews
