@@ -1,0 +1,39 @@
+id: K-0002
+theme: 6
+kind: causal
+statement: >-
+  並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、
+  そのたびに重い続きのジョブ（tier-large、PR 本文への追記つき）が走って、費用と本文の追記による次の欠陥を生む。
+scope:
+  roles: [implement]
+  paths: [CHANGELOG.md, changelog.d/]
+confidence: hypothesis
+evidence:
+  - case: C-0001
+  - pr: 546
+  - event: "case.analyzed:113682"
+status: active
+verified_at: 2026-11-03
+review_by: 2026-12-03
+confidentiality: product
+invalidate_when:
+  - "利用者に見える変更の記録が CHANGELOG.md の同じ場所への直接の追記に戻った"
+  - "changelog.d/ の断片方式にしたあとも、CHANGELOG だけの衝突が続いている"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: config
+      what: >-
+        CHANGELOG を PR ごとの断片（changelog.d/<Issue 番号>.md）にし、取りまとめを別の工程にした
+        （Engine ADR 0027、core-gates/changelog_compile.py、このリポジトリの changelog.d/README.md と CLAUDE.md）。
+        この事例のあとに入ったもので、効き目（CHANGELOG の衝突が減ったか）はまだ確かめていない
+    - kind: ci_check
+      what: >-
+        PR の差分（merge-base から head）が CHANGELOG.md の [Unreleased] を直接変えていたら落とす検査
+        （tools/changelog-check/check.mjs）。断片を足していても直接の書き換えは落とす。取りまとめ（core-gates/changelog_compile.py。
+        足した行がすべて、その PR で消した断片の行か種類の見出し）と、版の切り出し（消した行がすべて版の項に移った）だけを通す。
+        PR ごとに走らせるワークフローは建設者が足す（ワーカーは .github/workflows/ を変えられない）
+      issue: 827
+      at: 2026-11-03
+      decided_by: committee:D-0001
+decided_by: committee:D-0001

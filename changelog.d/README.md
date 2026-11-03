@@ -19,3 +19,4 @@
 
 - 工場が、断片が 10 件たまったときと、出荷の列車（17 時）の前に、`factory:changelog` の Issue を起こし、断片を `CHANGELOG.md` に移す PR を作る。移した断片は消える
 - 取りまとめの PR だけは `CHANGELOG.md` を書き換える
+- `CHANGELOG.md` の `[Unreleased]` を直接書き換えた PR は検査（`tools/changelog-check/`）で落ちる。通るのは取りまとめ（消した断片の行を移しただけ）と版の切り出しだけ
