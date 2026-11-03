@@ -65,7 +65,7 @@ export function headquartersApi(client: ApiClient) {
       filter: { sport?: Schemas["Sport"]; acceptance_status?: Schemas["CoachAcceptanceStatus"]; q?: string } = {},
     ) =>
       call(() => client.GET("/coaches/incomplete-profiles", { params: { query: filter } })),
-    listLowRatedLessonReviews: (filter: { handled?: boolean; student_id?: string } = {}) =>
+    listLowRatedLessonReviews: (filter: { handled?: boolean; from?: string; to?: string; student_id?: string } = {}) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
     markLowRatedLessonReviewHandled: (reviewId: string) =>
       call(() =>
