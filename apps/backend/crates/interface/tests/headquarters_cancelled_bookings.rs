@@ -1,8 +1,8 @@
 //! `GET /bookings/cancelled`（admin-web の `listCancelledBookings`。本部が見るキャンセルされた予約の一覧）の統合テスト。
 //! レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、キャンセルした日付（日本時間）で
 //! 絞ってキャンセルの新しい順に返すこと（枠の開始の日付は問わない）、キャンセルした人が載ること、日付を省いたときは今日までの
-//! 7 日であること、期間の違反と日付でない値が 422 であること、同じ階層の `GET /bookings/{booking_id}` と並べても固定の
-//! パスが当たることを確かめる。期間の規則の境界は domain の `BookingPeriod`、並べ方の細部はユースケース
+//! 7 日であること、コーチ・生徒で絞れること、期間の違反と日付でない値・UUID でない ID が 422 であること、同じ階層の
+//! `GET /bookings/{booking_id}` と並べても固定のパスが当たることを確かめる。期間の規則の境界は domain の `BookingPeriod`、並べ方の細部はユースケース
 //! `ListCancelledBookings` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -378,6 +378,65 @@ async fn coach_id_narrows_to_the_coach_keeping_the_days_and_the_order() {
 }
 
 #[tokio::test]
+async fn student_id_narrows_to_the_student_combined_with_the_days_and_the_coach() {
+    let admin = support::Contract::load("admin-web");
+    let (bookings, made) = bookings().await;
+    let app = app_at(nov1(10 * DAY), bookings).await;
+    let days = "from=2026-10-31&to=2026-11-08";
+    let aoki = "00000000-0000-0000-0000-000000000003";
+
+    for (query, expected) in [
+        // あおき（3）の予約。期間とキャンセルの新しい順は絞らないときと同じ
+        (format!("student_id={aoki}"), vec![4, 5, 3, 1, 0]),
+        // アカウントのない生徒（4）でも予約した生徒の ID で絞る
+        (
+            "student_id=00000000-0000-0000-0000-000000000004".to_string(),
+            vec![2],
+        ),
+        // コーチと組み合わせると両方に当てはまる予約だけ（あおきが、いとう（43）の枠を）
+        (
+            format!("student_id={aoki}&coach_id=00000000-0000-0000-0000-00000000002b"),
+            vec![5],
+        ),
+        // 生徒でない ID（コーチのたなか）・ない ID は 404 にせず空の配列
+        (
+            "student_id=00000000-0000-0000-0000-00000000002a".to_string(),
+            vec![],
+        ),
+        (
+            "student_id=00000000-0000-0000-0000-0000000003e7".to_string(),
+            vec![],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{days}&{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(
+            (&body["from"], &body["to"]),
+            (&json!("2026-10-31"), &json!("2026-11-08"))
+        );
+        assert_eq!(booking_ids(&body), ids(&made, &expected), "{query}: {body}");
+    }
+
+    // 期間を省いても期間の規則は同じ（今日までの 7 日）
+    let (status, body) = get(&app, &format!("{PATH}?student_id={aoki}"), HEADQUARTERS).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-11-05"), &json!("2026-11-11"))
+    );
+    assert_eq!(booking_ids(&body), ids(&made, &[4, 5]));
+    assert!(
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["student_id"] == aoki),
+        "{body}"
+    );
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_cancelled_bookings() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -413,6 +472,9 @@ async fn invalid_days_are_422() {
         // coach_id の検証は listBookings と同じ
         ("?coach_id=42", "coach_id が UUID でない"),
         ("?coach_id=", "coach_id が UUID でない"),
+        // student_id の検証も listBookings と同じ
+        ("?student_id=3", "student_id が UUID でない"),
+        ("?student_id=", "student_id が UUID でない"),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
