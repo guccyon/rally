@@ -1273,8 +1273,17 @@ export interface paths {
          *       生徒も載る（`getStudentActivity` がキャンセル済みの予約も生徒の予約として `cancelled_booking_count` に数え、
          *       `last_booked_at` も状態を問わないのに揃える。実装は backend の domain `CoachBookedStudents` の 1 か所）。
          *       `coach_id` が UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は 404 にせず `students` が空の配列
-         *     - `q`・`sport`・`not_booked_since`・`coach_id` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
-         *       どれも付けなければ今までどおりすべての生徒
+         *     - 返事を待っているメッセージのある生徒で絞る（任意）: `has_unanswered=true` を付ければ、`listUnansweredMessageThreads` に
+         *       既定の条件（`older_than_hours` を省いた既定の 24 時間・`coach_id` なし。担当コーチを問わない）とその生徒の `student_id`
+         *       だけを付けたときに載るスレッドが 1 件以上ある生徒、つまり `getStudentActivity` の `unanswered_message_thread_count` が
+         *       1 以上の生徒だけを返す。数え方は `getStudentActivity` の `unanswered_message_thread_count` と同じ 1 か所（何を発言と数えるか・
+         *       待ち始め・境界（ちょうど 24 時間を含む）・照会した時刻（サーバーの現在時刻）から数えることは
+         *       `listUnansweredMessageThreads` の説明のとおり。実装は backend の domain `UnansweredThreadCriteria` の既定で、数は
+         *       `StudentUnansweredMessageThreadCount`、絞り込みの判定は `UnansweredStudentFilter`）。付けないとき・`false` は絞らない。
+         *       `true` / `false` でなければ 422 `validation_failed`。スレッドの数や ID は返さない（中身は `listUnansweredMessageThreads`、
+         *       数は `getStudentActivity` で見る）
+         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered` は組み合わせられ、付けたものをすべて満たす生徒だけを返す
+         *       （並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
          *       足す）。生徒がいなければ `students` は空の配列
@@ -4664,6 +4673,12 @@ export interface operations {
                  *     付けなければコーチで絞らない。UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は空の一覧
                  */
                 coach_id?: string;
+                /**
+                 * @description `true` なら `listUnansweredMessageThreads` に既定の条件とその生徒の `student_id` だけを付けたときに載るスレッドが
+                 *     1 件以上ある（`getStudentActivity` の `unanswered_message_thread_count` が 1 以上の）生徒だけを返す（付けないとき・
+                 *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_unanswered?: boolean;
             };
             header?: never;
             path?: never;
