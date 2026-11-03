@@ -7,7 +7,7 @@ statement: >-
 scope:
   roles: [implement, body_fix, judge]
 confidence: hypothesis
-status: draft
+status: active
 verified_at: 2026-11-03
 review_by: 2026-12-03
 confidentiality: product
@@ -19,3 +19,4 @@ evidence:
 related: [K-0001]
 invalidate_when:
   - "同じ PR の本文を書き換えるジョブを PR ごとに順に並べる決まりがラインに入った"
+decided_by: committee:D-0001
