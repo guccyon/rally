@@ -11,6 +11,7 @@
 //! 本部が取り下げられ（[`AnnouncementWithdrawal`]）、取り下げたお知らせは生徒のお知らせの一覧に出さない。
 //! 本部は生徒 1 人が受け取ったお知らせ（[`ReceivedAnnouncement`]。既読と取り下げ）を、問い合わせで確かめられる。
 //! 本部は送る前のお知らせを下書き（[`AnnouncementDraft`]）として残し、あとで直してから送れる。下書きは生徒に届かない。
+//! 本部が下書きを題で探すときの検索語は [`AnnouncementTitleQuery`]。
 
 mod announcement;
 mod announcement_body;
@@ -18,6 +19,7 @@ mod announcement_draft;
 mod announcement_draft_id;
 mod announcement_id;
 mod announcement_title;
+mod announcement_title_query;
 mod announcement_withdrawal;
 #[allow(clippy::module_inception)]
 mod notification;
@@ -34,6 +36,7 @@ pub use announcement_draft::AnnouncementDraft;
 pub use announcement_draft_id::AnnouncementDraftId;
 pub use announcement_id::AnnouncementId;
 pub use announcement_title::AnnouncementTitle;
+pub use announcement_title_query::AnnouncementTitleQuery;
 pub use announcement_withdrawal::AnnouncementWithdrawal;
 pub use notification::Notification;
 pub use notification_error::NotificationError;

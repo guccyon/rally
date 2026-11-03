@@ -13,7 +13,9 @@ use crate::{Unavailable, clock::Clock};
 ///
 /// 期間の始まり（domain の [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み、低い評価を domain の
 /// [`LowRatedReviewCriteria::select`] で選んで並べる（しきい値と期間は domain だけ）。本部の対応済みかを指定されたら、
-/// 対応済みの印（domain の [`domain::review::LowRatedReviewHandling`]）の有無がそれと同じ評価だけを残す。スポーツを指定されたら、評価した
+/// 対応済みの印（domain の [`domain::review::LowRatedReviewHandling`]）の有無がそれと同じ評価だけを残す。コーチを指定されたら、
+/// 評価されたコーチがそれと同じ評価だけを残す（いないコーチなら空の一覧。規則は domain の
+/// [`LessonReview::matches_coach`](domain::review::LessonReview::matches_coach)）。スポーツを指定されたら、評価した
 /// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
 /// （スポーツが引けない評価は残さない）。各評価には、評価した完了した
 /// レッスンの元が持つレッスンメニューの写し（[`ReviewedLessonMenuLookup`]）と、コーチ・生徒の表示名
@@ -56,11 +58,13 @@ where
     }
 
     /// `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
-    /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。
+    /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。`coach_id` があれば、
+    /// そのコーチが評価された評価だけ。なければコーチを問わない。
     pub async fn execute(
         &self,
         sport: Option<Sport>,
         handled: Option<bool>,
+        coach_id: Option<AccountId>,
     ) -> Result<LowRatedReviewList, Unavailable> {
         let now = self.clock.now();
         let submitted = self
@@ -68,6 +72,7 @@ where
             .find_submitted_since(LowRatedReviewCriteria::since(now))
             .await?;
         let mut reviews = LowRatedReviewCriteria::select(submitted, now);
+        reviews.retain(|review| review.matches_coach(coach_id));
         if let Some(handled) = handled {
             reviews.retain(|review| review.handling().is_some() == handled);
         }
@@ -281,7 +286,7 @@ mod tests {
             review(5, OTHER_COACH, 2, now() - 30 * DAY),
         ]);
 
-        let list = use_case.execute(None, None).await.unwrap();
+        let list = use_case.execute(None, None, None).await.unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
         assert_eq!(ids, [2, 1, 5], "コーチ・スポーツを問わず、新しい順");
         assert!(
@@ -317,7 +322,7 @@ mod tests {
     async fn no_low_reviews_is_an_empty_list_without_asking_names() {
         let use_case = use_case([review(1, COACH, 5, now())]);
 
-        let list = use_case.execute(None, None).await.unwrap();
+        let list = use_case.execute(None, None, None).await.unwrap();
         assert!(list.reviews.is_empty());
         assert!(list.lesson_menus.is_empty());
         assert!(list.coach_display_names.is_empty());
@@ -338,7 +343,10 @@ mod tests {
             review(6, COACH, 1, now() - 2 * DAY),
         ]);
 
-        let list = use_case.execute(Some(Sport::Tennis), None).await.unwrap();
+        let list = use_case
+            .execute(Some(Sport::Tennis), None, None)
+            .await
+            .unwrap();
         let ids: Vec<u128> = list.reviews.iter().map(|r| r.id().as_u128()).collect();
         assert_eq!(ids, [1, 5], "テニスのレッスンの評価だけを、新しい順");
         assert_eq!(
@@ -359,7 +367,10 @@ mod tests {
             [BTreeSet::from([COACH, OTHER_COACH])]
         );
 
-        let list = use_case.execute(Some(Sport::Golf), None).await.unwrap();
+        let list = use_case
+            .execute(Some(Sport::Golf), None, None)
+            .await
+            .unwrap();
         assert!(list.reviews.is_empty(), "そのスポーツの評価がなければ空");
     }
 
@@ -383,29 +394,29 @@ mod tests {
             list.reviews.iter().map(|r| r.id().as_u128()).collect()
         };
         assert_eq!(
-            ids(use_case.execute(None, Some(false)).await.unwrap()),
+            ids(use_case.execute(None, Some(false), None).await.unwrap()),
             [2, 5],
             "未対応だけを、新しい順"
         );
         assert_eq!(
-            ids(use_case.execute(None, Some(true)).await.unwrap()),
+            ids(use_case.execute(None, Some(true), None).await.unwrap()),
             [1],
             "対応済みだけ"
         );
         assert_eq!(
-            ids(use_case.execute(None, None).await.unwrap()),
+            ids(use_case.execute(None, None, None).await.unwrap()),
             [2, 1, 5],
             "指定しなければ印を問わない"
         );
         // スポーツと合わせて絞れる（レッスン 1・5 はテニス、2 は水泳）
         assert_eq!(
             ids(use_case
-                .execute(Some(Sport::Tennis), Some(false))
+                .execute(Some(Sport::Tennis), Some(false), None)
                 .await
                 .unwrap()),
             [5]
         );
-        let list = use_case.execute(None, Some(true)).await.unwrap();
+        let list = use_case.execute(None, Some(true), None).await.unwrap();
         assert_eq!(
             list.student_display_names
                 .keys()
@@ -414,5 +425,81 @@ mod tests {
             [AccountId::from_u128(101)],
             "絞ったあとの評価の生徒だけ"
         );
+    }
+
+    #[tokio::test]
+    async fn coach_id_keeps_only_low_reviews_of_the_coach_combined_with_the_other_filters() {
+        let handled = |review: LessonReview| {
+            review.with_handling(Some(LowRatedReviewHandling::new(
+                AccountId::from_u128(9),
+                now() - DAY,
+            )))
+        };
+        let use_case = use_case([
+            // レッスン 1・5 はテニス、2 は水泳、6 はスポーツが引けない
+            handled(review(1, COACH, 1, now() - 3 * DAY)),
+            review(2, COACH, 2, now() - DAY),
+            review(5, COACH, 2, now() - 4 * DAY),
+            review(6, OTHER_COACH, 1, now() - 2 * DAY),
+            // ★3 と 30 日より前は、コーチで絞っても載らない
+            review(3, COACH, 3, now() - DAY),
+            review(4, COACH, 1, now() - 31 * DAY),
+        ]);
+
+        let ids = |list: LowRatedReviewList| -> Vec<u128> {
+            list.reviews.iter().map(|r| r.id().as_u128()).collect()
+        };
+        let list = use_case.execute(None, None, Some(COACH)).await.unwrap();
+        assert_eq!(
+            use_case.coach_names.asked.lock().unwrap().clone(),
+            [BTreeSet::from([COACH])],
+            "絞ったあとのコーチだけを問い合わせる"
+        );
+        assert_eq!(ids(list), [2, 1, 5], "そのコーチの評価だけを、新しい順");
+        assert_eq!(
+            ids(use_case
+                .execute(None, None, Some(OTHER_COACH))
+                .await
+                .unwrap()),
+            [6]
+        );
+        // 競技・対応済みと合わせて絞れる
+        assert_eq!(
+            ids(use_case
+                .execute(Some(Sport::Tennis), None, Some(COACH))
+                .await
+                .unwrap()),
+            [1, 5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(Some(Sport::Tennis), Some(false), Some(COACH))
+                .await
+                .unwrap()),
+            [5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(None, Some(true), Some(OTHER_COACH))
+                .await
+                .unwrap()),
+            [] as [u128; 0]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(Some(Sport::Tennis), None, Some(OTHER_COACH))
+                .await
+                .unwrap()),
+            [] as [u128; 0],
+            "スポーツが引けないレッスンの評価はコーチが合っても載らない"
+        );
+
+        // ない ID・コーチでない ID（生徒）は空の一覧で、表示名を問い合わせない
+        let asked = use_case.coach_names.asked.lock().unwrap().len();
+        for coach_id in [AccountId::from_u128(99), AccountId::from_u128(101)] {
+            let list = use_case.execute(None, None, Some(coach_id)).await.unwrap();
+            assert!(list.reviews.is_empty(), "{coach_id:?}");
+        }
+        assert_eq!(use_case.coach_names.asked.lock().unwrap().len(), asked);
     }
 }

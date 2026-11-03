@@ -22,7 +22,10 @@ use application::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{
+        Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{post, put},
@@ -30,7 +33,9 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::Role,
-    notification::{AnnouncementDraft, AnnouncementDraftId, NotificationError},
+    notification::{
+        AnnouncementDraft, AnnouncementDraftId, AnnouncementTitleQuery, NotificationError,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +65,12 @@ pub struct AnnouncementDraftRequest {
     title: String,
     body: String,
     sport: Option<String>,
+}
+
+/// admin-web の `listAnnouncementDrafts` のクエリ。
+#[derive(Deserialize)]
+pub struct ListAnnouncementDraftsParams {
+    q: Option<String>,
 }
 
 /// admin-web の `AnnouncementDraft`。
@@ -139,9 +150,11 @@ where
 }
 
 /// `GET /announcement-drafts`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。下書きを最後に
-/// 直した時刻の新しい順で返す（どの本部のアカウントが作ったかで絞らない）。
+/// 直した時刻の新しい順で返す（どの本部のアカウントが作ったかで絞らない）。`q` があれば題に部分一致する下書きだけで、
+/// 一致のしかたは `listLessonMenus` の `q` と同じ（[`AnnouncementTitleQuery`]）。長すぎる `q` は 422。
 pub async fn list_announcement_drafts<D, A, L, N, S, P, C>(
     State(state): State<Shared<D, A, L, N, S, P, C>>,
+    params: Result<Query<ListAnnouncementDraftsParams>, QueryRejection>,
 ) -> Result<Json<AnnouncementDraftListBody>, ApiError>
 where
     D: AnnouncementDraftRepository,
@@ -152,9 +165,18 @@ where
     P: PushSender,
     C: Clock,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let title = params
+        .q
+        .as_deref()
+        .map(AnnouncementTitleQuery::new)
+        .transpose()
+        .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
+        .flatten();
     let drafts = state
         .list_announcement_drafts
-        .execute()
+        .execute(title.as_ref())
         .await
         .map_err(ApiError::internal)?;
     draft_list_body(&drafts).map(Json)

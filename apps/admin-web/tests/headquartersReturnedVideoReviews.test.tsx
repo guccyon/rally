@@ -12,6 +12,7 @@ import {
   ReturnedVideoReviewsHome,
   returnedVideoReviewFilterFrom,
   returnedVideoReviewsPath,
+  studentReturnedVideoReviewsPath,
 } from "@/components/headquarters/ReturnedVideoReviewsHome";
 import { SPORT_LABELS, formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
@@ -30,13 +31,14 @@ beforeEach(() => {
 
 const COACH_1 = "22222222-2222-4222-8222-000000000001";
 const COACH_2 = "22222222-2222-4222-8222-000000000002";
+const STUDENT_1 = "11111111-1111-4111-8111-000000000001";
 
 // API が返す並び（返した時刻の新しい順）。画面はこの順と値のまま出す。
 const REVIEWS: Schemas["ReturnedVideoReview"][] = [
   {
     video_id: "55555555-5555-4555-8555-000000000001",
     sport: "golf",
-    student_id: "11111111-1111-4111-8111-000000000001",
+    student_id: STUDENT_1,
     student_display_name: "佐藤 太郎",
     coach_id: COACH_1,
     coach_display_name: "高橋 コーチ",
@@ -202,6 +204,7 @@ describe("本部の返した動画添削", () => {
       period: { from: "2026-10-20", to: "2026-10-26" },
       coachId: COACH_1,
       sport: "golf",
+      studentId: "",
     });
 
     await user.selectOptions(screen.getByLabelText("スポーツ"), "すべて");
@@ -218,7 +221,12 @@ describe("本部の返した動画添削", () => {
     render(
       <ReturnedVideoReviewList
         api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
-        initialFilter={{ period: { from: "2026-10-01", to: "2026-10-31" }, coachId: COACH_2, sport: "tennis" }}
+        initialFilter={{
+          period: { from: "2026-10-01", to: "2026-10-31" },
+          coachId: COACH_2,
+          sport: "tennis",
+          studentId: "",
+        }}
       />,
     );
     await screen.findByRole("table");
@@ -373,12 +381,90 @@ describe("本部の返した動画添削", () => {
   });
 });
 
+describe("本部の返した動画添削（生徒で絞る）", () => {
+  test("生徒で絞って開くと API の student_id に渡し、期間・コーチ・スポーツを変えて読み直しても絞り込みは残る", async () => {
+    const listReturnedVideoReviews = listOf([REVIEWS[0]!]);
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    await screen.findByRole("table");
+    expect(listReturnedVideoReviews).toHaveBeenCalledWith({ student_id: STUDENT_1 });
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+
+    await changePeriod(user, "2026-10-01", "2026-10-31");
+    await user.selectOptions(screen.getByLabelText("コーチ"), "高橋 コーチ");
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listReturnedVideoReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      coach_id: COACH_1,
+      sport: "golf",
+      student_id: STUDENT_1,
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      period: { from: "2026-10-01", to: "2026-10-31" },
+      coachId: COACH_1,
+      sport: "golf",
+      studentId: STUDENT_1,
+    });
+  });
+
+  test("生徒だけで絞って 0 件なら「この期間にこの生徒に返した動画添削はありません」と出す", async () => {
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+      />,
+    );
+
+    expect(await screen.findByText("この期間にこの生徒に返した動画添削はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("生徒とコーチの両方で絞って 0 件なら「この期間に条件に合う返した動画添削はありません」と出す", async () => {
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews: listOf([]), listCoaches: coachesOf() }}
+        initialFilter={{ period: null, coachId: COACH_1, sport: "", studentId: STUDENT_1 }}
+      />,
+    );
+
+    expect(await screen.findByText("この期間に条件に合う返した動画添削はありません")).toBeInTheDocument();
+  });
+
+  test("生徒で絞っているときの 422 は、生徒の選び直しも添えた理由を出す", async () => {
+    const listReturnedVideoReviews = vi.fn<HeadquartersApi["listReturnedVideoReviews"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "student_id must be a UUID",
+    }));
+    render(
+      <ReturnedVideoReviewList
+        api={{ listReturnedVideoReviews, listCoaches: coachesOf() }}
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: "not-a-uuid" }}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "期間・コーチ・生徒のどれかの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。生徒は生徒の一覧から選び直してください。",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
 describe("絞り込みの URL", () => {
   test("期間・コーチ・スポーツを契約のクエリの名前で URL に残し、期間がない・「すべて」の条件は出さない", () => {
-    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "" })).toBe(
+    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "", studentId: "" })).toBe(
       "/headquarters/returned-video-reviews",
     );
-    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "golf" })).toBe(
+    expect(returnedVideoReviewsPath({ period: null, coachId: "", sport: "golf", studentId: "" })).toBe(
       "/headquarters/returned-video-reviews?sport=golf",
     );
     expect(
@@ -386,8 +472,22 @@ describe("絞り込みの URL", () => {
         period: { from: "2026-10-01", to: "2026-10-31" },
         coachId: COACH_1,
         sport: "tennis",
+        studentId: "",
       }),
     ).toBe(`/headquarters/returned-video-reviews?from=2026-10-01&to=2026-10-31&coach_id=${COACH_1}&sport=tennis`);
+    expect(
+      returnedVideoReviewsPath({
+        period: { from: "2026-10-01", to: "2026-10-31" },
+        coachId: COACH_1,
+        sport: "tennis",
+        studentId: STUDENT_1,
+      }),
+    ).toBe(
+      `/headquarters/returned-video-reviews?from=2026-10-01&to=2026-10-31&coach_id=${COACH_1}&sport=tennis&student_id=${STUDENT_1}`,
+    );
+    expect(studentReturnedVideoReviewsPath(STUDENT_1)).toBe(
+      `/headquarters/returned-video-reviews?student_id=${STUDENT_1}`,
+    );
   });
 
   test("URL のクエリから条件を読み、正しくない期間は API の既定に、契約にないスポーツは「すべて」にする", () => {
@@ -395,21 +495,30 @@ describe("絞り込みの URL", () => {
       returnedVideoReviewFilterFrom(
         new URLSearchParams(`from=2026-10-01&to=2026-10-31&coach_id=${COACH_2}&sport=tennis`),
       ),
-    ).toEqual({ period: { from: "2026-10-01", to: "2026-10-31" }, coachId: COACH_2, sport: "tennis" });
+    ).toEqual({ period: { from: "2026-10-01", to: "2026-10-31" }, coachId: COACH_2, sport: "tennis", studentId: "" });
+    expect(returnedVideoReviewFilterFrom(new URLSearchParams(`student_id=${STUDENT_1}&coach_id=${COACH_1}`))).toEqual({
+      period: null,
+      coachId: COACH_1,
+      sport: "",
+      studentId: STUDENT_1,
+    });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams(""))).toEqual({
       period: null,
       coachId: "",
       sport: "",
+      studentId: "",
     });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams("from=2026-10-01&sport=cricket"))).toEqual({
       period: null,
       coachId: "",
       sport: "",
+      studentId: "",
     });
     expect(returnedVideoReviewFilterFrom(new URLSearchParams("from=2026-09-01&to=2026-10-31"))).toEqual({
       period: null,
       coachId: "",
       sport: "",
+      studentId: "",
     });
   });
 });
@@ -478,6 +587,66 @@ describe("画面への配置", () => {
       "/headquarters/returned-video-reviews?from=2026-10-20&to=2026-10-26&sport=golf",
       { scroll: false },
     );
+  });
+
+  test("生徒で絞った画面は一覧の上に生徒の名前と「すべての生徒の記録を見る」を出し、外すリンクは生徒の絞り込みだけを除く", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: true,
+      data: {
+        student_id: STUDENT_1,
+        display_name: "山田 花子",
+        upcoming_bookings: [],
+        recent_lessons: [],
+        cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
+      },
+    }));
+    headquartersApiMock.mockReturnValue({
+      listReturnedVideoReviews: listOf([REVIEWS[0]!]),
+      listCoaches: coachesOf(),
+      getStudentActivity,
+    });
+    const user = userEvent.setup();
+    render(
+      <ReturnedVideoReviewsHome
+        token="mock.headquarters.x"
+        initialFilter={{ period: null, coachId: "", sport: "", studentId: STUDENT_1 }}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: "返した動画添削" });
+    expect(await within(region).findByText("山田 花子")).toBeInTheDocument();
+    expect(within(region).getByText(/^生徒で絞っています:/)).toBeInTheDocument();
+    expect(getStudentActivity).toHaveBeenCalledWith(STUDENT_1);
+    expect(screen.getByRole("link", { name: "すべての生徒の記録を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/returned-video-reviews",
+    );
+    await within(region).findByRole("table", { name: "返した動画添削の一覧" });
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(replace).toHaveBeenCalledWith(
+      `/headquarters/returned-video-reviews?from=2026-10-20&to=2026-10-26&sport=golf&student_id=${STUDENT_1}`,
+      { scroll: false },
+    );
+    expect(screen.getByRole("link", { name: "すべての生徒の記録を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/returned-video-reviews?from=2026-10-20&to=2026-10-26&sport=golf",
+    );
+  });
+
+  test("生徒で絞らない画面には生徒の絞り込みの表示がない", async () => {
+    headquartersApiMock.mockReturnValue({
+      listReturnedVideoReviews: listOf(REVIEWS),
+      listCoaches: coachesOf(),
+    });
+    render(<ReturnedVideoReviewsHome token="mock.headquarters.x" />);
+    await screen.findByRole("table", { name: "返した動画添削の一覧" });
+
+    expect(screen.queryByRole("link", { name: "すべての生徒の記録を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
