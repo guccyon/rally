@@ -1,11 +1,12 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { ResultMessage } from "@/components/ui/ResultMessage";
-import { formatDateTime, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
+import { MAX_PERIOD_DAYS, type Period, periodError } from "@/components/headquarters/bookingPeriod";
+import { formatDateTime, formatDay, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import { addMinutesToLocal, selectableMenus } from "./slotLessonMenu";
 import { WithdrawSlotAction } from "./WithdrawSlotAction";
@@ -33,10 +34,29 @@ type MenuState =
 const MENU_CHANGED =
   "選んだレッスンメニューは、この枠に結びつけられませんでした。メニューが非公開になったか、スポーツや時間が変わった可能性があります。メニューを読み込み直したので、選び直してください。";
 
+// 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
+const VALIDATION_FAILED = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
+
+const NO_PERIOD: Period = { from: "", to: "" };
+
 type ListState =
   | { kind: "loading" }
-  | { kind: "loaded"; upcoming: CoachSlot[]; past: CoachSlot[]; fetchedAt: number }
+  | {
+      kind: "loaded";
+      upcoming: CoachSlot[];
+      past: CoachSlot[];
+      fetchedAt: number;
+      /** 読んだ期間（枠の開始の日付。日本時間）。null は期間で絞らずに読んだとき。 */
+      period: Period | null;
+    }
   | { kind: "failed"; message: string };
+
+/** 枠が 0 件のときの文言。期間で絞っていれば、その期間を言う。 */
+function emptyMessageOf(period: Period | null): string {
+  return period === null
+    ? "まだ枠を公開していません。"
+    : `${formatDay(period.from)} 〜 ${formatDay(period.to)}に始まる枠はありません。`;
+}
 
 /**
  * API の並び（開始時刻の古い順）を、終わっていない枠（終了時刻が今より後）と終わった枠に分ける。
@@ -119,6 +139,9 @@ function SlotTable({
  * これからの枠のうち予約の入っていない公開中の枠は、行の中で確かめてから取り下げられる（withdrawMySlot）。
  * 枠には自分のレッスンメニュー（listMyLessonMenus）のうち、公開中の同期の、枠と同じスポーツのものを結びつけられる。
  * メニューを選んだら終了は開始＋メニューの時間で決まり、手では変えられない。
+ * 一覧は「開始日」「終了日」で枠の開始の日付（日本時間）の期間に絞れる（API の `from`・`to`）。本部の画面の期間の欄と同じく、
+ * 送る前に確かめて「この期間で見る」で読み直し、「期間を外す」ですべての枠に戻す。開いたときは今までどおり期間を付けずに読み、
+ * 公開・取り下げのあとの取り直しは確定した期間で読む。
  */
 export function PublishSlotForm({
   api,
@@ -135,13 +158,33 @@ export function PublishSlotForm({
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // 期間の欄の値（「この期間で見る」を押すまでは一覧に効かない）と、確定した期間（公開・取り下げのあとの取り直しにも使う）。
+  const [draftPeriod, setDraftPeriod] = useState<Period>(NO_PERIOD);
+  const [periodDraftError, setPeriodDraftError] = useState<string | null>(null);
+  const [appliedPeriod, setAppliedPeriod] = useState<Period | null>(null);
+  const appliedPeriodRef = useRef<Period | null>(null);
+  // 期間を続けて変えたときに、前の期間の遅れて返った結果で上書きしないための番号。
+  const latestRequest = useRef(0);
 
-  const fetchSlots = useCallback(async (): Promise<ListState> => {
-    const response = await api.listMyCoachSlots();
-    if (!response.ok) return { kind: "failed", message: response.message };
-    const now = Date.now();
-    return { kind: "loaded", ...splitSlots(response.data.slots, now), fetchedAt: now };
-  }, [api]);
+  const fetchSlots = useCallback(
+    async (period: Period | null): Promise<ListState> => {
+      const response = await api.listMyCoachSlots(period ?? {});
+      if (!response.ok) {
+        const message = period !== null && response.code === "validation_failed" ? VALIDATION_FAILED : response.message;
+        return { kind: "failed", message };
+      }
+      const now = Date.now();
+      return { kind: "loaded", ...splitSlots(response.data.slots, now), fetchedAt: now, period };
+    },
+    [api],
+  );
+
+  /** 確定した期間で一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
+  const reloadSlots = useCallback(async () => {
+    const request = ++latestRequest.current;
+    const next = await fetchSlots(appliedPeriodRef.current);
+    if (request === latestRequest.current) setList(next);
+  }, [fetchSlots]);
 
   const fetchMenus = useCallback(async (): Promise<MenuState> => {
     const response = await api.listMyLessonMenus();
@@ -152,8 +195,9 @@ export function PublishSlotForm({
   // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
-    void fetchSlots().then((next) => {
-      if (active) setList(next);
+    const request = ++latestRequest.current;
+    void fetchSlots(null).then((next) => {
+      if (active && request === latestRequest.current) setList(next);
     });
     void fetchMenus().then((next) => {
       if (active) setMenus(next);
@@ -206,7 +250,7 @@ export function PublishSlotForm({
     });
     if (response.ok) {
       setResult({ ok: true, message: "枠を公開しました。" });
-      setList(await fetchSlots());
+      await reloadSlots();
     } else if (selectedMenu && response.code === "validation_failed") {
       setResult({ ok: false, message: MENU_CHANGED });
       const next = await fetchMenus();
@@ -244,7 +288,28 @@ export function PublishSlotForm({
     }
     // 409（予約が入った・始まった・すでに閉じた）などはサーバーの ErrorCode の文言を出し、一覧を今の状態に取り直す。
     setResult(response);
-    if (response.code !== undefined) setList(await fetchSlots());
+    if (response.code !== undefined) await reloadSlots();
+  }
+
+  async function applyPeriod(period: Period | null) {
+    appliedPeriodRef.current = period;
+    setAppliedPeriod(period);
+    setList({ kind: "loading" });
+    await reloadSlots();
+  }
+
+  async function submitPeriod(event: FormEvent) {
+    event.preventDefault();
+    const error = periodError(draftPeriod);
+    setPeriodDraftError(error);
+    if (error !== null) return;
+    await applyPeriod(draftPeriod);
+  }
+
+  async function clearPeriod() {
+    setDraftPeriod(NO_PERIOD);
+    setPeriodDraftError(null);
+    await applyPeriod(null);
   }
 
   return (
@@ -334,10 +399,42 @@ export function PublishSlotForm({
               : "レッスンメニューを選ぶと、終了はメニューの時間で決まります。")}
       </p>
       <ResultMessage result={result} />
+      <p className="text-sm">
+        期間を選ぶと、一覧をその期間（日本時間）に始まる枠だけにします（期間は {MAX_PERIOD_DAYS} 日まで）。
+      </p>
+      <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submitPeriod(event)}>
+        <label className="block">
+          開始日
+          <input
+            type="date"
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={draftPeriod.from}
+            onChange={(event) => setDraftPeriod({ ...draftPeriod, from: event.target.value })}
+          />
+        </label>
+        <label className="block">
+          終了日
+          <input
+            type="date"
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={draftPeriod.to}
+            onChange={(event) => setDraftPeriod({ ...draftPeriod, to: event.target.value })}
+          />
+        </label>
+        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+          この期間で見る
+        </button>
+        {appliedPeriod !== null && (
+          <button type="button" className="rounded-pill border px-4 py-1" onClick={() => void clearPeriod()}>
+            期間を外す
+          </button>
+        )}
+      </form>
+      {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}
       {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
       {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
-        <p className="text-sm">まだ枠を公開していません。</p>
+        <p className="text-sm">{emptyMessageOf(list.period)}</p>
       )}
       {list.kind === "loaded" && (list.upcoming.length > 0 || list.past.length > 0) && (
         <>
