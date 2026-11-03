@@ -35,8 +35,17 @@ type State =
 
 type DraftState =
   | { kind: "loading" }
-  | { kind: "loaded"; drafts: AnnouncementDraft[]; q: string }
+  | { kind: "loaded"; drafts: AnnouncementDraft[]; filter: DraftFilter }
   | { kind: "failed"; message: string };
+
+/**
+ * 下書きの一覧を読む条件（確定した題の語・スポーツ・最後に直した期間）。語とスポーツは空なら、期間は null なら絞らない
+ * （契約で `q`・`sport`・`from`・`to` を省いたときと同じく、すべての下書き）。
+ */
+type DraftFilter = { q: string; sport: Sport | ""; period: Period | null };
+
+const NO_DRAFT_FILTER: DraftFilter = { q: "", sport: "", period: null };
+const NO_PERIOD: Period = { from: "", to: "" };
 
 /** フォームに渡す中身。`key` を変えるとフォームを作り直す（下書きを開く・新しく書く）。 */
 type FormSeed = { key: number; initial: AnnouncementInput; reviewOnOpen: boolean };
@@ -62,6 +71,29 @@ type SentFilter = { period: Period; q: string; sport: Sport | "" };
 function emptyMessageOf({ q, sport }: SentFilter): string {
   const sent = sport === "" ? "この期間に送った" : `この期間に${SPORT_LABELS[sport]}の生徒に向けて送った`;
   return q === "" ? `${sent}お知らせはありません` : `${sent}、題に「${q}」を含むお知らせはありません`;
+}
+
+/** 下書きを絞っているか（絞っている間に保存した下書きが載るかは画面で決めず、今の条件で読み直す）。 */
+function isDraftFiltered({ q, sport, period }: DraftFilter): boolean {
+  return q !== "" || sport !== "" || period !== null;
+}
+
+/** 下書きの一覧（listAnnouncementDrafts）に付けるクエリ。絞らない条件は付けない。 */
+function draftQueryOf({ q, sport, period }: DraftFilter) {
+  return { ...(period ?? {}), ...(q === "" ? {} : { q }), ...(sport === "" ? {} : { sport }) };
+}
+
+/**
+ * 下書きが 0 件のときの文言。絞っていなければ「保存した下書きはありません」、絞っていれば選んだ条件（最後に直した期間・
+ * スポーツ・題の語）をすべて言う。スポーツで絞ったときは生徒全員に向けた下書きは載らない（契約）ので「〜の生徒に向けた」と言う。
+ */
+function draftEmptyMessageOf({ q, sport, period }: DraftFilter): string {
+  const conditions = [
+    ...(period === null ? [] : [`${formatDay(period.from)} 〜 ${formatDay(period.to)}に最後に直した`]),
+    ...(sport === "" ? [] : [`${SPORT_LABELS[sport]}の生徒に向けた`]),
+    ...(q === "" ? [] : [`題に「${q}」を含む`]),
+  ];
+  return conditions.length === 0 ? "保存した下書きはありません" : `${conditions.join("、")}下書きはありません`;
 }
 
 /** 送った日付（日本時間）が期間に入るか。期間の外で送ったお知らせは、今の一覧に足さない。 */
@@ -102,17 +134,26 @@ export type AnnouncementsApi = Pick<
  *
  * 下書きの一覧の上の「題で探す」は、ほかの一覧の名前の検索と同じく「探す」（または Enter）で確定し、前後の空白を除いた語を
  * listAnnouncementDrafts の `q` に渡して読み直す（空なら絞らない）。上限を超える語は送らずに理由を出す。
- * 題で絞っている間に保存した下書きは、題が語に合うかを画面で決めず（一致のしかたは契約が正本）、今の語で一覧を読み直す。
+ * 下書きの「スポーツ」と期間の欄は送ったお知らせの一覧と同じ部品・同じ確かめで、スポーツは選んだらすぐ `sport` に、期間は
+ * 「この期間で見る」で最後に直した期間として `from`・`to` に渡し、確定したほかの条件と組み合わせて読み直す。下書きは期間を
+ * 付けずに開き（今までどおりすべての下書き）、「期間を外す」ですべての期間に戻す。
+ * 絞っている間に保存した下書きは、条件に合うかを画面で決めず（一致のしかたは契約が正本）、今の条件で一覧を読み直す。
  */
 export function Announcements({ api }: { api: AnnouncementsApi }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [drafts, setDrafts] = useState<DraftState>({ kind: "loading" });
   const [draftResult, setDraftResult] = useState<{ ok: boolean; message: string } | null>(null);
-  // 下書きの題の検索欄の入力中の値と、今の下書きの一覧を読んだ語（確定した語。空なら絞らない）。
+  // 下書きの題の検索欄の入力中の値と期間の欄の値（どちらも確定するまでは一覧に効かない）。
   const [draftQueryDraft, setDraftQueryDraft] = useState("");
   const [draftQueryError, setDraftQueryError] = useState<string | null>(null);
-  const appliedDraftQuery = useRef("");
+  const [draftListPeriod, setDraftListPeriod] = useState<Period>(NO_PERIOD);
+  const [draftPeriodError, setDraftPeriodError] = useState<string | null>(null);
+  // 下書きを絞るスポーツ（選んだらすぐ読み直す）。
+  const [draftSport, setDraftSport] = useState<Sport | "">("");
+  // 今の下書きの一覧を読んだ条件（確定した語・スポーツ・期間）。
+  const appliedDraftFilter = useRef<DraftFilter>(NO_DRAFT_FILTER);
+  const [draftPeriodApplied, setDraftPeriodApplied] = useState(false);
   // 語を続けて変えたときに、前の語の遅れて返った結果で上書きしないための番号。
   const latestDraftRequest = useRef(0);
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -157,23 +198,25 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   );
 
   const fetchDrafts = useCallback(
-    async (q: string): Promise<DraftState> => {
-      const response = await api.listAnnouncementDrafts(q === "" ? {} : { q });
-      if (response.ok) return { kind: "loaded", drafts: response.data.announcement_drafts, q };
-      // 検索欄からは送る前に確かめているので、422 はふつう来ない。来たら直す場所（語の長さ）を添える。
+    async (filter: DraftFilter): Promise<DraftState> => {
+      const response = await api.listAnnouncementDrafts(draftQueryOf(filter));
+      if (response.ok) return { kind: "loaded", drafts: response.data.announcement_drafts, filter };
+      if (response.code !== "validation_failed") return { kind: "failed", message: response.message };
+      // 語も期間も送る前に確かめているので、422 はふつう来ない。来たら直す場所（期間で絞っていれば期間、語の長さ）を添える。
+      if (filter.period === null) return { kind: "failed", message: `${response.message}${DRAFT_QUERY_TOO_LONG}` };
       return {
         kind: "failed",
-        message: response.code === "validation_failed" ? `${response.message}${DRAFT_QUERY_TOO_LONG}` : response.message,
+        message: filter.q === "" ? VALIDATION_FAILED : `${VALIDATION_FAILED}${DRAFT_QUERY_TOO_LONG}`,
       };
     },
     [api],
   );
 
-  /** 語 q で下書きの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
+  /** 条件 filter で下書きの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
   const reloadDrafts = useCallback(
-    async (q: string) => {
+    async (filter: DraftFilter) => {
       const request = ++latestDraftRequest.current;
-      const next = await fetchDrafts(q);
+      const next = await fetchDrafts(filter);
       if (request === latestDraftRequest.current) setDrafts(next);
     },
     [fetchDrafts],
@@ -190,7 +233,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
       if (active && request === latestRequest.current) setState(next);
     });
     const draftRequest = ++latestDraftRequest.current;
-    void fetchDrafts(appliedDraftQuery.current).then((next) => {
+    void fetchDrafts(appliedDraftFilter.current).then((next) => {
       if (active && draftRequest === latestDraftRequest.current) setDrafts(next);
     });
     return () => {
@@ -272,6 +315,16 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     await reload({ ...appliedFilter(), sport: next });
   }
 
+  /** 確定した下書きの条件の一部を変えて、下書きの一覧を読み直す。 */
+  async function applyDraftFilter(change: Partial<DraftFilter>) {
+    const next = { ...appliedDraftFilter.current, ...change };
+    appliedDraftFilter.current = next;
+    setDraftPeriodApplied(next.period !== null);
+    setDraftResult(null);
+    setDrafts({ kind: "loading" });
+    await reloadDrafts(next);
+  }
+
   async function submitDraftQuery(event: FormEvent) {
     event.preventDefault();
     const query = draftTitleQuery(draftQueryDraft);
@@ -281,19 +334,35 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     }
     setDraftQueryError(null);
     setDraftQueryDraft(query.q);
-    appliedDraftQuery.current = query.q;
-    setDraftResult(null);
-    setDrafts({ kind: "loading" });
-    await reloadDrafts(query.q);
+    await applyDraftFilter({ q: query.q });
+  }
+
+  async function changeDraftSport(next: Sport | "") {
+    setDraftSport(next);
+    await applyDraftFilter({ sport: next });
+  }
+
+  async function submitDraftPeriod(event: FormEvent) {
+    event.preventDefault();
+    const error = periodError(draftListPeriod);
+    setDraftPeriodError(error);
+    if (error !== null) return;
+    await applyDraftFilter({ period: draftListPeriod });
+  }
+
+  async function clearDraftPeriod() {
+    setDraftListPeriod(NO_PERIOD);
+    setDraftPeriodError(null);
+    await applyDraftFilter({ period: null });
   }
 
   /**
-   * 直した（作った）下書きを一覧の先頭に置く（最後に直した時刻の新しい順）。題で絞っているときは、題が語に合うかを
-   * 画面で決めずに今の語で読み直す。
+   * 直した（作った）下書きを一覧の先頭に置く（最後に直した時刻の新しい順）。絞っているときは、条件に合うかを
+   * 画面で決めずに今の条件で読み直す。
    */
   function putFirst(draft: AnnouncementDraft) {
-    if (appliedDraftQuery.current !== "") {
-      void reloadDrafts(appliedDraftQuery.current);
+    if (isDraftFiltered(appliedDraftFilter.current)) {
+      void reloadDrafts(appliedDraftFilter.current);
       return;
     }
     setDrafts((current) =>
@@ -366,8 +435,8 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
       setOpenedId(null);
       return { ok: false, message: DRAFT_GONE };
     }
-    // 題で絞っているときは、送り終わってから一覧を直す（送る前に読み直すと、送った下書きが遅れて一覧に戻りうる）
-    const filtered = appliedDraftQuery.current !== "";
+    // 絞っているときは、送り終わってから一覧を直す（送る前に読み直すと、送った下書きが遅れて一覧に戻りうる）
+    const filtered = isDraftFiltered(appliedDraftFilter.current);
     if (!filtered) putFirst(updated.data);
     const sent = await api.sendAnnouncementDraft(openedId);
     if (sent.ok) {
@@ -383,9 +452,9 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     const id = draft.announcement_draft_id;
     const response = await api.deleteAnnouncementDraft(id);
     if (response.ok) {
-      // 応答は絞らない残りの一覧なので、題で絞っているときは消した行だけを外す
-      if (appliedDraftQuery.current === "") {
-        setDrafts({ kind: "loaded", drafts: response.data.announcement_drafts, q: "" });
+      // 応答は絞らない残りの一覧なので、絞っているときは消した行だけを外す
+      if (!isDraftFiltered(appliedDraftFilter.current)) {
+        setDrafts({ kind: "loaded", drafts: response.data.announcement_drafts, filter: NO_DRAFT_FILTER });
       } else {
         removeDraft(id);
       }
@@ -432,28 +501,76 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
         <p className="mb-3 text-xs text-text-muted">
           下書きは生徒に届きません（お知らせもプッシュ通知も送りません）。「送る」で確かめてから送ったときに初めて届きます。
         </p>
-        <form className="mb-3 flex items-end gap-2" onSubmit={(event) => void submitDraftQuery(event)}>
+        <p className="mb-3 text-sm">
+          スポーツを選ぶと、そのスポーツの生徒に向けた下書きだけを出します（生徒全員に向けた下書きは「すべて」で見られます）。期間を選ぶと、その期間（日本時間）に最後に直した下書きだけを出します（期間は{" "}
+          {MAX_PERIOD_DAYS} 日まで）。
+        </p>
+        <form className="mb-3 flex flex-wrap items-end gap-4" onSubmit={(event) => void submitDraftPeriod(event)}>
           <label className="block">
-            題で探す
+            開始日
             <input
-              type="search"
+              type="date"
               className="mt-1 block rounded-md border px-2 py-1"
-              value={draftQueryDraft}
-              onChange={(event) => setDraftQueryDraft(event.target.value)}
+              value={draftListPeriod.from}
+              onChange={(event) => setDraftListPeriod({ ...draftListPeriod, from: event.target.value })}
+            />
+          </label>
+          <label className="block">
+            終了日
+            <input
+              type="date"
+              className="mt-1 block rounded-md border px-2 py-1"
+              value={draftListPeriod.to}
+              onChange={(event) => setDraftListPeriod({ ...draftListPeriod, to: event.target.value })}
             />
           </label>
           <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
-            探す
+            この期間で見る
           </button>
+          {draftPeriodApplied && (
+            <button type="button" className="rounded-pill border px-4 py-1" onClick={() => void clearDraftPeriod()}>
+              期間を外す
+            </button>
+          )}
         </form>
+        {draftPeriodError !== null && <ResultMessage result={{ ok: false, message: draftPeriodError }} />}
+        <div className="mb-3 flex flex-wrap items-end gap-4">
+          <form className="flex items-end gap-2" onSubmit={(event) => void submitDraftQuery(event)}>
+            <label className="block">
+              題で探す
+              <input
+                type="search"
+                className="mt-1 block rounded-md border px-2 py-1"
+                value={draftQueryDraft}
+                onChange={(event) => setDraftQueryDraft(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+              探す
+            </button>
+          </form>
+          <label className="block">
+            スポーツ
+            <select
+              className="mt-1 block rounded-md border px-2 py-1"
+              value={draftSport}
+              onChange={(event) => void changeDraftSport(event.target.value as Sport | "")}
+            >
+              <option value="">すべて</option>
+              {SPORTS.map((value) => (
+                <option key={value} value={value}>
+                  {SPORT_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {draftQueryError !== null && <ResultMessage result={{ ok: false, message: draftQueryError }} />}
         <ResultMessage result={draftResult} />
         {drafts.kind === "loading" && <p className="text-sm text-text-muted">下書きを読み込み中…</p>}
         {drafts.kind === "failed" && <ResultMessage result={{ ok: false, message: drafts.message }} />}
         {drafts.kind === "loaded" && drafts.drafts.length === 0 && (
-          <p className="text-sm">
-            {drafts.q === "" ? "保存した下書きはありません" : `題に「${drafts.q}」を含む下書きはありません`}
-          </p>
+          <p className="text-sm">{draftEmptyMessageOf(drafts.filter)}</p>
         )}
         {drafts.kind === "loaded" && drafts.drafts.length > 0 && (
           <AnnouncementDraftList

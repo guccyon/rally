@@ -567,9 +567,11 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/announcements",
     open: async (page) => {
-      await page.getByLabel("開始日").fill("2026-09-01");
-      await page.getByLabel("終了日").fill("2026-09-30");
-      await page.getByRole("button", { name: "この期間で見る" }).click();
+      // 「開始日」「終了日」「この期間で見る」は下書きの欄にもあるので、送ったお知らせの欄の中で探す
+      const sent = page.getByRole("region", { name: "送ったお知らせ", exact: true });
+      await sent.getByLabel("開始日").fill("2026-09-01");
+      await sent.getByLabel("終了日").fill("2026-09-30");
+      await sent.getByRole("button", { name: "この期間で見る" }).click();
       await page.getByText("この期間に送ったお知らせはありません").waitFor();
     },
   },
@@ -617,6 +619,22 @@ export const SCREENS: Screen[] = [
       await drafts.getByLabel("題で探す").fill("夏休み");
       await drafts.getByRole("button", { name: "探す", exact: true }).click();
       await page.getByText("題に「夏休み」を含む下書きはありません").waitFor();
+    },
+  },
+  {
+    id: "hq-announcement-drafts-filter",
+    title: "本部: お知らせの下書きを期間とスポーツで絞る（見つからないとき）",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      const drafts = page.getByRole("region", { name: "下書き", exact: true });
+      await drafts.getByLabel("開始日").fill("2026-09-01");
+      await drafts.getByLabel("終了日").fill("2026-09-30");
+      await drafts.getByRole("button", { name: "この期間で見る" }).click();
+      await drafts.getByLabel("スポーツ").selectOption({ label: "ゴルフ" });
+      await page
+        .getByText("2026年9月1日（火） 〜 2026年9月30日（水）に最後に直した、ゴルフの生徒に向けた下書きはありません")
+        .waitFor();
     },
   },
   {
