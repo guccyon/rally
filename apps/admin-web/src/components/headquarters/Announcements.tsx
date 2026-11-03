@@ -5,7 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
-import { formatDay, toJstDate } from "@/components/labels";
+import { SPORT_LABELS, formatDay, toJstDate } from "@/components/labels";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { Section } from "@/components/ui/Section";
 
@@ -22,13 +22,15 @@ import {
   toAnnouncementDraftRequest,
 } from "./announcementInput";
 import { MAX_PERIOD_DAYS, type Period, periodError, recentPeriod } from "./bookingPeriod";
+import { SPORTS } from "./PendingVideoReviewList";
 
 type Announcement = Schemas["Announcement"];
 type AnnouncementDraft = Schemas["AnnouncementDraft"];
+type Sport = Schemas["Sport"];
 
 type State =
   | { kind: "loading" }
-  | { kind: "loaded"; announcements: Announcement[]; period: Period; q: string }
+  | { kind: "loaded"; announcements: Announcement[]; period: Period; q: string; sport: Sport | "" }
   | { kind: "failed"; message: string };
 
 type DraftState =
@@ -49,6 +51,18 @@ const DRAFT_GONE_ON_DELETE = "この下書きは見つかりません。ほか�
 
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
+
+/** 送ったお知らせの一覧を読む条件（期間・確定した題の語・スポーツ）。語とスポーツは空なら絞らない。 */
+type SentFilter = { period: Period; q: string; sport: Sport | "" };
+
+/**
+ * 0 件のときの文言。スポーツで絞っていればその競技の生徒に向けて送ったもの、題で探していれば語を含むもののことだと言う。
+ * スポーツで絞ったときは生徒全員に向けて送ったものは載らない（契約）ので、「〜の生徒に向けて送った」と言う。
+ */
+function emptyMessageOf({ q, sport }: SentFilter): string {
+  const sent = sport === "" ? "この期間に送った" : `この期間に${SPORT_LABELS[sport]}の生徒に向けて送った`;
+  return q === "" ? `${sent}お知らせはありません` : `${sent}、題に「${q}」を含むお知らせはありません`;
+}
 
 /** 送った日付（日本時間）が期間に入るか。期間の外で送ったお知らせは、今の一覧に足さない。 */
 function sentWithin(announcement: Announcement, { from, to }: Period): boolean {
@@ -80,6 +94,8 @@ export type AnnouncementsApi = Pick<
  * 送ったお知らせの一覧の「題で探す」は下書きの一覧の検索と同じ部品・同じ確かめで、listAnnouncements の `q` に渡す。
  * 期間と題はそれぞれのボタンで確定し、確定したもう一方の条件と組み合わせて読み直す。題で絞っている間に送ったお知らせは、
  * 題が語に合うかを画面で決めず、今の期間と語で一覧を読み直す。
+ * 「スポーツ」はほかの一覧のスポーツの欄と同じ部品で、選んだらすぐに listAnnouncements の `sport` に渡し、確定した期間・題と
+ * 組み合わせて読み直す（「すべて」なら絞らない）。スポーツで絞っている間に送ったお知らせも、載るかを画面で決めず今の条件で読み直す。
  *
  * 下書きを開くとフォームに中身を入れ、「下書きに保存」はその下書きを直す。開いたまま送ると、書いた中身で下書きを直して
  * から下書きから送り（sendAnnouncementDraft）、送れたら下書きは一覧から消える。一覧の「送る」は開いてすぐに確かめに進む。
@@ -109,13 +125,20 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   const [queryDraft, setQueryDraft] = useState("");
   const [queryError, setQueryError] = useState<string | null>(null);
   const appliedQuery = useRef("");
+  // 送ったお知らせを絞るスポーツ（選んだらすぐ読み直すので、欄の値と今の一覧を読んだスポーツは同じ。空なら絞らない）。
+  const [sport, setSport] = useState<Sport | "">("");
+  const appliedSport = useRef<Sport | "">("");
   // 期間を続けて変えたときに、前の期間の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
 
   const fetchAnnouncements = useCallback(
-    async (period: Period, q: string): Promise<State> => {
-      const response = await api.listAnnouncements(q === "" ? period : { ...period, q });
-      if (response.ok) return { kind: "loaded", announcements: response.data.announcements, period, q };
+    async ({ period, q, sport }: SentFilter): Promise<State> => {
+      const response = await api.listAnnouncements({
+        ...period,
+        ...(q === "" ? {} : { q }),
+        ...(sport === "" ? {} : { sport }),
+      });
+      if (response.ok) return { kind: "loaded", announcements: response.data.announcements, period, q, sport };
       if (response.code !== "validation_failed") return { kind: "failed", message: response.message };
       // 期間も語も送る前に確かめているので、422 はふつう来ない。来たら直す場所（期間と、語で探していれば語の長さ）を添える。
       return { kind: "failed", message: q === "" ? VALIDATION_FAILED : `${VALIDATION_FAILED}${DRAFT_QUERY_TOO_LONG}` };
@@ -123,11 +146,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     [api],
   );
 
-  /** 期間と語 q で送ったお知らせの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
+  /** 期間・語・スポーツで送ったお知らせの一覧を読み直す（後から読み直したときは、前の遅れた結果を捨てる）。 */
   const reload = useCallback(
-    async (period: Period, q: string) => {
+    async (filter: SentFilter) => {
       const request = ++latestRequest.current;
-      const next = await fetchAnnouncements(period, q);
+      const next = await fetchAnnouncements(filter);
       if (request === latestRequest.current) setState(next);
     },
     [fetchAnnouncements],
@@ -159,7 +182,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchAnnouncements(appliedPeriod.current, appliedQuery.current).then((next) => {
+    void fetchAnnouncements({
+      period: appliedPeriod.current,
+      q: appliedQuery.current,
+      sport: appliedSport.current,
+    }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     const draftRequest = ++latestDraftRequest.current;
@@ -170,6 +197,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
       active = false;
     };
   }, [fetchAnnouncements, fetchDrafts]);
+
+  /** 確定した期間・語・スポーツ（今の一覧を読んだ条件）。 */
+  function appliedFilter(): SentFilter {
+    return { period: appliedPeriod.current, q: appliedQuery.current, sport: appliedSport.current };
+  }
 
   async function withdraw(announcement: Announcement) {
     const response = await api.withdrawAnnouncement(announcement.announcement_id);
@@ -190,13 +222,13 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     // 409（すでに取り下げ済み）・404 などは ErrorCode の文言を出し、一覧を今の状態に取り直す。
     // 接続できなかったとき（code がない）は取り直さず、行はそのまま（もう一度押せる）。
     setResult(response);
-    if (response.code !== undefined) await reload(appliedPeriod.current, appliedQuery.current);
+    if (response.code !== undefined) await reload(appliedFilter());
   }
 
   function prepend(announcement: Announcement) {
     setResult(null);
-    if (appliedQuery.current !== "") {
-      void reload(appliedPeriod.current, appliedQuery.current);
+    if (appliedQuery.current !== "" || appliedSport.current !== "") {
+      void reload(appliedFilter());
       return;
     }
     setState((current) =>
@@ -214,7 +246,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     appliedPeriod.current = draftPeriod;
     setResult(null);
     setState({ kind: "loading" });
-    await reload(draftPeriod, appliedQuery.current);
+    await reload({ ...appliedFilter(), period: draftPeriod });
   }
 
   async function submitQuery(event: FormEvent) {
@@ -229,7 +261,15 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     appliedQuery.current = query.q;
     setResult(null);
     setState({ kind: "loading" });
-    await reload(appliedPeriod.current, query.q);
+    await reload({ ...appliedFilter(), q: query.q });
+  }
+
+  async function changeSport(next: Sport | "") {
+    setSport(next);
+    appliedSport.current = next;
+    setResult(null);
+    setState({ kind: "loading" });
+    await reload({ ...appliedFilter(), sport: next });
   }
 
   async function submitDraftQuery(event: FormEvent) {
@@ -429,7 +469,7 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
         <div className="space-y-4">
           <p className="text-sm">
             送ったお知らせを、送った日付（日本時間）で絞って、送った時刻の新しい順に見られます。期間は {MAX_PERIOD_DAYS}{" "}
-            日まで選べます。
+            日まで選べます。スポーツを選ぶと、そのスポーツの生徒に向けて送ったものだけを出します（生徒全員に送ったものは「すべて」で見られます）。
           </p>
           <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submitPeriod(event)}>
             <label className="block">
@@ -455,20 +495,37 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
             </button>
           </form>
           {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}
-          <form className="flex items-end gap-2" onSubmit={(event) => void submitQuery(event)}>
+          <div className="flex flex-wrap items-end gap-4">
+            <form className="flex items-end gap-2" onSubmit={(event) => void submitQuery(event)}>
+              <label className="block">
+                題で探す
+                <input
+                  type="search"
+                  className="mt-1 block rounded-md border px-2 py-1"
+                  value={queryDraft}
+                  onChange={(event) => setQueryDraft(event.target.value)}
+                />
+              </label>
+              <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+                探す
+              </button>
+            </form>
             <label className="block">
-              題で探す
-              <input
-                type="search"
+              スポーツ
+              <select
                 className="mt-1 block rounded-md border px-2 py-1"
-                value={queryDraft}
-                onChange={(event) => setQueryDraft(event.target.value)}
-              />
+                value={sport}
+                onChange={(event) => void changeSport(event.target.value as Sport | "")}
+              >
+                <option value="">すべて</option>
+                {SPORTS.map((value) => (
+                  <option key={value} value={value}>
+                    {SPORT_LABELS[value]}
+                  </option>
+                ))}
+              </select>
             </label>
-            <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
-              探す
-            </button>
-          </form>
+          </div>
           {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
           <ResultMessage result={result} />
           {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
@@ -477,15 +534,10 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
             <div className="space-y-2">
               <p className="text-sm">
                 {formatDay(state.period.from)} 〜 {formatDay(state.period.to)}
+                {state.sport !== "" && `・${SPORT_LABELS[state.sport]}の生徒向け`}
                 {state.q !== "" && `・題に「${state.q}」を含む`}・{state.announcements.length} 件
               </p>
-              {state.announcements.length === 0 && (
-                <p className="text-sm">
-                  {state.q === ""
-                    ? "この期間に送ったお知らせはありません"
-                    : `この期間に送った、題に「${state.q}」を含むお知らせはありません`}
-                </p>
-              )}
+              {state.announcements.length === 0 && <p className="text-sm">{emptyMessageOf(state)}</p>}
               {state.announcements.length > 0 && (
                 <AnnouncementList announcements={state.announcements} onWithdraw={withdraw} />
               )}

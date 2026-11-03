@@ -1220,6 +1220,14 @@ export const FIXTURES: Fixture[] = [
     body: { announcements: [] } satisfies Schemas["AnnouncementList"],
   },
   {
+    // 送ったお知らせをスポーツで絞って見つからないとき（hq-announcements-sport）。0 件の表示（競技を含めた文言）を撮る。
+    // 期間は既定（今日までの 7 日）のまま。既定の期間の `/announcements` より前に置く。
+    method: "GET",
+    path: "/announcements",
+    query: { sport: "golf" },
+    body: { announcements: [] } satisfies Schemas["AnnouncementList"],
+  },
+  {
     // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。
     // mockApi は先に一致した応答を返すので、既定の期間の `/announcements` より前に置く。
     method: "GET",

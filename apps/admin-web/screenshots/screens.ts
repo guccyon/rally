@@ -632,6 +632,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-announcements-sport",
+    title: "本部: 送ったお知らせをスポーツで絞る（見つからないとき）",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      const sent = page.getByRole("region", { name: "送ったお知らせ", exact: true });
+      await sent.getByLabel("スポーツ").selectOption({ label: "ゴルフ" });
+      await page.getByText("この期間にゴルフの生徒に向けて送ったお知らせはありません").waitFor();
+    },
+  },
+  {
     id: "hq-pending-video-reviews",
     title: "本部: 返却待ちの動画添削",
     role: "headquarters",
