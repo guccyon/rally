@@ -1235,6 +1235,28 @@ export const FIXTURES: Fixture[] = [
     body: { announcements: [] } satisfies Schemas["AnnouncementList"],
   },
   {
+    // 送ったお知らせを取り下げたかで絞ったとき（hq-announcements-withdrawn）。取り下げたもの（既定の一覧の 2 件目）だけを返す。
+    // 期間は既定（今日までの 7 日）のまま。既定の期間の `/announcements` より前に置く。
+    method: "GET",
+    path: "/announcements",
+    query: { withdrawn: "true" },
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 5),
+          sender_id: "99999999-9999-4999-8999-999999999999",
+          title: "テニスのコートの案内（誤り）",
+          body: "11月からコートの予約はアプリの「予約」から行えます。",
+          sport: "tennis",
+          recipient_count: 15,
+          read_count: 3,
+          sent_at: at(-24 * 2),
+          withdrawal: { withdrawn_by: "99999999-9999-4999-8999-999999999999", withdrawn_at: at(-24 * 2 + 1) },
+        },
+      ],
+    } satisfies Schemas["AnnouncementList"],
+  },
+  {
     // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。
     // mockApi は先に一致した応答を返すので、既定の期間の `/announcements` より前に置く。
     method: "GET",
