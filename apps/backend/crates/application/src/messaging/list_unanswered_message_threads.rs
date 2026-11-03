@@ -17,7 +17,9 @@ use crate::{Unavailable, clock::Clock};
 /// すべてのスレッドを読み、domain の [`UnansweredThreadCriteria::select`] で、最後の発言が生徒のもので基準の時間以上
 /// たったものを選んで経過の長い順に並べる（何を発言と数えるか・既定・範囲・境界は domain だけ）。基準に担当コーチ
 /// （[`UnansweredThreadCriteria::coach_id`]）があれば、そのアカウントが当事者のスレッドだけを読み（[`MessageThreadRepository::list_for`]）、
-/// domain がそのコーチの担当のものだけを選ぶ（いないコーチ・コーチでないアカウントなら空の一覧）。各スレッドには、
+/// domain がそのコーチの担当のものだけを選ぶ（いないコーチ・コーチでないアカウントなら空の一覧）。生徒
+/// （[`UnansweredThreadCriteria::student_id`]）があれば、コーチより先にその生徒が当事者のスレッドだけを読み、domain が
+/// その生徒のもの（コーチもあれば両方に合うもの）だけを選ぶ（いない生徒・生徒でないアカウントなら空の一覧）。各スレッドには、
 /// 担当コーチと生徒の表示名（[`ThreadCoachDisplayNameLookup`]・[`ThreadStudentDisplayNameLookup`]）を引いて添える。
 /// 誰が呼べるか（本部だけ）と、本文を返さないことは境界（interface）が守る。
 pub struct ListUnansweredMessageThreads<R, D, S, C> {
@@ -48,8 +50,8 @@ where
         criteria: UnansweredThreadCriteria,
     ) -> Result<UnansweredThreadList, Unavailable> {
         let now = self.clock.now();
-        let candidates = match criteria.coach_id() {
-            Some(coach_id) => self.threads.list_for(coach_id).await?,
+        let candidates = match criteria.student_id().or(criteria.coach_id()) {
+            Some(account_id) => self.threads.list_for(account_id).await?,
             None => self.threads.list_all().await?,
         };
         let threads = criteria.select(candidates, now);
@@ -298,6 +300,50 @@ mod tests {
                 assert!(asked.is_empty(), "空なら表示名を引かない");
             } else {
                 assert_eq!(asked, [BTreeSet::from([coach])]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn the_student_of_the_criteria_narrows_to_the_threads_of_the_student() {
+        for (student, coach, hours, expected) in [
+            (STUDENT, None, 24, vec![1]),
+            (STUDENT, None, 1, vec![1, 3]),
+            (OTHER_STUDENT, None, 24, vec![6]),
+            (OTHER_STUDENT, None, 31, vec![]),
+            // コーチと組み合わせれば両方に合うものだけ
+            (STUDENT, Some(OTHER_COACH), 1, vec![3]),
+            (STUDENT, Some(COACH), 1, vec![1]),
+            (OTHER_STUDENT, Some(OTHER_COACH), 1, vec![]),
+            // アカウントのない生徒も、スレッドがあれば載る
+            (AccountId::from_u128(4), None, 24, vec![4]),
+            // コーチの ID・どのスレッドにもいない ID は空の一覧
+            (COACH, None, 1, vec![]),
+            (AccountId::from_u128(1000), None, 1, vec![]),
+        ] {
+            let lookup = RecordingLookup::default();
+            let list = use_case(threads(), lookup.clone())
+                .execute(
+                    UnansweredThreadCriteria::new(hours)
+                        .unwrap()
+                        .with_coach_id(coach)
+                        .with_student_id(Some(student)),
+                )
+                .await
+                .unwrap();
+            assert_eq!(list.criteria.hours(), hours);
+            assert_eq!(list.criteria.student_id(), Some(student));
+            assert_eq!(list.criteria.coach_id(), coach);
+            assert_eq!(
+                ids(&list),
+                expected,
+                "{student:?} と {coach:?} の {hours} 時間"
+            );
+            let asked = lookup.students_asked.lock().unwrap().clone();
+            if expected.is_empty() {
+                assert!(asked.is_empty(), "空なら表示名を引かない");
+            } else {
+                assert_eq!(asked, [BTreeSet::from([student])]);
             }
         }
     }

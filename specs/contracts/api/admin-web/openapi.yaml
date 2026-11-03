@@ -2545,6 +2545,11 @@ paths:
           コーチに個別に声をかけるとき、そのコーチの分だけを見る）。`older_than_hours` と組み合わせられ、時間の規則・何を発言と
           数えるか・並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない
           ID（生徒の ID を含む）・ない ID・該当するスレッドがないコーチは、404 にせず `threads` が空の配列
+        - 任意の `student_id` で、その生徒の（スレッドの `student_id` がその生徒の）スレッドだけに絞れる（問い合わせが続いている
+          生徒について、返事のないやり取りをまとめて確かめる）。`older_than_hours`・`coach_id` と組み合わせられ、時間の規則・何を
+          発言と数えるか・並べ方は変わらない。省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。扱いは
+          `listCancelledBookings` の `student_id` と同じで、生徒でない ID（コーチの ID を含む）・ない ID・該当するスレッドがない
+          生徒は、404 にせず `threads` が空の配列
         - 並べ方: 経過の長い順（`waiting_since` の古い順）。同じ時刻は `thread_id` の順
         - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・待ち始め `waiting_since`・
           照会した時刻までの待ち始めからの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
@@ -2572,6 +2577,15 @@ paths:
           description: |
             あればこのコーチが担当するスレッドだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
             コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
+        - name: student_id
+          in: query
+          required: false
+          description: |
+            あればこの生徒のスレッドだけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+            生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
           schema:
             type: string
             format: uuid

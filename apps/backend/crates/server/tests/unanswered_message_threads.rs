@@ -2,8 +2,8 @@
 //! Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で送った
 //! Postgres のメッセージから、最後の発言が生徒で既定の 24 時間（`older_than_hours` で変えられる）以上たったスレッドを
 //! 本文なしで返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` で担当コーチを絞れること（生徒の ID・
-//! ない ID は空の一覧）、コーチが返せば消えること、本部以外は 403 に
-//! なることを確かめる。契約の形・時間の範囲の細かい検査は interface の `tests/unanswered_message_threads.rs`、すべての
+//! ない ID は空の一覧）、`student_id` で生徒を絞れること（コーチの ID・ない ID は空の一覧。`coach_id` と組み合わせられる）、
+//! コーチが返せば消えること、本部以外は 403 になることを確かめる。契約の形・時間の範囲の細かい検査は interface の `tests/unanswered_message_threads.rs`、すべての
 //! スレッドの読み取りは infra の `tests/pg_message_thread_repository.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -250,6 +250,48 @@ async fn headquarters_reads_unanswered_threads_from_postgres(pool: PgPool) {
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["threads"], json!([]), "{query} {coach:?}");
+    }
+
+    // 生徒で絞れる（時間・担当コーチと組み合わせられる）。コーチの ID・ない ID・ほかの生徒は空の一覧
+    for query in [
+        format!("student_id={}", account_id_uuid::format(taro)),
+        format!(
+            "student_id={}&coach_id={}&older_than_hours=24",
+            account_id_uuid::format(taro),
+            account_id_uuid::format(tanaka)
+        ),
+    ] {
+        let (status, body) = send(&router, get(&format!("{PATH}?{query}"), &hq_token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["older_than_hours"], 24);
+        assert_eq!(
+            body["threads"].as_array().unwrap().len(),
+            1,
+            "{query}: {body}"
+        );
+        assert_eq!(body["threads"][0]["thread_id"], thread_id);
+    }
+    let (other_student, _) = register(&pool_for_test, "hanako@example.com", Role::Student).await;
+    for query in [
+        format!("student_id={}", account_id_uuid::format(tanaka)),
+        format!("student_id={}", account_id_uuid::format(other_student)),
+        format!(
+            "student_id={}",
+            account_id_uuid::format(AccountId::from_u128(12345))
+        ),
+        format!(
+            "older_than_hours=25&student_id={}",
+            account_id_uuid::format(taro)
+        ),
+        format!(
+            "student_id={}&coach_id={}",
+            account_id_uuid::format(taro),
+            account_id_uuid::format(other_coach)
+        ),
+    ] {
+        let (status, body) = send(&router, get(&format!("{PATH}?{query}"), &hq_token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["threads"], json!([]), "{query}");
     }
 
     // 本部だけ

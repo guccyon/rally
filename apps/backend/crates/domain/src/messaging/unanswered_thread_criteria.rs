@@ -9,12 +9,14 @@ use crate::identity::AccountId;
 /// 最後の発言が生徒のもので、照会した時刻に返信を待ち始めてから（コーチの最後の発言のあとの最初の生徒の発言から。
 /// [`MessageThread::awaiting_coach_reply_since`]）[`Self::hours`] 時間以上たったスレッドを「返信のないまま時間の過ぎた」スレッドとする。時間は
 /// [`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] 時間で、省いたときは [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。
-/// 既定・範囲と並べ方はこの型の 1 か所だけに置く。任意の担当コーチ [`Self::coach_id`] で絞れ（[`Self::with_coach_id`]。
-/// 省けばすべてのコーチ）、時間と組み合わせても時間の規則と並べ方は変わらない。
+/// 既定・範囲と並べ方はこの型の 1 か所だけに置く。任意の担当コーチ [`Self::coach_id`]（[`Self::with_coach_id`]。
+/// 省けばすべてのコーチ）と生徒 [`Self::student_id`]（[`Self::with_student_id`]。省けばすべての生徒）で絞れ、
+/// 時間と組み合わせても時間の規則と並べ方は変わらない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnansweredThreadCriteria {
     hours: u16,
     coach_id: Option<AccountId>,
+    student_id: Option<AccountId>,
 }
 
 impl UnansweredThreadCriteria {
@@ -37,12 +39,18 @@ impl UnansweredThreadCriteria {
         Ok(Self {
             hours,
             coach_id: None,
+            student_id: None,
         })
     }
 
     /// `coach_id` があればそのコーチが担当するスレッドだけを選ぶ基準（`None` ならすべてのコーチ）。時間は変えない。
     pub const fn with_coach_id(self, coach_id: Option<AccountId>) -> Self {
         Self { coach_id, ..self }
+    }
+
+    /// `student_id` があればその生徒のスレッドだけを選ぶ基準（`None` ならすべての生徒）。時間と担当コーチは変えない。
+    pub const fn with_student_id(self, student_id: Option<AccountId>) -> Self {
+        Self { student_id, ..self }
     }
 
     /// 返信を待ち始めてからの時間（時間単位）。
@@ -53,6 +61,11 @@ impl UnansweredThreadCriteria {
     /// 絞り込む担当コーチ。`None` ならすべてのコーチ。
     pub const fn coach_id(&self) -> Option<AccountId> {
         self.coach_id
+    }
+
+    /// 絞り込む生徒。`None` ならすべての生徒。
+    pub const fn student_id(&self) -> Option<AccountId> {
+        self.student_id
     }
 
     /// 返信を待ち始めてからの時間の長さ。
@@ -69,10 +82,13 @@ impl UnansweredThreadCriteria {
     }
 
     /// `thread` が `now` に照会したときの、返信のないまま時間の過ぎたスレッド（ちょうどその時間を含む）で、コーチの指定が
-    /// あればそのコーチが担当するスレッドか。
+    /// あればそのコーチが担当し、生徒の指定があればその生徒のスレッドか。
     pub fn matches(&self, thread: &MessageThread, now: SystemTime) -> bool {
         self.coach_id
             .is_none_or(|coach_id| thread.coach_id() == coach_id)
+            && self
+                .student_id
+                .is_none_or(|student_id| thread.student_id() == student_id)
             && Self::elapsed(thread, now).is_some_and(|elapsed| elapsed >= self.threshold())
     }
 
@@ -93,6 +109,7 @@ impl Default for UnansweredThreadCriteria {
         Self {
             hours: Self::DEFAULT_HOURS,
             coach_id: None,
+            student_id: None,
         }
     }
 }
@@ -151,6 +168,52 @@ mod tests {
         assert_eq!(criteria.hours(), 24);
         assert_eq!(criteria.threshold(), 24 * HOUR);
         assert_eq!(criteria.coach_id(), None, "既定はすべてのコーチ");
+        assert_eq!(criteria.student_id(), None, "既定はすべての生徒");
+    }
+
+    #[test]
+    fn the_student_narrows_to_the_threads_of_the_student() {
+        let waiting = thread(1, &[(STUDENT, now() - 30 * HOUR)]);
+        let criteria = UnansweredThreadCriteria::new(24)
+            .unwrap()
+            .with_student_id(Some(STUDENT));
+        assert_eq!(criteria.hours(), 24, "時間は変えない");
+        assert_eq!(criteria.student_id(), Some(STUDENT));
+        assert_eq!(criteria.coach_id(), None, "コーチは変えない");
+        assert!(criteria.matches(&waiting, now()));
+        // ほかの生徒・担当コーチの ID では出ない
+        for other in [AccountId::from_u128(8), COACH] {
+            assert!(
+                !UnansweredThreadCriteria::default()
+                    .with_student_id(Some(other))
+                    .matches(&waiting, now()),
+                "{other:?}"
+            );
+        }
+        // 時間の規則は変わらない
+        assert!(
+            !UnansweredThreadCriteria::new(31)
+                .unwrap()
+                .with_student_id(Some(STUDENT))
+                .matches(&waiting, now())
+        );
+        // コーチと組み合わせれば両方に合うものだけ
+        assert!(criteria.with_coach_id(Some(COACH)).matches(&waiting, now()));
+        assert!(
+            !criteria
+                .with_coach_id(Some(AccountId::from_u128(8)))
+                .matches(&waiting, now())
+        );
+        assert_eq!(
+            criteria.with_coach_id(Some(COACH)).student_id(),
+            Some(STUDENT),
+            "コーチを足しても生徒は変えない"
+        );
+        // 指定を外せばすべての生徒
+        assert_eq!(
+            criteria.with_student_id(None),
+            UnansweredThreadCriteria::default()
+        );
     }
 
     #[test]
