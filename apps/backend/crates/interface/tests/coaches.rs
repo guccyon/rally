@@ -1,6 +1,6 @@
 //! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
 //! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
-//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。コーチは 403。
+//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチに絞れる。コーチは 403。
 
 use std::time::{Duration, SystemTime};
 
@@ -18,7 +18,7 @@ use application::{
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
-    review::ReviewCoachReviewSummaryLookup,
+    review::{ReviewCoachLowRatedReviewCountLookup, ReviewCoachReviewSummaryLookup},
     scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
 };
 use axum::{
@@ -37,7 +37,7 @@ use domain::{
     live_lesson::SessionId,
     matching::FavoriteCoach,
     profile::DisplayName,
-    review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
+    review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -155,8 +155,23 @@ fn completion(id: u128, coach_id: u128, live: bool, at: SystemTime) -> LessonCom
     )
 }
 
+/// 点が `rating` で `at` に送られた、コーチ `coach_id` への評価。
+fn review_at(id: u128, coach_id: u128, rating: i64, at: SystemTime) -> LessonReview {
+    LessonReview::restore(
+        LessonReviewId::from_u128(id),
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Rating::new(rating).unwrap(),
+        LessonReviewComment::new("いまひとつ").unwrap(),
+        at,
+    )
+}
+
 /// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。直近 30 日に終わったレッスンは
 /// コーチ 2 が通話 1・添削 1（30 日前ちょうどを含む。31 日前の添削は数えない）、コーチ 5 が添削 1。コーチ 4 は 0。
+/// 本部が見る直近の低い評価は、コーチ 4 が今日の ★1（未対応）と ★3、コーチ 2 が 30 日前ちょうどの ★2（未対応）、
+/// コーチ 5 が対応済みの ★2 と 31 日前の ★1（期間の外）。
 fn app(accounts: InMemoryAccountRepository) -> Router {
     app_with(accounts, InMemoryCoachAcceptanceRepository::default())
 }
@@ -184,12 +199,21 @@ fn app_with(
         completion(3, 2, false, now() - 31 * DAY),
         completion(4, 5, false, now()),
     ]);
+    let low_rated_reviews = InMemoryLessonReviewRepository::with_reviews([
+        review_at(11, 4, 1, now()),
+        review_at(12, 4, 3, now()),
+        review_at(13, 2, 2, now() - 30 * DAY),
+        review_at(14, 5, 2, now() - DAY)
+            .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS_ID, now()))),
+        review_at(15, 5, 1, now() - 31 * DAY),
+    ]);
     let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
     interface::coaches_router(
         ListCoaches::new(
             accounts.clone(),
             acceptances.clone(),
             LessonCoachRecentLessonCountLookup::new(completions, FixedClock(now())),
+            ReviewCoachLowRatedReviewCountLookup::new(low_rated_reviews, FixedClock(now())),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
@@ -433,6 +457,73 @@ async fn headquarters_inactive_other_than_true_or_false_is_422() {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed");
     }
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_unhandled_low_rated_reviews_combined_with_other_filters()
+ {
+    // 未対応の低い評価はコーチ 4（停止中）と 2 にある。コーチ 5 は対応済みと期間の外だけ。いとう = %E3%81%84%E3%81%A8
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_unhandled_low_rated=true", vec![4, 2]),
+        // false・付けないときは絞らない
+        ("?has_unhandled_low_rated=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_unhandled_low_rated=true&sport=tennis", vec![4, 2]),
+        ("?has_unhandled_low_rated=true&sport=soccer", vec![]),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=suspended",
+            vec![4],
+        ),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=accepting",
+            vec![2],
+        ),
+        ("?has_unhandled_low_rated=true&inactive=true", vec![4]),
+        (
+            "?has_unhandled_low_rated=true&q=%E3%81%84%E3%81%A8",
+            vec![4],
+        ),
+        (
+            "?has_unhandled_low_rated=false&inactive=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_unhandled_low_rated_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_unhandled_low_rated=yes",
+        "?has_unhandled_low_rated=1",
+        "?has_unhandled_low_rated=",
+        "?has_unhandled_low_rated=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_unhandled_low_rated_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_unhandled_low_rated=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
 }
 
 #[tokio::test]
