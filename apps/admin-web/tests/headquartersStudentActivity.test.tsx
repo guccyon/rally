@@ -147,6 +147,8 @@ describe("本部の生徒の利用の様子", () => {
     expect(valueOf("送った動画")).toHaveTextContent(/^0 件（これまでのすべて）$/);
     expect(valueOf("返却待ち")).toHaveTextContent(/^0 件（いま返却を待っている動画）$/);
     expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -165,20 +167,40 @@ describe("本部の生徒の利用の様子", () => {
     expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
   });
 
-  test("この生徒で絞った「返事のないメッセージ」への入口を、返却待ちの数によらず出す", async () => {
+  test("返事を待っているメッセージの数を返却待ちと同じ形で返った値のまま出し、1 件以上ならその生徒で絞った一覧への入口を添える", async () => {
     render(
       <StudentActivity
-        api={{ getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0 }) }}
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0, unanswered_message_thread_count: 2 }),
+        }}
         studentId={STUDENT_ID}
       />,
     );
 
     await screen.findByRole("table", { name: "これからの予約" });
-    const messages = valueOf("メッセージ");
+    const messages = valueOf("返事を待っているメッセージ");
+    expect(messages).toHaveTextContent(/^2 件（返事を待って 24 時間以上たったやり取り）返事のないメッセージを見る$/);
+    // 入口はこの生徒で絞った返事のないメッセージの一覧（返却待ちの数にはよらない）
     expect(within(messages).getByRole("link", { name: "返事のないメッセージを見る" })).toHaveAttribute(
       "href",
       `/headquarters/unanswered-messages?student_id=${STUDENT_ID}`,
     );
+    expect(within(messages).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("返事を待っているメッセージが 0 件なら 0 件と出し、一覧への入口は出さない", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, unanswered_message_thread_count: 0 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    // 返却待ちの入口はそのまま
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
   });
 
   test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
@@ -228,7 +250,9 @@ describe("本部の生徒の利用の様子", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("student_id が正しくありません。");
     expect(screen.queryByText("送った動画")).not.toBeInTheDocument();
     expect(screen.queryByText("返却待ち")).not.toBeInTheDocument();
+    expect(screen.queryByText("返事を待っているメッセージ")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
   });
 
   test("404 以外の失敗（403 など）はその文言を出し、中身は出さない", async () => {
