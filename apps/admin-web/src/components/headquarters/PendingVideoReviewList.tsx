@@ -27,8 +27,8 @@ type Filter = PendingVideoReviewFilter;
 /** スポーツの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
-/** 経過時間の下限の選択肢（時間）。URL のクエリの確かめにも使う。 */
-export const MIN_ELAPSED_HOURS_OPTIONS = [24, 48, 72, 168] as const;
+/** 経過時間の下限の選択肢（時間）。URL のクエリの確かめにも使うので、凍結して公開する。 */
+export const MIN_ELAPSED_HOURS_OPTIONS = Object.freeze([24, 48, 72, 168] as const);
 
 const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "" };
 

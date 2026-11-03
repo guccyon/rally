@@ -6,7 +6,11 @@ import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
-import { PendingVideoReviewList } from "@/components/headquarters/PendingVideoReviewList";
+import {
+  MIN_ELAPSED_HOURS_OPTIONS,
+  PendingVideoReviewList,
+  SPORTS,
+} from "@/components/headquarters/PendingVideoReviewList";
 import {
   PendingVideoReviewsHome,
   pendingVideoReviewFilterFrom,
@@ -396,6 +400,11 @@ describe("絞り込みの URL", () => {
     expect(pendingVideoReviewsPath({ sport: "tennis", minElapsedHours: 48, coachId: COACH_1 })).toBe(
       `/headquarters/pending-video-reviews?sport=tennis&min_elapsed_hours=48&coach_id=${COACH_1}`,
     );
+  });
+
+  test("クエリの確かめに使う選択肢は凍結してあり、import した側から書き換えられない", () => {
+    expect(Object.isFrozen(SPORTS)).toBe(true);
+    expect(Object.isFrozen(MIN_ELAPSED_HOURS_OPTIONS)).toBe(true);
   });
 
   test("URL のクエリから条件を読み、選択肢にないスポーツ・経過時間は「すべて」にする", () => {
