@@ -143,6 +143,9 @@ pub(crate) fn notification_error(error: &NotificationError) -> String {
         NotificationError::AnnouncementTitleTooLong { max } => {
             format!("お知らせの題は {max} 文字まで")
         }
+        NotificationError::AnnouncementTitleQueryTooLong { max } => {
+            format!("お知らせの題の検索語は {max} 文字まで")
+        }
         NotificationError::EmptyAnnouncementBody => "お知らせの本文が空".to_string(),
         NotificationError::AnnouncementBodyTooLong { max } => {
             format!("お知らせの本文は {max} 文字まで")

@@ -67,9 +67,10 @@ export function headquartersApi(client: ApiClient) {
       to?: string;
       coach_id?: string;
       sport?: Schemas["Sport"];
+      student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
-    listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
+    listOverdueLiveLessonSessions: (filter: { older_than_hours?: number; coach_id?: string } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
     listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string; student_id?: string }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
@@ -127,7 +128,8 @@ export function headquartersApi(client: ApiClient) {
       ),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
-    listAnnouncements: () => call(() => client.GET("/announcements")),
+    listAnnouncements: (filter: { from?: string; to?: string }) =>
+      call(() => client.GET("/announcements", { params: { query: filter } })),
     withdrawAnnouncement: (announcementId: string) =>
       call(() =>
         client.POST("/announcements/{announcement_id}/withdraw", {
