@@ -460,6 +460,16 @@ describe("headquartersApi", () => {
     expect(url.search).toBe("?sport=golf");
   });
 
+  test("listIncompleteCoachProfiles は検索語を渡せばクエリ q に載せ、ほかの条件と並べる", async () => {
+    const { api, fetchMock } = setup(json(200, { coaches: [] }));
+    await api.listIncompleteCoachProfiles({ sport: "golf", acceptance_status: "accepting", q: "高橋" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
+    expect(url.searchParams.get("q")).toBe("高橋");
+    expect(url.searchParams.get("sport")).toBe("golf");
+    expect(url.searchParams.get("acceptance_status")).toBe("accepting");
+  });
+
   test("listOverdueLiveLessonSessions は経過時間の下限をクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {
     const list = {
       older_than_hours: 24,
