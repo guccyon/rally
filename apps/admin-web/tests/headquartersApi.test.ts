@@ -826,6 +826,14 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listAnnouncements は取り下げたかを withdrawn のクエリにして渡す", async () => {
+    const { api, fetchMock } = setup(json(200, { announcements: [] }));
+    await api.listAnnouncements({ from: "2026-10-20", to: "2026-10-26", withdrawn: false });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/announcements");
+    expect(url.searchParams.get("withdrawn")).toBe("false");
+  });
+
   test("listAnnouncements は期間を省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, { announcements: [] }));
     await api.listAnnouncements({});

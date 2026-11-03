@@ -674,6 +674,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-announcements-withdrawn",
+    title: "本部: 送ったお知らせを取り下げたかで絞る",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      // 各行の「「…」を取り下げる」も「取り下げ」を含むので、欄の名前は exact で探す
+      const sent = page.getByRole("region", { name: "送ったお知らせ", exact: true });
+      await sent.getByLabel("取り下げ", { exact: true }).selectOption({ label: "取り下げたもの" });
+      await page.getByText(/・取り下げたもの・1 件/).waitFor();
+    },
+  },
+  {
     id: "hq-pending-video-reviews",
     title: "本部: 返却待ちの動画添削",
     role: "headquarters",
