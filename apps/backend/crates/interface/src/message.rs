@@ -57,6 +57,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::EmptyReviewComment => "添削コメントが空".to_string(),
         DomainError::ReviewCommentTooLong { max } => format!("添削コメントは {max} 文字まで"),
         DomainError::LiveLessonSessionNotEnded => "通話セッションがまだ終了していない".to_string(),
+        DomainError::LiveLessonSessionEndedByHeadquarters => {
+            "本部が終わらせた通話セッションは完了として記録できない".to_string()
+        }
         DomainError::EmptyAiFeedback => "AI の一次フィードバックが空".to_string(),
         DomainError::AiFeedbackAlreadyRecorded => "AI の一次フィードバックは付与済み".to_string(),
         DomainError::AiFeedbackBeforeSubmission => {
@@ -284,6 +287,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionNotEnded),
             "通話セッションがまだ終了していない"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionEndedByHeadquarters),
+            "本部が終わらせた通話セッションは完了として記録できない"
         );
         assert_eq!(
             domain_error(&DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts),
