@@ -1,6 +1,6 @@
 # 変更履歴
 
-Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の利用者に見える変更を `[Unreleased]` に足し、リリース時に版の項へ移す。工場のワーカーも、利用者に見える変更を含む PR ではここを更新する（rubric DOC-002）。
+Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の利用者に見える変更を `[Unreleased]` に足し、リリース時に版の項へ移す。PR はこのファイルを直接書き換えず、`changelog.d/<Issue 番号>.md` に断片を書く。工場が断片をここへ取りまとめる（rubric DOC-002、factory-engine の ADR 0027）。
 
 ## [Unreleased]
 
