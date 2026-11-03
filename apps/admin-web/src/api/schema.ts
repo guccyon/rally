@@ -1679,6 +1679,14 @@ export interface paths {
          *       問い合わせを受けたときに、その生徒の記録だけを見る）。期間・`coach_id`・`sport` と組み合わせられ、期間の規則・かかった時間の
          *       数え方・並べ方は変わらない。省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・
          *       ない ID・期間に返却がない生徒は、404 にせず `reviews` が空の配列
+         *     - 任意の `lesson_menu_id` で、動画を送った時点のレッスンメニュー（生徒が送るときに選んだ非同期のメニューの写し。コーチの
+         *       `listMyCoachVideos` の各項目の `lesson_menu` の `lesson_menu_id`）がそのメニューの動画だけに絞れる（メニューごとの添削の
+         *       返し方を振り返る）。動画とメニューの結び付け方は `listPendingVideoReviews` の `lesson_menu_id` と同じ: 送った後にメニューが
+         *       直されても・非公開にされても、送った時点のメニューで絞る。メニューを選ばずに送った動画（`lesson_menu` のない動画）は、
+         *       `lesson_menu_id` を付ければ出ない（実装は backend の domain `Video::matches_lesson_menu` の 1 か所。扱いは `listBookings` の
+         *       `lesson_menu_id` と同じ）。期間・`coach_id`・`sport`・`student_id` と組み合わせられ、期間の規則・かかった時間の数え方・
+         *       並べ方は変わらない。省けばメニューを問わない。`lesson_menu_id` が UUID でなければ 422 `validation_failed`。ないメニューの ID・
+         *       期間にそのメニューの返却がないメニューは、404 にせず `reviews` が空の配列
          *     - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
          *       端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
          *       （KPI は小数で、ここは切り捨てた整数）
@@ -5000,6 +5008,12 @@ export interface operations {
                  *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あれば動画を送った時点のレッスンメニューがこのメニューの動画だけに絞る。省けばメニューを問わない。
+                 *     メニューを選ばずに送った動画は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;

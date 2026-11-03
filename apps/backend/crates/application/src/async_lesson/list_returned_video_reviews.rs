@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use domain::{
     DomainError,
     async_lesson::{ReturnedVideoReviewFilter, Video},
-    catalog::Sport,
+    catalog::{LessonMenuId, Sport},
     identity::AccountId,
 };
 use time::{Date, Duration};
@@ -18,8 +18,8 @@ use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 /// 照会だけで、何も保存しない。
 ///
 /// 返却の日付（日本時間。[`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の返却済みの動画をすべての
-/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチ・スポーツ・生徒で絞って
-/// 返却の新しい順に並べる（期間の長さの規則・かかった時間の数え方・並べ方・動画のスポーツの決め方は domain だけ）。どちらも省けば今日までの
+/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチ・スポーツ・生徒・レッスンメニューで絞って
+/// 返却の新しい順に並べる（期間の長さの規則・かかった時間の数え方・並べ方・動画のスポーツとレッスンメニューの決め方は domain だけ）。どちらも省けば今日までの
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日、片方だけなら、もう片方はそこから
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日目（両端を含む）。各動画には担当のコーチと生徒の表示名を profile に
 /// 問い合わせて（[`VideoCoachDisplayNameLookup`]・[`VideoStudentDisplayNameLookup`]）添える。誰が呼べるか（本部だけ）は
@@ -44,6 +44,8 @@ pub struct ListReturnedVideoReviewsQuery {
     pub sport: Option<Sport>,
     /// あればこの生徒が送った動画だけ
     pub student_id: Option<AccountId>,
+    /// あれば送った時点のレッスンメニューがこのメニューの動画だけ（[`Video::matches_lesson_menu`]）
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 #[derive(Debug)]
@@ -101,6 +103,7 @@ where
             query.coach_id,
             query.sport,
             query.student_id,
+            query.lesson_menu_id,
         )?;
         let videos = filter.select(
             self.videos
@@ -137,8 +140,8 @@ mod tests {
     };
 
     use domain::{
-        async_lesson::{ReviewComment, VideoId, VideoReviewId},
-        catalog::Sport,
+        async_lesson::{ReviewComment, VideoId, VideoLessonMenu, VideoReviewId},
+        catalog::{LessonMenuName, Sport},
         profile::DisplayName,
     };
     use time::Month;
@@ -338,6 +341,7 @@ mod tests {
             coach_id: None,
             sport: None,
             student_id: None,
+            lesson_menu_id: None,
         })
         .await;
         assert_eq!(ids(&list), [4]);
@@ -435,6 +439,7 @@ mod tests {
             coach_id: None,
             sport: Some(Sport::Golf),
             student_id: None,
+            lesson_menu_id: None,
         })
         .await;
         assert_eq!(ids(&list), [13]);
@@ -508,6 +513,7 @@ mod tests {
                     coach_id: None,
                     sport: None,
                     student_id: Some(STUDENT),
+                    lesson_menu_id: None,
                 },
                 vec![4],
             ),
@@ -541,6 +547,174 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_lesson_menu_narrows_the_list_with_the_period_coach_sport_and_student() {
+        const FORM: LessonMenuId = LessonMenuId::from_u128(50);
+        const SERVE: LessonMenuId = LessonMenuId::from_u128(51);
+        // `id` のテニスの動画を `student` が `coach` に `menu` を選んで送り、`returned_at` に返した
+        let with_menu = |id: u128,
+                         student: AccountId,
+                         coach: AccountId,
+                         menu: LessonMenuId,
+                         name: &str,
+                         submitted_at: SystemTime,
+                         returned_at: SystemTime| {
+            Video::restore(
+                VideoId::from_u128(id),
+                student,
+                coach,
+                Sport::Tennis,
+                submitted_at,
+                Some((
+                    VideoReviewId::from_u128(id + 100),
+                    ReviewComment::new("テイクバックが早い").unwrap(),
+                    returned_at,
+                )),
+                Some(VideoLessonMenu::restore(
+                    menu,
+                    LessonMenuName::new(name).unwrap(),
+                )),
+            )
+            .unwrap()
+        };
+        let mut all = videos().all();
+        all.extend([
+            with_menu(
+                21,
+                STUDENT,
+                COACH,
+                FORM,
+                "フォーム添削",
+                at(27, 0),
+                at(29, 0),
+            ),
+            with_menu(
+                22,
+                OTHER_STUDENT,
+                OTHER_COACH,
+                FORM,
+                "フォーム添削",
+                at(26, 0),
+                at(28, 0),
+            ),
+            // 送った後にメニューの名前が直されていても、写しの ID で絞る
+            with_menu(
+                23,
+                STUDENT,
+                OTHER_COACH,
+                FORM,
+                "スイング添削",
+                at(25, 0),
+                at(27, 0),
+            ),
+            with_menu(
+                24,
+                STUDENT,
+                COACH,
+                SERVE,
+                "サーブ添削",
+                at(25, 0),
+                at(26, 0),
+            ),
+            // 期間の外（10/24）
+            with_menu(
+                25,
+                STUDENT,
+                COACH,
+                FORM,
+                "フォーム添削",
+                at(20, 0),
+                at(24, 0),
+            ),
+        ]);
+        let run = |query| {
+            let all = all.clone();
+            async move {
+                use_case(
+                    InMemoryVideoRepository::with_videos(all),
+                    RecordingLookup::default(),
+                )
+                .execute(query)
+                .await
+                .unwrap()
+            }
+        };
+        let list = run(ListReturnedVideoReviewsQuery {
+            lesson_menu_id: Some(FORM),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(
+            (list.from, list.to),
+            (date(Month::October, 25), date(Month::October, 31)),
+            "メニューで絞っても期間を省けば今日までの 7 日"
+        );
+        assert_eq!(
+            ids(&list),
+            [21, 22, 23],
+            "メニューのない動画（1〜3）・別のメニュー（24）・期間の外（25）は出ず、返却の新しい順のまま"
+        );
+        for (query, expected) in [
+            (
+                ListReturnedVideoReviewsQuery {
+                    lesson_menu_id: Some(SERVE),
+                    ..Default::default()
+                },
+                vec![24],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    from: Some(date(Month::October, 24)),
+                    to: Some(date(Month::October, 24)),
+                    lesson_menu_id: Some(FORM),
+                    ..Default::default()
+                },
+                vec![25],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    lesson_menu_id: Some(FORM),
+                    ..Default::default()
+                },
+                vec![22, 23],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    student_id: Some(STUDENT),
+                    sport: Some(Sport::Tennis),
+                    lesson_menu_id: Some(FORM),
+                    ..Default::default()
+                },
+                vec![23],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    sport: Some(Sport::Golf),
+                    lesson_menu_id: Some(FORM),
+                    ..Default::default()
+                },
+                vec![],
+            ),
+            // ないメニューの ID は 404 にせず空の一覧
+            (
+                ListReturnedVideoReviewsQuery {
+                    lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                    ..Default::default()
+                },
+                vec![],
+            ),
+            // 付けなければメニューのない動画も載る
+            (
+                ListReturnedVideoReviewsQuery::default(),
+                vec![1, 2, 21, 22, 23, 24, 3],
+            ),
+        ] {
+            assert_eq!(ids(&run(query).await), expected, "{query:?}");
+        }
+    }
+
+    #[tokio::test]
     async fn periods_breaking_the_rule_are_invalid() {
         for (from, to, expected) in [
             (
@@ -561,6 +735,7 @@ mod tests {
                     coach_id: None,
                     sport: None,
                     student_id: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .unwrap_err();
@@ -578,6 +753,7 @@ mod tests {
                     coach_id: None,
                     sport: None,
                     student_id: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .is_ok()
