@@ -621,6 +621,7 @@ export const FIXTURES: Fixture[] = [
       pending_video_review_count: 2,
       overdue_pending_video_review_count: 1,
       recent_cancelled_booking_count: 2,
+      unanswered_message_thread_count: 1,
     } satisfies Schemas["CoachOverview"],
   },
   {

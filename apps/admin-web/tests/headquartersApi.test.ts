@@ -144,6 +144,7 @@ describe("headquartersApi", () => {
       pending_video_review_count: 1,
       overdue_pending_video_review_count: 0,
       recent_cancelled_booking_count: 0,
+      unanswered_message_thread_count: 0,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);

@@ -2,11 +2,11 @@
 //! レスポンスの形を OpenAPI のスキーマで検査し、本部がコーチ 1 人の表示名・受付の状態・評価の件数と平均・直近の低い評価の
 //! 件数と未対応の件数・今月と先月（日本時間の暦月）のレッスンの実績・公開中のレッスンメニューの数・直近 30 日に送られた動画の
 //! 返却までの時間の中央値（まだ返していない動画は今までの経過時間）とそのうち返した件数・返却待ちの動画添削の件数とそのうち
-//! 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を 1 回で読めること、コーチでない
+//! 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数・返信のないまま既定の時間の過ぎたスレッドの数を 1 回で読めること、コーチでない
 //! ID・ない ID・UUID でない ID は 404、本部以外（コーチ・生徒）は 403、トークンがなければ 401 になることを確かめる。数え方の
 //! 細かい検査は各操作のテスト（`reviews.rs`・`low_rated_reviews.rs`・`lesson_stats.rs`・`lesson_menus.rs`・
 //! `pending_video_reviews.rs`）と、domain の `VideoReviewLeadTime`・`CoachPendingVideoReviewCount`・
-//! `CoachRecentCancelledBookingCount` の単体テスト。
+//! `CoachRecentCancelledBookingCount`・`CoachUnansweredMessageThreadCount` の単体テスト。
 
 use std::time::{Duration, SystemTime};
 
@@ -20,10 +20,11 @@ use application::{
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
         InMemoryCoachAcceptanceRepository, InMemoryLessonCompletionRepository,
-        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository, InMemorySlotRepository,
-        InMemoryVideoRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
     },
     lesson::GetMyLessonStats,
+    messaging::MessagingCoachUnansweredMessageThreadCountLookup,
     profile::GetCoachOverview,
     review::{
         GetCoachLowRatedReviewCount, GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup,
@@ -47,6 +48,7 @@ use domain::{
     identity::{Account, AccountId, Email, Role},
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     live_lesson::SessionId,
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
     scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
@@ -188,7 +190,7 @@ fn returned_video(id: u128, returned_at: SystemTime, lead_minutes: u64) -> Video
 /// テニス 1・ゴルフ 1（ほかに非公開 1）。直近 30 日に送られた動画は、送付から 1 時間 30 分と 2 時間 10 分で返した 2 本と、
 /// まだ返していない 2 本（今までの経過 24 時間と 72 時間）で、40 日前に返した 1 本は数えない。返却待ちはこの 2 本で、
 /// 48 時間以上たったのは 72 時間の 1 本。キャンセルされた予約は 1 時間前と 30 日前ちょうどの 2 件で、30 日と 1 秒前の
-/// 1 件は数えない。
+/// 1 件は数えない。生徒の発言に返していないスレッドは 25 時間前の 1 件で、23 時間前の 1 件とコーチが返した 1 件は数えない。
 /// `NEW_COACH`（いとう）は何もない。
 /// 生徒 `STUDENT` がコーチ `COACH` のスロット（開始は 2099 年）を予約し、`cancelled_at` の時刻にキャンセルした予約の保存先。
 async fn cancelled_bookings(cancelled_at: &[SystemTime]) -> InMemoryBookingRepository {
@@ -237,6 +239,34 @@ async fn cancelled_bookings(cancelled_at: &[SystemTime]) -> InMemoryBookingRepos
             .unwrap();
     }
     bookings
+}
+
+/// `id` の生徒 `STUDENT` とコーチ `COACH` のスレッドを `now` の 10 日前に開き、`exchange` の順に（生徒が送ったか,
+/// 送信時刻）で本文を送る。
+fn thread(id: u128, now: SystemTime, exchange: &[(bool, SystemTime)]) -> MessageThread {
+    let mut thread = MessageThread::open(
+        MessageThreadId::from_u128(id),
+        AccountId::from_u128(100 + id),
+        COACH,
+        now - Duration::from_secs(240 * 3600),
+    )
+    .unwrap();
+    for (n, (by_student, at)) in exchange.iter().enumerate() {
+        thread
+            .send(
+                MessageId::from_u128(id * 100 + n as u128),
+                if *by_student {
+                    AccountId::from_u128(100 + id)
+                } else {
+                    COACH
+                },
+                MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+                true,
+                *at,
+            )
+            .unwrap();
+    }
+    thread
 }
 
 async fn app() -> Router {
@@ -320,6 +350,14 @@ async fn app() -> Router {
                 .await,
                 FixedClock(now),
             ),
+            MessagingCoachUnansweredMessageThreadCountLookup::new(
+                InMemoryMessageThreadRepository::with_threads([
+                    thread(1, now, &[(true, now - day - Duration::from_secs(3600))]),
+                    thread(2, now, &[(true, now - Duration::from_secs(23 * 3600))]),
+                    thread(3, now, &[(true, now - day * 3), (false, now - day * 2)]),
+                ]),
+                FixedClock(now),
+            ),
         ),
         FakeTokens,
     )
@@ -388,6 +426,7 @@ async fn headquarters_reads_the_overview_of_a_coach() {
             "pending_video_review_count": 2,
             "overdue_pending_video_review_count": 1,
             "recent_cancelled_booking_count": 2,
+            "unanswered_message_thread_count": 1,
         })
     );
 }
@@ -418,6 +457,7 @@ async fn a_coach_without_anything_is_accepting_with_zero_counts() {
             "pending_video_review_count": 0,
             "overdue_pending_video_review_count": 0,
             "recent_cancelled_booking_count": 0,
+            "unanswered_message_thread_count": 0,
         })
     );
 }

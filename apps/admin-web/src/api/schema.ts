@@ -726,8 +726,8 @@ export interface paths {
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
          *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を
-         *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数・
+         *     返信のないまま時間の過ぎたチャットのスレッドの数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
          *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
@@ -761,6 +761,12 @@ export interface paths {
          *       `recent_lesson_count` と同じ（実装は backend の domain `CoachRecentCancelledBookingCount` の 1 か所で、期間は
          *       `RecentLessonPeriod`）。誰がキャンセルしたか（`getBooking` の `cancelled_by`）では分けない合計で、予約した枠の
          *       開始時刻や体験予約かは問わない。キャンセルされた予約がなければ 0
+         *     - `unanswered_message_thread_count`: そのコーチが担当するスレッドのうち、返信のないまま時間の過ぎたものの数。
+         *       **既定の条件の一覧と同じ数**で、`listUnansweredMessageThreads` に `coach_id` だけを付けたとき（`older_than_hours` を
+         *       省いた既定の 24 時間・`student_id` なし）の `threads` の件数と同じ。何を発言と数えるか・待ち始め・境界（ちょうど
+         *       24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は backend の domain
+         *       `UnansweredThreadCriteria` の既定の 1 か所で、数は `CoachUnansweredMessageThreadCount`）。件数だけで、メッセージの本文は
+         *       返さない。該当するスレッドがなければ 0
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -2455,7 +2461,8 @@ export interface components {
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
          *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を添える。金額は持たない
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数・返信のないまま時間の
+         *     過ぎたチャットのスレッドの数を添える。金額とメッセージの本文は持たない
          */
         CoachOverview: {
             /**
@@ -2498,6 +2505,11 @@ export interface components {
              *     キャンセルしたかを分けない合計。期間の境界は `listCoaches` の `recent_lesson_count` と同じ）
              */
             recent_cancelled_booking_count: number;
+            /**
+             * @description そのコーチが担当するスレッドのうち、返信のないまま時間の過ぎたものの数。既定の条件の一覧と同じ数
+             *     （`listUnansweredMessageThreads` に `coach_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
+             */
+            unanswered_message_thread_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
