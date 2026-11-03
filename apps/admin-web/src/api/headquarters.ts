@@ -71,7 +71,7 @@ export function headquartersApi(client: ApiClient) {
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
-    listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string }) =>
+    listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string; student_id?: string }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
     listLessonMenus: (filter: {
       q?: string;
