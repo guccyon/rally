@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, collections::BTreeSet};
 
-use domain::identity::AccountId;
+use domain::{catalog::LessonMenuId, identity::AccountId};
 use time::Date;
 
 use super::{
@@ -18,7 +18,10 @@ use crate::clock::Clock;
 /// 絞る（いないコーチなら空の一覧。規則は [`super::ListBookings`] と同じ domain の
 /// [`Booking::matches_coach`](domain::scheduling::Booking::matches_coach)）。`student_id` があればその生徒が予約した
 /// 予約だけに絞る（いない生徒なら空の一覧。規則は [`super::ListBookings`] と同じ domain の
-/// [`Booking::matches_student`](domain::scheduling::Booking::matches_student)）。キャンセルした人は domain の
+/// [`Booking::matches_student`](domain::scheduling::Booking::matches_student)）。`lesson_menu_id` があれば予約した時点の
+/// レッスンメニューの写しがそのメニューの予約だけに絞る（メニューのない予約は出ない。ないメニューなら空の一覧。規則は
+/// [`super::ListBookings`] と同じ domain の
+/// [`Booking::matches_lesson_menu`](domain::scheduling::Booking::matches_lesson_menu)）。キャンセルした人は domain の
 /// [`Booking::cancelled_by`](domain::scheduling::Booking::cancelled_by)。一覧に出るコーチと生徒の表示名は profile に
 /// 問い合わせて添える。読むだけで何も変えない。
 pub struct ListCancelledBookings<B, K, D, C> {
@@ -39,6 +42,8 @@ pub struct ListCancelledBookingsQuery {
     pub coach_id: Option<AccountId>,
     /// あればこの生徒が予約した予約だけ
     pub student_id: Option<AccountId>,
+    /// あれば予約した時点のレッスンメニューの写しがこのメニューの予約だけ
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl<B, K, D, C> ListCancelledBookings<B, K, D, C>
@@ -73,6 +78,7 @@ where
             booking.cancelled_at().is_some_and(|at| period.includes(at))
                 && booking.matches_coach(query.coach_id)
                 && booking.matches_student(query.student_id)
+                && booking.matches_lesson_menu(query.lesson_menu_id)
         });
         bookings.sort_by_key(|booking| (Reverse(booking.cancelled_at()), booking.id()));
 
@@ -107,11 +113,11 @@ mod tests {
     };
 
     use domain::{
-        catalog::Sport,
+        catalog::{LessonMenuName, Sport},
         profile::DisplayName,
         scheduling::{
-            Booking, BookingCanceller, BookingId, SchedulingError, Slot, SlotId, SlotSeats,
-            SlotStatus,
+            Booking, BookingCanceller, BookingId, BookingLessonMenu, SchedulingError, Slot, SlotId,
+            SlotSeats, SlotStatus,
         },
     };
     use time::Month;
@@ -209,6 +215,35 @@ mod tests {
             .unwrap()
     }
 
+    /// `slot` に、予約した時点のレッスンメニューの写し `menu` のある予約を作る。
+    async fn book_with_menu(
+        bookings: &InMemoryBookingRepository,
+        student: AccountId,
+        slot: u128,
+        menu: u128,
+    ) -> Booking {
+        bookings
+            .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+                Booking::reserve(
+                    BookingId::from_u128(slot.id().as_u128() * 100 + existing.len() as u128),
+                    student,
+                    false,
+                    slot,
+                    existing,
+                    at(1, 0),
+                )
+                .map(|booking| {
+                    booking.with_restored_lesson_menu(Some(BookingLessonMenu::restore(
+                        LessonMenuId::from_u128(menu),
+                        LessonMenuName::new("フォア改善").unwrap(),
+                        None,
+                    )))
+                })
+            })
+            .await
+            .unwrap()
+    }
+
     async fn cancel(bookings: &InMemoryBookingRepository, booking: &Booking, at: SystemTime) {
         let student = booking.student_id();
         bookings
@@ -238,6 +273,7 @@ mod tests {
             to,
             coach_id: None,
             student_id: None,
+            lesson_menu_id: None,
         }
     }
 
@@ -447,6 +483,139 @@ mod tests {
         let error = use_case
             .execute(ListCancelledBookingsQuery {
                 student_id: Some(STUDENT),
+                ..query(Some(date(3)), Some(date(2)))
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ListBookingsError::Invalid(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        ));
+    }
+
+    #[tokio::test]
+    async fn lesson_menu_id_narrows_to_the_menu_combined_with_the_days_the_coach_and_the_student() {
+        const MENU: u128 = 50;
+        const OTHER_MENU: u128 = 51;
+        let slots = InMemorySlotRepository::with_slots(
+            [
+                (1, COACH),
+                (2, COACH),
+                (3, OTHER_COACH),
+                (4, COACH),
+                (5, COACH),
+                (6, COACH),
+                (7, COACH),
+            ]
+            .map(|(id, coach)| slot(id, coach)),
+        );
+        let bookings = InMemoryBookingRepository::new(slots);
+        for (booking, cancelled_at) in [
+            (book_with_menu(&bookings, STUDENT, 1, MENU).await, at(2, 9)),
+            (
+                book_with_menu(&bookings, OTHER_STUDENT, 2, MENU).await,
+                at(3, 8),
+            ),
+            (book_with_menu(&bookings, STUDENT, 3, MENU).await, at(2, 12)),
+            (
+                book_with_menu(&bookings, STUDENT, 4, OTHER_MENU).await,
+                at(2, 10),
+            ),
+            // メニューのない予約
+            (book(&bookings, STUDENT, 5).await, at(2, 11)),
+            // 期間（11 月 2 日〜3 日）の外
+            (book_with_menu(&bookings, STUDENT, 6, MENU).await, at(4, 0)),
+        ] {
+            cancel(&bookings, &booking, cancelled_at).await;
+        }
+        // キャンセルしていない予約は出ない
+        book_with_menu(&bookings, STUDENT, 7, MENU).await;
+
+        let lookup = RecordingLookup::default();
+        let use_case = list_cancelled_bookings(bookings, lookup.clone(), at(10, 0));
+        let menu = Some(LessonMenuId::from_u128(MENU));
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                lesson_menu_id: menu,
+                ..query(Some(date(2)), Some(date(3)))
+            })
+            .await
+            .unwrap();
+        assert_eq!((list.from, list.to), (date(2), date(3)));
+        assert_eq!(rows(&list), [2, 3, 1]);
+        assert_eq!(
+            *lookup.coaches_asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "絞ったあとのコーチだけを問い合わせる"
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT, OTHER_STUDENT])]
+        );
+
+        // コーチ・生徒と組み合わせると全部に当てはまる予約だけ。なければメニューを問わない（今までと同じ）
+        for (query, expected) in [
+            (
+                ListCancelledBookingsQuery {
+                    lesson_menu_id: Some(LessonMenuId::from_u128(OTHER_MENU)),
+                    ..ListCancelledBookingsQuery::default()
+                },
+                vec![4],
+            ),
+            (
+                ListCancelledBookingsQuery {
+                    coach_id: Some(COACH),
+                    lesson_menu_id: menu,
+                    ..ListCancelledBookingsQuery::default()
+                },
+                vec![2, 1],
+            ),
+            (
+                ListCancelledBookingsQuery {
+                    student_id: Some(STUDENT),
+                    lesson_menu_id: menu,
+                    ..ListCancelledBookingsQuery::default()
+                },
+                vec![3, 1],
+            ),
+            (
+                ListCancelledBookingsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    student_id: Some(OTHER_STUDENT),
+                    lesson_menu_id: menu,
+                    ..ListCancelledBookingsQuery::default()
+                },
+                vec![],
+            ),
+            (ListCancelledBookingsQuery::default(), vec![2, 3, 5, 4, 1]),
+        ] {
+            let list = use_case
+                .execute(ListCancelledBookingsQuery {
+                    from: Some(date(2)),
+                    to: Some(date(3)),
+                    ..query.clone()
+                })
+                .await
+                .unwrap();
+            assert_eq!(rows(&list), expected, "{query:?}");
+        }
+
+        // ないメニューの ID は空の一覧で、表示名を問い合わせない
+        let asked = lookup.coaches_asked.lock().unwrap().len();
+        let list = use_case
+            .execute(ListCancelledBookingsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..query(Some(date(2)), Some(date(3)))
+            })
+            .await
+            .unwrap();
+        assert!(list.bookings.is_empty());
+        assert_eq!(lookup.coaches_asked.lock().unwrap().len(), asked);
+
+        // 期間の規則はメニューで絞っても同じ
+        let error = use_case
+            .execute(ListCancelledBookingsQuery {
+                lesson_menu_id: menu,
                 ..query(Some(date(3)), Some(date(2)))
             })
             .await

@@ -165,6 +165,11 @@ export interface paths {
          *       その生徒の分だけを見る）。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての
          *       生徒。検証と扱いは `listBookings` の `student_id` と同じで、UUID でなければ 422 `validation_failed`。生徒でない ID・
          *       ない ID・期間にキャンセルがない生徒は、404 にせず `bookings` が空の配列
+         *     - 任意の `lesson_menu_id` で、予約した時点のレッスンメニューがそのメニューのキャンセルされた予約だけに絞れる（キャンセルの
+         *       多いメニューに気づく）。予約した後にメニューが直されても、枠のメニューが変わっても、予約した時点のメニューで絞る。
+         *       メニューのない予約は、`lesson_menu_id` を付ければ出ない。期間・`coach_id`・`student_id` と組み合わせられ、期間の規則と
+         *       並べ方は変わらない。省けば今までどおりメニューを問わない。検証と扱いは `listBookings` の `lesson_menu_id` と同じで、
+         *       UUID でなければ 422 `validation_failed`。ないメニューの ID・期間にキャンセルがないメニューは、404 にせず `bookings` が空の配列
          *     - 並べ方: キャンセルした時刻（`cancelled_at`）の新しい順。同じ時刻は `booking_id` の順。ページングはしない。
          *       キャンセルされた予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 各項目には予約の ID・予約した生徒（`student_id` と表示名 `student_display_name`）・予約された枠のコーチ（`coach_id` と
@@ -3653,6 +3658,12 @@ export interface operations {
                  *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あれば予約した時点のレッスンメニューがこのメニューのキャンセルされた予約だけに絞る。省けばメニューを問わない。
+                 *     メニューのない予約は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;

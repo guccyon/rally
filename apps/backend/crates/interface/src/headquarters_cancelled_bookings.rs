@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use application::{
+    catalog::lesson_menu_id_uuid,
     clock::Clock,
     identity::{TokenVerifier, account_id_uuid},
     scheduling::{
@@ -42,6 +43,7 @@ pub struct ListCancelledBookingsParams {
     to: Option<String>,
     coach_id: Option<String>,
     student_id: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `CancelledBookingList`。
@@ -69,8 +71,8 @@ pub struct CancelledBookingBody {
 }
 
 /// `GET /bookings/cancelled`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないとき・`coach_id`・`student_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は
-/// [`crate::scheduling_error`] が決める。`coach_id`・`student_id` の検証も含めて `listBookings` と同じ）。
+/// 日付でないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は
+/// [`crate::scheduling_error`] が決める。`coach_id`・`student_id`・`lesson_menu_id` の検証も含めて `listBookings` と同じ）。
 pub async fn list_cancelled_bookings<B, K, D, C>(
     State(state): State<Arc<HeadquartersCancelledBookingsState<B, K, D, C>>>,
     _account: AuthenticatedAccount,
@@ -104,6 +106,14 @@ where
             .student_id
             .as_deref()
             .map(|id| account_id_from_contract("student_id", id))
+            .transpose()?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| {
+                lesson_menu_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed("lesson_menu_id が UUID でない"))
+            })
             .transpose()?,
     };
     let list = state
