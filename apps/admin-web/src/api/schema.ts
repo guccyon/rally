@@ -1418,7 +1418,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 通話セッションの記録を期間とコーチ・生徒・競技で見る（本部）
+         * 通話セッションの記録を期間とコーチ・生徒・競技・レッスンメニューで見る（本部）
          * @description 通話セッション（glossary の live_lesson_session）のうち、開始した日付（日本時間）が `from` から `to` まで（両端を含む）の
          *     ものを、終了の有無を問わずコーチを問わず横断で返す。本部が問い合わせを受けたときに、ライブレッスンがいつ始まり
          *     いつ終わったかを引くための一覧。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
@@ -1445,6 +1445,16 @@ export interface paths {
          *       `student_id` と組み合わせられ、期間の規則と並べ方は変わらない。省けばすべての競技。`sport` が `Sport` の値でなければ
          *       422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。期間に該当するセッションがない競技は
          *       `sessions` が空の配列
+         *     - 任意の `lesson_menu_id` で、そのレッスンメニューのセッションだけに絞れる（レッスンメニューの見直しを考える本部が、
+         *       そのメニューのライブレッスンの実施を振り返る）。セッションのメニューは、セッションに結び付いた予約の予約した時点の
+         *       レッスンメニュー（`listBookings` の各予約の `lesson_menu` の `lesson_menu_id`）で決め、結び付いた予約のどれかがその
+         *       メニューならセッションが載る（グループレッスンでは、通話を始めた予約に限らない。`student_id` と同じ見方）。予約した
+         *       後にメニューが直されても・非公開にされても、枠のメニューが変わっても、予約した時点のメニューで絞る。メニューのない
+         *       予約（`lesson_menu` のない予約）だけが結び付いたセッションは、`lesson_menu_id` を付ければ出ない（実装は backend の
+         *       domain `SessionHistoryCriteria::matches_lesson_menu` の 1 か所）。期間・`coach_id`・`student_id`・`sport` と組み合わせ
+         *       られ、期間の規則と並べ方は変わらない。省けば今までどおりメニューを問わない。`lesson_menu_id` が UUID でなければ 422
+         *       `validation_failed`。ないメニューの ID・期間にセッションがないメニューは、`listBookings` の `lesson_menu_id` と同じく
+         *       404 にせず `sessions` が空の配列
          *     - 対象: 終了したセッションも、通話中（終了の記録がない）のセッションも載る。グループレッスンのセッションも 1 件。
          *       本部が終わらせたセッション（`endLiveLessonSessionByHeadquarters`）は、本部が操作した時刻を `ended_at` にして載る
          *     - 並べ方: 開始 `started_at` の新しい順。同じ時刻は `session_id` の順
@@ -4803,6 +4813,12 @@ export interface operations {
                  *     `Sport` の値でなければ 422 `validation_failed`
                  */
                 sport?: components["schemas"]["Sport"];
+                /**
+                 * @description あれば結び付いた予約のどれかの予約した時点のレッスンメニューがこのメニューのセッションだけに絞る。省けばメニューを
+                 *     問わない。メニューのない予約だけのセッションは、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
