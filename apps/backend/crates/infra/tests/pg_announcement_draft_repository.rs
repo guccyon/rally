@@ -123,7 +123,7 @@ async fn listing_by_a_title_query_keeps_matching_drafts_in_the_same_order(pool: 
     let found = |q: &str| {
         let list = &list;
         let query = AnnouncementTitleQuery::new(q).unwrap();
-        async move { list.execute(query.as_ref()).await.unwrap() }
+        async move { list.execute(query.as_ref(), None).await.unwrap() }
     };
     assert_eq!(
         found(" メンテナンス ").await,
@@ -148,5 +148,62 @@ async fn listing_by_a_title_query_keeps_matching_drafts_in_the_same_order(pool: 
         found("\u{3000} ").await,
         [night, untitled, app, maintenance],
         "空白だけなら絞り込まない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn listing_by_a_sport_keeps_drafts_for_that_sport_in_the_same_order(pool: PgPool) {
+    let drafts = PgAnnouncementDraftRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let tennis = draft(
+        &drafts,
+        headquarters,
+        "テニスの大会",
+        Some(Sport::Tennis),
+        1,
+    );
+    let golf = draft(&drafts, headquarters, "ゴルフの大会", Some(Sport::Golf), 2);
+    let everyone = draft(&drafts, headquarters, "テニスの大会と更新", None, 3);
+    let result = draft(
+        &drafts,
+        headquarters,
+        "テニスの大会の結果",
+        Some(Sport::Tennis),
+        4,
+    );
+    for draft in [&tennis, &golf, &everyone, &result] {
+        drafts.insert(draft.clone()).await.unwrap();
+    }
+
+    let list = ListAnnouncementDrafts::new(drafts.clone());
+    let found = |q: &str, sport: Option<Sport>| {
+        let list = &list;
+        let query = AnnouncementTitleQuery::new(q).unwrap();
+        async move { list.execute(query.as_ref(), sport).await.unwrap() }
+    };
+    assert_eq!(
+        found("", Some(Sport::Tennis)).await,
+        [result.clone(), tennis.clone()],
+        "そのスポーツの生徒に向けた下書きだけ。生徒全員に向けた下書きは入らない。並べ方は変わらない"
+    );
+    assert_eq!(
+        found("", Some(Sport::Golf)).await,
+        std::slice::from_ref(&golf)
+    );
+    assert!(found("", Some(Sport::Swimming)).await.is_empty());
+    assert_eq!(
+        found("結果", Some(Sport::Tennis)).await,
+        std::slice::from_ref(&result),
+        "題と組み合わせられる"
+    );
+    assert!(
+        found("更新", Some(Sport::Tennis)).await.is_empty(),
+        "題が合っても生徒全員に向けた下書きは入らない"
+    );
+    assert_eq!(
+        found("", None).await,
+        [result, everyone, golf, tennis],
+        "付けなければ今までどおりすべて"
     );
 }

@@ -576,6 +576,58 @@ async fn headquarters_finds_drafts_by_a_part_of_the_title() {
 }
 
 #[tokio::test]
+async fn headquarters_narrows_drafts_by_sport() {
+    let app = App::default();
+    for (minute, title, sport) in [
+        (10, "テニスの大会", json!("tennis")),
+        (20, "ゴルフの大会", json!("golf")),
+        (30, "テニスの大会と更新", Value::Null),
+        (40, "テニスの大会の結果", json!("tennis")),
+    ] {
+        create(
+            &app,
+            minute,
+            json!({ "title": title, "body": "本文", "sport": sport }),
+        )
+        .await;
+    }
+
+    for (query, expected) in [
+        // そのスポーツの生徒に向けた下書きだけ。生徒全員に向けた下書きは入らない。並べ方は変わらない
+        ("?sport=tennis", vec!["テニスの大会の結果", "テニスの大会"]),
+        ("?sport=golf", vec!["ゴルフの大会"]),
+        ("?sport=swimming", vec![]),
+        // q と組み合わせられる
+        (
+            "?sport=tennis&q=%E7%B5%90%E6%9E%9C",
+            vec!["テニスの大会の結果"],
+        ),
+        ("?q=%E6%9B%B4%E6%96%B0&sport=tennis", vec![]),
+        ("?sport=golf&q=%E3%83%86%E3%83%8B%E3%82%B9", vec![]),
+        // 付けなければ今までどおり
+        (
+            "",
+            vec![
+                "テニスの大会の結果",
+                "テニスの大会と更新",
+                "ゴルフの大会",
+                "テニスの大会",
+            ],
+        ),
+    ] {
+        let (status, body) = search(&app, 50, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(titles(&body), expected, "{query}");
+    }
+
+    for query in ["?sport=ski", "?sport=", "?sport=Tennis"] {
+        let (status, body) = search(&app, 50, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn a_missing_draft_is_not_found() {
     let app = App::default();
     let router = app.router(at(10)).await;

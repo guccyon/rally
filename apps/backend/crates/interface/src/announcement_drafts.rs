@@ -71,6 +71,7 @@ pub struct AnnouncementDraftRequest {
 #[derive(Deserialize)]
 pub struct ListAnnouncementDraftsParams {
     q: Option<String>,
+    sport: Option<String>,
 }
 
 /// admin-web の `AnnouncementDraft`。
@@ -151,7 +152,9 @@ where
 
 /// `GET /announcement-drafts`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。下書きを最後に
 /// 直した時刻の新しい順で返す（どの本部のアカウントが作ったかで絞らない）。`q` があれば題に部分一致する下書きだけで、
-/// 一致のしかたは `listLessonMenus` の `q` と同じ（[`AnnouncementTitleQuery`]）。長すぎる `q` は 422。
+/// 一致のしかたは `listLessonMenus` の `q` と同じ（[`AnnouncementTitleQuery`]）。長すぎる `q` は 422。`sport` があれば
+/// そのスポーツの生徒に向けた下書きだけに絞る（生徒全員に向けた下書きは入らない。照合は `listAnnouncements` の `sport` と
+/// 同じ。`q` と組み合わせられる。`Sport` の値でなければ 422。値の読み方は下書きの `sport` と同じ [`admin_web_sport`]）。
 pub async fn list_announcement_drafts<D, A, L, N, S, P, C>(
     State(state): State<Shared<D, A, L, N, S, P, C>>,
     params: Result<Query<ListAnnouncementDraftsParams>, QueryRejection>,
@@ -174,9 +177,10 @@ where
         .transpose()
         .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
         .flatten();
+    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
     let drafts = state
         .list_announcement_drafts
-        .execute(title.as_ref())
+        .execute(title.as_ref(), sport)
         .await
         .map_err(ApiError::internal)?;
     draft_list_body(&drafts).map(Json)
