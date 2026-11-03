@@ -64,6 +64,9 @@ const STUDENTS: Schemas["Student"][] = [
   },
 ];
 
+const RECENT_BOOKING_COUNT_NOTE =
+  "直近 30 日の予約は、今日までの 30 日にその生徒が作った予約（体験予約を含む）のうち、キャンセルされていないものの数です。";
+
 function listOf(students: Schemas["Student"][]) {
   return vi.fn<HeadquartersApi["listStudents"]>(async () => ({ ok: true, data: { students } }));
 }
@@ -81,7 +84,7 @@ function bodyRows() {
 }
 
 describe("本部の生徒", () => {
-  test("読み込み中を出し、読めたら各行に表示名・スポーツ・契約プラン・最後に予約した日・登録日を API の順で出す", async () => {
+  test("読み込み中を出し、読めたら各行に表示名・スポーツ・契約プラン・最後に予約した日・直近 30 日の予約・登録日を API の順で出す", async () => {
     const listStudents = listOf(STUDENTS);
     render(<StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} />);
 
@@ -89,11 +92,11 @@ describe("本部の生徒", () => {
     await screen.findByRole("table", { name: "生徒の一覧" });
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
     expect(bodyRows().map(cellsOf)).toEqual([
-      ["山田 花子", "テニス", "月額（プラス）", "2026/10/25", "2026/10/21"],
+      ["山田 花子", "テニス", "月額（プラス）", "2026/10/25", "3 件", "2026/10/21"],
       // ワンショットはプランがなく、予約がなければ「まだ予約がありません」
-      ["佐藤 一郎", "ゴルフ", "ワンショット", "まだ予約がありません", "2026/10/10"],
+      ["佐藤 一郎", "ゴルフ", "ワンショット", "まだ予約がありません", "0 件", "2026/10/10"],
       // 受講権がなければ「未契約」。最後に予約した日は日本時間の日付
-      ["鈴木 次郎", "テニス", "未契約", "2026/10/1", "2026/9/30"],
+      ["鈴木 次郎", "テニス", "未契約", "2026/10/1", "1 件", "2026/9/30"],
     ]);
     expect(within(screen.getByRole("table")).getAllByRole("columnheader")[3]).toHaveTextContent(
       "最後に予約した日",
@@ -104,6 +107,15 @@ describe("本部の生徒", () => {
     expect(screen.getByLabelText("スポーツ")).toHaveValue("");
     expect(screen.getByLabelText("この日以降に予約していない")).toHaveValue("");
     expect(screen.getByLabelText("コーチ")).toHaveValue("");
+  });
+
+  test("各行に直近 30 日の予約の数を「n 件」で出し（0 も空欄にせず「0 件」）、表の上に数え方を添える", async () => {
+    render(<StudentDirectory api={{ listStudents: listOf(STUDENTS), listCoaches: coachesOf() }} />);
+
+    const table = await screen.findByRole("table", { name: "生徒の一覧" });
+    expect(within(table).getByRole("columnheader", { name: "直近 30 日の予約" })).toBeInTheDocument();
+    expect(bodyRows().map((row) => cellsOf(row)[4])).toEqual(["3 件", "0 件", "1 件"]);
+    expect(screen.getByText(RECENT_BOOKING_COUNT_NOTE)).toBeInTheDocument();
   });
 
   test("スポーツは「すべて」と 6 種類から選べる", async () => {
@@ -334,6 +346,7 @@ describe("本部の生徒", () => {
 
     expect(await screen.findByText("まだ生徒はいません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(RECENT_BOOKING_COUNT_NOTE)).not.toBeInTheDocument();
     expect(screen.queryByText("条件に合う生徒はいません")).not.toBeInTheDocument();
   });
 
