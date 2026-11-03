@@ -227,7 +227,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         ProfileStudentDisplayNameLookup::new(accounts),
         FixedClock(now),
     );
-    let list = use_case.execute(None, None, None).await.unwrap();
+    let list = use_case.execute(None, None, None, None).await.unwrap();
     assert_eq!(
         list.reviews,
         [latest.clone(), edge.clone()],
@@ -247,7 +247,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
 
     // 予約の枠はテニス
     let tennis = use_case
-        .execute(Some(Sport::Tennis), None, None)
+        .execute(Some(Sport::Tennis), None, None, None)
         .await
         .unwrap();
     assert_eq!(
@@ -258,7 +258,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
 
     // コーチは完了記録ごとに別（support::ended_session は新しいコーチを作る）
     let of_coach = use_case
-        .execute(None, None, Some(edge.coach_id()))
+        .execute(None, None, Some(edge.coach_id()), None)
         .await
         .unwrap();
     assert_eq!(
@@ -271,21 +271,77 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         [&edge.coach_id()]
     );
     let of_coach = use_case
-        .execute(Some(Sport::Tennis), Some(false), Some(latest.coach_id()))
+        .execute(
+            Some(Sport::Tennis),
+            Some(false),
+            Some(latest.coach_id()),
+            None,
+        )
         .await
         .unwrap();
     assert_eq!(
         of_coach.reviews,
-        [latest],
+        std::slice::from_ref(&latest),
         "スポーツ・対応済みと合わせて絞れる"
     );
     // 低い評価のないコーチ・ない ID は空
     for coach_id in [good.coach_id(), domain::identity::AccountId::from_u128(99)] {
-        let list = use_case.execute(None, None, Some(coach_id)).await.unwrap();
+        let list = use_case
+            .execute(None, None, Some(coach_id), None)
+            .await
+            .unwrap();
         assert!(list.reviews.is_empty(), "{coach_id:?}");
     }
+    // 生徒も完了記録ごとに別（support::ended_session は新しい生徒の予約を作る）
+    let of_student = use_case
+        .execute(None, None, None, Some(edge.student_id()))
+        .await
+        .unwrap();
+    assert_eq!(
+        of_student.reviews,
+        std::slice::from_ref(&edge),
+        "その生徒の評価だけ"
+    );
+    assert_eq!(
+        of_student.student_display_names.keys().collect::<Vec<_>>(),
+        [&edge.student_id()]
+    );
+    let of_student = use_case
+        .execute(
+            Some(Sport::Tennis),
+            Some(false),
+            Some(latest.coach_id()),
+            Some(latest.student_id()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        of_student.reviews,
+        std::slice::from_ref(&latest),
+        "スポーツ・対応済み・コーチと合わせて絞れる"
+    );
+    let of_student = use_case
+        .execute(None, None, Some(edge.coach_id()), Some(latest.student_id()))
+        .await
+        .unwrap();
+    assert!(
+        of_student.reviews.is_empty(),
+        "コーチと生徒の両方に合う評価だけ"
+    );
+    // 低い評価のない生徒・生徒でない ID（コーチ）・ない ID は空
+    for student_id in [
+        good.student_id(),
+        edge.coach_id(),
+        domain::identity::AccountId::from_u128(99),
+    ] {
+        let list = use_case
+            .execute(None, None, None, Some(student_id))
+            .await
+            .unwrap();
+        assert!(list.reviews.is_empty(), "{student_id:?}");
+    }
     let golf = use_case
-        .execute(Some(Sport::Golf), None, None)
+        .execute(Some(Sport::Golf), None, None, None)
         .await
         .unwrap();
     assert!(golf.reviews.is_empty(), "ゴルフのレッスンの評価はない");
@@ -503,15 +559,21 @@ async fn headquarters_marks_a_low_review_handled_once_and_lists_only_the_unhandl
         list.reviews.iter().map(LessonReview::id).collect()
     };
     assert_eq!(
-        ids(use_case.execute(None, Some(false), None).await.unwrap()),
+        ids(use_case
+            .execute(None, Some(false), None, None)
+            .await
+            .unwrap()),
         [unhandled.id()]
     );
     assert_eq!(
-        ids(use_case.execute(None, Some(true), None).await.unwrap()),
+        ids(use_case
+            .execute(None, Some(true), None, None)
+            .await
+            .unwrap()),
         [low.id()]
     );
     assert_eq!(
-        ids(use_case.execute(None, None, None).await.unwrap()),
+        ids(use_case.execute(None, None, None, None).await.unwrap()),
         [unhandled.id(), low.id()]
     );
 }

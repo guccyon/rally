@@ -2,6 +2,7 @@
 //! 直近の低い評価の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツのレッスンの評価だけ（`Sport` の値で
 //! なければ 422）。`handled` があれば本部の対応済みの印の有無がそれと同じ評価だけ（`true` / `false` でなければ 422）。
 //! `coach_id` があればそのコーチが評価された評価だけ（UUID でなければ 422。いないコーチは空の一覧）。
+//! `student_id` があればその生徒が評価した評価だけ（UUID でなければ 422。いない生徒は空の一覧）。
 //! 各評価には評価されたコーチの返信と、本部の対応済みの印を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
@@ -52,6 +53,7 @@ pub struct ListLowRatedReviewsParams {
     sport: Option<String>,
     handled: Option<bool>,
     coach_id: Option<String>,
+    student_id: Option<String>,
 }
 
 /// admin-web の `LowRatedLessonReviewList`。
@@ -84,7 +86,8 @@ pub struct LowRatedLessonReviewBody {
 /// `GET /lesson-reviews/low`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
 /// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。`handled` があれば対応済みの印の
 /// 有無がそれと同じ評価だけ（`false` で未対応だけ）。`coach_id` があればそのコーチの評価だけ（UUID でなければ 422。
-/// 検証と扱いは `listCancelledBookings` の `coach_id` と同じ）。
+/// 検証と扱いは `listCancelledBookings` の `coach_id` と同じ）。`student_id` があればその生徒が評価した評価だけ（UUID で
+/// なければ 422。検証と扱いは `listCancelledBookings` の `student_id` と同じ）。
 pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
     State(state): State<Shared<R, M, P, D, S, C>>,
     params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
@@ -105,9 +108,14 @@ where
         .as_deref()
         .map(|id| account_id_from_contract("coach_id", id))
         .transpose()?;
+    let student_id = params
+        .student_id
+        .as_deref()
+        .map(|id| account_id_from_contract("student_id", id))
+        .transpose()?;
     let list = state
         .list_low_rated_reviews
-        .execute(sport, params.handled, coach_id)
+        .execute(sport, params.handled, coach_id, student_id)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(LowRatedLessonReviewListBody {

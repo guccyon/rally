@@ -489,8 +489,12 @@ export interface paths {
          *       そのコーチの分だけを見る）。`sport`・`handled` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
          *       付けなければコーチを問わずすべて。扱いは `listCancelledBookings` の `coach_id` と同じで、コーチでない ID・ない ID・
          *       低い評価のないコーチは、404 にせず `reviews` が空の配列
-         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id` が UUID でないときは
-         *       422 `validation_failed`
+         *     - 絞り込み（任意）: `student_id` を付ければ、その生徒が評価した評価だけ（同じ生徒から低い評価が続いていないかを本部が
+         *       確かめる）。`sport`・`handled`・`coach_id` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
+         *       付けなければ生徒を問わずすべて。扱いは `listCancelledBookings` の `student_id` と同じで、生徒でない ID・ない ID・
+         *       低い評価のない生徒は、404 にせず `reviews` が空の配列
+         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id`・`student_id` が UUID でない
+         *       ときは 422 `validation_failed`
          *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
          *
@@ -3906,6 +3910,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの生徒が評価した評価だけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+                 *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                student_id?: string;
             };
             header?: never;
             path?: never;

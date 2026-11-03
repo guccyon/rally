@@ -154,6 +154,13 @@ impl LessonReview {
         coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
     }
 
+    /// 一覧を絞る生徒の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `student_id`）。指定があればその ID が
+    /// 評価した生徒のときだけ、なければどの評価も当てはまる。生徒でない ID・ない ID はどの評価にも当てはまらない
+    /// （一覧は空になる。コーチの指定 [`Self::matches_coach`] と同じ扱い）。
+    pub fn matches_student(&self, student_id: Option<AccountId>) -> bool {
+        student_id.is_none_or(|student_id| self.student_id == student_id)
+    }
+
     pub const fn rating(&self) -> Rating {
         self.rating
     }
@@ -394,6 +401,19 @@ mod tests {
         // ない ID・コーチでない ID（評価した生徒）には当てはまらない
         assert!(!review.matches_coach(Some(AccountId::from_u128(99))));
         assert!(!review.matches_coach(Some(STUDENT)));
+    }
+
+    #[test]
+    fn matches_student_only_the_reviewer_or_any_without_a_student() {
+        let review = rated(1);
+        assert!(
+            review.matches_student(None),
+            "指定がなければどの生徒の評価も"
+        );
+        assert!(review.matches_student(Some(STUDENT)));
+        // ない ID・生徒でない ID（評価されたコーチ）には当てはまらない
+        assert!(!review.matches_student(Some(AccountId::from_u128(99))));
+        assert!(!review.matches_student(Some(COACH)));
     }
 
     #[test]
