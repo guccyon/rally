@@ -102,6 +102,12 @@ where
             RecordLessonCompletionError::Invalid(
                 error @ DomainError::LiveLessonSessionNotEnded,
             ) => ApiError::conflict("invalid_session_state", message::domain_error(&error)),
+            RecordLessonCompletionError::Invalid(
+                error @ DomainError::LiveLessonSessionEndedByHeadquarters,
+            ) => ApiError::conflict(
+                "live_lesson_session_ended_by_headquarters",
+                message::domain_error(&error),
+            ),
             RecordLessonCompletionError::Invalid(error @ DomainError::VideoReviewNotReturned) => {
                 ApiError::conflict("invalid_video_state", message::domain_error(&error))
             }
