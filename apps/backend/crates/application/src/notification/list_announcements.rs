@@ -815,6 +815,7 @@ mod tests {
         async fn find_announcements_by_recipient(
             &self,
             _recipient: AccountId,
+            _unread_only: bool,
             _limit: usize,
         ) -> Result<Vec<Notification>, Unavailable> {
             unreachable!()

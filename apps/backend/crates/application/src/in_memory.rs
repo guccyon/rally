@@ -1675,10 +1675,12 @@ impl NotificationRepository for InMemoryNotificationRepository {
     async fn find_announcements_by_recipient(
         &self,
         recipient: AccountId,
+        unread_only: bool,
         limit: usize,
     ) -> Result<Vec<Notification>, Unavailable> {
         let mut announcements = self.find_by_recipient(recipient).await?;
-        announcements.retain(|n| n.kind() == NotificationKind::Announcement);
+        announcements
+            .retain(|n| n.kind() == NotificationKind::Announcement && n.is_unread_as(unread_only));
         announcements.truncate(limit);
         Ok(announcements)
     }
