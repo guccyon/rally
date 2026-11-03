@@ -2,7 +2,8 @@
 //! 保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で
 //! 開始した Postgres のセッションのうち終了していないものだけを、開始から既定の 3 時間（`older_than_hours` で変えられる）
 //! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でコーチを絞れること、`sport` で
-//! コーチの提供スポーツ（アカウントの保存先）から競技を絞れること、本部以外は 403 になることを確かめる。
+//! コーチの提供スポーツ（アカウントの保存先）から競技を絞れること、`student_id` で生徒を絞れること（ほかの絞り込みと
+//! 組み合わさる）、本部以外は 403 になることを確かめる。
 //! 契約の形・時間の範囲の細かい検査は interface の `tests/overdue_live_lesson_sessions.rs`、通話中のセッションの読み取りは
 //! infra の `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -317,6 +318,39 @@ async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
+
+    // 生徒で絞れる。時間・コーチ・競技と組み合わさる
+    let taro_id = account_id_uuid::format(taro);
+    for query in [
+        format!("student_id={taro_id}"),
+        format!("student_id={taro_id}&older_than_hours=3&coach_id={tanaka_id}&sport=tennis"),
+    ] {
+        assert_eq!(
+            overdue(query.clone()).await,
+            std::slice::from_ref(&session_id),
+            "{query}"
+        );
+    }
+    for query in [
+        // 終了した通話だけの生徒・通話のない ID（コーチ）
+        format!("student_id={}", account_id_uuid::format(hanako)),
+        format!("student_id={tanaka_id}"),
+        format!("student_id={taro_id}&older_than_hours=4"),
+        format!(
+            "student_id={taro_id}&coach_id={}",
+            account_id_uuid::format(suzuki)
+        ),
+        format!("student_id={taro_id}&sport=golf"),
+    ] {
+        assert!(overdue(query.clone()).await.is_empty(), "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/live-lesson-sessions/overdue?student_id=taro", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["message"], "student_id が UUID でない");
 
     // 本部だけ
     for token in [&tanaka_token, &taro_token] {
