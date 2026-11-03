@@ -358,4 +358,36 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/returned-video-reviews",
   },
+  {
+    id: "hq-returned-video-reviews-by-student",
+    title: "本部: 生徒 1 人の返した動画添削",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "この生徒の返した動画添削の記録を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("table", { name: "返した動画添削の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-returned-video-reviews-by-student-empty",
+    title: "本部: 生徒 1 人の返した動画添削（コーチでも絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      // 選択肢（コーチの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText("この期間に条件に合う返した動画添削はありません").waitFor();
+    },
+  },
+  {
+    id: "hq-returned-video-reviews-invalid-student",
+    title: "本部: 返した動画添削（生徒の指定が正しくない 422）",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews?student_id=not-a-uuid",
+    open: async (page) => {
+      await page.getByRole("alert").filter({ hasText: "生徒は生徒の一覧から選び直してください。" }).waitFor();
+    },
+  },
 ];

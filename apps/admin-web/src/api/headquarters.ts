@@ -66,6 +66,7 @@ export function headquartersApi(client: ApiClient) {
       to?: string;
       coach_id?: string;
       sport?: Schemas["Sport"];
+      student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
     listOverdueLiveLessonSessions: (filter: { older_than_hours?: number } = {}) =>
