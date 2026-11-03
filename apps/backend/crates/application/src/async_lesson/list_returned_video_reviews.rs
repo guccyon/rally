@@ -18,7 +18,7 @@ use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 /// 照会だけで、何も保存しない。
 ///
 /// 返却の日付（日本時間。[`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の返却済みの動画をすべての
-/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチと任意のスポーツで絞って
+/// コーチについて読み、domain の [`ReturnedVideoReviewFilter::select`] で期間と任意のコーチ・スポーツ・生徒で絞って
 /// 返却の新しい順に並べる（期間の長さの規則・かかった時間の数え方・並べ方・動画のスポーツの決め方は domain だけ）。どちらも省けば今日までの
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日、片方だけなら、もう片方はそこから
 /// [`ReturnedVideoReviewFilter::DEFAULT_DAYS`] 日目（両端を含む）。各動画には担当のコーチと生徒の表示名を profile に
@@ -42,6 +42,8 @@ pub struct ListReturnedVideoReviewsQuery {
     pub coach_id: Option<AccountId>,
     /// あればこのスポーツの動画だけ
     pub sport: Option<Sport>,
+    /// あればこの生徒が送った動画だけ
+    pub student_id: Option<AccountId>,
 }
 
 #[derive(Debug)]
@@ -98,6 +100,7 @@ where
             calendar_day::end(to),
             query.coach_id,
             query.sport,
+            query.student_id,
         )?;
         let videos = filter.select(
             self.videos
@@ -334,6 +337,7 @@ mod tests {
             to: Some(date(Month::October, 24)),
             coach_id: None,
             sport: None,
+            student_id: None,
         })
         .await;
         assert_eq!(ids(&list), [4]);
@@ -430,6 +434,7 @@ mod tests {
             to: Some(date(Month::October, 24)),
             coach_id: None,
             sport: Some(Sport::Golf),
+            student_id: None,
         })
         .await;
         assert_eq!(ids(&list), [13]);
@@ -447,6 +452,92 @@ mod tests {
         })
         .await;
         assert!(list.videos.is_empty(), "そのスポーツの返却がなければ空");
+    }
+
+    #[tokio::test]
+    async fn the_student_narrows_the_list_with_the_period_coach_and_sport() {
+        let mut all = videos().all();
+        all.push(video_in(
+            11,
+            Sport::Golf,
+            STUDENT,
+            COACH,
+            at(28, 0),
+            Some(at(30, 9)),
+        ));
+        let run = |query| {
+            let all = all.clone();
+            async move {
+                use_case(
+                    InMemoryVideoRepository::with_videos(all),
+                    RecordingLookup::default(),
+                )
+                .execute(query)
+                .await
+                .unwrap()
+            }
+        };
+        let list = run(ListReturnedVideoReviewsQuery {
+            student_id: Some(STUDENT),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(
+            (list.from, list.to),
+            (date(Month::October, 25), date(Month::October, 31)),
+            "生徒で絞っても期間を省けば今日までの 7 日"
+        );
+        assert_eq!(
+            ids(&list),
+            [1, 11, 3],
+            "期間の外（4）と返していない動画（5）は出ず、返却の新しい順のまま"
+        );
+        let list = run(ListReturnedVideoReviewsQuery {
+            student_id: Some(OTHER_STUDENT),
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(ids(&list), [2]);
+
+        // 期間・コーチ・スポーツと組み合わさる
+        for (query, expected) in [
+            (
+                ListReturnedVideoReviewsQuery {
+                    from: Some(date(Month::October, 24)),
+                    to: Some(date(Month::October, 24)),
+                    coach_id: None,
+                    sport: None,
+                    student_id: Some(STUDENT),
+                },
+                vec![4],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                },
+                vec![3],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    sport: Some(Sport::Golf),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                },
+                vec![11],
+            ),
+            (
+                ListReturnedVideoReviewsQuery {
+                    sport: Some(Sport::Golf),
+                    student_id: Some(OTHER_STUDENT),
+                    ..Default::default()
+                },
+                vec![],
+            ),
+        ] {
+            assert_eq!(ids(&run(query).await), expected, "{query:?}");
+        }
     }
 
     #[tokio::test]
@@ -469,6 +560,7 @@ mod tests {
                     to: Some(to),
                     coach_id: None,
                     sport: None,
+                    student_id: None,
                 })
                 .await
                 .unwrap_err();
@@ -485,6 +577,7 @@ mod tests {
                     to: Some(date(Month::October, 31)),
                     coach_id: None,
                     sport: None,
+                    student_id: None,
                 })
                 .await
                 .is_ok()
@@ -503,6 +596,14 @@ mod tests {
             .unwrap();
         assert!(list.videos.is_empty());
         assert!(list.coaches.is_empty() && list.students.is_empty());
+        let list = use_case(videos(), lookup.clone())
+            .execute(ListReturnedVideoReviewsQuery {
+                student_id: Some(AccountId::from_u128(99)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(list.videos.is_empty(), "ない生徒も 404 にせず空の一覧");
         assert!(lookup.asked_coaches.lock().unwrap().is_empty());
         assert!(lookup.asked_students.lock().unwrap().is_empty());
     }
