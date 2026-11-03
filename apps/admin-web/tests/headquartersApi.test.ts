@@ -192,6 +192,17 @@ describe("headquartersApi", () => {
     const request = fetchMock.mock.calls[0]![0];
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe(`/api/coaches/${coachId}/acceptance-changes`);
+    expect(new URL(request.url).search).toBe("");
+  });
+
+  test("listCoachAcceptanceChanges は期間を from・to のクエリで渡す", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const { api, fetchMock } = setup(json(200, { coach_id: coachId, changes: [] }));
+    await api.listCoachAcceptanceChanges(coachId, { from: "2026-10-01", to: "2026-10-31" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe(`/api/coaches/${coachId}/acceptance-changes`);
+    expect(url.searchParams.get("from")).toBe("2026-10-01");
+    expect(url.searchParams.get("to")).toBe("2026-10-31");
   });
 
   test("listLessonMenuPublicationChanges は GET /api/lesson-menus/{lesson_menu_id}/publication-changes を呼び、公開の記録を返す", async () => {
