@@ -3,6 +3,8 @@
 //! なければ 422）。`handled` があれば本部の対応済みの印の有無がそれと同じ評価だけ（`true` / `false` でなければ 422）。
 //! `coach_id` があればそのコーチが評価された評価だけ（UUID でなければ 422。いないコーチは空の一覧）。
 //! `student_id` があればその生徒が評価した評価だけ（UUID でなければ 422。いない生徒は空の一覧）。
+//! `from`・`to` があれば送った日付（日本時間）がその期間の評価だけ（日付でない・期間の規則に反するときは 422。
+//! 規則は `listAnnouncements` と同じ）。
 //! 各評価には評価されたコーチの返信と、本部の対応済みの印を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
@@ -12,9 +14,10 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     lesson::lesson_completion_id_uuid,
     review::{
-        LessonReviewRepository, ListLowRatedReviews, LowRatedReviewList,
-        ReviewedCoachDisplayNameLookup, ReviewedLessonMenuLookup, ReviewedLessonSportLookup,
-        ReviewerDisplayNameLookup, lesson_review_id_uuid,
+        LessonReviewRepository, ListLowRatedReviews, ListLowRatedReviewsError,
+        ListLowRatedReviewsQuery, LowRatedReviewList, ReviewedCoachDisplayNameLookup,
+        ReviewedLessonMenuLookup, ReviewedLessonSportLookup, ReviewerDisplayNameLookup,
+        lesson_review_id_uuid,
     },
 };
 use axum::{
@@ -30,7 +33,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::{account_id_from_contract, admin_web_sport, date_time_to_contract},
+    contract::{
+        account_id_from_contract, admin_web_sport, date_from_contract, date_time_to_contract,
+    },
     error::ApiError,
     low_rated_review_handlings::{LowRatedReviewHandlingBody, low_rated_review_handling_body},
     reviews::{
@@ -54,6 +59,8 @@ pub struct ListLowRatedReviewsParams {
     handled: Option<bool>,
     coach_id: Option<String>,
     student_id: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
 }
 
 /// admin-web の `LowRatedLessonReviewList`。
@@ -87,7 +94,8 @@ pub struct LowRatedLessonReviewBody {
 /// `sport` があればそのスポーツのレッスンの評価だけを返す（ゴルフも受け付ける）。`handled` があれば対応済みの印の
 /// 有無がそれと同じ評価だけ（`false` で未対応だけ）。`coach_id` があればそのコーチの評価だけ（UUID でなければ 422。
 /// 検証と扱いは `listCancelledBookings` の `coach_id` と同じ）。`student_id` があればその生徒が評価した評価だけ（UUID で
-/// なければ 422。検証と扱いは `listCancelledBookings` の `student_id` と同じ）。
+/// なければ 422。検証と扱いは `listCancelledBookings` の `student_id` と同じ）。`from`・`to` があれば送った日付がその期間の
+/// 評価だけ（検証と期間の規則は `listAnnouncements` の `from`・`to` と同じ）。
 pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
     State(state): State<Shared<R, M, P, D, S, C>>,
     params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
@@ -102,22 +110,38 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    let sport = params.sport.as_deref().map(admin_web_sport).transpose()?;
-    let coach_id = params
-        .coach_id
-        .as_deref()
-        .map(|id| account_id_from_contract("coach_id", id))
-        .transpose()?;
-    let student_id = params
-        .student_id
-        .as_deref()
-        .map(|id| account_id_from_contract("student_id", id))
-        .transpose()?;
+    let query = ListLowRatedReviewsQuery {
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        handled: params.handled,
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| account_id_from_contract("coach_id", id))
+            .transpose()?,
+        student_id: params
+            .student_id
+            .as_deref()
+            .map(|id| account_id_from_contract("student_id", id))
+            .transpose()?,
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+    };
     let list = state
         .list_low_rated_reviews
-        .execute(sport, params.handled, coach_id, student_id)
+        .execute(query)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(|error| match error {
+            ListLowRatedReviewsError::Invalid(error) => ApiError::from(error),
+            ListLowRatedReviewsError::Unavailable(error) => ApiError::internal(error),
+        })?;
     Ok(Json(LowRatedLessonReviewListBody {
         max_rating: LowRatedReviewCriteria::MAX_RATING,
         period_days: LowRatedReviewCriteria::WINDOW_DAYS,

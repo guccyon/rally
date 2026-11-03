@@ -3,7 +3,7 @@
 //! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む。スポーツで絞るときは
 //! レッスンのスポーツを予約の枠から読む）。評価へのコーチの返信の
 //! 保存と上書き、評価の ID での読み取り。低い評価への本部の対応済みの印の保存（2 回目は最初の印が残る）と、一覧の
-//! 未対応・対応済みの絞り込み。DB が印の形と付けたアカウントの役割を守ること。
+//! 未対応・対応済みの絞り込み。一覧の送った日付（日本時間）の期間での絞り込み。DB が印の形と付けたアカウントの役割を守ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -21,13 +21,14 @@ use application::{
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
     review::{
         GetCoachReviewSummary, InsertReviewError, LessonReviewRepository, ListLowRatedReviews,
-        MarkLowRatedReviewHandled, MarkLowRatedReviewHandledCommand,
-        MarkLowRatedReviewHandledError, ReplyToLessonReview, ReplyToLessonReviewCommand,
-        ReplyToLessonReviewError, SubmitLessonReview, SubmitLessonReviewCommand,
-        SubmitLessonReviewError,
+        ListLowRatedReviewsError, ListLowRatedReviewsQuery, MarkLowRatedReviewHandled,
+        MarkLowRatedReviewHandledCommand, MarkLowRatedReviewHandledError, ReplyToLessonReview,
+        ReplyToLessonReviewCommand, ReplyToLessonReviewError, SubmitLessonReview,
+        SubmitLessonReviewCommand, SubmitLessonReviewError,
     },
-    scheduling::SchedulingBookingLookup,
+    scheduling::{SchedulingBookingLookup, calendar_day},
 };
+
 use domain::{
     catalog::Sport,
     identity::Role,
@@ -43,6 +44,7 @@ use infra::{
 };
 use sqlx::PgPool;
 use support::at;
+use time::{Date, Month};
 
 /// 新しい生徒とコーチの、終了した通話セッションの完了記録。
 async fn completed_lesson(pool: &PgPool) -> LessonCompletion {
@@ -227,7 +229,10 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         ProfileStudentDisplayNameLookup::new(accounts),
         FixedClock(now),
     );
-    let list = use_case.execute(None, None, None, None).await.unwrap();
+    let list = use_case
+        .execute(ListLowRatedReviewsQuery::default())
+        .await
+        .unwrap();
     assert_eq!(
         list.reviews,
         [latest.clone(), edge.clone()],
@@ -247,7 +252,10 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
 
     // 予約の枠はテニス
     let tennis = use_case
-        .execute(Some(Sport::Tennis), None, None, None)
+        .execute(ListLowRatedReviewsQuery {
+            sport: Some(Sport::Tennis),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -258,7 +266,10 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
 
     // コーチは完了記録ごとに別（support::ended_session は新しいコーチを作る）
     let of_coach = use_case
-        .execute(None, None, Some(edge.coach_id()), None)
+        .execute(ListLowRatedReviewsQuery {
+            coach_id: Some(edge.coach_id()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -271,12 +282,12 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         [&edge.coach_id()]
     );
     let of_coach = use_case
-        .execute(
-            Some(Sport::Tennis),
-            Some(false),
-            Some(latest.coach_id()),
-            None,
-        )
+        .execute(ListLowRatedReviewsQuery {
+            sport: Some(Sport::Tennis),
+            handled: Some(false),
+            coach_id: Some(latest.coach_id()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -287,14 +298,20 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
     // 低い評価のないコーチ・ない ID は空
     for coach_id in [good.coach_id(), domain::identity::AccountId::from_u128(99)] {
         let list = use_case
-            .execute(None, None, Some(coach_id), None)
+            .execute(ListLowRatedReviewsQuery {
+                coach_id: Some(coach_id),
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert!(list.reviews.is_empty(), "{coach_id:?}");
     }
     // 生徒も完了記録ごとに別（support::ended_session は新しい生徒の予約を作る）
     let of_student = use_case
-        .execute(None, None, None, Some(edge.student_id()))
+        .execute(ListLowRatedReviewsQuery {
+            student_id: Some(edge.student_id()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -307,12 +324,13 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         [&edge.student_id()]
     );
     let of_student = use_case
-        .execute(
-            Some(Sport::Tennis),
-            Some(false),
-            Some(latest.coach_id()),
-            Some(latest.student_id()),
-        )
+        .execute(ListLowRatedReviewsQuery {
+            sport: Some(Sport::Tennis),
+            handled: Some(false),
+            coach_id: Some(latest.coach_id()),
+            student_id: Some(latest.student_id()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -321,7 +339,11 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         "スポーツ・対応済み・コーチと合わせて絞れる"
     );
     let of_student = use_case
-        .execute(None, None, Some(edge.coach_id()), Some(latest.student_id()))
+        .execute(ListLowRatedReviewsQuery {
+            coach_id: Some(edge.coach_id()),
+            student_id: Some(latest.student_id()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert!(
@@ -335,13 +357,19 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         domain::identity::AccountId::from_u128(99),
     ] {
         let list = use_case
-            .execute(None, None, None, Some(student_id))
+            .execute(ListLowRatedReviewsQuery {
+                student_id: Some(student_id),
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert!(list.reviews.is_empty(), "{student_id:?}");
     }
     let golf = use_case
-        .execute(Some(Sport::Golf), None, None, None)
+        .execute(ListLowRatedReviewsQuery {
+            sport: Some(Sport::Golf),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert!(golf.reviews.is_empty(), "ゴルフのレッスンの評価はない");
@@ -357,6 +385,88 @@ fn reply_command(
         review_id: review.id(),
         comment: LessonReviewReplyComment::new(text).unwrap(),
     }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn from_and_to_keep_only_low_reviews_submitted_in_the_days_in_japan(pool: PgPool) {
+    // 照会した時刻は日本時間の 12 月 11 日 9 時
+    let now = at(24 * 40);
+    let dec = |day| Date::from_calendar_date(2026, Month::December, day).unwrap();
+    let mut lessons = Vec::new();
+    for _ in 0..4 {
+        lessons.push(completed_lesson(&pool).await);
+    }
+    let starts = calendar_day::start(dec(3));
+    let ends = calendar_day::end(dec(9));
+    let first = review_at(&pool, &lessons[0], 1, starts).await;
+    review_at(&pool, &lessons[1], 2, starts - Duration::from_secs(1)).await;
+    let last = review_at(&pool, &lessons[2], 2, ends - Duration::from_secs(1)).await;
+    review_at(&pool, &lessons[3], 1, ends).await;
+
+    let accounts = PgAccountRepository::new(pool.clone());
+    let use_case = ListLowRatedReviews::new(
+        PgLessonReviewRepository::new(pool.clone()),
+        LessonCompletionMenuLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        LessonCompletionSportLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ProfileStudentDisplayNameLookup::new(accounts),
+        FixedClock(now),
+    );
+    let week = ListLowRatedReviewsQuery {
+        from: Some(dec(3)),
+        to: Some(dec(9)),
+        ..Default::default()
+    };
+    assert_eq!(
+        use_case.execute(week).await.unwrap().reviews,
+        [last.clone(), first.clone()],
+        "12 月 3 日の 0 時（含む）から 12 月 10 日の 0 時（含まない）まで（日本時間）を新しい順"
+    );
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery {
+                coach_id: Some(first.coach_id()),
+                sport: Some(Sport::Tennis),
+                ..week
+            })
+            .await
+            .unwrap()
+            .reviews,
+        [first],
+        "ほかの絞り込みと合わせて絞れる"
+    );
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery::default())
+            .await
+            .unwrap()
+            .reviews
+            .len(),
+        4,
+        "指定しなければ今までどおり"
+    );
+    let result = use_case
+        .execute(ListLowRatedReviewsQuery {
+            from: Some(dec(9)),
+            to: Some(dec(3)),
+            ..Default::default()
+        })
+        .await;
+    assert!(
+        matches!(result, Err(ListLowRatedReviewsError::Invalid(_))),
+        "{result:?}"
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -560,20 +670,29 @@ async fn headquarters_marks_a_low_review_handled_once_and_lists_only_the_unhandl
     };
     assert_eq!(
         ids(use_case
-            .execute(None, Some(false), None, None)
+            .execute(ListLowRatedReviewsQuery {
+                handled: Some(false),
+                ..Default::default()
+            })
             .await
             .unwrap()),
         [unhandled.id()]
     );
     assert_eq!(
         ids(use_case
-            .execute(None, Some(true), None, None)
+            .execute(ListLowRatedReviewsQuery {
+                handled: Some(true),
+                ..Default::default()
+            })
             .await
             .unwrap()),
         [low.id()]
     );
     assert_eq!(
-        ids(use_case.execute(None, None, None, None).await.unwrap()),
+        ids(use_case
+            .execute(ListLowRatedReviewsQuery::default())
+            .await
+            .unwrap()),
         [unhandled.id(), low.id()]
     );
 }

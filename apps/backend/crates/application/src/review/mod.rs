@@ -22,6 +22,8 @@ mod list_coach_reviews;
 mod list_coach_reviews_error;
 mod list_coach_reviews_query;
 mod list_low_rated_reviews;
+mod list_low_rated_reviews_error;
+mod list_low_rated_reviews_query;
 mod low_rated_review_list;
 mod mark_low_rated_review_handled;
 mod reply_to_lesson_review;
@@ -44,6 +46,8 @@ pub use list_coach_reviews::ListCoachReviews;
 pub use list_coach_reviews_error::ListCoachReviewsError;
 pub use list_coach_reviews_query::ListCoachReviewsQuery;
 pub use list_low_rated_reviews::ListLowRatedReviews;
+pub use list_low_rated_reviews_error::ListLowRatedReviewsError;
+pub use list_low_rated_reviews_query::ListLowRatedReviewsQuery;
 pub use low_rated_review_list::LowRatedReviewList;
 pub use mark_low_rated_review_handled::{
     MarkLowRatedReviewHandled, MarkLowRatedReviewHandledCommand, MarkLowRatedReviewHandledError,

@@ -154,6 +154,13 @@ impl LessonReview {
         coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
     }
 
+    /// 一覧を絞る期間の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `from`・`to`）。指定があれば送った
+    /// 時刻がその期間に入る（開始を含み、終了を含まない）評価だけ、なければどの評価も当てはまる。期間の規則（1 日以上・
+    /// 上限の日数）は本部が送ったお知らせの一覧と同じ [`BookingPeriod`] だけが持つ。
+    pub fn matches_period(&self, period: Option<&BookingPeriod>) -> bool {
+        period.is_none_or(|period| period.includes(self.submitted_at))
+    }
+
     /// 一覧を絞る生徒の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `student_id`）。指定があればその ID が
     /// 評価した生徒のときだけ、なければどの評価も当てはまる。生徒でない ID・ない ID はどの評価にも当てはまらない
     /// （一覧は空になる。コーチの指定 [`Self::matches_coach`] と同じ扱い）。
@@ -401,6 +408,25 @@ mod tests {
         // ない ID・コーチでない ID（評価した生徒）には当てはまらない
         assert!(!review.matches_coach(Some(AccountId::from_u128(99))));
         assert!(!review.matches_coach(Some(STUDENT)));
+    }
+
+    #[test]
+    fn matches_period_only_reviews_submitted_in_it_or_any_without_a_period() {
+        // 評価は at(3) に送った
+        let review = rated(1);
+        assert!(
+            review.matches_period(None),
+            "指定がなければどの時刻の評価も"
+        );
+        let period = |starts: u64, ends: u64| BookingPeriod::new(at(starts), at(ends)).unwrap();
+        for (period, matches, why) in [
+            (period(3, 4), true, "開始ちょうどは含む"),
+            (period(0, 4), true, "期間の中"),
+            (period(0, 3), false, "終了ちょうどは含まない"),
+            (period(4, 5), false, "開始より前は含まない"),
+        ] {
+            assert_eq!(review.matches_period(Some(&period)), matches, "{why}");
+        }
     }
 
     #[test]
