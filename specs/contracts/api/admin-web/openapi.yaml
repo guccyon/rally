@@ -34,7 +34,8 @@ info:
     本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数・
     返信のないまま時間の過ぎたチャットのスレッドの数）を読む（`getStudentActivity`。「コーチから返事が来ない」という
     問い合わせには、返事のないメッセージの多さを確かめる）。「お知らせが届いていない」という問い合わせには、生徒 1 人が受け取った本部からのお知らせと
-    既読・取り下げ済みかを読む（`listStudentAnnouncements`）。
+    既読・取り下げ済みかを読む（`listStudentAnnouncements`。「お知らせを見ていない」という問い合わせには `unread_only=true` で
+    まだ読んでいないものだけに絞る）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。確認した低い評価には
     「対応済み」の印を付け（`markLowRatedLessonReviewHandled`。いつ・どの本部のアカウントが）、一覧をまだ対応していない
     ものだけに絞れる（`listLowRatedLessonReviews` の `handled=false`）。コーチでも、送った日付（日本時間）の期間でも絞れる
@@ -2077,6 +2078,13 @@ paths:
           受け取ったお知らせがなければ `announcements` は空の配列
         - 取り下げたお知らせ（`withdrawAnnouncement`）も載り、`is_withdrawn` が true（生徒のお知らせの一覧には出ていない）
         - `is_read` は生徒が既読にしたか（student-app の `markMyNotificationsRead`）。取り下げても既読は変わらない
+        - 未読だけに絞る（任意）: `unread_only` が `true` なら、生徒がまだ読んでいないお知らせ（`is_read` が false のもの）だけを返す。
+          `false` か付けなければ今までどおり既読かを問わない。判定は backend の domain `Notification::is_unread_as` の 1 か所
+        - 最大 50 件は絞ったあとに数える（未読のものの新しい順に 50 件。新しい既読のお知らせが多くても、それより古い未読のものが
+          枠から押し出されない）。並べ方は絞っても変わらない。取り下げたお知らせも未読なら載る（`is_withdrawn` が true）。未読の
+          お知らせがなければ `announcements` は空の配列
+        - `unread_only` が `true` / `false` でなければ 422 `validation_failed`（生徒を確かめる前。値の受け方は `listAnnouncements` の
+          `withdrawn`・`listLowRatedLessonReviews` の `handled` と同じ）
         - 本文・対象のスポーツ・送った本部のアカウントは返さない（`listAnnouncements` で読む）。プッシュ通知が届いたかの記録は持たない
           （受け取り設定でオフの生徒にもお知らせは作る）
         - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
@@ -2093,9 +2101,17 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: unread_only
+          in: query
+          required: false
+          description: |
+            `true` なら生徒がまだ読んでいないお知らせだけを返す（最大 50 件は絞ったあとに数える）。`false` か省けば既読かを問わない。
+            `true` / `false` でなければ 422 `validation_failed`
+          schema:
+            type: boolean
       responses:
         "200":
-          description: 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件）
+          description: 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件。`unread_only=true` なら未読のものだけ）
           content:
             application/json:
               schema:
@@ -2106,6 +2122,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /live-lesson-sessions:
     get:
@@ -4237,7 +4255,9 @@ components:
         announcements:
           type: array
           maxItems: 50
-          description: 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件
+          description: |
+            送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件。`unread_only=true` なら未読のものだけを
+            新しい順に最大 50 件
           items:
             $ref: "#/components/schemas/StudentAnnouncement"
 

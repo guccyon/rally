@@ -1,6 +1,7 @@
 //! `GET /students/{student_id}/announcements`（admin-web の `listStudentAnnouncements`）の統合テスト。本部には生徒 1 人が
 //! 受け取った本部からのお知らせ（ID・題・送った時刻・既読か・取り下げ済みか）を新しい順に最大 50 件返すことを OpenAPI の
-//! スキーマで検査する。コーチ・生徒は 403、トークンがなければ 401、生徒でない・ない・UUID でない ID は 404。
+//! スキーマで検査する。`unread_only=true` なら未読だけに絞ってから 50 件を数え、真偽でなければ 422。コーチ・生徒は 403、
+//! トークンがなければ 401、生徒でない・ない・UUID でない ID は 404。
 
 use std::time::{Duration, SystemTime};
 
@@ -151,7 +152,17 @@ async fn app() -> Router {
 
 /// `GET /students/{student_id}/announcements`。レスポンスを admin-web の契約で検査する。
 async fn list(router: &Router, student_id: &str, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get(format!("/students/{student_id}/announcements"));
+    list_with_query(router, student_id, "", token).await
+}
+
+/// クエリ `query`（`?` から）を付けた `GET /students/{student_id}/announcements`。レスポンスを admin-web の契約で検査する。
+async fn list_with_query(
+    router: &Router,
+    student_id: &str,
+    query: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/students/{student_id}/announcements{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -221,6 +232,54 @@ async fn headquarters_sees_the_newest_fifty_announcements_with_read_and_withdraw
 }
 
 #[tokio::test]
+async fn unread_only_lists_the_newest_fifty_unread_including_withdrawn() {
+    let (status, body) = list_with_query(
+        &app().await,
+        &uuid(3),
+        "?unread_only=true",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let announcements = body["announcements"].as_array().unwrap();
+    assert_eq!(
+        announcements.len(),
+        42,
+        "未読の 11〜52 の 42 件（既読の 10 件は数えない）"
+    );
+    assert_eq!(announcements[0]["announcement_id"], uuid(52));
+    assert_eq!(
+        announcements[0]["is_withdrawn"], true,
+        "取り下げたものも未読なら載る"
+    );
+    assert_eq!(announcements[41]["announcement_id"], uuid(11));
+    assert!(
+        announcements.iter().all(|a| a["is_read"] == false),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn unread_only_false_is_the_same_as_omitting_it() {
+    let router = app().await;
+    let (_, omitted) = list(&router, &uuid(3), Some(HEADQUARTERS)).await;
+    let (status, body) =
+        list_with_query(&router, &uuid(3), "?unread_only=false", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, omitted);
+}
+
+#[tokio::test]
+async fn unread_only_that_is_not_a_boolean_is_422() {
+    let router = app().await;
+    for query in ["?unread_only=yes", "?unread_only="] {
+        let (status, body) = list_with_query(&router, &uuid(3), query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
 async fn student_without_announcements_is_empty() {
     let (status, body) = list(&app().await, &uuid(4), Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -236,6 +295,13 @@ async fn non_student_missing_and_malformed_ids_are_404() {
         assert_eq!(status, StatusCode::NOT_FOUND, "{id}: {body}");
         assert_eq!(body["code"], "not_found");
     }
+    let (status, body) =
+        list_with_query(&router, &uuid(2), "?unread_only=true", Some(HEADQUARTERS)).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "絞っても生徒でなければ 404: {body}"
+    );
 }
 
 #[tokio::test]

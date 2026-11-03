@@ -1332,6 +1332,13 @@ export interface paths {
          *       受け取ったお知らせがなければ `announcements` は空の配列
          *     - 取り下げたお知らせ（`withdrawAnnouncement`）も載り、`is_withdrawn` が true（生徒のお知らせの一覧には出ていない）
          *     - `is_read` は生徒が既読にしたか（student-app の `markMyNotificationsRead`）。取り下げても既読は変わらない
+         *     - 未読だけに絞る（任意）: `unread_only` が `true` なら、生徒がまだ読んでいないお知らせ（`is_read` が false のもの）だけを返す。
+         *       `false` か付けなければ今までどおり既読かを問わない。判定は backend の domain `Notification::is_unread_as` の 1 か所
+         *     - 最大 50 件は絞ったあとに数える（未読のものの新しい順に 50 件。新しい既読のお知らせが多くても、それより古い未読のものが
+         *       枠から押し出されない）。並べ方は絞っても変わらない。取り下げたお知らせも未読なら載る（`is_withdrawn` が true）。未読の
+         *       お知らせがなければ `announcements` は空の配列
+         *     - `unread_only` が `true` / `false` でなければ 422 `validation_failed`（生徒を確かめる前。値の受け方は `listAnnouncements` の
+         *       `withdrawn`・`listLowRatedLessonReviews` の `handled` と同じ）
          *     - 本文・対象のスポーツ・送った本部のアカウントは返さない（`listAnnouncements` で読む）。プッシュ通知が届いたかの記録は持たない
          *       （受け取り設定でオフの生徒にもお知らせは作る）
          *     - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
@@ -2661,7 +2668,10 @@ export interface components {
         };
         /** @description 生徒 1 人の受け取ったお知らせの一覧（`listStudentAnnouncements`） */
         StudentAnnouncementList: {
-            /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件 */
+            /**
+             * @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件。`unread_only=true` なら未読のものだけを
+             *     新しい順に最大 50 件
+             */
             announcements: components["schemas"]["StudentAnnouncement"][];
         };
         /**
@@ -4635,7 +4645,13 @@ export interface operations {
     };
     listStudentAnnouncements: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description `true` なら生徒がまだ読んでいないお知らせだけを返す（最大 50 件は絞ったあとに数える）。`false` か省けば既読かを問わない。
+                 *     `true` / `false` でなければ 422 `validation_failed`
+                 */
+                unread_only?: boolean;
+            };
             header?: never;
             path: {
                 student_id: string;
@@ -4644,7 +4660,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件） */
+            /** @description 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件。`unread_only=true` なら未読のものだけ） */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4656,6 +4672,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listLiveLessonSessions: {
