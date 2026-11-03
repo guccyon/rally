@@ -670,6 +670,17 @@ impl CoachAcceptanceRepository for InMemoryCoachAcceptanceRepository {
         changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
         Ok(changes)
     }
+
+    async fn changes_between(
+        &self,
+        coach_id: AccountId,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        let mut changes = self.changes(coach_id).await?;
+        changes.retain(|change| starts_at <= change.changed_at() && change.changed_at() < ends_at);
+        Ok(changes)
+    }
 }
 
 /// 発行したドメインイベントを記録する [`DomainEventPublisher`]。複製は同じ記録を共有する。
