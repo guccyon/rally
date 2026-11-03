@@ -628,6 +628,44 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["CoachList"],
   },
+  // 期間を指定したとき（来週。hq-slot-supply-period）
+  {
+    method: "GET",
+    path: "/slot-supply",
+    query: { from: "2026-11-02", to: "2026-11-08" },
+    body: {
+      window_start: "2026-11-01T15:00:00Z",
+      window_end: "2026-11-08T15:00:00Z",
+      from: "2026-11-02",
+      to: "2026-11-08",
+      sports: [
+        { sport: "tennis", status: "insufficient", published_slots: 9, booking_students: 7 },
+        { sport: "golf", status: "insufficient", published_slots: 2, booking_students: 5 },
+        { sport: "baseball", status: "sufficient", published_slots: 4, booking_students: 1 },
+        { sport: "soccer", status: "sufficient", published_slots: 3, booking_students: 0 },
+        { sport: "basketball", status: "sufficient", published_slots: 0, booking_students: 0 },
+        { sport: "swimming", status: "sufficient", published_slots: 5, booking_students: 2 },
+      ],
+    } satisfies Schemas["SlotSupplyReport"],
+  },
+  // 期間を指定して、どのスポーツにも枠も予約もないとき（hq-slot-supply-empty）
+  {
+    method: "GET",
+    path: "/slot-supply",
+    query: { from: "2026-12-21", to: "2026-12-27" },
+    body: {
+      window_start: "2026-12-20T15:00:00Z",
+      window_end: "2026-12-27T15:00:00Z",
+      from: "2026-12-21",
+      to: "2026-12-27",
+      sports: (["tennis", "golf", "baseball", "soccer", "basketball", "swimming"] as const).map((sport) => ({
+        sport,
+        status: "sufficient" as const,
+        published_slots: 0,
+        booking_students: 0,
+      })),
+    } satisfies Schemas["SlotSupplyReport"],
+  },
   {
     method: "GET",
     path: "/slot-supply",
@@ -722,6 +760,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "subscription",
           plan: "standard",
           last_booked_at: at(-24),
+          recent_booking_count: 4,
           registered_at: at(-24 * 5),
         },
       ],
@@ -754,6 +793,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "subscription",
           plan: "standard",
           last_booked_at: at(-24),
+          recent_booking_count: 4,
           registered_at: at(-24 * 5),
         },
         {
@@ -763,6 +803,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: "one_shot",
           plan: null,
           last_booked_at: at(-24 * 3),
+          recent_booking_count: 1,
           registered_at: at(-24 * 12),
         },
         {
@@ -772,6 +813,7 @@ export const FIXTURES: Fixture[] = [
           contract_type: null,
           plan: null,
           last_booked_at: null,
+          recent_booking_count: 0,
           registered_at: at(-24 * 20),
         },
       ],
@@ -845,6 +887,19 @@ export const FIXTURES: Fixture[] = [
       from: "2026-10-26",
       to: "2026-11-01",
       bookings: HQ_BOOKINGS.filter((item) => item.booking.student_id === STUDENT_ID),
+    } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
+    // レッスンメニュー「フォアハンドの基礎」で絞った予約の一覧（hq-bookings-by-lesson-menu）。絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter(
+        (item) => item.booking.lesson_menu?.lesson_menu_id === MENU_FORE.lesson_menu_id,
+      ),
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {

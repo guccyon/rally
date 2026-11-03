@@ -592,6 +592,14 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn bookings_of_students_created_since(
+            &self,
+            _student_ids: &std::collections::BTreeSet<AccountId>,
+            _created_since: SystemTime,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn bookings_of_coach(
             &self,
             _coach_id: AccountId,

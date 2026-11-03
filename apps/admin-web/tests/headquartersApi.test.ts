@@ -42,6 +42,19 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("getSlotSupply は期間をクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, REPORT));
+    await api.getSlotSupply({ from: "2026-11-02", to: "2026-11-08" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/slot-supply");
+    expect(url.searchParams.get("from")).toBe("2026-11-02");
+    expect(url.searchParams.get("to")).toBe("2026-11-08");
+
+    const omitted = setup(json(200, REPORT));
+    await omitted.api.getSlotSupply({});
+    expect(new URL(omitted.fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
+
   test("本部以外のトークン（403）はロールの文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.getSlotSupply();

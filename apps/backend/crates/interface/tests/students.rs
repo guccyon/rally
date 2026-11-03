@@ -1,5 +1,5 @@
 //! `GET /students`（admin-web の `listStudents`）の統合テスト。本部には生徒の一覧を、受講権の契約種別と契約プラン・
-//! 最後に予約した時刻とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
+//! 最後に予約した時刻・直近 30 日の予約の数とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
 //! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。`sport`・`not_booked_since` を付ければ
 //! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。`coach_id` を付ければ
 //! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。この操作はパスパラメータを受けないので、
@@ -14,11 +14,12 @@ use application::{
         TokenVerifier,
     },
     in_memory::{
-        InMemoryAccountRepository, InMemoryBookingRepository, InMemoryEntitlementRepository,
-        InMemorySlotRepository,
+        FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
+        InMemoryEntitlementRepository, InMemorySlotRepository,
     },
     scheduling::{
         BookingRepository, SchedulingStudentCoachBookingLookup, SchedulingStudentLastBookingLookup,
+        SchedulingStudentRecentBookingCountLookup,
     },
 };
 use axum::{
@@ -105,8 +106,19 @@ fn slot(id: u128, hour: u64) -> Slot {
     .unwrap()
 }
 
+/// 照会した時刻（2026-10-02T00:00:00Z）。月額の生徒の 2 件の予約はどちらも直近 30 日に入る。
+fn now() -> SystemTime {
+    at(24)
+}
+
 /// 本部・コーチと、生徒 3 人（登録は月額の生徒 → ゴルフの生徒 → 新しい生徒の順）。月額の生徒は 2 回予約した。
+/// 照会した時刻は [`now`]。
 async fn app() -> Router {
+    app_at(now()).await
+}
+
+/// [`app`] と同じ生徒と予約で、照会した時刻を `now` にしたもの。
+async fn app_at(now: SystemTime) -> Router {
     let accounts = InMemoryAccountRepository::default();
     for account in [
         account(AccountId::from_u128(1), Role::Headquarters, &[], 0),
@@ -156,20 +168,23 @@ async fn app() -> Router {
             .await
             .unwrap();
     }
-    router(accounts, entitlements, bookings)
+    router(accounts, entitlements, bookings, now)
 }
 
 fn router(
     accounts: InMemoryAccountRepository,
     entitlements: InMemoryEntitlementRepository,
     bookings: InMemoryBookingRepository,
+    now: SystemTime,
 ) -> Router {
     interface::students_router(
         ListStudents::new(
             accounts,
             EntitlementStudentContractLookup::new(entitlements),
             SchedulingStudentLastBookingLookup::new(bookings.clone()),
-            SchedulingStudentCoachBookingLookup::new(bookings),
+            SchedulingStudentCoachBookingLookup::new(bookings.clone()),
+            SchedulingStudentRecentBookingCountLookup::new(bookings),
+            FixedClock(now),
         ),
         FakeTokens,
     )
@@ -213,6 +228,7 @@ async fn headquarters_lists_students_newest_first_with_contract_and_last_booking
                     "contract_type": null,
                     "plan": null,
                     "last_booked_at": null,
+                    "recent_booking_count": 0,
                     "registered_at": "2026-10-01T03:00:00Z",
                 },
                 {
@@ -222,6 +238,7 @@ async fn headquarters_lists_students_newest_first_with_contract_and_last_booking
                     "contract_type": "one_shot",
                     "plan": null,
                     "last_booked_at": null,
+                    "recent_booking_count": 0,
                     "registered_at": "2026-10-01T02:00:00Z",
                 },
                 {
@@ -232,11 +249,93 @@ async fn headquarters_lists_students_newest_first_with_contract_and_last_booking
                     "plan": "plus",
                     // 開始の遅い枠の予約ではなく、後で作った予約の時刻
                     "last_booked_at": "2026-10-01T12:00:00Z",
+                    "recent_booking_count": 2,
                     "registered_at": "2026-10-01T01:00:00Z",
                 },
             ],
         }),
         "生徒だけを載せ、メールアドレスは載せない"
+    );
+}
+
+#[tokio::test]
+async fn recent_booking_count_counts_bookings_of_the_last_thirty_days_including_the_start() {
+    // 月額の生徒の予約は 2026-10-01 の 10 時と 12 時に作った。12 時ちょうどの 30 日後に照会すると、12 時の予約は期間の
+    // 始まりちょうどで数え、10 時の予約は期間の外
+    let count = |body: &Value| -> Vec<u64> {
+        body["students"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["recent_booking_count"].as_u64().unwrap())
+            .collect()
+    };
+    let (status, body) = list_students(&app_at(at(12 + 30 * 24)).await, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(count(&body), [0, 0, 1]);
+    assert_eq!(
+        body["students"][2]["last_booked_at"], "2026-10-01T12:00:00Z",
+        "最後に予約した時刻は期間に関係なく載る"
+    );
+    let (_, body) = list_students(
+        &app_at(at(12 + 30 * 24) + Duration::from_secs(1)).await,
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(count(&body), [0, 0, 0], "30 日より前の予約は数えない");
+}
+
+#[tokio::test]
+async fn recent_booking_count_leaves_out_cancelled_bookings() {
+    let accounts = InMemoryAccountRepository::default();
+    accounts
+        .insert(account(MONTHLY_STUDENT, Role::Student, &[Sport::Tennis], 1))
+        .await
+        .unwrap();
+    let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
+        slot(20, 100),
+        slot(21, 50),
+    ]));
+    let mut made = Vec::new();
+    for slot_id in [20, 21] {
+        made.push(
+            bookings
+                .reserve(
+                    SlotId::from_u128(slot_id),
+                    MONTHLY_STUDENT,
+                    |slot, existing| {
+                        Booking::reserve(
+                            bookings.next_id(),
+                            MONTHLY_STUDENT,
+                            false,
+                            slot,
+                            existing,
+                            at(10),
+                        )
+                    },
+                )
+                .await
+                .unwrap(),
+        );
+    }
+    bookings
+        .update(made[0].id(), |booking, slot| {
+            booking.cancel(MONTHLY_STUDENT, slot, at(11)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let router = router(
+        accounts,
+        InMemoryEntitlementRepository::default(),
+        bookings,
+        now(),
+    );
+
+    let (status, body) = list_students(&router, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["students"][0]["recent_booking_count"], 1,
+        "キャンセルした予約は数えない"
     );
 }
 
@@ -309,6 +408,7 @@ async fn q_matches_ascii_letters_case_insensitively() {
         accounts,
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        now(),
     );
     let (status, body) = list_students_at(&router, "/students?q=yamada", Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -504,6 +604,7 @@ async fn no_students_is_an_empty_list() {
         accounts,
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        now(),
     );
     let (status, body) = list_students(&router, Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -561,6 +662,10 @@ async fn lookup_failure_is_500_internal_without_the_reason() {
             SchedulingStudentCoachBookingLookup::new(InMemoryBookingRepository::new(
                 InMemorySlotRepository::default(),
             )),
+            SchedulingStudentRecentBookingCountLookup::new(InMemoryBookingRepository::new(
+                InMemorySlotRepository::default(),
+            )),
+            FixedClock(now()),
         ),
         FakeTokens,
     );

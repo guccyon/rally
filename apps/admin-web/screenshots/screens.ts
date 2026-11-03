@@ -19,6 +19,15 @@ const coachTab = (name: string) => async (page: Page) => {
   await page.getByRole("tab", { name: new RegExp(`^${name}`) }).click();
 };
 
+// 予約枠の需給の期間を入れて「この条件で見る」で読み直し、読み直した結果の文言が出るまで待つ。
+const slotSupplyPeriod = (from: string, to: string, shown: string) => async (page: Page) => {
+  await page.getByRole("table").waitFor();
+  await page.getByLabel("開始日").fill(from);
+  await page.getByLabel("終了日").fill(to);
+  await page.getByRole("button", { name: "この条件で見る" }).click();
+  await page.getByText(shown).waitFor();
+};
+
 export const SCREENS: Screen[] = [
   { id: "login", title: "ログイン", path: "/" },
   // デザインシステムの部品のカタログ（本番のメニューには出さない）。部品が変わるとここに出る
@@ -57,6 +66,20 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-home", title: "本部: ホーム", role: "headquarters", path: "/headquarters" },
   { id: "hq-slot-supply", title: "本部: 予約枠の需給", role: "headquarters", path: "/headquarters/slot-supply" },
+  {
+    id: "hq-slot-supply-period",
+    title: "本部: 予約枠の需給（期間を指定）",
+    role: "headquarters",
+    path: "/headquarters/slot-supply",
+    open: slotSupplyPeriod("2026-11-02", "2026-11-08", "2026年11月2日"),
+  },
+  {
+    id: "hq-slot-supply-empty",
+    title: "本部: 予約枠の需給（期間を指定して 0 件）",
+    role: "headquarters",
+    path: "/headquarters/slot-supply",
+    open: slotSupplyPeriod("2026-12-21", "2026-12-27", "予約枠はなく"),
+  },
   {
     id: "hq-coach-reviews",
     title: "本部: コーチの評価",
@@ -243,6 +266,18 @@ export const SCREENS: Screen[] = [
       await page.getByRole("link", { name: "この生徒の予約を見る" }).click();
       await page.getByText(/^この生徒の予約を/).waitFor();
       await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
+    id: "hq-bookings-by-lesson-menu",
+    title: "本部: レッスンメニュー 1 件の予約",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("link", { name: "「フォアハンドの基礎」の予約を見る" }).click();
+      await page.getByText(/^このレッスンメニューの予約を/).waitFor();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
       await page.getByText(/・\d+ 件$/).waitFor();
     },
   },

@@ -180,6 +180,22 @@ describe("本部のレッスンメニュー", () => {
     expect(screen.getAllByRole("link", { name: /の公開の記録を見る$/ })).toHaveLength(MENUS.length);
   });
 
+  test("直近 30 日の予約の数から、そのメニューで絞った予約の一覧へ移れる（0 件の行も）", async () => {
+    render(<LessonMenuCatalog api={apiOf(listOf(MENUS))} />);
+
+    await screen.findByRole("table", { name: "レッスンメニューの一覧" });
+    const link = screen.getByRole("link", { name: "「フォアハンドの基礎」の予約を見る" });
+    expect(link).toHaveTextContent("4 件");
+    expect(link).toHaveAttribute(
+      "href",
+      "/headquarters/bookings?lesson_menu_id=aaaaaaaa-0000-4000-8000-000000000001",
+    );
+    // 既存のリンクと同じ見た目
+    expect(link).toHaveClass("text-primary", "underline");
+    expect(screen.getByRole("link", { name: "「サーブのフォーム添削」の予約を見る" })).toHaveTextContent("0 件");
+    expect(screen.getAllByRole("link", { name: /の予約を見る$/ })).toHaveLength(MENUS.length);
+  });
+
   test("スポーツは「すべて」と 6 種類から選べる", async () => {
     render(<LessonMenuCatalog api={apiOf(listOf(MENUS))} />);
     await screen.findByRole("table");
