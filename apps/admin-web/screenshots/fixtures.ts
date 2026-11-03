@@ -1000,7 +1000,8 @@ export const FIXTURES: Fixture[] = [
       cancelled_booking_count: 1,
       submitted_video_count: 2,
       pending_video_review_count: 1,
-      unanswered_message_thread_count: 0,
+      // 生徒で絞った返事のないメッセージの応答（1 件）と揃える。0 件だと一覧への入口が出ず hq-unanswered-messages-by-student が撮れない
+      unanswered_message_thread_count: 1,
     } satisfies Schemas["StudentActivity"],
   },
   {
