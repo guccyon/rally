@@ -6,6 +6,10 @@
 //! コーチだけに絞れること（照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む）を確かめる。
 //! あわせて、本部が表示名の検索語 `q` で Postgres に保存したコーチを探せること（ほかの絞り込みとの組み合わせと 422 を含む。
 //! 一致の規則の細かい検査は domain の `DisplayNameQuery`）を確かめる。
+//! あわせて、`has_unhandled_low_rated=true` で Postgres に保存した評価のうち未対応の低い評価のあるコーチだけに絞れること
+//! （本部が対応済みの印を付けると外れること・照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む。しきい値と期間の
+//! 細かい検査は domain の `CoachLowRatedReviewCount`・`LowRatedReviewCriteria`）を確かめる。評価は完了したレッスンが要り、
+//! そこまでの HTTP の流れは `lessons.rs` で通しているので、評価は保存先に直に書く（`low_rated_reviews.rs` と同じ）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coaches -- --include-ignored` で走らせる。
@@ -17,14 +21,20 @@ use application::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
     },
     in_memory::{ManualClock, RecordingAnalyticsSink},
+    review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
     Router,
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use domain::{catalog::Sport, identity::Role};
-use infra::{MockTokenService, PgAccountRepository};
+use domain::{
+    catalog::Sport,
+    identity::Role,
+    lesson::LessonCompletionId,
+    review::{LessonReview, LessonReviewComment, Rating},
+};
+use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -397,6 +407,168 @@ async fn headquarters_searches_coaches_by_display_name(pool: PgPool) {
         &router,
         "GET",
         &format!("/coaches?q={}", "a".repeat(51)),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student_id` がコーチ `coach_id` に `submitted_at` に付けた評価を保存先に直に書き、評価の ID を返す。
+async fn review(
+    reviews: &PgLessonReviewRepository,
+    student_id: &str,
+    coach_id: &str,
+    lesson: u128,
+    rating: i64,
+    submitted_at: SystemTime,
+) -> String {
+    let id = reviews.next_id();
+    reviews
+        .insert(LessonReview::restore(
+            id,
+            LessonCompletionId::from_u128(lesson),
+            account_id_uuid::parse(student_id).unwrap(),
+            account_id_uuid::parse(coach_id).unwrap(),
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("説明が少なかった").unwrap(),
+            submitted_at,
+        ))
+        .await
+        .unwrap();
+    lesson_review_id_uuid::format(id)
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_coaches_with_unhandled_low_rated_reviews(pool: PgPool) {
+    let (tanaka_id, _) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, _) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ueno_id, _) = register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (student_id, _) = register(
+        &pool,
+        "taro@example.com",
+        "たろう",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+
+    // たなかは日 10 に ★1、いとうは日 10 に ★2、うえのは日 0 に ★2 と日 10 に ★4
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    review(&reviews, &student_id, &tanaka_id, 1, 1, at(10 * DAY)).await;
+    let ito_review = review(&reviews, &student_id, &ito_id, 2, 2, at(10 * DAY)).await;
+    review(&reviews, &student_id, &ueno_id, 3, 2, at(0)).await;
+    review(&reviews, &student_id, &ueno_id, 4, 4, at(10 * DAY)).await;
+    let clock = ManualClock::new(at(20 * DAY));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let list = |query: &'static str| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "GET",
+                &format!("/coaches{query}"),
+                Some(&headquarters),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            names(&body)
+        }
+    };
+
+    assert_eq!(
+        list("?has_unhandled_low_rated=true").await,
+        ["いとう", "うえの", "たなか"]
+    );
+    // 本部が対応済みの印を付けると外れる（getCoachOverview の unhandled_low_rated_review_count と同じ数え方）
+    let (status, body) = send(
+        &router,
+        "PUT",
+        &format!("/lesson-reviews/{ito_review}/handling"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, overview) = send(
+        &router,
+        "GET",
+        &format!("/coaches/{ito_id}/overview"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(overview["unhandled_low_rated_review_count"], 0);
+    for (query, expected) in [
+        ("?has_unhandled_low_rated=true", vec!["うえの", "たなか"]),
+        // ほかの絞り込みと組み合わせる。たなか = %E3%81%9F%E3%81%AA
+        ("?has_unhandled_low_rated=true&sport=tennis", vec!["たなか"]),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=accepting",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_unhandled_low_rated=true&inactive=true",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_unhandled_low_rated=true&q=%E3%81%9F%E3%81%AA",
+            vec!["たなか"],
+        ),
+        // false・付けないときは絞らない
+        (
+            "?has_unhandled_low_rated=false",
+            vec!["いとう", "うえの", "たなか"],
+        ),
+        ("", vec!["いとう", "うえの", "たなか"]),
+    ] {
+        assert_eq!(list(query).await, expected, "{query}");
+    }
+
+    // 照会した時刻が進んで、うえのの日 0 の ★2 が 30 日の外になれば外れる
+    clock.set(at(30 * DAY));
+    assert_eq!(
+        list("?has_unhandled_low_rated=true").await,
+        ["うえの", "たなか"],
+        "30 日前ちょうどは含む"
+    );
+    clock.set(at(30 * DAY + 1));
+    assert_eq!(list("?has_unhandled_low_rated=true").await, ["たなか"]);
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?has_unhandled_low_rated=yes",
         Some(&headquarters),
         None,
     )

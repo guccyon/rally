@@ -5,7 +5,8 @@
 //! [`CompletedLessonLookup`] で読むだけ（実装は [`crate::lesson::LessonCompletionLookup`]）。評価の一覧に添える
 //! レッスンメニューも、完了したレッスンの元（予約・動画）が持つ写しを [`ReviewedLessonMenuLookup`] で読むだけ
 //! （実装は [`crate::lesson::LessonCompletionMenuLookup`]）。matching がコーチを探す一覧に添える評価の件数と平均は
-//! [`ReviewCoachReviewSummaryLookup`] で、コーチの月ごとのレッスンの実績に添える暦月ごとの評価の件数と平均は
+//! [`ReviewCoachReviewSummaryLookup`] で、本部が見るコーチの一覧を絞る直近の低い評価の件数は
+//! [`ReviewCoachLowRatedReviewCountLookup`] で、コーチの月ごとのレッスンの実績に添える暦月ごとの評価の件数と平均は
 //! [`ReviewMonthlyReviewSummaryLookup`] で渡す。生徒が受けたレッスンの一覧に添える評価済みの印は
 //! [`ReviewLessonCompletionReviewLookup`] で渡す。本部が見る低い評価の一覧（[`ListLowRatedReviews`]）に添えるコーチ・生徒の
 //! 表示名は profile から [`ReviewedCoachDisplayNameLookup`]・[`ReviewerDisplayNameLookup`] で読むだけ。一覧をスポーツで
@@ -28,6 +29,7 @@ mod low_rated_review_list;
 mod mark_low_rated_review_handled;
 mod reply_to_lesson_review;
 mod repository;
+mod review_coach_low_rated_review_count_lookup;
 mod review_coach_review_summary_lookup;
 mod review_lesson_completion_review_lookup;
 mod review_monthly_review_summary_lookup;
@@ -56,6 +58,7 @@ pub use reply_to_lesson_review::{
     ReplyToLessonReview, ReplyToLessonReviewCommand, ReplyToLessonReviewError,
 };
 pub use repository::LessonReviewRepository;
+pub use review_coach_low_rated_review_count_lookup::ReviewCoachLowRatedReviewCountLookup;
 pub use review_coach_review_summary_lookup::ReviewCoachReviewSummaryLookup;
 pub use review_lesson_completion_review_lookup::ReviewLessonCompletionReviewLookup;
 pub use review_monthly_review_summary_lookup::ReviewMonthlyReviewSummaryLookup;

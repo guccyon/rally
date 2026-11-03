@@ -13,4 +13,7 @@ pub struct ListCoachesQuery {
     /// `true` なら直近の期間に完了したレッスンのない（`recent_lesson_count` が 0 の）コーチだけ（判定は
     /// [`domain::lesson::InactiveCoachFilter`]）。`false`（既定）なら絞らない
     pub inactive: bool,
+    /// `true` なら直近の低い評価のうち本部が未対応のもの（`getCoachOverview` の `unhandled_low_rated_review_count`）が
+    /// 1 件以上あるコーチだけ（判定は [`domain::review::UnhandledLowRatedCoachFilter`]）。`false`（既定）なら絞らない
+    pub has_unhandled_low_rated: bool,
 }

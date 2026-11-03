@@ -1,13 +1,14 @@
 //! コーチの一覧（`GET /coaches`。本部と生徒）。受付の状態は scheduling
 //! に問い合わせて添える・除く（`SchedulingCoachAcceptanceLookup`）。本部の一覧の直近 30 日に終わったレッスンの数は
-//! 完了記録の保存先から読む（`LessonCoachRecentLessonCountLookup`）。
+//! 完了記録の保存先から読む（`LessonCoachRecentLessonCountLookup`）。本部の一覧を未対応の低い評価のあるコーチに絞るときの
+//! 件数は評価の保存先から読む（`ReviewCoachLowRatedReviewCountLookup`）。
 
 use application::{
     catalog::CatalogPublishedLessonMenuCountLookup,
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
-    review::ReviewCoachReviewSummaryLookup,
+    review::{ReviewCoachLowRatedReviewCountLookup, ReviewCoachReviewSummaryLookup},
     scheduling::SchedulingCoachAcceptanceLookup,
 };
 use axum::Router;
@@ -21,6 +22,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.accounts(),
             SchedulingCoachAcceptanceLookup::new(ports.coach_acceptances()),
             LessonCoachRecentLessonCountLookup::new(ports.completions(), ports.clock()),
+            ReviewCoachLowRatedReviewCountLookup::new(ports.reviews(), ports.clock()),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(ports.accounts()),
