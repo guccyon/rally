@@ -116,6 +116,22 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-slot-supply-lesson-menu",
+    title: "本部: 予約枠の需給（期間とレッスンメニューを指定）",
+    role: "headquarters",
+    path: "/headquarters/slot-supply",
+    open: async (page) => {
+      await page.getByRole("table").waitFor();
+      await page.getByLabel("開始日").fill("2026-11-02");
+      await page.getByLabel("終了日").fill("2026-11-08");
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByRole("table").waitFor();
+    },
+  },
+  {
     id: "hq-slot-supply-empty",
     title: "本部: 予約枠の需給（期間を指定して 0 件）",
     role: "headquarters",
