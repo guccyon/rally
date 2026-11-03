@@ -505,6 +505,16 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // テニスで絞ったとき（hq-overdue-live-sessions-by-sport）は、テニスのコーチ（鈴木 コーチ）のセッションだけを返す。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { sport: "tennis" },
+    body: {
+      older_than_hours: 3,
+      sessions: OVERDUE_SESSIONS.filter((session) => session.coach_id === COACH_ID),
+    } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
     // 鈴木 コーチで絞ったとき（hq-overdue-live-sessions-by-coach）は、そのコーチのセッションだけを返す。
     method: "GET",
     path: "/live-lesson-sessions/overdue",

@@ -373,6 +373,16 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-overdue-live-sessions-by-sport",
+    title: "本部: 終わっていない通話（スポーツで絞る）",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions?sport=tennis",
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "スポーツ" }).and(page.locator(":enabled")).waitFor();
+      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-overdue-live-sessions-by-coach-empty",
     title: "本部: 終わっていない通話（コーチで絞って 0 件）",
     role: "headquarters",
