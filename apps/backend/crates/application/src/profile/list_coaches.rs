@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use domain::{
     identity::AccountId,
     lesson::{CoachLessonCount, InactiveCoachFilter},
-    profile::CoachSportFilter,
+    profile::{CoachAcceptanceFilter, CoachSportFilter},
     scheduling::CoachAcceptanceStatus,
 };
 
@@ -17,7 +17,8 @@ use crate::{Unavailable, identity::AccountRepository};
 /// [`CoachRecentLessonCountLookup`]。数え方と期間は domain の [`CoachLessonCount::tally_recent`] で、ここでは数えない）を
 /// 添えて返す。受付を止めているコーチも載せる。
 /// 任意の条件（[`ListCoachesQuery`]）で絞れる: 表示名の検索語（`name`。部分一致の規則は domain の
-/// [`domain::profile::DisplayNameQuery`] で、ここでは比べ方を持たない）・受付の状態（`acceptance`）・競技（`sport`。コーチの
+/// [`domain::profile::DisplayNameQuery`] で、ここでは比べ方を持たない）・受付の状態（`acceptance`。判定は domain の
+/// [`CoachAcceptanceFilter`]）・競技（`sport`。コーチの
 /// 提供スポーツに含むもの。判定は domain の [`CoachSportFilter`]）・直近にレッスンのないコーチ（`inactive`。添える直近の
 /// レッスンの数が 0 のもの。判定は domain の [`InactiveCoachFilter`]）。付けたものをすべて満たすもの、どれも付けなければ
 /// 絞らない。
@@ -76,7 +77,7 @@ where
                     .unwrap_or(CoachAcceptanceStatus::Accepting);
                 (account, status)
             })
-            .filter(|(_, status)| acceptance.is_none_or(|wanted| *status == wanted))
+            .filter(|(_, status)| CoachAcceptanceFilter::new(*acceptance).matches(*status))
             .collect();
         let coach_ids: BTreeSet<AccountId> =
             coaches.iter().map(|(account, _)| account.id()).collect();
