@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use domain::{
     identity::AccountId,
     lesson::{CoachLessonCount, InactiveCoachFilter},
+    messaging::UnansweredCoachFilter,
     profile::{CoachAcceptanceFilter, CoachSportFilter},
     review::UnhandledLowRatedCoachFilter,
     scheduling::CoachAcceptanceStatus,
@@ -10,7 +11,7 @@ use domain::{
 
 use super::{
     CoachAcceptanceLookup, CoachLowRatedReviewCountLookup, CoachRecentLessonCountLookup,
-    ListCoachesQuery, ListedCoach,
+    CoachUnansweredMessageThreadCountsLookup, ListCoachesQuery, ListedCoach,
 };
 use crate::{Unavailable, identity::AccountRepository};
 
@@ -26,30 +27,43 @@ use crate::{Unavailable, identity::AccountRepository};
 /// 提供スポーツに含むもの。判定は domain の [`CoachSportFilter`]）・直近にレッスンのないコーチ（`inactive`。添える直近の
 /// レッスンの数が 0 のもの。判定は domain の [`InactiveCoachFilter`]）・未対応の低い評価のあるコーチ
 /// （`has_unhandled_low_rated`。review に問い合わせる。[`CoachLowRatedReviewCountLookup`]。数え方は domain の
-/// [`domain::review::CoachLowRatedReviewCount::tally`] で、判定は [`UnhandledLowRatedCoachFilter`]。絞るときだけ問い合わせる）。
+/// [`domain::review::CoachLowRatedReviewCount::tally`] で、判定は [`UnhandledLowRatedCoachFilter`]。絞るときだけ問い合わせる）・
+/// 返事のないメッセージのあるコーチ（`has_unanswered`。messaging に問い合わせる。
+/// [`CoachUnansweredMessageThreadCountsLookup`]。数え方は `getCoachOverview` と同じ domain の
+/// [`domain::messaging::CoachUnansweredMessageThreadCount::tally`] で、判定は [`UnansweredCoachFilter`]。絞るときだけ
+/// 問い合わせる）。
 /// 付けたものをすべて満たすもの、どれも付けなければ絞らない。
 /// 並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListCoaches<R, A, L, N> {
+pub struct ListCoaches<R, A, L, N, U> {
     accounts: R,
     acceptances: A,
     recent_lessons: L,
     low_rated_reviews: N,
+    unanswered_threads: U,
 }
 
-impl<R, A, L, N> ListCoaches<R, A, L, N>
+impl<R, A, L, N, U> ListCoaches<R, A, L, N, U>
 where
     R: AccountRepository,
     A: CoachAcceptanceLookup,
     L: CoachRecentLessonCountLookup,
     N: CoachLowRatedReviewCountLookup,
+    U: CoachUnansweredMessageThreadCountsLookup,
 {
-    pub fn new(accounts: R, acceptances: A, recent_lessons: L, low_rated_reviews: N) -> Self {
+    pub fn new(
+        accounts: R,
+        acceptances: A,
+        recent_lessons: L,
+        low_rated_reviews: N,
+        unanswered_threads: U,
+    ) -> Self {
         Self {
             accounts,
             acceptances,
             recent_lessons,
             low_rated_reviews,
+            unanswered_threads,
         }
     }
 
@@ -60,6 +74,7 @@ where
             sport,
             inactive,
             has_unhandled_low_rated,
+            has_unanswered,
         } = query;
         let coaches: Vec<_> = self
             .accounts
@@ -111,6 +126,27 @@ where
             } else {
                 coaches
             };
+        let unanswered = UnansweredCoachFilter::new(*has_unanswered);
+        // 絞らないときは messaging に問い合わせない（今までどおり）
+        let coaches: Vec<_> = if unanswered.has_unanswered() && !coaches.is_empty() {
+            let coach_ids: BTreeSet<AccountId> =
+                coaches.iter().map(|(account, _)| account.id()).collect();
+            let counts = self
+                .unanswered_threads
+                .find_unanswered_message_thread_counts(&coach_ids)
+                .await?;
+            coaches
+                .into_iter()
+                // ポートは聞いたコーチをすべて返す。返さなかったコーチは 0 件として扱う（載せない）
+                .filter(|(account, _)| {
+                    counts
+                        .get(&account.id())
+                        .is_some_and(|count| unanswered.matches(count))
+                })
+                .collect()
+        } else {
+            coaches
+        };
         let coach_ids: BTreeSet<AccountId> =
             coaches.iter().map(|(account, _)| account.id()).collect();
         let mut recent_lessons = if coach_ids.is_empty() {
@@ -146,6 +182,10 @@ mod tests {
         identity::{Account, Email, Role},
         lesson::{LessonCompletion, LessonCompletionId, LessonSource},
         live_lesson::SessionId,
+        messaging::{
+            CoachUnansweredMessageThreadCount, MessageBody, MessageContent, MessageId,
+            MessageThread, MessageThreadId,
+        },
         profile::{DisplayName, DisplayNameQuery},
         review::{
             CoachLowRatedReviewCount, LessonReview, LessonReviewComment, LessonReviewId,
@@ -158,8 +198,10 @@ mod tests {
         in_memory::{
             FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
             InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
+            InMemoryMessageThreadRepository,
         },
         lesson::LessonCoachRecentLessonCountLookup,
+        messaging::MessagingCoachUnansweredMessageThreadCountLookup,
         review::ReviewCoachLowRatedReviewCountLookup,
         scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
     };
@@ -237,6 +279,65 @@ mod tests {
         }
     }
 
+    type UnansweredThreads = MessagingCoachUnansweredMessageThreadCountLookup<
+        InMemoryMessageThreadRepository,
+        FixedClock,
+    >;
+
+    fn no_threads() -> UnansweredThreads {
+        unanswered_threads([])
+    }
+
+    fn unanswered_threads(threads: impl IntoIterator<Item = MessageThread>) -> UnansweredThreads {
+        MessagingCoachUnansweredMessageThreadCountLookup::new(
+            InMemoryMessageThreadRepository::with_threads(threads),
+            FixedClock(now()),
+        )
+    }
+
+    const HOUR: Duration = Duration::from_secs(3600);
+
+    /// `id` の生徒（`100 + id`）とコーチ `coach_id` のスレッドを照会の 10 日前に開き、`exchange` の順に
+    /// （生徒が送ったか, 送信時刻）で本文を送る。
+    fn message_thread(id: u128, coach_id: u128, exchange: &[(bool, SystemTime)]) -> MessageThread {
+        let student = AccountId::from_u128(100 + id);
+        let coach = AccountId::from_u128(coach_id);
+        let mut thread = MessageThread::open(
+            MessageThreadId::from_u128(id),
+            student,
+            coach,
+            now() - 10 * DAY,
+        )
+        .unwrap();
+        for (n, (by_student, at)) in exchange.iter().enumerate() {
+            thread
+                .send(
+                    MessageId::from_u128(id * 100 + n as u128),
+                    if *by_student { student } else { coach },
+                    MessageContent::Text(MessageBody::new("質問です").unwrap()),
+                    true,
+                    *at,
+                )
+                .unwrap();
+        }
+        thread
+    }
+
+    /// 呼ばれたら失敗するスレッドの問い合わせ（絞らないときは問い合わせないことを確かめる）。
+    struct UnreachableUnansweredThreads;
+
+    impl CoachUnansweredMessageThreadCountsLookup for UnreachableUnansweredThreads {
+        async fn find_unanswered_message_thread_counts(
+            &self,
+            _coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<
+            std::collections::BTreeMap<AccountId, CoachUnansweredMessageThreadCount>,
+            Unavailable,
+        > {
+            panic!("絞らないときはスレッドに問い合わせない")
+        }
+    }
+
     fn completion(id: u128, coach_id: u128, live: bool, at: SystemTime) -> LessonCompletion {
         let source = if live {
             LessonSource::Live(SessionId::from_u128(id))
@@ -280,10 +381,16 @@ mod tests {
             accounts.insert(account).await.unwrap();
         }
 
-        let coaches = ListCoaches::new(accounts, no_suspension(), no_lessons(), no_reviews())
-            .execute(&ListCoachesQuery::default())
-            .await
-            .unwrap();
+        let coaches = ListCoaches::new(
+            accounts,
+            no_suspension(),
+            no_lessons(),
+            no_reviews(),
+            no_threads(),
+        )
+        .execute(&ListCoachesQuery::default())
+        .await
+        .unwrap();
         let listed: Vec<_> = coaches
             .iter()
             .map(|c| (c.account.id().as_u128(), c.account.display_name().as_str()))
@@ -302,10 +409,16 @@ mod tests {
             .await
             .unwrap();
 
-        let coaches = ListCoaches::new(accounts, no_suspension(), no_lessons(), no_reviews())
-            .execute(&ListCoachesQuery::default())
-            .await
-            .unwrap();
+        let coaches = ListCoaches::new(
+            accounts,
+            no_suspension(),
+            no_lessons(),
+            no_reviews(),
+            no_threads(),
+        )
+        .execute(&ListCoachesQuery::default())
+        .await
+        .unwrap();
         assert!(coaches.is_empty());
     }
 
@@ -335,6 +448,7 @@ mod tests {
             SchedulingCoachAcceptanceLookup::new(acceptances),
             no_lessons(),
             no_reviews(),
+            no_threads(),
         )
         .execute(&ListCoachesQuery::default())
         .await
@@ -384,6 +498,7 @@ mod tests {
             SchedulingCoachAcceptanceLookup::new(acceptances),
             no_lessons(),
             no_reviews(),
+            no_threads(),
         )
         .execute(&ListCoachesQuery {
             acceptance,
@@ -459,6 +574,7 @@ mod tests {
                 completion(5, 2, false, now() - 2 * DAY),
             ]),
             no_reviews(),
+            no_threads(),
         );
 
         let listed: Vec<_> = use_case
@@ -530,6 +646,7 @@ mod tests {
                 completion(3, 4, true, now()),
             ]),
             no_reviews(),
+            no_threads(),
         )
         .execute(&query)
         .await
@@ -636,6 +753,7 @@ mod tests {
                 review(5, 4, 3, now()),
                 review(6, 5, 1, now()),
             ]),
+            no_threads(),
         )
         .execute(&query)
         .await
@@ -727,6 +845,145 @@ mod tests {
             no_suspension(),
             no_lessons(),
             UnreachableLowRatedReviews,
+            no_threads(),
+        )
+        .execute(&ListCoachesQuery {
+            inactive: true,
+            sport: Some(Sport::Tennis),
+            ..ListCoachesQuery::default()
+        })
+        .await
+        .unwrap();
+        assert_eq!(coaches.len(), 1);
+    }
+
+    /// 返事のないメッセージのあるコーチに絞った一覧（ID の並び）。たなか（1。テニス・停止中。24 時間ちょうど前の生徒の発言に
+    /// 返信がない）・いとう（2。サッカーとテニス。返信済みと、24 時間に 1 秒足りないものだけ）・うえの（3。テニス。30 時間前の
+    /// 発言に返信がなく、未対応の ★1 がある。今日通話 1）・えんどう（4。野球。スレッドなし）と、テニスの生徒（5）。
+    async fn unanswered(query: ListCoachesQuery) -> Vec<u128> {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
+            account(2, "いとう", Role::Coach, &[Sport::Soccer, Sport::Tennis]),
+            account(3, "うえの", Role::Coach, &[Sport::Tennis]),
+            account(4, "えんどう", Role::Coach, &[Sport::Baseball]),
+            account(5, "あおき", Role::Student, &[Sport::Tennis]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        acceptances
+            .update(AccountId::from_u128(1), |a| {
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
+            })
+            .await
+            .unwrap();
+        ListCoaches::new(
+            accounts,
+            SchedulingCoachAcceptanceLookup::new(acceptances),
+            recent_lessons([completion(1, 3, true, now())]),
+            low_rated_reviews([review(1, 3, 1, now())]),
+            unanswered_threads([
+                message_thread(1, 1, &[(true, now() - 24 * HOUR)]),
+                message_thread(2, 2, &[(true, now() - 50 * HOUR), (false, now() - HOUR)]),
+                message_thread(3, 2, &[(true, now() - 24 * HOUR + Duration::from_secs(1))]),
+                message_thread(4, 3, &[(true, now() - 30 * HOUR)]),
+                // 生徒の ID をコーチとしたスレッドはない（生徒は載らない）
+            ]),
+        )
+        .execute(&query)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.account.id().as_u128())
+        .collect()
+    }
+
+    fn unanswered_only() -> ListCoachesQuery {
+        ListCoachesQuery {
+            has_unanswered: true,
+            ..ListCoachesQuery::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn has_unanswered_lists_only_coaches_with_an_unanswered_thread_keeping_the_order() {
+        // 表示名の順（うえの・たなか）のまま。返信済み・時間に満たない・スレッドのないコーチと生徒は載らない
+        assert_eq!(unanswered(unanswered_only()).await, [3, 1]);
+        // 付けなければ（false なら）今までどおりすべて
+        assert_eq!(unanswered(ListCoachesQuery::default()).await, [2, 3, 4, 1]);
+    }
+
+    #[tokio::test]
+    async fn has_unanswered_is_combined_with_the_other_conditions() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        let query = |query: ListCoachesQuery| ListCoachesQuery {
+            has_unanswered: true,
+            ..query
+        };
+        assert_eq!(
+            unanswered(query(ListCoachesQuery {
+                acceptance: Some(Suspended),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [1]
+        );
+        assert_eq!(
+            unanswered(query(ListCoachesQuery {
+                acceptance: Some(Accepting),
+                sport: Some(Sport::Tennis),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [3]
+        );
+        assert!(
+            unanswered(query(ListCoachesQuery {
+                sport: Some(Sport::Soccer),
+                ..ListCoachesQuery::default()
+            }))
+            .await
+            .is_empty(),
+            "いとうのスレッドは返信済みか時間に満たない"
+        );
+        assert_eq!(
+            unanswered(query(ListCoachesQuery {
+                name: DisplayNameQuery::new("たな").unwrap(),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [1]
+        );
+        assert_eq!(
+            unanswered(query(inactive_only())).await,
+            [1],
+            "うえのには直近のレッスンがある"
+        );
+        assert_eq!(
+            unanswered(query(unhandled_low_rated_only())).await,
+            [3],
+            "未対応の低い評価があるのはうえのだけ"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_has_unanswered_threads_are_not_looked_up() {
+        let accounts = InMemoryAccountRepository::default();
+        accounts
+            .insert(account(1, "たなか", Role::Coach, &[Sport::Tennis]))
+            .await
+            .unwrap();
+        let coaches = ListCoaches::new(
+            accounts,
+            no_suspension(),
+            no_lessons(),
+            no_reviews(),
+            UnreachableUnansweredThreads,
         )
         .execute(&ListCoachesQuery {
             inactive: true,
@@ -767,6 +1024,7 @@ mod tests {
             SchedulingCoachAcceptanceLookup::new(acceptances),
             no_lessons(),
             no_reviews(),
+            no_threads(),
         )
         .execute(&query)
         .await

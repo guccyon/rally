@@ -1,12 +1,14 @@
 //! コーチの一覧（`GET /coaches`。本部と生徒）。受付の状態は scheduling
 //! に問い合わせて添える・除く（`SchedulingCoachAcceptanceLookup`）。本部の一覧の直近 30 日に終わったレッスンの数は
 //! 完了記録の保存先から読む（`LessonCoachRecentLessonCountLookup`）。本部の一覧を未対応の低い評価のあるコーチに絞るときの
-//! 件数は評価の保存先から読む（`ReviewCoachLowRatedReviewCountLookup`）。
+//! 件数は評価の保存先から読む（`ReviewCoachLowRatedReviewCountLookup`）。返事のないメッセージのあるコーチに絞るときの
+//! スレッドの数は messaging に問い合わせる（`MessagingCoachUnansweredMessageThreadCountLookup`）。
 
 use application::{
     catalog::CatalogPublishedLessonMenuCountLookup,
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
+    messaging::MessagingCoachUnansweredMessageThreadCountLookup,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
     review::{ReviewCoachLowRatedReviewCountLookup, ReviewCoachReviewSummaryLookup},
     scheduling::SchedulingCoachAcceptanceLookup,
@@ -23,6 +25,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             SchedulingCoachAcceptanceLookup::new(ports.coach_acceptances()),
             LessonCoachRecentLessonCountLookup::new(ports.completions(), ports.clock()),
             ReviewCoachLowRatedReviewCountLookup::new(ports.reviews(), ports.clock()),
+            MessagingCoachUnansweredMessageThreadCountLookup::new(ports.threads(), ports.clock()),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(ports.accounts()),

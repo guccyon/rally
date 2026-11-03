@@ -1,6 +1,7 @@
 //! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
 //! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
-//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチに絞れる。コーチは 403。
+//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチと、返事のない
+//! メッセージのあるコーチに絞れる。コーチは 403。
 
 use std::time::{Duration, SystemTime};
 
@@ -14,9 +15,11 @@ use application::{
         FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
         InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
         InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryMessageThreadRepository,
     },
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
+    messaging::MessagingCoachUnansweredMessageThreadCountLookup,
     profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
     review::{ReviewCoachLowRatedReviewCountLookup, ReviewCoachReviewSummaryLookup},
     scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
@@ -36,6 +39,7 @@ use domain::{
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     live_lesson::SessionId,
     matching::FavoriteCoach,
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
     review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
 };
@@ -168,10 +172,40 @@ fn review_at(id: u128, coach_id: u128, rating: i64, at: SystemTime) -> LessonRev
     )
 }
 
+const HOUR: Duration = Duration::from_secs(3600);
+
+/// テニスの生徒（3）とコーチ `coach_id` のスレッドを照会の 10 日前に開き、`exchange` の順に（生徒が送ったか, 送信時刻）で
+/// 本文を送る。
+fn message_thread(id: u128, coach_id: u128, exchange: &[(bool, SystemTime)]) -> MessageThread {
+    let student = AccountId::from_u128(3);
+    let coach = AccountId::from_u128(coach_id);
+    let mut thread = MessageThread::open(
+        MessageThreadId::from_u128(id),
+        student,
+        coach,
+        now() - 10 * DAY,
+    )
+    .unwrap();
+    for (n, (by_student, at)) in exchange.iter().enumerate() {
+        thread
+            .send(
+                MessageId::from_u128(id * 100 + n as u128),
+                if *by_student { student } else { coach },
+                MessageContent::Text(MessageBody::new("質問です").unwrap()),
+                true,
+                *at,
+            )
+            .unwrap();
+    }
+    thread
+}
+
 /// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。直近 30 日に終わったレッスンは
 /// コーチ 2 が通話 1・添削 1（30 日前ちょうどを含む。31 日前の添削は数えない）、コーチ 5 が添削 1。コーチ 4 は 0。
 /// 本部が見る直近の低い評価は、コーチ 4 が今日の ★1（未対応）と ★3、コーチ 2 が 30 日前ちょうどの ★2（未対応）、
 /// コーチ 5 が対応済みの ★2 と 31 日前の ★1（期間の外）。
+/// 返信のないまま既定の 24 時間の過ぎたスレッドは、コーチ 4 が 30 時間前の発言、コーチ 5 が 24 時間ちょうど前の発言。
+/// コーチ 2 は返信済みと 24 時間に 1 秒足りないものだけ。
 fn app(accounts: InMemoryAccountRepository) -> Router {
     app_with(accounts, InMemoryCoachAcceptanceRepository::default())
 }
@@ -207,6 +241,12 @@ fn app_with(
             .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS_ID, now()))),
         review_at(15, 5, 1, now() - 31 * DAY),
     ]);
+    let threads = InMemoryMessageThreadRepository::with_threads([
+        message_thread(1, 4, &[(true, now() - 30 * HOUR)]),
+        message_thread(2, 5, &[(true, now() - 24 * HOUR)]),
+        message_thread(3, 2, &[(true, now() - 50 * HOUR), (false, now() - HOUR)]),
+        message_thread(4, 2, &[(true, now() - 24 * HOUR + Duration::from_secs(1))]),
+    ]);
     let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
     interface::coaches_router(
         ListCoaches::new(
@@ -214,6 +254,7 @@ fn app_with(
             acceptances.clone(),
             LessonCoachRecentLessonCountLookup::new(completions, FixedClock(now())),
             ReviewCoachLowRatedReviewCountLookup::new(low_rated_reviews, FixedClock(now())),
+            MessagingCoachUnansweredMessageThreadCountLookup::new(threads, FixedClock(now())),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
@@ -519,6 +560,65 @@ async fn students_ignore_has_unhandled_low_rated_as_before() {
         &router,
         "student-app",
         "?has_unhandled_low_rated=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_unanswered_threads_combined_with_other_filters() {
+    // 返事のないメッセージはコーチ 4（停止中）と 5 にある。コーチ 2 は返信済みと時間に満たないものだけ。
+    // たな = %E3%81%9F%E3%81%AA
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_unanswered=true", vec![4, 5]),
+        // false・付けないときは絞らない
+        ("?has_unanswered=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_unanswered=true&sport=tennis", vec![4]),
+        ("?has_unanswered=true&sport=soccer", vec![5]),
+        ("?has_unanswered=true&acceptance_status=suspended", vec![4]),
+        ("?has_unanswered=true&acceptance_status=accepting", vec![5]),
+        ("?has_unanswered=true&inactive=true", vec![4]),
+        ("?has_unanswered=true&has_unhandled_low_rated=true", vec![4]),
+        ("?has_unanswered=true&q=%E3%81%9F%E3%81%AA", vec![]),
+        (
+            "?has_unanswered=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_unanswered_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_unanswered=yes",
+        "?has_unanswered=1",
+        "?has_unanswered=",
+        "?has_unanswered=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_unanswered_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_unanswered=true",
         Some(STUDENT),
     )
     .await;

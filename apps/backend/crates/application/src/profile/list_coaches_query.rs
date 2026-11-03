@@ -16,4 +16,8 @@ pub struct ListCoachesQuery {
     /// `true` なら直近の低い評価のうち本部が未対応のもの（`getCoachOverview` の `unhandled_low_rated_review_count`）が
     /// 1 件以上あるコーチだけ（判定は [`domain::review::UnhandledLowRatedCoachFilter`]）。`false`（既定）なら絞らない
     pub has_unhandled_low_rated: bool,
+    /// `true` なら返信のないまま既定の時間の過ぎたスレッド（`getCoachOverview` の `unanswered_message_thread_count`。
+    /// `listUnansweredMessageThreads` に既定の条件とそのコーチの `coach_id` だけを付けたときに載るもの）が 1 件以上ある
+    /// コーチだけ（判定は [`domain::messaging::UnansweredCoachFilter`]）。`false`（既定）なら絞らない
+    pub has_unanswered: bool,
 }
