@@ -959,6 +959,26 @@ export const FIXTURES: Fixture[] = [
     body: { students: [] } satisfies Schemas["StudentList"],
   },
   {
+    // 返事を待っているメッセージのある生徒だけに絞ったとき（hq-students-has-unanswered）。山田 花子だけ。
+    method: "GET",
+    path: "/students",
+    query: { has_unanswered: "true" },
+    body: {
+      students: [
+        {
+          student_id: STUDENT_ID,
+          display_name: YAMADA.name,
+          sport: "tennis",
+          contract_type: "subscription",
+          plan: "standard",
+          last_booked_at: at(-24),
+          recent_booking_count: 4,
+          registered_at: at(-24 * 5),
+        },
+      ],
+    } satisfies Schemas["StudentList"],
+  },
+  {
     // URL のコーチの ID が UUID でないとき（hq-students-invalid-coach）は 422。
     method: "GET",
     path: "/students",

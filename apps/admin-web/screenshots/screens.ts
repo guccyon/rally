@@ -335,6 +335,21 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返事を待っているメッセージのある生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-unanswered",
+    title: "本部: 生徒（返事を待っているメッセージのある生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "返事を待っているメッセージのある生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("返事を待っているメッセージのある生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-students-invalid-coach",
     title: "本部: 生徒（コーチの指定が正しくない 422）",
     role: "headquarters",

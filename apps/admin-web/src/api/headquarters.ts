@@ -130,7 +130,12 @@ export function headquartersApi(client: ApiClient) {
         }),
       ),
     listStudents: (
-      filter: { sport?: Schemas["Sport"]; not_booked_since?: string; coach_id?: string } = {},
+      filter: {
+        sport?: Schemas["Sport"];
+        not_booked_since?: string;
+        coach_id?: string;
+        has_unanswered?: boolean;
+      } = {},
     ) =>
       call(() => client.GET("/students", { params: { query: filter } })),
     getStudentActivity: (studentId: string) =>
