@@ -920,6 +920,28 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // レッスンメニュー「フォアハンドの基礎」で絞ったとき（hq-cancelled-bookings-lesson-menu）。そのメニューのキャンセルだけを返す。
+    method: "GET",
+    path: "/bookings/cancelled",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 21),
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 2),
+          cancelled_at: at(-3),
+          cancelled_by: "student",
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
     // コーチで絞ったとき（hq-cancelled-bookings-coach）。高橋 コーチの枠のキャンセルだけを返す。
     method: "GET",
     path: "/bookings/cancelled",

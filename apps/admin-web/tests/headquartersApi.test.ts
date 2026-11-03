@@ -685,6 +685,19 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
+  test("listCancelledBookings はコーチ・レッスンメニューを期間と合わせてクエリの coach_id / lesson_menu_id にする", async () => {
+    const coachId = "22222222-2222-4222-8222-222222222222";
+    const lessonMenuId = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-20", to: "2026-10-26", bookings: [] }));
+    await api.listCancelledBookings({ from: "2026-10-20", to: "2026-10-26", coach_id: coachId, lesson_menu_id: lessonMenuId });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/bookings/cancelled");
+    expect(url.searchParams.get("from")).toBe("2026-10-20");
+    expect(url.searchParams.get("to")).toBe("2026-10-26");
+    expect(url.searchParams.get("coach_id")).toBe(coachId);
+    expect(url.searchParams.get("lesson_menu_id")).toBe(lessonMenuId);
+  });
+
   test("listCancelledBookings は期間を省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, { from: "2026-10-20", to: "2026-10-26", bookings: [] }));
     await api.listCancelledBookings({});
