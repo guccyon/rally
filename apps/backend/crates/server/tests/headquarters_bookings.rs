@@ -3,7 +3,8 @@
 //! 開始の古い順に読み、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でそのコーチの予約だけに絞れること、
 //! `status` で Postgres に保存した状態（確定待ち・確定済み・キャンセル済み）の予約だけに絞れること、`student_id` でその生徒の
 //! 予約だけに絞れること、`lesson_menu_id` で Postgres に保存した予約した時点のメニューの写しがそのメニューの予約だけに
-//! 絞れること、本部以外は 403 になることを確かめる。
+//! 絞れること、`sport` で Postgres に保存したコーチの提供スポーツがその競技の予約だけに絞れること、本部以外は 403 に
+//! なることを確かめる。
 //! 契約の形・期間の規則の細かい検査は interface の `tests/headquarters_bookings.rs`、期間に開始する予約の読み取りは
 //! infra の `tests/pg_booking_repository.rs`。
 //!
@@ -60,6 +61,21 @@ fn post_json(path: &str, token: &str, body: Value) -> Request<Body> {
 
 /// アカウントを登録して ID とトークンを返す。契約にコーチ・本部の登録の操作がないので、ユースケースを直に呼ぶ。
 async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String) {
+    let sports = if role == Role::Headquarters {
+        vec![]
+    } else {
+        vec![Sport::Tennis]
+    };
+    register_with_sports(pool, email, role, sports).await
+}
+
+/// 提供スポーツ（生徒ならスポーツ）`sports` のアカウントを登録して ID とトークンを返す。
+async fn register_with_sports(
+    pool: &PgPool,
+    email: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (AccountId, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -69,11 +85,7 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
         email: email.to_string(),
         display_name: email.split('@').next().unwrap().to_string(),
         role,
-        sports: if role == Role::Headquarters {
-            vec![]
-        } else {
-            vec![Sport::Tennis]
-        },
+        sports,
     })
     .await
     .unwrap();
@@ -510,4 +522,139 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
             assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
         }
     }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_narrows_bookings_by_the_sport_of_the_coach_in_postgres(pool: PgPool) {
+    // たなかはテニスとゴルフ、いとうはサッカーを提供する。枠のスポーツはコーチの最初の提供スポーツ
+    let (tanaka, tanaka_token) = register_with_sports(
+        &pool,
+        "tanaka@example.com",
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Golf],
+    )
+    .await;
+    let (ito, ito_token) =
+        register_with_sports(&pool, "ito@example.com", Role::Coach, vec![Sport::Soccer]).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+    let (_, jiro_token) = register(&pool, "jiro@example.com", Role::Student).await;
+    let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let router = server::router_with_postgres(
+        pool,
+        FixedClock(SystemTime::UNIX_EPOCH + NOW),
+        RecordingAnalyticsSink::default(),
+    );
+
+    // 10 月 26 日にたなかの枠（テニス）、10 月 27 日にいとうの枠（サッカー）、10 月 28 日にたなかの枠（テニス）
+    let mut booked = Vec::new();
+    for (coach, sport, starts_at, ends_at, student) in [
+        (
+            &tanaka_token,
+            "tennis",
+            "2026-10-26T03:00:00Z",
+            "2026-10-26T04:00:00Z",
+            &taro_token,
+        ),
+        (
+            &ito_token,
+            "soccer",
+            "2026-10-27T03:00:00Z",
+            "2026-10-27T04:00:00Z",
+            &taro_token,
+        ),
+        (
+            &tanaka_token,
+            "tennis",
+            "2026-10-28T03:00:00Z",
+            "2026-10-28T04:00:00Z",
+            &jiro_token,
+        ),
+    ] {
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                coach,
+                json!({ "sport": sport, "starts_at": starts_at, "ends_at": ends_at }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        let (status, booking) = send(
+            &router,
+            post_json(
+                "/bookings",
+                student,
+                json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{booking}");
+        booked.push(booking["booking_id"].clone());
+    }
+    // 3 件目（じろうの予約）をキャンセルする。キャンセルされた予約も競技で絞れる
+    let (status, body) = send(
+        &router,
+        post_json(
+            &format!("/bookings/{}/cancel", booked[2].as_str().unwrap()),
+            &jiro_token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let ids_of = |body: &Value| -> Vec<Value> {
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["booking"]["booking_id"].clone())
+            .collect()
+    };
+    let id = |i: usize| booked[i].clone();
+    for (query, expected) in [
+        // 枠のスポーツ（テニス）でなく、コーチの提供スポーツ（ゴルフ）で決める
+        ("&sport=golf".to_string(), vec![id(0), id(2)]),
+        ("&sport=tennis".to_string(), vec![id(0), id(2)]),
+        ("&sport=soccer".to_string(), vec![id(1)]),
+        ("&sport=baseball".to_string(), vec![]),
+        // 付けなければ今までどおりすべての競技
+        (String::new(), vec![id(0), id(1), id(2)]),
+        // 期間・コーチ・生徒・状態と組み合わせる
+        ("&sport=golf&to=2026-10-27".to_string(), vec![id(0)]),
+        (
+            format!("&sport=golf&coach_id={}", account_id_uuid::format(ito)),
+            vec![],
+        ),
+        (
+            format!("&sport=golf&coach_id={}", account_id_uuid::format(tanaka)),
+            vec![id(0), id(2)],
+        ),
+        (
+            format!("&sport=golf&student_id={}", account_id_uuid::format(taro)),
+            vec![id(0)],
+        ),
+        ("&sport=golf&status=cancelled".to_string(), vec![id(2)]),
+        ("&sport=soccer&status=cancelled".to_string(), vec![]),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/bookings?from=2026-10-26{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids_of(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = send(&router, get("/bookings?sport=soccer", &hq_token)).await;
+    assert_eq!(body["bookings"][0]["coach_display_name"], "ito", "{body}");
+
+    for query in ["?sport=cricket", "?sport=Golf", "?sport="] {
+        let (status, body) = send(&router, get(&format!("/bookings{query}"), &hq_token)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+    let (status, _) = send(&router, get("/bookings?sport=golf", &tanaka_token)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }

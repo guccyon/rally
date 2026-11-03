@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// live-lesson の [`SessionCoachAccountLookup`]（本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧を
-/// 競技で絞る）と、scheduling の [`SlotCoachAccountLookup`]（本部が見る予約枠の需給を競技で絞る）の profile による
+/// 競技で絞る）と、scheduling の [`SlotCoachAccountLookup`]（本部が見る予約枠の需給と予約の一覧を競技で絞る）の profile による
 /// 実装。アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。
