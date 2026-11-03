@@ -21,6 +21,7 @@ export function headquartersApi(client: ApiClient) {
         q?: string;
         inactive?: boolean;
         has_unhandled_low_rated?: boolean;
+        has_unanswered?: boolean;
       } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
