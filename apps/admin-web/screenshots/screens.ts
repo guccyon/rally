@@ -228,6 +228,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返事のないメッセージのあるコーチだけに絞った状態（URL のクエリ has_unanswered=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-unanswered",
+    title: "本部: コーチの受付（返事のないメッセージのあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_unanswered=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("返事のないメッセージのあるコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",

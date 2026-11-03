@@ -19,6 +19,7 @@ const SPORT_QUERY = "sport";
 const NAME_QUERY = "q";
 const INACTIVE_QUERY = "inactive";
 const UNHANDLED_LOW_RATED_QUERY = "has_unhandled_low_rated";
+const UNANSWERED_QUERY = "has_unanswered";
 
 /** 絞り込みを残した「コーチの受付」の URL。「すべて」の条件はクエリに出さない。 */
 export function coachAcceptancePath(filter: CoachAcceptanceFilter): string {
@@ -28,12 +29,13 @@ export function coachAcceptancePath(filter: CoachAcceptanceFilter): string {
   if (filter.q !== "") query.set(NAME_QUERY, filter.q);
   if (filter.inactive) query.set(INACTIVE_QUERY, "true");
   if (filter.hasUnhandledLowRated) query.set(UNHANDLED_LOW_RATED_QUERY, "true");
+  if (filter.hasUnanswered) query.set(UNANSWERED_QUERY, "true");
   const search = query.toString();
   return search === "" ? COACH_ACCEPTANCE_PATH : `${COACH_ACCEPTANCE_PATH}?${search}`;
 }
 
 /**
- * URL のクエリから絞り込みを読む。契約の値でなければ「すべて」として扱う（`inactive`・`has_unhandled_low_rated` は `true` のときだけ絞る）。
+ * URL のクエリから絞り込みを読む。契約の値でなければ「すべて」として扱う（`inactive`・`has_unhandled_low_rated`・`has_unanswered` は `true` のときだけ絞る）。
  * 検索語は前後の空白を除いてそのまま使う（長すぎる語はサーバーの 422 の理由を一覧に出す）。
  */
 export function coachAcceptanceFilterFrom(params: Pick<URLSearchParams, "get">): CoachAcceptanceFilter {
@@ -45,12 +47,13 @@ export function coachAcceptanceFilterFrom(params: Pick<URLSearchParams, "get">):
     q: params.get(NAME_QUERY)?.trim() ?? "",
     inactive: params.get(INACTIVE_QUERY) === "true",
     hasUnhandledLowRated: params.get(UNHANDLED_LOW_RATED_QUERY) === "true",
+    hasUnanswered: params.get(UNANSWERED_QUERY) === "true",
   };
 }
 
 /**
  * 本部の画面: コーチの一覧で受付の状態を見て、受付を止める・再開する。
- * 絞り込みは URL のクエリ（`?acceptance_status=&sport=&q=&inactive=true&has_unhandled_low_rated=true`）に残し、再読み込み・共有で同じ一覧を開く。
+ * 絞り込みは URL のクエリ（`?acceptance_status=&sport=&q=&inactive=true&has_unhandled_low_rated=true&has_unanswered=true`）に残し、再読み込み・共有で同じ一覧を開く。
  */
 export function CoachAcceptanceHome({
   token,
