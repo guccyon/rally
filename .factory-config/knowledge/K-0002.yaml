@@ -12,7 +12,7 @@ evidence:
   - case: C-0001
   - pr: 546
   - event: "case.analyzed:113682"
-status: draft
+status: active
 verified_at: 2026-11-03
 review_by: 2026-12-03
 confidentiality: product
@@ -27,3 +27,4 @@ enforcement:
         CHANGELOG を PR ごとの断片（changelog.d/<Issue 番号>.md）にし、取りまとめを別の工程にした
         （Engine ADR 0027、core-gates/changelog_compile.py、このリポジトリの changelog.d/README.md と CLAUDE.md）。
         この事例のあとに入ったもので、効き目（CHANGELOG の衝突が減ったか）はまだ確かめていない
+decided_by: committee:D-0001

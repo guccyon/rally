@@ -12,10 +12,11 @@ evidence:
   - case: C-0001
   - pr: 546
   - event: "case.analyzed:113682"
-status: draft
+status: active
 verified_at: 2026-11-03
 review_by: 2026-12-03
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
+decided_by: committee:D-0001
