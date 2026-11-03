@@ -9,6 +9,7 @@ mod list_overdue_live_lesson_sessions;
 mod live_lesson_session_history;
 mod overdue_session_list;
 mod repository;
+mod session_coach_account_lookup;
 mod session_coach_display_name_lookup;
 pub mod session_id_uuid;
 mod session_student_display_name_lookup;
@@ -32,6 +33,7 @@ pub use list_overdue_live_lesson_sessions::ListOverdueLiveLessonSessions;
 pub use live_lesson_session_history::LiveLessonSessionHistory;
 pub use overdue_session_list::OverdueSessionList;
 pub use repository::LiveLessonSessionRepository;
+pub use session_coach_account_lookup::SessionCoachAccountLookup;
 pub use session_coach_display_name_lookup::SessionCoachDisplayNameLookup;
 pub use session_student_display_name_lookup::SessionStudentDisplayNameLookup;
 pub use start_live_lesson_session::{

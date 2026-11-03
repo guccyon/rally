@@ -1422,6 +1422,12 @@ export interface paths {
          *     - 任意の `coach_id` で、そのコーチのセッションだけに絞れる（終わっていない通話が残るコーチに連絡するとき、そのコーチの分だけを
          *       見る）。`older_than_hours` と組み合わせられ、時間の規則と並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID で
          *       なければ 422 `validation_failed`。コーチでない ID・ない ID・該当するセッションがないコーチは、404 にせず `sessions` が空の配列
+         *     - 任意の `sport` で、その競技のセッションだけに絞れる（競技ごとの担当が自分の競技の分だけを見る）。セッションの競技は
+         *       セッションのコーチの競技で、コーチの提供スポーツのどれかが `sport` と一致するセッションだけを返す（決め方は `listCoaches` の
+         *       `sport` と同じ。実装は backend の domain `CoachSportFilter` の 1 か所。ゴルフも絞れる）。アカウントの引けないコーチの
+         *       セッションは、`sport` を付けると載らない。`older_than_hours`・`coach_id` と組み合わせられ、時間の規則と並べ方は変わらない。
+         *       省けばすべての競技。`sport` が `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。
+         *       該当するセッションがない競技は `sessions` が空の配列
          *     - 並べ方: 開始 `started_at` の古い順。同じ時刻は `session_id` の順
          *     - 各セッションには、セッションの ID・開始した予約の ID `booking_id`・コーチ `coach_id`・開始した予約の生徒 `student_id`・
          *       開始の時刻 `started_at`・照会した時刻までの開始からの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の
@@ -4590,6 +4596,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの競技を提供するコーチのセッションだけに絞る（コーチの提供スポーツのどれかが一致するもの）。省けばすべての競技。
+                 *     `Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

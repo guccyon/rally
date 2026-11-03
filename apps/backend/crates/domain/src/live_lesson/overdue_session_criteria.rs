@@ -1,7 +1,12 @@
 use std::time::{Duration, SystemTime};
 
 use super::LiveLessonSession;
-use crate::{DomainError, identity::AccountId};
+use crate::{
+    DomainError,
+    catalog::Sport,
+    identity::{Account, AccountId},
+    profile::CoachSportFilter,
+};
 
 /// 本部が見る「終わっていないまま時間の過ぎた」通話セッションの基準（admin-web の `listOverdueLiveLessonSessions`。
 /// 既定・範囲・境界の正本は `specs/contracts/api/admin-web/openapi.yaml` の `listOverdueLiveLessonSessions`）。
@@ -10,10 +15,13 @@ use crate::{DomainError, identity::AccountId};
 /// セッションを「時間の過ぎた」セッションとする。時間は [`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] 時間で、省いたときは
 /// [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。既定と範囲はこの型の 1 か所だけに置く。任意のコーチ [`Self::coach_id`]
 /// で絞れ（[`Self::with_coach_id`]。省けばすべてのコーチ）、時間と組み合わせても時間の規則と並べ方は変わらない。
+/// 任意の競技 [`Self::sport`] でも絞れる（[`Self::with_sport`]。省けばすべての競技）。セッションの競技はセッションの
+/// コーチの競技で、コーチの提供スポーツに含むかの判定は [`CoachSportFilter`] の 1 か所（[`Self::matches_coach_sport`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverdueSessionCriteria {
     hours: u16,
     coach_id: Option<AccountId>,
+    coach_sport: CoachSportFilter,
 }
 
 impl OverdueSessionCriteria {
@@ -36,12 +44,21 @@ impl OverdueSessionCriteria {
         Ok(Self {
             hours,
             coach_id: None,
+            coach_sport: CoachSportFilter::new(None),
         })
     }
 
     /// `coach_id` があればそのコーチのセッションだけを選ぶ基準（`None` ならすべてのコーチ）。時間は変えない。
     pub const fn with_coach_id(self, coach_id: Option<AccountId>) -> Self {
         Self { coach_id, ..self }
+    }
+
+    /// `sport` があればその競技のコーチのセッションだけを選ぶ基準（`None` ならすべての競技）。時間とコーチは変えない。
+    pub const fn with_sport(self, sport: Option<Sport>) -> Self {
+        Self {
+            coach_sport: CoachSportFilter::new(sport),
+            ..self
+        }
     }
 
     /// 開始からの時間（時間単位）。
@@ -52,6 +69,21 @@ impl OverdueSessionCriteria {
     /// 絞り込むコーチ。`None` ならすべてのコーチ。
     pub const fn coach_id(&self) -> Option<AccountId> {
         self.coach_id
+    }
+
+    /// 絞り込む競技。`None` ならすべての競技。
+    pub const fn sport(&self) -> Option<Sport> {
+        self.coach_sport.sport()
+    }
+
+    /// セッションのコーチのアカウント `coach`（引けなければ `None`）が競技の指定に合うか。競技の指定がなければ常に合う。
+    /// 指定があれば、コーチの役割のアカウントで提供スポーツに競技を含むときだけ合う（判定は [`CoachSportFilter`]。
+    /// `listCoaches` の `sport` と同じ）。アカウントの引けないコーチは合わない。
+    pub fn matches_coach_sport(&self, coach: Option<&Account>) -> bool {
+        match self.sport() {
+            None => true,
+            Some(_) => coach.is_some_and(|coach| self.coach_sport.matches(coach)),
+        }
     }
 
     /// 開始からの時間の長さ。
@@ -97,6 +129,7 @@ impl Default for OverdueSessionCriteria {
         Self {
             hours: Self::DEFAULT_HOURS,
             coach_id: None,
+            coach_sport: CoachSportFilter::new(None),
         }
     }
 }
@@ -105,7 +138,9 @@ impl Default for OverdueSessionCriteria {
 mod tests {
     use super::*;
     use crate::{
+        identity::{Email, Role},
         live_lesson::{ConnectionQuality, SessionId},
+        profile::DisplayName,
         scheduling::BookingId,
     };
 
@@ -155,6 +190,7 @@ mod tests {
         assert_eq!(criteria.threshold(), 3 * HOUR);
         assert_eq!(criteria.started_at_or_before(now()), now() - 3 * HOUR);
         assert_eq!(criteria.coach_id(), None, "既定はすべてのコーチ");
+        assert_eq!(criteria.sport(), None, "既定はすべての競技");
     }
 
     #[test]
@@ -268,5 +304,56 @@ mod tests {
             Vec::<u128>::new(),
             "セッションのないコーチは空"
         );
+    }
+
+    fn account(role: Role, sports: &[Sport]) -> Account {
+        Account::new(
+            COACH,
+            Email::new("coach@example.com").unwrap(),
+            DisplayName::new("たなか").unwrap(),
+            role,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn with_sport_keeps_the_hours_and_the_coach() {
+        let criteria = OverdueSessionCriteria::new(24)
+            .unwrap()
+            .with_coach_id(Some(COACH))
+            .with_sport(Some(Sport::Golf));
+        assert_eq!(
+            (criteria.hours(), criteria.coach_id(), criteria.sport()),
+            (24, Some(COACH), Some(Sport::Golf))
+        );
+        assert_eq!(
+            OverdueSessionCriteria::default().with_sport(None),
+            OverdueSessionCriteria::default()
+        );
+    }
+
+    #[test]
+    fn without_sport_every_coach_matches() {
+        let criteria = OverdueSessionCriteria::default();
+        assert!(criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Soccer]))));
+        assert!(
+            criteria.matches_coach_sport(None),
+            "アカウントの引けないコーチも、競技を指定しなければ絞らない"
+        );
+    }
+
+    #[test]
+    fn sport_matches_coaches_offering_it_among_several() {
+        let criteria = OverdueSessionCriteria::default().with_sport(Some(Sport::Golf));
+        assert!(
+            criteria
+                .matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis, Sport::Golf])))
+        );
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis]))));
+        // コーチでないアカウント・引けないコーチは合わない
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Student, &[Sport::Golf]))));
+        assert!(!criteria.matches_coach_sport(None));
     }
 }

@@ -1,8 +1,8 @@
 //! 本部が終わっていないまま時間の過ぎた通話セッションの一覧を見る（admin-web の `listOverdueLiveLessonSessions`）ことを、
 //! 保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で
 //! 開始した Postgres のセッションのうち終了していないものだけを、開始から既定の 3 時間（`older_than_hours` で変えられる）
-//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でコーチを絞れること、本部以外は
-//! 403 になることを確かめる。
+//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でコーチを絞れること、`sport` で
+//! コーチの提供スポーツ（アカウントの保存先）から競技を絞れること、本部以外は 403 になることを確かめる。
 //! 契約の形・時間の範囲の細かい検査は interface の `tests/overdue_live_lesson_sessions.rs`、通話中のセッションの読み取りは
 //! infra の `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -62,7 +62,23 @@ fn post_json(path: &str, token: &str, body: Value) -> Request<Body> {
 }
 
 /// アカウントを登録して ID とトークンを返す。契約にコーチ・本部の登録の操作がないので、ユースケースを直に呼ぶ。
+/// 生徒・コーチのスポーツはテニス。
 async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String) {
+    let sports = if role == Role::Headquarters {
+        vec![]
+    } else {
+        vec![Sport::Tennis]
+    };
+    register_with_sports(pool, email, role, sports).await
+}
+
+/// スポーツ `sports` のアカウントを登録して ID とトークンを返す。
+async fn register_with_sports(
+    pool: &PgPool,
+    email: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (AccountId, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -72,11 +88,7 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
         email: email.to_string(),
         display_name: email.split('@').next().unwrap().to_string(),
         role,
-        sports: if role == Role::Headquarters {
-            vec![]
-        } else {
-            vec![Sport::Tennis]
-        },
+        sports,
     })
     .await
     .unwrap();
@@ -133,7 +145,13 @@ async fn confirmed_booking(
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
-    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (tanaka, tanaka_token) = register_with_sports(
+        &pool,
+        "tanaka@example.com",
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Soccer],
+    )
+    .await;
     let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
     let (hanako, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
     let (suzuki, _) = register(&pool, "suzuki@example.com", Role::Coach).await;
@@ -272,6 +290,33 @@ async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
                 .is_empty()
         );
     }
+
+    // 競技で絞れる（たなかの提供スポーツはテニスとサッカーで、どちらでも出る）。時間・コーチと組み合わさる
+    for query in ["sport=tennis", "sport=soccer"] {
+        assert_eq!(
+            overdue(query.to_string()).await,
+            std::slice::from_ref(&session_id),
+            "{query}"
+        );
+    }
+    for query in [
+        "sport=golf".to_string(),
+        "sport=tennis&older_than_hours=4".to_string(),
+        format!("sport=tennis&coach_id={}", account_id_uuid::format(suzuki)),
+    ] {
+        assert!(overdue(query.clone()).await.is_empty(), "{query}");
+    }
+    assert_eq!(
+        overdue(format!("sport=tennis&coach_id={tanaka_id}")).await,
+        std::slice::from_ref(&session_id)
+    );
+    let (status, body) = send(
+        &router,
+        get("/live-lesson-sessions/overdue?sport=pingpong", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
 
     // 本部だけ
     for token in [&tanaka_token, &taro_token] {
