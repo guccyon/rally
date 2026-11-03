@@ -272,7 +272,8 @@ impl Booking {
 
     /// 一覧を絞るレッスンメニューの指定に当てはまるか。指定があれば予約した時点のメニューの写し（[`Booking::lesson_menu`]）の
     /// ID がそれと同じときだけ、なければどの予約も当てはまる。メニューの写しのない予約・ないメニューの ID は当てはまらない
-    /// （一覧は空になる。コーチの指定 [`Booking::matches_coach`] と同じ扱い）。本部が見る予約の一覧が使う。
+    /// （一覧は空になる。コーチの指定 [`Booking::matches_coach`] と同じ扱い）。本部が見る予約の一覧と、キャンセルされた予約の
+    /// 一覧が使う。
     pub fn matches_lesson_menu(&self, lesson_menu_id: Option<LessonMenuId>) -> bool {
         lesson_menu_id.is_none_or(|id| {
             self.lesson_menu

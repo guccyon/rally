@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use application::{
-    catalog::lesson_menu_id_uuid,
     clock::Clock,
     identity::TokenVerifier,
     scheduling::{
@@ -25,7 +24,7 @@ use crate::{
     bookings::{BookingBody, booking_body},
     contract::{
         account_id_from_contract, booking_status_from_contract, date_from_contract,
-        date_to_contract,
+        date_to_contract, lesson_menu_id_from_contract,
     },
     error::ApiError,
 };
@@ -123,10 +122,7 @@ where
         lesson_menu_id: params
             .lesson_menu_id
             .as_deref()
-            .map(|id| {
-                lesson_menu_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("lesson_menu_id が UUID でない"))
-            })
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
             .transpose()?,
     };
     let list = state
