@@ -125,7 +125,7 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         &self,
         coach_id: AccountId,
     ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
-        let rows: Vec<(String, Option<String>, Uuid, OffsetDateTime)> = sqlx::query_as(
+        let rows: Vec<ChangeRow> = sqlx::query_as(
             "SELECT status, reason, changed_by, changed_at FROM scheduling.coach_acceptance_changes
              WHERE coach_id = $1
              ORDER BY changed_at DESC, seq DESC",
@@ -134,22 +134,53 @@ impl CoachAcceptanceRepository for PgCoachAcceptanceRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;
-        rows.into_iter()
-            .map(|(status, reason, changed_by, changed_at)| {
-                let status = coach_acceptance_status_from_value(&status)
-                    .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
-                let reason = reason
-                    .map(CoachSuspensionReason::new)
-                    .transpose()
-                    .map_err(Unavailable::new)?;
-                Ok(CoachAcceptanceChange::restore(
-                    coach_id,
-                    status,
-                    reason,
-                    account_id_uuid::from_uuid(changed_by),
-                    SystemTime::from(changed_at),
-                ))
-            })
-            .collect()
+        changes_from_rows(coach_id, rows)
     }
+
+    async fn changes_between(
+        &self,
+        coach_id: AccountId,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        let rows: Vec<ChangeRow> = sqlx::query_as(
+            "SELECT status, reason, changed_by, changed_at FROM scheduling.coach_acceptance_changes
+             WHERE coach_id = $1 AND changed_at >= $2 AND changed_at < $3
+             ORDER BY changed_at DESC, seq DESC",
+        )
+        .bind(account_id_uuid::to_uuid(coach_id))
+        .bind(timestamp(starts_at))
+        .bind(timestamp(ends_at))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        changes_from_rows(coach_id, rows)
+    }
+}
+
+/// `scheduling.coach_acceptance_changes` の 1 行（`status`・`reason`・`changed_by`・`changed_at`）。
+type ChangeRow = (String, Option<String>, Uuid, OffsetDateTime);
+
+/// `coach_id` のコーチの記録の行を、並びを変えずに [`CoachAcceptanceChange`] に戻す。
+fn changes_from_rows(
+    coach_id: AccountId,
+    rows: Vec<ChangeRow>,
+) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+    rows.into_iter()
+        .map(|(status, reason, changed_by, changed_at)| {
+            let status = coach_acceptance_status_from_value(&status)
+                .ok_or_else(|| Unavailable::new(format!("未知の status: {status}")))?;
+            let reason = reason
+                .map(CoachSuspensionReason::new)
+                .transpose()
+                .map_err(Unavailable::new)?;
+            Ok(CoachAcceptanceChange::restore(
+                coach_id,
+                status,
+                reason,
+                account_id_uuid::from_uuid(changed_by),
+                SystemTime::from(changed_at),
+            ))
+        })
+        .collect()
 }
