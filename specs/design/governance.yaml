@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.1.1     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.2.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -67,3 +67,23 @@ changelog:
       reason: 正本は student-app に Noto Sans CJK JP を同梱すると書くが、pubspec に fonts がなく、正本と実際がずれていた。admin-web は書体の段の大きさと行間だけを写し、字間が抜けていた
       affects: admin-web の全画面（text-xs・text-sm・text-base・text-xl・text-headline の字間が変わる）。student-app は変わらない
       approved_by: 工場（文の直しとトークンの写し）
+    - version: 0.2.0
+      date: "2026-11-02"
+      change: >-
+        tokens.yaml の青の値を変えた（primary・focus_ring・info.fg #1E3FD0→#3A54B0、primary_pressed #1A2FA8→#2E4590、
+        primary_container・info.container #E6EBFF→#E9EDF8、on_primary_container・info.on_container #14246E→#1E2A5C。scale.blue も同じ段で）と contrast_checked の比。
+        concept_tone.yaml に copy（コピーの 3 語とデザインの結びつき）を足した。components.yaml の empty_state に variants（screen・section）と基準を足し、文を text_muted から text にした。
+        全部の部品に preview（状態ごとの見本）と preview_css を足し、正本からカタログを組み立てられるようにした。typography.scale に日本語の sample を足した
+      reason: >-
+        人が見本のカタログを見て「青が強い」「空の表示のボタンが読みにくい」と指摘し、彩度を下げた値と empty_state の形を決めた（2026-11-02）。
+        名前は変えず値だけを変えた。新しい値も WCAG 2.2 AA を満たす（primary は background で 6.83、surface で 6.15、primary_container で 5.83）。
+        primary を inverse_surface の上に置かない決まりは変わらない（2.72）
+      affects: >-
+        student-app と admin-web の全画面（screens.ts と capture_test.dart のすべての id。主なボタン・リンク・選択中・フォーカス・info の色が落ち着く）。
+        empty_state を使う画面（student-app のホームの各欄・admin-web の一覧の 0 件）はボタンの種類と文の色が変わる
+      approved_by: 人（色の役割の値の変更・concept_tone の変更、2026-11-02）、工場（部品の基準と見本）
+      migration:
+        - student-app の lib/ui/theme/rally_tokens.dart の RallyColors の値を新しい値にする（名前は同じ）
+        - admin-web の src/app/globals.css の @theme の値と tests/designTokens.test.ts の期待の値を新しい値にする
+        - EmptyState（admin-web の src/components/ui/EmptyState.tsx・student-app の lib/ui/components/empty_state.dart）は文を text にし、variant（screen・section）を受けて、screen は surface の面と primary、section は background の面と border の線と secondary にする
+        - 見た目が変わる PR には前後のキャプチャを付ける

@@ -729,3 +729,125 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
     expect(lessonMenuBookingListPath(MENU_ID)).toBe(`/headquarters/bookings?lesson_menu_id=${MENU_ID}`);
   });
 });
+
+describe("本部の予約（スポーツで絞る）", () => {
+  const MENU_ID = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+  const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
+  const COACH_ID = "22222222-2222-4222-8222-000000000001";
+
+  test("選択肢は「すべて」と各スポーツで、既定は「すべて」（sport を付けない）", async () => {
+    const listBookings = listOf(BOOKINGS);
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findAllByRole("table");
+
+    const select = screen.getByRole("combobox", { name: "スポーツ" });
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "テニス",
+      "ゴルフ",
+      "野球",
+      "サッカー",
+      "バスケットボール",
+      "水泳",
+    ]);
+    expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("sport");
+  });
+
+  test("スポーツを選ぶと選んでいる期間で sport を付けて読み直し、「すべて」に戻すと外す", async () => {
+    const listBookings = listOf(BOOKINGS);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件");
+
+    listBookings.mockResolvedValueOnce({
+      ok: true,
+      data: { from: "2026-10-26", to: "2026-11-01", bookings: [BOOKINGS[1]!] },
+    });
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01", sport: "tennis" });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・テニス 1 件")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "すべて");
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01" });
+    expect(await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件")).toBeInTheDocument();
+  });
+
+  test("スポーツを選んだまま期間を変えて「この期間で見る」でも sport を付ける", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "ゴルフ");
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-27");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-10-27", sport: "golf" });
+  });
+
+  test("0 件なら「この期間に、そのスポーツの予約はありません」と出す", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "水泳");
+    expect(await screen.findByText("この期間に、水泳の予約はありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・水泳 0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("コーチ・生徒・レッスンメニュー・「体験予約だけ」と組み合わせると、すべてを付けて読む", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
+    await screen.findByText("この期間に、このレッスンメニューの予約はありません");
+
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    expect(listBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      student_id: STUDENT_ID,
+      trial: true,
+      lesson_menu_id: MENU_ID,
+      sport: "tennis",
+    });
+    expect(
+      await screen.findByText("この期間に、このレッスンメニューの、テニスの体験予約はありません"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・テニス 体験予約 0 件")).toBeInTheDocument();
+
+    // 「体験予約だけ」を切ってもスポーツの絞り込みは残る
+    await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
+    expect(listBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      coach_id: COACH_ID,
+      student_id: STUDENT_ID,
+      lesson_menu_id: MENU_ID,
+      sport: "tennis",
+    });
+  });
+
+  test("スポーツを選んで読めなければその文言を出し、期間が正しくなければ送らずに理由を出す", async () => {
+    const listBookings = listOf([]);
+    const user = userEvent.setup();
+    render(<BookingList api={{ listBookings }} />);
+    await screen.findByText("この期間の予約はありません");
+
+    listBookings.mockResolvedValueOnce({ ok: false, message: "通信できませんでした。" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "野球");
+    expect(await screen.findByRole("alert")).toHaveTextContent("通信できませんでした。");
+
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-25");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "サッカー");
+    expect(screen.getByText("終了日は開始日と同じか、それより後の日付にしてください。")).toBeInTheDocument();
+    expect(listBookings).toHaveBeenCalledTimes(2);
+  });
+});

@@ -1030,6 +1030,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingList"],
   },
   {
+    // テニスで絞った予約の一覧（hq-bookings-by-sport）。テニスのコーチ（鈴木 コーチ）の枠への予約だけを返す。絞らない `/bookings` より前に置く。
+    method: "GET",
+    path: "/bookings",
+    query: { sport: "tennis" },
+    body: {
+      from: "2026-10-26",
+      to: "2026-11-01",
+      bookings: HQ_BOOKINGS.filter((item) => item.booking.coach_id === COACH_ID),
+    } satisfies Schemas["HeadquartersBookingList"],
+  },
+  {
     method: "GET",
     path: "/bookings",
     body: {

@@ -347,6 +347,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-bookings-by-sport",
+    title: "本部: スポーツで絞った予約",
+    role: "headquarters",
+    path: "/headquarters/bookings",
+    open: async (page) => {
+      await page.getByText(/・\d+ 件$/).waitFor();
+      await page.getByRole("combobox", { name: "スポーツ" }).selectOption({ label: "テニス" });
+      await page.getByText(/・テニス 3 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-cancelled-bookings",
     title: "本部: キャンセルされた予約",
     role: "headquarters",

@@ -41,6 +41,18 @@ components:
     examples:
       good: 「スロットを探して予約する」が primary、「予約をすべて見る」が text
       bad: 「予約する」と「コーチを探す」がどちらも primary で並ぶ
+    preview:
+      - label: "primary"
+        html: "<div class=\"pv\"><span class=\"btn btn-primary\">スロットを探して予約する</span></div>"
+      - label: "押下"
+        html: "<div class=\"pv\"><span class=\"btn btn-pressed\">スロットを探して予約する</span></div>"
+      - label: "secondary・text"
+        html: "<div class=\"pv\"><span class=\"btn btn-secondary\">コーチを探す</span> <span class=\"btn btn-text\">予約をすべて見る</span></div>"
+      - label: "読み込み中"
+        html: "<div class=\"pv\"><span class=\"btn btn-primary\" aria-busy=\"true\"><i class=\"spin\"></i>予約する</span></div>"
+      - label: "無効"
+        html: "<div class=\"pv\"><span class=\"btn btn-disabled\" aria-disabled=\"true\">予約する</span><p class=\"type-small hint\">スロットを選ぶと予約できます。</p></div>"
+
 
   - id: text_field
     ja: 入力欄
@@ -66,6 +78,16 @@ components:
     examples:
       good: ラベル「一言」・helper「200 文字まで」・counter「12 / 200」
       bad: placeholder「一言を入力」だけ
+    preview:
+      - label: "通常"
+        html: "<div class=\"pv tf\"><label class=\"type-small\">表示名</label><div class=\"field type-body\">山田 太郎</div><div class=\"help type-small\"><span>1〜20 文字</span><span>5 / 20</span></div></div>"
+      - label: "フォーカス"
+        html: "<div class=\"pv tf focus\"><label class=\"type-small\">一言</label><div class=\"field type-body\">フォームが分かりやすかったです</div><div class=\"help type-small\"><span>200 文字まで</span><span>15 / 200</span></div></div>"
+      - label: "誤り"
+        html: "<div class=\"pv tf err\"><label class=\"type-small\">表示名</label><div class=\"field type-body\"></div><div class=\"etext type-small\" role=\"alert\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v6M12 16.5v.5\"/></svg>表示名は 1〜20 文字で入れてください。</div></div>"
+      - label: "無効"
+        html: "<div class=\"pv tf off\"><label class=\"type-small\">メールアドレス</label><div class=\"field type-body\">taro@example.jp</div><div class=\"help type-small\"><span>メールアドレスはここでは変えられません。</span></div></div>"
+
 
   - id: card
     ja: カード
@@ -80,6 +102,14 @@ components:
     examples:
       good: "題「10/28（水）12:00〜12:30」・meta「テニス・コーチ: 山田」・status_tag「確定済み」"
       bad: カードの中にカードを重ねる
+    preview:
+      - label: "確定済み"
+        html: "<div class=\"pv card\"><div class=\"type-title\">10/28（水）12:00〜12:30</div><div class=\"type-small muted\">テニス・コーチ: 山田</div><span class=\"tag tag-success type-caption\">確定済み</span></div>"
+      - label: "確定待ち"
+        html: "<div class=\"pv card\"><div class=\"type-title\">11/4（水）18:00〜18:30</div><div class=\"type-small muted\">野球・コーチ: 佐藤</div><span class=\"tag tag-warning type-caption\">確定待ち</span></div>"
+      - label: "押下"
+        html: "<div class=\"pv card is-pressed\"><div class=\"type-title\">10/28（水）12:00〜12:30</div><div class=\"type-small muted\">テニス・コーチ: 山田</div><span class=\"tag tag-success type-caption\">確定済み</span></div>"
+
 
   - id: list_row
     ja: 一覧の行
@@ -93,6 +123,14 @@ components:
     examples:
       good: 「コーチから返事が届きました」・「10/27 18:04」・未読のしるし
       bad: 未読を太字だけで示す
+    preview:
+      - label: "通常"
+        html: "<div class=\"pv row\"><div class=\"main\"><div class=\"type-body t\">本部からのお知らせ</div><div class=\"type-small muted\">10/27 9:00</div></div><span class=\"muted\">›</span></div>"
+      - label: "未読"
+        html: "<div class=\"pv row unread\"><div class=\"main\"><div class=\"type-body t\"><span class=\"badge type-caption\">未読</span> コーチから返事が届きました</div><div class=\"type-small muted\">10/27 18:04</div></div><span class=\"muted\">›</span></div>"
+      - label: "押下"
+        html: "<div class=\"pv row is-pressed\"><div class=\"main\"><div class=\"type-body t\">テニス・コーチ: 山田</div><div class=\"type-small muted\">10/21 受けたレッスン</div></div><span class=\"muted\">›</span></div>"
+
 
   - id: badge
     ja: しるし
@@ -104,6 +142,14 @@ components:
       dot: {container: danger.fg, size_px: 8}
       on_dark: {container: secondary, label: on_secondary, radius: sm}
     a11y: 入口のラベルに数を足す（「チャット、未読 3 件」）
+    preview:
+      - label: "count"
+        html: "<div class=\"pv\"><span class=\"entry type-body\">チャット <span class=\"badge type-caption\" aria-label=\"未読 3 件\">3</span></span></div>"
+      - label: "dot"
+        html: "<div class=\"pv\"><span class=\"entry type-body\">お知らせ <span class=\"dot\" aria-label=\"未読あり\"></span></span></div>"
+      - label: "on_dark"
+        html: "<div class=\"pv panel dark\"><span class=\"entry type-body\">返ってきた添削 <span class=\"badge dark type-caption\">1</span></span></div>"
+
 
   - id: status_tag
     ja: 状態のタグ
@@ -118,6 +164,14 @@ components:
     examples:
       good: 「確定待ち」（warning の面と時計のアイコン）
       bad: 黄色の点だけ
+    preview:
+      - label: "確定待ち（warning）"
+        html: "<div class=\"pv\"><span class=\"tag tag-warning type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>確定待ち</span></div>"
+      - label: "確定済み（success）"
+        html: "<div class=\"pv\"><span class=\"tag tag-success type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M5 12l4 4 10-10\"/></svg>確定済み</span></div>"
+      - label: "キャンセル済み（neutral）"
+        html: "<div class=\"pv\"><span class=\"tag tag-neutral type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6L6 18\"/></svg>キャンセル済み</span></div>"
+
 
   - id: score_panel
     ja: スコアの面
@@ -139,6 +193,12 @@ components:
     examples:
       good: "eyebrow「今月のビデオ通話」・number「2」・unit「回」・note「月 2 回のうち（プラン: スタンダード）」"
       bad: 「2」だけを大きく、何の数かがない
+    preview:
+      - label: "残りの回数"
+        html: "<div class=\"pv w panel dark\" aria-label=\"今月のビデオ通話、残り 2 回、月 2 回のうち\"><i class=\"band\"></i><div class=\"eb type-small\">今月のビデオ通話</div><div><span class=\"num type-display\">2</span> <span class=\"type-title\">回</span></div><div class=\"note note-d type-small\">月 2 回のうち（プラン: スタンダード）</div></div>"
+      - label: "空のホーム（on_dark のボタン）"
+        html: "<div class=\"pv w panel dark\"><i class=\"band\"></i><div class=\"eb type-small\">はじめての練習</div><div class=\"type-headline\">まずは体験予約</div><span class=\"btn btn-on-dark\" style=\"align-self:flex-start\">コーチを探す</span></div>"
+
 
   - id: notice
     ja: 知らせ
@@ -156,17 +216,49 @@ components:
         statement: 失敗の知らせは自動で消さない
         why: 読み終わる前に消えると、生徒は何が起きたか分からず同じ操作をくり返す
         check: design_inspector
+    preview:
+      - label: "成功（inline）"
+        html: "<div class=\"pv notice n-success type-body\" role=\"status\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M5 12l4 4 10-10\"/></svg><p>予約が確定しました。</p></div>"
+      - label: "失敗（inline）"
+        html: "<div class=\"pv notice n-danger type-body\" role=\"alert\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v6M12 16.5v.5\"/></svg><p>予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。</p></div>"
+      - label: "注意（inline）"
+        html: "<div class=\"pv notice n-warning type-body\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M12 3l10 18H2z\"/><path d=\"M12 10v4M12 17.5v.5\"/></svg><p>今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p></div>"
+      - label: "toast（成功だけ）"
+        html: "<div class=\"pv notice toast type-body\" role=\"status\"><p>メッセージを送りました</p></div>"
+
 
   - id: empty_state
     ja: 空の表示
     lifecycle: trial
-    use: 一覧や欄に 0 件のとき
-    parts: [message（body）, action（secondary か text のボタン。任意）]
-    style: {container: surface, radius: md, padding_px: 24, text: text_muted}
+    use: 一覧や欄に 0 件のとき。背中を押す一言と次の操作を出す
+    not_for: 読めなかったとき → notice（danger）。読み込み中 → loading
+    parts: [container, message（body）, action（button。任意）]
+    variants:   # 0.2.0 で決めた（人の判断 2026-11-02）
+      screen:  {when: 画面にほかの主な操作（primary）がない, container: surface, action: button の primary}
+      section: {when: 欄だけが空で、画面にほかの primary がある, container: background と border の 1px の線, action: button の secondary}
+    style: {radius: md, padding_px: 24, gap_px: 16, text: text（0.2.0 で text_muted から変えた）}
     wording: 背中を押す一言と次の操作（「まだこれからの予約はありません。コーチを探して始めましょう」）
+    a11y: message を見出しの次に読み、action は動詞のボタンとして読む
+    rules:
+      - level: should
+        statement: surface の面の上に button の secondary を置かない（欄だけが空のときは section の形にする）
+        why: 白い面のボタンが薄い灰色の面に沈み、次の操作が読みにくい（人の指摘 2026-11-02）
+        check: design_inspector
+      - level: should
+        statement: empty_state の action は、画面にほかの primary がなければ primary、あれば secondary にする
+        why: 空の画面でも次の一手を 1 つだけはっきり示し、主なボタンを 2 つにしない
+        check: design_inspector
     examples:
-      good: 文と「コーチを探す」のボタン
-      bad: 空白のまま、または「データがありません」
+      good: 予約が 0 件の一覧で、文と primary の「コーチを探す」
+      bad: surface の面に secondary の「コーチを探す」と text_muted の文。空白のまま、または「データがありません」
+    preview:
+      - label: "screen（ほかに primary がない）"
+        html: "<div class=\"pv empty empty-screen\"><p class=\"type-body\">まだこれからの予約はありません。コーチを探して始めましょう</p><span class=\"btn btn-primary\">コーチを探す</span></div>"
+      - label: "section（画面に primary がある）"
+        html: "<div class=\"pv empty empty-section\"><p class=\"type-body\">まだこれからの予約はありません。</p><span class=\"btn btn-secondary\">コーチを探す</span></div>"
+      - label: "文だけ"
+        html: "<div class=\"pv empty empty-screen\"><p class=\"type-body\">まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。</p></div>"
+
 
   - id: loading
     ja: 読み込み中
@@ -178,6 +270,12 @@ components:
       spinner: {size_px: 20, note: ボタンの中だけ}
     behavior: 300ms より速く終わるときは出さない。読み込み中も読めた欄はそのまま出す
     a11y: 読み込みの始まりと終わりを読み上げに伝える
+    preview:
+      - label: "bar（画面全体）"
+        html: "<div class=\"pv\"><div class=\"bar\" role=\"progressbar\" aria-label=\"ホームを読み込んでいます\"><i></i></div><div class=\"type-headline\">ホーム</div></div>"
+      - label: "section_text（欄ごと）"
+        html: "<div class=\"pv sect\"><h4 class=\"type-title\">お気に入りのコーチ</h4><p class=\"type-small muted\" role=\"status\">お気に入りのコーチを読み込んでいます…</p></div>"
+
 
   - id: confirm_dialog
     ja: 確認のダイアログ
@@ -196,3 +294,75 @@ components:
     examples:
       good: 本文「10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。」
       bad: 題「よろしいですか？」・ボタン「OK」
+    preview:
+      - label: "取り消せない操作（danger）"
+        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">予約をキャンセルしますか？</h4><p class=\"type-body\">10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p><div class=\"acts\"><span class=\"btn btn-text\">やめる</span><span class=\"btn btn-danger\">キャンセルする</span></div></div></div>"
+      - label: "送る前の確認（primary）"
+        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">体験予約を申し込みますか？</h4><p class=\"type-body\">11/4（水）18:00〜18:30 の野球の体験予約を申し込みます。コーチが確定すると、チャットが開きます。</p><div class=\"acts\"><span class=\"btn btn-text\">やめる</span><span class=\"btn btn-primary\">申し込む</span></div></div></div>"
+      - label: "読み込み中"
+        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">受付を停止しますか？</h4><p class=\"type-body\">コーチ: 山田 の受付を停止します。新しい予約を受け付けなくなります。確定済みの予約はそのまま残ります。</p><div class=\"acts\"><span class=\"btn btn-disabled\">やめる</span><span class=\"btn btn-danger\" aria-busy=\"true\"><i class=\"spin\"></i>停止する</span></div></div></div>"
+
+preview_css: |
+  .pv{font-family:var(--font-sans);color:var(--color-text);width:320px}
+  .pv.w{width:360px}
+  .pv p{margin:0}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-sm);min-height:48px;padding:0 var(--space-lg);border-radius:var(--radius-pill);border:1px solid transparent;font:700 16px/1.25 var(--font-sans);letter-spacing:0.01em;white-space:nowrap}
+  .btn-primary{background:var(--color-primary);color:var(--color-on-primary)}
+  .btn-pressed{background:var(--color-primary-pressed);color:var(--color-on-primary)}
+  .btn-secondary{background:var(--color-background);border-color:var(--color-border-strong);color:var(--color-primary)}
+  .btn-secondary.is-pressed{background:var(--color-primary-container)}
+  .btn-text{background:none;color:var(--color-primary);padding:0 var(--space-md)}
+  .btn-danger{background:var(--color-danger-fg);color:var(--color-on-primary)}
+  .btn-on-dark{background:var(--color-secondary);color:var(--color-on-secondary)}
+  .btn-disabled{background:var(--color-surface);color:var(--color-text-muted)}
+  .spin{width:16px;height:16px;border-radius:var(--radius-pill);border:2px solid currentColor;border-right-color:transparent;display:inline-block}
+  .hint{color:var(--color-text-muted);margin-top:var(--space-sm)}
+  .tf label{display:block;font-weight:700;margin-bottom:var(--space-xs)}
+  .tf .field{min-height:48px;display:flex;align-items:center;padding:0 var(--space-md);background:var(--color-background);border:1px solid var(--color-border-strong);border-radius:var(--radius-md)}
+  .tf.focus .field{border:2px solid var(--color-focus-ring)}
+  .tf.err .field{border:2px solid var(--color-danger-fg)}
+  .tf.off .field{background:var(--color-surface);color:var(--color-text-muted)}
+  .tf .help{display:flex;justify-content:space-between;color:var(--color-text-muted);margin-top:var(--space-xs)}
+  .tf .etext{display:flex;gap:var(--space-xs);align-items:center;color:var(--color-danger-fg);margin-top:var(--space-xs)}
+  .card{background:var(--color-surface);border-radius:var(--radius-md);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
+  .card.is-pressed{background:var(--color-primary-container)}
+  .muted{color:var(--color-text-muted)}
+  .tag{display:inline-flex;align-items:center;gap:var(--space-xs);padding:0 var(--space-sm);border-radius:var(--radius-sm);align-self:flex-start}
+  .tag-warning{background:var(--color-warning-container);color:var(--color-warning-on-container)}
+  .tag-success{background:var(--color-success-container);color:var(--color-success-on-container)}
+  .tag-neutral{background:var(--color-surface);color:var(--color-text-muted);border:1px solid var(--color-border)}
+  .row{display:flex;align-items:center;gap:var(--space-md);min-height:56px;padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--color-border);background:var(--color-background)}
+  .row.unread{box-shadow:none;border-left:4px solid var(--color-primary)}
+  .row.is-pressed{background:var(--color-primary-container)}
+  .row .main{flex:1}
+  .row .t{font-weight:700}
+  .badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 var(--space-xs);border-radius:var(--radius-sm);background:var(--color-danger-fg);color:var(--color-on-primary)}
+  .badge.dark{background:var(--color-secondary);color:var(--color-on-secondary)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);background:var(--color-danger-fg)}
+  .entry{display:inline-flex;align-items:center;gap:var(--space-sm)}
+  .dark{background:var(--color-inverse-surface);color:var(--color-on-inverse-surface)}
+  .panel{border-radius:var(--radius-md);padding:var(--space-lg);position:relative;overflow:hidden;display:flex;flex-direction:column;gap:var(--space-sm)}
+  .panel .eb{color:var(--color-on-inverse-surface-muted)}
+  .panel .num{border-bottom:4px solid var(--color-secondary);display:inline-block;margin-bottom:var(--space-xs);align-self:flex-start;font-variant-numeric:tabular-nums}
+  .panel .band{position:absolute;right:-24px;top:16px;width:120px;height:16px;background:var(--color-secondary);transform:rotate(-12deg)}
+  .panel .eb,.panel .note{position:relative}
+  .note-d{color:var(--color-on-inverse-surface-muted)}
+  .notice{display:flex;gap:var(--space-sm);align-items:flex-start;padding:var(--space-md);border-radius:var(--radius-md)}
+  .n-success{background:var(--color-success-container);color:var(--color-success-on-container)}
+  .n-success svg{color:var(--color-success-fg)}
+  .n-danger{background:var(--color-danger-container);color:var(--color-danger-on-container)}
+  .n-danger svg{color:var(--color-danger-fg)}
+  .n-warning{background:var(--color-warning-container);color:var(--color-warning-on-container)}
+  .n-warning svg{color:var(--color-warning-fg)}
+  .toast{background:var(--color-inverse-surface);color:var(--color-on-inverse-surface)}
+  .notice svg{flex:none;margin-top:var(--space-xs)}
+  .empty{border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md);align-items:flex-start;color:var(--color-text)}
+  .empty-screen{background:var(--color-surface)}
+  .empty-section{background:var(--color-background);border:1px solid var(--color-border)}
+  .sect h4{margin:0 0 var(--space-sm)}
+  .bar{height:4px;background:var(--color-primary-container);border-radius:var(--radius-pill);overflow:hidden;margin-bottom:var(--space-md)}
+  .bar i{display:block;width:40%;height:100%;background:var(--color-primary)}
+  .scrim{background:var(--color-scrim);padding:var(--space-lg);border-radius:var(--radius-md)}
+  .dlg{background:var(--color-background);border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md)}
+  .dlg h4{margin:0}
+  .acts{display:flex;justify-content:flex-end;gap:var(--space-sm)}
