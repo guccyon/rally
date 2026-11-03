@@ -15,10 +15,10 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listCoachReviews: (coachId: string) =>
+    listCoachReviews: (coachId: string, filter: { max_rating?: number } = {}) =>
       call(() =>
         client.GET("/coaches/{coach_id}/reviews", {
-          params: { path: { coach_id: coachId } },
+          params: { path: { coach_id: coachId }, query: filter },
         }),
       ),
     suspendCoach: (coachId: string, body: Schemas["SuspendCoachRequest"]) =>

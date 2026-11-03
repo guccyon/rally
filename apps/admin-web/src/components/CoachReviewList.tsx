@@ -7,19 +7,21 @@ import { formatDateTime } from "@/components/labels";
  * コーチが受けた評価の一覧（listCoachReviews）。並べ方は契約の正本どおり API が済ませている（送った時刻の新しい順）ので、
  * 返った順のまま出す。`showLessonMenu` のときは、評価したレッスンのメニュー（`lesson_menu`）があれば
  * 「メニュー: 〇〇」も出す（コーチの「自分の評価」だけ。本部の画面は出さない）。`renderReply` を渡すと、各行の下に
- * その評価への返信の欄を出す（コーチの「自分の評価」だけ）。
+ * その評価への返信の欄を出す（コーチの「自分の評価」だけ）。`emptyMessage` は 0 件のときの文言（点で絞ったときに変える）。
  */
 export function CoachReviewList({
   reviews,
   showLessonMenu = false,
   renderReply,
+  emptyMessage = "まだ評価はありません",
 }: {
   reviews: Schemas["CoachReview"][];
   showLessonMenu?: boolean;
   renderReply?: (review: Schemas["CoachReview"]) => ReactNode;
+  emptyMessage?: string;
 }) {
   if (reviews.length === 0) {
-    return <p className="text-sm">まだ評価はありません</p>;
+    return <p className="text-sm">{emptyMessage}</p>;
   }
   return (
     <ul aria-label="評価の一覧" className="divide-y rounded-md border text-sm">

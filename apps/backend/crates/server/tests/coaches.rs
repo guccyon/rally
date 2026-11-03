@@ -2,7 +2,8 @@
 //! 組み立て（`server::router_with_postgres`）で通す。生徒が student-app の操作で動画添削を受けて完了を記録したことが、
 //! 完了記録の保存先から読まれてコーチごとの数に出ること、照会した時刻から 30 日を過ぎると数えないこと、生徒には同じパスで
 //! student-app の形（数を載せない）で返し、コーチは 403 であることを確かめる。期間の境目と契約の形の細かい検査は
-//! interface の `tests/coaches.rs` と domain の `RecentLessonPeriod`。
+//! interface の `tests/coaches.rs` と domain の `RecentLessonPeriod`。あわせて、`inactive=true` で直近 30 日にレッスンのない
+//! コーチだけに絞れること（照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む）を確かめる。
 //! あわせて、本部が表示名の検索語 `q` で Postgres に保存したコーチを探せること（ほかの絞り込みとの組み合わせと 422 を含む。
 //! 一致の規則の細かい検査は domain の `DisplayNameQuery`）を確かめる。
 //!
@@ -236,6 +237,64 @@ async fn headquarters_sees_lessons_completed_in_the_last_30_days_of_each_coach(p
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(counts(&body)[2], ("たなか".to_string(), json!(2)));
+
+    // 直近 30 日にレッスンのないコーチだけ（数え方は recent_lesson_count と同じ）。ほかの絞り込みと組み合わせられる
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(counts(&body), [("うえの".to_string(), json!(0))]);
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true&sport=soccer",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert!(counts(&body).is_empty(), "{body}");
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=false",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(counts(&body).len(), 3, "false なら絞らない: {body}");
+    // 照会した時刻が進んで、いとうの日 10 の分も期間の外になれば、いとうも載る
+    clock.set(at(10 * DAY + 30 * DAY + 3600));
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(
+        counts(&body),
+        [
+            ("いとう".to_string(), json!(0)),
+            ("うえの".to_string(), json!(0)),
+            ("たなか".to_string(), json!(0)),
+        ]
+    );
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    clock.set(at(61 + 30 * DAY));
 
     // 生徒には student-app の形で返し、数は載せない。コーチは 403
     let (status, body) = send(&router, "GET", "/coaches", Some(&student), None).await;

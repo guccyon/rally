@@ -446,6 +446,22 @@ export const FIXTURES: Fixture[] = [
     path: "/coaches/{coach_id}/review-summary",
     body: { coach_id: COACH_ID, review_count: 3, average_rating: 4.67 } satisfies Schemas["CoachReviewSummary"],
   },
+  // 本部の「コーチの評価」で点数を選んだとき（4 点以下は 1 件、3 点以下は 0 件）。
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/reviews",
+    query: { max_rating: "4" },
+    body: {
+      coach_id: COACH_ID,
+      reviews: REVIEWS.filter((item) => item.rating <= 4),
+    } satisfies Schemas["CoachReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/reviews",
+    query: { max_rating: "3" },
+    body: { coach_id: COACH_ID, reviews: [] } satisfies Schemas["CoachReviewList"],
+  },
   {
     method: "GET",
     path: "/coaches/{coach_id}/reviews",
@@ -1000,6 +1016,27 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["AnnouncementList"],
+  },
+  // コーチで絞った返却待ち（高橋 コーチ）。条件なしの応答より前に置く（先に合ったものを返す）。
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    query: { coach_id: COACH_ID_2 },
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 21),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-101.5),
+          elapsed_hours: 101,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
   },
   {
     method: "GET",
