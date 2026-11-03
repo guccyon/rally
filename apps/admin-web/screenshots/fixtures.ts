@@ -658,6 +658,40 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LessonMenuPublicationChangeList"],
   },
   {
+    // 鈴木 コーチで絞ったとき（hq-students-by-coach）。そのコーチを予約したことのある生徒だけ。
+    method: "GET",
+    path: "/students",
+    query: { coach_id: COACH_ID },
+    body: {
+      students: [
+        {
+          student_id: STUDENT_ID,
+          display_name: YAMADA.name,
+          sport: "tennis",
+          contract_type: "subscription",
+          plan: "standard",
+          last_booked_at: at(-24),
+          registered_at: at(-24 * 5),
+        },
+      ],
+    } satisfies Schemas["StudentList"],
+  },
+  {
+    // 高橋 コーチで絞ったときは 0 件を返す（絞り込んで 0 件の表示を撮る。hq-students-by-coach-empty）。
+    method: "GET",
+    path: "/students",
+    query: { coach_id: COACH_ID_2 },
+    body: { students: [] } satisfies Schemas["StudentList"],
+  },
+  {
+    // URL のコーチの ID が UUID でないとき（hq-students-invalid-coach）は 422。
+    method: "GET",
+    path: "/students",
+    query: { coach_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "coach_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
     method: "GET",
     path: "/students",
     body: {
