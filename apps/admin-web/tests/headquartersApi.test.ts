@@ -42,7 +42,7 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
-  test("getSlotSupply は期間とコーチをクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
+  test("getSlotSupply は期間・コーチ・スポーツ・レッスンメニューをクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, REPORT));
     await api.getSlotSupply({ from: "2026-11-02", to: "2026-11-08" });
     const url = new URL(fetchMock.mock.calls[0]![0].url);
@@ -55,6 +55,18 @@ describe("headquartersApi", () => {
     const byCoachUrl = new URL(byCoach.fetchMock.mock.calls[0]![0].url);
     expect(byCoachUrl.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
     expect(byCoachUrl.searchParams.get("from")).toBe("2026-11-02");
+
+    const byLessonMenu = setup(json(200, REPORT));
+    await byLessonMenu.api.getSlotSupply({
+      from: "2026-11-02",
+      to: "2026-11-08",
+      sport: "tennis",
+      lesson_menu_id: "aaaaaaaa-aaaa-4aaa-8aaa-000000000001",
+    });
+    const byLessonMenuUrl = new URL(byLessonMenu.fetchMock.mock.calls[0]![0].url);
+    expect(byLessonMenuUrl.searchParams.get("lesson_menu_id")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-000000000001");
+    expect(byLessonMenuUrl.searchParams.get("sport")).toBe("tennis");
+    expect(byLessonMenuUrl.searchParams.get("from")).toBe("2026-11-02");
 
     const omitted = setup(json(200, REPORT));
     await omitted.api.getSlotSupply({});
