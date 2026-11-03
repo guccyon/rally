@@ -383,6 +383,12 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/pending-video-reviews",
   },
   {
+    id: "hq-pending-video-reviews-coach",
+    title: "本部: 返却待ちの動画添削（コーチで絞ったとき）",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews?coach_id=22222222-2222-4222-8222-222222222223",
+  },
+  {
     id: "hq-returned-video-reviews",
     title: "本部: 返した動画添削",
     role: "headquarters",

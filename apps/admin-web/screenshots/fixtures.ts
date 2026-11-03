@@ -963,6 +963,27 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["AnnouncementList"],
   },
+  // コーチで絞った返却待ち（高橋 コーチ）。条件なしの応答より前に置く（先に合ったものを返す）。
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    query: { coach_id: COACH_ID_2 },
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 21),
+          sport: "golf",
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID_2,
+          coach_display_name: TAKAHASHI_COACH.name,
+          submitted_at: at(-101.5),
+          elapsed_hours: 101,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
+  },
   {
     method: "GET",
     path: "/video-reviews/pending",
