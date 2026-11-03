@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use domain::{
-    identity::AccountId, lesson::CoachLessonCount, profile::CoachSportFilter,
+    identity::AccountId,
+    lesson::{CoachLessonCount, InactiveCoachFilter},
+    profile::CoachSportFilter,
     scheduling::CoachAcceptanceStatus,
 };
 
@@ -16,7 +18,9 @@ use crate::{Unavailable, identity::AccountRepository};
 /// 添えて返す。受付を止めているコーチも載せる。
 /// 任意の条件（[`ListCoachesQuery`]）で絞れる: 表示名の検索語（`name`。部分一致の規則は domain の
 /// [`domain::profile::DisplayNameQuery`] で、ここでは比べ方を持たない）・受付の状態（`acceptance`）・競技（`sport`。コーチの
-/// 提供スポーツに含むもの。判定は domain の [`CoachSportFilter`]）。付けたものをすべて満たすもの、どれも `None` なら絞らない。
+/// 提供スポーツに含むもの。判定は domain の [`CoachSportFilter`]）・直近にレッスンのないコーチ（`inactive`。添える直近の
+/// レッスンの数が 0 のもの。判定は domain の [`InactiveCoachFilter`]）。付けたものをすべて満たすもの、どれも付けなければ
+/// 絞らない。
 /// 並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
 pub struct ListCoaches<R, A, L> {
@@ -44,6 +48,7 @@ where
             name,
             acceptance,
             sport,
+            inactive,
         } = query;
         let coaches: Vec<_> = self
             .accounts
@@ -82,6 +87,7 @@ where
                 .find_recent_lesson_counts(&coach_ids)
                 .await?
         };
+        let inactive = InactiveCoachFilter::new(*inactive);
         Ok(coaches
             .into_iter()
             .map(|(account, acceptance)| ListedCoach {
@@ -92,6 +98,7 @@ where
                 acceptance,
                 account,
             })
+            .filter(|coach| inactive.matches(&coach.recent_lessons))
             .collect())
     }
 }
@@ -402,6 +409,108 @@ mod tests {
             filtered[0].recent_lessons.total_count(),
             3,
             "絞っても数え方は変わらない"
+        );
+    }
+
+    /// 直近 30 日にレッスンのないコーチに絞った一覧（ID の並び）。たなか（1。テニス・停止中。30 日前ちょうどに添削 1）・
+    /// いとう（2。サッカーとテニス。31 日前に通話 1 だけ）・うえの（3。テニス。レッスンなし）・えんどう（4。野球。今日通話 1）と、
+    /// レッスンのないテニスの生徒（5）。
+    async fn inactive(query: ListCoachesQuery) -> Vec<u128> {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
+            account(2, "いとう", Role::Coach, &[Sport::Soccer, Sport::Tennis]),
+            account(3, "うえの", Role::Coach, &[Sport::Tennis]),
+            account(4, "えんどう", Role::Coach, &[Sport::Baseball]),
+            account(5, "あおき", Role::Student, &[Sport::Tennis]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        acceptances
+            .update(AccountId::from_u128(1), |a| {
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
+            })
+            .await
+            .unwrap();
+        ListCoaches::new(
+            accounts,
+            SchedulingCoachAcceptanceLookup::new(acceptances),
+            recent_lessons([
+                completion(1, 1, false, now() - 30 * DAY),
+                completion(2, 2, true, now() - 31 * DAY),
+                completion(3, 4, true, now()),
+            ]),
+        )
+        .execute(&query)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| {
+            if query.inactive {
+                assert_eq!(c.recent_lessons.total_count(), 0, "{c:?}");
+            }
+            c.account.id().as_u128()
+        })
+        .collect()
+    }
+
+    fn inactive_only() -> ListCoachesQuery {
+        ListCoachesQuery {
+            inactive: true,
+            ..ListCoachesQuery::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn inactive_lists_only_coaches_without_lessons_in_the_last_30_days_keeping_the_order() {
+        // 表示名の順（いとう・うえの）のまま。30 日前ちょうどのレッスンは数えるのでたなかは載らない。生徒は載らない
+        assert_eq!(inactive(inactive_only()).await, [2, 3]);
+        // 付けなければ（false なら）今までどおりすべて
+        assert_eq!(inactive(ListCoachesQuery::default()).await, [2, 3, 4, 1]);
+    }
+
+    #[tokio::test]
+    async fn inactive_is_combined_with_the_other_conditions() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        assert_eq!(
+            inactive(ListCoachesQuery {
+                sport: Some(Sport::Soccer),
+                ..inactive_only()
+            })
+            .await,
+            [2]
+        );
+        assert!(
+            inactive(ListCoachesQuery {
+                acceptance: Some(Suspended),
+                ..inactive_only()
+            })
+            .await
+            .is_empty(),
+            "停止中のたなかにはレッスンがある"
+        );
+        assert_eq!(
+            inactive(ListCoachesQuery {
+                acceptance: Some(Accepting),
+                sport: Some(Sport::Tennis),
+                name: DisplayNameQuery::new("うえ").unwrap(),
+                ..inactive_only()
+            })
+            .await,
+            [3]
+        );
+        assert!(
+            inactive(ListCoachesQuery {
+                sport: Some(Sport::Baseball),
+                ..inactive_only()
+            })
+            .await
+            .is_empty()
         );
     }
 
