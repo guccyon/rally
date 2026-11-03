@@ -16,7 +16,7 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// すべてのコーチのメニューを、条件（[`ListLessonMenusQuery`]）があれば、名前の検索語に部分一致する・そのスポーツの・
-/// 公開中か非公開の・そのコーチの（いないコーチなら空の一覧）・直近に予約のない（`unbooked`。添える直近の予約の数が 0 の。
+/// そのレッスンの種類の・公開中か非公開の・そのコーチの（いないコーチなら空の一覧）・直近に予約のない（`unbooked`。添える直近の予約の数が 0 の。
 /// 判定は domain の [`UnbookedLessonMenuFilter`]）メニューに絞って返す。
 /// 並べ方はスポーツの順（[`Sport`](domain::catalog::Sport) の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。引けないコーチは
 /// 同じスポーツの中で最後）→ コーチの ID → 作った時刻の古い順 → メニューの ID の順。コーチの表示名は profile に
@@ -61,6 +61,9 @@ where
                     .as_ref()
                     .is_none_or(|name| name.matches(menu.name()))
                     && query.sport.is_none_or(|sport| menu.sport() == sport)
+                    && query
+                        .lesson_type
+                        .is_none_or(|lesson_type| menu.lesson_type() == lesson_type)
                     && query
                         .is_published
                         .is_none_or(|published| menu.is_published() == published)
@@ -255,6 +258,7 @@ mod tests {
         ListLessonMenusQuery {
             name: None,
             sport,
+            lesson_type: None,
             is_published,
             coach_id,
             unbooked: false,
@@ -350,6 +354,76 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ids(&list), [3].map(LessonMenuId::from_u128));
+    }
+
+    #[tokio::test]
+    async fn filters_by_lesson_type_together_with_the_other_conditions() {
+        let use_case = use_case();
+        let of_type = |lesson_type: LessonType, base: ListLessonMenusQuery| ListLessonMenusQuery {
+            lesson_type: Some(lesson_type),
+            ..base
+        };
+        // 偶数の ID のメニューは非同期、奇数は同期
+        let list = use_case
+            .execute(&of_type(LessonType::Live, ListLessonMenusQuery::default()))
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [3, 1, 9, 5, 7].map(LessonMenuId::from_u128),
+            "並べ方は変わらない"
+        );
+        let list = use_case
+            .execute(&of_type(LessonType::Async, ListLessonMenusQuery::default()))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [4, 6, 8, 2].map(LessonMenuId::from_u128));
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap().last().unwrap(),
+            ([2, 4, 6, 8].map(LessonMenuId::from_u128).into(), now()),
+            "その種類のメニューだけを問い合わせる"
+        );
+
+        // スポーツ・公開中か・コーチ・名前・直近に予約のないメニューと組み合わせられる
+        let list = use_case
+            .execute(&of_type(
+                LessonType::Live,
+                query(Some(Sport::Tennis), Some(true), None),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [1, 9, 5].map(LessonMenuId::from_u128));
+        let list = use_case
+            .execute(&of_type(LessonType::Async, query(None, None, Some(ITO))))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [4, 2].map(LessonMenuId::from_u128));
+        assert_eq!(list.coaches.keys().copied().collect::<Vec<_>>(), [ITO]);
+        let list = use_case
+            .execute(&ListLessonMenusQuery {
+                name: LessonMenuNameQuery::new("メニュー").unwrap(),
+                unbooked: true,
+                ..of_type(LessonType::Live, ListLessonMenusQuery::default())
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [3, 9, 5].map(LessonMenuId::from_u128),
+            "直近の予約のある同期のメニュー（1・7）は除く"
+        );
+
+        // 合うメニューがなければ空の一覧で、他のコンテキストに問い合わせない
+        let asked = use_case.coaches.asked.lock().unwrap().len();
+        let list = use_case
+            .execute(&of_type(
+                LessonType::Async,
+                query(Some(Sport::Golf), None, None),
+            ))
+            .await
+            .unwrap();
+        assert!(list.lesson_menus.is_empty());
+        assert_eq!(use_case.coaches.asked.lock().unwrap().len(), asked);
     }
 
     #[tokio::test]

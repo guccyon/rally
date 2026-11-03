@@ -1,6 +1,7 @@
 use domain::{
     catalog::{LessonMenuNameQuery, Sport},
     identity::AccountId,
+    lesson::LessonType,
 };
 
 /// 本部が見るレッスンメニューの横断の一覧（[`super::ListLessonMenus`]）の条件。どれも省け、省いた条件では絞り込まない
@@ -11,6 +12,8 @@ pub struct ListLessonMenusQuery {
     pub name: Option<LessonMenuNameQuery>,
     /// あればこのスポーツのメニューだけ
     pub sport: Option<Sport>,
+    /// あればこのレッスンの種類（同期か非同期か）のメニューだけ
+    pub lesson_type: Option<LessonType>,
     /// あれば公開中（`true`）か非公開（`false`）のメニューだけ
     pub is_published: Option<bool>,
     /// あればこのコーチのメニューだけ（いないコーチなら空の一覧）
