@@ -154,6 +154,29 @@ describe("本部のコーチの様子", () => {
     expect(within(value).getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
   });
 
+  test("返事のないメッセージの件数を出し、「このコーチの返事のないメッセージを見る」はそのコーチで絞った一覧へのリンク", async () => {
+    const data = { ...OVERVIEW, unanswered_message_thread_count: 3 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返事のないメッセージ");
+    expect(value).toHaveTextContent("3 件");
+    expect(within(value).getByRole("link", { name: "このコーチの返事のないメッセージを見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/unanswered-messages?coach_id=${COACH_ID}`,
+    );
+  });
+
+  test("返事のないメッセージが 0 件なら「ありません」と出し、一覧へのリンクは出さない", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返事のないメッセージ");
+    expect(value).toHaveTextContent("ありません");
+    expect(value).not.toHaveTextContent("件");
+    expect(within(value).queryByRole("link")).not.toBeInTheDocument();
+  });
+
   test("評価が 0 件なら平均は「評価はまだありません」、受付中なら「受付中」", async () => {
     const data = { ...OVERVIEW, acceptance_status: "accepting", review_count: 0, average_rating: null } as const;
     render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);

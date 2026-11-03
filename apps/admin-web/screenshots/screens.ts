@@ -674,6 +674,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // コーチで絞った応答は fixtures にないので、条件なしの応答（どれも鈴木 コーチのやり取り）が返る。
+    id: "hq-unanswered-messages-by-coach",
+    title: "本部: コーチ 1 人の返事のないメッセージ",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("link", { name: "このコーチの返事のないメッセージを見る" }).click();
+      await page.getByRole("combobox", { name: "コーチ" }).and(page.locator(":enabled")).waitFor();
+      await page.getByRole("table", { name: "返事のないメッセージの一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-unanswered-messages-by-student",
     title: "本部: 生徒 1 人の返事のないメッセージ",
     role: "headquarters",

@@ -621,7 +621,8 @@ export const FIXTURES: Fixture[] = [
       pending_video_review_count: 2,
       overdue_pending_video_review_count: 1,
       recent_cancelled_booking_count: 2,
-      unanswered_message_thread_count: 1,
+      // コーチで絞らない返事のないメッセージの応答（鈴木 コーチの 2 件）と揃える（hq-unanswered-messages-by-coach）。
+      unanswered_message_thread_count: 2,
     } satisfies Schemas["CoachOverview"],
   },
   {
