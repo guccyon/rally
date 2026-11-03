@@ -12,6 +12,7 @@ import {
 } from "@/components/headquarters/UnansweredMessageThreadList";
 import {
   UnansweredMessageThreadsHome,
+  coachUnansweredMessageThreadsPath,
   studentUnansweredMessageThreadsPath,
   unansweredMessageThreadFilterFrom,
   unansweredMessageThreadsPath,
@@ -364,6 +365,7 @@ describe("絞り込みの URL", () => {
     expect(studentUnansweredMessageThreadsPath(STUDENT_1)).toBe(
       `/headquarters/unanswered-messages?student_id=${STUDENT_1}`,
     );
+    expect(coachUnansweredMessageThreadsPath(COACH_1)).toBe(`/headquarters/unanswered-messages?coach_id=${COACH_1}`);
   });
 
   test("時間の選択肢は凍結してあり、import した側から書き換えられない", () => {
