@@ -28,6 +28,14 @@ const NO_PERIOD: Period = { from: "", to: "" };
 
 // 期間で絞っているとき（送る前の確かめ periodError をすり抜けた 422）の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED_WITH_PERIOD = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
+// 生徒で絞っているとき（生徒の ID は URL のクエリから来るので、書き換えられて UUID でないこともある）に添える。返事のないメッセージの一覧と同じ。
+const VALIDATION_HINT_WITH_STUDENT = "生徒は生徒の一覧から選び直してください。";
+
+/** 422 の理由。期間・生徒のうち、いま絞っている条件の直す場所を伝える。どちらでも絞っていなければ ErrorCode の文言のまま。 */
+function validationFailedMessageOf({ period }: Filter, studentFiltered: boolean, message: string): string {
+  if (period === null) return studentFiltered ? `${message}${VALIDATION_HINT_WITH_STUDENT}` : message;
+  return studentFiltered ? `${VALIDATION_FAILED_WITH_PERIOD}${VALIDATION_HINT_WITH_STUDENT}` : VALIDATION_FAILED_WITH_PERIOD;
+}
 
 /** 一覧（listLowRatedLessonReviews）に付けるクエリ。「未対応だけ」を外したとき・期間なしの条件は付けない。 */
 function queryOf({ unhandledOnly, period }: Filter) {
@@ -37,10 +45,12 @@ function queryOf({ unhandledOnly, period }: Filter) {
   };
 }
 
-/** 0 件のときの文言。期間で絞っていれば、その期間のことだと言う。 */
-function emptyMessageOf({ unhandledOnly, period }: Filter): string {
-  if (period === null) return unhandledOnly ? "未対応の低い評価はありません" : "低い評価はまだありません";
-  return unhandledOnly ? "この期間に未対応の低い評価はありません" : "この期間に低い評価はありません";
+/** 0 件のときの文言。期間・生徒で絞っていれば、その期間・その生徒のことだと言う。 */
+function emptyMessageOf({ unhandledOnly, period }: Filter, studentFiltered: boolean): string {
+  const reviews = unhandledOnly ? "未対応の低い評価" : "低い評価";
+  const student = studentFiltered ? "この生徒の" : "";
+  if (period === null) return studentFiltered || unhandledOnly ? `${student}${reviews}はありません` : "低い評価はまだありません";
+  return `この期間に${student}${reviews}はありません`;
 }
 
 function HandlingStatus({ review }: { review: LowRatedReview }) {
@@ -57,7 +67,8 @@ function HandlingStatus({ review }: { review: LowRatedReview }) {
  * 「開始日」「終了日」で送った日付（日本時間）の期間に絞る（API の `from`・`to`）。期間を省ける「コーチの評価」の期間の欄と同じく、
  * 期間を付けずに開き（直近の期間のすべて）、送る前に確かめて「この期間で見る」で読み直し、「期間を外す」で戻す。
  * 「未対応だけ」と期間は組み合わせられる（どちらを変えても、もう一方の確定した条件は残す）。
- * `studentId` があれば、その生徒がつけた評価だけを読む（API の `student_id`。「未対応だけ」・期間と合わせて付ける）。
+ * `studentId` があれば、その生徒がつけた評価だけを読む（API の `student_id`。「未対応だけ」・期間と合わせて付け、どちらを変えても残す）。
+ * 生徒は欄では選ばず、ほかの一覧と同じく URL のクエリ（生徒の利用の様子の画面からの入口）で受け取る。0 件と 422 の文言は生徒で絞っていることを添える。
  */
 export function LowRatedReviewList({
   api,
@@ -86,8 +97,8 @@ export function LowRatedReviewList({
       return {
         kind: "failed",
         message:
-          response.code === "validation_failed" && next.period !== null
-            ? VALIDATION_FAILED_WITH_PERIOD
+          response.code === "validation_failed"
+            ? validationFailedMessageOf(next, Boolean(studentId), response.message)
             : response.message,
       };
     },
@@ -214,7 +225,7 @@ export function LowRatedReviewList({
         </p>
       )}
       {state.kind === "loaded" && state.list.reviews.length === 0 && (
-        <p className="text-sm">{emptyMessageOf(state.filter)}</p>
+        <p className="text-sm">{emptyMessageOf(state.filter, Boolean(studentId))}</p>
       )}
       {state.kind === "loaded" && state.list.reviews.length > 0 && (
         <ul aria-label="低い評価の一覧" className="divide-y rounded-md border text-sm">
