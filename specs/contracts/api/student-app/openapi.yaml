@@ -570,7 +570,9 @@ paths:
         `is_first_lesson` はサーバーが判定する（その生徒の完了記録が同期・非同期あわせて 0 件のときだけ true）。
         呼べるのは元のセッション・動画の当事者（生徒・コーチ）だけで、それ以外のアカウントとない ID には 404
         （あることも知らせない）。`session_id` / `video_id` が UUID でない、`lesson_type` に合わない ID を指定したときは 422。
-        終了していない通話セッションは 409 `invalid_session_state`、添削が返されていない動画は 409 `invalid_video_state`、
+        終了していない通話セッションは 409 `invalid_session_state`、本部が終わらせた通話セッション（admin-web の
+        `endLiveLessonSessionByHeadquarters`。本部の終了は完了として数えない）は 409 `live_lesson_session_ended_by_headquarters`、
+        添削が返されていない動画は 409 `invalid_video_state`、
         同じセッション・動画の 2 回目は 409 `lesson_already_completed`。記録すると行動イベント `lesson.completed` を
         発火し、境界間イベント `LessonCompleted` を発行する。
         通話セッションの完了は、セッションに結び付いた予約（`LiveLessonSession.bookings`）の生徒ごとに 1 つ（グループレッスン）。
@@ -2665,6 +2667,7 @@ components:
         - chat_not_entitled
         - lesson_already_reviewed
         - coach_not_accepting_bookings
+        - live_lesson_session_ended_by_headquarters
 
     Error:
       type: object

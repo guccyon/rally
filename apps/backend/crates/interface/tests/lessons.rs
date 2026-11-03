@@ -81,6 +81,8 @@ const HEADQUARTERS: &str = "headquarters:5";
 const ENDED_SESSION: SessionId = SessionId::from_u128(30);
 /// 生徒 1 とコーチ 9 の、まだ終了していない通話セッション
 const OPEN_SESSION: SessionId = SessionId::from_u128(31);
+/// 生徒 1 とコーチ 9 の、本部（アカウント 5）が終わらせた通話セッション（D188）
+const HEADQUARTERS_ENDED_SESSION: SessionId = SessionId::from_u128(32);
 /// 生徒 1 がコーチ 9 に送り、添削が返された動画
 const REVIEWED_VIDEO: VideoId = VideoId::from_u128(40);
 /// 生徒 1 がコーチ 9 に送り、添削がまだ返されていない動画
@@ -137,6 +139,18 @@ fn session(id: SessionId, booking: u128, ended: bool) -> LiveLessonSession {
     session
 }
 
+/// 開始の 1 時間後に本部が終わらせたセッション。
+fn headquarters_ended_session() -> LiveLessonSession {
+    let mut session = session(HEADQUARTERS_ENDED_SESSION, 12, false);
+    session
+        .end_by_headquarters(
+            account_id(HEADQUARTERS),
+            nov1_10() + Duration::from_secs(3600),
+        )
+        .unwrap();
+    session
+}
+
 fn video(id: VideoId, reviewed: bool) -> Video {
     let mut video = Video::submit(
         id,
@@ -177,6 +191,7 @@ fn app() -> App {
     let sessions = InMemoryLiveLessonSessionRepository::with_sessions([
         session(ENDED_SESSION, 10, true),
         session(OPEN_SESSION, 11, false),
+        headquarters_ended_session(),
     ]);
     let videos = InMemoryVideoRepository::with_videos([
         video(REVIEWED_VIDEO, true),
@@ -526,6 +541,28 @@ async fn unfinished_lessons_and_repeats_conflict() {
     }
     assert_eq!(app.lesson_completed().len(), 2, "拒否では発火しない");
     assert_eq!(app.events.events().len(), 2);
+}
+
+#[tokio::test]
+async fn a_session_ended_by_headquarters_is_not_completed() {
+    let app = app();
+    // 本部の終了は完了として数えない（生徒もコーチも記録できない）
+    for token in [STUDENT, COACH] {
+        let (status, error) = app.complete(token, live(HEADQUARTERS_ENDED_SESSION)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{token}: {error}");
+        assert_eq!(error["code"], "live_lesson_session_ended_by_headquarters");
+        assert_eq!(
+            error["message"],
+            "本部が終わらせた通話セッションは完了として記録できない"
+        );
+    }
+    // 参加者でなければ、今までどおりあることも知らせない
+    let (status, error) = app
+        .complete(OTHER_STUDENT, live(HEADQUARTERS_ENDED_SESSION))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{error}");
+    assert!(app.lesson_completed().is_empty(), "拒否では発火しない");
+    assert!(app.events.events().is_empty());
 }
 
 #[tokio::test]
