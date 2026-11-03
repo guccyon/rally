@@ -1863,8 +1863,8 @@ export interface paths {
          *     - 競技で絞る（任意）: `sport` を付ければ、そのスポーツの生徒に向けて送ったお知らせ（`sport` がその値のもの）だけを返す
          *       （テニス向け・ゴルフ向けなど、競技ごとに送ったお知らせを振り返るのに使う）。生徒全員に向けて送ったお知らせ
          *       （`sport` が null のもの）は、そのスポーツの生徒も受け取っているが、`sport` を付けたときは載せない（競技を問わず
-         *       送ったものは `sport` を付けずに見る）。判定は backend の domain `Announcement::is_in_sport` の 1 か所。取り下げた
-         *       お知らせも対象のスポーツが一致すれば載る。`sport` を付けなければ今までどおりスポーツを問わない
+         *       送ったものは `sport` を付けずに見る）。判定は backend の domain `AnnouncementSportFilter` の 1 か所（`listAnnouncementDrafts` の
+         *       `sport` と同じ）。取り下げたお知らせも対象のスポーツが一致すれば載る。`sport` を付けなければ今までどおりスポーツを問わない
          *     - `sport` は `from`・`to`・`q` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送ったもの）。
          *       並べ方と `read_count` の数え方は `sport` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列。
          *       `sport` が `Sport` の値でなければ 422 `validation_failed`（`message` に理由。値の読み方は `sendAnnouncement` の `sport` と同じ）
@@ -1958,6 +1958,13 @@ export interface paths {
          *       本文・対象のスポーツでは探さない。並べ方は上と同じ。一致する下書きがなければ `announcement_drafts` は空の配列
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ。`listLessonMenus` の `q` が
          *       メニューの名前の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
+         *     - 競技で絞る（任意）: `sport` を付ければ、そのスポーツの生徒に向けた下書き（`sport` がその値のもの）だけを返す（競技ごとに
+         *       書きためた下書きを探すのに使う）。生徒全員に向けた下書き（`sport` が null のもの）は、`sport` を付けたときは載せない
+         *       （`listAnnouncements` の `sport` と同じ扱い。判定は backend の domain `AnnouncementSportFilter` の 1 か所）。
+         *       `sport` を付けなければ今までどおりスポーツを問わない
+         *     - `sport` は `q` と組み合わせられる（題が一致し、そのスポーツに向けた下書き）。並べ方は `sport` で絞っても変わらない。
+         *       一致する下書きがなければ `announcement_drafts` は空の配列。`sport` が `Sport` の値でなければ 422 `validation_failed`
+         *       （`message` に理由。値の読み方は `createAnnouncementDraft` の `sport` と同じ）
          *
          *     行動イベントは発火しない。
          */
@@ -5160,6 +5167,11 @@ export interface operations {
             query?: {
                 /** @description 題の検索語。題に部分一致する下書きだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
                 q?: string;
+                /**
+                 * @description あればこのスポーツの生徒に向けた下書きだけを返す（生徒全員に向けた下書きは載せない）。省けばスポーツを問わない。
+                 *     `Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

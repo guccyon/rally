@@ -1,6 +1,9 @@
 use std::time::SystemTime;
 
-use super::{AnnouncementBody, AnnouncementDraftId, AnnouncementTitle, NotificationError};
+use super::{
+    AnnouncementBody, AnnouncementDraftId, AnnouncementSportFilter, AnnouncementTitle,
+    NotificationError,
+};
 use crate::{catalog::Sport, identity::AccountId};
 
 /// 本部からのお知らせの下書き（glossary の announcement_draft）。本部が書きかけで残したお知らせで、作った本部の
@@ -73,6 +76,14 @@ impl AnnouncementDraft {
     /// 対象のスポーツ。生徒全員なら `None`。
     pub fn sport(&self) -> Option<Sport> {
         self.sport
+    }
+
+    /// 本部の下書きの一覧（admin-web の `listAnnouncementDrafts`）の任意のスポーツの絞り込み `sport` にこの下書きが
+    /// 入るか。`None` ならスポーツを問わない（すべて入る）。スポーツを付けたときは、そのスポーツの生徒に向けた下書き
+    /// （[`Self::sport`] が同じもの）だけが入り、生徒全員に向けた下書き（[`Self::sport`] が `None`）は入らない。
+    /// 照合は送ったお知らせ（[`super::Announcement::is_in_sport`]）と同じ [`AnnouncementSportFilter`] の 1 か所。
+    pub fn is_in_sport(&self, sport: Option<Sport>) -> bool {
+        AnnouncementSportFilter::new(sport).matches(self.sport)
     }
 
     pub fn created_at(&self) -> SystemTime {
@@ -163,6 +174,27 @@ mod tests {
         assert_eq!(draft.sport(), Some(Sport::Tennis));
         assert_eq!(draft.created_at(), at(10));
         assert_eq!(draft.updated_at(), at(10), "直していなければ作った時刻");
+    }
+
+    #[test]
+    fn a_draft_is_in_its_own_sport_or_any_sport() {
+        let tennis = draft("題", "").unwrap();
+        assert!(tennis.is_in_sport(None), "絞らなければスポーツを問わない");
+        assert!(tennis.is_in_sport(Some(Sport::Tennis)));
+        assert!(!tennis.is_in_sport(Some(Sport::Golf)));
+    }
+
+    #[test]
+    fn a_draft_to_every_student_is_not_in_a_sport() {
+        let mut everyone = draft("題", "").unwrap();
+        everyone.revise("題", "", None, at(20)).unwrap();
+        assert!(everyone.is_in_sport(None), "絞らなければ載る");
+        for sport in Sport::ALL {
+            assert!(
+                !everyone.is_in_sport(Some(sport)),
+                "生徒全員に向けた下書きはスポーツで絞ると入らない: {sport:?}"
+            );
+        }
     }
 
     #[test]

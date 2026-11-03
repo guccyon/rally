@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    AnnouncementBody, AnnouncementId, AnnouncementTitle, AnnouncementWithdrawal, NotificationError,
-    PushNotification,
+    AnnouncementBody, AnnouncementId, AnnouncementSportFilter, AnnouncementTitle,
+    AnnouncementWithdrawal, NotificationError, PushNotification,
 };
 use crate::{catalog::Sport, identity::AccountId, scheduling::BookingPeriod};
 
@@ -99,9 +99,9 @@ impl Announcement {
     /// 本部の一覧（admin-web の `listAnnouncements`）の任意のスポーツの絞り込み `sport` にこのお知らせが入るか。
     /// `None` ならスポーツを問わない（すべて入る）。スポーツを付けたときは、そのスポーツの生徒に向けて送ったもの
     /// （[`Self::sport`] が同じもの）だけが入り、生徒全員に送ったもの（[`Self::sport`] が `None`）は入らない。
-    /// 取り下げたかは問わない。
+    /// 取り下げたかは問わない。照合は下書きと同じ [`AnnouncementSportFilter`] の 1 か所。
     pub fn is_in_sport(&self, sport: Option<Sport>) -> bool {
-        sport.is_none_or(|sport| self.sport == Some(sport))
+        AnnouncementSportFilter::new(sport).matches(self.sport)
     }
 
     /// 取り下げ。取り下げていなければ `None`。
