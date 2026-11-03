@@ -215,6 +215,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 未対応の低い評価のあるコーチだけに絞った状態（URL のクエリ has_unhandled_low_rated=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-unhandled-low-rated",
+    title: "本部: コーチの受付（未対応の低い評価のあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_unhandled_low_rated=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("未対応の低い評価のあるコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",

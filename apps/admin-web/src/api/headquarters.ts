@@ -20,6 +20,7 @@ export function headquartersApi(client: ApiClient) {
         sport?: Schemas["Sport"];
         q?: string;
         inactive?: boolean;
+        has_unhandled_low_rated?: boolean;
       } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
