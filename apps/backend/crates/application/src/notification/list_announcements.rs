@@ -18,6 +18,10 @@ use crate::scheduling::calendar_day;
 /// 題の検索語（[`ListAnnouncementsQuery::title`]）があれば、題に部分一致するものだけに絞る（期間と組み合わせられる。
 /// 照合は下書きの一覧と同じ domain の [`domain::notification::AnnouncementTitleQuery`]）。並べ方は変わらず、既読にした数は
 /// 絞ったものにだけ添える。
+///
+/// スポーツ（[`ListAnnouncementsQuery::sport`]）があれば、そのスポーツの生徒に向けて送ったものだけに絞る（生徒全員に
+/// 送ったものは入らない。判定は domain の [`domain::notification::Announcement::is_in_sport`]）。期間・題と組み合わせられ、
+/// 並べ方は変わらず、既読にした数は絞ったものにだけ添える。
 pub struct ListAnnouncements<A, N> {
     announcements: A,
     notifications: N,
@@ -56,6 +60,7 @@ where
         if let Some(title) = &query.title {
             announcements.retain(|announcement| title.matches(announcement.title().as_str()));
         }
+        announcements.retain(|announcement| announcement.is_in_sport(query.sport));
         Ok(AnnouncementWithReadCount::attach(announcements, &self.notifications).await?)
     }
 }
@@ -486,6 +491,7 @@ mod tests {
                     from: Some(nov(1)),
                     to: Some(nov(3)),
                     title: search("メンテナンス"),
+                    sport: None,
                 },
             )
             .await,
@@ -498,6 +504,7 @@ mod tests {
                     from: Some(nov(3)),
                     to: Some(nov(2)),
                     title: search("メンテナンス"),
+                    sport: None,
                 })
                 .await,
             Err(ListAnnouncementsError::Invalid(
@@ -524,6 +531,150 @@ mod tests {
             listed_now,
             [listed(&app, 1)],
             "題で絞ったものにだけ既読にした数を添える"
+        );
+    }
+
+    fn for_sport(id: u128, sent_at: SystemTime, title: &str, sport: Option<Sport>) -> Announcement {
+        Announcement::new(
+            AnnouncementId::from_u128(id),
+            HEADQUARTERS,
+            AnnouncementTitle::new(title).unwrap(),
+            AnnouncementBody::new("本文").unwrap(),
+            sport,
+            3,
+            sent_at,
+        )
+        .unwrap()
+    }
+
+    /// 10/31 の最後・11/1 の始まり・11/3 の最後（取り下げた）・11/4 の始まり・11/2 に送った、対象のスポーツの違うお知らせ
+    /// （テニス・ゴルフ・テニス・テニス・生徒全員）。
+    fn for_sports_around_the_period() -> (InMemoryAnnouncementRepository, [Announcement; 5]) {
+        let nov1 = calendar_day::start(nov(1));
+        let nov4 = calendar_day::start(nov(4));
+        let nanos = StdDuration::from_nanos(1);
+        let mut withdrawn = for_sport(3, nov4 - nanos, "テニスの大会（再）", Some(Sport::Tennis));
+        withdrawn.withdraw(HEADQUARTERS, nov4 + nanos).unwrap();
+        let sent = [
+            for_sport(1, nov1 - nanos, "テニスの大会", Some(Sport::Tennis)),
+            for_sport(2, nov1, "ゴルフの大会", Some(Sport::Golf)),
+            withdrawn,
+            for_sport(4, nov4, "テニスの大会の結果", Some(Sport::Tennis)),
+            for_sport(5, calendar_day::start(nov(2)), "テニスの大会と更新", None),
+        ];
+        (
+            InMemoryAnnouncementRepository::with_announcements(sent.clone()),
+            sent,
+        )
+    }
+
+    #[tokio::test]
+    async fn a_sport_keeps_only_announcements_sent_to_that_sport_in_the_same_order() {
+        let (repository, [first, golf, withdrawn, last, everyone]) = for_sports_around_the_period();
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    sport: Some(Sport::Tennis),
+                    ..Default::default()
+                }
+            )
+            .await,
+            [last, withdrawn, first],
+            "そのスポーツの生徒に向けて送ったものだけ。新しい順は変わらず、取り下げたものも載る。生徒全員に送ったものは入らない"
+        );
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    sport: Some(Sport::Golf),
+                    ..Default::default()
+                }
+            )
+            .await,
+            [golf]
+        );
+        assert!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    sport: Some(Sport::Swimming),
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_empty(),
+            "そのスポーツに送ったものがなければ空の一覧"
+        );
+        let every = list_titled(&repository, ListAnnouncementsQuery::default()).await;
+        assert_eq!(every.len(), 5, "付けなければ今までどおりすべて");
+        assert!(every.contains(&everyone), "生徒全員に送ったものも載る");
+        assert_eq!(repository.all().len(), 5, "照会では何も変えない");
+    }
+
+    #[tokio::test]
+    async fn a_sport_combines_with_the_period_and_the_title() {
+        let (repository, [_, _, withdrawn, _, _]) = for_sports_around_the_period();
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    from: Some(nov(1)),
+                    to: Some(nov(3)),
+                    title: search("大会"),
+                    sport: Some(Sport::Tennis),
+                },
+            )
+            .await,
+            [withdrawn],
+            "期間（11/1〜11/3）に送ったもののうち、題が一致し、テニスの生徒に向けて送ったものだけ"
+        );
+        assert!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    title: search("更新"),
+                    sport: Some(Sport::Tennis),
+                    ..Default::default()
+                },
+            )
+            .await
+            .is_empty(),
+            "題が一致しても生徒全員に送ったものは入らない"
+        );
+        assert!(matches!(
+            ListAnnouncements::new(repository, InMemoryNotificationRepository::default())
+                .execute(ListAnnouncementsQuery {
+                    from: Some(nov(3)),
+                    to: Some(nov(2)),
+                    sport: Some(Sport::Tennis),
+                    ..Default::default()
+                })
+                .await,
+            Err(ListAnnouncementsError::Invalid(
+                SchedulingError::BookingPeriodEndsBeforeItStarts
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_counts_are_attached_to_the_announcements_in_the_sport() {
+        let (repository, [first, golf, ..]) = for_sports_around_the_period();
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            received(1, &first, 11, Some(30_000_000)),
+            received(2, &golf, 11, Some(30_000_000)),
+        ]);
+        let listed_now = ListAnnouncements::new(repository, notifications)
+            .execute(ListAnnouncementsQuery {
+                sport: Some(Sport::Golf),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            listed_now,
+            [listed(&golf, 1)],
+            "スポーツで絞ったものにだけ既読にした数を添える"
         );
     }
 

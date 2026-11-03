@@ -96,6 +96,14 @@ impl Announcement {
         period.includes(self.sent_at)
     }
 
+    /// 本部の一覧（admin-web の `listAnnouncements`）の任意のスポーツの絞り込み `sport` にこのお知らせが入るか。
+    /// `None` ならスポーツを問わない（すべて入る）。スポーツを付けたときは、そのスポーツの生徒に向けて送ったもの
+    /// （[`Self::sport`] が同じもの）だけが入り、生徒全員に送ったもの（[`Self::sport`] が `None`）は入らない。
+    /// 取り下げたかは問わない。
+    pub fn is_in_sport(&self, sport: Option<Sport>) -> bool {
+        sport.is_none_or(|sport| self.sport == Some(sport))
+    }
+
     /// 取り下げ。取り下げていなければ `None`。
     pub const fn withdrawal(&self) -> Option<&AnnouncementWithdrawal> {
         self.withdrawal.as_ref()
@@ -265,6 +273,33 @@ mod tests {
             announcement.is_sent_in(&BookingPeriod::new(at(10), at(11)).unwrap()),
             "取り下げても送った時刻で決まる"
         );
+    }
+
+    #[test]
+    fn an_announcement_is_in_its_own_sport_or_any_sport() {
+        let tennis = sent(Some(Sport::Tennis), 1).unwrap();
+        assert!(tennis.is_in_sport(None), "絞らなければスポーツを問わない");
+        assert!(tennis.is_in_sport(Some(Sport::Tennis)));
+        assert!(!tennis.is_in_sport(Some(Sport::Golf)));
+    }
+
+    #[test]
+    fn an_announcement_to_every_student_is_not_in_a_sport() {
+        let everyone = sent(None, 1).unwrap();
+        assert!(everyone.is_in_sport(None), "絞らなければ載る");
+        for sport in Sport::ALL {
+            assert!(
+                !everyone.is_in_sport(Some(sport)),
+                "生徒全員に送ったものはスポーツで絞ると入らない: {sport:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_withdrawn_announcement_is_still_in_its_sport() {
+        let mut announcement = sent(Some(Sport::Golf), 1).unwrap();
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert!(announcement.is_in_sport(Some(Sport::Golf)));
     }
 
     #[test]
