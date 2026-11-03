@@ -11,8 +11,9 @@ import {
   LiveSessionRecordsHome,
   studentLiveSessionRecordsPath,
 } from "@/components/headquarters/LiveSessionRecordsHome";
+import { SPORTS } from "@/components/headquarters/PendingVideoReviewList";
 import { recentPeriod } from "@/components/headquarters/bookingPeriod";
-import { formatDateTime } from "@/components/labels";
+import { SPORT_LABELS, formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
 
 const replace = vi.fn();
@@ -112,6 +113,7 @@ describe("本部のライブレッスンの記録", () => {
     expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
     expect(screen.getByLabelText("終了日")).toHaveValue("2026-10-26");
     expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("");
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
   });
 
@@ -144,6 +146,55 @@ describe("本部のライブレッスンの記録", () => {
     expect(await screen.findByText("2026年10月1日（木） 〜 2026年10月15日（木）・0 件")).toBeInTheDocument();
   });
 
+  test("スポーツの選択肢は返却待ちの動画添削と同じで、選んで「この条件で見る」で sport を付けて読み直す", async () => {
+    const user = userEvent.setup();
+    const listLiveLessonSessions = listOf(SESSIONS);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table", { name: TABLE });
+
+    const select = screen.getByRole("combobox", { name: "スポーツ" });
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      ...SPORTS.map((sport) => SPORT_LABELS[sport]),
+    ]);
+    await user.selectOptions(select, "テニス");
+    // 選んだだけでは読み直さない。
+    expect(listLiveLessonSessions).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listLiveLessonSessions).toHaveBeenCalledTimes(2);
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", sport: "tennis" });
+
+    // 「すべて」に戻せば sport を付けずに読む。
+    await user.selectOptions(select, "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+  });
+
+  test("スポーツは期間・コーチと組み合わせて読む", async () => {
+    const user = userEvent.setup();
+    const listLiveLessonSessions = listOf([]);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    await screen.findByText("この条件の通話の記録はありません");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await user.clear(screen.getByLabelText("開始日"));
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.clear(screen.getByLabelText("終了日"));
+    await user.type(screen.getByLabelText("終了日"), "2026-10-15");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-15",
+      coach_id: SUZUKI,
+      sport: "tennis",
+    });
+    expect(await screen.findByText("2026年10月1日（木） 〜 2026年10月15日（木）・0 件")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("tennis");
+  });
+
   test("0 件なら「この条件の通話の記録はありません」と出し、表は出さない", async () => {
     render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf() }} />);
 
@@ -174,7 +225,7 @@ describe("本部のライブレッスンの記録", () => {
     expect(screen.getByRole("table", { name: TABLE })).toBeInTheDocument();
   });
 
-  test("サーバーの 422 は汎用の文言に、期間とコーチの直し方を添えて出す", async () => {
+  test("サーバーの 422 は汎用の文言に、期間・スポーツ・コーチの直し方を添えて出す", async () => {
     const listLiveLessonSessions = vi.fn<HeadquartersApi["listLiveLessonSessions"]>(async () => ({
       ok: false,
       message: "入力の内容が正しくありません。",
@@ -183,7 +234,7 @@ describe("本部のライブレッスンの記録", () => {
     render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。コーチは一覧から選び直してください。",
+      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
   });
@@ -272,7 +323,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
     );
   }
 
-  test("studentId があれば student_id を付けて読み、期間とコーチを変えても絞り込みは残る", async () => {
+  test("studentId があれば student_id を付けて読み、期間・コーチ・スポーツを変えても絞り込みは残る", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf([SESSIONS[0]!]);
     render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId={STUDENT_ID} />);
@@ -282,6 +333,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
     await screen.findByRole("table", { name: TABLE });
 
     await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
     await user.clear(screen.getByLabelText("開始日"));
     await user.type(screen.getByLabelText("開始日"), "2026-10-01");
     await user.click(screen.getByRole("button", { name: "この条件で見る" }));
@@ -291,6 +343,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
       to: "2026-10-26",
       coach_id: SUZUKI,
       student_id: STUDENT_ID,
+      sport: "tennis",
     });
   });
 
@@ -313,7 +366,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
     render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId="not-a-uuid" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
     );
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
   });

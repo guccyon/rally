@@ -493,6 +493,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-live-sessions-by-sport",
+    title: "本部: スポーツで絞ったライブレッスンの記録",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+    open: async (page) => {
+      await page.getByLabel("スポーツ").selectOption({ label: "テニス" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/・2 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-live-sessions-empty",
     title: "本部: ライブレッスンの記録（0 件）",
     role: "headquarters",

@@ -490,6 +490,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // テニスで絞ったとき（hq-live-sessions-by-sport）は、テニスのコーチ（鈴木 コーチ）のセッションだけを返す。
+    method: "GET",
+    path: "/live-lesson-sessions",
+    query: { sport: "tennis" },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      sessions: LIVE_SESSION_RECORDS.filter((session) => session.coach_id === COACH_ID),
+    } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
     method: "GET",
     path: "/live-lesson-sessions",
     query: { coach_id: COACH_ID_2 },
