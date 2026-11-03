@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use super::{
-    AnnouncementBody, AnnouncementId, AnnouncementTitle, AnnouncementWithdrawal, NotificationError,
-    PushNotification,
+    AnnouncementBody, AnnouncementId, AnnouncementSportFilter, AnnouncementTitle,
+    AnnouncementWithdrawal, NotificationError, PushNotification,
 };
 use crate::{catalog::Sport, identity::AccountId, scheduling::BookingPeriod};
 
@@ -96,6 +96,14 @@ impl Announcement {
         period.includes(self.sent_at)
     }
 
+    /// 本部の一覧（admin-web の `listAnnouncements`）の任意のスポーツの絞り込み `sport` にこのお知らせが入るか。
+    /// `None` ならスポーツを問わない（すべて入る）。スポーツを付けたときは、そのスポーツの生徒に向けて送ったもの
+    /// （[`Self::sport`] が同じもの）だけが入り、生徒全員に送ったもの（[`Self::sport`] が `None`）は入らない。
+    /// 取り下げたかは問わない。照合は下書きと同じ [`AnnouncementSportFilter`] の 1 か所。
+    pub fn is_in_sport(&self, sport: Option<Sport>) -> bool {
+        AnnouncementSportFilter::new(sport).matches(self.sport)
+    }
+
     /// 取り下げ。取り下げていなければ `None`。
     pub const fn withdrawal(&self) -> Option<&AnnouncementWithdrawal> {
         self.withdrawal.as_ref()
@@ -104,6 +112,16 @@ impl Announcement {
     /// 取り下げ済みか（生徒のお知らせの一覧に出さない）。
     pub const fn is_withdrawn(&self) -> bool {
         self.withdrawal.is_some()
+    }
+
+    /// 本部の一覧（admin-web の `listAnnouncements`）の任意の取り下げの絞り込み `withdrawn` にこのお知らせが入るか。
+    /// `None` なら取り下げたかを問わない（すべて入る）。`Some(true)` なら取り下げたものだけ、`Some(false)` なら
+    /// 取り下げていないもの（いま生徒のお知らせの一覧に出ているもの）だけが入る。判定は [`Self::is_withdrawn`] の 1 か所。
+    pub const fn is_withdrawn_as(&self, withdrawn: Option<bool>) -> bool {
+        match withdrawn {
+            None => true,
+            Some(withdrawn) => self.is_withdrawn() == withdrawn,
+        }
     }
 
     /// 受け取った生徒のうち既読にした数に入れる既読の時刻の上限（その時刻ちょうどまでを含む）。取り下げたお知らせは
@@ -265,6 +283,50 @@ mod tests {
             announcement.is_sent_in(&BookingPeriod::new(at(10), at(11)).unwrap()),
             "取り下げても送った時刻で決まる"
         );
+    }
+
+    #[test]
+    fn an_announcement_is_in_its_own_sport_or_any_sport() {
+        let tennis = sent(Some(Sport::Tennis), 1).unwrap();
+        assert!(tennis.is_in_sport(None), "絞らなければスポーツを問わない");
+        assert!(tennis.is_in_sport(Some(Sport::Tennis)));
+        assert!(!tennis.is_in_sport(Some(Sport::Golf)));
+    }
+
+    #[test]
+    fn an_announcement_to_every_student_is_not_in_a_sport() {
+        let everyone = sent(None, 1).unwrap();
+        assert!(everyone.is_in_sport(None), "絞らなければ載る");
+        for sport in Sport::ALL {
+            assert!(
+                !everyone.is_in_sport(Some(sport)),
+                "生徒全員に送ったものはスポーツで絞ると入らない: {sport:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_announcement_not_withdrawn_is_in_the_not_withdrawn_filter_only() {
+        let announcement = sent(None, 1).unwrap();
+        assert!(announcement.is_withdrawn_as(None), "絞らなければ載る");
+        assert!(announcement.is_withdrawn_as(Some(false)));
+        assert!(!announcement.is_withdrawn_as(Some(true)));
+    }
+
+    #[test]
+    fn a_withdrawn_announcement_is_in_the_withdrawn_filter_only() {
+        let mut announcement = sent(None, 1).unwrap();
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert!(announcement.is_withdrawn_as(None), "絞らなければ載る");
+        assert!(announcement.is_withdrawn_as(Some(true)));
+        assert!(!announcement.is_withdrawn_as(Some(false)));
+    }
+
+    #[test]
+    fn a_withdrawn_announcement_is_still_in_its_sport() {
+        let mut announcement = sent(Some(Sport::Golf), 1).unwrap();
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert!(announcement.is_in_sport(Some(Sport::Golf)));
     }
 
     #[test]

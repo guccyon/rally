@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use domain::{
-    catalog::Sport,
+    catalog::{LessonMenuId, Sport},
     identity::AccountId,
     profile::CoachSportFilter,
     scheduling::{Slot, SlotSupply},
@@ -24,7 +24,9 @@ use crate::clock::Clock;
 /// [`Slot::matches_coach`]。予約の一覧の `coach_id` と同じ扱い）。`sport` があれば、残った枠のコーチのアカウント
 /// （[`SlotCoachAccountLookup`]）を引き、その競技を提供するコーチの枠とそれらへの予約だけを同じ数え方で数える（規則は
 /// domain の [`Slot::matches_coach_sport`]。コーチの競技の決め方は [`CoachSportFilter`] の 1 か所。`coach_id` と組み合わせ
-/// られ、結果はどちらもスポーツ 6 種類すべて）。
+/// られ、結果はどちらもスポーツ 6 種類すべて）。`lesson_menu_id` があれば、そのレッスンメニューに結びついた枠とそれらへの
+/// 予約だけを同じ数え方で数える（メニューのない枠は数えない。ないメニューの ID ならどのスポーツも 0。規則は domain の
+/// [`Slot::matches_lesson_menu`]。予約の一覧の `lesson_menu_id` と同じ扱い。期間・`coach_id`・`sport` と組み合わせられる）。
 pub struct GetSlotSupply<B, A, C> {
     bookings: B,
     coach_accounts: A,
@@ -42,6 +44,8 @@ pub struct GetSlotSupplyQuery {
     pub coach_id: Option<AccountId>,
     /// あればこの競技を提供するコーチの枠（とそれらへの予約）だけを数える
     pub sport: Option<Sport>,
+    /// あればこのレッスンメニューに結びついた枠（とそれらへの予約）だけを数える
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl<B, A, C> GetSlotSupply<B, A, C>
@@ -74,7 +78,9 @@ where
             .slots_starting_between(period.starts_at(), period.ends_at())
             .await?;
         // 絞った枠にない枠への予約は SlotSupply::tally が数えないので、予約はそのまま渡す
-        slots.retain(|slot| slot.matches_coach(query.coach_id));
+        slots.retain(|slot| {
+            slot.matches_coach(query.coach_id) && slot.matches_lesson_menu(query.lesson_menu_id)
+        });
         let sport = CoachSportFilter::new(query.sport);
         if sport.sport().is_some() && !slots.is_empty() {
             let coach_ids: BTreeSet<AccountId> = slots.iter().map(Slot::coach_id).collect();
@@ -264,6 +270,7 @@ mod tests {
                 to: Some(to),
                 coach_id: None,
                 sport: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -349,6 +356,7 @@ mod tests {
                 to: Some(to),
                 coach_id: Some(coach),
                 sport: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -408,6 +416,7 @@ mod tests {
                         to,
                         coach_id: None,
                         sport: None,
+                        lesson_menu_id: None,
                     })
                     .await
                     .map(|report| (report.dates, report.window_start, report.window_end))
@@ -442,6 +451,7 @@ mod tests {
                         to,
                         coach_id: None,
                         sport: None,
+                        lesson_menu_id: None,
                     })
                     .await
                 {
@@ -458,6 +468,7 @@ mod tests {
                     to: Some(today + Days::days(30)),
                     coach_id: None,
                     sport: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .is_ok()
@@ -603,11 +614,132 @@ mod tests {
                 to: Some(to),
                 coach_id: None,
                 sport: Some(Sport::Tennis),
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
         assert_eq!(report.dates, Some((from, to)));
         assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 1, 1));
         assert_eq!(report.sports[3], SlotSupply::new(Sport::Soccer, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn with_lesson_menu_counts_only_the_slots_bound_to_it_and_their_bookings() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let (menu, other_menu) = (LessonMenuId::from_u128(50), LessonMenuId::from_u128(51));
+        // たなかはテニスとサッカー、すずきはテニスだけを提供する
+        let (tanaka, suzuki) = (AccountId::from_u128(500), AccountId::from_u128(501));
+        let accounts = accounts_of(&[
+            (tanaka, Role::Coach, &[Sport::Tennis, Sport::Soccer]),
+            (suzuki, Role::Coach, &[Sport::Tennis]),
+        ])
+        .await;
+        let in_window = |days: u64| now - Duration::from_secs(days * DAY);
+        let with_menu = |slot: Slot, menu| slot.with_restored_lesson_menu(Some(menu));
+        let slots = InMemorySlotRepository::with_slots([
+            with_menu(slot_of(1, tanaka, Sport::Tennis, in_window(1)), menu),
+            with_menu(slot_of(2, tanaka, Sport::Tennis, in_window(2)), menu),
+            with_menu(slot_of(3, suzuki, Sport::Tennis, in_window(1)), menu),
+            // 別のメニューの枠、メニューのない枠、期間の外のそのメニューの枠
+            with_menu(slot_of(4, tanaka, Sport::Soccer, in_window(1)), other_menu),
+            slot_of(5, tanaka, Sport::Tennis, in_window(1)),
+            with_menu(slot_of(6, tanaka, Sport::Tennis, now), menu),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+        book(&bookings, 8, 3).await;
+        // 別のメニューの枠・メニューのない枠・期間の外の枠への予約は数えない
+        book(&bookings, 9, 4).await;
+        book(&bookings, 10, 5).await;
+        book(&bookings, 11, 6).await;
+
+        let supply = GetSlotSupply::new(bookings, accounts, FixedClock(now));
+        let with_lesson_menu = |lesson_menu_id, coach_id, sport| {
+            let supply = &supply;
+            async move {
+                supply
+                    .execute(GetSlotSupplyQuery {
+                        lesson_menu_id: Some(lesson_menu_id),
+                        coach_id,
+                        sport,
+                        ..GetSlotSupplyQuery::default()
+                    })
+                    .await
+                    .unwrap()
+            }
+        };
+        let report = with_lesson_menu(menu, None, None).await;
+        assert_eq!(
+            (report.window_start, report.window_end, report.dates),
+            (now - SlotSupply::WINDOW, now, None),
+            "期間はメニューを付けても変わらない"
+        );
+        assert_eq!(
+            report.sports,
+            [
+                SlotSupply::new(Sport::Tennis, 3, 2),
+                SlotSupply::new(Sport::Golf, 0, 0),
+                SlotSupply::new(Sport::Baseball, 0, 0),
+                SlotSupply::new(Sport::Soccer, 0, 0),
+                SlotSupply::new(Sport::Basketball, 0, 0),
+                SlotSupply::new(Sport::Swimming, 0, 0),
+            ]
+        );
+        // コーチ・競技と組み合わせる
+        let report = with_lesson_menu(menu, Some(suzuki), None).await;
+        assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 1, 1));
+        let report = with_lesson_menu(menu, None, Some(Sport::Soccer)).await;
+        assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 2, 1));
+        let report = with_lesson_menu(other_menu, Some(suzuki), None).await;
+        assert!(
+            report
+                .sports
+                .iter()
+                .all(|supply| supply.published_slots() == 0 && supply.booking_students() == 0)
+        );
+        // ないメニューの ID はどのスポーツも 0（sufficient）
+        let report = with_lesson_menu(LessonMenuId::from_u128(99), None, None).await;
+        assert_eq!(report.sports.len(), Sport::ALL.len());
+        assert!(report.sports.iter().all(|supply| {
+            supply.published_slots() == 0
+                && supply.booking_students() == 0
+                && supply.status() == SlotSupplyStatus::Sufficient
+        }));
+        // 付けなければ今までどおりメニューを問わない（メニューのない枠も数える）
+        let all = supply.execute(GetSlotSupplyQuery::default()).await.unwrap();
+        assert_eq!(all.sports[0], SlotSupply::new(Sport::Tennis, 4, 3));
+        assert_eq!(all.sports[3], SlotSupply::new(Sport::Soccer, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn with_lesson_menu_and_dates_counts_the_slots_of_that_menu_in_the_days() {
+        let now = SystemTime::UNIX_EPOCH + NOW;
+        let menu = LessonMenuId::from_u128(50);
+        let from = calendar_day::of(now) + Days::days(7);
+        let to = from + Days::days(6);
+        let start = calendar_day::start(from);
+        let slots = InMemorySlotRepository::with_slots([
+            slot(1, Sport::Tennis, start).with_restored_lesson_menu(Some(menu)),
+            slot(2, Sport::Tennis, start),
+            // そのメニューの、期間の外の枠
+            slot(3, Sport::Tennis, start - Duration::from_secs(1))
+                .with_restored_lesson_menu(Some(menu)),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        book(&bookings, 7, 1).await;
+        book(&bookings, 8, 2).await;
+        book(&bookings, 9, 3).await;
+
+        let report = GetSlotSupply::new(bookings, no_accounts(), FixedClock(now))
+            .execute(GetSlotSupplyQuery {
+                from: Some(from),
+                to: Some(to),
+                lesson_menu_id: Some(menu),
+                ..GetSlotSupplyQuery::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.dates, Some((from, to)));
+        assert_eq!(report.sports[0], SlotSupply::new(Sport::Tennis, 1, 1));
     }
 }

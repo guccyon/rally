@@ -3,7 +3,8 @@
 //! 件数と未対応の件数（本部が `PUT /lesson-reviews/{review_id}/handling` で付けた印を読む）・今月と先月の実績・公開中の
 //! レッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・返却待ちの動画添削の件数と
 //! そのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を、それぞれの保存先
-//! （scheduling・review・lesson・catalog・async-lesson）から読むこと、照会のあとも何も変わらないこと、ないコーチは 404・
+//! （scheduling・review・lesson・catalog・async-lesson）から読むこと、返信のないまま既定の時間の過ぎたスレッドの数を
+//! messaging の保存先から読み、`listUnansweredMessageThreads` の既定の条件の一覧と同じ数になること、照会のあとも何も変わらないこと、ないコーチは 404・
 //! 本部以外は 403 になることを確かめる。契約の形と数え方の細かい検査は interface の
 //! `tests/coach_overviews.rs` と各操作のテスト。
 //!
@@ -19,6 +20,7 @@ use application::{
         RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
     },
     in_memory::{FixedClock, ManualClock, RecordingAnalyticsSink},
+    messaging::MessageThreadRepository,
     review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
@@ -31,9 +33,13 @@ use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
     lesson::LessonCompletionId,
+    messaging::{MessageBody, MessageContent, MessageThread},
     review::{LessonReview, LessonReviewComment, LessonReviewId, Rating},
 };
-use infra::{MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgVideoRepository};
+use infra::{
+    MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgMessageThreadRepository,
+    PgVideoRepository,
+};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -294,7 +300,8 @@ async fn headquarters_reads_the_overview_of_a_coach_from_postgres(pool: PgPool) 
         "median_video_review_lead_time_hours": 8.5,
         "pending_video_review_count": 2,
         "overdue_pending_video_review_count": 1,
-        "recent_cancelled_booking_count": 0
+        "recent_cancelled_booking_count": 0,
+        "unanswered_message_thread_count": 0
     });
     assert_eq!(body, expected);
     // 照会だけで何も変えない（2 回目も同じ）
@@ -419,4 +426,126 @@ async fn counts_bookings_of_the_coach_cancelled_in_the_last_30_days_from_postgre
     let (status, body) = send(&router, "GET", &path, &hq_token, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["recent_cancelled_booking_count"], 1);
+}
+
+/// 生徒 `student` とコーチ `coach` のスレッドを `opened_at` に開いて保存先に書き、`exchange` の順に（生徒が送ったか, 送信時刻）で
+/// 本文を送る。
+async fn thread(
+    threads: &PgMessageThreadRepository,
+    student: AccountId,
+    coach: AccountId,
+    opened_at: SystemTime,
+    exchange: &[(bool, SystemTime)],
+) {
+    let thread = threads
+        .open(MessageThread::open(threads.next_thread_id(), student, coach, opened_at).unwrap())
+        .await
+        .unwrap();
+    for &(by_student, at) in exchange {
+        let message_id = threads.next_message_id();
+        threads
+            .update(thread.id(), |t| {
+                t.send(
+                    message_id,
+                    if by_student { student } else { coach },
+                    MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+                    true,
+                    at,
+                )
+                .map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn counts_unanswered_message_threads_of_the_coach_as_the_default_list_from_postgres(
+    pool: PgPool,
+) {
+    let (tanaka, _) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, _) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let mut students = Vec::new();
+    for name in ["taro", "jiro", "saburo", "shiro"] {
+        let (student, _) = register(&pool, &format!("{name}@example.com"), Role::Student).await;
+        students.push(student);
+    }
+    let start = SystemTime::UNIX_EPOCH + NOW;
+    let threads = PgMessageThreadRepository::new(pool.clone());
+    let opened_at = start - HOUR * 24 * 10;
+    // たなかのスレッドは、照会の 24 時間ちょうど前に生徒が送った 1 件・23 時間前に送った 1 件・コーチが返した 1 件・
+    // 発言のない 1 件。いとうのスレッドは 72 時間前に生徒が送った 1 件
+    thread(
+        &threads,
+        students[0],
+        tanaka,
+        opened_at,
+        &[(true, start - HOUR * 24)],
+    )
+    .await;
+    thread(
+        &threads,
+        students[1],
+        tanaka,
+        opened_at,
+        &[(true, start - HOUR * 23)],
+    )
+    .await;
+    thread(
+        &threads,
+        students[2],
+        tanaka,
+        opened_at,
+        &[(true, start - HOUR * 50), (false, start - HOUR)],
+    )
+    .await;
+    thread(&threads, students[3], tanaka, opened_at, &[]).await;
+    thread(
+        &threads,
+        students[0],
+        ito,
+        opened_at,
+        &[(true, start - HOUR * 72)],
+    )
+    .await;
+    let clock = ManualClock::new(start);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    for (at, expected) in [(start, 1), (start + HOUR, 2)] {
+        clock.set(at);
+        for (coach, expected) in [(tanaka, expected), (ito, 1)] {
+            let coach_id = account_id_uuid::format(coach);
+            let (status, overview) = send(
+                &router,
+                "GET",
+                &format!("/coaches/{coach_id}/overview"),
+                &hq_token,
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{overview}");
+            assert_eq!(
+                overview["unanswered_message_thread_count"], expected,
+                "{coach_id}: 24 時間ちょうどは含み、それに満たない・コーチが返した・発言のない・他のコーチのスレッドは数えない"
+            );
+            // 既定の条件の一覧と同じ数
+            let (status, list) = send(
+                &router,
+                "GET",
+                &format!("/message-threads/unanswered?coach_id={coach_id}"),
+                &hq_token,
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{list}");
+            assert_eq!(
+                list["threads"].as_array().unwrap().len(),
+                expected,
+                "{coach_id}: {list}"
+            );
+        }
+    }
 }

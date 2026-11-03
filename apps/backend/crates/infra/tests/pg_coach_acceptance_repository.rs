@@ -2,13 +2,14 @@
 //! 受付中であること、並行な停止の直列化、停止中のコーチの枠を検索（`PgSlotRepository::search`）から除くこと、
 //! 予約の保存先（`PgBookingRepository::find_coach_acceptance`）が同じ状態を読むこと。止めた・再開した記録
 //! （`scheduling.coach_acceptance_changes`）が状態と同じトランザクションで残り、止めた理由とともに新しい順に読めること。
+//! 変えた時刻の期間（開始を含み、終了を含まない）で絞って読めること（`changes_between`）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Duration};
 
 use application::scheduling::{
     BookingRepository, CoachAcceptanceRepository, SlotCriteria, SlotRepository,
@@ -223,6 +224,65 @@ async fn changes_are_recorded_with_who_why_and_when_and_read_newest_first(pool: 
             hq,
             at(2)
         )]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn changes_between_reads_the_changes_of_the_coach_in_the_period_newest_first(pool: PgPool) {
+    let (coach_id, other_coach) = (coach(&pool).await, coach(&pool).await);
+    let hq = headquarters(&pool).await;
+    let acceptances = PgCoachAcceptanceRepository::new(pool.clone());
+    let one_micro = Duration::from_micros(1);
+
+    // 期間は at(2)（含む）から at(4)（含まない）
+    for (time, suspend) in [
+        (at(2) - one_micro, true),
+        (at(2), false),
+        (at(3), true),
+        (at(4) - one_micro, false),
+        (at(4), true),
+    ] {
+        acceptances
+            .update(coach_id, |a| {
+                if suspend {
+                    a.suspend(hq, CoachSuspensionReason::default(), time)
+                } else {
+                    a.resume(hq, time)
+                }
+            })
+            .await
+            .unwrap();
+    }
+    acceptances
+        .update(other_coach, |a| {
+            a.suspend(hq, CoachSuspensionReason::default(), at(3))
+        })
+        .await
+        .unwrap();
+
+    let changes = acceptances
+        .changes_between(coach_id, at(2), at(4))
+        .await
+        .unwrap();
+    assert_eq!(
+        changes
+            .iter()
+            .map(|change| (change.status(), change.changed_at()))
+            .collect::<Vec<_>>(),
+        vec![
+            (CoachAcceptanceStatus::Accepting, at(4) - one_micro),
+            (CoachAcceptanceStatus::Suspended, at(3)),
+            (CoachAcceptanceStatus::Accepting, at(2)),
+        ],
+        "開始を含み、終了を含まず、ほかのコーチの記録は入らない。並べ方は changes と同じ新しい順"
+    );
+    assert!(
+        acceptances
+            .changes_between(coach_id, at(5), at(6))
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
 

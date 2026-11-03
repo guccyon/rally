@@ -7,7 +7,7 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { LowRatedReviewList } from "@/components/headquarters/LowRatedReviewList";
-import { LowRatedReviewsHome } from "@/components/headquarters/LowRatedReviewsHome";
+import { LowRatedReviewsHome, studentLowRatedReviewsPath } from "@/components/headquarters/LowRatedReviewsHome";
 import { formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
 
@@ -25,6 +25,7 @@ beforeEach(() => {
 
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_COACH_ID = "77777777-7777-4777-8777-777777777777";
+const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
 
 // API が返す並び（送った時刻の新しい順）。画面はこの順のまま出す。
 const REVIEWS: Schemas["LowRatedLessonReview"][] = [
@@ -510,6 +511,71 @@ describe("画面への配置", () => {
     expect(await within(region).findByRole("list", { name: "低い評価の一覧" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "本部の画面へ戻る" })).toHaveAttribute("href", "/headquarters");
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("生徒で絞って開くと、その生徒の評価だけを読み、生徒の名前と絞り込みを外す入口を出す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: true,
+      data: {
+        student_id: STUDENT_ID,
+        display_name: "山田 花子",
+        upcoming_bookings: [],
+        recent_lessons: [],
+        cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
+        unanswered_message_thread_count: 0,
+        low_rated_review_count: 1,
+        unhandled_low_rated_review_count: 1,
+      },
+    }));
+    headquartersApiMock.mockReturnValue({
+      listLowRatedLessonReviews,
+      markLowRatedLessonReviewHandled: noMark(),
+      getStudentActivity,
+    });
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <LowRatedReviewsHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    const region = screen.getByRole("region", { name: "低い評価" });
+    expect(await within(region).findByRole("list", { name: "低い評価の一覧" })).toBeInTheDocument();
+    expect(listLowRatedLessonReviews).toHaveBeenCalledWith({ student_id: STUDENT_ID });
+    expect(await within(region).findByText(/^生徒で絞っています:/)).toHaveTextContent("生徒で絞っています: 山田 花子");
+    expect(getStudentActivity).toHaveBeenCalledWith(STUDENT_ID);
+    expect(screen.getByRole("link", { name: "すべての生徒の低い評価を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/low-reviews",
+    );
+
+    // 「未対応だけ」は生徒の絞り込みと合わせて付ける
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ handled: false, student_id: STUDENT_ID });
+  });
+
+  test("生徒で絞らずに開けば、生徒の条件を付けずに読み、絞り込みを外す入口は出さない", async () => {
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    headquartersApiMock.mockReturnValue({ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() });
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <LowRatedReviewsHome token={session.token} />}
+      </RoleGate>,
+    );
+
+    await screen.findByRole("list", { name: "低い評価の一覧" });
+    expect(listLowRatedLessonReviews).toHaveBeenCalledWith({});
+    expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "すべての生徒の低い評価を見る" })).not.toBeInTheDocument();
+  });
+
+  test("その生徒で絞った低い評価の URL は student_id のクエリに生徒を載せる", () => {
+    expect(studentLowRatedReviewsPath(STUDENT_ID)).toBe(`/headquarters/low-reviews?student_id=${STUDENT_ID}`);
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {

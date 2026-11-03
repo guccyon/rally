@@ -1,12 +1,14 @@
 //! 本部が見るコーチ 1 人の様子（`GET /coaches/{coach_id}/overview`）。受付の状態は scheduling に問い合わせ
 //! （`SchedulingCoachAcceptanceLookup`）、評価の件数と平均・直近の低い評価の件数・月ごとのレッスンの数・メニュー・動画添削の
 //! 返却までの時間・返却待ちの動画添削の件数はそれぞれの保存先から読む。直近 30 日にキャンセルされた予約の数は scheduling に
-//! 問い合わせる（`SchedulingCoachRecentCancelledBookingCountLookup`）。
+//! 問い合わせる（`SchedulingCoachRecentCancelledBookingCountLookup`）。返信のないまま既定の時間の過ぎたスレッドの数は messaging に
+//! 問い合わせる（`MessagingCoachUnansweredMessageThreadCountLookup`）。
 
 use application::{
     async_lesson::{GetCoachPendingVideoReviewCount, GetCoachVideoReviewLeadTime},
     catalog::ListCoachLessonMenus,
     lesson::GetMyLessonStats,
+    messaging::MessagingCoachUnansweredMessageThreadCountLookup,
     profile::GetCoachOverview,
     review::{
         GetCoachLowRatedReviewCount, GetCoachReviewSummary, ReviewMonthlyReviewSummaryLookup,
@@ -36,6 +38,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             GetCoachVideoReviewLeadTime::new(ports.videos(), ports.clock()),
             GetCoachPendingVideoReviewCount::new(ports.videos(), ports.clock()),
             SchedulingCoachRecentCancelledBookingCountLookup::new(ports.bookings(), ports.clock()),
+            MessagingCoachUnansweredMessageThreadCountLookup::new(ports.threads(), ports.clock()),
         ),
         MockTokenService,
     )

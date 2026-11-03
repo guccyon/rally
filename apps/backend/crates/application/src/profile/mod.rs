@@ -8,11 +8,14 @@
 
 mod coach_acceptance_lookup;
 mod coach_favorite_lookup;
+mod coach_low_rated_review_count_lookup;
 mod coach_overview;
 mod coach_profile;
 mod coach_profile_repository;
 mod coach_recent_cancelled_booking_count_lookup;
 mod coach_recent_lesson_count_lookup;
+mod coach_unanswered_message_thread_count_lookup;
+mod coach_unanswered_message_thread_counts_lookup;
 mod get_coach_bio;
 mod get_coach_overview;
 mod get_coach_profile;
@@ -33,11 +36,14 @@ mod update_student_profile;
 
 pub use coach_acceptance_lookup::CoachAcceptanceLookup;
 pub use coach_favorite_lookup::CoachFavoriteLookup;
+pub use coach_low_rated_review_count_lookup::CoachLowRatedReviewCountLookup;
 pub use coach_overview::CoachOverview;
 pub use coach_profile::CoachProfile;
 pub use coach_profile_repository::CoachProfileRepository;
 pub use coach_recent_cancelled_booking_count_lookup::CoachRecentCancelledBookingCountLookup;
 pub use coach_recent_lesson_count_lookup::CoachRecentLessonCountLookup;
+pub use coach_unanswered_message_thread_count_lookup::CoachUnansweredMessageThreadCountLookup;
+pub use coach_unanswered_message_thread_counts_lookup::CoachUnansweredMessageThreadCountsLookup;
 pub use get_coach_bio::GetCoachBio;
 pub use get_coach_overview::GetCoachOverview;
 pub use get_coach_profile::{GetCoachProfile, GetCoachProfileCommand};

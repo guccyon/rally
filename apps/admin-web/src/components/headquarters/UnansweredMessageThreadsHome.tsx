@@ -35,6 +35,11 @@ export function unansweredMessageThreadsPath(filter: UnansweredMessageThreadFilt
   return search === "" ? UNANSWERED_MESSAGE_THREADS_PATH : `${UNANSWERED_MESSAGE_THREADS_PATH}?${search}`;
 }
 
+/** そのコーチで絞った「返事のないメッセージ」の URL。 */
+export function coachUnansweredMessageThreadsPath(coachId: string): string {
+  return unansweredMessageThreadsPath({ ...NO_FILTER, coachId });
+}
+
 /** その生徒で絞った「返事のないメッセージ」の URL。 */
 export function studentUnansweredMessageThreadsPath(studentId: string): string {
   return unansweredMessageThreadsPath({ ...NO_FILTER, studentId });

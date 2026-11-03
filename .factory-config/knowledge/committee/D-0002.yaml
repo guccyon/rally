@@ -1,0 +1,61 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0002
+pr: https://github.com/guccyon/rally/pull/828
+decided_at: '2026-11-04'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更は K-0002 の enforcement.solutions に ci_check を 1 件足すだけで、statement・scope・confidence・evidence
+    は変わらないので、既存の知見との矛盾や重なりは生まれません。
+  - '足した ci_check は、D-0001 の enforcement で K-0002 に出た提案を形にしたものです。issue 827 と decided_by:
+    committee:D-0001 で議決まで辿れるので、変更セットの扱いは妥当です。'
+  - D-0001 の提案は「changelog.d/ の断片を足していなければ落とす」でしたが、今回の検査は「断片を足していても直接の書き換えは落とす」とより厳しく、版の切り出しも例外に加えています。断片方式の趣旨に合うので矛盾とは見ませんが、議決とのずれとして次の議決に残してください。
+  - K-0001 は PR 本文の見出しの重なりについての知見で、CHANGELOG の検査とは作用する先が別なので、影響を受ける既存の知見はなく、扱いを添える必要もありません。
+  - 検査の対象はルートの CHANGELOG.md の [Unreleased] だけです。specs/design/CHANGELOG.md（governance.yaml
+    の changelog）とはファイルも決まりも別なので、規範とはぶつかりません。
+  - PR ごとに走らせるワークフローはまだ建設者が足していないので、それが入り、CHANGELOG だけの衝突が減ったと記録で示せるまでは confidence
+    を hypothesis のままにしてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の項は、issue 827 と committee:D-0001 の enforcement の提案（K-0002 の ci_check）に辿れ、検査の置き場
+    tools/changelog-check/check.mjs と例外の取りまとめ core-gates/changelog_compile.py も名指しされているので、根拠への道筋はあります。
+  - D-0001 の提案は「直接変えていて断片を足していなければ落とす」でしたが、この実装は「断片を足していても直接の書き換えは落とす」とより厳しくなっているので、その差を
+    issue 827 か PR 本文に理由として残してください。
+  - 項の at は 2026-11-03 ですが、根拠に挙げた D-0001 の decided_at は 2026-11-04 なので、どちらかの日付を一次記録に合わせて直してください。
+  - PR ごとに走らせるワークフローはまだ建設者が足していないと明記されており、この検査はまだ効いていないので、これを確かさを上げる根拠に数えてはいけません。
+  - 根拠は C-0001 の 1 件のままで、断片方式と今回の検査のあとに CHANGELOG だけの衝突が減ったかを数えた記録もまだないので、confidence
+    は hypothesis のままが妥当です。
+  - 足した文には利用者の氏名・連絡先・利用者 ID・本文の引用はなく、残っているのは issue 番号とファイルの道筋だけです。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この変更は D-0001 の enforcement が K-0002 に出した ci_check の提案を、実際に作った検査（tools/changelog-check/check.mjs）として
+    enforcement.solutions に記録するもので、担保の観点で問題はありません。
+  - D-0001 の提案は「断片を足していなければ落とす」でしたが、今回の検査は断片の有無に関係なく [Unreleased] への直接の書き換えを落とすので、線がより単純で引きやすく、すり抜けも減ります。
+  - 例外を取りまとめ（core-gates/changelog_compile.py）と版の切り出しの 2 つに絞り、どちらも差分の行の対応で機械的に判定しているので、確かさと作る費用のつり合いも妥当です。
+  - PR ごとに走らせるワークフローはまだ建設者が足していないので、その間は検査が自動では効かない半分の担保だと理解したうえで、ワークフローが入ったら at と一緒に記録を直してください。
+  - 断片方式と CI の検査がそろっても CHANGELOG だけの衝突が減ったかはまだ数えていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この変更は K-0002 の statement と scope を変えず、D-0001 で議決した ci_check を enforcement.solutions
+    に 1 件足すだけなので、主張の範囲は広がっておらず、採らない理由は見つかりませんでした。
+  - 反例を探すと、PR ごとのワークフローは建設者が足すまで走らないので、そのあいだは tools/changelog-check/check.mjs があっても担保は効いていません。what
+    にそのことは書いてありますが、ワークフローが入った日を記録に足してください。
+  - D-0001 の提案は「changelog.d/<Issue 番号>.md を足していなければ落とす」でしたが、この検査は断片を足していても直接の書き換えは落とすので、提案より厳しくなっています。この差は議決のときに想定していなかったので、議決の範囲を越えていないか確かめてください。
+  - より厳しくしたぶんの反例として、取りまとめたあとの [Unreleased] の行の誤字直しや、取り消した変更の行を消すといった正当な直接の編集も落ちます。例外の扱いを決めるか、断片で直す手順を
+    changelog.d/README.md に書くとよいです。
+  - solutions に入った ci_check の at は 2026-11-03 ですが、decided_by に書いた D-0001 の decided_at
+    は 2026-11-04 で、議決より前の日付になっているので、どちらかの日付を直してください。
+  - CI の検査が入っても、衝突が減ったという効き目の根拠にはならないので、confidence は hypothesis のままがよく、断片方式を入れたあとの
+    CHANGELOG だけの衝突の件数を review_by の 2026-12-03 までに数えてください。
+  personal_data: false
+enforcement: []

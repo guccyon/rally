@@ -1,5 +1,5 @@
 //! `/students/{student_id}/announcements`。admin-web の `GET /students/{student_id}/announcements`
-//! （`listStudentAnnouncements`。本部が見る生徒 1 人の受け取ったお知らせと既読）。本部だけが呼べる。
+//! （`listStudentAnnouncements`。本部が見る生徒 1 人の受け取ったお知らせと既読。未読だけに絞れる）。本部だけが呼べる。
 
 use std::sync::Arc;
 
@@ -12,11 +12,11 @@ use application::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State, rejection::QueryRejection},
     routing::get,
 };
 use domain::identity::Role;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
@@ -42,6 +42,12 @@ pub struct StudentAnnouncementBody {
     is_withdrawn: bool,
 }
 
+/// admin-web の `listStudentAnnouncements` のクエリ。
+#[derive(Deserialize)]
+pub struct ListStudentAnnouncementsParams {
+    unread_only: Option<bool>,
+}
+
 /// admin-web の `StudentAnnouncementList`。
 #[derive(Serialize)]
 pub struct StudentAnnouncementListBody {
@@ -49,21 +55,26 @@ pub struct StudentAnnouncementListBody {
 }
 
 /// `GET /students/{student_id}/announcements`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`student_id` が
-/// UUID でない・生徒のアカウントがないときは 404。
+/// UUID でない・生徒のアカウントがないときは 404。`unread_only` が `true` なら生徒がまだ読んでいないものだけに絞る（省くか
+/// `false` なら既読かを問わない）。`true` / `false` でなければ生徒を確かめる前に 422（値の読み方は `listAnnouncements` の
+/// `withdrawn`・`listLowRatedLessonReviews` の `handled` と同じ）。
 pub async fn list_student_announcements<N, A, L>(
     State(state): State<Shared<N, A, L>>,
     Path(student_id): Path<String>,
+    params: Result<Query<ListStudentAnnouncementsParams>, QueryRejection>,
 ) -> Result<Json<StudentAnnouncementListBody>, ApiError>
 where
     N: NotificationRepository,
     A: AnnouncementRepository,
     L: AnnouncementRecipientLookup,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let student_id =
         account_id_uuid::parse(&student_id).map_err(|_| ApiError::not_found("生徒がない"))?;
     let received = state
         .list_student_announcements
-        .execute(student_id)
+        .execute(student_id, params.unread_only.unwrap_or(false))
         .await
         .map_err(|error| match error {
             ListStudentAnnouncementsError::StudentNotFound => ApiError::not_found("生徒がない"),

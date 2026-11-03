@@ -1,7 +1,8 @@
 //! `GET /video-reviews/pending`（admin-web の `listPendingVideoReviews`）の統合テスト。本部にはコーチがまだ返していない
 //! 動画添削をコーチを問わず送付の古い順に、生徒と担当のコーチの ID と表示名・送った時刻・経過時間（時間。端数は切り捨て）
 //! とともに返すことを OpenAPI のスキーマで検査する。クエリの `sport` でスポーツを、`min_elapsed_hours` で経過時間の下限を、
-//! `coach_id` でコーチを、`student_id` で生徒を絞り、値が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
+//! `coach_id` でコーチを、`student_id` で生徒を、`lesson_menu_id` で送った時点のレッスンメニューを絞り、値が不正なら
+//! 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
 //! （経過時間の数え方の境目は domain の `PendingVideoReviewFilter` のテスト）。
 
 use std::time::{Duration, SystemTime};
@@ -22,8 +23,8 @@ use axum::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
-    catalog::Sport,
+    async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+    catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
 };
@@ -402,6 +403,109 @@ async fn student_id_narrows_the_list_and_combines_with_the_other_filters() {
     }
 }
 
+/// `id` の返却待ちの動画を `student` が `coach` にテニスで `hours` 時間前に送る。`menu` があれば送った時点のそのメニューの
+/// 写しを持つ（名前は `name`）。
+fn video_with_menu(
+    id: u128,
+    student: AccountId,
+    coach: AccountId,
+    hours: u32,
+    menu: Option<(u128, &str)>,
+) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        student,
+        coach,
+        Sport::Tennis,
+        now() - hours * HOUR,
+        None,
+        menu.map(|(menu, name)| {
+            VideoLessonMenu::restore(
+                LessonMenuId::from_u128(menu),
+                LessonMenuName::new(name).unwrap(),
+            )
+        }),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn lesson_menu_id_narrows_the_list_and_combines_with_the_other_filters() {
+    let accounts = InMemoryAccountRepository::default();
+    let router = router(
+        accounts,
+        InMemoryVideoRepository::with_videos([
+            video_with_menu(20, STUDENT, COACH, 72, Some((0x50, "フォーム添削"))),
+            // メニューを選ばずに送った動画
+            video_with_menu(21, STUDENT, COACH, 60, None),
+            video_with_menu(
+                22,
+                STUDENT,
+                OTHER_COACH,
+                50,
+                Some((0x51, "サーブ動画チェック")),
+            ),
+            // 送った後にメニューの名前が直されていても、写しの ID で絞る
+            video_with_menu(23, UNKNOWN_STUDENT, COACH, 10, Some((0x50, "スイング添削"))),
+        ]),
+    );
+    for (query, expected) in [
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050",
+            vec![
+                "00000000-0000-0000-0000-000000000014",
+                "00000000-0000-0000-0000-000000000017",
+            ],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000051",
+            vec!["00000000-0000-0000-0000-000000000016"],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&min_elapsed_hours=48",
+            vec!["00000000-0000-0000-0000-000000000014"],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&student_id=00000000-0000-0000-0000-000000000005",
+            vec!["00000000-0000-0000-0000-000000000017"],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000051&coach_id=00000000-0000-0000-0000-000000000002",
+            vec![],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&sport=tennis&coach_id=00000000-0000-0000-0000-000000000002",
+            vec![
+                "00000000-0000-0000-0000-000000000014",
+                "00000000-0000-0000-0000-000000000017",
+            ],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&sport=golf",
+            vec![],
+        ),
+        // ないメニューの ID は 404 にせず空
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000099",
+            vec![],
+        ),
+        // 付けなければメニューのない動画も載る
+        (
+            "",
+            vec![
+                "00000000-0000-0000-0000-000000000014",
+                "00000000-0000-0000-0000-000000000015",
+                "00000000-0000-0000-0000-000000000016",
+                "00000000-0000-0000-0000-000000000017",
+            ],
+        ),
+    ] {
+        let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+}
+
 #[tokio::test]
 async fn invalid_query_is_422_validation_failed() {
     let router = app().await;
@@ -420,6 +524,9 @@ async fn invalid_query_is_422_validation_failed() {
         "?student_id=not-a-uuid",
         "?student_id=",
         "?student_id=00000000-0000-0000-0000-00000000000",
+        "?lesson_menu_id=not-a-uuid",
+        "?lesson_menu_id=",
+        "?lesson_menu_id=00000000-0000-0000-0000-00000000000",
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

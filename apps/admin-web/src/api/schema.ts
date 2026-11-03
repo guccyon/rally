@@ -70,6 +70,15 @@ export interface paths {
          *       枠を出していないスポーツは 0）。`coach_id`・`from` / `to` と組み合わせられる。省けば今までどおりすべてのコーチ。
          *       `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない
          *       競技は、どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+         *     - 任意の `lesson_menu_id` で、そのレッスンメニューに結びついた枠（コーチが `publishSlot` の `lesson_menu_id` で
+         *       結びつけたメニュー。`listMyCoachSlots` の `lesson_menu` と同じもの）と、それらの枠への予約だけを数える（人気のメニューの枠が足りているかを
+         *       見る）。メニューに結びついていない枠と、それらの枠への予約は、`lesson_menu_id` を付ければ数えない。予約の側の
+         *       メニューの写し（`listBookings` の `lesson_menu`）では決めず、枠のメニューで決める（決め方は backend の domain
+         *       `Slot::matches_lesson_menu` の 1 か所）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す
+         *       （そのメニューの枠がないスポーツは 0）。`from` / `to`・`coach_id`・`sport` と組み合わせられる。省けば今までどおり
+         *       メニューを問わない（メニューのない枠も数える）。扱いは `listBookings` の `lesson_menu_id` と同じ: UUID でなければ
+         *       422 `validation_failed`（`message` は `lesson_menu_id が UUID でない`）。ないメニューの ID・期間に枠がないメニューは、
+         *       404 にせずどのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
          *     - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
          *       コーチが閉じた枠（`closed`）は数えない
          *     - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
@@ -327,15 +336,30 @@ export interface paths {
          *     - 直近にレッスンのないコーチ（任意）: `inactive` が `true` なら、`recent_lesson_count` が 0 の（直近 30 日に完了した
          *       レッスンのない）コーチだけを返す。数え方と期間は `recent_lesson_count` と同じ（実装は backend の domain `CoachLessonCount`・
          *       `RecentLessonPeriod` の 1 か所で、判定は `InactiveCoachFilter`）。付けないとき・`false` のときは絞らない
+         *     - 未対応の低い評価のあるコーチ（任意）: `has_unhandled_low_rated` が `true` なら、`getCoachOverview` の
+         *       `unhandled_low_rated_review_count` が 1 以上のコーチだけを返す。つまり、`listLowRatedLessonReviews` と同じしきい値と期間の
+         *       低い評価（点 `rating` が 2 以下で、照会した時刻の 30 日前（含む）から照会した時刻（含む）までに送られたもの）のうち、本部が
+         *       まだ対応済みの印を付けていない（`markLowRatedLessonReviewHandled` をしていない。`listLowRatedLessonReviews` の
+         *       `handled=false` に載る）ものが 1 件以上あるコーチ。数え方は `unhandled_low_rated_review_count` と同じ（実装は backend の
+         *       domain `CoachLowRatedReviewCount`・`LowRatedReviewCriteria` の 1 か所で、判定は `UnhandledLowRatedCoachFilter`）。
+         *       件数は一覧の項目に載せない（見るのは `getCoachOverview`）。付けないとき・`false` のときは絞らない
+         *     - 返事のないメッセージのあるコーチ（任意）: `has_unanswered` が `true` なら、`listUnansweredMessageThreads` に既定の条件
+         *       （`older_than_hours` を省いた既定の 24 時間・`student_id` なし。生徒を問わない）とそのコーチの `coach_id` だけを付けたときに
+         *       載るスレッドが 1 件以上あるコーチ、つまり `getCoachOverview` の `unanswered_message_thread_count` が 1 以上のコーチだけを
+         *       返す。数え方は `getCoachOverview` の `unanswered_message_thread_count` と同じ 1 か所（何を発言と数えるか・待ち始め・境界
+         *       （ちょうど 24 時間を含む）・照会した時刻（サーバーの現在時刻）から数えることは `listUnansweredMessageThreads` の説明のとおり。
+         *       実装は backend の domain `UnansweredThreadCriteria` の既定で、数は `CoachUnansweredMessageThreadCount`、絞り込みの判定は
+         *       `UnansweredCoachFilter`）。スレッドの数や ID・メッセージの本文は一覧に載せない（中身は `listUnansweredMessageThreads`、数は
+         *       `getCoachOverview` で見る）。付けないとき・`false` のときは絞らない
          *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含むコーチだけを返す。一致のしかたは `listStudents` の
          *       `q` と同じ（実装は backend の domain `DisplayNameQuery` の 1 か所）: `q` の前後の空白（全角の空白を含む）は除いて比べ、
          *       途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなと
          *       カタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。`q` を付けない・空・
          *       空白だけのときは絞り込まない。表示名以外では探さない
-         *     - `q`・`acceptance_status`・`sport`・`inactive` は組み合わせられ、付けたものをすべて満たすコーチだけを返す。どれも付けなければ今までどおり
+         *     - `q`・`acceptance_status`・`sport`・`inactive`・`has_unhandled_low_rated`・`has_unanswered` は組み合わせられ、付けたものをすべて満たすコーチだけを返す。どれも付けなければ今までどおり
          *       すべてのコーチ。絞っても並べ方は変わらない
-         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でない・`inactive` が `true` / `false`
-         *       でない・`q` が前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422
+         *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でない・`inactive`・`has_unhandled_low_rated`・
+         *       `has_unanswered` が `true` / `false` でない・`q` が前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422
          *       `validation_failed`
          *     - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
          *     - `recent_lesson_count`: 照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスン（glossary の
@@ -345,7 +369,9 @@ export interface paths {
          *       完了したレッスンがなければ 0。並べ方には使わない（絞り込みに使うのは `inactive` だけ）
          *
          *     受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える。完了したレッスンは live-lesson と
-         *     async-lesson が記録し、1 件ごとに数えて添える（`x-context` が複数なのはそのため）。
+         *     async-lesson が記録し、1 件ごとに数えて添える。評価は review の持ち物で、`has_unhandled_low_rated` を付けたときだけ 1 件ごとに
+         *     review から読んで数える。スレッドは messaging の持ち物で、`has_unanswered` を付けたときだけ 1 件ごとに messaging から
+         *     読んで数える（`x-context` が複数なのはそのため）。
          *     行動イベントは発火しない。
          */
         get: operations["listCoaches"];
@@ -388,9 +414,15 @@ export interface paths {
          *       コーチ・再開したコーチは受付中。判定は backend の domain `CoachAcceptanceFilter` の 1 か所）。付けなければ今までどおり
          *       受付を止めているコーチも載る。絞っても「足りない」の判定と並べ方は変わらない。受付中なのに自己紹介が足りないコーチを
          *       先に直してもらうのに使う
-         *     - `sport`・`acceptance_status` は組み合わせられ、付けたものをすべて満たすコーチだけを返す
-         *     - `sport` が `Sport` の値でない・`acceptance_status` が `CoachAcceptanceStatus` の値でないときは 422 `validation_failed`
-         *       （`listCoaches` と同じ）
+         *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含むコーチだけを返す。一致のしかたは `listCoaches` の
+         *       `q` と同じ（実装は backend の domain `DisplayNameQuery` の 1 か所）: `q` の前後の空白（全角の空白を含む）は除いて比べ、
+         *       途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなと
+         *       カタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。`q` を付けない・空・
+         *       空白だけのときは今までどおり絞り込まない。表示名以外では探さない。絞っても「足りない」の判定と並べ方は変わらない。
+         *       問い合わせのあったコーチの自己紹介の足りなさを名前からすぐ確かめるのに使う
+         *     - `q`・`sport`・`acceptance_status` は組み合わせられ、付けたものをすべて満たすコーチだけを返す
+         *     - `sport` が `Sport` の値でない・`acceptance_status` が `CoachAcceptanceStatus` の値でない・`q` が前後の空白を除いて
+         *       50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422 `validation_failed`（`listCoaches` と同じ）
          *     - ページングはしない。該当するコーチがいなければ（条件に合うコーチがいなければ） `coaches` は空の配列
          *     - 照会だけで、何も保存しない。コーチへの連絡はしない
          *
@@ -521,7 +553,9 @@ export interface paths {
          *     - 絞り込み（任意）: `student_id` を付ければ、その生徒が評価した評価だけ（同じ生徒から低い評価が続いていないかを本部が
          *       確かめる）。`sport`・`handled`・`coach_id`・`from`・`to` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
          *       付けなければ生徒を問わずすべて。扱いは `listCancelledBookings` の `student_id` と同じで、生徒でない ID・ない ID・
-         *       低い評価のない生徒は、404 にせず `reviews` が空の配列
+         *       低い評価のない生徒は、404 にせず `reviews` が空の配列。`student_id` だけを付けたときの件数は生徒 1 人の利用の様子
+         *       （`getStudentActivity`）の `low_rated_review_count` と、`handled=false` も付けたときの件数は
+         *       `unhandled_low_rated_review_count` と同じ
          *     - 絞り込み（任意）: `from`・`to` を付ければ、送った日付（`submitted_at` の日本時間の日付）が `from` から `to` まで
          *       （両端を含む）の評価だけ（週ごとの振り返りで、その期間に付いた低い評価だけを見る）。`from` の日本時間 0 時（含む）から
          *       `to` の翌日の日本時間 0 時（含まない）までに送ったもの。境界と期間の規則は `listAnnouncements` の `from`・`to` と同じ:
@@ -695,7 +729,15 @@ export interface paths {
          *       残し始める前に止めた記録は null
          *     - 並べ方: `changed_at` の新しい順。同じ時刻は後に記録した方が先
          *     - 記録を残し始める前（この操作を足す前）の停止・再開は載らない。一度も止めていないコーチは `changes` が空の配列
-         *     - 絞り込み・ページング・件数の上限はない
+         *     - 任意の `from`・`to` で、変えた日付（`changed_at` の日本時間の日付）が `from` から `to` まで（両端を含む）の記録だけに
+         *       絞れる（問い合わせのあった時期の停止・再開を確かめるのに使う）。`from` の日本時間 0 時（含む）から `to` の翌日の
+         *       日本時間 0 時（含まない）までに変えたもの。両方を省けば今までどおりすべて。`from` だけなら `from` から 7 日目まで、
+         *       `to` だけなら `to` の 6 日前から（どちらも 7 日。`listAnnouncements` と同じ）。止めた記録か再開した記録かは問わない
+         *     - 期間の規則は `listAnnouncements` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・
+         *       31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）。期間の
+         *       誤りは、`coach_id` がコーチでない・ないことより先に 422 で返す（UUID でない `coach_id` だけは先に 404）
+         *     - 並べ方は期間で絞っても変わらない。期間に記録がなければ `changes` は空の配列（404 にはしない）
+         *     - 期間のほかの絞り込み・ページング・件数の上限はない
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     境界間イベント・行動イベントは発火しない（`suspendCoach` と同じ）。
@@ -720,8 +762,8 @@ export interface paths {
          * コーチ 1 人の様子（本部）
          * @description コーチ 1 人について、表示名・受付の状態・評価の件数と平均・直近の低い評価の件数と未対応の件数・今月と先月の完了した
          *     レッスンの数・公開中のレッスンメニューの数・直近 30 日に送られた動画の返却までの時間の中央値とそのうち返した件数・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を
-         *     1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数・
+         *     返信のないまま時間の過ぎたチャットのスレッドの数を 1 回の照会で返す。本部がコーチの様子をまとめて見るのに使う。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
          *     照会だけで、何も保存しない。
          *
          *     各項目は持ち主の操作と同じ数え方で、ここでは計算し直さない（実装は backend の既存のユースケースを組み合わせる）。
@@ -755,6 +797,12 @@ export interface paths {
          *       `recent_lesson_count` と同じ（実装は backend の domain `CoachRecentCancelledBookingCount` の 1 か所で、期間は
          *       `RecentLessonPeriod`）。誰がキャンセルしたか（`getBooking` の `cancelled_by`）では分けない合計で、予約した枠の
          *       開始時刻や体験予約かは問わない。キャンセルされた予約がなければ 0
+         *     - `unanswered_message_thread_count`: そのコーチが担当するスレッドのうち、返信のないまま時間の過ぎたものの数。
+         *       **既定の条件の一覧と同じ数**で、`listUnansweredMessageThreads` に `coach_id` だけを付けたとき（`older_than_hours` を
+         *       省いた既定の 24 時間・`student_id` なし）の `threads` の件数と同じ。何を発言と数えるか・待ち始め・境界（ちょうど
+         *       24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は backend の domain
+         *       `UnansweredThreadCriteria` の既定の 1 か所で、数は `CoachUnansweredMessageThreadCount`）。件数だけで、メッセージの本文は
+         *       返さない。該当するスレッドがなければ 0
          *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
          *
          *     行動イベントは発火しない。
@@ -1234,8 +1282,17 @@ export interface paths {
          *       生徒も載る（`getStudentActivity` がキャンセル済みの予約も生徒の予約として `cancelled_booking_count` に数え、
          *       `last_booked_at` も状態を問わないのに揃える。実装は backend の domain `CoachBookedStudents` の 1 か所）。
          *       `coach_id` が UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は 404 にせず `students` が空の配列
-         *     - `q`・`sport`・`not_booked_since`・`coach_id` は組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。
-         *       どれも付けなければ今までどおりすべての生徒
+         *     - 返事を待っているメッセージのある生徒で絞る（任意）: `has_unanswered=true` を付ければ、`listUnansweredMessageThreads` に
+         *       既定の条件（`older_than_hours` を省いた既定の 24 時間・`coach_id` なし。担当コーチを問わない）とその生徒の `student_id`
+         *       だけを付けたときに載るスレッドが 1 件以上ある生徒、つまり `getStudentActivity` の `unanswered_message_thread_count` が
+         *       1 以上の生徒だけを返す。数え方は `getStudentActivity` の `unanswered_message_thread_count` と同じ 1 か所（何を発言と数えるか・
+         *       待ち始め・境界（ちょうど 24 時間を含む）・照会した時刻（サーバーの現在時刻）から数えることは
+         *       `listUnansweredMessageThreads` の説明のとおり。実装は backend の domain `UnansweredThreadCriteria` の既定で、数は
+         *       `StudentUnansweredMessageThreadCount`、絞り込みの判定は `UnansweredStudentFilter`）。付けないとき・`false` は絞らない。
+         *       `true` / `false` でなければ 422 `validation_failed`。スレッドの数や ID は返さない（中身は `listUnansweredMessageThreads`、
+         *       数は `getStudentActivity` で見る）
+         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered` は組み合わせられ、付けたものをすべて満たす生徒だけを返す
+         *       （並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
          *       足す）。生徒がいなければ `students` は空の配列
@@ -1277,6 +1334,22 @@ export interface paths {
          *       返却待ちの判定は `listPendingVideoReviews` と同じ（スポーツ・コーチ・経過時間で絞らない。backend の domain
          *       `PendingVideoReviewFilter` の 1 か所）で、その一覧に載るこの生徒の動画の数と一致する。動画の一覧や ID は返さない
          *       （返却待ちの中身は `listPendingVideoReviews` で見る）
+         *     - `unanswered_message_thread_count`: その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。
+         *       **既定の条件の一覧と同じ数**で、`listUnansweredMessageThreads` に `student_id` だけを付けたとき（`older_than_hours` を
+         *       省いた既定の 24 時間・`coach_id` なし。担当コーチを問わない）の `threads` の件数と同じ。何を発言と数えるか・待ち始め・
+         *       境界（ちょうど 24 時間を含む）・照会した時刻から数えることも `listUnansweredMessageThreads` の説明のとおり（実装は
+         *       backend の domain `UnansweredThreadCriteria` の既定の 1 か所で、数は `StudentUnansweredMessageThreadCount`）。件数だけで、
+         *       メッセージの本文やスレッドの ID は返さない（中身は `listUnansweredMessageThreads` で見る）。該当するスレッドがなければ 0
+         *     - `low_rated_review_count`: その生徒がつけた評価（glossary の lesson_review）のうち、`listLowRatedLessonReviews` に載る
+         *       低い評価の数。**その生徒で絞った低い評価の一覧と同じ数**で、`listLowRatedLessonReviews` に `student_id` だけを付けたとき
+         *       （既定のしきい値と期間。点 `rating` が 2 以下で、照会した時刻の 30 日前（含む）から照会した時刻（含む）までに送られた
+         *       もの。コーチ・スポーツ・送った日付・対応済みかで絞らない）の `reviews` の件数と同じ。しきい値と期間は
+         *       `listLowRatedLessonReviews` の説明のとおり（実装は backend の domain `LowRatedReviewCriteria` の 1 か所で、数は
+         *       `StudentLowRatedReviewCount`）。評価されたコーチを問わない。該当する評価がなければ 0
+         *     - `unhandled_low_rated_review_count`: `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない
+         *       （`markLowRatedLessonReviewHandled` をしていない）評価の数。`listLowRatedLessonReviews` に `student_id` と
+         *       `handled=false` だけを付けたときの `reviews` の件数と同じ。`low_rated_review_count` 以下
+         *     - 低い評価は件数だけで、評価の本文・点・評価の ID は返さない（中身は `listLowRatedLessonReviews` の `student_id` で見る）
          *     - 予約とレッスンには、コーチの表示名 `coach_display_name` を添える。コーチのアカウントが引けないときは載せない
          *     - 生徒を特定する情報は、表示名 `display_name` と ID（`student_id` と、予約・レッスンの各 ID）のほかは返さない
          *       （メールアドレス・スポーツ・受講権・課金の情報は返さない）
@@ -1314,6 +1387,13 @@ export interface paths {
          *       受け取ったお知らせがなければ `announcements` は空の配列
          *     - 取り下げたお知らせ（`withdrawAnnouncement`）も載り、`is_withdrawn` が true（生徒のお知らせの一覧には出ていない）
          *     - `is_read` は生徒が既読にしたか（student-app の `markMyNotificationsRead`）。取り下げても既読は変わらない
+         *     - 未読だけに絞る（任意）: `unread_only` が `true` なら、生徒がまだ読んでいないお知らせ（`is_read` が false のもの）だけを返す。
+         *       `false` か付けなければ今までどおり既読かを問わない。判定は backend の domain `Notification::is_unread_as` の 1 か所
+         *     - 最大 50 件は絞ったあとに数える（未読のものの新しい順に 50 件。新しい既読のお知らせが多くても、それより古い未読のものが
+         *       枠から押し出されない）。並べ方は絞っても変わらない。取り下げたお知らせも未読なら載る（`is_withdrawn` が true）。未読の
+         *       お知らせがなければ `announcements` は空の配列
+         *     - `unread_only` が `true` / `false` でなければ 422 `validation_failed`（生徒を確かめる前。値の受け方は `listAnnouncements` の
+         *       `withdrawn`・`listLowRatedLessonReviews` の `handled` と同じ）
          *     - 本文・対象のスポーツ・送った本部のアカウントは返さない（`listAnnouncements` で読む）。プッシュ通知が届いたかの記録は持たない
          *       （受け取り設定でオフの生徒にもお知らせは作る）
          *     - `student_id` が UUID でない・アカウントがない・生徒の役割のアカウントでないときは 404
@@ -1539,10 +1619,16 @@ export interface paths {
          *       （含む）の動画だけ（例: `48` で 48 時間以上）。`coach_id` を付ければそのコーチ（動画の送り先のコーチ）の動画だけ。
          *       `student_id` を付ければその生徒（動画を送った生徒。各項目の `student_id`）の動画だけ（生徒から添削が返ってこないと
          *       問い合わせを受けたときに、その生徒の返却待ちだけを見る。扱いは `listReturnedVideoReviews` の `student_id` と同じ）。
+         *       `lesson_menu_id` を付ければ、動画を送った時点のレッスンメニュー（生徒が送るときに選んだ非同期のメニューの写し。コーチの
+         *       `listMyCoachVideos` の各項目の `lesson_menu` の `lesson_menu_id`）がそのメニューの動画だけ（特定のメニューの添削が滞って
+         *       いないかを確かめる）。送った後にメニューが直されても・非公開にされても、送った時点のメニューで絞る。メニューを選ばずに
+         *       送った動画（`lesson_menu` のない動画）は、`lesson_menu_id` を付ければ出ない（実装は backend の domain
+         *       `Video::matches_lesson_menu` の 1 か所。扱いは `listBookings` の `lesson_menu_id` と同じ）。
          *       どれも組み合わせられ、経過時間の数え方と並べ方は変わらない。付けなければ絞らない
          *     - `sport` が `Sport` の値でない・`min_elapsed_hours` が 0 以上の整数でない（負・小数・2147483647 を超える）・`coach_id` が
-         *       UUID でない・`student_id` が UUID でないときは 422 `validation_failed`。コーチでない ID・ない ID・返却待ちの動画がないコーチは、
-         *       404 にせず `videos` が空の配列。`student_id` も同じく、生徒でない ID・ない ID・返却待ちの動画がない生徒は 404 にせず空の配列
+         *       UUID でない・`student_id` が UUID でない・`lesson_menu_id` が UUID でないときは 422 `validation_failed`。コーチでない ID・
+         *       ない ID・返却待ちの動画がないコーチは、404 にせず `videos` が空の配列。`student_id` も同じく、生徒でない ID・ない ID・返却待ちの動画がない生徒は 404 にせず空の配列。
+         *       `lesson_menu_id` も `listBookings` と同じく、ないメニューの ID・返却待ちの動画がないメニューは 404 にせず空の配列
          *     - 各項目には、動画の ID・スポーツ・生徒と担当のコーチ（送り先のコーチ）の ID と表示名・送った時刻・経過時間を載せる。
          *       表示名は今のアカウントの表示名で、引けないとき（アカウントがない）は載らない
          *     - ページング・件数の上限はない。該当する動画がなければ `videos` は空の配列
@@ -1593,6 +1679,14 @@ export interface paths {
          *       問い合わせを受けたときに、その生徒の記録だけを見る）。期間・`coach_id`・`sport` と組み合わせられ、期間の規則・かかった時間の
          *       数え方・並べ方は変わらない。省けばすべての生徒。`student_id` が UUID でなければ 422 `validation_failed`。生徒でない ID・
          *       ない ID・期間に返却がない生徒は、404 にせず `reviews` が空の配列
+         *     - 任意の `lesson_menu_id` で、動画を送った時点のレッスンメニュー（生徒が送るときに選んだ非同期のメニューの写し。コーチの
+         *       `listMyCoachVideos` の各項目の `lesson_menu` の `lesson_menu_id`）がそのメニューの動画だけに絞れる（メニューごとの添削の
+         *       返し方を振り返る）。動画とメニューの結び付け方は `listPendingVideoReviews` の `lesson_menu_id` と同じ: 送った後にメニューが
+         *       直されても・非公開にされても、送った時点のメニューで絞る。メニューを選ばずに送った動画（`lesson_menu` のない動画）は、
+         *       `lesson_menu_id` を付ければ出ない（実装は backend の domain `Video::matches_lesson_menu` の 1 か所。扱いは `listBookings` の
+         *       `lesson_menu_id` と同じ）。期間・`coach_id`・`sport`・`student_id` と組み合わせられ、期間の規則・かかった時間の数え方・
+         *       並べ方は変わらない。省けばメニューを問わない。`lesson_menu_id` が UUID でなければ 422 `validation_failed`。ないメニューの ID・
+         *       期間にそのメニューの返却がないメニューは、404 にせず `reviews` が空の配列
          *     - かかった時間 `lead_time_hours`: 動画を送った時刻 `submitted_at` から添削を返した時刻 `returned_at` までの時間。1 時間に満たない
          *       端数は切り捨てる（47 時間 59 分は 47）。暦日では区切らない。KPI の式の `hours_between(submitted_at, occurred_at)` の 1 件分
          *       （KPI は小数で、ここは切り捨てた整数）
@@ -1842,6 +1936,21 @@ export interface paths {
          *       `q` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ）まで。超えたら 422
          *       `validation_failed`（`message` に理由）
+         *     - 競技で絞る（任意）: `sport` を付ければ、そのスポーツの生徒に向けて送ったお知らせ（`sport` がその値のもの）だけを返す
+         *       （テニス向け・ゴルフ向けなど、競技ごとに送ったお知らせを振り返るのに使う）。生徒全員に向けて送ったお知らせ
+         *       （`sport` が null のもの）は、そのスポーツの生徒も受け取っているが、`sport` を付けたときは載せない（競技を問わず
+         *       送ったものは `sport` を付けずに見る）。判定は backend の domain `AnnouncementSportFilter` の 1 か所（`listAnnouncementDrafts` の
+         *       `sport` と同じ）。取り下げたお知らせも対象のスポーツが一致すれば載る。`sport` を付けなければ今までどおりスポーツを問わない
+         *     - `sport` は `from`・`to`・`q` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送ったもの）。
+         *       並べ方と `read_count` の数え方は `sport` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列。
+         *       `sport` が `Sport` の値でなければ 422 `validation_failed`（`message` に理由。値の読み方は `sendAnnouncement` の `sport` と同じ）
+         *     - 取り下げたかで絞る（任意）: `withdrawn` を付ければ、`true` なら取り下げたお知らせ（`withdrawal` が null でないもの）だけ、
+         *       `false` なら取り下げていないお知らせ（`withdrawal` が null のもの。いま生徒のお知らせの一覧に出ているもの）だけを返す。
+         *       付けなければ今までどおり取り下げたかを問わない。判定は backend の domain `Announcement::is_withdrawn_as` の 1 か所
+         *     - `withdrawn` は `from`・`to`・`q`・`sport` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送り、
+         *       取り下げたか・取り下げていないもの）。並べ方と `read_count` の数え方は `withdrawn` で絞っても変わらない。一致するお知らせが
+         *       なければ `announcements` は空の配列。`withdrawn` が `true` / `false` でなければ 422 `validation_failed`（値の受け方は
+         *       `listLowRatedLessonReviews` の `handled`・`listLessonMenus` の `published` と同じ）
          *
          *     行動イベントは発火しない。
          */
@@ -1932,6 +2041,22 @@ export interface paths {
          *       本文・対象のスポーツでは探さない。並べ方は上と同じ。一致する下書きがなければ `announcement_drafts` は空の配列
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。お知らせの題の上限と同じ。`listLessonMenus` の `q` が
          *       メニューの名前の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
+         *     - 競技で絞る（任意）: `sport` を付ければ、そのスポーツの生徒に向けた下書き（`sport` がその値のもの）だけを返す（競技ごとに
+         *       書きためた下書きを探すのに使う）。生徒全員に向けた下書き（`sport` が null のもの）は、`sport` を付けたときは載せない
+         *       （`listAnnouncements` の `sport` と同じ扱い。判定は backend の domain `AnnouncementSportFilter` の 1 か所）。
+         *       `sport` を付けなければ今までどおりスポーツを問わない
+         *     - `sport` は `q` と組み合わせられる（題が一致し、そのスポーツに向けた下書き）。並べ方は `sport` で絞っても変わらない。
+         *       一致する下書きがなければ `announcement_drafts` は空の配列。`sport` が `Sport` の値でなければ 422 `validation_failed`
+         *       （`message` に理由。値の読み方は `createAnnouncementDraft` の `sport` と同じ）
+         *     - 最後に直した期間で絞る（任意）: `from`・`to` で、最後に直した日付（`updated_at` の日本時間の日付）が `from` から `to`
+         *       まで（両端を含む）の下書きだけに絞れる（古いまま残った下書きを見つけて片付けるのに使う）。`from` の日本時間 0 時（含む）
+         *       から `to` の翌日の日本時間 0 時（含まない）までに最後に直したもの。直していない下書きは作った時刻が `updated_at`。
+         *       両方を省けば今までどおりすべて。`from` だけなら `from` から 7 日目まで、`to` だけなら `to` の 6 日前から（どちらも
+         *       7 日）。境界と省いたときの扱いは `listAnnouncements` の `from`・`to` と同じ（backend の同じ 1 か所で決める）
+         *     - 期間の規則も `listAnnouncements` の `from`・`to` と同じ: 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が
+         *       `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由）
+         *     - `from`・`to` は `q`・`sport` と組み合わせられる（期間に最後に直したもののうち、題が一致し、そのスポーツに向けた下書き）。
+         *       並べ方は期間で絞っても変わらない。一致する下書きがなければ `announcement_drafts` は空の配列
          *
          *     行動イベントは発火しない。
          */
@@ -2449,7 +2574,8 @@ export interface components {
         /**
          * @description 本部が見るコーチ 1 人の様子（`getCoachOverview`）。glossary の coach に、受付の状態・評価の件数と平均・直近の低い評価の
          *     件数と未対応の件数・今月と先月のレッスンの実績・公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・
-         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数を添える。金額は持たない
+         *     返却待ちの動画添削の件数とそのうち 48 時間以上たった件数・直近 30 日にキャンセルされた予約の数・返信のないまま時間の
+         *     過ぎたチャットのスレッドの数を添える。金額とメッセージの本文は持たない
          */
         CoachOverview: {
             /**
@@ -2492,6 +2618,11 @@ export interface components {
              *     キャンセルしたかを分けない合計。期間の境界は `listCoaches` の `recent_lesson_count` と同じ）
              */
             recent_cancelled_booking_count: number;
+            /**
+             * @description そのコーチが担当するスレッドのうち、返信のないまま時間の過ぎたものの数。既定の条件の一覧と同じ数
+             *     （`listUnansweredMessageThreads` に `coach_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
+             */
+            unanswered_message_thread_count: number;
         };
         /**
          * @description 契約種別（student-app の `ContractType` と同じ）。subscription は月額、one_shot はワンショット（ゴルフだけ）
@@ -2544,7 +2675,8 @@ export interface components {
         };
         /**
          * @description 本部が見る生徒 1 人の利用の様子（`getStudentActivity`）。生徒の表示名に、これからの予約・直近の受けたレッスン・
-         *     キャンセルの件数・送った動画の数と返却待ちの数を添える。生徒を特定する情報は表示名と ID だけ
+         *     キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま時間の過ぎたスレッドの数・その生徒がつけた直近の低い評価の
+         *     件数と未対応の件数を添える。生徒を特定する情報は表示名と ID だけ
          */
         StudentActivity: {
             /**
@@ -2567,6 +2699,21 @@ export interface components {
              *     `submitted_video_count` 以下
              */
             pending_video_review_count: number;
+            /**
+             * @description その生徒のスレッドのうち、返信のないまま時間の過ぎたものの数。既定の条件の一覧と同じ数
+             *     （`listUnansweredMessageThreads` に `student_id` だけを付けたとき（既定の 24 時間）の `threads` の件数と同じ）
+             */
+            unanswered_message_thread_count: number;
+            /**
+             * @description その生徒がつけた直近 30 日の低い評価（★2 以下。`listLowRatedLessonReviews` と同じ線）の件数。対応済みかを問わない。
+             *     その生徒で絞った低い評価の一覧と同じ数（`listLowRatedLessonReviews` に `student_id` だけを付けたときの `reviews` の件数と同じ）
+             */
+            low_rated_review_count: number;
+            /**
+             * @description `low_rated_review_count` のうち、本部がまだ対応済みの印を付けていない件数（`listLowRatedLessonReviews` に `student_id` と
+             *     `handled=false` を付けたときの `reviews` の件数と同じ。`low_rated_review_count` 以下）
+             */
+            unhandled_low_rated_review_count: number;
         };
         /** @description 生徒 1 人の利用の様子のこれからの予約の 1 件。予約（glossary の booking）と、予約された枠のコーチの表示名 */
         StudentActivityBooking: {
@@ -2600,7 +2747,10 @@ export interface components {
         };
         /** @description 生徒 1 人の受け取ったお知らせの一覧（`listStudentAnnouncements`） */
         StudentAnnouncementList: {
-            /** @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件 */
+            /**
+             * @description 送った時刻の新しい順（同じ時刻なら後に送ったものが先）に最大 50 件。`unread_only=true` なら未読のものだけを
+             *     新しい順に最大 50 件
+             */
             announcements: components["schemas"]["StudentAnnouncement"][];
         };
         /**
@@ -3654,6 +3804,12 @@ export interface operations {
                  *     省けばすべてのコーチ。`Sport` の値でなければ 422 `validation_failed`
                  */
                 sport?: components["schemas"]["Sport"];
+                /**
+                 * @description あればこのレッスンメニューに結びついた枠と、それらの枠への予約だけを数える（メニューのない枠は数えない）。
+                 *     省けばメニューを問わない。UUID でなければ 422 `validation_failed`。ないメニューの ID は、404 にせずどのスポーツも
+                 *     0 を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
@@ -3867,6 +4023,14 @@ export interface operations {
                 sport?: components["schemas"]["Sport"];
                 /** @description `true` なら直近 30 日に完了したレッスンのない（`recent_lesson_count` が 0 の）コーチだけを返す（付けないとき・`false` は絞らない） */
                 inactive?: boolean;
+                /** @description `true` なら未対応の低い評価のある（`getCoachOverview` の `unhandled_low_rated_review_count` が 1 以上の）コーチだけを返す（付けないとき・`false` は絞らない） */
+                has_unhandled_low_rated?: boolean;
+                /**
+                 * @description `true` なら `listUnansweredMessageThreads` に既定の条件とそのコーチの `coach_id` だけを付けたときに載るスレッドが
+                 *     1 件以上ある（`getCoachOverview` の `unanswered_message_thread_count` が 1 以上の）コーチだけを返す（付けないとき・
+                 *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_unanswered?: boolean;
             };
             header?: never;
             path?: never;
@@ -3895,6 +4059,8 @@ export interface operations {
                 sport?: components["schemas"]["Sport"];
                 /** @description 受付の状態（付ければその状態のコーチだけ） */
                 acceptance_status?: components["schemas"]["CoachAcceptanceStatus"];
+                /** @description 表示名の検索語。表示名に部分一致するコーチだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
+                q?: string;
             };
             header?: never;
             path?: never;
@@ -4131,7 +4297,12 @@ export interface operations {
     };
     listCoachAcceptanceChanges: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 変えた期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 変えた期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
+            };
             header?: never;
             path: {
                 coach_id: string;
@@ -4152,6 +4323,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCoachOverview: {
@@ -4524,6 +4696,12 @@ export interface operations {
                  *     付けなければコーチで絞らない。UUID でなければ 422 `validation_failed`。ない ID・コーチでない ID は空の一覧
                  */
                 coach_id?: string;
+                /**
+                 * @description `true` なら `listUnansweredMessageThreads` に既定の条件とその生徒の `student_id` だけを付けたときに載るスレッドが
+                 *     1 件以上ある（`getStudentActivity` の `unanswered_message_thread_count` が 1 以上の）生徒だけを返す（付けないとき・
+                 *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_unanswered?: boolean;
             };
             header?: never;
             path?: never;
@@ -4572,7 +4750,13 @@ export interface operations {
     };
     listStudentAnnouncements: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description `true` なら生徒がまだ読んでいないお知らせだけを返す（最大 50 件は絞ったあとに数える）。`false` か省けば既読かを問わない。
+                 *     `true` / `false` でなければ 422 `validation_failed`
+                 */
+                unread_only?: boolean;
+            };
             header?: never;
             path: {
                 student_id: string;
@@ -4581,7 +4765,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件） */
+            /** @description 生徒 1 人の受け取ったお知らせ（新しい順に最大 50 件。`unread_only=true` なら未読のものだけ） */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4593,6 +4777,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     listLiveLessonSessions: {
@@ -4777,6 +4962,12 @@ export interface operations {
                  *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あれば動画を送った時点のレッスンメニューがこのメニューの動画だけに絞る。省けばメニューを問わない。
+                 *     メニューを選ばずに送った動画は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
@@ -4817,6 +5008,12 @@ export interface operations {
                  *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 student_id?: string;
+                /**
+                 * @description あれば動画を送った時点のレッスンメニューがこのメニューの動画だけに絞る。省けばメニューを問わない。
+                 *     メニューを選ばずに送った動画は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
@@ -5035,6 +5232,13 @@ export interface operations {
                 from?: string;
                 /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
                 to?: string;
+                /**
+                 * @description あればこのスポーツの生徒に向けて送ったお知らせだけを返す（生徒全員に向けて送ったものは載せない）。省けばスポーツを
+                 *     問わない。`Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
+                /** @description 取り下げたか（`true` なら取り下げたものだけ、`false` なら取り下げていないものだけ。付けなければ問わない） */
+                withdrawn?: boolean;
             };
             header?: never;
             path?: never;
@@ -5113,8 +5317,17 @@ export interface operations {
     listAnnouncementDrafts: {
         parameters: {
             query?: {
+                /** @description 最後に直した期間の始まりの日付（日本時間。含む）。`to` だけを付ければ `to` の 6 日前。両方省けば期間で絞らない */
+                from?: string;
+                /** @description 最後に直した期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
+                to?: string;
                 /** @description 題の検索語。題に部分一致する下書きだけを返す。前後の空白を除いて 50 文字まで（空白だけなら絞り込まない） */
                 q?: string;
+                /**
+                 * @description あればこのスポーツの生徒に向けた下書きだけを返す（生徒全員に向けた下書きは載せない）。省けばスポーツを問わない。
+                 *     `Sport` の値でなければ 422 `validation_failed`
+                 */
+                sport?: components["schemas"]["Sport"];
             };
             header?: never;
             path?: never;

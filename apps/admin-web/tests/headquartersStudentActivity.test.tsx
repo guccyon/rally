@@ -70,6 +70,9 @@ const ACTIVITY: Schemas["StudentActivity"] = {
   cancelled_booking_count: 3,
   submitted_video_count: 4,
   pending_video_review_count: 1,
+  unanswered_message_thread_count: 0,
+  low_rated_review_count: 0,
+  unhandled_low_rated_review_count: 0,
 };
 
 function activityOf(activity: Schemas["StudentActivity"]) {
@@ -133,6 +136,9 @@ describe("本部の生徒の利用の様子", () => {
             cancelled_booking_count: 0,
             submitted_video_count: 0,
             pending_video_review_count: 0,
+            unanswered_message_thread_count: 0,
+            low_rated_review_count: 0,
+            unhandled_low_rated_review_count: 0,
           }),
         }}
         studentId={STUDENT_ID}
@@ -145,6 +151,10 @@ describe("本部の生徒の利用の様子", () => {
     expect(valueOf("送った動画")).toHaveTextContent(/^0 件（これまでのすべて）$/);
     expect(valueOf("返却待ち")).toHaveTextContent(/^0 件（いま返却を待っている動画）$/);
     expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    expect(valueOf("つけた低い評価")).toHaveTextContent(/^0 件（直近 30 日の★2 以下。うち未対応 0 件）$/);
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -163,20 +173,103 @@ describe("本部の生徒の利用の様子", () => {
     expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
   });
 
-  test("この生徒で絞った「返事のないメッセージ」への入口を、返却待ちの数によらず出す", async () => {
+  test("返事を待っているメッセージの数を返却待ちと同じ形で返った値のまま出し、1 件以上ならその生徒で絞った一覧への入口を添える", async () => {
     render(
       <StudentActivity
-        api={{ getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0 }) }}
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0, unanswered_message_thread_count: 2 }),
+        }}
         studentId={STUDENT_ID}
       />,
     );
 
     await screen.findByRole("table", { name: "これからの予約" });
-    const messages = valueOf("メッセージ");
+    const messages = valueOf("返事を待っているメッセージ");
+    expect(messages).toHaveTextContent(/^2 件（返事を待って 24 時間以上たったやり取り）返事のないメッセージを見る$/);
+    // 入口はこの生徒で絞った返事のないメッセージの一覧（返却待ちの数にはよらない）
     expect(within(messages).getByRole("link", { name: "返事のないメッセージを見る" })).toHaveAttribute(
       "href",
       `/headquarters/unanswered-messages?student_id=${STUDENT_ID}`,
     );
+    expect(within(messages).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("返事を待っているメッセージが 0 件なら 0 件と出し、一覧への入口は出さない", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, unanswered_message_thread_count: 0 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    // 返却待ちの入口はそのまま
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
+  });
+
+  test("つけた低い評価の数と未対応の数を返事を待っているメッセージと同じ形で返った値のまま出し、1 件以上ならその生徒で絞った一覧への入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({
+            ...ACTIVITY,
+            pending_video_review_count: 0,
+            unanswered_message_thread_count: 0,
+            low_rated_review_count: 3,
+            unhandled_low_rated_review_count: 1,
+          }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const reviews = valueOf("つけた低い評価");
+    expect(reviews).toHaveTextContent(/^3 件（直近 30 日の★2 以下。うち未対応 1 件）低い評価を見る$/);
+    // 入口はこの生徒で絞った低い評価の一覧（返却待ち・返事を待っているメッセージの数にはよらない）
+    expect(within(reviews).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/low-reviews?student_id=${STUDENT_ID}`,
+    );
+    expect(within(reviews).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("つけた低い評価がすべて対応済み（未対応 0 件）でも、1 件以上なら入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, low_rated_review_count: 2, unhandled_low_rated_review_count: 0 }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const reviews = valueOf("つけた低い評価");
+    expect(reviews).toHaveTextContent(/^2 件（直近 30 日の★2 以下。うち未対応 0 件）低い評価を見る$/);
+    expect(within(reviews).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/low-reviews?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("つけた低い評価が 0 件なら 0 件と出し、一覧への入口は出さない", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, low_rated_review_count: 0, unhandled_low_rated_review_count: 0 }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("つけた低い評価")).toHaveTextContent(/^0 件（直近 30 日の★2 以下。うち未対応 0 件）$/);
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
+    // 返却待ちの入口はそのまま
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
   });
 
   test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
@@ -226,7 +319,11 @@ describe("本部の生徒の利用の様子", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("student_id が正しくありません。");
     expect(screen.queryByText("送った動画")).not.toBeInTheDocument();
     expect(screen.queryByText("返却待ち")).not.toBeInTheDocument();
+    expect(screen.queryByText("返事を待っているメッセージ")).not.toBeInTheDocument();
+    expect(screen.queryByText("つけた低い評価")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
   });
 
   test("404 以外の失敗（403 など）はその文言を出し、中身は出さない", async () => {

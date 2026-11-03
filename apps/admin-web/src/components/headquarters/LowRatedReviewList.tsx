@@ -57,11 +57,14 @@ function HandlingStatus({ review }: { review: LowRatedReview }) {
  * 「開始日」「終了日」で送った日付（日本時間）の期間に絞る（API の `from`・`to`）。期間を省ける「コーチの評価」の期間の欄と同じく、
  * 期間を付けずに開き（直近の期間のすべて）、送る前に確かめて「この期間で見る」で読み直し、「期間を外す」で戻す。
  * 「未対応だけ」と期間は組み合わせられる（どちらを変えても、もう一方の確定した条件は残す）。
+ * `studentId` があれば、その生徒がつけた評価だけを読む（API の `student_id`。「未対応だけ」・期間と合わせて付ける）。
  */
 export function LowRatedReviewList({
   api,
+  studentId,
 }: {
   api: Pick<HeadquartersApi, "listLowRatedLessonReviews" | "markLowRatedLessonReviewHandled">;
+  studentId?: string;
 }) {
   // 今の一覧を読んだ条件（取り直しにも使う）。期間は「この期間で見る」を押したときだけ変わる。
   const [filter, setFilter] = useState<Filter>({ unhandledOnly: false, period: null });
@@ -75,7 +78,10 @@ export function LowRatedReviewList({
 
   const fetchReviews = useCallback(
     async (next: Filter): Promise<State> => {
-      const response = await api.listLowRatedLessonReviews(queryOf(next));
+      const response = await api.listLowRatedLessonReviews({
+        ...queryOf(next),
+        ...(studentId ? { student_id: studentId } : {}),
+      });
       if (response.ok) return { kind: "loaded", list: response.data, filter: next };
       return {
         kind: "failed",
@@ -85,7 +91,7 @@ export function LowRatedReviewList({
             : response.message,
       };
     },
-    [api],
+    [api, studentId],
   );
 
   // 開いたときの読み込み（条件なし）。初期の状態が loading なので、ここでは結果だけを入れる。

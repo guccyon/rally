@@ -8,7 +8,9 @@ use application::{
     identity::{
         AccountRepository, GetStudentActivity, GetStudentActivityError,
         StudentActivityCoachDisplayNameLookup, StudentBookingActivityLookup,
-        StudentLessonHistoryLookup, StudentVideoActivityLookup, TokenVerifier, account_id_uuid,
+        StudentLessonHistoryLookup, StudentLowRatedReviewCountLookup,
+        StudentUnansweredMessageThreadCountLookup, StudentVideoActivityLookup, TokenVerifier,
+        account_id_uuid,
     },
     lesson::lesson_completion_id_uuid,
 };
@@ -28,12 +30,12 @@ use crate::{
 };
 
 /// `/students/{student_id}/activity` のハンドラーが使うユースケース。
-pub struct StudentActivityState<R, B, L, V, D, C> {
-    pub get_student_activity: GetStudentActivity<R, B, L, V, D, C>,
+pub struct StudentActivityState<R, B, L, V, U, W, D, C> {
+    pub get_student_activity: GetStudentActivity<R, B, L, V, U, W, D, C>,
 }
 
 /// ハンドラーが共有する [`StudentActivityState`]。
-type Shared<R, B, L, V, D, C> = Arc<StudentActivityState<R, B, L, V, D, C>>;
+type Shared<R, B, L, V, U, W, D, C> = Arc<StudentActivityState<R, B, L, V, U, W, D, C>>;
 
 /// admin-web の `StudentActivity`。生徒を特定する情報は表示名と ID だけを載せる。
 #[derive(Serialize)]
@@ -45,6 +47,9 @@ pub struct StudentActivityBody {
     cancelled_booking_count: u32,
     submitted_video_count: u32,
     pending_video_review_count: u32,
+    unanswered_message_thread_count: u32,
+    low_rated_review_count: u32,
+    unhandled_low_rated_review_count: u32,
 }
 
 /// admin-web の `StudentActivityBooking`。コーチの表示名は引けなければ載せない。
@@ -68,8 +73,9 @@ pub struct StudentActivityLessonBody {
 
 /// `GET /students/{student_id}/activity`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`student_id` が
 /// UUID でない・生徒のアカウントがないときは 404。
-pub async fn get_student_activity<R, B, L, V, D, C>(
-    State(state): State<Shared<R, B, L, V, D, C>>,
+#[allow(clippy::type_complexity)]
+pub async fn get_student_activity<R, B, L, V, U, W, D, C>(
+    State(state): State<Shared<R, B, L, V, U, W, D, C>>,
     Path(student_id): Path<String>,
 ) -> Result<Json<StudentActivityBody>, ApiError>
 where
@@ -77,6 +83,8 @@ where
     B: StudentBookingActivityLookup,
     L: StudentLessonHistoryLookup,
     V: StudentVideoActivityLookup,
+    U: StudentUnansweredMessageThreadCountLookup,
+    W: StudentLowRatedReviewCountLookup,
     D: StudentActivityCoachDisplayNameLookup,
     C: Clock,
 {
@@ -125,6 +133,9 @@ where
         cancelled_booking_count: activity.cancelled_booking_count,
         submitted_video_count: activity.submitted_video_count,
         pending_video_review_count: activity.pending_video_review_count,
+        unanswered_message_thread_count: activity.unanswered_message_thread_count,
+        low_rated_review_count: activity.low_rated_review_count,
+        unhandled_low_rated_review_count: activity.unhandled_low_rated_review_count,
     }))
 }
 
@@ -132,8 +143,8 @@ where
 /// クレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /students/{student_id}/activity` は本部だけ（コーチ・生徒は 403）。
-pub fn student_activity_router<R, B, L, V, D, C, T>(
-    get_student_activity: GetStudentActivity<R, B, L, V, D, C>,
+pub fn student_activity_router<R, B, L, V, U, W, D, C, T>(
+    get_student_activity: GetStudentActivity<R, B, L, V, U, W, D, C>,
     tokens: T,
 ) -> Router
 where
@@ -141,6 +152,8 @@ where
     B: StudentBookingActivityLookup + 'static,
     L: StudentLessonHistoryLookup + 'static,
     V: StudentVideoActivityLookup + 'static,
+    U: StudentUnansweredMessageThreadCountLookup + 'static,
+    W: StudentLowRatedReviewCountLookup + 'static,
     D: StudentActivityCoachDisplayNameLookup + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
@@ -149,7 +162,7 @@ where
     Router::new()
         .route(
             "/students/{student_id}/activity",
-            get(self::get_student_activity::<R, B, L, V, D, C>),
+            get(self::get_student_activity::<R, B, L, V, U, W, D, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(StudentActivityState {

@@ -42,7 +42,7 @@ describe("headquartersApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
   });
 
-  test("getSlotSupply は期間とコーチをクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
+  test("getSlotSupply は期間・コーチ・スポーツ・レッスンメニューをクエリにして GET /api/slot-supply を呼び、省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, REPORT));
     await api.getSlotSupply({ from: "2026-11-02", to: "2026-11-08" });
     const url = new URL(fetchMock.mock.calls[0]![0].url);
@@ -55,6 +55,18 @@ describe("headquartersApi", () => {
     const byCoachUrl = new URL(byCoach.fetchMock.mock.calls[0]![0].url);
     expect(byCoachUrl.searchParams.get("coach_id")).toBe("22222222-2222-4222-8222-222222222222");
     expect(byCoachUrl.searchParams.get("from")).toBe("2026-11-02");
+
+    const byLessonMenu = setup(json(200, REPORT));
+    await byLessonMenu.api.getSlotSupply({
+      from: "2026-11-02",
+      to: "2026-11-08",
+      sport: "tennis",
+      lesson_menu_id: "aaaaaaaa-aaaa-4aaa-8aaa-000000000001",
+    });
+    const byLessonMenuUrl = new URL(byLessonMenu.fetchMock.mock.calls[0]![0].url);
+    expect(byLessonMenuUrl.searchParams.get("lesson_menu_id")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-000000000001");
+    expect(byLessonMenuUrl.searchParams.get("sport")).toBe("tennis");
+    expect(byLessonMenuUrl.searchParams.get("from")).toBe("2026-11-02");
 
     const omitted = setup(json(200, REPORT));
     await omitted.api.getSlotSupply({});
@@ -144,6 +156,7 @@ describe("headquartersApi", () => {
       pending_video_review_count: 1,
       overdue_pending_video_review_count: 0,
       recent_cancelled_booking_count: 0,
+      unanswered_message_thread_count: 0,
     };
     const { api, fetchMock } = setup(json(200, overview));
     const result = await api.getCoachOverview(coachId);
@@ -352,6 +365,9 @@ describe("headquartersApi", () => {
       cancelled_booking_count: 0,
       submitted_video_count: 0,
       pending_video_review_count: 0,
+      unanswered_message_thread_count: 0,
+      low_rated_review_count: 0,
+      unhandled_low_rated_review_count: 0,
     };
     const { api, fetchMock } = setup(json(200, activity));
     const result = await api.getStudentActivity(studentId);
@@ -417,6 +433,15 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("to")).toBe("2026-11-01");
   });
 
+  test("listStudentAnnouncements は GET /api/students/{id}/announcements を呼び、unread_only をクエリにする", async () => {
+    const studentId = "11111111-1111-4111-8111-111111111111";
+    const { api, fetchMock } = setup(json(200, { announcements: [] }));
+    await api.listStudentAnnouncements(studentId, { unread_only: true });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe(`/api/students/${studentId}/announcements`);
+    expect(url.searchParams.get("unread_only")).toBe("true");
+  });
+
   test("markLowRatedLessonReviewHandled は本文なしで PUT /api/lesson-reviews/{id}/handling を呼び、印を返す", async () => {
     const reviewId = "33333333-3333-4333-8333-333333333333";
     const handling = { handled_by: "55555555-5555-4555-8555-555555555555", handled_at: "2026-10-31T03:00:00Z" };
@@ -468,6 +493,16 @@ describe("headquartersApi", () => {
     const url = new URL(fetchMock.mock.calls[0]![0].url);
     expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
     expect(url.search).toBe("?sport=golf");
+  });
+
+  test("listIncompleteCoachProfiles は検索語を渡せばクエリ q に載せ、ほかの条件と並べる", async () => {
+    const { api, fetchMock } = setup(json(200, { coaches: [] }));
+    await api.listIncompleteCoachProfiles({ sport: "golf", acceptance_status: "accepting", q: "高橋" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/incomplete-profiles");
+    expect(url.searchParams.get("q")).toBe("高橋");
+    expect(url.searchParams.get("sport")).toBe("golf");
+    expect(url.searchParams.get("acceptance_status")).toBe("accepting");
   });
 
   test("listOverdueLiveLessonSessions は経過時間の下限をクエリにして GET /api/live-lesson-sessions/overdue を呼ぶ", async () => {
@@ -822,6 +857,14 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("from")).toBe("2026-10-20");
     expect(url.searchParams.get("to")).toBe("2026-10-26");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.headquarters.abc");
+  });
+
+  test("listAnnouncements は取り下げたかを withdrawn のクエリにして渡す", async () => {
+    const { api, fetchMock } = setup(json(200, { announcements: [] }));
+    await api.listAnnouncements({ from: "2026-10-20", to: "2026-10-26", withdrawn: false });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/announcements");
+    expect(url.searchParams.get("withdrawn")).toBe("false");
   });
 
   test("listAnnouncements は期間を省けばクエリを付けない", async () => {

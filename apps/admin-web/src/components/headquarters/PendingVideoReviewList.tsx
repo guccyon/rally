@@ -8,6 +8,9 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime } from "@/components/labels";
 
+import { BookingLessonMenuFilter } from "./BookingLessonMenuFilter";
+import { lessonMenuOptionLabel } from "./CancelledBookingList";
+
 type Sport = Schemas["Sport"];
 
 type State =
@@ -20,8 +23,13 @@ type CoachesState =
   | { kind: "loaded"; coaches: Schemas["Coach"][] }
   | { kind: "failed"; message: string };
 
+type LessonMenusState =
+  | { kind: "loading" }
+  | { kind: "loaded"; lessonMenus: Schemas["CoachLessonMenu"][] }
+  | { kind: "failed"; message: string };
+
 /**
- * sport・coachId・studentId が空なら、minElapsedHours が null なら、それで絞らない。
+ * sport・coachId・studentId・lessonMenuId が空なら、minElapsedHours が null なら、それで絞らない。
  * 生徒は返した動画添削の記録と同じく絞り込みの欄では選ばず、URL のクエリ（生徒の利用の様子の画面からの入口）で受け取る。
  */
 export type PendingVideoReviewFilter = {
@@ -29,6 +37,7 @@ export type PendingVideoReviewFilter = {
   minElapsedHours: number | null;
   coachId: string;
   studentId: string;
+  lessonMenuId: string;
 };
 type Filter = PendingVideoReviewFilter;
 
@@ -38,13 +47,13 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
 /** 経過時間の下限の選択肢（時間）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const MIN_ELAPSED_HOURS_OPTIONS = Object.freeze([24, 48, 72, 168] as const);
 
-const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "", studentId: "" };
+const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "", studentId: "", lessonMenuId: "" };
 
 /**
- * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（スポーツ・経過時間・コーチの指定）を添えて直す場所を伝える。
+ * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（スポーツ・経過時間・コーチ・レッスンメニューの指定）を添えて直す場所を伝える。
  * 選択肢から選んでいればふつうは来ない（URL のクエリを手で書き換えたときなど）。
  */
-const VALIDATION_HINT = "スポーツ・送ってからの経過・コーチは一覧から選び直してください。";
+const VALIDATION_HINT = "スポーツ・送ってからの経過・コーチ・レッスンメニューは一覧から選び直してください。";
 // 生徒で絞っているとき（生徒の ID は URL のクエリから来るので、書き換えられて UUID でないこともある）に添える。
 const VALIDATION_HINT_WITH_STUDENT = `${VALIDATION_HINT}生徒は生徒の一覧から選び直してください。`;
 
@@ -54,13 +63,16 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filte
 }
 
 /**
- * 0 件のときの文言。コーチだけ・生徒だけで絞っていればそのコーチ・その生徒と言い、ほかの条件もある・コーチと生徒の両方で
- * 絞っていれば「条件に合う」と言う（返した動画添削の記録と同じ）。
+ * 0 件のときの文言。コーチだけ・生徒だけ・レッスンメニューだけで絞っていればそのコーチ・その生徒・そのメニューと言い、ほかの条件もある・
+ * コーチと生徒とレッスンメニューのうち 2 つ以上で絞っていれば「条件に合う」と言う（返した動画添削の記録と同じ。どのメニューかは
+ * 一覧の上の BookingLessonMenuFilter が名前で出す）。
  */
-function emptyMessageOf({ sport, minElapsedHours, coachId, studentId }: Filter): string {
-  if (sport !== "" || minElapsedHours !== null || (coachId !== "" && studentId !== "")) {
+function emptyMessageOf({ sport, minElapsedHours, coachId, studentId, lessonMenuId }: Filter): string {
+  const narrowed = [coachId !== "", studentId !== "", lessonMenuId !== ""].filter(Boolean).length;
+  if (sport !== "" || minElapsedHours !== null || narrowed >= 2) {
     return "条件に合う返却待ちの動画添削はありません";
   }
+  if (lessonMenuId !== "") return "このレッスンメニューの返却待ちの動画添削はありません";
   if (coachId !== "") return "このコーチの返却待ちの動画添削はありません";
   if (studentId !== "") return "この生徒の返却待ちの動画添削はありません";
   return "返却を待っている動画添削はありません";
@@ -75,12 +87,17 @@ function isOverdue(video: { elapsed_hours: number }): boolean {
 
 /**
  * 本部の「返却待ちの動画添削」。コーチがまだ返していない動画添削の一覧（listPendingVideoReviews）を出す。
- * 絞り込み（スポーツ・経過時間の下限・コーチ）は API の `sport` / `min_elapsed_hours` / `coach_id` に渡し、経過時間の数え方と並び
+ * 絞り込み（スポーツ・経過時間の下限・コーチ・レッスンメニュー）は API の `sport` / `min_elapsed_hours` / `coach_id` /
+ * `lesson_menu_id` に渡し、経過時間の数え方と並び
  * （送った時刻の古い順）は契約の正本どおり API が済ませているので、返った順と値のまま出す。
  * 経過が 48 時間以上の行は、予約の画面の「開始まで 24 時間以内」と同じやり方（行の薄い赤と札）で目立たせ、
  * 一覧の上にその件数を出す（今出している一覧の中で数える）。
  * コーチの選択肢はライブレッスンの記録と同じくコーチの一覧（listCoaches）の返った順。
- * 生徒（`studentId`）は API の `student_id` に渡す。欄はなく、スポーツ・経過時間・コーチを変えて読み直しても絞り込みは残る。
+ * レッスンメニューは API の `lesson_menu_id` に渡し、動画を送った時点のメニューで絞る（契約）。選択肢はレッスンメニューの一覧
+ * （listLessonMenus。絞り込みなしで、公開をやめたメニューも含む）のうち非同期のメニュー（動画を送るときに選べるもの）を返った順に出し、
+ * 文言はキャンセルされた予約の絞り込みに揃える。絞っているあいだは一覧の上に「どのレッスンメニューで絞っているか」
+ * （BookingLessonMenuFilter）を出す（0 件のときも出すので、どのメニューで空になったかが分かる）。
+ * 生徒（`studentId`）は API の `student_id` に渡す。欄はなく、ほかの条件を変えて読み直しても絞り込みは残る。
  * `initialFilter`（URL のクエリ）の条件で開き、絞り込みを変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
 export function PendingVideoReviewList({
@@ -88,13 +105,14 @@ export function PendingVideoReviewList({
   initialFilter = NO_FILTER,
   onFilterChange,
 }: {
-  api: Pick<HeadquartersApi, "listPendingVideoReviews" | "listCoaches">;
+  api: Pick<HeadquartersApi, "listPendingVideoReviews" | "listCoaches" | "listLessonMenus">;
   initialFilter?: Filter;
   onFilterChange?: (filter: Filter) => void;
 }) {
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [state, setState] = useState<State>({ kind: "loading" });
   const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
+  const [lessonMenus, setLessonMenus] = useState<LessonMenusState>({ kind: "loading" });
   // 絞り込みを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
   const initialFilterRef = useRef(initialFilter);
@@ -106,6 +124,7 @@ export function PendingVideoReviewList({
         ...(next.minElapsedHours === null ? {} : { min_elapsed_hours: next.minElapsedHours }),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
         ...(next.studentId === "" ? {} : { student_id: next.studentId }),
+        ...(next.lessonMenuId === "" ? {} : { lesson_menu_id: next.lessonMenuId }),
       });
       return response.ok
         ? { kind: "loaded", list: response.data }
@@ -134,6 +153,25 @@ export function PendingVideoReviewList({
       setCoaches(
         response.ok
           ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  // レッスンメニューの選択肢。読めなくても一覧はほかの条件で引けるようにし、レッスンメニューの絞り込みだけを使えなくする。
+  useEffect(() => {
+    let active = true;
+    void api.listLessonMenus({}).then((response) => {
+      if (!active) return;
+      setLessonMenus(
+        response.ok
+          ? {
+              kind: "loaded",
+              lessonMenus: response.data.lesson_menus.filter((menu) => menu.lesson_type === "async_lesson"),
+            }
           : { kind: "failed", message: response.message },
       );
     });
@@ -213,11 +251,36 @@ export function PendingVideoReviewList({
               ))}
           </select>
         </label>
+        <label className="block">
+          レッスンメニュー
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.lessonMenuId}
+            disabled={lessonMenus.kind !== "loaded"}
+            onChange={(event) => void changeFilter({ ...filter, lessonMenuId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {lessonMenus.kind === "loaded" &&
+              lessonMenus.lessonMenus.map((menu) => (
+                <option key={menu.lesson_menu_id} value={menu.lesson_menu_id}>
+                  {lessonMenuOptionLabel(menu)}
+                </option>
+              ))}
+          </select>
+        </label>
       </div>
       {coaches.kind === "failed" && (
         <ResultMessage
           result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
         />
+      )}
+      {lessonMenus.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `レッスンメニューの一覧を読めませんでした。${lessonMenus.message}` }}
+        />
+      )}
+      {filter.lessonMenuId !== "" && (
+        <BookingLessonMenuFilter key={filter.lessonMenuId} api={api} lessonMenuId={filter.lessonMenuId} />
       )}
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
