@@ -114,6 +114,16 @@ impl Announcement {
         self.withdrawal.is_some()
     }
 
+    /// 本部の一覧（admin-web の `listAnnouncements`）の任意の取り下げの絞り込み `withdrawn` にこのお知らせが入るか。
+    /// `None` なら取り下げたかを問わない（すべて入る）。`Some(true)` なら取り下げたものだけ、`Some(false)` なら
+    /// 取り下げていないもの（いま生徒のお知らせの一覧に出ているもの）だけが入る。判定は [`Self::is_withdrawn`] の 1 か所。
+    pub const fn is_withdrawn_as(&self, withdrawn: Option<bool>) -> bool {
+        match withdrawn {
+            None => true,
+            Some(withdrawn) => self.is_withdrawn() == withdrawn,
+        }
+    }
+
     /// 受け取った生徒のうち既読にした数に入れる既読の時刻の上限（その時刻ちょうどまでを含む）。取り下げたお知らせは
     /// 取り下げた時刻まで（取り下げたあとに既読になったものは数えない。生徒の一覧に出ないので読まれていない）、
     /// 取り下げていなければ上限なし（`None`）。
@@ -293,6 +303,23 @@ mod tests {
                 "生徒全員に送ったものはスポーツで絞ると入らない: {sport:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_announcement_not_withdrawn_is_in_the_not_withdrawn_filter_only() {
+        let announcement = sent(None, 1).unwrap();
+        assert!(announcement.is_withdrawn_as(None), "絞らなければ載る");
+        assert!(announcement.is_withdrawn_as(Some(false)));
+        assert!(!announcement.is_withdrawn_as(Some(true)));
+    }
+
+    #[test]
+    fn a_withdrawn_announcement_is_in_the_withdrawn_filter_only() {
+        let mut announcement = sent(None, 1).unwrap();
+        announcement.withdraw(HEADQUARTERS, at(20)).unwrap();
+        assert!(announcement.is_withdrawn_as(None), "絞らなければ載る");
+        assert!(announcement.is_withdrawn_as(Some(true)));
+        assert!(!announcement.is_withdrawn_as(Some(false)));
     }
 
     #[test]

@@ -1868,6 +1868,13 @@ export interface paths {
          *     - `sport` は `from`・`to`・`q` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送ったもの）。
          *       並べ方と `read_count` の数え方は `sport` で絞っても変わらない。一致するお知らせがなければ `announcements` は空の配列。
          *       `sport` が `Sport` の値でなければ 422 `validation_failed`（`message` に理由。値の読み方は `sendAnnouncement` の `sport` と同じ）
+         *     - 取り下げたかで絞る（任意）: `withdrawn` を付ければ、`true` なら取り下げたお知らせ（`withdrawal` が null でないもの）だけ、
+         *       `false` なら取り下げていないお知らせ（`withdrawal` が null のもの。いま生徒のお知らせの一覧に出ているもの）だけを返す。
+         *       付けなければ今までどおり取り下げたかを問わない。判定は backend の domain `Announcement::is_withdrawn_as` の 1 か所
+         *     - `withdrawn` は `from`・`to`・`q`・`sport` と組み合わせられる（期間に送ったもののうち、題が一致し、そのスポーツに向けて送り、
+         *       取り下げたか・取り下げていないもの）。並べ方と `read_count` の数え方は `withdrawn` で絞っても変わらない。一致するお知らせが
+         *       なければ `announcements` は空の配列。`withdrawn` が `true` / `false` でなければ 422 `validation_failed`（値の受け方は
+         *       `listLowRatedLessonReviews` の `handled`・`listLessonMenus` の `published` と同じ）
          *
          *     行動イベントは発火しない。
          */
@@ -5096,6 +5103,8 @@ export interface operations {
                  *     問わない。`Sport` の値でなければ 422 `validation_failed`
                  */
                 sport?: components["schemas"]["Sport"];
+                /** @description 取り下げたか（`true` なら取り下げたものだけ、`false` なら取り下げていないものだけ。付けなければ問わない） */
+                withdrawn?: boolean;
             };
             header?: never;
             path?: never;

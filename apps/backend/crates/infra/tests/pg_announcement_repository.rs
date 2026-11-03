@@ -2,7 +2,7 @@
 //! 送った時刻の新しい順（同じ時刻は後に残したものが先）・送った時刻の期間で引くこと（開始を含み終了を含まない。取り下げた
 //! ものも含む）・ID で引くこと・取り下げの往復（最初の取り下げを上書きしない）・一覧のユースケース（`ListAnnouncements`）が
 //! 題の検索語で絞ること（期間と組み合わせられる）・対象のスポーツで絞ること（生徒全員に送ったものは入らない。期間・題と
-//! 組み合わせられる）。
+//! 組み合わせられる）・取り下げたかで絞ること（期間・題・スポーツと組み合わせられる）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -223,6 +223,7 @@ async fn listing_by_a_title_query_keeps_matching_announcements_in_the_same_order
             to: from,
             title: AnnouncementTitleQuery::new(q).unwrap(),
             sport: None,
+            withdrawn: None,
         };
         async move {
             list.execute(query)
@@ -368,6 +369,7 @@ async fn listing_by_a_sport_keeps_announcements_sent_to_that_sport_in_the_same_o
             to: Some(nov2),
             title: AnnouncementTitleQuery::new("大会").unwrap(),
             sport: Some(Sport::Tennis),
+            withdrawn: None,
         })
         .await,
         std::slice::from_ref(&tennis_withdrawn),
@@ -379,6 +381,7 @@ async fn listing_by_a_sport_keeps_announcements_sent_to_that_sport_in_the_same_o
             to: Some(nov1),
             title: AnnouncementTitleQuery::new("ゴルフ").unwrap(),
             sport: Some(Sport::Tennis),
+            withdrawn: None,
         })
         .await
         .is_empty(),
@@ -387,6 +390,108 @@ async fn listing_by_a_sport_keeps_announcements_sent_to_that_sport_in_the_same_o
     assert_eq!(
         found(ListAnnouncementsQuery::default()).await,
         [tennis_result, tennis_withdrawn, golf, tennis, everyone],
+        "付けなければ今までどおりすべて"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn listing_by_withdrawn_keeps_announcements_withdrawn_or_not_in_the_same_order(pool: PgPool) {
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    // 1 時・2 時（UTC）は日本時間の 11/1、16 時・17 時は 11/2
+    let mut everyone_withdrawn = announcement(
+        &announcements,
+        headquarters,
+        "メンテナンスのお知らせ",
+        None,
+        1,
+    );
+    let tennis = announcement(
+        &announcements,
+        headquarters,
+        "テニスの大会",
+        Some(Sport::Tennis),
+        2,
+    );
+    let mut tennis_withdrawn = announcement(
+        &announcements,
+        headquarters,
+        "テニスの大会（再）",
+        Some(Sport::Tennis),
+        16,
+    );
+    let everyone = announcement(&announcements, headquarters, "メンテナンスの終了", None, 17);
+    for announcement in [&everyone_withdrawn, &tennis, &tennis_withdrawn, &everyone] {
+        announcements.insert(announcement.clone()).await.unwrap();
+    }
+    for withdrawn in [&mut everyone_withdrawn, &mut tennis_withdrawn] {
+        withdrawn.withdraw(headquarters, at(18)).unwrap();
+        announcements.update(withdrawn.clone()).await.unwrap();
+    }
+
+    let list = ListAnnouncements::new(
+        announcements.clone(),
+        PgNotificationRepository::new(pool.clone()),
+    );
+    let found = |query: ListAnnouncementsQuery| {
+        let list = &list;
+        async move {
+            list.execute(query)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|listed| listed.announcement)
+                .collect::<Vec<_>>()
+        }
+    };
+    let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
+    let nov2 = time::Date::from_calendar_date(2026, time::Month::November, 2).unwrap();
+    assert_eq!(
+        found(ListAnnouncementsQuery {
+            withdrawn: Some(true),
+            ..Default::default()
+        })
+        .await,
+        [tennis_withdrawn.clone(), everyone_withdrawn.clone()],
+        "取り下げたものだけ。新しい順は変わらない"
+    );
+    assert_eq!(
+        found(ListAnnouncementsQuery {
+            withdrawn: Some(false),
+            ..Default::default()
+        })
+        .await,
+        [everyone.clone(), tennis.clone()],
+        "取り下げていないものだけ"
+    );
+    assert_eq!(
+        found(ListAnnouncementsQuery {
+            from: Some(nov2),
+            to: Some(nov2),
+            title: AnnouncementTitleQuery::new("大会").unwrap(),
+            sport: Some(Sport::Tennis),
+            withdrawn: Some(true),
+        })
+        .await,
+        std::slice::from_ref(&tennis_withdrawn),
+        "期間（日本時間の 11/2）・題・スポーツと組み合わせられる"
+    );
+    assert!(
+        found(ListAnnouncementsQuery {
+            from: Some(nov1),
+            to: Some(nov1),
+            title: AnnouncementTitleQuery::new("メンテナンス").unwrap(),
+            withdrawn: Some(false),
+            ..Default::default()
+        })
+        .await
+        .is_empty(),
+        "11/1 に送ったメンテナンスのお知らせは取り下げてある"
+    );
+    assert_eq!(
+        found(ListAnnouncementsQuery::default()).await,
+        [everyone, tennis_withdrawn, tennis, everyone_withdrawn],
         "付けなければ今までどおりすべて"
     );
 }
