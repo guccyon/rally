@@ -2,7 +2,8 @@
 //! 最後に予約した時刻・直近 30 日の予約の数とともに返すことを OpenAPI のスキーマで検査する。コーチ・生徒は 403、トークンがなければ 401。
 //! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。`sport`・`not_booked_since` を付ければ
 //! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。`coach_id` を付ければ
-//! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。この操作はパスパラメータを受けないので、
+//! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。
+//! `has_unanswered=true` を付ければ返信のないまま既定の時間の過ぎたスレッドのある生徒だけを返し、真偽でなければ 422。この操作はパスパラメータを受けないので、
 //! 404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
@@ -15,8 +16,9 @@ use application::{
     },
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemorySlotRepository,
+        InMemoryEntitlementRepository, InMemoryMessageThreadRepository, InMemorySlotRepository,
     },
+    messaging::MessagingStudentUnansweredMessageThreadCountLookup,
     scheduling::{
         BookingRepository, SchedulingStudentCoachBookingLookup, SchedulingStudentLastBookingLookup,
         SchedulingStudentRecentBookingCountLookup,
@@ -33,6 +35,7 @@ use domain::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{Account, AccountId, Email, Role},
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
     scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
@@ -112,6 +115,7 @@ fn now() -> SystemTime {
 }
 
 /// 本部・コーチと、生徒 3 人（登録は月額の生徒 → ゴルフの生徒 → 新しい生徒の順）。月額の生徒は 2 回予約した。
+/// 月額の生徒はコーチに返信をもらっていないスレッドが、ゴルフの生徒はコーチが返したスレッドがある（[`threads`]）。
 /// 照会した時刻は [`now`]。
 async fn app() -> Router {
     app_at(now()).await
@@ -168,13 +172,40 @@ async fn app_at(now: SystemTime) -> Router {
             .await
             .unwrap();
     }
-    router(accounts, entitlements, bookings, now)
+    router(accounts, entitlements, bookings, threads(), now)
+}
+
+/// `id` の `student` とコーチのスレッドを開き、`exchange` の順に（生徒が送ったか, 送信時刻）で本文を送る。
+fn thread(id: u128, student: AccountId, exchange: &[(bool, SystemTime)]) -> MessageThread {
+    let mut thread =
+        MessageThread::open(MessageThreadId::from_u128(id), student, COACH, at(0)).unwrap();
+    for (n, (by_student, sent_at)) in exchange.iter().enumerate() {
+        thread
+            .send(
+                MessageId::from_u128(id * 100 + n as u128),
+                if *by_student { student } else { COACH },
+                MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+                true,
+                *sent_at,
+            )
+            .unwrap();
+    }
+    thread
+}
+
+/// 月額の生徒が [`now`] のちょうど 24 時間前に送ってまだ返信のないスレッドと、ゴルフの生徒が送りコーチが返したスレッド。
+fn threads() -> InMemoryMessageThreadRepository {
+    InMemoryMessageThreadRepository::with_threads([
+        thread(30, MONTHLY_STUDENT, &[(true, at(0))]),
+        thread(31, GOLF_STUDENT, &[(true, at(0)), (false, at(1))]),
+    ])
 }
 
 fn router(
     accounts: InMemoryAccountRepository,
     entitlements: InMemoryEntitlementRepository,
     bookings: InMemoryBookingRepository,
+    threads: InMemoryMessageThreadRepository,
     now: SystemTime,
 ) -> Router {
     interface::students_router(
@@ -184,6 +215,7 @@ fn router(
             SchedulingStudentLastBookingLookup::new(bookings.clone()),
             SchedulingStudentCoachBookingLookup::new(bookings.clone()),
             SchedulingStudentRecentBookingCountLookup::new(bookings),
+            MessagingStudentUnansweredMessageThreadCountLookup::new(threads),
             FixedClock(now),
         ),
         FakeTokens,
@@ -328,6 +360,7 @@ async fn recent_booking_count_leaves_out_cancelled_bookings() {
         accounts,
         InMemoryEntitlementRepository::default(),
         bookings,
+        InMemoryMessageThreadRepository::default(),
         now(),
     );
 
@@ -408,6 +441,7 @@ async fn q_matches_ascii_letters_case_insensitively() {
         accounts,
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        InMemoryMessageThreadRepository::default(),
         now(),
     );
     let (status, body) = list_students_at(&router, "/students?q=yamada", Some(HEADQUARTERS)).await;
@@ -566,6 +600,64 @@ async fn coach_id_lists_only_students_who_booked_the_coach() {
 }
 
 #[tokio::test]
+async fn has_unanswered_lists_only_students_with_an_unanswered_thread() {
+    let router = app().await;
+    for (uri, expected) in [
+        // 月額の生徒だけが 24 時間ちょうど返信を待っている。ゴルフの生徒はコーチが返し、新しい生徒はスレッドがない
+        ("/students?has_unanswered=true", vec!["3"]),
+        // false は絞らない
+        ("/students?has_unanswered=false", vec!["5", "4", "3"]),
+        // ほかの条件と組み合わせられる
+        ("/students?has_unanswered=true&sport=tennis", vec!["3"]),
+        ("/students?has_unanswered=true&sport=golf", vec![]),
+        (
+            "/students?has_unanswered=true&q=%E3%81%AA%E3%81%BE%E3%81%883",
+            vec!["3"],
+        ),
+        (
+            "/students?has_unanswered=true&coach_id=00000000-0000-0000-0000-000000000002&not_booked_since=2026-10-02",
+            vec!["3"],
+        ),
+        (
+            "/students?has_unanswered=true&not_booked_since=2026-10-01",
+            vec![],
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) =
+        list_students_at(&router, "/students?has_unanswered=true", Some(HEADQUARTERS)).await;
+    assert_eq!(
+        body["students"][0]["last_booked_at"], "2026-10-01T12:00:00Z",
+        "絞り込んでも最後に予約した時刻を添える"
+    );
+
+    // 照会した時刻から数える（1 秒前なら 24 時間に満たない）
+    let router = app_at(now() - Duration::from_secs(1)).await;
+    let (status, body) =
+        list_students_at(&router, "/students?has_unanswered=true", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(listed_ids(&body), Vec::<&str>::new());
+}
+
+#[tokio::test]
+async fn has_unanswered_that_is_not_a_boolean_is_422() {
+    let router = app().await;
+    for uri in [
+        "/students?has_unanswered=yes",
+        "/students?has_unanswered=1",
+        "/students?has_unanswered=",
+        "/students?has_unanswered=TRUE",
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn unknown_sport_or_malformed_date_is_422() {
     let router = app().await;
     for (uri, message) in [
@@ -604,6 +696,7 @@ async fn no_students_is_an_empty_list() {
         accounts,
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+        InMemoryMessageThreadRepository::default(),
         now(),
     );
     let (status, body) = list_students(&router, Some(HEADQUARTERS)).await;
@@ -665,6 +758,9 @@ async fn lookup_failure_is_500_internal_without_the_reason() {
             SchedulingStudentRecentBookingCountLookup::new(InMemoryBookingRepository::new(
                 InMemorySlotRepository::default(),
             )),
+            MessagingStudentUnansweredMessageThreadCountLookup::new(
+                InMemoryMessageThreadRepository::default(),
+            ),
             FixedClock(now()),
         ),
         FakeTokens,

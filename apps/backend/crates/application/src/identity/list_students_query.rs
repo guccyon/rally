@@ -14,4 +14,8 @@ pub struct ListStudentsQuery {
     /// あればこのコーチの枠を一度でも予約した生徒だけ（予約の状態を問わない。数え方は domain の
     /// [`domain::scheduling::CoachBookedStudents`]）。ないコーチ・コーチでない ID なら誰も残らない
     pub coach_id: Option<AccountId>,
+    /// `true` なら返信のないまま既定の時間の過ぎたスレッドが 1 件以上ある生徒だけ（数え方は生徒 1 人の利用の様子と同じ
+    /// domain の [`domain::messaging::StudentUnansweredMessageThreadCount`]、判定は
+    /// [`domain::messaging::UnansweredStudentFilter`]）。`false` なら絞らない
+    pub has_unanswered: bool,
 }

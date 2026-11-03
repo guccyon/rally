@@ -7,7 +7,8 @@ use application::{
     identity::{
         AccountRepository, ListStudents, ListStudentsQuery, StudentCoachBookingLookup,
         StudentContractLookup, StudentLastBookingLookup, StudentOverview,
-        StudentRecentBookingCountLookup, TokenVerifier, account_id_uuid,
+        StudentRecentBookingCountLookup, StudentUnansweredMessageThreadCountsLookup, TokenVerifier,
+        account_id_uuid,
     },
 };
 use axum::{
@@ -28,8 +29,8 @@ use crate::{
 };
 
 /// `/students` のハンドラーが使うユースケース。
-pub struct StudentsState<R, C, B, K, N, L> {
-    pub list_students: ListStudents<R, C, B, K, N, L>,
+pub struct StudentsState<R, C, B, K, N, U, L> {
+    pub list_students: ListStudents<R, C, B, K, N, U, L>,
 }
 
 /// admin-web の `listStudents` のクエリ。
@@ -39,6 +40,7 @@ pub struct ListStudentsParams {
     sport: Option<String>,
     not_booked_since: Option<String>,
     coach_id: Option<String>,
+    has_unanswered: Option<bool>,
 }
 
 /// admin-web の `StudentList`。
@@ -85,11 +87,13 @@ fn student_body(student: &StudentOverview) -> Result<StudentBody, ApiError> {
 /// 返す（ゴルフの生徒も載せる）。`q` があれば表示名に部分一致する生徒だけで、長すぎる `q` は 422。`sport` があれば
 /// そのスポーツの生徒だけ、`not_booked_since`（`YYYY-MM-DD`。日本時間）があればその日以降に予約していない生徒だけで、
 /// `coach_id` があればそのコーチの枠を一度でも予約した生徒だけ（キャンセル済みの予約も数える）で、ない・コーチでない ID なら
-/// 空の一覧。`sport` が `Sport` の値でない・`not_booked_since` が日付でない・`coach_id` が UUID でないときは 422。
+/// 空の一覧。`has_unanswered` が `true` なら返信のないまま既定の時間の過ぎたスレッドのある生徒だけ（付けない・`false` なら
+/// 絞らない）。`sport` が `Sport` の値でない・`not_booked_since` が日付でない・`coach_id` が UUID でない・`has_unanswered` が
+/// `true` / `false` でないときは 422。
 /// 各行には直近 30 日の予約の数（`recent_booking_count`）を添える。
 #[allow(clippy::type_complexity)]
-pub async fn list_students<R, C, B, K, N, L>(
-    State(state): State<Arc<StudentsState<R, C, B, K, N, L>>>,
+pub async fn list_students<R, C, B, K, N, U, L>(
+    State(state): State<Arc<StudentsState<R, C, B, K, N, U, L>>>,
     params: Result<Query<ListStudentsParams>, QueryRejection>,
 ) -> Result<Json<StudentListBody>, ApiError>
 where
@@ -98,6 +102,7 @@ where
     B: StudentLastBookingLookup,
     K: StudentCoachBookingLookup,
     N: StudentRecentBookingCountLookup,
+    U: StudentUnansweredMessageThreadCountsLookup,
     L: Clock,
 {
     let Query(params) =
@@ -118,6 +123,7 @@ where
                     .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
             })
             .transpose()?,
+        has_unanswered: params.has_unanswered.unwrap_or(false),
     };
     let students = state
         .list_students
@@ -136,8 +142,8 @@ where
 /// `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /students` は本部だけ（コーチ・生徒は 403）。
-pub fn students_router<R, C, B, K, N, L, T>(
-    list_students: ListStudents<R, C, B, K, N, L>,
+pub fn students_router<R, C, B, K, N, U, L, T>(
+    list_students: ListStudents<R, C, B, K, N, U, L>,
     tokens: T,
 ) -> Router
 where
@@ -146,12 +152,13 @@ where
     B: StudentLastBookingLookup + 'static,
     K: StudentCoachBookingLookup + 'static,
     N: StudentRecentBookingCountLookup + 'static,
+    U: StudentUnansweredMessageThreadCountsLookup + 'static,
     L: Clock + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/students", get(self::list_students::<R, C, B, K, N, L>))
+        .route("/students", get(self::list_students::<R, C, B, K, N, U, L>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(StudentsState { list_students }))
         .layer(TokenVerification::layer(tokens))
