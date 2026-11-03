@@ -37,6 +37,7 @@ mod scheduling_lesson_menu_recent_booking_count_lookup;
 mod scheduling_student_booking_activity_lookup;
 mod scheduling_student_coach_booking_lookup;
 mod scheduling_student_last_booking_lookup;
+mod scheduling_student_recent_booking_count_lookup;
 mod search_slots;
 mod slot_criteria;
 mod slot_cursor;
@@ -85,6 +86,7 @@ pub use scheduling_lesson_menu_recent_booking_count_lookup::SchedulingLessonMenu
 pub use scheduling_student_booking_activity_lookup::SchedulingStudentBookingActivityLookup;
 pub use scheduling_student_coach_booking_lookup::SchedulingStudentCoachBookingLookup;
 pub use scheduling_student_last_booking_lookup::SchedulingStudentLastBookingLookup;
+pub use scheduling_student_recent_booking_count_lookup::SchedulingStudentRecentBookingCountLookup;
 pub use search_slots::{SearchSlots, SearchSlotsQuery};
 pub use slot_criteria::SlotCriteria;
 pub use slot_cursor::SlotCursor;

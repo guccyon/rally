@@ -4,38 +4,53 @@ use domain::identity::AccountId;
 
 use super::{
     AccountRepository, ListStudentsQuery, StudentCoachBookingLookup, StudentContractLookup,
-    StudentLastBookingLookup, StudentOverview,
+    StudentLastBookingLookup, StudentOverview, StudentRecentBookingCountLookup,
 };
-use crate::{Unavailable, scheduling::calendar_day};
+use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 
 /// 生徒の一覧のユースケース（admin-web の `listStudents`。本部だけが呼ぶ）。照会だけで、何も保存しない。
 ///
 /// 生徒のアカウントを登録の新しい順（同じ時刻は ID の順）に並べ、受講権の契約種別と契約プランを entitlement に
 /// （[`StudentContractLookup`]）、最後に予約した時刻を scheduling に（[`StudentLastBookingLookup`]）問い合わせて添える。
+/// 直近の予約の数は、時計の今の時刻で scheduling に問い合わせて（[`StudentRecentBookingCountLookup`]）添える（並べ方・絞り込みには
+/// 使わない）。
 /// 条件（[`ListStudentsQuery`]）があれば、表示名の検索語に部分一致する・そのスポーツの・そのコーチを予約したことがある
 /// （scheduling に [`StudentCoachBookingLookup`] で問い合わせる）・その日付（日本時間。[`calendar_day`] で区切る）の
 /// 始まり以降に予約を作っていない生徒だけに絞る。絞っても並べ方は変えない。条件がなければすべての生徒。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListStudents<R, C, B, K> {
+pub struct ListStudents<R, C, B, K, N, L> {
     accounts: R,
     contracts: C,
     bookings: B,
     coach_bookings: K,
+    recent_bookings: N,
+    clock: L,
 }
 
-impl<R, C, B, K> ListStudents<R, C, B, K>
+impl<R, C, B, K, N, L> ListStudents<R, C, B, K, N, L>
 where
     R: AccountRepository,
     C: StudentContractLookup,
     B: StudentLastBookingLookup,
     K: StudentCoachBookingLookup,
+    N: StudentRecentBookingCountLookup,
+    L: Clock,
 {
-    pub fn new(accounts: R, contracts: C, bookings: B, coach_bookings: K) -> Self {
+    pub fn new(
+        accounts: R,
+        contracts: C,
+        bookings: B,
+        coach_bookings: K,
+        recent_bookings: N,
+        clock: L,
+    ) -> Self {
         Self {
             accounts,
             contracts,
             bookings,
             coach_bookings,
+            recent_bookings,
+            clock,
         }
     }
 
@@ -88,6 +103,10 @@ where
         let student_ids: BTreeSet<AccountId> =
             students.iter().map(|(account, _)| account.id()).collect();
         let contracts = self.contracts.find_student_contracts(&student_ids).await?;
+        let recent_booking_counts = self
+            .recent_bookings
+            .count_recent_bookings(&student_ids, self.clock.now())
+            .await?;
         Ok(students
             .into_iter()
             .map(|(account, sport)| StudentOverview {
@@ -96,6 +115,10 @@ where
                 sport,
                 contract: contracts.get(&account.id()).copied(),
                 last_booked_at: last_booked_at.get(&account.id()).copied(),
+                recent_booking_count: recent_booking_counts
+                    .get(&account.id())
+                    .copied()
+                    .unwrap_or(0),
                 registered_at: account.registered_at(),
             })
             .collect())
@@ -118,7 +141,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::{identity::StudentContract, in_memory::InMemoryAccountRepository};
+    use crate::{
+        identity::StudentContract,
+        in_memory::{FixedClock, InMemoryAccountRepository},
+    };
+
+    /// 照会した時刻（時計の今の時刻）。
+    const NOW: u64 = 1_793_404_800;
 
     fn at(seconds: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
@@ -199,6 +228,27 @@ mod tests {
         }
     }
 
+    /// 生徒 1 は直近の予約が 3 件、生徒 6 は 1 件。問い合わせた ID と時刻を記録する。
+    #[derive(Default)]
+    struct FakeRecentBookings {
+        asked: Mutex<Vec<(BTreeSet<AccountId>, SystemTime)>>,
+    }
+
+    impl StudentRecentBookingCountLookup for FakeRecentBookings {
+        async fn count_recent_bookings(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+            now: SystemTime,
+        ) -> Result<BTreeMap<AccountId, u32>, Unavailable> {
+            self.asked.lock().unwrap().push((student_ids.clone(), now));
+            Ok([(1, 3), (6, 1)]
+                .into_iter()
+                .map(|(id, count)| (AccountId::from_u128(id), count))
+                .filter(|(id, _)| student_ids.contains(id))
+                .collect())
+        }
+    }
+
     /// 取り出せない保存先の偽物。
     struct Broken;
 
@@ -236,6 +286,8 @@ mod tests {
             contracts,
             bookings,
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
 
         let students = use_case
@@ -250,6 +302,7 @@ mod tests {
                     s.sport,
                     s.contract,
                     s.last_booked_at,
+                    s.recent_booking_count,
                     s.registered_at,
                 )
             })
@@ -257,11 +310,12 @@ mod tests {
         assert_eq!(
             listed,
             [
-                (2, Sport::Swimming, None, Some(at(500)), at(300)),
-                (5, Sport::Soccer, None, None, at(200)),
-                (6, Sport::Golf, None, None, at(200)),
-                (1, Sport::Tennis, Some(MONTHLY_PLUS), None, at(100)),
-            ]
+                (2, Sport::Swimming, None, Some(at(500)), 0, at(300)),
+                (5, Sport::Soccer, None, None, 0, at(200)),
+                (6, Sport::Golf, None, None, 1, at(200)),
+                (1, Sport::Tennis, Some(MONTHLY_PLUS), None, 3, at(100)),
+            ],
+            "直近の予約がない生徒は 0。直近の予約の数は並べ方を変えない"
         );
         assert_eq!(students[0].display_name.as_str(), "なまえ2");
 
@@ -271,7 +325,15 @@ mod tests {
             std::slice::from_ref(&ids),
             "生徒の ID だけをまとめて 1 回で問い合わせる"
         );
-        assert_eq!(*use_case.bookings.asked.lock().unwrap(), [ids]);
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            std::slice::from_ref(&ids)
+        );
+        assert_eq!(
+            *use_case.recent_bookings.asked.lock().unwrap(),
+            [(ids, at(NOW))],
+            "直近の予約の数は生徒の ID をまとめて、時計の今の時刻で問い合わせる"
+        );
     }
 
     #[tokio::test]
@@ -305,6 +367,8 @@ mod tests {
             FakeContracts::default(),
             FakeBookings::default(),
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
 
         let listed = |students: Vec<StudentOverview>| -> Vec<u128> {
@@ -349,6 +413,8 @@ mod tests {
             FakeContracts::default(),
             FakeBookings::default(),
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
 
         assert!(
@@ -360,6 +426,7 @@ mod tests {
         );
         assert!(use_case.contracts.asked.lock().unwrap().is_empty());
         assert!(use_case.bookings.asked.lock().unwrap().is_empty());
+        assert!(use_case.recent_bookings.asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -369,6 +436,8 @@ mod tests {
             Broken,
             FakeBookings::default(),
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         assert!(
             use_case
@@ -408,6 +477,8 @@ mod tests {
             FakeContracts::default(),
             FakeBookings::default(),
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         let query = |sport| ListStudentsQuery {
             sport: Some(sport),
@@ -459,6 +530,8 @@ mod tests {
             contracts,
             DatedBookings,
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
         let query = ListStudentsQuery {
@@ -501,6 +574,8 @@ mod tests {
             FakeContracts::default(),
             DatedBookings,
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
         let query = |sport| ListStudentsQuery {
@@ -537,6 +612,8 @@ mod tests {
             FakeContracts::default(),
             FakeBookings::default(),
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         let query = |coach: u128| ListStudentsQuery {
             coach_id: Some(AccountId::from_u128(coach)),
@@ -557,7 +634,22 @@ mod tests {
             std::slice::from_ref(&ids),
             "予約したことがある生徒の ID だけを問い合わせる"
         );
-        assert_eq!(*use_case.contracts.asked.lock().unwrap(), [ids]);
+        assert_eq!(
+            *use_case.contracts.asked.lock().unwrap(),
+            std::slice::from_ref(&ids)
+        );
+        assert_eq!(
+            *use_case.recent_bookings.asked.lock().unwrap(),
+            [(ids, at(NOW))],
+            "絞り込んだあとの生徒の ID だけを直近の予約の数に問い合わせる"
+        );
+        assert_eq!(
+            students
+                .iter()
+                .map(|s| s.recent_booking_count)
+                .collect::<Vec<_>>(),
+            [0, 0, 1]
+        );
 
         // ないコーチ・コーチでない ID（本部 4・生徒 1）は空の一覧で、ほかのコンテキストに問い合わせない
         for coach in [9, 4, 1] {
@@ -569,6 +661,7 @@ mod tests {
         );
         assert_eq!(use_case.bookings.asked.lock().unwrap().len(), 1);
         assert_eq!(use_case.contracts.asked.lock().unwrap().len(), 1);
+        assert_eq!(use_case.recent_bookings.asked.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -578,6 +671,8 @@ mod tests {
             FakeContracts::default(),
             DatedBookings,
             FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
         let coach = Some(AccountId::from_u128(3));

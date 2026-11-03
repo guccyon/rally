@@ -532,6 +532,21 @@ impl BookingRepository for InMemoryBookingRepository {
         Ok(last)
     }
 
+    async fn bookings_of_students_created_since(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        created_since: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| student_ids.contains(&b.student_id()) && b.created_at() >= created_since)
+            .cloned()
+            .collect())
+    }
+
     async fn bookings_of_coach(
         &self,
         coach_id: AccountId,

@@ -96,8 +96,8 @@ pub fn router() -> Router {
 /// 本部が見るキャンセルされた予約の一覧（`GET /bookings/cancelled`）は予約の保存先から期間にキャンセルした予約を読み、
 /// 表示名を同じように添える（`ListCancelledBookings`）。
 /// 本部が見る生徒の一覧（`GET /students`）はアカウントの保存先から生徒を読み、受講権の契約種別と契約プランを受講権の
-/// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）
-/// 読んで添え、コーチで絞るときはそのコーチを予約したことがある生徒を予約の保存先から（`SchedulingStudentCoachBookingLookup`）
+/// 保存先から（`EntitlementStudentContractLookup`）、最後に予約した時刻を予約の保存先から（`SchedulingStudentLastBookingLookup`）、
+/// 直近 30 日の予約の数を同じく予約の保存先から時計の今の時刻で（`SchedulingStudentRecentBookingCountLookup`）読んで添え、コーチで絞るときはそのコーチを予約したことがある生徒を予約の保存先から（`SchedulingStudentCoachBookingLookup`）
 /// 読む（identity は entitlement・scheduling の表を直接読まない）。
 /// 本部が見る生徒 1 人の利用の様子（`GET /students/{student_id}/activity`）はアカウントの保存先から生徒の表示名を読み、
 /// これからの予約とキャンセルの件数を予約の保存先から（`SchedulingStudentBookingActivityLookup`）、直近の受けたレッスンを

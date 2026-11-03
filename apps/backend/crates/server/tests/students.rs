@@ -1,6 +1,6 @@
 //! 本部が見る生徒の一覧（admin-web の `GET /students`）を、保存先を Postgres にした組み立て
 //! （`server::router_with_postgres`）で通す。生徒が student-app の操作で登録し・月額契約を始め・予約したことが、
-//! 一覧の契約種別と契約プラン・最後に予約した時刻に出ること、スポーツと最後に予約した日（日本時間）で絞れること、
+//! 一覧の契約種別と契約プラン・最後に予約した時刻・直近 30 日の予約の数に出ること、スポーツと最後に予約した日（日本時間）で絞れること、
 //! 予約したことのあるコーチで絞れること（キャンセルした予約も数える）、
 //! コーチ・生徒は 403 であることを確かめる。契約の形の
 //! 細かい検査は interface の `tests/students.rs`。
@@ -169,6 +169,7 @@ async fn headquarters_sees_contract_and_last_booking_of_students(pool: PgPool) {
                     "contract_type": null,
                     "plan": null,
                     "last_booked_at": null,
+                    "recent_booking_count": 0,
                     "registered_at": "2026-10-05T00:02:00Z",
                 },
                 {
@@ -178,11 +179,26 @@ async fn headquarters_sees_contract_and_last_booking_of_students(pool: PgPool) {
                     "contract_type": "subscription",
                     "plan": "plus",
                     "last_booked_at": "2026-10-05T00:04:00Z",
+                    "recent_booking_count": 1,
                     "registered_at": "2026-10-05T00:01:00Z",
                 },
             ],
         })
     );
+
+    // 直近の予約の数は時計の今の時刻で数える。予約を作ってちょうど 30 日後までは数え、それより後は数えない
+    const THIRTY_DAYS: u64 = 30 * 24 * 3600;
+    for (now, expected) in [(at(240 + THIRTY_DAYS), 1), (at(240 + THIRTY_DAYS + 1), 0)] {
+        clock.set(now);
+        let (status, body) = send(&router, "GET", "/students", Some(&headquarters), None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["students"][1]["recent_booking_count"], expected);
+        assert_eq!(
+            body["students"][1]["last_booked_at"],
+            "2026-10-05T00:04:00Z"
+        );
+    }
+    clock.set(at(240));
 
     // スポーツと、その日（日本時間）以降に予約していないかで絞る。予約は日本時間の 2026-10-05 09:04
     for (path, expected) in [
