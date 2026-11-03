@@ -98,6 +98,15 @@ pub trait BookingRepository: Send + Sync {
         student_ids: &BTreeSet<AccountId>,
     ) -> impl Future<Output = Result<BTreeMap<AccountId, SystemTime>, Unavailable>> + Send;
 
+    /// `student_ids` の生徒の予約のうち、作った時刻が `created_since`（含む）以後のもの（状態を問わない）。並びは決めない。
+    /// 読むだけで何も変えない。本部が見る生徒ごとの直近の予約の数（[`super::SchedulingStudentRecentBookingCountLookup`]）が
+    /// 読み、数えるかの判定は domain の [`domain::scheduling::RecentStudentBookings`] が行う。
+    fn bookings_of_students_created_since(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        created_since: SystemTime,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
+
     /// `coach_id` のコーチのスロットへの予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
     /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）と、本部が見る生徒の一覧をコーチで
     /// 絞るとき（[`super::SchedulingStudentCoachBookingLookup`]）が読む。

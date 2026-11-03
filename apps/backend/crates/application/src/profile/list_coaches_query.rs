@@ -10,4 +10,7 @@ pub struct ListCoachesQuery {
     pub acceptance: Option<CoachAcceptanceStatus>,
     /// あればこのスポーツを提供する（提供スポーツのどれかが一致する）コーチだけ
     pub sport: Option<Sport>,
+    /// `true` なら直近の期間に完了したレッスンのない（`recent_lesson_count` が 0 の）コーチだけ（判定は
+    /// [`domain::lesson::InactiveCoachFilter`]）。`false`（既定）なら絞らない
+    pub inactive: bool,
 }

@@ -3,6 +3,7 @@
 //! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧。枠の開始の期間で絞るものを含む）。
 //! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
 //! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数）。
+//! 生徒ごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部の生徒の一覧の直近 30 日の予約の数。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -18,7 +19,8 @@ use application::{
     profile::ProfileCoachDisplayNameLookup,
     scheduling::{
         BookingRepository, CreateBooking, CreateBookingCommand, ListCoachBookings, ListMyBookings,
-        ReserveSlotError, SchedulingLessonMenuRecentBookingCountLookup, SlotRepository,
+        ReserveSlotError, SchedulingLessonMenuRecentBookingCountLookup,
+        SchedulingStudentRecentBookingCountLookup, SlotRepository,
     },
 };
 use domain::{
@@ -921,5 +923,95 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
         list.recent_booking_counts,
         std::collections::BTreeMap::from([(popular.id(), 2), (quiet.id(), 1), (other.id(), 1)]),
         "キャンセル・期間の外・メニューのない予約は数えない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn recent_bookings_of_students_are_counted_per_student(pool: PgPool) {
+    use application::identity::StudentRecentBookingCountLookup;
+
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let menu = lesson_menu(&pool, 1, coach, true).await;
+    let (busy, quiet, cancelled_only, no_booking, not_asked) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+    );
+    // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
+    let now = 1000;
+    let mut hour = 2000;
+    let mut booked = Vec::new();
+    for (student, with_menu, created_hour) in [
+        // 期間の始まりちょうどと、照会した時刻ちょうどは数える。メニューのない枠への予約も数える
+        (busy, true, 280),
+        (busy, false, now),
+        // 期間の始まりより前は数えない
+        (busy, true, 279),
+        (quiet, true, 900),
+        // 聞いていない生徒の予約
+        (not_asked, true, 900),
+    ] {
+        hour += 2;
+        let slot = if with_menu {
+            slot_with_menu(&pool, coach, hour, &menu).await
+        } else {
+            support::open_slot(&pool, coach, hour, hour + 1).await
+        };
+        let menu = with_menu.then_some(&menu);
+        booked.push(book_menu(&bookings, student, &slot, menu, created_hour).await);
+    }
+    // キャンセルした予約は読み取りには入り、数えない
+    hour += 2;
+    let slot = support::open_slot(&pool, coach, hour, hour + 1).await;
+    let cancelled = book_menu(&bookings, cancelled_only, &slot, None, 500).await;
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(cancelled_only, slot, at(501)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let asked: std::collections::BTreeSet<AccountId> = [busy, quiet, cancelled_only, no_booking]
+        .into_iter()
+        .collect();
+    let mut found: Vec<_> = bookings
+        .bookings_of_students_created_since(&asked, at(280))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|booking| booking.id())
+        .collect();
+    found.sort();
+    let mut expected = vec![
+        booked[0].id(),
+        booked[1].id(),
+        booked[3].id(),
+        cancelled.id(),
+    ];
+    expected.sort();
+    assert_eq!(
+        found, expected,
+        "期間の始まり（含む）以後の、聞いた生徒の予約を状態を問わず"
+    );
+    assert!(
+        bookings
+            .bookings_of_students_created_since(&Default::default(), at(0))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let counts = SchedulingStudentRecentBookingCountLookup::new(bookings.clone())
+        .count_recent_bookings(&asked, at(now))
+        .await
+        .unwrap();
+    assert_eq!(
+        counts,
+        std::collections::BTreeMap::from([(busy, 2), (quiet, 1)]),
+        "キャンセル・期間の外の予約は数えず、数える予約のない生徒は含めない"
     );
 }

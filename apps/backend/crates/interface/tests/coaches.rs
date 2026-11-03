@@ -393,6 +393,49 @@ async fn headquarters_filters_by_acceptance_status_and_sport_keeping_the_order()
 }
 
 #[tokio::test]
+async fn headquarters_lists_only_coaches_without_lessons_in_the_last_30_days_combined_with_other_filters()
+ {
+    // 直近 30 日のレッスンはコーチ 2 が 2・コーチ 5 が 1・コーチ 4（停止中）が 0（31 日前の添削は数えない）
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?inactive=true", vec![4]),
+        // false・付けないときは絞らない
+        ("?inactive=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?inactive=true&sport=tennis", vec![4]),
+        ("?inactive=true&acceptance_status=suspended", vec![4]),
+        ("?inactive=true&acceptance_status=accepting", vec![]),
+        ("?inactive=true&sport=soccer", vec![]),
+        ("?inactive=true&q=%E3%81%84%E3%81%A8", vec![4]),
+        ("?inactive=false&acceptance_status=accepting", vec![5, 2]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+        if query.contains("inactive=true") {
+            for coach in body["coaches"].as_array().unwrap() {
+                assert_eq!(coach["recent_lesson_count"], 0, "{query}: {coach}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn headquarters_inactive_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?inactive=yes",
+        "?inactive=1",
+        "?inactive=",
+        "?inactive=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
 async fn headquarters_unknown_acceptance_status_or_sport_is_422() {
     let router = app(accounts().await);
     for query in [
