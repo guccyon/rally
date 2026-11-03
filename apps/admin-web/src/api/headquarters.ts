@@ -7,7 +7,12 @@ export function headquartersApi(client: ApiClient) {
     getSlotSupply: (filter: { from?: string; to?: string } = {}) =>
       call(() => client.GET("/slot-supply", { params: { query: filter } })),
     listCoaches: (
-      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
+      filter: {
+        acceptance_status?: Schemas["CoachAcceptanceStatus"];
+        sport?: Schemas["Sport"];
+        q?: string;
+        inactive?: boolean;
+      } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>

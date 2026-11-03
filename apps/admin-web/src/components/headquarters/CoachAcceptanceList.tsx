@@ -22,11 +22,30 @@ type State =
   | { kind: "loaded"; coaches: Coach[] }
   | { kind: "failed"; message: string };
 
-/** 絞り込みの条件。空なら絞らない。`q` は表示名の検索語（前後の空白を除いた値）。 */
-export type CoachAcceptanceFilter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | ""; q: string };
+/**
+ * 絞り込みの条件。空なら絞らない。`q` は表示名の検索語（前後の空白を除いた値）。
+ * `inactive` が true なら直近 30 日にレッスンのないコーチだけ（契約の `inactive`。false なら絞らない）。
+ */
+export type CoachAcceptanceFilter = {
+  acceptanceStatus: AcceptanceStatus | "";
+  sport: Sport | "";
+  q: string;
+  inactive: boolean;
+};
 type Filter = CoachAcceptanceFilter;
 
-const NO_FILTER: Filter = { acceptanceStatus: "", sport: "", q: "" };
+const NO_FILTER: Filter = { acceptanceStatus: "", sport: "", q: "", inactive: false };
+
+/** 0 件のときの文言。直近 30 日にレッスンのないコーチだけに絞っているときは、その条件を文言に含める。 */
+function emptyMessage(filter: Filter): string {
+  const others = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
+  if (filter.inactive) {
+    return others
+      ? "直近 30 日にレッスンのないコーチのうち、条件に合うコーチはいません"
+      : "直近 30 日にレッスンのないコーチはいません";
+  }
+  return others ? "条件に合うコーチはいません" : "コーチがまだいません";
+}
 
 /** 契約の `listCoaches` の `q` の上限（前後の空白を除いた Unicode のコードポイントの数。表示名の上限と同じ）。 */
 const QUERY_MAX_LENGTH = 50;
@@ -64,8 +83,9 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
  * （resumeCoach。理由は付けない）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
+ * 「直近 30 日にレッスンのないコーチだけ」を入れたら `inactive=true` を付けて読み直し、外したら付けずに読み直す。
  * 表示名の検索欄は「探す」（または Enter）で確定し、前後の空白を除いた語を `q` に渡して読み直す（空なら絞らない）。
- * 上限を超える語は送らずに理由を出す。受付の状態・スポーツを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * 上限を超える語は送らずに理由を出す。受付の状態・スポーツ・直近 30 日にレッスンのないコーチだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
  * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
@@ -94,6 +114,7 @@ export function CoachAcceptanceList({
         ...(next.acceptanceStatus === "" ? {} : { acceptance_status: next.acceptanceStatus }),
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.q === "" ? {} : { q: next.q }),
+        ...(next.inactive ? { inactive: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
@@ -113,17 +134,27 @@ export function CoachAcceptanceList({
   );
 
   // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
-  const { acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ } = initialFilter;
+  const {
+    acceptanceStatus: initialAcceptanceStatus,
+    sport: initialSport,
+    q: initialQ,
+    inactive: initialInactive,
+  } = initialFilter;
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchCoaches({ acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ }).then((next) => {
+    void fetchCoaches({
+      acceptanceStatus: initialAcceptanceStatus,
+      sport: initialSport,
+      q: initialQ,
+      inactive: initialInactive,
+    }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches, initialAcceptanceStatus, initialSport, initialQ]);
+  }, [fetchCoaches, initialAcceptanceStatus, initialSport, initialQ, initialInactive]);
 
   async function changeFilter(next: Filter) {
     setFilter(next);
@@ -135,7 +166,7 @@ export function CoachAcceptanceList({
   }
 
   // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
-  async function commitFilter(change: Partial<Pick<Filter, "acceptanceStatus" | "sport">>) {
+  async function commitFilter(change: Partial<Pick<Filter, "acceptanceStatus" | "sport" | "inactive">>) {
     const query = coachNameQuery(queryDraft);
     if (!query.ok) {
       setQueryError(query.message);
@@ -181,8 +212,6 @@ export function CoachAcceptanceList({
     setResult(response);
     if (response.code !== undefined) await reload(filter);
   }
-
-  const filtered = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
 
   return (
     <div className="space-y-4">
@@ -240,13 +269,21 @@ export function CoachAcceptanceList({
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.inactive}
+            onChange={(event) => void commitFilter({ inactive: event.target.checked })}
+          />
+          直近 30 日にレッスンのないコーチだけ
+        </label>
       </form>
       {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
       <ResultMessage result={result} />
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
-        <p className="text-sm">{filtered ? "条件に合うコーチはいません" : "コーチがまだいません"}</p>
+        <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.coaches.length > 0 && (
         <>
