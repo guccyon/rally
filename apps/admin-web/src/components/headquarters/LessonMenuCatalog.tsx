@@ -28,8 +28,17 @@ type CoachesState =
 /** URL に残す絞り込み（コーチと確定した名前の検索語。空なら絞らない）。 */
 export type LessonMenuCatalogQuery = { coachId: string; q: string };
 
-/** 絞り込みの条件。`q` は確定した名前の検索語（前後の空白を除いた値。空なら絞らない）。 */
-type Filter = { q: string; sport: Sport | ""; publishedOnly: boolean; coachId: string };
+/**
+ * 絞り込みの条件。`q` は確定した名前の検索語（前後の空白を除いた値。空なら絞らない）。
+ * `unbookedOnly` が true なら直近 30 日に予約のないメニューだけ（契約の `unbooked`。false なら絞らない）。
+ */
+type Filter = {
+  q: string;
+  sport: Sport | "";
+  publishedOnly: boolean;
+  coachId: string;
+  unbookedOnly: boolean;
+};
 
 const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
 
@@ -45,6 +54,16 @@ const VALIDATION_FAILED = `絞り込みの指定が正しくありません。�
 /** 検索語の文字数（Unicode のコードポイントで数える）が上限を超えていれば理由を返す。 */
 function queryError(q: string): string | null {
   return [...q].length > MAX_QUERY_LENGTH ? QUERY_TOO_LONG : null;
+}
+
+/** 0 件のときの文言。直近 30 日に予約のないメニューだけに絞っているときは、その条件を文言に含める。 */
+function emptyMessage(filter: Filter): string {
+  if (!filter.unbookedOnly) return "条件に合うメニューはありません";
+  const others =
+    filter.q !== "" || filter.sport !== "" || filter.publishedOnly || filter.coachId !== "";
+  return others
+    ? "直近 30 日に予約のないメニューのうち、条件に合うメニューはありません"
+    : "直近 30 日に予約のないメニューはありません";
 }
 
 function durationLabel(menu: LessonMenu): string {
@@ -68,12 +87,15 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
 
 /**
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
- * 絞り込み（名前・スポーツ・公開中だけ・コーチ）は API の `q` / `sport` / `published` / `coach_id` に渡し、並びは契約の正本どおり返った順のまま出す。
- * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・公開中だけ・コーチは選んだときに読み直す。
- * スポーツ・公開中だけ・コーチを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * 絞り込み（名前・スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけ）は API の `q` / `sport` / `published` / `coach_id` / `unbooked` に渡し、
+ * 並びは契約の正本どおり返った順のまま出す。
+ * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけは選んだときに読み直す
+ * （「直近 30 日に予約のないメニューだけ」を入れたら `unbooked=true` を付けて読み直し、外したら付けずに読み直す。URL には残さない）。
+ * スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
  * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
+ * 0 件のときは、直近 30 日に予約のないメニューだけに絞っていればその条件を含めた文言を出す。
  * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
  * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約の正本）を右寄せ・等幅の数字で出し、隣の「公開」の列との間をあける（並び替えには使わない）。
  * その数は、そのメニューで絞った「予約」の画面（`?lesson_menu_id=`）へのリンクにする。
@@ -100,6 +122,7 @@ export function LessonMenuCatalog({
     sport: "",
     publishedOnly: false,
     coachId: initialCoachId ?? "",
+    unbookedOnly: false,
   });
   // 名前の検索欄の入力中の値（確定する（探す・Enter・ほかの絞り込みを変える）までは一覧を読み直さない）。
   const [queryDraft, setQueryDraft] = useState(initialQ);
@@ -117,6 +140,7 @@ export function LessonMenuCatalog({
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.publishedOnly ? { published: true } : {}),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
+        ...(next.unbookedOnly ? { unbooked: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", menus: response.data.lesson_menus }
@@ -137,6 +161,7 @@ export function LessonMenuCatalog({
       sport: "",
       publishedOnly: false,
       coachId: initialCoachId ?? "",
+      unbookedOnly: false,
     }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
@@ -296,6 +321,14 @@ export function LessonMenuCatalog({
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={filter.unbookedOnly}
+            onChange={(event) => void commitFilter({ unbookedOnly: event.target.checked })}
+          />
+          直近 30 日に予約のないメニューだけ
+        </label>
       </div>
       {queryDraftError !== null && <ResultMessage result={{ ok: false, message: queryDraftError }} />}
       {coaches.kind === "failed" && (
@@ -307,7 +340,7 @@ export function LessonMenuCatalog({
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.menus.length === 0 && (
-        <p className="text-sm">条件に合うメニューはありません</p>
+        <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.menus.length > 0 && (
         <table aria-label="レッスンメニューの一覧" className="w-full text-left text-sm">

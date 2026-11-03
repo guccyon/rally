@@ -17,7 +17,9 @@ use crate::{clock::Clock, scheduling::calendar_day};
 /// 本部の対応済みかを指定されたら、
 /// 対応済みの印（domain の [`domain::review::LowRatedReviewHandling`]）の有無がそれと同じ評価だけを残す。コーチを指定されたら、
 /// 評価されたコーチがそれと同じ評価だけを残す（いないコーチなら空の一覧。規則は domain の
-/// [`LessonReview::matches_coach`](domain::review::LessonReview::matches_coach)）。スポーツを指定されたら、評価した
+/// [`LessonReview::matches_coach`](domain::review::LessonReview::matches_coach)）。生徒を指定されたら、評価した生徒が
+/// それと同じ評価だけを残す（いない生徒なら空の一覧。規則は domain の
+/// [`LessonReview::matches_student`](domain::review::LessonReview::matches_student)）。スポーツを指定されたら、評価した
 /// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
 /// （スポーツが引けない評価は残さない）。日付 `from`・`to` のどちらかを指定されたら、送った日付（日本時間。
 /// [`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の評価だけを残す（規則は domain の
@@ -66,7 +68,8 @@ where
 
     /// `query` の `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
     /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。`coach_id` があれば、
-    /// そのコーチが評価された評価だけ。なければコーチを問わない。`from`・`to` のどちらかがあれば、送った日付がその期間の
+    /// そのコーチが評価された評価だけ。なければコーチを問わない。`student_id` があれば、その生徒が評価した評価だけ。
+    /// なければ生徒を問わない。`from`・`to` のどちらかがあれば、送った日付がその期間の
     /// 評価だけ。両方なければ期間で絞らない。期間が規則を満たさなければ [`ListLowRatedReviewsError::Invalid`]（評価は読まない）。
     pub async fn execute(
         &self,
@@ -76,6 +79,7 @@ where
             sport,
             handled,
             coach_id,
+            student_id,
             from,
             to,
         } = query;
@@ -95,7 +99,9 @@ where
             .await?;
         let mut reviews = LowRatedReviewCriteria::select(submitted, now);
         reviews.retain(|review| {
-            review.matches_coach(coach_id) && review.matches_period(period.as_ref())
+            review.matches_coach(coach_id)
+                && review.matches_student(student_id)
+                && review.matches_period(period.as_ref())
         });
         if let Some(handled) = handled {
             reviews.retain(|review| review.handling().is_some() == handled);
@@ -765,5 +771,138 @@ mod tests {
             use_case.coach_names.asked.lock().unwrap().len() == 1,
             "期間が規則を満たさなければ表示名も引かない"
         );
+    }
+
+    #[tokio::test]
+    async fn student_id_keeps_only_low_reviews_by_the_student_combined_with_the_other_filters() {
+        const STUDENT: AccountId = AccountId::from_u128(200);
+        let by_student = |review: LessonReview| {
+            LessonReview::restore(
+                review.id(),
+                review.lesson_id(),
+                STUDENT,
+                review.coach_id(),
+                review.rating(),
+                review.comment().clone(),
+                review.submitted_at(),
+            )
+        };
+        let handled = |review: LessonReview| {
+            review.with_handling(Some(LowRatedReviewHandling::new(
+                AccountId::from_u128(9),
+                now() - DAY,
+            )))
+        };
+        let use_case = use_case([
+            // 生徒 200 の評価。レッスン 1・5 はテニス、2 は水泳
+            handled(by_student(review(1, COACH, 1, now() - 3 * DAY))),
+            by_student(review(2, OTHER_COACH, 2, now() - DAY)),
+            by_student(review(5, COACH, 2, now() - 4 * DAY)),
+            // ★3 と 30 日より前は、生徒で絞っても載らない
+            by_student(review(3, COACH, 3, now() - DAY)),
+            by_student(review(4, COACH, 1, now() - 31 * DAY)),
+            // 別の生徒（106）の評価
+            review(6, COACH, 1, now() - 2 * DAY),
+        ]);
+
+        let ids = |list: LowRatedReviewList| -> Vec<u128> {
+            list.reviews.iter().map(|r| r.id().as_u128()).collect()
+        };
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                student_id: Some(STUDENT),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            use_case.student_names.asked.lock().unwrap().clone(),
+            [BTreeSet::from([STUDENT])],
+            "絞ったあとの生徒だけを問い合わせる"
+        );
+        assert_eq!(ids(list), [2, 1, 5], "その生徒の評価だけを、新しい順");
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    student_id: Some(AccountId::from_u128(106)),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [6]
+        );
+        // 競技・対応済み・コーチと合わせて絞れる
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [1, 5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    handled: Some(false),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [2, 5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    coach_id: Some(COACH),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [1, 5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    handled: Some(false),
+                    coach_id: Some(COACH),
+                    student_id: Some(STUDENT),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [5]
+        );
+        assert_eq!(
+            ids(use_case
+                .execute(ListLowRatedReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    student_id: Some(AccountId::from_u128(106)),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()),
+            [] as [u128; 0],
+            "コーチと生徒の両方に合う評価だけ"
+        );
+
+        // ない ID・生徒でない ID（コーチ）は空の一覧で、表示名を問い合わせない
+        let asked = use_case.student_names.asked.lock().unwrap().len();
+        for student_id in [AccountId::from_u128(99), COACH] {
+            let list = use_case
+                .execute(ListLowRatedReviewsQuery {
+                    student_id: Some(student_id),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert!(list.reviews.is_empty(), "{student_id:?}");
+        }
+        assert_eq!(use_case.student_names.asked.lock().unwrap().len(), asked);
     }
 }

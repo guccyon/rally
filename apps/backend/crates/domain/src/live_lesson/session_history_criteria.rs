@@ -4,7 +4,12 @@ use std::{
 };
 
 use super::LiveLessonSession;
-use crate::{DomainError, identity::AccountId};
+use crate::{
+    DomainError,
+    catalog::Sport,
+    identity::{Account, AccountId},
+    profile::CoachSportFilter,
+};
 
 /// 本部が見る通話セッションの記録の一覧の条件（admin-web の `listLiveLessonSessions`。期間・範囲・並べ方の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `listLiveLessonSessions`）。
@@ -13,12 +18,16 @@ use crate::{DomainError, identity::AccountId};
 /// [`Self::coach_id`] と任意の生徒 [`Self::student_id`] で絞る。生徒は結び付いた予約の生徒（グループレッスンでは開始した
 /// 予約の生徒に限らない。[`LiveLessonSession::booking_of`]）で見る。日付から時刻への変換（タイムゾーン）は application が決め、ここは期間の長さの規則と
 /// 選び方・並べ方だけを持つ。期間は 0 より長く [`Self::MAX_DAYS`] 日まで。終了の有無は問わない（通話中も含む）。
+/// 任意の競技 [`Self::sport`] でも絞れる（[`Self::with_sport`]。省けばすべての競技）。セッションの競技はセッションの
+/// コーチの競技で、コーチの提供スポーツに含むかの判定は [`CoachSportFilter`] の 1 か所（[`Self::matches_coach_sport`]。
+/// `listOverdueLiveLessonSessions` の `sport` と同じ。[`super::OverdueSessionCriteria`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionHistoryCriteria {
     starts_at: SystemTime,
     ends_at: SystemTime,
     coach_id: Option<AccountId>,
     student_id: Option<AccountId>,
+    coach_sport: CoachSportFilter,
 }
 
 impl SessionHistoryCriteria {
@@ -50,7 +59,17 @@ impl SessionHistoryCriteria {
             ends_at,
             coach_id,
             student_id,
+            coach_sport: CoachSportFilter::new(None),
         })
+    }
+
+    /// `sport` があればその競技のコーチのセッションだけを選ぶ条件（`None` ならすべての競技）。期間・コーチ・生徒は
+    /// 変えない。
+    pub const fn with_sport(self, sport: Option<Sport>) -> Self {
+        Self {
+            coach_sport: CoachSportFilter::new(sport),
+            ..self
+        }
     }
 
     pub const fn starts_at(&self) -> SystemTime {
@@ -67,6 +86,21 @@ impl SessionHistoryCriteria {
 
     pub const fn student_id(&self) -> Option<AccountId> {
         self.student_id
+    }
+
+    /// 絞り込む競技。`None` ならすべての競技。
+    pub const fn sport(&self) -> Option<Sport> {
+        self.coach_sport.sport()
+    }
+
+    /// セッションのコーチのアカウント `coach`（引けなければ `None`）が競技の指定に合うか。競技の指定がなければ常に合う。
+    /// 指定があれば、コーチの役割のアカウントで提供スポーツに競技を含むときだけ合う（判定は [`CoachSportFilter`]。
+    /// `listCoaches` の `sport` と同じ）。アカウントの引けないコーチは合わない。
+    pub fn matches_coach_sport(&self, coach: Option<&Account>) -> bool {
+        match self.sport() {
+            None => true,
+            Some(_) => coach.is_some_and(|coach| self.coach_sport.matches(coach)),
+        }
     }
 
     /// `session` が期間に開始し（開始を含み、終了を含まない）、コーチの指定があればそのコーチの、生徒の指定があれば
@@ -97,7 +131,9 @@ impl SessionHistoryCriteria {
 mod tests {
     use super::*;
     use crate::{
+        identity::{Email, Role},
         live_lesson::{ConnectionQuality, SessionBooking, SessionId},
+        profile::DisplayName,
         scheduling::BookingId,
     };
 
@@ -235,6 +271,69 @@ mod tests {
                 .unwrap()
                 .matches(&group)
         );
+    }
+
+    fn account(role: Role, sports: &[Sport]) -> Account {
+        Account::new(
+            COACH,
+            Email::new("coach@example.com").unwrap(),
+            DisplayName::new("たなか").unwrap(),
+            role,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn with_sport_keeps_the_period_the_coach_and_the_student() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), Some(COACH), Some(STUDENT))
+            .unwrap()
+            .with_sport(Some(Sport::Golf));
+        assert_eq!(
+            (
+                criteria.starts_at(),
+                criteria.ends_at(),
+                criteria.coach_id(),
+                criteria.student_id(),
+                criteria.sport()
+            ),
+            (
+                day(10),
+                day(12),
+                Some(COACH),
+                Some(STUDENT),
+                Some(Sport::Golf)
+            )
+        );
+        let plain = SessionHistoryCriteria::new(day(10), day(12), None, None).unwrap();
+        assert_eq!(plain.sport(), None, "既定はすべての競技");
+        assert_eq!(plain.with_sport(None), plain);
+    }
+
+    #[test]
+    fn without_sport_every_coach_matches() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None).unwrap();
+        assert!(criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Soccer]))));
+        assert!(
+            criteria.matches_coach_sport(None),
+            "アカウントの引けないコーチも、競技を指定しなければ絞らない"
+        );
+    }
+
+    #[test]
+    fn sport_matches_coaches_offering_it_among_several() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None)
+            .unwrap()
+            .with_sport(Some(Sport::Golf));
+        assert!(
+            criteria
+                .matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis, Sport::Golf])))
+        );
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis]))));
+        // コーチでないアカウント・引けないコーチは合わない
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Student, &[Sport::Golf]))));
+        assert!(!criteria.matches_coach_sport(None));
     }
 
     #[test]

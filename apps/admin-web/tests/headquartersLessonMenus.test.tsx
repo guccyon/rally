@@ -283,6 +283,120 @@ describe("本部のレッスンメニュー", () => {
   });
 });
 
+describe("本部のレッスンメニューを直近 30 日に予約のないメニューだけに絞る", () => {
+  test("入れたら API の unbooked=true を付けて読み直し、外したら付けずに読み直す", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [MENUS[1]!] } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } });
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} onQueryChange={onQueryChange} />);
+    await screen.findByRole("table");
+    expect(listLessonMenus).toHaveBeenLastCalledWith({});
+
+    const toggle = screen.getByLabelText("直近 30 日に予約のないメニューだけ");
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ unbooked: true });
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole("row", { name: /サーブのフォーム添削/ })).toBeInTheDocument();
+    // URL に残すのはコーチと名前の検索語だけ
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: "", q: "" });
+
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(4));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({});
+    expect(listLessonMenus).toHaveBeenCalledTimes(3);
+  });
+
+  test("名前・スポーツ・公開中だけ・コーチと組み合わせられ、ほかを変えても入れたまま残る", async () => {
+    const listLessonMenus = listOf([MENUS[1]!]);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={COACH_B} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ coach_id: COACH_B, unbooked: true }),
+    );
+
+    await user.type(screen.getByLabelText("名前で探す"), "サーブ{Enter}");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        sport: "tennis",
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    await user.click(screen.getByLabelText("公開中だけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        sport: "tennis",
+        published: true,
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    expect(screen.getByLabelText("直近 30 日に予約のないメニューだけ")).toBeChecked();
+  });
+
+  test("入力中の語は、切り替えたときに一緒に確定する。40 文字を超えていれば理由を出して条件を変えない", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), " 基礎 ");
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "基礎", unbooked: true }),
+    );
+
+    await user.clear(screen.getByLabelText("名前で探す"));
+    await user.type(screen.getByLabelText("名前で探す"), "あ".repeat(41));
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText(/名前の検索語は 40 文字までにしてください/)).toBeInTheDocument();
+    expect(listLessonMenus).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("直近 30 日に予約のないメニューだけ")).toBeChecked();
+  });
+
+  test("0 件なら絞り込みの条件が分かる文言を出し、表は出さない", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValue({ ok: true, data: { lesson_menus: [] } });
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText("直近 30 日に予約のないメニューはありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "水泳");
+    expect(
+      await screen.findByText("直近 30 日に予約のないメニューのうち、条件に合うメニューはありません"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
+  });
+});
+
 describe("本部のレッスンメニューをコーチで絞る", () => {
   test("コーチは「すべて」とコーチの一覧の返った順から選べ、選ぶと API の coach_id に渡して読み直す", async () => {
     const listLessonMenus = vi

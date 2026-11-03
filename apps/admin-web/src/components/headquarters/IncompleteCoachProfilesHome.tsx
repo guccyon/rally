@@ -8,7 +8,7 @@ import { createApiClient } from "@/api/client";
 import { headquartersApi } from "@/api/headquarters";
 import { Section } from "@/components/ui/Section";
 
-import { SPORTS } from "./CoachAcceptanceList";
+import { ACCEPTANCE_STATUSES, SPORTS } from "./CoachAcceptanceList";
 import { type IncompleteCoachProfileFilter, IncompleteCoachProfileList } from "./IncompleteCoachProfileList";
 
 /** 「自己紹介の足りないコーチ」の画面の URL。 */
@@ -16,23 +16,30 @@ export const INCOMPLETE_COACH_PROFILES_PATH = "/headquarters/coaches/incomplete-
 
 /** URL に絞り込みを残すクエリの名前（契約の `listIncompleteCoachProfiles` のクエリと同じ）。 */
 const SPORT_QUERY = "sport";
+const STATUS_QUERY = "acceptance_status";
 
 /** 絞り込みを残した「自己紹介の足りないコーチ」の URL。「すべて」の条件はクエリに出さない。 */
 export function incompleteCoachProfilesPath(filter: IncompleteCoachProfileFilter): string {
-  return filter.sport === ""
-    ? INCOMPLETE_COACH_PROFILES_PATH
-    : `${INCOMPLETE_COACH_PROFILES_PATH}?${new URLSearchParams({ [SPORT_QUERY]: filter.sport })}`;
+  const query = new URLSearchParams();
+  if (filter.sport !== "") query.set(SPORT_QUERY, filter.sport);
+  if (filter.acceptanceStatus !== "") query.set(STATUS_QUERY, filter.acceptanceStatus);
+  const search = query.toString();
+  return search === "" ? INCOMPLETE_COACH_PROFILES_PATH : `${INCOMPLETE_COACH_PROFILES_PATH}?${search}`;
 }
 
 /** URL のクエリから絞り込みを読む。契約の値でなければ「すべて」として扱う。 */
 export function incompleteCoachProfileFilterFrom(params: Pick<URLSearchParams, "get">): IncompleteCoachProfileFilter {
   const sport = params.get(SPORT_QUERY);
-  return { sport: SPORTS.find((value) => value === sport) ?? "" };
+  const status = params.get(STATUS_QUERY);
+  return {
+    sport: SPORTS.find((value) => value === sport) ?? "",
+    acceptanceStatus: ACCEPTANCE_STATUSES.find((value) => value === status) ?? "",
+  };
 }
 
 /**
  * 本部の画面: プロフィール（自己紹介）に空の項目があるコーチを見る。
- * 絞り込みは URL のクエリ（`?sport=`）に残し、再読み込み・共有で同じ一覧を開く。
+ * 絞り込みは URL のクエリ（`?sport=&acceptance_status=`）に残し、再読み込み・共有で同じ一覧を開く。
  */
 export function IncompleteCoachProfilesHome({
   token,

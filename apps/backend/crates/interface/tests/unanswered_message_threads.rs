@@ -1,7 +1,9 @@
 //! `GET /message-threads/unanswered`（admin-web の `listUnansweredMessageThreads`。本部が見る、返信のないまま時間の
 //! 過ぎたスレッドの一覧）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること
 //! （403）、最後の発言が生徒で既定の 24 時間以上たったスレッドを経過の長い順に返すこと、メッセージの本文を返さないこと、
-//! `older_than_hours` で時間を変えられること、整数でない・範囲の外の `older_than_hours` が 422 であることを確かめる。
+//! `older_than_hours` で時間を変えられること、`coach_id` で担当コーチを、`student_id` で生徒を絞れること（時間・互いと
+//! 組み合わせられる）、整数でない・範囲の外の `older_than_hours` と UUID でない `coach_id`・`student_id` が 422 であることを
+//! 確かめる。
 //! 何を発言と数えるかと基準の境界は domain の `MessageThread::awaiting_coach_reply_since`・`UnansweredThreadCriteria`、
 //! 選び方の細部はユースケース `ListUnansweredMessageThreads` のテスト。
 
@@ -272,6 +274,121 @@ async fn older_than_hours_changes_the_threshold() {
         admin.assert_response("get", PATH, status, &body);
         assert_eq!(body["older_than_hours"], hours);
         assert_eq!(thread_ids(&body), expected, "{hours} 時間");
+    }
+}
+
+#[tokio::test]
+async fn coach_id_narrows_the_threads_with_older_than_hours() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for (query, expected) in [
+        (format!("coach_id={}", uuid(42)), vec![uuid(1)]),
+        // アカウントのないコーチも、担当のスレッドがあれば載る
+        (format!("coach_id={}", uuid(99)), vec![uuid(4)]),
+        (format!("coach_id={}", uuid(44)), vec![]),
+        (
+            format!("coach_id={}&older_than_hours=1", uuid(44)),
+            vec![uuid(2)],
+        ),
+        (format!("older_than_hours=25&coach_id={}", uuid(42)), vec![]),
+        // コーチが返したスレッドだけのコーチ
+        (format!("coach_id={}", uuid(45)), vec![]),
+        // コーチでない ID（生徒）・ない ID は空の一覧
+        (format!("coach_id={}&older_than_hours=1", uuid(3)), vec![]),
+        (format!("coach_id={}", uuid(12345)), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(thread_ids(&body), expected, "{query}");
+    }
+    // 時間を省けば既定の 24 時間のまま。項目は絞らないときと同じ
+    let (_, body) = get(&app, &format!("{PATH}?coach_id={}", uuid(42)), HEADQUARTERS).await;
+    assert_eq!(body["older_than_hours"], 24);
+    let (_, all) = get(&app, PATH, HEADQUARTERS).await;
+    assert_eq!(body["threads"][0], all["threads"][1]);
+}
+
+#[tokio::test]
+async fn invalid_coach_id_is_422() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for value in ["42", "not-a-uuid", ""] {
+        let (status, body) = get(&app, &format!("{PATH}?coach_id={value}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["code"], "validation_failed", "{value}");
+        assert_eq!(body["message"], "coach_id が UUID でない", "{value}");
+    }
+}
+
+#[tokio::test]
+async fn student_id_narrows_the_threads_with_older_than_hours_and_coach_id() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for (query, expected) in [
+        (format!("student_id={}", uuid(3)), vec![uuid(1)]),
+        (
+            format!("student_id={}&older_than_hours=1", uuid(3)),
+            vec![uuid(1), uuid(2)],
+        ),
+        (
+            format!("older_than_hours=25&student_id={}", uuid(3)),
+            vec![],
+        ),
+        // アカウントのない生徒も、スレッドがあれば載る
+        (format!("student_id={}", uuid(4)), vec![uuid(4)]),
+        // コーチと組み合わせれば両方に合うものだけ
+        (
+            format!(
+                "student_id={}&coach_id={}&older_than_hours=1",
+                uuid(3),
+                uuid(44)
+            ),
+            vec![uuid(2)],
+        ),
+        (
+            format!("coach_id={}&student_id={}", uuid(42), uuid(3)),
+            vec![uuid(1)],
+        ),
+        (
+            format!("student_id={}&coach_id={}", uuid(4), uuid(42)),
+            vec![],
+        ),
+        // 生徒でない ID（コーチ）・ない ID は空の一覧
+        (
+            format!("student_id={}&older_than_hours=1", uuid(42)),
+            vec![],
+        ),
+        (format!("student_id={}", uuid(12345)), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(thread_ids(&body), expected, "{query}");
+    }
+    // 時間を省けば既定の 24 時間のまま。項目は絞らないときと同じ
+    let (_, body) = get(
+        &app,
+        &format!("{PATH}?student_id={}", uuid(3)),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(body["older_than_hours"], 24);
+    let (_, all) = get(&app, PATH, HEADQUARTERS).await;
+    assert_eq!(body["threads"][0], all["threads"][1]);
+}
+
+#[tokio::test]
+async fn invalid_student_id_is_422() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for value in ["3", "not-a-uuid", ""] {
+        let (status, body) = get(&app, &format!("{PATH}?student_id={value}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(body["code"], "validation_failed", "{value}");
+        assert_eq!(body["message"], "student_id が UUID でない", "{value}");
     }
 }
 

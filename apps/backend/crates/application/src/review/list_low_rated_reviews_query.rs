@@ -10,6 +10,8 @@ pub struct ListLowRatedReviewsQuery {
     pub handled: Option<bool>,
     /// このコーチが評価された評価だけ
     pub coach_id: Option<AccountId>,
+    /// この生徒が評価した評価だけ
+    pub student_id: Option<AccountId>,
     /// 送った期間の始まりの日付（日本時間。含む）
     pub from: Option<Date>,
     /// 送った期間の終わりの日付（日本時間。含む）

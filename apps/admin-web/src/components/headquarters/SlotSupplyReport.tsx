@@ -14,33 +14,57 @@ import {
 } from "@/components/labels";
 
 import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";
+import { SPORTS } from "./PendingVideoReviewList";
+
+type Sport = Schemas["Sport"];
 
 type State =
   | { kind: "loading" }
-  | { kind: "loaded"; report: Schemas["SlotSupplyReport"] }
+  | { kind: "loaded"; report: Schemas["SlotSupplyReport"]; coachId: string; sport: Sport | "" }
   | { kind: "failed"; message: string };
 
+type CoachesState =
+  | { kind: "loading" }
+  | { kind: "loaded"; coaches: Schemas["Coach"][] }
+  | { kind: "failed"; message: string };
+
+/** period が null なら API の既定の期間（開いたときだけ）。coachId が空ならすべてのコーチ、sport が空ならすべての競技。 */
+type Filter = { period: Period | null; coachId: string; sport: Sport | "" };
+
+const ALL_COACHES: Filter = { period: null, coachId: "", sport: "" };
+
+const NO_NAME = "（名前を表示できません）";
+
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
-const VALIDATION_FAILED = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
+const VALIDATION_FAILED = `期間・コーチ・スポーツの指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチとスポーツは一覧から選び直してください。`;
 
 /**
  * スポーツごとの予約枠の需給（getSlotSupply）。判定と数え方は契約の説明が正本で、画面は返った値を出すだけ。
- * 開いたときは期間を付けずに読み（API の既定: 集計した時刻までの 30 日）、数えた期間の日付（日本時間）を入力欄に入れる。
- * 「この条件で見る」で選んだ期間（日本時間の日付）を `from` / `to` に渡して読み直し、「再集計」は最後に読んだ条件で読み直す。
+ * 開いたときは期間とコーチを付けずに読み（API の既定: 集計した時刻までの 30 日・すべてのコーチ）、数えた期間の日付（日本時間）を入力欄に入れる。
+ * 「この条件で見る」で選んだ期間（日本時間の日付）を `from` / `to` に、選んだコーチを `coach_id` に、選んだスポーツを `sport` に渡して
+ * 読み直し、「再集計」は最後に読んだ条件で読み直す。コーチの選択肢はコーチの一覧（listCoaches）の返った順（キャンセルされた予約と同じ）、
+ * スポーツの選択肢は契約の `Sport` の順（返却待ちの動画添削と同じ）。スポーツで絞ると、その競技を提供するコーチの枠と予約だけを数え、
+ * 表は今までどおり 6 種類すべてを出す（契約）。コーチ・スポーツで絞った結果には、表の上に「どのコーチ・どの競技の需給か」の見出しを出す。
  */
-export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotSupply"> }) {
-  // period が null なら API の既定の期間に任せる（開いたときだけ）。
-  const [draft, setDraft] = useState<Period | null>(null);
+export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotSupply" | "listCoaches"> }) {
+  const [draft, setDraft] = useState<Filter>(ALL_COACHES);
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [applied, setApplied] = useState<Period | null>(null);
+  const [applied, setApplied] = useState<Filter>(ALL_COACHES);
+  const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
   const [state, setState] = useState<State>({ kind: "loading" });
   // 条件を続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
 
   const fetchReport = useCallback(
-    async (period: Period | null): Promise<State> => {
-      const response = await api.getSlotSupply(period ?? {});
-      if (response.ok) return { kind: "loaded", report: response.data };
+    async (filter: Filter): Promise<State> => {
+      const response = await api.getSlotSupply({
+        ...(filter.period ?? {}),
+        ...(filter.coachId === "" ? {} : { coach_id: filter.coachId }),
+        ...(filter.sport === "" ? {} : { sport: filter.sport }),
+      });
+      if (response.ok) {
+        return { kind: "loaded", report: response.data, coachId: filter.coachId, sport: filter.sport };
+      }
       return {
         kind: "failed",
         message: response.code === "validation_failed" ? VALIDATION_FAILED : response.message,
@@ -53,12 +77,12 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchReport(null).then((next) => {
+    void fetchReport(ALL_COACHES).then((next) => {
       if (!active || request !== latestRequest.current) return;
       setState(next);
       if (next.kind === "loaded") {
         const used = usedPeriodOf(next.report);
-        setDraft((current) => current ?? used);
+        setDraft((current) => (current.period === null ? { ...current, period: used } : current));
       }
     });
     return () => {
@@ -66,30 +90,47 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
     };
   }, [fetchReport]);
 
-  async function load(period: Period | null) {
+  // コーチの選択肢。読めなくても需給は期間だけで見られるようにし、コーチの絞り込みだけを使えなくする。
+  useEffect(() => {
+    let active = true;
+    void api.listCoaches().then((response) => {
+      if (!active) return;
+      setCoaches(
+        response.ok
+          ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  async function load(filter: Filter) {
     const request = ++latestRequest.current;
     setState({ kind: "loading" });
-    const result = await fetchReport(period);
+    const result = await fetchReport(filter);
     if (request === latestRequest.current) setState(result);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const period = draft ?? { from: "", to: "" };
+    const period = draft.period ?? { from: "", to: "" };
     const error = periodError(period);
     setDraftError(error);
     if (error !== null) return;
-    setApplied(period);
-    await load(period);
+    const filter = { ...draft, period };
+    setApplied(filter);
+    await load(filter);
   }
 
-  const period = draft ?? { from: "", to: "" };
+  const period = draft.period ?? { from: "", to: "" };
 
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        枠の開始の日付（日本時間）で期間を選んで、繁忙期の前に枠が足りるかを見られます。期間は {MAX_PERIOD_DAYS}{" "}
-        日まで選べます。開いたときは集計した時刻までの 30 日です。
+        枠の開始の日付（日本時間）で期間を選んで、繁忙期の前に枠が足りるかを見られます。コーチを選ぶと、そのコーチの枠と、それらの枠への予約だけを数えます。スポーツを選ぶと、そのスポーツを提供するコーチの枠と、それらの枠への予約だけを数えます。期間は{" "}
+        {MAX_PERIOD_DAYS} 日まで選べます。開いたときは集計した時刻までの 30 日・すべてのコーチ・すべてのスポーツです。
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">
@@ -98,7 +139,7 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
             type="date"
             className="mt-1 block rounded-md border px-2 py-1"
             value={period.from}
-            onChange={(event) => setDraft({ ...period, from: event.target.value })}
+            onChange={(event) => setDraft({ ...draft, period: { ...period, from: event.target.value } })}
           />
         </label>
         <label className="block">
@@ -107,8 +148,40 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
             type="date"
             className="mt-1 block rounded-md border px-2 py-1"
             value={period.to}
-            onChange={(event) => setDraft({ ...period, to: event.target.value })}
+            onChange={(event) => setDraft({ ...draft, period: { ...period, to: event.target.value } })}
           />
+        </label>
+        <label className="block">
+          コーチ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={draft.coachId}
+            disabled={coaches.kind !== "loaded"}
+            onChange={(event) => setDraft({ ...draft, coachId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {coaches.kind === "loaded" &&
+              coaches.coaches.map((coach) => (
+                <option key={coach.coach_id} value={coach.coach_id}>
+                  {coach.display_name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="block">
+          スポーツ
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={draft.sport}
+            onChange={(event) => setDraft({ ...draft, sport: event.target.value as Sport | "" })}
+          >
+            <option value="">すべて</option>
+            {SPORTS.map((sport) => (
+              <option key={sport} value={sport}>
+                {SPORT_LABELS[sport]}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
           この条件で見る
@@ -122,10 +195,17 @@ export function SlotSupplyReport({ api }: { api: Pick<HeadquartersApi, "getSlotS
           再集計
         </button>
       </form>
+      {coaches.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
+        />
+      )}
       {draftError !== null && <ResultMessage result={{ ok: false, message: draftError }} />}
       {state.kind === "loading" && <p className="text-sm text-text-muted">集計中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
-      {state.kind === "loaded" && <LoadedReport report={state.report} />}
+      {state.kind === "loaded" && (
+        <LoadedReport report={state.report} coachName={coachNameOf(state.coachId, coaches)} sport={state.sport} />
+      )}
     </div>
   );
 }
@@ -142,9 +222,46 @@ function isEmpty(report: Schemas["SlotSupplyReport"]): boolean {
   return report.sports.every((supply) => supply.published_slots === 0 && supply.booking_students === 0);
 }
 
-function LoadedReport({ report }: { report: Schemas["SlotSupplyReport"] }) {
+/**
+ * 絞ったコーチの名前（絞っていなければ null）。応答には名前が載らないので選択肢のコーチの一覧から引く（コーチは一覧を読めてから
+ * しか選べない）。一覧にない ID のときは名前の代わりに「名前を表示できません」を出す。
+ */
+function coachNameOf(coachId: string, coaches: CoachesState): string | null {
+  if (coachId === "") return null;
+  const coach = coaches.kind === "loaded" ? coaches.coaches.find((each) => each.coach_id === coachId) : undefined;
+  return coach?.display_name ?? NO_NAME;
+}
+
+/** 絞った条件の見出し（絞っていなければ null）。スポーツはその競技を提供するコーチで絞る（契約）ので、コーチの言い方で書く。 */
+function headingOf(coachName: string | null, sport: Sport | ""): string | null {
+  if (sport === "") return coachName === null ? null : `${coachName} の予約枠の需給`;
+  const sportCoaches = `${SPORT_LABELS[sport]}を提供するコーチ`;
+  return coachName === null
+    ? `${sportCoaches}の予約枠の需給`
+    : `${coachName} の予約枠の需給（${sportCoaches}に限る）`;
+}
+
+/** 0 件のときの文言。コーチだけ・スポーツだけならそのコーチ・その競技のコーチと言い、両方なら「条件に合う」と言う。 */
+function emptyMessageOf(coachName: string | null, sport: Sport | ""): string {
+  if (coachName !== null && sport !== "") return "この期間に開始する条件に合う予約枠はなく、予約しようとした生徒もいません";
+  if (coachName !== null) return "この期間に開始するこのコーチの予約枠はなく、予約しようとした生徒もいません";
+  if (sport !== "") return "この期間に開始するこのスポーツのコーチの予約枠はなく、予約しようとした生徒もいません";
+  return "この期間に開始する予約枠はなく、予約しようとした生徒もいません";
+}
+
+function LoadedReport({
+  report,
+  coachName,
+  sport,
+}: {
+  report: Schemas["SlotSupplyReport"];
+  coachName: string | null;
+  sport: Sport | "";
+}) {
+  const heading = headingOf(coachName, sport);
   return (
     <div className="space-y-2">
+      {heading !== null && <h3 className="font-semibold">{heading}</h3>}
       {report.from !== undefined && report.to !== undefined ? (
         <p className="text-sm">
           集計の期間: {formatDay(report.from)} 〜 {formatDay(report.to)}（この期間の日付に開始する枠を数える）
@@ -155,7 +272,9 @@ function LoadedReport({ report }: { report: Schemas["SlotSupplyReport"] }) {
           （終わりは含まない。この期間に開始する枠を数える）
         </p>
       )}
-      {isEmpty(report) && <p className="text-sm">この期間に開始する予約枠はなく、予約しようとした生徒もいません</p>}
+      {isEmpty(report) && (
+        <p className="text-sm">{emptyMessageOf(coachName, sport)}</p>
+      )}
       {!isEmpty(report) && (
         <table className="w-full text-sm">
           <thead>

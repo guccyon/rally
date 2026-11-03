@@ -6,7 +6,8 @@ use super::{
 };
 use crate::{
     catalog::{LessonMenu, LessonMenuId},
-    identity::AccountId,
+    identity::{Account, AccountId},
+    profile::CoachSportFilter,
 };
 
 /// 予約（glossary の booking）。生徒によるスロットの確保で、体験予約（`is_trial`）もこれ。
@@ -226,6 +227,15 @@ impl Booking {
         student_id.is_none_or(|student_id| self.student_id == student_id)
     }
 
+    /// 一覧を絞る競技の指定に当てはまるか。予約した枠のコーチのアカウント `coach`（引けなければ `None`）の提供スポーツで
+    /// 決め（判定は [`CoachSportFilter`] の 1 か所。予約枠の需給の [`Slot::matches_coach_sport`] と同じ）、指定がなければ
+    /// どの予約も当てはまる。指定があるときは、`coach` が予約した枠のコーチのアカウントで競技を提供するときだけ当てはまる
+    /// （アカウントが引けない予約は当てはまらない）。本部が見る予約の一覧が使う。
+    pub fn matches_coach_sport(&self, sport: CoachSportFilter, coach: Option<&Account>) -> bool {
+        sport.sport().is_none()
+            || coach.is_some_and(|coach| coach.id() == self.coach_id && sport.matches(coach))
+    }
+
     pub const fn is_trial(&self) -> bool {
         self.is_trial
     }
@@ -272,7 +282,8 @@ impl Booking {
 
     /// 一覧を絞るレッスンメニューの指定に当てはまるか。指定があれば予約した時点のメニューの写し（[`Booking::lesson_menu`]）の
     /// ID がそれと同じときだけ、なければどの予約も当てはまる。メニューの写しのない予約・ないメニューの ID は当てはまらない
-    /// （一覧は空になる。コーチの指定 [`Booking::matches_coach`] と同じ扱い）。本部が見る予約の一覧が使う。
+    /// （一覧は空になる。コーチの指定 [`Booking::matches_coach`] と同じ扱い）。本部が見る予約の一覧と、キャンセルされた予約の
+    /// 一覧が使う。
     pub fn matches_lesson_menu(&self, lesson_menu_id: Option<LessonMenuId>) -> bool {
         lesson_menu_id.is_none_or(|id| {
             self.lesson_menu
@@ -958,6 +969,51 @@ mod tests {
         assert!(!booking.matches_student(Some(COACH)));
         // キャンセルしても予約した生徒は変わらない
         assert!(cancelled(booking).matches_student(Some(STUDENT)));
+    }
+
+    fn account(id: AccountId, role: crate::identity::Role, sports: &[Sport]) -> Account {
+        Account::new(
+            id,
+            crate::identity::Email::new(format!("user{}@example.com", id.as_u128())).unwrap(),
+            crate::profile::DisplayName::new("たろう").unwrap(),
+            role,
+            sports.iter().copied(),
+            NOW,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn matches_coach_sport_by_the_sports_the_coach_of_the_slot_offers() {
+        use crate::identity::Role;
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        // 枠はテニスだが、コーチはテニスとゴルフを提供する
+        let coach = account(COACH, Role::Coach, &[Sport::Tennis, Sport::Golf]);
+        let filter = |sport| CoachSportFilter::new(Some(sport));
+        assert!(booking.matches_coach_sport(filter(Sport::Tennis), Some(&coach)));
+        assert!(
+            booking.matches_coach_sport(filter(Sport::Golf), Some(&coach)),
+            "枠のスポーツでなくコーチの提供スポーツで決める"
+        );
+        assert!(!booking.matches_coach_sport(filter(Sport::Soccer), Some(&coach)));
+        // アカウントが引けない予約・枠のコーチでないアカウント・コーチでないアカウントは当てはまらない
+        assert!(!booking.matches_coach_sport(filter(Sport::Tennis), None));
+        let other = account(AccountId::from_u128(99), Role::Coach, &[Sport::Tennis]);
+        assert!(!booking.matches_coach_sport(filter(Sport::Tennis), Some(&other)));
+        let student = account(COACH, Role::Student, &[Sport::Tennis]);
+        assert!(!booking.matches_coach_sport(filter(Sport::Tennis), Some(&student)));
+        // キャンセルしても枠のコーチは変わらない
+        assert!(cancelled(booking).matches_coach_sport(filter(Sport::Golf), Some(&coach)));
+    }
+
+    #[test]
+    fn matches_coach_sport_without_a_sport_is_every_booking() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        assert!(booking.matches_coach_sport(CoachSportFilter::default(), None));
+        let coach = account(COACH, crate::identity::Role::Coach, &[Sport::Soccer]);
+        assert!(booking.matches_coach_sport(CoachSportFilter::default(), Some(&coach)));
     }
 
     #[test]

@@ -1,9 +1,13 @@
+use std::collections::BTreeSet;
+
 use domain::{
     catalog::Sport,
-    profile::{CoachSportFilter, MissingCoachProfileFields},
+    identity::AccountId,
+    profile::{CoachAcceptanceFilter, CoachSportFilter, MissingCoachProfileFields},
+    scheduling::CoachAcceptanceStatus,
 };
 
-use super::{CoachProfileRepository, IncompleteCoachProfile};
+use super::{CoachAcceptanceLookup, CoachProfileRepository, IncompleteCoachProfile};
 use crate::{Unavailable, identity::AccountRepository};
 
 /// プロフィールに足りない項目のあるコーチの一覧のユースケース（admin-web の `listIncompleteCoachProfiles`。本部だけが
@@ -12,26 +16,36 @@ use crate::{Unavailable, identity::AccountRepository};
 /// すべてのコーチのアカウント（受付を止めているコーチも含む）のうち、足りない項目（domain の
 /// [`MissingCoachProfileFields`] で判定する）が 1 つ以上あるものを、アカウントを登録した時刻の古い順（同じ時刻は ID の順）で
 /// 返す。任意の競技 `sport` で絞れる（コーチの提供スポーツに含むものだけ。判定は domain の [`CoachSportFilter`] で、
-/// `listCoaches` の `sport` と同じ）。`None` なら絞らない。絞っても「足りない」の判定と並べ方は変わらない。
+/// `listCoaches` の `sport` と同じ）。`None` なら絞らない。任意の受付の状態 `acceptance` でも絞れる（scheduling に問い合わせる。
+/// [`CoachAcceptanceLookup`]。判定は domain の [`CoachAcceptanceFilter`] で、`listCoaches` の `acceptance_status` と同じ。
+/// 止めていないコーチは受付中）。`None` なら絞らず、問い合わせもしない。両方付ければ両方を満たすものだけ。
+/// 絞っても「足りない」の判定と並べ方は変わらない。
 /// プロフィールを最後に更新した時刻は、今の保存先が持たないので常に `None`（記録するのは別の段）。
 /// 照会だけで、行動イベントも境界間イベントも発火しない。誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListIncompleteCoachProfiles<R, P> {
+pub struct ListIncompleteCoachProfiles<R, P, A> {
     accounts: R,
     profiles: P,
+    acceptances: A,
 }
 
-impl<R, P> ListIncompleteCoachProfiles<R, P>
+impl<R, P, A> ListIncompleteCoachProfiles<R, P, A>
 where
     R: AccountRepository,
     P: CoachProfileRepository,
+    A: CoachAcceptanceLookup,
 {
-    pub fn new(accounts: R, profiles: P) -> Self {
-        Self { accounts, profiles }
+    pub fn new(accounts: R, profiles: P, acceptances: A) -> Self {
+        Self {
+            accounts,
+            profiles,
+            acceptances,
+        }
     }
 
     pub async fn execute(
         &self,
         sport: Option<Sport>,
+        acceptance: Option<CoachAcceptanceStatus>,
     ) -> Result<Vec<IncompleteCoachProfile>, Unavailable> {
         let filter = CoachSportFilter::new(sport);
         let bios = self.profiles.list_coach_bios().await?;
@@ -52,6 +66,22 @@ where
                 })
             })
             .collect();
+        let acceptance = CoachAcceptanceFilter::new(acceptance);
+        if acceptance.status().is_some() && !incomplete.is_empty() {
+            let coach_ids: BTreeSet<AccountId> = incomplete
+                .iter()
+                .map(|profile| profile.account.id())
+                .collect();
+            let statuses = self.acceptances.find_coach_acceptances(&coach_ids).await?;
+            incomplete.retain(|profile| {
+                acceptance.matches(
+                    statuses
+                        .get(&profile.account.id())
+                        .copied()
+                        .unwrap_or(CoachAcceptanceStatus::Accepting),
+                )
+            });
+        }
         incomplete.sort_by_key(|profile| (profile.account.registered_at(), profile.account.id()));
         Ok(incomplete)
     }
@@ -62,12 +92,19 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        identity::{Account, AccountId, Email, Role},
+        identity::{Account, Email, Role},
         profile::{CoachBio, CoachProfileField, DisplayName},
+        scheduling::CoachSuspensionReason,
     };
 
     use super::*;
-    use crate::in_memory::InMemoryAccountRepository;
+    use crate::{
+        in_memory::{InMemoryAccountRepository, InMemoryCoachAcceptanceRepository},
+        scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
+    };
+
+    /// 受付を止める本部のアカウント。
+    const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
 
     fn account(id: u128, role: Role, registered_hour: u64) -> Account {
         let sports: &[Sport] = match role {
@@ -118,10 +155,42 @@ mod tests {
         accounts: &InMemoryAccountRepository,
         sport: Option<Sport>,
     ) -> Vec<IncompleteCoachProfile> {
-        ListIncompleteCoachProfiles::new(accounts.clone(), accounts.clone())
-            .execute(sport)
+        listed_with(
+            accounts,
+            &InMemoryCoachAcceptanceRepository::default(),
+            sport,
+            None,
+        )
+        .await
+    }
+
+    async fn listed_with(
+        accounts: &InMemoryAccountRepository,
+        acceptances: &InMemoryCoachAcceptanceRepository,
+        sport: Option<Sport>,
+        acceptance: Option<CoachAcceptanceStatus>,
+    ) -> Vec<IncompleteCoachProfile> {
+        ListIncompleteCoachProfiles::new(
+            accounts.clone(),
+            accounts.clone(),
+            SchedulingCoachAcceptanceLookup::new(acceptances.clone()),
+        )
+        .execute(sport, acceptance)
+        .await
+        .unwrap()
+    }
+
+    async fn suspend(acceptances: &InMemoryCoachAcceptanceRepository, id: u128) {
+        acceptances
+            .update(AccountId::from_u128(id), |a| {
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
+            })
             .await
-            .unwrap()
+            .unwrap();
     }
 
     fn ids(profiles: &[IncompleteCoachProfile]) -> Vec<u128> {
@@ -213,6 +282,63 @@ mod tests {
             ids(&listed(&accounts).await),
             [6, 4, 7, 3],
             "付けなければ今までどおり"
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_lists_only_coaches_in_that_status_keeping_the_order() {
+        let accounts = accounts([
+            account_with_sports(1, Role::Headquarters, &[], 0),
+            account_with_sports(2, Role::Coach, &[Sport::Tennis], 3),
+            account_with_sports(3, Role::Coach, &[Sport::Golf], 1),
+            account_with_sports(4, Role::Coach, &[Sport::Tennis, Sport::Golf], 2),
+            account_with_sports(5, Role::Coach, &[Sport::Tennis], 0),
+            account_with_sports(6, Role::Coach, &[Sport::Soccer], 4),
+        ])
+        .await;
+        // 6 は受付中でも書き終えているので載らない
+        write_bio(&accounts, 6, "サッカー歴 5 年").await;
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        suspend(&acceptances, 3).await;
+        suspend(&acceptances, 5).await;
+        // 止めてから再開したコーチは受付中
+        suspend(&acceptances, 4).await;
+        acceptances
+            .update(AccountId::from_u128(4), |a| {
+                a.resume(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH)
+            })
+            .await
+            .unwrap();
+
+        let listed = |sport, acceptance| listed_with(&accounts, &acceptances, sport, acceptance);
+        assert_eq!(
+            ids(&listed(None, Some(CoachAcceptanceStatus::Accepting)).await),
+            [4, 2],
+            "受付中（止めたことのないコーチ・再開したコーチ）だけ。登録の古い順のまま"
+        );
+        assert_eq!(
+            ids(&listed(None, Some(CoachAcceptanceStatus::Suspended)).await),
+            [5, 3]
+        );
+        assert_eq!(
+            ids(&listed(Some(Sport::Golf), Some(CoachAcceptanceStatus::Accepting)).await),
+            [4],
+            "競技と組み合わせれば両方を満たすものだけ"
+        );
+        assert_eq!(
+            ids(&listed(Some(Sport::Tennis), Some(CoachAcceptanceStatus::Suspended)).await),
+            [5]
+        );
+        assert!(
+            listed(Some(Sport::Soccer), Some(CoachAcceptanceStatus::Accepting))
+                .await
+                .is_empty(),
+            "合うコーチがいなければ空"
+        );
+        assert_eq!(
+            ids(&listed(None, None).await),
+            [5, 3, 4, 2],
+            "付けなければ今までどおり（止めているコーチも載る）"
         );
     }
 }

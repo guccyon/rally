@@ -1,7 +1,7 @@
-//! `GET /live-lesson-sessions`（admin-web の `listLiveLessonSessions`。本部が期間とコーチ・生徒で見る通話セッションの記録の
-//! 一覧）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付
+//! `GET /live-lesson-sessions`（admin-web の `listLiveLessonSessions`。本部が期間とコーチ・生徒・競技で見る通話セッションの
+//! 記録の一覧）の統合テスト。レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、日付
 //! （日本時間）の期間に開始したセッションを終了の有無を問わず開始の新しい順に返すこと、終了の時刻と長さ（分）、
-//! `coach_id`・`student_id` で絞れること、期間の不正が 422 であることを確かめる。期間の境界は domain の `SessionHistoryCriteria`、
+//! `coach_id`・`student_id`・`sport` で絞れること、期間・`sport` の不正が 422 であることを確かめる。期間の境界は domain の `SessionHistoryCriteria`、
 //! 選び方の細部はユースケース `ListLiveLessonSessions` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -10,7 +10,9 @@ use application::{
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
     in_memory::{InMemoryAccountRepository, InMemoryLiveLessonSessionRepository},
     live_lesson::ListLiveLessonSessions,
-    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
+    profile::{
+        ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
+    },
 };
 use axum::{
     Router,
@@ -148,6 +150,7 @@ async fn app() -> Router {
     interface::headquarters_live_lesson_sessions_router(
         ListLiveLessonSessions::new(
             sessions(),
+            ProfileCoachAccountLookup::new(accounts.clone()),
             ProfileCoachDisplayNameLookup::new(accounts.clone()),
             ProfileStudentDisplayNameLookup::new(accounts),
         ),
@@ -302,6 +305,48 @@ async fn student_id_narrows_the_sessions() {
 }
 
 #[tokio::test]
+async fn sport_narrows_the_sessions_by_the_sport_of_the_coach() {
+    let admin = support::Contract::load("admin-web");
+    let app = app().await;
+    for (query, expected) in [
+        // たなか（42）はテニスのコーチ。アカウントのないコーチ（99）の通話は出ない
+        ("sport=tennis".to_string(), vec![uuid(4), uuid(1), uuid(2)]),
+        // 生徒のスポーツはコーチの競技ではない。該当するセッションのない競技は空の一覧
+        ("sport=golf".to_string(), vec![]),
+        // コーチ・生徒と組み合わさる
+        (
+            format!("sport=tennis&coach_id={}", uuid(42)),
+            vec![uuid(4), uuid(1), uuid(2)],
+        ),
+        (format!("sport=tennis&coach_id={}", uuid(99)), vec![]),
+        (format!("sport=tennis&student_id={}", uuid(4)), vec![]),
+        (
+            format!("sport=tennis&student_id={}", uuid(3)),
+            vec![uuid(4), uuid(1), uuid(2)],
+        ),
+    ] {
+        let (status, body) = get(
+            &app,
+            &format!("{PATH}?from=2026-10-31&to=2026-11-02&{query}"),
+            HEADQUARTERS,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(session_ids(&body), expected, "{query}");
+    }
+    // 期間と組み合わさる（10 月 31 日を外せば前日に始まった通話は出ない）
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?from=2026-11-01&to=2026-11-02&sport=tennis"),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(session_ids(&body), [uuid(4), uuid(1)]);
+}
+
+#[tokio::test]
 async fn only_headquarters_lists_sessions() {
     let admin = support::Contract::load("admin-web");
     let app = app().await;
@@ -347,6 +392,10 @@ async fn invalid_periods_are_422() {
         (
             "from=2026-11-01&to=2026-11-02&student_id=nope",
             "student_id が UUID でない",
+        ),
+        (
+            "from=2026-11-01&to=2026-11-02&sport=cricket",
+            "未知のスポーツ: cricket",
         ),
     ] {
         let (status, body) = get(&app, &format!("{PATH}?{query}"), HEADQUARTERS).await;

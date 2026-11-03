@@ -148,19 +148,35 @@ describe("本部の生徒の利用の様子", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあれば一覧への入口を添える", async () => {
+  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあればその生徒で絞った一覧への入口を添える", async () => {
     render(<StudentActivity api={{ getStudentActivity: activityOf(ACTIVITY) }} studentId={STUDENT_ID} />);
 
     await screen.findByRole("table", { name: "これからの予約" });
     expect(valueOf("送った動画")).toHaveTextContent(/^4 件（これまでのすべて）$/);
     const pending = valueOf("返却待ち");
     expect(pending).toHaveTextContent(/^1 件（いま返却を待っている動画）返却待ちの動画添削を見る$/);
-    // 一覧には生徒の絞り込みがないので、入口は一覧そのもの
+    // 入口はこの生徒で絞った返却待ちの一覧
     expect(within(pending).getByRole("link", { name: "返却待ちの動画添削を見る" })).toHaveAttribute(
       "href",
-      "/headquarters/pending-video-reviews",
+      `/headquarters/pending-video-reviews?student_id=${STUDENT_ID}`,
     );
     expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("この生徒で絞った「返事のないメッセージ」への入口を、返却待ちの数によらず出す", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const messages = valueOf("メッセージ");
+    expect(within(messages).getByRole("link", { name: "返事のないメッセージを見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/unanswered-messages?student_id=${STUDENT_ID}`,
+    );
   });
 
   test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
@@ -268,6 +284,7 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "生徒の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/students");
     expect(screen.queryByRole("link", { name: "この生徒の予約を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "この生徒の終わっていない通話を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "この生徒の返した動画添削の記録を見る" })).not.toBeInTheDocument();
   });
 
@@ -296,6 +313,20 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).toHaveAttribute(
       "href",
       `/headquarters/live-sessions?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("利用の様子から、その生徒で絞った終わっていない通話を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒の終わっていない通話を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/overdue-live-sessions?student_id=${STUDENT_ID}`,
     );
   });
 

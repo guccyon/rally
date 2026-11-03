@@ -151,6 +151,7 @@ mod tests {
                 sport: None,
                 min_elapsed_hours,
                 coach_id: Some(COACH),
+                student_id: None,
             }
             .select(videos.clone(), now())
             .len()

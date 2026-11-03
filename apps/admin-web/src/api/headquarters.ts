@@ -4,10 +4,17 @@ import type { ApiClient, Schemas } from "./client";
 /** 本部の操作（契約の operationId と 1 対 1）。 */
 export function headquartersApi(client: ApiClient) {
   return {
-    getSlotSupply: (filter: { from?: string; to?: string } = {}) =>
+    getSlotSupply: (
+      filter: { from?: string; to?: string; coach_id?: string; sport?: Schemas["Sport"] } = {},
+    ) =>
       call(() => client.GET("/slot-supply", { params: { query: filter } })),
     listCoaches: (
-      filter: { acceptance_status?: Schemas["CoachAcceptanceStatus"]; sport?: Schemas["Sport"]; q?: string } = {},
+      filter: {
+        acceptance_status?: Schemas["CoachAcceptanceStatus"];
+        sport?: Schemas["Sport"];
+        q?: string;
+        inactive?: boolean;
+      } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
       call(() =>
@@ -15,7 +22,7 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listCoachReviews: (coachId: string, filter: { max_rating?: number } = {}) =>
+    listCoachReviews: (coachId: string, filter: { max_rating?: number; from?: string; to?: string } = {}) =>
       call(() =>
         client.GET("/coaches/{coach_id}/reviews", {
           params: { path: { coach_id: coachId }, query: filter },
@@ -46,7 +53,9 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listIncompleteCoachProfiles: (filter: { sport?: Schemas["Sport"] } = {}) =>
+    listIncompleteCoachProfiles: (
+      filter: { sport?: Schemas["Sport"]; acceptance_status?: Schemas["CoachAcceptanceStatus"] } = {},
+    ) =>
       call(() => client.GET("/coaches/incomplete-profiles", { params: { query: filter } })),
     listLowRatedLessonReviews: (filter: { handled?: boolean } = {}) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
@@ -60,8 +69,11 @@ export function headquartersApi(client: ApiClient) {
       sport?: Schemas["Sport"];
       min_elapsed_hours?: number;
       coach_id?: string;
+      student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
+    listUnansweredMessageThreads: (filter: { older_than_hours?: number; coach_id?: string; student_id?: string } = {}) =>
+      call(() => client.GET("/message-threads/unanswered", { params: { query: filter } })),
     listReturnedVideoReviews: (filter: {
       from?: string;
       to?: string;
@@ -70,15 +82,24 @@ export function headquartersApi(client: ApiClient) {
       student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/returned", { params: { query: filter } })),
-    listOverdueLiveLessonSessions: (filter: { older_than_hours?: number; coach_id?: string } = {}) =>
+    listOverdueLiveLessonSessions: (
+      filter: { older_than_hours?: number; coach_id?: string; sport?: Schemas["Sport"]; student_id?: string } = {},
+    ) =>
       call(() => client.GET("/live-lesson-sessions/overdue", { params: { query: filter } })),
-    listLiveLessonSessions: (filter: { from: string; to: string; coach_id?: string; student_id?: string }) =>
+    listLiveLessonSessions: (filter: {
+      from: string;
+      to: string;
+      coach_id?: string;
+      student_id?: string;
+      sport?: Schemas["Sport"];
+    }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
     listLessonMenus: (filter: {
       q?: string;
       sport?: Schemas["Sport"];
       published?: boolean;
       coach_id?: string;
+      unbooked?: boolean;
     }) =>
       call(() => client.GET("/lesson-menus", { params: { query: filter } })),
     unpublishLessonMenu: (lessonMenuId: string, body: Schemas["UnpublishLessonMenuRequest"]) =>
@@ -125,7 +146,7 @@ export function headquartersApi(client: ApiClient) {
       lesson_menu_id?: string;
     }) =>
       call(() => client.GET("/bookings", { params: { query } })),
-    listCancelledBookings: (filter: { from?: string; to?: string; coach_id?: string }) =>
+    listCancelledBookings: (filter: { from?: string; to?: string; coach_id?: string; lesson_menu_id?: string }) =>
       call(() => client.GET("/bookings/cancelled", { params: { query: filter } })),
     getBooking: (bookingId: string) =>
       call(() =>
@@ -135,7 +156,7 @@ export function headquartersApi(client: ApiClient) {
       ),
     sendAnnouncement: (body: Schemas["SendAnnouncementRequest"]) =>
       call(() => client.POST("/announcements", { body })),
-    listAnnouncements: (filter: { from?: string; to?: string }) =>
+    listAnnouncements: (filter: { from?: string; to?: string; q?: string }) =>
       call(() => client.GET("/announcements", { params: { query: filter } })),
     withdrawAnnouncement: (announcementId: string) =>
       call(() =>
@@ -145,7 +166,8 @@ export function headquartersApi(client: ApiClient) {
       ),
     createAnnouncementDraft: (body: Schemas["AnnouncementDraftRequest"]) =>
       call(() => client.POST("/announcement-drafts", { body })),
-    listAnnouncementDrafts: () => call(() => client.GET("/announcement-drafts")),
+    listAnnouncementDrafts: (filter: { q?: string } = {}) =>
+      call(() => client.GET("/announcement-drafts", { params: { query: filter } })),
     updateAnnouncementDraft: (announcementDraftId: string, body: Schemas["AnnouncementDraftRequest"]) =>
       call(() =>
         client.PUT("/announcement-drafts/{announcement_draft_id}", {

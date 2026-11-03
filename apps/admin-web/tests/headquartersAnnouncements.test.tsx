@@ -112,6 +112,16 @@ function apiOf(overrides: Partial<AnnouncementsApi>): AnnouncementsApi {
   };
 }
 
+/** 下書きの欄（「題で探す」と「探す」は送ったお知らせの欄にもあるので、欄の中で探す）。 */
+function draftSection() {
+  return within(screen.getByRole("region", { name: "下書き" }));
+}
+
+/** 送ったお知らせの欄。 */
+function sentSection() {
+  return within(screen.getByRole("region", { name: "送ったお知らせ" }));
+}
+
 function items() {
   return within(screen.getByRole("list", { name: "送ったお知らせの一覧" })).getAllByRole("listitem");
 }
@@ -309,6 +319,155 @@ describe("送ったお知らせの期間", () => {
     await user.click(screen.getByRole("button", { name: "この期間で見る" }));
     await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・2 件");
     expect(listAnnouncementDrafts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("送ったお知らせを題で探す", () => {
+  test("題の語を入れて「探す」（または Enter）で前後の空白を除いた語を今の期間とともに q に渡して読み直し、空にして探すと絞らずに読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "　水泳 ");
+    await user.click(sentSection().getByRole("button", { name: "探す" }));
+
+    await waitFor(() =>
+      expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", q: "水泳" }),
+    );
+    expect(sentSection().getByLabelText("題で探す")).toHaveValue("水泳");
+    expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・題に「水泳」を含む・2 件")).toBeInTheDocument();
+
+    await user.clear(sentSection().getByLabelText("題で探す"));
+    await user.type(sentSection().getByLabelText("題で探す"), "  {Enter}");
+
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+    expect(sentSection().getByLabelText("題で探す")).toHaveValue("");
+  });
+
+  test("期間と組み合わせる: 題で絞ったまま期間を変えると語を保って読み、期間を確定しないまま探すと今の一覧の期間で読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(2));
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-09-01", to: "2026-09-30", q: "水泳" });
+    expect(await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・題に「水泳」を含む・2 件")).toBeInTheDocument();
+
+    await changePeriod(user, "2026-08-01", "2026-08-31");
+    await user.clear(sentSection().getByLabelText("題で探す"));
+    await user.type(sentSection().getByLabelText("題で探す"), "メンテ{Enter}");
+    await waitFor(() =>
+      expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-09-01", to: "2026-09-30", q: "メンテ" }),
+    );
+  });
+
+  test("見つからなければ語を含めて「この期間に送った、題に「…」を含むお知らせはありません」と出し、一覧は出さない", async () => {
+    const listAnnouncements = vi.fn<HeadquartersApi["listAnnouncements"]>(async (filter) => ({
+      ok: true,
+      data: { announcements: filter.q === undefined ? SENT : [] },
+    }));
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "夏休み{Enter}");
+
+    expect(await screen.findByText("この期間に送った、題に「夏休み」を含むお知らせはありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・題に「夏休み」を含む・0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間に送ったお知らせはありません")).not.toBeInTheDocument();
+  });
+
+  test("50 文字（コードポイントで数える）を超える語は送らずに理由を出す", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.click(sentSection().getByLabelText("題で探す"));
+    await user.paste("𠮷".repeat(51));
+    await user.click(sentSection().getByRole("button", { name: "探す" }));
+
+    expect(sentSection().getByRole("alert")).toHaveTextContent("題は 50 文字までで探してください。");
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(items()).toHaveLength(2);
+  });
+
+  test("語で探しているときの API の 422 は、期間と語の長さの直し方を添えた理由を出す", async () => {
+    const listAnnouncements = vi.fn<HeadquartersApi["listAnnouncements"]>(async (filter) =>
+      filter.q === undefined
+        ? { ok: true, data: { announcements: SENT } }
+        : { ok: false, code: "validation_failed", message: "入力が正しくありません。" },
+    );
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+
+    expect(await sentSection().findByRole("alert")).toHaveTextContent(
+      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。題は 50 文字までで探してください。",
+    );
+  });
+
+  test("題で絞っている間に送ったお知らせは、今の期間と語で一覧を読み直して出す", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, sendAnnouncement: sendOk() })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(2));
+
+    await fillAndReview(user, { title: "お知らせ", body: "本文" });
+    await user.click(screen.getByRole("button", { name: "送るのを確定" }));
+
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", q: "水泳" });
+    await waitFor(() => expect(items()).toHaveLength(2));
+  });
+
+  test("取り下げに断られて取り直すときは、今の期間と語で読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const withdrawAnnouncement = vi.fn<HeadquartersApi["withdrawAnnouncement"]>(async () => ({
+      ok: false,
+      code: "announcement_already_withdrawn",
+      message: "このお知らせはすでに取り下げられています。",
+    }));
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, withdrawAnnouncement })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+    await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・題に「水泳」を含む・2 件");
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "取り下げを確定" }));
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26", q: "水泳" });
+  });
+
+  test("送ったお知らせの検索と下書きの検索は互いの一覧を読み直さない", async () => {
+    const listAnnouncements = listOf(SENT);
+    const listAnnouncementDrafts = draftListOf([]);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await user.type(sentSection().getByLabelText("題で探す"), "水泳{Enter}");
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(2));
+    expect(listAnnouncementDrafts).toHaveBeenCalledTimes(1);
+
+    await user.type(draftSection().getByLabelText("題で探す"), "年末{Enter}");
+    await waitFor(() => expect(listAnnouncementDrafts).toHaveBeenCalledTimes(2));
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+    expect(sentSection().getByLabelText("題で探す")).toHaveValue("水泳");
   });
 });
 
@@ -739,6 +898,127 @@ describe("下書きの一覧", () => {
     expect(await within(region).findByRole("alert")).toHaveTextContent("サーバーに接続できません。");
     expect(screen.queryByRole("list", { name: "下書きの一覧" })).not.toBeInTheDocument();
     expect(screen.queryByText("下書きを読み込み中…")).not.toBeInTheDocument();
+  });
+});
+
+describe("下書きを題で探す", () => {
+  test("題の語を入れて「探す」（または Enter）で前後の空白を除いた語を q に渡して読み直し、空にして探すと絞らずに読む", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = draftListOf(DRAFTS);
+    render(<Announcements api={apiOf({ listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+    expect(listAnnouncementDrafts).toHaveBeenLastCalledWith({});
+
+    await user.type(draftSection().getByLabelText("題で探す"), "　年末 ");
+    await user.click(draftSection().getByRole("button", { name: "探す" }));
+
+    await waitFor(() => expect(listAnnouncementDrafts).toHaveBeenLastCalledWith({ q: "年末" }));
+    expect(draftSection().getByLabelText("題で探す")).toHaveValue("年末");
+
+    await user.clear(draftSection().getByLabelText("題で探す"));
+    await user.type(draftSection().getByLabelText("題で探す"), "  {Enter}");
+
+    await waitFor(() => expect(listAnnouncementDrafts).toHaveBeenCalledTimes(3));
+    expect(listAnnouncementDrafts).toHaveBeenLastCalledWith({});
+    expect(draftSection().getByLabelText("題で探す")).toHaveValue("");
+  });
+
+  test("見つからなければ語を含めて「題に「…」を含む下書きはありません」と出し、一覧は出さない", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = vi.fn<HeadquartersApi["listAnnouncementDrafts"]>(async (filter) => ({
+      ok: true,
+      data: { announcement_drafts: filter?.q === undefined ? DRAFTS : [] },
+    }));
+    render(<Announcements api={apiOf({ listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+
+    await user.type(draftSection().getByLabelText("題で探す"), "夏休み{Enter}");
+
+    expect(await screen.findByText("題に「夏休み」を含む下書きはありません")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "下書きの一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByText("保存した下書きはありません")).not.toBeInTheDocument();
+  });
+
+  test("50 文字（コードポイントで数える）を超える語は送らずに理由を出す", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = draftListOf(DRAFTS);
+    render(<Announcements api={apiOf({ listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+
+    await user.click(draftSection().getByLabelText("題で探す"));
+    await user.paste("𠮷".repeat(51));
+    await user.click(draftSection().getByRole("button", { name: "探す" }));
+
+    const region = screen.getByRole("region", { name: "下書き" });
+    expect(within(region).getByRole("alert")).toHaveTextContent("題は 50 文字までで探してください。");
+    expect(listAnnouncementDrafts).toHaveBeenCalledTimes(1);
+    expect(draftItems()).toHaveLength(2);
+  });
+
+  test("API の 422 は、語の長さの上限を添えた理由を出す", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = vi.fn<HeadquartersApi["listAnnouncementDrafts"]>(async (filter) =>
+      filter?.q === undefined
+        ? { ok: true, data: { announcement_drafts: DRAFTS } }
+        : { ok: false, code: "validation_failed", message: "入力が正しくありません。" },
+    );
+    render(<Announcements api={apiOf({ listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+
+    await user.type(draftSection().getByLabelText("題で探す"), "年末{Enter}");
+
+    const region = screen.getByRole("region", { name: "下書き" });
+    expect(await within(region).findByRole("alert")).toHaveTextContent(
+      "入力が正しくありません。題は 50 文字までで探してください。",
+    );
+  });
+
+  test("題で絞っている間に保存した下書きは、今の語で一覧を読み直して出す", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = vi.fn<HeadquartersApi["listAnnouncementDrafts"]>(async (filter) => ({
+      ok: true,
+      data: { announcement_drafts: filter?.q === undefined ? DRAFTS : [DRAFTS[0]!] },
+    }));
+    const createAnnouncementDraft = vi.fn<HeadquartersApi["createAnnouncementDraft"]>(async (request) => ({
+      ok: true,
+      data: savedDraft("eeeeeeee-0000-4000-8000-000000000003", request),
+    }));
+    render(<Announcements api={apiOf({ listAnnouncementDrafts, createAnnouncementDraft })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+    await user.type(draftSection().getByLabelText("題で探す"), "年末{Enter}");
+    await waitFor(() => expect(draftItems()).toHaveLength(1));
+
+    await user.type(screen.getByLabelText("題"), "水泳の案内");
+    await user.click(screen.getByRole("button", { name: "下書きに保存" }));
+
+    await screen.findByText("下書き「水泳の案内」を保存しました。生徒にはまだ届いていません。");
+    await waitFor(() => expect(listAnnouncementDrafts).toHaveBeenCalledTimes(3));
+    expect(listAnnouncementDrafts).toHaveBeenLastCalledWith({ q: "年末" });
+    // 語に合わない下書きは画面で足さない（一覧は API が返したまま）
+    expect(draftItems()).toHaveLength(1);
+    expect(draftItems()[0]).toHaveTextContent("年末年始の営業");
+  });
+
+  test("題で絞っている間に消した下書きは、その行だけを外す（応答の絞らない一覧には置き換えない）", async () => {
+    const user = userEvent.setup();
+    const listAnnouncementDrafts = vi.fn<HeadquartersApi["listAnnouncementDrafts"]>(async (filter) => ({
+      ok: true,
+      data: { announcement_drafts: filter?.q === undefined ? DRAFTS : [DRAFTS[0]!] },
+    }));
+    const deleteAnnouncementDraft = vi.fn<HeadquartersApi["deleteAnnouncementDraft"]>(async () => ({
+      ok: true,
+      data: { announcement_drafts: [DRAFTS[1]!] },
+    }));
+    render(<Announcements api={apiOf({ listAnnouncementDrafts, deleteAnnouncementDraft })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+    await user.type(draftSection().getByLabelText("題で探す"), "年末{Enter}");
+    await waitFor(() => expect(draftItems()).toHaveLength(1));
+
+    await user.click(within(draftItems()[0]!).getByRole("button", { name: "消す" }));
+    await user.click(within(draftItems()[0]!).getByRole("button", { name: "消すのを確定" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("下書き「年末年始の営業」を消しました。");
+    expect(screen.getByText("題に「年末」を含む下書きはありません")).toBeInTheDocument();
   });
 });
 

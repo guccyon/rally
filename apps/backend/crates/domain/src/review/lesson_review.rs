@@ -161,6 +161,13 @@ impl LessonReview {
         period.is_none_or(|period| period.includes(self.submitted_at))
     }
 
+    /// 一覧を絞る生徒の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `student_id`）。指定があればその ID が
+    /// 評価した生徒のときだけ、なければどの評価も当てはまる。生徒でない ID・ない ID はどの評価にも当てはまらない
+    /// （一覧は空になる。コーチの指定 [`Self::matches_coach`] と同じ扱い）。
+    pub fn matches_student(&self, student_id: Option<AccountId>) -> bool {
+        student_id.is_none_or(|student_id| self.student_id == student_id)
+    }
+
     pub const fn rating(&self) -> Rating {
         self.rating
     }
@@ -176,6 +183,13 @@ impl LessonReview {
 
     pub const fn submitted_at(&self) -> SystemTime {
         self.submitted_at
+    }
+
+    /// 送った時刻が期間 `period` に入るか（開始を含み、終了を含まない）。admin-web の `listCoachReviews` の `from`・`to` の
+    /// 絞り込み（評価の付いた日付で絞る）に使う。期間の規則（1 日以上・上限の日数）は本部が送ったお知らせの一覧と同じ
+    /// [`BookingPeriod`] だけが持つ。
+    pub fn is_submitted_in(&self, period: &BookingPeriod) -> bool {
+        period.includes(self.submitted_at)
     }
 
     /// 評価されたコーチの返信。まだなければ `None`。
@@ -373,6 +387,17 @@ mod tests {
     }
 
     #[test]
+    fn submitted_in_a_period_includes_the_start_and_excludes_the_end() {
+        // 送った時刻は at(3)
+        let review = rated(1);
+        let period = |from: u64, to: u64| BookingPeriod::new(at(from), at(to)).unwrap();
+        assert!(review.is_submitted_in(&period(3, 4)), "開始を含む");
+        assert!(review.is_submitted_in(&period(2, 4)));
+        assert!(!review.is_submitted_in(&period(2, 3)), "終了を含まない");
+        assert!(!review.is_submitted_in(&period(4, 5)));
+    }
+
+    #[test]
     fn matches_coach_only_the_reviewed_coach_or_any_without_a_coach() {
         let review = rated(1);
         assert!(
@@ -402,6 +427,19 @@ mod tests {
         ] {
             assert_eq!(review.matches_period(Some(&period)), matches, "{why}");
         }
+    }
+
+    #[test]
+    fn matches_student_only_the_reviewer_or_any_without_a_student() {
+        let review = rated(1);
+        assert!(
+            review.matches_student(None),
+            "指定がなければどの生徒の評価も"
+        );
+        assert!(review.matches_student(Some(STUDENT)));
+        // ない ID・生徒でない ID（評価されたコーチ）には当てはまらない
+        assert!(!review.matches_student(Some(AccountId::from_u128(99))));
+        assert!(!review.matches_student(Some(COACH)));
     }
 
     #[test]

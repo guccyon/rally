@@ -15,6 +15,7 @@ import {
   PendingVideoReviewsHome,
   pendingVideoReviewFilterFrom,
   pendingVideoReviewsPath,
+  studentPendingVideoReviewsPath,
 } from "@/components/headquarters/PendingVideoReviewsHome";
 import { formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
@@ -57,6 +58,7 @@ const VIDEOS: Schemas["PendingVideoReview"][] = [
 
 const COACH_1 = "22222222-2222-4222-8222-000000000001";
 const COACH_2 = "22222222-2222-4222-8222-000000000002";
+const STUDENT_1 = "11111111-1111-4111-8111-000000000001";
 
 // コーチの一覧（listCoaches）が返す並び。選択肢はこの順のまま出す。
 const COACHES: Schemas["Coach"][] = [
@@ -304,9 +306,9 @@ describe("コーチの絞り込み", () => {
     expect(onFilterChange).not.toHaveBeenCalled();
 
     await user.selectOptions(screen.getByLabelText("コーチ"), "鈴木 コーチ");
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", minElapsedHours: null, coachId: COACH_2 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", minElapsedHours: null, coachId: COACH_2, studentId: "" });
     await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", minElapsedHours: null, coachId: COACH_2 });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", minElapsedHours: null, coachId: COACH_2, studentId: "" });
   });
 
   test("渡された条件（URL のクエリ）で開き、選択欄にもその条件を出す", async () => {
@@ -314,7 +316,7 @@ describe("コーチの絞り込み", () => {
     render(
       <PendingVideoReviewList
         api={{ listPendingVideoReviews, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "golf", minElapsedHours: 72, coachId: COACH_1 }}
+        initialFilter={{ sport: "golf", minElapsedHours: 72, coachId: COACH_1, studentId: "" }}
       />,
     );
     await screen.findByRole("table");
@@ -346,7 +348,7 @@ describe("コーチの絞り込み", () => {
     render(
       <PendingVideoReviewList
         api={{ listPendingVideoReviews: listOf([]), listCoaches: coachesOf() }}
-        initialFilter={{ sport: "tennis", minElapsedHours: null, coachId: COACH_2 }}
+        initialFilter={{ sport: "tennis", minElapsedHours: null, coachId: COACH_2, studentId: "" }}
       />,
     );
 
@@ -362,7 +364,7 @@ describe("コーチの絞り込み", () => {
     render(
       <PendingVideoReviewList
         api={{ listPendingVideoReviews, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "", minElapsedHours: null, coachId: "not-a-uuid" }}
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: "not-a-uuid", studentId: "" }}
       />,
     );
 
@@ -389,16 +391,123 @@ describe("コーチの絞り込み", () => {
   });
 });
 
+describe("生徒の絞り込み", () => {
+  test("生徒で絞って開くと API の student_id に渡し、スポーツ・経過時間・コーチを変えて読み直しても絞り込みは残る", async () => {
+    const listPendingVideoReviews = listOf([VIDEOS[0]!]);
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PendingVideoReviewList
+        api={{ listPendingVideoReviews, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: "", studentId: STUDENT_1 }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    await screen.findByRole("table");
+    expect(listPendingVideoReviews).toHaveBeenCalledWith({ student_id: STUDENT_1 });
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("コーチ"), "高橋 コーチ");
+    await waitFor(() =>
+      expect(listPendingVideoReviews).toHaveBeenLastCalledWith({ coach_id: COACH_1, student_id: STUDENT_1 }),
+    );
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    await user.selectOptions(screen.getByLabelText("送ってからの経過"), "48 時間以上");
+    await waitFor(() =>
+      expect(listPendingVideoReviews).toHaveBeenLastCalledWith({
+        sport: "golf",
+        min_elapsed_hours: 48,
+        coach_id: COACH_1,
+        student_id: STUDENT_1,
+      }),
+    );
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      sport: "golf",
+      minElapsedHours: 48,
+      coachId: COACH_1,
+      studentId: STUDENT_1,
+    });
+    await user.selectOptions(screen.getByLabelText("コーチ"), "すべて");
+    await waitFor(() =>
+      expect(listPendingVideoReviews).toHaveBeenLastCalledWith({
+        sport: "golf",
+        min_elapsed_hours: 48,
+        student_id: STUDENT_1,
+      }),
+    );
+    expect(listPendingVideoReviews).toHaveBeenCalledTimes(5);
+  });
+
+  test("生徒だけで絞って 0 件なら「この生徒の返却待ちの動画添削はありません」と出す", async () => {
+    render(
+      <PendingVideoReviewList
+        api={{ listPendingVideoReviews: listOf([]), listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: "", studentId: STUDENT_1 }}
+      />,
+    );
+
+    expect(await screen.findByText("この生徒の返却待ちの動画添削はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("生徒とコーチの両方・生徒とほかの条件で絞って 0 件なら「条件に合う返却待ちの動画添削はありません」と出す", async () => {
+    const { unmount } = render(
+      <PendingVideoReviewList
+        api={{ listPendingVideoReviews: listOf([]), listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: COACH_1, studentId: STUDENT_1 }}
+      />,
+    );
+    expect(await screen.findByText("条件に合う返却待ちの動画添削はありません")).toBeInTheDocument();
+    unmount();
+
+    render(
+      <PendingVideoReviewList
+        api={{ listPendingVideoReviews: listOf([]), listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", minElapsedHours: 24, coachId: "", studentId: STUDENT_1 }}
+      />,
+    );
+    expect(await screen.findByText("条件に合う返却待ちの動画添削はありません")).toBeInTheDocument();
+  });
+
+  test("生徒で絞っているときの 422 は、生徒の選び直しも添えた理由を出す", async () => {
+    const listPendingVideoReviews = vi.fn<HeadquartersApi["listPendingVideoReviews"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力内容を確認してください。",
+    }));
+    render(
+      <PendingVideoReviewList
+        api={{ listPendingVideoReviews, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: "", studentId: "not-a-uuid" }}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "入力内容を確認してください。スポーツ・送ってからの経過・コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+    );
+    expect(listPendingVideoReviews).toHaveBeenCalledWith({ student_id: "not-a-uuid" });
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
 describe("絞り込みの URL", () => {
   test("スポーツ・経過時間・コーチを契約のクエリの名前で URL に残し、「すべて」の条件は出さない", () => {
-    expect(pendingVideoReviewsPath({ sport: "", minElapsedHours: null, coachId: "" })).toBe(
+    expect(pendingVideoReviewsPath({ sport: "", minElapsedHours: null, coachId: "", studentId: "" })).toBe(
       "/headquarters/pending-video-reviews",
     );
-    expect(pendingVideoReviewsPath({ sport: "", minElapsedHours: null, coachId: COACH_1 })).toBe(
+    expect(pendingVideoReviewsPath({ sport: "", minElapsedHours: null, coachId: COACH_1, studentId: "" })).toBe(
       `/headquarters/pending-video-reviews?coach_id=${COACH_1}`,
     );
-    expect(pendingVideoReviewsPath({ sport: "tennis", minElapsedHours: 48, coachId: COACH_1 })).toBe(
+    expect(pendingVideoReviewsPath({ sport: "tennis", minElapsedHours: 48, coachId: COACH_1, studentId: "" })).toBe(
       `/headquarters/pending-video-reviews?sport=tennis&min_elapsed_hours=48&coach_id=${COACH_1}`,
+    );
+    expect(
+      pendingVideoReviewsPath({ sport: "tennis", minElapsedHours: 48, coachId: COACH_1, studentId: STUDENT_1 }),
+    ).toBe(
+      `/headquarters/pending-video-reviews?sport=tennis&min_elapsed_hours=48&coach_id=${COACH_1}&student_id=${STUDENT_1}`,
+    );
+    expect(studentPendingVideoReviewsPath(STUDENT_1)).toBe(
+      `/headquarters/pending-video-reviews?student_id=${STUDENT_1}`,
     );
   });
 
@@ -410,16 +519,24 @@ describe("絞り込みの URL", () => {
   test("URL のクエリから条件を読み、選択肢にないスポーツ・経過時間は「すべて」にする", () => {
     expect(
       pendingVideoReviewFilterFrom(new URLSearchParams(`sport=golf&min_elapsed_hours=168&coach_id=${COACH_2}`)),
-    ).toEqual({ sport: "golf", minElapsedHours: 168, coachId: COACH_2 });
+    ).toEqual({ sport: "golf", minElapsedHours: 168, coachId: COACH_2, studentId: "" });
+    expect(pendingVideoReviewFilterFrom(new URLSearchParams(`student_id=${STUDENT_1}&coach_id=${COACH_1}`))).toEqual({
+      sport: "",
+      minElapsedHours: null,
+      coachId: COACH_1,
+      studentId: STUDENT_1,
+    });
     expect(pendingVideoReviewFilterFrom(new URLSearchParams(""))).toEqual({
       sport: "",
       minElapsedHours: null,
       coachId: "",
+      studentId: "",
     });
     expect(pendingVideoReviewFilterFrom(new URLSearchParams("sport=cricket&min_elapsed_hours=5"))).toEqual({
       sport: "",
       minElapsedHours: null,
       coachId: "",
+      studentId: "",
     });
   });
 });
@@ -463,6 +580,62 @@ describe("画面への配置", () => {
     expect(replace).toHaveBeenLastCalledWith(`/headquarters/pending-video-reviews?coach_id=${COACH_1}`, {
       scroll: false,
     });
+  });
+
+  test("生徒で絞った画面は一覧の上に生徒の名前と「すべての生徒の返却待ちを見る」を出し、外すリンクは生徒の絞り込みだけを除く", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: true,
+      data: {
+        student_id: STUDENT_1,
+        display_name: "佐藤 太郎",
+        upcoming_bookings: [],
+        recent_lessons: [],
+        cancelled_booking_count: 0,
+        submitted_video_count: 1,
+        pending_video_review_count: 1,
+      },
+    }));
+    headquartersApiMock.mockReturnValue({
+      listPendingVideoReviews: listOf([VIDEOS[0]!]),
+      listCoaches: coachesOf(),
+      getStudentActivity,
+    });
+    const user = userEvent.setup();
+    render(
+      <PendingVideoReviewsHome
+        token="mock.headquarters.x"
+        initialFilter={{ sport: "", minElapsedHours: null, coachId: "", studentId: STUDENT_1 }}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: "返却待ちの動画添削" });
+    expect(await within(region).findByText(/^生徒で絞っています:/)).toHaveTextContent("生徒で絞っています: 佐藤 太郎");
+    expect(getStudentActivity).toHaveBeenCalledWith(STUDENT_1);
+    expect(screen.getByRole("link", { name: "すべての生徒の返却待ちを見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/pending-video-reviews",
+    );
+    await within(region).findByRole("table", { name: "返却待ちの動画添削の一覧" });
+    await waitFor(() => expect(screen.getByLabelText("コーチ")).toBeEnabled());
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "ゴルフ");
+    expect(replace).toHaveBeenLastCalledWith(
+      `/headquarters/pending-video-reviews?sport=golf&student_id=${STUDENT_1}`,
+      { scroll: false },
+    );
+    expect(screen.getByRole("link", { name: "すべての生徒の返却待ちを見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/pending-video-reviews?sport=golf",
+    );
+  });
+
+  test("生徒で絞らない画面には生徒の絞り込みの表示がない", async () => {
+    headquartersApiMock.mockReturnValue({ listPendingVideoReviews: listOf(VIDEOS), listCoaches: coachesOf() });
+    render(<PendingVideoReviewsHome token="mock.headquarters.x" />);
+    await screen.findByRole("table", { name: "返却待ちの動画添削の一覧" });
+
+    expect(screen.queryByRole("link", { name: "すべての生徒の返却待ちを見る" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {

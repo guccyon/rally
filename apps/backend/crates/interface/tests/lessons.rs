@@ -242,6 +242,9 @@ fn app() -> App {
         CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListMyBookings::new(

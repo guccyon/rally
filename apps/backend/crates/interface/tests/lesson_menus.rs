@@ -603,6 +603,12 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
             "?q=+%E3%80%80+",
             vec!["フォームの添削", "フォア", "スイング"],
         ),
+        // 予約がひとつもなければ unbooked で絞ってもすべて残る
+        (
+            "?unbooked=true",
+            vec!["フォームの添削", "フォア", "スイング"],
+        ),
+        ("?unbooked=true&published=true", vec!["フォア", "スイング"]),
         // 前後の空白を除いて 40 文字までは受け付ける
         (&format!("?q=+{}+", "a".repeat(40)), vec![]),
     ] {
@@ -623,6 +629,7 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
     for query in [
         "?sport=cricket",
         "?published=yes",
+        "?unbooked=yes",
         "?coach_id=not-a-uuid",
         too_long.as_str(),
     ] {
@@ -789,4 +796,47 @@ async fn each_menu_has_the_number_of_active_bookings_of_the_last_thirty_days() {
         [("フォア", &json!(2)), ("バック", &json!(0))],
         "予約のないメニューは 0: {body}"
     );
+
+    // unbooked=true なら recent_booking_count が 0 のメニューだけ。ほかの絞り込みと組み合わせられる
+    for (query, expected) in [
+        ("?unbooked=true", vec!["バック"]),
+        ("?unbooked=false", vec!["フォア", "バック"]),
+        ("?unbooked=true&sport=tennis&published=true", vec!["バック"]),
+        // 「フォ」
+        ("?unbooked=true&q=%E3%83%95%E3%82%A9", vec![]),
+        ("?unbooked=true&sport=golf", vec![]),
+    ] {
+        let (status, body) = send(
+            &app,
+            "GET",
+            &format!("{HEADQUARTERS_MENUS}{query}"),
+            HEADQUARTERS,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", HEADQUARTERS_MENUS, status, &body);
+        let menus: Vec<(&str, &Value)> = body["lesson_menus"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|menu| {
+                (
+                    menu["name"].as_str().unwrap(),
+                    &menu["recent_booking_count"],
+                )
+            })
+            .collect();
+        assert_eq!(
+            menus.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+            expected,
+            "{query}"
+        );
+        if query.starts_with("?unbooked=true") {
+            assert!(
+                menus.iter().all(|(_, count)| **count == json!(0)),
+                "{query}: {body}"
+            );
+        }
+    }
 }

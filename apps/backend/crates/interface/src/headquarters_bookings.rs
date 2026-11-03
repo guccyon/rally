@@ -4,12 +4,11 @@
 use std::sync::Arc;
 
 use application::{
-    catalog::lesson_menu_id_uuid,
     clock::Clock,
     identity::TokenVerifier,
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, ListBookings, ListBookingsQuery,
-        StudentDisplayNameLookup,
+        SlotCoachAccountLookup, StudentDisplayNameLookup,
     },
 };
 use axum::{
@@ -24,16 +23,19 @@ use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     bookings::{BookingBody, booking_body},
     contract::{
-        account_id_from_contract, booking_status_from_contract, date_from_contract,
-        date_to_contract,
+        account_id_from_contract, admin_web_sport, booking_status_from_contract,
+        date_from_contract, date_to_contract, lesson_menu_id_from_contract,
     },
     error::ApiError,
 };
 
 /// `GET /bookings`（本部）のハンドラーが使うユースケース。
-pub struct HeadquartersBookingsState<B, K, D, C> {
-    pub list_bookings: ListBookings<B, K, D, C>,
+pub struct HeadquartersBookingsState<B, A, K, D, C> {
+    pub list_bookings: ListBookings<B, A, K, D, C>,
 }
+
+/// ハンドラーが共有する [`HeadquartersBookingsState`]。
+type Shared<B, A, K, D, C> = Arc<HeadquartersBookingsState<B, A, K, D, C>>;
 
 /// admin-web の `listBookings` のクエリ（繰り返せる `status` は除く。[`statuses_from_query`] が読む）。
 #[derive(Deserialize)]
@@ -44,6 +46,7 @@ pub struct ListBookingsParams {
     student_id: Option<String>,
     trial: Option<bool>,
     lesson_menu_id: Option<String>,
+    sport: Option<String>,
 }
 
 /// admin-web の `HeadquartersBookingList`。
@@ -78,17 +81,19 @@ fn statuses_from_query(pairs: &[(String, String)]) -> Result<Vec<BookingStatus>,
 }
 
 /// `GET /bookings`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の日付で
-/// ないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき・`status` が予約の状態でないとき・`trial` が `true` / `false` でないときと、
-/// 期間の違反は 422（失敗の応答は
-/// [`crate::scheduling_error`] が決める）。
-pub async fn list_bookings<B, K, D, C>(
-    State(state): State<Arc<HeadquartersBookingsState<B, K, D, C>>>,
+/// ないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき・`status` が予約の状態でないとき・`trial` が `true` / `false` でないとき・
+/// `sport` が `Sport` の値でないとき（`listPendingVideoReviews` の `sport` と同じ）と、期間の違反は 422（失敗の応答は
+/// [`crate::scheduling_error`] が決める）。`sport` は予約した枠のコーチの提供スポーツで絞る（規則は domain の
+/// [`domain::scheduling::Booking::matches_coach_sport`]）。
+pub async fn list_bookings<B, A, K, D, C>(
+    State(state): State<Shared<B, A, K, D, C>>,
     _account: AuthenticatedAccount,
     params: Result<Query<ListBookingsParams>, QueryRejection>,
     pairs: Result<Query<Vec<(String, String)>>, QueryRejection>,
 ) -> Result<Json<HeadquartersBookingListBody>, ApiError>
 where
     B: BookingRepository,
+    A: SlotCoachAccountLookup,
     K: BookingCoachDisplayNameLookup,
     D: StudentDisplayNameLookup,
     C: Clock,
@@ -123,11 +128,9 @@ where
         lesson_menu_id: params
             .lesson_menu_id
             .as_deref()
-            .map(|id| {
-                lesson_menu_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("lesson_menu_id が UUID でない"))
-            })
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
             .transpose()?,
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
     };
     let list = state
         .list_bookings
@@ -162,12 +165,13 @@ where
 /// [`crate::bookings_router`] にあり、`merge` で 1 つのパスにまとまる。
 ///
 /// `GET /bookings` は本部だけ（コーチ・生徒は 403）。
-pub fn headquarters_bookings_router<B, K, D, C, T>(
-    list_bookings: ListBookings<B, K, D, C>,
+pub fn headquarters_bookings_router<B, A, K, D, C, T>(
+    list_bookings: ListBookings<B, A, K, D, C>,
     tokens: T,
 ) -> Router
 where
     B: BookingRepository + 'static,
+    A: SlotCoachAccountLookup + 'static,
     K: BookingCoachDisplayNameLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     C: Clock + 'static,
@@ -175,7 +179,7 @@ where
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/bookings", get(self::list_bookings::<B, K, D, C>))
+        .route("/bookings", get(self::list_bookings::<B, A, K, D, C>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(HeadquartersBookingsState { list_bookings }))
         .layer(TokenVerification::layer(tokens))

@@ -213,7 +213,7 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
 
     // 4 時（含む）までに開始した通話中のもの: 2 時・3 時（4 時は終了済み、5 時は後）
     let found = sessions
-        .find_in_progress_started_at_or_before(at(4), None)
+        .find_in_progress_started_at_or_before(at(4), None, None)
         .await
         .unwrap();
     let mut found_ids: Vec<_> = found.iter().map(LiveLessonSession::id).collect();
@@ -225,13 +225,13 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
 
     // 境界の時刻ちょうどに開始したものは含む
     let found = sessions
-        .find_in_progress_started_at_or_before(at(5), None)
+        .find_in_progress_started_at_or_before(at(5), None, None)
         .await
         .unwrap();
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(
         sessions
-            .find_in_progress_started_at_or_before(at(1), None)
+            .find_in_progress_started_at_or_before(at(1), None, None)
             .await
             .unwrap()
             .is_empty()
@@ -239,13 +239,13 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
 
     // コーチで絞る（new_confirmed_booking はセッションごとに別のコーチ）。時刻と組み合わさる
     let found = sessions
-        .find_in_progress_started_at_or_before(at(4), Some(started[2].coach_id()))
+        .find_in_progress_started_at_or_before(at(4), Some(started[2].coach_id()), None)
         .await
         .unwrap();
     assert_eq!(found, [started[2].clone()]);
     assert!(
         sessions
-            .find_in_progress_started_at_or_before(at(4), Some(started[0].coach_id()))
+            .find_in_progress_started_at_or_before(at(4), Some(started[0].coach_id()), None)
             .await
             .unwrap()
             .is_empty(),
@@ -253,7 +253,7 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
     );
     assert!(
         sessions
-            .find_in_progress_started_at_or_before(at(10), Some(started[3].coach_id()))
+            .find_in_progress_started_at_or_before(at(10), Some(started[3].coach_id()), None)
             .await
             .unwrap()
             .is_empty(),
@@ -261,7 +261,7 @@ async fn reads_in_progress_sessions_started_at_or_before_the_time(pool: PgPool) 
     );
     assert!(
         sessions
-            .find_in_progress_started_at_or_before(at(10), Some(started[1].student_id()))
+            .find_in_progress_started_at_or_before(at(10), Some(started[1].student_id()), None)
             .await
             .unwrap()
             .is_empty(),
@@ -392,6 +392,92 @@ async fn reads_sessions_started_in_the_period_by_student_including_group_lessons
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn reads_in_progress_sessions_by_student_including_group_lessons(pool: PgPool) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    // マンツーマンの通話（3 時）
+    let one_on_one = support::new_confirmed_booking(&pool).await;
+    let alone = LiveLessonSession::start(
+        sessions.next_id(),
+        one_on_one.student_id(),
+        &one_on_one,
+        &[],
+        None,
+        at(3),
+    )
+    .unwrap();
+    sessions.insert(alone.clone()).await.unwrap();
+    // 2 人のグループレッスン（10 時）。通話を始めたのは 1 人目の予約
+    let coach = support::coach(&pool).await;
+    let slot = support::open_slot_with_capacity(&pool, coach, 10, 11, 2).await;
+    let mut bookings = Vec::new();
+    for _ in 0..2 {
+        let student = support::student(&pool).await;
+        bookings.push(support::confirmed_booking(&pool, student, &slot).await);
+    }
+    let group = LiveLessonSession::start(
+        sessions.next_id(),
+        coach,
+        &bookings[0],
+        &bookings,
+        None,
+        at(10),
+    )
+    .unwrap();
+    sessions.insert(group.clone()).await.unwrap();
+
+    let find = |coach_id, student_id| {
+        sessions.find_in_progress_started_at_or_before(at(12), coach_id, student_id)
+    };
+    assert_eq!(
+        find(None, Some(one_on_one.student_id())).await.unwrap(),
+        std::slice::from_ref(&alone)
+    );
+    // 開始した予約の生徒でも、結び付いただけの予約の生徒でもグループレッスンのセッションが出る
+    for booking in &bookings {
+        assert_eq!(
+            find(None, Some(booking.student_id())).await.unwrap(),
+            std::slice::from_ref(&group)
+        );
+    }
+    // コーチと組み合わさる。生徒でない ID は空
+    assert_eq!(
+        find(Some(coach), Some(bookings[1].student_id()))
+            .await
+            .unwrap(),
+        std::slice::from_ref(&group)
+    );
+    assert!(
+        find(Some(one_on_one.coach_id()), Some(bookings[1].student_id()))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(find(None, Some(coach)).await.unwrap().is_empty());
+    // 時刻と組み合わさる
+    assert!(
+        sessions
+            .find_in_progress_started_at_or_before(at(9), None, Some(bookings[1].student_id()))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // 終了したセッションは、その生徒のものでも出ない
+    sessions
+        .update(alone.id(), |s| {
+            s.end(s.coach_id(), at(4), support::quality())
+        })
+        .await
+        .unwrap();
+    assert!(
+        find(None, Some(one_on_one.student_id()))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn a_session_ended_by_headquarters_round_trips_without_changing_the_session_row(
     pool: PgPool,
 ) {
@@ -458,7 +544,7 @@ async fn a_session_ended_by_headquarters_round_trips_without_changing_the_sessio
     // 終わっていないセッションの一覧には出ず、期間の記録には終了の時刻ごと出る
     assert_eq!(
         sessions
-            .find_in_progress_started_at_or_before(at(5), None)
+            .find_in_progress_started_at_or_before(at(5), None, None)
             .await
             .unwrap(),
         [started[1].clone()]

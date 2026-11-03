@@ -1,7 +1,7 @@
 //! `GET /bookings/cancelled`（admin-web の `listCancelledBookings`。本部が見るキャンセルされた予約の一覧）の統合テスト。
 //! レスポンスの形を admin-web の OpenAPI のスキーマで検査し、本部だけが呼べること（403）、キャンセルした日付（日本時間）で
 //! 絞ってキャンセルの新しい順に返すこと（枠の開始の日付は問わない）、キャンセルした人が載ること、日付を省いたときは今日までの
-//! 7 日であること、コーチ・生徒で絞れること、期間の違反と日付でない値・UUID でない ID が 422 であること、同じ階層の
+//! 7 日であること、コーチ・生徒・レッスンメニュー（予約した時点の写し。ないメニューは空の一覧）で絞れること、期間の違反と日付でない値・UUID でない ID が 422 であること、同じ階層の
 //! `GET /bookings/{booking_id}` と並べても固定のパスが当たることを確かめる。期間の規則の境界は domain の `BookingPeriod`、並べ方の細部はユースケース
 //! `ListCancelledBookings` のテスト。
 
@@ -21,10 +21,10 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    catalog::Sport,
+    catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
-    scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
+    scheduling::{Booking, BookingLessonMenu, Slot, SlotId, SlotSeats, SlotStatus},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -436,6 +436,110 @@ async fn student_id_narrows_to_the_student_combined_with_the_days_and_the_coach(
     );
 }
 
+/// 生徒 `student` が、予約した時点のレッスンメニューの写し `menu`（なければメニューなし）で枠 `slot` を予約し、`cancelled_at`
+/// にキャンセルする。
+async fn book_with_menu(
+    bookings: &InMemoryBookingRepository,
+    student: u128,
+    slot: u128,
+    menu: Option<u128>,
+    cancelled_at: SystemTime,
+) -> Booking {
+    let student = AccountId::from_u128(student);
+    let booking = bookings
+        .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+            Booking::reserve(
+                bookings.next_id(),
+                student,
+                false,
+                slot,
+                existing,
+                nov1(Duration::ZERO) - 10 * DAY,
+            )
+            .map(|booking| {
+                booking.with_restored_lesson_menu(menu.map(|menu| {
+                    BookingLessonMenu::restore(
+                        LessonMenuId::from_u128(menu),
+                        LessonMenuName::new("フォア改善").unwrap(),
+                        None,
+                    )
+                }))
+            })
+        })
+        .await
+        .unwrap();
+    bookings
+        .update(booking.id(), |booking, slot| {
+            booking.cancel(student, slot, cancelled_at).map(|_| ())
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn lesson_menu_id_narrows_to_the_menu_combined_with_the_days_the_coach_and_the_student() {
+    let admin = support::Contract::load("admin-web");
+    let later = nov1(19 * DAY);
+    let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
+        slot(1, 42, later),
+        slot(2, 43, later + HOUR),
+        slot(3, 42, later + 2 * HOUR),
+        slot(4, 42, later + 3 * HOUR),
+        slot(5, 42, later + 4 * HOUR),
+    ]));
+    let made = vec![
+        book_with_menu(&bookings, 3, 1, Some(50), nov1(9 * HOUR)).await,
+        book_with_menu(&bookings, 4, 2, Some(50), nov1(DAY)).await,
+        book_with_menu(&bookings, 3, 3, Some(51), nov1(10 * HOUR)).await,
+        // メニューのない予約
+        book_with_menu(&bookings, 3, 4, None, nov1(11 * HOUR)).await,
+        // 期間（11 月 1 日〜2 日）の外
+        book_with_menu(&bookings, 3, 5, Some(50), nov1(2 * DAY)).await,
+    ];
+    let app = app_at(nov1(10 * DAY), bookings).await;
+    let days = "from=2026-11-01&to=2026-11-02";
+    let menu = "00000000-0000-0000-0000-000000000032";
+
+    for (query, expected) in [
+        // 省けば今までどおりメニューを問わない
+        (String::new(), vec![1, 3, 2, 0]),
+        (format!("&lesson_menu_id={menu}"), vec![1, 0]),
+        (
+            "&lesson_menu_id=00000000-0000-0000-0000-000000000033".to_string(),
+            vec![2],
+        ),
+        // コーチ・生徒と組み合わせると全部に当てはまる予約だけ
+        (
+            format!("&lesson_menu_id={menu}&coach_id=00000000-0000-0000-0000-00000000002a"),
+            vec![0],
+        ),
+        (
+            format!("&lesson_menu_id={menu}&student_id=00000000-0000-0000-0000-000000000004"),
+            vec![1],
+        ),
+        (
+            format!(
+                "&lesson_menu_id={menu}&coach_id=00000000-0000-0000-0000-00000000002b&student_id=00000000-0000-0000-0000-000000000003"
+            ),
+            vec![],
+        ),
+        // ないメニューの ID は 404 にせず空の配列
+        (
+            "&lesson_menu_id=00000000-0000-0000-0000-0000000003e7".to_string(),
+            vec![],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{days}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(
+            (&body["from"], &body["to"]),
+            (&json!("2026-11-01"), &json!("2026-11-02"))
+        );
+        assert_eq!(booking_ids(&body), ids(&made, &expected), "{query}: {body}");
+    }
+}
+
 #[tokio::test]
 async fn only_headquarters_lists_cancelled_bookings() {
     let admin = support::Contract::load("admin-web");
@@ -475,6 +579,9 @@ async fn invalid_days_are_422() {
         // student_id の検証も listBookings と同じ
         ("?student_id=3", "student_id が UUID でない"),
         ("?student_id=", "student_id が UUID でない"),
+        // lesson_menu_id の検証も listBookings と同じ
+        ("?lesson_menu_id=menu", "lesson_menu_id が UUID でない"),
+        ("?lesson_menu_id=", "lesson_menu_id が UUID でない"),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

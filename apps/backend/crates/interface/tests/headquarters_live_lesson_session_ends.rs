@@ -10,7 +10,9 @@ use application::{
     identity::{InvalidToken, TokenClaims, TokenVerifier},
     in_memory::{FixedClock, InMemoryAccountRepository, InMemoryLiveLessonSessionRepository},
     live_lesson::{EndLiveLessonSessionByHeadquarters, ListOverdueLiveLessonSessions},
-    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
+    profile::{
+        ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
+    },
 };
 use axum::{
     Router,
@@ -97,6 +99,7 @@ fn app() -> Router {
     .merge(interface::overdue_live_lesson_sessions_router(
         ListOverdueLiveLessonSessions::new(
             sessions,
+            ProfileCoachAccountLookup::new(accounts.clone()),
             ProfileCoachDisplayNameLookup::new(accounts.clone()),
             ProfileStudentDisplayNameLookup::new(accounts),
             FixedClock(now()),

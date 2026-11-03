@@ -189,7 +189,13 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
-        GetSlotSupply::new(bookings, clock),
+        GetSlotSupply::new(
+            bookings,
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(
@@ -626,5 +632,79 @@ async fn students_read_every_review_whatever_the_max_rating() {
         .await;
         assert_eq!(status, StatusCode::OK, "{max_rating}: {body}");
         assert_eq!(review_ids(&body), ["02", "04", "01"], "{max_rating}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_and_the_coach_read_only_reviews_submitted_in_the_period() {
+    let router = app(reviews());
+    // 照会の基準の時刻は 2026-10-26 9 時（日本時間）。コーチの評価は 2 が 10 月 26 日 8 時・4 が 10 月 25 日 9 時・
+    // 1 が 10 月 24 日 9 時（どれも日本時間）
+    for token in [HEADQUARTERS, COACH] {
+        for (query, ids) in [
+            ("from=2026-10-25&to=2026-10-26", vec!["02", "04"]),
+            ("from=2026-10-24&to=2026-10-24", vec!["01"]),
+            ("from=2026-10-27&to=2026-10-27", vec![]),
+            // to だけなら to の 6 日前から、from だけなら from から 7 日目まで
+            ("to=2026-10-25", vec!["04", "01"]),
+            ("from=2026-10-25", vec!["02", "04"]),
+            // max_rating と合わせる
+            (
+                "from=2026-10-24&to=2026-10-26&max_rating=4",
+                vec!["04", "01"],
+            ),
+            ("from=2026-10-25&to=2026-10-26&max_rating=3", vec![]),
+        ] {
+            let (status, body) =
+                list_coach_reviews_with(&["admin-web"], &router, query, token).await;
+            assert_eq!(status, StatusCode::OK, "{token} {query}: {body}");
+            assert_eq!(body["coach_id"], COACH_ID);
+            assert_eq!(review_ids(&body), ids, "{token} {query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_period_that_breaks_the_rules_is_rejected_like_list_announcements() {
+    let router = app(reviews());
+    for token in [HEADQUARTERS, COACH] {
+        for (query, message) in [
+            (
+                "from=2026-10-26&to=2026-10-25",
+                "to は from と同じ日か、それより後の日付にする",
+            ),
+            (
+                "from=2026-10-01&to=2026-11-01",
+                "from から to までは 31 日まで",
+            ),
+            ("from=2026/10/25", "from は YYYY-MM-DD の日付でない"),
+            ("to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
+            ("from=", "from は YYYY-MM-DD の日付でない"),
+        ] {
+            let (status, body) =
+                list_coach_reviews_with(&["admin-web"], &router, query, token).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{token} {query}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+            assert_eq!(body["message"], message, "{token} {query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn students_read_every_review_whatever_the_period() {
+    // student-app の契約に from・to はないので、付けても変わらない（期間の違反でも 422 にしない）
+    let router = app(reviews());
+    for query in [
+        "from=2026-10-25&to=2026-10-26",
+        "from=2026-10-26&to=2026-10-25",
+    ] {
+        let (status, body) =
+            list_coach_reviews_with(&["student-app"], &router, query, STUDENT).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(review_ids(&body), ["02", "04", "01"], "{query}");
     }
 }

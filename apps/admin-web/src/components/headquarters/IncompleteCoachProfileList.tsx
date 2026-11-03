@@ -6,18 +6,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ui/ResultMessage";
-import { COACH_PROFILE_FIELD_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
+import {
+  COACH_ACCEPTANCE_STATUS_LABELS,
+  COACH_PROFILE_FIELD_LABELS,
+  SPORT_LABELS,
+  formatDateTime,
+} from "@/components/labels";
 
-import { SPORTS } from "./CoachAcceptanceList";
+import { ACCEPTANCE_STATUSES, SPORTS } from "./CoachAcceptanceList";
 import { coachOverviewPath } from "./CoachOverviewHome";
 
 type IncompleteCoachProfile = Schemas["IncompleteCoachProfile"];
 type Sport = Schemas["Sport"];
+type AcceptanceStatus = Schemas["CoachAcceptanceStatus"];
 
 /** 絞り込みの条件。空なら絞らない。 */
-export type IncompleteCoachProfileFilter = { sport: Sport | "" };
+export type IncompleteCoachProfileFilter = { sport: Sport | ""; acceptanceStatus: AcceptanceStatus | "" };
 
-const NO_FILTER: IncompleteCoachProfileFilter = { sport: "" };
+const NO_FILTER: IncompleteCoachProfileFilter = { sport: "", acceptanceStatus: "" };
 
 type State =
   | { kind: "loading" }
@@ -36,7 +42,8 @@ function updatedAtLabel(coach: IncompleteCoachProfile): string {
  * （listIncompleteCoachProfiles）を読み、コーチ（そのコーチの様子へのリンク）・空の項目・最後に更新した日時を出す。
  * 「足りない」の判定と並べ方は契約の正本どおり API が済ませているので、返った順（登録の古い順）のまま出す。
  * 照会だけで、コーチへの連絡はしない。
- * 一覧の上の絞り込み（スポーツ）は API の `sport` に渡して読み直す。`initialFilter`（URL のクエリ）の条件で開き、
+ * 一覧の上の絞り込み（スポーツ・受付の状態）は API の `sport` / `acceptance_status` に渡して読み直す（組み合わせられる）。
+ * 受付の状態の選択肢と言葉はコーチの受付の一覧と同じ。`initialFilter`（URL のクエリ）の条件で開き、
  * 変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
 export function IncompleteCoachProfileList({
@@ -55,7 +62,10 @@ export function IncompleteCoachProfileList({
 
   const fetchCoaches = useCallback(
     async (next: IncompleteCoachProfileFilter): Promise<State> => {
-      const response = await api.listIncompleteCoachProfiles(next.sport === "" ? {} : { sport: next.sport });
+      const response = await api.listIncompleteCoachProfiles({
+        ...(next.sport === "" ? {} : { sport: next.sport }),
+        ...(next.acceptanceStatus === "" ? {} : { acceptance_status: next.acceptanceStatus }),
+      });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
         : { kind: "failed", message: response.message };
@@ -64,17 +74,17 @@ export function IncompleteCoachProfileList({
   );
 
   // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
-  const initialSport = initialFilter.sport;
+  const { sport: initialSport, acceptanceStatus: initialAcceptanceStatus } = initialFilter;
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchCoaches({ sport: initialSport }).then((next) => {
+    void fetchCoaches({ sport: initialSport, acceptanceStatus: initialAcceptanceStatus }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches, initialSport]);
+  }, [fetchCoaches, initialSport, initialAcceptanceStatus]);
 
   async function changeFilter(next: IncompleteCoachProfileFilter) {
     setFilter(next);
@@ -85,7 +95,7 @@ export function IncompleteCoachProfileList({
     if (request === latestRequest.current) setState(loaded);
   }
 
-  const filtered = filter.sport !== "";
+  const filtered = filter.sport !== "" || filter.acceptanceStatus !== "";
 
   return (
     <div className="space-y-4">
@@ -98,12 +108,29 @@ export function IncompleteCoachProfileList({
           <select
             className="mt-1 block rounded-md border px-2 py-1"
             value={filter.sport}
-            onChange={(event) => void changeFilter({ sport: event.target.value as Sport | "" })}
+            onChange={(event) => void changeFilter({ ...filter, sport: event.target.value as Sport | "" })}
           >
             <option value="">すべて</option>
             {SPORTS.map((value) => (
               <option key={value} value={value}>
                 {SPORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          受付の状態
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.acceptanceStatus}
+            onChange={(event) =>
+              void changeFilter({ ...filter, acceptanceStatus: event.target.value as AcceptanceStatus | "" })
+            }
+          >
+            <option value="">すべて</option>
+            {ACCEPTANCE_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {COACH_ACCEPTANCE_STATUS_LABELS[value]}
               </option>
             ))}
           </select>

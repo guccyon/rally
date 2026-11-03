@@ -3,7 +3,8 @@
 //! admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った生徒にお知らせを送れること（生徒ごとに
 //! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること
 //! （1 件ごとに受け取った生徒のうち既読にした数。取り下げたものは取り下げた時刻まで）・送った日付（日本時間）の
-//! `from`・`to` で絞れること（日付でない・期間の規則違反は 422）・対象の生徒がいなければ 404・
+//! `from`・`to` で絞れること（日付でない・期間の規則違反は 422）・題の `q` で絞れること（期間と組み合わせられる。
+//! 長すぎる検索語は 422）・対象の生徒がいなければ 404・
 //! 題と本文とスポーツの規則違反は 422・送ったお知らせを取り下げられること（一覧で取り下げ済みと分かる。二度目は 409、
 //! ないものは 404）・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
@@ -375,6 +376,63 @@ async fn the_sent_date_in_japan_narrows_the_list() {
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
         assert_eq!(body, json!({ "announcements": expected }), "{query}");
     }
+}
+
+#[tokio::test]
+async fn headquarters_finds_sent_announcements_by_a_part_of_the_title() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に 2 件、11/2 に 1 件
+    let mut sent = Vec::new();
+    for (minute, title) in [
+        (10, "メンテナンスのお知らせ"),
+        (20, "App の更新"),
+        (15 * 60, "夜間メンテナンス 100%"),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(json!({ "title": title, "body": "本文" }))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let [maintenance, update, night] = <[Value; 3]>::try_from(sent).unwrap();
+    let router = app.router(at(16 * 60)).await;
+
+    let all = json!([night, update, maintenance]);
+    for (query, expected) in [
+        // 題に部分一致するものだけ。並べ方（新しい順）は変わらない
+        ("q=%E3%83%A1%E3%83%B3%E3%83%86", json!([night, maintenance])),
+        // 前後の空白（全角を含む）を除き、ASCII の英字は大文字・小文字を区別しない
+        ("q=+%E3%80%80APP+", json!([update])),
+        // % はワイルドカードでなく文字のまま
+        ("q=0%25", json!([night])),
+        // 本文では探さない
+        ("q=%E6%9C%AC%E6%96%87", json!([])),
+        // 期間と組み合わせられる（日本時間の 11/1 に送ったもののうち）
+        (
+            "from=2026-11-01&to=2026-11-01&q=%E3%83%A1%E3%83%B3%E3%83%86",
+            json!([maintenance]),
+        ),
+        ("to=2026-11-02&q=app", json!([update])),
+        // 付けない・空・空白だけなら絞り込まない
+        ("", all.clone()),
+        ("q=", all.clone()),
+        ("q=+%E3%80%80+", all.clone()),
+        // 前後の空白を除いて 50 文字までは受け付ける
+        (&format!("q=+{}+", "a".repeat(50)), json!([])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    let (status, body) = list(&router, &format!("q={}", "a".repeat(51))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    assert_eq!(body["message"], "お知らせの題の検索語は 50 文字まで");
 }
 
 #[tokio::test]

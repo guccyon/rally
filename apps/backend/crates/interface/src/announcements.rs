@@ -1,5 +1,5 @@
 //! `/announcements`。admin-web の `POST /announcements`（`sendAnnouncement`。本部が生徒にお知らせを送る）と
-//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧）と
+//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧。期間と題で絞れる）と
 //! `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`。本部が送ったお知らせを取り下げる）。
 //! どれも本部だけが呼べる。
 //!
@@ -30,7 +30,9 @@ use axum::{
 };
 use domain::{
     identity::Role,
-    notification::{AnnouncementBody, AnnouncementTitle, NotificationError},
+    notification::{
+        AnnouncementBody, AnnouncementTitle, AnnouncementTitleQuery, NotificationError,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +87,7 @@ pub struct AnnouncementWithdrawalBody {
 pub struct ListAnnouncementsParams {
     from: Option<String>,
     to: Option<String>,
+    q: Option<String>,
 }
 
 /// admin-web の `AnnouncementList`。
@@ -174,6 +177,8 @@ where
 /// 送った時刻の新しい順で、受け取った生徒のうち既読にした数とともに返す（どの本部のアカウントが送ったかで絞らない）。
 /// `from`・`to` を両方省けばすべて、どちらかがあれば送った日付（日本時間）の期間で絞る。`from`・`to` が `YYYY-MM-DD` の
 /// 日付でないときと、期間の違反は 422（期間の違反の応答は `listBookings` と同じく [`crate::scheduling_error`] が決める）。
+/// `q` があれば題に部分一致するものだけに絞る（期間と組み合わせられる。検索語の読み方と長すぎるときの 422 は
+/// `listAnnouncementDrafts` の `q` と同じ [`AnnouncementTitleQuery`]）。
 pub async fn list_announcements<A, L, N, S, P, C>(
     State(state): State<Shared<A, L, N, S, P, C>>,
     params: Result<Query<ListAnnouncementsParams>, QueryRejection>,
@@ -199,6 +204,13 @@ where
             .as_deref()
             .map(|value| date_from_contract("to", value))
             .transpose()?,
+        title: params
+            .q
+            .as_deref()
+            .map(AnnouncementTitleQuery::new)
+            .transpose()
+            .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
+            .flatten(),
     };
     let announcements =
         state

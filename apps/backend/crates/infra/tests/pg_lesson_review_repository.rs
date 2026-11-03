@@ -292,7 +292,7 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
         .unwrap();
     assert_eq!(
         of_coach.reviews,
-        [latest],
+        std::slice::from_ref(&latest),
         "スポーツ・対応済みと合わせて絞れる"
     );
     // 低い評価のないコーチ・ない ID は空
@@ -305,6 +305,65 @@ async fn reads_reviews_submitted_since_and_lists_the_low_ones(pool: PgPool) {
             .await
             .unwrap();
         assert!(list.reviews.is_empty(), "{coach_id:?}");
+    }
+    // 生徒も完了記録ごとに別（support::ended_session は新しい生徒の予約を作る）
+    let of_student = use_case
+        .execute(ListLowRatedReviewsQuery {
+            student_id: Some(edge.student_id()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        of_student.reviews,
+        std::slice::from_ref(&edge),
+        "その生徒の評価だけ"
+    );
+    assert_eq!(
+        of_student.student_display_names.keys().collect::<Vec<_>>(),
+        [&edge.student_id()]
+    );
+    let of_student = use_case
+        .execute(ListLowRatedReviewsQuery {
+            sport: Some(Sport::Tennis),
+            handled: Some(false),
+            coach_id: Some(latest.coach_id()),
+            student_id: Some(latest.student_id()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        of_student.reviews,
+        std::slice::from_ref(&latest),
+        "スポーツ・対応済み・コーチと合わせて絞れる"
+    );
+    let of_student = use_case
+        .execute(ListLowRatedReviewsQuery {
+            coach_id: Some(edge.coach_id()),
+            student_id: Some(latest.student_id()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        of_student.reviews.is_empty(),
+        "コーチと生徒の両方に合う評価だけ"
+    );
+    // 低い評価のない生徒・生徒でない ID（コーチ）・ない ID は空
+    for student_id in [
+        good.student_id(),
+        edge.coach_id(),
+        domain::identity::AccountId::from_u128(99),
+    ] {
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                student_id: Some(student_id),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(list.reviews.is_empty(), "{student_id:?}");
     }
     let golf = use_case
         .execute(ListLowRatedReviewsQuery {

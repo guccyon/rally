@@ -76,6 +76,11 @@ export function HeadquartersHome() {
           返した添削とかかった時間を見る
         </Link>
       </Section>
+      <Section title="返事のないメッセージ">
+        <Link href="/headquarters/unanswered-messages" className="text-primary underline">
+          返事の遅れているやり取りを見る
+        </Link>
+      </Section>
       <Section title="完了記録の一覧">
         <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>

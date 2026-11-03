@@ -52,6 +52,10 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>): stri
 
 const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
 
+/** 「直近 30 日の予約」の数え方（契約の `listStudents` の `recent_booking_count` の説明を短くしたもの）。 */
+const RECENT_BOOKING_COUNT_NOTE =
+  "直近 30 日の予約は、今日までの 30 日にその生徒が作った予約（体験予約を含む）のうち、キャンセルされていないものの数です。";
+
 /** 契約種別とプランを 1 つの欄にする。受講権がなければ「未契約」。 */
 function planLabel(student: Student): string {
   if (student.contract_type === null) return "未契約";
@@ -62,6 +66,8 @@ function planLabel(student: Student): string {
 /**
  * 本部の「生徒」。生徒の一覧（listStudents）を出す。絞り込み（スポーツ・この日以降に予約していない・予約したことのあるコーチ）は
  * API の `sport` / `not_booked_since` / `coach_id` に渡し、並びは契約の正本どおり返った順（登録の新しい順）のまま出す。
+ * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約が正本で、画面は返った値を「n 件」で出すだけ。0 も「0 件」）
+ * を出し、表の上に数え方を添える（並べ替え・絞り込みには使わない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL のクエリ）のコーチで絞って開き、
  * コーチを変えたら `onCoachChange` で知らせる（URL に残すのは呼ぶ側）。
  */
@@ -212,36 +218,41 @@ export function StudentDirectory({
         <p className="text-sm">{filtered ? "条件に合う生徒はいません" : "まだ生徒はいません"}</p>
       )}
       {state.kind === "loaded" && state.students.length > 0 && (
-        <table aria-label="生徒の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">表示名</th>
-              <th className="py-1">スポーツ</th>
-              <th className="py-1">契約プラン</th>
-              <th className="py-1">最後に予約した日</th>
-              <th className="py-1">登録日</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.students.map((student) => (
-              <tr key={student.student_id} className="border-t">
-                <td className="py-1">
-                  <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
-                    {student.display_name}
-                  </Link>
-                </td>
-                <td className="py-1">{SPORT_LABELS[student.sport]}</td>
-                <td className="py-1">{planLabel(student)}</td>
-                <td className="py-1">
-                  {student.last_booked_at === null
-                    ? "まだ予約がありません"
-                    : formatDate(student.last_booked_at)}
-                </td>
-                <td className="py-1">{formatDate(student.registered_at)}</td>
+        <>
+          <p className="text-sm">{RECENT_BOOKING_COUNT_NOTE}</p>
+          <table aria-label="生徒の一覧" className="w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th className="py-1">表示名</th>
+                <th className="py-1">スポーツ</th>
+                <th className="py-1">契約プラン</th>
+                <th className="py-1">最後に予約した日</th>
+                <th className="py-1">直近 30 日の予約</th>
+                <th className="py-1">登録日</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {state.students.map((student) => (
+                <tr key={student.student_id} className="border-t">
+                  <td className="py-1">
+                    <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
+                      {student.display_name}
+                    </Link>
+                  </td>
+                  <td className="py-1">{SPORT_LABELS[student.sport]}</td>
+                  <td className="py-1">{planLabel(student)}</td>
+                  <td className="py-1">
+                    {student.last_booked_at === null
+                      ? "まだ予約がありません"
+                      : formatDate(student.last_booked_at)}
+                  </td>
+                  <td className="py-1">{student.recent_booking_count} 件</td>
+                  <td className="py-1">{formatDate(student.registered_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );

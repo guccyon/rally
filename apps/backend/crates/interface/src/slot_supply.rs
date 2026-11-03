@@ -5,7 +5,7 @@ use std::sync::Arc;
 use application::{
     clock::Clock,
     identity::TokenVerifier,
-    scheduling::{BookingRepository, GetSlotSupply, GetSlotSupplyQuery},
+    scheduling::{BookingRepository, GetSlotSupply, GetSlotSupplyQuery, SlotCoachAccountLookup},
 };
 use axum::{
     Json, Router,
@@ -18,15 +18,15 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
-        date_from_contract, date_time_to_contract, date_to_contract,
-        slot_supply_status_to_contract, sport_to_contract,
+        account_id_from_contract, admin_web_sport, date_from_contract, date_time_to_contract,
+        date_to_contract, slot_supply_status_to_contract, sport_to_contract,
     },
     error::ApiError,
 };
 
 /// `/slot-supply` のハンドラーが使うユースケース。
-pub struct SlotSupplyState<B, C> {
-    pub get_slot_supply: GetSlotSupply<B, C>,
+pub struct SlotSupplyState<B, A, C> {
+    pub get_slot_supply: GetSlotSupply<B, A, C>,
 }
 
 /// admin-web の `getSlotSupply` のクエリ。
@@ -34,6 +34,8 @@ pub struct SlotSupplyState<B, C> {
 pub struct GetSlotSupplyParams {
     from: Option<String>,
     to: Option<String>,
+    coach_id: Option<String>,
+    sport: Option<String>,
 }
 
 /// admin-web の `SlotSupplyReport`。`from`・`to` は日付で期間を指定したときだけ載せる。
@@ -58,14 +60,18 @@ pub struct SlotSupplyBody {
 }
 
 /// `GET /slot-supply`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が決める。`listBookings` と同じ）。
-pub async fn get_slot_supply<B, C>(
-    State(state): State<Arc<SlotSupplyState<B, C>>>,
+/// 日付でないとき・`coach_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が
+/// 決める。`listBookings` と同じ）。ない・コーチでない `coach_id` は 404 にせず、どのスポーツも 0 の需給。`sport` が
+/// `Sport` の値でなければ 422（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない競技も、どのスポーツも
+/// 0 の需給。
+pub async fn get_slot_supply<B, A, C>(
+    State(state): State<Arc<SlotSupplyState<B, A, C>>>,
     _account: AuthenticatedAccount,
     params: Result<Query<GetSlotSupplyParams>, QueryRejection>,
 ) -> Result<Json<SlotSupplyReportBody>, ApiError>
 where
     B: BookingRepository,
+    A: SlotCoachAccountLookup,
     C: Clock,
 {
     let Query(params) =
@@ -81,6 +87,12 @@ where
             .as_deref()
             .map(|value| date_from_contract("to", value))
             .transpose()?,
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| account_id_from_contract("coach_id", id))
+            .transpose()?,
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
     };
     let report = state
         .get_slot_supply
@@ -109,15 +121,16 @@ fn slot_supply_body(supply: &SlotSupply) -> SlotSupplyBody {
 /// ルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /slot-supply` は本部だけ。
-pub fn slot_supply_router<B, C, T>(get_slot_supply: GetSlotSupply<B, C>, tokens: T) -> Router
+pub fn slot_supply_router<B, A, C, T>(get_slot_supply: GetSlotSupply<B, A, C>, tokens: T) -> Router
 where
     B: BookingRepository + 'static,
+    A: SlotCoachAccountLookup + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/slot-supply", get(self::get_slot_supply::<B, C>))
+        .route("/slot-supply", get(self::get_slot_supply::<B, A, C>))
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(SlotSupplyState { get_slot_supply }))
         .layer(TokenVerification::layer(tokens))

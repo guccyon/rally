@@ -1,7 +1,8 @@
-//! 本部が期間とコーチ・生徒で通話セッションの記録を見る（admin-web の `listLiveLessonSessions`）ことを、保存先を Postgres に
+//! 本部が期間とコーチ・生徒・競技で通話セッションの記録を見る（admin-web の `listLiveLessonSessions`）ことを、保存先を Postgres に
 //! した組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていて同じパスの開始（`POST`）と共存する
 //! こと、API で開始・終了した Postgres のセッションを日付（日本時間）の期間で開始の新しい順に返し、終了の時刻と長さ（分）・
-//! コーチと生徒の表示名を添えること、`coach_id`・`student_id` で絞れること、期間の不正が 422・本部以外が 403 になることを確かめる。
+//! コーチと生徒の表示名を添えること、`coach_id`・`student_id`・`sport`（コーチの提供スポーツを Postgres のアカウントから
+//! 読む）で絞れること、期間・`sport` の不正が 422・本部以外が 403 になることを確かめる。
 //! 契約の形・期間の細かい検査は interface の `tests/headquarters_live_lesson_sessions.rs`、期間の読み取りは infra の
 //! `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -62,6 +63,21 @@ fn post_json(path: &str, token: &str, body: Value) -> Request<Body> {
 
 /// アカウントを登録して ID とトークンを返す。契約にコーチ・本部の登録の操作がないので、ユースケースを直に呼ぶ。
 async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String) {
+    let sports = if role == Role::Headquarters {
+        vec![]
+    } else {
+        vec![Sport::Tennis]
+    };
+    register_with_sports(pool, email, role, sports).await
+}
+
+/// スポーツ `sports` のアカウントを登録して ID とトークンを返す。
+async fn register_with_sports(
+    pool: &PgPool,
+    email: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (AccountId, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -71,11 +87,7 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
         email: email.to_string(),
         display_name: email.split('@').next().unwrap().to_string(),
         role,
-        sports: if role == Role::Headquarters {
-            vec![]
-        } else {
-            vec![Sport::Tennis]
-        },
+        sports,
     })
     .await
     .unwrap();
@@ -133,10 +145,17 @@ async fn confirmed_booking(
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_reads_session_records_from_postgres(pool: PgPool) {
     let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
-    let (suzuki, suzuki_token) = register(&pool, "suzuki@example.com", Role::Coach).await;
+    // すずきはテニスとサッカーのコーチ
+    let (suzuki, suzuki_token) = register_with_sports(
+        &pool,
+        "suzuki@example.com",
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Soccer],
+    )
+    .await;
     let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
     let (hanako, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
-    let (_, jiro_token) = register(&pool, "jiro@example.com", Role::Student).await;
+    let (jiro, jiro_token) = register(&pool, "jiro@example.com", Role::Student).await;
     let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
     let clock = ManualClock::new(nov1_10() - 24 * HOUR);
     let router =
@@ -329,6 +348,69 @@ async fn headquarters_reads_session_records_from_postgres(pool: PgPool) {
         &router,
         get(
             "/live-lesson-sessions?from=2026-11-01&to=2026-11-02&student_id=nope",
+            &hq_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 競技（コーチの提供スポーツ）で絞れる。期間・コーチ・生徒と組み合わさる
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let jiro_id = account_id_uuid::format(jiro);
+    let taro_id = account_id_uuid::format(taro);
+    for (query, expected) in [
+        (
+            "from=2026-11-01&to=2026-11-02&sport=tennis".to_string(),
+            vec![
+                &next_day_session["session_id"],
+                &ended_session["session_id"],
+                &open_session["session_id"],
+            ],
+        ),
+        (
+            "from=2026-11-01&to=2026-11-02&sport=soccer".to_string(),
+            vec![&next_day_session["session_id"]],
+        ),
+        (
+            "from=2026-11-01&to=2026-11-01&sport=soccer".to_string(),
+            vec![],
+        ),
+        (
+            "from=2026-11-01&to=2026-11-02&sport=golf".to_string(),
+            vec![],
+        ),
+        (
+            format!("from=2026-11-01&to=2026-11-02&sport=soccer&coach_id={tanaka_id}"),
+            vec![],
+        ),
+        (
+            format!("from=2026-11-01&to=2026-11-02&sport=soccer&student_id={jiro_id}"),
+            vec![&next_day_session["session_id"]],
+        ),
+        (
+            format!("from=2026-11-01&to=2026-11-02&sport=soccer&student_id={taro_id}"),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/live-lesson-sessions?{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        let ids: Vec<&Value> = body["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| &s["session_id"])
+            .collect();
+        assert_eq!(ids, expected, "{query}: {body}");
+    }
+    let (status, body) = send(
+        &router,
+        get(
+            "/live-lesson-sessions?from=2026-11-01&to=2026-11-02&sport=pingpong",
             &hq_token,
         ),
     )
