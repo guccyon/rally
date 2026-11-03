@@ -1,7 +1,8 @@
 //! コーチのレッスンメニュー（catalog）を、保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。
 //! コーチが admin-web の操作でメニューを作り・直し・非公開にし、生徒が student-app の操作で公開中のものだけを
 //! コーチごと・スポーツごとに読めること、生徒・本部はメニューを作れず直せないこと（403）、他のコーチのメニューは
-//! 直せないこと（404）を確かめる。契約の形の細かい検査は interface の `tests/lesson_menus.rs`。
+//! 直せないこと（404）を確かめる。本部の横断の一覧（`GET /lesson-menus`）の `unbooked=true` で、直近 30 日に予約のない
+//! メニューだけに絞れることも確かめる。契約の形の細かい検査は interface の `tests/lesson_menus.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test lesson_menus -- --include-ignored` で走らせる。
@@ -202,4 +203,123 @@ async fn coaches_manage_their_menus_and_students_read_the_published_ones(pool: P
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+/// 本部の横断の一覧（`GET /lesson-menus`）の `unbooked=true` で、直近 30 日に予約のない（`recent_booking_count` が 0 の）
+/// メニューだけに絞れること。予約が 30 日より前になれば、そのメニューも載ること。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_menus_without_recent_bookings(pool: PgPool) {
+    let (_, coach) = register(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let (_, headquarters) = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let (_, student) = register(
+        &pool,
+        "taro@example.com",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let clock = ManualClock::new(at(0));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let mut menus = Vec::new();
+    // 作った時刻の古い順に並ぶので、1 秒ずらして作る
+    for (secs, name) in [(0, "フォア改善"), (1, "バック改善")] {
+        clock.set(at(secs));
+        let (status, menu) = send(
+            &router,
+            "POST",
+            "/coaches/me/lesson-menus",
+            &coach,
+            Some(json!({
+                "sport": "tennis",
+                "lesson_type": "live_lesson",
+                "name": name,
+                "duration_minutes": 60,
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{menu}");
+        menus.push(menu);
+    }
+    // 「フォア改善」の枠を生徒が予約する（予約した時刻は at(1)）
+    let (status, slot) = send(
+        &router,
+        "POST",
+        "/slots",
+        &coach,
+        Some(json!({
+            "sport": "tennis",
+            "starts_at": "2026-11-01T10:00:00Z",
+            "ends_at": "2026-11-01T11:00:00Z",
+            "lesson_menu_id": menus[0]["lesson_menu_id"],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, booking) = send(
+        &router,
+        "POST",
+        "/bookings",
+        &student,
+        Some(json!({ "slot_id": slot["slot_id"], "is_trial": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{booking}");
+
+    let listed = |query: &'static str| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "GET",
+                &format!("/lesson-menus{query}"),
+                &headquarters,
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            body["lesson_menus"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|menu| {
+                    (
+                        menu["name"].as_str().unwrap().to_string(),
+                        menu["recent_booking_count"].as_u64().unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    let both = vec![("フォア改善".to_string(), 1), ("バック改善".to_string(), 0)];
+    assert_eq!(listed("").await, both, "付けなければ今までどおり");
+    assert_eq!(listed("?unbooked=false").await, both);
+    assert_eq!(
+        listed("?unbooked=true").await,
+        [("バック改善".to_string(), 0)]
+    );
+    assert_eq!(
+        listed("?unbooked=true&published=true&sport=tennis").await,
+        [("バック改善".to_string(), 0)],
+        "ほかの絞り込みと組み合わせられる"
+    );
+    assert_eq!(
+        listed("?unbooked=true&sport=soccer").await,
+        Vec::<(String, u64)>::new()
+    );
+
+    // 30 日前ちょうどまでは数える。それより前になれば数えず、載る
+    clock.set(at(30 * 24 * 3600 + 1));
+    assert_eq!(
+        listed("?unbooked=true").await,
+        [("バック改善".to_string(), 0)]
+    );
+    clock.set(at(30 * 24 * 3600 + 2));
+    assert_eq!(
+        listed("?unbooked=true").await,
+        [("フォア改善".to_string(), 0), ("バック改善".to_string(), 0)]
+    );
 }

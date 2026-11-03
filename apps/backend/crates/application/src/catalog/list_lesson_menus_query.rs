@@ -15,4 +15,7 @@ pub struct ListLessonMenusQuery {
     pub is_published: Option<bool>,
     /// あればこのコーチのメニューだけ（いないコーチなら空の一覧）
     pub coach_id: Option<AccountId>,
+    /// `true` なら直近に予約のない（添える直近の予約の数が 0 の）メニューだけ。`false`（既定）なら絞らない。
+    /// 判定は domain の [`domain::scheduling::UnbookedLessonMenuFilter`]
+    pub unbooked: bool,
 }

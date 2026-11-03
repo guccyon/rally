@@ -2,7 +2,8 @@
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
 //! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧。枠の開始の期間で絞るものを含む）。
 //! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
-//! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数）。
+//! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数と、
+//! 予約のないメニューへの絞り込み `unbooked`）。
 //! 生徒ごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部の生徒の一覧の直近 30 日の予約の数。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -831,10 +832,11 @@ async fn book_menu(
 async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
     let bookings = PgBookingRepository::new(pool.clone());
     let coach = support::coach(&pool).await;
-    let (popular, quiet, other) = (
+    let (popular, quiet, other, idle) = (
         lesson_menu(&pool, 1, coach, true).await,
         lesson_menu(&pool, 2, coach, true).await,
         lesson_menu(&pool, 3, coach, true).await,
+        lesson_menu(&pool, 4, coach, true).await,
     );
     // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
     let now = 1000;
@@ -858,6 +860,8 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
         // 期間の始まりより前は数えない
         (Some(&popular), 279),
         (Some(&quiet), 900),
+        // 期間の外の予約しかないメニュー
+        (Some(&idle), 279),
         // 聞いていないメニューとメニューのない枠への予約
         (Some(&other), 900),
         (None, 900),
@@ -906,24 +910,43 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
             .is_empty()
     );
 
-    let list = ListLessonMenus::new(
+    let list_lesson_menus = ListLessonMenus::new(
         PgLessonMenuRepository::new(pool.clone()),
         ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
         SchedulingLessonMenuRecentBookingCountLookup::new(bookings.clone()),
         FixedClock(at(now)),
-    )
-    .execute(&ListLessonMenusQuery {
-        coach_id: Some(coach),
-        ..ListLessonMenusQuery::default()
-    })
-    .await
-    .unwrap();
-    assert_eq!(list.lesson_menus.len(), 3);
+    );
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.lesson_menus.len(), 4);
     assert_eq!(
         list.recent_booking_counts,
         std::collections::BTreeMap::from([(popular.id(), 2), (quiet.id(), 1), (other.id(), 1)]),
         "キャンセル・期間の外・メニューのない予約は数えない"
     );
+
+    // unbooked なら直近の予約の数が 0 のメニュー（期間の外の予約しかないもの）だけ
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            unbooked: true,
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.lesson_menus
+            .iter()
+            .map(LessonMenu::id)
+            .collect::<Vec<_>>(),
+        [idle.id()]
+    );
+    assert!(list.recent_booking_counts.is_empty());
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
