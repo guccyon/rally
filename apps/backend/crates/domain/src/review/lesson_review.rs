@@ -146,6 +146,13 @@ impl LessonReview {
         self.coach_id
     }
 
+    /// 一覧を絞るコーチの指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `coach_id`）。指定があればその ID が
+    /// 評価されたコーチのときだけ、なければどの評価も当てはまる。コーチでない ID・ない ID はどの評価にも当てはまらない
+    /// （一覧は空になる）。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
     pub const fn rating(&self) -> Rating {
         self.rating
     }
@@ -355,6 +362,19 @@ mod tests {
                 "★{rating} は {max_rating} 以下か"
             );
         }
+    }
+
+    #[test]
+    fn matches_coach_only_the_reviewed_coach_or_any_without_a_coach() {
+        let review = rated(1);
+        assert!(
+            review.matches_coach(None),
+            "指定がなければどのコーチの評価も"
+        );
+        assert!(review.matches_coach(Some(COACH)));
+        // ない ID・コーチでない ID（評価した生徒）には当てはまらない
+        assert!(!review.matches_coach(Some(AccountId::from_u128(99))));
+        assert!(!review.matches_coach(Some(STUDENT)));
     }
 
     #[test]

@@ -449,6 +449,95 @@ async fn handled_that_is_not_a_boolean_is_422_validation_failed() {
 }
 
 #[tokio::test]
+async fn coach_id_keeps_only_low_reviews_of_the_coach() {
+    let router = app().await;
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let other_coach = "00000000-0000-0000-0000-000000000003";
+
+    let (status, body) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        "?coach_id=00000000-0000-0000-0000-000000000002",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        ["00000000-0000-0000-0000-00000000000a"],
+        "たなかコーチの低い評価（10）だけ。★3（12）と 30 日より前（13）は載らない"
+    );
+    assert_eq!(body["reviews"][0]["coach_display_name"], "たなかコーチ");
+    assert_eq!(
+        (body["max_rating"].clone(), body["period_days"].clone()),
+        (2.into(), 30.into())
+    );
+
+    let (status, body) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        &format!("?coach_id={other_coach}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [
+            "00000000-0000-0000-0000-00000000000b",
+            "00000000-0000-0000-0000-00000000000e"
+        ],
+        "いとうコーチの低い評価（11・14）を、新しい順"
+    );
+
+    // スポーツ・対応済みと合わせて絞れる（11 はゴルフで未対応、14 は水泳で対応済み）
+    for (query, expected) in [
+        ("sport=golf", vec!["00000000-0000-0000-0000-00000000000b"]),
+        ("handled=true", vec!["00000000-0000-0000-0000-00000000000e"]),
+        ("sport=swimming&handled=false", vec![]),
+    ] {
+        let (status, body) = list_with_query(
+            &router,
+            Some(HEADQUARTERS),
+            &format!("?coach_id={other_coach}&{query}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+
+    // ない ID・コーチでない ID（生徒）は 404 にせず空の一覧
+    for coach_id in [
+        "00000000-0000-0000-0000-000000000063",
+        "00000000-0000-0000-0000-000000000004",
+    ] {
+        let (status, body) = list_with_query(
+            &router,
+            Some(HEADQUARTERS),
+            &format!("?coach_id={coach_id}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{coach_id}: {body}");
+        assert_eq!(body["reviews"], json!([]), "{coach_id}");
+    }
+}
+
+#[tokio::test]
+async fn coach_id_that_is_not_a_uuid_is_422_validation_failed() {
+    let router = app().await;
+    for query in ["?coach_id=tanaka", "?coach_id=", "?coach_id=2"] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn no_low_reviews_is_an_empty_list() {
     let router = router(
         InMemoryAccountRepository::default(),

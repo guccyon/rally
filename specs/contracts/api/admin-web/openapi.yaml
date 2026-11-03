@@ -36,7 +36,7 @@ info:
     既読・取り下げ済みかを読む（`listStudentAnnouncements`）。
     本部は直近 30 日の★2 以下の評価をコーチを問わず横断で読む（`listLowRatedLessonReviews`）。確認した低い評価には
     「対応済み」の印を付け（`markLowRatedLessonReviewHandled`。いつ・どの本部のアカウントが）、一覧をまだ対応していない
-    ものだけに絞れる（`listLowRatedLessonReviews` の `handled=false`）。
+    ものだけに絞れる（`listLowRatedLessonReviews` の `handled=false`）。コーチでも絞れる（`coach_id`）。
     本部はコーチがまだ返していない動画添削をコーチを問わず横断で、送付からの経過の長い順に読む（`listPendingVideoReviews`。
     スポーツと経過時間の下限とコーチで絞れる）。返した動画添削は、返却の日付（日本時間）の期間と任意のコーチと任意のスポーツで絞って、送付から返却までに
     かかった時間とともに返却の新しい順に読む（`listReturnedVideoReviews`。KPI「添削の返却リードタイム」を 1 件ずつたどる）。
@@ -755,7 +755,12 @@ paths:
         - 絞り込み（任意）: `handled` を付ければ、`false` なら本部がまだ対応済みにしていない評価（`handling` が null）だけ、
           `true` なら対応済みの評価だけ。付けなければ印を問わない。`sport` と合わせて付けられる。しきい値・期間・並べ方は
           付けても変わらない
-        - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないときは 422 `validation_failed`
+        - 絞り込み（任意）: `coach_id` を付ければ、そのコーチが評価された評価だけ（低い評価が続くコーチに本部が連絡する前に、
+          そのコーチの分だけを見る）。`sport`・`handled` と合わせて付けられる。しきい値・期間・並べ方は付けても変わらない。
+          付けなければコーチを問わずすべて。扱いは `listCancelledBookings` の `coach_id` と同じで、コーチでない ID・ない ID・
+          低い評価のないコーチは、404 にせず `reviews` が空の配列
+        - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id` が UUID でないときは
+          422 `validation_failed`
         - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
         - 照会だけで、何も保存しない（評価の非表示・削除はしない）
 
@@ -776,6 +781,15 @@ paths:
           description: 本部の対応済みか（`false` なら未対応だけ、`true` なら対応済みだけ。付けなければ問わない）
           schema:
             type: boolean
+        - name: coach_id
+          in: query
+          required: false
+          description: |
+            あればこのコーチが評価された評価だけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+            コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: 低い評価の一覧
