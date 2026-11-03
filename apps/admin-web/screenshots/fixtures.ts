@@ -512,6 +512,13 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // レッスンメニュー「フォアハンドの基礎」で絞ったとき（hq-live-sessions-by-lesson-menu）は 0 件を返す（メニューで絞って 0 件の表示を撮る）。
+    method: "GET",
+    path: "/live-lesson-sessions",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: { from: "2026-10-20", to: "2026-10-26", sessions: [] } satisfies Schemas["LiveLessonSessionRecordList"],
+  },
+  {
     method: "GET",
     path: "/live-lesson-sessions",
     query: { coach_id: COACH_ID_2 },

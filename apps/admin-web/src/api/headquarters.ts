@@ -102,6 +102,7 @@ export function headquartersApi(client: ApiClient) {
       coach_id?: string;
       student_id?: string;
       sport?: Schemas["Sport"];
+      lesson_menu_id?: string;
     }) =>
       call(() => client.GET("/live-lesson-sessions", { params: { query: filter } })),
     listLessonMenus: (filter: {
