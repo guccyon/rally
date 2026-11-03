@@ -22,6 +22,11 @@ type State =
 
 const NO_NAME = "（名前を表示できません）";
 
+// レッスンメニューで絞っているときの 422 の理由（期間は送る前に確かめるので、残るのは URL の ID が UUID でないとき）。
+// サーバーの `message` は表示用ではない（契約）ので、直し方をここで伝える。
+const LESSON_MENU_VALIDATION_FAILED =
+  "絞り込みの指定が正しくありません。レッスンメニューの一覧の「直近 30 日の予約」から開き直してください。";
+
 /** 開始する日付（日本時間）ごとにまとめる。API の順（開始時刻の古い順）なので、日付の並びも古い順になる。 */
 function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: HeadquartersBooking[] }[] {
   const groups: { day: string; items: HeadquartersBooking[] }[] = [];
@@ -34,11 +39,24 @@ function groupByDay(bookings: HeadquartersBooking[]): { day: string; items: Head
   return groups;
 }
 
-/** 一覧の上の説明の主語（何の予約を見ているか）。 */
-function subjectOf(coachId: string | undefined, studentId: string | undefined): string {
-  const coach = coachId === undefined ? "すべてのコーチの枠への" : "このコーチの枠への";
-  if (studentId === undefined) return `${coach}予約`;
-  return coachId === undefined ? "この生徒の予約" : `${coach}、この生徒の予約`;
+/** 一覧の上の説明の主語（何の予約を見ているか）。絞り込みはコーチ・生徒・レッスンメニューの順に「、」でつなぐ。 */
+function subjectOf(
+  coachId: string | undefined,
+  studentId: string | undefined,
+  lessonMenuId: string | undefined,
+): string {
+  const parts = [
+    ...(coachId === undefined ? [] : ["このコーチの枠への"]),
+    ...(studentId === undefined ? [] : ["この生徒の"]),
+    ...(lessonMenuId === undefined ? [] : ["このレッスンメニューの"]),
+  ];
+  return parts.length === 0 ? "すべてのコーチの枠への予約" : `${parts.join("、")}予約`;
+}
+
+/** 0 件のときの文言。体験予約だけか・レッスンメニューで絞っているかで言い分ける。 */
+function emptyMessage(trialOnly: boolean, byLessonMenu: boolean): string {
+  const kind = trialOnly ? "体験予約" : "予約";
+  return byLessonMenu ? `この期間に、このレッスンメニューの${kind}はありません` : `この期間の${kind}はありません`;
 }
 
 /** 一覧の条件: 期間と、体験予約だけに絞るか（絞るときだけ契約の `trial=true` を付ける）。 */
@@ -48,7 +66,9 @@ type Filter = Period & { trialOnly: boolean };
  * 本部の「予約」。すべてのコーチの枠への予約を、開始する日付（日本時間）の期間で出す（listBookings）。
  * 既定の期間は今日から 7 日。並びは契約の正本どおり返った順（開始時刻の古い順）のまま、日付ごとに分けて出す。
  * `coachId` があれば、そのコーチの枠への予約だけに絞る（`coach_id`）。`studentId` があれば、その生徒が予約した予約だけに
- * 絞る（`student_id`）。両方あれば両方で絞る。期間を変えても絞り込みは残る。
+ * 絞る（`student_id`）。`lessonMenuId` があれば、予約した時点のレッスンメニューがそのメニューの予約だけに絞る（`lesson_menu_id`）。
+ * どれも組み合わせられ、あるものすべてで絞る。期間を変えても絞り込みは残る。
+ * レッスンメニューで絞っていて 422（ID が UUID でない）なら、開き直す場所を出す。
  * 各行の開始の時刻から、その予約の詳細へ移る。
  * 「体験予約だけ」を変えると、選んでいる期間でそのまま読み直す（期間は「この期間で見る」で読み直す）。
  */
@@ -56,10 +76,12 @@ export function BookingList({
   api,
   coachId,
   studentId,
+  lessonMenuId,
 }: {
   api: Pick<HeadquartersApi, "listBookings">;
   coachId?: string;
   studentId?: string;
+  lessonMenuId?: string;
 }) {
   const [draft, setDraft] = useState<Period>(() => defaultPeriod(Date.now()));
   const [trialOnly, setTrialOnly] = useState(false);
@@ -76,6 +98,7 @@ export function BookingList({
         ...(coachId === undefined ? {} : { coach_id: coachId }),
         ...(studentId === undefined ? {} : { student_id: studentId }),
         ...(trialOnly ? { trial: true } : {}),
+        ...(lessonMenuId === undefined ? {} : { lesson_menu_id: lessonMenuId }),
       });
       return response.ok
         ? {
@@ -85,9 +108,15 @@ export function BookingList({
             bookings: response.data.bookings,
             now: Date.now(),
           }
-        : { kind: "failed", message: response.message };
+        : {
+            kind: "failed",
+            message:
+              lessonMenuId !== undefined && response.code === "validation_failed"
+                ? LESSON_MENU_VALIDATION_FAILED
+                : response.message,
+          };
     },
-    [api, coachId, studentId],
+    [api, coachId, studentId, lessonMenuId],
   );
 
   // 開いたときの読み込み（既定の期間）。初期の状態が loading なので、ここでは結果だけを入れる。
@@ -125,7 +154,7 @@ export function BookingList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        {`${subjectOf(coachId, studentId)}を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。`}
+        {`${subjectOf(coachId, studentId, lessonMenuId)}を、開始する日付（日本時間）ごとに見られます。期間は 31 日まで選べます。`}
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">
@@ -165,6 +194,7 @@ export function BookingList({
         <LoadedBookings
           period={state.period}
           trialOnly={state.trialOnly}
+          byLessonMenu={lessonMenuId !== undefined}
           bookings={state.bookings}
           now={state.now}
         />
@@ -176,11 +206,13 @@ export function BookingList({
 function LoadedBookings({
   period,
   trialOnly,
+  byLessonMenu,
   bookings,
   now,
 }: {
   period: Period;
   trialOnly: boolean;
+  byLessonMenu: boolean;
   bookings: HeadquartersBooking[];
   now: number;
 }) {
@@ -196,9 +228,7 @@ function LoadedBookings({
           確定待ちのまま 24 時間以内に始まる予約が {soonCount} 件あります。
         </p>
       )}
-      {bookings.length === 0 && (
-        <p className="text-sm">{trialOnly ? "この期間の体験予約はありません" : "この期間の予約はありません"}</p>
-      )}
+      {bookings.length === 0 && <p className="text-sm">{emptyMessage(trialOnly, byLessonMenu)}</p>}
       {groupByDay(bookings).map(({ day, items }) => (
         <div key={day}>
           <h3 className="mb-1 font-semibold">

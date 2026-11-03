@@ -247,6 +247,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-bookings-by-lesson-menu",
+    title: "本部: レッスンメニュー 1 件の予約",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("link", { name: "「フォアハンドの基礎」の予約を見る" }).click();
+      await page.getByText(/^このレッスンメニューの予約を/).waitFor();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
+  },
+  {
     id: "hq-cancelled-bookings",
     title: "本部: キャンセルされた予約",
     role: "headquarters",
