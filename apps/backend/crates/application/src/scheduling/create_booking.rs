@@ -528,6 +528,13 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn find_many(
+            &self,
+            _booking_ids: &std::collections::BTreeSet<BookingId>,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn find_coach_acceptance(
             &self,
             _coach_id: AccountId,

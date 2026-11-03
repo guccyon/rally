@@ -5,6 +5,7 @@
 //! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数と、
 //! 予約のないメニューへの絞り込み `unbooked`）。
 //! 生徒ごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部の生徒の一覧の直近 30 日の予約の数。
+//! ID を並べた予約の読み取り（`find_many`。本部が見る通話セッションの記録をレッスンメニューで絞るときに読む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -1036,5 +1037,64 @@ async fn recent_bookings_of_students_are_counted_per_student(pool: PgPool) {
         counts,
         std::collections::BTreeMap::from([(busy, 2), (quiet, 1)]),
         "キャンセル・期間の外の予約は数えず、数える予約のない生徒は含めない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn find_many_reads_the_asked_bookings_of_any_status(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let student = support::student(&pool).await;
+    let first = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 30, 31).await,
+        true,
+    )
+    .await
+    .unwrap();
+    let second = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 32, 33).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let not_asked = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 34, 35).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let cancelled = bookings
+        .update(second.id(), |booking, slot| {
+            booking.cancel(student, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let missing = bookings.next_id();
+    let mut found = bookings
+        .find_many(&[first.id(), cancelled.id(), missing].into_iter().collect())
+        .await
+        .unwrap();
+    found.sort_by_key(Booking::id);
+    let mut expected = vec![first, cancelled];
+    expected.sort_by_key(Booking::id);
+    assert_eq!(
+        found, expected,
+        "聞いた予約を状態を問わず。ない ID・聞いていない予約は含めない"
+    );
+    assert!(found.iter().all(|booking| booking.id() != not_asked.id()));
+    assert!(
+        bookings
+            .find_many(&Default::default())
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

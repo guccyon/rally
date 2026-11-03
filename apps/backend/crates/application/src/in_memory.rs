@@ -386,6 +386,20 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned())
     }
 
+    async fn find_many(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| booking_ids.contains(&b.id()))
+            .cloned()
+            .collect())
+    }
+
     async fn find_coach_acceptance(
         &self,
         coach_id: AccountId,
