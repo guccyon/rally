@@ -7,7 +7,10 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { RoleGate } from "@/components/RoleGate";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
 import { LiveSessionRecordList } from "@/components/headquarters/LiveSessionRecordList";
-import { LiveSessionRecordsHome } from "@/components/headquarters/LiveSessionRecordsHome";
+import {
+  LiveSessionRecordsHome,
+  studentLiveSessionRecordsPath,
+} from "@/components/headquarters/LiveSessionRecordsHome";
 import { recentPeriod } from "@/components/headquarters/bookingPeriod";
 import { formatDateTime } from "@/components/labels";
 import { saveSession } from "@/session/session";
@@ -239,6 +242,132 @@ describe("本部のライブレッスンの記録", () => {
 
     await screen.findByRole("table", { name: TABLE });
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["この条件で見る"]);
+  });
+});
+
+describe("本部のライブレッスンの記録（生徒で絞る）", () => {
+  const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
+
+  function activityOf(displayName: string) {
+    return vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: true,
+      data: {
+        student_id: STUDENT_ID,
+        display_name: displayName,
+        upcoming_bookings: [],
+        recent_lessons: [],
+        cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
+      },
+    }));
+  }
+
+  function renderHome(studentId?: string) {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    return render(
+      <RoleGate role="headquarters">
+        {(session) => <LiveSessionRecordsHome token={session.token} studentId={studentId} />}
+      </RoleGate>,
+    );
+  }
+
+  test("studentId があれば student_id を付けて読み、期間とコーチを変えても絞り込みは残る", async () => {
+    const user = userEvent.setup();
+    const listLiveLessonSessions = listOf([SESSIONS[0]!]);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId={STUDENT_ID} />);
+
+    expect(screen.getByText(/この生徒のライブレッスンがいつ始まりいつ終わったか/)).toBeInTheDocument();
+    expect(listLiveLessonSessions).toHaveBeenCalledWith({ from: "2026-10-20", to: "2026-10-26", student_id: STUDENT_ID });
+    await screen.findByRole("table", { name: TABLE });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.clear(screen.getByLabelText("開始日"));
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-26",
+      coach_id: SUZUKI,
+      student_id: STUDENT_ID,
+    });
+  });
+
+  test("生徒で絞って 0 件なら「この条件の通話の記録はありません」と出す", async () => {
+    render(
+      <LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf() }} studentId={STUDENT_ID} />,
+    );
+
+    expect(await screen.findByText("この条件の通話の記録はありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞っているときのサーバーの 422 は、生徒の選び直し方も添えて出す", async () => {
+    const listLiveLessonSessions = vi.fn<HeadquartersApi["listLiveLessonSessions"]>(async () => ({
+      ok: false,
+      message: "入力の内容が正しくありません。",
+      code: "validation_failed",
+    }));
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId="not-a-uuid" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+    );
+    expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞った画面は一覧の上に生徒の名前を出し、「すべての生徒の記録を見る」で外せる", async () => {
+    const listLiveLessonSessions = listOf([SESSIONS[0]!]);
+    const getStudentActivity = activityOf("山田 花子");
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions, listCoaches: coachesOf(), getStudentActivity });
+    renderHome(STUDENT_ID);
+
+    const region = screen.getByRole("region", { name: "ライブレッスンの記録" });
+    expect(await within(region).findByText("山田 花子", { selector: "span" })).toBeInTheDocument();
+    expect(within(region).getByText(/^生徒で絞っています:/)).toBeInTheDocument();
+    expect(getStudentActivity).toHaveBeenCalledWith(STUDENT_ID);
+    expect(await within(region).findByRole("table", { name: TABLE })).toBeInTheDocument();
+    expect(listLiveLessonSessions).toHaveBeenCalledWith({ from: "2026-10-20", to: "2026-10-26", student_id: STUDENT_ID });
+    expect(screen.getByRole("link", { name: "すべての生徒の記録を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/live-sessions",
+    );
+  });
+
+  test("生徒が読めなくても名前の代わりに「名前を表示できません」を出し、記録は読む", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: false,
+      code: "not_found",
+      message: "見つかりません。",
+    }));
+    headquartersApiMock.mockReturnValue({
+      listLiveLessonSessions: listOf([]),
+      listCoaches: coachesOf(),
+      getStudentActivity,
+    });
+    renderHome(STUDENT_ID);
+
+    const region = screen.getByRole("region", { name: "ライブレッスンの記録" });
+    expect(await within(region).findByText("この条件の通話の記録はありません")).toBeInTheDocument();
+    expect(within(region).getByText(/^生徒で絞っています:/)).toHaveTextContent("（名前を表示できません）");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞らない画面には生徒の絞り込みの表示がない", async () => {
+    const getStudentActivity = activityOf("山田 花子");
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), getStudentActivity });
+    renderHome();
+
+    await screen.findByRole("table", { name: TABLE });
+    expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "すべての生徒の記録を見る" })).not.toBeInTheDocument();
+    expect(getStudentActivity).not.toHaveBeenCalled();
+  });
+
+  test("studentLiveSessionRecordsPath は生徒の ID をクエリに入れる", () => {
+    expect(studentLiveSessionRecordsPath(STUDENT_ID)).toBe(`/headquarters/live-sessions?student_id=${STUDENT_ID}`);
   });
 });
 
