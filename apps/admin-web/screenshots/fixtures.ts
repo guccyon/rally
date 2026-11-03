@@ -446,6 +446,22 @@ export const FIXTURES: Fixture[] = [
     path: "/coaches/{coach_id}/review-summary",
     body: { coach_id: COACH_ID, review_count: 3, average_rating: 4.67 } satisfies Schemas["CoachReviewSummary"],
   },
+  // 本部の「コーチの評価」で点数を選んだとき（4 点以下は 1 件、3 点以下は 0 件）。
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/reviews",
+    query: { max_rating: "4" },
+    body: {
+      coach_id: COACH_ID,
+      reviews: REVIEWS.filter((item) => item.rating <= 4),
+    } satisfies Schemas["CoachReviewList"],
+  },
+  {
+    method: "GET",
+    path: "/coaches/{coach_id}/reviews",
+    query: { max_rating: "3" },
+    body: { coach_id: COACH_ID, reviews: [] } satisfies Schemas["CoachReviewList"],
+  },
   {
     method: "GET",
     path: "/coaches/{coach_id}/reviews",
