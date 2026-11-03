@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
@@ -13,8 +13,17 @@ import { saveSession } from "@/session/session";
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
 
+// 今（日本時間 2026-10-26 12:00）。既定の期間は今日までの 7 日（2026-10-20〜2026-10-26）。
+const NOW = new Date("2026-10-26T03:00:00Z");
+
 beforeEach(() => {
   replace.mockReset();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const SENDER_ID = "99999999-9999-4999-8999-999999999999";
@@ -138,10 +147,11 @@ describe("送ったお知らせの一覧", () => {
     expect(listAnnouncements).toHaveBeenCalledTimes(1);
   });
 
-  test("0 件なら「まだお知らせを送っていません」と出し、一覧は出さない", async () => {
+  test("0 件なら「この期間に送ったお知らせはありません」と出し、一覧は出さない", async () => {
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement: sendOk() })} />);
 
-    expect(await screen.findByText("まだお知らせを送っていません")).toBeInTheDocument();
+    expect(await screen.findByText("この期間に送ったお知らせはありません")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・0 件")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
   });
 
@@ -155,8 +165,150 @@ describe("送ったお知らせの一覧", () => {
     const list = screen.getByRole("region", { name: "送ったお知らせ" });
     expect(await within(list).findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
-    expect(screen.queryByText("まだお知らせを送っていません")).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間に送ったお知らせはありません")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument());
+  });
+});
+
+async function changePeriod(user: ReturnType<typeof userEvent.setup>, from: string, to: string) {
+  await user.clear(screen.getByLabelText("開始日"));
+  await user.type(screen.getByLabelText("開始日"), from);
+  await user.clear(screen.getByLabelText("終了日"));
+  await user.type(screen.getByLabelText("終了日"), to);
+}
+
+describe("送ったお知らせの期間", () => {
+  test("開いたときは今日（日本時間）までの 7 日で読み、期間を件数とともに出して期間の欄にも入れる", async () => {
+    const listAnnouncements = listOf(SENT);
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+
+    expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・2 件")).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+    expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
+    expect(screen.getByLabelText("終了日")).toHaveValue("2026-10-26");
+  });
+
+  test("期間を選んで「この期間で見る」で API の from / to に渡して読み直す", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-09-01", to: "2026-09-30" });
+    expect(await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・2 件")).toBeInTheDocument();
+  });
+
+  test("終了日が開始日より前・31 日を超える期間は送らずに理由を出す", async () => {
+    const listAnnouncements = listOf(SENT);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+    const region = screen.getByRole("region", { name: "送ったお知らせ" });
+
+    await changePeriod(user, "2026-10-20", "2026-10-19");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(within(region).getByRole("alert")).toHaveTextContent(
+      "終了日は開始日と同じか、それより後の日付にしてください。",
+    );
+
+    await changePeriod(user, "2026-09-01", "2026-10-02");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(within(region).getByRole("alert")).toHaveTextContent("期間は 31 日までにしてください。");
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+  });
+
+  test("API の 422 は、期間の直し方を添えた理由を出し、一覧は出さない", async () => {
+    const listAnnouncements = vi.fn<HeadquartersApi["listAnnouncements"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力の内容が正しくありません。",
+    }));
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+
+    const region = screen.getByRole("region", { name: "送ったお知らせ" });
+    expect(await within(region).findByRole("alert")).toHaveTextContent(
+      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。",
+    );
+    expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
+  });
+
+  test("後から変えた期間の結果だけを出す（前の期間の遅れた結果で上書きしない）", async () => {
+    let releaseFirst: () => void = () => {};
+    const listAnnouncements = vi
+      .fn<HeadquartersApi["listAnnouncements"]>()
+      .mockResolvedValueOnce({ ok: true, data: { announcements: SENT } })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseFirst = () => resolve({ ok: true, data: { announcements: SENT } });
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, data: { announcements: [SENT[1]!] } });
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await changePeriod(user, "2026-10-01", "2026-10-07");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(await screen.findByText("2026年10月1日（木） 〜 2026年10月7日（水）・1 件")).toBeInTheDocument();
+
+    releaseFirst();
+    await waitFor(() => expect(items()).toHaveLength(1));
+    expect(screen.getByText("2026年10月1日（木） 〜 2026年10月7日（水）・1 件")).toBeInTheDocument();
+  });
+
+  test("送ったお知らせは、送った日付が今の期間に入るときだけ一覧の先頭に足す", async () => {
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement: sendOk() })} />);
+    await screen.findByText("この期間に送ったお知らせはありません");
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・0 件");
+
+    await fillAndReview(user, { title: "お知らせ", body: "本文" });
+    await user.click(screen.getByRole("button", { name: "送るのを確定" }));
+    await waitFor(() => expect(screen.getByLabelText("題")).toHaveValue(""));
+    expect(screen.getByText("この期間に送ったお知らせはありません")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "送ったお知らせの一覧" })).not.toBeInTheDocument();
+  });
+
+  test("取り下げに断られて取り直すときは、今の期間で読む", async () => {
+    const listAnnouncements = listOf(SENT);
+    const withdrawAnnouncement = vi.fn<HeadquartersApi["withdrawAnnouncement"]>(async () => ({
+      ok: false,
+      code: "announcement_already_withdrawn",
+      message: "このお知らせはすでに取り下げられています。",
+    }));
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements, withdrawAnnouncement })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await changePeriod(user, "2026-10-01", "2026-10-26");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await screen.findByText("2026年10月1日（木） 〜 2026年10月26日（月）・2 件");
+
+    await user.click(screen.getByRole("button", { name: "「水泳のキャンペーン」を取り下げる" }));
+    await user.click(screen.getByRole("button", { name: "取り下げを確定" }));
+    await waitFor(() => expect(listAnnouncements).toHaveBeenCalledTimes(3));
+    expect(listAnnouncements).toHaveBeenLastCalledWith({ from: "2026-10-01", to: "2026-10-26" });
+  });
+
+  test("下書きの一覧は期間で読み直さない", async () => {
+    const listAnnouncementDrafts = draftListOf([]);
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncements: listOf(SENT), listAnnouncementDrafts })} />);
+    await screen.findByRole("list", { name: "送ったお知らせの一覧" });
+
+    await changePeriod(user, "2026-09-01", "2026-09-30");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    await screen.findByText("2026年9月1日（火） 〜 2026年9月30日（水）・2 件");
+    expect(listAnnouncementDrafts).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -304,7 +456,7 @@ describe("送ったお知らせの取り下げ", () => {
 describe("お知らせを送る", () => {
   test("対象は「生徒全員」（既定）と 6 種類のスポーツから選べる", async () => {
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement: sendOk() })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     expect(screen.getByLabelText("対象")).toHaveValue("");
     const options = within(screen.getByLabelText("対象")).getAllByRole("option");
@@ -362,7 +514,7 @@ describe("お知らせを送る", () => {
     const user = userEvent.setup();
     const sendAnnouncement = sendOk();
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     await fillAndReview(user, { title: "メンテナンス", body: "止まります" });
     expect(screen.getByRole("group", { name: "送る前の確認" })).toHaveTextContent(
@@ -374,14 +526,14 @@ describe("お知らせを送る", () => {
     expect(sendAnnouncement).toHaveBeenCalledWith({ title: "メンテナンス", body: "止まります", sport: null });
     // 0 件の表示から、送ったお知らせの一覧に変わる
     expect(items()).toHaveLength(1);
-    expect(screen.queryByText("まだお知らせを送っていません")).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間に送ったお知らせはありません")).not.toBeInTheDocument();
   });
 
   test("「直す」で入力に戻り、書いた内容は残る", async () => {
     const user = userEvent.setup();
     const sendAnnouncement = sendOk();
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     await fillAndReview(user, { target: "野球の生徒", title: "題です", body: "本文です" });
     await user.click(screen.getByRole("button", { name: "直す" }));
@@ -397,7 +549,7 @@ describe("お知らせを送る", () => {
     const user = userEvent.setup();
     const sendAnnouncement = sendOk();
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     await fillAndReview(user, { title: "   ", body: "" });
 
@@ -411,7 +563,7 @@ describe("お知らせを送る", () => {
   test("題は 50 文字、本文は 2000 文字まで（コードポイントで数える）。超えたら残りの文字数と理由を出し、確かめに進まない", async () => {
     const user = userEvent.setup();
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement: sendOk() })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     // 絵文字は UTF-16 では 2 単位だが 1 文字
     await user.click(screen.getByLabelText("題"));
@@ -436,7 +588,7 @@ describe("お知らせを送る", () => {
       () => new Promise((r) => (resolve = r)),
     );
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     await fillAndReview(user, { title: "題", body: "本文" });
     await user.click(screen.getByRole("button", { name: "送るのを確定" }));
@@ -476,7 +628,7 @@ describe("お知らせを送る", () => {
       message: "入力の内容が正しくありません。",
     }));
     render(<Announcements api={apiOf({ listAnnouncements: listOf([]), sendAnnouncement })} />);
-    await screen.findByText("まだお知らせを送っていません");
+    await screen.findByText("この期間に送ったお知らせはありません");
 
     await fillAndReview(user, { title: "題", body: "本文" });
     await user.click(screen.getByRole("button", { name: "送るのを確定" }));
@@ -545,7 +697,7 @@ function sendDraftOk() {
       sport: null,
       recipient_count: 120,
       read_count: 0,
-      sent_at: "2026-11-01T02:00:00Z",
+      sent_at: "2026-10-26T02:00:00Z",
       withdrawal: null,
     },
   }));

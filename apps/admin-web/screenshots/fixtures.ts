@@ -890,6 +890,14 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingDetail"],
   },
   {
+    // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。
+    // mockApi は先に一致した応答を返すので、既定の期間の `/announcements` より前に置く。
+    method: "GET",
+    path: "/announcements",
+    query: { from: "2026-09-01", to: "2026-09-30" },
+    body: { announcements: [] } satisfies Schemas["AnnouncementList"],
+  },
+  {
     method: "GET",
     path: "/announcements",
     body: {
