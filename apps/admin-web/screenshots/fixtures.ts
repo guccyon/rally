@@ -987,6 +987,13 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["HeadquartersBookingDetail"],
   },
   {
+    // 下書きを題で探して見つからないとき（hq-announcement-drafts-search）。0 件の表示（語を含めた文言）を撮る。
+    method: "GET",
+    path: "/announcement-drafts",
+    query: { q: "夏休み" },
+    body: { announcement_drafts: [] } satisfies Schemas["AnnouncementDraftList"],
+  },
+  {
     // 期間で絞ったとき（hq-announcements-period）。この期間には送っていない（0 件の表示を撮る）。
     // mockApi は先に一致した応答を返すので、既定の期間の `/announcements` より前に置く。
     method: "GET",

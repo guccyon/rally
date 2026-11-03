@@ -404,7 +404,7 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/announcements",
     open: async (page) => {
       await page.getByLabel("対象").selectOption({ label: "テニスの生徒" });
-      await page.getByLabel("題").fill("コートの予約方法が変わります");
+      await page.getByLabel("題", { exact: true }).fill("コートの予約方法が変わります");
       await page.getByLabel("本文").fill("11月から、コートの予約はアプリの「予約」から行えます。\n詳しくはお知らせの一覧をご覧ください。");
       await page.getByRole("button", { name: "内容を確かめる" }).click();
     },
@@ -424,10 +424,21 @@ export const SCREENS: Screen[] = [
     role: "headquarters",
     path: "/headquarters/announcements",
     open: async (page) => {
-      await page.getByLabel("題").fill("年末年始の営業について");
+      await page.getByLabel("題", { exact: true }).fill("年末年始の営業について");
       await page.getByLabel("本文").fill("12月29日から1月3日は、チャットの返信が遅れます。");
       await page.getByRole("button", { name: "下書きに保存" }).click();
       await page.getByRole("list", { name: "下書きの一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-announcement-drafts-search",
+    title: "本部: お知らせの下書きを題で探す（見つからないとき）",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      await page.getByLabel("題で探す").fill("夏休み");
+      await page.getByRole("button", { name: "探す", exact: true }).click();
+      await page.getByText("題に「夏休み」を含む下書きはありません").waitFor();
     },
   },
   {
