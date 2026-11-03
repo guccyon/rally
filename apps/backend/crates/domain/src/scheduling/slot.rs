@@ -138,6 +138,13 @@ impl Slot {
         self.coach_id
     }
 
+    /// 需給を絞るコーチの指定に当てはまるか。指定があればその ID が枠のコーチのときだけ、なければどの枠も当てはまる。
+    /// コーチでない ID・ない ID はどの枠にも当てはまらない（数は 0 になる。予約の一覧の
+    /// [`Booking::matches_coach`](super::Booking::matches_coach) と同じ扱い）。予約枠の需給が使う。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
     pub const fn sport(&self) -> Sport {
         self.sport
     }
@@ -291,6 +298,20 @@ mod tests {
 
     fn slot(id: u128, from: u64, to: u64) -> Slot {
         slot_with_capacity(id, from, to, 1)
+    }
+
+    #[test]
+    fn matches_coach_only_the_coach_of_the_slot_or_any_without_a_coach() {
+        let mut slot = slot(1, 10, 11);
+        assert!(slot.matches_coach(None), "指定がなければどのコーチの枠も");
+        assert!(slot.matches_coach(Some(AccountId::from_u128(1))));
+        // 別のコーチ・ない ID には当てはまらない
+        assert!(!slot.matches_coach(Some(AccountId::from_u128(99))));
+        // 閉じた枠でも枠のコーチは変わらない
+        slot.withdraw(AccountId::from_u128(1), at(0)).unwrap();
+        assert_eq!(slot.status(), SlotStatus::Closed);
+        assert!(slot.matches_coach(Some(AccountId::from_u128(1))));
+        assert!(!slot.matches_coach(Some(AccountId::from_u128(99))));
     }
 
     #[test]

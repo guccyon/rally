@@ -1,6 +1,6 @@
 //! `GET /slot-supply`（admin-web の `getSlotSupply`）の統合テスト。レスポンスの形を admin-web の OpenAPI の
 //! スキーマで検査し、本部だけが呼べることと、期間に開始する枠だけを数えることと、日付（`from`・`to`）で期間を指定できる
-//! ことを確かめる。判定の式の境界は
+//! ことと、`coach_id` でそのコーチの枠だけを数えることを確かめる。判定の式の境界は
 //! domain の `SlotSupply` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -462,4 +462,101 @@ async fn dates_breaking_the_rule_are_unprocessable() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+fn account_uuid(id: u128) -> String {
+    format!("00000000-0000-0000-0000-{id:012x}")
+}
+
+/// どのスポーツも枠も予約しようとした生徒も 0 か。
+fn all_zero(body: &Value) -> bool {
+    body["sports"].as_array().unwrap().iter().all(|supply| {
+        supply["published_slots"] == 0
+            && supply["booking_students"] == 0
+            && supply["status"] == "sufficient"
+    })
+}
+
+#[tokio::test]
+async fn coach_id_counts_only_the_slots_of_that_coach() {
+    let router = app(bookings().await);
+    // 枠 2（テニス、1 日前）のコーチ。その枠に 1 人
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!("/slot-supply?coach_id={}", account_uuid(102)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["window_start"], "2026-09-26T00:00:00Z");
+    assert_eq!(body["window_end"], "2026-10-26T00:00:00Z");
+    assert!(
+        body.get("from").is_none() && body.get("to").is_none(),
+        "{body}"
+    );
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    assert_eq!(body["sports"][3]["published_slots"], 0, "{body}");
+    assert_eq!(body["sports"].as_array().unwrap().len(), 6);
+
+    // 期間と組み合わせる。明日の枠 8 のコーチなら 1 枠に 1 人、枠 2 のコーチは 0
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!(
+            "/slot-supply?from=2026-10-27&to=2026-10-27&coach_id={}",
+            account_uuid(108)
+        ),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["from"], "2026-10-27");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!(
+            "/slot-supply?from=2026-10-27&to=2026-10-27&coach_id={}",
+            account_uuid(102)
+        ),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(all_zero(&body), "{body}");
+}
+
+#[tokio::test]
+async fn coach_id_of_no_coach_is_zero_and_not_a_uuid_is_unprocessable() {
+    let router = app(bookings().await);
+    // 予約した生徒（コーチでない ID）・ない ID は 404 にせず、どのスポーツも 0
+    for coach_id in [account_uuid(11), account_uuid(1000)] {
+        let (status, body) = get_slot_supply_at(
+            &router,
+            &format!("/slot-supply?coach_id={coach_id}"),
+            Some(HEADQUARTERS),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{coach_id}: {body}");
+        assert!(all_zero(&body), "{coach_id}: {body}");
+    }
+    for coach_id in ["not-a-uuid", ""] {
+        let (status, body) = get_slot_supply_at(
+            &router,
+            &format!("/slot-supply?coach_id={coach_id}"),
+            Some(HEADQUARTERS),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{coach_id}: {body}"
+        );
+        assert_eq!(body["code"], "validation_failed");
+        assert_eq!(body["message"], "coach_id が UUID でない");
+    }
 }

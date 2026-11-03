@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
-        date_from_contract, date_time_to_contract, date_to_contract,
+        account_id_from_contract, date_from_contract, date_time_to_contract, date_to_contract,
         slot_supply_status_to_contract, sport_to_contract,
     },
     error::ApiError,
@@ -34,6 +34,7 @@ pub struct SlotSupplyState<B, C> {
 pub struct GetSlotSupplyParams {
     from: Option<String>,
     to: Option<String>,
+    coach_id: Option<String>,
 }
 
 /// admin-web の `SlotSupplyReport`。`from`・`to` は日付で期間を指定したときだけ載せる。
@@ -58,7 +59,8 @@ pub struct SlotSupplyBody {
 }
 
 /// `GET /slot-supply`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が決める。`listBookings` と同じ）。
+/// 日付でないとき・`coach_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が
+/// 決める。`listBookings` と同じ）。ない・コーチでない `coach_id` は 404 にせず、どのスポーツも 0 の需給。
 pub async fn get_slot_supply<B, C>(
     State(state): State<Arc<SlotSupplyState<B, C>>>,
     _account: AuthenticatedAccount,
@@ -80,6 +82,11 @@ where
             .to
             .as_deref()
             .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        coach_id: params
+            .coach_id
+            .as_deref()
+            .map(|id| account_id_from_contract("coach_id", id))
             .transpose()?,
     };
     let report = state

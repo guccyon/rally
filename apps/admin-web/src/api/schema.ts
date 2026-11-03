@@ -58,6 +58,11 @@ export interface paths {
          *     - 期間は 1 日以上 31 日まで（`from` と `to` を含めて数える）。`to` が `from` より前・31 日を超える・`from` / `to` が
          *       `YYYY-MM-DD` の日付でないときは 422 `validation_failed`（`message` に理由。`listBookings` と同じ文言）。`to` だけを
          *       付けて今日より前の日付なら `from`（今日）より前なので 422
+         *     - 任意の `coach_id` で、そのコーチの枠と、それらの枠への予約だけを数える（枠を出していないコーチや、枠がすぐ埋まる
+         *       コーチを本部が個別に見る）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す（そのコーチが
+         *       教えていないスポーツは 0）。省けば今までどおりすべてのコーチ。扱いは `listBookings` の `coach_id` と同じ: UUID で
+         *       なければ 422 `validation_failed`（`message` は `coach_id が UUID でない`）。コーチでない ID・ない ID は、404 にせず
+         *       どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
          *     - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
          *       コーチが閉じた枠（`closed`）は数えない
          *     - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
@@ -3566,6 +3571,11 @@ export interface operations {
                 from?: string;
                 /** @description 期間の終わりの日付（日本時間。含む）。`from` も省けば集計した時刻まで。`from` だけなら `from` から 7 日目 */
                 to?: string;
+                /**
+                 * @description あればこのコーチの枠と、それらの枠への予約だけを数える。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせずどのスポーツも 0 を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
