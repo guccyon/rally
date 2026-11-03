@@ -161,6 +161,10 @@ export interface paths {
          *       期間と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべてのコーチ。検証と扱いは `listBookings` の
          *       `coach_id` と同じで、UUID でなければ 422 `validation_failed`。コーチでない ID・ない ID・期間にキャンセルがないコーチは、
          *       404 にせず `bookings` が空の配列
+         *     - 任意の `student_id` で、その生徒が予約したキャンセルされた予約だけに絞れる（キャンセルを繰り返す生徒から相談を受けたときに、
+         *       その生徒の分だけを見る）。期間・`coach_id` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての
+         *       生徒。検証と扱いは `listBookings` の `student_id` と同じで、UUID でなければ 422 `validation_failed`。生徒でない ID・
+         *       ない ID・期間にキャンセルがない生徒は、404 にせず `bookings` が空の配列
          *     - 並べ方: キャンセルした時刻（`cancelled_at`）の新しい順。同じ時刻は `booking_id` の順。ページングはしない。
          *       キャンセルされた予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 各項目には予約の ID・予約した生徒（`student_id` と表示名 `student_display_name`）・予約された枠のコーチ（`coach_id` と
@@ -3518,6 +3522,11 @@ export interface operations {
                  *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
                  */
                 coach_id?: string;
+                /**
+                 * @description あればこの生徒が予約したキャンセルされた予約だけに絞る。省けばすべての生徒。UUID でなければ 422 `validation_failed`。
+                 *     生徒でない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                student_id?: string;
             };
             header?: never;
             path?: never;

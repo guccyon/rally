@@ -41,6 +41,7 @@ pub struct ListCancelledBookingsParams {
     from: Option<String>,
     to: Option<String>,
     coach_id: Option<String>,
+    student_id: Option<String>,
 }
 
 /// admin-web の `CancelledBookingList`。
@@ -68,8 +69,8 @@ pub struct CancelledBookingBody {
 }
 
 /// `GET /bookings/cancelled`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないとき・`coach_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が
-/// 決める。`coach_id` の検証も含めて `listBookings` と同じ）。
+/// 日付でないとき・`coach_id`・`student_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は
+/// [`crate::scheduling_error`] が決める。`coach_id`・`student_id` の検証も含めて `listBookings` と同じ）。
 pub async fn list_cancelled_bookings<B, K, D, C>(
     State(state): State<Arc<HeadquartersCancelledBookingsState<B, K, D, C>>>,
     _account: AuthenticatedAccount,
@@ -98,6 +99,11 @@ where
             .coach_id
             .as_deref()
             .map(|id| account_id_from_contract("coach_id", id))
+            .transpose()?,
+        student_id: params
+            .student_id
+            .as_deref()
+            .map(|id| account_id_from_contract("student_id", id))
             .transpose()?,
     };
     let list = state
