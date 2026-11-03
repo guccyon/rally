@@ -834,6 +834,16 @@ describe("headquartersApi", () => {
     }
   });
 
+  test("listAnnouncementDrafts は題の検索語を q にして GET /api/announcement-drafts を呼ぶ", async () => {
+    const list = { announcement_drafts: [] };
+    const { api, fetchMock } = setup(json(200, list));
+    const result = await api.listAnnouncementDrafts({ q: "年末" });
+    expect(result).toEqual({ ok: true, data: list });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/announcement-drafts");
+    expect(url.searchParams.get("q")).toBe("年末");
+  });
+
   test("sendAnnouncementDraft の 404 は code を付けて返す", async () => {
     const { api } = setup(json(404, { code: "not_found", message: "no draft" }));
     const result = await api.sendAnnouncementDraft("eeeeeeee-0000-4000-8000-000000000001");
