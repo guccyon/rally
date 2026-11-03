@@ -1,6 +1,7 @@
 //! `GET /slot-supply`（admin-web の `getSlotSupply`）の統合テスト。レスポンスの形を admin-web の OpenAPI の
 //! スキーマで検査し、本部だけが呼べることと、期間に開始する枠だけを数えることと、日付（`from`・`to`）で期間を指定できる
-//! ことと、`coach_id` でそのコーチの枠だけを数えることを確かめる。判定の式の境界は
+//! ことと、`coach_id` でそのコーチの枠だけを数えることと、`sport` でその競技を提供するコーチの枠だけを数えることを
+//! 確かめる。判定の式の境界は
 //! domain の `SlotSupply` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -9,7 +10,8 @@ use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
     identity::{
-        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
+        AccessToken, AccountRepository, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer,
+        TokenVerifier,
     },
     in_memory::{
         FixedAiFeedbackGenerator, FixedClock, FixedVideoCallProvider, FixedVideoStorage,
@@ -32,7 +34,8 @@ use axum::{
 };
 use domain::{
     catalog::Sport,
-    identity::{AccountId, Role},
+    identity::{Account, AccountId, Email, Role},
+    profile::DisplayName,
     scheduling::{Booking, Slot, SlotId, SlotStatus},
 };
 use serde_json::{Value, json};
@@ -123,7 +126,42 @@ async fn bookings() -> InMemoryBookingRepository {
     bookings
 }
 
+/// [`bookings`] の枠のコーチ（ID は 100 + 枠の ID）のアカウント。提供スポーツは枠のスポーツで、枠 2（テニス）のコーチは
+/// サッカーも提供する。
+async fn coach_accounts() -> InMemoryAccountRepository {
+    let accounts = InMemoryAccountRepository::default();
+    for (id, sports) in [
+        (101, &[Sport::Tennis][..]),
+        (102, &[Sport::Tennis, Sport::Soccer]),
+        (103, &[Sport::Tennis]),
+        (104, &[Sport::Tennis]),
+        (105, &[Sport::Soccer]),
+        (106, &[Sport::Soccer]),
+        (107, &[Sport::Tennis]),
+        (108, &[Sport::Tennis]),
+    ] {
+        let account = Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("coach{id}@example.com")).unwrap(),
+            DisplayName::new("コーチ").unwrap(),
+            Role::Coach,
+            sports.iter().copied(),
+            now(),
+        )
+        .unwrap();
+        accounts.insert(account).await.unwrap();
+    }
+    accounts
+}
+
 fn app(bookings: InMemoryBookingRepository) -> Router {
+    app_with_accounts(bookings, InMemoryAccountRepository::default())
+}
+
+fn app_with_accounts(
+    bookings: InMemoryBookingRepository,
+    accounts: InMemoryAccountRepository,
+) -> Router {
     let analytics = RecordingAnalyticsSink::default();
     let clock = FixedClock(now());
     let slots = bookings.slots().clone();
@@ -175,7 +213,11 @@ fn app(bookings: InMemoryBookingRepository) -> Router {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
-        GetSlotSupply::new(bookings, clock),
+        GetSlotSupply::new(
+            bookings,
+            application::profile::ProfileCoachAccountLookup::new(accounts),
+            clock,
+        ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(
@@ -558,5 +600,79 @@ async fn coach_id_of_no_coach_is_zero_and_not_a_uuid_is_unprocessable() {
         );
         assert_eq!(body["code"], "validation_failed");
         assert_eq!(body["message"], "coach_id が UUID でない");
+    }
+}
+
+#[tokio::test]
+async fn sport_counts_only_the_slots_of_coaches_offering_it() {
+    let router = app_with_accounts(bookings().await, coach_accounts().await);
+    // サッカーを提供するのは枠 2（テニス）・5・6 のコーチ。枠 2 に 1 人、枠 5 に 1 人
+    let (status, body) =
+        get_slot_supply_at(&router, "/slot-supply?sport=soccer", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["window_start"], "2026-09-26T00:00:00Z");
+    assert_eq!(body["window_end"], "2026-10-26T00:00:00Z");
+    assert_eq!(body["sports"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    assert_eq!(
+        body["sports"][3],
+        json!({ "sport": "soccer", "status": "sufficient", "published_slots": 2, "booking_students": 1 })
+    );
+
+    // 提供するコーチのいない競技は、どのスポーツも 0
+    let (status, body) =
+        get_slot_supply_at(&router, "/slot-supply?sport=golf", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(all_zero(&body), "{body}");
+
+    // コーチ・期間と組み合わせる。枠 2 のコーチはサッカーを提供するので、その枠だけ
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!("/slot-supply?sport=soccer&coach_id={}", account_uuid(102)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    assert_eq!(body["sports"][3]["published_slots"], 0, "{body}");
+    let (status, body) = get_slot_supply_at(
+        &router,
+        "/slot-supply?from=2026-10-27&to=2026-10-27&sport=tennis",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["from"], "2026-10-27");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+
+    // 付けなければ今までどおり
+    let (status, body) = get_slot_supply(&router, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["sports"][3]["published_slots"], 2, "{body}");
+    assert_eq!(body["sports"][0]["published_slots"], 3, "{body}");
+}
+
+#[tokio::test]
+async fn unknown_sport_is_unprocessable() {
+    let router = app_with_accounts(bookings().await, coach_accounts().await);
+    for sport in ["cricket", "Tennis", ""] {
+        let (status, body) = get_slot_supply_at(
+            &router,
+            &format!("/slot-supply?sport={sport}"),
+            Some(HEADQUARTERS),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{sport}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+        assert_eq!(body["message"], format!("未知のスポーツ: {sport}"));
     }
 }

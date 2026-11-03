@@ -4,7 +4,8 @@ use super::{SchedulingError, SlotCapacity, SlotId, SlotSeats, SlotStatus};
 use crate::{
     catalog::Sport,
     catalog::{LessonFormat, LessonMenu, LessonMenuId},
-    identity::AccountId,
+    identity::{Account, AccountId},
+    profile::CoachSportFilter,
 };
 
 /// スロット（glossary の slot）。コーチが公開する予約枠で、開始は終了より前。
@@ -143,6 +144,15 @@ impl Slot {
     /// [`Booking::matches_coach`](super::Booking::matches_coach) と同じ扱い）。予約枠の需給が使う。
     pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
         coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
+    /// 需給を絞る競技の指定に当てはまるか。枠のコーチのアカウント `coach`（引けなければ `None`）の提供スポーツで決め
+    /// （判定は [`CoachSportFilter`] の 1 か所。枠そのもののスポーツ [`Self::sport`] では決めない）、指定がなければ
+    /// どの枠も当てはまる。指定があるときは、`coach` が枠のコーチのアカウントで競技を提供するときだけ当てはまる
+    /// （アカウントが引けない枠は当てはまらない）。予約枠の需給が使う。
+    pub fn matches_coach_sport(&self, sport: CoachSportFilter, coach: Option<&Account>) -> bool {
+        sport.sport().is_none()
+            || coach.is_some_and(|coach| coach.id() == self.coach_id && sport.matches(coach))
     }
 
     pub const fn sport(&self) -> Sport {
@@ -312,6 +322,47 @@ mod tests {
         assert_eq!(slot.status(), SlotStatus::Closed);
         assert!(slot.matches_coach(Some(AccountId::from_u128(1))));
         assert!(!slot.matches_coach(Some(AccountId::from_u128(99))));
+    }
+
+    fn account(id: u128, role: crate::identity::Role, sports: &[Sport]) -> Account {
+        Account::new(
+            AccountId::from_u128(id),
+            crate::identity::Email::new(format!("user{id}@example.com")).unwrap(),
+            crate::profile::DisplayName::new("たろう").unwrap(),
+            role,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn matches_coach_sport_by_the_sports_the_coach_offers() {
+        use crate::identity::Role;
+        // 枠はテニスだが、コーチはテニスとサッカーを提供する
+        let slot = slot(1, 10, 11);
+        let coach = account(1, Role::Coach, &[Sport::Tennis, Sport::Soccer]);
+        let filter = |sport| CoachSportFilter::new(Some(sport));
+        assert!(slot.matches_coach_sport(filter(Sport::Tennis), Some(&coach)));
+        assert!(
+            slot.matches_coach_sport(filter(Sport::Soccer), Some(&coach)),
+            "枠のスポーツでなくコーチの提供スポーツで決める"
+        );
+        assert!(!slot.matches_coach_sport(filter(Sport::Golf), Some(&coach)));
+        // アカウントが引けない枠・枠のコーチでないアカウント・コーチでないアカウントは当てはまらない
+        assert!(!slot.matches_coach_sport(filter(Sport::Tennis), None));
+        let other = account(2, Role::Coach, &[Sport::Tennis]);
+        assert!(!slot.matches_coach_sport(filter(Sport::Tennis), Some(&other)));
+        let student = account(1, Role::Student, &[Sport::Tennis]);
+        assert!(!slot.matches_coach_sport(filter(Sport::Tennis), Some(&student)));
+    }
+
+    #[test]
+    fn matches_coach_sport_without_a_sport_is_every_slot() {
+        let slot = slot(1, 10, 11);
+        assert!(slot.matches_coach_sport(CoachSportFilter::default(), None));
+        let coach = account(1, crate::identity::Role::Coach, &[Sport::Golf]);
+        assert!(slot.matches_coach_sport(CoachSportFilter::default(), Some(&coach)));
     }
 
     #[test]
