@@ -1005,6 +1005,31 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["StudentActivity"],
   },
   {
+    // 未読だけに絞った生徒の受け取ったお知らせ（hq-student-announcements-unread）。条件なしの応答のうち未読の 2 件を返す。
+    // mockApi は先に一致した応答を返すので、絞らない応答より前に置く。
+    method: "GET",
+    path: "/students/{student_id}/announcements",
+    query: { unread_only: "true" },
+    body: {
+      announcements: [
+        {
+          announcement_id: id("8888", 3),
+          title: "年末年始の営業について",
+          sent_at: at(-12),
+          is_read: false,
+          is_withdrawn: false,
+        },
+        {
+          announcement_id: id("8888", 4),
+          title: "テニスの新しいコーチのご紹介",
+          sent_at: at(-24 * 5),
+          is_read: false,
+          is_withdrawn: true,
+        },
+      ],
+    } satisfies Schemas["StudentAnnouncementList"],
+  },
+  {
     method: "GET",
     path: "/students/{student_id}/announcements",
     body: {

@@ -131,10 +131,10 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { student_id: studentId } },
         }),
       ),
-    listStudentAnnouncements: (studentId: string) =>
+    listStudentAnnouncements: (studentId: string, filter: { unread_only?: boolean } = {}) =>
       call(() =>
         client.GET("/students/{student_id}/announcements", {
-          params: { path: { student_id: studentId } },
+          params: { path: { student_id: studentId }, query: filter },
         }),
       ),
     listBookings: (query: {
