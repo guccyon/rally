@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成と、本部からのお知らせの取り下げと、受け取ったお知らせの組み立てで返す。
+/// notification（通知）の不変条件の違反。お知らせと本部からのお知らせの生成と、下書きの題の検索語の生成と、本部からのお知らせの取り下げと、受け取ったお知らせの組み立てで返す。
 ///
 /// 利用者に見せる文言は境界が変種から決める。[`fmt::Display`] はデバッグ用。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,6 +11,8 @@ pub enum NotificationError {
     EmptyAnnouncementTitle,
     /// 本部からのお知らせの題が長すぎる（`max` は文字数）
     AnnouncementTitleTooLong { max: usize },
+    /// お知らせの下書きの題の検索語が長すぎる（`max` は前後の空白を除いた文字数）
+    AnnouncementTitleQueryTooLong { max: usize },
     /// 本部からのお知らせの本文が空（空白だけを含む）
     EmptyAnnouncementBody,
     /// 本部からのお知らせの本文が長すぎる（`max` は文字数）
