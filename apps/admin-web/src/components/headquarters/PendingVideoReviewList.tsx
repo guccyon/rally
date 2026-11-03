@@ -20,8 +20,16 @@ type CoachesState =
   | { kind: "loaded"; coaches: Schemas["Coach"][] }
   | { kind: "failed"; message: string };
 
-/** sport・coachId が空なら、minElapsedHours が null なら、それで絞らない。 */
-export type PendingVideoReviewFilter = { sport: Sport | ""; minElapsedHours: number | null; coachId: string };
+/**
+ * sport・coachId・studentId が空なら、minElapsedHours が null なら、それで絞らない。
+ * 生徒は返した動画添削の記録と同じく絞り込みの欄では選ばず、URL のクエリ（生徒の利用の様子の画面からの入口）で受け取る。
+ */
+export type PendingVideoReviewFilter = {
+  sport: Sport | "";
+  minElapsedHours: number | null;
+  coachId: string;
+  studentId: string;
+};
 type Filter = PendingVideoReviewFilter;
 
 /** スポーツの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
@@ -30,22 +38,31 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
 /** 経過時間の下限の選択肢（時間）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const MIN_ELAPSED_HOURS_OPTIONS = Object.freeze([24, 48, 72, 168] as const);
 
-const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "" };
+const NO_FILTER: Filter = { sport: "", minElapsedHours: null, coachId: "", studentId: "" };
 
 /**
  * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（スポーツ・経過時間・コーチの指定）を添えて直す場所を伝える。
  * 選択肢から選んでいればふつうは来ない（URL のクエリを手で書き換えたときなど）。
  */
 const VALIDATION_HINT = "スポーツ・送ってからの経過・コーチは一覧から選び直してください。";
+// 生徒で絞っているとき（生徒の ID は URL のクエリから来るので、書き換えられて UUID でないこともある）に添える。
+const VALIDATION_HINT_WITH_STUDENT = `${VALIDATION_HINT}生徒は生徒の一覧から選び直してください。`;
 
-function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
-  return response.code === "validation_failed" ? `${response.message}${VALIDATION_HINT}` : response.message;
+function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filter: Filter): string {
+  if (response.code !== "validation_failed") return response.message;
+  return `${response.message}${filter.studentId === "" ? VALIDATION_HINT : VALIDATION_HINT_WITH_STUDENT}`;
 }
 
-/** 0 件のときの文言。コーチだけで絞っていればそのコーチと言い、ほかの条件もあれば「条件に合う」と言う。 */
-function emptyMessageOf(filter: Filter): string {
-  if (filter.sport !== "" || filter.minElapsedHours !== null) return "条件に合う返却待ちの動画添削はありません";
-  if (filter.coachId !== "") return "このコーチの返却待ちの動画添削はありません";
+/**
+ * 0 件のときの文言。コーチだけ・生徒だけで絞っていればそのコーチ・その生徒と言い、ほかの条件もある・コーチと生徒の両方で
+ * 絞っていれば「条件に合う」と言う（返した動画添削の記録と同じ）。
+ */
+function emptyMessageOf({ sport, minElapsedHours, coachId, studentId }: Filter): string {
+  if (sport !== "" || minElapsedHours !== null || (coachId !== "" && studentId !== "")) {
+    return "条件に合う返却待ちの動画添削はありません";
+  }
+  if (coachId !== "") return "このコーチの返却待ちの動画添削はありません";
+  if (studentId !== "") return "この生徒の返却待ちの動画添削はありません";
   return "返却を待っている動画添削はありません";
 }
 
@@ -63,6 +80,7 @@ function isOverdue(video: { elapsed_hours: number }): boolean {
  * 経過が 48 時間以上の行は、予約の画面の「開始まで 24 時間以内」と同じやり方（行の薄い赤と札）で目立たせ、
  * 一覧の上にその件数を出す（今出している一覧の中で数える）。
  * コーチの選択肢はライブレッスンの記録と同じくコーチの一覧（listCoaches）の返った順。
+ * 生徒（`studentId`）は API の `student_id` に渡す。欄はなく、スポーツ・経過時間・コーチを変えて読み直しても絞り込みは残る。
  * `initialFilter`（URL のクエリ）の条件で開き、絞り込みを変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  */
 export function PendingVideoReviewList({
@@ -87,10 +105,11 @@ export function PendingVideoReviewList({
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.minElapsedHours === null ? {} : { min_elapsed_hours: next.minElapsedHours }),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
+        ...(next.studentId === "" ? {} : { student_id: next.studentId }),
       });
       return response.ok
         ? { kind: "loaded", list: response.data }
-        : { kind: "failed", message: failureMessage(response) };
+        : { kind: "failed", message: failureMessage(response, next) };
     },
     [api],
   );

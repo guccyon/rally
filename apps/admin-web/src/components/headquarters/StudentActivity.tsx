@@ -10,7 +10,7 @@ import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { LESSON_TYPE_LABELS, formatDateTime } from "@/components/labels";
 
 import { BookingStatusBadge } from "./BookingStatusBadge";
-import { PENDING_VIDEO_REVIEWS_PATH } from "./PendingVideoReviewsHome";
+import { studentPendingVideoReviewsPath } from "./PendingVideoReviewsHome";
 
 type StudentActivityData = Schemas["StudentActivity"];
 
@@ -26,8 +26,8 @@ const NOT_FOUND = "この生徒は見つかりません。生徒の一覧から�
 /**
  * 本部の「生徒の利用の様子」。生徒 1 人の表示名・これからの予約・直近の受けたレッスン・キャンセルの件数・
  * 送った動画の数・返却待ちの動画の数を getStudentActivity で一度だけ読む。並びと件数（直近のレッスンは最大 20 件）と
- * 数え方は契約の正本どおりで、画面は返った値を出すだけ。返却待ちが 1 件以上なら「返却待ちの動画添削」への入口を添える
- * （一覧に生徒の絞り込みがないので、入口は一覧そのもの）。
+ * 数え方は契約の正本どおりで、画面は返った値を出すだけ。返却待ちが 1 件以上なら、この生徒で絞った「返却待ちの動画添削」への
+ * 入口を添える。
  * `studentId` がない・API が 404 のときは「見つからない」として、ほかの失敗とは分けて出す。
  */
 export function StudentActivity({
@@ -73,7 +73,7 @@ export function StudentActivity({
         <dd>
           {activity.pending_video_review_count} 件（いま返却を待っている動画）
           {activity.pending_video_review_count > 0 && (
-            <Link href={PENDING_VIDEO_REVIEWS_PATH} className="ml-3 text-primary underline">
+            <Link href={studentPendingVideoReviewsPath(activity.student_id)} className="ml-3 text-primary underline">
               返却待ちの動画添削を見る
             </Link>
           )}

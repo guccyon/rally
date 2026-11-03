@@ -148,17 +148,17 @@ describe("本部の生徒の利用の様子", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあれば一覧への入口を添える", async () => {
+  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあればその生徒で絞った一覧への入口を添える", async () => {
     render(<StudentActivity api={{ getStudentActivity: activityOf(ACTIVITY) }} studentId={STUDENT_ID} />);
 
     await screen.findByRole("table", { name: "これからの予約" });
     expect(valueOf("送った動画")).toHaveTextContent(/^4 件（これまでのすべて）$/);
     const pending = valueOf("返却待ち");
     expect(pending).toHaveTextContent(/^1 件（いま返却を待っている動画）返却待ちの動画添削を見る$/);
-    // 一覧には生徒の絞り込みがないので、入口は一覧そのもの
+    // 入口はこの生徒で絞った返却待ちの一覧
     expect(within(pending).getByRole("link", { name: "返却待ちの動画添削を見る" })).toHaveAttribute(
       "href",
-      "/headquarters/pending-video-reviews",
+      `/headquarters/pending-video-reviews?student_id=${STUDENT_ID}`,
     );
     expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
   });

@@ -1152,6 +1152,27 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["PendingVideoReviewList"],
   },
+  // 生徒で絞った返却待ち（山田 花子）。条件なしの応答より前に置く（先に合ったものを返す）。
+  {
+    method: "GET",
+    path: "/video-reviews/pending",
+    query: { student_id: YAMADA.id },
+    body: {
+      as_of: NOW.toISOString(),
+      videos: [
+        {
+          video_id: id("5555", 22),
+          sport: "tennis",
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          submitted_at: at(-52.25),
+          elapsed_hours: 52,
+        },
+      ],
+    } satisfies Schemas["PendingVideoReviewList"],
+  },
   {
     method: "GET",
     path: "/video-reviews/pending",

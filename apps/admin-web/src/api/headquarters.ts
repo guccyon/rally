@@ -65,6 +65,7 @@ export function headquartersApi(client: ApiClient) {
       sport?: Schemas["Sport"];
       min_elapsed_hours?: number;
       coach_id?: string;
+      student_id?: string;
     }) =>
       call(() => client.GET("/video-reviews/pending", { params: { query: filter } })),
     listReturnedVideoReviews: (filter: {
