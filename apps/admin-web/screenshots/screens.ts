@@ -738,6 +738,18 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/pending-video-reviews?coach_id=22222222-2222-4222-8222-222222222223",
   },
   {
+    id: "hq-pending-video-reviews-lesson-menu",
+    title: "本部: 返却待ちの動画添削（レッスンメニューで絞って 0 件のとき）",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+    open: async (page) => {
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "サーブの添削（鈴木 コーチ）" });
+      await page.getByText(/^レッスンメニューで絞っています: サーブの添削$/).waitFor();
+      await page.getByText("このレッスンメニューの返却待ちの動画添削はありません").waitFor();
+    },
+  },
+  {
     id: "hq-pending-video-reviews-by-student",
     title: "本部: 生徒 1 人の返却待ちの動画添削",
     role: "headquarters",
