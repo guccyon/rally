@@ -3,7 +3,8 @@
 //! `MissingCoachProfileFields` の 1 か所で、項目の名前の文字列は [`crate::contract`] の対応表で決める。任意の `sport` で
 //! 絞る（値の読み取りと 422 は `listCoaches` の `sport` と同じ [`crate::contract`] の `admin_web_sport`）。任意の
 //! `acceptance_status` でも絞る（値の読み取りと 422 は `listCoaches` の `acceptance_status` と同じ [`crate::contract`] の
-//! `coach_acceptance_status_from_contract`）。
+//! `coach_acceptance_status_from_contract`）。任意の `q`（表示名の検索語）でも絞る（値の読み取りと 422 は `listCoaches` の
+//! `q` と同じ [`crate::contract`] の `display_name_query_from_contract`。一致の規則は domain の `DisplayNameQuery`）。
 
 use std::sync::Arc;
 
@@ -26,7 +27,7 @@ use crate::{
     auth::{TokenVerification, require_role},
     contract::{
         admin_web_sport, coach_acceptance_status_from_contract, coach_profile_field_to_contract,
-        date_time_to_contract,
+        date_time_to_contract, display_name_query_from_contract,
     },
     error::ApiError,
 };
@@ -41,6 +42,7 @@ pub struct IncompleteCoachProfilesState<R, P, A> {
 pub struct ListIncompleteCoachProfilesParams {
     sport: Option<String>,
     acceptance_status: Option<String>,
+    q: Option<String>,
 }
 
 /// admin-web の `IncompleteCoachProfileList`。
@@ -60,7 +62,7 @@ pub struct IncompleteCoachProfileBody {
 }
 
 /// `GET /coaches/incomplete-profiles`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// `sport` が `Sport` の値でない・`acceptance_status` が `CoachAcceptanceStatus` の値でなければ 422。
+/// `sport` が `Sport` の値でない・`acceptance_status` が `CoachAcceptanceStatus` の値でない・`q` が長すぎれば 422。
 pub async fn list_incomplete_coach_profiles<R, P, A>(
     State(state): State<Arc<IncompleteCoachProfilesState<R, P, A>>>,
     params: Result<Query<ListIncompleteCoachProfilesParams>, QueryRejection>,
@@ -78,9 +80,10 @@ where
         .as_deref()
         .map(coach_acceptance_status_from_contract)
         .transpose()?;
+    let name = display_name_query_from_contract(params.q.as_deref())?;
     let profiles = state
         .list_incomplete_coach_profiles
-        .execute(sport, acceptance)
+        .execute(sport, acceptance, name.as_ref())
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(IncompleteCoachProfileListBody {

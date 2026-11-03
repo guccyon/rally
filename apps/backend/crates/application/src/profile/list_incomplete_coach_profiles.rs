@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use domain::{
     catalog::Sport,
     identity::AccountId,
-    profile::{CoachAcceptanceFilter, CoachSportFilter, MissingCoachProfileFields},
+    profile::{
+        CoachAcceptanceFilter, CoachSportFilter, DisplayNameQuery, MissingCoachProfileFields,
+    },
     scheduling::CoachAcceptanceStatus,
 };
 
@@ -18,7 +20,9 @@ use crate::{Unavailable, identity::AccountRepository};
 /// 返す。任意の競技 `sport` で絞れる（コーチの提供スポーツに含むものだけ。判定は domain の [`CoachSportFilter`] で、
 /// `listCoaches` の `sport` と同じ）。`None` なら絞らない。任意の受付の状態 `acceptance` でも絞れる（scheduling に問い合わせる。
 /// [`CoachAcceptanceLookup`]。判定は domain の [`CoachAcceptanceFilter`] で、`listCoaches` の `acceptance_status` と同じ。
-/// 止めていないコーチは受付中）。`None` なら絞らず、問い合わせもしない。両方付ければ両方を満たすものだけ。
+/// 止めていないコーチは受付中）。`None` なら絞らず、問い合わせもしない。任意の表示名の検索語 `name` でも絞れる（表示名に
+/// 部分一致するものだけ。一致の規則は domain の [`DisplayNameQuery`] で、`listCoaches` の `q` と同じ。ここでは比べ方を
+/// 持たない）。`None` なら絞らない。付けたものをすべて満たすものだけ。
 /// 絞っても「足りない」の判定と並べ方は変わらない。
 /// プロフィールを最後に更新した時刻は、今の保存先が持たないので常に `None`（記録するのは別の段）。
 /// 照会だけで、行動イベントも境界間イベントも発火しない。誰が呼べるか（本部だけ）は境界（interface）が確かめる。
@@ -46,6 +50,7 @@ where
         &self,
         sport: Option<Sport>,
         acceptance: Option<CoachAcceptanceStatus>,
+        name: Option<&DisplayNameQuery>,
     ) -> Result<Vec<IncompleteCoachProfile>, Unavailable> {
         let filter = CoachSportFilter::new(sport);
         let bios = self.profiles.list_coach_bios().await?;
@@ -55,6 +60,7 @@ where
             .await?
             .into_iter()
             .filter(|account| filter.matches(account))
+            .filter(|account| name.is_none_or(|name| name.matches(account.display_name())))
             .filter_map(|account| {
                 // 自己紹介文の行がないコーチは書いていない（空）とみなす
                 let bio = bios.get(&account.id()).cloned().unwrap_or_default();
@@ -93,7 +99,7 @@ mod tests {
 
     use domain::{
         identity::{Account, Email, Role},
-        profile::{CoachBio, CoachProfileField, DisplayName},
+        profile::{CoachBio, CoachProfileField, DisplayName, DisplayNameQuery},
         scheduling::CoachSuspensionReason,
     };
 
@@ -120,15 +126,7 @@ mod tests {
         sports: &[Sport],
         registered_hour: u64,
     ) -> Account {
-        Account::new(
-            AccountId::from_u128(id),
-            Email::new(format!("user{id}@example.com")).unwrap(),
-            DisplayName::new(format!("なまえ{id}")).unwrap(),
-            role,
-            sports.iter().copied(),
-            SystemTime::UNIX_EPOCH + Duration::from_secs(registered_hour * 3600),
-        )
-        .unwrap()
+        named(id, role, &format!("なまえ{id}"), sports, registered_hour)
     }
 
     async fn accounts(accounts: impl IntoIterator<Item = Account>) -> InMemoryAccountRepository {
@@ -170,13 +168,36 @@ mod tests {
         sport: Option<Sport>,
         acceptance: Option<CoachAcceptanceStatus>,
     ) -> Vec<IncompleteCoachProfile> {
+        listed_by(accounts, acceptances, sport, acceptance, None).await
+    }
+
+    async fn listed_by(
+        accounts: &InMemoryAccountRepository,
+        acceptances: &InMemoryCoachAcceptanceRepository,
+        sport: Option<Sport>,
+        acceptance: Option<CoachAcceptanceStatus>,
+        name: Option<&str>,
+    ) -> Vec<IncompleteCoachProfile> {
+        let name = name.map(|name| DisplayNameQuery::new(name).unwrap().unwrap());
         ListIncompleteCoachProfiles::new(
             accounts.clone(),
             accounts.clone(),
             SchedulingCoachAcceptanceLookup::new(acceptances.clone()),
         )
-        .execute(sport, acceptance)
+        .execute(sport, acceptance, name.as_ref())
         .await
+        .unwrap()
+    }
+
+    fn named(id: u128, role: Role, name: &str, sports: &[Sport], registered_hour: u64) -> Account {
+        Account::new(
+            AccountId::from_u128(id),
+            Email::new(format!("user{id}@example.com")).unwrap(),
+            DisplayName::new(name).unwrap(),
+            role,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(registered_hour * 3600),
+        )
         .unwrap()
     }
 
@@ -339,6 +360,66 @@ mod tests {
             ids(&listed(None, None).await),
             [5, 3, 4, 2],
             "付けなければ今までどおり（止めているコーチも載る）"
+        );
+    }
+
+    #[tokio::test]
+    async fn name_lists_only_coaches_whose_display_name_contains_it_keeping_the_order() {
+        let accounts = accounts([
+            named(1, Role::Headquarters, "山田 本部", &[], 0),
+            named(2, Role::Student, "山田 生徒", &[Sport::Tennis], 0),
+            named(3, Role::Coach, "山田 太郎", &[Sport::Tennis], 3),
+            named(4, Role::Coach, "Hanako YAMADA", &[Sport::Golf], 1),
+            named(5, Role::Coach, "小山田 次郎", &[Sport::Tennis], 2),
+            named(6, Role::Coach, "山田 書き終え", &[Sport::Tennis], 0),
+            named(7, Role::Coach, "佐藤 花子", &[Sport::Tennis], 0),
+        ])
+        .await;
+        // 6 は名前が合っても書き終えているので載らない
+        write_bio(&accounts, 6, "テニス歴 3 年").await;
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        suspend(&acceptances, 5).await;
+
+        let listed =
+            |sport, acceptance, name| listed_by(&accounts, &acceptances, sport, acceptance, name);
+        assert_eq!(
+            ids(&listed(None, None, Some("山田")).await),
+            [5, 3],
+            "表示名に含むコーチだけ。登録の古い順のまま。本部・生徒・書き終えたコーチは載らない"
+        );
+        assert_eq!(
+            ids(&listed(None, None, Some(" yamada\u{3000}")).await),
+            [4],
+            "前後の空白を除き、ASCII の英字は大文字と小文字を区別しない（規則は DisplayNameQuery）"
+        );
+        assert_eq!(
+            ids(&listed(Some(Sport::Tennis), None, Some("山田")).await),
+            [5, 3],
+            "競技と組み合わせられる"
+        );
+        assert_eq!(
+            ids(&listed(None, Some(CoachAcceptanceStatus::Accepting), Some("山田")).await),
+            [3],
+            "受付の状態と組み合わせられる"
+        );
+        assert_eq!(
+            ids(&listed(
+                Some(Sport::Golf),
+                Some(CoachAcceptanceStatus::Accepting),
+                Some("YAMADA")
+            )
+            .await),
+            [4],
+            "3 つとも付ければすべてを満たすものだけ"
+        );
+        assert!(
+            listed(None, None, Some("鈴木")).await.is_empty(),
+            "合うコーチがいなければ空"
+        );
+        assert_eq!(
+            ids(&listed(None, None, None).await),
+            [7, 4, 5, 3],
+            "付けなければ今までどおり"
         );
     }
 }

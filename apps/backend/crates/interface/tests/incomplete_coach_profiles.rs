@@ -1,7 +1,8 @@
 //! `GET /coaches/incomplete-profiles`（admin-web の `listIncompleteCoachProfiles`）の統合テスト。本部には、プロフィールに
 //! 足りない項目のあるコーチを、空の項目の名前・最後に更新した時刻（今は記録していないので null）・登録した時刻とともに、
 //! 登録の古い順で返すことを OpenAPI のスキーマで検査する。任意の `sport` で絞れ、`Sport` の値でなければ 422。任意の
-//! `acceptance_status` でも絞れ（`sport` と組み合わせられる）、`CoachAcceptanceStatus` の値でなければ 422。
+//! `acceptance_status` でも絞れ（`sport` と組み合わせられる）、`CoachAcceptanceStatus` の値でなければ 422。任意の `q`
+//! （表示名の検索語）でも絞れ（ほかの絞り込みと組み合わせられる）、前後の空白を除いて 50 文字を超えれば 422。
 //! コーチ・生徒は 403、トークンがなければ 401。
 
 use std::time::{Duration, SystemTime};
@@ -284,6 +285,62 @@ async fn unknown_acceptance_status_is_unprocessable() {
         "?sport=golf&acceptance_status=paused",
     ] {
         let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn q_narrows_to_coaches_whose_display_name_contains_it() {
+    let router = app().await;
+    for (query, expected) in [
+        // なまえ
+        ("?q=%E3%81%AA%E3%81%BE%E3%81%88", &["5", "4"][..]),
+        // なまえ5
+        ("?q=%E3%81%AA%E3%81%BE%E3%81%885", &["5"][..]),
+        // え4（部分一致）
+        ("?q=%E3%81%884", &["4"][..]),
+        // 全角の空白・なまえ4・空白（前後の空白は除く）
+        ("?q=%E3%80%80%E3%81%AA%E3%81%BE%E3%81%884+", &["4"][..]),
+        // なまえ3 は書き終えているので載らない
+        ("?q=%E3%81%AA%E3%81%BE%E3%81%883", &[][..]),
+        // いない
+        ("?q=%E3%81%84%E3%81%AA%E3%81%84", &[][..]),
+        // 空・空白だけは絞らない
+        ("?q=", &["5", "4"][..]),
+        ("?q=+%E3%80%80+", &["5", "4"][..]),
+        // ほかの絞り込みと組み合わせる
+        ("?q=%E3%81%AA%E3%81%BE%E3%81%88&sport=golf", &["4"][..]),
+        (
+            "?q=%E3%81%AA%E3%81%BE%E3%81%88&acceptance_status=suspended",
+            &["5"][..],
+        ),
+        (
+            "?q=%E3%81%AA%E3%81%BE%E3%81%885&sport=soccer&acceptance_status=accepting",
+            &[][..],
+        ),
+    ] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn too_long_q_is_unprocessable() {
+    let router = app().await;
+    let (status, body) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        &format!("?q=+{}+", "a".repeat(50)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "50 文字までは通る: {body}");
+    for query in [
+        format!("?q={}", "a".repeat(51)),
+        format!("?sport=golf&q={}", "a".repeat(51)),
+    ] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), &query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed", "{query}");
     }
