@@ -1,6 +1,7 @@
 //! `PgAnnouncementRepository`（`notification.announcements`）の検証。送った記録の往復（全員とスポーツを絞ったもの）・
 //! 送った時刻の新しい順（同じ時刻は後に残したものが先）・送った時刻の期間で引くこと（開始を含み終了を含まない。取り下げた
-//! ものも含む）・ID で引くこと・取り下げの往復（最初の取り下げを上書きしない）。
+//! ものも含む）・ID で引くこと・取り下げの往復（最初の取り下げを上書きしない）・一覧のユースケース（`ListAnnouncements`）が
+//! 題の検索語で絞ること（期間と組み合わせられる）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,13 +10,18 @@ mod support;
 
 use std::collections::BTreeSet;
 
-use application::notification::AnnouncementRepository;
+use application::notification::{
+    AnnouncementRepository, ListAnnouncements, ListAnnouncementsQuery,
+};
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
-    notification::{Announcement, AnnouncementBody, AnnouncementTitle, AnnouncementWithdrawal},
+    notification::{
+        Announcement, AnnouncementBody, AnnouncementTitle, AnnouncementTitleQuery,
+        AnnouncementWithdrawal,
+    },
 };
-use infra::PgAnnouncementRepository;
+use infra::{PgAnnouncementRepository, PgNotificationRepository};
 use sqlx::PgPool;
 use support::at;
 
@@ -169,5 +175,90 @@ async fn announcements_sent_in_a_period_newest_first(pool: PgPool) {
             .await
             .unwrap()
             .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn listing_by_a_title_query_keeps_matching_announcements_in_the_same_order(pool: PgPool) {
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    // 1 時・2 時（UTC）は日本時間の 11/1、16 時は 11/2
+    let maintenance = announcement(
+        &announcements,
+        headquarters,
+        "メンテナンスのお知らせ",
+        None,
+        1,
+    );
+    let app = announcement(
+        &announcements,
+        headquarters,
+        "App の更新",
+        Some(Sport::Tennis),
+        2,
+    );
+    let mut night = announcement(
+        &announcements,
+        headquarters,
+        "夜間メンテナンス_100%",
+        None,
+        16,
+    );
+    for announcement in [&maintenance, &app, &night] {
+        announcements.insert(announcement.clone()).await.unwrap();
+    }
+    night.withdraw(headquarters, at(17)).unwrap();
+    announcements.update(night.clone()).await.unwrap();
+
+    let list = ListAnnouncements::new(
+        announcements.clone(),
+        PgNotificationRepository::new(pool.clone()),
+    );
+    let found = |q: &str, from: Option<time::Date>| {
+        let list = &list;
+        let query = ListAnnouncementsQuery {
+            from,
+            to: from,
+            title: AnnouncementTitleQuery::new(q).unwrap(),
+        };
+        async move {
+            list.execute(query)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|listed| listed.announcement)
+                .collect::<Vec<_>>()
+        }
+    };
+    let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
+    assert_eq!(
+        found(" メンテナンス ", None).await,
+        [night.clone(), maintenance.clone()],
+        "題に部分一致するものだけ。新しい順は変わらず、取り下げたものも載る"
+    );
+    assert_eq!(
+        found("aPP", None).await,
+        std::slice::from_ref(&app),
+        "ASCII の英字は大文字・小文字を区別しない"
+    );
+    assert_eq!(
+        found("_1", None).await,
+        std::slice::from_ref(&night),
+        "_ と % は文字のまま"
+    );
+    assert!(
+        found("ＡＰＰ", None).await.is_empty(),
+        "全角の英字は書いたとおりに比べる"
+    );
+    assert_eq!(
+        found("メンテナンス", Some(nov1)).await,
+        std::slice::from_ref(&maintenance),
+        "期間（日本時間の 11/1）と組み合わせられる"
+    );
+    assert_eq!(
+        found("\u{3000} ", None).await,
+        [night, app, maintenance],
+        "空白だけなら絞り込まない"
     );
 }
