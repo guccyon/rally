@@ -542,6 +542,17 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/pending-video-reviews?coach_id=22222222-2222-4222-8222-222222222223",
   },
   {
+    id: "hq-pending-video-reviews-by-student",
+    title: "本部: 生徒 1 人の返却待ちの動画添削",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "返却待ちの動画添削を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("table", { name: "返却待ちの動画添削の一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-returned-video-reviews",
     title: "本部: 返した動画添削",
     role: "headquarters",
