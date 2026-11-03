@@ -1,11 +1,12 @@
 # 変更履歴
 
-Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の利用者に見える変更を `[Unreleased]` に足し、リリース時に版の項へ移す。工場のワーカーも、利用者に見える変更を含む PR ではここを更新する（rubric DOC-002）。
+Keep a Changelog の形。利用者（生徒・コーチ・本部）や API の利用者に見える変更を `[Unreleased]` に足し、リリース時に版の項へ移す。PR はこのファイルを直接書き換えず、`changelog.d/<Issue 番号>.md` に断片を書く。工場が断片をここへ取りまとめる（rubric DOC-002、factory-engine の ADR 0027）。
 
 ## [Unreleased]
 
 ### 追加
 - admin-web の本部の「生徒の利用の様子」（`/headquarters/students/activity?student_id=…`）に「送った動画」と「返却待ち」の数を足した: `getStudentActivity` の `submitted_video_count` を「N 件（これまでのすべて）」、`pending_video_review_count` を「N 件（いま返却を待っている動画）」でキャンセルした予約の行の下に出し、返却待ちが 1 件以上なら「返却待ちの動画添削を見る」（`/headquarters/pending-video-reviews`。一覧に生徒の絞り込みはないので一覧そのもの）を添える。0 件なら「0 件」で入口は出さず、読めなかったときは今までどおりその理由を出す。API と契約の変更はない（#679）
+- admin-web の本部の「生徒」（`/headquarters/students`）の絞り込みの並びに「コーチ」（既定は「すべて」。選択肢はコーチの一覧の返った順）を足した: 選ぶとそのコーチの枠を一度でも予約した（キャンセル済みを含む）生徒だけに絞り（`listStudents` の `coach_id`）、スポーツ・「この日以降に予約していない」と組み合わせられる。選んだコーチは URL のクエリ（`?coach_id=`）に残し、再読み込み・共有で同じ条件で開く（一覧にない ID は「（一覧にないコーチ）」と出す）。0 件なら「条件に合う生徒はいません」、422 には直し方を添える。一覧の列と API・契約は変えない（#681）
 - 本部が返した動画添削の記録を生徒で絞る: admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`）に任意のクエリ `student_id` を足した。付ければその生徒が送った動画だけを返す（生徒から返却の内容について問い合わせを受けたときに、その生徒の記録だけを見る）。期間・`coach_id`・`sport` と組み合わせられ、期間の規則・かかった時間の数え方・並べ方は変わらない。UUID でなければ 422 `validation_failed`、ない ID・生徒でない ID は 404 にせず空の配列。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#666）
 - 本部が終わっていない通話セッションの一覧をコーチで絞る: admin-web の `GET /live-lesson-sessions/overdue`（`listOverdueLiveLessonSessions`）に任意のクエリ `coach_id` を足した。付ければそのコーチのセッションだけを返す（終わっていない通話が残るコーチに連絡するため）。`older_than_hours` と組み合わせられ、時間の規則と並べ方は変わらない。付けなければ今までどおりすべてのコーチ。UUID でなければ 422 `validation_failed`、ない ID・コーチでない ID は 404 にせず空の配列（`listLiveLessonSessions` の `coach_id` と同じ扱い）。応答の項目は変えない。DB の変更はない。admin-web は型を生成し直しただけで、画面は変えない（#667）
 - admin-web の本部の「キャンセルされた予約」（`/headquarters/cancelled-bookings`）に、期間の並びでコーチの絞り込み（既定は「すべて」。選択肢はライブレッスンの記録と同じくコーチの一覧の順）を足した: 「この条件で見る」（「この期間で見る」から改めた）で期間と組み合わせて `listCancelledBookings` の `coach_id` に渡して読み直す。選んだコーチは URL のクエリ（`?coach_id=`）に残し、再読み込み・共有で同じコーチの一覧を開く（期間は残さない）。コーチで絞って 0 件なら「この期間にこのコーチの枠でキャンセルされた予約はありません」、422 には期間とコーチの直し方を出し、コーチの一覧が読めなければコーチの欄だけを使えなくする。一覧の列と API・契約は変えない（#660）
