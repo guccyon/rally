@@ -13,4 +13,7 @@ pub struct ListAnnouncementsQuery {
     /// 対象のスポーツ。あればそのスポーツの生徒に向けて送ったものだけ（生徒全員に送ったものは入らない。
     /// [`domain::notification::Announcement::is_in_sport`]）
     pub sport: Option<Sport>,
+    /// 取り下げたか。`true` なら取り下げたものだけ、`false` なら取り下げていないものだけ（省けば問わない。
+    /// [`domain::notification::Announcement::is_withdrawn_as`]）
+    pub withdrawn: Option<bool>,
 }

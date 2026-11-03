@@ -22,6 +22,10 @@ use crate::scheduling::calendar_day;
 /// スポーツ（[`ListAnnouncementsQuery::sport`]）があれば、そのスポーツの生徒に向けて送ったものだけに絞る（生徒全員に
 /// 送ったものは入らない。判定は domain の [`domain::notification::Announcement::is_in_sport`]）。期間・題と組み合わせられ、
 /// 並べ方は変わらず、既読にした数は絞ったものにだけ添える。
+///
+/// 取り下げたか（[`ListAnnouncementsQuery::withdrawn`]）があれば、`true` なら取り下げたものだけ、`false` なら取り下げて
+/// いないものだけに絞る（判定は domain の [`domain::notification::Announcement::is_withdrawn_as`]）。期間・題・スポーツと
+/// 組み合わせられ、並べ方は変わらず、既読にした数は絞ったものにだけ添える。
 pub struct ListAnnouncements<A, N> {
     announcements: A,
     notifications: N,
@@ -61,6 +65,7 @@ where
             announcements.retain(|announcement| title.matches(announcement.title().as_str()));
         }
         announcements.retain(|announcement| announcement.is_in_sport(query.sport));
+        announcements.retain(|announcement| announcement.is_withdrawn_as(query.withdrawn));
         Ok(AnnouncementWithReadCount::attach(announcements, &self.notifications).await?)
     }
 }
@@ -492,6 +497,7 @@ mod tests {
                     to: Some(nov(3)),
                     title: search("メンテナンス"),
                     sport: None,
+                    withdrawn: None,
                 },
             )
             .await,
@@ -505,6 +511,7 @@ mod tests {
                     to: Some(nov(2)),
                     title: search("メンテナンス"),
                     sport: None,
+                    withdrawn: None,
                 })
                 .await,
             Err(ListAnnouncementsError::Invalid(
@@ -623,6 +630,7 @@ mod tests {
                     to: Some(nov(3)),
                     title: search("大会"),
                     sport: Some(Sport::Tennis),
+                    withdrawn: None,
                 },
             )
             .await,
@@ -675,6 +683,113 @@ mod tests {
             listed_now,
             [listed(&golf, 1)],
             "スポーツで絞ったものにだけ既読にした数を添える"
+        );
+    }
+
+    #[tokio::test]
+    async fn withdrawn_keeps_only_announcements_withdrawn_or_not_in_the_same_order() {
+        let (repository, [first, golf, withdrawn, last, everyone]) = for_sports_around_the_period();
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    withdrawn: Some(true),
+                    ..Default::default()
+                }
+            )
+            .await,
+            [withdrawn],
+            "取り下げたものだけ"
+        );
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    withdrawn: Some(false),
+                    ..Default::default()
+                }
+            )
+            .await,
+            [last, everyone, golf, first],
+            "取り下げていないものだけ。新しい順は変わらない"
+        );
+        assert_eq!(
+            list_titled(&repository, ListAnnouncementsQuery::default())
+                .await
+                .len(),
+            5,
+            "付けなければ今までどおり取り下げたかを問わない"
+        );
+    }
+
+    #[tokio::test]
+    async fn withdrawn_combines_with_the_period_the_title_and_the_sport() {
+        let (repository, [first, golf, withdrawn, _, _]) = for_sports_around_the_period();
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    from: Some(nov(1)),
+                    to: Some(nov(3)),
+                    title: search("大会"),
+                    sport: Some(Sport::Tennis),
+                    withdrawn: Some(true),
+                },
+            )
+            .await,
+            [withdrawn],
+            "期間に送ったもののうち、題が一致し、テニスに向けて送り、取り下げたもの"
+        );
+        assert!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    from: Some(nov(1)),
+                    to: Some(nov(3)),
+                    sport: Some(Sport::Tennis),
+                    withdrawn: Some(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .is_empty(),
+            "期間にテニスに向けて送ったものは取り下げた 1 件だけ"
+        );
+        assert_eq!(
+            list_titled(
+                &repository,
+                ListAnnouncementsQuery {
+                    title: search("大会"),
+                    withdrawn: Some(false),
+                    to: Some(nov(1)),
+                    ..Default::default()
+                },
+            )
+            .await,
+            [golf, first]
+        );
+    }
+
+    #[tokio::test]
+    async fn read_counts_are_attached_to_the_announcements_withdrawn_or_not() {
+        let (repository, [first, golf, ..]) = for_sports_around_the_period();
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            received(1, &first, 11, Some(30_000_000)),
+            received(2, &golf, 11, Some(30_000_000)),
+            received(3, &golf, 12, Some(30_000_000)),
+        ]);
+        let listed_now = ListAnnouncements::new(repository, notifications)
+            .execute(ListAnnouncementsQuery {
+                withdrawn: Some(false),
+                sport: Some(Sport::Golf),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            listed_now,
+            [listed(&golf, 2)],
+            "取り下げたかで絞ったものにだけ既読にした数を添える"
         );
     }
 

@@ -1,5 +1,5 @@
 //! `/announcements`。admin-web の `POST /announcements`（`sendAnnouncement`。本部が生徒にお知らせを送る）と
-//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧。期間と題とスポーツで絞れる）と
+//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧。期間と題とスポーツと取り下げたかで絞れる）と
 //! `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`。本部が送ったお知らせを取り下げる）。
 //! どれも本部だけが呼べる。
 //!
@@ -89,6 +89,7 @@ pub struct ListAnnouncementsParams {
     to: Option<String>,
     q: Option<String>,
     sport: Option<String>,
+    withdrawn: Option<bool>,
 }
 
 /// admin-web の `AnnouncementList`。
@@ -181,7 +182,9 @@ where
 /// `q` があれば題に部分一致するものだけに絞る（期間と組み合わせられる。検索語の読み方と長すぎるときの 422 は
 /// `listAnnouncementDrafts` の `q` と同じ [`AnnouncementTitleQuery`]）。`sport` があればそのスポーツの生徒に向けて送ったもの
 /// だけに絞る（生徒全員に送ったものは入らない。期間・題と組み合わせられる。`Sport` の値でなければ 422。値の読み方は
-/// `sendAnnouncement` と同じ [`admin_web_sport`]）。
+/// `sendAnnouncement` と同じ [`admin_web_sport`]）。`withdrawn` があれば `true` なら取り下げたものだけ、`false` なら取り下げて
+/// いないものだけに絞る（期間・題・スポーツと組み合わせられる。`true` / `false` でなければ 422。値の読み方は
+/// `listLowRatedLessonReviews` の `handled` と同じ）。
 pub async fn list_announcements<A, L, N, S, P, C>(
     State(state): State<Shared<A, L, N, S, P, C>>,
     params: Result<Query<ListAnnouncementsParams>, QueryRejection>,
@@ -215,6 +218,7 @@ where
             .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
             .flatten(),
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        withdrawn: params.withdrawn,
     };
     let announcements =
         state
