@@ -431,6 +431,26 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-overdue-live-sessions-by-student",
+    title: "本部: 生徒 1 人の終わっていない通話",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "この生徒の終わっていない通話を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-overdue-live-sessions-invalid-student",
+    title: "本部: 終わっていない通話（生徒の指定が正しくない 422）",
+    role: "headquarters",
+    path: "/headquarters/overdue-live-sessions?student_id=not-a-uuid",
+    open: async (page) => {
+      await page.getByRole("alert").filter({ hasText: "生徒は生徒の一覧から選び直してください。" }).waitFor();
+    },
+  },
+  {
     id: "hq-live-sessions",
     title: "本部: ライブレッスンの記録",
     role: "headquarters",

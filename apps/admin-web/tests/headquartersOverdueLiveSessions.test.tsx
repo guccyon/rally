@@ -11,6 +11,7 @@ import {
   OverdueLiveSessionsHome,
   overdueLiveSessionFilterFrom,
   overdueLiveSessionsPath,
+  studentOverdueLiveSessionsPath,
 } from "@/components/headquarters/OverdueLiveSessionsHome";
 import { formatDateTime, formatElapsed } from "@/components/labels";
 import { saveSession } from "@/session/session";
@@ -210,7 +211,7 @@ describe("コーチで絞る", () => {
 
     await user.selectOptions(select, "高橋 コーチ");
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3, coach_id: TAKAHASHI });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: TAKAHASHI });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: TAKAHASHI, studentId: "" });
 
     await user.selectOptions(screen.getByRole("combobox", { name: "開始からの経過" }), "1 日（24 時間）以上");
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 24, coach_id: TAKAHASHI });
@@ -219,7 +220,7 @@ describe("コーチで絞る", () => {
 
     await user.selectOptions(select, "すべて");
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 24 });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: "" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: "", studentId: "" });
     expect(onFilterChange).toHaveBeenCalledTimes(2);
   });
 
@@ -228,7 +229,7 @@ describe("コーチで絞る", () => {
     render(
       <OverdueLiveSessionList
         api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "", coachId: SATO }}
+        initialFilter={{ sport: "", coachId: SATO, studentId: "" }}
       />,
     );
 
@@ -250,7 +251,7 @@ describe("コーチで絞る", () => {
     render(
       <OverdueLiveSessionList
         api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "", coachId: unknown }}
+        initialFilter={{ sport: "", coachId: unknown, studentId: "" }}
       />,
     );
 
@@ -289,7 +290,7 @@ describe("コーチで絞る", () => {
     render(
       <OverdueLiveSessionList
         api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "", coachId: "not-a-uuid" }}
+        initialFilter={{ sport: "", coachId: "not-a-uuid", studentId: "" }}
       />,
     );
 
@@ -352,12 +353,12 @@ describe("スポーツで絞る", () => {
     await user.selectOptions(select, "ゴルフ");
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(2);
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3, sport: "golf" });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "golf", coachId: "" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "golf", coachId: "", studentId: "" });
     expect(await screen.findByRole("table", { name: "終わっていない通話の一覧" })).toBeInTheDocument();
 
     await user.selectOptions(select, "すべて");
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3 });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: "" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "", coachId: "", studentId: "" });
     expect(onFilterChange).toHaveBeenCalledTimes(2);
   });
 
@@ -387,7 +388,7 @@ describe("スポーツで絞る", () => {
       coach_id: SATO,
       sport: "tennis",
     });
-    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", coachId: SATO });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", coachId: SATO, studentId: "" });
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("tennis");
   });
 
@@ -396,7 +397,7 @@ describe("スポーツで絞る", () => {
     render(
       <OverdueLiveSessionList
         api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
-        initialFilter={{ sport: "tennis", coachId: SATO }}
+        initialFilter={{ sport: "tennis", coachId: SATO, studentId: "" }}
       />,
     );
 
@@ -440,38 +441,226 @@ describe("スポーツで絞る", () => {
   });
 });
 
+const YAMADA = "11111111-1111-4111-8111-000000000001";
+
+function studentActivityOf(displayName = "山田 花子") {
+  return vi.fn<HeadquartersApi["getStudentActivity"]>(async (studentId) => ({
+    ok: true,
+    data: {
+      student_id: studentId,
+      display_name: displayName,
+      cancelled_booking_count: 0,
+      submitted_video_count: 0,
+      pending_video_review_count: 0,
+      upcoming_bookings: [],
+      recent_lessons: [],
+    },
+  }));
+}
+
+describe("生徒で絞る", () => {
+  test("渡された生徒で絞って開き、API の student_id に渡す。生徒の欄は出さない", async () => {
+    const listOverdueLiveLessonSessions = listOf([SESSIONS[0]!]);
+    render(
+      <OverdueLiveSessionList
+        api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", coachId: "", studentId: YAMADA }}
+      />,
+    );
+
+    const table = await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
+    expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, student_id: YAMADA });
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText(/この生徒の通話を、開始の古い順に見られます/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "生徒" })).not.toBeInTheDocument();
+  });
+
+  test("生徒は経過時間・スポーツ・コーチと組み合わせられ、ほかの条件を変えても生徒の絞り込みは残る", async () => {
+    const user = userEvent.setup();
+    const listOverdueLiveLessonSessions = listOf([SESSIONS[0]!]);
+    const onFilterChange = vi.fn();
+    render(
+      <OverdueLiveSessionList
+        api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", coachId: "", studentId: YAMADA }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    const coach = screen.getByRole("combobox", { name: "コーチ" });
+    await waitFor(() => expect(coach).toBeEnabled());
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "開始からの経過" }), "1 日（24 時間）以上");
+    expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 24, student_id: YAMADA });
+    // 経過時間は URL に残さないので知らせない
+    expect(onFilterChange).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({
+      older_than_hours: 24,
+      sport: "tennis",
+      student_id: YAMADA,
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", coachId: "", studentId: YAMADA });
+
+    await user.selectOptions(coach, "佐藤 健");
+    expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({
+      older_than_hours: 24,
+      coach_id: SATO,
+      sport: "tennis",
+      student_id: YAMADA,
+    });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", coachId: SATO, studentId: YAMADA });
+  });
+
+  test("生徒だけで絞って 0 件なら「この生徒の終わっていない通話はありません」、コーチでも絞って 0 件なら「条件に合う」と出す", async () => {
+    const user = userEvent.setup();
+    const listOverdueLiveLessonSessions = listOf([]);
+    render(
+      <OverdueLiveSessionList
+        api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", coachId: "", studentId: YAMADA }}
+      />,
+    );
+
+    expect(await screen.findByText("この生徒の終わっていない通話はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+
+    const coach = screen.getByRole("combobox", { name: "コーチ" });
+    await waitFor(() => expect(coach).toBeEnabled());
+    await user.selectOptions(coach, "高橋 コーチ");
+    expect(await screen.findByText("条件に合う終わっていない通話はありません")).toBeInTheDocument();
+    expect(screen.queryByText("この生徒の終わっていない通話はありません")).not.toBeInTheDocument();
+  });
+
+  test("生徒で絞っていて 422 なら、コーチに加えて生徒を選び直すことも添える", async () => {
+    const listOverdueLiveLessonSessions = vi.fn<HeadquartersApi["listOverdueLiveLessonSessions"]>(async () => ({
+      ok: false,
+      message: "入力の内容が正しくありません。",
+      code: "validation_failed",
+    }));
+    render(
+      <OverdueLiveSessionList
+        api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }}
+        initialFilter={{ sport: "", coachId: "", studentId: "not-a-uuid" }}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "入力の内容が正しくありません。コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+    );
+    expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, student_id: "not-a-uuid" });
+  });
+
+  test("生徒で絞った画面は一覧の上にその生徒の名前を出し、生徒の絞り込みだけを外すリンクはいまのスポーツ・コーチを残す", async () => {
+    const user = userEvent.setup();
+    const listOverdueLiveLessonSessions = listOf([SESSIONS[0]!]);
+    const getStudentActivity = studentActivityOf();
+    headquartersApiMock.mockReturnValue({
+      listOverdueLiveLessonSessions,
+      listCoaches: coachesOf(),
+      getStudentActivity,
+    });
+    render(
+      <OverdueLiveSessionsHome
+        token="mock.headquarters.x"
+        initialFilter={{ sport: "", coachId: "", studentId: YAMADA }}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: "終わっていない通話" });
+    const label = within(region).getByText(/^生徒で絞っています:/);
+    await waitFor(() => expect(label).toHaveTextContent("生徒で絞っています: 山田 花子"));
+    expect(getStudentActivity).toHaveBeenCalledWith(YAMADA);
+    await within(region).findByRole("table", { name: "終わっていない通話の一覧" });
+    expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, student_id: YAMADA });
+    expect(screen.getByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/overdue-live-sessions",
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    expect(replace).toHaveBeenLastCalledWith(`/headquarters/overdue-live-sessions?sport=tennis&student_id=${YAMADA}`, {
+      scroll: false,
+    });
+    expect(screen.getByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/overdue-live-sessions?sport=tennis",
+    );
+  });
+
+  test("生徒で絞っていなければ、生徒の名前も生徒の絞り込みを外すリンクも出さない", async () => {
+    const getStudentActivity = studentActivityOf();
+    headquartersApiMock.mockReturnValue({
+      listOverdueLiveLessonSessions: listOf(SESSIONS),
+      listCoaches: coachesOf(),
+      getStudentActivity,
+    });
+    render(<OverdueLiveSessionsHome token="mock.headquarters.x" />);
+
+    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    expect(screen.queryByText(/生徒で絞っています/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).not.toBeInTheDocument();
+    expect(getStudentActivity).not.toHaveBeenCalled();
+  });
+});
+
 describe("終わっていない通話の絞り込みと URL", () => {
   test("「すべて」のコーチはクエリに出さず、選んだコーチを契約のクエリの名前で残す", () => {
-    expect(overdueLiveSessionsPath({ sport: "", coachId: "" })).toBe("/headquarters/overdue-live-sessions");
-    expect(overdueLiveSessionsPath({ sport: "", coachId: SATO })).toBe(
+    expect(overdueLiveSessionsPath({ sport: "", coachId: "", studentId: "" })).toBe(
+      "/headquarters/overdue-live-sessions",
+    );
+    expect(overdueLiveSessionsPath({ sport: "", coachId: SATO, studentId: "" })).toBe(
       `/headquarters/overdue-live-sessions?coach_id=${SATO}`,
     );
   });
 
   test("選んだスポーツを契約のクエリの名前で残し、コーチと組み合わせられる", () => {
-    expect(overdueLiveSessionsPath({ sport: "golf", coachId: "" })).toBe("/headquarters/overdue-live-sessions?sport=golf");
-    expect(overdueLiveSessionsPath({ sport: "tennis", coachId: SATO })).toBe(
+    expect(overdueLiveSessionsPath({ sport: "golf", coachId: "", studentId: "" })).toBe(
+      "/headquarters/overdue-live-sessions?sport=golf",
+    );
+    expect(overdueLiveSessionsPath({ sport: "tennis", coachId: SATO, studentId: "" })).toBe(
       `/headquarters/overdue-live-sessions?sport=tennis&coach_id=${SATO}`,
     );
+  });
+
+  test("選んだ生徒を契約のクエリの名前で残し、スポーツ・コーチと組み合わせられる", () => {
+    expect(studentOverdueLiveSessionsPath(YAMADA)).toBe(`/headquarters/overdue-live-sessions?student_id=${YAMADA}`);
+    expect(overdueLiveSessionsPath({ sport: "tennis", coachId: SATO, studentId: YAMADA })).toBe(
+      `/headquarters/overdue-live-sessions?sport=tennis&coach_id=${SATO}&student_id=${YAMADA}`,
+    );
+    expect(overdueLiveSessionFilterFrom(new URLSearchParams(`student_id=${YAMADA}&sport=golf`))).toEqual({
+      sport: "golf",
+      coachId: "",
+      studentId: YAMADA,
+    });
   });
 
   test("URL のクエリから絞り込みを読む。スポーツが選択肢の値でなければ「すべて」にし、コーチはそのまま渡す", () => {
     expect(overdueLiveSessionFilterFrom(new URLSearchParams(`sport=golf&coach_id=${SATO}`))).toEqual({
       sport: "golf",
       coachId: SATO,
+      studentId: "",
     });
     expect(overdueLiveSessionFilterFrom(new URLSearchParams("sport=curling&coach_id=not-a-uuid"))).toEqual({
       sport: "",
       coachId: "not-a-uuid",
+      studentId: "",
     });
-    expect(overdueLiveSessionFilterFrom(new URLSearchParams(""))).toEqual({ sport: "", coachId: "" });
+    expect(overdueLiveSessionFilterFrom(new URLSearchParams(""))).toEqual({ sport: "", coachId: "", studentId: "" });
   });
 
   test("画面でコーチ・スポーツを変えると、履歴を積まずに URL のクエリを置き換える。経過時間では置き換えない", async () => {
     const user = userEvent.setup();
     const listOverdueLiveLessonSessions = listOf(SESSIONS);
     headquartersApiMock.mockReturnValue({ listOverdueLiveLessonSessions, listCoaches: coachesOf() });
-    render(<OverdueLiveSessionsHome token="mock.headquarters.x" initialFilter={{ sport: "", coachId: SATO }} />);
+    render(
+      <OverdueLiveSessionsHome
+        token="mock.headquarters.x"
+        initialFilter={{ sport: "", coachId: SATO, studentId: "" }}
+      />,
+    );
     await screen.findByRole("table", { name: "終わっていない通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, coach_id: SATO });
     const select = screen.getByRole("combobox", { name: "コーチ" });
@@ -497,7 +686,12 @@ describe("終わっていない通話の絞り込みと URL", () => {
   test("URL のスポーツで絞って開き、そのスポーツを選んだ状態にする", async () => {
     const listOverdueLiveLessonSessions = listOf(SESSIONS);
     headquartersApiMock.mockReturnValue({ listOverdueLiveLessonSessions, listCoaches: coachesOf() });
-    render(<OverdueLiveSessionsHome token="mock.headquarters.x" initialFilter={{ sport: "golf", coachId: "" }} />);
+    render(
+      <OverdueLiveSessionsHome
+        token="mock.headquarters.x"
+        initialFilter={{ sport: "golf", coachId: "", studentId: "" }}
+      />,
+    );
 
     await screen.findByRole("table", { name: "終わっていない通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
