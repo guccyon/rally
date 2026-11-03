@@ -268,6 +268,7 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "生徒の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/students");
     expect(screen.queryByRole("link", { name: "この生徒の予約を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "この生徒の終わっていない通話を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "この生徒の返した動画添削の記録を見る" })).not.toBeInTheDocument();
   });
 
@@ -296,6 +297,20 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).toHaveAttribute(
       "href",
       `/headquarters/live-sessions?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("利用の様子から、その生徒で絞った終わっていない通話を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒の終わっていない通話を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/overdue-live-sessions?student_id=${STUDENT_ID}`,
     );
   });
 

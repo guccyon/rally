@@ -505,6 +505,24 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LiveLessonSessionRecordList"],
   },
   {
+    // 山田 花子で絞ったとき（hq-overdue-live-sessions-by-student）は、その生徒のセッションだけを返す。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { student_id: STUDENT_ID },
+    body: {
+      older_than_hours: 3,
+      sessions: OVERDUE_SESSIONS.filter((session) => session.student_id === STUDENT_ID),
+    } satisfies Schemas["OverdueLiveLessonSessionList"],
+  },
+  {
+    // URL の生徒の ID が UUID でないとき（hq-overdue-live-sessions-invalid-student）は 422。
+    method: "GET",
+    path: "/live-lesson-sessions/overdue",
+    query: { student_id: "not-a-uuid" },
+    status: 422,
+    body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
+  },
+  {
     // テニスで絞ったとき（hq-overdue-live-sessions-by-sport）は、テニスのコーチ（鈴木 コーチ）のセッションだけを返す。
     method: "GET",
     path: "/live-lesson-sessions/overdue",

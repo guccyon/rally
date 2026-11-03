@@ -22,13 +22,17 @@ type CoachesState =
   | { kind: "loaded"; coaches: Schemas["Coach"][] }
   | { kind: "failed"; message: string };
 
-/** URL に残す絞り込みの条件。`sport` はスポーツ（空ならすべてのスポーツ）、`coachId` はコーチの ID（空ならすべてのコーチ）。 */
-export type OverdueLiveSessionFilter = { sport: Sport | ""; coachId: string };
+/**
+ * URL に残す絞り込みの条件。`sport` はスポーツ（空ならすべてのスポーツ）、`coachId` はコーチの ID（空ならすべてのコーチ）、
+ * `studentId` は生徒の ID（空ならすべての生徒）。生徒はライブレッスンの記録と同じく絞り込みの欄では選ばず、URL のクエリ
+ * （生徒の利用の様子の画面からの入口）で受け取る。
+ */
+export type OverdueLiveSessionFilter = { sport: Sport | ""; coachId: string; studentId: string };
 
 /** 絞り込みの条件。`hours` は経過時間の下限（時間）。経過時間は URL に残さない。 */
 type Filter = OverdueLiveSessionFilter & { hours: number };
 
-const NO_FILTER: OverdueLiveSessionFilter = { sport: "", coachId: "" };
+const NO_FILTER: OverdueLiveSessionFilter = { sport: "", coachId: "", studentId: "" };
 
 /** 契約の `older_than_hours` の既定（省いたときの 3 時間）。 */
 const DEFAULT_HOURS = 3;
@@ -50,16 +54,23 @@ const UNKNOWN_COACH = "（一覧にないコーチ）";
  * 経過時間は選択肢が契約の範囲の中だけなので、ふつうは URL のコーチの ID が UUID でないときに来る。
  */
 const VALIDATION_HINT = "コーチは一覧から選び直してください。";
+// 生徒で絞っているとき（生徒の ID は URL のクエリから来るので、書き換えられて UUID でないこともある）に添える。
+const VALIDATION_HINT_WITH_STUDENT = `${VALIDATION_HINT}生徒は生徒の一覧から選び直してください。`;
 
-/** 0 件のときの文言。コーチだけで絞っていればそのコーチと言い、スポーツでも絞っていれば「条件に合う」と言う。 */
-function emptyMessageOf(filter: Filter): string {
-  if (filter.sport !== "") return "条件に合う終わっていない通話はありません";
-  if (filter.coachId !== "") return "このコーチの終わっていない通話はありません";
+/**
+ * 0 件のときの文言。コーチだけ・生徒だけで絞っていればそのコーチ・その生徒と言い、スポーツでも絞っている・コーチと生徒の両方で
+ * 絞っていれば「条件に合う」と言う（返却待ちの動画添削と同じ）。
+ */
+function emptyMessageOf({ sport, coachId, studentId }: Filter): string {
+  if (sport !== "" || (coachId !== "" && studentId !== "")) return "条件に合う終わっていない通話はありません";
+  if (coachId !== "") return "このコーチの終わっていない通話はありません";
+  if (studentId !== "") return "この生徒の終わっていない通話はありません";
   return "終わっていない通話はありません";
 }
 
-function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
-  return response.code === "validation_failed" ? `${response.message}${VALIDATION_HINT}` : response.message;
+function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filter: Filter): string {
+  if (response.code !== "validation_failed") return response.message;
+  return `${response.message}${filter.studentId === "" ? VALIDATION_HINT : VALIDATION_HINT_WITH_STUDENT}`;
 }
 
 /**
@@ -69,6 +80,7 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>): stri
  * スポーツの絞り込みは返却待ちの動画添削（PendingVideoReviewList）と同じ選択欄で、API の `sport` に渡す。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialFilter`（URL のクエリ）のスポーツ・コーチで絞って開き、
  * スポーツかコーチを変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。照会だけで、セッションを終わらせる操作はない。
+ * 生徒（`initialFilter.studentId`）は API の `student_id` に渡す。欄はなく、経過時間・スポーツ・コーチを変えて読み直しても絞り込みは残る。
  */
 export function OverdueLiveSessionList({
   api,
@@ -87,20 +99,21 @@ export function OverdueLiveSessionList({
   const initialFilterRef = useRef(initialFilter);
 
   const fetchSessions = useCallback(
-    async ({ hours, sport, coachId }: Filter): Promise<State> => {
+    async (next: Filter): Promise<State> => {
       const response = await api.listOverdueLiveLessonSessions({
-        older_than_hours: hours,
-        ...(coachId === "" ? {} : { coach_id: coachId }),
-        ...(sport === "" ? {} : { sport }),
+        older_than_hours: next.hours,
+        ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
+        ...(next.sport === "" ? {} : { sport: next.sport }),
+        ...(next.studentId === "" ? {} : { student_id: next.studentId }),
       });
       return response.ok
         ? { kind: "loaded", list: response.data }
-        : { kind: "failed", message: failureMessage(response) };
+        : { kind: "failed", message: failureMessage(response, next) };
     },
     [api],
   );
 
-  // 開いたときの読み込み（既定の下限と、渡されたスポーツ・コーチ）。初期の状態が loading なので、ここでは結果だけを入れる。
+  // 開いたときの読み込み（既定の下限と、渡されたスポーツ・コーチ・生徒）。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
@@ -131,7 +144,7 @@ export function OverdueLiveSessionList({
   async function changeFilter(next: Filter) {
     setFilter(next);
     if (next.sport !== filter.sport || next.coachId !== filter.coachId) {
-      onFilterChange?.({ sport: next.sport, coachId: next.coachId });
+      onFilterChange?.({ sport: next.sport, coachId: next.coachId, studentId: next.studentId });
     }
     const request = ++latestRequest.current;
     setState({ kind: "loading" });
@@ -147,7 +160,7 @@ export function OverdueLiveSessionList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        始まったまま終了の記録がない通話を、開始の古い順に見られます。終了し忘れや通話の切断で残ったものを見つけるための一覧です。スポーツを選ぶとそのスポーツのコーチの通話だけに、コーチを選ぶとそのコーチの通話だけに絞ります。
+        始まったまま終了の記録がない{filter.studentId === "" ? "" : "この生徒の"}通話を、開始の古い順に見られます。終了し忘れや通話の切断で残ったものを見つけるための一覧です。スポーツを選ぶとそのスポーツのコーチの通話だけに、コーチを選ぶとそのコーチの通話だけに絞ります。
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="block">
