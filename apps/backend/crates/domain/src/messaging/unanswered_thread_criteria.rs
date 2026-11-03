@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use super::{MessageThread, MessagingError};
+use crate::identity::AccountId;
 
 /// 本部が見る「返信のないまま時間の過ぎた」スレッドの基準（admin-web の `listUnansweredMessageThreads`。
 /// 既定・範囲・境界の正本は `specs/contracts/api/admin-web/openapi.yaml` の `listUnansweredMessageThreads`）。
@@ -8,10 +9,12 @@ use super::{MessageThread, MessagingError};
 /// 最後の発言が生徒のもので、照会した時刻に返信を待ち始めてから（コーチの最後の発言のあとの最初の生徒の発言から。
 /// [`MessageThread::awaiting_coach_reply_since`]）[`Self::hours`] 時間以上たったスレッドを「返信のないまま時間の過ぎた」スレッドとする。時間は
 /// [`Self::MIN_HOURS`]〜[`Self::MAX_HOURS`] 時間で、省いたときは [`Self::DEFAULT_HOURS`] 時間（[`Default`]）。
-/// 既定・範囲と並べ方はこの型の 1 か所だけに置く。
+/// 既定・範囲と並べ方はこの型の 1 か所だけに置く。任意の担当コーチ [`Self::coach_id`] で絞れ（[`Self::with_coach_id`]。
+/// 省けばすべてのコーチ）、時間と組み合わせても時間の規則と並べ方は変わらない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnansweredThreadCriteria {
     hours: u16,
+    coach_id: Option<AccountId>,
 }
 
 impl UnansweredThreadCriteria {
@@ -31,12 +34,25 @@ impl UnansweredThreadCriteria {
                 max: Self::MAX_HOURS,
             });
         }
-        Ok(Self { hours })
+        Ok(Self {
+            hours,
+            coach_id: None,
+        })
+    }
+
+    /// `coach_id` があればそのコーチが担当するスレッドだけを選ぶ基準（`None` ならすべてのコーチ）。時間は変えない。
+    pub const fn with_coach_id(self, coach_id: Option<AccountId>) -> Self {
+        Self { coach_id, ..self }
     }
 
     /// 返信を待ち始めてからの時間（時間単位）。
     pub const fn hours(&self) -> u16 {
         self.hours
+    }
+
+    /// 絞り込む担当コーチ。`None` ならすべてのコーチ。
+    pub const fn coach_id(&self) -> Option<AccountId> {
+        self.coach_id
     }
 
     /// 返信を待ち始めてからの時間の長さ。
@@ -52,9 +68,12 @@ impl UnansweredThreadCriteria {
             .map(|since| now.duration_since(since).unwrap_or_default())
     }
 
-    /// `thread` が `now` に照会したときの、返信のないまま時間の過ぎたスレッドか（ちょうどその時間を含む）。
+    /// `thread` が `now` に照会したときの、返信のないまま時間の過ぎたスレッド（ちょうどその時間を含む）で、コーチの指定が
+    /// あればそのコーチが担当するスレッドか。
     pub fn matches(&self, thread: &MessageThread, now: SystemTime) -> bool {
-        Self::elapsed(thread, now).is_some_and(|elapsed| elapsed >= self.threshold())
+        self.coach_id
+            .is_none_or(|coach_id| thread.coach_id() == coach_id)
+            && Self::elapsed(thread, now).is_some_and(|elapsed| elapsed >= self.threshold())
     }
 
     /// `threads` から `now` に照会したときの返信のないまま時間の過ぎたスレッドだけを選び、経過の長い順（待ち始めの
@@ -73,6 +92,7 @@ impl Default for UnansweredThreadCriteria {
     fn default() -> Self {
         Self {
             hours: Self::DEFAULT_HOURS,
+            coach_id: None,
         }
     }
 }
@@ -130,6 +150,39 @@ mod tests {
         let criteria = UnansweredThreadCriteria::default();
         assert_eq!(criteria.hours(), 24);
         assert_eq!(criteria.threshold(), 24 * HOUR);
+        assert_eq!(criteria.coach_id(), None, "既定はすべてのコーチ");
+    }
+
+    #[test]
+    fn the_coach_narrows_to_the_threads_the_coach_is_in_charge_of() {
+        let waiting = thread(1, &[(STUDENT, now() - 30 * HOUR)]);
+        let criteria = UnansweredThreadCriteria::new(24)
+            .unwrap()
+            .with_coach_id(Some(COACH));
+        assert_eq!(criteria.hours(), 24, "時間は変えない");
+        assert_eq!(criteria.coach_id(), Some(COACH));
+        assert!(criteria.matches(&waiting, now()));
+        // ほかのコーチ・当事者の生徒の ID では出ない
+        for other in [AccountId::from_u128(8), STUDENT] {
+            assert!(
+                !UnansweredThreadCriteria::default()
+                    .with_coach_id(Some(other))
+                    .matches(&waiting, now()),
+                "{other:?}"
+            );
+        }
+        // 時間の規則は変わらない
+        assert!(
+            !UnansweredThreadCriteria::new(31)
+                .unwrap()
+                .with_coach_id(Some(COACH))
+                .matches(&waiting, now())
+        );
+        // 指定を外せばすべてのコーチ
+        assert_eq!(
+            criteria.with_coach_id(None),
+            UnansweredThreadCriteria::default()
+        );
     }
 
     #[test]

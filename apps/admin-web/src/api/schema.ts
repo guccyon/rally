@@ -1602,6 +1602,10 @@ export interface paths {
          *     - 対象: 最後の発言が生徒のもので、照会した時刻に待ち始め `waiting_since` から `older_than_hours` 時間以上たったスレッド
          *       （ちょうどその時間のものを含む）。コーチが最後に発言したスレッドと、発言がまだないスレッドは載らない。既読かどうかは問わない
          *     - `older_than_hours`: 返信を待ち始めてからの時間（時間単位の整数）。省けば 24。1〜168（7 日）の外・整数でないときは 422 `validation_failed`
+         *     - 任意の `coach_id` で、そのコーチが担当する（スレッドの `coach_id` がそのコーチの）スレッドだけに絞れる（返事の遅れている
+         *       コーチに個別に声をかけるとき、そのコーチの分だけを見る）。`older_than_hours` と組み合わせられ、時間の規則・何を発言と
+         *       数えるか・並べ方は変わらない。省けばすべてのコーチ。`coach_id` が UUID でなければ 422 `validation_failed`。コーチでない
+         *       ID（生徒の ID を含む）・ない ID・該当するスレッドがないコーチは、404 にせず `threads` が空の配列
          *     - 並べ方: 経過の長い順（`waiting_since` の古い順）。同じ時刻は `thread_id` の順
          *     - 各スレッドには、スレッドの ID・担当コーチ `coach_id`・生徒 `student_id`・待ち始め `waiting_since`・
          *       照会した時刻までの待ち始めからの経過時間 `elapsed_sec`（秒。切り捨て）を載せる。コーチと生徒の表示名
@@ -4722,6 +4726,11 @@ export interface operations {
             query?: {
                 /** @description 返信を待ち始めてから（コーチの返信のあとの最初の生徒の発言から）この時間（時間単位）以上コーチが返していないスレッドを返す。省けば 24 */
                 older_than_hours?: number;
+                /**
+                 * @description あればこのコーチが担当するスレッドだけに絞る。省けばすべてのコーチ。UUID でなければ 422 `validation_failed`。
+                 *     コーチでない ID・ない ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                coach_id?: string;
             };
             header?: never;
             path?: never;
