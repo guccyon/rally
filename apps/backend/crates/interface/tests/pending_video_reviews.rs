@@ -1,7 +1,7 @@
 //! `GET /video-reviews/pending`（admin-web の `listPendingVideoReviews`）の統合テスト。本部にはコーチがまだ返していない
 //! 動画添削をコーチを問わず送付の古い順に、生徒と担当のコーチの ID と表示名・送った時刻・経過時間（時間。端数は切り捨て）
 //! とともに返すことを OpenAPI のスキーマで検査する。クエリの `sport` でスポーツを、`min_elapsed_hours` で経過時間の下限を、
-//! `coach_id` でコーチを絞り、値が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
+//! `coach_id` でコーチを、`student_id` で生徒を絞り、値が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
 //! （経過時間の数え方の境目は domain の `PendingVideoReviewFilter` のテスト）。
 
 use std::time::{Duration, SystemTime};
@@ -365,6 +365,44 @@ async fn sport_min_elapsed_hours_and_coach_id_narrow_the_list() {
 }
 
 #[tokio::test]
+async fn student_id_narrows_the_list_and_combines_with_the_other_filters() {
+    let router = app().await;
+    for (query, expected) in [
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004",
+            vec![
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000c",
+            ],
+        ),
+        (
+            // アカウントが引けない生徒でも、動画を送った生徒で絞れる
+            "?student_id=00000000-0000-0000-0000-000000000005",
+            vec!["00000000-0000-0000-0000-00000000000b"],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&coach_id=00000000-0000-0000-0000-000000000003",
+            vec!["00000000-0000-0000-0000-00000000000c"],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&min_elapsed_hours=48",
+            vec!["00000000-0000-0000-0000-00000000000a"],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000005&sport=tennis",
+            vec![],
+        ),
+        // コーチの ID・ない ID は 404 にせず空
+        ("?student_id=00000000-0000-0000-0000-000000000002", vec![]),
+        ("?student_id=00000000-0000-0000-0000-000000000099", vec![]),
+    ] {
+        let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
 async fn invalid_query_is_422_validation_failed() {
     let router = app().await;
     for query in [
@@ -379,6 +417,9 @@ async fn invalid_query_is_422_validation_failed() {
         "?coach_id=not-a-uuid",
         "?coach_id=",
         "?coach_id=00000000-0000-0000-0000-00000000000",
+        "?student_id=not-a-uuid",
+        "?student_id=",
+        "?student_id=00000000-0000-0000-0000-00000000000",
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

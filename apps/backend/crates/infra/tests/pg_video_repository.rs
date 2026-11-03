@@ -414,6 +414,7 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
             sport: None,
             min_elapsed_hours: 48,
             coach_id: None,
+            student_id: None,
         })
         .await
         .unwrap();
@@ -427,6 +428,7 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
             sport: Some(Sport::Golf),
             min_elapsed_hours: 49,
             coach_id: None,
+            student_id: None,
         })
         .await
         .unwrap();
@@ -450,6 +452,7 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
             sport: Some(Sport::Golf),
             min_elapsed_hours: 0,
             coach_id: Some(coach),
+            student_id: None,
         })
         .await
         .unwrap();
@@ -459,10 +462,61 @@ async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgP
             sport: Some(Sport::Golf),
             min_elapsed_hours: 49,
             coach_id: Some(other_coach),
+            student_id: None,
         })
         .await
         .unwrap();
-    assert_eq!(list.videos, [golf]);
+    assert_eq!(list.videos, std::slice::from_ref(&golf));
+    // 生徒で絞ると、その生徒が送った返却待ちだけ。コーチ・経過時間の下限と組み合わせられる
+    let other_student =
+        support::register_named(&pool, Role::Student, vec![Sport::Tennis], "はなこ").await;
+    let from_other = Video::submit(
+        videos.next_video_id(),
+        other_student,
+        coach,
+        Sport::Tennis,
+        at(20),
+    );
+    videos.insert(from_other.clone()).await.unwrap();
+    let by_student = |student_id, coach_id, min_elapsed_hours| PendingVideoReviewFilter {
+        min_elapsed_hours,
+        coach_id,
+        student_id: Some(student_id),
+        ..PendingVideoReviewFilter::default()
+    };
+    let list = list_pending
+        .execute(by_student(other_student, None, 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&from_other));
+    assert_eq!(
+        list.students.keys().copied().collect::<Vec<_>>(),
+        [other_student],
+        "表示名は絞った後の動画の生徒だけ引く"
+    );
+    let list = list_pending
+        .execute(by_student(student, None, 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [golf.clone(), tennis.clone()]);
+    let list = list_pending
+        .execute(by_student(student, Some(coach), 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [tennis]);
+    let list = list_pending
+        .execute(by_student(other_student, None, 48))
+        .await
+        .unwrap();
+    assert!(
+        list.videos.is_empty(),
+        "38 時間前の動画は 48 時間に届かない"
+    );
+    let list = list_pending
+        .execute(by_student(coach, None, 0))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty(), "コーチの ID は空");
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
