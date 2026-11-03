@@ -20,7 +20,7 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listCoachReviews: (coachId: string, filter: { max_rating?: number } = {}) =>
+    listCoachReviews: (coachId: string, filter: { max_rating?: number; from?: string; to?: string } = {}) =>
       call(() =>
         client.GET("/coaches/{coach_id}/reviews", {
           params: { path: { coach_id: coachId }, query: filter },
