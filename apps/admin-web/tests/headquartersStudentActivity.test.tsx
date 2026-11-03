@@ -192,7 +192,8 @@ describe("画面への配置", () => {
         ],
       },
     }));
-    render(<StudentDirectory api={{ listStudents }} />);
+    const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches: [] } }));
+    render(<StudentDirectory api={{ listStudents, listCoaches }} />);
 
     expect(await screen.findByRole("link", { name: "山田 花子" })).toHaveAttribute(
       "href",
