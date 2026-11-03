@@ -1544,6 +1544,13 @@ export const FIXTURES: Fixture[] = [
     body: { code: "validation_failed", message: "student_id must be a UUID" } satisfies Schemas["Error"],
   },
   {
+    // レッスンメニューで絞ったとき（hq-returned-video-reviews-lesson-menu。サーブの添削）は 0 件。選んだメニューを含めた空の表示を撮る。
+    method: "GET",
+    path: "/video-reviews/returned",
+    query: { lesson_menu_id: MENU_SERVE.lesson_menu_id },
+    body: { from: "2026-10-20", to: "2026-10-26", reviews: [] } satisfies Schemas["ReturnedVideoReviewList"],
+  },
+  {
     // 山田 花子と高橋 コーチの両方で絞ったとき（hq-returned-video-reviews-by-student-empty）は 0 件。
     method: "GET",
     path: "/video-reviews/returned",

@@ -871,6 +871,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-returned-video-reviews-lesson-menu",
+    title: "本部: 返した動画添削（レッスンメニューで絞って 0 件のとき）",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews",
+    open: async (page) => {
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "サーブの添削（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: サーブの添削$/).waitFor();
+      await page.getByText("この期間にこのレッスンメニューの返した動画添削はありません").waitFor();
+    },
+  },
+  {
     id: "hq-returned-video-reviews-invalid-student",
     title: "本部: 返した動画添削（生徒の指定が正しくない 422）",
     role: "headquarters",
