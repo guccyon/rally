@@ -1,7 +1,8 @@
 //! `GET /video-reviews/returned`（admin-web の `listReturnedVideoReviews`）の統合テスト。本部にはコーチが返した動画添削を
 //! コーチを問わず返却の新しい順に、生徒と担当のコーチの ID と表示名・送った時刻・返した時刻・かかった時間（時間。端数は
 //! 切り捨て）とともに返すことを OpenAPI のスキーマで検査する。クエリの `from`・`to`（返却の日付。日本時間）で期間を、
-//! `coach_id` でコーチを絞り、値や期間が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
+//! `coach_id` でコーチを、`sport` でスポーツを、`student_id` で生徒を、`lesson_menu_id` で送った時点のレッスンメニューを
+//! 絞り、値や期間が不正なら 422 `validation_failed`。コーチ・生徒は 403、トークンがなければ 401
 //! （かかった時間の数え方の境目は domain の `Video::review_lead_hours` のテスト）。
 
 use std::time::{Duration, SystemTime};
@@ -22,8 +23,8 @@ use axum::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
-    catalog::Sport,
+    async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+    catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
 };
@@ -304,7 +305,7 @@ async fn headquarters_lists_returned_video_reviews_of_the_last_seven_days_latest
 }
 
 #[tokio::test]
-async fn the_period_and_coach_narrow_the_list() {
+async fn the_period_coach_sport_and_student_narrow_the_list() {
     let router = app().await;
     let (a, b, c) = (
         "00000000-0000-0000-0000-00000000000a",
@@ -369,6 +370,51 @@ async fn the_period_and_coach_narrow_the_list() {
             vec![c],
         ),
         ("?sport=soccer", "2026-10-25", "2026-10-31", vec![]),
+        // 生徒は動画を送った生徒で絞る。期間・コーチ・スポーツと組み合わせられ、並べ方は変わらない
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004",
+            "2026-10-25",
+            "2026-10-31",
+            vec![a],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![a, c],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&coach_id=00000000-0000-0000-0000-000000000003&sport=tennis&from=2026-10-01&to=2026-10-31",
+            "2026-10-01",
+            "2026-10-31",
+            vec![c],
+        ),
+        // アカウントが引けない生徒の動画も ID で絞れる
+        (
+            "?student_id=00000000-0000-0000-0000-000000000005",
+            "2026-10-25",
+            "2026-10-31",
+            vec![b],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&sport=golf",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
+        // いない生徒・生徒でない ID は空
+        (
+            "?student_id=00000000-0000-0000-0000-000000000063",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
+        (
+            "?student_id=00000000-0000-0000-0000-000000000002",
+            "2026-10-25",
+            "2026-10-31",
+            vec![],
+        ),
     ] {
         let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
         assert_eq!(status, StatusCode::OK, "{query}: {body}");
@@ -377,6 +423,150 @@ async fn the_period_and_coach_narrow_the_list() {
             (Some(from), Some(to)),
             "{query}"
         );
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+}
+
+/// `id` のテニスの動画を `student` が `coach` に `menu` を選んで（名前は `name`）`submitted_at` に送り、`returned_at` に返した。
+fn returned_with_menu(
+    id: u128,
+    student: AccountId,
+    coach: AccountId,
+    menu: Option<(u128, &str)>,
+    submitted_at: SystemTime,
+    returned_at: SystemTime,
+) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        student,
+        coach,
+        Sport::Tennis,
+        submitted_at,
+        Some((
+            VideoReviewId::from_u128(id + 100),
+            ReviewComment::new("テイクバックが早い").unwrap(),
+            returned_at,
+        )),
+        menu.map(|(menu, name)| {
+            VideoLessonMenu::restore(
+                LessonMenuId::from_u128(menu),
+                LessonMenuName::new(name).unwrap(),
+            )
+        }),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn lesson_menu_id_narrows_the_list_and_combines_with_the_other_filters() {
+    let router = router(
+        InMemoryAccountRepository::default(),
+        InMemoryVideoRepository::with_videos([
+            returned_with_menu(
+                20,
+                STUDENT,
+                COACH,
+                Some((0x50, "フォーム添削")),
+                oct31_jst() - 72 * HOUR,
+                oct31_jst() - 24 * HOUR,
+            ),
+            // メニューを選ばずに送った動画
+            returned_with_menu(
+                21,
+                STUDENT,
+                COACH,
+                None,
+                oct31_jst() - 60 * HOUR,
+                oct31_jst() - 12 * HOUR,
+            ),
+            returned_with_menu(
+                22,
+                STUDENT,
+                OTHER_COACH,
+                Some((0x51, "サーブ動画チェック")),
+                oct31_jst() - 50 * HOUR,
+                oct31_jst() - 2 * HOUR,
+            ),
+            // 送った後にメニューの名前が直されていても、写しの ID で絞る
+            returned_with_menu(
+                23,
+                UNKNOWN_STUDENT,
+                COACH,
+                Some((0x50, "スイング添削")),
+                oct31_jst() - 10 * HOUR,
+                oct31_jst() + HOUR,
+            ),
+            // 日本時間の 10-20 に返した（既定の 7 日の外）
+            returned_with_menu(
+                24,
+                STUDENT,
+                COACH,
+                Some((0x50, "フォーム添削")),
+                oct31_jst() - 12 * 24 * HOUR,
+                oct31_jst() - 11 * 24 * HOUR,
+            ),
+            // 返していない動画は載らない
+            Video::restore(
+                VideoId::from_u128(25),
+                STUDENT,
+                COACH,
+                Sport::Tennis,
+                now() - 5 * HOUR,
+                None,
+                Some(VideoLessonMenu::restore(
+                    LessonMenuId::from_u128(0x50),
+                    LessonMenuName::new("フォーム添削").unwrap(),
+                )),
+            )
+            .unwrap(),
+        ]),
+    );
+    let (v20, v21, v22, v23, v24) = (
+        "00000000-0000-0000-0000-000000000014",
+        "00000000-0000-0000-0000-000000000015",
+        "00000000-0000-0000-0000-000000000016",
+        "00000000-0000-0000-0000-000000000017",
+        "00000000-0000-0000-0000-000000000018",
+    );
+    for (query, expected) in [
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050",
+            vec![v23, v20],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000051",
+            vec![v22],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&from=2026-10-01&to=2026-10-31",
+            vec![v23, v20, v24],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&student_id=00000000-0000-0000-0000-000000000005",
+            vec![v23],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000051&coach_id=00000000-0000-0000-0000-000000000002",
+            vec![],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&sport=tennis&coach_id=00000000-0000-0000-0000-000000000002",
+            vec![v23, v20],
+        ),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&sport=golf",
+            vec![],
+        ),
+        // ないメニューの ID は 404 にせず空
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000099",
+            vec![],
+        ),
+        // 付けなければメニューのない動画も載る
+        ("", vec![v23, v22, v21, v20]),
+    ] {
+        let (status, body) = list(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
         assert_eq!(ids(&body), expected, "{query}");
     }
 }
@@ -397,6 +587,24 @@ async fn invalid_query_is_422_validation_failed() {
         ("?to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
         ("?from=", "from は YYYY-MM-DD の日付でない"),
         ("?coach_id=coach-2", "coach_id が UUID でない"),
+        ("?student_id=student-4", "student_id が UUID でない"),
+        ("?student_id=", "student_id が UUID でない"),
+        ("?lesson_menu_id=menu-50", "lesson_menu_id が UUID でない"),
+        ("?lesson_menu_id=", "lesson_menu_id が UUID でない"),
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-00000000005",
+            "lesson_menu_id が UUID でない",
+        ),
+        // メニューが正しくても期間の規則は変わらない
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-000000000050&from=2026-10-01&to=2026-11-01",
+            "from から to までは 31 日まで",
+        ),
+        // 生徒が正しくても期間の規則は変わらない
+        (
+            "?student_id=00000000-0000-0000-0000-000000000004&from=2026-10-01&to=2026-11-01",
+            "from から to までは 31 日まで",
+        ),
         ("?sport=pingpong", "未知のスポーツ: pingpong"),
         ("?sport=", "未知のスポーツ: "),
         ("?sport=Tennis", "未知のスポーツ: Tennis"),

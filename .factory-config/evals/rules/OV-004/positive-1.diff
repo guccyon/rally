@@ -1,0 +1,75 @@
+guccyon/rally#102（D04: student-app のチャット画面）の apps/student-app/lib/state/student_flow.dart のうち、仮決めが差し替えられた箇所（openThread / refreshMessages で listMessages の後に markMessageThreadRead を呼ぶ）の hunk だけを gh pr diff から切り出したもの。
+diff --git a/apps/student-app/lib/state/student_flow.dart b/apps/student-app/lib/state/student_flow.dart
+index ecde0e00..29b74ebc 100644
+--- a/apps/student-app/lib/state/student_flow.dart
++++ b/apps/student-app/lib/state/student_flow.dart
+@@ -258,6 +290,69 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
+     );
+   });
+ 
++  /// チャットを開く（`listMessageThreads`）。閉じたら今の段に戻る。
++  Future<void> openChat() {
++    if (!state.step.isChat) {
++      state = state.copyWith(
++        chatReturnStep: state.step,
++        step: FlowStep.messageThreads,
++      );
++    }
++    return _run(_loadThreads);
++  }
++
++  /// チャットを閉じて、開いた段に戻る
++  void closeChat() =>
++      state = state.copyWith(step: state.chatReturnStep ?? FlowStep.slotSearch);
++
++  /// スレッドを開く。`listMessages` で読み、相手のメッセージを `markMessageThreadRead` で既読にする
++  /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。
++  Future<void> openThread(MessageThread thread) => _run(() async {
++    final list = await _api.listMessages(thread.threadId);
++    final read = await _api.markMessageThreadRead(thread.threadId);
++    state = state.copyWith(
++      thread: read,
++      messages: list.messages,
++      step: FlowStep.messages,
++    );
++  });
++
++  /// 開いているスレッドの新しいメッセージを確かめる（読み直して既読にする）
++  Future<void> refreshMessages() => _run(() async {
++    final threadId = state.thread!.threadId;
++    final list = await _api.listMessages(threadId);
++    final read = await _api.markMessageThreadRead(threadId);
++    state = state.copyWith(thread: read, messages: list.messages);
++  });
++
++  /// `sendMessage`。送れたら true（月額契約の前は 403 `chat_not_entitled` で false）。
++  Future<bool> sendMessage(String body) async {
++    var sent = false;
++    await _run(() async {
++      final message = await _api.sendMessage(
++        state.thread!.threadId,
++        SendMessageRequest(body: body),
++      );
++      state = state.copyWith(messages: [...?state.messages, message]);
++      sent = true;
++    });
++    return sent;
++  }
++
++  /// スレッドの一覧を読み直す
++  Future<void> refreshThreads() => _run(_loadThreads);
++
++  /// スレッドの一覧に戻る（未読の数と最後のメッセージを読み直す）
++  Future<void> backToThreads() {
++    state = state.copyWith(step: FlowStep.messageThreads);
++    return _run(_loadThreads);
++  }
++
++  Future<void> _loadThreads() async {
++    final list = await _api.listMessageThreads();
++    state = state.copyWith(threads: list.threads);
++  }
++
+   Future<void> _run(Future<void> Function() action) async {
+     if (state.busy) return;
+     state = state.copyWith(busy: true);

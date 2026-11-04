@@ -35,6 +35,12 @@ const OVERVIEW: Schemas["CoachOverview"] = {
     average_rating: null,
   },
   published_lesson_menu_count: 5,
+  returned_video_review_count: 5,
+  median_video_review_lead_time_hours: 12.25,
+  pending_video_review_count: 0,
+  overdue_pending_video_review_count: 0,
+  recent_cancelled_booking_count: 0,
+  unanswered_message_thread_count: 0,
 };
 
 function apiOf(result: Result<Schemas["CoachOverview"]>) {
@@ -117,6 +123,60 @@ describe("本部のコーチの様子", () => {
     expect(within(value).getByRole("link", { name: "低い評価を見る" })).toBeInTheDocument();
   });
 
+  test("返却待ちの動画添削の件数と 48 時間以上たった件数を出し、「返却待ちの動画添削を見る」は返却待ちの画面へのリンク", async () => {
+    const data = { ...OVERVIEW, pending_video_review_count: 3, overdue_pending_video_review_count: 1 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返却待ちの動画添削");
+    expect(value).toHaveTextContent("3 件（うち 48 時間以上 1 件）");
+    expect(within(value).getByRole("link", { name: "返却待ちの動画添削を見る" })).toHaveAttribute(
+      "href",
+      "/headquarters/pending-video-reviews",
+    );
+  });
+
+  test("返却待ちに遅れがなければ 48 時間以上は 0 件と出す", async () => {
+    const data = { ...OVERVIEW, pending_video_review_count: 2, overdue_pending_video_review_count: 0 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    expect(valueOf("返却待ちの動画添削")).toHaveTextContent("2 件（うち 48 時間以上 0 件）");
+  });
+
+  test("返却待ちの動画添削が 0 件なら「ありません」と出し、リンクは残す", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返却待ちの動画添削");
+    expect(value).toHaveTextContent("ありません");
+    expect(value).not.toHaveTextContent("件");
+    expect(within(value).getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
+  });
+
+  test("返事のないメッセージの件数を出し、「このコーチの返事のないメッセージを見る」はそのコーチで絞った一覧へのリンク", async () => {
+    const data = { ...OVERVIEW, unanswered_message_thread_count: 3 };
+    render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返事のないメッセージ");
+    expect(value).toHaveTextContent("3 件");
+    expect(within(value).getByRole("link", { name: "このコーチの返事のないメッセージを見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/unanswered-messages?coach_id=${COACH_ID}`,
+    );
+  });
+
+  test("返事のないメッセージが 0 件なら「ありません」と出し、一覧へのリンクは出さない", async () => {
+    render(<CoachOverview api={apiOf({ ok: true, data: OVERVIEW })} coachId={COACH_ID} />);
+
+    await screen.findByRole("heading", { name: "鈴木 コーチ" });
+    const value = valueOf("返事のないメッセージ");
+    expect(value).toHaveTextContent("ありません");
+    expect(value).not.toHaveTextContent("件");
+    expect(within(value).queryByRole("link")).not.toBeInTheDocument();
+  });
+
   test("評価が 0 件なら平均は「評価はまだありません」、受付中なら「受付中」", async () => {
     const data = { ...OVERVIEW, acceptance_status: "accepting", review_count: 0, average_rating: null } as const;
     render(<CoachOverview api={apiOf({ ok: true, data })} coachId={COACH_ID} />);
@@ -162,6 +222,18 @@ describe("本部のコーチの様子", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("heading", { name: "鈴木 コーチ" })).not.toBeInTheDocument();
     expect(screen.queryByText("直近 30 日の低い評価")).not.toBeInTheDocument();
+  });
+
+  test("422 validation_failed ならその理由の文言を出す", async () => {
+    render(
+      <CoachOverview
+        api={apiOf({ ok: false, code: "validation_failed", message: "入力を確かめてください。" })}
+        coachId={COACH_ID}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("入力を確かめてください。");
+    expect(screen.queryByText("返却待ちの動画添削")).not.toBeInTheDocument();
   });
 
   test("接続できないときもその文言を出す", async () => {

@@ -12,6 +12,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.slots(),
             CatalogLessonMenuLookup::new(ports.lesson_menus()),
             ports.bookings(),
+            ports.clock(),
         ),
         MockTokenService,
     )

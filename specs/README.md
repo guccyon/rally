@@ -18,3 +18,5 @@
 - `design/`: デザインシステムの正本（コンセプト `rally-court`）
   - `principles.yaml`（原則）・`concept_tone.yaml`（コンセプトとトーン＆マナー）・`tokens.yaml`（色・書体・余白・角丸・アイコン・動き）・`components.yaml`（基本の部品）・`patterns.yaml`（画面の型）・`content.yaml`（文言と表記）・`accessibility.yaml`（WCAG 2.2 AA）・`governance.yaml`（育て方・lint の基準）。変更の記録は `design/CHANGELOG.md`
   - アプリへの写しは student-app の `lib/ui/theme/`（`RallyColors` など）と `lib/ui/components/`、admin-web の `src/app/globals.css`（`@theme`）と `src/components/ui/`。トークンの値が正本と同じことを student-app の `test/ui/theme/rally_tokens_test.dart` と admin-web の `tests/designTokens.test.ts` が確かめる
+  - 部品の種類と状態の見本を並べたカタログ（admin-web の `/design`、student-app の `DesignCatalogScreen`。画面のキャプチャの `design-catalog`）。カタログが components.yaml の部品と種類をすべて持つこと（アプリで使わないものは理由付きで除く）を admin-web の `tests/designSystem.test.tsx` と student-app の `test/ui/design_catalog_test.dart` が確かめる
+  - 正本だけから組み立てた見本のカタログ `design/catalog/catalog.html` と `catalog.png`（`tools/design-catalog/` が `tokens.yaml`・`components.yaml` の `preview` と `preview_css`・`concept_tone.yaml` の `copy` から作る。手で直さない）

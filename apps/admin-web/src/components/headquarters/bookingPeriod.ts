@@ -1,11 +1,11 @@
-// 本部の日付の期間（予約の一覧 listBookings・通話セッションの記録 listLiveLessonSessions）と、開始が近い確定待ちの見分け。
+// 本部の日付の期間（予約の一覧 listBookings・通話セッションの記録 listLiveLessonSessions・予約枠の需給 getSlotSupply など）と、開始が近い確定待ちの見分け。
 // 日付は日本時間（契約の `from` / `to` と同じ）。
 
 import { toJstDate } from "@/components/labels";
 
 const DAY = 86_400_000;
 
-/** 期間の日数の上限（契約の `listBookings` / `listLiveLessonSessions`。`from` と `to` を含めて数える）。 */
+/** 期間の日数の上限（契約の `listBookings` / `listLiveLessonSessions` / `getSlotSupply`。`from` と `to` を含めて数える）。 */
 export const MAX_PERIOD_DAYS = 31;
 
 /** 既定の期間の日数（契約で `to` を省いたときと同じく、`from` を含めて 7 日）。 */

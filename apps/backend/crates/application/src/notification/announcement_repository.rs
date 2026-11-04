@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
+    time::SystemTime,
 };
 
 use domain::notification::{Announcement, AnnouncementId};
@@ -36,6 +37,14 @@ pub trait AnnouncementRepository: Send + Sync {
 
     /// 送った記録すべて（取り下げたものも含む）。送った時刻の新しい順（同じ時刻は後に残したものが先）。
     fn find_all(&self) -> impl Future<Output = Result<Vec<Announcement>, Unavailable>> + Send;
+
+    /// 送った時刻が `starts_at`（含む）から `ends_at`（含まない）までの送った記録（取り下げたものも含む）。並べ方は
+    /// [`Self::find_all`] と同じ。
+    fn find_sent_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> impl Future<Output = Result<Vec<Announcement>, Unavailable>> + Send;
 
     /// ID が `ids` のどれかの送った記録（ID ごと。取り下げたものも含む）。ない ID は結果に入れない。
     fn find_by_ids(

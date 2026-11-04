@@ -8,6 +8,23 @@ concept:
   chosen_on: "2026-11-01"
   chosen_by: 人（HumanChoice concept_tone）
 
+copy:   # コピーの 3 語とデザインの結びつき（0.2.0。カタログ 1 版目の README の表を正本に写した）
+  line: コートの熱。次の練習へ、前のめりに。
+  map:
+    - phrase: コートの熱
+      design: 濃い面 inverse_surface に、ライム secondary の線と display の数字を置く
+      limit: 熱は 1 画面 1 か所（principles の one-hot-spot）
+      tokens: [color.roles.inverse_surface, color.roles.secondary, typography.scale.display, iconography.decoration]
+    - phrase: 次の練習へ
+      design: 次の一手を一番前に置き、主なボタン（button の primary）は 1 画面に 1 つ。空の画面でも次の行動を示す（empty_state の action）
+      limit: 次の一手が 2 つ並ぶ画面にしない（principles の next-move-first）
+      tokens: [components.button.primary, components.empty_state, components.score_panel]
+    - phrase: 前のめりに
+      design: 太い字（900・700）、-12° の帯、動詞で言い切るボタン、待たせない動き（motion の fast 120ms・base 200ms）
+      limit: 回数・日時・規定・誤りは勢いより正確さを先にする（principles の clear-before-hype）。誤りの知らせに勢いの言葉を使わない
+      tokens: [typography.weights.black, typography.weights.bold, iconography.decoration, motion.durations_ms]
+  calm_primary: 主の色 primary は勢いを担わない。熱は inverse_surface と secondary が担い、primary は押せるもの・選択中の印として落ち着いた青（#3A54B0）にする（0.2.0。人が「青が強い」と指摘）
+
 impression:
   who: 部活や趣味で体を動かすのが好きな生徒
   feel: 「早く練習したい、次も上手くなれる」と前のめりになってほしい
@@ -33,7 +50,7 @@ voice:
       example: 「次のレッスンは 10/28（水）12:00」「残り 2 回」
     - scene: empty
       tone: 背中を押す一言と、次の操作
-      example: 「まだこれからの予約はありません。コーチを探して始めましょう」
+      example: 「まだこれからの予約はありません。コーチを探して始めましょう」（文は text の色。ボタンは empty_state の決まりで primary か secondary）
     - scene: success
       tone: 達成を短く強く。感嘆符は 1 つまで
       example: 「予約が確定しました」

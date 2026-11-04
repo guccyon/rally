@@ -1,6 +1,8 @@
 //! レッスンの評価。student-app の `POST /lesson-reviews`（`submitLessonReview`。生徒だけ）と、admin-web・student-app の
 //! `GET /coaches/{coach_id}/review-summary`（`getCoachReviewSummary`。本部と生徒はどのコーチの分も、コーチは自分の分だけ）と、
 //! `GET /coaches/{coach_id}/reviews`（`listCoachReviews`。コーチが受けた評価の一覧。読める範囲は件数と平均と同じ）。
+//! 評価の一覧の任意の `max_rating`（その点以下だけ）と `from`・`to`（評価の付いた日付の期間）は admin-web の契約だけに
+//! あるので、本部とコーチの役割のトークンだけで読む（生徒の役割では student-app の契約のとおり付けても変わらない）。
 //! 評価の一覧には、評価した生徒を特定できる項目を載せない（[`CoachReviewBody`] に `student_id` がない）。各評価には、
 //! 評価した完了したレッスンの元（予約・動画）が持つレッスンメニューの写しを載せる（なければ null）。評価されたコーチの返信も
 //! 載せる（なければ null）。返信を付ける `PUT /lesson-reviews/{review_id}/reply` は [`crate::review_replies`]。
@@ -16,13 +18,17 @@ use application::{
     lesson::lesson_completion_id_uuid,
     review::{
         CoachReviewList, CompletedLessonLookup, GetCoachReviewSummary, LessonReviewRepository,
-        ListCoachReviews, ReviewedLessonMenuLookup, SubmitLessonReview, SubmitLessonReviewCommand,
-        SubmitLessonReviewError, lesson_review_id_uuid,
+        ListCoachReviews, ListCoachReviewsError, ListCoachReviewsQuery, ReviewedLessonMenuLookup,
+        SubmitLessonReview, SubmitLessonReviewCommand, SubmitLessonReviewError,
+        lesson_review_id_uuid,
     },
 };
 use axum::{
     Json, Router,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{
+        Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::StatusCode,
     routing::{get, post},
 };
@@ -37,7 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::date_time_to_contract,
+    contract::{date_from_contract, date_time_to_contract},
     error::ApiError,
     review_error,
 };
@@ -58,6 +64,14 @@ pub struct SubmitLessonReviewRequest {
     lesson_id: String,
     rating: i64,
     comment: String,
+}
+
+/// admin-web の `listCoachReviews` のクエリ（student-app の同じ操作にはない）。
+#[derive(Deserialize)]
+pub struct ListCoachReviewsParams {
+    max_rating: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
 }
 
 /// student-app の `LessonReview`。
@@ -181,10 +195,15 @@ where
 
 /// `GET /coaches/{coach_id}/reviews`（admin-web・student-app）。本部・コーチ・生徒が呼べ（役割は `require_role` の層が
 /// 確かめる）、コーチは自分の分だけを読める。本部と生徒はどのコーチの分も読める。
+/// 本部とコーチ（admin-web）は `max_rating` でその点以下の評価だけに絞れ、1〜5 の整数でなければ 422。`from`・`to` で
+/// 評価の付いた日付（日本時間）の期間に絞れ、`YYYY-MM-DD` の日付でないときと期間の違反は 422（期間の違反の応答は
+/// `listAnnouncements` と同じく [`crate::scheduling_error`] が決める）。生徒（student-app）は `max_rating`・`from`・`to` を
+/// 読まない。
 pub async fn list_coach_reviews<L, R, M, A, C>(
     State(state): State<Shared<L, R, M, A, C>>,
     account: AuthenticatedAccount,
     Path(coach_id): Path<String>,
+    params: Result<Query<ListCoachReviewsParams>, QueryRejection>,
 ) -> Result<Json<CoachReviewListBody>, ApiError>
 where
     L: CompletedLessonLookup,
@@ -199,12 +218,39 @@ where
     if account.role() == Role::Coach && account.account_id() != coach_id {
         return Err(ApiError::forbidden("コーチは自分の評価だけを読める"));
     }
+    let query = match account.role() {
+        Role::Headquarters | Role::Coach => {
+            let Query(params) =
+                params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+            ListCoachReviewsQuery {
+                max_rating: params
+                    .max_rating
+                    .as_deref()
+                    .map(max_rating_from_contract)
+                    .transpose()?,
+                from: params
+                    .from
+                    .as_deref()
+                    .map(|value| date_from_contract("from", value))
+                    .transpose()?,
+                to: params
+                    .to
+                    .as_deref()
+                    .map(|value| date_from_contract("to", value))
+                    .transpose()?,
+            }
+        }
+        Role::Student => ListCoachReviewsQuery::default(),
+    };
 
     let list = state
         .list_coach_reviews
-        .execute(coach_id)
+        .execute(coach_id, query)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(|error| match error {
+            ListCoachReviewsError::Invalid(error) => ApiError::from(error),
+            ListCoachReviewsError::Unavailable(error) => ApiError::internal(error),
+        })?;
     Ok(Json(CoachReviewListBody {
         coach_id: account_id_uuid::format(coach_id),
         reviews: list
@@ -213,6 +259,21 @@ where
             .map(|review| coach_review_body(review, &list))
             .collect::<Result<_, _>>()?,
     }))
+}
+
+/// admin-web の `listCoachReviews` の `max_rating`（1〜5 の整数）。整数でないとき・範囲の外は 422。
+fn max_rating_from_contract(value: &str) -> Result<Rating, ApiError> {
+    value
+        .parse::<i64>()
+        .ok()
+        .and_then(|value| Rating::new(value).ok())
+        .ok_or_else(|| {
+            ApiError::validation_failed(format!(
+                "max_rating は {}〜{} の整数",
+                Rating::MIN,
+                Rating::MAX
+            ))
+        })
 }
 
 fn lesson_review_body(review: &LessonReview) -> Result<LessonReviewBody, ApiError> {

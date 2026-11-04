@@ -716,10 +716,11 @@ mod tests {
         async fn find_announcements_by_recipient(
             &self,
             recipient: AccountId,
+            unread_only: bool,
             limit: usize,
         ) -> Result<Vec<Notification>, Unavailable> {
             self.notifications
-                .find_announcements_by_recipient(recipient, limit)
+                .find_announcements_by_recipient(recipient, unread_only, limit)
                 .await
         }
 
@@ -729,6 +730,21 @@ mod tests {
             at: SystemTime,
         ) -> Result<(), Unavailable> {
             self.notifications.mark_all_read(recipient, at).await
+        }
+
+        async fn count_read_by_announcement(
+            &self,
+            read_until: &std::collections::BTreeMap<
+                domain::notification::AnnouncementId,
+                Option<SystemTime>,
+            >,
+        ) -> Result<
+            std::collections::BTreeMap<domain::notification::AnnouncementId, u32>,
+            Unavailable,
+        > {
+            self.notifications
+                .count_read_by_announcement(read_until)
+                .await
         }
     }
 

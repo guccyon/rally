@@ -1,0 +1,11 @@
+{
+  "name": "rally-changelog-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PR が CHANGELOG.md の [Unreleased] を直接書き換えていないかを見る（断片 changelog.d/ を使わせる）",
+  "scripts": {
+    "check": "node check.mjs",
+    "test": "node --test"
+  }
+}

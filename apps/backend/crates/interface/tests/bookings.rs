@@ -6,9 +6,11 @@
 //! 各予約には今キャンセルしたら枠を使うか（`cancel_consumes_quota`）と境目（`free_cancel_until`）を載せ、境目の前後・キャンセル済み・
 //! 月額の受講権のない生徒の体験予約で値が変わることを確かめる。
 //! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
-//! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。
+//! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。任意の `from`・`to`（枠の開始の日付。日本時間）を付ければ
+//! `listBookings` と同じ規則（省いた日付の決め方・422 の条件）で期間に絞り、付けなければ今までどおり絞らないことを確かめる。
 //! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
 //! 有効な予約が入っているかと、結びついたレッスンメニュー（なければ null）を添えて返すことと、コーチ以外は 403 を確かめる。
+//! 任意の `from`・`to`（枠の開始の日付。日本時間）で絞れ、省いたときの決め方と 422 の条件が `listBookings` と同じことを確かめる。
 //! 予約の一覧（`listMyBookings`・`listMyCoachBookings`）の枠には `lesson_menu` を載せない。予約には予約した時点のレッスンメニュー
 //! `lesson_menu`（なければ null）を載せ、予約した後にメニューを直しても変わらないことを確かめる。
 
@@ -200,6 +202,9 @@ fn app_with_entitlements(
         CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock,
         ),
         ListMyBookings::new(
@@ -211,11 +216,13 @@ fn app_with_entitlements(
         ListCoachBookings::new(
             bookings.clone(),
             application::profile::ProfileStudentDisplayNameLookup::new(accounts.clone()),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             slots.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             bookings,
+            clock,
         ),
         StartSubscription::new(
             entitlements.clone(),
@@ -1249,7 +1256,16 @@ async fn only_authenticated_students_can_list_their_bookings() {
 const COACH_TOKEN: &str = "coach:9";
 
 async fn get_my_coach_bookings(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/coaches/me/bookings");
+    get_my_coach_bookings_with(router, token, "").await
+}
+
+/// `query` は `?` から始まるクエリ（なければ空文字列）。
+async fn get_my_coach_bookings_with(
+    router: &Router,
+    token: Option<&str>,
+    query: &str,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/coaches/me/bookings{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -1381,6 +1397,108 @@ async fn coach_without_bookings_gets_an_empty_list() {
 }
 
 #[tokio::test]
+async fn coach_narrows_own_bookings_by_the_date_the_slot_starts_in_japan() {
+    // スロット 15 は 11 月 1 日 15 時（UTC）＝日本時間の 11 月 2 日 0 時に始まる。スロット 20 は別のコーチの枠
+    let other_coach_slot = Slot::restore(
+        SlotId::from_u128(20),
+        AccountId::from_u128(8),
+        Sport::Tennis,
+        nov1(20),
+        nov1(21),
+        SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
+    )
+    .unwrap();
+    let app = app_with([slot(15, SlotStatus::Open), other_coach_slot]);
+    let early = create(&app.router, STUDENT, 10, false).await;
+    let next_day = create(&app.router, STUDENT, 15, false).await;
+    create(&app.router, OTHER_STUDENT, 20, false).await;
+    let listed = |body: &Value| -> Vec<String> {
+        body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["booking"]["booking_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // 省けば今までどおり期間で絞らず、期間も載せない
+    let (status, body) = get_my_coach_bookings(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_list_contract(status, &body);
+    assert_eq!(listed(&body), [early.clone(), next_day.clone()]);
+    assert!(
+        body.get("from").is_none() && body.get("to").is_none(),
+        "{body}"
+    );
+
+    for (query, from, to, expected) in [
+        (
+            "?from=2026-11-01&to=2026-11-01",
+            "2026-11-01",
+            "2026-11-01",
+            vec![early.clone()],
+        ),
+        (
+            "?from=2026-11-02&to=2026-11-02",
+            "2026-11-02",
+            "2026-11-02",
+            vec![next_day.clone()],
+        ),
+        // to だけなら from は今日（日本時間の 10 月 26 日）
+        (
+            "?to=2026-11-01",
+            "2026-10-26",
+            "2026-11-01",
+            vec![early.clone()],
+        ),
+        // from だけなら to は from から 7 日目
+        (
+            "?from=2026-11-02",
+            "2026-11-02",
+            "2026-11-08",
+            vec![next_day.clone()],
+        ),
+        ("?from=2026-11-03", "2026-11-03", "2026-11-09", vec![]),
+    ] {
+        let (status, body) =
+            get_my_coach_bookings_with(&app.router, Some(COACH_TOKEN), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_coach_list_contract(status, &body);
+        assert_eq!(body["from"], from, "{query}: {body}");
+        assert_eq!(body["to"], to, "{query}: {body}");
+        assert_eq!(listed(&body), expected, "{query}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn coach_bookings_reject_dates_like_list_bookings() {
+    let app = app();
+    for query in [
+        "?from=2026-11-02&to=2026-11-01",
+        "?from=2026-11-01&to=2026-12-02",
+        "?to=2026-10-25",
+        "?from=2026/11/01",
+        "?to=2026-11-31",
+        "?from=",
+    ] {
+        let (status, body) =
+            get_my_coach_bookings_with(&app.router, Some(COACH_TOKEN), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_coach_list_contract(status, &body);
+        assert_eq!(body["code"], "validation_failed", "{query}: {body}");
+    }
+    // 31 日までは通る
+    let (status, body) = get_my_coach_bookings_with(
+        &app.router,
+        Some(COACH_TOKEN),
+        "?from=2026-11-01&to=2026-12-01",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
 async fn only_authenticated_coaches_can_list_their_bookings() {
     let app = app();
     create(&app.router, STUDENT, 10, false).await;
@@ -1400,7 +1518,16 @@ async fn only_authenticated_coaches_can_list_their_bookings() {
 // --- GET /coaches/me/slots ---
 
 async fn get_my_coach_slots(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get("/coaches/me/slots");
+    get_my_coach_slots_with(router, token, "").await
+}
+
+/// クエリ `query`（`?from=...` のように `?` から）を付けて `GET /coaches/me/slots` を呼ぶ。
+async fn get_my_coach_slots_with(
+    router: &Router,
+    token: Option<&str>,
+    query: &str,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/coaches/me/slots{query}"));
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -1660,6 +1787,87 @@ async fn bookings_carry_the_lesson_menu_of_the_time_of_booking() {
             ]
         );
     }
+}
+
+#[tokio::test]
+async fn coach_narrows_own_slots_to_days_starting_from_from_to_to_in_japan_time() {
+    // 現在は日本時間の 10 月 26 日 9 時。スロット 5 は 10 月 24 日（日本時間）に始まった枠、15 は 11 月 2 日 0 時
+    // （日本時間）に始まる枠。10〜13 は 11 月 1 日の 19〜22 時（日本時間）
+    let ended = Slot::restore(
+        SlotId::from_u128(5),
+        COACH,
+        Sport::Tennis,
+        SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(48 * 3600),
+        SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(47 * 3600),
+        SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
+    )
+    .unwrap();
+    let app = app_with([ended, slot(15, SlotStatus::Open)]);
+    let ids = |body: &Value| -> Vec<String> {
+        body["slots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["slot"]["slot_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let expect = |ids: &[u128]| -> Vec<String> { ids.iter().map(|&id| slot_id(id)).collect() };
+    for (query, expected) in [
+        // 省けば今までどおりすべて
+        ("", expect(&[5, 10, 11, 12, 13, 15])),
+        ("?from=2026-11-01&to=2026-11-01", expect(&[10, 11, 12, 13])),
+        // to を省けば from から 7 日目まで
+        ("?from=2026-11-02", expect(&[15])),
+        ("?from=2026-10-24", expect(&[5])),
+        // from を省けば今日（10 月 26 日）から
+        ("?to=2026-11-02", expect(&[10, 11, 12, 13, 15])),
+        // 期間に枠がなければ空の配列
+        ("?from=2026-12-01&to=2026-12-31", expect(&[])),
+    ] {
+        let (status, body) = get_my_coach_slots_with(&app.router, Some(COACH_TOKEN), query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_coach_slot_list_contract(status, &body);
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn coach_slots_with_invalid_days_are_422_like_the_bookings_list() {
+    let app = app();
+    for (query, message) in [
+        (
+            "?from=2026-11-02&to=2026-11-01",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        // 省いた from は今日（10 月 26 日）
+        (
+            "?to=2026-10-25",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        // 11 月 1 日〜12 月 2 日は 32 日
+        (
+            "?from=2026-11-01&to=2026-12-02",
+            "from から to までは 31 日まで",
+        ),
+        ("?from=2026-11-31", "from は YYYY-MM-DD の日付でない"),
+        ("?from=", "from は YYYY-MM-DD の日付でない"),
+        ("?to=tomorrow", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = get_my_coach_slots_with(&app.router, Some(COACH_TOKEN), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_coach_slot_list_contract(status, &body);
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
+    }
+    // 31 日までは読める
+    let (status, body) = get_my_coach_slots_with(
+        &app.router,
+        Some(COACH_TOKEN),
+        "?from=2026-11-01&to=2026-12-01",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }
 
 #[tokio::test]

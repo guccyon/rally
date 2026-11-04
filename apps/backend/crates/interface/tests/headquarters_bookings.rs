@@ -3,7 +3,10 @@
 //! 日付を省いたときは今日から 7 日であること、`coach_id` でそのコーチの予約だけに絞れること（いないコーチは空の一覧）、
 //! `student_id` でその生徒の予約だけに絞れること（いない生徒は空の一覧）、
 //! `status`（繰り返せる）でその状態の予約だけに絞れること、`trial` で体験予約だけ・体験予約でない予約だけに絞れること、
-//! 期間の違反と日付でない値・UUID でない `coach_id`・`student_id`・予約の状態でない `status`・真偽値でない `trial` が 422 であることを
+//! `lesson_menu_id` で予約した時点のメニューがそのメニューの予約だけに絞れること（ないメニューは空の一覧）、
+//! `sport` で予約した枠のコーチがその競技を提供する予約だけに絞れること（ほかの条件と組み合わせられる）、
+//! 期間の違反と日付でない値・UUID でない `coach_id`・`student_id`・`lesson_menu_id`・予約の状態でない `status`・真偽値でない
+//! `trial`・`Sport` の値でない `sport` が 422 であることを
 //! 確かめる。期間の規則の境界は
 //! domain の `BookingPeriod`、並べ方の細部はユースケース `ListBookings` のテスト。
 
@@ -14,7 +17,9 @@ use application::{
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository,
     },
-    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
+    profile::{
+        ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
+    },
     scheduling::{BookingRepository, ListBookings},
 };
 use axum::{
@@ -77,7 +82,12 @@ async fn accounts() -> InMemoryAccountRepository {
         (1, "本部", Role::Headquarters, vec![]),
         (3, "あおき", Role::Student, vec![Sport::Tennis]),
         (42, "たなか", Role::Coach, vec![Sport::Tennis]),
-        (43, "いとう", Role::Coach, vec![Sport::Tennis]),
+        (
+            43,
+            "いとう",
+            Role::Coach,
+            vec![Sport::Tennis, Sport::Soccer],
+        ),
     ] {
         accounts
             .insert(
@@ -154,7 +164,7 @@ async fn book(
         .unwrap()
 }
 
-/// 日本時間の 11 月 1 日と 2 日に、コーチ「たなか」（42）・「いとう」（43）・アカウントのないコーチ（99）の枠へ
+/// 日本時間の 11 月 1 日と 2 日に、コーチ「たなか」（42。テニス）・「いとう」（43。テニスとサッカー）・アカウントのないコーチ（99）の枠へ
 /// 生徒「あおき」（3）とアカウントのない生徒（4）が予約した。期間の境目の前後（10 月 31 日 23 時・11 月 8 日 0 時）にもある。
 async fn bookings() -> (InMemoryBookingRepository, Vec<Booking>) {
     let slots = InMemorySlotRepository::with_slots([
@@ -183,6 +193,7 @@ async fn app_at(now: SystemTime, bookings: InMemoryBookingRepository) -> Router 
     interface::headquarters_bookings_router(
         ListBookings::new(
             bookings,
+            ProfileCoachAccountLookup::new(accounts.clone()),
             ProfileCoachDisplayNameLookup::new(accounts.clone()),
             ProfileStudentDisplayNameLookup::new(accounts),
             FixedClock(now),
@@ -590,6 +601,110 @@ async fn trial_lists_only_trial_or_only_regular_bookings() {
 }
 
 #[tokio::test]
+async fn lesson_menu_id_lists_only_bookings_of_that_menu() {
+    let admin = support::Contract::load("admin-web");
+    // 11 月 1 日〜7 日の予約は枠 3・2・4・6 で、メニュー 9 の写しがあるのは枠 2（コーチ 42・生徒 3・体験予約）だけ
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+    let menu = "00000000-0000-0000-0000-000000000009";
+
+    for (query, expected) in [
+        (format!("?lesson_menu_id={menu}"), vec![slot_uuid(2)]),
+        // ないメニュー・メニューでない ID（コーチ）は 404 にせず空の一覧
+        (
+            "?lesson_menu_id=00000000-0000-0000-0000-0000000003e8".to_string(),
+            vec![],
+        ),
+        (format!("?lesson_menu_id={}", account_uuid(42)), vec![]),
+        // 期間・コーチ・生徒・状態・体験予約かと組み合わせる
+        (
+            format!("?from=2026-11-02&to=2026-11-07&lesson_menu_id={menu}"),
+            vec![],
+        ),
+        (
+            format!("?coach_id={}&lesson_menu_id={menu}", account_uuid(42)),
+            vec![slot_uuid(2)],
+        ),
+        (
+            format!("?coach_id={}&lesson_menu_id={menu}", account_uuid(43)),
+            vec![],
+        ),
+        (
+            format!("?student_id={}&lesson_menu_id={menu}", account_uuid(3)),
+            vec![slot_uuid(2)],
+        ),
+        (
+            format!("?status=pending&trial=true&lesson_menu_id={menu}"),
+            vec![slot_uuid(2)],
+        ),
+        (format!("?status=cancelled&lesson_menu_id={menu}"), vec![]),
+        (format!("?trial=false&lesson_menu_id={menu}"), vec![]),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = get(&app, &format!("{PATH}?lesson_menu_id={menu}"), HEADQUARTERS).await;
+    assert_eq!(
+        body["bookings"][0]["booking"]["lesson_menu"]["lesson_menu_id"],
+        menu
+    );
+}
+
+#[tokio::test]
+async fn sport_lists_only_bookings_of_coaches_offering_it() {
+    let admin = support::Contract::load("admin-web");
+    // 11 月 1 日〜7 日の予約は枠 3（いとう・生徒 4）・2（たなか・生徒 3・体験予約・メニュー 9）・4（アカウントのない
+    // コーチ・生徒 3）・6（いとう・生徒 3）。枠のスポーツはどれもテニス
+    let (bookings, _) = bookings().await;
+    let app = app_at(nov1(Duration::ZERO), bookings).await;
+    let menu = "00000000-0000-0000-0000-000000000009";
+
+    for (query, expected) in [
+        // アカウントのないコーチの予約は、競技を指定すれば出ない
+        (
+            "?sport=tennis".to_string(),
+            vec![slot_uuid(3), slot_uuid(2), slot_uuid(6)],
+        ),
+        // 枠のスポーツでなくコーチの提供スポーツで決める
+        (
+            "?sport=soccer".to_string(),
+            vec![slot_uuid(3), slot_uuid(6)],
+        ),
+        // 提供するコーチのいない競技は空の一覧
+        ("?sport=golf".to_string(), vec![]),
+        // 期間・コーチ・生徒・状態・体験予約か・レッスンメニューと組み合わせる
+        (
+            "?from=2026-11-01&to=2026-11-08&sport=tennis".to_string(),
+            vec![slot_uuid(3), slot_uuid(2), slot_uuid(6), slot_uuid(5)],
+        ),
+        (
+            format!("?coach_id={}&sport=soccer", account_uuid(42)),
+            vec![],
+        ),
+        (
+            format!("?student_id={}&sport=soccer", account_uuid(3)),
+            vec![slot_uuid(6)],
+        ),
+        ("?status=cancelled&sport=tennis".to_string(), vec![]),
+        ("?trial=true&sport=tennis".to_string(), vec![slot_uuid(2)]),
+        ("?trial=true&sport=soccer".to_string(), vec![]),
+        (
+            format!("?lesson_menu_id={menu}&sport=tennis"),
+            vec![slot_uuid(2)],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(slot_ids(&body), expected, "{query}: {body}");
+    }
+    let (_, body) = get(&app, &format!("{PATH}?sport=soccer"), HEADQUARTERS).await;
+    assert_eq!(body["bookings"][0]["coach_display_name"], "いとう");
+}
+
+#[tokio::test]
 async fn trial_that_is_not_a_boolean_is_422() {
     let admin = support::Contract::load("admin-web");
     let (bookings, _) = bookings().await;
@@ -646,6 +761,8 @@ async fn invalid_days_are_422() {
         ("?coach_id=", "coach_id が UUID でない"),
         ("?student_id=3", "student_id が UUID でない"),
         ("?student_id=", "student_id が UUID でない"),
+        ("?lesson_menu_id=9", "lesson_menu_id が UUID でない"),
+        ("?lesson_menu_id=", "lesson_menu_id が UUID でない"),
         ("?status=canceled", "未知の予約の状態: canceled"),
         (
             "?status=pending&status=PENDING",
@@ -656,6 +773,9 @@ async fn invalid_days_are_422() {
             "未知の予約の状態: pending,cancelled",
         ),
         ("?status=", "未知の予約の状態: "),
+        ("?sport=cricket", "未知のスポーツ: cricket"),
+        ("?sport=Tennis", "未知のスポーツ: Tennis"),
+        ("?sport=", "未知のスポーツ: "),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");

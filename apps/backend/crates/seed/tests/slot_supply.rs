@@ -9,13 +9,14 @@ use std::time::{Duration, SystemTime};
 
 use application::{
     in_memory::{FixedClock, RecordingAnalyticsSink},
-    scheduling::GetSlotSupply,
+    profile::ProfileCoachAccountLookup,
+    scheduling::{GetSlotSupply, GetSlotSupplyQuery},
 };
 use domain::{
     catalog::Sport,
     scheduling::{SlotSupply, SlotSupplyStatus},
 };
-use infra::PgBookingRepository;
+use infra::{PgAccountRepository, PgBookingRepository};
 use seed::{SeedPlan, Seeder};
 use sqlx::PgPool;
 
@@ -32,10 +33,14 @@ async fn some_sport_lacks_slots_in_the_synthetic_seed(pool: PgPool) {
         .await
         .unwrap();
 
-    let report = GetSlotSupply::new(PgBookingRepository::new(pool), FixedClock(now))
-        .execute()
-        .await
-        .unwrap();
+    let report = GetSlotSupply::new(
+        PgBookingRepository::new(pool.clone()),
+        ProfileCoachAccountLookup::new(PgAccountRepository::new(pool)),
+        FixedClock(now),
+    )
+    .execute(GetSlotSupplyQuery::default())
+    .await
+    .unwrap();
     let insufficient: Vec<&SlotSupply> = report
         .sports
         .iter()

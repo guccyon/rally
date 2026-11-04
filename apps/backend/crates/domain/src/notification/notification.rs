@@ -77,6 +77,13 @@ impl Notification {
         self.read_at.is_some()
     }
 
+    /// 本部が見る生徒 1 人の受け取ったお知らせ（admin-web の `listStudentAnnouncements`）の任意の絞り込み `unread_only` に
+    /// このお知らせが入るか。`false` なら既読かを問わない（すべて入る）。`true` なら未読のもの（[`Self::is_read`] でないもの）
+    /// だけが入る。判定は [`Self::is_read`] の 1 か所（Postgres の実装は同じ条件を `read_at IS NULL` で絞る）。
+    pub fn is_unread_as(&self, unread_only: bool) -> bool {
+        !unread_only || !self.is_read()
+    }
+
     /// 時刻 `at` に読んだことにする。すでに読んでいれば最初に読んだ時刻のまま。`at` より後に作ったお知らせ
     /// （既読にする操作と並んで作られたもの）は読んでいないままにする。
     pub fn mark_read(&mut self, at: SystemTime) {
@@ -135,6 +142,16 @@ mod tests {
             Some(at(20)),
             "最初に読んだ時刻のまま"
         );
+    }
+
+    #[test]
+    fn the_unread_only_filter_takes_only_unread_notifications() {
+        let mut notification = confirmed();
+        assert!(notification.is_unread_as(false), "絞らなければ載る");
+        assert!(notification.is_unread_as(true), "未読は載る");
+        notification.mark_read(at(20));
+        assert!(notification.is_unread_as(false), "絞らなければ既読も載る");
+        assert!(!notification.is_unread_as(true), "既読は載らない");
     }
 
     #[test]

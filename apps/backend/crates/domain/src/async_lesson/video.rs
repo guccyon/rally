@@ -6,7 +6,7 @@ use super::{
 use crate::{
     DomainError,
     catalog::Sport,
-    catalog::{LessonFormat, LessonMenu},
+    catalog::{LessonFormat, LessonMenu, LessonMenuId},
     identity::AccountId,
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
 };
@@ -269,6 +269,13 @@ impl Video {
         }
     }
 
+    /// コーチがまだ添削を返していない（返却待ちの）動画か。本部の返却待ちの一覧（[`super::PendingVideoReviewFilter`]）と
+    /// コーチの自分に届いた動画の一覧の返却待ちだけの絞り込み（admin-web の `listMyCoachVideos` の `pending_only`）は
+    /// この 1 か所を使う。
+    pub const fn is_awaiting_review(&self) -> bool {
+        self.review.is_none()
+    }
+
     /// 返却した添削。返却するまでは `None`。
     pub const fn review(&self) -> Option<&VideoReview> {
         self.review.as_ref()
@@ -282,6 +289,18 @@ impl Video {
     /// 送った時点のレッスンメニューの写し。メニューを選ばずに送った動画は `None`。
     pub const fn lesson_menu(&self) -> Option<&VideoLessonMenu> {
         self.lesson_menu.as_ref()
+    }
+
+    /// 本部の一覧の任意のレッスンメニューの絞り込み `lesson_menu_id` にこの動画が入るか。指定があれば送った時点の
+    /// メニューの写し（[`Self::lesson_menu`]）の ID がそれと同じときだけ、なければどの動画も入る。メニューを選ばずに
+    /// 送った動画・ないメニューの ID は入らない（一覧は空になる。予約の [`crate::scheduling::Booking::matches_lesson_menu`]
+    /// と同じ扱い）。送った後にメニューが直されても、写しの ID で決める。
+    pub fn matches_lesson_menu(&self, lesson_menu_id: Option<LessonMenuId>) -> bool {
+        lesson_menu_id.is_none_or(|id| {
+            self.lesson_menu
+                .as_ref()
+                .is_some_and(|menu| menu.id() == id)
+        })
     }
 }
 
@@ -417,6 +436,39 @@ mod tests {
             .return_review(REVIEW, COACH, comment(), true, at(1))
             .unwrap();
         assert_eq!(video.lesson_menu(), Some(&copy));
+    }
+
+    #[test]
+    fn matches_lesson_menu_by_the_id_of_the_copy_taken_when_sent() {
+        let copy = |id: u128, name: &str| {
+            VideoLessonMenu::restore(
+                LessonMenuId::from_u128(id),
+                crate::catalog::LessonMenuName::new(name).unwrap(),
+            )
+        };
+        let with_menu = |menu: Option<VideoLessonMenu>| {
+            Video::restore(VIDEO, STUDENT, COACH, Sport::Tennis, NOW, None, menu).unwrap()
+        };
+        let form = with_menu(Some(copy(9, "フォーム添削")));
+        assert!(form.matches_lesson_menu(None), "指定がなければ入る");
+        assert!(form.matches_lesson_menu(Some(LessonMenuId::from_u128(9))));
+        assert!(!form.matches_lesson_menu(Some(LessonMenuId::from_u128(10))));
+        // 送った後にメニューの名前が直されても、写しの ID で決める
+        let renamed = with_menu(Some(copy(9, "スイング添削")));
+        assert!(renamed.matches_lesson_menu(Some(LessonMenuId::from_u128(9))));
+        // メニューを選ばずに送った動画は、指定があれば入らない
+        assert!(submitted().matches_lesson_menu(None));
+        assert!(!submitted().matches_lesson_menu(Some(LessonMenuId::from_u128(9))));
+    }
+
+    #[test]
+    fn a_video_awaits_its_review_until_the_review_is_returned() {
+        let mut video = submitted();
+        assert!(video.is_awaiting_review());
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(1))
+            .unwrap();
+        assert!(!video.is_awaiting_review(), "返却した動画は返却待ちでない");
     }
 
     #[test]

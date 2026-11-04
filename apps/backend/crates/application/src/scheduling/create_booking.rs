@@ -528,6 +528,13 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn find_many(
+            &self,
+            _booking_ids: &std::collections::BTreeSet<BookingId>,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn find_coach_acceptance(
             &self,
             _coach_id: AccountId,
@@ -592,9 +599,26 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn bookings_of_students_created_since(
+            &self,
+            _student_ids: &std::collections::BTreeSet<AccountId>,
+            _created_since: SystemTime,
+        ) -> Result<Vec<Booking>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn bookings_of_coach(
             &self,
             _coach_id: AccountId,
+        ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
+        async fn bookings_of_coach_starting_between(
+            &self,
+            _coach_id: AccountId,
+            _from: SystemTime,
+            _until: SystemTime,
         ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }

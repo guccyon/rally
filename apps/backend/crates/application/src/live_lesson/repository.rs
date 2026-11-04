@@ -35,11 +35,14 @@ pub trait LiveLessonSessionRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<LiveLessonSession>, Unavailable>> + Send;
 
     /// 終了の記録がなく、`started_at_or_before`（含む）までに開始したセッション（本部が見る、終わっていないまま時間の
-    /// 過ぎたセッションの一覧）。並びは問わない（選び方と並べ方は domain の
+    /// 過ぎたセッションの一覧）。`coach_id` があればそのコーチの、`student_id` があればその生徒の予約が結び付いた
+    /// （グループレッスンでは開始した予約の生徒に限らない）セッションだけ。並びは問わない（選び方と並べ方は domain の
     /// [`domain::live_lesson::OverdueSessionCriteria`]）。
     fn find_in_progress_started_at_or_before(
         &self,
         started_at_or_before: SystemTime,
+        coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> impl Future<Output = Result<Vec<LiveLessonSession>, Unavailable>> + Send;
 
     /// `starts_at`（含む）から `ends_at`（含まない）までに開始したセッション（終了の有無を問わない。本部が見る通話

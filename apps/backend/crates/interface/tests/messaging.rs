@@ -247,7 +247,13 @@ fn app() -> App {
             events.clone(),
             clock.clone(),
         ),
-        GetSlotSupply::new(bookings.clone(), clock.clone()),
+        GetSlotSupply::new(
+            bookings.clone(),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock.clone(),
+        ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(
@@ -261,6 +267,7 @@ fn app() -> App {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock.clone(),
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -268,6 +275,7 @@ fn app() -> App {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock.clone(),
         ),
         StartSubscription::new(
             entitlements.clone(),

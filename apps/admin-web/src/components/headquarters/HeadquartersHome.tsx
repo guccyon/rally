@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { NotImplemented, Section } from "@/components/Section";
+import { NotImplemented, Section } from "@/components/ui/Section";
 
 /** 本部の画面（読むだけ）。完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
 export function HeadquartersHome() {
@@ -74,6 +74,11 @@ export function HeadquartersHome() {
       <Section title="返した動画添削">
         <Link href="/headquarters/returned-video-reviews" className="text-primary underline">
           返した添削とかかった時間を見る
+        </Link>
+      </Section>
+      <Section title="返事のないメッセージ">
+        <Link href="/headquarters/unanswered-messages" className="text-primary underline">
+          返事の遅れているやり取りを見る
         </Link>
       </Section>
       <Section title="完了記録の一覧">

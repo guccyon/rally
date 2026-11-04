@@ -1,8 +1,10 @@
 //! `/video-reviews/returned`。admin-web の `GET /video-reviews/returned`（`listReturnedVideoReviews`。本部が横断で見る
 //! 返した動画添削の記録）。本部だけが呼べる。クエリの `from`・`to` は返却の日付（日本時間。`YYYY-MM-DD` でなければ 422）、
 //! `coach_id` があればそのコーチの動画だけ（UUID でなければ 422）、`sport` があればそのスポーツの動画だけ（`Sport` の値で
-//! なければ 422。値の読み方は `listPendingVideoReviews` と同じ [`admin_web_sport`]）。期間の規則・かかった時間の数え方・並べ方は domain の
-//! [`ReturnedVideoReviewFilter`]（期間の違反も 422 `validation_failed`）。
+//! なければ 422。値の読み方は `listPendingVideoReviews` と同じ [`admin_web_sport`]）、`student_id` があればその生徒が送った
+//! 動画だけ（UUID でなければ 422）、`lesson_menu_id` があれば送った時点のレッスンメニューがそのメニューの動画だけ
+//! （UUID でなければ 422。扱いは `listPendingVideoReviews` の `lesson_menu_id` と同じ）。期間の規則・かかった時間の
+//! 数え方・並べ方は domain の [`ReturnedVideoReviewFilter`]（期間の違反も 422 `validation_failed`）。
 
 use std::sync::Arc;
 
@@ -30,7 +32,7 @@ use crate::{
     auth::{TokenVerification, require_role},
     contract::{
         admin_web_sport, date_from_contract, date_time_to_contract, date_to_contract,
-        sport_to_contract,
+        lesson_menu_id_from_contract, sport_to_contract,
     },
     error::ApiError,
 };
@@ -47,6 +49,8 @@ pub struct ListReturnedVideoReviewsParams {
     to: Option<String>,
     coach_id: Option<String>,
     sport: Option<String>,
+    student_id: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `ReturnedVideoReviewList`。
@@ -86,6 +90,14 @@ where
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let optional_account_id = |field: &str, value: Option<&str>| {
+        value
+            .map(|id| {
+                account_id_uuid::parse(id)
+                    .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
+            })
+            .transpose()
+    };
     let query = ListReturnedVideoReviewsQuery {
         from: params
             .from
@@ -97,15 +109,14 @@ where
             .as_deref()
             .map(|value| date_from_contract("to", value))
             .transpose()?,
-        coach_id: params
-            .coach_id
-            .as_deref()
-            .map(|id| {
-                account_id_uuid::parse(id)
-                    .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
-            })
-            .transpose()?,
+        coach_id: optional_account_id("coach_id", params.coach_id.as_deref())?,
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        student_id: optional_account_id("student_id", params.student_id.as_deref())?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
+            .transpose()?,
     };
     let list = state
         .list_returned_video_reviews

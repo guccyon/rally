@@ -1,8 +1,8 @@
-use std::{future::Future, time::SystemTime};
+use std::{collections::BTreeMap, future::Future, time::SystemTime};
 
 use domain::{
     identity::AccountId,
-    notification::{Notification, NotificationId},
+    notification::{AnnouncementId, Notification, NotificationId},
 };
 
 use crate::Unavailable;
@@ -29,10 +29,12 @@ pub trait NotificationRepository: Send + Sync {
     ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
 
     /// `recipient` が受け取る本部からのお知らせのお知らせ（種類が [`domain::notification::NotificationKind::Announcement`]）を、
-    /// 作った時刻の新しい順（同じ時刻は後に残したものが先）に最大 `limit` 件。
+    /// 作った時刻の新しい順（同じ時刻は後に残したものが先）に最大 `limit` 件。`unread_only` なら未読のもの
+    /// （[`Notification::is_unread_as`] に入るもの）だけに絞ってから `limit` 件を数える。
     fn find_announcements_by_recipient(
         &self,
         recipient: AccountId,
+        unread_only: bool,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
 
@@ -43,4 +45,12 @@ pub trait NotificationRepository: Send + Sync {
         recipient: AccountId,
         at: SystemTime,
     ) -> impl Future<Output = Result<(), Unavailable>> + Send;
+
+    /// 本部からのお知らせごとの、生徒ごとのお知らせのうち既読のもの（[`Notification::is_read`]）の数。`read_until` の
+    /// キーが数えるお知らせで、値が数えに入れる既読の時刻の上限（その時刻ちょうどまでを含む。`None` なら上限なし。決めるのは
+    /// [`domain::notification::Announcement::reads_counted_until`]）。数えるものがない ID は結果に入れない（0 件）。
+    fn count_read_by_announcement(
+        &self,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
+    ) -> impl Future<Output = Result<BTreeMap<AnnouncementId, u32>, Unavailable>> + Send;
 }

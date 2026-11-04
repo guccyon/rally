@@ -1,7 +1,10 @@
 //! `/announcements` の統合テスト。admin-web の `POST /announcements`（`sendAnnouncement`）と `GET /announcements`
 //! （`listAnnouncements`）と `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`）のレスポンスの形を
 //! admin-web の OpenAPI のスキーマで検査し、本部が生徒全員か、スポーツを絞った生徒にお知らせを送れること（生徒ごとに
-//! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること・対象の生徒がいなければ 404・
+//! お知らせを作り、受け取り設定に従ってプッシュ通知を送る）・送った記録を新しい順に読めること
+//! （1 件ごとに受け取った生徒のうち既読にした数。取り下げたものは取り下げた時刻まで）・送った日付（日本時間）の
+//! `from`・`to` で絞れること（日付でない・期間の規則違反は 422）・題の `q` で絞れること（期間と組み合わせられる。
+//! 長すぎる検索語は 422）・対象の生徒がいなければ 404・
 //! 題と本文とスポーツの規則違反は 422・送ったお知らせを取り下げられること（一覧で取り下げ済みと分かる。二度目は 409、
 //! ないものは 404）・コーチと生徒の 403・トークンなしの 401 を確かめる。
 
@@ -17,7 +20,9 @@ use application::{
         InMemoryNotificationRepository, InMemoryNotificationSettingsRepository,
         RecordingPushSender,
     },
-    notification::{ListAnnouncements, SendAnnouncement, WithdrawAnnouncement},
+    notification::{
+        ListAnnouncements, NotificationRepository, SendAnnouncement, WithdrawAnnouncement,
+    },
     profile::ProfileAnnouncementRecipientLookup,
 };
 use axum::{
@@ -126,8 +131,12 @@ impl App {
                 self.push.clone(),
                 FixedClock(now),
             ),
-            ListAnnouncements::new(self.announcements.clone()),
-            WithdrawAnnouncement::new(self.announcements.clone(), FixedClock(now)),
+            ListAnnouncements::new(self.announcements.clone(), self.notifications.clone()),
+            WithdrawAnnouncement::new(
+                self.announcements.clone(),
+                self.notifications.clone(),
+                FixedClock(now),
+            ),
             FakeTokens,
         )
     }
@@ -233,6 +242,7 @@ async fn headquarters_sends_to_every_student_and_respects_the_settings() {
             "body": "11/3 の 2:00〜4:00 は使えません。\nご不便をおかけします。",
             "sport": null,
             "recipient_count": 3,
+            "read_count": 0,
             "sent_at": "2026-11-01T00:10:00Z",
             "withdrawal": null
         }),
@@ -319,6 +329,350 @@ async fn headquarters_lists_what_was_sent_newest_first() {
         "新しい順。ほかの本部のアカウントが送った分も出す"
     );
     assert_eq!(app.announcements.all().len(), 2, "照会では何も変えない");
+}
+
+/// `token` で `GET /announcements?{query}` を呼び、レスポンスを admin-web の契約で検査する。
+async fn list(router: &Router, query: &str) -> (StatusCode, Value) {
+    call(
+        router,
+        "GET",
+        &format!("/announcements?{query}"),
+        "/announcements",
+        Some(HEADQUARTERS),
+        None,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn the_sent_date_in_japan_narrows_the_list() {
+    let app = App::new().await;
+    // 2026-11-01T00:10:00Z は日本時間の 11/1、2026-11-01T15:00:00Z は日本時間の 11/2 の始まり
+    let (_, nov1) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let (_, nov2) = send(
+        &app.router(at(15 * 60)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let router = app.router(at(16 * 60)).await;
+
+    for (query, expected) in [
+        ("", json!([nov2, nov1])),
+        ("from=2026-11-01&to=2026-11-01", json!([nov1])),
+        ("from=2026-11-01&to=2026-11-02", json!([nov2, nov1])),
+        ("from=2026-11-02", json!([nov2])),
+        ("to=2026-11-01", json!([nov1])),
+        ("from=2026-11-03", json!([])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_finds_sent_announcements_by_a_part_of_the_title() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に 2 件、11/2 に 1 件
+    let mut sent = Vec::new();
+    for (minute, title) in [
+        (10, "メンテナンスのお知らせ"),
+        (20, "App の更新"),
+        (15 * 60, "夜間メンテナンス 100%"),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(json!({ "title": title, "body": "本文" }))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let [maintenance, update, night] = <[Value; 3]>::try_from(sent).unwrap();
+    let router = app.router(at(16 * 60)).await;
+
+    let all = json!([night, update, maintenance]);
+    for (query, expected) in [
+        // 題に部分一致するものだけ。並べ方（新しい順）は変わらない
+        ("q=%E3%83%A1%E3%83%B3%E3%83%86", json!([night, maintenance])),
+        // 前後の空白（全角を含む）を除き、ASCII の英字は大文字・小文字を区別しない
+        ("q=+%E3%80%80APP+", json!([update])),
+        // % はワイルドカードでなく文字のまま
+        ("q=0%25", json!([night])),
+        // 本文では探さない
+        ("q=%E6%9C%AC%E6%96%87", json!([])),
+        // 期間と組み合わせられる（日本時間の 11/1 に送ったもののうち）
+        (
+            "from=2026-11-01&to=2026-11-01&q=%E3%83%A1%E3%83%B3%E3%83%86",
+            json!([maintenance]),
+        ),
+        ("to=2026-11-02&q=app", json!([update])),
+        // 付けない・空・空白だけなら絞り込まない
+        ("", all.clone()),
+        ("q=", all.clone()),
+        ("q=+%E3%80%80+", all.clone()),
+        // 前後の空白を除いて 50 文字までは受け付ける
+        (&format!("q=+{}+", "a".repeat(50)), json!([])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    let (status, body) = list(&router, &format!("q={}", "a".repeat(51))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    assert_eq!(body["message"], "お知らせの題の検索語は 50 文字まで");
+}
+
+#[tokio::test]
+async fn headquarters_narrows_sent_announcements_by_sport() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に生徒全員・テニス・水泳へ 1 件ずつ、11/2 にテニスへ 1 件
+    let mut sent = Vec::new();
+    for (minute, title, sport) in [
+        (10, "メンテナンスのお知らせ", None),
+        (20, "テニスの大会", Some("tennis")),
+        (30, "水泳の大会", Some("swimming")),
+        (15 * 60, "テニスの大会の結果", Some("tennis")),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(
+                json!({ "title": title, "body": "本文", "sport": sport }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let [everyone, tennis, swimming, tennis_result] = <[Value; 4]>::try_from(sent).unwrap();
+    let router = app.router(at(16 * 60)).await;
+
+    for (query, expected) in [
+        // そのスポーツの生徒に向けて送ったものだけ。生徒全員に送ったものは入らない。並べ方は変わらない
+        ("sport=tennis", json!([tennis_result, tennis])),
+        ("sport=swimming", json!([swimming])),
+        // 送ったものがなければ空の一覧
+        ("sport=golf", json!([])),
+        // 期間・題と組み合わせられる
+        (
+            "sport=tennis&from=2026-11-01&to=2026-11-01",
+            json!([tennis]),
+        ),
+        ("sport=tennis&q=%E7%B5%90%E6%9E%9C", json!([tennis_result])),
+        ("sport=swimming&q=%E3%83%86%E3%83%8B%E3%82%B9", json!([])),
+        // 付けなければ今までどおりすべて
+        ("", json!([tennis_result, swimming, tennis, everyone])),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    for query in ["sport=ski", "sport=", "sport=Tennis"] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_narrows_sent_announcements_by_withdrawn() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に生徒全員・テニスへ 1 件ずつ、11/2 にテニス・生徒全員へ 1 件ずつ。11/1 の生徒全員と 11/2 のテニスを取り下げる
+    let mut sent = Vec::new();
+    for (minute, title, sport) in [
+        (10, "メンテナンスのお知らせ", None),
+        (20, "テニスの大会", Some("tennis")),
+        (15 * 60, "テニスの大会の結果", Some("tennis")),
+        (15 * 60 + 10, "メンテナンスの終了", None),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(
+                json!({ "title": title, "body": "本文", "sport": sport }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let mut withdrawn = Vec::new();
+    for index in [0, 2] {
+        let id = sent[index]["announcement_id"].as_str().unwrap().to_owned();
+        let (status, body) =
+            withdraw(&app.router(at(16 * 60)).await, Some(HEADQUARTERS), &id).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        withdrawn.push(body);
+    }
+    let [everyone_withdrawn, tennis_result_withdrawn] = <[Value; 2]>::try_from(withdrawn).unwrap();
+    let [_, tennis, _, everyone] = <[Value; 4]>::try_from(sent).unwrap();
+    let router = app.router(at(17 * 60)).await;
+
+    for (query, expected) in [
+        // 取り下げたものだけ・取り下げていないものだけ。並べ方は変わらない
+        (
+            "withdrawn=true",
+            json!([tennis_result_withdrawn, everyone_withdrawn]),
+        ),
+        ("withdrawn=false", json!([everyone, tennis])),
+        // 期間・題・スポーツと組み合わせられる
+        (
+            "withdrawn=true&from=2026-11-01&to=2026-11-01",
+            json!([everyone_withdrawn]),
+        ),
+        (
+            "withdrawn=false&q=%E3%83%A1%E3%83%B3%E3%83%86%E3%83%8A%E3%83%B3%E3%82%B9",
+            json!([everyone]),
+        ),
+        (
+            "withdrawn=true&sport=tennis",
+            json!([tennis_result_withdrawn]),
+        ),
+        (
+            "withdrawn=false&sport=tennis&from=2026-11-02&to=2026-11-02",
+            json!([]),
+        ),
+        // 付けなければ今までどおりすべて
+        (
+            "",
+            json!([
+                everyone,
+                tennis_result_withdrawn,
+                tennis,
+                everyone_withdrawn
+            ]),
+        ),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    for query in ["withdrawn=yes", "withdrawn=", "withdrawn=1"] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn an_invalid_period_is_rejected() {
+    let app = App::new().await;
+    let router = app.router(at(0)).await;
+    for (query, message) in [
+        (
+            "from=2026-11-03&to=2026-11-02",
+            "to は from と同じ日か、それより後の日付にする",
+        ),
+        (
+            "from=2026-11-01&to=2026-12-02",
+            "from から to までは 31 日まで",
+        ),
+        ("from=2026/11/01", "from は YYYY-MM-DD の日付でない"),
+        ("to=", "to は YYYY-MM-DD の日付でない"),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], message, "{query}");
+    }
+    let (status, _) = list(&router, "from=2026-11-01&to=2026-12-01").await;
+    assert_eq!(status, StatusCode::OK, "31 日まではよい");
+}
+
+#[tokio::test]
+async fn the_list_counts_the_students_who_read_each_announcement() {
+    let app = App::new().await;
+    let (_, everyone) = send(
+        &app.router(at(10)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(maintenance())),
+    )
+    .await;
+    let (_, swimming) = send(
+        &app.router(at(20)).await,
+        "POST",
+        Some(HEADQUARTERS),
+        Some(Ok(
+            json!({ "title": "キャンペーン", "body": "水泳の生徒へ", "sport": "swimming" }),
+        )),
+    )
+    .await;
+    // 生徒 1 は全員へのお知らせだけを、生徒 2 は両方を読む（生徒 3 は読まない）
+    app.notifications
+        .mark_all_read(TENNIS_STUDENT, at(30))
+        .await
+        .unwrap();
+    app.notifications
+        .mark_all_read(SWIMMING_STUDENT, at(30))
+        .await
+        .unwrap();
+
+    let (status, body) = send(&app.router(at(40)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counts: Vec<_> = body["announcements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            (
+                a["announcement_id"].clone(),
+                a["recipient_count"].clone(),
+                a["read_count"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [
+            (swimming["announcement_id"].clone(), json!(1), json!(1)),
+            (everyone["announcement_id"].clone(), json!(3), json!(2)),
+        ],
+        "受け取った生徒のうち既読にした数"
+    );
+
+    // 取り下げても一覧に残り、既読にした数は取り下げた時刻までのもの
+    let id = everyone["announcement_id"].as_str().unwrap();
+    let (status, withdrawn) = withdraw(&app.router(at(50)).await, Some(HEADQUARTERS), id).await;
+    assert_eq!(status, StatusCode::OK, "{withdrawn}");
+    assert_eq!(withdrawn["read_count"], 2, "取り下げの応答にも載る");
+    app.notifications
+        .mark_all_read(QUIET_STUDENT, at(60))
+        .await
+        .unwrap();
+    let (_, listed) = send(&app.router(at(70)).await, "GET", Some(HEADQUARTERS), None).await;
+    assert_eq!(listed["announcements"][1]["announcement_id"], id);
+    assert_eq!(
+        listed["announcements"][1]["read_count"], 2,
+        "取り下げたあとに「すべて既読にする」を押した生徒は数えない"
+    );
+    assert_eq!(
+        app.notifications
+            .all()
+            .iter()
+            .filter(|n| n.recipient() == QUIET_STUDENT)
+            .map(|n| n.is_read())
+            .collect::<Vec<_>>(),
+        [true],
+        "既読そのものは変えない（D141）"
+    );
 }
 
 #[tokio::test]
