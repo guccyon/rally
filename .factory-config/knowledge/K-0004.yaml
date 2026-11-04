@@ -16,4 +16,4 @@ status: draft
 verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
-related: [K-0003]
+related: [K-0001, K-0003]
