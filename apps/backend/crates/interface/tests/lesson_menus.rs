@@ -609,6 +609,19 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
             vec!["フォームの添削", "フォア", "スイング"],
         ),
         ("?unbooked=true&published=true", vec!["フォア", "スイング"]),
+        // レッスンの種類で絞る。ほかの絞り込みと組み合わせられ、並べ方は変わらない
+        ("?lesson_type=live_lesson", vec!["フォア", "スイング"]),
+        ("?lesson_type=async_lesson", vec!["フォームの添削"]),
+        ("?lesson_type=live_lesson&sport=golf", vec!["スイング"]),
+        ("?lesson_type=async_lesson&published=true", vec![]),
+        (
+            &format!("?lesson_type=live_lesson&coach_id={OTHER_COACH_ID}"),
+            vec![],
+        ),
+        (
+            "?lesson_type=async_lesson&q=%E3%83%95%E3%82%A9&unbooked=true",
+            vec!["フォームの添削"],
+        ),
         // 前後の空白を除いて 40 文字までは受け付ける
         (&format!("?q=+{}+", "a".repeat(40)), vec![]),
     ] {
@@ -630,6 +643,9 @@ async fn headquarters_lists_menus_of_every_coach_by_sport_then_coach_name() {
         "?sport=cricket",
         "?published=yes",
         "?unbooked=yes",
+        "?lesson_type=video",
+        "?lesson_type=LIVE_LESSON",
+        "?lesson_type=",
         "?coach_id=not-a-uuid",
         too_long.as_str(),
     ] {

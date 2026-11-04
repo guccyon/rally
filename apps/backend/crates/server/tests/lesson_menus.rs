@@ -310,6 +310,15 @@ async fn headquarters_lists_only_menus_without_recent_bookings(pool: PgPool) {
         listed("?unbooked=true&sport=soccer").await,
         Vec::<(String, u64)>::new()
     );
+    // レッスンの種類（どちらも同期）と組み合わせられる
+    assert_eq!(
+        listed("?unbooked=true&lesson_type=live_lesson").await,
+        [("バック改善".to_string(), 0)]
+    );
+    assert_eq!(
+        listed("?lesson_type=async_lesson").await,
+        Vec::<(String, u64)>::new()
+    );
 
     // 30 日前ちょうどまでは数える。それより前になれば数えず、載る
     clock.set(at(30 * 24 * 3600 + 1));

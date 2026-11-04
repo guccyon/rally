@@ -1095,19 +1095,23 @@ export interface paths {
          *     - 絞り込み（任意）: `sport` を付ければそのスポーツのメニューだけ、`published` を付ければ公開中（`true`）か
          *       非公開（`false`）のメニューだけ、`coach_id` を付ければそのコーチのメニューだけ（公開中も非公開もまとめて。コーチ 1 人が
          *       出しているメニューを見るのに使う）。いくつ付けてもすべてを満たすもの。付けなければすべて（ゴルフも含む）
+         *     - レッスンの種類（任意）: `lesson_type` を付ければ、その種類（`LessonType` の値。同期 `live_lesson` / 非同期 `async_lesson`）の
+         *       メニューだけを返す（ライブレッスンと動画添削など、種類ごとに本部がメニューを見直すのに使う）。比べるのは各行の `lesson_type`
+         *       と同じ今のメニューの種類。`q`・`sport`・`published`・`coach_id`・`unbooked` と組み合わせられ、並べ方は下と同じ。付けないときは絞らない
          *     - 名前で探す（任意）: `q` を付ければ、メニューの名前 `name` に `q` を部分文字列として含むメニューだけを返す（問い合わせのあった
          *       メニューを本部が探すのに使う）。一致のしかたは `listStudents` の `q` と同じ: `q` の前後の空白（全角の空白を含む）は除いて
          *       比べ、途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・
          *       ひらがなとカタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。
-         *       `q` を付けない・空・空白だけのときは絞り込まない。`sport`・`published`・`coach_id` と組み合わせられ、並べ方は下と同じ。
+         *       `q` を付けない・空・空白だけのときは絞り込まない。`sport`・`lesson_type`・`published`・`coach_id` と組み合わせられ、並べ方は下と同じ。
          *       名前以外（説明・コーチの表示名など）では探さない
          *     - `q` は前後の空白を除いて 40 文字（Unicode のコードポイントの数。メニューの名前の上限と同じ。`listStudents` の `q` が
          *       表示名の上限までなのと同じ決め方）まで。超えたら 422 `validation_failed`
          *     - 直近に予約のないメニュー（任意）: `unbooked` が `true` なら、`recent_booking_count` が 0 の（直近 30 日に予約のない）
          *       メニューだけを返す（選ばれていないメニューを本部が見直すのに使う）。数え方と期間は `recent_booking_count` と同じ（実装は
          *       backend の domain `RecentLessonMenuBookings` の 1 か所で、判定は `UnbookedLessonMenuFilter`）。`q`・`sport`・`published`・
-         *       `coach_id` と組み合わせられ、並べ方は下と同じ。付けないとき・`false` のときは絞らない
-         *     - `sport` が `Sport` の値でない・`published` や `unbooked` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
+         *       `coach_id`・`lesson_type` と組み合わせられ、並べ方は下と同じ。付けないとき・`false` のときは絞らない
+         *     - `sport` が `Sport` の値でない・`lesson_type` が `LessonType` の値でない（大文字・小文字も区別し、空の値も含む。`listCoaches` の
+         *       `acceptance_status` と同じ）・`published` や `unbooked` が `true` / `false` でない・`coach_id` が UUID でないときは 422 `validation_failed`
          *     - コーチでない ID・ない ID・メニューのないコーチの `coach_id` は、404 にせず `lesson_menus` が空の配列
          *     - 並べ方: スポーツの順（`Sport` の enum の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。言語ごとの照合はしない。
          *       同じ表示名は `coach_id` の順）→ 作った時刻 `created_at` の古い順 → `lesson_menu_id` の順
@@ -4577,6 +4581,8 @@ export interface operations {
                 /** @description メニューの名前の検索語。名前に部分一致するメニューだけを返す。前後の空白を除いて 40 文字まで（空白だけなら絞り込まない） */
                 q?: string;
                 sport?: components["schemas"]["Sport"];
+                /** @description レッスンの種類（付ければその種類のメニューだけ。`LessonMenu` の `lesson_type` と同じ値） */
+                lesson_type?: components["schemas"]["LessonType"];
                 /** @description 公開中か（`true` なら公開中だけ、`false` なら非公開だけ） */
                 published?: boolean;
                 /**

@@ -1,6 +1,6 @@
 //! `PgLessonMenuRepository`（`catalog.lesson_menus`）の検証。コーチのアカウントを `PgAccountRepository` で読んで
 //! メニューを作り・直し・読み戻せること、公開中の一覧とスポーツの絞り込み、他のコーチのメニューを直せないこと、
-//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（名前・スポーツ・公開中か・コーチ）と並べ方。
+//! 本部が見る横断の一覧（`ListLessonMenus`。コーチの表示名は `ProfileCoachDisplayNameLookup` で読む）の絞り込み（名前・スポーツ・レッスンの種類・公開中か・コーチ）と並べ方。
 //! 本部による非公開（`UnpublishLessonMenu`。時刻と理由を残す）と公開に戻す操作（`RepublishLessonMenu`）、そのあいだコーチが
 //! 公開し直せないこと。非公開にした・公開に戻した記録（`catalog.lesson_menu_publication_changes`）を誰が・いつ・理由とともに
 //! メニューと同じトランザクションで残し、新しい順に読めること（`ListLessonMenuPublicationChanges`）と、並行な非公開は 1 つだけ通ること。
@@ -45,6 +45,7 @@ fn query(
     ListLessonMenusQuery {
         name: None,
         sport,
+        lesson_type: None,
         is_published,
         coach_id,
         unbooked: false,
@@ -282,7 +283,7 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
             .await
             .unwrap()
             .lesson_menus,
-        vec![tanaka_soccer]
+        vec![tanaka_soccer.clone()]
     );
     assert_eq!(
         use_case
@@ -303,6 +304,51 @@ async fn lists_menus_of_every_coach_by_sport_then_coach_name(pool: PgPool) {
     assert!(
         use_case
             .execute(&query(Some(Sport::Swimming), None, None))
+            .await
+            .unwrap()
+            .lesson_menus
+            .is_empty()
+    );
+
+    // レッスンの種類で絞る（保存した lesson_type を読み戻して比べる）。sport・published・coach_id と組み合わせられ、
+    // 並べ方は変わらない
+    let of_type = |lesson_type: LessonType, base: ListLessonMenusQuery| ListLessonMenusQuery {
+        lesson_type: Some(lesson_type),
+        ..base
+    };
+    assert_eq!(
+        use_case
+            .execute(&of_type(LessonType::Live, query(None, None, None)))
+            .await
+            .unwrap()
+            .lesson_menus,
+        vec![ito_earlier.clone(), tanaka_tennis.clone()]
+    );
+    assert_eq!(
+        use_case
+            .execute(&of_type(LessonType::Async, query(None, None, None)))
+            .await
+            .unwrap()
+            .lesson_menus,
+        vec![ito_later.clone(), tanaka_soccer.clone()]
+    );
+    assert_eq!(
+        use_case
+            .execute(&of_type(
+                LessonType::Async,
+                query(Some(Sport::Tennis), Some(false), Some(ito)),
+            ))
+            .await
+            .unwrap()
+            .lesson_menus,
+        vec![ito_later.clone()]
+    );
+    assert!(
+        use_case
+            .execute(&of_type(
+                LessonType::Live,
+                query(Some(Sport::Soccer), None, Some(tanaka)),
+            ))
             .await
             .unwrap()
             .lesson_menus
