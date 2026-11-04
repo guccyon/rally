@@ -239,6 +239,8 @@ mod tests {
     const SECOND_SESSION: SessionId = SessionId::from_u128(31);
     /// 生徒 1 の終了していない通話セッション
     const OPEN_SESSION: SessionId = SessionId::from_u128(32);
+    /// 生徒 1 の、本部が終わらせた通話セッション（D188）
+    const HEADQUARTERS_ENDED_SESSION: SessionId = SessionId::from_u128(33);
     /// 生徒 1 の添削を返した動画
     const REVIEWED_VIDEO: VideoId = VideoId::from_u128(40);
     /// 生徒 1 の添削をまだ返していない動画
@@ -288,6 +290,15 @@ mod tests {
         session
     }
 
+    /// 開始の 1 時間後に本部（アカウント 9）が終わらせたセッション。
+    fn headquarters_ended_session() -> LiveLessonSession {
+        let mut session = session(HEADQUARTERS_ENDED_SESSION, 13, false);
+        session
+            .end_by_headquarters(AccountId::from_u128(9), start() + Duration::from_secs(3600))
+            .unwrap();
+        session
+    }
+
     fn video(id: VideoId, student: AccountId, reviewed: bool) -> Video {
         let mut video = Video::submit(id, student, COACH, Sport::Tennis, start());
         if reviewed {
@@ -310,6 +321,7 @@ mod tests {
                 session(ENDED_SESSION, 10, true),
                 session(SECOND_SESSION, 11, true),
                 session(OPEN_SESSION, 12, false),
+                headquarters_ended_session(),
             ]),
             InMemoryVideoRepository::with_videos([
                 video(REVIEWED_VIDEO, STUDENT, true),
@@ -457,6 +469,15 @@ mod tests {
             (
                 command(STUDENT, LessonSource::Live(OPEN_SESSION)),
                 DomainError::LiveLessonSessionNotEnded,
+            ),
+            // 本部の終了は完了として数えない（生徒もコーチも記録できない）
+            (
+                command(STUDENT, LessonSource::Live(HEADQUARTERS_ENDED_SESSION)),
+                DomainError::LiveLessonSessionEndedByHeadquarters,
+            ),
+            (
+                command(COACH, LessonSource::Live(HEADQUARTERS_ENDED_SESSION)),
+                DomainError::LiveLessonSessionEndedByHeadquarters,
             ),
             (
                 command(OTHER_STUDENT, LessonSource::Async(REVIEWED_VIDEO)),

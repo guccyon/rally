@@ -105,6 +105,9 @@ function apiOf(
   };
 }
 
+// 表の下の、直近 30 日の予約の数え方の注記。
+const NOTE = "この 30 日間に入った予約（キャンセルされていないもの）の数です。";
+
 function cellsOf(row: HTMLElement) {
   return within(row).getAllByRole("cell").map((cell) => cell.textContent);
 }
@@ -117,16 +120,53 @@ describe("本部のレッスンメニュー", () => {
     const table = await screen.findByRole("table", { name: "レッスンメニューの一覧" });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map(cellsOf)).toEqual([
-      ["テニス", "山田コーチ", "フォアハンドの基礎", "同期（ビデオ通話）", "60 分", "公開中", "非公開にする記録"],
+      ["テニス", "山田コーチ", "フォアハンドの基礎", "同期（ビデオ通話）", "60 分", "4 件", "公開中", "非公開にする記録"],
       // コーチが自分で非公開にしたものも本部が非公開にできる
-      ["テニス", "佐藤コーチ", "サーブのフォーム添削", "非同期（動画の添削）", "—", "非公開", "非公開にする記録"],
+      ["テニス", "佐藤コーチ", "サーブのフォーム添削", "非同期（動画の添削）", "—", "0 件", "非公開", "非公開にする記録"],
       // コーチのアカウントが引けない行は表示名がない
-      ["水泳", "（名前を表示できません）", "クロールの息継ぎ", "同期（ビデオ通話）", "45 分", "公開中", "非公開にする記録"],
+      ["水泳", "（名前を表示できません）", "クロールの息継ぎ", "同期（ビデオ通話）", "45 分", "1 件", "公開中", "非公開にする記録"],
     ]);
     expect(listLessonMenus).toHaveBeenCalledTimes(1);
     expect(listLessonMenus).toHaveBeenCalledWith({});
     expect(screen.getByLabelText("スポーツ")).toHaveValue("");
     expect(screen.getByLabelText("公開中だけ")).not.toBeChecked();
+  });
+
+  test("直近 30 日の予約の数を「N 件」で右寄せ・等幅の数字で出し、「公開」の列との間をあけ、表の下に数え方を書く", async () => {
+    const menus = [{ ...MENUS[0]!, recent_booking_count: 128 }, MENUS[1]!];
+    render(<LessonMenuCatalog api={apiOf(listOf(menus))} />);
+
+    const table = await screen.findByRole("table", { name: "レッスンメニューの一覧" });
+    const header = within(table).getByRole("columnheader", { name: "直近 30 日の予約" });
+    expect(header).toHaveClass("text-right", "pr-4");
+    const counts = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[5]!);
+    expect(counts.map((cell) => cell.textContent)).toEqual(["128 件", "0 件"]);
+    for (const cell of counts) expect(cell).toHaveClass("text-right", "tabular-nums", "pr-4");
+    // 注記は契約の listLessonMenus の数え方（30 日の間に作られ、今キャンセルされていない予約）と同じことを言う。
+    const note = screen.getByText(NOTE);
+    expect(note).toHaveClass("text-xs", "text-text-muted");
+    // 表の下に 1 行だけ出す
+    expect(table.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(NOTE)).toHaveLength(1);
+  });
+
+  test("読み込んでいる間は「読み込み中…」を出し、表と予約の数の説明は出さない", async () => {
+    let resolve: (value: Awaited<ReturnType<HeadquartersApi["listLessonMenus"]>>) => void = () => {};
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(
+      () => new Promise((done) => (resolve = done)),
+    );
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+
+    expect(await screen.findByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+
+    resolve({ ok: true, data: { lesson_menus: MENUS } });
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
   });
 
   test("各行の操作の列に、そのメニューの公開の記録の画面への「記録」を置く", async () => {
@@ -138,6 +178,22 @@ describe("本部のレッスンメニュー", () => {
       "/headquarters/lesson-menus/history?lesson_menu_id=aaaaaaaa-0000-4000-8000-000000000001",
     );
     expect(screen.getAllByRole("link", { name: /の公開の記録を見る$/ })).toHaveLength(MENUS.length);
+  });
+
+  test("直近 30 日の予約の数から、そのメニューで絞った予約の一覧へ移れる（0 件の行も）", async () => {
+    render(<LessonMenuCatalog api={apiOf(listOf(MENUS))} />);
+
+    await screen.findByRole("table", { name: "レッスンメニューの一覧" });
+    const link = screen.getByRole("link", { name: "「フォアハンドの基礎」の予約を見る" });
+    expect(link).toHaveTextContent("4 件");
+    expect(link).toHaveAttribute(
+      "href",
+      "/headquarters/bookings?lesson_menu_id=aaaaaaaa-0000-4000-8000-000000000001",
+    );
+    // 既存のリンクと同じ見た目
+    expect(link).toHaveClass("text-primary", "underline");
+    expect(screen.getByRole("link", { name: "「サーブのフォーム添削」の予約を見る" })).toHaveTextContent("0 件");
+    expect(screen.getAllByRole("link", { name: /の予約を見る$/ })).toHaveLength(MENUS.length);
   });
 
   test("スポーツは「すべて」と 6 種類から選べる", async () => {
@@ -208,6 +264,7 @@ describe("本部のレッスンメニュー", () => {
 
     expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
     // 絞り込みは 0 件でも変えられる
     expect(screen.getByLabelText("スポーツ")).toBeEnabled();
   });
@@ -222,6 +279,121 @@ describe("本部のレッスンメニュー", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText("条件に合うメニューはありません")).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+  });
+});
+
+describe("本部のレッスンメニューを直近 30 日に予約のないメニューだけに絞る", () => {
+  test("入れたら API の unbooked=true を付けて読み直し、外したら付けずに読み直す", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: [MENUS[1]!] } })
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } });
+    const onQueryChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} onQueryChange={onQueryChange} />);
+    await screen.findByRole("table");
+    expect(listLessonMenus).toHaveBeenLastCalledWith({});
+
+    const toggle = screen.getByLabelText("直近 30 日に予約のないメニューだけ");
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({ unbooked: true });
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole("row", { name: /サーブのフォーム添削/ })).toBeInTheDocument();
+    // URL に残すのはコーチと名前の検索語だけ
+    expect(onQueryChange).toHaveBeenLastCalledWith({ coachId: "", q: "" });
+
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(4));
+    expect(listLessonMenus).toHaveBeenLastCalledWith({});
+    expect(listLessonMenus).toHaveBeenCalledTimes(3);
+  });
+
+  test("名前・スポーツ・公開中だけ・コーチと組み合わせられ、ほかを変えても入れたまま残る", async () => {
+    const listLessonMenus = listOf([MENUS[1]!]);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} initialCoachId={COACH_B} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ coach_id: COACH_B, unbooked: true }),
+    );
+
+    await user.type(screen.getByLabelText("名前で探す"), "サーブ{Enter}");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        sport: "tennis",
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    await user.click(screen.getByLabelText("公開中だけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({
+        q: "サーブ",
+        sport: "tennis",
+        published: true,
+        coach_id: COACH_B,
+        unbooked: true,
+      }),
+    );
+    expect(screen.getByLabelText("直近 30 日に予約のないメニューだけ")).toBeChecked();
+  });
+
+  test("入力中の語は、切り替えたときに一緒に確定する。40 文字を超えていれば理由を出して条件を変えない", async () => {
+    const listLessonMenus = listOf(MENUS);
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.type(screen.getByLabelText("名前で探す"), " 基礎 ");
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    await waitFor(() =>
+      expect(listLessonMenus).toHaveBeenLastCalledWith({ q: "基礎", unbooked: true }),
+    );
+
+    await user.clear(screen.getByLabelText("名前で探す"));
+    await user.type(screen.getByLabelText("名前で探す"), "あ".repeat(41));
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText(/名前の検索語は 40 文字までにしてください/)).toBeInTheDocument();
+    expect(listLessonMenus).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("直近 30 日に予約のないメニューだけ")).toBeChecked();
+  });
+
+  test("0 件なら絞り込みの条件が分かる文言を出し、表は出さない", async () => {
+    const listLessonMenus = vi
+      .fn<HeadquartersApi["listLessonMenus"]>()
+      .mockResolvedValueOnce({ ok: true, data: { lesson_menus: MENUS } })
+      .mockResolvedValue({ ok: true, data: { lesson_menus: [] } });
+    const user = userEvent.setup();
+    render(<LessonMenuCatalog api={apiOf(listLessonMenus)} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText("直近 30 日に予約のないメニューはありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "水泳");
+    expect(
+      await screen.findByText("直近 30 日に予約のないメニューのうち、条件に合うメニューはありません"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("直近 30 日に予約のないメニューだけ"));
+    expect(await screen.findByText("条件に合うメニューはありません")).toBeInTheDocument();
   });
 });
 
@@ -249,7 +421,7 @@ describe("本部のレッスンメニューをコーチで絞る", () => {
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
     expect(listLessonMenus).toHaveBeenLastCalledWith({ coach_id: COACH_B });
     // 公開中も非公開もまとめて出る（非公開の行も残す）
-    expect(cellsOf(rowOf("サーブのフォーム添削"))[5]).toBe("非公開");
+    expect(cellsOf(rowOf("サーブのフォーム添削"))[6]).toBe("非公開");
 
     // ほかの絞り込みと重ねられる。0 件なら表を出さない
     await user.click(screen.getByLabelText("公開中だけ"));
@@ -593,10 +765,10 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
 
     const row = await screen.findByRole("row", { name: /ボレーの基礎/ });
     const cells = cellsOf(row);
-    expect(cells[5]).toContain("非公開（本部）");
-    expect(cells[5]).toContain("理由: 料金の表記が誤っている");
-    expect(cells[5]).toContain("2026");
-    expect(cells[6]).toBe("公開に戻す記録");
+    expect(cells[6]).toContain("非公開（本部）");
+    expect(cells[6]).toContain("理由: 料金の表記が誤っている");
+    expect(cells[6]).toContain("2026");
+    expect(cells[7]).toBe("公開に戻す記録");
   });
 
   test("理由が空なら日時だけを出す", async () => {
@@ -607,7 +779,7 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
     render(<LessonMenuCatalog api={apiOf(listOf([menu]))} />);
 
     const row = await screen.findByRole("row", { name: /ボレーの基礎/ });
-    expect(cellsOf(row)[5]).not.toContain("理由");
+    expect(cellsOf(row)[6]).not.toContain("理由");
   });
 
   test("「非公開にする」は行の中で確かめ、理由を付けて確定すると送り、送っている間は押せず、結果を行に反映する", async () => {
@@ -648,9 +820,9 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
     const cells = cellsOf(rowOf("フォアハンドの基礎"));
     // 表示名は応答（LessonMenu）にないので、一覧の行のものを残す
     expect(cells[1]).toBe("山田コーチ");
-    expect(cells[5]).toContain("非公開（本部）");
-    expect(cells[5]).toContain("理由: 誤った内容");
-    expect(cells[6]).toBe("公開に戻す記録");
+    expect(cells[6]).toContain("非公開（本部）");
+    expect(cells[6]).toContain("理由: 誤った内容");
+    expect(cells[7]).toBe("公開に戻す記録");
     // 一覧は取り直さない
     expect(listLessonMenus).toHaveBeenCalledTimes(1);
   });
@@ -671,7 +843,7 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
     await user.click(screen.getByRole("button", { name: "非公開を確定" }));
 
     expect(unpublishLessonMenu).toHaveBeenCalledWith(MENUS[1]!.lesson_menu_id, {});
-    await waitFor(() => expect(cellsOf(rowOf("サーブのフォーム添削"))[5]).toContain("非公開（本部）"));
+    await waitFor(() => expect(cellsOf(rowOf("サーブのフォーム添削"))[6]).toContain("非公開（本部）"));
   });
 
   test("「やめる」で送らずに戻り、書いた理由は残さない", async () => {
@@ -729,8 +901,8 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
     expect(republishLessonMenu).toHaveBeenCalledWith(HQ_UNPUBLISHED.lesson_menu_id);
     expect(await screen.findByRole("status")).toHaveTextContent("「ボレーの基礎」を公開に戻しました。");
     const cells = cellsOf(rowOf("ボレーの基礎"));
-    expect(cells[5]).toBe("公開中");
-    expect(cells[6]).toBe("非公開にする記録");
+    expect(cells[6]).toBe("公開中");
+    expect(cells[7]).toBe("非公開にする記録");
   });
 
   test("断られたら（409 など）ErrorCode の文言を出し、今の絞り込みで一覧を取り直す", async () => {
@@ -770,7 +942,7 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
     expect(listLessonMenus).toHaveBeenCalledTimes(3);
     expect(listLessonMenus).toHaveBeenLastCalledWith({ sport: "tennis" });
-    expect(cellsOf(rowOf("フォアハンドの基礎"))[6]).toBe("公開に戻す記録");
+    expect(cellsOf(rowOf("フォアハンドの基礎"))[7]).toBe("公開に戻す記録");
     // 文言は取り直した後も残す
     expect(screen.getByRole("alert")).toBeInTheDocument();
   });
@@ -790,7 +962,7 @@ describe("本部がレッスンメニューを非公開にする・公開に戻�
 
     expect(await screen.findByRole("alert")).toHaveTextContent("サーバーに接続できません。");
     expect(listLessonMenus).toHaveBeenCalledTimes(1);
-    expect(cellsOf(rowOf("ボレーの基礎"))[6]).toBe("公開に戻す記録");
+    expect(cellsOf(rowOf("ボレーの基礎"))[7]).toBe("公開に戻す記録");
   });
 
   test("絞り込みを変えたら前の操作の文言を消す", async () => {

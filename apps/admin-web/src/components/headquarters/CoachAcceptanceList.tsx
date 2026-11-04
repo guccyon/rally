@@ -22,11 +22,58 @@ type State =
   | { kind: "loaded"; coaches: Coach[] }
   | { kind: "failed"; message: string };
 
-/** 絞り込みの条件。空なら絞らない。`q` は表示名の検索語（前後の空白を除いた値）。 */
-export type CoachAcceptanceFilter = { acceptanceStatus: AcceptanceStatus | ""; sport: Sport | ""; q: string };
+/**
+ * 絞り込みの条件。空なら絞らない。`q` は表示名の検索語（前後の空白を除いた値）。
+ * `inactive` が true なら直近 30 日にレッスンのないコーチだけ（契約の `inactive`。false なら絞らない）。
+ * `hasUnhandledLowRated` が true なら未対応の低い評価のあるコーチだけ（契約の `has_unhandled_low_rated`。false なら絞らない）。
+ * `hasUnanswered` が true なら返事のないメッセージのあるコーチだけ（契約の `has_unanswered`。false なら絞らない）。
+ */
+export type CoachAcceptanceFilter = {
+  acceptanceStatus: AcceptanceStatus | "";
+  sport: Sport | "";
+  q: string;
+  inactive: boolean;
+  hasUnhandledLowRated: boolean;
+  hasUnanswered: boolean;
+};
 type Filter = CoachAcceptanceFilter;
 
-const NO_FILTER: Filter = { acceptanceStatus: "", sport: "", q: "" };
+const NO_FILTER: Filter = {
+  acceptanceStatus: "",
+  sport: "",
+  q: "",
+  inactive: false,
+  hasUnhandledLowRated: false,
+  hasUnanswered: false,
+};
+
+/** 切り替えの条件の言い方。途中に並べるときは「…がなく」「…があり」、最後は「…のない」「…のある」でコーチにかける。 */
+const TOGGLE_PHRASES: readonly { key: "inactive" | "hasUnhandledLowRated" | "hasUnanswered"; joined: string; last: string }[] = [
+  { key: "inactive", joined: "直近 30 日にレッスンがなく", last: "直近 30 日にレッスンのない" },
+  { key: "hasUnhandledLowRated", joined: "未対応の低い評価があり", last: "未対応の低い評価のある" },
+  { key: "hasUnanswered", joined: "返事のないメッセージがあり", last: "返事のないメッセージのある" },
+];
+
+/** 切り替えで絞っているときの、0 件の文言の主語（どれも外していれば null）。 */
+function toggledSubject(filter: Filter): string | null {
+  const phrases = TOGGLE_PHRASES.filter(({ key }) => filter[key]);
+  const last = phrases.at(-1);
+  if (last === undefined) return null;
+  return [...phrases.slice(0, -1).map(({ joined }) => joined), `${last.last}コーチ`].join("、");
+}
+
+/**
+ * 0 件のときの文言。直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけに
+ * 絞っているときは、その条件を文言に含める。
+ */
+function emptyMessage(filter: Filter): string {
+  const others = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
+  const subject = toggledSubject(filter);
+  if (subject !== null) {
+    return others ? `${subject}のうち、条件に合うコーチはいません` : `${subject}はいません`;
+  }
+  return others ? "条件に合うコーチはいません" : "コーチがまだいません";
+}
 
 /** 契約の `listCoaches` の `q` の上限（前後の空白を除いた Unicode のコードポイントの数。表示名の上限と同じ）。 */
 const QUERY_MAX_LENGTH = 50;
@@ -42,10 +89,15 @@ export function coachNameQuery(input: string): { ok: true; q: string } | { ok: f
 /**
  * サーバーの 422 は ErrorCode の汎用の文言しか出せないので、契約の 422 の条件（検索語の長さ）を添えて直す場所を伝える。
  * 検索欄からは送る前に確かめているので、ふつうは URL のクエリに長い `q` を書いて開いたときだけここに来る。
+ * 自己紹介の足りないコーチの一覧（`listIncompleteCoachProfiles` の `q` も同じ上限）でも使う。
  */
-function failureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
+export function coachNameQueryFailureMessage(response: Extract<Result<unknown>, { ok: false }>): string {
   return response.code === "validation_failed" ? `${response.message}${QUERY_TOO_LONG}` : response.message;
 }
+
+/** 「直近 30 日のレッスン」の数え方（契約の `listCoaches` の `recent_lesson_count` の説明を短くしたもの）。 */
+const RECENT_LESSON_COUNT_NOTE =
+  "直近 30 日のレッスンは、今日までの 30 日に完了した通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
 
 /** 絞り込みの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
@@ -54,13 +106,17 @@ export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
 /**
- * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態を出す。
+ * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態と直近 30 日のレッスンの数
+ * （`recent_lesson_count`。数え方は契約が正本で、画面は返った値を「n 回」で出すだけ。0 も「0 回」）を出す。
  * 受付中の行は「受付を止める」（suspendCoach。確かめるときに書いた理由（任意）を付ける）、停止中の行は「再開する」
  * （resumeCoach。理由は付けない）を行の中で確かめてから送り、
  * 応答の状態を行に入れる。並びは契約の正本どおり返った順（表示名の順）のまま出す。表示名からそのコーチの様子へ移る。
  * 一覧の上の絞り込み（受付の状態・スポーツ）は API の `acceptance_status` / `sport` に渡して読み直す。
+ * 「直近 30 日にレッスンのないコーチだけ」を入れたら `inactive=true` を付けて読み直し、外したら付けずに読み直す。
+ * 「未対応の低い評価のあるコーチだけ」も同じく、入れたら `has_unhandled_low_rated=true` を付けて読み直し、外したら付けずに読み直す。
+ * 「返事のないメッセージのあるコーチだけ」も同じく、入れたら `has_unanswered=true` を付けて読み直し、外したら付けずに読み直す。
  * 表示名の検索欄は「探す」（または Enter）で確定し、前後の空白を除いた語を `q` に渡して読み直す（空なら絞らない）。
- * 上限を超える語は送らずに理由を出す。受付の状態・スポーツを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * 上限を超える語は送らずに理由を出す。受付の状態・スポーツ・直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
  * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
@@ -89,10 +145,13 @@ export function CoachAcceptanceList({
         ...(next.acceptanceStatus === "" ? {} : { acceptance_status: next.acceptanceStatus }),
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.q === "" ? {} : { q: next.q }),
+        ...(next.inactive ? { inactive: true } : {}),
+        ...(next.hasUnhandledLowRated ? { has_unhandled_low_rated: true } : {}),
+        ...(next.hasUnanswered ? { has_unanswered: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
-        : { kind: "failed", message: failureMessage(response) };
+        : { kind: "failed", message: coachNameQueryFailureMessage(response) };
     },
     [api],
   );
@@ -108,17 +167,39 @@ export function CoachAcceptanceList({
   );
 
   // 開いたときの読み込み（渡された条件）。初期の状態が loading なので、ここでは結果だけを入れる。
-  const { acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ } = initialFilter;
+  const {
+    acceptanceStatus: initialAcceptanceStatus,
+    sport: initialSport,
+    q: initialQ,
+    inactive: initialInactive,
+    hasUnhandledLowRated: initialHasUnhandledLowRated,
+    hasUnanswered: initialHasUnanswered,
+  } = initialFilter;
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchCoaches({ acceptanceStatus: initialAcceptanceStatus, sport: initialSport, q: initialQ }).then((next) => {
+    void fetchCoaches({
+      acceptanceStatus: initialAcceptanceStatus,
+      sport: initialSport,
+      q: initialQ,
+      inactive: initialInactive,
+      hasUnhandledLowRated: initialHasUnhandledLowRated,
+      hasUnanswered: initialHasUnanswered,
+    }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetchCoaches, initialAcceptanceStatus, initialSport, initialQ]);
+  }, [
+    fetchCoaches,
+    initialAcceptanceStatus,
+    initialSport,
+    initialQ,
+    initialInactive,
+    initialHasUnhandledLowRated,
+    initialHasUnanswered,
+  ]);
 
   async function changeFilter(next: Filter) {
     setFilter(next);
@@ -130,7 +211,9 @@ export function CoachAcceptanceList({
   }
 
   // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
-  async function commitFilter(change: Partial<Pick<Filter, "acceptanceStatus" | "sport">>) {
+  async function commitFilter(
+    change: Partial<Pick<Filter, "acceptanceStatus" | "sport" | "inactive" | "hasUnhandledLowRated" | "hasUnanswered">>,
+  ) {
     const query = coachNameQuery(queryDraft);
     if (!query.ok) {
       setQueryError(query.message);
@@ -176,8 +259,6 @@ export function CoachAcceptanceList({
     setResult(response);
     if (response.code !== undefined) await reload(filter);
   }
-
-  const filtered = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
 
   return (
     <div className="space-y-4">
@@ -235,46 +316,75 @@ export function CoachAcceptanceList({
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.inactive}
+            onChange={(event) => void commitFilter({ inactive: event.target.checked })}
+          />
+          直近 30 日にレッスンのないコーチだけ
+        </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.hasUnhandledLowRated}
+            onChange={(event) => void commitFilter({ hasUnhandledLowRated: event.target.checked })}
+          />
+          未対応の低い評価のあるコーチだけ
+        </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.hasUnanswered}
+            onChange={(event) => void commitFilter({ hasUnanswered: event.target.checked })}
+          />
+          返事のないメッセージのあるコーチだけ
+        </label>
       </form>
       {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
       <ResultMessage result={result} />
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.coaches.length === 0 && (
-        <p className="text-sm">{filtered ? "条件に合うコーチはいません" : "コーチがまだいません"}</p>
+        <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.coaches.length > 0 && (
-        <table aria-label="コーチの一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">表示名</th>
-              <th className="py-1">受付</th>
-              <th className="py-1">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.coaches.map((coach) => (
-              <tr key={coach.coach_id} className="border-t align-top">
-                <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
-                    {coach.display_name}
-                  </Link>
-                </td>
-                <td className="py-1">
-                  <CoachAcceptanceBadge status={coach.acceptance_status} />
-                </td>
-                <td className="py-1">
-                  <CoachAcceptanceAction
-                    // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
-                    key={coach.acceptance_status}
-                    status={coach.acceptance_status}
-                    onConfirm={(reason) => changeAcceptance(coach, reason)}
-                  />
-                </td>
+        <>
+          <p className="text-sm">{RECENT_LESSON_COUNT_NOTE}</p>
+          <table aria-label="コーチの一覧" className="w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th className="py-1">表示名</th>
+                <th className="py-1">受付</th>
+                <th className="py-1">直近 30 日のレッスン</th>
+                <th className="py-1">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {state.coaches.map((coach) => (
+                <tr key={coach.coach_id} className="border-t align-top">
+                  <td className="py-1">
+                    <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+                      {coach.display_name}
+                    </Link>
+                  </td>
+                  <td className="py-1">
+                    <CoachAcceptanceBadge status={coach.acceptance_status} />
+                  </td>
+                  <td className="py-1">{coach.recent_lesson_count} 回</td>
+                  <td className="py-1">
+                    <CoachAcceptanceAction
+                      // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
+                      key={coach.acceptance_status}
+                      status={coach.acceptance_status}
+                      onConfirm={(reason) => changeAcceptance(coach, reason)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );

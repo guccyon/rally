@@ -1,17 +1,18 @@
 //! 契約（OpenAPI）の文字列と domain の値の対応表。HTTP の入出力はこの表だけを通す。
 //!
-//! アカウント ID・スロット ID（`format: uuid`）のテキスト形式は `application::identity::account_id_uuid`
-//! と `application::scheduling::slot_id_uuid`。
+//! アカウント ID・スロット ID・レッスンメニュー ID（`format: uuid`）のテキスト形式は `application::identity::account_id_uuid`
+//! と `application::scheduling::slot_id_uuid` と `application::catalog::lesson_menu_id_uuid`。
 
 use std::{collections::BTreeSet, time::SystemTime};
 
 use application::{
+    catalog::lesson_menu_id_uuid,
     identity::account_id_uuid,
     scheduling::{SlotCursor, slot_id_uuid},
 };
 use domain::{
     async_lesson::{VideoContentType, VideoStatus},
-    catalog::{LessonMenuPublicationAction, Sport},
+    catalog::{LessonMenuId, LessonMenuPublicationAction, Sport},
     entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus, YearMonth},
     identity::{AccountId, Role},
     lesson::LessonType,
@@ -102,7 +103,8 @@ pub(crate) const fn coach_acceptance_status_to_contract(
     }
 }
 
-/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` のクエリ `acceptance_status`）。値でなければ 422。
+/// admin-web の `CoachAcceptanceStatus` の値から（`listCoaches` と `listIncompleteCoachProfiles` のクエリ
+/// `acceptance_status`）。値でなければ 422。
 pub(crate) fn coach_acceptance_status_from_contract(
     value: &str,
 ) -> Result<CoachAcceptanceStatus, ApiError> {
@@ -369,6 +371,16 @@ pub(crate) fn date_from_contract(field: &str, value: &str) -> Result<Date, ApiEr
 /// あるか・役割は問わない（ない ID・役割の違う ID で絞れば一覧が空になる）。
 pub(crate) fn account_id_from_contract(field: &str, value: &str) -> Result<AccountId, ApiError> {
     account_id_uuid::parse(value)
+        .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
+}
+
+/// レッスンメニュー ID（`format: uuid`）の絞り込みのクエリの値を読む。UUID でなければ 422（`field` は文言に使う項目名）。
+/// ID のメニューがあるかは問わない（ないメニューの ID で絞れば一覧が空になる）。
+pub(crate) fn lesson_menu_id_from_contract(
+    field: &str,
+    value: &str,
+) -> Result<LessonMenuId, ApiError> {
+    lesson_menu_id_uuid::parse(value)
         .map_err(|_| ApiError::validation_failed(format!("{field} が UUID でない")))
 }
 

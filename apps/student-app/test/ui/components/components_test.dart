@@ -132,20 +132,44 @@ void main() {
     expect(semantics.properties.liveRegion, isTrue);
   });
 
-  testWidgets('空の表示は一言と次の操作を出す', (tester) async {
+  testWidgets('空の表示は一言と次の操作を出す。screen は surface の面と primary、文は text の色', (
+    tester,
+  ) async {
+    var tapped = 0;
     await pumpPart(
       tester,
       EmptyState(
         message: 'まだこれからの予約はありません。コーチを探して始めましょう',
-        action: RallyButton(
-          label: 'コーチを探す',
-          variant: RallyButtonVariant.secondary,
-          onPressed: () {},
-        ),
+        actionLabel: 'コーチを探す',
+        onAction: () => tapped++,
       ),
     );
-    expect(find.textContaining('まだこれからの予約はありません'), findsOneWidget);
+    final message = tester.widget<Text>(
+      find.textContaining('まだこれからの予約はありません'),
+    );
+    expect(message.style?.color, RallyColors.text);
+    expect(_emptyDecoration(tester).color, RallyColors.surface);
+    await tester.tap(find.widgetWithText(FilledButton, 'コーチを探す'));
+    expect(tapped, 1);
+  });
+
+  testWidgets('欄だけの空の表示（section）は background の面と border の線と secondary', (
+    tester,
+  ) async {
+    await pumpPart(
+      tester,
+      EmptyState(
+        message: 'まだこれからの予約はありません。',
+        actionLabel: 'コーチを探す',
+        onAction: () {},
+        variant: EmptyStateVariant.section,
+      ),
+    );
+    final decoration = _emptyDecoration(tester);
+    expect(decoration.color, RallyColors.background);
+    expect(decoration.border, Border.all(color: RallyColors.border));
     expect(find.widgetWithText(OutlinedButton, 'コーチを探す'), findsOneWidget);
+    expect(find.byType(FilledButton), findsNothing);
   });
 
   testWidgets('欄の読み込み中は文で出す', (tester) async {
@@ -242,3 +266,16 @@ void main() {
     });
   });
 }
+
+BoxDecoration _emptyDecoration(WidgetTester tester) =>
+    tester
+            .widget<Container>(
+              find
+                  .descendant(
+                    of: find.byType(EmptyState),
+                    matching: find.byType(Container),
+                  )
+                  .first,
+            )
+            .decoration!
+        as BoxDecoration;

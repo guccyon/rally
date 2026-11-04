@@ -29,10 +29,12 @@ pub trait NotificationRepository: Send + Sync {
     ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
 
     /// `recipient` が受け取る本部からのお知らせのお知らせ（種類が [`domain::notification::NotificationKind::Announcement`]）を、
-    /// 作った時刻の新しい順（同じ時刻は後に残したものが先）に最大 `limit` 件。
+    /// 作った時刻の新しい順（同じ時刻は後に残したものが先）に最大 `limit` 件。`unread_only` なら未読のもの
+    /// （[`Notification::is_unread_as`] に入るもの）だけに絞ってから `limit` 件を数える。
     fn find_announcements_by_recipient(
         &self,
         recipient: AccountId,
+        unread_only: bool,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Notification>, Unavailable>> + Send;
 

@@ -164,6 +164,9 @@ fn app() -> App {
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock.clone(),
         ),
         application::scheduling::ListMyBookings::new(

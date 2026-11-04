@@ -1,14 +1,18 @@
 use std::time::SystemTime;
 
 use super::Video;
-use crate::{catalog::Sport, identity::AccountId};
+use crate::{
+    catalog::{LessonMenuId, Sport},
+    identity::AccountId,
+};
 
 /// 本部が見る「返却を待っている動画添削」の選び方（admin-web の `listPendingVideoReviews`。規則の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `listPendingVideoReviews`）。
 ///
 /// コーチがまだ添削を返していない動画（[`super::VideoStatus::Submitted`]）を、任意のスポーツ `sport` と、送付からの
-/// 経過時間の下限 `min_elapsed_hours`（時間。0 なら下限なし）と、任意のコーチ `coach_id` で絞る。経過時間の数え方（[`Self::elapsed_hours`]）と
-/// 並べ方（送付の古い順）はこの型の 1 か所だけに置く。
+/// 経過時間の下限 `min_elapsed_hours`（時間。0 なら下限なし）と、任意のコーチ `coach_id` と、任意の生徒 `student_id` と、
+/// 任意のレッスンメニュー `lesson_menu_id`（送った時点のメニューの写し。[`Video::matches_lesson_menu`]）で絞る。
+/// 経過時間の数え方（[`Self::elapsed_hours`]）と並べ方（送付の古い順）はこの型の 1 か所だけに置く。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PendingVideoReviewFilter {
     /// あれば、このスポーツの動画だけ
@@ -17,6 +21,11 @@ pub struct PendingVideoReviewFilter {
     pub min_elapsed_hours: u32,
     /// あれば、このコーチ（動画の送り先）の動画だけ
     pub coach_id: Option<AccountId>,
+    /// あれば、この生徒（動画を送った生徒）の動画だけ
+    pub student_id: Option<AccountId>,
+    /// あれば、送った時点のレッスンメニュー（[`Video::lesson_menu`]）がこのメニューの動画だけ。メニューを選ばずに送った
+    /// 動画は、付ければ入らない（[`Video::matches_lesson_menu`]）
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl PendingVideoReviewFilter {
@@ -27,13 +36,17 @@ impl PendingVideoReviewFilter {
     }
 
     /// `video` が `now` に照会したときにこの条件の返却待ちの動画か（添削を返していない（[`Video::is_awaiting_review`]）・
-    /// スポーツが合う・コーチが合う・経過時間が下限以上）。
+    /// スポーツが合う・コーチが合う・生徒が合う・レッスンメニューが合う・経過時間が下限以上）。
     pub fn matches(&self, video: &Video, now: SystemTime) -> bool {
         video.is_awaiting_review()
             && video.is_in_sport(self.sport)
             && self
                 .coach_id
                 .is_none_or(|coach_id| video.coach_id() == coach_id)
+            && self
+                .student_id
+                .is_none_or(|student_id| video.student_id() == student_id)
+            && video.matches_lesson_menu(self.lesson_menu_id)
             && Self::elapsed_hours(video, now) >= u64::from(self.min_elapsed_hours)
     }
 
@@ -63,13 +76,15 @@ mod tests {
 
     use super::*;
     use crate::{
-        async_lesson::{ReviewComment, VideoId, VideoReviewId},
+        async_lesson::{ReviewComment, VideoId, VideoLessonMenu, VideoReviewId},
+        catalog::LessonMenuName,
         identity::AccountId,
     };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(2);
     const OTHER_COACH: AccountId = AccountId::from_u128(3);
+    const OTHER_STUDENT: AccountId = AccountId::from_u128(4);
 
     fn now() -> SystemTime {
         // 2026-10-31T00:00:00Z
@@ -86,6 +101,39 @@ mod tests {
 
     fn pending_to(id: u128, coach: AccountId, sport: Sport, submitted_at: SystemTime) -> Video {
         Video::submit(VideoId::from_u128(id), STUDENT, coach, sport, submitted_at)
+    }
+
+    fn pending_from(
+        id: u128,
+        student: AccountId,
+        coach: AccountId,
+        sport: Sport,
+        submitted_at: SystemTime,
+    ) -> Video {
+        Video::submit(VideoId::from_u128(id), student, coach, sport, submitted_at)
+    }
+
+    const FORM: LessonMenuId = LessonMenuId::from_u128(50);
+    const SERVE: LessonMenuId = LessonMenuId::from_u128(51);
+
+    /// `STUDENT` が `coach` に `sport` で送った返却待ちの動画。`menu` があれば送った時点のそのメニューの写しを持つ。
+    fn pending_with_menu(
+        id: u128,
+        coach: AccountId,
+        sport: Sport,
+        menu: Option<LessonMenuId>,
+        submitted_at: SystemTime,
+    ) -> Video {
+        Video::restore(
+            VideoId::from_u128(id),
+            STUDENT,
+            coach,
+            sport,
+            submitted_at,
+            None,
+            menu.map(|menu| VideoLessonMenu::restore(menu, LessonMenuName::new("添削").unwrap())),
+        )
+        .unwrap()
     }
 
     fn returned(id: u128, submitted_at: SystemTime) -> Video {
@@ -139,6 +187,8 @@ mod tests {
             sport: None,
             min_elapsed_hours: 48,
             coach_id: None,
+            student_id: None,
+            lesson_menu_id: None,
         };
         let just = pending(1, Sport::Tennis, hours_ago(48));
         let short = pending(2, Sport::Tennis, hours_ago(48) + Duration::from_secs(1));
@@ -155,6 +205,8 @@ mod tests {
             sport: Some(Sport::Golf),
             min_elapsed_hours: 0,
             coach_id: None,
+            student_id: None,
+            lesson_menu_id: None,
         };
         assert!(filter.matches(&pending(1, Sport::Golf, now()), now()));
         assert!(!filter.matches(&pending(2, Sport::Tennis, now()), now()));
@@ -166,6 +218,8 @@ mod tests {
             sport: None,
             min_elapsed_hours: 0,
             coach_id: Some(OTHER_COACH),
+            student_id: None,
+            lesson_menu_id: None,
         };
         assert!(filter.matches(&pending_to(1, OTHER_COACH, Sport::Tennis, now()), now()));
         assert!(!filter.matches(&pending_to(2, COACH, Sport::Tennis, now()), now()));
@@ -206,6 +260,8 @@ mod tests {
                 sport: Some(Sport::Tennis),
                 min_elapsed_hours: 48,
                 coach_id: Some(COACH),
+                student_id: None,
+                lesson_menu_id: None,
             }),
             [6, 4, 5]
         );
@@ -217,6 +273,154 @@ mod tests {
             })
             .is_empty()
         );
+    }
+
+    #[test]
+    fn student_id_keeps_only_videos_that_student_sent() {
+        let filter = PendingVideoReviewFilter {
+            student_id: Some(OTHER_STUDENT),
+            ..PendingVideoReviewFilter::default()
+        };
+        assert!(filter.matches(
+            &pending_from(1, OTHER_STUDENT, COACH, Sport::Tennis, now()),
+            now()
+        ));
+        assert!(!filter.matches(&pending(2, Sport::Tennis, now()), now()));
+        // 返却済みは生徒が合っても出ない（returned は STUDENT が送った）
+        let filter = PendingVideoReviewFilter {
+            student_id: Some(STUDENT),
+            ..PendingVideoReviewFilter::default()
+        };
+        assert!(!filter.matches(&returned(3, hours_ago(100)), now()));
+    }
+
+    #[test]
+    fn student_id_combines_with_the_other_filters_keeping_the_order() {
+        let videos = vec![
+            pending_from(1, OTHER_STUDENT, COACH, Sport::Tennis, hours_ago(10)),
+            pending_from(2, STUDENT, COACH, Sport::Tennis, hours_ago(90)),
+            pending_from(3, OTHER_STUDENT, OTHER_COACH, Sport::Golf, hours_ago(72)),
+            pending_from(5, OTHER_STUDENT, COACH, Sport::Tennis, hours_ago(50)),
+            pending_from(4, OTHER_STUDENT, OTHER_COACH, Sport::Tennis, hours_ago(50)),
+            pending_from(6, OTHER_STUDENT, COACH, Sport::Tennis, hours_ago(60)),
+        ];
+        let ids = |filter: PendingVideoReviewFilter| -> Vec<u128> {
+            filter
+                .select(videos.clone(), now())
+                .iter()
+                .map(|video| video.id().as_u128())
+                .collect()
+        };
+        assert_eq!(
+            ids(PendingVideoReviewFilter {
+                student_id: Some(OTHER_STUDENT),
+                ..PendingVideoReviewFilter::default()
+            }),
+            [3, 6, 4, 5, 1]
+        );
+        assert_eq!(
+            ids(PendingVideoReviewFilter {
+                sport: Some(Sport::Tennis),
+                min_elapsed_hours: 48,
+                coach_id: Some(COACH),
+                student_id: Some(OTHER_STUDENT),
+                lesson_menu_id: None,
+            }),
+            [6, 5]
+        );
+        // 返却待ちのない生徒は空
+        assert!(
+            ids(PendingVideoReviewFilter {
+                student_id: Some(AccountId::from_u128(99)),
+                ..PendingVideoReviewFilter::default()
+            })
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn lesson_menu_id_keeps_only_videos_sent_with_that_menu() {
+        let filter = PendingVideoReviewFilter {
+            lesson_menu_id: Some(FORM),
+            ..PendingVideoReviewFilter::default()
+        };
+        assert!(filter.matches(
+            &pending_with_menu(1, COACH, Sport::Tennis, Some(FORM), now()),
+            now()
+        ));
+        assert!(
+            !filter.matches(
+                &pending_with_menu(2, COACH, Sport::Tennis, Some(SERVE), now()),
+                now()
+            ),
+            "別のメニューの動画は出ない"
+        );
+        assert!(
+            !filter.matches(&pending(3, Sport::Tennis, now()), now()),
+            "メニューを選ばずに送った動画は出ない"
+        );
+        // 返却済みはメニューが合っても出ない
+        let mut returned = pending_with_menu(4, COACH, Sport::Tennis, Some(FORM), hours_ago(100));
+        returned
+            .return_review(
+                VideoReviewId::from_u128(104),
+                COACH,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                now(),
+            )
+            .unwrap();
+        assert!(!filter.matches(&returned, now()));
+        // 指定しなければメニューのない動画も出る
+        assert!(
+            PendingVideoReviewFilter::default().matches(&pending(5, Sport::Tennis, now()), now())
+        );
+    }
+
+    #[test]
+    fn lesson_menu_id_combines_with_the_other_filters_keeping_the_order() {
+        let videos = vec![
+            pending_with_menu(1, COACH, Sport::Tennis, Some(FORM), hours_ago(10)),
+            pending_with_menu(2, COACH, Sport::Tennis, None, hours_ago(90)),
+            pending_with_menu(3, OTHER_COACH, Sport::Tennis, Some(FORM), hours_ago(72)),
+            pending_with_menu(5, COACH, Sport::Tennis, Some(FORM), hours_ago(50)),
+            pending_with_menu(4, COACH, Sport::Tennis, Some(FORM), hours_ago(50)),
+            pending_with_menu(6, COACH, Sport::Tennis, Some(SERVE), hours_ago(60)),
+        ];
+        let ids = |filter: PendingVideoReviewFilter| -> Vec<u128> {
+            filter
+                .select(videos.clone(), now())
+                .iter()
+                .map(|video| video.id().as_u128())
+                .collect()
+        };
+        assert_eq!(
+            ids(PendingVideoReviewFilter {
+                lesson_menu_id: Some(FORM),
+                ..PendingVideoReviewFilter::default()
+            }),
+            [3, 4, 5, 1]
+        );
+        assert_eq!(
+            ids(PendingVideoReviewFilter {
+                sport: Some(Sport::Tennis),
+                min_elapsed_hours: 48,
+                coach_id: Some(COACH),
+                student_id: Some(STUDENT),
+                lesson_menu_id: Some(FORM),
+            }),
+            [4, 5]
+        );
+        // ないメニューの ID は空
+        assert!(
+            ids(PendingVideoReviewFilter {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..PendingVideoReviewFilter::default()
+            })
+            .is_empty()
+        );
+        // 指定しなければ今までどおりメニューを問わない
+        assert_eq!(ids(PendingVideoReviewFilter::default()), [2, 3, 6, 4, 5, 1]);
     }
 
     #[test]
@@ -265,6 +469,8 @@ mod tests {
                 sport: None,
                 min_elapsed_hours: 48,
                 coach_id: None,
+                student_id: None,
+                lesson_menu_id: None,
             }),
             [3, 4, 5]
         );
@@ -273,6 +479,8 @@ mod tests {
                 sport: Some(Sport::Tennis),
                 min_elapsed_hours: 48,
                 coach_id: None,
+                student_id: None,
+                lesson_menu_id: None,
             }),
             [5]
         );

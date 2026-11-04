@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, future::Future};
+use std::{collections::BTreeSet, future::Future, time::SystemTime};
 
 use domain::{
     identity::AccountId,
@@ -39,5 +39,14 @@ pub trait CoachAcceptanceRepository: Send + Sync {
     fn changes(
         &self,
         coach_id: AccountId,
+    ) -> impl Future<Output = Result<Vec<CoachAcceptanceChange>, Unavailable>> + Send;
+
+    /// `coach_id` のコーチの受付を止めた・再開した記録のうち、変えた時刻が `starts_at`（含む）から `ends_at`（含まない）
+    /// までのもの。並べ方は [`Self::changes`] と同じ。記録がなければ空。コーチがいるかは確かめない。読むだけで何も変えない。
+    fn changes_between(
+        &self,
+        coach_id: AccountId,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
     ) -> impl Future<Output = Result<Vec<CoachAcceptanceChange>, Unavailable>> + Send;
 }

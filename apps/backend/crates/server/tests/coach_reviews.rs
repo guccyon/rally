@@ -3,6 +3,7 @@
 //! 時刻の新しい順で評価した生徒を載せないこと、評価のないコーチは 0 件になることを確かめる。
 //! 評価されたコーチが `PUT /lesson-reviews/{review_id}/reply` で付けた返信（2 回目は上書き）が、生徒の読む一覧に載ることも
 //! 本部とコーチ（admin-web）が `max_rating` でその点以下の評価だけを読めること（生徒は付けても変わらないこと）も確かめる。
+//! 本部とコーチが `from`・`to` で評価の付いた日付（日本時間）の期間に絞れること（`max_rating` と合わせられること）も確かめる。
 //! 契約の形の細かい検査は interface の `tests/reviews.rs`・`tests/review_replies.rs`。
 //!
 //! 評価は完了したレッスンが要り、そこまでの流れは `lessons.rs` で通しているので、ここでは評価を保存先に直に書く
@@ -298,4 +299,78 @@ async fn headquarters_reads_only_reviews_rated_at_most_the_max_rating_from_postg
     let (status, body) = get(&router, &path("2"), &taro_token).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(ids(&body), [high, middle, low_newer, low_older]);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_reads_only_reviews_submitted_in_the_period_from_postgres(pool: PgPool) {
+    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, _) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (_, headquarters) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
+
+    // NOW は 2026-10-26 9 時（日本時間）
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    // 10 月 26 日 8 時と、10 月 26 日の始まり（0 時）
+    let today_high = review(&reviews, taro, tanaka, 1, 5, "とてもよい", 1).await;
+    let today_low = review(&reviews, taro, tanaka, 2, 2, "いまひとつ", 9).await;
+    // 10 月 25 日 23 時
+    let yesterday = review(&reviews, taro, tanaka, 3, 1, "合わなかった", 10).await;
+    // 10 月 24 日 9 時
+    let older = review(&reviews, taro, tanaka, 4, 3, "ふつう", 48).await;
+    // 他のコーチの評価は期間に入っても載らない
+    review(&reviews, taro, ito, 5, 1, "別のコーチ", 2).await;
+    let router = server::router_with_postgres(pool, SystemClock, RecordingAnalyticsSink::default());
+
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let path = |query: &str| format!("/coaches/{tanaka_id}/reviews?{query}");
+
+    for token in [&headquarters, &tanaka_token] {
+        for (query, expected) in [
+            (
+                "from=2026-10-26&to=2026-10-26",
+                vec![today_high.clone(), today_low.clone()],
+            ),
+            ("from=2026-10-25&to=2026-10-25", vec![yesterday.clone()]),
+            (
+                "from=2026-10-24&to=2026-10-25",
+                vec![yesterday.clone(), older.clone()],
+            ),
+            (
+                "to=2026-10-26",
+                vec![
+                    today_high.clone(),
+                    today_low.clone(),
+                    yesterday.clone(),
+                    older.clone(),
+                ],
+            ),
+            (
+                "from=2026-10-25&to=2026-10-26&max_rating=2",
+                vec![today_low.clone(), yesterday.clone()],
+            ),
+        ] {
+            let (status, body) = get(&router, &path(query), token).await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            assert_eq!(body["coach_id"], tanaka_id);
+            assert_eq!(ids(&body), expected, "{query}");
+        }
+
+        let (status, body) = get(&router, &path("from=2026-10-26&to=2026-10-25"), token).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+
+    // 生徒（student-app）は付けても変わらない
+    let (status, body) = get(&router, &path("from=2026-10-26&to=2026-10-26"), &taro_token).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), [today_high, today_low, yesterday, older]);
 }

@@ -94,12 +94,13 @@ const READ_COUNTS_OF_ANNOUNCEMENTS: &str = "SELECT n.announcement_id, count(*)
          AND (c.read_until IS NULL OR n.read_at <= c.read_until)
      GROUP BY n.announcement_id";
 
-/// `recipient_id = $1` で種類が `$2`（本部からのお知らせ）のお知らせ（新しい順に最大 `$3` 件）。
+/// `recipient_id = $1` で種類が `$2`（本部からのお知らせ）のお知らせ（新しい順に最大 `$3` 件）。`$4` が true なら未読
+/// （`read_at` がないもの）だけに絞ってから `$3` 件を数える。
 const ANNOUNCEMENT_NOTIFICATIONS_OF: &str =
     "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id, review_id,
             thread_id, message_id, sender_role, announcement_id, created_at, read_at
      FROM notification.notifications
-     WHERE recipient_id = $1 AND kind = $2
+     WHERE recipient_id = $1 AND kind = $2 AND (NOT $4 OR read_at IS NULL)
      ORDER BY created_at DESC, seq DESC
      LIMIT $3";
 
@@ -161,12 +162,15 @@ impl NotificationRepository for PgNotificationRepository {
     async fn find_announcements_by_recipient(
         &self,
         recipient: AccountId,
+        unread_only: bool,
         limit: usize,
     ) -> Result<Vec<Notification>, Unavailable> {
+        // `unread_only` の判定は domain の `Notification::is_unread_as`（未読は `read_at` がないもの）と同じ
         let rows: Vec<NotificationRow> = sqlx::query_as(ANNOUNCEMENT_NOTIFICATIONS_OF)
             .bind(account_id_uuid::to_uuid(recipient))
             .bind(ANNOUNCEMENT)
             .bind(i64::try_from(limit).map_err(Unavailable::new)?)
+            .bind(unread_only)
             .fetch_all(&self.pool)
             .await
             .map_err(Unavailable::new)?;
