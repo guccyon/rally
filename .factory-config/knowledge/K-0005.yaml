@@ -1,7 +1,10 @@
 id: K-0005
 theme: 4
 kind: causal
-statement: 続きの job（continue）が自分の報告を PR 本文の末尾に追記すると、見出しが二重になり、取り込みやコミットの状態も head と食い違いやすい。本文は追記せず、head を確かめてから全体を最新の状態に書き直す方がよいと見られる
+statement: >-
+  続きの job（continue）が PR 本文に書く自分の報告で、既定ブランチの取り込みやコミットの状態を head を確かめずに書くと、
+  報告を書いた時点の認識が残り、渡した時点の head と食い違った記述が本文に残りやすい。
+  直すときも、人や前の job が書いた既存の節は残し、続きの job の節だけを head を確かめてから最新にする（本文の全体は書き直さない）。
 scope:
   roles: [implement]
 confidence: hypothesis
@@ -9,8 +12,10 @@ evidence:
   - case: C-0003
   - event: "case.analyzed:113588"
   - pr: "guccyon/rally#534"
-status: active
-verified_at: 2026-11-02
-review_by: 2026-12-02
+status: draft
+verified_at: 2026-11-04
+review_by: 2026-12-04
 confidentiality: product
-decided_by: committee:D-0005
+related: [K-0001]
+invalidate_when:
+  - "続きの job の報告に書く取り込みやコミットの状態を、Engine が head から機械で書き入れるようになった"
