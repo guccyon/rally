@@ -1,0 +1,22 @@
+id: OV-005
+title: "同じ表示・変換を別の場所に書き直さない（既にある関数・定数・表示のモジュールを使うか、1 か所にまとめて両方から使う）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#222"
+  - "github:guccyon/rally#224"
+  - "github:guccyon/rally#304"
+  - "github:guccyon/rally#431"
+signature: "rubric:ARCH-004"
+check:
+  kind: rubric
+  text: >-
+    差分が、リポジトリに既にある変換や表示の関数・定数（差分の文脈行や同じディレクトリのファイル、`labels.ts`・`labels.dart` のように表示の変換を受け持つモジュールにあるもの）と同じことをする処理を新しく書いているときは欠陥とする。
+    例: 予約の一覧から生徒 ID → 表示名の Map を作る for 文を `fetchStudentNames` と別に書く、`"（名前を表示できません）"` のような引けないときの文言の定数を別のファイルで定義し直す、
+    `name == null ? '担当コーチ' : '$name コーチ'` のような表示の変換をウィジェットの中に直に書いて同じ変換が 2 か所になる、`labels.ts` が `timeZone: "Asia/Tokyo"` で日本時間にしているのに `+ 9 * 3_600_000` のように手で時差を足す別方式の変換を作る。
+    同じ変換を 1 つのモジュール（`studentNames.ts`・`labels.ts`・`labels.dart` など）にまとめ、使う側がすべてそれを import して呼んでいる差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-005/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-005/negative-1.diff" }

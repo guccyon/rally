@@ -10,6 +10,7 @@ import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { LESSON_TYPE_LABELS, formatDateTime } from "@/components/labels";
 
 import { BookingStatusBadge } from "./BookingStatusBadge";
+import { studentLowRatedReviewsPath } from "./LowRatedReviewsHome";
 import { studentPendingVideoReviewsPath } from "./PendingVideoReviewsHome";
 import { studentUnansweredMessageThreadsPath } from "./UnansweredMessageThreadsHome";
 
@@ -26,10 +27,11 @@ const NOT_FOUND = "この生徒は見つかりません。生徒の一覧から�
 
 /**
  * 本部の「生徒の利用の様子」。生徒 1 人の表示名・これからの予約・直近の受けたレッスン・キャンセルの件数・
- * 送った動画の数・返却待ちの動画の数・返事を待っているメッセージ（返信のないまま時間の過ぎたスレッド）の数を
- * getStudentActivity で一度だけ読む。並びと件数（直近のレッスンは最大 20 件）と数え方は契約の正本どおりで、画面は返った値を
- * 出すだけ。返却待ちが 1 件以上なら、この生徒で絞った「返却待ちの動画添削」への入口を、返事を待っているメッセージが
- * 1 件以上なら、この生徒で絞った「返事のないメッセージ」への入口を添える。
+ * 送った動画の数・返却待ちの動画の数・返事を待っているメッセージ（返信のないまま時間の過ぎたスレッド）の数・
+ * その生徒がつけた低い評価（直近 30 日の★2 以下）の数とそのうち未対応の数を getStudentActivity で一度だけ読む。
+ * 並びと件数（直近のレッスンは最大 20 件）と数え方は契約の正本どおりで、画面は返った値を出すだけ。返却待ちが 1 件以上なら、この生徒で絞った「返却待ちの動画添削」への入口を、返事を待っているメッセージが
+ * 1 件以上なら、この生徒で絞った「返事のないメッセージ」への入口を、つけた低い評価が 1 件以上なら、この生徒で絞った
+ * 「低い評価」への入口を添える。
  * `studentId` がない・API が 404 のときは「見つからない」として、ほかの失敗とは分けて出す。
  */
 export function StudentActivity({
@@ -86,6 +88,15 @@ export function StudentActivity({
           {activity.unanswered_message_thread_count > 0 && (
             <Link href={studentUnansweredMessageThreadsPath(activity.student_id)} className="ml-3 text-primary underline">
               返事のないメッセージを見る
+            </Link>
+          )}
+        </dd>
+        <dt className="font-semibold">つけた低い評価</dt>
+        <dd>
+          {activity.low_rated_review_count} 件（直近 30 日の★2 以下。うち未対応 {activity.unhandled_low_rated_review_count} 件）
+          {activity.low_rated_review_count > 0 && (
+            <Link href={studentLowRatedReviewsPath(activity.student_id)} className="ml-3 text-primary underline">
+              低い評価を見る
             </Link>
           )}
         </dd>

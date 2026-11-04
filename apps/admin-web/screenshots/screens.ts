@@ -35,6 +35,19 @@ export const SCREENS: Screen[] = [
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
   { id: "coach-slots", title: "コーチ: 予約枠", role: "coach", path: "/coach", open: coachTab("予約枠") },
   {
+    id: "coach-slots-period-empty",
+    title: "コーチ: 予約枠（期間を指定して 0 件）",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await coachTab("予約枠")(page);
+      await page.getByLabel("開始日").fill("2026-12-21");
+      await page.getByLabel("終了日").fill("2026-12-27");
+      await page.getByRole("button", { name: "この期間で見る" }).click();
+      await page.getByText("に始まる枠はありません。").waitFor();
+    },
+  },
+  {
     id: "coach-lesson-menus",
     title: "コーチ: レッスンメニュー",
     role: "coach",
@@ -103,6 +116,22 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-slot-supply-lesson-menu",
+    title: "本部: 予約枠の需給（期間とレッスンメニューを指定）",
+    role: "headquarters",
+    path: "/headquarters/slot-supply",
+    open: async (page) => {
+      await page.getByRole("table").waitFor();
+      await page.getByLabel("開始日").fill("2026-11-02");
+      await page.getByLabel("終了日").fill("2026-11-08");
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByRole("table").waitFor();
+    },
+  },
+  {
     id: "hq-slot-supply-empty",
     title: "本部: 予約枠の需給（期間を指定して 0 件）",
     role: "headquarters",
@@ -152,6 +181,20 @@ export const SCREENS: Screen[] = [
   },
   { id: "hq-low-reviews", title: "本部: 低い評価", role: "headquarters", path: "/headquarters/low-reviews" },
   {
+    // 期間を入れて「この期間で見る」で読み直した状態。
+    id: "hq-low-reviews-period",
+    title: "本部: 低い評価（期間で絞る）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByText(/点以下の評価です。$/).waitFor();
+      await page.getByLabel("開始日").fill("2026-10-26");
+      await page.getByLabel("終了日").fill("2026-11-01");
+      await page.getByRole("button", { name: "この期間で見る" }).click();
+      await page.getByText("2026年10月26日（月） 〜 2026年11月1日（日） に送られたものです。", { exact: false }).waitFor();
+    },
+  },
+  {
     id: "hq-low-reviews-handling-confirm",
     title: "本部: 低い評価（対応済みにする前の確認）",
     role: "headquarters",
@@ -182,6 +225,32 @@ export const SCREENS: Screen[] = [
       await page
         .getByRole("table", { name: "コーチの一覧" })
         .or(page.getByText("直近 30 日にレッスンのないコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
+    // 未対応の低い評価のあるコーチだけに絞った状態（URL のクエリ has_unhandled_low_rated=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-unhandled-low-rated",
+    title: "本部: コーチの受付（未対応の低い評価のあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_unhandled_low_rated=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("未対応の低い評価のあるコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
+    // 返事のないメッセージのあるコーチだけに絞った状態（URL のクエリ has_unanswered=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-unanswered",
+    title: "本部: コーチの受付（返事のないメッセージのあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_unanswered=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("返事のないメッセージのあるコーチはいません"))
         .waitFor();
     },
   },
@@ -293,6 +362,21 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返事を待っているメッセージのある生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-unanswered",
+    title: "本部: 生徒（返事を待っているメッセージのある生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "返事を待っているメッセージのある生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("返事を待っているメッセージのある生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-students-invalid-coach",
     title: "本部: 生徒（コーチの指定が正しくない 422）",
     role: "headquarters",
@@ -306,6 +390,17 @@ export const SCREENS: Screen[] = [
     title: "本部: 生徒の利用の様子",
     role: "headquarters",
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+  },
+  {
+    id: "hq-student-announcements-unread",
+    title: "本部: 生徒の受け取ったお知らせ（未読だけ）",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("checkbox", { name: "未読だけ" }).check();
+      await page.getByText(/^未読のものだけを、送った新しい順に/).waitFor();
+      await page.getByRole("table", { name: "受け取ったお知らせ" }).waitFor();
+    },
   },
   { id: "hq-bookings", title: "本部: 予約", role: "headquarters", path: "/headquarters/bookings" },
   {
@@ -661,6 +756,18 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-announcements-withdrawn",
+    title: "本部: 送ったお知らせを取り下げたかで絞る",
+    role: "headquarters",
+    path: "/headquarters/announcements",
+    open: async (page) => {
+      // 各行の「「…」を取り下げる」も「取り下げ」を含むので、欄の名前は exact で探す
+      const sent = page.getByRole("region", { name: "送ったお知らせ", exact: true });
+      await sent.getByLabel("取り下げ", { exact: true }).selectOption({ label: "取り下げたもの" });
+      await page.getByText(/・取り下げたもの・1 件/).waitFor();
+    },
+  },
+  {
     id: "hq-pending-video-reviews",
     title: "本部: 返却待ちの動画添削",
     role: "headquarters",
@@ -671,6 +778,18 @@ export const SCREENS: Screen[] = [
     title: "本部: 返却待ちの動画添削（コーチで絞ったとき）",
     role: "headquarters",
     path: "/headquarters/pending-video-reviews?coach_id=22222222-2222-4222-8222-222222222223",
+  },
+  {
+    id: "hq-pending-video-reviews-lesson-menu",
+    title: "本部: 返却待ちの動画添削（レッスンメニューで絞って 0 件のとき）",
+    role: "headquarters",
+    path: "/headquarters/pending-video-reviews",
+    open: async (page) => {
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "サーブの添削（鈴木 コーチ）" });
+      await page.getByText(/^レッスンメニューで絞っています: サーブの添削$/).waitFor();
+      await page.getByText("このレッスンメニューの返却待ちの動画添削はありません").waitFor();
+    },
   },
   {
     id: "hq-pending-video-reviews-by-student",
@@ -726,6 +845,17 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "hq-low-reviews-by-student",
+    title: "本部: 生徒 1 人のつけた低い評価",
+    role: "headquarters",
+    path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
+    open: async (page) => {
+      await page.getByRole("link", { name: "低い評価を見る" }).click();
+      await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+    },
+  },
+  {
     id: "hq-returned-video-reviews",
     title: "本部: 返した動画添削",
     role: "headquarters",
@@ -752,6 +882,19 @@ export const SCREENS: Screen[] = [
       await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
       await page.getByRole("button", { name: "この条件で見る" }).click();
       await page.getByText("この期間に条件に合う返した動画添削はありません").waitFor();
+    },
+  },
+  {
+    id: "hq-returned-video-reviews-lesson-menu",
+    title: "本部: 返した動画添削（レッスンメニューで絞って 0 件のとき）",
+    role: "headquarters",
+    path: "/headquarters/returned-video-reviews",
+    open: async (page) => {
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "サーブの添削（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: サーブの添削$/).waitFor();
+      await page.getByText("この期間にこのレッスンメニューの返した動画添削はありません").waitFor();
     },
   },
   {

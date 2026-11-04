@@ -159,6 +159,24 @@ impl BookingRepository for PgBookingRepository {
         row.map(booking_from_row).transpose()
     }
 
+    async fn find_many(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        let ids: Vec<Uuid> = booking_ids
+            .iter()
+            .copied()
+            .map(booking_id_uuid::to_uuid)
+            .collect();
+        let rows: Vec<BookingRow> =
+            sqlx::query_as(select_bookings!("WHERE b.booking_id = ANY($1)"))
+                .bind(ids)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(Unavailable::new)?;
+        rows.into_iter().map(booking_from_row).collect()
+    }
+
     async fn reserve<F>(
         &self,
         slot_id: SlotId,

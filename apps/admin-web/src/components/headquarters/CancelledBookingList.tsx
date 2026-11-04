@@ -41,7 +41,7 @@ const NO_NAME = "（名前を表示できません）";
 const VALIDATION_FAILED = `期間・コーチ・レッスンメニュー・スポーツの指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・レッスンメニュー・スポーツは一覧から選び直してください。`;
 
 /** レッスンメニューの選択肢の文言。コーチが違えば同じ名前のメニューがあるので、引けるときはコーチの名前を添える。 */
-function lessonMenuOptionLabel(menu: Schemas["CoachLessonMenu"]): string {
+export function lessonMenuOptionLabel(menu: Schemas["CoachLessonMenu"]): string {
   return menu.coach_display_name === undefined ? menu.name : `${menu.name}（${menu.coach_display_name}）`;
 }
 

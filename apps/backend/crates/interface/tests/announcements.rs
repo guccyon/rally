@@ -490,6 +490,88 @@ async fn headquarters_narrows_sent_announcements_by_sport() {
 }
 
 #[tokio::test]
+async fn headquarters_narrows_sent_announcements_by_withdrawn() {
+    let app = App::new().await;
+    // 日本時間の 11/1 に生徒全員・テニスへ 1 件ずつ、11/2 にテニス・生徒全員へ 1 件ずつ。11/1 の生徒全員と 11/2 のテニスを取り下げる
+    let mut sent = Vec::new();
+    for (minute, title, sport) in [
+        (10, "メンテナンスのお知らせ", None),
+        (20, "テニスの大会", Some("tennis")),
+        (15 * 60, "テニスの大会の結果", Some("tennis")),
+        (15 * 60 + 10, "メンテナンスの終了", None),
+    ] {
+        let (status, body) = send(
+            &app.router(at(minute)).await,
+            "POST",
+            Some(HEADQUARTERS),
+            Some(Ok(
+                json!({ "title": title, "body": "本文", "sport": sport }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        sent.push(body);
+    }
+    let mut withdrawn = Vec::new();
+    for index in [0, 2] {
+        let id = sent[index]["announcement_id"].as_str().unwrap().to_owned();
+        let (status, body) =
+            withdraw(&app.router(at(16 * 60)).await, Some(HEADQUARTERS), &id).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        withdrawn.push(body);
+    }
+    let [everyone_withdrawn, tennis_result_withdrawn] = <[Value; 2]>::try_from(withdrawn).unwrap();
+    let [_, tennis, _, everyone] = <[Value; 4]>::try_from(sent).unwrap();
+    let router = app.router(at(17 * 60)).await;
+
+    for (query, expected) in [
+        // 取り下げたものだけ・取り下げていないものだけ。並べ方は変わらない
+        (
+            "withdrawn=true",
+            json!([tennis_result_withdrawn, everyone_withdrawn]),
+        ),
+        ("withdrawn=false", json!([everyone, tennis])),
+        // 期間・題・スポーツと組み合わせられる
+        (
+            "withdrawn=true&from=2026-11-01&to=2026-11-01",
+            json!([everyone_withdrawn]),
+        ),
+        (
+            "withdrawn=false&q=%E3%83%A1%E3%83%B3%E3%83%86%E3%83%8A%E3%83%B3%E3%82%B9",
+            json!([everyone]),
+        ),
+        (
+            "withdrawn=true&sport=tennis",
+            json!([tennis_result_withdrawn]),
+        ),
+        (
+            "withdrawn=false&sport=tennis&from=2026-11-02&to=2026-11-02",
+            json!([]),
+        ),
+        // 付けなければ今までどおりすべて
+        (
+            "",
+            json!([
+                everyone,
+                tennis_result_withdrawn,
+                tennis,
+                everyone_withdrawn
+            ]),
+        ),
+    ] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, json!({ "announcements": expected }), "{query}");
+    }
+
+    for query in ["withdrawn=yes", "withdrawn=", "withdrawn=1"] {
+        let (status, body) = list(&router, query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn an_invalid_period_is_rejected() {
     let app = App::new().await;
     let router = app.router(at(0)).await;
