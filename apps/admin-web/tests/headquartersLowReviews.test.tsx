@@ -481,6 +481,82 @@ describe("本部の低い評価の期間", () => {
     );
     expect(screen.queryByRole("list", { name: "低い評価の一覧" })).not.toBeInTheDocument();
   });
+
+  test("生徒で絞っていれば、期間・「未対応だけ」と組み合わせて読み直し、どちらを変えても生徒の条件を残す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
+    render(
+      <LowRatedReviewList
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }}
+        studentId={STUDENT_ID}
+      />,
+    );
+    await itemsOf();
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ student_id: STUDENT_ID });
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      student_id: STUDENT_ID,
+    });
+    await itemsOf();
+
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      handled: false,
+      from: "2026-10-26",
+      to: "2026-11-01",
+      student_id: STUDENT_ID,
+    });
+    await itemsOf();
+
+    await user.click(screen.getByRole("button", { name: "期間を外す" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ handled: false, student_id: STUDENT_ID });
+    await itemsOf();
+
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ student_id: STUDENT_ID });
+  });
+
+  test("生徒で絞って 0 件なら、その生徒のことだと言う（期間・未対応だけでも）", async () => {
+    const user = userEvent.setup();
+    render(
+      <LowRatedReviewList
+        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark() }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    expect(await screen.findByText("この生徒の低い評価はありません")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(await screen.findByText("この生徒の未対応の低い評価はありません")).toBeInTheDocument();
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    expect(await screen.findByText("この期間にこの生徒の未対応の低い評価はありません")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(await screen.findByText("この期間にこの生徒の低い評価はありません")).toBeInTheDocument();
+  });
+
+  test("生徒で絞って 422 が返ったら、生徒を選び直すよう添える（期間で絞っていれば期間の規則も）", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力内容を確認してください。",
+    }));
+    render(
+      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark() }} studentId="not-a-uuid" />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "入力内容を確認してください。生徒は生徒の一覧から選び直してください。",
+    );
+
+    await choosePeriod(user, "2026-10-26", "2026-11-01");
+    expect(await screen.findByText(/^期間の指定が正しくありません。/)).toHaveTextContent(
+      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。生徒は生徒の一覧から選び直してください。",
+    );
+  });
 });
 
 describe("画面への配置", () => {
