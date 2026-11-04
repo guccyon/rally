@@ -7,6 +7,7 @@ use super::{
 use crate::{
     identity::AccountId,
     lesson::{LessonCompletion, LessonCompletionId},
+    scheduling::BookingPeriod,
 };
 
 /// レッスンの評価（glossary の lesson_review）。完了したレッスン 1 件につき 1 つで、付けるのはそのレッスンの生徒。
@@ -146,8 +147,34 @@ impl LessonReview {
         self.coach_id
     }
 
+    /// 一覧を絞るコーチの指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `coach_id`）。指定があればその ID が
+    /// 評価されたコーチのときだけ、なければどの評価も当てはまる。コーチでない ID・ない ID はどの評価にも当てはまらない
+    /// （一覧は空になる）。
+    pub fn matches_coach(&self, coach_id: Option<AccountId>) -> bool {
+        coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
+    }
+
+    /// 一覧を絞る期間の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `from`・`to`）。指定があれば送った
+    /// 時刻がその期間に入る（開始を含み、終了を含まない）評価だけ、なければどの評価も当てはまる。期間の規則（1 日以上・
+    /// 上限の日数）は本部が送ったお知らせの一覧と同じ [`BookingPeriod`] だけが持つ。
+    pub fn matches_period(&self, period: Option<&BookingPeriod>) -> bool {
+        period.is_none_or(|period| period.includes(self.submitted_at))
+    }
+
+    /// 一覧を絞る生徒の指定に当てはまるか（admin-web の `listLowRatedLessonReviews` の `student_id`）。指定があればその ID が
+    /// 評価した生徒のときだけ、なければどの評価も当てはまる。生徒でない ID・ない ID はどの評価にも当てはまらない
+    /// （一覧は空になる。コーチの指定 [`Self::matches_coach`] と同じ扱い）。
+    pub fn matches_student(&self, student_id: Option<AccountId>) -> bool {
+        student_id.is_none_or(|student_id| self.student_id == student_id)
+    }
+
     pub const fn rating(&self) -> Rating {
         self.rating
+    }
+
+    /// 点が `max_rating` 以下（含む）か（admin-web の `listCoachReviews` の `max_rating` の絞り込み）。
+    pub fn is_rated_at_most(&self, max_rating: Rating) -> bool {
+        self.rating <= max_rating
     }
 
     pub const fn comment(&self) -> &LessonReviewComment {
@@ -156,6 +183,13 @@ impl LessonReview {
 
     pub const fn submitted_at(&self) -> SystemTime {
         self.submitted_at
+    }
+
+    /// 送った時刻が期間 `period` に入るか（開始を含み、終了を含まない）。admin-web の `listCoachReviews` の `from`・`to` の
+    /// 絞り込み（評価の付いた日付で絞る）に使う。期間の規則（1 日以上・上限の日数）は本部が送ったお知らせの一覧と同じ
+    /// [`BookingPeriod`] だけが持つ。
+    pub fn is_submitted_in(&self, period: &BookingPeriod) -> bool {
+        period.includes(self.submitted_at)
     }
 
     /// 評価されたコーチの返信。まだなければ `None`。
@@ -332,6 +366,80 @@ mod tests {
             at(3),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_review_is_rated_at_most_the_given_rating_including_it() {
+        for (rating, max_rating, at_most) in [
+            (1, 1, true),
+            (2, 1, false),
+            (2, 2, true),
+            (2, 3, true),
+            (5, 4, false),
+            (5, 5, true),
+        ] {
+            assert_eq!(
+                rated(rating).is_rated_at_most(Rating::new(max_rating).unwrap()),
+                at_most,
+                "★{rating} は {max_rating} 以下か"
+            );
+        }
+    }
+
+    #[test]
+    fn submitted_in_a_period_includes_the_start_and_excludes_the_end() {
+        // 送った時刻は at(3)
+        let review = rated(1);
+        let period = |from: u64, to: u64| BookingPeriod::new(at(from), at(to)).unwrap();
+        assert!(review.is_submitted_in(&period(3, 4)), "開始を含む");
+        assert!(review.is_submitted_in(&period(2, 4)));
+        assert!(!review.is_submitted_in(&period(2, 3)), "終了を含まない");
+        assert!(!review.is_submitted_in(&period(4, 5)));
+    }
+
+    #[test]
+    fn matches_coach_only_the_reviewed_coach_or_any_without_a_coach() {
+        let review = rated(1);
+        assert!(
+            review.matches_coach(None),
+            "指定がなければどのコーチの評価も"
+        );
+        assert!(review.matches_coach(Some(COACH)));
+        // ない ID・コーチでない ID（評価した生徒）には当てはまらない
+        assert!(!review.matches_coach(Some(AccountId::from_u128(99))));
+        assert!(!review.matches_coach(Some(STUDENT)));
+    }
+
+    #[test]
+    fn matches_period_only_reviews_submitted_in_it_or_any_without_a_period() {
+        // 評価は at(3) に送った
+        let review = rated(1);
+        assert!(
+            review.matches_period(None),
+            "指定がなければどの時刻の評価も"
+        );
+        let period = |starts: u64, ends: u64| BookingPeriod::new(at(starts), at(ends)).unwrap();
+        for (period, matches, why) in [
+            (period(3, 4), true, "開始ちょうどは含む"),
+            (period(0, 4), true, "期間の中"),
+            (period(0, 3), false, "終了ちょうどは含まない"),
+            (period(4, 5), false, "開始より前は含まない"),
+        ] {
+            assert_eq!(review.matches_period(Some(&period)), matches, "{why}");
+        }
+    }
+
+    #[test]
+    fn matches_student_only_the_reviewer_or_any_without_a_student() {
+        let review = rated(1);
+        assert!(
+            review.matches_student(None),
+            "指定がなければどの生徒の評価も"
+        );
+        assert!(review.matches_student(Some(STUDENT)));
+        // ない ID・生徒でない ID（評価されたコーチ）には当てはまらない
+        assert!(!review.matches_student(Some(AccountId::from_u128(99))));
+        assert!(!review.matches_student(Some(COACH)));
     }
 
     #[test]

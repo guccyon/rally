@@ -19,6 +19,7 @@ mod favorite_coaches;
 mod headquarters_booking_details;
 mod headquarters_bookings;
 mod headquarters_cancelled_bookings;
+mod headquarters_live_lesson_session_ends;
 mod headquarters_live_lesson_sessions;
 mod healthz;
 mod incomplete_coach_profiles;
@@ -50,6 +51,7 @@ mod student_announcements;
 mod students;
 mod subscription_plans;
 mod subscriptions;
+mod unanswered_message_threads;
 mod videos;
 
 use axum::Router;
@@ -75,6 +77,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(headquarters_booking_details::router(ports))
         .merge(headquarters_bookings::router(ports))
         .merge(headquarters_cancelled_bookings::router(ports))
+        .merge(headquarters_live_lesson_session_ends::router(ports))
         .merge(headquarters_live_lesson_sessions::router(ports))
         .merge(healthz::router(ports))
         .merge(incomplete_coach_profiles::router(ports))
@@ -106,5 +109,6 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(students::router(ports))
         .merge(subscription_plans::router(ports))
         .merge(subscriptions::router(ports))
+        .merge(unanswered_message_threads::router(ports))
         .merge(videos::router(ports))
 }

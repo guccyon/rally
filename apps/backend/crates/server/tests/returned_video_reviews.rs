@@ -1,7 +1,7 @@
 //! 本部が返した動画添削の記録を見る（admin-web の `listReturnedVideoReviews`）ことを、保存先を Postgres にした
 //! 組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の動画のうち返却の日付（日本時間）が
-//! 期間に入るものをコーチを問わず返却の新しい順に読み、かかった時間とコーチ・生徒の表示名を添えること、`coach_id` で絞れること、
-//! 期間の違反は 422、本部以外は 403 になることを確かめる。
+//! 期間に入るものをコーチを問わず返却の新しい順に読み、かかった時間とコーチ・生徒の表示名を添えること、`coach_id`・`sport`・
+//! `student_id`・`lesson_menu_id` で絞れること、期間の違反は 422、本部以外は 403 になることを確かめる。
 //! 契約の形・クエリの検証の細かい検査は interface の `tests/returned_video_reviews.rs`、期間に返却した動画の読み取りは
 //! infra の `tests/pg_video_repository.rs`。
 //!
@@ -24,8 +24,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::{ReviewComment, Video},
-    catalog::Sport,
+    async_lesson::{ReviewComment, Video, VideoLessonMenu},
+    catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{AccountId, Role},
 };
 use infra::{MockTokenService, PgAccountRepository, PgVideoRepository};
@@ -124,8 +124,11 @@ async fn headquarters_reads_returned_video_reviews_from_postgres(pool: PgPool) {
             .unwrap();
     }
 
-    let router =
-        server::router_with_postgres(pool, FixedClock(now()), RecordingAnalyticsSink::default());
+    let router = server::router_with_postgres(
+        pool.clone(),
+        FixedClock(now()),
+        RecordingAnalyticsSink::default(),
+    );
 
     let (status, body) = send(&router, get("/video-reviews/returned", &hq_token)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -208,6 +211,141 @@ async fn headquarters_reads_returned_video_reviews_from_postgres(pool: PgPool) {
     let (status, body) = send(
         &router,
         get("/video-reviews/returned?sport=pingpong", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 生徒は動画を送った生徒で絞る。コーチ・スポーツと組み合わせられる
+    let (hanako, _) = register(&pool, "hanako@example.com", Role::Student).await;
+    let hanako_video = Video::submit(
+        videos.next_video_id(),
+        hanako,
+        tanaka,
+        Sport::Tennis,
+        now() - HOUR * 10,
+    );
+    videos.insert(hanako_video.clone()).await.unwrap();
+    videos
+        .update(hanako_video.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                tanaka,
+                ReviewComment::new("フォロースルーが短い").unwrap(),
+                true,
+                now() - HOUR * 3,
+            )
+        })
+        .await
+        .unwrap();
+    let returned_ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["video_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for (query, expected) in [
+        (
+            format!("student_id={}", account_id_uuid::format(taro)),
+            vec![video_id(&quick), video_id(&slow_golf)],
+        ),
+        (
+            format!("student_id={}", account_id_uuid::format(hanako)),
+            vec![video_id(&hanako_video)],
+        ),
+        (
+            format!(
+                "student_id={}&coach_id={}",
+                account_id_uuid::format(taro),
+                account_id_uuid::format(tanaka)
+            ),
+            vec![video_id(&quick)],
+        ),
+        (
+            format!("student_id={}&sport=golf", account_id_uuid::format(hanako)),
+            vec![],
+        ),
+        // 生徒でない ID は空の一覧
+        (
+            format!("student_id={}", account_id_uuid::format(tanaka)),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/video-reviews/returned?{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(returned_ids(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/returned?student_id=taro", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // レッスンメニューは送った時点のメニューの写しで絞る。生徒と組み合わせられる
+    let form_video = Video::restore(
+        videos.next_video_id(),
+        hanako,
+        ito,
+        Sport::Tennis,
+        now() - HOUR * 20,
+        None,
+        Some(VideoLessonMenu::restore(
+            LessonMenuId::from_u128(0x50),
+            LessonMenuName::new("フォーム添削").unwrap(),
+        )),
+    )
+    .unwrap();
+    videos.insert(form_video.clone()).await.unwrap();
+    videos
+        .update(form_video.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                ito,
+                ReviewComment::new("肘が下がっている").unwrap(),
+                true,
+                now() - HOUR * 4,
+            )
+        })
+        .await
+        .unwrap();
+    let form_menu = "00000000-0000-0000-0000-000000000050";
+    for (query, expected) in [
+        (
+            format!("lesson_menu_id={form_menu}"),
+            vec![video_id(&form_video)],
+        ),
+        (
+            format!(
+                "lesson_menu_id={form_menu}&student_id={}",
+                account_id_uuid::format(taro)
+            ),
+            vec![],
+        ),
+        // ないメニューの ID は空の一覧
+        (
+            "lesson_menu_id=00000000-0000-0000-0000-000000000099".to_string(),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/video-reviews/returned?{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(returned_ids(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/returned?lesson_menu_id=form", &hq_token),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");

@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use domain::{
     catalog::{LessonMenu, LessonMenuId},
     identity::AccountId,
+    scheduling::UnbookedLessonMenuFilter,
 };
 
 use super::{
@@ -15,7 +16,8 @@ use crate::{Unavailable, clock::Clock};
 /// 照会だけで、何も保存しない。
 ///
 /// すべてのコーチのメニューを、条件（[`ListLessonMenusQuery`]）があれば、名前の検索語に部分一致する・そのスポーツの・
-/// 公開中か非公開の・そのコーチの（いないコーチなら空の一覧）メニューに絞って返す。
+/// 公開中か非公開の・そのコーチの（いないコーチなら空の一覧）・直近に予約のない（`unbooked`。添える直近の予約の数が 0 の。
+/// 判定は domain の [`UnbookedLessonMenuFilter`]）メニューに絞って返す。
 /// 並べ方はスポーツの順（[`Sport`](domain::catalog::Sport) の順）→ 作ったコーチの表示名（Unicode のコードポイントの順。引けないコーチは
 /// 同じスポーツの中で最後）→ コーチの ID → 作った時刻の古い順 → メニューの ID の順。コーチの表示名は profile に
 /// 問い合わせて（[`LessonMenuCoachDisplayNameLookup`]）添える。メニューごとの直近の予約の数は、時計の今の時刻で scheduling に
@@ -64,17 +66,26 @@ where
                         .is_none_or(|published| menu.is_published() == published)
             })
             .collect();
-        let coach_ids: BTreeSet<AccountId> = menus.iter().map(LessonMenu::coach_id).collect();
-        let (coaches, recent_booking_counts) = if menus.is_empty() {
+        let mut recent_booking_counts = if menus.is_empty() {
             Default::default()
         } else {
             let menu_ids: BTreeSet<LessonMenuId> = menus.iter().map(LessonMenu::id).collect();
-            (
-                self.coaches.find_coach_display_names(&coach_ids).await?,
-                self.bookings
-                    .count_recent_bookings(&menu_ids, self.clock.now())
-                    .await?,
-            )
+            self.bookings
+                .count_recent_bookings(&menu_ids, self.clock.now())
+                .await?
+        };
+        // ポートは予約のないメニューを返さない。返さなかったメニューは 0 件として扱う
+        let unbooked = UnbookedLessonMenuFilter::new(query.unbooked);
+        menus.retain(|menu| {
+            unbooked.matches(recent_booking_counts.get(&menu.id()).copied().unwrap_or(0))
+        });
+        let menu_ids: BTreeSet<LessonMenuId> = menus.iter().map(LessonMenu::id).collect();
+        recent_booking_counts.retain(|id, _| menu_ids.contains(id));
+        let coach_ids: BTreeSet<AccountId> = menus.iter().map(LessonMenu::coach_id).collect();
+        let coaches = if coach_ids.is_empty() {
+            Default::default()
+        } else {
+            self.coaches.find_coach_display_names(&coach_ids).await?
         };
         menus.sort_by(|a, b| {
             let name_a = coaches.get(&a.coach_id()).map(|name| name.as_str());
@@ -246,6 +257,7 @@ mod tests {
             sport,
             is_published,
             coach_id,
+            unbooked: false,
         }
     }
 
@@ -447,6 +459,105 @@ mod tests {
             use_case.coaches.asked.lock().unwrap().len(),
             asked,
             "一致するメニューがなければ他のコンテキストに問い合わせない"
+        );
+    }
+
+    #[tokio::test]
+    async fn unbooked_lists_only_menus_without_recent_bookings_keeping_the_order() {
+        let use_case = use_case();
+        let unbooked = |base: ListLessonMenusQuery| ListLessonMenusQuery {
+            unbooked: true,
+            ..base
+        };
+        // 直近の予約があるのは 1（3 件）・4（1 件）・7（2 件）
+        let list = use_case
+            .execute(&unbooked(ListLessonMenusQuery::default()))
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [3, 6, 8, 9, 5, 2].map(LessonMenuId::from_u128),
+            "予約のあるメニューを除いても並べ方は変わらない"
+        );
+        assert!(
+            list.recent_booking_counts.is_empty(),
+            "載ったメニューはどれも 0 件"
+        );
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            [(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9]
+                    .map(LessonMenuId::from_u128)
+                    .into(),
+                now()
+            )],
+            "数えるのは絞り込む前のメニュー。時計の今の時刻で問い合わせる"
+        );
+        assert_eq!(
+            *use_case.coaches.asked.lock().unwrap().last().unwrap(),
+            [TANAKA, ITO, ITO_2, UNKNOWN].into(),
+        );
+
+        // 付けないとき（false）は絞らない
+        let list = use_case
+            .execute(&ListLessonMenusQuery::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&list),
+            [4, 3, 6, 1, 8, 9, 5, 7, 2].map(LessonMenuId::from_u128)
+        );
+    }
+
+    #[tokio::test]
+    async fn unbooked_is_combined_with_the_other_conditions() {
+        let use_case = use_case();
+        let unbooked = |base: ListLessonMenusQuery| ListLessonMenusQuery {
+            unbooked: true,
+            ..base
+        };
+        let list = use_case
+            .execute(&unbooked(query(Some(Sport::Tennis), Some(true), None)))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [6, 8, 9, 5].map(LessonMenuId::from_u128));
+        let list = use_case
+            .execute(&unbooked(query(None, None, Some(TANAKA))))
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [8, 9].map(LessonMenuId::from_u128));
+        assert_eq!(list.coaches.keys().copied().collect::<Vec<_>>(), [TANAKA]);
+        let list = use_case
+            .execute(&ListLessonMenusQuery {
+                name: LessonMenuNameQuery::new("メニュー2").unwrap(),
+                ..unbooked(ListLessonMenusQuery::default())
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [2].map(LessonMenuId::from_u128));
+    }
+
+    #[tokio::test]
+    async fn unbooked_without_matching_menus_does_not_ask_names() {
+        let use_case = use_case();
+        let list = use_case
+            .execute(&ListLessonMenusQuery {
+                unbooked: true,
+                ..query(Some(Sport::Golf), None, None)
+            })
+            .await
+            .unwrap();
+        assert!(list.lesson_menus.is_empty());
+        assert!(list.coaches.is_empty());
+        assert!(list.recent_booking_counts.is_empty());
+        assert_eq!(
+            use_case.bookings.asked.lock().unwrap().len(),
+            1,
+            "ゴルフのメニュー（7）の予約の数は数える"
+        );
+        assert!(
+            use_case.coaches.asked.lock().unwrap().is_empty(),
+            "残ったメニューがなければ表示名を問い合わせない"
         );
     }
 

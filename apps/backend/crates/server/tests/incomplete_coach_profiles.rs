@@ -1,7 +1,10 @@
 //! 本部が見る、プロフィールに足りない項目のあるコーチの一覧（admin-web の `GET /coaches/incomplete-profiles`）を、保存先を
 //! Postgres にした組み立て（`server::router_with_postgres`）で通す。自己紹介文を書いていない・空白だけのコーチが載り、
 //! 書き終えたコーチ（`PUT /me/profile`）は載らず、消せばまた載ること、`sport` で提供スポーツの合うコーチだけに絞れる
-//! （保存先の提供スポーツの読み方まで通す）こと、コーチ・生徒は 403 であることを確かめる。
+//! （保存先の提供スポーツの読み方まで通す）こと、`acceptance_status` で受付の状態の合うコーチだけに絞れる（本部が受付を
+//! 止めた記録を scheduling の表から読むところまで通す。`sport` と組み合わせられる）こと、`q` で表示名に含むコーチだけに
+//! 絞れる（保存先から読んだ表示名で比べる。`sport`・`acceptance_status` と組み合わせられる）こと、コーチ・生徒は 403 で
+//! あることを確かめる。
 //! 契約の形の細かい検査は interface の `tests/incomplete_coach_profiles.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -234,6 +237,101 @@ async fn headquarters_finds_coaches_whose_bio_is_missing_in_postgres(pool: PgPoo
         &router,
         "GET",
         "/coaches/incomplete-profiles?sport=curling",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 受付の状態で絞る。本部が blank（ゴルフ）と fresh（野球）の受付を止める
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches/incomplete-profiles",
+        &headquarters,
+        None,
+    )
+    .await;
+    for name in ["blank", "fresh"] {
+        let coach_id = body["coaches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["display_name"] == name)
+            .unwrap()["coach_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let (status, body) = send(
+            &router,
+            "POST",
+            &format!("/coaches/{coach_id}/suspend"),
+            &headquarters,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{name}: {body}");
+    }
+    for (query, expected) in [
+        ("?acceptance_status=suspended", &["fresh", "blank"][..]),
+        ("?acceptance_status=accepting", &["written", "multi"][..]),
+        ("?sport=golf&acceptance_status=suspended", &["blank"][..]),
+        ("?sport=golf&acceptance_status=accepting", &["multi"][..]),
+        ("?sport=baseball&acceptance_status=accepting", &[][..]),
+        ("", &["written", "fresh", "blank", "multi"][..]),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches/incomplete-profiles{query}"),
+            &headquarters,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(names_in(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches/incomplete-profiles?acceptance_status=paused",
+        &headquarters,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 表示名で絞る。ASCII の英字は大文字と小文字を区別せず、前後の空白は除く
+    for (query, expected) in [
+        ("?q=RES", &["fresh"][..]),
+        ("?q=i", &["written", "multi"][..]),
+        ("?q=+%E3%80%80bl+", &["blank"][..]),
+        ("?q=l&sport=golf", &["blank", "multi"][..]),
+        (
+            "?q=l&sport=golf&acceptance_status=accepting",
+            &["multi"][..],
+        ),
+        ("?q=i&acceptance_status=suspended", &[][..]),
+        ("?q=nobody", &[][..]),
+        ("?q=+", &["written", "fresh", "blank", "multi"][..]),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches/incomplete-profiles{query}"),
+            &headquarters,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(names_in(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        "GET",
+        &format!("/coaches/incomplete-profiles?q={}", "a".repeat(51)),
         &headquarters,
         None,
     )

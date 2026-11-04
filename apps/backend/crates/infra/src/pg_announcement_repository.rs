@@ -68,6 +68,14 @@ const ALL_ANNOUNCEMENTS: &str =
      FROM notification.announcements
      ORDER BY sent_at DESC, seq DESC";
 
+/// 送った時刻が `$1`（含む）から `$2`（含まない）までの送った記録（新しい順）。
+const ANNOUNCEMENTS_SENT_BETWEEN: &str =
+    "SELECT announcement_id, sender_id, title, body, sport, recipient_count, sent_at,
+            withdrawn_by, withdrawn_at
+     FROM notification.announcements
+     WHERE sent_at >= $1 AND sent_at < $2
+     ORDER BY sent_at DESC, seq DESC";
+
 /// ID が `$1` のどれかの送った記録。
 const ANNOUNCEMENTS_OF: &str =
     "SELECT announcement_id, sender_id, title, body, sport, recipient_count, sent_at,
@@ -129,6 +137,20 @@ impl AnnouncementRepository for PgAnnouncementRepository {
 
     async fn find_all(&self) -> Result<Vec<Announcement>, Unavailable> {
         let rows: Vec<AnnouncementRow> = sqlx::query_as(ALL_ANNOUNCEMENTS)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Unavailable::new)?;
+        rows.into_iter().map(announcement_from_row).collect()
+    }
+
+    async fn find_sent_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Announcement>, Unavailable> {
+        let rows: Vec<AnnouncementRow> = sqlx::query_as(ANNOUNCEMENTS_SENT_BETWEEN)
+            .bind(timestamp(starts_at))
+            .bind(timestamp(ends_at))
             .fetch_all(&self.pool)
             .await
             .map_err(Unavailable::new)?;

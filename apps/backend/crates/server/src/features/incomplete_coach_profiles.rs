@@ -1,7 +1,10 @@
 //! 本部が見る、プロフィールに足りない項目のあるコーチの一覧（`GET /coaches/incomplete-profiles`）。コーチのアカウントと
-//! 自己紹介文を、どちらもアカウントの保存先（当面は identity の表）から読む。
+//! 自己紹介文を、どちらもアカウントの保存先（当面は identity の表）から読む。受付の状態で絞るときは scheduling に
+//! 問い合わせる（`SchedulingCoachAcceptanceLookup`）。
 
-use application::profile::ListIncompleteCoachProfiles;
+use application::{
+    profile::ListIncompleteCoachProfiles, scheduling::SchedulingCoachAcceptanceLookup,
+};
 use axum::Router;
 use infra::MockTokenService;
 
@@ -9,7 +12,11 @@ use crate::ports::Ports;
 
 pub(super) fn router<P: Ports>(ports: &P) -> Router {
     interface::incomplete_coach_profiles_router(
-        ListIncompleteCoachProfiles::new(ports.accounts(), ports.accounts()),
+        ListIncompleteCoachProfiles::new(
+            ports.accounts(),
+            ports.accounts(),
+            SchedulingCoachAcceptanceLookup::new(ports.coach_acceptances()),
+        ),
         MockTokenService,
     )
 }

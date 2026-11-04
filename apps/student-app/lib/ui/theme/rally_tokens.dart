@@ -6,11 +6,11 @@ import 'package:flutter/material.dart';
 
 /// 色の役割（color.roles）。明るい配色だけ（color.dark_mode.gen1）。
 abstract final class RallyColors {
-  static const primary = Color(0xFF1E3FD0);
+  static const primary = Color(0xFF3A54B0);
   static const onPrimary = Color(0xFFFFFFFF);
-  static const primaryPressed = Color(0xFF1A2FA8);
-  static const primaryContainer = Color(0xFFE6EBFF);
-  static const onPrimaryContainer = Color(0xFF14246E);
+  static const primaryPressed = Color(0xFF2E4590);
+  static const primaryContainer = Color(0xFFE9EDF8);
+  static const onPrimaryContainer = Color(0xFF1E2A5C);
 
   /// ライム。文字の色にしない（濃い面の上の強調か、on_secondary の文字の下の面だけ）
   static const secondary = Color(0xFFD4F53C);
@@ -28,15 +28,15 @@ abstract final class RallyColors {
   /// 飾りの区切り線だけ。部品の輪郭には [borderStrong]
   static const border = Color(0xFFDDE1EA);
   static const borderStrong = Color(0xFF7D8599);
-  static const focusRing = Color(0xFF1E3FD0);
+  static const focusRing = Color(0xFF3A54B0);
 
   /// rgba(16,19,26,0.56)
   static const scrim = Color(0x8F10131A);
 
   static const info = RallyStatusColors(
-    fg: Color(0xFF1E3FD0),
-    container: Color(0xFFE6EBFF),
-    onContainer: Color(0xFF14246E),
+    fg: Color(0xFF3A54B0),
+    container: Color(0xFFE9EDF8),
+    onContainer: Color(0xFF1E2A5C),
   );
   static const success = RallyStatusColors(
     fg: Color(0xFF0E7A3E),

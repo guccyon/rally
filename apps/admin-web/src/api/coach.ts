@@ -16,7 +16,8 @@ export function coachApi(client: ApiClient) {
           body,
         }),
       ),
-    listMyCoachSlots: () => call(() => client.GET("/coaches/me/slots")),
+    listMyCoachSlots: (period: { from?: string; to?: string } = {}) =>
+      call(() => client.GET("/coaches/me/slots", { params: { query: period } })),
     withdrawMySlot: (slotId: string) =>
       call(() =>
         client.POST("/coaches/me/slots/{slot_id}/withdraw", {

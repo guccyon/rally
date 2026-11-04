@@ -386,6 +386,20 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned())
     }
 
+    async fn find_many(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| booking_ids.contains(&b.id()))
+            .cloned()
+            .collect())
+    }
+
     async fn find_coach_acceptance(
         &self,
         coach_id: AccountId,
@@ -532,6 +546,21 @@ impl BookingRepository for InMemoryBookingRepository {
         Ok(last)
     }
 
+    async fn bookings_of_students_created_since(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        created_since: SystemTime,
+    ) -> Result<Vec<Booking>, Unavailable> {
+        Ok(self
+            .bookings
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|b| student_ids.contains(&b.student_id()) && b.created_at() >= created_since)
+            .cloned()
+            .collect())
+    }
+
     async fn bookings_of_coach(
         &self,
         coach_id: AccountId,
@@ -549,6 +578,20 @@ impl BookingRepository for InMemoryBookingRepository {
                 Ok((b.clone(), slot.clone()))
             })
             .collect()
+    }
+
+    async fn bookings_of_coach_starting_between(
+        &self,
+        coach_id: AccountId,
+        from: SystemTime,
+        until: SystemTime,
+    ) -> Result<Vec<(Booking, Slot)>, Unavailable> {
+        Ok(self
+            .bookings_of_coach(coach_id)
+            .await?
+            .into_iter()
+            .filter(|(_, slot)| from <= slot.starts_at() && slot.starts_at() < until)
+            .collect())
     }
 
     async fn bookings_of_lesson_menus_created_since(
@@ -639,6 +682,17 @@ impl CoachAcceptanceRepository for InMemoryCoachAcceptanceRepository {
             .cloned()
             .collect();
         changes.sort_by_key(|change| std::cmp::Reverse(change.changed_at()));
+        Ok(changes)
+    }
+
+    async fn changes_between(
+        &self,
+        coach_id: AccountId,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<CoachAcceptanceChange>, Unavailable> {
+        let mut changes = self.changes(coach_id).await?;
+        changes.retain(|change| starts_at <= change.changed_at() && change.changed_at() < ends_at);
         Ok(changes)
     }
 }
@@ -827,13 +881,20 @@ impl LiveLessonSessionRepository for InMemoryLiveLessonSessionRepository {
     async fn find_in_progress_started_at_or_before(
         &self,
         started_at_or_before: SystemTime,
+        coach_id: Option<AccountId>,
+        student_id: Option<AccountId>,
     ) -> Result<Vec<LiveLessonSession>, Unavailable> {
         Ok(self
             .sessions
             .lock()
             .unwrap()
             .iter()
-            .filter(|s| s.ended_at().is_none() && s.started_at() <= started_at_or_before)
+            .filter(|s| {
+                s.ended_at().is_none()
+                    && s.started_at() <= started_at_or_before
+                    && coach_id.is_none_or(|coach_id| s.coach_id() == coach_id)
+                    && student_id.is_none_or(|student_id| s.booking_of(student_id).is_some())
+            })
             .cloned()
             .collect())
     }
@@ -1255,6 +1316,10 @@ impl MessageThreadRepository for InMemoryMessageThreadRepository {
             .collect())
     }
 
+    async fn list_all(&self) -> Result<Vec<MessageThread>, Unavailable> {
+        Ok(self.all())
+    }
+
     async fn update<F>(
         &self,
         thread_id: MessageThreadId,
@@ -1635,10 +1700,12 @@ impl NotificationRepository for InMemoryNotificationRepository {
     async fn find_announcements_by_recipient(
         &self,
         recipient: AccountId,
+        unread_only: bool,
         limit: usize,
     ) -> Result<Vec<Notification>, Unavailable> {
         let mut announcements = self.find_by_recipient(recipient).await?;
-        announcements.retain(|n| n.kind() == NotificationKind::Announcement);
+        announcements
+            .retain(|n| n.kind() == NotificationKind::Announcement && n.is_unread_as(unread_only));
         announcements.truncate(limit);
         Ok(announcements)
     }
@@ -1650,6 +1717,24 @@ impl NotificationRepository for InMemoryNotificationRepository {
             }
         }
         Ok(())
+    }
+
+    async fn count_read_by_announcement(
+        &self,
+        read_until: &BTreeMap<AnnouncementId, Option<SystemTime>>,
+    ) -> Result<BTreeMap<AnnouncementId, u32>, Unavailable> {
+        let mut counts = BTreeMap::new();
+        for notification in self.all() {
+            if let (Some(id), Some(read_at)) = (
+                notification.push().announcement_id(),
+                notification.read_at(),
+            ) && let Some(until) = read_until.get(&id)
+                && until.is_none_or(|until| read_at <= until)
+            {
+                *counts.entry(id).or_insert(0) += 1;
+            }
+        }
+        Ok(counts)
     }
 }
 
@@ -1705,6 +1790,16 @@ impl AnnouncementRepository for InMemoryAnnouncementRepository {
         // 後に残したものから並べてあるので、安定な並べ替えで同じ時刻は後に残したものが先になる
         all.sort_by_key(|a| std::cmp::Reverse(a.sent_at()));
         Ok(all)
+    }
+
+    async fn find_sent_between(
+        &self,
+        starts_at: SystemTime,
+        ends_at: SystemTime,
+    ) -> Result<Vec<Announcement>, Unavailable> {
+        let mut sent = self.find_all().await?;
+        sent.retain(|a| starts_at <= a.sent_at() && a.sent_at() < ends_at);
+        Ok(sent)
     }
 
     async fn find_by_ids(

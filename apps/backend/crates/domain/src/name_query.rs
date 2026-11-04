@@ -1,7 +1,6 @@
-use crate::DomainError;
-
 /// 名前の検索語の共通の規則。名前に部分一致するものを探す（本部の一覧の `q`。表示名は
-/// [`crate::profile::DisplayNameQuery`]、レッスンメニューの名前は [`crate::catalog::LessonMenuNameQuery`] がこれを包む）。
+/// [`crate::profile::DisplayNameQuery`]、レッスンメニューの名前は [`crate::catalog::LessonMenuNameQuery`]、お知らせの下書きの題は
+/// [`crate::notification::AnnouncementTitleQuery`] がこれを包む）。
 ///
 /// 前後の空白（全角の空白を含む）は除いて扱い、除いたあとに空なら検索語なし。除いたあとの文字数の上限は包む型が決める
 /// （探す名前の上限と同じ）。大文字・小文字は ASCII の英字（`A`〜`Z` と `a`〜`z`）だけ区別しない。全角の英字・
@@ -16,12 +15,9 @@ impl NameQuery {
     /// [`NameQuery::FOLD_FROM`] の各文字の置き換え先（ASCII の小文字）。
     pub const FOLD_TO: &str = "abcdefghijklmnopqrstuvwxyz";
 
-    /// 前後の空白を除いて空なら（空白だけなら）検索語なしとして `None`。除いたあとに `max_chars` 文字を超えたら `too_long`。
-    pub fn new(
-        value: &str,
-        max_chars: usize,
-        too_long: DomainError,
-    ) -> Result<Option<Self>, DomainError> {
+    /// 前後の空白を除いて空なら（空白だけなら）検索語なしとして `None`。除いたあとに `max_chars` 文字を超えたら `too_long`
+    /// （エラーの型は包む型のコンテキストのもの）。
+    pub fn new<E>(value: &str, max_chars: usize, too_long: E) -> Result<Option<Self>, E> {
         let value = value.trim();
         if value.is_empty() {
             return Ok(None);
@@ -62,6 +58,7 @@ fn fold(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DomainError;
 
     const MAX: usize = 5;
     const TOO_LONG: DomainError = DomainError::DisplayNameQueryTooLong { max: MAX };

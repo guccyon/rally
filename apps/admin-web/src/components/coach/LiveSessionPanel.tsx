@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { ResultMessage } from "@/components/ResultMessage";
+import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   BOOKING_STATUS_LABELS,
   formatDateTime,

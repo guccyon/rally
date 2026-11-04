@@ -3,7 +3,8 @@
 //! OpenAPI のスキーマで検査し、送付 → 返却の一連・返却前の取得が未返却（`in_progress`）になること・行動イベント
 //! `video.submitted` / `video_review.returned`（`submitted_at` 付き）・ゴルフの動画の添削に着手できないこと・
 //! 役割と当事者による 403 / 404 を確かめる。admin-web の `GET /coaches/me/videos`（`listMyCoachVideos`）は、コーチ本人に
-//! 送られた動画だけを添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返し、コーチ以外は 403 になることを確かめる。
+//! 送られた動画だけを添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返し、`pending_only=true` なら添削待ちだけを
+//! 同じ並びで返し（`true` / `false` でなければ 422）、コーチ以外は 403 になることを確かめる。
 //! AI の一次フィードバック（`ai_feedback`）は送付の直後に付き、添削とは別の項目として返却の後も変わらないこと、
 //! AI が作れなかった動画は null になることを `getVideoReview` と `listMyCoachVideos` で確かめる。
 //! 送付で選んだ非同期のレッスンメニュー（`lesson_menu_id`）は送った時点の ID・名前の写し（`lesson_menu`）として
@@ -263,6 +264,9 @@ fn app() -> App {
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock.clone(),
         ),
         application::scheduling::ListMyBookings::new(
@@ -278,6 +282,7 @@ fn app() -> App {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock.clone(),
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -285,6 +290,7 @@ fn app() -> App {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock.clone(),
         ),
         StartSubscription::new(
             entitlements.clone(),
@@ -499,9 +505,18 @@ impl App {
     }
 
     async fn list_coach_videos(&self, token: Option<&str>) -> (StatusCode, Value) {
+        self.list_coach_videos_with_query(token, "").await
+    }
+
+    /// `query`（`?` から。空なら付けない）を付けた `listMyCoachVideos`。
+    async fn list_coach_videos_with_query(
+        &self,
+        token: Option<&str>,
+        query: &str,
+    ) -> (StatusCode, Value) {
         let (status, body) = send(
             &self.router,
-            with_token(Request::get("/coaches/me/videos"), token)
+            with_token(Request::get(format!("/coaches/me/videos{query}")), token)
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -868,6 +883,74 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
     let (status, body) = app.list_coach_videos(Some("coach:3")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "videos": [] }));
+}
+
+#[tokio::test]
+async fn pending_only_lists_only_videos_awaiting_review_in_the_same_order() {
+    let app = app();
+    let golf = video_id_uuid::format(GOLF_VIDEO);
+
+    // 1 時間後・2 時間後に送り、3 時間後に 1 本目の添削を返す
+    let hour = |h: u64| submitted_at() + Duration::from_secs(h * 3600);
+    app.clock.set(hour(1));
+    let first = app.submitted_video().await;
+    app.clock.set(hour(2));
+    let second = app.submitted_video().await;
+    app.clock.set(hour(3));
+    let (status, body) = app
+        .return_review(Some(COACH), &first, review("トスを体の前に上げる"))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let ids = |body: &Value| -> Vec<String> {
+        body["videos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|video| video["video_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // 返却待ちだけ（送られた時刻の古い順のまま）。返却済みの 1 本目は出ない
+    let (status, pending) = app
+        .list_coach_videos_with_query(Some(COACH), "?pending_only=true")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    assert_eq!(ids(&pending), [golf.clone(), second.clone()]);
+    assert!(
+        pending["videos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|video| video["review_status"] == "in_progress")
+    );
+
+    // 省いたとき・false のときは今までどおりすべて
+    let (status, all) = app.list_coach_videos(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    assert_eq!(ids(&all), [golf, second, first]);
+    let (status, not_only) = app
+        .list_coach_videos_with_query(Some(COACH), "?pending_only=false")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{not_only}");
+    assert_eq!(not_only, all);
+
+    // 返却待ちがないコーチは空の配列
+    let (status, body) = app
+        .list_coach_videos_with_query(Some("coach:3"), "?pending_only=true")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "videos": [] }));
+}
+
+#[tokio::test]
+async fn pending_only_that_is_not_a_boolean_is_422_validation_failed() {
+    let app = app();
+    for query in ["?pending_only=yes", "?pending_only=1", "?pending_only="] {
+        let (status, body) = app.list_coach_videos_with_query(Some(COACH), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+    }
 }
 
 #[tokio::test]

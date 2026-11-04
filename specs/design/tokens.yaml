@@ -7,11 +7,11 @@ concept: rally-court
 
 color:
   roles:   # 明るい配色（Gen1 の既定で、唯一の配色）
-    primary: "#1E3FD0"              # 主。主なボタン・リンク・選択中
+    primary: "#3A54B0"              # 主。主なボタン・リンク・選択中（0.2.0 で #1E3FD0 から彩度を下げた）
     on_primary: "#FFFFFF"
-    primary_pressed: "#1A2FA8"      # 押下のとき（白の文字と 10.42）
-    primary_container: "#E6EBFF"    # 選択中の行・情報の面
-    on_primary_container: "#14246E"
+    primary_pressed: "#2E4590"      # 押下のとき（白の文字と 8.86）
+    primary_container: "#E9EDF8"    # 選択中の行・情報の面
+    on_primary_container: "#1E2A5C"
     secondary: "#D4F53C"            # 副（ライム）。文字の色にしない
     on_secondary: "#10131A"
     text: "#10131A"
@@ -23,10 +23,10 @@ color:
     on_inverse_surface_muted: "#B8BFCC"
     border: "#DDE1EA"               # 飾りの区切り線だけ（1.31。部品の輪郭に使わない）
     border_strong: "#7D8599"        # 入力欄・押せる部品の輪郭（3.69）
-    focus_ring: "#1E3FD0"           # 濃い面の上では secondary
+    focus_ring: "#3A54B0"           # 濃い面の上では secondary
     scrim: "rgba(16,19,26,0.56)"    # ダイアログの後ろ
   status:
-    info:    {fg: "#1E3FD0", container: "#E6EBFF", on_container: "#14246E"}
+    info:    {fg: "#3A54B0", container: "#E9EDF8", on_container: "#1E2A5C"}
     success: {fg: "#0E7A3E", container: "#E2F6EA", on_container: "#0A4F28"}
     warning: {fg: "#9A5B00", container: "#FFF1D6", on_container: "#5A3500"}
     danger:  {fg: "#C0182F", container: "#FDE8EB", on_container: "#7A0F1E"}
@@ -36,19 +36,22 @@ color:
     confirmed: success    # 確定済み
     cancelled: neutral    # キャンセル済み（text_muted の文字と surface の面）
   scale:   # 濃淡の段階。roles にない段は使わない（足すときは governance の手順で）
-    blue:  {50: "#E6EBFF", 600: "#1E3FD0", 700: "#1A2FA8", 900: "#14246E"}
+    blue:  {50: "#E9EDF8", 600: "#3A54B0", 700: "#2E4590", 900: "#1E2A5C"}   # 0.2.0 で彩度を下げた（段の名前は同じ）
     lime:  {300: "#D4F53C"}
     ink:   {50: "#F1F3F8", 100: "#DDE1EA", 300: "#B8BFCC", 500: "#7D8599", 700: "#4A5163", 950: "#10131A"}
   usage_rules:
     - secondary（ライム）は文字の色にしない。濃い面の上の強調（線・しるし・数字の下線）か、on_secondary の文字の下の面にだけ使う
-    - primary を inverse_surface の上の文字・アイコンに使わない（2.37）。濃い面の上は on_inverse_surface か secondary
+    - primary を inverse_surface の上の文字・アイコンに使わない（2.72）。濃い面の上は on_inverse_surface か secondary
     - border は区切り線だけ。入力欄・ボタンの輪郭は border_strong
   contrast_checked:   # WCAG 2.2 の比。文字は 4.5 以上、大きな文字と文字でない部品は 3 以上
-    - {fg: primary, bg: background, ratio: 7.84}
-    - {fg: primary, bg: surface, ratio: 7.07}
-    - {fg: primary, bg: primary_container, ratio: 6.61}
-    - {fg: on_primary, bg: primary_pressed, ratio: 10.42}
-    - {fg: on_primary_container, bg: primary_container, ratio: 11.74}
+    - {fg: primary, bg: background, ratio: 6.83}
+    - {fg: primary, bg: surface, ratio: 6.15}
+    - {fg: primary, bg: primary_container, ratio: 5.83}
+    - {fg: on_primary, bg: primary, ratio: 6.83}
+    - {fg: on_primary, bg: primary_pressed, ratio: 8.86}
+    - {fg: on_primary_container, bg: primary_container, ratio: 11.64}
+    - {fg: text, bg: primary_container, ratio: 15.87}
+    - {fg: text_muted, bg: primary_container, ratio: 6.77}
     - {fg: text, bg: background, ratio: 18.58}
     - {fg: text, bg: surface, ratio: 16.74}
     - {fg: text_muted, bg: background, ratio: 7.93}
@@ -57,7 +60,7 @@ color:
     - {fg: on_inverse_surface, bg: inverse_surface, ratio: 18.58}
     - {fg: on_inverse_surface_muted, bg: inverse_surface, ratio: 10.05}
     - {fg: secondary, bg: inverse_surface, ratio: 14.98, note: 文字でない強調と display の数字}
-    - {fg: secondary, bg: primary, ratio: 6.32, note: 文字でない強調だけ}
+    - {fg: secondary, bg: primary, ratio: 5.50, note: 文字でない強調だけ}
     - {fg: border_strong, bg: background, ratio: 3.69, note: 文字でない部品}
     - {fg: border_strong, bg: surface, ratio: 3.33, note: 文字でない部品}
     - {fg: danger.fg, bg: background, ratio: 6.15}
@@ -75,7 +78,7 @@ color:
     - {fg: warning.on_container, bg: warning.container, ratio: 9.67}
   not_allowed_pairs:   # 比が足りないので使わない
     - {fg: secondary, bg: background, ratio: 1.24}
-    - {fg: primary, bg: inverse_surface, ratio: 2.37}
+    - {fg: primary, bg: inverse_surface, ratio: 2.72}
     - {fg: border, bg: background, ratio: 1.31, note: 部品の輪郭として}
   dark_mode:
     gen1: 明るい配色だけ。端末がダークでも明るい配色で出す（Flutter は themeMode を ThemeMode.light、admin-web は color-scheme を light）
@@ -101,12 +104,13 @@ typography:
     bundling_status: student-app の同梱はまだ（pubspec に fonts がない）。今は RallyTypography.family の名前で指定し、端末に Noto Sans CJK JP があればそれ（Android の既定）、なければ端末の既定のゴシックで出る。同梱は別のタスク
   weights: {regular: 400, bold: 700, black: 900}
   scale:   # 大きさ px / 太さ / 行間 / 字間
-    display:  {size: 44, weight: 900, line_height: 1.1,  letter_spacing: "-0.02em", use: 残りの回数・次のレッスンの日時。1 画面 1 か所}
-    headline: {size: 28, weight: 900, line_height: 1.25, letter_spacing: "-0.01em", use: 画面の見出し}
-    title:    {size: 20, weight: 700, line_height: 1.25, letter_spacing: "-0.01em", use: 欄の見出し・カードの主の行}
-    body:     {size: 16, weight: 400, line_height: 1.65, letter_spacing: "0.01em",  use: 本文・規定・誤りの知らせ}
-    small:    {size: 14, weight: 400, line_height: 1.6,  letter_spacing: "0.01em",  use: カードの補足・ラベル}
-    caption:  {size: 12, weight: 700, line_height: 1.5,  letter_spacing: "0.02em",  use: しるし・タグだけ。文には使わない}
+    display:  {size: 44, weight: 900, line_height: 1.1,  letter_spacing: "-0.02em", use: 残りの回数・次のレッスンの日時。1 画面 1 か所, sample: "残り 2 回"}
+    headline: {size: 28, weight: 900, line_height: 1.25, letter_spacing: "-0.01em", use: 画面の見出し, sample: "ホーム"}
+    title:    {size: 20, weight: 700, line_height: 1.25, letter_spacing: "-0.01em", use: 欄の見出し・カードの主の行, sample: "これからの予約"}
+    body:     {size: 16, weight: 400, line_height: 1.65, letter_spacing: "0.01em",  use: 本文・規定・誤りの知らせ, sample: "予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。"}
+    small:    {size: 14, weight: 400, line_height: 1.6,  letter_spacing: "0.01em",  use: カードの補足・ラベル, sample: "コーチ: 山田"}
+    caption:  {size: 12, weight: 700, line_height: 1.5,  letter_spacing: "0.02em",  use: しるし・タグだけ。文には使わない, sample: "確定待ち"}
+  sample_rule: 書体の見本（sample とカタログ）は日本語で、実際の画面の文言にする。サービスは日本国内だけに出す
   admin_web: admin-web は display を使わず、headline を 24px、本文を 16px にする
   emphasis: 本文の強調は 700。下線は押せるリンクだけ。斜体は使わない
   max_line_length: 本文の 1 行は 40 字まで（PC の admin-web は 1 段 48rem）

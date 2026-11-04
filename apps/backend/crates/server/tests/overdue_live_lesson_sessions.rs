@@ -1,7 +1,9 @@
 //! 本部が終わっていないまま時間の過ぎた通話セッションの一覧を見る（admin-web の `listOverdueLiveLessonSessions`）ことを、
 //! 保存先を Postgres にした組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、API で
 //! 開始した Postgres のセッションのうち終了していないものだけを、開始から既定の 3 時間（`older_than_hours` で変えられる）
-//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、本部以外は 403 になることを確かめる。
+//! 以上たったときに返し、コーチと生徒の表示名をアカウントの保存先から添えること、`coach_id` でコーチを絞れること、`sport` で
+//! コーチの提供スポーツ（アカウントの保存先）から競技を絞れること、`student_id` で生徒を絞れること（ほかの絞り込みと
+//! 組み合わさる）、本部以外は 403 になることを確かめる。
 //! 契約の形・時間の範囲の細かい検査は interface の `tests/overdue_live_lesson_sessions.rs`、通話中のセッションの読み取りは
 //! infra の `tests/pg_live_lesson_session_repository.rs`。
 //!
@@ -61,7 +63,23 @@ fn post_json(path: &str, token: &str, body: Value) -> Request<Body> {
 }
 
 /// アカウントを登録して ID とトークンを返す。契約にコーチ・本部の登録の操作がないので、ユースケースを直に呼ぶ。
+/// 生徒・コーチのスポーツはテニス。
 async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String) {
+    let sports = if role == Role::Headquarters {
+        vec![]
+    } else {
+        vec![Sport::Tennis]
+    };
+    register_with_sports(pool, email, role, sports).await
+}
+
+/// スポーツ `sports` のアカウントを登録して ID とトークンを返す。
+async fn register_with_sports(
+    pool: &PgPool,
+    email: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (AccountId, String) {
     let account = RegisterAccount::new(
         PgAccountRepository::new(pool.clone()),
         RecordingAnalyticsSink::default(),
@@ -71,11 +89,7 @@ async fn register(pool: &PgPool, email: &str, role: Role) -> (AccountId, String)
         email: email.to_string(),
         display_name: email.split('@').next().unwrap().to_string(),
         role,
-        sports: if role == Role::Headquarters {
-            vec![]
-        } else {
-            vec![Sport::Tennis]
-        },
+        sports,
     })
     .await
     .unwrap();
@@ -132,9 +146,16 @@ async fn confirmed_booking(
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
-    let (tanaka, tanaka_token) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (tanaka, tanaka_token) = register_with_sports(
+        &pool,
+        "tanaka@example.com",
+        Role::Coach,
+        vec![Sport::Tennis, Sport::Soccer],
+    )
+    .await;
     let (taro, taro_token) = register(&pool, "taro@example.com", Role::Student).await;
-    let (_, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
+    let (hanako, hanako_token) = register(&pool, "hanako@example.com", Role::Student).await;
+    let (suzuki, _) = register(&pool, "suzuki@example.com", Role::Coach).await;
     let (_, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
     let clock = ManualClock::new(nov1_10() - 24 * HOUR);
     let router =
@@ -232,6 +253,104 @@ async fn headquarters_reads_overdue_sessions_from_postgres(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, json!({ "older_than_hours": 4, "sessions": [] }));
+
+    // コーチで絞れる。時間と組み合わさる
+    let overdue = |query: String| {
+        let router = router.clone();
+        let hq_token = hq_token.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                get(&format!("/live-lesson-sessions/overdue?{query}"), &hq_token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            body["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["session_id"].clone())
+                .collect::<Vec<_>>()
+        }
+    };
+    let tanaka_id = account_id_uuid::format(tanaka);
+    assert_eq!(
+        overdue(format!("coach_id={tanaka_id}")).await,
+        std::slice::from_ref(&session_id)
+    );
+    assert!(
+        overdue(format!("coach_id={tanaka_id}&older_than_hours=4"))
+            .await
+            .is_empty()
+    );
+    // 通話のないコーチ・コーチでない ID は空
+    for other in [suzuki, hanako] {
+        assert!(
+            overdue(format!("coach_id={}", account_id_uuid::format(other)))
+                .await
+                .is_empty()
+        );
+    }
+
+    // 競技で絞れる（たなかの提供スポーツはテニスとサッカーで、どちらでも出る）。時間・コーチと組み合わさる
+    for query in ["sport=tennis", "sport=soccer"] {
+        assert_eq!(
+            overdue(query.to_string()).await,
+            std::slice::from_ref(&session_id),
+            "{query}"
+        );
+    }
+    for query in [
+        "sport=golf".to_string(),
+        "sport=tennis&older_than_hours=4".to_string(),
+        format!("sport=tennis&coach_id={}", account_id_uuid::format(suzuki)),
+    ] {
+        assert!(overdue(query.clone()).await.is_empty(), "{query}");
+    }
+    assert_eq!(
+        overdue(format!("sport=tennis&coach_id={tanaka_id}")).await,
+        std::slice::from_ref(&session_id)
+    );
+    let (status, body) = send(
+        &router,
+        get("/live-lesson-sessions/overdue?sport=pingpong", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // 生徒で絞れる。時間・コーチ・競技と組み合わさる
+    let taro_id = account_id_uuid::format(taro);
+    for query in [
+        format!("student_id={taro_id}"),
+        format!("student_id={taro_id}&older_than_hours=3&coach_id={tanaka_id}&sport=tennis"),
+    ] {
+        assert_eq!(
+            overdue(query.clone()).await,
+            std::slice::from_ref(&session_id),
+            "{query}"
+        );
+    }
+    for query in [
+        // 終了した通話だけの生徒・通話のない ID（コーチ）
+        format!("student_id={}", account_id_uuid::format(hanako)),
+        format!("student_id={tanaka_id}"),
+        format!("student_id={taro_id}&older_than_hours=4"),
+        format!(
+            "student_id={taro_id}&coach_id={}",
+            account_id_uuid::format(suzuki)
+        ),
+        format!("student_id={taro_id}&sport=golf"),
+    ] {
+        assert!(overdue(query.clone()).await.is_empty(), "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/live-lesson-sessions/overdue?student_id=taro", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["message"], "student_id が UUID でない");
 
     // 本部だけ
     for token in [&tanaka_token, &taro_token] {

@@ -1,10 +1,17 @@
 use std::{
     cmp::Reverse,
+    collections::BTreeMap,
     time::{Duration, SystemTime},
 };
 
 use super::LiveLessonSession;
-use crate::{DomainError, identity::AccountId};
+use crate::{
+    DomainError,
+    catalog::{LessonMenuId, Sport},
+    identity::{Account, AccountId},
+    profile::CoachSportFilter,
+    scheduling::BookingId,
+};
 
 /// 本部が見る通話セッションの記録の一覧の条件（admin-web の `listLiveLessonSessions`。期間・範囲・並べ方の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `listLiveLessonSessions`）。
@@ -13,12 +20,20 @@ use crate::{DomainError, identity::AccountId};
 /// [`Self::coach_id`] と任意の生徒 [`Self::student_id`] で絞る。生徒は結び付いた予約の生徒（グループレッスンでは開始した
 /// 予約の生徒に限らない。[`LiveLessonSession::booking_of`]）で見る。日付から時刻への変換（タイムゾーン）は application が決め、ここは期間の長さの規則と
 /// 選び方・並べ方だけを持つ。期間は 0 より長く [`Self::MAX_DAYS`] 日まで。終了の有無は問わない（通話中も含む）。
+/// 任意の競技 [`Self::sport`] でも絞れる（[`Self::with_sport`]。省けばすべての競技）。セッションの競技はセッションの
+/// コーチの競技で、コーチの提供スポーツに含むかの判定は [`CoachSportFilter`] の 1 か所（[`Self::matches_coach_sport`]。
+/// `listOverdueLiveLessonSessions` の `sport` と同じ。[`super::OverdueSessionCriteria`]）。任意のレッスンメニュー
+/// [`Self::lesson_menu_id`] でも絞れる（[`Self::with_lesson_menu`]。省けばメニューを問わない）。セッションのメニューは
+/// 結び付いた予約の予約した時点のメニューの写しで、どれかの予約がそのメニューならセッションが合う（グループレッスンでは
+/// 開始した予約に限らない。生徒の指定と同じ見方。[`Self::matches_lesson_menu`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionHistoryCriteria {
     starts_at: SystemTime,
     ends_at: SystemTime,
     coach_id: Option<AccountId>,
     student_id: Option<AccountId>,
+    coach_sport: CoachSportFilter,
+    lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl SessionHistoryCriteria {
@@ -50,7 +65,27 @@ impl SessionHistoryCriteria {
             ends_at,
             coach_id,
             student_id,
+            coach_sport: CoachSportFilter::new(None),
+            lesson_menu_id: None,
         })
+    }
+
+    /// `sport` があればその競技のコーチのセッションだけを選ぶ条件（`None` ならすべての競技）。期間・コーチ・生徒は
+    /// 変えない。
+    pub const fn with_sport(self, sport: Option<Sport>) -> Self {
+        Self {
+            coach_sport: CoachSportFilter::new(sport),
+            ..self
+        }
+    }
+
+    /// `lesson_menu_id` があればそのメニューの予約が結び付いたセッションだけを選ぶ条件（`None` ならメニューを問わない）。
+    /// 期間・コーチ・生徒・競技は変えない。
+    pub const fn with_lesson_menu(self, lesson_menu_id: Option<LessonMenuId>) -> Self {
+        Self {
+            lesson_menu_id,
+            ..self
+        }
     }
 
     pub const fn starts_at(&self) -> SystemTime {
@@ -67,6 +102,42 @@ impl SessionHistoryCriteria {
 
     pub const fn student_id(&self) -> Option<AccountId> {
         self.student_id
+    }
+
+    /// 絞り込む競技。`None` ならすべての競技。
+    pub const fn sport(&self) -> Option<Sport> {
+        self.coach_sport.sport()
+    }
+
+    /// 絞り込むレッスンメニュー。`None` ならメニューを問わない。
+    pub const fn lesson_menu_id(&self) -> Option<LessonMenuId> {
+        self.lesson_menu_id
+    }
+
+    /// `session` がメニューの指定に合うか。`booking_menus` は予約ごとの予約した時点のメニュー（メニューのない予約は
+    /// 含まない）。メニューの指定がなければ常に合う。指定があれば、結び付いた予約のどれか（グループレッスンでは開始した
+    /// 予約に限らない）の予約した時点のメニューが指定のメニューのときだけ合う。メニューのない予約だけのセッションは合わない。
+    pub fn matches_lesson_menu(
+        &self,
+        session: &LiveLessonSession,
+        booking_menus: &BTreeMap<BookingId, LessonMenuId>,
+    ) -> bool {
+        self.lesson_menu_id.is_none_or(|lesson_menu_id| {
+            session
+                .bookings()
+                .iter()
+                .any(|booking| booking_menus.get(&booking.booking_id()) == Some(&lesson_menu_id))
+        })
+    }
+
+    /// セッションのコーチのアカウント `coach`（引けなければ `None`）が競技の指定に合うか。競技の指定がなければ常に合う。
+    /// 指定があれば、コーチの役割のアカウントで提供スポーツに競技を含むときだけ合う（判定は [`CoachSportFilter`]。
+    /// `listCoaches` の `sport` と同じ）。アカウントの引けないコーチは合わない。
+    pub fn matches_coach_sport(&self, coach: Option<&Account>) -> bool {
+        match self.sport() {
+            None => true,
+            Some(_) => coach.is_some_and(|coach| self.coach_sport.matches(coach)),
+        }
     }
 
     /// `session` が期間に開始し（開始を含み、終了を含まない）、コーチの指定があればそのコーチの、生徒の指定があれば
@@ -97,7 +168,9 @@ impl SessionHistoryCriteria {
 mod tests {
     use super::*;
     use crate::{
+        identity::{Email, Role},
         live_lesson::{ConnectionQuality, SessionBooking, SessionId},
+        profile::DisplayName,
         scheduling::BookingId,
     };
 
@@ -235,6 +308,163 @@ mod tests {
                 .unwrap()
                 .matches(&group)
         );
+    }
+
+    fn account(role: Role, sports: &[Sport]) -> Account {
+        Account::new(
+            COACH,
+            Email::new("coach@example.com").unwrap(),
+            DisplayName::new("たなか").unwrap(),
+            role,
+            sports.iter().copied(),
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn with_sport_keeps_the_period_the_coach_and_the_student() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), Some(COACH), Some(STUDENT))
+            .unwrap()
+            .with_sport(Some(Sport::Golf));
+        assert_eq!(
+            (
+                criteria.starts_at(),
+                criteria.ends_at(),
+                criteria.coach_id(),
+                criteria.student_id(),
+                criteria.sport()
+            ),
+            (
+                day(10),
+                day(12),
+                Some(COACH),
+                Some(STUDENT),
+                Some(Sport::Golf)
+            )
+        );
+        let plain = SessionHistoryCriteria::new(day(10), day(12), None, None).unwrap();
+        assert_eq!(plain.sport(), None, "既定はすべての競技");
+        assert_eq!(plain.with_sport(None), plain);
+    }
+
+    #[test]
+    fn without_sport_every_coach_matches() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None).unwrap();
+        assert!(criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Soccer]))));
+        assert!(
+            criteria.matches_coach_sport(None),
+            "アカウントの引けないコーチも、競技を指定しなければ絞らない"
+        );
+    }
+
+    #[test]
+    fn sport_matches_coaches_offering_it_among_several() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None)
+            .unwrap()
+            .with_sport(Some(Sport::Golf));
+        assert!(
+            criteria
+                .matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis, Sport::Golf])))
+        );
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Coach, &[Sport::Tennis]))));
+        // コーチでないアカウント・引けないコーチは合わない
+        assert!(!criteria.matches_coach_sport(Some(&account(Role::Student, &[Sport::Golf]))));
+        assert!(!criteria.matches_coach_sport(None));
+    }
+
+    const MENU: LessonMenuId = LessonMenuId::from_u128(50);
+    const OTHER_MENU: LessonMenuId = LessonMenuId::from_u128(51);
+
+    #[test]
+    fn with_lesson_menu_keeps_the_other_conditions() {
+        let plain = SessionHistoryCriteria::new(day(10), day(12), Some(COACH), Some(STUDENT))
+            .unwrap()
+            .with_sport(Some(Sport::Golf));
+        let criteria = plain.with_lesson_menu(Some(MENU));
+        assert_eq!(
+            (
+                criteria.starts_at(),
+                criteria.ends_at(),
+                criteria.coach_id(),
+                criteria.student_id(),
+                criteria.sport(),
+                criteria.lesson_menu_id()
+            ),
+            (
+                day(10),
+                day(12),
+                Some(COACH),
+                Some(STUDENT),
+                Some(Sport::Golf),
+                Some(MENU)
+            )
+        );
+        assert_eq!(plain.lesson_menu_id(), None, "既定はメニューを問わない");
+        assert_eq!(plain.with_lesson_menu(None), plain);
+    }
+
+    #[test]
+    fn without_lesson_menu_every_session_matches() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None).unwrap();
+        assert!(
+            criteria.matches_lesson_menu(&session(1, COACH, day(10), None), &BTreeMap::new()),
+            "メニューのない予約のセッションも、メニューを指定しなければ絞らない"
+        );
+    }
+
+    #[test]
+    fn lesson_menu_matches_sessions_with_a_booking_of_that_menu() {
+        let criteria = SessionHistoryCriteria::new(day(10), day(12), None, None)
+            .unwrap()
+            .with_lesson_menu(Some(MENU));
+        // 開始した予約（101）のメニュー
+        let single = session(1, COACH, day(10), None);
+        assert!(criteria.matches_lesson_menu(
+            &single,
+            &BTreeMap::from([(BookingId::from_u128(101), MENU)])
+        ));
+        assert!(!criteria.matches_lesson_menu(
+            &single,
+            &BTreeMap::from([(BookingId::from_u128(101), OTHER_MENU)])
+        ));
+        assert!(
+            !criteria.matches_lesson_menu(&single, &BTreeMap::new()),
+            "メニューのない予約のセッションは合わない"
+        );
+        assert!(
+            !criteria.matches_lesson_menu(
+                &single,
+                &BTreeMap::from([(BookingId::from_u128(999), MENU)])
+            ),
+            "結び付いていない予約のメニューは見ない"
+        );
+        // グループレッスンで、開始した予約（103）はメニューがなく、結び付いた予約（104）がそのメニュー
+        let group = LiveLessonSession::restore(
+            SessionId::from_u128(3),
+            BookingId::from_u128(103),
+            STUDENT,
+            COACH,
+            vec![SessionBooking::new(
+                BookingId::from_u128(104),
+                OTHER_STUDENT,
+            )],
+            day(10),
+            None,
+        )
+        .unwrap();
+        assert!(
+            criteria
+                .matches_lesson_menu(&group, &BTreeMap::from([(BookingId::from_u128(104), MENU)])),
+            "開始した予約に限らない"
+        );
+        assert!(!criteria.matches_lesson_menu(
+            &group,
+            &BTreeMap::from([
+                (BookingId::from_u128(103), OTHER_MENU),
+                (BookingId::from_u128(104), OTHER_MENU)
+            ])
+        ));
     }
 
     #[test]

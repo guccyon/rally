@@ -187,6 +187,9 @@ fn router(now: SystemTime) -> Router {
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListMyBookings::new(
@@ -202,6 +205,7 @@ fn router(now: SystemTime) -> Router {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -209,6 +213,7 @@ fn router(now: SystemTime) -> Router {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             entitlements.clone(),

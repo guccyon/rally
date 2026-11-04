@@ -1,20 +1,25 @@
 //! `GET /students/{student_id}/activity`（admin-web の `getStudentActivity`）の統合テスト。本部には生徒 1 人の表示名・
-//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数を返すことを OpenAPI のスキーマで検査する。
+//! これからの予約・直近の受けたレッスン（最大 20 件）・キャンセルの件数・送った動画の数と返却待ちの数・返信のないまま既定の
+//! 時間の過ぎたスレッドの数・その生徒がつけた直近の低い評価の件数と未対応の件数を返すことを OpenAPI のスキーマで検査する。
 //! コーチ・生徒は 403、トークンがなければ 401、生徒でない・ない・UUID でない ID は 404。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::AsyncLessonStudentVideoActivityLookup,
     identity::{
         AccessToken, AccountRepository, GetStudentActivity, InvalidToken, TokenClaims, TokenIssuer,
         TokenVerifier,
     },
     in_memory::{
         InMemoryAccountRepository, InMemoryBookingRepository, InMemoryLessonCompletionRepository,
-        InMemorySlotRepository, ManualClock,
+        InMemoryLessonReviewRepository, InMemoryMessageThreadRepository, InMemorySlotRepository,
+        InMemoryVideoRepository, ManualClock,
     },
     lesson::LessonStudentLessonHistoryLookup,
+    messaging::MessagingStudentUnansweredMessageThreadCountLookup,
     profile::ProfileCoachDisplayNameLookup,
+    review::ReviewStudentLowRatedReviewCountLookup,
     scheduling::{BookingRepository, SchedulingStudentBookingActivityLookup},
 };
 use axum::{
@@ -23,12 +28,14 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::VideoId,
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
     lesson::{LessonCompletion, LessonCompletionId, LessonSource},
     live_lesson::SessionId,
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
+    review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
     scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
 use serde_json::{Value, json};
@@ -122,8 +129,67 @@ fn lesson(id: u128, coach: AccountId, hour: u64) -> LessonCompletion {
     )
 }
 
+/// `student` が `COACH` に `hour` 時に送った動画 `id`。`returned` なら 1 時間後に添削が返っている。
+fn video(id: u128, student: AccountId, hour: u64, returned: bool) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        student,
+        COACH,
+        Sport::Tennis,
+        at(hour),
+        returned.then(|| {
+            (
+                VideoReviewId::from_u128(id),
+                ReviewComment::new("フォロースルーを大きく").unwrap(),
+                at(hour + 1),
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
+/// `student` と `coach` のスレッド `id` を 0 時に開き、生徒が `hour` 時に本文を送ったまま返信がない。
+fn waiting_thread(id: u128, student: AccountId, coach: AccountId, hour: u64) -> MessageThread {
+    let mut thread =
+        MessageThread::open(MessageThreadId::from_u128(id), student, coach, at(0)).unwrap();
+    thread
+        .send(
+            MessageId::from_u128(id),
+            student,
+            MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+            true,
+            at(hour),
+        )
+        .unwrap();
+    thread
+}
+
+/// `student` が `coach` に `submitted_at` に点 `rating` で付けた評価 `id`。
+fn review(
+    id: u128,
+    student: AccountId,
+    coach: AccountId,
+    rating: i64,
+    submitted_at: SystemTime,
+) -> LessonReview {
+    LessonReview::restore(
+        LessonReviewId::from_u128(id),
+        LessonCompletionId::from_u128(id),
+        student,
+        coach,
+        Rating::new(rating).unwrap(),
+        LessonReviewComment::new("本部には見せない評価の本文").unwrap(),
+        submitted_at,
+    )
+}
+
 /// 今は 100 時。生徒 `STUDENT` は 200 時の枠（`COACH`）と 150 時の枠（`GONE_COACH`）をこれから受け、50 時の枠は
-/// 始まっていて、300 時の枠はキャンセルした。完了したレッスンは 22 件（1〜22 時）。
+/// 始まっていて、300 時の枠はキャンセルした。完了したレッスンは 22 件（1〜22 時）。動画は 3 本送り、1 本は添削が
+/// 返っていて 2 本は返却待ち（ほかに別の生徒の返却待ちが 1 本ある）。スレッドは、生徒が 70 時（30 時間前）に送ったまま
+/// 返信のないものと 80 時（20 時間前）に送ったまま返信のないもの（ほかに別の生徒の 30 時間前のものが 1 つある）。
+/// 評価は、生徒が ★1（`COACH`）と ★2（`GONE_COACH`。本部が対応済み）と ★3 を 30 日の中に、★1 を 30 日より前に付けた
+/// （ほかに別の生徒の ★1 が 1 件ある）。
 async fn app() -> Router {
     let accounts = InMemoryAccountRepository::default();
     for account in [
@@ -160,19 +226,51 @@ async fn app() -> Router {
         let coach = if id == 22 { GONE_COACH } else { COACH };
         lesson(id, coach, id as u64)
     }));
-    router(accounts, bookings, completions)
+    let videos = InMemoryVideoRepository::with_videos([
+        video(40, STUDENT, 30, true),
+        video(41, STUDENT, 40, false),
+        video(42, STUDENT, 90, false),
+        video(43, AccountId::from_u128(99), 40, false),
+    ]);
+    let threads = InMemoryMessageThreadRepository::with_threads([
+        waiting_thread(60, STUDENT, COACH, 70),
+        waiting_thread(61, STUDENT, GONE_COACH, 80),
+        waiting_thread(62, AccountId::from_u128(99), COACH, 70),
+    ]);
+    let reviews = InMemoryLessonReviewRepository::with_reviews([
+        review(80, STUDENT, COACH, 1, at(90)),
+        review(81, STUDENT, GONE_COACH, 2, at(95)).with_handling(Some(
+            LowRatedReviewHandling::new(AccountId::from_u128(1), at(96)),
+        )),
+        review(82, STUDENT, COACH, 3, at(95)),
+        review(
+            83,
+            STUDENT,
+            COACH,
+            1,
+            at(100) - Duration::from_secs(30 * 24 * 3600 + 1),
+        ),
+        review(84, AccountId::from_u128(99), COACH, 1, at(90)),
+    ]);
+    router(accounts, bookings, completions, videos, threads, reviews)
 }
 
 fn router(
     accounts: InMemoryAccountRepository,
     bookings: InMemoryBookingRepository,
     completions: InMemoryLessonCompletionRepository,
+    videos: InMemoryVideoRepository,
+    threads: InMemoryMessageThreadRepository,
+    reviews: InMemoryLessonReviewRepository,
 ) -> Router {
     interface::student_activity_router(
         GetStudentActivity::new(
             accounts.clone(),
             SchedulingStudentBookingActivityLookup::new(bookings),
             LessonStudentLessonHistoryLookup::new(completions),
+            AsyncLessonStudentVideoActivityLookup::new(videos),
+            MessagingStudentUnansweredMessageThreadCountLookup::new(threads),
+            ReviewStudentLowRatedReviewCountLookup::new(reviews),
             ProfileCoachDisplayNameLookup::new(accounts),
             ManualClock::new(at(100)),
         ),
@@ -212,12 +310,29 @@ fn uuid(id: u128) -> String {
 }
 
 #[tokio::test]
-async fn headquarters_sees_upcoming_bookings_recent_lessons_and_cancelled_count() {
+async fn headquarters_sees_upcoming_bookings_recent_lessons_cancelled_count_and_videos() {
     let (status, body) = get_activity(&app().await, &uuid(3), Some(HEADQUARTERS)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["student_id"], uuid(3));
     assert_eq!(body["display_name"], "なまえ3");
     assert_eq!(body["cancelled_booking_count"], 1);
+    assert_eq!(body["submitted_video_count"], 3, "返却済みも数える");
+    assert_eq!(
+        body["pending_video_review_count"], 2,
+        "別の生徒の動画は数えない"
+    );
+    assert_eq!(
+        body["unanswered_message_thread_count"], 1,
+        "24 時間に満たないスレッド・別の生徒のスレッドは数えない"
+    );
+    assert_eq!(
+        body["low_rated_review_count"], 2,
+        "★3・30 日より前・別の生徒の評価は数えない"
+    );
+    assert_eq!(
+        body["unhandled_low_rated_review_count"], 1,
+        "対応済みの印のある評価は未対応に数えない"
+    );
 
     let upcoming = body["upcoming_bookings"].as_array().unwrap();
     assert_eq!(
@@ -267,6 +382,14 @@ async fn headquarters_sees_upcoming_bookings_recent_lessons_and_cancelled_count(
         !body.to_string().contains("@example.com"),
         "メールアドレスは載せない: {body}"
     );
+    assert!(
+        !body.to_string().contains("本部には見せない本文"),
+        "メッセージの本文は載せない: {body}"
+    );
+    assert!(
+        !body.to_string().contains("本部には見せない評価の本文"),
+        "評価の本文は載せない: {body}"
+    );
 }
 
 #[tokio::test]
@@ -281,6 +404,11 @@ async fn student_without_bookings_or_lessons_is_empty() {
             "upcoming_bookings": [],
             "recent_lessons": [],
             "cancelled_booking_count": 0,
+            "submitted_video_count": 0,
+            "pending_video_review_count": 0,
+            "unanswered_message_thread_count": 0,
+            "low_rated_review_count": 0,
+            "unhandled_low_rated_review_count": 0,
         })
     );
 }

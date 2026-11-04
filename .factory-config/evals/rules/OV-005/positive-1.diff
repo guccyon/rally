@@ -1,0 +1,236 @@
+guccyon/rally#222（コーチのやること一覧）のうち、指摘の箇所（pendingTasks.ts の loadPendingTasks で予約の一覧から生徒 ID → 表示名を組み立て直す処理と、CoachTasks.tsx の UNKNOWN_NAME の定義し直し。CoachChat.tsx の fetchStudentNames は文脈行）のファイルの hunk だけを gh pr diff から切り出したもの。
+diff --git a/apps/admin-web/src/components/coach/CoachChat.tsx b/apps/admin-web/src/components/coach/CoachChat.tsx
+index 7ca765d3..eadc7061 100644
+--- a/apps/admin-web/src/components/coach/CoachChat.tsx
++++ b/apps/admin-web/src/components/coach/CoachChat.tsx
+@@ -58,10 +58,11 @@ function lastMessagePreview(message: Schemas["Message"]) {
+ /**
+  * コーチのチャット。開いたときに自分が当事者のスレッドの一覧（listMessageThreads。API の順＝最後の出来事の新しい順）を、
+  * 生徒の名前と未読の数と最後のメッセージとともに出し、選んだスレッドのメッセージと送信の欄（MessageThreadView）を開く。
++ * `initialThreadId`（対応待ちから移ったときのスレッド）があれば、そのスレッドを選んだ状態で開く。
+  */
+-export function CoachChat({ api }: { api: ChatApi }) {
++export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThreadId?: string }) {
+   const [list, setList] = useState<ListState>({ kind: "loading" });
+-  const [selectedId, setSelectedId] = useState<string | null>(null);
++  const [selectedId, setSelectedId] = useState<string | null>(initialThreadId ?? null);
+ 
+   const fetchThreads = useCallback(async (): Promise<ListState> => {
+     const [threads, names] = await Promise.all([api.listMessageThreads(), fetchStudentNames(api)]);
+diff --git a/apps/admin-web/src/components/coach/CoachTasks.tsx b/apps/admin-web/src/components/coach/CoachTasks.tsx
+new file mode 100644
+index 00000000..b0a6fb1a
+--- /dev/null
++++ b/apps/admin-web/src/components/coach/CoachTasks.tsx
+@@ -0,0 +1,130 @@
++"use client";
++
++import type { ReactNode } from "react";
++
++import type { Result } from "@/api/call";
++import { ResultMessage } from "@/components/ResultMessage";
++import { formatDateTime } from "@/components/labels";
++
++import type { PendingTasks } from "./pendingTasks";
++
++const UNKNOWN_NAME = "（名前を表示できません）";
++
++const BUTTON = "rounded bg-blue-600 px-3 py-1 text-white";
++
++/** 対応待ちの 1 種類（見出し・件数・一覧）。一覧の API が失敗したときはその文言だけを出す。 */
++function TaskGroup<T>({
++  title,
++  note,
++  part,
++  empty,
++  renderItem,
++}: {
++  title: string;
++  note?: string;
++  part: Result<T[]>;
++  empty: string;
++  renderItem: (item: T) => ReactNode;
++}) {
++  return (
++    <div className="space-y-2">
++      <h3 className="font-semibold">
++        {title}
++        {part.ok && `（${part.data.length} 件）`}
++      </h3>
++      {note && <p className="text-sm text-gray-600">{note}</p>}
++      {!part.ok && <ResultMessage result={{ ok: false, message: part.message }} />}
++      {part.ok && part.data.length === 0 && <p className="text-sm">{empty}</p>}
++      {part.ok && part.data.length > 0 && (
++        <ul aria-label={title} className="divide-y rounded border text-sm">
++          {part.data.map(renderItem)}
++        </ul>
++      )}
++    </div>
++  );
++}
++
++/**
++ * コーチの「対応待ち」。添削待ちの動画（送られた古い順）・生徒の確定を待っている予約（日時の早い順）・
++ * 未読のあるチャット（最後の出来事の新しい順）を並べ、それぞれのボタンで該当の画面へ移る。
++ */
++export function CoachTasks({
++  tasks,
++  onOpenVideo,
++  onOpenBookings,
++  onOpenThread,
++}: {
++  tasks: PendingTasks | null;
++  onOpenVideo: (videoId: string) => void;
++  onOpenBookings: () => void;
++  onOpenThread: (threadId: string) => void;
++}) {
++  if (!tasks) return <p className="text-sm text-gray-500">読み込み中…</p>;
++  return (
++    <div className="space-y-6">
++      <p className="text-sm">
++        添削を待っている動画、確定を待っている予約、まだ読んでいないメッセージのあるチャットです。ボタンから、それぞれの画面へ移れます。
++      </p>
++      <TaskGroup
++        title="添削待ちの動画"
++        part={tasks.videos}
++        empty="添削待ちの動画はありません。"
++        renderItem={(video) => (
++          <li key={video.video_id} className="flex items-center justify-between gap-2 px-3 py-2">
++            <span>
++              <span className="font-semibold">{video.student_display_name ?? UNKNOWN_NAME}</span>
++              <span className="block text-gray-600">
++                {formatDateTime(video.submitted_at)} に送られました
++              </span>
++            </span>
++            <button type="button" onClick={() => onOpenVideo(video.video_id)} className={BUTTON}>
++              添削する
++            </button>
++          </li>
++        )}
++      />
++      <TaskGroup
++        title="確定待ちの予約"
++        note="生徒がまだ確定していない予約です。確定すると通話を始められます。"
++        part={tasks.bookings}
++        empty="確定待ちの予約はありません。"
++        renderItem={(item) => (
++          <li
++            key={item.booking.booking_id}
++            className="flex items-center justify-between gap-2 px-3 py-2"
++          >
++            <span>
++              <span className="font-semibold">{item.student_display_name ?? UNKNOWN_NAME}</span>
++              <span className="block text-gray-600">
++                {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
++              </span>
++            </span>
++            <button type="button" onClick={onOpenBookings} className={BUTTON}>
++              予約を見る
++            </button>
++          </li>
++        )}
++      />
++      <TaskGroup
++        title="未読のあるチャット"
++        part={tasks.threads}
++        empty="まだ読んでいないメッセージはありません。"
++        renderItem={(thread) => (
++          <li key={thread.thread_id} className="flex items-center justify-between gap-2 px-3 py-2">
++            <span>
++              <span className="font-semibold">
++                {tasks.names.get(thread.student_id) ?? UNKNOWN_NAME}
++              </span>
++              <span className="ml-2 rounded bg-red-600 px-2 text-xs text-white">
++                未読 {thread.unread_count} 件
++              </span>
++            </span>
++            <button type="button" onClick={() => onOpenThread(thread.thread_id)} className={BUTTON}>
++              チャットを開く
++            </button>
++          </li>
++        )}
++      />
++    </div>
++  );
++}
+diff --git a/apps/admin-web/src/components/coach/pendingTasks.ts b/apps/admin-web/src/components/coach/pendingTasks.ts
+new file mode 100644
+index 00000000..797c90f1
+--- /dev/null
++++ b/apps/admin-web/src/components/coach/pendingTasks.ts
+@@ -0,0 +1,75 @@
++import type { Result } from "@/api/call";
++import type { Schemas } from "@/api/client";
++import type { CoachApi } from "@/api/coach";
++
++type CoachVideo = Schemas["CoachVideo"];
++type CoachBooking = Schemas["CoachBooking"];
++type MessageThread = Schemas["MessageThread"];
++
++export type PendingTasksApi = Pick<
++  CoachApi,
++  "listMyCoachVideos" | "listMyCoachBookings" | "listMessageThreads"
++>;
++
++/** コーチの対応待ち。一覧の API ごとに読めたか・読めなかったかを持つ（1 つが失敗しても残りは出す）。 */
++export type PendingTasks = {
++  /** 添削待ちの動画（API の順＝送られた時刻の古い順）。 */
++  videos: Result<CoachVideo[]>;
++  /** 確定待ち（`pending`）でまだ終わっていない予約（API の順＝開始時刻の古い順）。 */
++  bookings: Result<CoachBooking[]>;
++  /** 未読のあるスレッド（API の順＝最後の出来事の新しい順）。 */
++  threads: Result<MessageThread[]>;
++  /** 生徒の ID → 表示名。スレッドは生徒の ID しか持たないので、予約の一覧の表示名から引く。 */
++  names: Map<string, string>;
++};
++
++/** 一覧の API の結果から、対応待ちの項目だけを API の順のまま残す。 */
++function select<R, T>(
++  response: Result<R>,
++  items: (data: R) => T[],
++  pick: (item: T) => boolean,
++): Result<T[]> {
++  return response.ok ? { ok: true, data: items(response.data).filter(pick) } : response;
++}
++
++/**
++ * 今の API（listMyCoachVideos / listMyCoachBookings / listMessageThreads）から、コーチの対応待ちを集める。
++ * 確定待ちの予約は、終了時刻が `now` より後のものだけ（終わった予約は対応できないので数えない）。
++ */
++export async function loadPendingTasks(api: PendingTasksApi, now: number): Promise<PendingTasks> {
++  const [videos, bookings, threads] = await Promise.all([
++    api.listMyCoachVideos(),
++    api.listMyCoachBookings(),
++    api.listMessageThreads(),
++  ]);
++  const names = new Map<string, string>();
++  if (bookings.ok) {
++    for (const item of bookings.data.bookings) {
++      if (item.student_display_name) names.set(item.booking.student_id, item.student_display_name);
++    }
++  }
++  return {
++    videos: select(
++      videos,
++      (data) => data.videos,
++      (video) => video.review_status === "in_progress",
++    ),
++    bookings: select(
++      bookings,
++      (data) => data.bookings,
++      (item) => item.booking.status === "pending" && new Date(item.slot.ends_at).getTime() > now,
++    ),
++    threads: select(
++      threads,
++      (data) => data.threads,
++      (thread) => thread.unread_count > 0,
++    ),
++    names,
++  };
++}
++
++/** 未対応の件数（添削待ちの動画＋確定待ちの予約＋未読のあるスレッド）。読めなかった一覧は 0 件として数える。 */
++export function countPendingTasks(tasks: PendingTasks): number {
++  const size = (part: Result<unknown[]>) => (part.ok ? part.data.length : 0);
++  return size(tasks.videos) + size(tasks.bookings) + size(tasks.threads);
++}

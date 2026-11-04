@@ -138,6 +138,9 @@ fn app() -> App {
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListMyBookings::new(
@@ -153,11 +156,13 @@ fn app() -> App {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),

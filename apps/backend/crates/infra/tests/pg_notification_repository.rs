@@ -1,12 +1,15 @@
 //! `PgNotificationRepository`（`notification.notifications`）の検証。プッシュ通知の変種ごとの往復・受け取る人ごとの
 //! 新しい順・同じプッシュ通知（同じ動画の添削の依頼を含む）を 2 件にしないこと・すべて既読（最初に読んだ時刻のまま、
 //! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復と、
-//! 生徒 1 人の本部からのお知らせだけを新しい順に上限まで読むこと。
+//! 生徒 1 人の本部からのお知らせだけを新しい順に上限まで読むこと・本部からのお知らせごとの既読の数（ほかの種類と、ほかの
+//! お知らせは数えない。上限の時刻があればそれまでに既読になったものだけ）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
 
 mod support;
+
+use std::{collections::BTreeMap, time::SystemTime};
 
 use application::notification::{AnnouncementRepository, NotificationRepository};
 use domain::{
@@ -326,7 +329,7 @@ async fn only_the_announcements_of_the_student_are_found_newest_first_up_to_the_
     notifications.mark_all_read(student, at(4)).await.unwrap();
 
     let found = notifications
-        .find_announcements_by_recipient(student, 50)
+        .find_announcements_by_recipient(student, false, 50)
         .await
         .unwrap();
     assert_eq!(
@@ -338,7 +341,7 @@ async fn only_the_announcements_of_the_student_are_found_newest_first_up_to_the_
     assert!(!found[0].is_read());
     assert_eq!(
         notifications
-            .find_announcements_by_recipient(student, 2)
+            .find_announcements_by_recipient(student, false, 2)
             .await
             .unwrap()
             .iter()
@@ -349,7 +352,174 @@ async fn only_the_announcements_of_the_student_are_found_newest_first_up_to_the_
     );
     assert!(
         notifications
-            .find_announcements_by_recipient(coach, 50)
+            .find_announcements_by_recipient(coach, false, 50)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn unread_only_finds_the_unread_announcements_and_limits_after_filtering(pool: PgPool) {
+    let notifications = PgNotificationRepository::new(pool.clone());
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let mut received = Vec::new();
+    // 3 分・5 分・7 分に送ったお知らせのうち、3 分と 7 分のものは既読
+    for (minute, read) in [(3, true), (5, false), (7, true)] {
+        let announcement = Announcement::new(
+            announcements.next_id(),
+            headquarters,
+            AnnouncementTitle::new("題").unwrap(),
+            AnnouncementBody::new("本文").unwrap(),
+            None,
+            2,
+            at(minute),
+        )
+        .unwrap();
+        announcements.insert(announcement.clone()).await.unwrap();
+        let mut notification = Notification::new(
+            notifications.next_id(),
+            announcement.push_to(student),
+            announcement.sent_at(),
+        );
+        if read {
+            notification.mark_read(at(minute + 1));
+        }
+        notifications.insert(notification).await.unwrap();
+        notifications
+            .insert(Notification::new(
+                notifications.next_id(),
+                announcement.push_to(other),
+                announcement.sent_at(),
+            ))
+            .await
+            .unwrap();
+        received.push(notification);
+    }
+
+    let ids = |found: Vec<Notification>| found.iter().map(Notification::id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(notifications
+            .find_announcements_by_recipient(student, true, 50)
+            .await
+            .unwrap()),
+        [received[1].id()],
+        "未読だけ。ほかの生徒の分は出さない"
+    );
+    assert_eq!(
+        ids(notifications
+            .find_announcements_by_recipient(student, true, 1)
+            .await
+            .unwrap()),
+        [received[1].id()],
+        "上限は絞ったあとに数える（新しい既読の 7 分のものに枠を取られない）"
+    );
+    assert_eq!(
+        ids(notifications
+            .find_announcements_by_recipient(student, false, 1)
+            .await
+            .unwrap()),
+        [received[2].id()],
+        "絞らなければ既読も数える"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn read_notifications_are_counted_per_announcement(pool: PgPool) {
+    let notifications = PgNotificationRepository::new(pool.clone());
+    let announcements = PgAnnouncementRepository::new(pool.clone());
+    let headquarters = support::register(&pool, Role::Headquarters, vec![]).await;
+    let (first_student, second_student, third_student, coach) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::coach(&pool).await,
+    );
+    let sent = |title: &str, hour: u64| {
+        Announcement::new(
+            announcements.next_id(),
+            headquarters,
+            AnnouncementTitle::new(title).unwrap(),
+            AnnouncementBody::new("本文").unwrap(),
+            None,
+            3,
+            at(hour),
+        )
+        .unwrap()
+    };
+    let (maintenance, campaign, unread) = (
+        sent("メンテナンス", 1),
+        sent("キャンペーン", 2),
+        sent("読まれない", 3),
+    );
+    for announcement in [&maintenance, &campaign, &unread] {
+        announcements.insert(announcement.clone()).await.unwrap();
+        for student in [first_student, second_student, third_student] {
+            notifications
+                .insert(Notification::new(
+                    notifications.next_id(),
+                    announcement.push_to(student),
+                    announcement.sent_at(),
+                ))
+                .await
+                .unwrap();
+        }
+    }
+    // ほかの種類のお知らせ（既読）は数えない
+    let [confirmed, ..] = pushes(first_student, coach);
+    notifications
+        .insert(Notification::new(notifications.next_id(), confirmed, at(1)))
+        .await
+        .unwrap();
+
+    // 生徒 1 は時刻 2 に、生徒 2 は時刻 1 に読む（読んだ時刻より後に作ったものは読まないまま）
+    notifications
+        .mark_all_read(first_student, at(2))
+        .await
+        .unwrap();
+    notifications
+        .mark_all_read(second_student, at(1))
+        .await
+        .unwrap();
+
+    let no_limit = |ids: &[_]| -> BTreeMap<_, Option<SystemTime>> {
+        ids.iter().map(|id| (*id, None)).collect()
+    };
+    assert_eq!(
+        notifications
+            .count_read_by_announcement(&no_limit(&[maintenance.id(), campaign.id(), unread.id()]))
+            .await
+            .unwrap(),
+        BTreeMap::from([(maintenance.id(), 2), (campaign.id(), 1)]),
+        "既読のものがないお知らせは入れない"
+    );
+    assert_eq!(
+        notifications
+            .count_read_by_announcement(&no_limit(&[campaign.id()]))
+            .await
+            .unwrap(),
+        BTreeMap::from([(campaign.id(), 1)]),
+        "求めた ID だけを数える"
+    );
+    // 取り下げたお知らせは上限の時刻（取り下げた時刻）までに既読になったものだけ。ちょうどの時刻は数える
+    assert_eq!(
+        notifications
+            .count_read_by_announcement(&BTreeMap::from([
+                (maintenance.id(), Some(at(1))),
+                (campaign.id(), Some(at(1))),
+            ]))
+            .await
+            .unwrap(),
+        BTreeMap::from([(maintenance.id(), 1)]),
+        "上限より後に既読になったものは数えない"
+    );
+    assert!(
+        notifications
+            .count_read_by_announcement(&BTreeMap::new())
             .await
             .unwrap()
             .is_empty()

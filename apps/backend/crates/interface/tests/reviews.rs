@@ -189,7 +189,13 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             RecordingDomainEventPublisher::default(),
             clock,
         ),
-        GetSlotSupply::new(bookings, clock),
+        GetSlotSupply::new(
+            bookings,
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            clock,
+        ),
         application::scheduling::ListMyBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(
@@ -203,6 +209,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -210,6 +217,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             InMemoryEntitlementRepository::default(),
@@ -312,6 +320,17 @@ async fn get(
     template: &str,
     token: Option<&str>,
 ) -> (StatusCode, Value) {
+    get_in(&["admin-web", "student-app"], router, path, template, token).await
+}
+
+/// `GET <path>` を送り、レスポンスの形を `apps` の契約で検査する。
+async fn get_in(
+    apps: &[&str],
+    router: &Router,
+    path: &str,
+    template: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
     let mut request = Request::get(path);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
@@ -324,7 +343,7 @@ async fn get(
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap();
-    for app in ["admin-web", "student-app"] {
+    for app in apps {
         support::Contract::load(app).assert_response("get", template, status, &body);
     }
     (status, body)
@@ -512,5 +531,180 @@ async fn a_coach_id_that_is_not_a_uuid_is_not_found() {
         let (status, body) = get_coach_review_summary(&router, "not-a-uuid", Some(token)).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{token}: {body}");
         assert_eq!(body["code"], "not_found");
+    }
+}
+
+/// コーチ（`COACH_ID`）の `GET /coaches/{coach_id}/reviews?<query>` を送り、`apps` の契約で検査する。
+async fn list_coach_reviews_with(
+    apps: &[&str],
+    router: &Router,
+    query: &str,
+    token: &str,
+) -> (StatusCode, Value) {
+    get_in(
+        apps,
+        router,
+        &format!("/coaches/{COACH_ID}/reviews?{query}"),
+        "/coaches/{coach_id}/reviews",
+        Some(token),
+    )
+    .await
+}
+
+/// 一覧の評価の ID の末尾 2 桁。
+fn review_ids(body: &Value) -> Vec<String> {
+    body["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|review| review["review_id"].as_str().unwrap()[34..].to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn headquarters_and_the_coach_read_only_reviews_rated_at_most_the_max_rating() {
+    let router = app(reviews());
+    // コーチの評価は ★5（2）・★4（4）・★3（1）
+    for token in [HEADQUARTERS, COACH] {
+        for (max_rating, ids) in [
+            ("3", vec!["01"]),
+            ("4", vec!["04", "01"]),
+            ("5", vec!["02", "04", "01"]),
+            ("2", vec![]),
+            ("1", vec![]),
+        ] {
+            let (status, body) = list_coach_reviews_with(
+                &["admin-web"],
+                &router,
+                &format!("max_rating={max_rating}"),
+                token,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{token} {max_rating}: {body}");
+            assert_eq!(body["coach_id"], COACH_ID);
+            assert_eq!(
+                review_ids(&body),
+                ids,
+                "{token} {max_rating}: その点以下だけを、新しい順で"
+            );
+        }
+    }
+    let (status, body) =
+        list_coach_reviews_with(&["admin-web"], &router, "max_rating=4", HEADQUARTERS).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"][0]["rating"], 4);
+    assert_eq!(body["reviews"][0]["lesson_menu"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_max_rating_that_is_not_an_integer_from_one_to_five_is_rejected() {
+    let router = app(reviews());
+    for token in [HEADQUARTERS, COACH] {
+        for max_rating in ["0", "6", "-1", "2.5", "abc", "", "256"] {
+            let (status, body) = list_coach_reviews_with(
+                &["admin-web"],
+                &router,
+                &format!("max_rating={max_rating}"),
+                token,
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{token} {max_rating:?}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn students_read_every_review_whatever_the_max_rating() {
+    // student-app の契約に max_rating はないので、付けても変わらない（範囲外でも 422 にしない）
+    let router = app(reviews());
+    for max_rating in ["3", "0", "abc"] {
+        let (status, body) = list_coach_reviews_with(
+            &["student-app"],
+            &router,
+            &format!("max_rating={max_rating}"),
+            STUDENT,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{max_rating}: {body}");
+        assert_eq!(review_ids(&body), ["02", "04", "01"], "{max_rating}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_and_the_coach_read_only_reviews_submitted_in_the_period() {
+    let router = app(reviews());
+    // 照会の基準の時刻は 2026-10-26 9 時（日本時間）。コーチの評価は 2 が 10 月 26 日 8 時・4 が 10 月 25 日 9 時・
+    // 1 が 10 月 24 日 9 時（どれも日本時間）
+    for token in [HEADQUARTERS, COACH] {
+        for (query, ids) in [
+            ("from=2026-10-25&to=2026-10-26", vec!["02", "04"]),
+            ("from=2026-10-24&to=2026-10-24", vec!["01"]),
+            ("from=2026-10-27&to=2026-10-27", vec![]),
+            // to だけなら to の 6 日前から、from だけなら from から 7 日目まで
+            ("to=2026-10-25", vec!["04", "01"]),
+            ("from=2026-10-25", vec!["02", "04"]),
+            // max_rating と合わせる
+            (
+                "from=2026-10-24&to=2026-10-26&max_rating=4",
+                vec!["04", "01"],
+            ),
+            ("from=2026-10-25&to=2026-10-26&max_rating=3", vec![]),
+        ] {
+            let (status, body) =
+                list_coach_reviews_with(&["admin-web"], &router, query, token).await;
+            assert_eq!(status, StatusCode::OK, "{token} {query}: {body}");
+            assert_eq!(body["coach_id"], COACH_ID);
+            assert_eq!(review_ids(&body), ids, "{token} {query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_period_that_breaks_the_rules_is_rejected_like_list_announcements() {
+    let router = app(reviews());
+    for token in [HEADQUARTERS, COACH] {
+        for (query, message) in [
+            (
+                "from=2026-10-26&to=2026-10-25",
+                "to は from と同じ日か、それより後の日付にする",
+            ),
+            (
+                "from=2026-10-01&to=2026-11-01",
+                "from から to までは 31 日まで",
+            ),
+            ("from=2026/10/25", "from は YYYY-MM-DD の日付でない"),
+            ("to=2026-02-30", "to は YYYY-MM-DD の日付でない"),
+            ("from=", "from は YYYY-MM-DD の日付でない"),
+        ] {
+            let (status, body) =
+                list_coach_reviews_with(&["admin-web"], &router, query, token).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{token} {query}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+            assert_eq!(body["message"], message, "{token} {query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn students_read_every_review_whatever_the_period() {
+    // student-app の契約に from・to はないので、付けても変わらない（期間の違反でも 422 にしない）
+    let router = app(reviews());
+    for query in [
+        "from=2026-10-25&to=2026-10-26",
+        "from=2026-10-26&to=2026-10-25",
+    ] {
+        let (status, body) =
+            list_coach_reviews_with(&["student-app"], &router, query, STUDENT).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(review_ids(&body), ["02", "04", "01"], "{query}");
     }
 }

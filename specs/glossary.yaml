@@ -128,11 +128,12 @@ terms:
     ja: "本部からのお知らせ"
     definition: "本部が生徒全員か、あるスポーツの生徒全員に送る知らせ（メンテナンスやキャンペーンなど）の記録で、題（1〜50 文字）・本文（1〜2000 文字）・対象のスポーツ・受け取った生徒の数・送った時刻を持ち、受け取る生徒ごとにお知らせ（notification）を 1 件作る。"
     context: notification
-    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, ReceivedAnnouncement, notification.announcements, sendAnnouncement, listAnnouncements, listStudentAnnouncements]
+    code: [Announcement, AnnouncementId, AnnouncementTitle, AnnouncementBody, AnnouncementWithReadCount, ReceivedAnnouncement, notification.announcements, sendAnnouncement, listAnnouncements, listStudentAnnouncements]
     note: >-
       送るのも一覧を見るのも本部だけ（admin-web）。受け取る生徒がいなければ送らない。プッシュ通知は生徒の通知の受け取り設定
       （notification_settings の announcement）に従い、オフの生徒にもお知らせは作る。予約送信は Gen1 では扱わない（D124）。
-      誤って送ったものは本部が取り下げられる（announcement_withdrawal。D141）。
+      誤って送ったものは本部が取り下げられる（announcement_withdrawal。D141）。本部の一覧には 1 件ごとに、受け取った生徒のうち
+      お知らせを既読にした生徒の数（read_count。取り下げたものは取り下げた時刻までに既読になった生徒だけを数える）を添える（D161）。
       本部は生徒 1 人が受け取ったものを、既読と取り下げ済みかとともに確かめられる（listStudentAnnouncements。D186）。
   - id: announcement_withdrawal
     ja: "お知らせの取り下げ"
@@ -222,9 +223,9 @@ terms:
       残りの席は定員から有効な予約の数を引いた数（SlotSeats::remaining、契約の remaining_seats）。同じ生徒が同じ枠を 2 回は予約できない。
   - id: live_lesson_session
     ja: "通話セッション"
-    definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録する。"
+    definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録し、終了の記録がないまま残ったものは本部が終わったことにでき、そのときは指標を持たずに終わらせた本部のアカウントを残し、完了したレッスンとして数えない（完了を記録できない）。"
     context: live-lesson
-    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended]
+    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended, LiveLessonSession::end_by_headquarters, endLiveLessonSessionByHeadquarters, live_lesson.session_headquarters_ends]
     note: >-
       開始・終了できるのは参加者だけで、確定した予約にしか開始できず、同じ予約のセッションは 1 つ。グループレッスンの通話中のセッションには、
       結び付いた予約の生徒が同じセッションに入る。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。

@@ -14,14 +14,18 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     notification::{
         AnnouncementDraftError, AnnouncementDraftRepository, AnnouncementRecipientLookup,
-        AnnouncementRepository, CreateAnnouncementDraft, DeleteAnnouncementDraft,
-        ListAnnouncementDrafts, NotificationRepository, NotificationSettingsRepository, PushSender,
-        SendAnnouncementDraft, UpdateAnnouncementDraft, announcement_draft_id_uuid,
+        AnnouncementRepository, AnnouncementWithReadCount, CreateAnnouncementDraft,
+        DeleteAnnouncementDraft, ListAnnouncementDrafts, ListAnnouncementDraftsError,
+        ListAnnouncementDraftsQuery, NotificationRepository, NotificationSettingsRepository,
+        PushSender, SendAnnouncementDraft, UpdateAnnouncementDraft, announcement_draft_id_uuid,
     },
 };
 use axum::{
     Json, Router,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{
+        Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{post, put},
@@ -29,14 +33,16 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::Role,
-    notification::{AnnouncementDraft, AnnouncementDraftId, NotificationError},
+    notification::{
+        AnnouncementDraft, AnnouncementDraftId, AnnouncementTitleQuery, NotificationError,
+    },
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     announcements::announcement_body,
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
+    contract::{admin_web_sport, date_from_contract, date_time_to_contract, sport_to_contract},
     error::ApiError,
     message::notification_error,
 };
@@ -58,6 +64,15 @@ type Shared<D, A, L, N, S, P, C> = Arc<AnnouncementDraftsState<D, A, L, N, S, P,
 pub struct AnnouncementDraftRequest {
     title: String,
     body: String,
+    sport: Option<String>,
+}
+
+/// admin-web の `listAnnouncementDrafts` のクエリ。
+#[derive(Deserialize)]
+pub struct ListAnnouncementDraftsParams {
+    from: Option<String>,
+    to: Option<String>,
+    q: Option<String>,
     sport: Option<String>,
 }
 
@@ -138,9 +153,16 @@ where
 }
 
 /// `GET /announcement-drafts`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。下書きを最後に
-/// 直した時刻の新しい順で返す（どの本部のアカウントが作ったかで絞らない）。
+/// 直した時刻の新しい順で返す（どの本部のアカウントが作ったかで絞らない）。`q` があれば題に部分一致する下書きだけで、
+/// 一致のしかたは `listLessonMenus` の `q` と同じ（[`AnnouncementTitleQuery`]）。長すぎる `q` は 422。`sport` があれば
+/// そのスポーツの生徒に向けた下書きだけに絞る（生徒全員に向けた下書きは入らない。照合は `listAnnouncements` の `sport` と
+/// 同じ。`q` と組み合わせられる。`Sport` の値でなければ 422。値の読み方は下書きの `sport` と同じ [`admin_web_sport`]）。
+/// `from`・`to` を両方省けばすべて、どちらかがあれば最後に直した日付（日本時間）の期間で絞る（`q`・`sport` と組み合わせ
+/// られる）。`from`・`to` が `YYYY-MM-DD` の日付でないときと、期間の違反は 422 で、読み方・期間の規則・応答は
+/// `listAnnouncements` の `from`・`to` と同じ（[`date_from_contract`]・[`crate::scheduling_error`]）。
 pub async fn list_announcement_drafts<D, A, L, N, S, P, C>(
     State(state): State<Shared<D, A, L, N, S, P, C>>,
+    params: Result<Query<ListAnnouncementDraftsParams>, QueryRejection>,
 ) -> Result<Json<AnnouncementDraftListBody>, ApiError>
 where
     D: AnnouncementDraftRepository,
@@ -151,11 +173,36 @@ where
     P: PushSender,
     C: Clock,
 {
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let query = ListAnnouncementDraftsQuery {
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        title: params
+            .q
+            .as_deref()
+            .map(AnnouncementTitleQuery::new)
+            .transpose()
+            .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
+            .flatten(),
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+    };
     let drafts = state
         .list_announcement_drafts
-        .execute()
+        .execute(query)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(|error| match error {
+            ListAnnouncementDraftsError::Invalid(error) => ApiError::from(error),
+            ListAnnouncementDraftsError::Unavailable(error) => ApiError::internal(error),
+        })?;
     draft_list_body(&drafts).map(Json)
 }
 
@@ -234,7 +281,13 @@ where
         .execute(draft_id, account.account_id())
         .await
         .map_err(draft_error)?;
-    Ok((StatusCode::CREATED, Json(announcement_body(&announcement)?)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(announcement_body(&AnnouncementWithReadCount::just_sent(
+            announcement,
+        ))?),
+    )
+        .into_response())
 }
 
 fn draft_body(draft: &AnnouncementDraft) -> Result<AnnouncementDraftBody, ApiError> {

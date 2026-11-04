@@ -1,4 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
 import type { Result } from "@/api/call";
@@ -61,7 +62,8 @@ describe("本部の生徒の受け取ったお知らせ", () => {
     await screen.findByRole("table", { name: "受け取ったお知らせ" });
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
     expect(api.listStudentAnnouncements).toHaveBeenCalledTimes(1);
-    expect(api.listStudentAnnouncements).toHaveBeenCalledWith(STUDENT_ID);
+    expect(api.listStudentAnnouncements).toHaveBeenCalledWith(STUDENT_ID, {});
+    expect(screen.getByRole("checkbox", { name: "未読だけ" })).not.toBeChecked();
 
     expect(rows()).toEqual([
       ["年末年始の営業について", "2026/10/30 10:00:00", "未読", "—"],
@@ -76,6 +78,64 @@ describe("本部の生徒の受け取ったお知らせ", () => {
 
     expect(await screen.findByText("受け取ったお知らせはありません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("「未読だけ」を切り替えると unread_only=true で取り直し、外すと条件なしで取り直す", async () => {
+    const unread = { announcements: ANNOUNCEMENTS.announcements.filter((item) => !item.is_read) };
+    const listStudentAnnouncements = vi.fn<HeadquartersApi["listStudentAnnouncements"]>(async (_id, filter) => ({
+      ok: true,
+      data: filter?.unread_only ? unread : ANNOUNCEMENTS,
+    }));
+    const user = userEvent.setup();
+    render(<StudentAnnouncements api={{ listStudentAnnouncements }} studentId={STUDENT_ID} />);
+    await screen.findByRole("table", { name: "受け取ったお知らせ" });
+
+    await user.click(screen.getByRole("checkbox", { name: "未読だけ" }));
+    expect(listStudentAnnouncements).toHaveBeenLastCalledWith(STUDENT_ID, { unread_only: true });
+    await waitFor(() => expect(rows()).toEqual([["年末年始の営業について", "2026/10/30 10:00:00", "未読", "—"]]));
+    expect(screen.getByText("未読のものだけを、送った新しい順に、最大 50 件まで出します。", { exact: false })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "未読だけ" }));
+    expect(listStudentAnnouncements).toHaveBeenLastCalledWith(STUDENT_ID, {});
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(listStudentAnnouncements).toHaveBeenCalledTimes(3);
+  });
+
+  test("未読だけで 0 件なら条件を含めた文言を出し、表は出さない", async () => {
+    const listStudentAnnouncements = vi.fn<HeadquartersApi["listStudentAnnouncements"]>(async (_id, filter) => ({
+      ok: true,
+      data: filter?.unread_only ? { announcements: [] } : ANNOUNCEMENTS,
+    }));
+    const user = userEvent.setup();
+    render(<StudentAnnouncements api={{ listStudentAnnouncements }} studentId={STUDENT_ID} />);
+    await screen.findByRole("table", { name: "受け取ったお知らせ" });
+
+    await user.click(screen.getByRole("checkbox", { name: "未読だけ" }));
+    expect(await screen.findByText("未読のお知らせはありません")).toBeInTheDocument();
+    expect(screen.queryByText("受け取ったお知らせはありません")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("切り替えを続けて変えたときは、前の条件の遅れて返った結果で上書きしない", async () => {
+    let resolveUnread: (value: Result<Schemas["StudentAnnouncementList"]>) => void = () => {};
+    const listStudentAnnouncements = vi.fn<HeadquartersApi["listStudentAnnouncements"]>((_id, filter) =>
+      filter?.unread_only
+        ? new Promise((resolve) => {
+            resolveUnread = resolve;
+          })
+        : Promise.resolve({ ok: true, data: ANNOUNCEMENTS }),
+    );
+    const user = userEvent.setup();
+    render(<StudentAnnouncements api={{ listStudentAnnouncements }} studentId={STUDENT_ID} />);
+    await screen.findByRole("table", { name: "受け取ったお知らせ" });
+
+    await user.click(screen.getByRole("checkbox", { name: "未読だけ" }));
+    await user.click(screen.getByRole("checkbox", { name: "未読だけ" }));
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    resolveUnread({ ok: true, data: { announcements: [] } });
+    await Promise.resolve();
+    expect(rows()).toHaveLength(3);
+    expect(screen.queryByText("未読のお知らせはありません")).not.toBeInTheDocument();
   });
 
   test("読み込めなければ欄の中にその文言を出し、表は出さない", async () => {
@@ -101,6 +161,11 @@ describe("本部の生徒の受け取ったお知らせ", () => {
         upcoming_bookings: [],
         recent_lessons: [],
         cancelled_booking_count: 0,
+        submitted_video_count: 0,
+        pending_video_review_count: 0,
+        unanswered_message_thread_count: 0,
+        low_rated_review_count: 0,
+        unhandled_low_rated_review_count: 0,
       },
     }));
     render(

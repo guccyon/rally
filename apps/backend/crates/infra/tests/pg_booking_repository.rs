@@ -1,8 +1,11 @@
 //! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
 //! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
-//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧）。
+//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧。枠の開始の期間で絞るものを含む）。
 //! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
-//! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数）。
+//! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数と、
+//! 予約のないメニューへの絞り込み `unbooked`）。
+//! 生徒ごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部の生徒の一覧の直近 30 日の予約の数。
+//! ID を並べた予約の読み取り（`find_many`。本部が見る通話セッションの記録をレッスンメニューで絞るときに読む）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -18,7 +21,8 @@ use application::{
     profile::ProfileCoachDisplayNameLookup,
     scheduling::{
         BookingRepository, CreateBooking, CreateBookingCommand, ListCoachBookings, ListMyBookings,
-        ReserveSlotError, SchedulingLessonMenuRecentBookingCountLookup, SlotRepository,
+        ReserveSlotError, SchedulingLessonMenuRecentBookingCountLookup,
+        SchedulingStudentRecentBookingCountLookup, SlotRepository,
     },
 };
 use domain::{
@@ -565,8 +569,9 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
         application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
+        FixedClock(at(0)),
     )
-    .execute(coach)
+    .execute(coach, Default::default())
     .await
     .unwrap();
     let statuses: Vec<_> = list.items.iter().map(|(b, _)| b.status()).collect();
@@ -583,6 +588,57 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
 
     let nobody = support::coach(&pool).await;
     assert!(bookings.bookings_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_coach_starting_between_reads_only_own_bookings_starting_in_the_period(
+    pool: PgPool,
+) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let before = support::open_slot(&pool, coach, 9, 10).await;
+    let start = support::open_slot(&pool, coach, 10, 11).await;
+    let inside = support::open_slot(&pool, coach, 20, 21).await;
+    let end = support::open_slot(&pool, coach, 30, 31).await;
+    let others = support::open_slot(&pool, other_coach, 15, 16).await;
+    reserve(&bookings, student, &before, false).await.unwrap();
+    let cancelled = reserve(&bookings, other, &start, false).await.unwrap();
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(other, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &inside).await;
+    reserve(&bookings, student, &end, false).await.unwrap();
+    reserve(&bookings, other, &others, false).await.unwrap();
+
+    // 始まりは含み、終わりは含まない。状態を問わず、別のコーチの枠への予約は読まない
+    let mut found = bookings
+        .bookings_of_coach_starting_between(coach, at(10), at(30))
+        .await
+        .unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let found: Vec<_> = found
+        .iter()
+        .map(|(booking, slot)| (booking.id(), booking.status(), slot.id()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (cancelled.id(), BookingStatus::Cancelled, start.id()),
+            (confirmed.id(), BookingStatus::Confirmed, inside.id()),
+        ]
+    );
+    assert!(
+        bookings
+            .bookings_of_coach_starting_between(other_coach, at(20), at(30))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// コーチ `coach` のテニスの 1 回 60 分のメニューを保存する。
@@ -737,8 +793,9 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
         application::profile::ProfileStudentDisplayNameLookup::new(PgAccountRepository::new(
             pool.clone(),
         )),
+        FixedClock(at(0)),
     )
-    .execute(coach)
+    .execute(coach, Default::default())
     .await
     .unwrap();
     for items in [&mine.items, &of_coach.items] {
@@ -776,10 +833,11 @@ async fn book_menu(
 async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
     let bookings = PgBookingRepository::new(pool.clone());
     let coach = support::coach(&pool).await;
-    let (popular, quiet, other) = (
+    let (popular, quiet, other, idle) = (
         lesson_menu(&pool, 1, coach, true).await,
         lesson_menu(&pool, 2, coach, true).await,
         lesson_menu(&pool, 3, coach, true).await,
+        lesson_menu(&pool, 4, coach, true).await,
     );
     // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
     let now = 1000;
@@ -803,6 +861,8 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
         // 期間の始まりより前は数えない
         (Some(&popular), 279),
         (Some(&quiet), 900),
+        // 期間の外の予約しかないメニュー
+        (Some(&idle), 279),
         // 聞いていないメニューとメニューのない枠への予約
         (Some(&other), 900),
         (None, 900),
@@ -851,22 +911,190 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
             .is_empty()
     );
 
-    let list = ListLessonMenus::new(
+    let list_lesson_menus = ListLessonMenus::new(
         PgLessonMenuRepository::new(pool.clone()),
         ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
         SchedulingLessonMenuRecentBookingCountLookup::new(bookings.clone()),
         FixedClock(at(now)),
-    )
-    .execute(&ListLessonMenusQuery {
-        coach_id: Some(coach),
-        ..ListLessonMenusQuery::default()
-    })
-    .await
-    .unwrap();
-    assert_eq!(list.lesson_menus.len(), 3);
+    );
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.lesson_menus.len(), 4);
     assert_eq!(
         list.recent_booking_counts,
         std::collections::BTreeMap::from([(popular.id(), 2), (quiet.id(), 1), (other.id(), 1)]),
         "キャンセル・期間の外・メニューのない予約は数えない"
+    );
+
+    // unbooked なら直近の予約の数が 0 のメニュー（期間の外の予約しかないもの）だけ
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            unbooked: true,
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.lesson_menus
+            .iter()
+            .map(LessonMenu::id)
+            .collect::<Vec<_>>(),
+        [idle.id()]
+    );
+    assert!(list.recent_booking_counts.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn recent_bookings_of_students_are_counted_per_student(pool: PgPool) {
+    use application::identity::StudentRecentBookingCountLookup;
+
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let menu = lesson_menu(&pool, 1, coach, true).await;
+    let (busy, quiet, cancelled_only, no_booking, not_asked) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+    );
+    // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
+    let now = 1000;
+    let mut hour = 2000;
+    let mut booked = Vec::new();
+    for (student, with_menu, created_hour) in [
+        // 期間の始まりちょうどと、照会した時刻ちょうどは数える。メニューのない枠への予約も数える
+        (busy, true, 280),
+        (busy, false, now),
+        // 期間の始まりより前は数えない
+        (busy, true, 279),
+        (quiet, true, 900),
+        // 聞いていない生徒の予約
+        (not_asked, true, 900),
+    ] {
+        hour += 2;
+        let slot = if with_menu {
+            slot_with_menu(&pool, coach, hour, &menu).await
+        } else {
+            support::open_slot(&pool, coach, hour, hour + 1).await
+        };
+        let menu = with_menu.then_some(&menu);
+        booked.push(book_menu(&bookings, student, &slot, menu, created_hour).await);
+    }
+    // キャンセルした予約は読み取りには入り、数えない
+    hour += 2;
+    let slot = support::open_slot(&pool, coach, hour, hour + 1).await;
+    let cancelled = book_menu(&bookings, cancelled_only, &slot, None, 500).await;
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(cancelled_only, slot, at(501)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let asked: std::collections::BTreeSet<AccountId> = [busy, quiet, cancelled_only, no_booking]
+        .into_iter()
+        .collect();
+    let mut found: Vec<_> = bookings
+        .bookings_of_students_created_since(&asked, at(280))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|booking| booking.id())
+        .collect();
+    found.sort();
+    let mut expected = vec![
+        booked[0].id(),
+        booked[1].id(),
+        booked[3].id(),
+        cancelled.id(),
+    ];
+    expected.sort();
+    assert_eq!(
+        found, expected,
+        "期間の始まり（含む）以後の、聞いた生徒の予約を状態を問わず"
+    );
+    assert!(
+        bookings
+            .bookings_of_students_created_since(&Default::default(), at(0))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let counts = SchedulingStudentRecentBookingCountLookup::new(bookings.clone())
+        .count_recent_bookings(&asked, at(now))
+        .await
+        .unwrap();
+    assert_eq!(
+        counts,
+        std::collections::BTreeMap::from([(busy, 2), (quiet, 1)]),
+        "キャンセル・期間の外の予約は数えず、数える予約のない生徒は含めない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn find_many_reads_the_asked_bookings_of_any_status(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let student = support::student(&pool).await;
+    let first = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 30, 31).await,
+        true,
+    )
+    .await
+    .unwrap();
+    let second = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 32, 33).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let not_asked = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 34, 35).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let cancelled = bookings
+        .update(second.id(), |booking, slot| {
+            booking.cancel(student, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let missing = bookings.next_id();
+    let mut found = bookings
+        .find_many(&[first.id(), cancelled.id(), missing].into_iter().collect())
+        .await
+        .unwrap();
+    found.sort_by_key(Booking::id);
+    let mut expected = vec![first, cancelled];
+    expected.sort_by_key(Booking::id);
+    assert_eq!(
+        found, expected,
+        "聞いた予約を状態を問わず。ない ID・聞いていない予約は含めない"
+    );
+    assert!(found.iter().all(|booking| booking.id() != not_asked.id()));
+    assert!(
+        bookings
+            .find_many(&Default::default())
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

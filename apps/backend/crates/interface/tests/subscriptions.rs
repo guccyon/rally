@@ -137,6 +137,9 @@ fn app() -> App {
         CancelBooking::new(bookings, analytics.clone(), events.clone(), clock),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::profile::ProfileCoachAccountLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListMyBookings::new(
@@ -152,6 +155,7 @@ fn app() -> App {
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
+            clock,
         ),
         application::scheduling::ListCoachSlots::new(
             InMemorySlotRepository::default(),
@@ -159,6 +163,7 @@ fn app() -> App {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            clock,
         ),
         StartSubscription::new(
             entitlements.clone(),

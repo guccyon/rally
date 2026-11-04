@@ -1,5 +1,5 @@
 //! `/announcements`。admin-web の `POST /announcements`（`sendAnnouncement`。本部が生徒にお知らせを送る）と
-//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧）と
+//! `GET /announcements`（`listAnnouncements`。本部が送ったお知らせの一覧。期間と題とスポーツと取り下げたかで絞れる）と
 //! `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`。本部が送ったお知らせを取り下げる）。
 //! どれも本部だけが呼べる。
 //!
@@ -11,28 +11,34 @@ use application::{
     clock::Clock,
     identity::{TokenVerifier, account_id_uuid},
     notification::{
-        AnnouncementRecipientLookup, AnnouncementRepository, ListAnnouncements,
-        NotificationRepository, NotificationSettingsRepository, PushSender, SendAnnouncement,
-        SendAnnouncementCommand, SendAnnouncementError, WithdrawAnnouncement,
-        WithdrawAnnouncementError, announcement_id_uuid,
+        AnnouncementRecipientLookup, AnnouncementRepository, AnnouncementWithReadCount,
+        ListAnnouncements, ListAnnouncementsError, ListAnnouncementsQuery, NotificationRepository,
+        NotificationSettingsRepository, PushSender, SendAnnouncement, SendAnnouncementCommand,
+        SendAnnouncementError, WithdrawAnnouncement, WithdrawAnnouncementError,
+        announcement_id_uuid,
     },
 };
 use axum::{
     Json, Router,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{
+        Path, Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::post,
 };
 use domain::{
     identity::Role,
-    notification::{Announcement, AnnouncementBody, AnnouncementTitle, NotificationError},
+    notification::{
+        AnnouncementBody, AnnouncementTitle, AnnouncementTitleQuery, NotificationError,
+    },
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
+    contract::{admin_web_sport, date_from_contract, date_time_to_contract, sport_to_contract},
     error::ApiError,
     message::notification_error,
 };
@@ -40,8 +46,8 @@ use crate::{
 /// `/announcements` のハンドラーが使うユースケース。
 pub struct AnnouncementsState<A, L, N, S, P, C> {
     pub send_announcement: SendAnnouncement<A, L, N, S, P, C>,
-    pub list_announcements: ListAnnouncements<A>,
-    pub withdraw_announcement: WithdrawAnnouncement<A, C>,
+    pub list_announcements: ListAnnouncements<A, N>,
+    pub withdraw_announcement: WithdrawAnnouncement<A, N, C>,
 }
 
 /// ハンドラーが共有する [`AnnouncementsState`]。
@@ -64,6 +70,7 @@ pub struct AnnouncementBodyJson {
     body: String,
     sport: Option<&'static str>,
     recipient_count: u32,
+    read_count: u32,
     sent_at: String,
     withdrawal: Option<AnnouncementWithdrawalBody>,
 }
@@ -75,6 +82,16 @@ pub struct AnnouncementWithdrawalBody {
     withdrawn_at: String,
 }
 
+/// admin-web の `listAnnouncements` のクエリ。
+#[derive(Deserialize)]
+pub struct ListAnnouncementsParams {
+    from: Option<String>,
+    to: Option<String>,
+    q: Option<String>,
+    sport: Option<String>,
+    withdrawn: Option<bool>,
+}
+
 /// admin-web の `AnnouncementList`。
 #[derive(Serialize)]
 pub struct AnnouncementListBody {
@@ -82,7 +99,7 @@ pub struct AnnouncementListBody {
 }
 
 /// `POST /announcements/{announcement_id}/withdraw`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// 取り下げたのはトークンの本部のアカウントとして残し、取り下げたあとの記録を返す。リクエストの本文は読まない。
+/// 取り下げたのはトークンの本部のアカウントとして残し、取り下げたあとの記録を既読にした数とともに返す。リクエストの本文は読まない。
 /// ない・UUID でないお知らせは 404、取り下げ済みのお知らせは 409 `announcement_already_withdrawn` で、どちらも何も変えない。
 pub async fn withdraw_announcement<A, L, N, S, P, C>(
     State(state): State<Shared<A, L, N, S, P, C>>,
@@ -143,9 +160,13 @@ where
         sport: request.sport.as_deref().map(admin_web_sport).transpose()?,
     };
     match state.send_announcement.execute(command).await {
-        Ok(announcement) => {
-            Ok((StatusCode::CREATED, Json(announcement_body(&announcement)?)).into_response())
-        }
+        Ok(announcement) => Ok((
+            StatusCode::CREATED,
+            Json(announcement_body(&AnnouncementWithReadCount::just_sent(
+                announcement,
+            ))?),
+        )
+            .into_response()),
         Err(SendAnnouncementError::Invalid(
             error @ NotificationError::AnnouncementWithoutRecipients,
         )) => Err(ApiError::not_found(notification_error(&error))),
@@ -155,9 +176,18 @@ where
 }
 
 /// `GET /announcements`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。送ったお知らせを
-/// 送った時刻の新しい順で返す（どの本部のアカウントが送ったかで絞らない）。
+/// 送った時刻の新しい順で、受け取った生徒のうち既読にした数とともに返す（どの本部のアカウントが送ったかで絞らない）。
+/// `from`・`to` を両方省けばすべて、どちらかがあれば送った日付（日本時間）の期間で絞る。`from`・`to` が `YYYY-MM-DD` の
+/// 日付でないときと、期間の違反は 422（期間の違反の応答は `listBookings` と同じく [`crate::scheduling_error`] が決める）。
+/// `q` があれば題に部分一致するものだけに絞る（期間と組み合わせられる。検索語の読み方と長すぎるときの 422 は
+/// `listAnnouncementDrafts` の `q` と同じ [`AnnouncementTitleQuery`]）。`sport` があればそのスポーツの生徒に向けて送ったもの
+/// だけに絞る（生徒全員に送ったものは入らない。期間・題と組み合わせられる。`Sport` の値でなければ 422。値の読み方は
+/// `sendAnnouncement` と同じ [`admin_web_sport`]）。`withdrawn` があれば `true` なら取り下げたものだけ、`false` なら取り下げて
+/// いないものだけに絞る（期間・題・スポーツと組み合わせられる。`true` / `false` でなければ 422。値の読み方は
+/// `listLowRatedLessonReviews` の `handled` と同じ）。
 pub async fn list_announcements<A, L, N, S, P, C>(
     State(state): State<Shared<A, L, N, S, P, C>>,
+    params: Result<Query<ListAnnouncementsParams>, QueryRejection>,
 ) -> Result<Json<AnnouncementListBody>, ApiError>
 where
     A: AnnouncementRepository,
@@ -167,11 +197,38 @@ where
     P: PushSender,
     C: Clock,
 {
-    let announcements = state
-        .list_announcements
-        .execute()
-        .await
-        .map_err(ApiError::internal)?;
+    let Query(params) =
+        params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let query = ListAnnouncementsQuery {
+        from: params
+            .from
+            .as_deref()
+            .map(|value| date_from_contract("from", value))
+            .transpose()?,
+        to: params
+            .to
+            .as_deref()
+            .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        title: params
+            .q
+            .as_deref()
+            .map(AnnouncementTitleQuery::new)
+            .transpose()
+            .map_err(|error| ApiError::validation_failed(notification_error(&error)))?
+            .flatten(),
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        withdrawn: params.withdrawn,
+    };
+    let announcements =
+        state
+            .list_announcements
+            .execute(query)
+            .await
+            .map_err(|error| match error {
+                ListAnnouncementsError::Invalid(error) => ApiError::from(error),
+                ListAnnouncementsError::Unavailable(error) => ApiError::internal(error),
+            })?;
     Ok(Json(AnnouncementListBody {
         announcements: announcements
             .iter()
@@ -181,7 +238,10 @@ where
 }
 
 pub(crate) fn announcement_body(
-    announcement: &Announcement,
+    AnnouncementWithReadCount {
+        announcement,
+        read_count,
+    }: &AnnouncementWithReadCount,
 ) -> Result<AnnouncementBodyJson, ApiError> {
     Ok(AnnouncementBodyJson {
         announcement_id: announcement_id_uuid::format(announcement.id()),
@@ -190,6 +250,7 @@ pub(crate) fn announcement_body(
         body: announcement.body().as_str().to_string(),
         sport: announcement.sport().map(sport_to_contract),
         recipient_count: announcement.recipient_count(),
+        read_count: *read_count,
         sent_at: date_time_to_contract(announcement.sent_at())?,
         withdrawal: announcement
             .withdrawal()
@@ -210,8 +271,8 @@ pub(crate) fn announcement_body(
 /// どれも本部だけ（コーチ・生徒は 403）。受け取った生徒は自分のお知らせ（[`crate::notifications_router`]）で読む。
 pub fn announcements_router<A, L, N, S, P, C, T>(
     send_announcement: SendAnnouncement<A, L, N, S, P, C>,
-    list_announcements: ListAnnouncements<A>,
-    withdraw_announcement: WithdrawAnnouncement<A, C>,
+    list_announcements: ListAnnouncements<A, N>,
+    withdraw_announcement: WithdrawAnnouncement<A, N, C>,
     tokens: T,
 ) -> Router
 where
