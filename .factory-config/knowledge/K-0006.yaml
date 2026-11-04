@@ -1,0 +1,20 @@
+id: K-0006
+theme: 6
+kind: causal
+statement: >-
+  差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、
+  見出しの順と階層が崩れて新しい差し戻しを生む。同じ本文を複数のジョブ（body_fix と続きの implement）が並列に書き換えると、
+  この崩れは重くなる（並列は主な原因ではなく、悪化させる条件）。
+scope:
+  roles: [judge, body_fix, implement]
+confidence: hypothesis
+evidence:
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
+status: active
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+related: [K-0001, K-0005]
+decided_by: committee:D-0006
