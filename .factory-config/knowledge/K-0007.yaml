@@ -1,4 +1,4 @@
-id: K-0004
+id: K-0007
 theme: 4
 kind: causal
 statement: >-
@@ -12,10 +12,10 @@ verified_at: 2026-11-03
 review_by: 2026-12-03
 confidentiality: product
 evidence:
-  - case: C-0002
+  - case: C-0003
   - pr: 657
   - issue: 646
   - event: "case.analyzed:274311"
 invalidate_when:
   - "PR 本文の決まった形（本体の節と取り込みの記録の分け方と置き場所）が規範に定められた"
-decided_by: committee:D-0003
+decided_by: committee:D-0005
