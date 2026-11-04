@@ -1,4 +1,4 @@
-id: K-0002
+id: K-0004
 theme: 6
 kind: causal
 statement: >-
@@ -9,11 +9,11 @@ scope:
   roles: [judge, body_fix, implement]
 confidence: hypothesis
 evidence:
-  - case: C-0001
+  - case: C-0002
   - pr: "396"
   - event: "case.analyzed:40381"
 status: draft
 verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
-related: [K-0001]
+related: [K-0003]

@@ -1,4 +1,4 @@
-id: K-0001
+id: K-0003
 theme: 4
 kind: causal
 statement: >-
@@ -8,7 +8,7 @@ scope:
   roles: [implement, inspector]
 confidence: hypothesis
 evidence:
-  - case: C-0001
+  - case: C-0002
   - pr: "396"
   - event: "case.analyzed:40381"
 status: draft
