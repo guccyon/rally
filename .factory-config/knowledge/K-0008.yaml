@@ -13,7 +13,7 @@ confidence: hypothesis
 evidence:
   - case: C-0004
   - event: "case.analyzed:113588"
-  - pr: "guccyon/rally#534"
+  - pr: 534
 status: draft
 verified_at: 2026-11-04
 review_by: 2026-12-04
