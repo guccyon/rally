@@ -3,6 +3,8 @@
 //! 表示名がアカウントの表から添わること、コーチ・生徒は 403 であることを確かめる。`sport` を付けると、評価した完了した
 //! レッスンの元（同期は予約の枠、非同期は動画）のスポーツで絞られることも確かめる。本部が `PUT /lesson-reviews/{review_id}/handling`
 //! で対応済みの印を付けると Postgres に残り（2 回目は最初の印のまま）、一覧の `handled=false` で未対応だけに絞れることも確かめる。
+//! `coach_id` を付けると評価されたコーチで絞られ、`sport`・`handled` と合わせられることも確かめる。
+//! `student_id` を付けると評価した生徒で絞られ、`sport`・`handled`・`coach_id` と合わせられることも確かめる。
 //! 契約の形の細かい検査は interface の `tests/low_rated_reviews.rs`・`tests/low_rated_review_handlings.rs`。
 //!
 //! 評価は完了したレッスンが要り、そこまでの HTTP の流れは `lessons.rs` で通しているので、ここでは枠・予約・通話セッション・
@@ -340,6 +342,269 @@ async fn headquarters_narrows_low_reviews_to_a_sport_from_postgres(pool: PgPool)
     }
 
     let (status, body) = get_with_query(&router, &headquarters, "?sport=pingpong").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_narrows_low_reviews_to_a_coach_from_postgres(pool: PgPool) {
+    let (_, headquarters) = register(&pool, "honbu@example.com", Role::Headquarters).await;
+    let (tanaka, _) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, _) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (taro, _) = register(&pool, "taro@example.com", Role::Student).await;
+
+    // たなかコーチはテニスの同期レッスンと水泳の非同期レッスン、いとうコーチはテニスの同期レッスン
+    let live = live_lesson(&pool, tanaka, taro, now() - 10 * DAY).await;
+    let video = async_lesson(&pool, tanaka, taro, now() - 5 * DAY).await;
+    let ito_live = live_lesson(&pool, ito, taro, now() - 8 * DAY).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    let tanaka_tennis = review(
+        &reviews,
+        taro,
+        tanaka,
+        live.id().as_u128(),
+        1,
+        now() - 9 * DAY,
+    )
+    .await;
+    let tanaka_swimming = review(
+        &reviews,
+        taro,
+        tanaka,
+        video.id().as_u128(),
+        2,
+        now() - 4 * DAY,
+    )
+    .await;
+    let ito_tennis = review(
+        &reviews,
+        taro,
+        ito,
+        ito_live.id().as_u128(),
+        2,
+        now() - 7 * DAY,
+    )
+    .await;
+    // ★3 と 30 日より前は、コーチで絞っても載らない
+    review(&reviews, taro, tanaka, 900, 3, now() - DAY).await;
+    review(&reviews, taro, tanaka, 901, 1, now() - 31 * DAY).await;
+    let router =
+        server::router_with_postgres(pool, FixedClock(now()), RecordingAnalyticsSink::default());
+
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (status, body) = get(&router, &headquarters).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [
+            tanaka_swimming.as_str(),
+            ito_tennis.as_str(),
+            tanaka_tennis.as_str()
+        ],
+        "付けなければ今までどおり"
+    );
+
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let ito_id = account_id_uuid::format(ito);
+    let (status, body) =
+        get_with_query(&router, &headquarters, &format!("?coach_id={tanaka_id}")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [tanaka_swimming.as_str(), tanaka_tennis.as_str()],
+        "たなかコーチの低い評価だけを、新しい順"
+    );
+    assert!(
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["coach_display_name"] == "tanaka")
+    );
+
+    // スポーツ・対応済みと合わせて絞れる
+    for (query, expected) in [
+        (
+            format!("?coach_id={tanaka_id}&sport=tennis"),
+            vec![tanaka_tennis.as_str()],
+        ),
+        (
+            format!("?coach_id={ito_id}&sport=tennis&handled=false"),
+            vec![ito_tennis.as_str()],
+        ),
+        (format!("?coach_id={ito_id}&sport=swimming"), vec![]),
+        (format!("?coach_id={tanaka_id}&handled=true"), vec![]),
+    ] {
+        let (status, body) = get_with_query(&router, &headquarters, &query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+
+    // ない ID・コーチでない ID（生徒）は 404 にせず空の一覧
+    for coach_id in [
+        "00000000-0000-0000-0000-000000000063".to_string(),
+        account_id_uuid::format(taro),
+    ] {
+        let (status, body) =
+            get_with_query(&router, &headquarters, &format!("?coach_id={coach_id}")).await;
+        assert_eq!(status, StatusCode::OK, "{coach_id}: {body}");
+        assert_eq!(ids(&body), Vec::<String>::new(), "{coach_id}");
+    }
+
+    let (status, body) = get_with_query(&router, &headquarters, "?coach_id=tanaka").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_narrows_low_reviews_to_a_student_from_postgres(pool: PgPool) {
+    let (_, headquarters) = register(&pool, "honbu@example.com", Role::Headquarters).await;
+    let (tanaka, _) = register(&pool, "tanaka@example.com", Role::Coach).await;
+    let (ito, _) = register(&pool, "ito@example.com", Role::Coach).await;
+    let (taro, _) = register(&pool, "taro@example.com", Role::Student).await;
+    let (hanako, _) = register(&pool, "hanako@example.com", Role::Student).await;
+
+    // たろうさんはたなかコーチのテニスの同期レッスンと水泳の非同期レッスン、いとうコーチのテニスの同期レッスン。
+    // はなこさんはたなかコーチのテニスの同期レッスン
+    let live = live_lesson(&pool, tanaka, taro, now() - 10 * DAY).await;
+    let video = async_lesson(&pool, tanaka, taro, now() - 5 * DAY).await;
+    let ito_live = live_lesson(&pool, ito, taro, now() - 8 * DAY).await;
+    let hanako_live = live_lesson(&pool, tanaka, hanako, now() - 6 * DAY).await;
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    let taro_tanaka_tennis = review(
+        &reviews,
+        taro,
+        tanaka,
+        live.id().as_u128(),
+        1,
+        now() - 9 * DAY,
+    )
+    .await;
+    let taro_tanaka_swimming = review(
+        &reviews,
+        taro,
+        tanaka,
+        video.id().as_u128(),
+        2,
+        now() - 4 * DAY,
+    )
+    .await;
+    let taro_ito_tennis = review(
+        &reviews,
+        taro,
+        ito,
+        ito_live.id().as_u128(),
+        2,
+        now() - 7 * DAY,
+    )
+    .await;
+    let hanako_tennis = review(
+        &reviews,
+        hanako,
+        tanaka,
+        hanako_live.id().as_u128(),
+        1,
+        now() - 5 * DAY,
+    )
+    .await;
+    // ★3 と 30 日より前は、生徒で絞っても載らない
+    review(&reviews, taro, tanaka, 900, 3, now() - DAY).await;
+    review(&reviews, taro, tanaka, 901, 1, now() - 31 * DAY).await;
+    let router =
+        server::router_with_postgres(pool, FixedClock(now()), RecordingAnalyticsSink::default());
+
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (status, body) = get(&router, &headquarters).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [
+            taro_tanaka_swimming.as_str(),
+            hanako_tennis.as_str(),
+            taro_ito_tennis.as_str(),
+            taro_tanaka_tennis.as_str()
+        ],
+        "付けなければ今までどおり"
+    );
+
+    let taro_id = account_id_uuid::format(taro);
+    let hanako_id = account_id_uuid::format(hanako);
+    let tanaka_id = account_id_uuid::format(tanaka);
+    let ito_id = account_id_uuid::format(ito);
+    let (status, body) =
+        get_with_query(&router, &headquarters, &format!("?student_id={taro_id}")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        [
+            taro_tanaka_swimming.as_str(),
+            taro_ito_tennis.as_str(),
+            taro_tanaka_tennis.as_str()
+        ],
+        "たろうさんの低い評価だけを、コーチを問わず新しい順"
+    );
+    assert!(
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["student_display_name"] == "taro")
+    );
+
+    // スポーツ・対応済み・コーチと合わせて絞れる
+    for (query, expected) in [
+        (
+            format!("?student_id={taro_id}&sport=tennis"),
+            vec![taro_ito_tennis.as_str(), taro_tanaka_tennis.as_str()],
+        ),
+        (
+            format!("?student_id={taro_id}&coach_id={tanaka_id}"),
+            vec![taro_tanaka_swimming.as_str(), taro_tanaka_tennis.as_str()],
+        ),
+        (
+            format!("?student_id={taro_id}&coach_id={ito_id}&sport=tennis&handled=false"),
+            vec![taro_ito_tennis.as_str()],
+        ),
+        (
+            format!("?student_id={hanako_id}&coach_id={tanaka_id}"),
+            vec![hanako_tennis.as_str()],
+        ),
+        (format!("?student_id={hanako_id}&coach_id={ito_id}"), vec![]),
+        (format!("?student_id={taro_id}&handled=true"), vec![]),
+    ] {
+        let (status, body) = get_with_query(&router, &headquarters, &query).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+
+    // ない ID・生徒でない ID（コーチ）は 404 にせず空の一覧
+    for student_id in [
+        "00000000-0000-0000-0000-000000000063".to_string(),
+        tanaka_id,
+    ] {
+        let (status, body) =
+            get_with_query(&router, &headquarters, &format!("?student_id={student_id}")).await;
+        assert_eq!(status, StatusCode::OK, "{student_id}: {body}");
+        assert_eq!(ids(&body), Vec::<String>::new(), "{student_id}");
+    }
+
+    let (status, body) = get_with_query(&router, &headquarters, "?student_id=taro").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
 }

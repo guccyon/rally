@@ -2,3 +2,4 @@
 /tmp/
 .env
 .env.*
+tools/design-catalog/node_modules/

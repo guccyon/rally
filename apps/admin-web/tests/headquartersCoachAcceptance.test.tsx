@@ -36,7 +36,7 @@ const SUZUKI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000001",
   display_name: "鈴木 コーチ",
   acceptance_status: "accepting",
-  recent_lesson_count: 0,
+  recent_lesson_count: 12,
 };
 const TAKAHASHI: Schemas["Coach"] = {
   coach_id: "22222222-2222-4222-8222-000000000002",
@@ -79,6 +79,13 @@ async function rowOf(name: string) {
 function statusOf(row: HTMLElement) {
   return within(row).getAllByRole("cell")[1]!.textContent;
 }
+
+function recentLessonsOf(row: HTMLElement) {
+  return within(row).getAllByRole("cell")[2]!.textContent;
+}
+
+const RECENT_LESSON_COUNT_NOTE =
+  "直近 30 日のレッスンは、今日までの 30 日に完了した通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
 
 describe("本部のコーチの受付", () => {
   test("読み込み中を出し、読めたら API の順で各行に表示名と受付の状態と、状態に応じたボタンを出す", async () => {
@@ -300,11 +307,22 @@ describe("本部のコーチの受付", () => {
     expect(listCoaches).toHaveBeenCalledTimes(1);
   });
 
-  test("コーチが 0 人なら「コーチがまだいません」を出し、表は出さない", async () => {
+  test("各行に直近 30 日のレッスンの数を「n 回」で出し（0 も「0 回」）、表の上に数え方を添える", async () => {
+    renderList({});
+
+    const table = await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(within(table).getByRole("columnheader", { name: "直近 30 日のレッスン" })).toBeInTheDocument();
+    expect(recentLessonsOf(await rowOf("鈴木 コーチ"))).toBe("12 回");
+    expect(recentLessonsOf(await rowOf("高橋 コーチ"))).toBe("0 回");
+    expect(screen.getByText(RECENT_LESSON_COUNT_NOTE)).toBeInTheDocument();
+  });
+
+  test("コーチが 0 人なら「コーチがまだいません」を出し、表と数え方の説明は出さない", async () => {
     renderList({ listCoaches: listOf([]) });
 
     expect(await screen.findByText("コーチがまだいません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(RECENT_LESSON_COUNT_NOTE)).not.toBeInTheDocument();
   });
 
   test("一覧の API が失敗したときはその文言だけを出す", async () => {
@@ -474,7 +492,7 @@ describe("本部のコーチの受付の絞り込み", () => {
 
   test("渡された条件（URL のクエリ）で開き、絞り込みにその値を出す", async () => {
     const listCoaches = listOf([SUZUKI]);
-    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "accepting", sport: "golf", q: "" } });
+    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "accepting", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false } });
 
     await screen.findByRole("table", { name: "コーチの一覧" });
     expect(listCoaches).toHaveBeenCalledTimes(1);
@@ -484,7 +502,7 @@ describe("本部のコーチの受付の絞り込み", () => {
   });
 
   test("渡された条件で開いて 0 件なら「条件に合うコーチはいません」を出す", async () => {
-    renderList({ listCoaches: listOf([]) }, { initialFilter: { acceptanceStatus: "", sport: "swimming", q: "" } });
+    renderList({ listCoaches: listOf([]) }, { initialFilter: { acceptanceStatus: "", sport: "swimming", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false } });
 
     expect(await screen.findByText("条件に合うコーチはいません")).toBeInTheDocument();
   });
@@ -496,10 +514,543 @@ describe("本部のコーチの受付の絞り込み", () => {
     await screen.findByRole("table", { name: "コーチの一覧" });
 
     await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
-    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "", q: "" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
-    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "tennis", q: "" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "suspended", sport: "tennis", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
     expect(onFilterChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+const INACTIVE_ONLY = "直近 30 日にレッスンのないコーチだけ";
+
+describe("本部のコーチの受付の直近 30 日にレッスンのないコーチだけ", () => {
+  test("開いたときは外れていて、入れたら inactive=true を付けて読み直し、外したら付けずに読み直す", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    const listCoaches = listOf(COACHES, [TAKAHASHI], COACHES);
+    renderList({ listCoaches }, { onFilterChange });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    const toggle = screen.getByRole("checkbox", { name: INACTIVE_ONLY });
+    expect(toggle).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledWith({});
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ inactive: true }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "", q: "", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false });
+    expect(toggle).toBeChecked();
+    await waitFor(async () => expect(await rowOf("鈴木 コーチ")).toBeUndefined());
+    expect(recentLessonsOf((await rowOf("高橋 コーチ"))!)).toBe("0 回");
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({}));
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
+    await waitFor(async () => expect(await rowOf("鈴木 コーチ")).toBeDefined());
+    expect(listCoaches).toHaveBeenCalledTimes(3);
+  });
+
+  test("受付の状態・スポーツ・検索欄の語と組み合わせ、どれを変えても inactive=true を付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [TAKAHASHI], [TAKAHASHI], [TAKAHASHI], [TAKAHASHI], [TAKAHASHI]);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "停止中");
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended" }));
+
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended", inactive: true }),
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended", sport: "tennis", inactive: true }),
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "高橋{Enter}");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "suspended",
+        sport: "tennis",
+        q: "高橋",
+        inactive: true,
+      }),
+    );
+
+    // 検索欄に入れただけの語も、切り替えたときに一緒に確定する。
+    await user.clear(screen.getByRole("textbox", { name: "表示名" }));
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "  高 ");
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "suspended", sport: "tennis", q: "高" }),
+    );
+    expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("高");
+    expect(listCoaches).toHaveBeenCalledTimes(6);
+  });
+
+  test("検索欄の語が上限を超えたまま切り替えたら、理由を出して条件を変えない", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "あ".repeat(51));
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("表示名は 50 文字までで探してください。");
+    expect(screen.getByRole("checkbox", { name: INACTIVE_ONLY })).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+  });
+
+  test("該当がなければ「直近 30 日にレッスンのないコーチはいません」を出し、表は出さない", async () => {
+    const user = userEvent.setup();
+    renderList({ listCoaches: listOf(COACHES, []) });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+
+    expect(await screen.findByText("直近 30 日にレッスンのないコーチはいません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("コーチがまだいません")).not.toBeInTheDocument();
+  });
+
+  test("ほかの条件と組み合わせて該当がなければ、直近 30 日にレッスンのないコーチのうち条件に合う人がいないと出す", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "", sport: "swimming", q: "", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false } },
+    );
+
+    expect(
+      await screen.findByText("直近 30 日にレッスンのないコーチのうち、条件に合うコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("渡された条件（URL のクエリ）で入れた状態で開き、inactive=true を付けて読む", async () => {
+    const listCoaches = listOf([TAKAHASHI]);
+    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false } });
+
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+    expect(listCoaches).toHaveBeenCalledWith({ inactive: true });
+    expect(screen.getByRole("checkbox", { name: INACTIVE_ONLY })).toBeChecked();
+  });
+
+  test("入れたまま止めたら、inactive=true を付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf([SUZUKI], [{ ...SUZUKI, acceptance_status: "suspended" }]);
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: true,
+      data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
+    }));
+    renderList({ listCoaches, suspendCoach }, { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false } });
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.click(within(row).getByRole("button", { name: "停止を確定" }));
+
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
+    expect(listCoaches).toHaveBeenLastCalledWith({ inactive: true });
+  });
+});
+
+const UNHANDLED_LOW_RATED_ONLY = "未対応の低い評価のあるコーチだけ";
+
+describe("本部のコーチの受付の未対応の低い評価のあるコーチだけ", () => {
+  test("開いたときは外れていて、入れたら has_unhandled_low_rated=true を付けて読み直し、外したら付けずに読み直す", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    const listCoaches = listOf(COACHES, [SUZUKI], COACHES);
+    renderList({ listCoaches }, { onFilterChange });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    const toggle = screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY });
+    expect(toggle).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledWith({});
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ has_unhandled_low_rated: true }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: false,
+      hasUnhandledLowRated: true,
+      hasUnanswered: false,
+    });
+    expect(toggle).toBeChecked();
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeUndefined());
+    expect(await rowOf("鈴木 コーチ")).toBeDefined();
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({}));
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
+    });
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeDefined());
+    expect(listCoaches).toHaveBeenCalledTimes(3);
+  });
+
+  test("受付の状態・スポーツ・検索欄の語・直近 30 日にレッスンのないコーチだけと組み合わせ、どれを変えても付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI]);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ has_unhandled_low_rated: true }));
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting", has_unhandled_low_rated: true }),
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        has_unhandled_low_rated: true,
+      }),
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "鈴木{Enter}");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴木",
+        has_unhandled_low_rated: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴木",
+        inactive: true,
+        has_unhandled_low_rated: true,
+      }),
+    );
+
+    // 検索欄に入れただけの語も、切り替えたときに一緒に確定する。
+    await user.clear(screen.getByRole("textbox", { name: "表示名" }));
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "  鈴 ");
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴",
+        inactive: true,
+      }),
+    );
+    expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("鈴");
+    expect(listCoaches).toHaveBeenCalledTimes(7);
+  });
+
+  test("検索欄の語が上限を超えたまま切り替えたら、理由を出して条件を変えない", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "あ".repeat(51));
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("表示名は 50 文字までで探してください。");
+    expect(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY })).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+  });
+
+  test("該当がなければ「未対応の低い評価のあるコーチはいません」を出し、表は出さない", async () => {
+    const user = userEvent.setup();
+    renderList({ listCoaches: listOf(COACHES, []) });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+
+    expect(await screen.findByText("未対応の低い評価のあるコーチはいません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("コーチがまだいません")).not.toBeInTheDocument();
+  });
+
+  test("ほかの条件と組み合わせて該当がなければ、未対応の低い評価のあるコーチのうち条件に合う人がいないと出す", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "suspended", sport: "", q: "", inactive: false, hasUnhandledLowRated: true, hasUnanswered: false } },
+    );
+
+    expect(
+      await screen.findByText("未対応の低い評価のあるコーチのうち、条件に合うコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("直近 30 日にレッスンのないコーチだけと両方入れて該当がなければ、両方の条件を文言に含める", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: true, hasUnhandledLowRated: true, hasUnanswered: false } },
+    );
+    expect(
+      await screen.findByText("直近 30 日にレッスンがなく、未対応の低い評価のあるコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("両方入れてほかの条件とも組み合わせて該当がなければ、両方の条件のうち条件に合う人がいないと出す", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "鈴木", inactive: true, hasUnhandledLowRated: true, hasUnanswered: false } },
+    );
+    expect(
+      await screen.findByText("直近 30 日にレッスンがなく、未対応の低い評価のあるコーチのうち、条件に合うコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("渡された条件（URL のクエリ）で入れた状態で開き、has_unhandled_low_rated=true を付けて読む", async () => {
+    const listCoaches = listOf([SUZUKI]);
+    renderList(
+      { listCoaches },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: true, hasUnanswered: false } },
+    );
+
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+    expect(listCoaches).toHaveBeenCalledWith({ has_unhandled_low_rated: true });
+    expect(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: INACTIVE_ONLY })).not.toBeChecked();
+  });
+
+  test("入れたまま止めたら、has_unhandled_low_rated=true を付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf([SUZUKI], [{ ...SUZUKI, acceptance_status: "suspended" }]);
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: true,
+      data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
+    }));
+    renderList(
+      { listCoaches, suspendCoach },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: true, hasUnanswered: false } },
+    );
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.click(within(row).getByRole("button", { name: "停止を確定" }));
+
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
+    expect(listCoaches).toHaveBeenLastCalledWith({ has_unhandled_low_rated: true });
+  });
+});
+
+const UNANSWERED_ONLY = "返事のないメッセージのあるコーチだけ";
+
+describe("本部のコーチの受付の返事のないメッセージのあるコーチだけ", () => {
+  test("開いたときは外れていて、入れたら has_unanswered=true を付けて読み直し、外したら付けずに読み直す", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    const listCoaches = listOf(COACHES, [SUZUKI], COACHES);
+    renderList({ listCoaches }, { onFilterChange });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    const toggle = screen.getByRole("checkbox", { name: UNANSWERED_ONLY });
+    expect(toggle).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledWith({});
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ has_unanswered: true }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: true,
+    });
+    expect(toggle).toBeChecked();
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeUndefined());
+    expect(await rowOf("鈴木 コーチ")).toBeDefined();
+
+    await user.click(toggle);
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({}));
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
+    });
+    await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeDefined());
+    expect(listCoaches).toHaveBeenCalledTimes(3);
+  });
+
+  test("受付の状態・スポーツ・検索欄の語・ほかの切り替えと組み合わせ、どれを変えても付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI], [SUZUKI]);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNANSWERED_ONLY }));
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ has_unanswered: true }));
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "受付の状態" }), "受付中");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({ acceptance_status: "accepting", has_unanswered: true }),
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        has_unanswered: true,
+      }),
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "鈴木{Enter}");
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴木",
+        has_unanswered: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴木",
+        inactive: true,
+        has_unanswered: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴木",
+        inactive: true,
+        has_unhandled_low_rated: true,
+        has_unanswered: true,
+      }),
+    );
+
+    // 検索欄に入れただけの語も、切り替えたときに一緒に確定する。
+    await user.clear(screen.getByRole("textbox", { name: "表示名" }));
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "  鈴 ");
+    await user.click(screen.getByRole("checkbox", { name: UNANSWERED_ONLY }));
+    await waitFor(() =>
+      expect(listCoaches).toHaveBeenLastCalledWith({
+        acceptance_status: "accepting",
+        sport: "tennis",
+        q: "鈴",
+        inactive: true,
+        has_unhandled_low_rated: true,
+      }),
+    );
+    expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("鈴");
+    expect(listCoaches).toHaveBeenCalledTimes(8);
+  });
+
+  test("検索欄の語が上限を超えたまま切り替えたら、理由を出して条件を変えない", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES);
+    renderList({ listCoaches });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.type(screen.getByRole("textbox", { name: "表示名" }), "あ".repeat(51));
+    await user.click(screen.getByRole("checkbox", { name: UNANSWERED_ONLY }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("表示名は 50 文字までで探してください。");
+    expect(screen.getByRole("checkbox", { name: UNANSWERED_ONLY })).not.toBeChecked();
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+  });
+
+  test("該当がなければ「返事のないメッセージのあるコーチはいません」を出し、表は出さない", async () => {
+    const user = userEvent.setup();
+    renderList({ listCoaches: listOf(COACHES, []) });
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNANSWERED_ONLY }));
+
+    expect(await screen.findByText("返事のないメッセージのあるコーチはいません")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText("コーチがまだいません")).not.toBeInTheDocument();
+  });
+
+  test("ほかの条件と組み合わせて該当がなければ、返事のないメッセージのあるコーチのうち条件に合う人がいないと出す", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "", sport: "tennis", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: true } },
+    );
+
+    expect(
+      await screen.findByText("返事のないメッセージのあるコーチのうち、条件に合うコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("ほかの切り替えと一緒に入れて該当がなければ、入れた切り替えの条件をすべて文言に含める", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: true, hasUnanswered: true } },
+    );
+    expect(
+      await screen.findByText("未対応の低い評価があり、返事のないメッセージのあるコーチはいません"),
+    ).toBeInTheDocument();
+  });
+
+  test("3 つの切り替えをすべて入れてほかの条件とも組み合わせて該当がなければ、すべての条件のうち条件に合う人がいないと出す", async () => {
+    renderList(
+      { listCoaches: listOf([]) },
+      { initialFilter: { acceptanceStatus: "suspended", sport: "", q: "", inactive: true, hasUnhandledLowRated: true, hasUnanswered: true } },
+    );
+    expect(
+      await screen.findByText(
+        "直近 30 日にレッスンがなく、未対応の低い評価があり、返事のないメッセージのあるコーチのうち、条件に合うコーチはいません",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  test("渡された条件（URL のクエリ）で入れた状態で開き、has_unanswered=true を付けて読む", async () => {
+    const listCoaches = listOf([SUZUKI]);
+    renderList(
+      { listCoaches },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: true } },
+    );
+
+    await screen.findByRole("table", { name: "コーチの一覧" });
+    expect(listCoaches).toHaveBeenCalledTimes(1);
+    expect(listCoaches).toHaveBeenCalledWith({ has_unanswered: true });
+    expect(screen.getByRole("checkbox", { name: UNANSWERED_ONLY })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY })).not.toBeChecked();
+  });
+
+  test("入れたまま止めたら、has_unanswered=true を付けたまま読み直す", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf([SUZUKI], [{ ...SUZUKI, acceptance_status: "suspended" }]);
+    const suspendCoach = vi.fn<HeadquartersApi["suspendCoach"]>(async () => ({
+      ok: true,
+      data: { coach_id: SUZUKI.coach_id, acceptance_status: "suspended" },
+    }));
+    renderList(
+      { listCoaches, suspendCoach },
+      { initialFilter: { acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: true } },
+    );
+
+    const row = await rowOf("鈴木 コーチ");
+    await user.click(within(row).getByRole("button", { name: "受付を止める" }));
+    await user.click(within(row).getByRole("button", { name: "停止を確定" }));
+
+    await waitFor(() => expect(listCoaches).toHaveBeenCalledTimes(2));
+    expect(listCoaches).toHaveBeenLastCalledWith({ has_unanswered: true });
   });
 });
 
@@ -526,7 +1077,7 @@ describe("本部のコーチの受付の表示名の検索", () => {
     await user.click(screen.getByRole("button", { name: "探す" }));
 
     await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ q: "鈴木" }));
-    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "", q: "鈴木" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "", q: "鈴木", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
     expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("鈴木");
     await waitFor(async () => expect(await rowOf("高橋 コーチ")).toBeUndefined());
     expect(await rowOf("鈴木 コーチ")).toBeDefined();
@@ -560,7 +1111,7 @@ describe("本部のコーチの受付の表示名の検索", () => {
     await user.type(input, " 鈴木\u3000");
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
     await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "tennis", q: "鈴木" }));
-    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "tennis", q: "鈴木" });
+    expect(onFilterChange).toHaveBeenLastCalledWith({ acceptanceStatus: "", sport: "tennis", q: "鈴木", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
     expect(input).toHaveValue("鈴木");
 
     await user.clear(input);
@@ -597,7 +1148,7 @@ describe("本部のコーチの受付の表示名の検索", () => {
   test("空にして確定したら q を付けずに読み直す", async () => {
     const user = userEvent.setup();
     const listCoaches = listOf([SUZUKI], COACHES);
-    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "", sport: "", q: "鈴木" } });
+    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "", sport: "", q: "鈴木", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false } });
     await screen.findByRole("table", { name: "コーチの一覧" });
     expect(listCoaches).toHaveBeenCalledWith({ q: "鈴木" });
     expect(screen.getByRole("textbox", { name: "表示名" })).toHaveValue("鈴木");
@@ -647,7 +1198,7 @@ describe("本部のコーチの受付の表示名の検索", () => {
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "", sport: "", q: "あ".repeat(51) } });
+    renderList({ listCoaches }, { initialFilter: { acceptanceStatus: "", sport: "", q: "あ".repeat(51), inactive: false, hasUnhandledLowRated: false, hasUnanswered: false } });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "入力の内容が正しくありません。表示名は 50 文字までで探してください。",
@@ -666,14 +1217,14 @@ describe("本部のコーチの受付の表示名の検索", () => {
 
 describe("コーチの受付の絞り込みと URL", () => {
   test("「すべて」の条件はクエリに出さず、選んだ条件だけを契約のクエリの名前で残す", () => {
-    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "", q: "" })).toBe("/headquarters/coaches");
-    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "", q: "" })).toBe(
+    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false })).toBe("/headquarters/coaches");
+    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false })).toBe(
       "/headquarters/coaches?acceptance_status=suspended",
     );
-    expect(coachAcceptancePath({ acceptanceStatus: "accepting", sport: "golf", q: "" })).toBe(
+    expect(coachAcceptancePath({ acceptanceStatus: "accepting", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false })).toBe(
       "/headquarters/coaches?acceptance_status=accepting&sport=golf",
     );
-    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "tennis", q: "鈴木 コーチ" })).toBe(
+    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "tennis", q: "鈴木 コーチ", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false })).toBe(
       "/headquarters/coaches?acceptance_status=suspended&sport=tennis&q=%E9%88%B4%E6%9C%A8+%E3%82%B3%E3%83%BC%E3%83%81",
     );
   });
@@ -683,18 +1234,136 @@ describe("コーチの受付の絞り込みと URL", () => {
       acceptanceStatus: "suspended",
       sport: "tennis",
       q: "",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
     });
-    expect(coachAcceptanceFilterFrom(new URLSearchParams(""))).toEqual({ acceptanceStatus: "", sport: "", q: "" });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams(""))).toEqual({ acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false });
     expect(coachAcceptanceFilterFrom(new URLSearchParams("q=%E3%80%80%E9%88%B4%E6%9C%A8+&sport=golf"))).toEqual({
       acceptanceStatus: "",
       sport: "golf",
       q: "鈴木",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
     });
     expect(coachAcceptanceFilterFrom(new URLSearchParams("acceptance_status=paused&sport=chess"))).toEqual({
       acceptanceStatus: "",
       sport: "",
       q: "",
+      inactive: false,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
     });
+  });
+
+  test("直近 30 日にレッスンのないコーチだけは inactive=true で残し、true のときだけ読む", () => {
+    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "", q: "", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false })).toBe(
+      "/headquarters/coaches?inactive=true",
+    );
+    expect(coachAcceptancePath({ acceptanceStatus: "suspended", sport: "tennis", q: "高橋", inactive: true, hasUnhandledLowRated: false, hasUnanswered: false })).toBe(
+      "/headquarters/coaches?acceptance_status=suspended&sport=tennis&q=%E9%AB%98%E6%A9%8B&inactive=true",
+    );
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("inactive=true&sport=golf"))).toEqual({
+      acceptanceStatus: "",
+      sport: "golf",
+      q: "",
+      inactive: true,
+      hasUnhandledLowRated: false,
+      hasUnanswered: false,
+    });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("inactive=false")).inactive).toBe(false);
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("inactive=1")).inactive).toBe(false);
+  });
+
+  test("画面で直近 30 日にレッスンのないコーチだけを入れると、ほかの条件と合わせて URL のクエリを置き換える", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [TAKAHASHI]);
+    headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
+    render(
+      <CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false }} />,
+    );
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: INACTIVE_ONLY }));
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/coaches?sport=golf&inactive=true", { scroll: false });
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "golf", inactive: true }));
+  });
+
+  test("未対応の低い評価のあるコーチだけは has_unhandled_low_rated=true で残し、true のときだけ読む", () => {
+    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: true, hasUnanswered: false })).toBe(
+      "/headquarters/coaches?has_unhandled_low_rated=true",
+    );
+    expect(coachAcceptancePath({ acceptanceStatus: "accepting", sport: "golf", q: "", inactive: true, hasUnhandledLowRated: true, hasUnanswered: false })).toBe(
+      "/headquarters/coaches?acceptance_status=accepting&sport=golf&inactive=true&has_unhandled_low_rated=true",
+    );
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unhandled_low_rated=true&inactive=true"))).toEqual({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: true,
+      hasUnhandledLowRated: true,
+      hasUnanswered: false,
+    });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unhandled_low_rated=false")).hasUnhandledLowRated).toBe(false);
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unhandled_low_rated=1")).hasUnhandledLowRated).toBe(false);
+  });
+
+  test("画面で未対応の低い評価のあるコーチだけを入れると、ほかの条件と合わせて URL のクエリを置き換える", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI]);
+    headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
+    render(
+      <CoachAcceptanceHome
+        token="mock.headquarters.x"
+        initialFilter={{ acceptanceStatus: "", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false }}
+      />,
+    );
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNHANDLED_LOW_RATED_ONLY }));
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/coaches?sport=golf&has_unhandled_low_rated=true", {
+      scroll: false,
+    });
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "golf", has_unhandled_low_rated: true }));
+  });
+
+  test("返事のないメッセージのあるコーチだけは has_unanswered=true で残し、true のときだけ読む", () => {
+    expect(coachAcceptancePath({ acceptanceStatus: "", sport: "", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: true })).toBe(
+      "/headquarters/coaches?has_unanswered=true",
+    );
+    expect(coachAcceptancePath({ acceptanceStatus: "accepting", sport: "golf", q: "", inactive: true, hasUnhandledLowRated: true, hasUnanswered: true })).toBe(
+      "/headquarters/coaches?acceptance_status=accepting&sport=golf&inactive=true&has_unhandled_low_rated=true&has_unanswered=true",
+    );
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unanswered=true&has_unhandled_low_rated=true"))).toEqual({
+      acceptanceStatus: "",
+      sport: "",
+      q: "",
+      inactive: false,
+      hasUnhandledLowRated: true,
+      hasUnanswered: true,
+    });
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unanswered=false")).hasUnanswered).toBe(false);
+    expect(coachAcceptanceFilterFrom(new URLSearchParams("has_unanswered=1")).hasUnanswered).toBe(false);
+  });
+
+  test("画面で返事のないメッセージのあるコーチだけを入れると、ほかの条件と合わせて URL のクエリを置き換える", async () => {
+    const user = userEvent.setup();
+    const listCoaches = listOf(COACHES, [SUZUKI]);
+    headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
+    render(
+      <CoachAcceptanceHome
+        token="mock.headquarters.x"
+        initialFilter={{ acceptanceStatus: "", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false }}
+      />,
+    );
+    await screen.findByRole("table", { name: "コーチの一覧" });
+
+    await user.click(screen.getByRole("checkbox", { name: UNANSWERED_ONLY }));
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/coaches?sport=golf&has_unanswered=true", {
+      scroll: false,
+    });
+    await waitFor(() => expect(listCoaches).toHaveBeenLastCalledWith({ sport: "golf", has_unanswered: true }));
   });
 
   test("クエリの確かめに使う選択肢は凍結してあり、import した側から書き換えられない", () => {
@@ -706,7 +1375,7 @@ describe("コーチの受付の絞り込みと URL", () => {
     const user = userEvent.setup();
     const listCoaches = listOf(COACHES, [SUZUKI]);
     headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
-    render(<CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf", q: "" }} />);
+    render(<CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false }} />);
     await screen.findByRole("table", { name: "コーチの一覧" });
     expect(listCoaches).toHaveBeenCalledWith({ sport: "golf" });
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("golf");
@@ -723,7 +1392,7 @@ describe("コーチの受付の絞り込みと URL", () => {
     const listCoaches = listOf(COACHES, [SUZUKI]);
     headquartersApiMock.mockReturnValue({ listCoaches, suspendCoach: vi.fn(), resumeCoach: vi.fn() });
     render(
-      <CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf", q: "" }} />,
+      <CoachAcceptanceHome token="mock.headquarters.x" initialFilter={{ acceptanceStatus: "", sport: "golf", q: "", inactive: false, hasUnhandledLowRated: false, hasUnanswered: false }} />,
     );
     await screen.findByRole("table", { name: "コーチの一覧" });
 

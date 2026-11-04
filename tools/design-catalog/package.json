@@ -1,0 +1,16 @@
+{
+  "name": "rally-design-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "デザインシステムの正本（specs/design/）から部品のカタログ（catalog.html と catalog.png）を組み立てる",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:png": "node build.mjs --png",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright": "1.63.0",
+    "yaml": "^2.9.1"
+  }
+}

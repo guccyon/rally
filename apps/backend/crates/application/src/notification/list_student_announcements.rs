@@ -13,7 +13,9 @@ use crate::Unavailable;
 ///
 /// 生徒が受け取った本部からのお知らせを、お知らせを作った時刻（送った時刻）の新しい順（同じ時刻は後に残したものが先）に
 /// 最大 [`Self::LIMIT`] 件、送った記録を添えて返す（[`ReceivedAnnouncement`]）。取り下げたお知らせも含む（生徒の一覧からは
-/// 外れているが、届いたことと既読は残っている）。生徒かは profile に問い合わせる（[`AnnouncementRecipientLookup`]）。
+/// 外れているが、届いたことと既読は残っている）。`unread_only` なら生徒がまだ読んでいないものだけに絞ってから
+/// [`Self::LIMIT`] 件を数える（判定は domain の [`domain::notification::Notification::is_unread_as`]。取り下げたものも
+/// 未読なら載る）。生徒かは profile に問い合わせる（[`AnnouncementRecipientLookup`]）。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。行動イベントは発火しない。
 pub struct ListStudentAnnouncements<N, A, L> {
     notifications: N,
@@ -41,13 +43,14 @@ where
     pub async fn execute(
         &self,
         student_id: AccountId,
+        unread_only: bool,
     ) -> Result<Vec<ReceivedAnnouncement>, ListStudentAnnouncementsError> {
         if !self.students.is_student(student_id).await? {
             return Err(ListStudentAnnouncementsError::StudentNotFound);
         }
         let notifications = self
             .notifications
-            .find_announcements_by_recipient(student_id, Self::LIMIT)
+            .find_announcements_by_recipient(student_id, unread_only, Self::LIMIT)
             .await?;
         let ids: BTreeSet<_> = notifications
             .iter()
@@ -176,7 +179,7 @@ mod tests {
             InMemoryAnnouncementRepository::with_announcements([old, new, same_time, withdrawn]);
         let listed =
             ListStudentAnnouncements::new(notifications.clone(), announcements, FakeStudents)
-                .execute(STUDENT)
+                .execute(STUDENT, false)
                 .await
                 .unwrap();
         assert_eq!(
@@ -210,7 +213,7 @@ mod tests {
             InMemoryAnnouncementRepository::with_announcements(sent),
             FakeStudents,
         )
-        .execute(STUDENT)
+        .execute(STUDENT, false)
         .await
         .unwrap();
         assert_eq!(listed.len(), 50);
@@ -223,13 +226,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unread_only_lists_only_what_the_student_has_not_read_including_withdrawn() {
+        let (read, unread) = (announcement(1, 10), announcement(2, 20));
+        let mut withdrawn_unread = announcement(3, 30);
+        withdrawn_unread.withdraw(HEADQUARTERS, at(40)).unwrap();
+        let mut withdrawn_read = announcement(4, 50);
+        withdrawn_read.withdraw(HEADQUARTERS, at(70)).unwrap();
+        let (mut read_received, mut withdrawn_read_received) = (
+            received(11, &read, STUDENT),
+            received(14, &withdrawn_read, STUDENT),
+        );
+        read_received.mark_read(at(15));
+        withdrawn_read_received.mark_read(at(60));
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            read_received,
+            received(12, &unread, STUDENT),
+            received(13, &withdrawn_unread, STUDENT),
+            withdrawn_read_received,
+            received(15, &read, OTHER),
+        ]);
+        let listed = ListStudentAnnouncements::new(
+            notifications.clone(),
+            InMemoryAnnouncementRepository::with_announcements([
+                read,
+                unread,
+                withdrawn_unread,
+                withdrawn_read,
+            ]),
+            FakeStudents,
+        )
+        .execute(STUDENT, true)
+        .await
+        .unwrap();
+        assert_eq!(
+            summary(&listed),
+            [(3, false, true), (2, false, false)],
+            "未読だけを新しい順に。取り下げたものも未読なら載る。ほかの生徒の分は載せない"
+        );
+        assert_eq!(
+            notifications.all().iter().filter(|n| n.is_read()).count(),
+            2,
+            "照会では既読にしない"
+        );
+    }
+
+    #[tokio::test]
+    async fn unread_only_counts_the_fifty_after_filtering() {
+        let sent: Vec<Announcement> = (1..=60).map(|id| announcement(id, id as u64)).collect();
+        let notifications =
+            InMemoryNotificationRepository::with_notifications(sent.iter().map(|a| {
+                let mut notification = received(100 + a.id().as_u128(), a, STUDENT);
+                if a.id().as_u128() > 51 {
+                    notification.mark_read(at(100));
+                }
+                notification
+            }));
+        let listed = ListStudentAnnouncements::new(
+            notifications,
+            InMemoryAnnouncementRepository::with_announcements(sent),
+            FakeStudents,
+        )
+        .execute(STUDENT, true)
+        .await
+        .unwrap();
+        assert_eq!(
+            listed.len(),
+            50,
+            "新しい 9 件は既読。未読の 51 件のうち 50 件"
+        );
+        assert_eq!(listed[0].announcement_id().as_u128(), 51);
+        assert_eq!(
+            listed[49].announcement_id().as_u128(),
+            2,
+            "既読のものは数えず、未読のいちばん古い 1 件だけを載せない"
+        );
+        assert!(listed.iter().all(|r| !r.is_read()));
+    }
+
+    #[tokio::test]
     async fn a_student_without_announcements_is_an_empty_list() {
         let listed = ListStudentAnnouncements::new(
             InMemoryNotificationRepository::default(),
             InMemoryAnnouncementRepository::default(),
             FakeStudents,
         )
-        .execute(OTHER)
+        .execute(OTHER, false)
         .await
         .unwrap();
         assert!(listed.is_empty());
@@ -242,7 +323,7 @@ mod tests {
             InMemoryAnnouncementRepository::default(),
             FakeStudents,
         )
-        .execute(COACH)
+        .execute(COACH, false)
         .await;
         assert!(matches!(
             result,
@@ -262,7 +343,7 @@ mod tests {
             InMemoryAnnouncementRepository::default(),
             FakeStudents,
         )
-        .execute(STUDENT)
+        .execute(STUDENT, false)
         .await;
         assert!(
             matches!(result, Err(ListStudentAnnouncementsError::Unavailable(_))),

@@ -9,8 +9,8 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelledBookingList,
-        ListCancelledBookings, ListCancelledBookingsQuery, StudentDisplayNameLookup,
-        booking_id_uuid,
+        ListCancelledBookings, ListCancelledBookingsQuery, SlotCoachAccountLookup,
+        StudentDisplayNameLookup, booking_id_uuid,
     },
 };
 use axum::{
@@ -24,16 +24,19 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
-        account_id_from_contract, booking_canceller_to_contract, date_from_contract,
-        date_time_to_contract, date_to_contract,
+        account_id_from_contract, admin_web_sport, booking_canceller_to_contract,
+        date_from_contract, date_time_to_contract, date_to_contract, lesson_menu_id_from_contract,
     },
     error::ApiError,
 };
 
 /// `GET /bookings/cancelled` のハンドラーが使うユースケース。
-pub struct HeadquartersCancelledBookingsState<B, K, D, C> {
-    pub list_cancelled_bookings: ListCancelledBookings<B, K, D, C>,
+pub struct HeadquartersCancelledBookingsState<B, A, K, D, C> {
+    pub list_cancelled_bookings: ListCancelledBookings<B, A, K, D, C>,
 }
+
+/// ハンドラーが共有する [`HeadquartersCancelledBookingsState`]。
+type Shared<B, A, K, D, C> = Arc<HeadquartersCancelledBookingsState<B, A, K, D, C>>;
 
 /// admin-web の `listCancelledBookings` のクエリ。
 #[derive(Deserialize)]
@@ -41,6 +44,9 @@ pub struct ListCancelledBookingsParams {
     from: Option<String>,
     to: Option<String>,
     coach_id: Option<String>,
+    student_id: Option<String>,
+    lesson_menu_id: Option<String>,
+    sport: Option<String>,
 }
 
 /// admin-web の `CancelledBookingList`。
@@ -68,15 +74,18 @@ pub struct CancelledBookingBody {
 }
 
 /// `GET /bookings/cancelled`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないとき・`coach_id` が UUID でないときと、期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が
-/// 決める。`coach_id` の検証も含めて `listBookings` と同じ）。
-pub async fn list_cancelled_bookings<B, K, D, C>(
-    State(state): State<Arc<HeadquartersCancelledBookingsState<B, K, D, C>>>,
+/// 日付でないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき・`sport` が `Sport` の値でないときと、
+/// 期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が決める。`coach_id`・`student_id`・`lesson_menu_id`・
+/// `sport` の検証も含めて `listBookings` と同じ）。`sport` は予約した枠のコーチの提供スポーツで絞る（規則は domain の
+/// [`domain::scheduling::Booking::matches_coach_sport`]）。
+pub async fn list_cancelled_bookings<B, A, K, D, C>(
+    State(state): State<Shared<B, A, K, D, C>>,
     _account: AuthenticatedAccount,
     params: Result<Query<ListCancelledBookingsParams>, QueryRejection>,
 ) -> Result<Json<CancelledBookingListBody>, ApiError>
 where
     B: BookingRepository,
+    A: SlotCoachAccountLookup,
     K: BookingCoachDisplayNameLookup,
     D: StudentDisplayNameLookup,
     C: Clock,
@@ -99,6 +108,17 @@ where
             .as_deref()
             .map(|id| account_id_from_contract("coach_id", id))
             .transpose()?,
+        student_id: params
+            .student_id
+            .as_deref()
+            .map(|id| account_id_from_contract("student_id", id))
+            .transpose()?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
+            .transpose()?,
+        sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
     };
     let list = state
         .list_cancelled_bookings
@@ -145,12 +165,13 @@ fn cancelled_booking_body(
 /// 機能のルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /bookings/cancelled` は本部だけ（コーチ・生徒は 403）。
-pub fn headquarters_cancelled_bookings_router<B, K, D, C, T>(
-    list_cancelled_bookings: ListCancelledBookings<B, K, D, C>,
+pub fn headquarters_cancelled_bookings_router<B, A, K, D, C, T>(
+    list_cancelled_bookings: ListCancelledBookings<B, A, K, D, C>,
     tokens: T,
 ) -> Router
 where
     B: BookingRepository + 'static,
+    A: SlotCoachAccountLookup + 'static,
     K: BookingCoachDisplayNameLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     C: Clock + 'static,
@@ -160,7 +181,7 @@ where
     Router::new()
         .route(
             "/bookings/cancelled",
-            get(self::list_cancelled_bookings::<B, K, D, C>),
+            get(self::list_cancelled_bookings::<B, A, K, D, C>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(HeadquartersCancelledBookingsState {

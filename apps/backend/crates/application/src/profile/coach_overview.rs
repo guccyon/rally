@@ -1,8 +1,9 @@
 use domain::{
     async_lesson::{CoachPendingVideoReviewCount, VideoReviewLeadTime},
+    messaging::CoachUnansweredMessageThreadCount,
     profile::DisplayName,
     review::{CoachLowRatedReviewCount, CoachReviewSummary},
-    scheduling::CoachAcceptanceStatus,
+    scheduling::{CoachAcceptanceStatus, CoachRecentCancelledBookingCount},
 };
 
 use crate::lesson::CoachLessonStats;
@@ -28,4 +29,10 @@ pub struct CoachOverview {
     /// 返却待ちの動画添削の件数と、そのうち送付から 48 時間以上たった件数（async-lesson の
     /// `GetCoachPendingVideoReviewCount`）
     pub pending_video_reviews: CoachPendingVideoReviewCount,
+    /// 直近 30 日にキャンセルされた予約の数（scheduling の `CoachRecentCancelledBookingCountLookup`。誰がキャンセルしたかを
+    /// 分けない）
+    pub recent_cancelled_bookings: CoachRecentCancelledBookingCount,
+    /// 返信のないまま既定の時間の過ぎたスレッドの数（messaging の `CoachUnansweredMessageThreadCountLookup`。
+    /// `listUnansweredMessageThreads` の既定の条件と同じ）
+    pub unanswered_message_threads: CoachUnansweredMessageThreadCount,
 }

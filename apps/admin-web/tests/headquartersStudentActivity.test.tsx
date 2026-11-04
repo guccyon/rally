@@ -70,6 +70,9 @@ const ACTIVITY: Schemas["StudentActivity"] = {
   cancelled_booking_count: 3,
   submitted_video_count: 4,
   pending_video_review_count: 1,
+  unanswered_message_thread_count: 0,
+  low_rated_review_count: 0,
+  unhandled_low_rated_review_count: 0,
 };
 
 function activityOf(activity: Schemas["StudentActivity"]) {
@@ -81,6 +84,14 @@ function rowsOf(name: string) {
     .getAllByRole("row")
     .slice(1)
     .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
+}
+
+/** 利用の様子の項目（dt）の値（dd）。 */
+function valueOf(term: string) {
+  const dt = screen.getByText(term, { selector: "dt" });
+  const dd = dt.nextElementSibling;
+  if (!(dd instanceof HTMLElement) || dd.tagName !== "DD") throw new Error(`${term} の値がありません`);
+  return dd;
 }
 
 describe("本部の生徒の利用の様子", () => {
@@ -95,7 +106,7 @@ describe("本部の生徒の利用の様子", () => {
     expect(getStudentActivity).toHaveBeenCalledTimes(1);
 
     expect(screen.getByText("山田 花子")).toBeInTheDocument();
-    expect(screen.getByText("3 件（これまでのすべて）")).toBeInTheDocument();
+    expect(valueOf("キャンセルした予約")).toHaveTextContent(/^3 件（これまでのすべて）$/);
     expect(rowsOf("これからの予約")).toEqual([
       ["2026/10/27 10:00:00", "確定待ち", "鈴木 コーチ", "フォアハンドの基礎（60 分）", "体験予約"],
       ["2026/10/28 18:00:00", "確定済み", "（名前を表示できません）", "—", "—"],
@@ -125,6 +136,9 @@ describe("本部の生徒の利用の様子", () => {
             cancelled_booking_count: 0,
             submitted_video_count: 0,
             pending_video_review_count: 0,
+            unanswered_message_thread_count: 0,
+            low_rated_review_count: 0,
+            unhandled_low_rated_review_count: 0,
           }),
         }}
         studentId={STUDENT_ID}
@@ -133,8 +147,143 @@ describe("本部の生徒の利用の様子", () => {
 
     expect(await screen.findByText("これからの予約はありません")).toBeInTheDocument();
     expect(screen.getByText("まだ受けたレッスンはありません")).toBeInTheDocument();
-    expect(screen.getByText("0 件（これまでのすべて）")).toBeInTheDocument();
+    expect(valueOf("キャンセルした予約")).toHaveTextContent(/^0 件（これまでのすべて）$/);
+    expect(valueOf("送った動画")).toHaveTextContent(/^0 件（これまでのすべて）$/);
+    expect(valueOf("返却待ち")).toHaveTextContent(/^0 件（いま返却を待っている動画）$/);
+    expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    expect(valueOf("つけた低い評価")).toHaveTextContent(/^0 件（直近 30 日の★2 以下。うち未対応 0 件）$/);
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  test("送った動画と返却待ちの数を、キャンセルの件数と同じ形で返った値のまま出し、返却待ちがあればその生徒で絞った一覧への入口を添える", async () => {
+    render(<StudentActivity api={{ getStudentActivity: activityOf(ACTIVITY) }} studentId={STUDENT_ID} />);
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("送った動画")).toHaveTextContent(/^4 件（これまでのすべて）$/);
+    const pending = valueOf("返却待ち");
+    expect(pending).toHaveTextContent(/^1 件（いま返却を待っている動画）返却待ちの動画添削を見る$/);
+    // 入口はこの生徒で絞った返却待ちの一覧
+    expect(within(pending).getByRole("link", { name: "返却待ちの動画添削を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/pending-video-reviews?student_id=${STUDENT_ID}`,
+    );
+    expect(within(pending).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("返事を待っているメッセージの数を返却待ちと同じ形で返った値のまま出し、1 件以上ならその生徒で絞った一覧への入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, pending_video_review_count: 0, unanswered_message_thread_count: 2 }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const messages = valueOf("返事を待っているメッセージ");
+    expect(messages).toHaveTextContent(/^2 件（返事を待って 24 時間以上たったやり取り）返事のないメッセージを見る$/);
+    // 入口はこの生徒で絞った返事のないメッセージの一覧（返却待ちの数にはよらない）
+    expect(within(messages).getByRole("link", { name: "返事のないメッセージを見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/unanswered-messages?student_id=${STUDENT_ID}`,
+    );
+    expect(within(messages).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("返事を待っているメッセージが 0 件なら 0 件と出し、一覧への入口は出さない", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, unanswered_message_thread_count: 0 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("返事を待っているメッセージ")).toHaveTextContent(/^0 件（返事を待って 24 時間以上たったやり取り）$/);
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    // 返却待ちの入口はそのまま
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
+  });
+
+  test("つけた低い評価の数と未対応の数を返事を待っているメッセージと同じ形で返った値のまま出し、1 件以上ならその生徒で絞った一覧への入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({
+            ...ACTIVITY,
+            pending_video_review_count: 0,
+            unanswered_message_thread_count: 0,
+            low_rated_review_count: 3,
+            unhandled_low_rated_review_count: 1,
+          }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const reviews = valueOf("つけた低い評価");
+    expect(reviews).toHaveTextContent(/^3 件（直近 30 日の★2 以下。うち未対応 1 件）低い評価を見る$/);
+    // 入口はこの生徒で絞った低い評価の一覧（返却待ち・返事を待っているメッセージの数にはよらない）
+    expect(within(reviews).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/low-reviews?student_id=${STUDENT_ID}`,
+    );
+    expect(within(reviews).getByRole("link")).toHaveClass("text-primary", "underline");
+  });
+
+  test("つけた低い評価がすべて対応済み（未対応 0 件）でも、1 件以上なら入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, low_rated_review_count: 2, unhandled_low_rated_review_count: 0 }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    const reviews = valueOf("つけた低い評価");
+    expect(reviews).toHaveTextContent(/^2 件（直近 30 日の★2 以下。うち未対応 0 件）低い評価を見る$/);
+    expect(within(reviews).getByRole("link", { name: "低い評価を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/low-reviews?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("つけた低い評価が 0 件なら 0 件と出し、一覧への入口は出さない", async () => {
+    render(
+      <StudentActivity
+        api={{
+          getStudentActivity: activityOf({ ...ACTIVITY, low_rated_review_count: 0, unhandled_low_rated_review_count: 0 }),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("つけた低い評価")).toHaveTextContent(/^0 件（直近 30 日の★2 以下。うち未対応 0 件）$/);
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
+    // 返却待ちの入口はそのまま
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
+  });
+
+  test("返却待ちが送った動画と同じ数（すべて返却待ち）でも、そのまま出して入口を添える", async () => {
+    render(
+      <StudentActivity
+        api={{ getStudentActivity: activityOf({ ...ACTIVITY, submitted_video_count: 2, pending_video_review_count: 2 }) }}
+        studentId={STUDENT_ID}
+      />,
+    );
+
+    await screen.findByRole("table", { name: "これからの予約" });
+    expect(valueOf("送った動画")).toHaveTextContent(/^2 件（これまでのすべて）$/);
+    expect(valueOf("返却待ち")).toHaveTextContent(/^2 件（いま返却を待っている動画）/);
+    expect(screen.getByRole("link", { name: "返却待ちの動画添削を見る" })).toBeInTheDocument();
   });
 
   test("API が 404 なら「見つからない」を出す", async () => {
@@ -157,6 +306,24 @@ describe("本部の生徒の利用の様子", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("この生徒は見つかりません。");
     expect(getStudentActivity).not.toHaveBeenCalled();
+  });
+
+  test("422 `validation_failed` が返れば、その理由の文言を出し、件数も入口も出さない", async () => {
+    const getStudentActivity = vi.fn<HeadquartersApi["getStudentActivity"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "student_id が正しくありません。",
+    }));
+    render(<StudentActivity api={{ getStudentActivity }} studentId={STUDENT_ID} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("student_id が正しくありません。");
+    expect(screen.queryByText("送った動画")).not.toBeInTheDocument();
+    expect(screen.queryByText("返却待ち")).not.toBeInTheDocument();
+    expect(screen.queryByText("返事を待っているメッセージ")).not.toBeInTheDocument();
+    expect(screen.queryByText("つけた低い評価")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "返却待ちの動画添削を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "返事のないメッセージを見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "低い評価を見る" })).not.toBeInTheDocument();
   });
 
   test("404 以外の失敗（403 など）はその文言を出し、中身は出さない", async () => {
@@ -187,12 +354,14 @@ describe("画面への配置", () => {
             contract_type: null,
             plan: null,
             last_booked_at: null,
+            recent_booking_count: 0,
             registered_at: "2026-10-20T00:00:00Z",
           },
         ],
       },
     }));
-    render(<StudentDirectory api={{ listStudents }} />);
+    const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches: [] } }));
+    render(<StudentDirectory api={{ listStudents, listCoaches }} />);
 
     expect(await screen.findByRole("link", { name: "山田 花子" })).toHaveAttribute(
       "href",
@@ -211,6 +380,9 @@ describe("画面への配置", () => {
 
     expect(screen.getByRole("link", { name: "生徒の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/students");
     expect(screen.queryByRole("link", { name: "この生徒の予約を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "この生徒の終わっていない通話を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "この生徒の返した動画添削の記録を見る" })).not.toBeInTheDocument();
   });
 
   test("利用の様子から、その生徒で絞った予約の一覧を開ける", () => {
@@ -224,6 +396,48 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "この生徒の予約を見る" })).toHaveAttribute(
       "href",
       `/headquarters/bookings?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("利用の様子から、その生徒で絞ったライブレッスンの記録を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒のライブレッスンの記録を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/live-sessions?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("利用の様子から、その生徒で絞った終わっていない通話を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒の終わっていない通話を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/overdue-live-sessions?student_id=${STUDENT_ID}`,
+    );
+  });
+
+  test("利用の様子から、その生徒で絞った返した動画添削の記録を開ける", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <StudentActivityHome token={session.token} studentId={STUDENT_ID} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "この生徒の返した動画添削の記録を見る" })).toHaveAttribute(
+      "href",
+      `/headquarters/returned-video-reviews?student_id=${STUDENT_ID}`,
     );
   });
 

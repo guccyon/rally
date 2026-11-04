@@ -108,7 +108,21 @@ async fn app() -> (Router, InMemoryCoachAcceptanceRepository, ManualClock) {
 
 /// `GET /coaches/{coach_id}/acceptance-changes`。レスポンスを admin-web の契約で検査する。
 async fn get_changes(router: &Router, coach_id: &str, token: Option<&str>) -> (StatusCode, Value) {
-    let mut request = Request::get(format!("/coaches/{coach_id}/acceptance-changes"));
+    get_changes_with_query(router, coach_id, "", token).await
+}
+
+/// `GET /coaches/{coach_id}/acceptance-changes?<query>`（`query` が空なら付けない）。レスポンスを admin-web の契約で検査する。
+async fn get_changes_with_query(
+    router: &Router,
+    coach_id: &str,
+    query: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut uri = format!("/coaches/{coach_id}/acceptance-changes");
+    if !query.is_empty() {
+        uri = format!("{uri}?{query}");
+    }
+    let mut request = Request::get(uri);
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -382,4 +396,107 @@ async fn only_headquarters_may_list_changes_and_a_token_is_required() {
     let (status, body) = get_changes(&router, COACH_ID, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert_eq!(body["code"], "unauthorized");
+}
+
+/// 本部 1 が `times` の時刻に交互に止めて・再開する（最初は止める）。
+async fn toggle_at(router: &Router, clock: &ManualClock, times: &[SystemTime]) {
+    for (i, &time) in times.iter().enumerate() {
+        clock.set(time);
+        let action = if i % 2 == 0 { "suspend" } else { "resume" };
+        let (status, body) = post(router, COACH_ID, action, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{action}: {body}");
+    }
+}
+
+fn changed_ats(body: &Value) -> Vec<&str> {
+    body["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|change| change["changed_at"].as_str().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn from_and_to_narrow_the_changes_to_the_changed_dates_in_japan() {
+    let (router, _, clock) = app().await;
+    // start() は日本時間の 11 月 1 日 9 時。日本時間の 11 月 2 日は 11 月 1 日 15 時（UTC）から 11 月 2 日 15 時（UTC）の前まで
+    let hour = |h: u64| start() + Duration::from_secs(h * 3600);
+    toggle_at(
+        &router,
+        &clock,
+        &[
+            hour(15) - Duration::from_secs(1),
+            hour(15),
+            hour(39) - Duration::from_secs(1),
+            hour(39),
+        ],
+    )
+    .await;
+
+    let (status, body) = get_changes_with_query(
+        &router,
+        COACH_ID,
+        "from=2026-11-02&to=2026-11-02",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["coach_id"], COACH_ID);
+    assert_eq!(
+        changed_ats(&body),
+        ["2026-11-02T14:59:59Z", "2026-11-01T15:00:00Z"],
+        "両端の日付を含み、日本時間の 0 時で区切る。並べ方は新しい順のまま"
+    );
+
+    // from だけなら from から 7 日目まで、to だけなら to の 6 日前から
+    let (_, body) =
+        get_changes_with_query(&router, COACH_ID, "from=2026-11-03", Some(HEADQUARTERS)).await;
+    assert_eq!(changed_ats(&body), ["2026-11-02T15:00:00Z"]);
+    let (_, body) =
+        get_changes_with_query(&router, COACH_ID, "to=2026-11-01", Some(HEADQUARTERS)).await;
+    assert_eq!(changed_ats(&body), ["2026-11-01T14:59:59Z"]);
+
+    // 期間に記録がなければ空の配列
+    let (status, body) =
+        get_changes_with_query(&router, COACH_ID, "from=2026-12-01", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coach_id": COACH_ID, "changes": [] }));
+
+    // 両方省けば今までどおりすべて
+    let (_, body) = get_changes(&router, COACH_ID, Some(HEADQUARTERS)).await;
+    assert_eq!(changed_ats(&body).len(), 4);
+}
+
+#[tokio::test]
+async fn a_malformed_reversed_or_too_long_period_is_422() {
+    let (router, _, _) = app().await;
+    for query in [
+        "from=2026-11-3",
+        "to=2026/11/03",
+        "from=2026-02-30",
+        "from=2026-11-03&to=2026-11-02",
+        "from=2026-11-01&to=2026-12-02",
+    ] {
+        // コーチでない ID・ない ID でも、期間の誤りが先
+        for coach_id in [COACH_ID, STUDENT_ID, "00000000-0000-0000-0000-000000000099"] {
+            let (status, body) =
+                get_changes_with_query(&router, coach_id, query, Some(HEADQUARTERS)).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{coach_id}?{query}: {body}"
+            );
+            assert_eq!(body["code"], "validation_failed");
+        }
+    }
+    // 31 日までは通る
+    let (status, body) = get_changes_with_query(
+        &router,
+        COACH_ID,
+        "from=2026-11-01&to=2026-12-01",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }

@@ -57,6 +57,8 @@ pub enum DomainError {
     ReviewCommentTooLong { max: usize },
     /// 通話セッションがまだ終了していないので、レッスンの完了を記録できない
     LiveLessonSessionNotEnded,
+    /// 本部が終わらせた通話セッションなので、レッスンの完了を記録できない（本部の終了は完了として数えない。D188）
+    LiveLessonSessionEndedByHeadquarters,
     /// AI の一次フィードバックの文が空（空白だけを含む）
     EmptyAiFeedback,
     /// 動画の AI の一次フィードバックはすでに付けてある（1 本に 1 つ）

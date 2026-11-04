@@ -96,6 +96,7 @@ pub struct ListLessonMenusParams {
     sport: Option<String>,
     published: Option<bool>,
     coach_id: Option<String>,
+    unbooked: Option<bool>,
 }
 
 /// admin-web・student-app の `LessonMenu`。
@@ -296,10 +297,11 @@ where
 }
 
 /// `GET /lesson-menus`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// すべてのコーチのメニューを、`q`・`sport`・`published`・`coach_id` があればそれで絞って返す（ゴルフも載せる）。
+/// すべてのコーチのメニューを、`q`・`sport`・`published`・`coach_id`・`unbooked` があればそれで絞って返す（ゴルフも載せる）。
+/// `unbooked` が `true` なら直近 30 日に予約のない（`recent_booking_count` が 0 の）メニューだけ。
 /// `q` は名前に部分一致するメニューだけで、一致のしかたは `listStudents` の `q` と同じ（[`LessonMenuNameQuery`]）。
 /// 各行に直近 30 日に入った予約の数（キャンセルを除く）を載せる（予約がなければ 0）。
-/// 長すぎる `q`・UUID でない `coach_id` は 422。いないコーチの ID なら空の一覧（404 にしない）。
+/// 長すぎる `q`・UUID でない `coach_id`・`true` / `false` でない `published` と `unbooked` は 422。いないコーチの ID なら空の一覧（404 にしない）。
 pub async fn list_lesson_menus<M, R, C, D, B>(
     State(state): State<Shared<M, R, C, D, B>>,
     params: Result<Query<ListLessonMenusParams>, QueryRejection>,
@@ -330,6 +332,8 @@ where
                     .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))
             })
             .transpose()?,
+        // 付けないときは false と同じ（絞らない）
+        unbooked: params.unbooked.unwrap_or(false),
     };
     let list = state
         .list_lesson_menus

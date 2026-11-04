@@ -29,6 +29,14 @@ pub trait BookingRepository: Send + Sync {
         booking_id: BookingId,
     ) -> impl Future<Output = Result<Option<Booking>, Unavailable>> + Send;
 
+    /// `booking_ids` の予約（状態を問わない）。ない ID は結果に含めない。並びは決めない。読むだけで何も変えない。
+    /// 本部が見る通話セッションの記録の一覧をレッスンメニューで絞るとき（[`super::SchedulingSessionBookingLessonMenuLookup`]）
+    /// に、セッションに結び付いた予約の予約した時点のメニューを引くのに読む。
+    fn find_many(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
+
     /// `slot_id` のスロット（状態を問わない）。なければ `None`。読むだけで何も変えない。予約の作成
     /// （[`super::CreateBooking`]）が、スロットに結びついたレッスンメニューを catalog に引くために先に読む。
     fn find_slot(
@@ -97,6 +105,15 @@ pub trait BookingRepository: Send + Sync {
         &self,
         student_ids: &BTreeSet<AccountId>,
     ) -> impl Future<Output = Result<BTreeMap<AccountId, SystemTime>, Unavailable>> + Send;
+
+    /// `student_ids` の生徒の予約のうち、作った時刻が `created_since`（含む）以後のもの（状態を問わない）。並びは決めない。
+    /// 読むだけで何も変えない。本部が見る生徒ごとの直近の予約の数（[`super::SchedulingStudentRecentBookingCountLookup`]）が
+    /// 読み、数えるかの判定は domain の [`domain::scheduling::RecentStudentBookings`] が行う。
+    fn bookings_of_students_created_since(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        created_since: SystemTime,
+    ) -> impl Future<Output = Result<Vec<Booking>, Unavailable>> + Send;
 
     /// `coach_id` のコーチのスロットへの予約（状態を問わない）と、それぞれの予約したスロット。並びは決めない。
     /// 読むだけで何も変えない。コーチの自分の予約の一覧（[`super::ListCoachBookings`]）と、本部が見る生徒の一覧をコーチで

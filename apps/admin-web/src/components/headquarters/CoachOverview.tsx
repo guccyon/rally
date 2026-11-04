@@ -12,7 +12,10 @@ import { LessonStatsTable } from "@/components/coach/LessonStats";
 import { CoachAcceptanceBadge } from "./CoachAcceptanceBadge";
 import { coachReviewSummaryPath } from "./CoachReviewSummaryHome";
 import { lessonMenuCatalogPath } from "./LessonMenuCatalogHome";
+import { OVERDUE_ELAPSED_HOURS } from "./PendingVideoReviewList";
 import { LOW_RATED_REVIEWS_PATH } from "./LowRatedReviewsHome";
+import { PENDING_VIDEO_REVIEWS_PATH } from "./PendingVideoReviewsHome";
+import { coachUnansweredMessageThreadsPath } from "./UnansweredMessageThreadsHome";
 
 type State =
   | { kind: "loading" }
@@ -23,6 +26,10 @@ type State =
 /**
  * 本部の「コーチの様子」。開いたときにコーチ 1 人の様子（getCoachOverview）を一度だけ読み、受付の状態・評価の件数と平均
  * （「コーチの評価」へのリンク）・直近 30 日の低い評価の件数と未対応の件数（「低い評価」へのリンク。0 件なら「ありません」）・
+ * 返却待ちの動画添削の件数と、そのうち送付から 48 時間以上たった件数（「返却待ちの動画添削」へのリンク。一覧にはまだ
+ * コーチの絞り込みがないので、コーチを問わない一覧を開く。0 件なら「ありません」）・
+ * 返事のないメッセージの件数（既定の 24 時間の条件。1 件以上なら、そのコーチで絞った「返事のないメッセージ」へのリンク。
+ * 0 件なら「ありません」で、リンクは出さない）・
  * 今月と先月の実績・公開中のレッスンメニューの数（そのコーチで絞った「レッスンメニュー」へのリンク。
  * 公開中も非公開もまとめて出る）を出す。数え方は契約が正本で、画面は返った値を
  * 出すだけ。`coachId` がない・404 `not_found` なら「見つかりません」、それ以外の失敗はその文言を出す。受付は変えない。
@@ -84,6 +91,31 @@ export function CoachOverview({
           <Link href={LOW_RATED_REVIEWS_PATH} className="ml-3 text-primary underline">
             低い評価を見る
           </Link>
+        </dd>
+        <dt>返却待ちの動画添削</dt>
+        <dd>
+          {overview.pending_video_review_count === 0
+            ? "ありません"
+            : `${overview.pending_video_review_count} 件（うち ${OVERDUE_ELAPSED_HOURS} 時間以上 ${overview.overdue_pending_video_review_count} 件）`}
+          <Link href={PENDING_VIDEO_REVIEWS_PATH} className="ml-3 text-primary underline">
+            返却待ちの動画添削を見る
+          </Link>
+        </dd>
+        <dt>返事のないメッセージ</dt>
+        <dd>
+          {overview.unanswered_message_thread_count === 0 ? (
+            "ありません"
+          ) : (
+            <>
+              {overview.unanswered_message_thread_count} 件
+              <Link
+                href={coachUnansweredMessageThreadsPath(overview.coach_id)}
+                className="ml-3 text-primary underline"
+              >
+                このコーチの返事のないメッセージを見る
+              </Link>
+            </>
+          )}
         </dd>
         <dt>公開中のレッスンメニュー</dt>
         <dd>
