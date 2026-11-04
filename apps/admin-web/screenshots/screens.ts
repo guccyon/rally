@@ -655,6 +655,19 @@ export const SCREENS: Screen[] = [
       await page.getByText("この条件の通話の記録はありません").waitFor();
     },
   },
+  {
+    id: "hq-live-sessions-by-lesson-menu",
+    title: "本部: ライブレッスンの記録（レッスンメニューで絞って 0 件のとき）",
+    role: "headquarters",
+    path: "/headquarters/live-sessions",
+    open: async (page) => {
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByText("このレッスンメニューの通話の記録はありません").waitFor();
+    },
+  },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },
   {
     id: "hq-announcements-period",
