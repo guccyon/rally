@@ -10,9 +10,10 @@ scope:
 confidence: hypothesis
 evidence:
   - case: C-0001
+  - case: C-0003
   - pr: 546
   - event: "case.analyzed:113682"
-  - case: C-0003
+  - case: C-0004
   - pr: 534
   - event: "case.analyzed:113588"
 status: active
@@ -22,4 +23,5 @@ confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
+related: [K-0003, K-0004]
 decided_by: committee:D-0001
