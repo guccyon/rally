@@ -1,4 +1,4 @@
-id: K-0002
+id: K-0004
 theme: 6
 kind: causal
 statement: 人の判断待ち（factory:needs-judgment）の停止中に PR が main と衝突しても、衝突を解く continue を判断の後まで起こさないと、判断の後に手戻りの待ちが順番に重なる。衝突のような機械的な手戻りは判断待ちと並行して解く方がよいと見られる
@@ -6,11 +6,11 @@ scope:
   roles: [supervisor]
 confidence: hypothesis
 evidence:
-  - case: C-0001
+  - case: C-0002
   - event: "case.analyzed:113588"
   - pr: "guccyon/rally#534"
 status: active
 verified_at: 2026-11-02
 review_by: 2026-12-02
 confidentiality: product
-decided_by: committee:D-0001
+decided_by: committee:D-0003
