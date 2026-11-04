@@ -1,4 +1,4 @@
-id: K-0005
+id: K-0007
 theme: 4
 kind: causal
 statement: >-
@@ -9,7 +9,7 @@ scope:
   roles: [implement]
 confidence: hypothesis
 evidence:
-  - case: C-0003
+  - case: C-0004
   - event: "case.analyzed:113588"
   - pr: "guccyon/rally#534"
 status: draft

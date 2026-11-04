@@ -1,16 +1,16 @@
-id: K-0006
+id: K-0008
 theme: 6
 kind: causal
 statement: >-
   人の判断待ち（factory:needs-judgment）の停止中に PR が main と衝突（pr.conflicted）しても、衝突を解く continue が判断の後に enqueue されると、
-  判断の後に衝突の解消の待ちが足される（C-0003 では enqueue から job の開始まで約 26 分で、痛さは大きくない）。
+  判断の後に衝突の解消の待ちが足される（C-0004 では enqueue から job の開始まで約 26 分で、痛さは大きくない）。
   人の判断が PR の差分を変えない見込みのときに限り、衝突の解消を判断待ちと並行して起こせば、この待ちを減らせると見られる。
   判断の後まで continue が起きなかった理由（supervisor の仕組み）は確かめていない。
 scope:
   roles: [supervisor]
 confidence: hypothesis
 evidence:
-  - case: C-0003
+  - case: C-0004
   - event: "case.analyzed:113588"
   - pr: "guccyon/rally#534"
 status: draft
