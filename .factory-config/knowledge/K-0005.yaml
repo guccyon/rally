@@ -1,4 +1,4 @@
-id: K-0002
+id: K-0005
 theme: 6
 kind: causal
 statement: >-
@@ -12,11 +12,11 @@ verified_at: 2026-11-03
 review_by: 2026-12-03
 confidentiality: product
 evidence:
-  - case: C-0001
+  - case: C-0002
   - pr: 657
   - issue: 646
   - event: "case.analyzed:274311"
-related: [K-0001]
+related: [K-0004]
 invalidate_when:
   - "同じ PR の本文を書き換えるジョブを PR ごとに順に並べる決まりがラインに入った"
-decided_by: committee:D-0001
+decided_by: committee:D-0003
