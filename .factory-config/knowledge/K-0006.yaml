@@ -1,4 +1,4 @@
-id: K-0004
+id: K-0006
 theme: 6
 kind: causal
 statement: >-
@@ -9,12 +9,12 @@ scope:
   roles: [judge, body_fix, implement]
 confidence: hypothesis
 evidence:
-  - case: C-0002
+  - case: C-0003
   - pr: "396"
   - event: "case.analyzed:40381"
 status: active
 verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
-related: [K-0001, K-0003]
-decided_by: committee:D-0004
+related: [K-0001, K-0005]
+decided_by: committee:D-0006

@@ -1,4 +1,4 @@
-id: K-0003
+id: K-0005
 theme: 4
 kind: causal
 statement: >-
@@ -9,7 +9,7 @@ scope:
   roles: [implement, inspect, judge]
 confidence: hypothesis
 evidence:
-  - case: C-0002
+  - case: C-0003
   - case: C-0001
   - pr: "396"
   - event: "case.analyzed:40381"
@@ -17,5 +17,5 @@ status: active
 verified_at: 2026-11-04
 review_by: 2026-12-04
 confidentiality: product
-related: [K-0001, K-0004]
-decided_by: committee:D-0004
+related: [K-0001, K-0006]
+decided_by: committee:D-0006
