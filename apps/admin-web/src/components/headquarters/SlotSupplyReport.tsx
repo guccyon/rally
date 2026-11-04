@@ -51,6 +51,17 @@ const ALL_COACHES: Filter = { period: null, coachId: "", sport: "", lessonMenuId
 
 const NO_NAME = "（名前を表示できません）";
 
+// 判定の見た目。足りていないを目立たせ、数からは言えない・対象外は判定ではないので控えめに出す。
+const STATUS_CLASS_NAMES: Record<Schemas["SlotSupplyStatus"], string> = {
+  sufficient: "",
+  insufficient: "font-semibold text-danger",
+  no_activity: "text-text-muted",
+  not_applicable: "text-text-muted",
+};
+
+// 対象外の理由（契約の `getSlotSupply` の判定の 1）。
+const NOT_APPLICABLE_NOTE = "対象外: 月額の契約の対象でないスポーツ（ゴルフ。ワンショットだけ）は、需給を判定しません。";
+
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED = `期間・コーチ・スポーツ・レッスンメニューの指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・スポーツ・レッスンメニューは一覧から選び直してください。`;
 
@@ -374,15 +385,16 @@ function LoadedReport({
             {report.sports.map((supply) => (
               <tr key={supply.sport}>
                 <td>{SPORT_LABELS[supply.sport]}</td>
-                <td className={supply.status === "insufficient" ? "font-semibold text-danger" : ""}>
-                  {SLOT_SUPPLY_STATUS_LABELS[supply.status]}
-                </td>
+                <td className={STATUS_CLASS_NAMES[supply.status]}>{SLOT_SUPPLY_STATUS_LABELS[supply.status]}</td>
                 <td>{supply.published_slots}</td>
                 <td>{supply.booking_students}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+      {!isEmpty(report) && report.sports.some((supply) => supply.status === "not_applicable") && (
+        <p className="text-sm text-text-muted">{NOT_APPLICABLE_NOTE}</p>
       )}
     </div>
   );

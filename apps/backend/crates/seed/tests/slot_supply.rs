@@ -56,4 +56,9 @@ async fn some_sport_lacks_slots_in_the_synthetic_seed(pool: PgPool) {
     // シードはゴルフのコーチを作らない
     let golf = report.sports.iter().find(|s| s.sport() == Sport::Golf);
     assert_eq!(golf, Some(&SlotSupply::new(Sport::Golf, 0, 0)));
+    // ゴルフは月額の契約の対象外なので、需給を判定しない
+    assert_eq!(
+        golf.map(SlotSupply::status),
+        Some(SlotSupplyStatus::NotApplicable)
+    );
 }

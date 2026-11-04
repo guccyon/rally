@@ -136,6 +136,8 @@ pub(crate) const fn slot_supply_status_to_contract(status: SlotSupplyStatus) -> 
     match status {
         SlotSupplyStatus::Sufficient => "sufficient",
         SlotSupplyStatus::Insufficient => "insufficient",
+        SlotSupplyStatus::NoActivity => "no_activity",
+        SlotSupplyStatus::NotApplicable => "not_applicable",
     }
 }
 
