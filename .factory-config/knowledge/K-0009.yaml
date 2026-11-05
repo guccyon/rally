@@ -4,9 +4,8 @@ kind: causal
 statement: >-
   既定ブランチとの衝突（conflict）を解く続きのジョブ（continue）に回数や費用の上限もエスカレーションも無いと、
   人のマージを待つ間に同じ形の衝突の解消が何度も繰り返され（C-0005 では 23 回・約 14 時間）、引き継いだ会話の費用と PR 本文への追記が積み上がる。
-  その間の取り込みは衝突の印と fmt・clippy・テストしか見ないので、既定ブランチで共有モジュールの約束が変わっても、PR の差分の設計は見直されない。
 scope:
-  roles: [supervisor, implement, inspect]
+  roles: [supervisor]
 confidence: hypothesis
 evidence:
   - case: C-0005
@@ -16,7 +15,6 @@ status: draft
 verified_at: 2026-11-05
 review_by: 2026-12-05
 confidentiality: product
-related: [K-0002, K-0008]
+related: [K-0002, K-0008, K-0011]
 invalidate_when:
   - "conflict の continue に回数か費用の上限が入り、超えたら人にマージを促すかエスカレーションするようになった"
-  - "取り込みで共有モジュールの約束が変わったときに、PR の差分の設計を検査し直すようになった"
