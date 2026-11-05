@@ -29,4 +29,14 @@ enforcement:
       issue: 902
       at: 2026-11-05
       decided_by: committee:D-0004
+    - kind: ci_check
+      what: >-
+        tools/sendback-check/check.mjs に、制御プレーンのイベント列（supervisor.judge_enqueued で head を区切り、judgment.judged と
+        Judgment、sendback.filed、continue.enqueued、body_fix の job.enqueued、supervisor.inspector_approved）から PR と head ごとの記録を組む
+        入口（--events・--pr）と、GitHub Actions の ::error と要約（--summary）を足し、PR ごと（か supervisor が差し戻し・続きのジョブを起こしたとき）に走らせて
+        落とす検査にした。直っていない採用欠陥も差し替えもないのに差し戻しか続きのジョブが起きた head（PR #395 の記録の流れ）と、
+        basis が adopt の合計だけの承認で外れる。.github/workflows/ の配線と制御プレーンからイベントを出す経路は建設者が足すので、効き目はまだ確かめていない
+      issue: 934
+      at: 2026-11-05
+      decided_by: committee:D-0009
 decided_by: committee:D-0004
