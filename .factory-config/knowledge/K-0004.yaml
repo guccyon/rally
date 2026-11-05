@@ -83,4 +83,16 @@ enforcement:
       issue: 945
       at: 2026-11-05
       decided_by: committee:D-0010
+    - kind: test
+      what: >-
+        議決 D-0011 の test の案のうち、ワーカーの権限で入れられる分を入れた。tools/sendback-check/engine.test.mjs の basis の場合（(3)）と
+        Engine の正しい判定のイベント列が check.mjs --events で通る場合（(c)）の todo を外して必須のテストにし、todo は Engine が今の形の basis
+        （judge が N 件を裁いた（採用 N。…）。LEGACY_BASIS）を書くときだけに狭めた。Engine の basis がこの形から変わったら、その版からは
+        approvalBasis() と合わないと落ちる（分けて書いても数がずれれば落ちることを、basis を書き換えた Engine の写しで確かめた）。
+        todo が今の形だけに効くことも Engine なしで走るテストにした。Engine は別のリポジトリで、inspector_approved の basis を直すことと、
+        そのあとの D-0010 の check.mjs の ci_check の配線は建設者が入れるので（順序は README）、今の Engine（ENGINE_REF）では (3) と (c) は
+        まだ todo で、basis の担保の効き目はまだ確かめていない
+      issue: 949
+      at: 2026-11-05
+      decided_by: committee:D-0011
 decided_by: committee:D-0004
