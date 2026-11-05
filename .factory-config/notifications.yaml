@@ -1,0 +1,18 @@
+# 通知の出し分けの設定（factory-engine の ADR 0032）。工場が既定ブランチのこの版を読む。書き方は factory-engine の templates/notifications.example.yaml
+# credential の値は書かない。secret は工場の .env の変数名だけ
+#
+# rally は Gen1 の試行で、事業主が操業も自走する扱い（operated_by: business_owner）。
+# 宛先は Slack の 1 チャンネルだけ。事業主の宛先にすると、レポート 2 種と受信トレイ（事業主の判断が要る件）がすべてここに届く。
+
+operated_by: business_owner
+
+connections:
+  gen1_hook:
+    party: business_owner
+    via: slack_webhook
+    secret: env:SLACK_WEBHOOK_URL_GEN1
+
+destinations:
+  gen1_channel:
+    connection: gen1_hook
+    quiet: "22-7"             # 送らない時間（JST の時）。明けた最初の周回でまとめて送る
