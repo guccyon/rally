@@ -1,0 +1,87 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0012
+pr: https://github.com/guccyon/rally/pull/952
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0009
+- K-0010
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - C-0005 の「既存の知見の扱い」は K-0001 から K-0008 のすべてに、直す・そのままのどれかと理由を添えていて、README の変更セットの決まりを満たしています。
+  - K-0009 は、K-0001 の「追記になることが伝わらない」と K-0006 の「組み直す持ち主がいない」の先にある「採用済みの指摘と body_fix
+    の決まりが書き足す役の入力に入らない」に絞ってあり、related で互いに指しているので重複とはみなしません。
+  - K-0010 は K-0002 の衝突の原因ではなく、衝突のあとの積み直し方（上限なし・agent_resumed・tier-large）に絞っていますが、statement
+    の末尾「回数とともに PR 本文の追記も重なる」は K-0001 と K-0002 の主張と重なるので、次に直すときは削るか K-0001 への参照にしてください。
+  - K-0010 は K-0008 の「continue を繰り返す費用」と同じ費用の話に触れるので、related に K-0008 を足すと線引きが辿りやすくなります。
+  - K-0001・K-0002・K-0005・K-0006 は evidence だけを足して statement・確かさ・担保を変えておらず、D-0004・D-0006
+    などで求められていた verified_at と review_by の更新もそろっているので、confidence は hypothesis のままが妥当です。
+  - specs/ の glossary.yaml と context-map.yaml は製品の領域の規範で、工場の工程についての K-0009・K-0010
+    と用語も主張もぶつからず、INDEX.md の行も K-*.yaml の値と食い違っていません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0009 と K-0010 はどちらも C-0005・PR #659・case.analyzed:274379 を指しており、C-0005 の communication
+    と process の観点のなぜなぜから主張をそのまま辿れます。'
+  - K-0009 の元になった communication の観点は確からしさ mid で「（推測）」を含むため、confidence は hypothesis
+    のままが妥当で、continue の implement ジョブの入力を実際に確かめるまで confirmed に上げないでください。
+  - K-0010 の「引き継いだ文脈の分だけコストが増える」は、cost_usd が 1.95 から 10.36 に増えたことと agent_resumed=true
+    が同時に起きていたことからの推論なので、引き継ぎをしない場合と比べるまでは hypothesis が妥当です。
+  - K-0001・K-0002・K-0005・K-0006 への根拠の追加は、C-0005 の「既存の知見の扱い」に、どれも同じ因果だという理由と、statement・確かさ・担保を変えないことが書かれているので、段を上げずに
+    evidence と期限だけを更新するのは妥当です。
+  - 'K-0002 について「PR #659 は changelog.d/ の断片方式が入る前のもので反例ではない」としていますが、C-0005 には PR #659
+    のマージ日（K-0002 の担保が入った 2026-11-03 との前後）が書かれていないので、次の変更セットで日付を書き足すと辿りやすくなります。'
+  - 差分に出てくるのは PR・Issue・job の番号、event の id、機能の名前（コーチの様子・返却待ちの件数）、費用の数値だけで、利用者や人を特定できる情報は抽象化されて残っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0010 は「conflict の続きのジョブを上限なしで、セッションを引き継いで tier-large で積み直す」ことが原因なので、回数の上限・引き継ぎの打ち切り・tier
+    の振り分けという数値と条件で線が引け、設定で決定論に担保するのが最も安くて確かです。
+  - C-0005 では 13 時間に 20 回走り、1 回の cost_usd が 1.95 から 10.36 へ増えたので、繰り返しも外したときの痛さも大きく、文脈（指示）に頼る担保では足りません。
+  - K-0009 の「決まりと採用済みの指摘が続きのジョブの入力に入らない」は、continue の implement ジョブの入力を作る処理のテストで機械的に確かめられ、指示の文だけで担保するより確かです。
+  - K-0009 が守らせたい「## を足さない」は K-0001 の ci_check（tools/pr-body-check/check.mjs）でもう線が引けているのに配線がまだなく、C-0005
+    の 21 回の追記はその配線を急ぐ理由になるので、K-0001 の担保を効かせることを先に進めてください。
+  - K-0001・K-0002・K-0005・K-0006 への根拠の追加は statement と担保を変えておらず、K-0002 は断片方式が入る前の事例だと明記されているので、担保の観点で問題はありません。
+  - K-0009 と K-0010 はどちらも C-0005 の 1 件だけが根拠なので confidence は hypothesis のままとし、上の担保を入れて同じ形の再発が止まるかを見てから上げてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - K-0009 は K-0001（追記になることが伝わらない）と K-0006（全体を組み直す持ち主がいない）にない「採用済みの指摘と body_fix の決まりが次に書き足す役の入力に入らない」に絞ってあり、C-0005
+    で線を引いた理由も書かれているので、範囲は広すぎないと判断します。
+  - ただし C-0005 では body_fix 自身が整理の節を足すだけで本文を組み直していないので、指摘と決まりを渡しても K-0006 の側で崩れたままだった可能性という反例が切れておらず、K-0009
+    だけを確かめられる事例が出るまで confidence は hypothesis のままにしてください。
+  - K-0009 の invalidate_when は直した場合の条件だけなので、「続きのジョブに指摘と決まりを渡したのに見出しの重なりが続いた」という反証の条件を足すと、K-0001・K-0006
+    との切り分けが確かめやすくなります。
+  - K-0009 の根拠のうち communication の観点は確からしさ mid で、なぜの 2 段めに（推測）があるので、確かさを上げる前に続きのジョブの実際の入力を一次記録で確かめてください。
+  - K-0010 の末尾「回数とともに PR 本文の追記も重なる」は K-0001 と K-0002（重い続きのジョブと本文の追記による次の欠陥）の主張と重なるので、次の変更セットで削って「上限なし・セッションの引き継ぎで
+    1 回ごとのコストが増える」に絞るのが望ましいです。
+  - K-0010 は上限なし・agent_resumed・tier-large の 3 つの条件を束ねていて、cost_usd が 1.95 から 10.36
+    に増えた原因がセッションの引き継ぎだと他の要因（main の進みや差分の大きさ）と切り分けていないので、条件ごとに効き目を確かめるまで hypothesis
+    のままにし、繰り返しの費用に触れている K-0008 も related に足すとよいです。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: config
+  proposal: 'supervisor が pr.conflicted で積む continue（reason=conflict）の implement ジョブに、同じ
+    PR での回数の上限（例: 3 回を超えたら人の判断待ちに上げる）を設け、2 回目以降は agent_resumed=false で新しいセッションにする。衝突したファイルが
+    CHANGELOG.md や changelog.d/ だけのときは tier-small か機械的な解消に回す。Engine の supervisor のテストで、上限を超えたときに積まれないことと、CHANGELOG
+    だけの衝突の tier を確かめる。'
+- knowledge: K-0009
+  level: deterministic
+  solution_kind: test
+  proposal: continue（conflict/ci_failed）の implement ジョブの入力を作る処理に、その PR の未解消の採用済みの指摘（PR-002
+    など）と、body_fix が残した本文の決まりが入ることを確かめるテストを Engine に足す。採用済みの指摘がある PR で continue を積んだとき、入力にその指摘の
+    id がなければ落とす。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'D-0001 で決めた tools/pr-body-check/check.mjs を、続きのジョブの summary を PR 本文に組み込んだあと（pr.head_updated・handoff.saved
+    のあと）に必ず呼ぶよう配線し、同じ ## 見出しの重なりや「## 工場の記録」より後ろの ## があれば本文の更新を止めて body_fix に回す。C-0005
+    の 21 回の追記と同じ入力で落ちることを確かめる。'
