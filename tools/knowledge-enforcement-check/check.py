@@ -4,9 +4,9 @@
 .factory-config/knowledge/K-*.yaml の enforcement.solutions の各項目にある真偽の項目を見る。LLM を使わない。
   - wired: CI や呼び出しに配線済みか（.github/workflows/ や Engine の呼び出しから実際に走るか）
   - verified: 本物の記録で効き目を確かめたか（wired でないのに verified にはできない）
-どちらも書いていない項目は false（未記入）として数える。
+書いていない項目は落とさず false（未記入）として数え、未記入の件数を別に出す。
 
-担保の表示（INDEX.md の担保の列に出す値。Engine の core-gates/knowledge_check.py に移すまではこの検査の出力で見る）:
+担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
   - deterministic で、wired はあるが wired かつ verified が 1 件もない: deterministic（未確認）

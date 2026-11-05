@@ -20,7 +20,7 @@ python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 | `wired` | `true` / `false` | CI（`.github/workflows/`）や Engine の呼び出しから実際に走るか。ひな形（`ci/*.yml`）を置いただけ、テストを書いただけは `false` |
 | `verified` | `true` / `false` | 本物の記録（実際の PR やイベント列）で、外れたときに落ちる・正しいときに通ることを確かめたか。写しや作った入力だけで確かめたものは `false` |
 
-書いていない項目は `false`（未記入）として数える。
+書いていない項目は落とさず `false`（未記入）として数え、表示も `未配線` 側に倒す（`K-0002` の `config` のように実際は効いているかもしれない解決策も、書くまでは配線済みと出さない）。未記入の件数は出力の「未記入」に別に出すので、書いていないのか `false` と書いたのかは見分けられる。項目を書くのは足したり直したりした知見から順に（2026-11-05 の時点で書いたのは `K-0004` だけ。`K-0001`・`K-0002`・`K-0009` は次にその知見を直す変更セットで書く）。
 
 ## 落とすもの
 
@@ -29,7 +29,7 @@ python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 
 ## 担保の表示
 
-`INDEX.md` の担保の列に出す値（`check.py` の `label()`）。
+`check.py` の出力に出す値（`label()`）。Engine の `knowledge_check.py` に移したら `INDEX.md` の担保の列もこの値になる予定で、それまで `INDEX.md` は `enforcement.level` のまま出る。
 
 | 強さ（`enforcement.level`） | 解決策 | 表示 |
 |---|---|---|
@@ -38,7 +38,7 @@ python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 | `deterministic` | `wired: true` はあるが、`wired: true` かつ `verified: true` が 1 件もない | `deterministic（未確認）` |
 | `deterministic` | `wired: true` かつ `verified: true` が 1 件以上 | `deterministic` |
 
-すべて `wired: false` の知見は `deterministic` と出さない。
+`check.py` の表示では、すべて `wired: false`（未記入を含む）の知見を `deterministic` と出さない。
 
 ## まだ入っていないもの（建設者が入れる）
 
