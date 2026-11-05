@@ -57,7 +57,7 @@ touch:
           select '本部（モックのトークン。どの ID でも本部として通る）' as label,
                  'mock.headquarters.00000000-0000-4000-8000-000000000001' as value
           union all
-          select * from (select 'コーチ ' || display_name, 'mock.coach.' || account_id
+          select * from (select 'コーチ: ' || display_name, 'mock.coach.' || account_id
                          from identity.accounts where role = 'coach' order by created_at, account_id limit 3) c
         ) a
   reset:
