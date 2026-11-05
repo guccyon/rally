@@ -20,4 +20,4 @@ related: [K-0001, K-0006]
 invalidate_when:
   - "continue（conflict/ci_failed）の implement ジョブの入力に、未解消の採用済みの指摘と body_fix が決めた本文の決まりが入るようになった"
   - "続きのジョブの報告が PR 本文に入るときに、決まり（## を足さないなど）が機械で守られるようになった"
-decided_by: committee:D-0012
+decided_by: committee:D-0013
