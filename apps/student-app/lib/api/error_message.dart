@@ -30,6 +30,7 @@ String errorMessageOf(Object error) {
     ErrorCode.coachNotAcceptingBookings => 'このコーチは今、新しい予約を受け付けていません。',
     ErrorCode.liveLessonSessionEndedByHeadquarters =>
       'この通話は運営が終了したため、レッスンの完了を記録できません。',
+    ErrorCode.slotNotStarted => 'ビデオ通話は予約の開始時刻から始められます。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }

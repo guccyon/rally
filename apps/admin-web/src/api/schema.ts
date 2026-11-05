@@ -1510,7 +1510,9 @@ export interface paths {
          *     通話（Twilio Video）は Gen1 ではモックで、接続情報（`room_token`）もモックが返す。
          *     呼べるのは予約の参加者（生徒・コーチ）だけで、それ以外のアカウントには予約がないのと同じ 404 を返す（役割では絞らない）。
          *     確定前・キャンセル済みの予約は 409 `invalid_booking_state`、その予約のセッションがすでにあれば（終了済みを含む）
-         *     409 `invalid_session_state`（同じ予約のセッションは 1 つ）。`booking_id` が UUID でなければ 422。
+         *     409 `invalid_session_state`（同じ予約のセッションは 1 つ）。予約したスロットの開始時刻より前は 409 `slot_not_started`
+         *     （開始時刻ちょうどから始められる。完了したレッスンは通話の終了の後にしか記録できないので、枠の開始より前に完了は
+         *     記録できない。Issue #899）。`booking_id` が UUID でなければ 422。
          *     グループレッスン（定員 2 以上の枠。変更シナリオ cs-004）では、通話を始めたときに確定していた同じ枠の予約を
          *     すべて 1 つのセッションに結び付け（`bookings`）、全員が 1 つの通話ルームに入る。結び付いた予約が 2 つ以上の
          *     通話中のセッションには、結び付いた予約のどれで呼んでも（2 人目以降の生徒・コーチ）新しく開始せずに同じセッションを
@@ -3743,7 +3745,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */

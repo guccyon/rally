@@ -100,6 +100,18 @@ describe("coachApi", () => {
     ]);
   });
 
+  test("startLiveLessonSession の 409 slot_not_started は枠の開始時刻を待つ文言にする", async () => {
+    const { api } = setup(
+      json(409, { code: "slot_not_started", message: "予約したスロットの開始時刻より前" }),
+    );
+    const result = await api.startLiveLessonSession({ booking_id: "bk-1" });
+    expect(result).toEqual({
+      ok: false,
+      code: "slot_not_started",
+      message: "枠の開始時刻になるまで、ビデオ通話は始められません。",
+    });
+  });
+
   test("getMyAccount はトークンを付けて GET /api/me を呼び、本人のアカウントを返す", async () => {
     const account = { account_id: SLOT.coach_id, role: "coach", display_name: "山田コーチ" };
     const { api, fetchMock } = setup(json(200, account));
