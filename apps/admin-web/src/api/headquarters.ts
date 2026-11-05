@@ -49,10 +49,10 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId } },
         }),
       ),
-    listCoachAcceptanceChanges: (coachId: string) =>
+    listCoachAcceptanceChanges: (coachId: string, filter: { from?: string; to?: string } = {}) =>
       call(() =>
         client.GET("/coaches/{coach_id}/acceptance-changes", {
-          params: { path: { coach_id: coachId } },
+          params: { path: { coach_id: coachId }, query: filter },
         }),
       ),
     getCoachOverview: (coachId: string) =>
