@@ -487,6 +487,146 @@ describe("本部の生徒の返事を待っているメッセージのある生�
   });
 });
 
+const HAS_PENDING_VIDEO_ONLY = "返却待ちの動画のある生徒だけ";
+const HAS_UNHANDLED_LOW_RATED_ONLY = "未対応の低い評価をつけた生徒だけ";
+
+describe.each([
+  { label: HAS_PENDING_VIDEO_ONLY, query: { has_pending_video: true }, subject: "返却待ちの動画のある生徒" },
+  {
+    label: HAS_UNHANDLED_LOW_RATED_ONLY,
+    query: { has_unhandled_low_rated: true },
+    subject: "未対応の低い評価をつけた生徒",
+  },
+])("本部の生徒の$label", ({ label, query, subject }) => {
+  test("開いたときは外れていて、入れたら契約のクエリを true で付けて読み直し、外したら付けずに読み直す", async () => {
+    const listStudents = listOf(STUDENTS);
+    const onCoachChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} onCoachChange={onCoachChange} />,
+    );
+    await screen.findByRole("table");
+    const toggle = screen.getByRole("checkbox", { name: label });
+    expect(toggle).not.toBeChecked();
+    expect(listStudents).toHaveBeenCalledWith({});
+
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [STUDENTS[0]!] } });
+    await user.click(toggle);
+    await waitFor(() => expect(bodyRows().map((row) => cellsOf(row)[0])).toEqual(["山田 花子"]));
+    expect(listStudents).toHaveBeenLastCalledWith(query);
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    expect(listStudents).toHaveBeenLastCalledWith({});
+    expect(listStudents).toHaveBeenCalledTimes(3);
+    expect(onCoachChange).not.toHaveBeenCalled();
+  });
+
+  test("スポーツ・この日以降に予約していない・コーチと組み合わせ、どれを変えても付けたまま読み直す", async () => {
+    const listStudents = listOf(STUDENTS);
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+    const select = screen.getByRole("combobox", { name: "コーチ" });
+    await waitFor(() => expect(select).toBeEnabled());
+
+    await user.click(screen.getByRole("checkbox", { name: label }));
+    await waitFor(() => expect(listStudents).toHaveBeenLastCalledWith(query));
+
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "テニス");
+    await waitFor(() => expect(listStudents).toHaveBeenLastCalledWith({ sport: "tennis", ...query }));
+
+    fireEvent.change(screen.getByLabelText("この日以降に予約していない"), { target: { value: "2026-10-15" } });
+    await user.selectOptions(select, "鈴木 コーチ");
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({
+        sport: "tennis",
+        not_booked_since: "2026-10-15",
+        coach_id: SUZUKI,
+        ...query,
+      }),
+    );
+
+    // 切り替えを外しても、ほかの条件は残す
+    await user.click(screen.getByRole("checkbox", { name: label }));
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({
+        sport: "tennis",
+        not_booked_since: "2026-10-15",
+        coach_id: SUZUKI,
+      }),
+    );
+  });
+
+  test("該当がなければ条件を含めた空の文言を出し、表は出さない", async () => {
+    const listStudents = listOf(STUDENTS);
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [] } });
+    await user.click(screen.getByRole("checkbox", { name: label }));
+    expect(await screen.findByText(`${subject}はいません`)).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByText(RECENT_BOOKING_COUNT_NOTE)).not.toBeInTheDocument();
+
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [] } });
+    await user.selectOptions(screen.getByLabelText("スポーツ"), "水泳");
+    expect(await screen.findByText(`${subject}のうち、条件に合う生徒はいません`)).toBeInTheDocument();
+    expect(listStudents).toHaveBeenLastCalledWith({ sport: "swimming", ...query });
+  });
+});
+
+describe("本部の生徒の切り替えの組み合わせ", () => {
+  test("3 つの切り替えを同時に入れられ、すべてを付けて読み直し、1 つ外せばそれだけを外す", async () => {
+    const listStudents = listOf(STUDENTS);
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByRole("checkbox", { name: HAS_UNANSWERED_ONLY }));
+    await user.click(screen.getByRole("checkbox", { name: HAS_PENDING_VIDEO_ONLY }));
+    await user.click(screen.getByRole("checkbox", { name: HAS_UNHANDLED_LOW_RATED_ONLY }));
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({
+        has_unanswered: true,
+        has_pending_video: true,
+        has_unhandled_low_rated: true,
+      }),
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: HAS_PENDING_VIDEO_ONLY }));
+    await waitFor(() =>
+      expect(listStudents).toHaveBeenLastCalledWith({ has_unanswered: true, has_unhandled_low_rated: true }),
+    );
+  });
+
+  test("複数の切り替えで 0 件なら、入れた条件をつないだ空の文言を出す", async () => {
+    const listStudents = listOf(STUDENTS);
+    const user = userEvent.setup();
+    render(<StudentDirectory api={{ listStudents, listCoaches: coachesOf() }} />);
+    await screen.findByRole("table");
+
+    await user.click(screen.getByRole("checkbox", { name: HAS_PENDING_VIDEO_ONLY }));
+    await waitFor(() => expect(listStudents).toHaveBeenLastCalledWith({ has_pending_video: true }));
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [] } });
+    await user.click(screen.getByRole("checkbox", { name: HAS_UNHANDLED_LOW_RATED_ONLY }));
+    expect(
+      await screen.findByText("返却待ちの動画があり、未対応の低い評価をつけた生徒はいません"),
+    ).toBeInTheDocument();
+
+    listStudents.mockResolvedValueOnce({ ok: true, data: { students: [] } });
+    await user.click(screen.getByRole("checkbox", { name: HAS_UNANSWERED_ONLY }));
+    expect(
+      await screen.findByText(
+        "返事を待っているメッセージがあり、返却待ちの動画があり、未対応の低い評価をつけた生徒はいません",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
 describe("生徒の絞り込みと URL", () => {
   test("「すべて」のコーチはクエリに出さず、選んだコーチを契約のクエリの名前で残す", () => {
     expect(studentDirectoryPath("")).toBe("/headquarters/students");

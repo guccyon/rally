@@ -416,6 +416,36 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返却待ちの動画のある生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-pending-video",
+    title: "本部: 生徒（返却待ちの動画のある生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "返却待ちの動画のある生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("返却待ちの動画のある生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
+    // 未対応の低い評価をつけた生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-unhandled-low-rated",
+    title: "本部: 生徒（未対応の低い評価をつけた生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "未対応の低い評価をつけた生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("未対応の低い評価をつけた生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-students-invalid-coach",
     title: "本部: 生徒（コーチの指定が正しくない 422）",
     role: "headquarters",

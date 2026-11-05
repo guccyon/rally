@@ -148,6 +148,8 @@ export function headquartersApi(client: ApiClient) {
         not_booked_since?: string;
         coach_id?: string;
         has_unanswered?: boolean;
+        has_pending_video?: boolean;
+        has_unhandled_low_rated?: boolean;
       } = {},
     ) =>
       call(() => client.GET("/students", { params: { query: filter } })),
