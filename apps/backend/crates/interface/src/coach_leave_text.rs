@@ -17,7 +17,8 @@ pub(crate) fn coach_leave_notice_body(
     starts_at: SystemTime,
     ends_at: SystemTime,
 ) -> String {
-    let coach = coach_display_name.map_or_else(|| "コーチ".to_string(), |name| format!("{name} コーチ"));
+    let coach =
+        coach_display_name.map_or_else(|| "コーチ".to_string(), |name| format!("{name} コーチ"));
     format!(
         "{coach}のお休みのため、{} の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。",
         slot_time_label(starts_at, ends_at)
@@ -33,10 +34,7 @@ pub(crate) fn coach_leave_notification_text(notice: Option<&CoachLeaveNotice>) -
         );
     };
     let body = coach_leave_notice_body(
-        notice
-            .coach_display_name
-            .as_ref()
-            .map(|name| name.as_str()),
+        notice.coach_display_name.as_ref().map(|name| name.as_str()),
         notice.starts_at,
         notice.ends_at,
     );
@@ -122,7 +120,12 @@ mod tests {
             note: CoachLeaveNote::default(),
             ..notice
         };
-        assert_eq!(coach_leave_notification_text(Some(&without_note)).lines().count(), 2);
+        assert_eq!(
+            coach_leave_notification_text(Some(&without_note))
+                .lines()
+                .count(),
+            2
+        );
         assert!(
             coach_leave_notification_text(None).starts_with(COACH_LEAVE_NOTICE_TITLE),
             "記録が引けなくても題から始める"

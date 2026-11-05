@@ -243,7 +243,7 @@ mod tests {
             ))
         ));
         assert!(
-            matches!(use_case.execute(COACH, nov(6), nov(6)).await, Ok(_)),
+            use_case.execute(COACH, nov(6), nov(6)).await.is_ok(),
             "明日からは確かめられる"
         );
         assert!(matches!(

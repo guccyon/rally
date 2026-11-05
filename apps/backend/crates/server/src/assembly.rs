@@ -18,7 +18,9 @@ use application::{
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
-    scheduling::{BookingRepository, CoachAcceptanceRepository, SlotRepository},
+    scheduling::{
+        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository, SlotRepository,
+    },
 };
 
 use crate::{Repositories, ports::Ports};
@@ -39,7 +41,7 @@ impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D> Ports
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
-    B: BookingRepository + Clone + 'static,
+    B: BookingRepository + CoachLeaveRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
     L: LiveLessonSessionRepository + Clone + 'static,
     W: VideoRepository + Clone + 'static,

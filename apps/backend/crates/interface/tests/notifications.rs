@@ -2,15 +2,20 @@
 //! `POST /notifications/me/read`（`markMyNotificationsRead`）のレスポンスの形を、生徒は student-app、コーチは admin-web の
 //! OpenAPI のスキーマで検査し、生徒・コーチが自分のお知らせだけを新しい順に種類・本文・作った時刻・既読かで読めること・
 //! すべて既読にできて何度呼んでもよいこと・ほかの人のお知らせに触れないこと・本部からのお知らせは題と本文を本文に
-//! 載せること・本部の 403・トークンなしの 401 を確かめる。
+//! 載せること・本部による予約のキャンセル（コーチのお休み）は日時と本部の一言を本文に載せること・本部の 403・トークンなしの
+//! 401 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
     identity::{AccessToken, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier},
-    in_memory::{FixedClock, InMemoryAnnouncementRepository, InMemoryNotificationRepository},
+    in_memory::{
+        FixedClock, FixedCoachLeaveNotices, InMemoryAnnouncementRepository,
+        InMemoryNotificationRepository,
+    },
     notification::{
-        ListMyNotifications, MarkMyNotificationsRead, NotificationRepository, notification_id_uuid,
+        CoachLeaveNotice, ListMyNotifications, MarkMyNotificationsRead, NotificationRepository,
+        notification_id_uuid,
     },
 };
 use axum::{
@@ -165,9 +170,27 @@ fn router_with(
     announcements: InMemoryAnnouncementRepository,
     now: SystemTime,
 ) -> Router {
+    router_with_notices(
+        notifications,
+        announcements,
+        FixedCoachLeaveNotices::default(),
+        now,
+    )
+}
+
+fn router_with_notices(
+    notifications: InMemoryNotificationRepository,
+    announcements: InMemoryAnnouncementRepository,
+    notices: FixedCoachLeaveNotices,
+    now: SystemTime,
+) -> Router {
     interface::notifications_router(
-        ListMyNotifications::new(notifications.clone(), announcements.clone()),
-        MarkMyNotificationsRead::new(notifications, announcements, FixedClock(now)),
+        ListMyNotifications::new(
+            notifications.clone(),
+            announcements.clone(),
+            notices.clone(),
+        ),
+        MarkMyNotificationsRead::new(notifications, announcements, notices, FixedClock(now)),
         FakeTokens,
     )
 }
@@ -420,4 +443,47 @@ async fn an_announcement_shows_its_title_and_body() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["notifications"][0]["kind"], "announcement");
     assert_eq!(body["notifications"][0]["is_read"], true);
+}
+
+#[tokio::test]
+async fn a_headquarters_cancel_shows_the_coach_the_time_and_the_note() {
+    let booking_id = BookingId::from_u128(90);
+    let notifications = saved();
+    notifications
+        .insert(notification(
+            9,
+            PushNotification::BookingCancelledByHeadquarters {
+                student_id: STUDENT_ID,
+                coach_id: AccountId::from_u128(9),
+                booking_id,
+            },
+            55,
+        ))
+        .await
+        .unwrap();
+    // 2026-11-10 10:00〜10:30（日本時間）
+    let starts_at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_794_272_400);
+    let notice = CoachLeaveNotice {
+        coach_display_name: Some(domain::profile::DisplayName::new("山田 健").unwrap()),
+        starts_at,
+        ends_at: starts_at + Duration::from_secs(30 * 60),
+        note: domain::scheduling::CoachLeaveNote::new("ご迷惑をおかけします。").unwrap(),
+    };
+    let router = router_with_notices(
+        notifications,
+        InMemoryAnnouncementRepository::default(),
+        FixedCoachLeaveNotices::with_notices([(booking_id, notice)]),
+        at(60),
+    );
+
+    let (status, body) = send(&router, "GET", "/notifications/me", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["notifications"][0]["kind"], "booking_confirmed",
+        "予約の通知の種類"
+    );
+    assert_eq!(
+        body["notifications"][0]["body"],
+        "コーチのお休みで予約をキャンセルしました\n山田 健 コーチのお休みのため、11/10（火）10:00〜10:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。\nご迷惑をおかけします。"
+    );
 }

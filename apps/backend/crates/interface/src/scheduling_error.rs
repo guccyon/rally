@@ -45,8 +45,8 @@
 
 use application::scheduling::{
     CancelBookingError, ChangeCoachAcceptanceError, CoachLeaveError, ConfirmBookingError,
-    CreateBookingError,
-    GetBookingError, ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
+    CreateBookingError, GetBookingError, ListBookingsError, PublishSlotError, WithdrawSlotError,
+    slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
 
@@ -570,11 +570,10 @@ fn describe(error: &SchedulingError) -> String {
         SchedulingError::CoachLeaveStartsTooSoon => {
             "お休みの始まりの日は明日以降にする".to_string()
         }
-        SchedulingError::CoachLeaveOverlaps => {
-            "この期間に重なるお休みがもうある".to_string()
-        }
+        SchedulingError::CoachLeaveOverlaps => "この期間に重なるお休みがもうある".to_string(),
         SchedulingError::CoachLeavePreviewOutdated => {
-            "期間の予約が確かめたあとに変わった（expected_booking_ids と今の予約が違う）".to_string()
+            "期間の予約が確かめたあとに変わった（expected_booking_ids と今の予約が違う）"
+                .to_string()
         }
         SchedulingError::CoachLeaveNoteTooLong { max } => {
             format!("生徒への一言は {max} 文字まで")
@@ -743,6 +742,22 @@ mod tests {
                 SchedulingError::CoachSuspensionReasonTooLong { max: 200 },
                 "受付を止める理由は 200 文字まで",
             ),
+            (
+                SchedulingError::CoachLeaveStartsTooSoon,
+                "お休みの始まりの日は明日以降にする",
+            ),
+            (
+                SchedulingError::CoachLeaveOverlaps,
+                "この期間に重なるお休みがもうある",
+            ),
+            (
+                SchedulingError::CoachLeavePreviewOutdated,
+                "期間の予約が確かめたあとに変わった（expected_booking_ids と今の予約が違う）",
+            ),
+            (
+                SchedulingError::CoachLeaveNoteTooLong { max: 200 },
+                "生徒への一言は 200 文字まで",
+            ),
         ];
         // 変種を足したらここで止まる（上の一覧にも足す）
         for (error, _) in &all {
@@ -775,7 +790,11 @@ mod tests {
                 | SchedulingError::CoachAlreadySuspended
                 | SchedulingError::CoachNotSuspended
                 | SchedulingError::CoachNotAcceptingBookings
-                | SchedulingError::CoachSuspensionReasonTooLong { .. } => {}
+                | SchedulingError::CoachSuspensionReasonTooLong { .. }
+                | SchedulingError::CoachLeaveStartsTooSoon
+                | SchedulingError::CoachLeaveOverlaps
+                | SchedulingError::CoachLeavePreviewOutdated
+                | SchedulingError::CoachLeaveNoteTooLong { .. } => {}
             }
         }
         all
@@ -1158,5 +1177,56 @@ mod tests {
                 (status, code, message)
             );
         }
+    }
+
+    #[test]
+    fn maps_each_coach_leave_error_to_a_status_and_code() {
+        assert_maps(
+            |error| ApiError::from(CoachLeaveError::Invalid(error)),
+            &[
+                (
+                    SchedulingError::CoachLeaveOverlaps,
+                    StatusCode::CONFLICT,
+                    "coach_leave_overlaps",
+                    "この期間に重なるお休みがもうある",
+                ),
+                (
+                    SchedulingError::CoachLeavePreviewOutdated,
+                    StatusCode::CONFLICT,
+                    "leave_preview_outdated",
+                    "期間の予約が確かめたあとに変わった（expected_booking_ids と今の予約が違う）",
+                ),
+                (
+                    SchedulingError::CoachLeaveStartsTooSoon,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "お休みの始まりの日は明日以降にする",
+                ),
+                (
+                    SchedulingError::CoachLeaveNoteTooLong { max: 200 },
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "生徒への一言は 200 文字まで",
+                ),
+                (
+                    SchedulingError::BookingPeriodEndsBeforeItStarts,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "to は from と同じ日か、それより後の日付にする",
+                ),
+                (
+                    SchedulingError::BookingPeriodTooLong { max_days: 31 },
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    "from から to までは 31 日まで",
+                ),
+            ],
+            INTERNAL,
+        );
+        let api_error = ApiError::from(CoachLeaveError::CoachNotFound);
+        assert_eq!(
+            (api_error.status(), api_error.code()),
+            (StatusCode::NOT_FOUND, "not_found")
+        );
     }
 }

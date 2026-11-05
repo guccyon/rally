@@ -134,8 +134,8 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "scheduling.bookings",
             "scheduling.coach_acceptance_changes",
             "scheduling.coach_acceptances",
-        "scheduling.coach_leave_bookings",
-        "scheduling.coach_leaves",
+            "scheduling.coach_leave_bookings",
+            "scheduling.coach_leaves",
             "scheduling.slots",
         ]
     );

@@ -113,7 +113,10 @@ impl CoachLeave {
 
     /// お休みの期間 `period` が `now` より後に始まるか（始まりの日が明日以降か）。でなければ
     /// [`SchedulingError::CoachLeaveStartsTooSoon`]。期間の予約と枠の確かめと、お休みにする操作（[`Self::start`]）が共に使う。
-    pub fn ensure_starts_after(period: BookingPeriod, now: SystemTime) -> Result<(), SchedulingError> {
+    pub fn ensure_starts_after(
+        period: BookingPeriod,
+        now: SystemTime,
+    ) -> Result<(), SchedulingError> {
         if period.starts_at() <= now {
             return Err(SchedulingError::CoachLeaveStartsTooSoon);
         }

@@ -1,13 +1,15 @@
 import Link from "next/link";
 
 import { bookingListPath } from "./BookingListHome";
+import { coachLeavePath } from "./CoachLeaveHome";
 import { coachReviewSummaryPath } from "./CoachReviewSummaryHome";
 import { lessonMenuCatalogPath } from "./LessonMenuCatalogHome";
 import { LOW_RATED_REVIEWS_PATH } from "./LowRatedReviewsHome";
 
 /**
  * コーチの様子の画面の上に置く、そのコーチで開く本部の画面へのリンクの並び。
- * 評価・レッスンメニュー・予約はそのコーチを選んだ（絞った）状態で開く。低い評価の一覧はコーチで絞れない（契約に
+ * 評価・レッスンメニュー・予約はそのコーチを選んだ（絞った）状態で開く。お休み（期間の予約をまとめてキャンセルし、枠を取り下げる）も
+ * そのコーチで開く。低い評価の一覧はコーチで絞れない（契約に
  * `coach_id` がない）ので、一覧をそのまま開く。リンクはコーチの ID だけで決まるので、様子の読み込みを待たない。
  */
 export function CoachRelatedLinks({ coachId }: { coachId: string }) {
@@ -16,6 +18,7 @@ export function CoachRelatedLinks({ coachId }: { coachId: string }) {
     { label: "低い評価", href: LOW_RATED_REVIEWS_PATH },
     { label: "レッスンメニュー", href: lessonMenuCatalogPath(coachId) },
     { label: "予約", href: bookingListPath(coachId) },
+    { label: "お休み", href: coachLeavePath(coachId) },
   ];
   return (
     <nav aria-label="このコーチで開く画面" className="mb-4 text-sm">

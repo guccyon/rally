@@ -11,8 +11,7 @@ use application::{
     scheduling::{
         BookingRepository, CoachLeavePreview, CoachLeaveRepository, LessonMenuLookup,
         PreviewCoachLeave, SlotCoachAccountLookup, StartCoachLeave, StartCoachLeaveCommand,
-        StudentDisplayNameLookup, booking_id_uuid, calendar_day, coach_leave_id_uuid,
-        slot_id_uuid,
+        StudentDisplayNameLookup, booking_id_uuid, calendar_day, coach_leave_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -281,7 +280,14 @@ fn preview_body(preview: &CoachLeavePreview) -> Result<CoachLeavePreviewBody, Ap
             display_name: coach.display_name().as_str().to_string(),
             sports: coach
                 .as_coach()
-                .map(|coach| coach.sports().iter().copied().map(sport_to_contract).collect())
+                .map(|coach| {
+                    coach
+                        .sports()
+                        .iter()
+                        .copied()
+                        .map(sport_to_contract)
+                        .collect()
+                })
                 .unwrap_or_default(),
             acceptance_status: coach_acceptance_status_to_contract(preview.acceptance_status),
         },
