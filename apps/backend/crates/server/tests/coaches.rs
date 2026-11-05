@@ -14,6 +14,10 @@
 //! 絞れること（`getCoachOverview` の `unanswered_message_thread_count` と揃うこと・照会した時刻で変わること・ほかの絞り込みとの
 //! 組み合わせを含む。何を発言と数えるかと境界の細かい検査は domain の `UnansweredThreadCriteria`）を確かめる。スレッドは予約の
 //! 確定で開くが、そこまでの流れは `students.rs` と同じく省いて直に書く。
+//! あわせて、`has_overdue_video=true` で生徒が student-app の操作で送った動画のうち、返却を待ったまま送付から 48 時間以上
+//! たったものがあるコーチだけに絞れること（`getCoachOverview` の `overdue_pending_video_review_count` と揃うこと・添削を返した
+//! 動画は数えないこと・照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む。経過時間の境界の細かい検査は domain の
+//! `PendingVideoReviewFilter`・`CoachPendingVideoReviewCount`）を確かめる。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coaches -- --include-ignored` で走らせる。
@@ -768,6 +772,197 @@ async fn headquarters_lists_only_coaches_with_unanswered_message_threads(pool: P
         &router,
         "GET",
         "/coaches?has_unanswered=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student` が student-app の `POST /videos` でコーチ `coach_id` に `sport` の動画を送り、動画の ID を返す。
+async fn submit_video(router: &Router, student: &str, coach_id: &str, sport: &str) -> String {
+    let body = post_ok(
+        router,
+        "/videos",
+        student,
+        json!({ "coach_id": coach_id, "sport": sport, "content_type": "video/mp4" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    body["video_id"].as_str().unwrap().to_string()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_coaches_with_overdue_videos(pool: PgPool) {
+    let (tanaka_id, _) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, _) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ueno_id, ueno) = register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (endo_id, endo) = register(
+        &pool,
+        "endo@example.com",
+        "えんどう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (taro_id, taro) = register(
+        &pool,
+        "taro@example.com",
+        "たろう",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, jiro) = register(
+        &pool,
+        "jiro@example.com",
+        "じろう",
+        Role::Student,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+
+    let start = at(20 * DAY);
+    let hour = Duration::from_secs(3600);
+    // たなかには返事のないメッセージもある
+    thread(
+        &PgMessageThreadRepository::new(pool.clone()),
+        &taro_id,
+        &tanaka_id,
+        &[(true, start - hour * 30)],
+    )
+    .await;
+    let clock = ManualClock::new(start - hour * 72);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    // 照会の時刻から見て、うえのには 72 時間前に送られて返した動画と 60 時間前の返却待ち、たなかには 48 時間ちょうど前の
+    // 返却待ち、いとうには 47 時間前の返却待ち。えんどうは 72 時間前の動画を返した
+    let returned = submit_video(&router, &jiro, &ueno_id, "soccer").await;
+    let endo_returned = submit_video(&router, &taro, &endo_id, "tennis").await;
+    for (coach, video_id) in [(&ueno, &returned), (&endo, &endo_returned)] {
+        post_ok(
+            &router,
+            &format!("/videos/{video_id}/review"),
+            coach,
+            json!({ "comment": "フォロースルーを大きく" }),
+            StatusCode::OK,
+        )
+        .await;
+    }
+    clock.set(start - hour * 60);
+    submit_video(&router, &jiro, &ueno_id, "soccer").await;
+    clock.set(start - hour * 48);
+    submit_video(&router, &taro, &tanaka_id, "tennis").await;
+    clock.set(start - hour * 47);
+    submit_video(&router, &taro, &ito_id, "tennis").await;
+
+    let get = |path: String| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {body}");
+            body
+        }
+    };
+
+    // 表示名の順はそのまま。照会した時刻から数え、1 時間後にはいとうも載る
+    for (now, expected) in [
+        (start, vec!["うえの", "たなか"]),
+        (start + hour, vec!["いとう", "うえの", "たなか"]),
+    ] {
+        clock.set(now);
+        let body = get("/coaches?has_overdue_video=true".to_string()).await;
+        assert_eq!(names(&body), expected, "{body}");
+        // コーチ 1 人の様子の数が 1 以上のコーチと同じ
+        for (coach_id, name) in [
+            (&tanaka_id, "たなか"),
+            (&ito_id, "いとう"),
+            (&ueno_id, "うえの"),
+            (&endo_id, "えんどう"),
+        ] {
+            let overview = get(format!("/coaches/{coach_id}/overview")).await;
+            assert_eq!(
+                overview["overdue_pending_video_review_count"]
+                    .as_u64()
+                    .unwrap()
+                    > 0,
+                expected.contains(&name),
+                "{name}: {overview}"
+            );
+        }
+    }
+    clock.set(start);
+
+    for (query, expected) in [
+        // ほかの絞り込みと組み合わせる。たなか = %E3%81%9F%E3%81%AA
+        ("?has_overdue_video=true&sport=tennis", vec!["たなか"]),
+        ("?has_overdue_video=true&sport=soccer", vec!["うえの"]),
+        (
+            "?has_overdue_video=true&acceptance_status=accepting",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_overdue_video=true&acceptance_status=suspended",
+            vec![],
+        ),
+        (
+            "?has_overdue_video=true&inactive=true",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_overdue_video=true&q=%E3%81%9F%E3%81%AA",
+            vec!["たなか"],
+        ),
+        (
+            "?has_overdue_video=true&has_unanswered=true",
+            vec!["たなか"],
+        ),
+        (
+            "?has_overdue_video=true&has_unhandled_low_rated=true",
+            vec![],
+        ),
+        // false・付けないときは絞らない
+        (
+            "?has_overdue_video=false",
+            vec!["いとう", "うえの", "えんどう", "たなか"],
+        ),
+        ("", vec!["いとう", "うえの", "えんどう", "たなか"]),
+    ] {
+        let body = get(format!("/coaches{query}")).await;
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?has_overdue_video=yes",
         Some(&headquarters),
         None,
     )

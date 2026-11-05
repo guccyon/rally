@@ -2,9 +2,11 @@
 //! に問い合わせて添える・除く（`SchedulingCoachAcceptanceLookup`）。本部の一覧の直近 30 日に終わったレッスンの数は
 //! 完了記録の保存先から読む（`LessonCoachRecentLessonCountLookup`）。本部の一覧を未対応の低い評価のあるコーチに絞るときの
 //! 件数は評価の保存先から読む（`ReviewCoachLowRatedReviewCountLookup`）。返事のないメッセージのあるコーチに絞るときの
-//! スレッドの数は messaging に問い合わせる（`MessagingCoachUnansweredMessageThreadCountLookup`）。
+//! スレッドの数は messaging に問い合わせる（`MessagingCoachUnansweredMessageThreadCountLookup`）。返却の遅れている動画の
+//! あるコーチに絞るときの動画の数は async-lesson に問い合わせる（`AsyncLessonCoachPendingVideoReviewCountsLookup`）。
 
 use application::{
+    async_lesson::AsyncLessonCoachPendingVideoReviewCountsLookup,
     catalog::CatalogPublishedLessonMenuCountLookup,
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
@@ -26,6 +28,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             LessonCoachRecentLessonCountLookup::new(ports.completions(), ports.clock()),
             ReviewCoachLowRatedReviewCountLookup::new(ports.reviews(), ports.clock()),
             MessagingCoachUnansweredMessageThreadCountLookup::new(ports.threads(), ports.clock()),
+            AsyncLessonCoachPendingVideoReviewCountsLookup::new(ports.videos(), ports.clock()),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(ports.accounts()),

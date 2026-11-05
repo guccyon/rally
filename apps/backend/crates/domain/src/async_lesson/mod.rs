@@ -7,6 +7,7 @@
 
 mod ai_feedback;
 mod coach_pending_video_review_count;
+mod overdue_video_coach_filter;
 mod pending_video_review_filter;
 mod pending_video_student_filter;
 mod returned_video_review_filter;
@@ -22,6 +23,7 @@ mod video_status;
 
 pub use ai_feedback::AiFeedback;
 pub use coach_pending_video_review_count::CoachPendingVideoReviewCount;
+pub use overdue_video_coach_filter::OverdueVideoCoachFilter;
 pub use pending_video_review_filter::PendingVideoReviewFilter;
 pub use pending_video_student_filter::PendingVideoStudentFilter;
 pub use returned_video_review_filter::ReturnedVideoReviewFilter;

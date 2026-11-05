@@ -358,15 +358,23 @@ export interface paths {
          *       実装は backend の domain `UnansweredThreadCriteria` の既定で、数は `CoachUnansweredMessageThreadCount`、絞り込みの判定は
          *       `UnansweredCoachFilter`）。スレッドの数や ID・メッセージの本文は一覧に載せない（中身は `listUnansweredMessageThreads`、数は
          *       `getCoachOverview` で見る）。付けないとき・`false` のときは絞らない
+         *     - 返却の遅れている動画のあるコーチ（任意）: `has_overdue_video` が `true` なら、`getCoachOverview` の
+         *       `overdue_pending_video_review_count` が 1 以上のコーチだけを返す。つまり、`listPendingVideoReviews` にそのコーチの
+         *       `coach_id` と `min_elapsed_hours=48` だけを付けたときに載る動画（そのコーチに送られ、まだ添削を返していない動画のうち、
+         *       送付から 48 時間以上（含む）たったもの。スポーツを問わず、ゴルフの動画も数える）が 1 件以上あるコーチ。数え方は
+         *       `overdue_pending_video_review_count` と同じ 1 か所（経過時間は照会した時刻（サーバーの現在時刻）から数え、1 時間に
+         *       満たない端数は切り捨てる。実装は backend の domain `PendingVideoReviewFilter` で、数は `CoachPendingVideoReviewCount`、
+         *       絞り込みの判定は `OverdueVideoCoachFilter`）。動画の数や ID は一覧に載せない（中身は `listPendingVideoReviews`、数は
+         *       `getCoachOverview` で見る）。付けないとき・`false` のときは絞らない
          *     - 表示名で探す（任意）: `q` を付ければ、表示名に `q` を部分文字列として含むコーチだけを返す。一致のしかたは `listStudents` の
          *       `q` と同じ（実装は backend の domain `DisplayNameQuery` の 1 か所）: `q` の前後の空白（全角の空白を含む）は除いて比べ、
          *       途中の空白はそのまま比べる。大文字・小文字は ASCII の英字（`A`〜`Z` / `a`〜`z`）だけ区別しない。全角の英字・ひらがなと
          *       カタカナなどは書いたとおりに比べる（同じとみなさない）。`%` や `_` もワイルドカードでなく文字のまま。`q` を付けない・空・
          *       空白だけのときは絞り込まない。表示名以外では探さない
-         *     - `q`・`acceptance_status`・`sport`・`inactive`・`has_unhandled_low_rated`・`has_unanswered` は組み合わせられ、付けたものをすべて満たすコーチだけを返す。どれも付けなければ今までどおり
+         *     - `q`・`acceptance_status`・`sport`・`inactive`・`has_unhandled_low_rated`・`has_unanswered`・`has_overdue_video` は組み合わせられ、付けたものをすべて満たすコーチだけを返す。どれも付けなければ今までどおり
          *       すべてのコーチ。絞っても並べ方は変わらない
          *     - `acceptance_status` が `CoachAcceptanceStatus` の値でない・`sport` が `Sport` の値でない・`inactive`・`has_unhandled_low_rated`・
-         *       `has_unanswered` が `true` / `false` でない・`q` が前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422
+         *       `has_unanswered`・`has_overdue_video` が `true` / `false` でない・`q` が前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）を超えるときは 422
          *       `validation_failed`
          *     - ページングはしない。コーチがいない（条件に合うコーチがいない）なら `coaches` は空の配列
          *     - `recent_lesson_count`: 照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスン（glossary の
@@ -378,7 +386,8 @@ export interface paths {
          *     受付の状態は scheduling の持ち物で、1 件ごとに scheduling から読んで添える。完了したレッスンは live-lesson と
          *     async-lesson が記録し、1 件ごとに数えて添える。評価は review の持ち物で、`has_unhandled_low_rated` を付けたときだけ 1 件ごとに
          *     review から読んで数える。スレッドは messaging の持ち物で、`has_unanswered` を付けたときだけ 1 件ごとに messaging から
-         *     読んで数える（`x-context` が複数なのはそのため）。
+         *     読んで数える。動画は async-lesson の持ち物で、`has_overdue_video` を付けたときだけ 1 件ごとに async-lesson から読んで
+         *     数える（`x-context` が複数なのはそのため）。
          *     行動イベントは発火しない。
          */
         get: operations["listCoaches"];
@@ -4069,6 +4078,12 @@ export interface operations {
                  *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
                  */
                 has_unanswered?: boolean;
+                /**
+                 * @description `true` なら `listPendingVideoReviews` にそのコーチの `coach_id` と `min_elapsed_hours=48` だけを付けたときに載る
+                 *     動画が 1 件以上ある（`getCoachOverview` の `overdue_pending_video_review_count` が 1 以上の）コーチだけを返す
+                 *     （付けないとき・`false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_overdue_video?: boolean;
             };
             header?: never;
             path?: never;
