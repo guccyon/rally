@@ -171,6 +171,17 @@ test("イベントは JSON の配列・{ events } ・JSONL のどれでも読む
   assert.deepEqual(parseEvents(""), []);
 });
 
+test("{ \"events\": [...] } は空白があっても整形してあっても読み、形が合わなければ読めなかったとする", () => {
+  assert.deepEqual(parseEvents(`{ "events": ${JSON.stringify(EVENTS_395)} }`), EVENTS_395);
+  assert.deepEqual(parseEvents(JSON.stringify({ events: EVENTS_395 }, null, 2)), EVENTS_395);
+  assert.deepEqual(parseEvents(JSON.stringify(EVENTS_395, null, 2)), EVENTS_395);
+  assert.deepEqual(parseEvents(JSON.stringify(EVENTS_395[1])), [EVENTS_395[1]]);
+  assert.throws(() => parseEvents(`{ "events": {} }`), /events が配列でない/);
+  assert.throws(() => parseEvents(`[{ "payload": {} }]`), /1 件目に name がない/);
+  assert.throws(() => parseEvents(`{ "payload": {} }`), /name がない/);
+  assert.throws(() => parseEvents(`${JSON.stringify(EVENTS_395[1])}\n[1]`), /2 件目に name がない/);
+});
+
 test("CLI --events は外れたら 1 で終わり、GitHub Actions では ::error と要約を書く", () => {
   const dir = mkdtempSync(join(tmpdir(), "sendback-events-"));
   const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -187,4 +198,8 @@ test("CLI --events は外れたら 1 で終わり、GitHub Actions では ::erro
   const empty = execFileSync("node", [script, "--events", join(dir, "empty.json")], { encoding: "utf8" });
   assert.match(empty, /head 0 個・裁き 0 件/);
   assert.throws(() => execFileSync("node", [script, "--events", join(dir, "missing.json")], { stdio: "pipe" }), (e) => e.status === 2);
+  writeFileSync(join(dir, "no-name.json"), `{ "events": [{ "payload": { "pr_url": "${URL_395}" } }] }`);
+  assert.throws(() => execFileSync("node", [script, "--events", join(dir, "no-name.json")], { stdio: "pipe" }), (e) => e.status === 2);
+  writeFileSync(join(dir, "pretty.json"), JSON.stringify({ events: EVENTS_395 }, null, 2));
+  assert.throws(() => execFileSync("node", [script, "--events", join(dir, "pretty.json")], { stdio: "pipe" }), (e) => e.status === 1);
 });

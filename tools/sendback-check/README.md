@@ -45,7 +45,7 @@ PR の 1 つの head について、制御プレーンの記録（`judgment.judg
 
 ## イベント列から組む（`--events`）
 
-PR ごとの検査では、記録を手で組まずに制御プレーンの events をそのまま渡す。JSON の配列・`{ "events": [...] }`・JSONL（1 行 1 件）のどれでもよく、古い順（events の id 順）に並べる。1 件は `{ "name", "payload", "judgment"? }`。
+PR ごとの検査では、記録を手で組まずに制御プレーンの events をそのまま渡す。JSON の配列・`{ "events": [...] }`・JSONL（1 行 1 件）のどれでもよく、古い順（events の id 順）に並べる。1 件は `{ "name", "payload", "judgment"? }`。JSON は整形してあってもよい。`events` が配列でないときと、`name` のない件があるときは読めなかったとして終了コード 2 にする（黙って捨てて通さない）。
 
 - head の区切り: `supervisor.judge_enqueued`（`head_sha`）。そこから次の `judge_enqueued` までを、その head の記録にする。最初の `judge_enqueued` より前は裁きがないので見ない
 - `judgment.judged`: 中身（`subject`・`defect`・`already_applied`）は artifacts の Judgment（stage=judged）にあるので、`payload.artifact_id` で引いて `judgment` に添える。添えていなければ `payload.category` が `inspection` なら欠陥、ほかは仮決めとして数える（shadow のルールの指摘は見分けられない）

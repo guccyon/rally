@@ -165,15 +165,30 @@ export function recordsFromEvents(events, prUrl) {
   return [...byPr.values()].flatMap((st) => st.rounds.map((r) => ({ ...r, merged: st.merged })));
 }
 
-/** イベントの JSON（配列か { events: [...] }）か JSONL を読む。 */
+/**
+ * イベントの JSON（配列か { events: [...] }。整形してあってもよい）か JSONL を読む。
+ * 全体を JSON として読めなければ JSONL として読む。形が合わない（events が配列でない、name のない件がある）ときは投げる（読めなかった）。
+ */
 export function parseEvents(text) {
   const t = text.trim();
   if (t === "") return [];
-  if (t.startsWith("[") || t.startsWith("{\"events\"")) {
-    const v = JSON.parse(t);
-    return Array.isArray(v) ? v : v.events;
+  let events;
+  let whole;
+  try {
+    whole = JSON.parse(t);
+  } catch {
+    whole = undefined;
   }
-  return t.split("\n").filter((l) => l.trim() !== "").map((l) => JSON.parse(l));
+  if (Array.isArray(whole)) events = whole;
+  else if (whole !== undefined && whole !== null && typeof whole === "object" && "events" in whole) {
+    if (!Array.isArray(whole.events)) throw new Error("events が配列でない");
+    events = whole.events;
+  } else if (whole !== undefined) events = [whole];   // 1 行だけの JSONL
+  else events = t.split("\n").filter((l) => l.trim() !== "").map((l) => JSON.parse(l));
+  events.forEach((e, i) => {
+    if (e === null || typeof e !== "object" || typeof e.name !== "string") throw new Error(`${i + 1} 件目に name がない`);
+  });
+  return events;
 }
 
 export function renderSummary(results) {
