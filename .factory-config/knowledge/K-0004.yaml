@@ -14,4 +14,19 @@ verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
 related: [K-0003]
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        差し戻しか続きのジョブを起こすのは、直っていない採用欠陥（defect が null でなく verdict が adopt）か、
+        まだ入っていない仮決めの差し替えが 1 件以上あるときだけ、という判定の線をテストにした（tools/sendback-check/check.test.mjs）。
+        PR #395 と同じ入力（仮決めの adopt 3 件、欠陥の reject 2 件、マージ済み）では起こさないこと、
+        直っていない採用欠陥があればマージの前後に関わらず起こすこと、
+        inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書くことを確かめる。
+        PR の記録を照らす検査（tools/sendback-check/check.mjs）も付けた。Engine の basis は今も adopt の合計だけを書くので外れる。
+        Engine の判定と basis の文をこの線に合わせることと呼び出しの配線はまだ入っていないので、効き目はまだ確かめていない
+      issue: 902
+      at: 2026-11-05
+      decided_by: committee:D-0004
 decided_by: committee:D-0004
