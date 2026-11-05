@@ -1,0 +1,62 @@
+# Rally の品質方針（Engine ADR 0028 の決定 4。欄の型は factory-engine の definitions/quality_policy.yaml）
+# Blueprint の quality_policy の写し。食い違ったら Blueprint が正。
+# 「利用者（生徒・コーチ・本部の運営・CS）にとって使いやすいか」を QA 役が確かめるときの約束。内部品質（quality.yaml）とは別。
+# 詳しい規則は specs/ にあり、ここはそこを指して重ねて書かない。
+# 値は Gen1 では建設者が代理で仮置きした（provisional: true）。事業主が確かめたら外す。
+# 値を緩める変更（レベルを下げる・サポート対象を減らす・S1 の条件を外す）は人の承認が要る。
+
+schema_version: "0.1"
+provisional: true
+decided:
+  - { date: "2026-11-05", by: builder, note: "初版を仮置き。既存の specs/design/ と Blueprint の事業の形から起こした" }
+
+accessibility:
+  standard: WCAG 2.2 AA
+  rules: specs/design/accessibility.yaml
+  assistive:
+    - 読み上げ（iOS の VoiceOver、Android の TalkBack、admin-web は画面読み上げソフト）
+    - 端末の文字の大きさ 200%
+    - 動きを減らす設定
+    - キーボードだけの操作（admin-web）
+  note: "ダークモードは Gen1 では持たない（specs/design/tokens.yaml の dark_mode。端末がダークでも明るい配色で出す）"
+
+data:
+  minors: true      # 生徒に小中高生がいる（部活のスポーツ）。保護者の同意と、未成年の動画・チャットを見られる人の範囲も観点に入れる
+  classes:
+    - { id: account,        ja: "アカウント（表示名・連絡先・ログインの情報）",           sensitivity: high,   examples: [表示名, メールアドレス] }
+    - { id: student_video,  ja: "生徒が送ったフォームの動画（本人の姿が映る。未成年を含む）", sensitivity: high,   examples: [動画添削の依頼の動画] }
+    - { id: messages,       ja: "生徒とコーチのチャット",                                 sensitivity: high,   examples: [メッセージ, 添削の返却の文] }
+    - { id: payment,        ja: "契約と課金（Gen1 は決済がモック。カードの番号は持たない）", sensitivity: high,   examples: [月額契約, 受講権, コーチへの支払い額] }
+    - { id: lesson_record,  ja: "予約・受けたレッスン・評価",                             sensitivity: medium, examples: [予約, 完了したレッスン, 評価] }
+    - { id: coach_profile,  ja: "コーチの公開の紹介（自己紹介・レッスンメニュー・評価の平均）", sensitivity: low,    examples: [自己紹介, メニュー] }
+    - { id: analytics,      ja: "行動イベントと通話の品質（ID と判定に要る属性だけ。氏名・連絡先は載せない）", sensitivity: medium, examples: [specs/analytics/events.yaml] }
+  retention: "未定。Gen1 は消す決まりを持たない（運用開始の前に決める）"
+
+support:
+  locales: [ja-JP]   # 国内向け。時刻は端末のタイムゾーンで出す（specs/design/content.yaml）
+  matrix:
+    - { surface: student-app, platform: iOS,     os: "17 以上",           devices: "iPhone（画面幅 375pt 以上）", note: "Gen1 は iOS シミュレーターで確かめる（Mac ランナー）。iPad は保証しない" }
+    - { surface: student-app, platform: Android, os: "10（API 29）以上",  devices: "スマートフォン（画面幅 360dp 以上）", note: "タブレットは保証しない" }
+    - { surface: admin-web,   platform: Web,     os: "Windows・macOS",    browsers: "Chrome・Edge・Safari の最新と 1 つ前", devices: "PC（幅 1280px 以上）", note: "コーチと本部。スマートフォンの幅は崩れない程度（保証は PC）" }
+  network:
+    - 屋外のモバイル回線（遅い・途切れる）。動画の送付と通話の途中で切れても、やり直せて二重にならない
+    - アプリを閉じて開き直す・端末を再起動する（契約・予約・送った動画が残っている）
+
+language:
+  glossary: specs/glossary.yaml
+  notation: specs/design/content.yaml
+  voice: specs/design/concept_tone.yaml
+  readers:
+    - { who: 生徒,   note: "小中学生も読む。漢字を詰めすぎず、回数・日時・キャンセルの規定は正確さを先に" }
+    - { who: コーチ, note: "副業の人が多い。次にやること（枠を開ける・添削を返す）がすぐ分かる" }
+    - { who: 本部・CS, note: "問い合わせの経緯を追える言葉（予約の状態の名前を画面と記録で揃える）" }
+  judge: "言葉の温度は QA 役が判定せず、印として人に出す"
+
+s1:
+  conditions:
+    - { id: data_leak,        ja: "他人のデータが見える・漏れる（アカウント、動画、チャット。ログや行動イベントに氏名・連絡先が出るのも含む）" }
+    - { id: authz_bypass,     ja: "ロールを越えた操作ができる（生徒が他の生徒の予約を触る、コーチが本部の操作をする など）" }
+    - { id: minor_exposure,   ja: "未成年の生徒の動画・チャットが、担当のコーチと本部以外に見える" }
+    - { id: data_loss,        ja: "予約・契約・受講権・送った動画・メッセージが消える、再起動や再ログインで元に戻る" }
+    - { id: billing_wrong,    ja: "課金と受講権の誤り（契約プランの上限を超えて予約できる、二重に消費する、コーチへの支払い額が違う）" }
+    - { id: core_flow_broken, ja: "一周の流れ（登録 → 予約 → レッスン → 完了の記録）か、ログインが通らない" }
