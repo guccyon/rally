@@ -91,6 +91,8 @@ basis の文の形は `approvalBasis()` が返すもの（`judge が N 件を裁
 - (1) PR #395 と同じ入力では後続を起こさない、(2) 直っていない採用欠陥があればマージの前（`review_fix`）でも後（`sendback`）でも起こす、shadow のルールの指摘は起こさない、(3) basis に欠陥の採用数と仮決めの承認数を分けて書く
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。CI で走らせるには、Engine を固定した版（`ENGINE_REF`）で取ってから `ENGINE_DIR` を向ける手順を建設者が足す
 - (3) は今の Engine では外れる（`採用 N` の合計だけを書く）ので `todo` にしてある。外れても落ちないが結果には出る。建設者が Engine の basis を `approvalBasis()` の形に合わせたら `todo` を外す。`todo` のうちに `check.mjs` の ci_check を配線すると、すべての承認が `basis_not_split` で落ちるので、配線は Engine の basis を直して `todo` を外した後にする
+- イベントの経路（Issue #945）: `engine_harness.py` は Engine が記録したイベントを、上の「制御プレーンから出すときの例」の SQL と同じ形（同じ名前に絞り、`judgment.judged` に Judgment を添える）でも返す（`events`）。`supervisor.inspector_approved` と `supervisor.merged` は supervisor の周期が記録する形で足す。テストはそれを ci_check と同じ呼び方（`--events --pr --summary`、`GITHUB_ACTIONS=true`）で `check.mjs` に渡し、(a) 上の場合のイベント列が 1 つの head に組めて後続の判定が線に合うこと、(b) PR #395 と同じ入力のイベント列に Engine の形の `sendback.filed` を足した流れが `followup_without_defect` で落ちること（`::error` と要約も）を確かめる
+- (c) Engine の正しい判定のイベント列が `check.mjs --events` で通る（終了コード 0）ことは、今の Engine では basis が `basis_not_split` で落ちるので `todo` にしてある。これが ci_check を配線してよい合図で、Engine の basis を直したら (3) と一緒に `todo` を外す
 - 取り出す関数の名前が Engine で変わると `engine_harness.py` は終了コードを 0 以外にして落ちる。偽の cursor が知らない問い合わせが来たときも落ちる（黙って通さない）
 
 ```sh
@@ -100,6 +102,13 @@ ENGINE_DIR=/path/to/factory-engine node --test engine.test.mjs
 ## 呼び出す場所
 
 PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差し戻しか続きのジョブを起こしたとき（`sendback.filed`・`continue.enqueued` の `review_fix`・`body_fix` の `job.enqueued` を記録した後）に、その PR のイベント列で呼び、1 なら落とす。Engine の `supervisor.inspector_approved` の basis は、今は adopt の合計だけ（`採用 N`）を書くので `basis_not_split` で外れる。Engine の判定と basis の文をこの線に合わせること、制御プレーンからイベントを出す経路、呼び出しの配線（`.github/workflows/` か Engine の検査）は、ワーカーの権限の外なので建設者が入れる。
+
+配線の順序（議決 `D-0010`）:
+
+1. Engine の `inspector_approved` の basis を `approvalBasis()` の形にし、`engine.test.mjs` の (3) と (c) の `todo` を外す
+2. CI で Engine を固定の版（`ENGINE_REF`）で取って `ENGINE_DIR` を向け、`npm test` を走らせる
+3. 上の SQL で PR のイベント列を `events.json` に出す手順と、下の `check.mjs --events` の手順を足す（PR ごとと、supervisor が差し戻し・続きのジョブを起こしたとき）
+4. 本物の PR #395 のイベント列で `followup_without_defect` で落ちることを確かめ、`K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す
 
 ワークフローの例（イベントを出す手順は建設者が決める。ここでは前の手順で `events.json` に出してある前提）:
 

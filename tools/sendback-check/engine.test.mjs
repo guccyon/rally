@@ -1,16 +1,19 @@
 // Engine の本物の判定（judgment.record_judged → dispatcher.act_on_judgment、supervisor.inspector_approved）を
-// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010、Issue #935・#944）。
+// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010、Issue #935・#944・#945）。
 // 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { approvalBasis, checkRecord } from "./check.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
+const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
 const engineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
 const skip = existsSync(`${engineDir}/orchestrator/dispatcher/supervisor.py`)
   ? false : `Engine のチェックアウトがない（ENGINE_DIR=${engineDir}）`;
@@ -64,4 +67,58 @@ test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決
     const out = engine({ ...PR_395, merged: false, judgments });
     assert.equal(out.basis, approvalBasis(judgments));
     assert.deepEqual(checkRecord({ merged: false, judgments, followups: out.followups, basis: out.basis }), []);
+  });
+
+// イベントの経路（Issue #945）: Engine が記録したイベント列を、README の SQL と同じ形で check.mjs に渡す。
+// ci_check がワークフローで走らせるのと同じ呼び方（--events --pr --summary、GITHUB_ACTIONS=true）で CLI を動かす
+
+/** イベント列を ci_check と同じ呼び方で check.mjs に渡し、終了コード・標準出力・JSON・要約を返す */
+function ciCheck(events, prUrl = PR_395.pr_url) {
+  const dir = mkdtempSync(join(tmpdir(), "sendback-engine-events-"));
+  writeFileSync(join(dir, "events.json"), JSON.stringify(events, null, 2));
+  writeFileSync(join(dir, "summary.md"), "");
+  const r = spawnSync("node", [script, "--events", join(dir, "events.json"), "--pr", prUrl, "--json", join(dir, "out.json"),
+    "--summary", join(dir, "summary.md")], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  return { status: r.status, stdout: r.stdout, result: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")),
+    summary: readFileSync(join(dir, "summary.md"), "utf8") };
+}
+
+const adoptedDefect = defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" });
+/** Engine の今の判定で後続が線に合う場合（PR #395 と同じ入力、直っていない採用欠陥のマージ前・後、本文だけの欠陥） */
+const ENGINE_CASES = [
+  ["PR #395 と同じ入力", PR_395],
+  ["採用欠陥・マージ前", { ...PR_395, merged: false, judgments: [...PR_395.judgments, adoptedDefect] }],
+  ["採用欠陥・マージ後", { ...PR_395, merged: true, judgments: [...PR_395.judgments, adoptedDefect] }],
+  ["本文だけの欠陥", { ...PR_395, merged: false, judgments: [defect("adopt", "PR-002")] }],
+];
+
+test("イベントの経路: Engine が記録したイベント列を check.mjs --events にそのまま渡すと、1 つの head に組めて後続の判定は線に合う", { skip }, () => {
+  for (const [name, record] of ENGINE_CASES) {
+    const out = engine(record);
+    const { result, stdout } = ciCheck(out.events);
+    assert.deepEqual(result.errors.map((e) => e.rule).filter((r) => !r.startsWith("basis_")), [], name);
+    assert.match(stdout, new RegExp(`head 1 個・裁き ${record.judgments.length} 件`), name);
+  }
+});
+
+test("イベントの経路: PR #395 の流れ（直すもののない差し戻し）を Engine の形のイベント列で落とす", { skip }, () => {
+  // PR #395 と同じ入力の Engine のイベント列に、Engine が差し戻しで記録する sendback.filed（採用欠陥のマージ後の場合から取る）を足す
+  const sendback = engine(ENGINE_CASES[2][1]).events.find((e) => e.name === "sendback.filed");
+  assert.ok(sendback, "Engine が採用欠陥のマージ後に sendback.filed を記録していない");
+  const { status, stdout, result, summary } = ciCheck([...engine(PR_395).events, sendback]);
+  assert.equal(status, 1);
+  assert.ok(result.errors.some((e) => e.rule === "followup_without_defect" && e.pr_url === PR_395.pr_url && e.head_sha === "head1"));
+  assert.match(stdout, /^::error title=sendback-check followup_without_defect::https:\/\/github\.com\/guccyon\/rally\/pull\/395@head1 /m);
+  assert.match(summary, /外れた: https:\/\/github\.com\/guccyon\/rally\/pull\/395@head1（裁き 5 件。欠陥の採用 0・仮決めの承認 3）/);
+});
+
+// 今の Engine の basis は adopt の合計だけなので、承認のある head はすべて basis_not_split で落ちる（ci_check を配線してはいけない状態）。
+// 建設者が Engine の basis を直したらこの todo と (3) の todo を外し、通ってから ci_check を配線する（D-0010 の順序）
+test("イベントの経路: Engine の正しい判定のイベント列は check.mjs --events で通る（ci_check を配線してよい合図）",
+  { skip, todo: skip ? false : "Engine の basis が adopt の合計だけで basis_not_split で落ちる（建設者が Engine を直したら todo を外す）" }, () => {
+    for (const [name, record] of ENGINE_CASES) {
+      const { status, result } = ciCheck(engine(record).events);
+      assert.deepEqual(result.errors, [], name);
+      assert.equal(status, 0, name);
+    }
   });

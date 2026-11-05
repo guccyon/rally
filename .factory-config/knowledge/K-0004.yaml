@@ -61,4 +61,16 @@ enforcement:
       issue: 944
       at: 2026-11-05
       decided_by: committee:D-0010
+    - kind: ci_check
+      what: >-
+        議決 D-0010 の ci_check の案のうち、ワーカーの権限で入れられるイベントの経路の分を入れた。engine_harness.py が Engine の記録したイベントを
+        README の「制御プレーンから出すときの例」の SQL と同じ形（judgment.judged に Judgment を添える）で返し、engine.test.mjs がそれを ci_check と同じ呼び方
+        （check.mjs --events --pr --summary、GITHUB_ACTIONS=true）で渡して、Engine の形のイベント列が 1 つの head に組めて後続の判定が線に合うことと、
+        PR #395 と同じ入力のイベント列に Engine の形の sendback.filed を足した流れが followup_without_defect で落ちることを確かめた。
+        Engine の正しい判定のイベント列が通ること（ci_check を配線してよい合図）は、今の Engine の basis が adopt の合計だけで basis_not_split で落ちるので todo にした。
+        Engine の basis の直しと .github/workflows/ の配線と制御プレーンからイベントを出す手順は建設者が入れるので（順序は README）、
+        本物の PR #395 のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 945
+      at: 2026-11-05
+      decided_by: committee:D-0010
 decided_by: committee:D-0004
