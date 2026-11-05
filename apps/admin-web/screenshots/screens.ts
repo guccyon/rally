@@ -325,6 +325,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // レッスンの種類で非同期だけに絞った状態（URL には残さないので、開いてから選ぶ）。
+    id: "hq-lesson-menus-lesson-type",
+    title: "本部: レッスンメニュー（レッスンの種類で絞る）",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
+      await page.getByRole("combobox", { name: "レッスンの種類" }).selectOption({ label: "非同期（動画の添削）" });
+      await page.getByRole("row", { name: /サーブの添削/ }).waitFor();
+      await page.getByRole("row", { name: /フォアハンドの基礎/ }).waitFor({ state: "detached" });
+    },
+  },
+  {
     id: "hq-lesson-menus-by-coach",
     title: "本部: コーチ 1 人のレッスンメニュー",
     role: "headquarters",

@@ -117,6 +117,7 @@ export function headquartersApi(client: ApiClient) {
     listLessonMenus: (filter: {
       q?: string;
       sport?: Schemas["Sport"];
+      lesson_type?: Schemas["LessonType"];
       published?: boolean;
       coach_id?: string;
       unbooked?: boolean;

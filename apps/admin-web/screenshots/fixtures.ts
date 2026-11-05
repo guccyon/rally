@@ -892,6 +892,15 @@ export const FIXTURES: Fixture[] = [
   {
     method: "GET",
     path: "/lesson-menus",
+    // レッスンの種類で非同期だけ（下の一覧のうち「サーブの添削」）。
+    query: { lesson_type: "async_lesson" },
+    body: {
+      lesson_menus: [{ ...MENU_SERVE, coach_display_name: "鈴木 コーチ", recent_booking_count: 3 }],
+    } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
     // 直近 30 日に予約のないメニューだけ（下の一覧のうち予約が 0 件の「パターの距離感」）。
     query: { unbooked: "true" },
     body: {
