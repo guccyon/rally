@@ -1,0 +1,44 @@
+type: UserStory
+id: cs-traces-vanished-booking
+title: "CS が、生徒の「予約が消えた」という問い合わせに、予約の経緯を追って 1 分で答えられる"
+actor: cs
+goal: "生徒の不安と不満をその場で解く。経緯が分からないと、調べるのに開発者を呼ぶことになり、返事が遅れる"
+reader: [cs, student]
+entry: "生徒から「予約していたレッスンが消えた」と問い合わせが来る。CS は生徒の名前と、だいたいのレッスンの日時を聞いている"
+exit: "CS が、その予約がいつ・誰の操作で・どの状態に変わったか、キャンセルでビデオ通話の回数を消費したかを、生徒に説明できる"
+preconditions:
+  - "生徒が予約を確定し、そのあと開始の 24 時間前より後にキャンセルした予約がある"
+  - "同じ生徒に、ほかに確定した予約がある"
+steps:
+  - where: "admin-web 本部の画面"
+    do: "予約の一覧を開き、問い合わせの日付のあたりの期間と生徒で絞り込む"
+    sees: "その生徒の予約が、キャンセルしたものも含めて、枠の時刻・コーチ・今の状態つきで並ぶ"
+  - where: "admin-web 本部の予約の一覧"
+    do: "問い合わせの日時に近い予約を開く"
+    sees: "予約の詳細に、生徒・コーチ・レッスンメニュー・枠の時刻・今の状態と、状態が変わった記録"
+  - where: "admin-web 本部の予約の詳細"
+    do: "状態が変わった記録を読む"
+    sees: "確定した日時とキャンセルした日時、誰の操作でキャンセルしたか、開始の何時間前か、回数を消費したか"
+must_not:
+  - "CS が予約を探すのに生徒やコーチの ID を知っている必要がある"
+  - "キャンセルした予約が一覧から消えて、「なかったこと」に見える"
+  - "本部のロールでない人（生徒・コーチ）が、ほかの人の予約の経緯を見られる"
+  - "生徒に説明できない内部の言葉（状態のコードなど）しか出ない"
+touches:
+  apps: [admin-web, student-app]
+  contexts: [scheduling, entitlement, identity]
+  terms: [booking, slot, cancellation_policy]
+  operations:
+    - student-app.cancelBooking
+    - admin-web.listBookings
+    - admin-web.listCancelledBookings
+    - admin-web.getBooking
+  events: [booking.created, booking.confirmed, booking.cancelled]
+origin:
+  issues: []
+  note: "本部の画面に絞り込みが増える一方で、CS の流れが書かれていなかった（factory-engine の ADR 0028 の検討）"
+  retro: true
+known_gaps:
+  - step: 3
+    note: "状態が変わった記録（BookingStatusChange）は日時と変わった後の状態だけで、キャンセルした人・開始の何時間前か・回数を消費したかが出ない"
+status: active

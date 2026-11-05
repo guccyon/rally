@@ -1,0 +1,25 @@
+# ユーザーストーリーの利用者の種類（actor と reader に使う id）
+# 型は factory-engine の definitions/user_story.yaml。ストーリーは同じフォルダに 1 本 1 ファイル。
+# glossary.yaml に語があるものは glossary の id を term に書く。
+
+actors:
+  - id: student
+    ja: "生徒"
+    term: student
+    apps: [student-app]
+    note: "生徒アプリ（iOS / Android）を使う"
+  - id: coach
+    ja: "コーチ"
+    term: coach
+    apps: [admin-web]
+    note: "Gen1 は admin-web にコーチのロールでログインする（docs/adr/0002 Q3）"
+  - id: headquarters
+    ja: "本部（運営）"
+    term: null
+    apps: [admin-web]
+    note: "admin-web に本部のロールでログインし、コーチ・予約・評価などを見て運営する人"
+  - id: cs
+    ja: "カスタマーサポート（CS）"
+    term: null
+    apps: [admin-web]
+    note: "生徒やコーチからの問い合わせに答える人。Gen1 は CS 専用のロールがなく、本部のロールで本部の画面を使う"
