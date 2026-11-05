@@ -119,4 +119,17 @@ enforcement:
       issue: 960
       at: 2026-11-05
       decided_by: committee:D-0014
+    - kind: ci_check
+      what: >-
+        議決 D-0016 の ci_check の案（D-0012 の順序の見張りを、ENGINE_REF の Engine で走らせた結果でも見る）を入れた。
+        tools/sendback-check/order.mjs に --engine-report（engine.test.mjs の node --test の TAP）を足し、.github/workflows/ に check.mjs --events を
+        呼ぶ手順があるのに、その結果で (3)（basis を分けて書く）か (c)（Engine の正しい判定のイベント列が通る）が通っていなければ
+        （LEGACY_BASIS の todo になった・飛ばされた・落ちた・結果にない）engine_basis_not_passed で落とす。engine.test.mjs が CI に配線されていないときは
+        これまでどおり engine_test_not_wired で落ちる。ci/sendback-engine.yml の engine-test のジョブが TAP を engine-test.tap に出し、次の手順で
+        order.mjs --engine-report に渡す。(3) と (c) の名前は order.mjs の BASIS_TESTS に置いて engine.test.mjs もそれを使う。
+        今の Engine の写しで走らせた TAP では (3) と (c) が todo になり、配線した形のリポジトリの写しで engine_basis_not_passed が出ることを確かめた。
+        .github/workflows/ への写しは建設者なので、engine-test のジョブはまだ PR ごとには走っておらず、本物の配線の PR では効き目はまだ確かめていない
+      issue: 964
+      at: 2026-11-05
+      decided_by: committee:D-0016
 decided_by: committee:D-0004

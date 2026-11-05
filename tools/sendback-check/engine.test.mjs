@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { approvalBasis, checkRecord } from "./check.mjs";
+import { BASIS_TESTS } from "./order.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -83,6 +84,8 @@ const LEGACY_TODO = "Engine の basis が adopt の合計だけ（今の形。�
 
 /** Engine の basis が今の形（adopt の合計だけ）なら、そのテストを todo にする。ほかの形なら必須のまま */
 const todoWhileLegacy = (t, basis) => { if (LEGACY_BASIS.test(basis ?? "")) t.todo(LEGACY_TODO); };
+// (3) と (c) の名前は order.mjs の BASIS_TESTS に置く。CI はこのテストの TAP を order.mjs --engine-report に渡し、
+// check.mjs --events を配線したのに (3) か (c) が通っていなければ落とす（議決 D-0016、Issue #964）
 
 test("(3) の todo は Engine の今の basis の形（adopt の合計だけ）にだけ効き、ほかの形は必須にする", () => {
   assert.ok(LEGACY_BASIS.test("judge が 6 件を裁いた（採用 4。採用した指摘は続きのジョブか差し戻しで直す）"));
@@ -92,7 +95,7 @@ test("(3) の todo は Engine の今の basis の形（adopt の合計だけ）�
   assert.ok(!LEGACY_BASIS.test(""));
 });
 
-test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書く", { skip }, (t) => {
+test(BASIS_TESTS["(3)"], { skip }, (t) => {
   const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];
   const out = engine({ ...PR_395, merged: false, judgments });
   todoWhileLegacy(t, out.basis);
@@ -145,7 +148,7 @@ test("イベントの経路: PR #395 の流れ（直すもののない差し戻�
 
 // 今の Engine の basis は adopt の合計だけなので、承認のある head はすべて basis_not_split で落ちる（ci_check を配線してはいけない状態）。
 // (3) と同じく、todo は Engine が今の形の basis を書くときだけ。Engine の basis が直ってこれが通ってから ci_check を配線する（D-0010 の順序）
-test("イベントの経路: Engine の正しい判定のイベント列は check.mjs --events で通る（ci_check を配線してよい合図）", { skip }, (t) => {
+test(BASIS_TESTS["(c)"], { skip }, (t) => {
   for (const [name, record] of ENGINE_CASES) {
     const out = engine(record);
     todoWhileLegacy(t, out.events.find((e) => e.name === "supervisor.inspector_approved")?.payload.basis);

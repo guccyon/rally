@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { callsEventsCheck, checkOrder, loadRepo, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, loadRepo, parseTapReport, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -129,4 +129,87 @@ test("CLI: check.mjs --events を GitHub Actions で動かすと、通る記録�
   assert.match(bad.stdout, /^::error title=sendback-check engine_test_todo::/m);
   const good = run(fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED));
   assert.equal(good.status, 0, good.stdout);
+});
+
+// ENGINE_REF の Engine で走らせた engine.test.mjs の結果を見る（議決 D-0016、Issue #964）。
+// 結果は node --test の TAP（ci/sendback-engine.yml の engine-test が engine-test.tap に出す）。名前の中の # は \# に逃がされる
+
+/** engine.test.mjs の TAP の写し。basis は (3) と (c) の結果（"" は通った、" # TODO …" は todo）。 */
+const tap = ({ basis = "", events = basis, notOk = Boolean(basis) } = {}) => `TAP version 13
+# Subtest: (1) Engine は PR \\#395 と同じ入力では差し戻しも続きのジョブも起こさない
+ok 2 - (1) Engine は PR \\#395 と同じ入力では差し戻しも続きのジョブも起こさない
+  ---
+  duration_ms: 12.3
+  ...
+# Subtest: ${BASIS_TESTS["(3)"]}
+${notOk ? "not " : ""}ok 6 - ${BASIS_TESTS["(3)"]}${basis}
+  ---
+  duration_ms: 40.1
+  ...
+# Subtest: ${BASIS_TESTS["(c)"]}
+${notOk ? "not " : ""}ok 9 - ${BASIS_TESTS["(c)"]}${events}
+1..9
+`;
+const LEGACY_TODO = " # TODO Engine の basis が adopt の合計だけ（今の形。建設者が Engine を直したら必須になる）";
+const WIRED = [wf("sendback-engine.yml", template), wf("sendback-check.yml", EVENTS_WORKFLOW)];
+
+test("TAP の結果を読む（todo・skip・落ちた・通った、逃がした #、字下げした下の段は数えない）", () => {
+  const r = parseTapReport(tap({ basis: LEGACY_TODO }) + "    ok 1 - 下の段\nok 10 - 飛ばした # SKIP Engine のチェックアウトがない\nnot ok 11 - 落ちた\n");
+  assert.equal(r[BASIS_TESTS["(3)"]], "todo");
+  assert.equal(r[BASIS_TESTS["(c)"]], "todo");
+  assert.equal(r["(1) Engine は PR #395 と同じ入力では差し戻しも続きのジョブも起こさない"], "pass");
+  assert.equal(r["飛ばした"], "skip");
+  assert.equal(r["落ちた"], "fail");
+  assert.equal(r["下の段"], undefined);
+  assert.equal(parseTapReport(tap())[BASIS_TESTS["(3)"]], "pass");
+});
+
+test("engine.test.mjs の (3) と (c) は BASIS_TESTS の名前で、engine-test はその TAP を order.mjs --engine-report に渡す", () => {
+  assert.match(engineTestNow, /^test\(BASIS_TESTS\["\(3\)"\], \{ skip \}/m);
+  assert.match(engineTestNow, /^test\(BASIS_TESTS\["\(c\)"\], \{ skip \}/m);
+  const dest = template.match(/--test-reporter=tap --test-reporter-destination=(\S+)/)?.[1];
+  assert.ok(dest, "engine-test が engine.test.mjs の TAP をファイルに出していない");
+  assert.match(template, new RegExp(`^\\s*run: node order\\.mjs --engine-report ${dest.replace(/\./g, "\\.")} `, "m"));
+  assert.match(template, /if: \$\{\{ !cancelled\(\) \}\}\n\s*working-directory: tools\/sendback-check\n\s*run: node order\.mjs --engine-report/);
+});
+
+test("check.mjs --events を配線したのに、ENGINE_REF の Engine で (3) か (c) が LEGACY_BASIS の todo になったら engine_basis_not_passed で落ちる", () => {
+  const r = checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: tap({ basis: LEGACY_TODO }) });
+  assert.deepEqual(rules(r), ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  assert.match(r.errors[0].message, /ENGINE_REF の Engine で .*engine\.test\.mjs の \(3\)（.*）が todo になった/);
+  assert.match(r.errors[1].message, /の \(c\)（.*）が todo になった/);
+  // (c) だけが todo でも、飛ばした・落ちた・結果にないときも落とす（黙って通さない）
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: tap({ events: LEGACY_TODO, notOk: false }) })),
+    ["engine_basis_not_passed"]);
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: tap({ basis: " # SKIP x", notOk: false }) })),
+    ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: tap({ basis: "", notOk: true }) })),
+    ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  const missing = checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: "" });
+  assert.deepEqual(rules(missing), ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  assert.match(missing.errors[0].message, /結果にない/);
+});
+
+test("(3) と (c) が通った結果なら落ちず、check.mjs --events を配線していなければ todo の結果でも通る（今のリポジトリ）", () => {
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, engineReport: tap() })), []);
+  assert.deepEqual(checkOrder({ workflows: [wf("sendback-engine.yml", template)], engineTest: engineTestNow, engineReport: tap({ basis: LEGACY_TODO }) }),
+    { wired: [], errors: [] });
+  assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), engineReport: "" }), { wired: [], errors: [] });
+});
+
+test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) が todo なら終了コード 1、ファイルがなければ結果にないとして見る", () => {
+  const root = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
+  const run = (report) => spawnSync("node", [orderScript, "--repo", root, "--engine-report", report],
+    { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  writeFileSync(join(root, "legacy.tap"), tap({ basis: LEGACY_TODO }));
+  writeFileSync(join(root, "fixed.tap"), tap());
+  const legacy = run(join(root, "legacy.tap"));
+  assert.equal(legacy.status, 1);
+  assert.match(legacy.stdout, /^::error title=sendback-check engine_basis_not_passed::/m);
+  assert.equal(run(join(root, "fixed.tap")).status, 0);
+  const none = run(join(root, "none.tap"));
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /結果にない/);
+  // 今のリポジトリ（まだ配線していない）では、結果のファイルがなくても通る
+  assert.equal(spawnSync("node", [orderScript, "--engine-report", join(root, "none.tap")], { encoding: "utf8" }).status, 0);
 });
