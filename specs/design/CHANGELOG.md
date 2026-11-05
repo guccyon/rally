@@ -29,3 +29,10 @@
 - 理由: 本部の一覧の表が 48rem の枠（RoleGate の `max-w-3xl` と Section の padding で表は 550〜690px ほど）に押し込まれ、見出しや値が単語の途中で折り返し、列が `py-1` の余白だけでくっついていた（#896・#919）。既存の名前は消さず、`grid.pc` の値（文）だけを変えた。`reading` の 768px は今の 48rem と同じなので、読む画面の幅は変わらない
 - 効く画面: 正本の上では admin-web の本部の一覧の画面（`screens.ts` の `hq-bookings*`・`hq-cancelled-bookings*`・`hq-students*`・`hq-coaches*`・`hq-lesson-menus*`・`hq-slot-supply*`・`hq-incomplete-coach-profiles*`・`hq-pending-video-reviews*`・`hq-returned-video-reviews*`・`hq-live-sessions*`・`hq-overdue-live-sessions*`・`hq-unanswered-messages*`）。表のセルの決まりは coach-* の表と本部の詳細の表にも効く（幅は reading のまま）。この版で画面が変わるのはカタログ（`design-catalog`）だけで、各一覧の RoleGate の幅と表の `DataTable` への置き換えは #896 の実装役のタスク
 - 承認: 工場（新しい部品と should の基準、レイアウトの値の文の直し。must の追加と色の値の変更はない）
+
+## 0.4.0（2026-11-05）
+
+- 変えたもの: `components.yaml` に `date_field`（日付の欄。種類は `date`・`date_range`、状態は通常・押下・フォーカス・無効・読み込み中・誤り、誤りの文言の型は空の欄・終わりが始まりより前・31 日を超える）を足し、`text_field` の `not_for` に書き足した。`tokens.yaml` に `color.slot_state`（open は info、booked は success、closed は neutral）・`state_rules`・info の比を足した。`status_tag` にスロットの状態の見本、`governance.yaml` の lint に `date-field-only`・`state-color-map`、`requests` に `checkbox`（保留）を足した。admin-web に `DateField`・`DateRangeField`（`src/components/ui/DateField.tsx`）と誤りの型 `dateRangeError`（`src/components/ui/dateRange.ts`）、状態の色の対応 `SLOT_STATE_STATUS` を足し、コーチの予約枠の一覧の状態を `StatusTag` にした。student-app に `RallySlotState` を足した。両アプリの neutral の状態のタグに border の 1px の輪郭を付けた（`state_rules`）。両アプリのカタログに見本を足した（student-app は `date_field` を `not_for` により置かない）
+- 理由: #455 の画面の設計で部品が足りなかった（admin-web は 11 の部品が `input type=date` を直に書き、スロットの状態に色の対応がなかった）。`date_field` は 2 つの欄にまたがる誤りと既定の期間を読む loading があるので、`text_field` の種類にせず別の部品にした。既存の名前と値は消していない
+- 効く画面: 正本の上では admin-web の期間の欄のある画面（`hq-bookings*`・`hq-cancelled-bookings*`・`hq-live-sessions*`・`hq-returned-video-reviews*`・`hq-slot-supply*`・`hq-coach-reviews*`・`hq-low-reviews*`・`hq-students*`・`hq-announcements*`・`hq-coach-overview`・`coach-slots*`）と `design-catalog`。この版で画面が変わるのは両アプリの `design-catalog`、`coach-slots*`（状態がタグになる）。11 の部品の `input type=date` の `DateRangeField` への置き換えと `periodError` の文言の置き換えは別のタスク
+- 承認: 工場（新しい部品・should の基準・対応の追加）

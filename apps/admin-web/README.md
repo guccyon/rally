@@ -34,6 +34,7 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 - アイコンは Material Symbols Rounded の SVG を使う分だけ `src/components/ui/icons/` に同梱し（Apache License 2.0。出どころと一覧は同じフォルダの `README.md`）、`Icon` で描く。文字の記号でアイコンを代えない
 - 部品の種類と状態の見本を `src/components/ui/catalog.tsx` に並べ、`/design` で見られる（本番のメニューには出さない）。画面のキャプチャの `design-catalog` なので、部品を変えると PR のキャプチャに出る
 - 画面の枠は `RoleGate` の `width`（`tokens.yaml` の `spacing.content_width_px`）。既定は `reading`（最大 768px）で、本部の一覧の画面（表が主役）は `width="wide"`（最大 1280px。表の外の文は 1 行 40em まで）。本部の一覧の表は生の `<table>` を書かず `DataTable`（`components.yaml` の `data_table`）を使う。セルは `long_text` の列のほかは折り返さず、幅に収まらないときは表の包みだけが横に動く
+- 日付と期間の欄は `input type="date"` を直に書かず `DateField`・`DateRangeField`（`components.yaml` の `date_field`。`src/components/ui/DateField.tsx`）を使う。期間の誤りの文言と直す欄は `dateRangeError`（`src/components/ui/dateRange.ts`）で作る。状態のタグの色は、スロットは `SLOT_STATE_STATUS`（`tokens.yaml` の `color.slot_state`）から選ぶ
 - components.yaml に部品・種類を足したら `catalog.tsx` にも見本を足す。admin-web で使わない部品と種類は `NOT_IN_ADMIN_WEB` に理由とともに書く（`tests/designSystem.test.tsx` が突き合わせる）
 
 ## API

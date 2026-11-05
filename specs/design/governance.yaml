@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.3.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.4.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -48,7 +48,18 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     detect: 48px 未満の押せる部品
   - id: glossary-terms
     detect: 文言の中の glossary にない言い換え（例「予約枠」を画面の題に使う。glossary は「スロット」）
+  - id: date-field-only
+    target: admin-web の src/（src/components/ui/DateField.tsx を除く）
+    detect: input type="date" を直に書いている要素
+  - id: state-color-map
+    detect: status_tag の色が booking_state・slot_state の対応と違う
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
+
+requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
+  - id: checkbox
+    from: "#455（プロダクトデザイナー役、ADR 0025）"
+    stage: 保留
+    note: 案 b（予約ごとに選ぶ）でだけ使うので 0.4.0 では足さない。案 b を選んだら checkbox と「すべて選ぶ」を足すタスクを切る
 
 changelog:
   file: specs/design/CHANGELOG.md
@@ -113,3 +124,20 @@ changelog:
         - src/components/ui/ に DataTable（包み・table・th・td）を足し、各一覧の <table className="w-full text-left text-sm"> を置き換える。包みは overflow-x-auto、table は w-full min-w-max、セルは px-2 py-2 h-12 whitespace-nowrap（先頭の左と最後の右は 0）（long_text の列だけ whitespace-normal と word-break auto-phrase）、数字の列は text-right tabular-nums
         - 表の外の文（件数・説明・知らせ）は max-w-[40em]
         - 本部の一覧の前後のキャプチャ（幅 1280px と 360px）を PR に付ける。changelog.d/ に断片を書く（利用者に見える変更）
+    - version: 0.4.0
+      date: "2026-11-05"
+      change: >-
+        components.yaml に date_field（date・date_range。状態・誤りの文言の型・見本）を足し、text_field の not_for に書き足した。
+        tokens.yaml に color.slot_state（open は info、booked は success、closed は neutral）・state_rules・info の比を足した。
+        status_tag にスロットの状態の見本、lint に date-field-only・state-color-map、requests に checkbox（保留）を足した
+      reason: >-
+        #455 の画面の設計で部品が足りなかった。admin-web は 11 の部品が input type=date を直に書き、スロットの状態に色の対応がなかった。
+        date_field は text_field の variant にせず別の部品にした（2 つの欄にまたがる誤りと既定の期間を読む loading があるため）。
+        slot_state は Issue の仮の対応で決めた。誤りの文は今の periodError の文に「何が起きたか」を足した。既存の名前と値は消していない
+      affects: >-
+        admin-web の期間の欄のある画面（hq-bookings*・hq-cancelled-bookings*・hq-live-sessions*・hq-returned-video-reviews*・hq-slot-supply*・hq-coach-reviews*・
+        hq-low-reviews*・hq-students*・hq-announcements*・hq-coach-overview・coach-slots*）と design-catalog
+      approved_by: 工場（新しい部品・should の基準・対応の追加）
+      migration:
+        - admin-web に DateField を足して 11 の部品の input type=date を置き換え、periodError を date_field.errors の文にする（印の欄も返す）
+        - 両アプリの status_tag に slot_state の対応を足し、PublishSlotForm の状態を StatusTag にする。/design に見本を足す

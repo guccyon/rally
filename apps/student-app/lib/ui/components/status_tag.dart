@@ -21,6 +21,10 @@ class StatusTag extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.container,
         borderRadius: BorderRadius.circular(RallyRadius.sm),
+        // neutral は面が surface なので、border の 1px で輪郭を付ける（color.state_rules）
+        border: status == RallyStatus.neutral
+            ? Border.all(color: RallyColors.border)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
