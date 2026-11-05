@@ -532,6 +532,75 @@ describe("添削の返却", () => {
     expect(screen.getByRole("table", { name: "返却済み" })).toBeInTheDocument();
   });
 
+  test("開いたときは条件なしで読み、「返却待ちだけ」を入れると pending_only=true で、外すと条件なしで読み直す", async () => {
+    const listMyCoachVideos = vi.fn<CoachApi["listMyCoachVideos"]>(async (filter) => ({
+      ok: true,
+      data: { videos: filter?.pending_only ? VIDEOS.slice(0, 2) : VIDEOS },
+    }));
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview: vi.fn() }} />);
+
+    expect(await screen.findByRole("table", { name: "返却済み" })).toBeInTheDocument();
+    expect(listMyCoachVideos).toHaveBeenLastCalledWith({});
+    const checkbox = screen.getByRole("checkbox", { name: "返却待ちだけ" });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    expect(listMyCoachVideos).toHaveBeenLastCalledWith({ pending_only: true });
+    const waiting = await screen.findByRole("table", { name: "添削待ち" });
+    expect(firstCells(waiting)).toEqual(["佐藤さん", "（名前を表示できません）"]);
+    expect(screen.queryByRole("table", { name: "返却済み" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "返却待ちだけ" }));
+    expect(listMyCoachVideos).toHaveBeenLastCalledWith({});
+    expect(await screen.findByRole("table", { name: "返却済み" })).toBeInTheDocument();
+    expect(listMyCoachVideos).toHaveBeenCalledTimes(3);
+  });
+
+  test("「返却待ちだけ」で返却したら、pending_only=true で一覧を取り直す", async () => {
+    const listMyCoachVideos = vi
+      .fn<CoachApi["listMyCoachVideos"]>()
+      .mockResolvedValueOnce({ ok: true, data: { videos: VIDEOS } })
+      .mockResolvedValueOnce({ ok: true, data: { videos: VIDEOS.slice(0, 2) } })
+      .mockResolvedValueOnce({ ok: true, data: { videos: [VIDEOS[1]!] } });
+    const returnVideoReview = vi.fn<CoachApi["returnVideoReview"]>(async (videoId, body) =>
+      returned(videoId, body.comment),
+    );
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview }} />);
+    await screen.findByRole("table", { name: "返却済み" });
+
+    await user.click(screen.getByRole("checkbox", { name: "返却待ちだけ" }));
+    const row = await screen.findByRole("row", { name: /佐藤さん/ });
+    await user.click(within(row).getByRole("button", { name: "添削する" }));
+    await user.type(screen.getByLabelText("添削コメント"), "腰の回転を早めましょう");
+    await user.click(screen.getByRole("button", { name: "添削を返却" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("佐藤さんに添削を返却しました");
+    expect(listMyCoachVideos).toHaveBeenCalledTimes(3);
+    expect(listMyCoachVideos).toHaveBeenLastCalledWith({ pending_only: true });
+    expect(screen.getByRole("checkbox", { name: "返却待ちだけ" })).toBeChecked();
+    expect(firstCells(screen.getByRole("table", { name: "添削待ち" }))).toEqual([
+      "（名前を表示できません）",
+    ]);
+  });
+
+  test("「返却待ちだけ」で 0 件なら「返却待ちの動画はありません。」と出す", async () => {
+    const listMyCoachVideos = vi.fn<CoachApi["listMyCoachVideos"]>(async (filter) => ({
+      ok: true,
+      data: { videos: filter?.pending_only ? [] : VIDEOS.slice(2) },
+    }));
+    const user = userEvent.setup();
+    render(<ReturnVideoReviewForm api={{ listMyCoachVideos, returnVideoReview: vi.fn() }} />);
+    await screen.findByRole("table", { name: "返却済み" });
+
+    await user.click(screen.getByRole("checkbox", { name: "返却待ちだけ" }));
+
+    expect(await screen.findByText("返却待ちの動画はありません。")).toBeInTheDocument();
+    expect(screen.queryByText("まだ動画は届いていません。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
   test("一覧の API が失敗したら、その文言だけを出す", async () => {
     const listMyCoachVideos = vi.fn<CoachApi["listMyCoachVideos"]>(async () => ({
       ok: false,
