@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { approvalBasis, checkRecord, counts, needsFollowup, parseBasis } from "./check.mjs";
+import { approvalBasis, checkRecord, counts, needsFollowup, parseBasis, parseEvents, recordsFromEvents } from "./check.mjs";
 
 const provisional = (verdict) => ({ subject: "provisional", verdict, defect: null });
 const defect = (verdict, rubric_id, extra = {}) => ({ subject: "defect", verdict, defect: { rubric_id, location: "PR 本文", ...extra } });
@@ -101,4 +101,90 @@ test("CLI は外れたら 1 で終わり、JSON を書く", () => {
   const stdin = execFileSync("node", [script], { input: JSON.stringify({ ...PR_395, followups: [] }), encoding: "utf8" });
   assert.match(stdin, /欠陥の採用 0・仮決めの承認 3）、外れ 0 件/);
   assert.throws(() => execFileSync("node", [script, "--record", join(dir, "broken.json")], { stdio: "pipe" }), (e) => e.status === 2);
+});
+
+// ---- 制御プレーンのイベント列から組む（CI・supervisor から PR ごとに呼ぶ入口）
+
+const URL_395 = PR_395.pr_url;
+const judgeEnqueued = (head_sha) => ({ name: "supervisor.judge_enqueued", payload: { pr_url: URL_395, head_sha, skipped: false } });
+const judged = (j) => ({ name: "judgment.judged",
+  payload: { pr_url: URL_395, verdict: j.verdict, category: j.defect ? "inspection" : "ui" }, judgment: j });
+
+/** PR #395 の記録の流れ: 欠陥の採用 0 件なのに差し戻しが起き、basis は adopt の合計だけ。 */
+const EVENTS_395 = [
+  { name: "pr.head_updated", payload: { pr_url: URL_395, head_sha: "a1" } },
+  judgeEnqueued("a1"),
+  ...PR_395.judgments.map(judged),
+  { name: "supervisor.inspector_approved", payload: { pr_url: URL_395, head_sha: "a1", basis: "judge が 5 件を裁いた（採用 3。採用した指摘は続きのジョブか差し戻しで直す）" } },
+  { name: "supervisor.merged", payload: { pr_url: URL_395, head_sha: "a1" } },
+  { name: "sendback.filed", payload: { origin_pr: URL_395, fix_issue: "https://github.com/guccyon/rally/issues/400" } },
+];
+
+test("イベント列: PR #395 の記録は followup_without_defect と basis_not_split で外れる", () => {
+  const records = recordsFromEvents(EVENTS_395);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].head_sha, "a1");
+  assert.equal(records[0].merged, true);
+  assert.deepEqual(records[0].followups, [{ kind: "sendback" }]);
+  assert.deepEqual(rules(records[0]), ["followup_without_defect", "basis_not_split"]);
+});
+
+test("イベント列: head ごとに区切り、basis は同じ head に付け、ほかの PR と衝突の続きのジョブは数えない", () => {
+  const adopted = defect("adopt", "BE-003");
+  const events = [
+    judgeEnqueued("a1"),
+    judged(adopted), judged(provisional("adopt")),
+    { name: "continue.enqueued", payload: { pr_url: URL_395, head_sha: "a1", reason: "review_fix" } },
+    { name: "judgment.judged", payload: { pr_url: "https://github.com/guccyon/rally/pull/1", verdict: "adopt", category: "inspection" } },
+    judgeEnqueued("b2"),
+    judged(provisional("adopt")),
+    { name: "continue.enqueued", payload: { pr_url: URL_395, head_sha: "b2", reason: "conflict" } },
+    { name: "supervisor.inspector_approved", payload: { pr_url: URL_395, head_sha: "b2", basis: approvalBasis([provisional("adopt")]) } },
+  ];
+  const records = recordsFromEvents(events, URL_395);
+  assert.deepEqual(records.map((r) => r.head_sha), ["a1", "b2"]);
+  assert.deepEqual(records.map(rules), [[], []]);
+  assert.equal(records[0].basis, undefined);
+  assert.deepEqual(records[1].followups, [{ kind: "conflict" }]);
+  // review_fix を消すと a1 は直っていない採用欠陥を放っておいたことになる
+  assert.deepEqual(rules(recordsFromEvents(events.filter((e) => e.name !== "continue.enqueued"), URL_395)[0]), ["missing_followup"]);
+});
+
+test("イベント列: Judgment を添えていなければ category で欠陥と仮決めを分け、本文の直しも後続に数える", () => {
+  const events = [
+    judgeEnqueued("a1"),
+    { name: "judgment.judged", payload: { pr_url: URL_395, verdict: "adopt", category: "ui" } },
+    { name: "job.enqueued", payload: { pr_url: URL_395, kind: "body_fix" } },
+  ];
+  const [r] = recordsFromEvents(events);
+  assert.deepEqual(counts(r.judgments), { judged: 1, adopted_defects: 0, approved_provisionals: 1 });
+  assert.deepEqual(rules(r), ["followup_without_defect"]);
+  const [d] = recordsFromEvents([judgeEnqueued("a1"), { name: "judgment.judged", payload: { pr_url: URL_395, verdict: "adopt", category: "inspection" } }]);
+  assert.deepEqual(rules(d), ["missing_followup"]);
+});
+
+test("イベントは JSON の配列・{ events } ・JSONL のどれでも読む", () => {
+  const jsonl = EVENTS_395.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  assert.deepEqual(parseEvents(jsonl), EVENTS_395);
+  assert.deepEqual(parseEvents(JSON.stringify(EVENTS_395)), EVENTS_395);
+  assert.deepEqual(parseEvents(JSON.stringify({ events: EVENTS_395 })), EVENTS_395);
+  assert.deepEqual(parseEvents(""), []);
+});
+
+test("CLI --events は外れたら 1 で終わり、GitHub Actions では ::error と要約を書く", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sendback-events-"));
+  const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
+  writeFileSync(join(dir, "395.jsonl"), EVENTS_395.map((e) => JSON.stringify(e)).join("\n"));
+  writeFileSync(join(dir, "empty.json"), "[]");
+  writeFileSync(join(dir, "summary.md"), "");
+  let out;
+  assert.throws(() => execFileSync("node", [script, "--events", join(dir, "395.jsonl"), "--pr", URL_395, "--summary", join(dir, "summary.md")],
+    { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" }), (e) => { out = e.stdout; return e.status === 1; });
+  assert.match(out, /^::error title=sendback-check followup_without_defect::https:\/\/github\.com\/guccyon\/rally\/pull\/395@a1 /m);
+  assert.match(out, /^::error title=sendback-check basis_not_split::/m);
+  assert.match(out, /head 1 個・裁き 5 件（欠陥の採用 0・仮決めの承認 3）、外れ 2 件/);
+  assert.match(readFileSync(join(dir, "summary.md"), "utf8"), /外れた: https:\/\/github\.com\/guccyon\/rally\/pull\/395@a1/);
+  const empty = execFileSync("node", [script, "--events", join(dir, "empty.json")], { encoding: "utf8" });
+  assert.match(empty, /head 0 個・裁き 0 件/);
+  assert.throws(() => execFileSync("node", [script, "--events", join(dir, "missing.json")], { stdio: "pipe" }), (e) => e.status === 2);
 });

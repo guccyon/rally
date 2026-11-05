@@ -1,6 +1,7 @@
-// supervisor が差し戻し（sendback）・続きのジョブを起こす判定を決定論で検査する（知見 K-0004 の担保。議決 D-0004、Issue #902）。LLM を使わない。
+// supervisor が差し戻し（sendback）・続きのジョブを起こす判定を決定論で検査する（知見 K-0004 の担保。議決 D-0004・D-0009、Issue #902・#934）。LLM を使わない。
 //
-//   node check.mjs [--record <PR の記録の JSON>] [--json <出力先>]    # --record を省くと標準入力から読む
+//   node check.mjs [--record <PR の記録の JSON>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]    # --record を省くと標準入力から読む
+//   node check.mjs --events <制御プレーンのイベントの JSON か JSONL> [--pr <PR の URL>] [--json …] [--summary …]   # CI・supervisor から PR ごとに
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 判定の線: 差し戻しか続きのジョブを起こすのは「直っていない採用欠陥（defect が null でなく verdict が adopt）か、
@@ -12,7 +13,7 @@
 //   - 起こすものがあるのに差し戻しも続きのジョブも起きていない（missing_followup）
 //   - 検査役の承認（supervisor.inspector_approved）の basis に、欠陥の採用数と仮決めの承認数が分けて書かれている（basis_not_split・basis_mismatch）
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 /** 差し戻しか続きのジョブとして数える後続の種類（Engine の sendback.filed と、continue の reason・body_fix）。 */
@@ -100,20 +101,119 @@ export function checkRecord(record) {
   return errors;
 }
 
+/** 後続の種類。sendback.filed は sendback、続きのジョブは continue.enqueued の reason、本文の直しは job.enqueued の kind。 */
+function followupOf(e) {
+  if (e.name === "sendback.filed") return { kind: "sendback" };
+  if (e.name === "continue.enqueued") return { kind: e.payload?.reason };
+  if (e.name === "job.enqueued" && e.payload?.kind === "body_fix") return { kind: "body_fix" };
+  return null;
+}
+
+/**
+ * judgment.judged の 1 件を裁きの記録にする。中身（subject・defect・already_applied）は artifacts の Judgment（stage=judged）にあるので、
+ * イベントに judgment として添えてもらう。添えていなければ category で分ける（record_judged は欠陥を category=inspection にする）。
+ */
+function judgmentOf(e) {
+  const a = e.judgment;
+  if (a && typeof a === "object") {
+    const j = { subject: a.subject, verdict: a.verdict ?? e.payload?.verdict, defect: a.defect ?? null };
+    if (a.already_applied) j.already_applied = true;
+    if (a.fixed) j.fixed = true;
+    return j;
+  }
+  const isDefect = e.payload?.category === "inspection";
+  return { subject: isDefect ? "defect" : "provisional", verdict: e.payload?.verdict, defect: isDefect ? {} : null };
+}
+
+/** イベントがどの PR のものか（sendback.filed は origin_pr）。 */
+function prOf(e) {
+  return e.payload?.pr_url ?? e.payload?.origin_pr ?? null;
+}
+
+/**
+ * 制御プレーンのイベント列（古い順）から、PR と head ごとの記録を組む。
+ * head の区切りは supervisor.judge_enqueued（head_sha）。その後から次の judge_enqueued までの judgment.judged・後続を、その head のものとする。
+ * supervisor.inspector_approved の basis は head_sha の同じ区切りに付ける。最初の judge_enqueued より前のイベントは見ない（裁きがない）。
+ * events: [{ name, payload, judgment? }]。prUrl を渡せばその PR だけを組む。
+ */
+export function recordsFromEvents(events, prUrl) {
+  const byPr = new Map();
+  for (const e of events) {
+    const pr = prOf(e);
+    if (!pr || (prUrl && pr !== prUrl)) continue;
+    if (!byPr.has(pr)) byPr.set(pr, { rounds: [], merged: false });
+    const st = byPr.get(pr);
+    if (e.name === "supervisor.merged" || e.name === "pr.merged") {
+      st.merged = true;
+      continue;
+    }
+    if (e.name === "supervisor.judge_enqueued") {
+      st.rounds.push({ pr_url: pr, head_sha: e.payload.head_sha ?? null, judgments: [], followups: [] });
+      continue;
+    }
+    const cur = st.rounds.at(-1);
+    if (!cur) continue;
+    if (e.name === "judgment.judged") cur.judgments.push(judgmentOf(e));
+    else if (e.name === "supervisor.inspector_approved") {
+      const r = st.rounds.findLast((x) => x.head_sha === e.payload.head_sha) ?? cur;
+      r.basis = e.payload.basis;
+    } else {
+      const f = followupOf(e);
+      if (f) cur.followups.push(f);
+    }
+  }
+  return [...byPr.values()].flatMap((st) => st.rounds.map((r) => ({ ...r, merged: st.merged })));
+}
+
+/** イベントの JSON（配列か { events: [...] }）か JSONL を読む。 */
+export function parseEvents(text) {
+  const t = text.trim();
+  if (t === "") return [];
+  if (t.startsWith("[") || t.startsWith("{\"events\"")) {
+    const v = JSON.parse(t);
+    return Array.isArray(v) ? v : v.events;
+  }
+  return t.split("\n").filter((l) => l.trim() !== "").map((l) => JSON.parse(l));
+}
+
+export function renderSummary(results) {
+  const out = ["## sendback-check", ""];
+  if (results.length === 0) out.push("見る裁きがなかった（supervisor.judge_enqueued がない）");
+  for (const r of results) {
+    const c = counts(r.record.judgments ?? []);
+    const where = [r.record.pr_url, r.record.head_sha].filter(Boolean).join("@") || "記録";
+    out.push(`- ${r.errors.length === 0 ? "通る" : "外れた"}: ${where}（裁き ${c.judged} 件。欠陥の採用 ${c.adopted_defects}・仮決めの承認 ${c.approved_provisionals}）`);
+    for (const e of r.errors) out.push(`  - \`${e.rule}\`: ${e.message}`);
+  }
+  return out.join("\n") + "\n";
+}
+
 function main() {
-  const { values } = parseArgs({ options: { record: { type: "string" }, json: { type: "string" } } });
-  let record;
+  const { values } = parseArgs({ options: { record: { type: "string" }, events: { type: "string" }, pr: { type: "string" },
+    json: { type: "string" }, summary: { type: "string" } } });
+  let records;
   try {
-    record = JSON.parse(readFileSync(values.record ?? 0, "utf8"));
+    if (values.events) {
+      records = recordsFromEvents(parseEvents(readFileSync(values.events, "utf8")), values.pr);
+    } else {
+      records = [JSON.parse(readFileSync(values.record ?? 0, "utf8"))];
+    }
   } catch (e) {
     console.error(`sendback-check: 記録を読めなかった: ${e.message}`);
     process.exit(2);
   }
-  const errors = checkRecord(record);
+  const results = records.map((record) => ({ record, errors: checkRecord(record) }));
+  const errors = results.flatMap((r) => r.errors.map((e) => ({ ...e, ...(values.events ? { pr_url: r.record.pr_url, head_sha: r.record.head_sha } : {}) })));
   if (values.json) writeFileSync(values.json, JSON.stringify({ ok: errors.length === 0, errors }, null, 2) + "\n");
-  for (const e of errors) console.log(`${e.rule}: ${e.message}`);
-  const c = counts(record.judgments ?? []);
-  console.log(`sendback-check: 裁き ${c.judged} 件（欠陥の採用 ${c.adopted_defects}・仮決めの承認 ${c.approved_provisionals}）、外れ ${errors.length} 件`);
+  if (values.summary) appendFileSync(values.summary, renderSummary(results));
+  const annotate = process.env.GITHUB_ACTIONS === "true";
+  for (const e of errors) {
+    const where = e.pr_url ? `${e.pr_url}@${e.head_sha ?? "?"} ` : "";
+    console.log(annotate ? `::error title=sendback-check ${e.rule}::${where}${e.message}` : `${where}${e.rule}: ${e.message}`);
+  }
+  const c = counts(records.flatMap((r) => r.judgments ?? []));
+  const heads = values.events ? `head ${records.length} 個・` : "";
+  console.log(`sendback-check: ${heads}裁き ${c.judged} 件（欠陥の採用 ${c.adopted_defects}・仮決めの承認 ${c.approved_provisionals}）、外れ ${errors.length} 件`);
   process.exit(errors.length === 0 ? 0 : 1);
 }
 
