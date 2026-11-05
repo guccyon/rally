@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にした。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にした。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -89,13 +89,19 @@ basis の文の形は `approvalBasis()` が返すもの（`judge が N 件を裁
 
 - `engine_harness.py` が Engine のチェックアウトから `orchestrator/dispatcher/judgment.py` の `record_judged`、`dispatcher.py` の `act_on_judgment`・`file_sendback`・`enqueue_body_fix`・`is_body_only`、`supervisor.py` の `inspector_approved` を取り出し、DB（events・artifacts・jobs）と GitHub・続きのジョブ・停止を差し替えて動かす。関数の中身には手を入れない。起きた後続と basis を `check.mjs` の `checkRecord` に照らす
 - (1) PR #395 と同じ入力では後続を起こさない、(2) 直っていない採用欠陥があればマージの前（`review_fix`）でも後（`sendback`）でも起こす、shadow のルールの指摘は起こさない、(3) basis に欠陥の採用数と仮決めの承認数を分けて書く
-- Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。CI で走らせるには、Engine を固定した版（`ENGINE_REF`）で取ってから `ENGINE_DIR` を向ける手順を建設者が足す
+- Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（議決 `D-0011`、Issue #948）
+- (0) は `engine_harness.py --check` で、`record_judged`・`act_on_judgment`・`file_sendback`・`enqueue_body_fix`・`is_body_only`・`inspector_approved` をすべて取り出せるかを見る。チェックアウトがない・ファイルがない・関数の名前や置き場が変わったときは落ちる
 - (3) は今の Engine では外れる（`採用 N` の合計だけを書く）ので `todo` にしてある。外れても落ちないが結果には出る。建設者が Engine の basis を `approvalBasis()` の形に合わせたら `todo` を外す。`todo` のうちに `check.mjs` の ci_check を配線すると、すべての承認が `basis_not_split` で落ちるので、配線は Engine の basis を直して `todo` を外した後にする
 - 取り出す関数の名前が Engine で変わると `engine_harness.py` は終了コードを 0 以外にして落ちる。偽の cursor が知らない問い合わせが来たときも落ちる（黙って通さない）
 
 ```sh
 ENGINE_DIR=/path/to/factory-engine node --test engine.test.mjs
+python3 engine_harness.py --check /path/to/factory-engine   # 関数を取り出せるかだけを見る
 ```
+
+### CI への組み込み
+
+PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウトして `ENGINE_DIR` を向け、`engine.test.mjs` を走らせるワークフローを `ci/sendback-engine.yml` に置いた。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/sendback-engine.yml` に写す。写すときに変えてよいのは `ENGINE_REF` の行だけ。Engine を上げるときは `ENGINE_REF` も上げ、手元で `ENGINE_DIR` を向けて `engine.test.mjs` が通ることを確かめる。
 
 ## 呼び出す場所
 

@@ -61,4 +61,14 @@ enforcement:
       issue: 944
       at: 2026-11-05
       decided_by: committee:D-0010
+    - kind: ci_check
+      what: >-
+        tools/sendback-check/engine.test.mjs を、ENGINE_DIR を渡したときと CI（CI=true）では Engine のチェックアウトがなくても飛ばさずに落とすようにし、
+        engine_harness.py に --check（record_judged・act_on_judgment・file_sendback・enqueue_body_fix・is_body_only・inspector_approved を
+        すべて取り出せるかだけを見る）を足して、取り出せなければ落ちる (0) のテストにした。Engine を固定の版（ENGINE_REF のコミット）でチェックアウトして
+        ENGINE_DIR を向け、engine.test.mjs を PR ごとに走らせるワークフローを tools/sendback-check/ci/sendback-engine.yml に置いた。
+        .github/workflows/ に写すのは建設者なので、写すまで PR ごとには走っておらず効き目はまだ確かめていない。basis を分けて書く場合は今も todo のまま
+      issue: 948
+      at: 2026-11-05
+      decided_by: committee:D-0011
 decided_by: committee:D-0004
