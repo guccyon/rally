@@ -1,5 +1,5 @@
 // Engine の本物の判定（judgment.record_judged → dispatcher.act_on_judgment、supervisor.inspector_approved）を
-// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010、Issue #935・#944・#945）。
+// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010・D-0011、Issue #935・#944・#945・#949）。
 // 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 // ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（議決 D-0011、Issue #948）。
@@ -74,16 +74,31 @@ test("(2) Engine は overlay の shadow のルールの指摘は adopt でも起
   assert.deepEqual(engine({ ...PR_395, merged: false, judgments: [defect("adopt", "PR-002")] }).followups, [{ kind: "body_fix" }]);
 });
 
-// Engine の inspector_approved は今も adopt の合計（「採用 N」）だけを書くので外れる。Engine の basis の文を
-// approvalBasis() の形に合わせるのは建設者（ワーカーの権限の外）。合わせたら todo を外して落とす検査にする。
-// todo のうちに check.mjs の ci_check を配線すると、すべての承認が basis_not_split で落ちる（D-0010 の順序）
-test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書く",
-  { skip, todo: skip ? false : "Engine の basis が adopt の合計だけ（建設者が Engine を直したら todo を外す）" }, () => {
-    const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];
-    const out = engine({ ...PR_395, merged: false, judgments });
-    assert.equal(out.basis, approvalBasis(judgments));
-    assert.deepEqual(checkRecord({ merged: false, judgments, followups: out.followups, basis: out.basis }), []);
-  });
+// 議決 D-0011 は、Engine の basis を直す PR で todo を外すとした（Issue #949）。Engine は別のリポジトリで、basis の文を approvalBasis() の形に
+// 合わせるのは建設者なので、ここでは todo を「Engine が今の形（adopt の合計だけ。LEGACY_BASIS）を書くときだけ」に狭めて必須のテストにした。
+// Engine の basis が今の形から変わったら、その版からは approvalBasis() と合わないと落ちる（分けて書いても数や文がずれれば落ちる）。
+// 今の形のうちは外れても落ちないが結果に出る。todo のうちに check.mjs の ci_check を配線すると、すべての承認が basis_not_split で落ちる（D-0010 の順序）
+const LEGACY_BASIS = /^judge が \d+ 件を裁いた（採用 \d+。採用した指摘は続きのジョブか差し戻しで直す）$/;
+const LEGACY_TODO = "Engine の basis が adopt の合計だけ（今の形。建設者が Engine を直したら必須になる）";
+
+/** Engine の basis が今の形（adopt の合計だけ）なら、そのテストを todo にする。ほかの形なら必須のまま */
+const todoWhileLegacy = (t, basis) => { if (LEGACY_BASIS.test(basis ?? "")) t.todo(LEGACY_TODO); };
+
+test("(3) の todo は Engine の今の basis の形（adopt の合計だけ）にだけ効き、ほかの形は必須にする", () => {
+  assert.ok(LEGACY_BASIS.test("judge が 6 件を裁いた（採用 4。採用した指摘は続きのジョブか差し戻しで直す）"));
+  const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];
+  assert.ok(!LEGACY_BASIS.test(approvalBasis(judgments)));
+  assert.ok(!LEGACY_BASIS.test("judge が 6 件を裁いた（採用 4）"));
+  assert.ok(!LEGACY_BASIS.test(""));
+});
+
+test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書く", { skip }, (t) => {
+  const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];
+  const out = engine({ ...PR_395, merged: false, judgments });
+  todoWhileLegacy(t, out.basis);
+  assert.equal(out.basis, approvalBasis(judgments));
+  assert.deepEqual(checkRecord({ merged: false, judgments, followups: out.followups, basis: out.basis }), []);
+});
 
 // イベントの経路（Issue #945）: Engine が記録したイベント列を、README の SQL と同じ形で check.mjs に渡す。
 // ci_check がワークフローで走らせるのと同じ呼び方（--events --pr --summary、GITHUB_ACTIONS=true）で CLI を動かす
@@ -129,12 +144,13 @@ test("イベントの経路: PR #395 の流れ（直すもののない差し戻�
 });
 
 // 今の Engine の basis は adopt の合計だけなので、承認のある head はすべて basis_not_split で落ちる（ci_check を配線してはいけない状態）。
-// 建設者が Engine の basis を直したらこの todo と (3) の todo を外し、通ってから ci_check を配線する（D-0010 の順序）
-test("イベントの経路: Engine の正しい判定のイベント列は check.mjs --events で通る（ci_check を配線してよい合図）",
-  { skip, todo: skip ? false : "Engine の basis が adopt の合計だけで basis_not_split で落ちる（建設者が Engine を直したら todo を外す）" }, () => {
-    for (const [name, record] of ENGINE_CASES) {
-      const { status, result } = ciCheck(engine(record).events);
-      assert.deepEqual(result.errors, [], name);
-      assert.equal(status, 0, name);
-    }
-  });
+// (3) と同じく、todo は Engine が今の形の basis を書くときだけ。Engine の basis が直ってこれが通ってから ci_check を配線する（D-0010 の順序）
+test("イベントの経路: Engine の正しい判定のイベント列は check.mjs --events で通る（ci_check を配線してよい合図）", { skip }, (t) => {
+  for (const [name, record] of ENGINE_CASES) {
+    const out = engine(record);
+    todoWhileLegacy(t, out.events.find((e) => e.name === "supervisor.inspector_approved")?.payload.basis);
+    const { status, result } = ciCheck(out.events);
+    assert.deepEqual(result.errors, [], name);
+    assert.equal(status, 0, name);
+  }
+});
