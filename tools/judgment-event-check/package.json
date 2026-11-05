@@ -1,0 +1,11 @@
+{
+  "name": "rally-judgment-event-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "judge の裁き（judgment.judged）と差し戻しの incident の形を、仮決めの承認と欠陥の採用を分けたスキーマで決定論に検査する（知見 K-0003 の担保）",
+  "scripts": {
+    "check": "node check.mjs",
+    "test": "node --test"
+  }
+}

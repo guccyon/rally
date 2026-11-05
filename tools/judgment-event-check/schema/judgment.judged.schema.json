@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rally:judgment-event-check/judgment.judged",
+  "title": "judgment.judged の payload",
+  "description": "judge の 1 件ごとの裁き（Engine の definitions/events.yaml の judgment.judged）。verdict が adopt のときは、仮決めを認めたのか（subject=provisional）欠陥を直す対象にしたのか（subject=defect）を必ず示す（知見 K-0003 の担保。議決 D-0004、Issue #903）",
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "category",
+    "verdict",
+    "confidence",
+    "basis",
+    "mode",
+    "pr_url"
+  ],
+  "properties": {
+    "artifact_id": {
+      "type": "integer"
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "enum": [
+        "adopt",
+        "replace",
+        "reject",
+        "escalate",
+        "human_decided"
+      ]
+    },
+    "subject": {
+      "enum": [
+        "provisional",
+        "defect"
+      ]
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "basis": {
+      "enum": [
+        "track_record",
+        "self_report"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pr_url": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "if": {
+    "properties": {
+      "verdict": {
+        "const": "adopt"
+      }
+    },
+    "required": [
+      "verdict"
+    ]
+  },
+  "then": {
+    "description": "verdict が adopt のときは subject（provisional = 仮決めの承認、defect = 欠陥の採用）を必ず書く",
+    "required": [
+      "subject"
+    ]
+  }
+}
