@@ -8,10 +8,10 @@ judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥�
 node check.mjs --record <PR の記録の JSON> [--json <出力先>]
 node check.mjs < record.json     # --record を省くと標準入力から読む
 node check.mjs --events <制御プレーンのイベントの JSON か JSONL> [--pr <PR の URL>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]
-npm test
+npm test                         # Engine の本物の判定のテスト（engine.test.mjs）も走る
 ```
 
-依存はない（Node.js だけ）。
+依存はない（Node.js だけ。`engine.test.mjs` は Python 3 と Engine のチェックアウトも使う）。
 
 ## 判定の線
 
@@ -82,6 +82,20 @@ basis の文の形は `approvalBasis()` が返すもの（`judge が N 件を裁
 - 標準出力: 外れた rule ごとに「rule: 理由」（`--events` では前に `<PR の URL>@<head>`）と、最後に件数の 1 行。`GITHUB_ACTIONS=true` のときは `::error title=sendback-check <rule>::…` の形で出す
 - `--json`: `{ "ok": bool, "errors": [{ "rule", "message" }] }`（`--events` では各件に `pr_url`・`head_sha` も）
 - `--summary`: head ごとの通る・外れたと理由を Markdown で足す（`$GITHUB_STEP_SUMMARY` を渡す）
+
+## Engine の本物の判定のテスト（`engine.test.mjs`）
+
+`check.test.mjs` が確かめるのは `check.mjs` の線（参照の実装）。`engine.test.mjs` は同じ 3 つの場合を Engine の本物の判定で確かめる（議決 `D-0009`、Issue #935）。
+
+- `engine_harness.py` が Engine のチェックアウトから `orchestrator/dispatcher/judgment.py` の `record_judged`、`dispatcher.py` の `act_on_judgment`・`file_sendback`・`enqueue_body_fix`・`is_body_only`、`supervisor.py` の `inspector_approved` を取り出し、DB（events・artifacts・jobs）と GitHub・続きのジョブ・停止を差し替えて動かす。関数の中身には手を入れない。起きた後続と basis を `check.mjs` の `checkRecord` に照らす
+- (1) PR #395 と同じ入力では後続を起こさない、(2) 直っていない採用欠陥があればマージの前（`review_fix`）でも後（`sendback`）でも起こす、shadow のルールの指摘は起こさない、(3) basis に欠陥の採用数と仮決めの承認数を分けて書く
+- Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。CI で走らせるには、Engine を固定した版（`ENGINE_REF`）で取ってから `ENGINE_DIR` を向ける手順を建設者が足す
+- (3) は今の Engine では外れる（`採用 N` の合計だけを書く）ので `todo` にしてある。外れても落ちないが結果には出る。建設者が Engine の basis を `approvalBasis()` の形に合わせたら `todo` を外す
+- 取り出す関数の名前が Engine で変わると `engine_harness.py` は終了コードを 0 以外にして落ちる。偽の cursor が知らない問い合わせが来たときも落ちる（黙って通さない）
+
+```sh
+ENGINE_DIR=/path/to/factory-engine node --test engine.test.mjs
+```
 
 ## 呼び出す場所
 
