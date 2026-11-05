@@ -497,6 +497,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LowRatedLessonReviewList"],
   },
   {
+    // フォアハンドの基礎で絞ったとき（hq-low-reviews-lesson-menu）はそのメニューの行だけを返す（メニューのない行は外れる）。
+    method: "GET",
+    path: "/lesson-reviews/low",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: {
+      max_rating: 2,
+      period_days: 30,
+      reviews: LOW_REVIEWS.filter((review) => review.lesson_menu?.lesson_menu_id === MENU_FORE.lesson_menu_id),
+    } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
     // ゴルフで絞ったとき（hq-low-reviews-sport-empty）は 0 件。
     method: "GET",
     path: "/lesson-reviews/low",
