@@ -1326,8 +1326,18 @@ export interface paths {
          *       `PendingVideoReviewFilter` の既定の条件で、絞り込みの判定は `PendingVideoStudentFilter`）。付けないとき・`false` は絞らない。
          *       `true` / `false` でなければ 422 `validation_failed`。動画の数や ID は返さない（中身は `listPendingVideoReviews`、
          *       数は `getStudentActivity` で見る）
-         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video` は組み合わせられ、付けたものをすべて
-         *       満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
+         *     - 未対応の低い評価をつけた生徒で絞る（任意）: `has_unhandled_low_rated=true` を付ければ、`listLowRatedLessonReviews` に
+         *       その生徒の `student_id` と `handled=false` だけを付けたとき（既定のしきい値と期間。コーチ・スポーツ・送った日付・
+         *       レッスンメニューで絞らない。評価されたコーチを問わない）に載る評価が 1 件以上ある生徒、つまり `getStudentActivity` の
+         *       `unhandled_low_rated_review_count` が 1 以上の生徒だけを返す（フォローの要る生徒を見つける）。数え方は
+         *       `getStudentActivity` の `unhandled_low_rated_review_count` と同じ 1 か所（点 `rating` が 2 以下で、照会した時刻（サーバーの
+         *       現在時刻）の 30 日前（含む）から照会した時刻（含む）までに送られた評価のうち、本部がまだ対応済みの印を付けていない
+         *       （`markLowRatedLessonReviewHandled` をしていない）もの。実装は backend の domain `LowRatedReviewCriteria` の 1 か所で、
+         *       数は `StudentLowRatedReviewCount`、絞り込みの判定は `UnhandledLowRatedStudentFilter`）。付けないとき・`false` は絞らない。
+         *       `true` / `false` でなければ 422 `validation_failed`。評価の数や ID・本文は返さない（中身は `listLowRatedLessonReviews`、
+         *       数は `getStudentActivity` で見る）
+         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video`・`has_unhandled_low_rated` は
+         *       組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
          *       足す）。生徒がいなければ `students` は空の配列
@@ -4769,6 +4779,12 @@ export interface operations {
                  *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
                  */
                 has_pending_video?: boolean;
+                /**
+                 * @description `true` なら `listLowRatedLessonReviews` にその生徒の `student_id` と `handled=false` だけを付けたときに載る評価
+                 *     （本部が未対応の低い評価）が 1 件以上ある（`getStudentActivity` の `unhandled_low_rated_review_count` が 1 以上の）
+                 *     生徒だけを返す（付けないとき・`false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_unhandled_low_rated?: boolean;
             };
             header?: never;
             path?: never;

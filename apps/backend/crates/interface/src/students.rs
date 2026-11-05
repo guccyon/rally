@@ -6,8 +6,8 @@ use application::{
     clock::Clock,
     identity::{
         AccountRepository, ListStudents, ListStudentsQuery, StudentCoachBookingLookup,
-        StudentContractLookup, StudentLastBookingLookup, StudentOverview,
-        StudentPendingVideoReviewCountsLookup, StudentRecentBookingCountLookup,
+        StudentContractLookup, StudentLastBookingLookup, StudentLowRatedReviewCountsLookup,
+        StudentOverview, StudentPendingVideoReviewCountsLookup, StudentRecentBookingCountLookup,
         StudentUnansweredMessageThreadCountsLookup, TokenVerifier, account_id_uuid,
     },
 };
@@ -29,8 +29,8 @@ use crate::{
 };
 
 /// `/students` のハンドラーが使うユースケース。
-pub struct StudentsState<R, C, B, K, N, U, P, L> {
-    pub list_students: ListStudents<R, C, B, K, N, U, P, L>,
+pub struct StudentsState<R, C, B, K, N, U, P, W, L> {
+    pub list_students: ListStudents<R, C, B, K, N, U, P, W, L>,
 }
 
 /// admin-web の `listStudents` のクエリ。
@@ -42,6 +42,7 @@ pub struct ListStudentsParams {
     coach_id: Option<String>,
     has_unanswered: Option<bool>,
     has_pending_video: Option<bool>,
+    has_unhandled_low_rated: Option<bool>,
 }
 
 /// admin-web の `StudentList`。
@@ -89,13 +90,14 @@ fn student_body(student: &StudentOverview) -> Result<StudentBody, ApiError> {
 /// そのスポーツの生徒だけ、`not_booked_since`（`YYYY-MM-DD`。日本時間）があればその日以降に予約していない生徒だけで、
 /// `coach_id` があればそのコーチの枠を一度でも予約した生徒だけ（キャンセル済みの予約も数える）で、ない・コーチでない ID なら
 /// 空の一覧。`has_unanswered` が `true` なら返信のないまま既定の時間の過ぎたスレッドのある生徒だけ、`has_pending_video` が
-/// `true` なら返却待ちの動画のある生徒だけ（どちらも付けない・`false` なら絞らない）。`sport` が `Sport` の値でない・
-/// `not_booked_since` が日付でない・`coach_id` が UUID でない・`has_unanswered`・`has_pending_video` が `true` / `false` でない
+/// `true` なら返却待ちの動画のある生徒だけ、`has_unhandled_low_rated` が `true` なら本部が未対応の直近の低い評価をつけた
+/// 生徒だけ（どれも付けない・`false` なら絞らない）。`sport` が `Sport` の値でない・`not_booked_since` が日付でない・
+/// `coach_id` が UUID でない・`has_unanswered`・`has_pending_video`・`has_unhandled_low_rated` が `true` / `false` でない
 /// ときは 422。
 /// 各行には直近 30 日の予約の数（`recent_booking_count`）を添える。
 #[allow(clippy::type_complexity)]
-pub async fn list_students<R, C, B, K, N, U, P, L>(
-    State(state): State<Arc<StudentsState<R, C, B, K, N, U, P, L>>>,
+pub async fn list_students<R, C, B, K, N, U, P, W, L>(
+    State(state): State<Arc<StudentsState<R, C, B, K, N, U, P, W, L>>>,
     params: Result<Query<ListStudentsParams>, QueryRejection>,
 ) -> Result<Json<StudentListBody>, ApiError>
 where
@@ -106,6 +108,7 @@ where
     N: StudentRecentBookingCountLookup,
     U: StudentUnansweredMessageThreadCountsLookup,
     P: StudentPendingVideoReviewCountsLookup,
+    W: StudentLowRatedReviewCountsLookup,
     L: Clock,
 {
     let Query(params) =
@@ -128,6 +131,7 @@ where
             .transpose()?,
         has_unanswered: params.has_unanswered.unwrap_or(false),
         has_pending_video: params.has_pending_video.unwrap_or(false),
+        has_unhandled_low_rated: params.has_unhandled_low_rated.unwrap_or(false),
     };
     let students = state
         .list_students
@@ -146,8 +150,8 @@ where
 /// `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /students` は本部だけ（コーチ・生徒は 403）。
-pub fn students_router<R, C, B, K, N, U, P, L, T>(
-    list_students: ListStudents<R, C, B, K, N, U, P, L>,
+pub fn students_router<R, C, B, K, N, U, P, W, L, T>(
+    list_students: ListStudents<R, C, B, K, N, U, P, W, L>,
     tokens: T,
 ) -> Router
 where
@@ -158,6 +162,7 @@ where
     N: StudentRecentBookingCountLookup + 'static,
     U: StudentUnansweredMessageThreadCountsLookup + 'static,
     P: StudentPendingVideoReviewCountsLookup + 'static,
+    W: StudentLowRatedReviewCountsLookup + 'static,
     L: Clock + 'static,
     T: TokenVerifier + 'static,
 {
@@ -165,7 +170,7 @@ where
     Router::new()
         .route(
             "/students",
-            get(self::list_students::<R, C, B, K, N, U, P, L>),
+            get(self::list_students::<R, C, B, K, N, U, P, W, L>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(StudentsState { list_students }))

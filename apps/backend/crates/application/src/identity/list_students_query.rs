@@ -22,4 +22,8 @@ pub struct ListStudentsQuery {
     /// [`domain::async_lesson::PendingVideoReviewFilter`] の既定の条件、判定は
     /// [`domain::async_lesson::PendingVideoStudentFilter`]）。`false` なら絞らない
     pub has_pending_video: bool,
+    /// `true` なら本部が未対応の直近の低い評価を 1 件以上つけた生徒だけ（数え方は生徒 1 人の利用の様子の
+    /// `unhandled_low_rated_review_count` と同じ domain の [`domain::review::StudentLowRatedReviewCount`]、判定は
+    /// [`domain::review::UnhandledLowRatedStudentFilter`]）。`false` なら絞らない
+    pub has_unhandled_low_rated: bool,
 }

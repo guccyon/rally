@@ -1,4 +1,7 @@
-use std::time::SystemTime;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::SystemTime,
+};
 
 use domain::{
     identity::AccountId,
@@ -6,12 +9,16 @@ use domain::{
 };
 
 use super::LessonReviewRepository;
-use crate::{Unavailable, identity::StudentLowRatedReviewCountLookup};
+use crate::{
+    Unavailable,
+    identity::{StudentLowRatedReviewCountLookup, StudentLowRatedReviewCountsLookup},
+};
 
-/// identity の [`StudentLowRatedReviewCountLookup`] の review による実装。評価の保存先から期間の始まり（domain の
-/// [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み（[`LessonReviewRepository::find_submitted_since`]。
-/// [`super::ListLowRatedReviews`] と同じ読み方）、照会した時刻で domain の [`StudentLowRatedReviewCount::tally`] で数える
-/// だけで、何も変えない。
+/// identity の [`StudentLowRatedReviewCountLookup`] と [`StudentLowRatedReviewCountsLookup`] の review による実装。評価の
+/// 保存先から期間の始まり（domain の [`LowRatedReviewCriteria::since`]）以降に送られた評価を読み
+/// （[`LessonReviewRepository::find_submitted_since`]。[`super::ListLowRatedReviews`] と同じ読み方）、照会した時刻で domain の
+/// [`StudentLowRatedReviewCount::tally`] で数えるだけで、何も変えない。複数の生徒でも評価は 1 回で読み、生徒ごとに同じ
+/// 数え方で数える。
 #[derive(Debug, Clone)]
 pub struct ReviewStudentLowRatedReviewCountLookup<R> {
     reviews: R,
@@ -40,12 +47,37 @@ where
     }
 }
 
+impl<R> StudentLowRatedReviewCountsLookup for ReviewStudentLowRatedReviewCountLookup<R>
+where
+    R: LessonReviewRepository,
+{
+    async fn find_low_rated_review_counts(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        now: SystemTime,
+    ) -> Result<BTreeMap<AccountId, StudentLowRatedReviewCount>, Unavailable> {
+        if student_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let reviews = self
+            .reviews
+            .find_submitted_since(LowRatedReviewCriteria::since(now))
+            .await?;
+        Ok(student_ids
+            .iter()
+            .map(|&student_id| {
+                (
+                    student_id,
+                    StudentLowRatedReviewCount::tally(student_id, &reviews, now),
+                )
+            })
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeMap, BTreeSet},
-        time::Duration,
-    };
+    use std::time::Duration;
 
     use domain::{
         catalog::Sport,
@@ -216,5 +248,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn counts_low_reviews_of_each_student_the_same_as_one_student() {
+        let lookup = ReviewStudentLowRatedReviewCountLookup::new(reviews());
+        for at in [now(), now() + DAY, now() - 2 * DAY] {
+            let student_ids = BTreeSet::from([STUDENT, OTHER_STUDENT, COACH, NO_REVIEWS_STUDENT]);
+            let counts = lookup
+                .find_low_rated_review_counts(&student_ids, at)
+                .await
+                .unwrap();
+            assert_eq!(
+                counts.keys().copied().collect::<BTreeSet<_>>(),
+                student_ids,
+                "評価のない生徒も 0 件で含める"
+            );
+            for student_id in student_ids {
+                assert_eq!(
+                    counts[&student_id],
+                    lookup
+                        .find_low_rated_review_count(student_id, at)
+                        .await
+                        .unwrap(),
+                    "{student_id:?} {at:?}"
+                );
+            }
+        }
+        let counts = lookup
+            .find_low_rated_review_counts(&BTreeSet::from([STUDENT, OTHER_STUDENT]), now())
+            .await
+            .unwrap();
+        assert_eq!(
+            (
+                counts[&STUDENT].unhandled_count(),
+                counts[&OTHER_STUDENT].unhandled_count()
+            ),
+            (1, 1)
+        );
+        assert!(
+            lookup
+                .find_low_rated_review_counts(&BTreeSet::new(), now())
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
