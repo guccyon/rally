@@ -588,6 +588,60 @@ describe("コーチのチャット", () => {
     expect(api.markMessageThreadRead).toHaveBeenCalledTimes(2);
   });
 
+  test("「新しいメッセージを確かめる」でスレッドの一覧も取り直し、最後のメッセージを新しくする", async () => {
+    // 開いたときは 0 件。そのあと生徒が本文とスタンプを送った。
+    const studentText = message({
+      kind: "text",
+      sender_role: "student",
+      body: "よろしくお願いします",
+      sent_at: "2026-11-04T01:00:00Z",
+    });
+    const studentStamp = message({
+      kind: "stamp",
+      sender_role: "student",
+      body: "スタンプ: ありがとう",
+      stamp_id: "thanks",
+      sent_at: "2026-11-04T01:01:00Z",
+    });
+    let arrived = false;
+    const { api, user } = setup({
+      listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({
+        ok: true,
+        data: {
+          threads: [
+            arrived
+              ? thread(THREAD_ID, STUDENT_ID, 0, studentStamp)
+              : thread(THREAD_ID, STUDENT_ID, 0, null),
+          ],
+        },
+      })),
+      listMessages: vi.fn<CoachApi["listMessages"]>(async (threadId) => ({
+        ok: true,
+        data: { thread_id: threadId, messages: arrived ? [studentText, studentStamp] : [] },
+      })),
+    });
+    const list = await screen.findByRole("list", { name: "生徒とのチャット" });
+    await user.click(within(list).getByRole("button", { name: /佐藤さん/ }));
+    expect(await screen.findByText("まだメッセージはありません。")).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: /佐藤さん/ })).toHaveTextContent(
+      "まだメッセージはありません",
+    );
+
+    arrived = true;
+    await user.click(screen.getByRole("button", { name: "新しいメッセージを確かめる" }));
+
+    const messages = await screen.findByRole("list", { name: "メッセージ" });
+    expect(within(messages).getAllByRole("listitem")).toHaveLength(2);
+    expect(api.listMessageThreads).toHaveBeenCalledTimes(2);
+    const item = within(screen.getByRole("list", { name: "生徒とのチャット" })).getByRole("button", {
+      name: /佐藤さん/,
+    });
+    expect(item).toHaveTextContent("スタンプ: 🙏 ありがとう");
+    expect(item).toHaveTextContent(formatDateTime(studentStamp.sent_at));
+    expect(item).not.toHaveTextContent("まだメッセージはありません");
+    expect(item).not.toHaveTextContent("未読");
+  });
+
   test("スレッドが 0 件ならその旨を出す", async () => {
     setup({
       listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({

@@ -67,6 +67,7 @@ function ReviewCard({
  * 出す。依頼のカードは、まだ返していない動画（listMyCoachVideos の添削待ち）なら「添削する」で「動画の添削」と同じ欄
  * （VideoReviewCommentForm）を開いて返す。送信の欄の「スタンプ」から 8 種類を選んで、本文の代わりに送れる。
  * 知らない種類のメッセージと知らないスタンプは `body`（短い説明）を本文のメッセージとして出す。
+ * 送ったとき・返却したとき・「新しいメッセージを確かめる」で取り直したときは `onChanged` でスレッドの一覧も取り直させる。
  */
 export function MessageThreadView({
   api,
@@ -120,9 +121,11 @@ export function MessageThreadView({
     };
   }, [fetchThread]);
 
+  // 生徒から届いたメッセージでスレッドの一覧（最後のメッセージ・未読の数）も変わるので、一覧も取り直させる。
   async function onReload() {
     setBusy(true);
     setState(await fetchThread());
+    await onChanged();
     setBusy(false);
   }
 
