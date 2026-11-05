@@ -12,9 +12,12 @@
 //   - 起こすものがないのに差し戻しか続きのジョブが起きた（followup_without_defect）
 //   - 起こすものがあるのに差し戻しも続きのジョブも起きていない（missing_followup）
 //   - 検査役の承認（supervisor.inspector_approved）の basis に、欠陥の採用数と仮決めの承認数が分けて書かれている（basis_not_split・basis_mismatch）
+//   - --events を GitHub Actions で動かすときは、配線の順序も（engine_test_todo・engine_test_not_wired。order.mjs、議決 D-0012）
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+
+import { checkOrder, formatErrors, loadRepo, REPO_ROOT, renderSummary as renderOrderSummary } from "./order.mjs";
 
 /** 差し戻しか続きのジョブとして数える後続の種類（Engine の sendback.filed と、continue の reason・body_fix）。 */
 export const FOLLOWUP_KINDS = ["sendback", "review_fix", "body_fix"];
@@ -217,19 +220,23 @@ function main() {
     console.error(`sendback-check: 記録を読めなかった: ${e.message}`);
     process.exit(2);
   }
+  const annotate = process.env.GITHUB_ACTIONS === "true";
+  // CI で --events を動かすときは、配線の順序（engine.test.mjs の todo を外して CI に配線してから）も見る（議決 D-0012、Issue #953）
+  const order = values.events && annotate ? checkOrder(loadRepo(process.env.GITHUB_WORKSPACE || REPO_ROOT)) : { errors: [] };
   const results = records.map((record) => ({ record, errors: checkRecord(record) }));
   const errors = results.flatMap((r) => r.errors.map((e) => ({ ...e, ...(values.events ? { pr_url: r.record.pr_url, head_sha: r.record.head_sha } : {}) })));
-  if (values.json) writeFileSync(values.json, JSON.stringify({ ok: errors.length === 0, errors }, null, 2) + "\n");
-  if (values.summary) appendFileSync(values.summary, renderSummary(results));
-  const annotate = process.env.GITHUB_ACTIONS === "true";
+  const all = [...order.errors, ...errors];
+  if (values.json) writeFileSync(values.json, JSON.stringify({ ok: all.length === 0, errors: all }, null, 2) + "\n");
+  if (values.summary) appendFileSync(values.summary, renderSummary(results) + (order.errors.length > 0 ? "\n" + renderOrderSummary(order) : ""));
+  for (const line of formatErrors(order.errors, annotate)) console.log(line);
   for (const e of errors) {
     const where = e.pr_url ? `${e.pr_url}@${e.head_sha ?? "?"} ` : "";
     console.log(annotate ? `::error title=sendback-check ${e.rule}::${where}${e.message}` : `${where}${e.rule}: ${e.message}`);
   }
   const c = counts(records.flatMap((r) => r.judgments ?? []));
   const heads = values.events ? `head ${records.length} 個・` : "";
-  console.log(`sendback-check: ${heads}裁き ${c.judged} 件（欠陥の採用 ${c.adopted_defects}・仮決めの承認 ${c.approved_provisionals}）、外れ ${errors.length} 件`);
-  process.exit(errors.length === 0 ? 0 : 1);
+  console.log(`sendback-check: ${heads}裁き ${c.judged} 件（欠陥の採用 ${c.adopted_defects}・仮決めの承認 ${c.approved_provisionals}）、外れ ${all.length} 件`);
+  process.exit(all.length === 0 ? 0 : 1);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

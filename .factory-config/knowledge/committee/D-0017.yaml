@@ -1,0 +1,86 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0017
+pr: https://github.com/guccyon/rally/pull/966
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0012 の ci_check の案（配線の順序の見張り）を
+    enforcement.solutions に 1 件足しただけなので、D-0004 から D-0016 までの議決と矛盾しません。
+  - 足した solution の中身（check.mjs --events を呼ぶ手順があるのに engine.test.mjs が未配線か todo が残っていれば落とす）は
+    D-0012 の proposal と同じで、D-0016 でもう一度出された同じ案にも応えているため、重複ではなく議決への対応の記録として扱えます。
+  - kind・what・issue・at・decided_by の形は既存の solutions と同じで、decided_by を提案元の committee:D-0012
+    にしている点も D-0010・D-0011 の揃え方と合っており、enforcement.level はすでに deterministic なので INDEX.md
+    を変えていないことも整合しています。
+  - D-0009 から繰り返し求めている「差し替えがあるときも起こす」条件の出どころと verified_at・review_by の更新、D-0014 の「(0)」の削除、D-0016
+    の todo の書き分けはまだ入っていないので、次に K-0004 を直す変更セットでまとめてそろえてください。
+  - wiring-order のジョブは .github/workflows/ にまだ写されておらず、本物の配線の PR で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。
+  - specs/ の glossary.yaml と context-map.yaml は製品の領域の規範で、工場の工程についてのこの追記と用語も主張もぶつかりません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 953 と committee:D-0012 を指していて、D-0012 の enforcement
+    の案（check.mjs --events を呼ぶ手順があるのに engine.test.mjs が todo のまま、または配線されていなければ落とす）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - order.test.mjs で確かめたのはワークフローの写しだけで、wiring-order のジョブは .github/workflows/ に写されておらず本物の配線の
+    PR での効き目はまだ確かめていないと自分で書いているので、confidence は hypothesis のままが妥当です。
+  - 'Engine の basis を直して todo を外し、engine.test.mjs と check.mjs の ci_check を実際に配線して
+    PR #395 の流れで落ち、直したあとは通ることを確かめるまでは confirmed に上げないでください。'
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、engine_test_todo などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0012 の ci_check の案（配線の順序の見張り）を
+    issue 953 として enforcement.solutions に足しただけなので、担保の観点では採ってよいです。
+  - 「basis を直して todo を外し、engine.test.mjs を配線してから check.mjs の ci_check を配線する」という順序を、README
+    の文と人の注意ではなく order.mjs の engine_test_todo と engine_test_not_wired で止める形にしたのは、外すとすべての承認が
+    basis_not_split で落ちる痛さに対して安く確かな担保で、D-0012 と D-0016 の案に合っています。
+  - check.mjs --events を GitHub Actions で動かしたときに同じ見張りを先に通すので、ci/sendback-engine.yml
+    を写さずに check.mjs だけを配線しても落ちる二重の守りになっている点も良いです。
+  - ただし order.mjs は .github/workflows/ の中の check.mjs --events という呼び方を読んで見張るので、npm
+    スクリプトや別のラッパーを通して呼ぶ配線を見逃す抜け道が残り、order.test.mjs にその場合の写しを足すべきです。
+  - wiring-order のジョブも engine.test.mjs もまだ .github/workflows/ に写されておらず、solutions は
+    8 件になっても配線済みか・効き目を確かめたかが文でしか読めないので、D-0015 と D-0016 で出した wired と verified の項目の案は引き続き有効です。
+  - '本物の配線の PR で順序の見張りが効くことも、Engine の basis を直した版で PR #395 のイベント列が落ちることもまだ確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0012 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 'order.mjs は engine.test.mjs を走らせる手順があるかどうかしか見ていないので、その手順が continue-on-error や
+    if: false で実際には止めない、または check.mjs --events の手順と別の契機で走る、という配線でも通ってしまう反例が残ります。'
+  - その反例は、engine.test.mjs の手順が必須で、check.mjs --events の手順より先（needs など）に通ることまで見るように
+    order.mjs を狭めると手当てできるので、次の変更セットで扱ってください。
+  - check.mjs --events を GitHub Actions で動かしたときに同じ見張りを先に通すとしているので、npm のスクリプトや別名から呼ぶ配線で
+    order.mjs の静的な読み取りを抜ける反例はおおむね塞がれていると読めます。
+  - 確かめたのは order.test.mjs のワークフローの写しだけで、wiring-order のジョブも本物の配線の PR でもまだ走っていないと自分で書いているので、confidence
+    は hypothesis のままが妥当です。
+  - K-0004 の solutions は 8 件になり、配線待ちの記録が積み重なって読みにくくなっているので、建設者の配線が入ったときに効いたものと効いていないものを分けて整理することを勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/sendback-check/order.test.mjs に、check.mjs を npm スクリプトやシェルのラッパー、引数の順序を変えた呼び方（node
+    tools/sendback-check/check.mjs --pr N --events など）で配線したワークフローの写しを足し、order.mjs
+    がそれらも check.mjs --events の配線として見つけて engine_test_todo・engine_test_not_wired で落とすことを確かめる。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: 'D-0015 と D-0016 の案のとおり、definitions/knowledge.yaml の enforcement.solutions
+    に wired と verified の真偽の項目を足し、core-gates/knowledge_check.py が INDEX.md の担保の列に未配線・未確認を出して、すべて
+    wired: false の知見を deterministic と表示しないようにする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci/sendback-engine.yml（wiring-order のジョブと engine.test.mjs
+    のジョブ）を .github/workflows/ に写して PR ごとに走らせ、ブランチ保護の必須チェックに入れて、見張りそのものを外す PR も止まるようにする。

@@ -95,4 +95,16 @@ enforcement:
       issue: 949
       at: 2026-11-05
       decided_by: committee:D-0011
+    - kind: ci_check
+      what: >-
+        議決 D-0012 の ci_check の案（配線の順序の見張り）を入れた。tools/sendback-check/order.mjs が .github/workflows/ を読み、
+        check.mjs --events を呼ぶ手順があるのに、engine.test.mjs に todo（basis の場合の todoWhileLegacy を含む）が残っていれば engine_test_todo、
+        engine.test.mjs を走らせる手順がなければ engine_test_not_wired で落とす。呼ぶ手順がなければ通る（今のリポジトリ）。
+        ci/sendback-engine.yml に PR ごとに走らせる wiring-order のジョブを足し、check.mjs --events を GitHub Actions で動かしたときも
+        同じ見張りを先に通すようにしたので、ci/sendback-engine.yml を写さずに check.mjs --events だけを配線しても落ちる。
+        順序を守った配線・守らない配線のワークフローの写しで落ちる・通ることを order.test.mjs で確かめた。.github/workflows/ への写しは建設者なので、
+        wiring-order のジョブはまだ PR ごとには走っておらず、本物の配線の PR では効き目はまだ確かめていない
+      issue: 953
+      at: 2026-11-05
+      decided_by: committee:D-0012
 decided_by: committee:D-0004
