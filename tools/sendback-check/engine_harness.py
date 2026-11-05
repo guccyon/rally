@@ -14,7 +14,11 @@ dispatcher.py と supervisor.py は読み込むと DB・オブジェクトスト
   python3 engine_harness.py --check <Engine のチェックアウト>   # 関数を取り出せるかだけを見る（取り出せなければ終了コード 1）
 
 入力: { "pr_url", "merged", "judgments": check.mjs の記録の judgments（subject・verdict・defect・already_applied） }
-出力: { "followups": [{ "kind" }], "basis": str | null, "approved": bool }
+出力: { "followups": [{ "kind" }], "basis": str | null, "approved": bool, "events": [{ "name", "payload", "judgment" }] }
+
+events は、Engine が偽の cursor に記録したイベントを、README の「制御プレーンから出すときの例」の SQL と同じ形（同じ名前に絞り、
+judgment.judged に artifacts の Judgment を添える）で出したもの。check.mjs --events にそのまま渡せる（Issue #945）。
+supervisor.inspector_approved と supervisor.merged は supervisor の周期（取り出していない）が記録する形で足す。
 """
 from __future__ import annotations
 
@@ -31,6 +35,11 @@ ENGINE_FUNCTIONS = {
     "orchestrator/dispatcher/dispatcher.py": ["_quote", "is_body_only", "enqueue_body_fix", "act_on_judgment", "file_sendback"],
     "orchestrator/dispatcher/supervisor.py": ["inspector_approved"],
 }
+
+
+# README の「制御プレーンから出すときの例」の SQL が出すイベントの名前
+EXPORTED_EVENTS = ("supervisor.judge_enqueued", "judgment.judged", "sendback.filed", "continue.enqueued", "job.enqueued",
+                   "supervisor.inspector_approved", "supervisor.merged")
 
 
 class Jsonb:
@@ -100,6 +109,15 @@ class FakeCursor:
 
     def fetchall(self):
         return list(self._rows)
+
+
+def export_events(cur: FakeCursor, pr_url: str) -> list[dict]:
+    """README の SQL と同じ形で、その PR のイベントを古い順に出す（judgment.judged には Judgment を添え、ほかは null）"""
+    artifacts = {a["id"]: a["payload"] for a in cur.artifacts}
+    return [{"name": e["name"], "payload": e["payload"],
+             "judgment": artifacts.get(e["payload"].get("artifact_id")) if e["name"] == "judgment.judged" else None}
+            for e in cur.events
+            if e["name"] in EXPORTED_EVENTS and (e["payload"].get("pr_url") or e["payload"].get("origin_pr")) == pr_url]
 
 
 def load_engine_functions(engine: Path, namespace: dict) -> dict:
@@ -174,7 +192,11 @@ def run(engine: Path, case: dict) -> dict:
             followups.append({"kind": "body_fix"})
 
     def continuation_enqueue(cur_, *, reason, **kw):
-        cur_.add_event("continue.enqueued", {"pr_url": kw["pr_url"], "reason": reason})
+        # continuation.enqueue と同じく、continue.enqueued と続きのジョブの job.enqueued（kind: implement）を記録する
+        cont = {"branch": kw.get("branch"), "pr_number": int(kw["pr_number"]), "reason": reason}
+        cur_.add_event("continue.enqueued", {"pr_url": kw["pr_url"], "head_sha": kw.get("head_sha"), "reason": reason, "attempt": 1,
+                                             "continue": cont, "by": kw.get("by")}, f"continue:{kw['pr_url']}@{kw.get('head_sha')}:{reason}")
+        cur_.add_event("job.enqueued", {"by": kw.get("by"), "kind": "implement", "continue": cont, "pr_url": kw["pr_url"], "head_sha": kw.get("head_sha")})
         followups.append({"kind": reason})
         return 200
 
@@ -198,7 +220,11 @@ def run(engine: Path, case: dict) -> dict:
     summary = judgment.record_judged(cur, corr, 1, pr_url, inp, verdicts, mode, "テスト")
     ns["act_on_judgment"](cur, repo, corr, 1, pr_url, summary, mode)
     approved, basis = ns["inspector_approved"](cur, pr_url, sha)
-    return {"followups": followups, "basis": basis if approved else None, "approved": approved}
+    if approved:   # supervisor の周期が承認とマージを記録する形（supervisor.py の record）
+        cur.add_event("supervisor.inspector_approved", {"pr_url": pr_url, "head_sha": sha, "basis": basis}, f"inspector.approved:{pr_url}@{sha}")
+        if case.get("merged"):
+            cur.add_event("supervisor.merged", {"pr_url": pr_url, "head_sha": sha, "basis": basis}, f"supervisor.merged:{pr_url}")
+    return {"followups": followups, "basis": basis if approved else None, "approved": approved, "events": export_events(cur, pr_url)}
 
 
 def check(engine: Path) -> dict:
