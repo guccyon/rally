@@ -50,4 +50,15 @@ enforcement:
       issue: 935
       at: 2026-11-05
       decided_by: committee:D-0009
+    - kind: test
+      what: >-
+        議決 D-0010 の test の案（Engine の supervisor の判定と inspector_approved の basis に、check.test.mjs と同じ 3 つの場合のテストを置き、
+        ci_check の配線より先に入れる）は、Issue #935 で置いた tools/sendback-check/engine.test.mjs と engine_harness.py で満たすので、新しいテストは作らず
+        その担保として記録した。今の Engine で走らせ、PR #395 と同じ入力では起こさないこと、直っていない採用欠陥があればマージの前（review_fix）でも
+        後（sendback）でも起こすことは通り、basis を分けて書く場合は外れる（採用 N の合計だけ）ので todo のままにした。todo のうちに check.mjs の
+        ci_check を配線するとすべての承認が basis_not_split で落ちるので、Engine の basis を直して todo を外し、engine.test.mjs を CI に配線してから
+        ci_check を配線する順序を engine.test.mjs と README に書いた。CI の配線はまだなので効き目は確かめていない
+      issue: 944
+      at: 2026-11-05
+      decided_by: committee:D-0010
 decided_by: committee:D-0004

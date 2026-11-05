@@ -1,5 +1,6 @@
 // Engine の本物の判定（judgment.record_judged → dispatcher.act_on_judgment、supervisor.inspector_approved）を
-// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・Issue #935）。
+// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010、Issue #935・#944）。
+// 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -55,7 +56,8 @@ test("(2) Engine は overlay の shadow のルールの指摘は adopt でも起
 });
 
 // Engine の inspector_approved は今も adopt の合計（「採用 N」）だけを書くので外れる。Engine の basis の文を
-// approvalBasis() の形に合わせるのは建設者（ワーカーの権限の外）。合わせたら todo を外して落とす検査にする
+// approvalBasis() の形に合わせるのは建設者（ワーカーの権限の外）。合わせたら todo を外して落とす検査にする。
+// todo のうちに check.mjs の ci_check を配線すると、すべての承認が basis_not_split で落ちる（D-0010 の順序）
 test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書く",
   { skip, todo: skip ? false : "Engine の basis が adopt の合計だけ（建設者が Engine を直したら todo を外す）" }, () => {
     const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];

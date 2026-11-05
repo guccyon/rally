@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0012
+pr: https://github.com/guccyon/rally/pull/951
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0010 の test の案を enforcement.solutions
+    に記録しただけなので、D-0004・D-0009・D-0010・D-0011 の議決と矛盾しません。
+  - '足した solution は Issue #935 の solution と同じ tools/sendback-check/engine.test.mjs
+    と engine_harness.py を指していて中身が重なりますが、新しいテストを作らず D-0010 の案をその担保として満たしたと明記しているので、重複ではなく議決への対応の記録として扱えます。'
+  - basis を分けて書く場合を todo のままにし、Engine の basis を直してから engine.test.mjs を CI に配線し、そのあとに
+    ci_check を配線する順序を書いたのは、D-0010 の enforcement 担当と dissent 担当が求めた順序と合っています。
+  - kind・what・issue・at・decided_by の形は既存の solutions と同じで、decided_by を提案元の committee:D-0010
+    にしているのも前の記録と揃っており、enforcement.level と INDEX.md はすでに deterministic なので INDEX.md
+    を変えていないことと整合しています。
+  - D-0009 から求められている「差し替えがあるときも起こす」条件の出どころと verified_at・review_by の更新はまだ C-0002 にも
+    K-0004 にも入っていないので、次の変更セットでそろえてください。
+  - CI の配線がまだで効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 944 と committee:D-0010 を指していて、D-0010 の enforcement
+    の test の案（Engine の本物の判定に check.test.mjs と同じ 3 つの場合のテストを置き、ci_check の配線より先に入れる）とそのまま対応しているので、一次記録に辿れます。
+  - '新しいテストを作らず Issue #935 の tools/sendback-check/engine.test.mjs と engine_harness.py
+    をその担保とした点は、同じ K-0004 の issue 935 の solution の記述と食い違わないので、根拠のつながりは保たれています。'
+  - 3 つの場合のうち basis を分けて書く場合は今の Engine で外れて todo のままなので、D-0010 の案を「満たす」のは 2 つまでであり、残りが効くまでは担保の一部だと読むべきです。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、CI
+    の配線がまだで効き目を確かめていないと自分で書いているので、confidence は hypothesis のままが妥当です。'
+  - 'Engine の basis を直して todo を外し、engine.test.mjs と check.mjs の ci_check を配線して PR
+    #395 の流れで落ち、直したあとは通ることを確かめるまでは confirmed に上げないでください。'
+  - 差分に出てくるのは PR・issue の番号、議決の id、ツールのパス、basis_not_split などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は D-0010 の test の案が Issue #935 で置いた tools/sendback-check/engine.test.mjs
+    と engine_harness.py で満たされることを K-0004 の enforcement.solutions に記録しただけで、statement
+    も confidence も変えていないので採ってよいです。'
+  - '判定の線（PR #395 と同じ入力では起こさない、直っていない採用欠陥があればマージの前後に関わらず起こす）は機械で判定でき、supervisor の判定は
+    PR ごとに繰り返し通るので、文脈ではなくテストで担保する方向は正しいです。'
+  - ただし engine.test.mjs は CI にまだ配線されておらず basis の場合は todo なので、今は外れても何も止まらず、決定論の担保はまだ効いていません。
+  - D-0011 で出た案（Engine を固定の版で取って engine.test.mjs を PR ごとに走らせ、取り出せないときは skip ではなく失敗にする、basis
+    を直す PR で todo を外す）は引き続き有効なので、この PR では重ねて出さず、配線の順序を人の注意ではなく機械で守る案だけを足します。
+  - 「todo のうちに check.mjs の ci_check を配線しない」という順序は engine.test.mjs と README の文にしか書かれておらず、外すとすべての承認が
+    basis_not_split で落ちて痛いので、CI の検査で止めるのが安く確かです。
+  - 効き目は確かめていないので confidence は hypothesis のままが妥当で、CI の配線のあとに本物の Engine で 3 つの場合がすべて
+    todo なしで通ることを確かめてから confirmed に上げてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0010 の test の案の扱いを 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - '足した solution は Issue #935 の engine.test.mjs と engine_harness.py という既にある solution
+    と同じものを指しているので、solutions の数を担保の数と読むと二重に数える反例があり、次の変更セットでは #935 の solution の what
+    に D-0010 の案を満たす旨を寄せるか、この solution が新しい物を足していないことを先頭で分かるようにしてください。'
+  - what は D-0010 の案を「満たす」と書いていますが、3 つの場合のうち basis を分けて書く場合は todo で外れたままなので、満たしているのは
+    2 つだけで、「一部を満たす」と書くほうが正確です。
+  - D-0011 で挙がった、ENGINE_DIR がないときや engine_harness.py が関数を取り出せないときにテストが飛ばされて黙って通る反例は、この
+    solution でもまだ手当てされていないので、CI に配線するときに skip ではなく失敗にしてください。
+  - 前の head の採用欠陥を後の head で直したときに見誤る反例と、「まだ入っていない仮決めの差し替え」で起こす条件の出どころは今回も手当てされておらず、D-0009
+    から求めている根拠の記録を次の変更セットで残してください。
+  - CI の配線も Engine の basis の修正もまだで効き目を確かめていないと書かれているので、confidence は hypothesis のままにし、足した文に利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: CI に順序の見張りの手順を足し、.github/workflows/ に tools/sendback-check/check.mjs --events
+    を呼ぶ手順があるのに、engine.test.mjs の basis の場合がまだ todo のまま、または engine.test.mjs が CI に配線されていないときは落とす。これで
+    README と engine.test.mjs に書いた「basis を直して todo を外し、engine.test.mjs を配線してから check.mjs
+    の ci_check を配線する」順序を人の注意ではなく機械で守る。
