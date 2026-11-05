@@ -329,6 +329,8 @@ class StudentFlowState {
 }
 
 /// 接続先。`flutter run --dart-define=RALLY_API_URL=...` で変える（既定はバックエンドの既定の待ち受け）。
+/// `/api` のような相対の値は、開いたページのオリジンからの相対として解く（Web 版の出荷用イメージは
+/// 同じオリジンの `/api/*` をバックエンドへ中継する。`Dockerfile`）。
 const _apiBaseUrl = String.fromEnvironment(
   'RALLY_API_URL',
   defaultValue: 'http://127.0.0.1:8080',
@@ -337,7 +339,7 @@ const _apiBaseUrl = String.fromEnvironment(
 /// 画面が使う API。テストではモックに差し替える。
 final studentApiProvider = Provider<StudentApi>(
   (ref) => HttpStudentApi(
-    baseUrl: Uri.parse(_apiBaseUrl),
+    baseUrl: Uri.base.resolve(_apiBaseUrl),
     accessToken: () => ref.read(studentFlowProvider).accessToken,
   ),
 );
