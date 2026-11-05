@@ -486,6 +486,24 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LowRatedLessonReviewList"],
   },
   {
+    // 高橋 コーチで絞ったとき（hq-low-reviews-coach）は高橋 コーチの行だけを返す。
+    method: "GET",
+    path: "/lesson-reviews/low",
+    query: { coach_id: COACH_ID_2 },
+    body: {
+      max_rating: 2,
+      period_days: 30,
+      reviews: LOW_REVIEWS.filter((review) => review.coach_id === COACH_ID_2),
+    } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
+    // ゴルフで絞ったとき（hq-low-reviews-sport-empty）は 0 件。
+    method: "GET",
+    path: "/lesson-reviews/low",
+    query: { sport: "golf" },
+    body: { max_rating: 2, period_days: 30, reviews: [] } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
     method: "GET",
     path: "/lesson-reviews/low",
     body: { max_rating: 2, period_days: 30, reviews: LOW_REVIEWS } satisfies Schemas["LowRatedLessonReviewList"],

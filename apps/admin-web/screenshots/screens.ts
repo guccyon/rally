@@ -195,6 +195,32 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // コーチを選んで読み直した状態。
+    id: "hq-low-reviews-coach",
+    title: "本部: 低い評価（コーチで絞る）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+      // 選択肢（コーチの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
+      await page.getByText("説明が早口で、何を直せばいいのか分かりにくかったです。").waitFor();
+      await page.getByText("通話が途中で何度も切れて、ほとんど教えてもらえませんでした。").waitFor({ state: "detached" });
+    },
+  },
+  {
+    // スポーツで絞って 0 件の状態（選んだ条件を含めた空の表示）。
+    id: "hq-low-reviews-sport-empty",
+    title: "本部: 低い評価（スポーツで絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+      await page.getByRole("combobox", { name: "スポーツ" }).selectOption({ label: "ゴルフ" });
+      await page.getByText("条件に合う低い評価はありません").waitFor();
+    },
+  },
+  {
     id: "hq-low-reviews-handling-confirm",
     title: "本部: 低い評価（対応済みにする前の確認）",
     role: "headquarters",
