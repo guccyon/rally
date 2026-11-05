@@ -18,6 +18,17 @@ engine:
 phase: P0
 
 # ---------------------------------------------------------------------
+# product_stage: 製品の段階（Engine ADR 0028 の決定 4、definitions/product_stages.yaml。Blueprint の product_stage の写し）
+# 段階で出荷先が決まる。development は staging だけ（本番を立てない。承認ボタンも本番の戻しも受け付けない）、
+# launch と operating は staging と prod（prod は承認ボタン）。operating で運用開始（from: operation_start の常時承認が効く）。
+# 切り替えは人。この欄を変える PR は憲法の変更（constitution）なので承認が要る。工場は読むだけで自分で進めない
+# ---------------------------------------------------------------------
+product_stage:
+  stage: development
+  decided:
+    - { date: "2026-11-04", by: owner, note: "1st リリース前。本番はしばらく動かさず staging だけ動かす（Engine #160 の SHIP_PROD_HOLD をこの欄に置き換えた）" }
+
+# ---------------------------------------------------------------------
 # autonomy: 環境（操作）× 変更種別
 # 値: auto | shadow（判定して記録するが実行しない）| human_approve | forbidden
 # ---------------------------------------------------------------------
