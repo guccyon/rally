@@ -26,7 +26,7 @@
 ## Blueprint
 
 この工場の入力は Blueprint（`blueprint_version: 0.4`）。正本はプロジェクトの資料フォルダにあり、決定は `decisions:` に日付付きで追記する。
-`manifest.yaml` の autonomy・budgets・compat は Blueprint の同名の節と一致させる。
+`manifest.yaml` の autonomy・budgets・compat・product_stage（製品の段階。今は development で staging だけ）と、`quality_policy.yaml`（品質方針）は Blueprint の同名の節と一致させる。
 
 ## 利用について
 
