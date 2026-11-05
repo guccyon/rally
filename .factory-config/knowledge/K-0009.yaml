@@ -1,0 +1,20 @@
+id: K-0009
+theme: 6
+kind: causal
+statement: >-
+  既定ブランチとの衝突（conflict）を解く続きのジョブ（continue）に回数や費用の上限もエスカレーションも無いと、
+  人のマージを待つ間に同じ形の衝突の解消が何度も繰り返され（C-0005 では 23 回・約 14 時間）、引き継いだ会話の費用と PR 本文への追記が積み上がる。
+scope:
+  roles: [supervisor]
+confidence: hypothesis
+evidence:
+  - case: C-0005
+  - pr: 656
+  - event: "case.analyzed:274365"
+status: draft
+verified_at: 2026-11-05
+review_by: 2026-12-05
+confidentiality: product
+related: [K-0002, K-0008, K-0011]
+invalidate_when:
+  - "conflict の continue に回数か費用の上限が入り、超えたら人にマージを促すかエスカレーションするようになった"

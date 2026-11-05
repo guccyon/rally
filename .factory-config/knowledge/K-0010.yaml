@@ -1,0 +1,23 @@
+id: K-0010
+theme: 4
+kind: causal
+statement: >-
+  検査の指摘を直す続きのジョブ（review_fix）が差分のコードを変えた（衝突の印の解消を超える変更をした）のに、PR 本文に自分の要約を新しい節として足すだけで、
+  本体の「概要」「対応内容」のうち直した差分と食い違う記述を直さないと、直す前の説明が本体に残って本文と差分が食い違い、検査で PR-002 がもう一度出る。
+  直すのは食い違う記述だけで、人や前のジョブが書いた背景・判断の記録と「## 工場の記録」の下の節は残す。
+  衝突の印の解消だけの continue（conflict）は対象にせず、自分の節だけを最新にする（K-0007）。
+scope:
+  roles: [implement]
+confidence: hypothesis
+evidence:
+  - case: C-0005
+  - pr: 656
+  - event: "case.analyzed:274365"
+status: draft
+verified_at: 2026-11-05
+review_by: 2026-12-05
+confidentiality: product
+related: [K-0001, K-0006, K-0007]
+invalidate_when:
+  - "review_fix への指示が、本体の「概要」「対応内容」のうち直した差分と食い違う記述だけを直し、背景・判断の記録は残し、自分の記録は「## 工場の記録」の下の ### にだけ足すよう求めるようになった"
+  - "本文と差分の食い違いを、review_fix のあと検査役に回す前に機械か検査で確かめるようになった"

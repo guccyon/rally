@@ -1,0 +1,21 @@
+id: K-0011
+theme: 5
+kind: causal
+statement: >-
+  既定ブランチの取り込み（conflict の continue）の検査が衝突の印と fmt・clippy・テストだけだと、取り込んだ変更で共有モジュールの約束
+  （C-0005 では calendar_day の「日付はここだけを通して決める」）が変わっても、PR の差分がその約束に反していないかは見直されず、
+  約束に反する写しのコードが取り込みのあとも残る。
+scope:
+  roles: [implement, inspect]
+confidence: hypothesis
+evidence:
+  - case: C-0005
+  - pr: 656
+  - event: "case.analyzed:274365"
+status: draft
+verified_at: 2026-11-05
+review_by: 2026-12-05
+confidentiality: product
+related: [K-0009]
+invalidate_when:
+  - "取り込みで PR の差分が触る共有モジュールが既定ブランチ側でも変わったときに、差分の設計を検査し直すようになった"
