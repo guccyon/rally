@@ -12,9 +12,12 @@ evidence:
   - case: C-0001
   - pr: 546
   - event: "case.analyzed:113682"
+  - case: C-0005
+  - pr: 656
+  - event: "case.analyzed:274365"
 status: active
-verified_at: 2026-11-03
-review_by: 2026-12-03
+verified_at: 2026-11-05
+review_by: 2026-12-05
 confidentiality: product
 invalidate_when:
   - "利用者に見える変更の記録が CHANGELOG.md の同じ場所への直接の追記に戻った"

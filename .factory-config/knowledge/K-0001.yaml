@@ -16,9 +16,12 @@ evidence:
   - case: C-0004
   - pr: 534
   - event: "case.analyzed:113588"
+  - case: C-0005
+  - pr: 656
+  - event: "case.analyzed:274365"
 status: active
-verified_at: 2026-11-04
-review_by: 2026-12-04
+verified_at: 2026-11-05
+review_by: 2026-12-05
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"

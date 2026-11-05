@@ -15,7 +15,7 @@ status: draft
 verified_at: 2026-11-04
 review_by: 2026-12-04
 confidentiality: product
-related: [K-0001]
+related: [K-0001, K-0010]
 invalidate_when:
   - "続きの job の直し方（既存の節は残し、自分の節だけを head を確かめてから最新にする）が指示に入り、食い違いが出なくなった"
   - "続きの job の報告に書く取り込みやコミットの状態を、Engine が head から機械で書き入れるようになった"
