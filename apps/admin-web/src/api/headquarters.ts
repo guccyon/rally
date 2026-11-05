@@ -74,6 +74,7 @@ export function headquartersApi(client: ApiClient) {
         from?: string;
         to?: string;
         student_id?: string;
+        lesson_menu_id?: string;
       } = {},
     ) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),

@@ -8,7 +8,9 @@ import type { HeadquartersApi } from "@/api/headquarters";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime, formatDay } from "@/components/labels";
 
+import { BookingLessonMenuFilter } from "./BookingLessonMenuFilter";
 import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";
+import { lessonMenuOptionLabel } from "./CancelledBookingList";
 import { coachReviewSummaryPath } from "./CoachReviewSummaryHome";
 import { LowRatedReviewHandlingAction } from "./LowRatedReviewHandlingAction";
 import { SPORTS } from "./PendingVideoReviewList";
@@ -17,9 +19,15 @@ type LowRatedReview = Schemas["LowRatedLessonReview"];
 
 /**
  * period が null なら期間で絞らない（契約で `from`・`to` を省いたときと同じく、直近の期間のすべて）。
- * sport・coachId が空ならそれで絞らない。
+ * sport・coachId・lessonMenuId が空ならそれで絞らない。
  */
-type Filter = { unhandledOnly: boolean; period: Period | null; sport: Schemas["Sport"] | ""; coachId: string };
+type Filter = {
+  unhandledOnly: boolean;
+  period: Period | null;
+  sport: Schemas["Sport"] | "";
+  coachId: string;
+  lessonMenuId: string;
+};
 
 type State =
   | { kind: "loading" }
@@ -31,7 +39,12 @@ type CoachesState =
   | { kind: "loaded"; coaches: Schemas["Coach"][] }
   | { kind: "failed"; message: string };
 
-const NO_FILTER: Filter = { unhandledOnly: false, period: null, sport: "", coachId: "" };
+type LessonMenusState =
+  | { kind: "loading" }
+  | { kind: "loaded"; lessonMenus: Schemas["CoachLessonMenu"][] }
+  | { kind: "failed"; message: string };
+
+const NO_FILTER: Filter = { unhandledOnly: false, period: null, sport: "", coachId: "", lessonMenuId: "" };
 
 const NO_COACH_NAME = "（名前を表示できません）";
 
@@ -39,52 +52,61 @@ const NO_PERIOD: Period = { from: "", to: "" };
 
 // 期間で絞っているとき（送る前の確かめ periodError をすり抜けた 422）の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED_WITH_PERIOD = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
-// スポーツ・コーチで絞っているとき（選択肢から選んでいればふつうは来ない）に添える。返却待ちの動画添削の一覧と同じ。
-const VALIDATION_HINT_WITH_SPORT_OR_COACH = "スポーツ・コーチは一覧から選び直してください。";
+// スポーツ・コーチ・レッスンメニューで絞っているとき（選択肢から選んでいればふつうは来ない）に添える。返却待ちの動画添削の一覧と同じ。
+const VALIDATION_HINT_WITH_SELECTION = "スポーツ・コーチ・レッスンメニューは一覧から選び直してください。";
 // 生徒で絞っているとき（生徒の ID は URL のクエリから来るので、書き換えられて UUID でないこともある）に添える。返事のないメッセージの一覧と同じ。
 const VALIDATION_HINT_WITH_STUDENT = "生徒は生徒の一覧から選び直してください。";
 
 /**
- * 422 の理由。期間・スポーツ・コーチ・生徒のうち、いま絞っている条件の直す場所を伝える。
+ * 422 の理由。期間・スポーツ・コーチ・レッスンメニュー・生徒のうち、いま絞っている条件の直す場所を伝える。
  * どれでも絞っていなければ ErrorCode の文言のまま。
  */
 function validationFailedMessageOf(
-  { period, sport, coachId }: Filter,
+  { period, sport, coachId, lessonMenuId }: Filter,
   studentFiltered: boolean,
   message: string,
 ): string {
   return [
     period === null ? message : VALIDATION_FAILED_WITH_PERIOD,
-    sport !== "" || coachId !== "" ? VALIDATION_HINT_WITH_SPORT_OR_COACH : "",
+    sport !== "" || coachId !== "" || lessonMenuId !== "" ? VALIDATION_HINT_WITH_SELECTION : "",
     studentFiltered ? VALIDATION_HINT_WITH_STUDENT : "",
   ].join("");
 }
 
-/** 一覧（listLowRatedLessonReviews）に付けるクエリ。「未対応だけ」を外したとき・期間なし・空のスポーツとコーチの条件は付けない。 */
-function queryOf({ unhandledOnly, period, sport, coachId }: Filter) {
+/**
+ * 一覧（listLowRatedLessonReviews）に付けるクエリ。「未対応だけ」を外したとき・期間なし・空のスポーツとコーチとレッスンメニューの
+ * 条件は付けない。
+ */
+function queryOf({ unhandledOnly, period, sport, coachId, lessonMenuId }: Filter) {
   return {
     ...(sport === "" ? {} : { sport }),
     ...(unhandledOnly ? { handled: false } : {}),
     ...(coachId === "" ? {} : { coach_id: coachId }),
+    ...(lessonMenuId === "" ? {} : { lesson_menu_id: lessonMenuId }),
     ...(period ?? {}),
   };
 }
 
 /**
- * 0 件のときの文言。期間で絞っていればその期間のことだと言う。コーチだけ・生徒だけで絞っていればそのコーチ・その生徒と言い、
- * スポーツで絞っている・コーチと生徒の両方で絞っていれば「条件に合う」と言う（返却待ちの動画添削の一覧と同じ）。
+ * 0 件のときの文言。期間で絞っていればその期間のことだと言う。コーチだけ・生徒だけ・レッスンメニューだけで絞っていればそのコーチ・
+ * その生徒・そのメニューと言い、スポーツで絞っている・コーチと生徒とレッスンメニューのうち 2 つ以上で絞っていれば「条件に合う」と言う
+ * （返却待ちの動画添削の一覧と同じ。どのメニューかは一覧の上の BookingLessonMenuFilter が名前で出す）。
  */
-function emptyMessageOf({ unhandledOnly, period, sport, coachId }: Filter, studentFiltered: boolean): string {
+function emptyMessageOf({ unhandledOnly, period, sport, coachId, lessonMenuId }: Filter, studentFiltered: boolean): string {
   const reviews = unhandledOnly ? "未対応の低い評価" : "低い評価";
   const coachFiltered = coachId !== "";
+  const lessonMenuFiltered = lessonMenuId !== "";
+  const narrowedCount = [coachFiltered, studentFiltered, lessonMenuFiltered].filter(Boolean).length;
   const narrowed =
-    sport !== "" || (coachFiltered && studentFiltered)
+    sport !== "" || narrowedCount >= 2
       ? "条件に合う"
-      : coachFiltered
-        ? "このコーチの"
-        : studentFiltered
-          ? "この生徒の"
-          : "";
+      : lessonMenuFiltered
+        ? "このレッスンメニューの"
+        : coachFiltered
+          ? "このコーチの"
+          : studentFiltered
+            ? "この生徒の"
+            : "";
   if (period === null) return narrowed !== "" || unhandledOnly ? `${narrowed}${reviews}はありません` : "低い評価はまだありません";
   return `この期間に${narrowed}${reviews}はありません`;
 }
@@ -107,13 +129,21 @@ function HandlingStatus({ review }: { review: LowRatedReview }) {
  * 生徒は欄では選ばず、ほかの一覧と同じく URL のクエリ（生徒の利用の様子の画面からの入口）で受け取る。0 件と 422 の文言は生徒で絞っていることを添える。
  * 「スポーツ」「コーチ」は返却待ちの動画添削の一覧と同じ選択の欄で、選んだらすぐに読み直す（API の `sport`・`coach_id`）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。読めなくても一覧はほかの条件で引けるようにし、コーチの欄だけを使えなくする。
+ * 「レッスンメニュー」も同じ選択の欄で、選んだらすぐに API の `lesson_menu_id` で読み直す（評価に載せるメニューで絞る。契約）。部品と振る舞いは
+ * 返却待ちの動画添削の一覧に揃え、選択肢はレッスンメニューの一覧（listLessonMenus。絞り込みなしで、公開をやめたメニューも含む）の返った順に
+ * 出す（評価は同期・非同期のどちらのレッスンにも付くので、レッスンの種類では絞らない）。読めなくても一覧はほかの条件で引けるようにし、
+ * レッスンメニューの欄だけを使えなくする。絞っているあいだは一覧の上に「どのレッスンメニューで絞っているか」（BookingLessonMenuFilter）を
+ * 出す（0 件のときも出すので、どのメニューで空になったかが分かる）。
  * どの条件も組み合わせられ、どれを変えても、対応済みにするのを断られて取り直すときも、ほかの確定した条件を残す。
  */
 export function LowRatedReviewList({
   api,
   studentId,
 }: {
-  api: Pick<HeadquartersApi, "listLowRatedLessonReviews" | "markLowRatedLessonReviewHandled" | "listCoaches">;
+  api: Pick<
+    HeadquartersApi,
+    "listLowRatedLessonReviews" | "markLowRatedLessonReviewHandled" | "listCoaches" | "listLessonMenus"
+  >;
   studentId?: string;
 }) {
   // 今の一覧を読んだ条件（取り直しにも使う）。期間は「この期間で見る」を押したときだけ変わる。
@@ -123,6 +153,7 @@ export function LowRatedReviewList({
   const [periodDraftError, setPeriodDraftError] = useState<string | null>(null);
   const [state, setState] = useState<State>({ kind: "loading" });
   const [coaches, setCoaches] = useState<CoachesState>({ kind: "loading" });
+  const [lessonMenus, setLessonMenus] = useState<LessonMenusState>({ kind: "loading" });
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   // 切り替えを続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
@@ -165,6 +196,22 @@ export function LowRatedReviewList({
       setCoaches(
         response.ok
           ? { kind: "loaded", coaches: response.data.coaches }
+          : { kind: "failed", message: response.message },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  // レッスンメニューの選択肢。
+  useEffect(() => {
+    let active = true;
+    void api.listLessonMenus({}).then((response) => {
+      if (!active) return;
+      setLessonMenus(
+        response.ok
+          ? { kind: "loaded", lessonMenus: response.data.lesson_menus }
           : { kind: "failed", message: response.message },
       );
     });
@@ -230,7 +277,7 @@ export function LowRatedReviewList({
     <div className="space-y-4">
       <p className="text-sm">
         生徒がレッスンに付けた評価のうち、点の低いものを送った時刻の新しい順に見られます。コーチの名前から、そのコーチの評価へ移れます。期間を選ぶと、その期間（日本時間）に送られた評価だけにします（期間は{" "}
-        {MAX_PERIOD_DAYS} 日まで。「未対応だけ」・スポーツ・コーチと組み合わせられます）。
+        {MAX_PERIOD_DAYS} 日まで。「未対応だけ」・スポーツ・コーチ・レッスンメニューと組み合わせられます）。
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="block">
@@ -265,10 +312,32 @@ export function LowRatedReviewList({
               ))}
           </select>
         </label>
+        <label className="block">
+          レッスンメニュー
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.lessonMenuId}
+            disabled={lessonMenus.kind !== "loaded"}
+            onChange={(event) => void changeFilter({ ...filter, lessonMenuId: event.target.value })}
+          >
+            <option value="">すべて</option>
+            {lessonMenus.kind === "loaded" &&
+              lessonMenus.lessonMenus.map((menu) => (
+                <option key={menu.lesson_menu_id} value={menu.lesson_menu_id}>
+                  {lessonMenuOptionLabel(menu)}
+                </option>
+              ))}
+          </select>
+        </label>
       </div>
       {coaches.kind === "failed" && (
         <ResultMessage
           result={{ ok: false, message: `コーチの一覧を読めませんでした。${coaches.message}` }}
+        />
+      )}
+      {lessonMenus.kind === "failed" && (
+        <ResultMessage
+          result={{ ok: false, message: `レッスンメニューの一覧を読めませんでした。${lessonMenus.message}` }}
         />
       )}
       <label className="flex items-center gap-1 text-sm">
@@ -309,6 +378,9 @@ export function LowRatedReviewList({
       </form>
       {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}
       <ResultMessage result={result} />
+      {filter.lessonMenuId !== "" && (
+        <BookingLessonMenuFilter key={filter.lessonMenuId} api={api} lessonMenuId={filter.lessonMenuId} />
+      )}
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (

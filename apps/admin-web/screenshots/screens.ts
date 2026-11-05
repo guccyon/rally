@@ -209,6 +209,20 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // レッスンメニューを選んで読み直した状態（一覧の上に絞っているメニューの名前を出す）。
+    id: "hq-low-reviews-lesson-menu",
+    title: "本部: 低い評価（レッスンメニューで絞る）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByText("説明が早口で、何を直せばいいのか分かりにくかったです。").waitFor({ state: "detached" });
+    },
+  },
+  {
     // スポーツで絞って 0 件の状態（選んだ条件を含めた空の表示）。
     id: "hq-low-reviews-sport-empty",
     title: "本部: 低い評価（スポーツで絞って 0 件）",

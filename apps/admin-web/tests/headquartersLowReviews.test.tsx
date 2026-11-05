@@ -88,10 +88,44 @@ function coachesOf(coaches: Schemas["Coach"][] = COACHES) {
   return vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches } }));
 }
 
+const MENU_ID = "aaaa0001-0000-4000-8000-000000000000";
+const OTHER_MENU_ID = "aaaa0002-0000-4000-8000-000000000000";
+
+// レッスンメニューの一覧（listLessonMenus）が返す並び。選択肢はこの順のまま出す（同期・非同期のどちらも）。
+const LESSON_MENUS: Schemas["CoachLessonMenu"][] = [
+  {
+    lesson_menu_id: MENU_ID,
+    coach_id: COACH_ID,
+    sport: "tennis",
+    lesson_type: "live_lesson",
+    name: "フォア強化 30 分",
+    duration_minutes: 30,
+    is_published: true,
+    created_at: "2026-09-01T00:00:00Z",
+    coach_display_name: "佐藤 健",
+    recent_booking_count: 4,
+  },
+  {
+    lesson_menu_id: OTHER_MENU_ID,
+    coach_id: OTHER_COACH_ID,
+    sport: "tennis",
+    lesson_type: "async_lesson",
+    name: "サーブの添削",
+    duration_minutes: null,
+    is_published: false,
+    created_at: "2026-09-02T00:00:00Z",
+    recent_booking_count: 0,
+  },
+];
+
+function lessonMenusOf(lessonMenus: Schemas["CoachLessonMenu"][] = LESSON_MENUS) {
+  return vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({ ok: true, data: { lesson_menus: lessonMenus } }));
+}
+
 describe("本部の低い評価", () => {
   test("読み込み中を出し、読めたら 1 件ずつ点・コーチ・メニュー・一言・送った時刻を API の順で出す", async () => {
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
     const list = await screen.findByRole("list", { name: "低い評価の一覧" });
@@ -113,13 +147,13 @@ describe("本部の低い評価", () => {
   });
 
   test("しきい値と期間は応答の値を添える", async () => {
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByText("直近 30 日に送られた、2 点以下の評価です。")).toBeInTheDocument();
   });
 
   test("メニューがなければメニューの行を出さない", async () => {
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     const items = within(await screen.findByRole("list", { name: "低い評価の一覧" })).getAllByRole(
       "listitem",
@@ -128,7 +162,7 @@ describe("本部の低い評価", () => {
   });
 
   test("コーチの名前から、そのコーチを選んだ状態のコーチの評価の画面へ移れる", async () => {
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("link", { name: "佐藤 健" })).toHaveAttribute(
       "href",
@@ -137,7 +171,7 @@ describe("本部の低い評価", () => {
   });
 
   test("コーチの表示名が引けなくても、名前の代わりの文言からコーチの評価へ移れる", async () => {
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("link", { name: "（名前を表示できません）" })).toHaveAttribute(
       "href",
@@ -146,7 +180,7 @@ describe("本部の低い評価", () => {
   });
 
   test("0 件なら「低い評価はまだありません」と出し、一覧は出さない", async () => {
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByText("低い評価はまだありません")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "低い評価の一覧" })).not.toBeInTheDocument();
@@ -156,7 +190,7 @@ describe("本部の低い評価", () => {
     const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(
       async () => ({ ok: false, message: "権限がないためアクセスできません。" }),
     );
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("list", { name: "低い評価の一覧" })).not.toBeInTheDocument();
@@ -175,7 +209,7 @@ describe("本部の低い評価の対応済み", () => {
   test("対応済みの行は日時を出して「対応済みにする」を置かず、未対応の行にだけ置く", async () => {
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
       />,
     );
 
@@ -190,7 +224,7 @@ describe("本部の低い評価の対応済み", () => {
     const user = userEvent.setup();
     const markLowRatedLessonReviewHandled = markOk();
     render(
-      <LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />,
+      <LowRatedReviewList api={{ listLowRatedLessonReviews: listOf(REVIEWS), markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />,
     );
 
     await user.click(await screen.findByRole("button", { name: `${firstLabel}を対応済みにする` }));
@@ -211,7 +245,7 @@ describe("本部の低い評価の対応済み", () => {
       () => new Promise((r) => (resolve = r)),
     );
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     await user.click(await screen.findByRole("button", { name: `${firstLabel}を対応済みにする` }));
     await user.click(screen.getByRole("button", { name: "対応済みを確定" }));
@@ -238,7 +272,7 @@ describe("本部の低い評価の対応済み", () => {
       }),
     );
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     await user.click(await screen.findByRole("button", { name: `${firstLabel}を対応済みにする` }));
     await user.click(screen.getByRole("button", { name: "対応済みを確定" }));
@@ -254,7 +288,7 @@ describe("本部の低い評価の対応済み", () => {
       async () => ({ ok: false, message: "サーバーに接続できません。" }),
     );
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     await user.click(await screen.findByRole("button", { name: `${firstLabel}を対応済みにする` }));
     await user.click(screen.getByRole("button", { name: "対応済みを確定" }));
@@ -277,7 +311,7 @@ describe("本部の低い評価の対応済み", () => {
       }),
     );
     render(
-      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />,
+      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />,
     );
     expect(await itemsOf()).toHaveLength(2);
 
@@ -301,7 +335,7 @@ describe("本部の低い評価の対応済み", () => {
       }),
     );
     render(
-      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />,
+      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />,
     );
     await itemsOf();
 
@@ -329,7 +363,7 @@ describe("本部の低い評価の期間", () => {
 
   test("期間を付けずに開き、期間の欄は空で「期間を外す」は出さない", async () => {
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     await itemsOf();
     expect(listLowRatedLessonReviews).toHaveBeenCalledWith({});
@@ -346,7 +380,7 @@ describe("本部の低い評価の期間", () => {
         data: { max_rating: 2, period_days: 30, reviews: filter?.from === undefined ? REVIEWS : [REVIEWS[0]!] },
       }),
     );
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     // 欄を変えただけでは読み直さない。
@@ -373,7 +407,7 @@ describe("本部の低い評価の期間", () => {
   test("期間と「未対応だけ」は組み合わせられ、どちらを変えてももう一方の確定した条件を残す", async () => {
     const user = userEvent.setup();
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     await choosePeriod(user, "2026-10-26", "2026-11-01");
@@ -404,7 +438,7 @@ describe("本部の低い評価の期間", () => {
       async () => ({ ok: false, code: "not_found", message: "見つかりません。" }),
     );
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
     await choosePeriod(user, "2026-10-26", "2026-11-01");
     await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
@@ -427,7 +461,7 @@ describe("本部の低い評価の期間", () => {
   test("終了日が開始日より前なら、送らずにほかの期間の欄と同じ文言を出す", async () => {
     const user = userEvent.setup();
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     await choosePeriod(user, "2026-11-01", "2026-10-26");
@@ -441,7 +475,7 @@ describe("本部の低い評価の期間", () => {
   test("31 日を超える期間・片方だけの期間は送らずに文言を出し、直せば文言を消して読み直す", async () => {
     const user = userEvent.setup();
     const listLowRatedLessonReviews = listOf(REVIEWS);
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     await choosePeriod(user, "2026-10-01", "2026-11-01");
@@ -464,7 +498,7 @@ describe("本部の低い評価の期間", () => {
         data: { max_rating: 2, period_days: 30, reviews: filter?.from === undefined ? REVIEWS : [] },
       }),
     );
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     await choosePeriod(user, "2026-10-26", "2026-11-01");
@@ -481,7 +515,7 @@ describe("本部の低い評価の期間", () => {
         ? { ok: true, data: { max_rating: 2, period_days: 30, reviews: REVIEWS } }
         : { ok: false, code: "validation_failed", message: "入力内容を確認してください。" },
     );
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await itemsOf();
 
     await choosePeriod(user, "2026-10-26", "2026-11-01");
@@ -497,7 +531,7 @@ describe("本部の低い評価の期間", () => {
     const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
         studentId={STUDENT_ID}
       />,
     );
@@ -533,7 +567,7 @@ describe("本部の低い評価の期間", () => {
     const user = userEvent.setup();
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
         studentId={STUDENT_ID}
       />,
     );
@@ -555,7 +589,7 @@ describe("本部の低い評価の期間", () => {
       message: "入力内容を確認してください。",
     }));
     render(
-      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }} studentId="not-a-uuid" />,
+      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} studentId="not-a-uuid" />,
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -584,7 +618,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     const listLowRatedLessonReviews = listOf(REVIEWS);
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
       />,
     );
     await itemsOf();
@@ -606,7 +640,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     const listLowRatedLessonReviews = listOf(REVIEWS);
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
       />,
     );
     await itemsOf();
@@ -634,7 +668,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
         studentId={STUDENT_ID}
       />,
     );
@@ -685,7 +719,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     );
     const listLowRatedLessonReviews = listOf(REVIEWS);
     render(
-      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf() }} />,
+      <LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />,
     );
     await itemsOf();
     const coach = screen.getByRole("combobox", { name: "コーチ" });
@@ -709,7 +743,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     const user = userEvent.setup();
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
       />,
     );
     expect(await screen.findByText("低い評価はまだありません")).toBeInTheDocument();
@@ -734,7 +768,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     const user = userEvent.setup();
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews: listOf([]), markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
         studentId={STUDENT_ID}
       />,
     );
@@ -755,7 +789,7 @@ describe("本部の低い評価のスポーツとコーチ", () => {
     );
     render(
       <LowRatedReviewList
-        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf() }}
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
         studentId={STUDENT_ID}
       />,
     );
@@ -765,12 +799,12 @@ describe("本部の低い評価のスポーツとコーチ", () => {
 
     await user.selectOptions(coach, "佐藤 健");
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "入力内容を確認してください。スポーツ・コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+      "入力内容を確認してください。スポーツ・コーチ・レッスンメニューは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
     );
 
     await choosePeriod(user, "2026-10-26", "2026-11-01");
     expect(await screen.findByText(/^期間の指定が正しくありません。/)).toHaveTextContent(
-      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。スポーツ・コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+      "期間の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。スポーツ・コーチ・レッスンメニューは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
     );
   });
 
@@ -781,10 +815,240 @@ describe("本部の低い評価のスポーツとコーチ", () => {
       ok: false,
       message: "サーバーに接続できませんでした。",
     }));
-    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches }} />);
+    render(<LowRatedReviewList api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches, listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByText("コーチの一覧を読めませんでした。サーバーに接続できませんでした。")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "コーチ" })).toBeDisabled();
+    await itemsOf();
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ sport: "tennis" });
+    expect(await itemsOf()).toHaveLength(2);
+  });
+});
+
+describe("本部の低い評価のレッスンメニュー", () => {
+  async function itemsOf() {
+    return within(await screen.findByRole("list", { name: "低い評価の一覧" })).getAllByRole("listitem");
+  }
+
+  async function menuSelect() {
+    const menu = screen.getByRole("combobox", { name: "レッスンメニュー" });
+    await vi.waitFor(() => expect(menu).toBeEnabled());
+    return menu;
+  }
+
+  test("レッスンメニューは「すべて」で開き、選択肢はレッスンメニューの一覧の返った順に（同期・非同期とも）出す", async () => {
+    const listLessonMenus = lessonMenusOf();
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews: listOf(REVIEWS),
+          markLowRatedLessonReviewHandled: noMark(),
+          listCoaches: coachesOf(),
+          listLessonMenus,
+        }}
+      />,
+    );
+    await itemsOf();
+
+    const menu = await menuSelect();
+    expect(listLessonMenus).toHaveBeenCalledWith({});
+    expect(menu).toHaveValue("");
+    expect(within(menu).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "フォア強化 30 分（佐藤 健）",
+      "サーブの添削",
+    ]);
+    expect(screen.queryByText(/^レッスンメニューで絞っています/)).not.toBeInTheDocument();
+  });
+
+  test("レッスンメニューを選ぶと lesson_menu_id を付けて読み直し、絞っているメニューの名前を出す。「すべて」に戻すと外す", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews,
+          markLowRatedLessonReviewHandled: noMark(),
+          listCoaches: coachesOf(),
+          listLessonMenus: lessonMenusOf(),
+        }}
+      />,
+    );
+    await itemsOf();
+
+    const menu = await menuSelect();
+    await user.selectOptions(menu, "フォア強化 30 分（佐藤 健）");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ lesson_menu_id: MENU_ID });
+    expect(await screen.findByText(/^レッスンメニューで絞っています/)).toHaveTextContent(
+      "レッスンメニューで絞っています: フォア強化 30 分",
+    );
+    await itemsOf();
+
+    await user.selectOptions(menu, "すべて");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({});
+    expect(screen.queryByText(/^レッスンメニューで絞っています/)).not.toBeInTheDocument();
+  });
+
+  test("レッスンメニューはほかの条件と組み合わせられ、どれを変えても、対応済みにするのを断られて取り直すときも残す", async () => {
+    const user = userEvent.setup();
+    const markLowRatedLessonReviewHandled = vi.fn<HeadquartersApi["markLowRatedLessonReviewHandled"]>(
+      async () => ({ ok: false, code: "not_found", message: "見つかりません。" }),
+    );
+    const listLowRatedLessonReviews = listOf([REVIEWS[0]!]);
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews,
+          markLowRatedLessonReviewHandled,
+          listCoaches: coachesOf(),
+          listLessonMenus: lessonMenusOf(),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+    await itemsOf();
+    const menu = await menuSelect();
+    const coach = screen.getByRole("combobox", { name: "コーチ" });
+    await vi.waitFor(() => expect(coach).toBeEnabled());
+
+    await user.selectOptions(menu, "フォア強化 30 分（佐藤 健）");
+    await itemsOf();
+    await user.selectOptions(coach, "佐藤 健");
+    await itemsOf();
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await itemsOf();
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    await itemsOf();
+    await user.type(screen.getByLabelText("開始日"), "2026-10-26");
+    await user.type(screen.getByLabelText("終了日"), "2026-11-01");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    const all = {
+      sport: "tennis",
+      handled: false,
+      coach_id: COACH_ID,
+      lesson_menu_id: MENU_ID,
+      from: "2026-10-26",
+      to: "2026-11-01",
+      student_id: STUDENT_ID,
+    };
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith(all);
+    await itemsOf();
+
+    const label = `佐藤 健への${formatDateTime("2026-10-30T12:14:05Z")}の評価`;
+    await user.click(await screen.findByRole("button", { name: `${label}を対応済みにする` }));
+    await user.click(screen.getByRole("button", { name: "対応済みを確定" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("見つかりません。");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith(all);
+    await itemsOf();
+
+    await user.click(screen.getByRole("button", { name: "期間を外す" }));
+    const withoutPeriod = { sport: "tennis", handled: false, coach_id: COACH_ID, lesson_menu_id: MENU_ID, student_id: STUDENT_ID };
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith(withoutPeriod);
+    await itemsOf();
+
+    await user.selectOptions(coach, "すべて");
+    expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({
+      sport: "tennis",
+      handled: false,
+      lesson_menu_id: MENU_ID,
+      student_id: STUDENT_ID,
+    });
+    expect(menu).toHaveValue(MENU_ID);
+  });
+
+  test("0 件なら選んだメニューを含めて言い、どのメニューかの名前も出す（ほかの条件もあれば条件に合う）", async () => {
+    const user = userEvent.setup();
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews: listOf([]),
+          markLowRatedLessonReviewHandled: noMark(),
+          listCoaches: coachesOf(),
+          listLessonMenus: lessonMenusOf(),
+        }}
+      />,
+    );
+    expect(await screen.findByText("低い評価はまだありません")).toBeInTheDocument();
+    const menu = await menuSelect();
+
+    await user.selectOptions(menu, "サーブの添削");
+    expect(await screen.findByText("このレッスンメニューの低い評価はありません")).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています/)).toHaveTextContent(
+      "レッスンメニューで絞っています: サーブの添削",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "未対応だけ" }));
+    expect(await screen.findByText("このレッスンメニューの未対応の低い評価はありません")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("開始日"), "2026-10-26");
+    await user.type(screen.getByLabelText("終了日"), "2026-11-01");
+    await user.click(screen.getByRole("button", { name: "この期間で見る" }));
+    expect(await screen.findByText("この期間にこのレッスンメニューの未対応の低い評価はありません")).toBeInTheDocument();
+    const coach = screen.getByRole("combobox", { name: "コーチ" });
+    await user.selectOptions(coach, "高橋 コーチ");
+    expect(await screen.findByText("この期間に条件に合う未対応の低い評価はありません")).toBeInTheDocument();
+  });
+
+  test("生徒で絞ってレッスンメニューも選んで 0 件なら、条件に合うと言う", async () => {
+    const user = userEvent.setup();
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews: listOf([]),
+          markLowRatedLessonReviewHandled: noMark(),
+          listCoaches: coachesOf(),
+          listLessonMenus: lessonMenusOf(),
+        }}
+        studentId={STUDENT_ID}
+      />,
+    );
+    expect(await screen.findByText("この生徒の低い評価はありません")).toBeInTheDocument();
+
+    await user.selectOptions(await menuSelect(), "サーブの添削");
+    expect(await screen.findByText("条件に合う低い評価はありません")).toBeInTheDocument();
+  });
+
+  test("レッスンメニューで絞って 422 が返ったら、一覧から選び直すよう添える", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = vi.fn<HeadquartersApi["listLowRatedLessonReviews"]>(async (filter) =>
+      filter?.lesson_menu_id === undefined
+        ? { ok: true, data: { max_rating: 2, period_days: 30, reviews: REVIEWS } }
+        : { ok: false, code: "validation_failed", message: "入力内容を確認してください。" },
+    );
+    render(
+      <LowRatedReviewList
+        api={{
+          listLowRatedLessonReviews,
+          markLowRatedLessonReviewHandled: noMark(),
+          listCoaches: coachesOf(),
+          listLessonMenus: lessonMenusOf(),
+        }}
+      />,
+    );
+    await itemsOf();
+
+    await user.selectOptions(await menuSelect(), "サーブの添削");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "入力内容を確認してください。スポーツ・コーチ・レッスンメニューは一覧から選び直してください。",
+    );
+  });
+
+  test("レッスンメニューの一覧を読めなければ、レッスンメニューの欄だけを使えなくして文言を出し、一覧はほかの条件で引ける", async () => {
+    const user = userEvent.setup();
+    const listLowRatedLessonReviews = listOf(REVIEWS);
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できませんでした。",
+    }));
+    render(
+      <LowRatedReviewList
+        api={{ listLowRatedLessonReviews, markLowRatedLessonReviewHandled: noMark(), listCoaches: coachesOf(), listLessonMenus }}
+      />,
+    );
+
+    expect(
+      await screen.findByText("レッスンメニューの一覧を読めませんでした。サーバーに接続できませんでした。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toBeDisabled();
     await itemsOf();
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
     expect(listLowRatedLessonReviews).toHaveBeenLastCalledWith({ sport: "tennis" });
@@ -808,7 +1072,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listLowRatedLessonReviews: listOf(REVIEWS),
       markLowRatedLessonReviewHandled: noMark(),
-      listCoaches: coachesOf(),
+      listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(),
     });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
@@ -844,7 +1108,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listLowRatedLessonReviews,
       markLowRatedLessonReviewHandled: noMark(),
-      listCoaches: coachesOf(),
+      listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(),
       getStudentActivity,
     });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
@@ -874,7 +1138,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listLowRatedLessonReviews,
       markLowRatedLessonReviewHandled: noMark(),
-      listCoaches: coachesOf(),
+      listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(),
     });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
@@ -897,7 +1161,7 @@ describe("画面への配置", () => {
     headquartersApiMock.mockReturnValue({
       listLowRatedLessonReviews: listOf(REVIEWS),
       markLowRatedLessonReviewHandled: noMark(),
-      listCoaches: coachesOf(),
+      listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(),
     });
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
