@@ -1,8 +1,12 @@
 # 出荷用の環境の組み立て（factory-engine の ADR 0012）。工場の shipper が環境ごとに別のプロジェクトとして起動する。
-#   COMPOSE_PROJECT_NAME=rally-staging BACKEND_IMAGE=rally-backend:0.3.0 ADMIN_WEB_IMAGE=rally-admin-web:0.3.0 APP_VERSION=0.3.0 \
-#   BACKEND_PORT=18080 ADMIN_WEB_PORT=13000 docker compose -f deploy/compose.yaml up -d --wait
+#   COMPOSE_PROJECT_NAME=rally-staging BACKEND_IMAGE=rally-backend:0.3.0 ADMIN_WEB_IMAGE=rally-admin-web:0.3.0 \
+#   STUDENT_WEB_IMAGE=rally-student-web:0.3.0 APP_VERSION=0.3.0 \
+#   BACKEND_PORT=18080 ADMIN_WEB_PORT=13000 STUDENT_WEB_PORT=13100 docker compose -f deploy/compose.yaml up -d --wait
 # DB は環境ごとのボリュームに持ち、版を替えても（Rollback でも）残す。backend が起動時にマイグレーションを当てる（前進だけ）。
-# 手元からだけつながるよう 127.0.0.1 に限る（BIND_HOST で変えられる）。認証のない DB で、秘密情報は置かない。
+# 手元からだけつながるよう 127.0.0.1 に限る。認証のない DB は外に出さない。秘密情報は置かない。
+# 人がスマートフォンで触れる画面（admin-web・student-web）だけは WEB_BIND_HOST で待ち受けを変えられる
+# （触れる環境。factory-engine の ADR 0028 の touchable_env。shipper が .factory-config/ship.yaml の touch の環境にだけ渡す）。
+# backend は BIND_HOST（既定 127.0.0.1）のまま。画面は同じオリジンの /api/* を backend に中継するので、backend を外に出さなくても触れる。
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16}
@@ -44,12 +48,28 @@ services:
     depends_on:
       backend: { condition: service_healthy }
     ports:
-      - "${BIND_HOST:-127.0.0.1}:${ADMIN_WEB_PORT:-3000}:3000"
+      - "${WEB_BIND_HOST:-127.0.0.1}:${ADMIN_WEB_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 1s
       timeout: 3s
       retries: 60
+    restart: unless-stopped
+
+  # 生徒アプリの Web 版（apps/student-app/Dockerfile）。スマートフォンのブラウザで開いて触る
+  student-web:
+    image: ${STUDENT_WEB_IMAGE:?STUDENT_WEB_IMAGE を指定する}
+    environment:
+      RALLY_API_URL: http://backend:8080
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "${WEB_BIND_HOST:-127.0.0.1}:${STUDENT_WEB_PORT:-3100}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
     restart: unless-stopped
 
 volumes:
