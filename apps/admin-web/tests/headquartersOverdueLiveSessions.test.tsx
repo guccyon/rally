@@ -78,13 +78,13 @@ describe("経過時間の表示", () => {
   });
 });
 
-describe("本部の終わっていない通話", () => {
+describe("本部の終わっていないビデオ通話", () => {
   test("読み込み中を出し、読めたら既定の 3 時間で、コーチ・生徒・開始・経過を API の順で表にする", async () => {
     const listOverdueLiveLessonSessions = listOf(SESSIONS);
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
-    const table = await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    const table = await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3 });
     const rows = within(table).getAllByRole("row").slice(1);
@@ -103,7 +103,7 @@ describe("本部の終わっていない通話", () => {
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
 
     expect(
-      await screen.findByText("開始から 5 時間以上たって、まだ終わっていない通話です。経過は読み込んだ時点のものです。"),
+      await screen.findByText("開始から 5 時間以上たって、まだ終わっていないビデオ通話です。経過は読み込んだ時点のものです。"),
     ).toBeInTheDocument();
   });
 
@@ -111,7 +111,7 @@ describe("本部の終わっていない通話", () => {
     const user = userEvent.setup();
     const listOverdueLiveLessonSessions = listOf(SESSIONS);
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
 
     await user.selectOptions(screen.getByRole("combobox", { name: "開始からの経過" }), "1 日（24 時間）以上");
 
@@ -141,7 +141,7 @@ describe("本部の終わっていない通話", () => {
       },
     );
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
-    await screen.findByText("終わっていない通話はありません");
+    await screen.findByText("終わっていないビデオ通話はありません");
 
     const select = screen.getByRole("combobox", { name: "開始からの経過" });
     await user.selectOptions(select, "1 時間以上");
@@ -151,14 +151,14 @@ describe("本部の終わっていない通話", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByText(/開始から 6 時間以上たって/)).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
   });
 
-  test("0 件なら「終わっていない通話はありません」と出し、表は出さない", async () => {
+  test("0 件なら「終わっていないビデオ通話はありません」と出し、表は出さない", async () => {
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions: listOf([]), listCoaches: coachesOf() }} />);
 
-    expect(await screen.findByText("終わっていない通話はありません")).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(await screen.findByText("終わっていないビデオ通話はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
   });
 
   test("API のエラー（本部以外のトークンの 403 など）の文言を出し、表は出さない", async () => {
@@ -168,15 +168,15 @@ describe("本部の終わっていない通話", () => {
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
-    expect(screen.queryByText("終わっていない通話はありません")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByText("終わっていないビデオ通話はありません")).not.toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
   });
 
   test("セッションを終わらせる操作は出さない", async () => {
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf() }} />);
 
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
@@ -205,7 +205,7 @@ describe("コーチで絞る", () => {
         onFilterChange={onFilterChange}
       />,
     );
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     const select = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(select).toBeEnabled());
 
@@ -233,7 +233,7 @@ describe("コーチで絞る", () => {
       />,
     );
 
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, coach_id: SATO });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue(SATO));
@@ -255,30 +255,30 @@ describe("コーチで絞る", () => {
       />,
     );
 
-    expect(await screen.findByText("このコーチの終わっていない通話はありません")).toBeInTheDocument();
+    expect(await screen.findByText("このコーチの終わっていないビデオ通話はありません")).toBeInTheDocument();
     const select = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(select).toHaveValue(unknown));
     expect(within(select).getByRole("option", { selected: true })).toHaveTextContent("（一覧にないコーチ）");
 
     await user.selectOptions(select, "すべて");
-    expect(await screen.findByRole("table", { name: "終わっていない通話の一覧" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" })).toBeInTheDocument();
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3 });
     expect(within(select).queryByRole("option", { name: "（一覧にないコーチ）" })).not.toBeInTheDocument();
   });
 
-  test("コーチで絞って 0 件なら「このコーチの終わっていない通話はありません」と出し、表は出さない", async () => {
+  test("コーチで絞って 0 件なら「このコーチの終わっていないビデオ通話はありません」と出し、表は出さない", async () => {
     const user = userEvent.setup();
     const listOverdueLiveLessonSessions = listOf(SESSIONS);
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     const select = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(select).toBeEnabled());
 
     listOverdueLiveLessonSessions.mockResolvedValueOnce({ ok: true, data: { older_than_hours: 3, sessions: [] } });
     await user.selectOptions(select, "高橋 コーチ");
-    expect(await screen.findByText("このコーチの終わっていない通話はありません")).toBeInTheDocument();
-    expect(screen.queryByText("終わっていない通話はありません")).not.toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(await screen.findByText("このコーチの終わっていないビデオ通話はありません")).toBeInTheDocument();
+    expect(screen.queryByText("終わっていないビデオ通話はありません")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
   });
 
   test("422 なら汎用の文言に直す場所（コーチを選び直す）を添えて出し、表は出さない", async () => {
@@ -298,17 +298,17 @@ describe("コーチで絞る", () => {
       "入力の内容が正しくありません。コーチは一覧から選び直してください。",
     );
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, coach_id: "not-a-uuid" });
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
   });
 
-  test("コーチの一覧が読めなくても経過時間で通話を出し、コーチの絞り込みだけを使えなくする", async () => {
+  test("コーチの一覧が読めなくても経過時間でビデオ通話を出し、コーチの絞り込みだけを使えなくする", async () => {
     const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({
       ok: false,
       message: "サーバーに接続できません。",
     }));
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions: listOf(SESSIONS), listCoaches }} />);
 
-    expect(await screen.findByRole("table", { name: "終わっていない通話の一覧" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" })).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "コーチの一覧を読めませんでした。サーバーに接続できません。",
     );
@@ -334,7 +334,7 @@ describe("スポーツで絞る", () => {
       "バスケットボール",
       "水泳",
     ]);
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
   });
 
   test("スポーツを選ぶと API の sport に渡して読み直し、「すべて」に戻せば外す", async () => {
@@ -347,14 +347,14 @@ describe("スポーツで絞る", () => {
         onFilterChange={onFilterChange}
       />,
     );
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     const select = screen.getByRole("combobox", { name: "スポーツ" });
 
     await user.selectOptions(select, "ゴルフ");
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(2);
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3, sport: "golf" });
     expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "golf", coachId: "", studentId: "" });
-    expect(await screen.findByRole("table", { name: "終わっていない通話の一覧" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" })).toBeInTheDocument();
 
     await user.selectOptions(select, "すべて");
     expect(listOverdueLiveLessonSessions).toHaveBeenLastCalledWith({ older_than_hours: 3 });
@@ -372,7 +372,7 @@ describe("スポーツで絞る", () => {
         onFilterChange={onFilterChange}
       />,
     );
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     const coach = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(coach).toBeEnabled());
 
@@ -401,14 +401,14 @@ describe("スポーツで絞る", () => {
       />,
     );
 
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, coach_id: SATO, sport: "tennis" });
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("tennis");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue(SATO));
   });
 
-  test("スポーツで絞って 0 件なら「条件に合う終わっていない通話はありません」と出し、表は出さない", async () => {
+  test("スポーツで絞って 0 件なら「条件に合う終わっていないビデオ通話はありません」と出し、表は出さない", async () => {
     const user = userEvent.setup();
     const listOverdueLiveLessonSessions = vi.fn<HeadquartersApi["listOverdueLiveLessonSessions"]>(
       async (filter = {}) => ({
@@ -417,12 +417,12 @@ describe("スポーツで絞る", () => {
       }),
     );
     render(<OverdueLiveSessionList api={{ listOverdueLiveLessonSessions, listCoaches: coachesOf() }} />);
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
 
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "水泳");
-    expect(await screen.findByText("条件に合う終わっていない通話はありません")).toBeInTheDocument();
-    expect(screen.queryByText("終わっていない通話はありません")).not.toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(await screen.findByText("条件に合う終わっていないビデオ通話はありません")).toBeInTheDocument();
+    expect(screen.queryByText("終わっていないビデオ通話はありません")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
   });
 
   test("コーチの一覧が読めなくても、スポーツでは絞れる", async () => {
@@ -471,11 +471,11 @@ describe("生徒で絞る", () => {
       />,
     );
 
-    const table = await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    const table = await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, student_id: YAMADA });
     expect(within(table).getAllByRole("row")).toHaveLength(2);
-    expect(screen.getByText(/この生徒の通話を、開始の古い順に見られます/)).toBeInTheDocument();
+    expect(screen.getByText(/この生徒のビデオ通話を、開始の古い順に見られます/)).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "生徒" })).not.toBeInTheDocument();
   });
 
@@ -490,7 +490,7 @@ describe("生徒で絞る", () => {
         onFilterChange={onFilterChange}
       />,
     );
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     const coach = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(coach).toBeEnabled());
 
@@ -517,7 +517,7 @@ describe("生徒で絞る", () => {
     expect(onFilterChange).toHaveBeenLastCalledWith({ sport: "tennis", coachId: SATO, studentId: YAMADA });
   });
 
-  test("生徒だけで絞って 0 件なら「この生徒の終わっていない通話はありません」、コーチでも絞って 0 件なら「条件に合う」と出す", async () => {
+  test("生徒だけで絞って 0 件なら「この生徒の終わっていないビデオ通話はありません」、コーチでも絞って 0 件なら「条件に合う」と出す", async () => {
     const user = userEvent.setup();
     const listOverdueLiveLessonSessions = listOf([]);
     render(
@@ -527,14 +527,14 @@ describe("生徒で絞る", () => {
       />,
     );
 
-    expect(await screen.findByText("この生徒の終わっていない通話はありません")).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "終わっていない通話の一覧" })).not.toBeInTheDocument();
+    expect(await screen.findByText("この生徒の終わっていないビデオ通話はありません")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "終わっていないビデオ通話の一覧" })).not.toBeInTheDocument();
 
     const coach = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(coach).toBeEnabled());
     await user.selectOptions(coach, "高橋 コーチ");
-    expect(await screen.findByText("条件に合う終わっていない通話はありません")).toBeInTheDocument();
-    expect(screen.queryByText("この生徒の終わっていない通話はありません")).not.toBeInTheDocument();
+    expect(await screen.findByText("条件に合う終わっていないビデオ通話はありません")).toBeInTheDocument();
+    expect(screen.queryByText("この生徒の終わっていないビデオ通話はありません")).not.toBeInTheDocument();
   });
 
   test("生徒で絞っていて 422 なら、コーチに加えて生徒を選び直すことも添える", async () => {
@@ -572,13 +572,13 @@ describe("生徒で絞る", () => {
       />,
     );
 
-    const region = screen.getByRole("region", { name: "終わっていない通話" });
+    const region = screen.getByRole("region", { name: "終わっていないビデオ通話" });
     const label = within(region).getByText(/^生徒で絞っています:/);
     await waitFor(() => expect(label).toHaveTextContent("生徒で絞っています: 山田 花子"));
     expect(getStudentActivity).toHaveBeenCalledWith(YAMADA);
-    await within(region).findByRole("table", { name: "終わっていない通話の一覧" });
+    await within(region).findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, student_id: YAMADA });
-    expect(screen.getByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "すべての生徒の終わっていないビデオ通話を見る" })).toHaveAttribute(
       "href",
       "/headquarters/overdue-live-sessions",
     );
@@ -587,7 +587,7 @@ describe("生徒で絞る", () => {
     expect(replace).toHaveBeenLastCalledWith(`/headquarters/overdue-live-sessions?sport=tennis&student_id=${YAMADA}`, {
       scroll: false,
     });
-    expect(screen.getByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "すべての生徒の終わっていないビデオ通話を見る" })).toHaveAttribute(
       "href",
       "/headquarters/overdue-live-sessions?sport=tennis",
     );
@@ -602,14 +602,14 @@ describe("生徒で絞る", () => {
     });
     render(<OverdueLiveSessionsHome token="mock.headquarters.x" />);
 
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(screen.queryByText(/生徒で絞っています/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "すべての生徒の終わっていない通話を見る" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "すべての生徒の終わっていないビデオ通話を見る" })).not.toBeInTheDocument();
     expect(getStudentActivity).not.toHaveBeenCalled();
   });
 });
 
-describe("終わっていない通話の絞り込みと URL", () => {
+describe("終わっていないビデオ通話の絞り込みと URL", () => {
   test("「すべて」のコーチはクエリに出さず、選んだコーチを契約のクエリの名前で残す", () => {
     expect(overdueLiveSessionsPath({ sport: "", coachId: "", studentId: "" })).toBe(
       "/headquarters/overdue-live-sessions",
@@ -664,7 +664,7 @@ describe("終わっていない通話の絞り込みと URL", () => {
         initialFilter={{ sport: "", coachId: SATO, studentId: "" }}
       />,
     );
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, coach_id: SATO });
     const select = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(select).toHaveValue(SATO));
@@ -696,7 +696,7 @@ describe("終わっていない通話の絞り込みと URL", () => {
       />,
     );
 
-    await screen.findByRole("table", { name: "終わっていない通話の一覧" });
+    await screen.findByRole("table", { name: "終わっていないビデオ通話の一覧" });
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledTimes(1);
     expect(listOverdueLiveLessonSessions).toHaveBeenCalledWith({ older_than_hours: 3, sport: "golf" });
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("golf");
@@ -705,17 +705,17 @@ describe("終わっていない通話の絞り込みと URL", () => {
 });
 
 describe("画面への配置", () => {
-  test("本部の画面から終わっていない通話の画面へ移れる", () => {
+  test("本部の画面から終わっていないビデオ通話の画面へ移れる", () => {
     render(<HeadquartersHome />);
 
-    const region = screen.getByRole("region", { name: "終わっていない通話" });
-    expect(within(region).getByRole("link", { name: "時間の過ぎた通話を見る" })).toHaveAttribute(
+    const region = screen.getByRole("region", { name: "終わっていないビデオ通話" });
+    expect(within(region).getByRole("link", { name: "時間の過ぎたビデオ通話を見る" })).toHaveAttribute(
       "href",
       "/headquarters/overdue-live-sessions",
     );
   });
 
-  test("終わっていない通話の画面は開いたときに一覧を読み、本部の画面へ戻れる", async () => {
+  test("終わっていないビデオ通話の画面は開いたときに一覧を読み、本部の画面へ戻れる", async () => {
     headquartersApiMock.mockReturnValue({ listOverdueLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf() });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
@@ -724,8 +724,8 @@ describe("画面への配置", () => {
       </RoleGate>,
     );
 
-    const region = screen.getByRole("region", { name: "終わっていない通話" });
-    expect(await within(region).findByRole("table", { name: "終わっていない通話の一覧" })).toBeInTheDocument();
+    const region = screen.getByRole("region", { name: "終わっていないビデオ通話" });
+    expect(await within(region).findByRole("table", { name: "終わっていないビデオ通話の一覧" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "本部の画面へ戻る" })).toHaveAttribute("href", "/headquarters");
     expect(replace).not.toHaveBeenCalled();
   });
@@ -739,7 +739,7 @@ describe("画面への配置", () => {
       </RoleGate>,
     );
 
-    expect(screen.queryByRole("region", { name: "終わっていない通話" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "終わっていないビデオ通話" })).not.toBeInTheDocument();
     expect(replace).toHaveBeenCalledWith("/");
   });
 });

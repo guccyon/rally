@@ -11,9 +11,9 @@ import { formatMonth } from "@/components/labels";
 
 type MonthlyLessonStats = Schemas["MonthlyLessonStats"];
 
-/** 表の行（見出しと、1 か月分の値の表示）。並びは通話・動画添削・評価の件数・評価の平均。 */
+/** 表の行（見出しと、1 か月分の値の表示）。並びはビデオ通話・動画添削・評価の件数・評価の平均。 */
 const ROWS: { label: string; value: (month: MonthlyLessonStats) => string }[] = [
-  { label: "通話（同期レッスン）", value: (month) => `${month.live_lesson_count} 回` },
+  { label: "ビデオ通話（同期レッスン）", value: (month) => `${month.live_lesson_count} 回` },
   { label: "動画添削（非同期レッスン）", value: (month) => `${month.async_lesson_count} 回` },
   { label: "評価の件数", value: (month) => `${month.review_count} 件` },
   { label: "点の平均（1〜5）", value: (month) => formatAverageRating(month.average_rating) },
@@ -25,7 +25,7 @@ function isEmptyMonth(month: MonthlyLessonStats): boolean {
 
 /**
  * コーチのホーム（対応待ち）の上に出す、今月と先月のレッスンの実績（getMyLessonStats）。
- * 完了したレッスンの数を通話と動画添削に分けて、その月に受けた評価の件数と平均とともに月ごとの列で並べる。
+ * 完了したレッスンの数をビデオ通話と動画添削に分けて、その月に受けた評価の件数と平均とともに月ごとの列で並べる。
  * 数え方（暦月の区切り・平均の丸め）は契約が正本で、画面は返った値を出すだけ。金額は出さない。
  */
 export function LessonStats({ api }: { api: Pick<CoachApi, "getMyLessonStats"> }) {
