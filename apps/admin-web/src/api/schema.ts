@@ -1309,8 +1309,16 @@ export interface paths {
          *       `StudentUnansweredMessageThreadCount`、絞り込みの判定は `UnansweredStudentFilter`）。付けないとき・`false` は絞らない。
          *       `true` / `false` でなければ 422 `validation_failed`。スレッドの数や ID は返さない（中身は `listUnansweredMessageThreads`、
          *       数は `getStudentActivity` で見る）
-         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered` は組み合わせられ、付けたものをすべて満たす生徒だけを返す
-         *       （並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
+         *     - 返却待ちの動画のある生徒で絞る（任意）: `has_pending_video=true` を付ければ、`listPendingVideoReviews` にその生徒の
+         *       `student_id` だけを付けたとき（`sport`・`min_elapsed_hours`・`coach_id`・`lesson_menu_id` なし。担当コーチ・経過時間を
+         *       問わない）に載る動画が 1 件以上ある生徒、つまり `getStudentActivity` の `pending_video_review_count` が 1 以上の生徒だけを
+         *       返す（添削の返事を待っている生徒を見つける）。数え方は `getStudentActivity` の `pending_video_review_count` と同じ 1 か所
+         *       （コーチがまだ添削を返していない動画。照会した時刻（サーバーの現在時刻）で数える。実装は backend の domain
+         *       `PendingVideoReviewFilter` の既定の条件で、絞り込みの判定は `PendingVideoStudentFilter`）。付けないとき・`false` は絞らない。
+         *       `true` / `false` でなければ 422 `validation_failed`。動画の数や ID は返さない（中身は `listPendingVideoReviews`、
+         *       数は `getStudentActivity` で見る）
+         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video` は組み合わせられ、付けたものをすべて
+         *       満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
          *       足す）。生徒がいなければ `students` は空の配列
@@ -4740,6 +4748,12 @@ export interface operations {
                  *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
                  */
                 has_unanswered?: boolean;
+                /**
+                 * @description `true` なら `listPendingVideoReviews` にその生徒の `student_id` だけを付けたときに載る動画（返却待ちの動画）が
+                 *     1 件以上ある（`getStudentActivity` の `pending_video_review_count` が 1 以上の）生徒だけを返す（付けないとき・
+                 *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_pending_video?: boolean;
             };
             header?: never;
             path?: never;

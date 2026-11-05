@@ -18,4 +18,8 @@ pub struct ListStudentsQuery {
     /// domain の [`domain::messaging::StudentUnansweredMessageThreadCount`]、判定は
     /// [`domain::messaging::UnansweredStudentFilter`]）。`false` なら絞らない
     pub has_unanswered: bool,
+    /// `true` なら返却待ちの動画が 1 件以上ある生徒だけ（数え方は生徒 1 人の利用の様子の返却待ちの数と同じ domain の
+    /// [`domain::async_lesson::PendingVideoReviewFilter`] の既定の条件、判定は
+    /// [`domain::async_lesson::PendingVideoStudentFilter`]）。`false` なら絞らない
+    pub has_pending_video: bool,
 }
