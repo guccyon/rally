@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0008
+pr: https://github.com/guccyon/rally/pull/829
+decided_at: '2026-11-04'
+outcome: human
+requires_human: true
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更は D-0001 の enforcement の議決（K-0001 を ci_check で担保する）を K-0001 の enforcement.solutions
+    に書き写したもので、議決の中身とも README の「担保した知見も消さず solutions に残す」決まりとも合っています。
+  - INDEX.md の K-0001 の担保の列が context から deterministic に変わったのは K-0001.yaml の enforcement.level
+    と一致し、影響を受けるのは K-0001 だけで K-0002 とは作用先が別なので、既存の知見の扱いを足す必要はありません。
+  - specs/ の glossary.yaml・context-map.yaml・design の見出しの規範は製品の画面の話で、PR 本文の見出しの検査とは用語も主張もぶつかりません。
+  - D-0001 の提案は検査を core-gates に足すとしていましたが、実装は tools/pr-body-check/check.mjs なので、配線を入れるときにどちらに置くかを揃えて
+    solutions の what を直してください。
+  - K-0001 の invalidate_when の 2 つ目（本文の見出しの重なりを機械で検査するようになった）は配線が入ると満たされるので、そのときは廃止ではなく担保済みとして残す扱いになることを、次の変更セットで明記するとよいです。
+  - 配線がまだで効き目を確かめていないと書いてあるので、confidence は hypothesis のままが妥当で、上げるのは配線後に見出しの重なりによる差し戻しが減ったと記録で示せてからにしてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - この PR は K-0001 に enforcement.solutions を足しただけで、主張と evidence（case C-0001、pr 546、event
+    case.analyzed:113682）は変わっておらず、一次記録まで辿れる状態はそのままです。
+  - '足した解決策は decided_by: committee:D-0001 と issue 826 を指していて、D-0001 の enforcement
+    担当の提案（同じ ## 見出しの重なりと「## 工場の記録」の下の ### を見る ci_check）と中身が合っています。'
+  - tools/pr-body-check/check.mjs が実在するかと issue 826 の中身は材料の中では確かめられないので、確かさを上げる前に
+    issue 826 とそのファイルを一次記録として確かめてください。
+  - 呼び出しの配線がまだで効き目を確かめていないと本文に書いてあるので、confidence を hypothesis のままにするのが妥当です。
+  - 検査を配線して動き出すと invalidate_when の 2 つ目（本文の見出しの重なりを機械で検査するようになった）に当たるので、そのときに K-0001
+    の状態を見直してください。
+  - 足した文に利用者の氏名・連絡先・利用者 ID・本文の引用はなく、残っているのは issue の番号とファイルのパスだけです。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0001 の enforce の議決どおり、K-0001 の担保として PR 本文の見出しを見る決定論の検査（tools/pr-body-check/check.mjs、issue
+    826）を enforcement.solutions に記録しており、繰り返し起きやすく線も引きやすい欠陥を機械で見る方向は妥当です。
+  - ただし what にあるとおり呼び出しの配線（Engine の検査の前段か CI）はまだ入っていないので、今の時点では何も止めておらず、担保は実際には効いていません。
+  - INDEX.md の担保の列が context から deterministic に変わると担保済みに見えるので、配線が入るまでは K-0001 を文脈としてエージェントに渡す扱いをやめないでください。
+  - 配線は Engine に作用させると人の承認が要るので、先に CI の側（PR 本文の編集のたびに走る検査）で呼ぶと、承認を待たずに効き目を確かめられます。
+  - 'check.mjs には PR #546 の重なった本文を失敗の例、body_fix のあとの本文を通る例として固定したテストを添え、検査の線が事例と合っていることを確かめてください。'
+  - 効き目（続きのジョブのあとに見出しの重なりで差し戻しが起きなくなったこと）を記録で示せるまでは、confidence は hypothesis のままがよいです。
+  personal_data: false
+- role: dissent
+  vote: sendback
+  reasons:
+  - K-0001 の enforcement.level を deterministic に変えていますが、what 自身が「呼び出しの配線はまだ入っていない」と書いており、担保がまだ効いていないのに
+    INDEX.md の担保の列が deterministic になるのは言い過ぎです。
+  - 担保が deterministic と読まれて K-0001 が文脈としてエージェントに渡らなくなると、配線が入るまでのあいだ、文脈と検査のどちらにも守られない穴ができます。
+  - 直し方として、配線（Engine の検査の前段か CI）が入って issue 826 が閉じるまでは level を context のままにし、solutions
+    には予定の解決策として残すか、配線が入ったことを示す記録を添えてから deterministic に上げてください。
+  - '検査の 2 つ目の決まり「## 工場の記録 より後ろに ## 以上の見出しがない」は、C-0001 が追記の置き場として「## 補足」も挙げているので、##
+    補足 が工場の記録の後ろに来る正しい本文を誤って止める反例になりえます。CLAUDE.md の PR の見出しの決まりと突き合わせて、範囲を確かめてください。'
+  - '検査は見出しの重なりだけでなく置き場所まで縛る 3 つの決まりを持ち、K-0001 の主張（同じ見出しの組が 2 回出る）より広いので、主張に直接対応する「同じ
+    ## 見出しが 2 回以上ない」を中心にし、残りは決まりの根拠を示してから足してください。'
+  - '根拠は PR #546 の 1 件だけで効き目も確かめていないので、confidence は hypothesis のままにしてください。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/pr-body-check/check.mjs を PR 本文の編集（pull_request の edited と synchronize、Engine
+    の pr.head_updated・handoff.saved のあと）で走る CI の検査として呼び、同じ ## 見出しが 2 回以上ある、または「##
+    工場の記録」より後ろに ## 以上の見出しがあれば失敗にして検査役に回す前に止める。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: 'check.mjs のテストに、PR #546 の続きのジョブで重なった本文を失敗の例、body_fix のあとの本文を通る例として固定し、検査の線の引き方が事例とずれないようにする。'

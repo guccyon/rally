@@ -24,4 +24,16 @@ invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
 related: [K-0003, K-0004]
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: ci_check
+      what: >-
+        PR 本文で同じ ## 見出しが 2 回以上ないこと、「## 工場の記録」より後ろに ## 以上の見出しがないこと、
+        続きのジョブの見出しが「## 工場の記録」の下の ### 以下にあることを見る決定論の検査（tools/pr-body-check/check.mjs）。
+        PR 本文の更新（pr.head_updated・handoff.saved）のあと、検査役に回す前に呼ぶ想定。
+        呼び出しの配線（Engine の検査の前段か CI）はまだ入っていないので、効き目はまだ確かめていない
+      issue: 826
+      at: 2026-11-03
+      decided_by: committee:D-0001
 decided_by: committee:D-0001
