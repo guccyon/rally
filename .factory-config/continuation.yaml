@@ -1,0 +1,24 @@
+# 続きのジョブの積み方（factory-engine の ADR 0016・0017、orchestrator/dispatcher/continuation.py・supervisor.py の conflict_step、
+# orchestrator/worker/entrypoint.sh の衝突の解消）。この製品で Engine に守ってほしい線を機械可読で持つ。
+# 知見 K-0010 の担保（議決 D-0013、Issue #954）。線を Engine の本物の処理に照らすのは tools/conflict-check/（README）。
+# Engine はまだこのファイルを読まない。読ませる配線と、今の Engine が外れている線（README の「今の Engine」）を Engine に入れるのは建設者。
+# 値を緩める変更（上限を上げる・機械的に解くパスを減らす・引き継ぎを許す回数を増やす）は人の承認が要る。
+schema_version: "0.1"
+decided:
+  - { date: "2026-11-05", by: committee, note: "議決 D-0013 の担保の案（K-0010）。上限は案の例の 3 回をそのまま置いた（仮置き）" }
+
+# 既定ブランチとの衝突（supervisor が pr.conflicted / mergeable_state=dirty で積む continue の reason=conflict）
+conflict:
+  # 同じ PR で積む conflict の続きのジョブの上限。数えるのは continue.enqueued（reason=conflict）の件数で、
+  # 機械的に解いた回も数える（積む時点では衝突したファイルが分からないため）。上限に達したら次の衝突では積まない
+  max_attempts_per_pr: 3
+  # 上限を超えて衝突したときの扱い。stoppage = 衝突の停止（ci:<PR の URL>）を開いて人の判断待ちにする（supervisor の ci_failure_step と同じ停止）
+  on_limit: stoppage
+  # エージェントのセッションを引き継いで（agent_resumed=true）よいのは、この回まで。2 回目以降は新しいセッションで始める
+  resume_session_until_attempt: 1
+  # 衝突したファイルがすべてこのパスに当たるときは、エージェントを使わずに両方の行を残して機械的に解く（git merge-file --union）。
+  # 末尾が / のものはディレクトリの下のすべてのファイル。ほかのファイルも衝突していれば、エージェント（agent_tier）で解く
+  mechanical:
+    paths: ["CHANGELOG.md", "changelog.d/"]
+    agent_tier: none
+  agent_tier: tier-large

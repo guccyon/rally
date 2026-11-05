@@ -20,4 +20,21 @@ related: [K-0002, K-0001]
 invalidate_when:
   - "conflict の続きのジョブに回数の上限か、セッションの引き継ぎの打ち切りが入った"
   - "CHANGELOG だけのような機械的な衝突が tier-small か機械的な解消に回るようになった"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: config
+      what: >-
+        conflict の続きのジョブの積み方を .factory-config/continuation.yaml の conflict に設定の線として置いた（同じ PR で 3 回まで、
+        超えたら積まずに衝突の停止（ci:）を開いて人の判断待ち、セッションを引き継いでよいのは 1 回目まで、衝突したファイルが
+        CHANGELOG.md と changelog.d/ だけならエージェントを使わずに両方の行を残して機械的に解く、ほかも衝突したら tier-large）。
+        tools/conflict-check/ の policy.py が線を読み、test_policy.py で C-0005 と同じ 20 回の衝突では 3 回だけ積んで 4 回目は人へ回すこと、
+        2 回目以降は引き継がないこと、CHANGELOG だけの衝突の tier が none（機械的）になることを確かめる。test_engine.py は engine_harness.py で
+        Engine の本物の supervisor の conflict_step・ci_failure_step と continuation.enqueue、worker の entrypoint.sh の機械的な解消の手順と
+        STATE_ARGS の行を動かして線に照らす。今の Engine では、2 回目以降を引き継がないことと CHANGELOG.md だけの衝突を機械的に解くことは通り、
+        回数の上限（6 回の衝突で 6 回積む）と changelog.d/ を含む衝突の機械的な解消は外れるので、Engine が今の形のときだけ todo にした。
+        Engine が continuation.yaml を読むことと上限・機械的な解消の広げ、CI の配線は建設者が入れるので、効き目はまだ確かめていない
+      issue: 954
+      at: 2026-11-05
+      decided_by: committee:D-0013
 decided_by: committee:D-0013
