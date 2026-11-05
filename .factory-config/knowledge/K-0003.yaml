@@ -15,17 +15,23 @@ review_by: 2026-12-01
 confidentiality: product
 related: [K-0004]
 enforcement:
-  level: deterministic
+  # 書く側と配線が入るまでは担保が効いていないので context のまま（文脈としてエージェントに渡す）。solutions は予定の解決策
+  level: context
   solutions:
     - kind: schema
+      state: planned
       what: >-
-        judgment.judged の payload で verdict が adopt なら subject（provisional = 仮決めの承認、defect = 欠陥の採用）を必須にし、
-        差し戻しの incident は adopted_defects と approved_provisionals に分けて、2 つを混ぜた合計の adopted を置かないことを
+        予定の解決策（まだ何も止めていない）。judgment.judged の payload で verdict が adopt のときは仮決めの承認か欠陥の採用かを示す欄を必須にし、
+        差し戻しの incident は欠陥の採用の数と仮決めの承認の数に分けて、2 つを混ぜた合計の adopted を置かないことを、
         JSON Schema（tools/judgment-event-check/schema/）と決定論の検査（tools/judgment-event-check/check.mjs）で見る。
-        今の Engine はイベントに subject を載せず incident に合計の adopted を書くので、書く側を合わせることと
-        呼び出しの配線（Engine の書く前の検査）はまだ入っておらず、効き目はまだ確かめていない。
-        approve_provisional などの言葉の定義は承認の線（ADR 0023・0024）を経てから入れる
+        スキーマの欄の名前と値（subject の provisional・defect、incident の adopted_defects・approved_provisionals）は案で、
+        言葉の定義と合わせて承認の線（ADR 0023・0024）を経るまで確定しない。
+        今の Engine はイベントに subject を載せず incident に合計の adopted を書き、書く前の検査の配線も入っていないので、効き目はまだ確かめていない。
+        配線の前に、仮決めの採用が Issue や specs/ の補足などの続きの作業を求める場合（D-0004 の反対の票）が
+        provisional・defect の 2 つに収まるかを、C-0002 とほかの判定で確かめる。
+        Engine の書く側と書く前の検査の配線が入ったことの記録を添えてから level を deterministic に上げる
       issue: 903
       at: 2026-11-05
       decided_by: committee:D-0004
+decided_by: committee:D-0004
 decided_by: committee:D-0004

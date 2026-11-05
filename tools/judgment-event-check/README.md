@@ -22,7 +22,8 @@ npm test
 - `subject` は Engine が artifacts の Judgment にすでに書いている欄（`orchestrator/dispatcher/judgment.py`）と同じ名前・同じ値にした。イベントにもそれを必須で載せる形
 - 1 行が events の行の形（`{ "name": …, "payload": { … } }`）なら `payload` を見る
 - `check.mjs` はスキーマのキーワードのうち `type`・`enum`・`const`・`required`・`properties`・`minimum`・`maximum`・`minLength`・`if`/`then`/`else`・`not`・`allOf` だけを解釈する。スキーマにほかのキーワードを足すときは `check.mjs` も直す
-- `approve_provisional`・`adopt_defect` などの言葉の定義（`specs/glossary.yaml`）はここでは入れない。承認の線（Engine の ADR 0023・0024）を経てから入れる
+- 欄の名前と値（`subject` の `provisional`・`defect`、incident の `adopted_defects`・`approved_provisionals`）は案で、まだ確定していない。`approve_provisional`・`adopt_defect` などの言葉の定義（`specs/glossary.yaml`）と合わせて、承認の線（Engine の ADR 0023・0024）を経てから確定する
+- 仮決めの採用が Issue や specs/ の補足などの続きの作業を求める場合（議決 `D-0004` の反対の票）が `provisional`・`defect` の 2 つに収まるかは、まだ確かめていない。配線の前に事例 `C-0002` とほかの判定で確かめる
 
 ## 結果
 
@@ -32,4 +33,4 @@ npm test
 
 ## 呼び出す場所
 
-Engine が `judgment.judged` を書く前と、supervisor が差し戻しの incident を数える前（`orchestrator/dispatcher/case.py`）に呼び、1 なら書かずに止める想定。今の Engine は `judgment.judged` に `subject` を載せず、incident には合計の `adopted` を書くので、このスキーマには外れる。Engine の書く側を合わせることと呼び出しの配線は、ワーカーの権限の外なので建設者が入れる。
+Engine が `judgment.judged` を書く前と、supervisor が差し戻しの incident を数える前（`orchestrator/dispatcher/case.py`）に呼び、1 なら書かずに止める想定。今の Engine は `judgment.judged` に `subject` を載せず、incident には合計の `adopted` を書くので、このスキーマには外れる。Engine の書く側を合わせることと呼び出しの配線は、ワーカーの権限の外なので建設者が入れる。それまでは何も止めていないので、`K-0003` の担保は `context` のままにし、この検査は予定の解決策（`state: planned`）として記録している。
