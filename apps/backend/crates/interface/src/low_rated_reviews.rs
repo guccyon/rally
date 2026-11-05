@@ -4,7 +4,8 @@
 //! `coach_id` があればそのコーチが評価された評価だけ（UUID でなければ 422。いないコーチは空の一覧）。
 //! `student_id` があればその生徒が評価した評価だけ（UUID でなければ 422。いない生徒は空の一覧）。
 //! `from`・`to` があれば送った日付（日本時間）がその期間の評価だけ（日付でない・期間の規則に反するときは 422。
-//! 規則は `listAnnouncements` と同じ）。
+//! 規則は `listAnnouncements` と同じ）。`lesson_menu_id` があれば評価に添えるレッスンメニュー（`lesson_menu`）がそのメニューの
+//! 評価だけ（UUID でなければ 422。扱いは `listBookings` の `lesson_menu_id` と同じで、ないメニューは空の一覧）。
 //! 各評価には評価されたコーチの返信と、本部の対応済みの印を載せる（なければ null）。しきい値と期間は domain の [`LowRatedReviewCriteria`] の値をそのまま載せる。
 
 use std::sync::Arc;
@@ -35,6 +36,7 @@ use crate::{
     auth::{TokenVerification, require_role},
     contract::{
         account_id_from_contract, admin_web_sport, date_from_contract, date_time_to_contract,
+        lesson_menu_id_from_contract,
     },
     error::ApiError,
     low_rated_review_handlings::{LowRatedReviewHandlingBody, low_rated_review_handling_body},
@@ -61,6 +63,7 @@ pub struct ListLowRatedReviewsParams {
     student_id: Option<String>,
     from: Option<String>,
     to: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `LowRatedLessonReviewList`。
@@ -95,7 +98,8 @@ pub struct LowRatedLessonReviewBody {
 /// 有無がそれと同じ評価だけ（`false` で未対応だけ）。`coach_id` があればそのコーチの評価だけ（UUID でなければ 422。
 /// 検証と扱いは `listCancelledBookings` の `coach_id` と同じ）。`student_id` があればその生徒が評価した評価だけ（UUID で
 /// なければ 422。検証と扱いは `listCancelledBookings` の `student_id` と同じ）。`from`・`to` があれば送った日付がその期間の
-/// 評価だけ（検証と期間の規則は `listAnnouncements` の `from`・`to` と同じ）。
+/// 評価だけ（検証と期間の規則は `listAnnouncements` の `from`・`to` と同じ）。`lesson_menu_id` があれば評価の `lesson_menu` が
+/// そのメニューの評価だけ（検証と扱いは `listBookings` の `lesson_menu_id` と同じ）。
 pub async fn list_low_rated_reviews<R, M, P, D, S, C>(
     State(state): State<Shared<R, M, P, D, S, C>>,
     params: Result<Query<ListLowRatedReviewsParams>, QueryRejection>,
@@ -132,6 +136,11 @@ where
             .to
             .as_deref()
             .map(|value| date_from_contract("to", value))
+            .transpose()?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
             .transpose()?,
     };
     let list = state
