@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Schemas } from "@/api/client";
 import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime, formatDay } from "@/components/labels";
 
@@ -70,6 +71,19 @@ function endLabel(session: Schemas["LiveLessonSessionRecord"]): string {
   const ended = formatDateTime(session.ended_at);
   return session.duration_minutes === null ? ended : `${ended}（${session.duration_minutes} 分）`;
 }
+
+/** ビデオ通話の記録の表の列。 */
+const SESSION_COLUMNS: DataTableColumn<Schemas["LiveLessonSessionRecord"]>[] = [
+  { header: "コーチ", cell: (session) => session.coach_display_name ?? NO_NAME },
+  { header: "生徒", cell: (session) => session.student_display_name ?? NO_NAME },
+  { header: "開始", cell: (session) => formatDateTime(session.started_at) },
+  {
+    header: "終了",
+    cell: (session) => (
+      <span className={session.ended_at === null ? "text-text-muted" : undefined}>{endLabel(session)}</span>
+    ),
+  },
+];
 
 /**
  * 本部の「ビデオ通話の記録」。開始した日付（日本時間）の期間と任意のコーチ・スポーツ・レッスンメニューで、通話セッションの記録
@@ -296,28 +310,12 @@ function LoadedSessions({
       </p>
       {list.sessions.length === 0 && <p className="text-sm">{emptyMessage}</p>}
       {list.sessions.length > 0 && (
-        <table aria-label="ビデオ通話の記録の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">生徒</th>
-              <th className="py-1">開始</th>
-              <th className="py-1">終了</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.sessions.map((session) => (
-              <tr key={session.session_id} className="border-t">
-                <td className="py-1">{session.coach_display_name ?? NO_NAME}</td>
-                <td className="py-1">{session.student_display_name ?? NO_NAME}</td>
-                <td className="py-1">{formatDateTime(session.started_at)}</td>
-                <td className={`py-1 ${session.ended_at === null ? "text-text-muted" : ""}`}>
-                  {endLabel(session)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="ビデオ通話の記録の一覧"
+          columns={SESSION_COLUMNS}
+          rows={list.sessions}
+          rowKey={(session) => session.session_id}
+        />
       )}
     </div>
   );

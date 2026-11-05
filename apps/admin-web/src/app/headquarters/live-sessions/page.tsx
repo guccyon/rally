@@ -14,7 +14,7 @@ function LiveSessionRecordsContent() {
   const searchParams = useSearchParams();
   const studentId = searchParams.get(LIVE_SESSION_RECORDS_STUDENT_QUERY) || undefined;
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <LiveSessionRecordsHome token={session.token} studentId={studentId} />}
     </RoleGate>
   );

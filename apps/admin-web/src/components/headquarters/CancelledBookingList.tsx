@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { BOOKING_CANCELLER_LABELS, SPORT_LABELS, formatDateTime, formatDay } from "@/components/labels";
 
@@ -36,6 +37,19 @@ export type CancelledBookingFilter = { period: Period | null; coachId: string; l
 type Filter = CancelledBookingFilter;
 
 const NO_NAME = "（名前を表示できません）";
+
+/** キャンセルされた予約の一覧の列。 */
+const CANCELLED_BOOKING_COLUMNS: DataTableColumn<Schemas["CancelledBooking"]>[] = [
+  { header: "キャンセルした日時", cell: (booking) => formatDateTime(booking.cancelled_at) },
+  { header: "枠の開始", cell: (booking) => formatDateTime(booking.starts_at) },
+  { header: "コーチ", cell: (booking) => booking.coach_display_name ?? NO_NAME },
+  { header: "生徒", cell: (booking) => booking.student_display_name ?? NO_NAME },
+  {
+    header: "キャンセルした人",
+    cell: (booking) =>
+      booking.cancelled_by === null ? "記録なし" : BOOKING_CANCELLER_LABELS[booking.cancelled_by],
+  },
+];
 
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED = `期間・コーチ・レッスンメニュー・スポーツの指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・レッスンメニュー・スポーツは一覧から選び直してください。`;
@@ -316,30 +330,12 @@ function LoadedBookings({
       </p>
       {list.bookings.length === 0 && <p className="text-sm">{emptyMessage}</p>}
       {list.bookings.length > 0 && (
-        <table aria-label="キャンセルされた予約の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">キャンセルした日時</th>
-              <th className="py-1">枠の開始</th>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">生徒</th>
-              <th className="py-1">キャンセルした人</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.bookings.map((booking) => (
-              <tr key={booking.booking_id} className="border-t">
-                <td className="py-1">{formatDateTime(booking.cancelled_at)}</td>
-                <td className="py-1">{formatDateTime(booking.starts_at)}</td>
-                <td className="py-1">{booking.coach_display_name ?? NO_NAME}</td>
-                <td className="py-1">{booking.student_display_name ?? NO_NAME}</td>
-                <td className="py-1">
-                  {booking.cancelled_by === null ? "記録なし" : BOOKING_CANCELLER_LABELS[booking.cancelled_by]}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="キャンセルされた予約の一覧"
+          columns={CANCELLED_BOOKING_COLUMNS}
+          rows={list.bookings}
+          rowKey={(booking) => booking.booking_id}
+        />
       )}
     </div>
   );
