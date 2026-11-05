@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRow } from "@/components/ui/ListRow";
 import { LoadingBar, SectionLoading } from "@/components/ui/Loading";
@@ -81,7 +82,9 @@ test("知らせは失敗を role=alert、成功を role=status で出す", () =>
 test("一覧の行は未読を文字のしるしと左の線で示し、押すと詳細へ", async () => {
   const onClick = vi.fn();
   render(<ListRow title="コーチから返事が届きました" subtitle="10/27 18:04" unread onClick={onClick} />);
-  const row = screen.getByRole("button", { name: /未読.*コーチから返事が届きました/ });
+  const row = screen.getByRole("button", {
+    name: /未読.*コーチから返事が届きました/,
+  });
   expect(row).toHaveClass("border-l-primary", "min-h-14");
   await userEvent.click(row);
   expect(onClick).toHaveBeenCalledOnce();
@@ -136,7 +139,9 @@ function DialogHarness({ onConfirm }: { onConfirm: () => void }) {
 test("確認のダイアログは題にフォーカスし、やめるを左・確定を右に置き、Escape で閉じる", async () => {
   const onConfirm = vi.fn();
   render(<DialogHarness onConfirm={onConfirm} />);
-  const dialog = screen.getByRole("alertdialog", { name: "受付を停止しますか？" });
+  const dialog = screen.getByRole("alertdialog", {
+    name: "受付を停止しますか？",
+  });
   expect(dialog).toHaveAccessibleDescription(/新しい予約は入らなくなります/);
   expect(screen.getByRole("heading", { name: "受付を停止しますか？" })).toHaveFocus();
   const buttons = screen.getAllByRole("button");
@@ -147,4 +152,74 @@ test("確認のダイアログは題にフォーカスし、やめるを左・�
   expect(onConfirm).toHaveBeenCalledOnce();
   await userEvent.keyboard("{Escape}");
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+});
+
+test("表は包みの中で、見出しに scope があり、セルは段の余白で 1 行（文の列だけ折り返す）", () => {
+  type Row = { name: string; count: number; comment: string; urgent: boolean };
+  render(
+    <DataTable<Row>
+      label="コーチごとの予約枠の需給"
+      columns={[
+        { header: "コーチ", cell: (row) => row.name },
+        {
+          header: "公開した枠",
+          variant: "numeric",
+          cell: (row) => `${row.count} 件`,
+        },
+        {
+          header: "最新の一言",
+          variant: "long_text",
+          cell: (row) => row.comment,
+        },
+      ]}
+      rows={[
+        {
+          name: "山田 花子",
+          count: 12,
+          comment: "直すところがよく分かりました。",
+          urgent: true,
+        },
+        { name: "佐藤 健", count: 8, comment: "—", urgent: false },
+      ]}
+      rowKey={(row) => row.name}
+      highlightRow={(row) => row.urgent}
+    />,
+  );
+  const table = screen.getByRole("table", { name: "コーチごとの予約枠の需給" });
+  expect(table).toHaveClass("w-full", "min-w-max");
+  expect(table.parentElement).toHaveClass("overflow-x-auto", "max-w-full");
+
+  const headers = screen.getAllByRole("columnheader");
+  expect(headers.map((th) => th.textContent)).toEqual(["コーチ", "公開した枠", "最新の一言"]);
+  for (const th of headers) {
+    expect(th).toHaveAttribute("scope", "col");
+    expect(th).toHaveClass("whitespace-nowrap", "px-2", "py-2");
+  }
+
+  // 並べ方は渡した順のまま
+  const rows = screen.getAllByRole("row").slice(1);
+  expect(rows.map((row) => row.firstChild?.textContent)).toEqual(["山田 花子", "佐藤 健"]);
+  expect(rows[0]).toHaveClass("bg-danger-container");
+  expect(rows[1]).not.toHaveClass("bg-danger-container");
+
+  expect(screen.getByRole("cell", { name: "山田 花子" })).toHaveClass("whitespace-nowrap", "px-2", "py-2", "h-12");
+  expect(screen.getByRole("cell", { name: "12 件" })).toHaveClass("whitespace-nowrap", "text-right", "tabular-nums");
+  expect(screen.getByRole("cell", { name: "直すところがよく分かりました。" })).toHaveClass(
+    "whitespace-normal",
+    "min-w-[12em]",
+    "max-w-[40em]",
+  );
+});
+
+test("表が幅に収まるときは、包みをフォーカスの止まる場所にしない", () => {
+  render(
+    <DataTable
+      label="受付の記録"
+      columns={[{ header: "日時", cell: (row: string) => row }]}
+      rows={["10/28 9:00"]}
+      rowKey={(row) => row}
+    />,
+  );
+  expect(screen.queryByRole("region", { name: "受付の記録" })).not.toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "受付の記録" }).parentElement).not.toHaveAttribute("tabindex");
 });

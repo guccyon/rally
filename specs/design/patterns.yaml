@@ -5,7 +5,9 @@ section: patterns
 
 common_layout:
   student_app: アプリバー（題と入口のアイコン）→ 主役（score_panel か画面の見出し）→ 欄（title の見出しと中身）を xl 40px あけて縦に並べる
-  admin_web: 見出し（headline 24px）→ Section（surface の面・md の角丸・padding 16px）を xl 40px あけて 1 段で並べる。score_panel は使わない
+  admin_web: >-
+    見出し（headline 24px）→ Section（surface の面・md の角丸・padding 16px）を xl 40px あけて 1 段で並べる。score_panel は使わない。
+    1 段の幅は tokens.yaml の content_width_px で、本部の一覧の画面（data_table が主役）は wide 1280px、そのほかは reading 768px（0.3.0）
 
 patterns:
   - id: list
@@ -20,6 +22,10 @@ patterns:
       - level: should
         statement: 1 行に出すのは題・日時・状態の 3 つまで。残りは詳細へ
         why: スマホで一目で見比べられる
+        check: design_inspector
+      - level: should
+        statement: admin-web で列を見比べる一覧は data_table にし、画面の幅は wide にする。表が収まらないときは表の包みだけを横に動かす
+        why: 本部が多くの予約や生徒を 1 画面で見比べられ、狭い窓でも見出しと絞り込みは動かない
         check: design_inspector
 
   - id: detail

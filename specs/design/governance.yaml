@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.2.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.3.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -41,6 +41,9 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     detect: 1 画面に score_panel が 2 つ以上
   - id: a11y-labels
     detect: tooltip のない IconButton、aria-label のないアイコンだけのボタン、label のない入力欄
+  - id: table-no-page-scroll
+    target: admin-web の screens.ts の画面
+    detect: 幅 360px と 1024px で document の scrollWidth が画面の幅を超える（ページ全体が横に動く）。table が overflow-x の包みの外にある。表の th・td に段にない余白（py-1 だけ・px-3 など）
   - id: target-size
     detect: 48px 未満の押せる部品
   - id: glossary-terms
@@ -87,3 +90,26 @@ changelog:
         - admin-web の src/app/globals.css の @theme の値と tests/designTokens.test.ts の期待の値を新しい値にする
         - EmptyState（admin-web の src/components/ui/EmptyState.tsx・student-app の lib/ui/components/empty_state.dart）は文を text にし、variant（screen・section）を受けて、screen は surface の面と primary、section は background の面と border の線と secondary にする
         - 見た目が変わる PR には前後のキャプチャを付ける
+    - version: 0.3.0
+      date: "2026-11-05"
+      change: >-
+        tokens.yaml の spacing.grid.pc を書き換えた（「1 段で最大 48rem、一覧の表は 1 段の幅に収める」をやめ、読む画面は reading 768px、
+        本部の一覧の画面は wide 1280px。どちらも左右 24px）。spacing.grid.admin_web_narrow・spacing.content_width_px・spacing.wide_rules を足し、
+        typography.max_line_length の注を合わせた。components.yaml に data_table（表）を足した（セルは単語の途中で折り返さない、見出し・数字・短い値は 1 行、
+        列のあいだは spacing の段で md 16px、横スクロールは表の包みだけ）。patterns.yaml の common_layout.admin_web と list に幅と表の基準、
+        accessibility.yaml の text-resize に表の包みの例外、lint に table-no-page-scroll を足した
+      reason: >-
+        本部の一覧の表が 48rem の枠（RoleGate の max-w-3xl と Section の padding で表は 550〜690px ほど）に押し込まれ、
+        見出しや値が単語の途中で折り返し、列が py-1 の余白だけでくっついていた（#896）。既存の名前は消さず、grid.pc の値（文）だけを変えた。
+        reading の 768px は今の 48rem と同じなので、読む画面の幅は変わらない
+      affects: >-
+        admin-web の本部の一覧の画面（screens.ts の hq-bookings*・hq-cancelled-bookings*・hq-students*・hq-coaches*・hq-lesson-menus*・hq-slot-supply*・
+        hq-incomplete-coach-profiles*・hq-pending-video-reviews*・hq-returned-video-reviews*・hq-live-sessions*・hq-overdue-live-sessions*・hq-unanswered-messages* の表のある id。
+        幅が広がり、表の行が 1 行になる）。表のセルの決まりは coach-* の表（予約枠・自分のメニュー・動画の添削）と本部の詳細の表にも効く（幅は reading のまま）。
+        login・hq-home・フォームの画面・student-app は変わらない
+      approved_by: 工場（新しい部品と should の基準、レイアウトの値の文の直し。must の追加と色の値の変更はない）
+      migration:
+        - admin-web の RoleGate（src/components/RoleGate.tsx）に幅の種類（reading・wide）を渡せるようにし、本部の一覧の画面は wide（max-w-[1280px]、左右 p-6。600px 未満は p-4）で包む。reading は今の max-w-3xl のまま
+        - src/components/ui/ に DataTable（包み・table・th・td）を足し、各一覧の <table className="w-full text-left text-sm"> を置き換える。包みは overflow-x-auto、table は w-full min-w-max、セルは px-2 py-2 h-12 whitespace-nowrap（先頭の左と最後の右は 0）（long_text の列だけ whitespace-normal と word-break auto-phrase）、数字の列は text-right tabular-nums
+        - 表の外の文（件数・説明・知らせ）は max-w-[40em]
+        - 本部の一覧の前後のキャプチャ（幅 1280px と 360px）を PR に付ける。changelog.d/ に断片を書く（利用者に見える変更）

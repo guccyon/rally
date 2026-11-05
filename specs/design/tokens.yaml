@@ -113,7 +113,7 @@ typography:
   sample_rule: 書体の見本（sample とカタログ）は日本語で、実際の画面の文言にする。サービスは日本国内だけに出す
   admin_web: admin-web は display を使わず、headline を 24px、本文を 16px にする
   emphasis: 本文の強調は 700。下線は押せるリンクだけ。斜体は使わない
-  max_line_length: 本文の 1 行は 40 字まで（PC の admin-web は 1 段 48rem）
+  max_line_length: 本文の 1 行は 40 字まで（PC の admin-web は読む画面が 1 段 48rem。一覧の画面の wide でも表の外の文は 40em まで）
   punctuation:
     - 句読点は「、」「。」。全角の約物（「」（）・〜）を使い、行頭に来る約物は詰める（palt を使わない。字間は letter_spacing だけ）
     - 英数字と和文のあいだは半角スペースを 1 つ（例「残り 2 回」「10/28（水）12:00」）
@@ -133,7 +133,14 @@ spacing:   # design_guideline の spacing_layout（余白・グリッド・画�
   grid:
     phone: 1 段。幅いっぱい（左右 16px）
     tablet: 1 段、中身の幅は 600px まで中央寄せ
-    pc: admin-web は 1 段で最大 48rem（768px）、左右 24px。一覧の表は 1 段の幅に収める
+    pc: >-
+      admin-web は 1 段。中身の幅は画面の型で 2 つ（content_width_px）。読む画面（ログイン・詳細・フォーム・本部のホーム）は reading の最大 768px、
+      本部の一覧の画面（data_table が主役の画面）は wide の最大 1280px。どちらも左右 lg 24px で中央寄せ（0.3.0 で一覧の表を 768px に収める決まりをやめた）
+    admin_web_narrow: 600〜1023px は幅いっぱいで左右 lg 24px、600px 未満は左右 md 16px。表が幅に収まらないときは表の包み（data_table の wrapper）だけを横に動かし、ページ全体は横に動かさない
+  content_width_px: {reading: 768, wide: 1280}   # 0.3.0 で足した。reading は今の 48rem と同じ値
+  wide_rules:
+    - wide の画面でも、表の外の文（件数・説明・知らせ）は 1 行 40 字まで（max-width 40em）
+    - 表は 1 段の幅いっぱい（width 100%）に広げ、列の幅は中身で決める。細い枠に押し込んで折り返させない
   breakpoints_px: {phone: 0, tablet: 600, pc: 1024}
   safe_area: student-app は SafeArea の内側に置く。下に固定するボタンは下の安全領域 + 16px 上に置く
 

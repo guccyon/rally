@@ -132,6 +132,73 @@ components:
         html: "<div class=\"pv row is-pressed\"><div class=\"main\"><div class=\"type-body t\">テニス・コーチ: 山田</div><div class=\"type-small muted\">10/21 受けたレッスン</div></div><span class=\"muted\">›</span></div>"
 
 
+  - id: data_table
+    ja: 表
+    lifecycle: trial   # 0.3.0 で足した。admin-web の一覧の表（BookingList・StudentDirectory・CoachAcceptanceList など）の決まり
+    use: admin-web で、同じ項目を持つものを列で見比べる（本部の予約・生徒・コーチ・レッスンメニュー・返却待ちの動画添削の一覧、予約枠の需給）
+    not_for: スマホの student-app と、1 件の項目が 3 つまで → list_row。1 件ごとに操作が 2 つ以上 → card。1 件の詳細 → detail の型
+    parts: [wrapper（横に動く包み）, table（aria-label に表の名前）, header_cell（th）, cell（td）, row, row_highlight（任意）]
+    variants:
+      text: {align: left, wrap: しない, note: 日時・名前・状態・種類・メニューの名前など短い値}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・枠の数・割合。単位も同じセルに 1 行で（「12 件」「75%」）}
+      long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・お知らせの題など文の列だけ}
+    style:
+      wrapper: {overflow_x: auto, max_width: 100%, note: 1 段の幅いっぱい。ページではなくここだけが横に動く}
+      table: {width: 100%, min_width: max-content, border_collapse: collapse}
+      header_cell: {type: small, weight: 700, color: text, align: left, wrap: しない, divider: border の 1px（下）}
+      cell: {type: small, color: text, padding_y: sm 8px, padding_x: sm 8px, column_gap: md 16px（隣のセルの padding_x の和）, min_height_px: 48, vertical_align: middle, divider: border の 1px（上）}
+      edge: 先頭のセルの左と最後のセルの右の padding は 0（Section の padding md 16px にそろえる）
+      row_highlight: {container: danger.container, note: 急ぎの行（確定待ちのまま 24 時間以内に始まる予約）。色と一緒に文字のしるし（danger.fg の面と on_primary の文字「開始まで 24 時間以内」）を出す}
+      link: primary の文字と下線（詳細へ移るセル。開始の日時など 1 列だけ）
+    states:
+      default: 上の style
+      narrow: 1 段の幅に収まらないときは wrapper が横に動く。列は細くせず、セルは折り返さない
+      highlight: row_highlight の面と、状態のセルに status_tag
+      loading: 表を出さず、loading の section_text（「予約を読み込んでいます…」）
+      empty: 表を出さず、empty_state（section）。見出しの行だけの表にしない
+      error: 表を出さず、notice の inline（danger）
+    behavior: >-
+      並べ方は API が返した順のまま（patterns の list）。wrapper が横に動くときは、キーボードの矢印でも動かせるよう wrapper にフォーカスを置ける。
+      行全体を押せるようにはしない（詳細へは link のセルから）
+    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」「生徒」「レッスンメニュー」「種類」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」
+    a11y: >-
+      table に aria-label（「10/28（水）の予約」）、th に scope="col"。wrapper が横に動くときは role="region" と aria-label（表と同じ名前）と tabindex="0" を付け、
+      フォーカスは focus_ring 2px で見せる。row_highlight は色だけでなく status_tag の文字で伝える
+    rules:
+      - level: should
+        statement: セルは単語の途中で折り返さない。見出し・日時・数字・名前・状態・種類のセルは 1 行（white-space nowrap）にし、折り返してよいのは long_text の列だけ
+        why: 「12:00」や「体験予/約」が 2 行に割れると、本部が一覧を見比べるときに読み違え、行の高さもそろわない
+        check: design_inspector
+      - level: should
+        statement: 列と列のあいだの余白は spacing の段から取る（セルの左右 sm 8px で、列のあいだ md 16px）。段にない余白（py-1 の 4px だけ、12px など）を使わない
+        why: 列がくっつくと、隣の列の値と続けて読んでしまう（生徒の名前とメニューの名前など）
+        check: deterministic
+      - level: should
+        statement: 表が幅に収まらないときは wrapper だけを横に動かし（overflow-x auto）、ページ全体（body）は横に動かさない
+        why: 画面の見出し・絞り込み・件数の文は動かずに読めたまま、表の続きの列だけを見に行ける
+        check: deterministic
+      - level: should
+        statement: 本部の一覧の画面は content_width_px の wide（1280px まで）に置き、表を reading（768px）の枠に押し込まない
+        why: PC の広い画面があるのに表が 550px ほどに縮み、列が折り返して読めなくなっていた（#896）
+        check: design_inspector
+      - level: may
+        statement: 横に動くとき、先頭の列（開始・名前）を左に固定してよい（position sticky。面は表の下の面と同じ色）
+        why: 右の列を見ているときも、どの行かが分かる
+        check: design_inspector
+    examples:
+      good: PC で 6 列の予約の表が 1 行ずつ並び、開始「12:00」・状態「確定済み」・レッスンメニュー「フォアハンドの基礎」がどれも 1 行。スマホの幅では表だけが横に動く
+      bad: 768px の枠の中で「レッスンメニュー」の見出しが「レッスンメ/ニュー」と割れ、隣の列と 4px しか離れていない。ページ全体が横に動いて画面の見出しが切れる
+    preview:
+      - label: "PC 幅（wide）"
+        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"10/28（水）の予約\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr><tr><td><span class=\"lnk\">18:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class=\"lnk\">19:30</span></td><td><span class=\"tag tag-neutral type-caption\">キャンセル済み</span></td><td>山田 花子</td><td>高橋 蓮</td><td>サーブの安定（30 分）</td><td>—</td></tr></tbody></table></div></div>"
+      - label: "狭い幅（表の包みだけが横に動く）"
+        html: "<div class=\"pv w sectp\"><p class=\"type-small\">10/28（水）〜 11/3（火）・3 件</p><div class=\"tbl-wrap\" role=\"region\" aria-label=\"10/28（水）の予約\" tabindex=\"0\"><table class=\"tbl type-small\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr><tr><td><span class=\"lnk\">18:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr></tbody></table></div></div>"
+      - label: "急ぎの行（row_highlight）"
+        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"10/28（水）の予約\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr class=\"hl\"><td><span class=\"lnk\">9:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span> <span class=\"tag tag-danger type-caption\">開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr></tbody></table></div></div>"
+      - label: "数字の列（numeric）と文の列（long_text）"
+        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"コーチごとの予約枠の需給\"><thead><tr><th scope=\"col\">コーチ</th><th scope=\"col\" class=\"num\">公開した枠</th><th scope=\"col\" class=\"num\">予約された枠</th><th scope=\"col\" class=\"num\">埋まった割合</th><th scope=\"col\">最新の一言</th></tr></thead><tbody><tr><td>山田 花子</td><td class=\"num\">12 件</td><td class=\"num\">9 件</td><td class=\"num\">75%</td><td class=\"long\">フォームを動画で見せてもらえて、直すところがよく分かりました。</td></tr><tr><td>佐藤 健</td><td class=\"num\">8 件</td><td class=\"num\">2 件</td><td class=\"num\">25%</td><td class=\"long\">—</td></tr></tbody></table></div></div>"
+
+
   - id: badge
     ja: しるし
     lifecycle: trial
@@ -366,3 +433,18 @@ preview_css: |
   .dlg{background:var(--color-background);border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md)}
   .dlg h4{margin:0}
   .acts{display:flex;justify-content:flex-end;gap:var(--space-sm)}
+  .tag-danger{background:var(--color-danger-fg);color:var(--color-on-primary)}
+  .pv.tblw{width:960px}
+  .sectp{background:var(--color-surface);border-radius:var(--radius-md);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
+  .tbl-wrap{overflow-x:auto;max-width:100%}
+  .tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}
+  .tbl{width:100%;min-width:max-content;border-collapse:collapse;text-align:left}
+  .tbl th{font-weight:700;white-space:nowrap;padding:var(--space-sm);border-bottom:1px solid var(--color-border);vertical-align:bottom}
+  .tbl td{white-space:nowrap;padding:var(--space-sm);height:48px;box-sizing:border-box;border-top:1px solid var(--color-border);vertical-align:middle}
+  .tbl th:first-child,.tbl td:first-child{padding-left:0}
+  .tbl th:last-child,.tbl td:last-child{padding-right:0}
+  .tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+  .tbl td.long{white-space:normal;word-break:auto-phrase;min-width:12em;max-width:40em}
+  .tbl tr.hl td{background:var(--color-danger-container)}
+  .tbl .tag{vertical-align:middle}
+  .lnk{color:var(--color-primary);text-decoration:underline}
