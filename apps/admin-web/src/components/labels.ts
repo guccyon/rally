@@ -60,6 +60,8 @@ export const LESSON_TYPE_LABELS: Record<Schemas["LessonType"], string> = {
 export const SLOT_SUPPLY_STATUS_LABELS: Record<Schemas["SlotSupplyStatus"], string> = {
   sufficient: "足りている",
   insufficient: "足りていない",
+  no_activity: "枠も予約もない",
+  not_applicable: "対象外",
 };
 
 /** 契約種別（受講権）。subscription は月額、one_shot はワンショット（ゴルフだけ）。 */

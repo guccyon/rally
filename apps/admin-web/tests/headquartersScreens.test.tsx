@@ -22,10 +22,10 @@ const REPORT: Schemas["SlotSupplyReport"] = {
   window_end: "2026-10-27T03:00:00Z",
   sports: [
     { sport: "tennis", status: "insufficient", published_slots: 10, booking_students: 8 },
-    { sport: "golf", status: "sufficient", published_slots: 0, booking_students: 0 },
+    { sport: "golf", status: "not_applicable", published_slots: 0, booking_students: 0 },
     { sport: "baseball", status: "sufficient", published_slots: 12, booking_students: 3 },
     { sport: "soccer", status: "insufficient", published_slots: 5, booking_students: 4 },
-    { sport: "basketball", status: "sufficient", published_slots: 7, booking_students: 1 },
+    { sport: "basketball", status: "no_activity", published_slots: 0, booking_students: 0 },
     { sport: "swimming", status: "insufficient", published_slots: 2, booking_students: 6 },
   ],
 };
@@ -92,7 +92,7 @@ const EMPTY_COACH_REPORT: Schemas["SlotSupplyReport"] = {
   ...PERIOD_REPORT,
   sports: PERIOD_REPORT.sports.map((supply) => ({
     ...supply,
-    status: "sufficient",
+    status: supply.sport === "golf" ? "not_applicable" : "no_activity",
     published_slots: 0,
     booking_students: 0,
   })),
@@ -121,12 +121,23 @@ describe("スポーツ別の予約枠の需給", () => {
       "8",
     ]);
     const golf = screen.getByRole("row", { name: /ゴルフ/ });
+    // ゴルフは月額の契約の対象外で、枠も需要も 0 でも「足りている」と出さない（#900）
     expect(within(golf).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
       "ゴルフ",
-      "足りている",
+      "対象外",
       "0",
       "0",
     ]);
+    const basketball = screen.getByRole("row", { name: /バスケットボール/ });
+    expect(within(basketball).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "バスケットボール",
+      "枠も予約もない",
+      "0",
+      "0",
+    ]);
+    expect(
+      screen.getByText("対象外: 月額の契約の対象でないスポーツ（ゴルフ。ワンショットだけ）は、需給を判定しません。"),
+    ).toBeInTheDocument();
     const swimming = screen.getByRole("row", { name: /水泳/ });
     expect(within(swimming).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
       "水泳",
@@ -257,7 +268,7 @@ describe("スポーツ別の予約枠の需給", () => {
       ...PERIOD_REPORT,
       sports: PERIOD_REPORT.sports.map((supply) => ({
         ...supply,
-        status: "sufficient",
+        status: supply.sport === "golf" ? "not_applicable" : "no_activity",
         published_slots: 0,
         booking_students: 0,
       })),

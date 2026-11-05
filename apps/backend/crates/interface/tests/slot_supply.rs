@@ -388,12 +388,12 @@ async fn headquarters_reads_the_supply_of_every_sport_in_the_last_thirty_days() 
             "sports": [
                 // 開いている 3 枠に 2 人（67%）。閉じた枠は数えない
                 { "sport": "tennis", "status": "insufficient", "published_slots": 3, "booking_students": 2 },
-                { "sport": "golf", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
-                { "sport": "baseball", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
+                { "sport": "golf", "status": "not_applicable", "published_slots": 0, "booking_students": 0 },
+                { "sport": "baseball", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
                 // 2 枠に 1 人（50%）
                 { "sport": "soccer", "status": "sufficient", "published_slots": 2, "booking_students": 1 },
-                { "sport": "basketball", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
-                { "sport": "swimming", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
+                { "sport": "basketball", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
+                { "sport": "swimming", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
             ],
         })
     );
@@ -510,12 +510,17 @@ fn account_uuid(id: u128) -> String {
     format!("00000000-0000-0000-0000-{id:012x}")
 }
 
-/// どのスポーツも枠も予約しようとした生徒も 0 か。
+/// どのスポーツも枠も予約しようとした生徒も 0 か（判定はゴルフが対象外、それ以外が枠も予約もない）。
 fn all_zero(body: &Value) -> bool {
     body["sports"].as_array().unwrap().iter().all(|supply| {
+        let status = if supply["sport"] == "golf" {
+            "not_applicable"
+        } else {
+            "no_activity"
+        };
         supply["published_slots"] == 0
             && supply["booking_students"] == 0
-            && supply["status"] == "sufficient"
+            && supply["status"] == status
     })
 }
 

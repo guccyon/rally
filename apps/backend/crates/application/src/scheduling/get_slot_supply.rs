@@ -178,6 +178,15 @@ mod tests {
         .unwrap()
     }
 
+    /// 枠も予約しようとした生徒も 0 のスポーツの判定。ゴルフは対象外、それ以外は枠も予約もない。
+    fn zero_status(sport: Sport) -> SlotSupplyStatus {
+        if sport == Sport::Golf {
+            SlotSupplyStatus::NotApplicable
+        } else {
+            SlotSupplyStatus::NoActivity
+        }
+    }
+
     async fn book(bookings: &InMemoryBookingRepository, student: u128, slot: u128) {
         let student = AccountId::from_u128(student);
         bookings
@@ -233,11 +242,11 @@ mod tests {
             statuses,
             [
                 SlotSupplyStatus::Insufficient,
+                SlotSupplyStatus::NotApplicable,
+                SlotSupplyStatus::NoActivity,
                 SlotSupplyStatus::Sufficient,
-                SlotSupplyStatus::Sufficient,
-                SlotSupplyStatus::Sufficient,
-                SlotSupplyStatus::Sufficient,
-                SlotSupplyStatus::Sufficient,
+                SlotSupplyStatus::NoActivity,
+                SlotSupplyStatus::NoActivity,
             ]
         );
     }
@@ -390,11 +399,12 @@ mod tests {
                 .iter()
                 .all(|supply| supply.published_slots() == 0 && supply.booking_students() == 0)
         );
+        // 0 件はゴルフが対象外、それ以外が枠も予約もない
         assert!(
             report
                 .sports
                 .iter()
-                .all(|supply| supply.status() == SlotSupplyStatus::Sufficient)
+                .all(|supply| supply.status() == zero_status(supply.sport()))
         );
     }
 
@@ -697,13 +707,13 @@ mod tests {
                 .iter()
                 .all(|supply| supply.published_slots() == 0 && supply.booking_students() == 0)
         );
-        // ないメニューの ID はどのスポーツも 0（sufficient）
+        // ないメニューの ID はどのスポーツも 0（ゴルフは対象外、それ以外は枠も予約もない）
         let report = with_lesson_menu(LessonMenuId::from_u128(99), None, None).await;
         assert_eq!(report.sports.len(), Sport::ALL.len());
         assert!(report.sports.iter().all(|supply| {
             supply.published_slots() == 0
                 && supply.booking_students() == 0
-                && supply.status() == SlotSupplyStatus::Sufficient
+                && supply.status() == zero_status(supply.sport())
         }));
         // 付けなければ今までどおりメニューを問わない（メニューのない枠も数える）
         let all = supply.execute(GetSlotSupplyQuery::default()).await.unwrap();

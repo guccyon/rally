@@ -160,8 +160,8 @@ paths:
       operationId: getSlotSupply
       summary: スポーツごとの予約枠の需給（本部）
       description: |
-        スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`）と、
-        判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
+        スポーツごとに、公開した予約枠が予約しようとした生徒の数に対して足りているか（`sufficient` / `insufficient`。
+        数からは言えないときは `no_activity`、需給を判定しないスポーツは `not_applicable`）と、判定に使った数を返す。コーチの採用計画（どのスポーツのコーチを募集するか）に使う。本部の役割のトークンだけが
         呼べる（それ以外は 403）。スポーツは `Sport` の 6 種類すべてを、`Sport` の enum の順で返す。
 
         判定の式と期間はここが正本（実装は backend の domain `SlotSupply` の 1 か所）。
@@ -180,14 +180,14 @@ paths:
           コーチを本部が個別に見る）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す（そのコーチが
           教えていないスポーツは 0）。省けば今までどおりすべてのコーチ。扱いは `listBookings` の `coach_id` と同じ: UUID で
           なければ 422 `validation_failed`（`message` は `coach_id が UUID でない`）。コーチでない ID・ない ID は、404 にせず
-          どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+          どのスポーツも `published_slots` と `booking_students` が 0（ゴルフは `not_applicable`、それ以外は `no_activity`）
         - 任意の `sport` で、その競技を提供するコーチ（コーチの提供スポーツのどれかが一致するもの。ゴルフも絞れる）の枠と、
           それらの枠への予約だけを数える（競技ごとにコーチの募集や枠の呼びかけを決める）。競技は枠のコーチの提供スポーツで
           決め、枠そのもののスポーツでは決めない（決め方は backend の domain `CoachSportFilter` の 1 か所。`listCoaches` の
           `sport` と同じ）。数え方・判定・期間の規則・応答の形は変わらず、スポーツは 6 種類すべてを返す（その競技のコーチが
           枠を出していないスポーツは 0）。`coach_id`・`from` / `to` と組み合わせられる。省けば今までどおりすべてのコーチ。
           `Sport` の値でなければ 422 `validation_failed`（`listPendingVideoReviews` の `sport` と同じ）。提供するコーチのいない
-          競技は、どのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+          競技は、どのスポーツも `published_slots` と `booking_students` が 0（ゴルフは `not_applicable`、それ以外は `no_activity`）
         - 任意の `lesson_menu_id` で、そのレッスンメニューに結びついた枠（コーチが `publishSlot` の `lesson_menu_id` で
           結びつけたメニュー。`listMyCoachSlots` の `lesson_menu` と同じもの）と、それらの枠への予約だけを数える（人気のメニューの枠が足りているかを
           見る）。メニューに結びついていない枠と、それらの枠への予約は、`lesson_menu_id` を付ければ数えない。予約の側の
@@ -196,14 +196,21 @@ paths:
           （そのメニューの枠がないスポーツは 0）。`from` / `to`・`coach_id`・`sport` と組み合わせられる。省けば今までどおり
           メニューを問わない（メニューのない枠も数える）。扱いは `listBookings` の `lesson_menu_id` と同じ: UUID でなければ
           422 `validation_failed`（`message` は `lesson_menu_id が UUID でない`）。ないメニューの ID・期間に枠がないメニューは、
-          404 にせずどのスポーツも `published_slots` と `booking_students` が 0（`sufficient`）
+          404 にせずどのスポーツも `published_slots` と `booking_students` が 0（ゴルフは `not_applicable`、それ以外は `no_activity`）
         - `published_slots`（公開した枠の数）: そのスポーツの、期間に開始する枠のうち `open` か `booked` のもの。
           コーチが閉じた枠（`closed`）は数えない
         - `booking_students`（予約しようとした生徒の数）: そのスポーツの、期間に開始する枠（`closed` を含む）に
           予約を作った生徒の数。予約の状態（未確定・確定・キャンセル）を問わず、同じ生徒は 1 人と数える。
           スロットの検索は記録していないので数に入らない
-        - 判定: `booking_students >= 1` かつ `booking_students >= published_slots × 0.6` なら `insufficient`、
-          それ以外は `sufficient`（予約しようとした生徒がいなければ、枠が 0 でも `sufficient`）。
+        - 判定: 上から順に当てはめる
+          1. 月額（`subscription`）の契約の対象でないスポーツ（ゴルフ。ワンショットだけで、生徒は golf-app の範囲）は、
+             数を問わず `not_applicable`（需給を判定しない）。行は今までどおり返し、数も数える
+          2. `published_slots` と `booking_students` がどちらも 0 なら `no_activity`（枠も予約もなく、足りているかを数からは
+             言えない）
+          3. `booking_students >= 1` かつ `booking_students >= published_slots × 0.6` なら `insufficient`、
+             それ以外は `sufficient`（予約しようとした生徒がいなければ、枠があれば `sufficient`）
+
+          `not_applicable` / `no_activity` は 2026-11-04 に足した（Issue #900。それまではどちらも `sufficient`）。
           0.6 は仮の初期値（2026-10-27、合成シードで見て決めた。実データでの見直しが前提。工場の judge が人に回し、builder が委任の範囲で仮置きとした）
 
         行動イベントは発火しない。
@@ -3934,8 +3941,10 @@ components:
     SlotSupplyStatus:
       type: string
       description: |
-        sufficient: 公開した枠が足りている / insufficient: 足りていない。判定の式は `getSlotSupply` の説明。
-      enum: [sufficient, insufficient]
+        sufficient: 公開した枠が足りている / insufficient: 足りていない /
+        no_activity: 公開した枠も予約しようとした生徒も 0 で、足りているかを数からは言えない /
+        not_applicable: 月額の契約の対象でないスポーツ（ゴルフ）で、需給を判定しない。判定の式と順は `getSlotSupply` の説明。
+      enum: [sufficient, insufficient, no_activity, not_applicable]
 
     SlotSupply:
       type: object

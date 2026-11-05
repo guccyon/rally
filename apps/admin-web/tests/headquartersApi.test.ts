@@ -11,7 +11,7 @@ const REPORT = {
   window_end: "2026-10-27T00:00:00Z",
   sports: [
     { sport: "tennis", status: "insufficient", published_slots: 10, booking_students: 8 },
-    { sport: "golf", status: "sufficient", published_slots: 0, booking_students: 0 },
+    { sport: "golf", status: "not_applicable", published_slots: 0, booking_students: 0 },
   ],
 };
 
