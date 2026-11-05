@@ -21,6 +21,7 @@ void main() {
 
   test('部品と種類は、置けないと書いたもの以外すべてカタログに見本がある', () {
     for (final MapEntry(key: id, value: component) in components.entries) {
+      if (notInStudentCatalog.containsKey(id)) continue;
       final entries = designCatalog.where((e) => e.component == id);
       expect(entries, isNotEmpty, reason: id);
       for (final variant in _keysOf(component['variants'])) {
@@ -50,14 +51,23 @@ void main() {
     expect(names.toSet().length, names.length);
   });
 
-  test('置けないと書いた種類は components.yaml にあり、カタログには置かない', () {
+  test('置けないと書いた部品と種類は components.yaml にあり、カタログには置かない', () {
     for (final name in notInStudentCatalog.keys) {
-      final [id, variant] = name.split(' / ');
-      expect(_keysOf(components[id]?['variants']), contains(variant));
-      expect(
-        designCatalog.any((e) => e.component == id && e.variant == variant),
-        isFalse,
-      );
+      switch (name.split(' / ')) {
+        case [final id]:
+          expect(components, contains(id));
+          expect(designCatalog.any((e) => e.component == id), isFalse);
+        case [final id, final variant]:
+          expect(_keysOf(components[id]?['variants']), contains(variant));
+          expect(
+            designCatalog.any(
+              (e) => e.component == id && e.variant == variant,
+            ),
+            isFalse,
+          );
+        default:
+          fail('notInStudentCatalog の名前は「部品」か「部品 / 種類」: $name');
+      }
     }
   });
 
@@ -68,6 +78,7 @@ void main() {
     await tester.pumpAndSettle();
     // 種類・状態・見本の名前のない枠は、枠の名前が部品の見出しと同じ文字になる
     for (final id in components.keys) {
+      if (notInStudentCatalog.containsKey(id)) continue;
       final plain = designCatalog.where((e) => e.name == id).length;
       expect(find.text(id, skipOffstage: false), findsNWidgets(1 + plain));
     }

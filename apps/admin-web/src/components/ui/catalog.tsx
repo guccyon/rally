@@ -4,6 +4,7 @@ import { Badge } from "./Badge";
 import { Button, type ButtonVariant } from "./Button";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DataTable, type DataTableColumn } from "./DataTable";
 import { EmptyState } from "./EmptyState";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
@@ -25,11 +26,30 @@ export type CatalogEntry = {
 };
 
 /** components.yaml にあるが admin-web では使わない部品と種類（理由は components.yaml の not_for・各部品の注記）。 */
-export const NOT_IN_ADMIN_WEB: { component: string; variant?: string; reason: string }[] = [
-  { component: "score_panel", reason: "components.yaml の not_for に admin-web とある" },
-  { component: "button", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
-  { component: "badge", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
-  { component: "notice", variant: "toast", reason: "admin-web の Notice は inline だけ（toast はまだない）" },
+export const NOT_IN_ADMIN_WEB: {
+  component: string;
+  variant?: string;
+  reason: string;
+}[] = [
+  {
+    component: "score_panel",
+    reason: "components.yaml の not_for に admin-web とある",
+  },
+  {
+    component: "button",
+    variant: "on_dark",
+    reason: "admin-web は濃い面（inverse_surface）を使わない",
+  },
+  {
+    component: "badge",
+    variant: "on_dark",
+    reason: "admin-web は濃い面（inverse_surface）を使わない",
+  },
+  {
+    component: "notice",
+    variant: "toast",
+    reason: "admin-web の Notice は inline だけ（toast はまだない）",
+  },
 ];
 
 const noop = () => {};
@@ -55,6 +75,118 @@ const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
   warning: "開始まで 1 時間を切った確定待ちの予約があります。",
   danger: "予約を読み込めませんでした。時間をおいてもう一度開いてください。",
 };
+
+type BookingRow = {
+  id: string;
+  start: string;
+  status: { label: string; status: Status };
+  coach: string;
+  student: string;
+  menu: string;
+  kind: string;
+  urgent?: boolean;
+};
+
+const CONFIRMED_BOOKING: BookingRow = {
+  id: "b1",
+  start: "12:00",
+  status: { label: "確定済み", status: "success" },
+  coach: "山田 花子",
+  student: "鈴木 一郎",
+  menu: "フォアハンドの基礎（30 分）",
+  kind: "—",
+};
+
+const PENDING_BOOKING: BookingRow = {
+  id: "b2",
+  start: "18:00",
+  status: { label: "確定待ち", status: "warning" },
+  coach: "佐藤 健",
+  student: "田中 美咲",
+  menu: "バッティングの基本（30 分）",
+  kind: "体験予約",
+};
+
+const CANCELLED_BOOKING: BookingRow = {
+  id: "b3",
+  start: "19:30",
+  status: { label: "キャンセル済み", status: "neutral" },
+  coach: "山田 花子",
+  student: "高橋 蓮",
+  menu: "サーブの安定（30 分）",
+  kind: "—",
+};
+
+const BOOKING_ROWS = [CONFIRMED_BOOKING, PENDING_BOOKING, CANCELLED_BOOKING];
+
+const BOOKING_COLUMNS: DataTableColumn<BookingRow>[] = [
+  {
+    header: "開始",
+    cell: (row) => (
+      <a href="#" className="text-primary underline">
+        {row.start}
+      </a>
+    ),
+  },
+  {
+    header: "状態",
+    cell: (row) => (
+      <span className="inline-flex gap-2">
+        <StatusTag label={row.status.label} status={row.status.status} />
+        {row.urgent && (
+          <span className="rounded-sm bg-danger px-2 text-xs font-bold text-on-primary">開始まで 24 時間以内</span>
+        )}
+      </span>
+    ),
+  },
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "生徒", cell: (row) => row.student },
+  { header: "レッスンメニュー", cell: (row) => row.menu },
+  { header: "種類", cell: (row) => row.kind },
+];
+
+type SupplyRow = {
+  coach: string;
+  published: number;
+  booked: number;
+  comment: string;
+};
+
+const SUPPLY_ROWS: SupplyRow[] = [
+  {
+    coach: "山田 花子",
+    published: 12,
+    booked: 9,
+    comment: "フォームを動画で見せてもらえて、直すところがよく分かりました。",
+  },
+  { coach: "佐藤 健", published: 8, booked: 2, comment: "—" },
+];
+
+const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = { header: "コーチ", cell: (row) => row.coach };
+
+const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
+  SUPPLY_COACH_COLUMN,
+  {
+    header: "公開した枠",
+    variant: "numeric",
+    cell: (row) => `${row.published} 件`,
+  },
+  {
+    header: "予約された枠",
+    variant: "numeric",
+    cell: (row) => `${row.booked} 件`,
+  },
+  {
+    header: "埋まった割合",
+    variant: "numeric",
+    cell: (row) => `${Math.round((row.booked / row.published) * 100)}%`,
+  },
+];
+
+/** 表の見本を Section と同じ面（surface・padding 16px）に置く。 */
+function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
+  return <div className={`rounded-md bg-surface p-4 ${narrow ? "w-[360px]" : ""}`}>{children}</div>;
+}
 
 /**
  * 確認のダイアログは画面全体に重ねる部品なので、transform を付けた枠を基準にしてその中だけに重ねる
@@ -98,7 +230,11 @@ export const CATALOG: CatalogEntry[] = [
     const Field = variant === "single_line" ? TextField : TextArea;
     const props =
       variant === "single_line"
-        ? { label: "表示名", helper: "20 文字まで", defaultValue: "鈴木 コーチ" }
+        ? {
+            label: "表示名",
+            helper: "20 文字まで",
+            defaultValue: "鈴木 コーチ",
+          }
         : {
             label: "自己紹介",
             helper: "500 文字まで",
@@ -106,8 +242,18 @@ export const CATALOG: CatalogEntry[] = [
             defaultValue: "テニスを教えて 10 年になります。",
           };
     return [
-      { component: "text_field", variant, state: "default", render: () => <Field {...props} /> },
-      { component: "text_field", variant, state: "disabled", render: () => <Field {...props} disabled /> },
+      {
+        component: "text_field",
+        variant,
+        state: "default",
+        render: () => <Field {...props} />,
+      },
+      {
+        component: "text_field",
+        variant,
+        state: "disabled",
+        render: () => <Field {...props} disabled />,
+      },
       {
         component: "text_field",
         variant,
@@ -183,8 +329,83 @@ export const CATALOG: CatalogEntry[] = [
     ),
   },
   { component: "loading", variant: "bar", render: () => <LoadingBar /> },
-  { component: "loading", variant: "section_text", render: () => <SectionLoading message="予約を読み込んでいます…" /> },
+  {
+    component: "loading",
+    variant: "section_text",
+    render: () => <SectionLoading message="予約を読み込んでいます…" />,
+  },
   { component: "loading", variant: "spinner", render: () => <Spinner /> },
+  {
+    component: "data_table",
+    variant: "text",
+    render: () => (
+      <TableFrame>
+        <DataTable label="10/28（水）の予約" columns={BOOKING_COLUMNS} rows={BOOKING_ROWS} rowKey={(row) => row.id} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "numeric",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの予約枠の需給"
+          columns={SUPPLY_COLUMNS}
+          rows={SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "long_text",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの最新の一言"
+          columns={[
+            SUPPLY_COACH_COLUMN,
+            {
+              header: "最新の一言",
+              variant: "long_text",
+              cell: (row) => row.comment,
+            },
+          ]}
+          rows={SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "text",
+    state: "narrow",
+    render: () => (
+      <TableFrame narrow>
+        <p className="mb-2 max-w-[40em] text-sm">10/28（水）〜 11/3（火）・3 件</p>
+        <DataTable label="10/28（水）の予約" columns={BOOKING_COLUMNS} rows={BOOKING_ROWS} rowKey={(row) => row.id} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "text",
+    state: "highlight",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="10/28（水）の予約"
+          columns={BOOKING_COLUMNS}
+          rows={[{ ...PENDING_BOOKING, id: "b0", start: "9:00", urgent: true }, CONFIRMED_BOOKING]}
+          rowKey={(row) => row.id}
+          highlightRow={(row) => row.urgent === true}
+        />
+      </TableFrame>
+    ),
+  },
   ...([false, true] as const).map((danger) => ({
     component: "confirm_dialog",
     example: danger ? "危険な操作" : "送る前の確認",

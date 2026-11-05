@@ -45,7 +45,7 @@ rules:
     check: design_inspector
   - id: text-resize
     level: should
-    statement: 端末の文字の大きさを 200% にしても、文字が切れず重ならず、横に動かさずに読める（display は 1 行に収まらなければ折り返す）
+    statement: 端末の文字の大きさを 200% にしても、文字が切れず重ならず、横に動かさずに読める（display は 1 行に収まらなければ折り返す。admin-web の data_table だけは表の包みの中で横に動いてよい。WCAG 1.4.10 の表の例外で、ページ全体は動かさない）
     why: 大きな文字で使う生徒や保護者も、残りの回数と規定を読める
     check: design_inspector
   - id: motion
@@ -61,4 +61,4 @@ rules:
 
 platform_notes:
   student_app: Semantics を部品に付ける。textScaler は端末の値のまま（上限を付けない）
-  admin_web: 見出しは h1→h2 の順。Section は aria-label に題。表は th と scope
+  admin_web: 見出しは h1→h2 の順。Section は aria-label に題。表は th と scope。横に動く表の包みは role=region・aria-label・tabindex=0 でキーボードから動かせる（components の data_table）

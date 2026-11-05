@@ -22,3 +22,10 @@
 - 理由: 人が見本のカタログを見て「青が強い」「空の表示のボタンが読みにくい」と指摘し、彩度を下げた値と empty_state の形を決めた（2026-11-02）。名前は変えず値だけ。新しい値も WCAG 2.2 AA を満たす（primary は background で 6.83、surface で 6.15、primary_container で 5.83）
 - 効く画面: student-app と admin-web の全画面（`screens.ts` と `capture_test.dart` のすべての id。青が落ち着く）。empty_state は今は両アプリのカタログ（`design-catalog`）だけが使う
 - 承認: 人（色の役割の値の変更・concept_tone の変更、2026-11-02）、工場（部品の基準と見本）
+
+## 0.3.0（2026-11-05）
+
+- 変えたもの: `tokens.yaml` の `spacing.grid.pc` を書き換えた（「admin-web は 1 段で最大 48rem、一覧の表は 1 段の幅に収める」をやめ、読む画面は `reading` の最大 768px、本部の一覧の画面は `wide` の最大 1280px。どちらも左右 lg 24px で中央寄せ）。`spacing.grid.admin_web_narrow`（600〜1023px は幅いっぱいで左右 24px、600px 未満は左右 16px。表が収まらないときは表の包みだけを横に動かす）・`spacing.content_width_px`・`spacing.wide_rules` を足し、`typography.max_line_length` の注を合わせた。`components.yaml` に `data_table`（表）を足した（セルは単語の途中で折り返さない、見出し・日時・数字・名前・状態・種類は 1 行、列のあいだは spacing の段でセルの左右 sm 8px・列のあいだ md 16px、横スクロールは表の包みだけでページ全体は動かさない）。`patterns.yaml` の `common_layout.admin_web` と `list` に幅と表の基準、`accessibility.yaml` の `text-resize` に表の包みの例外（WCAG 1.4.10）、`governance.yaml` の lint に `table-no-page-scroll` を足した。admin-web に表の部品 `DataTable`（`src/components/ui/DataTable.tsx`）を足し、カタログ（`/design`）に見本を置いた。student-app のカタログには置かない（`not_for` に student-app とある）
+- 理由: 本部の一覧の表が 48rem の枠（RoleGate の `max-w-3xl` と Section の padding で表は 550〜690px ほど）に押し込まれ、見出しや値が単語の途中で折り返し、列が `py-1` の余白だけでくっついていた（#896・#919）。既存の名前は消さず、`grid.pc` の値（文）だけを変えた。`reading` の 768px は今の 48rem と同じなので、読む画面の幅は変わらない
+- 効く画面: 正本の上では admin-web の本部の一覧の画面（`screens.ts` の `hq-bookings*`・`hq-cancelled-bookings*`・`hq-students*`・`hq-coaches*`・`hq-lesson-menus*`・`hq-slot-supply*`・`hq-incomplete-coach-profiles*`・`hq-pending-video-reviews*`・`hq-returned-video-reviews*`・`hq-live-sessions*`・`hq-overdue-live-sessions*`・`hq-unanswered-messages*`）。表のセルの決まりは coach-* の表と本部の詳細の表にも効く（幅は reading のまま）。この版で画面が変わるのはカタログ（`design-catalog`）だけで、各一覧の RoleGate の幅と表の `DataTable` への置き換えは #896 の実装役のタスク
+- 承認: 工場（新しい部品と should の基準、レイアウトの値の文の直し。must の追加と色の値の変更はない）

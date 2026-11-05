@@ -32,8 +32,10 @@ class CatalogEntry {
   String get name => [component, ?variant, ?state, ?example].join(' / ');
 }
 
-/// components.yaml にあるが student-app のカタログに置かない部品と種類（部品・種類 → 理由）。
+/// components.yaml にあるが student-app のカタログに置かない部品と種類（`部品` か `部品 / 種類` → 理由）。
 const notInStudentCatalog = <String, String>{
+  'data_table':
+      'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'notice / toast':
       'toast はテーマ（SnackBarThemeData）の SnackBar で出す。画面の下に重ねて出るのでカタログには置けない',
 };
