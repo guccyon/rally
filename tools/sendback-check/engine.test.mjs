@@ -2,6 +2,7 @@
 // check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010、Issue #935・#944・#945）。
 // 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
+// ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（議決 D-0011、Issue #948）。
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +16,8 @@ import { approvalBasis, checkRecord } from "./check.mjs";
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
 const engineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
-const skip = existsSync(`${engineDir}/orchestrator/dispatcher/supervisor.py`)
+const required = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";
+const skip = required || existsSync(`${engineDir}/orchestrator/dispatcher/supervisor.py`)
   ? false : `Engine のチェックアウトがない（ENGINE_DIR=${engineDir}）`;
 
 /** Engine の判定を 1 回動かし、起きた後続と basis を返す */
@@ -32,6 +34,20 @@ const PR_395 = {
   judgments: [provisional("adopt"), provisional("adopt"), provisional("adopt"),
     defect("reject", "OV-001", { shadow: true }), defect("reject", "PR-002")],
 };
+
+// 取り出す関数（engine_harness.py の JUDGMENT_FUNCTIONS・ENGINE_FUNCTIONS）。Engine で名前や置き場が変わったら落ちる
+const ENGINE_FUNCTIONS = ["record_judged", "act_on_judgment", "file_sendback", "enqueue_body_fix", "is_body_only", "inspector_approved"];
+
+test("(0) Engine のチェックアウトがあり、判定の関数をすべて取り出せる", { skip }, () => {
+  let out;
+  try {
+    out = execFileSync("python3", ["-I", harness, "--check", engineDir], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    assert.fail(`engine_harness.py が Engine から関数を取り出せない（ENGINE_DIR=${engineDir}）: ${e.stderr || e.message}`);
+  }
+  const { functions } = JSON.parse(out);
+  for (const name of ENGINE_FUNCTIONS) assert.ok(functions.includes(name), `${name} を取り出せない`);
+});
 
 /** 後続の判定の線だけを見る（basis は (3) で見る） */
 const followupRules = (record) => checkRecord(record).map((e) => e.rule).filter((r) => !r.startsWith("basis_"));

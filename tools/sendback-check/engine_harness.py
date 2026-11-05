@@ -11,6 +11,7 @@ dispatcher.py と supervisor.py は読み込むと DB・オブジェクトスト
 制御プレーンの記録を持つ偽の cursor と、GitHub・継続ジョブ・停止の差し替えを渡して動かす。関数の中身には手を入れない。
 
   python3 engine_harness.py <Engine のチェックアウト> < case.json > result.json
+  python3 engine_harness.py --check <Engine のチェックアウト>   # 関数を取り出せるかだけを見る（取り出せなければ終了コード 1）
 
 入力: { "pr_url", "merged", "judgments": check.mjs の記録の judgments（subject・verdict・defect・already_applied） }
 出力: { "followups": [{ "kind" }], "basis": str | null, "approved": bool, "events": [{ "name", "payload", "judgment" }] }
@@ -29,6 +30,7 @@ import types
 from datetime import datetime, timezone
 from pathlib import Path
 
+JUDGMENT_FUNCTIONS = ["record_judged"]
 ENGINE_FUNCTIONS = {
     "orchestrator/dispatcher/dispatcher.py": ["_quote", "is_body_only", "enqueue_body_fix", "act_on_judgment", "file_sendback"],
     "orchestrator/dispatcher/supervisor.py": ["inspector_approved"],
@@ -121,6 +123,8 @@ def export_events(cur: FakeCursor, pr_url: str) -> list[dict]:
 def load_engine_functions(engine: Path, namespace: dict) -> dict:
     """Engine のファイルから、名前で指した関数の定義だけを取り出して namespace で動かす"""
     for rel, names in ENGINE_FUNCTIONS.items():
+        if not (engine / rel).is_file():
+            raise SystemExit(f"Engine のチェックアウトに {rel} がない（ENGINE_DIR={engine}）")
         tree = ast.parse((engine / rel).read_text(encoding="utf-8"), filename=str(engine / rel))
         found = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names}
         missing = sorted(set(names) - set(found))
@@ -138,8 +142,13 @@ def load_judgment(engine: Path):
     psycopg.types.json.Jsonb = Jsonb
     psycopg.errors = types.SimpleNamespace(UniqueViolation=type("UniqueViolation", (Exception,), {}))
     sys.modules.update({"psycopg": psycopg, "psycopg.types": psycopg.types, "psycopg.types.json": psycopg.types.json})
+    if not (engine / "orchestrator/dispatcher/judgment.py").is_file():
+        raise SystemExit(f"Engine のチェックアウトに orchestrator/dispatcher/judgment.py がない（ENGINE_DIR={engine}）")
     sys.path.insert(0, str(engine / "orchestrator/dispatcher"))
     import judgment
+    missing = [n for n in JUDGMENT_FUNCTIONS if not callable(getattr(judgment, n, None))]
+    if missing:
+        raise SystemExit(f"Engine の orchestrator/dispatcher/judgment.py に {', '.join(missing)} がない（関数の名前が変わったら engine_harness.py を合わせる）")
     return judgment, psycopg
 
 
@@ -218,9 +227,19 @@ def run(engine: Path, case: dict) -> dict:
     return {"followups": followups, "basis": basis if approved else None, "approved": approved, "events": export_events(cur, pr_url)}
 
 
+def check(engine: Path) -> dict:
+    """判定は動かさず、取り出す関数がすべて Engine のチェックアウトにあるかだけを見る（CI で飛ばさずに落とすため）"""
+    load_judgment(engine)
+    load_engine_functions(engine, {"__name__": "engine_harness_scope"})
+    return {"functions": JUDGMENT_FUNCTIONS + [n for names in ENGINE_FUNCTIONS.values() for n in names]}
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--check":
+        json.dump(check(Path(sys.argv[2])), sys.stdout, ensure_ascii=False)
+        return
     if len(sys.argv) != 2:
-        raise SystemExit("使い方: python3 engine_harness.py <Engine のチェックアウト> < case.json")
+        raise SystemExit("使い方: python3 engine_harness.py [--check] <Engine のチェックアウト> < case.json")
     json.dump(run(Path(sys.argv[1]), json.load(sys.stdin)), sys.stdout, ensure_ascii=False)
 
 
