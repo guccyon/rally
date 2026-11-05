@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にした。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足した。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -8,6 +8,7 @@ judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥�
 node check.mjs --record <PR の記録の JSON> [--json <出力先>]
 node check.mjs < record.json     # --record を省くと標準入力から読む
 node check.mjs --events <制御プレーンのイベントの JSON か JSONL> [--pr <PR の URL>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]
+node order.mjs [--repo <リポジトリの根>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 配線の順序の見張り
 npm test                         # Engine の本物の判定のテスト（engine.test.mjs）も走る
 ```
 
@@ -103,7 +104,7 @@ python3 engine_harness.py --check /path/to/factory-engine   # 関数を取り出
 
 ### CI への組み込み
 
-PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウトして `ENGINE_DIR` を向け、`engine.test.mjs` を走らせるワークフローを `ci/sendback-engine.yml` に置いた。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/sendback-engine.yml` に写す。写すときに変えてよいのは `ENGINE_REF` の行だけ。Engine を上げるときは `ENGINE_REF` も上げ、手元で `ENGINE_DIR` を向けて `engine.test.mjs` が通ることを確かめる。
+PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウトして `ENGINE_DIR` を向け、`engine.test.mjs` を走らせるワークフローを `ci/sendback-engine.yml` に置いた。同じファイルの `wiring-order` のジョブが、下の配線の順序の見張り（`order.mjs`）を PR ごとに走らせる。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/sendback-engine.yml` に写す。写すときに変えてよいのは `ENGINE_REF` の行だけ。Engine を上げるときは `ENGINE_REF` も上げ、手元で `ENGINE_DIR` を向けて `engine.test.mjs` が通ることを確かめる。
 
 ## 呼び出す場所
 
@@ -115,6 +116,20 @@ PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差
 2. CI で Engine を固定の版（`ENGINE_REF`）で取って `ENGINE_DIR` を向け、`npm test` を走らせる
 3. 上の SQL で PR のイベント列を `events.json` に出す手順と、下の `check.mjs --events` の手順を足す（PR ごとと、supervisor が差し戻し・続きのジョブを起こしたとき）
 4. 本物の PR #395 のイベント列で `followup_without_defect` で落ちることを確かめ、`K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す
+
+### 配線の順序の見張り（`order.mjs`）
+
+上の順序を人の注意ではなく機械で守る（議決 `D-0012`、Issue #953）。`.github/workflows/` に `check.mjs --events` を呼ぶ手順があるときだけ、次のどちらかで落とす。呼ぶ手順がなければ（今のリポジトリ）何も見ずに通る。
+
+| rule | 外れる状態 |
+|---|---|
+| `engine_test_todo` | `engine.test.mjs` に todo（`t.todo(…)`・`test.todo(…)`・`{ todo: … }`）が残っている（basis の場合の `todoWhileLegacy` を含む）。`engine.test.mjs` がないときも |
+| `engine_test_not_wired` | `.github/workflows/` に `engine.test.mjs` を走らせる手順がない（`engine.test.mjs` を名指しした `node --test` か、`tools/sendback-check` で `npm test`・ファイルを名指ししない `node --test`） |
+
+- 呼ぶ手順は、注釈を除いた行で `--events` と `tools/sendback-check/check.mjs`（`sendback-check` を含むワークフローなら `check.mjs` か `npm run check`）が並ぶもの。取りこぼすと見張れないので、迷う形は呼ぶ側に数える
+- 走らせる場所は 2 つ。`ci/sendback-engine.yml` の `wiring-order` のジョブ（`node tools/sendback-check/order.mjs`）と、`check.mjs --events` を GitHub Actions（`GITHUB_ACTIONS=true`）で動かしたとき（`GITHUB_WORKSPACE` のリポジトリを見て、外れたら記録が通っても終了コード 1）。後者があるので、`ci/sendback-engine.yml` を写さずに `check.mjs --events` だけを配線しても落ちる
+- 通すには、Engine の basis を直して `ENGINE_REF` を上げ、`LEGACY_BASIS` と `todoWhileLegacy` を消し、`ci/sendback-engine.yml` を `.github/workflows/` に写してから `check.mjs --events` の手順を足す
+- 終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった。`GITHUB_ACTIONS=true` のときは `::error title=sendback-check <rule>::…` の形で出す
 
 ワークフローの例（イベントを出す手順は建設者が決める。ここでは前の手順で `events.json` に出してある前提）:
 
