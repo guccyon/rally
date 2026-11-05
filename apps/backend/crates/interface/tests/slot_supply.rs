@@ -1,7 +1,7 @@
 //! `GET /slot-supply`（admin-web の `getSlotSupply`）の統合テスト。レスポンスの形を admin-web の OpenAPI の
 //! スキーマで検査し、本部だけが呼べることと、期間に開始する枠だけを数えることと、日付（`from`・`to`）で期間を指定できる
-//! ことと、`coach_id` でそのコーチの枠だけを数えることと、`sport` でその競技を提供するコーチの枠だけを数えることを
-//! 確かめる。判定の式の境界は
+//! ことと、`coach_id` でそのコーチの枠だけを数えることと、`sport` でその競技を提供するコーチの枠だけを数えることと、
+//! `lesson_menu_id` でそのメニューに結びついた枠だけを数えることを確かめる。判定の式の境界は
 //! domain の `SlotSupply` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -33,7 +33,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    catalog::Sport,
+    catalog::{LessonMenuId, Sport},
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
     scheduling::{Booking, Slot, SlotId, SlotStatus},
@@ -388,12 +388,12 @@ async fn headquarters_reads_the_supply_of_every_sport_in_the_last_thirty_days() 
             "sports": [
                 // 開いている 3 枠に 2 人（67%）。閉じた枠は数えない
                 { "sport": "tennis", "status": "insufficient", "published_slots": 3, "booking_students": 2 },
-                { "sport": "golf", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
-                { "sport": "baseball", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
+                { "sport": "golf", "status": "not_applicable", "published_slots": 0, "booking_students": 0 },
+                { "sport": "baseball", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
                 // 2 枠に 1 人（50%）
                 { "sport": "soccer", "status": "sufficient", "published_slots": 2, "booking_students": 1 },
-                { "sport": "basketball", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
-                { "sport": "swimming", "status": "sufficient", "published_slots": 0, "booking_students": 0 },
+                { "sport": "basketball", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
+                { "sport": "swimming", "status": "no_activity", "published_slots": 0, "booking_students": 0 },
             ],
         })
     );
@@ -510,12 +510,17 @@ fn account_uuid(id: u128) -> String {
     format!("00000000-0000-0000-0000-{id:012x}")
 }
 
-/// どのスポーツも枠も予約しようとした生徒も 0 か。
+/// どのスポーツも枠も予約しようとした生徒も 0 か（判定はゴルフが対象外、それ以外が枠も予約もない）。
 fn all_zero(body: &Value) -> bool {
     body["sports"].as_array().unwrap().iter().all(|supply| {
+        let status = if supply["sport"] == "golf" {
+            "not_applicable"
+        } else {
+            "no_activity"
+        };
         supply["published_slots"] == 0
             && supply["booking_students"] == 0
-            && supply["status"] == "sufficient"
+            && supply["status"] == status
     })
 }
 
@@ -674,5 +679,122 @@ async fn unknown_sport_is_unprocessable() {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{sport}: {body}");
         assert_eq!(body["code"], "validation_failed");
         assert_eq!(body["message"], format!("未知のスポーツ: {sport}"));
+    }
+}
+
+fn menu_uuid(id: u128) -> String {
+    format!("00000000-0000-0000-0000-{id:012x}")
+}
+
+/// 期間（30 日前から今まで）に、メニュー 50 に結びついたテニスの枠 2 つ（1 つに 1 人）と、メニュー 51 のサッカーの枠
+/// 1 つ（1 人）と、メニューのないテニスの枠 1 つ（1 人）。明日のメニュー 50 の枠にも 1 人。
+async fn menu_bookings() -> InMemoryBookingRepository {
+    let menu = |id| Some(LessonMenuId::from_u128(id));
+    let slots = InMemorySlotRepository::with_slots([
+        slot(1, Sport::Tennis, now() - DAY, SlotStatus::Open).with_restored_lesson_menu(menu(50)),
+        slot(2, Sport::Tennis, now() - 2 * DAY, SlotStatus::Open)
+            .with_restored_lesson_menu(menu(50)),
+        slot(3, Sport::Soccer, now() - DAY, SlotStatus::Open).with_restored_lesson_menu(menu(51)),
+        slot(4, Sport::Tennis, now() - DAY, SlotStatus::Open),
+        slot(5, Sport::Tennis, now() + DAY, SlotStatus::Open).with_restored_lesson_menu(menu(50)),
+    ]);
+    let bookings = InMemoryBookingRepository::new(slots);
+    book(&bookings, 11, 1).await;
+    book(&bookings, 12, 3).await;
+    book(&bookings, 13, 4).await;
+    book(&bookings, 14, 5).await;
+    bookings
+}
+
+#[tokio::test]
+async fn lesson_menu_id_counts_only_the_slots_bound_to_that_menu() {
+    let router = app(menu_bookings().await);
+    // メニュー 50 の 2 枠に 1 人。メニュー 51 の枠・メニューのない枠と、それらへの予約は数えない
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!("/slot-supply?lesson_menu_id={}", menu_uuid(50)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["window_start"], "2026-09-26T00:00:00Z");
+    assert_eq!(body["window_end"], "2026-10-26T00:00:00Z");
+    assert!(
+        body.get("from").is_none() && body.get("to").is_none(),
+        "{body}"
+    );
+    assert_eq!(body["sports"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "sufficient", "published_slots": 2, "booking_students": 1 })
+    );
+    assert_eq!(body["sports"][3]["published_slots"], 0, "{body}");
+
+    // 期間・コーチと組み合わせる。明日はメニュー 50 の枠 5 だけ。枠 1 のコーチなら枠 1 だけ
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!(
+            "/slot-supply?from=2026-10-27&to=2026-10-27&lesson_menu_id={}",
+            menu_uuid(50)
+        ),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["from"], "2026-10-27");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!(
+            "/slot-supply?lesson_menu_id={}&coach_id={}",
+            menu_uuid(50),
+            account_uuid(101)
+        ),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 1, "booking_students": 1 })
+    );
+
+    // ないメニューの ID は 404 にせず、どのスポーツも 0
+    let (status, body) = get_slot_supply_at(
+        &router,
+        &format!("/slot-supply?lesson_menu_id={}", menu_uuid(999)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(all_zero(&body), "{body}");
+
+    // 付けなければ今までどおりメニューを問わない
+    let (status, body) = get_slot_supply(&router, Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["sports"][0]["published_slots"], 3, "{body}");
+    assert_eq!(body["sports"][3]["published_slots"], 1, "{body}");
+}
+
+#[tokio::test]
+async fn lesson_menu_id_not_a_uuid_is_unprocessable() {
+    let router = app(menu_bookings().await);
+    for lesson_menu_id in ["not-a-uuid", ""] {
+        let (status, body) = get_slot_supply_at(
+            &router,
+            &format!("/slot-supply?lesson_menu_id={lesson_menu_id}"),
+            Some(HEADQUARTERS),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{lesson_menu_id}: {body}"
+        );
+        assert_eq!(body["code"], "validation_failed");
+        assert_eq!(body["message"], "lesson_menu_id が UUID でない");
     }
 }

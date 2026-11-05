@@ -32,10 +32,24 @@ type CoachesState =
 /**
  * 絞り込みの条件。`notBookedSince` は日付の入力欄の値（YYYY-MM-DD。空なら絞らない）。
  * `coachId` は予約したことのあるコーチの ID（空なら絞らない）。
+ * `hasUnanswered` が true なら返事を待っているメッセージのある生徒だけ（契約の `has_unanswered`。false なら絞らない）。
  */
-type Filter = { sport: Sport | ""; notBookedSince: string; coachId: string };
+type Filter = { sport: Sport | ""; notBookedSince: string; coachId: string; hasUnanswered: boolean };
 
-const NO_FILTER: Filter = { sport: "", notBookedSince: "", coachId: "" };
+const NO_FILTER: Filter = { sport: "", notBookedSince: "", coachId: "", hasUnanswered: false };
+
+/**
+ * 0 件のときの文言。返事を待っているメッセージのある生徒だけに絞っているときは、その条件を文言に含める
+ * （コーチの受付の「直近 30 日にレッスンのないコーチだけ」と同じ形）。
+ */
+function emptyMessage(filter: Filter): string {
+  const others = filter.sport !== "" || filter.notBookedSince !== "" || filter.coachId !== "";
+  if (filter.hasUnanswered) {
+    const subject = "返事を待っているメッセージのある生徒";
+    return others ? `${subject}のうち、条件に合う生徒はいません` : `${subject}はいません`;
+  }
+  return others ? "条件に合う生徒はいません" : "まだ生徒はいません";
+}
 
 /** URL のコーチの ID がコーチの一覧にない（消えたコーチ・打ち間違い）ときの選択肢の名前。 */
 const UNKNOWN_COACH = "（一覧にないコーチ）";
@@ -64,8 +78,8 @@ function planLabel(student: Student): string {
 }
 
 /**
- * 本部の「生徒」。生徒の一覧（listStudents）を出す。絞り込み（スポーツ・この日以降に予約していない・予約したことのあるコーチ）は
- * API の `sport` / `not_booked_since` / `coach_id` に渡し、並びは契約の正本どおり返った順（登録の新しい順）のまま出す。
+ * 本部の「生徒」。生徒の一覧（listStudents）を出す。絞り込み（スポーツ・この日以降に予約していない・予約したことのあるコーチ・
+ * 返事を待っているメッセージのある生徒だけ）は API の `sport` / `not_booked_since` / `coach_id` / `has_unanswered` に渡し、並びは契約の正本どおり返った順（登録の新しい順）のまま出す。
  * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約が正本で、画面は返った値を「n 件」で出すだけ。0 も「0 件」）
  * を出し、表の上に数え方を添える（並べ替え・絞り込みには使わない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL のクエリ）のコーチで絞って開き、
@@ -92,6 +106,7 @@ export function StudentDirectory({
         ...(next.sport === "" ? {} : { sport: next.sport }),
         ...(next.notBookedSince === "" ? {} : { not_booked_since: next.notBookedSince }),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
+        ...(next.hasUnanswered ? { has_unanswered: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", students: response.data.students }
@@ -137,7 +152,6 @@ export function StudentDirectory({
     if (request === latestRequest.current) setState(loaded);
   }
 
-  const filtered = filter.sport !== "" || filter.notBookedSince !== "" || filter.coachId !== "";
   const unknownCoach =
     filter.coachId !== "" &&
     coaches.kind === "loaded" &&
@@ -206,6 +220,19 @@ export function StudentDirectory({
             {unknownCoach && <option value={filter.coachId}>{UNKNOWN_COACH}</option>}
           </select>
         </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.hasUnanswered}
+            onChange={(event) =>
+              void changeFilter({
+                ...filter,
+                hasUnanswered: event.target.checked,
+              })
+            }
+          />
+          返事を待っているメッセージのある生徒だけ
+        </label>
       </div>
       {coaches.kind === "failed" && (
         <ResultMessage
@@ -215,7 +242,7 @@ export function StudentDirectory({
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && state.students.length === 0 && (
-        <p className="text-sm">{filtered ? "条件に合う生徒はいません" : "まだ生徒はいません"}</p>
+        <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.students.length > 0 && (
         <>

@@ -1,0 +1,17 @@
+id: K-0004
+theme: 6
+kind: causal
+statement: supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」ではなく adopt の件数で起こすと、直すもののない差し戻しが記録される。
+scope:
+  roles: [supervisor]
+confidence: hypothesis
+evidence:
+  - case: C-0002
+  - pr: 395
+  - event: "case.analyzed:40376"
+status: active
+verified_at: 2026-11-01
+review_by: 2026-12-01
+confidentiality: product
+related: [K-0003]
+decided_by: committee:D-0004

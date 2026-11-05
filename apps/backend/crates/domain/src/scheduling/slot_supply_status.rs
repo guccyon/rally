@@ -5,4 +5,8 @@ pub enum SlotSupplyStatus {
     Sufficient,
     /// 予約しようとした生徒の数に対して、公開した枠が足りていない
     Insufficient,
+    /// 公開した枠も、予約しようとした生徒も 0（足りているかを数からは言えない）
+    NoActivity,
+    /// 月額の契約の対象でないスポーツ（ゴルフ）で、需給を判定しない
+    NotApplicable,
 }

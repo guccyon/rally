@@ -2,7 +2,8 @@
 //! （`MockTokenService`）で発行する。契約の形・数え方の検査は interface の `tests/slot_supply.rs`、
 //! 合成シードでの判定は seed の `tests/slot_supply.rs`。日付（`from`・`to`）で期間を指定して Postgres の枠と予約を数える
 //! ことと、`coach_id` でそのコーチの枠と予約だけを数えることと、`sport` でその競技を提供するコーチの枠と予約だけを数える
-//! ことは、保存先を Postgres にした組み立てで確かめる。
+//! ことと、`lesson_menu_id` でそのメニューに結びついた枠と予約だけを数えることは、保存先を Postgres にした組み立てで
+//! 確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -451,4 +452,136 @@ async fn headquarters_reads_the_supply_of_a_sport_from_postgres(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
     assert_eq!(body["message"], "未知のスポーツ: cricket");
+}
+
+/// 保存先を Postgres にした組み立てで、レッスンメニュー（`lesson_menu_id`）で絞って来週の需給を読む。枠とメニューの
+/// 結びつきは Postgres の枠から読む。Postgres が要るので既定では走らない（`#[ignore]`）。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_reads_the_supply_of_a_lesson_menu_from_postgres(pool: PgPool) {
+    let (tanaka_id, tanaka) = register_account(&pool, "tanaka@example.com", Role::Coach).await;
+    let (suzuki_id, _) = register_account(&pool, "suzuki@example.com", Role::Coach).await;
+    let taro = register(&pool, "taro@example.com", Role::Student).await;
+    let hanako = register(&pool, "hanako@example.com", Role::Student).await;
+    let hq = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let router = server::router_with_postgres(
+        pool,
+        FixedClock(SystemTime::UNIX_EPOCH + NOW),
+        RecordingAnalyticsSink::default(),
+    );
+
+    // たなかが同期レッスンのメニューを作り、来週の 2 枠に結びつける（1 つに 1 人）。メニューのない枠にも 1 人
+    let (status, menu) = send(
+        &router,
+        post_json(
+            "/coaches/me/lesson-menus",
+            &tanaka,
+            json!({
+                "sport": "tennis",
+                "lesson_type": "live_lesson",
+                "name": "フォア改善",
+                "description": "ラリーが続かない人向け",
+                "duration_minutes": 60,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{menu}");
+    let menu_id = menu["lesson_menu_id"].as_str().unwrap().to_string();
+    let mut menu_slots = Vec::new();
+    for (starts_at, ends_at) in [
+        ("2026-11-02T01:00:00Z", "2026-11-02T02:00:00Z"),
+        ("2026-11-03T01:00:00Z", "2026-11-03T02:00:00Z"),
+    ] {
+        let (status, slot) = send(
+            &router,
+            post_json(
+                "/slots",
+                &tanaka,
+                json!({
+                    "sport": "tennis",
+                    "starts_at": starts_at,
+                    "ends_at": ends_at,
+                    "lesson_menu_id": menu_id,
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{slot}");
+        menu_slots.push(slot["slot_id"].clone());
+    }
+    let plain_slot = publish_slot(
+        &router,
+        &tanaka,
+        "2026-11-04T01:00:00Z",
+        "2026-11-04T02:00:00Z",
+    )
+    .await;
+    book(&router, &taro, &menu_slots[0]).await;
+    book(&router, &hanako, &plain_slot).await;
+
+    let week = "from=2026-11-02&to=2026-11-08";
+    let supply_of = |query: String| {
+        let (router, hq) = (&router, &hq);
+        async move {
+            let (status, body) = send(router, get(&format!("/slot-supply?{query}"), hq)).await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            body
+        }
+    };
+    // メニューの 2 枠に 1 人（50%）。メニューのない枠とその予約は数えない
+    let body = supply_of(format!("{week}&lesson_menu_id={menu_id}")).await;
+    assert_eq!(body["from"], "2026-11-02");
+    assert_eq!(body["window_start"], "2026-11-01T15:00:00Z");
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "sufficient", "published_slots": 2, "booking_students": 1 })
+    );
+    // コーチ・競技と組み合わせる
+    let body = supply_of(format!(
+        "{week}&lesson_menu_id={menu_id}&coach_id={}&sport=tennis",
+        account_id_uuid::format(tanaka_id)
+    ))
+    .await;
+    assert_eq!(body["sports"][0]["published_slots"], 2, "{body}");
+    let body = supply_of(format!(
+        "{week}&lesson_menu_id={menu_id}&coach_id={}",
+        account_id_uuid::format(suzuki_id)
+    ))
+    .await;
+    assert_eq!(body["sports"][0]["published_slots"], 0, "{body}");
+    // 期間と組み合わせる（11 月 3 日からは 11 月 2 日の枠とその予約を含まない）
+    let body = supply_of(format!(
+        "from=2026-11-03&to=2026-11-08&lesson_menu_id={menu_id}"
+    ))
+    .await;
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "sufficient", "published_slots": 1, "booking_students": 0 })
+    );
+    // ないメニューの ID は 404 にせず、どのスポーツも 0
+    let body = supply_of(format!(
+        "{week}&lesson_menu_id=00000000-0000-0000-0000-0000000003e7"
+    ))
+    .await;
+    assert!(
+        body["sports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["published_slots"] == 0 && s["booking_students"] == 0),
+        "{body}"
+    );
+    // 付けなければ今までどおりメニューを問わない（3 枠に 2 人）
+    let body = supply_of(week.to_string()).await;
+    assert_eq!(
+        body["sports"][0],
+        json!({ "sport": "tennis", "status": "insufficient", "published_slots": 3, "booking_students": 2 })
+    );
+
+    // UUID でなければ 422
+    let (status, body) = send(&router, get("/slot-supply?lesson_menu_id=menu", &hq)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    assert_eq!(body["message"], "lesson_menu_id が UUID でない");
 }

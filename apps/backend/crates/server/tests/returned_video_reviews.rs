@@ -1,7 +1,7 @@
 //! 本部が返した動画添削の記録を見る（admin-web の `listReturnedVideoReviews`）ことを、保存先を Postgres にした
 //! 組み立て（`server::router_with_postgres`）で通す。ルートが組み立てに入っていること、Postgres の動画のうち返却の日付（日本時間）が
 //! 期間に入るものをコーチを問わず返却の新しい順に読み、かかった時間とコーチ・生徒の表示名を添えること、`coach_id`・`sport`・
-//! `student_id` で絞れること、期間の違反は 422、本部以外は 403 になることを確かめる。
+//! `student_id`・`lesson_menu_id` で絞れること、期間の違反は 422、本部以外は 403 になることを確かめる。
 //! 契約の形・クエリの検証の細かい検査は interface の `tests/returned_video_reviews.rs`、期間に返却した動画の読み取りは
 //! infra の `tests/pg_video_repository.rs`。
 //!
@@ -24,8 +24,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::{ReviewComment, Video},
-    catalog::Sport,
+    async_lesson::{ReviewComment, Video, VideoLessonMenu},
+    catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{AccountId, Role},
 };
 use infra::{MockTokenService, PgAccountRepository, PgVideoRepository};
@@ -284,6 +284,68 @@ async fn headquarters_reads_returned_video_reviews_from_postgres(pool: PgPool) {
     let (status, body) = send(
         &router,
         get("/video-reviews/returned?student_id=taro", &hq_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+
+    // レッスンメニューは送った時点のメニューの写しで絞る。生徒と組み合わせられる
+    let form_video = Video::restore(
+        videos.next_video_id(),
+        hanako,
+        ito,
+        Sport::Tennis,
+        now() - HOUR * 20,
+        None,
+        Some(VideoLessonMenu::restore(
+            LessonMenuId::from_u128(0x50),
+            LessonMenuName::new("フォーム添削").unwrap(),
+        )),
+    )
+    .unwrap();
+    videos.insert(form_video.clone()).await.unwrap();
+    videos
+        .update(form_video.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                ito,
+                ReviewComment::new("肘が下がっている").unwrap(),
+                true,
+                now() - HOUR * 4,
+            )
+        })
+        .await
+        .unwrap();
+    let form_menu = "00000000-0000-0000-0000-000000000050";
+    for (query, expected) in [
+        (
+            format!("lesson_menu_id={form_menu}"),
+            vec![video_id(&form_video)],
+        ),
+        (
+            format!(
+                "lesson_menu_id={form_menu}&student_id={}",
+                account_id_uuid::format(taro)
+            ),
+            vec![],
+        ),
+        // ないメニューの ID は空の一覧
+        (
+            "lesson_menu_id=00000000-0000-0000-0000-000000000099".to_string(),
+            vec![],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            get(&format!("/video-reviews/returned?{query}"), &hq_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(returned_ids(&body), expected, "{query}");
+    }
+    let (status, body) = send(
+        &router,
+        get("/video-reviews/returned?lesson_menu_id=form", &hq_token),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");

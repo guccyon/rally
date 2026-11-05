@@ -94,6 +94,7 @@ pub struct ListCoachLessonMenusParams {
 pub struct ListLessonMenusParams {
     q: Option<String>,
     sport: Option<String>,
+    lesson_type: Option<String>,
     published: Option<bool>,
     coach_id: Option<String>,
     unbooked: Option<bool>,
@@ -297,11 +298,11 @@ where
 }
 
 /// `GET /lesson-menus`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
-/// すべてのコーチのメニューを、`q`・`sport`・`published`・`coach_id`・`unbooked` があればそれで絞って返す（ゴルフも載せる）。
+/// すべてのコーチのメニューを、`q`・`sport`・`lesson_type`・`published`・`coach_id`・`unbooked` があればそれで絞って返す（ゴルフも載せる）。
 /// `unbooked` が `true` なら直近 30 日に予約のない（`recent_booking_count` が 0 の）メニューだけ。
 /// `q` は名前に部分一致するメニューだけで、一致のしかたは `listStudents` の `q` と同じ（[`LessonMenuNameQuery`]）。
 /// 各行に直近 30 日に入った予約の数（キャンセルを除く）を載せる（予約がなければ 0）。
-/// 長すぎる `q`・UUID でない `coach_id`・`true` / `false` でない `published` と `unbooked` は 422。いないコーチの ID なら空の一覧（404 にしない）。
+/// 長すぎる `q`・`LessonType` の値でない `lesson_type`・UUID でない `coach_id`・`true` / `false` でない `published` と `unbooked` は 422。いないコーチの ID なら空の一覧（404 にしない）。
 pub async fn list_lesson_menus<M, R, C, D, B>(
     State(state): State<Shared<M, R, C, D, B>>,
     params: Result<Query<ListLessonMenusParams>, QueryRejection>,
@@ -323,6 +324,11 @@ where
             .transpose()?
             .flatten(),
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        lesson_type: params
+            .lesson_type
+            .as_deref()
+            .map(lesson_type_from_contract)
+            .transpose()?,
         is_published: params.published,
         coach_id: params
             .coach_id

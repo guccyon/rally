@@ -1,17 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use domain::{
-    DomainError, catalog::Sport, identity::AccountId, live_lesson::SessionHistoryCriteria,
+    DomainError,
+    catalog::{LessonMenuId, Sport},
+    identity::AccountId,
+    live_lesson::SessionHistoryCriteria,
+    scheduling::BookingId,
 };
 use time::Date;
 
 use super::{
-    LiveLessonSessionHistory, LiveLessonSessionRepository, SessionCoachAccountLookup,
-    SessionCoachDisplayNameLookup, SessionStudentDisplayNameLookup,
+    LiveLessonSessionHistory, LiveLessonSessionRepository, SessionBookingLessonMenuLookup,
+    SessionCoachAccountLookup, SessionCoachDisplayNameLookup, SessionStudentDisplayNameLookup,
 };
 use crate::{Unavailable, scheduling::calendar_day};
 
-/// 本部が期間とコーチ・生徒・競技で見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
+/// 本部が期間とコーチ・生徒・競技・レッスンメニューで見る通話セッションの記録の一覧のユースケース（admin-web の `listLiveLessonSessions`。本部だけが
 /// 呼ぶ）。問い合わせを受けたときに、ライブレッスンがいつ始まりいつ終わったかを引くための照会で、何も保存しない。
 ///
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）に開始したセッションを、終了の有無を問わず読む。期間の規則
@@ -20,14 +24,17 @@ use crate::{Unavailable, scheduling::calendar_day};
 /// コーチのセッションだけ（いないコーチなら空の一覧）、`student_id` があればその生徒の予約が結び付いたセッションだけ
 /// （グループレッスンでは開始した予約の生徒に限らない。いない生徒・生徒でない ID なら空の一覧）。`sport` があれば、選んだ
 /// セッションのコーチのアカウント（[`SessionCoachAccountLookup`]）を引き、[`SessionHistoryCriteria::matches_coach_sport`]
-/// に合うセッションだけを残す（並べ方は変わらない。`listOverdueLiveLessonSessions` と同じ）。各セッションには、コーチと開始した予約の生徒の表示名
+/// に合うセッションだけを残す（並べ方は変わらない。`listOverdueLiveLessonSessions` と同じ）。`lesson_menu_id` があれば、
+/// 選んだセッションに結び付いた予約の予約した時点のメニュー（[`SessionBookingLessonMenuLookup`]）を引き、
+/// [`SessionHistoryCriteria::matches_lesson_menu`] に合うセッションだけを残す（ないメニューなら空の一覧）。各セッションには、コーチと開始した予約の生徒の表示名
 /// （[`SessionCoachDisplayNameLookup`]・[`SessionStudentDisplayNameLookup`]）を引いて添える。誰が呼べるか（本部だけ）は
 /// 境界（interface）が確かめる。
-pub struct ListLiveLessonSessions<L, A, D, S> {
+pub struct ListLiveLessonSessions<L, A, D, S, M> {
     sessions: L,
     coach_accounts: A,
     coach_names: D,
     student_names: S,
+    booking_menus: M,
 }
 
 /// 本部が見る通話セッションの記録の一覧の条件。
@@ -43,6 +50,8 @@ pub struct ListLiveLessonSessionsQuery {
     pub student_id: Option<AccountId>,
     /// あればこの競技を提供するコーチのセッションだけ
     pub sport: Option<Sport>,
+    /// あればこのレッスンメニューの予約が結び付いたセッションだけ
+    pub lesson_menu_id: Option<LessonMenuId>,
 }
 
 #[derive(Debug)]
@@ -65,19 +74,27 @@ impl From<Unavailable> for ListLiveLessonSessionsError {
     }
 }
 
-impl<L, A, D, S> ListLiveLessonSessions<L, A, D, S>
+impl<L, A, D, S, M> ListLiveLessonSessions<L, A, D, S, M>
 where
     L: LiveLessonSessionRepository,
     A: SessionCoachAccountLookup,
     D: SessionCoachDisplayNameLookup,
     S: SessionStudentDisplayNameLookup,
+    M: SessionBookingLessonMenuLookup,
 {
-    pub fn new(sessions: L, coach_accounts: A, coach_names: D, student_names: S) -> Self {
+    pub fn new(
+        sessions: L,
+        coach_accounts: A,
+        coach_names: D,
+        student_names: S,
+        booking_menus: M,
+    ) -> Self {
         Self {
             sessions,
             coach_accounts,
             coach_names,
             student_names,
+            booking_menus,
         }
     }
 
@@ -91,7 +108,8 @@ where
             query.coach_id,
             query.student_id,
         )?
-        .with_sport(query.sport);
+        .with_sport(query.sport)
+        .with_lesson_menu(query.lesson_menu_id);
         let found = self
             .sessions
             .find_started_between(
@@ -102,6 +120,17 @@ where
             )
             .await?;
         let mut sessions = criteria.select(found);
+        if criteria.lesson_menu_id().is_some() && !sessions.is_empty() {
+            let booking_ids: BTreeSet<BookingId> = sessions
+                .iter()
+                .flat_map(|s| s.bookings().iter().map(|b| b.booking_id()))
+                .collect();
+            let menus = self
+                .booking_menus
+                .find_booking_lesson_menus(&booking_ids)
+                .await?;
+            sessions.retain(|session| criteria.matches_lesson_menu(session, &menus));
+        }
         if criteria.sport().is_some() && !sessions.is_empty() {
             let coach_ids: BTreeSet<AccountId> = sessions.iter().map(|s| s.coach_id()).collect();
             let coaches = self.coach_accounts.find_coach_accounts(&coach_ids).await?;
@@ -190,10 +219,15 @@ mod tests {
         DisplayName::new(value).unwrap()
     }
 
-    /// `COACH`（テニス・ゴルフ）と `OTHER_COACH`（サッカー）のアカウント、`COACH` と `STUDENT` の表示名だけを知っていて、
+    const MENU: LessonMenuId = LessonMenuId::from_u128(50);
+    const OTHER_MENU: LessonMenuId = LessonMenuId::from_u128(51);
+
+    /// `COACH`（テニス・ゴルフ）と `OTHER_COACH`（サッカー）のアカウント、`COACH` と `STUDENT` の表示名、予約の
+    /// メニュー（予約 101・105・107 は `MENU`、103 は `OTHER_MENU`、ほかはメニューのない予約）だけを知っていて、
     /// 問い合わせた ID を記録する。
     #[derive(Clone, Default)]
     struct RecordingLookup {
+        booking_menus_asked: Arc<Mutex<Vec<BTreeSet<BookingId>>>>,
         coach_accounts_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         coaches_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
         students_asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
@@ -225,6 +259,26 @@ mod tests {
                 .filter_map(|id| match *id {
                     COACH => Some((*id, coach_account(*id, &[Sport::Tennis, Sport::Golf]))),
                     OTHER_COACH => Some((*id, coach_account(*id, &[Sport::Soccer]))),
+                    _ => None,
+                })
+                .collect())
+        }
+    }
+
+    impl SessionBookingLessonMenuLookup for RecordingLookup {
+        async fn find_booking_lesson_menus(
+            &self,
+            booking_ids: &BTreeSet<BookingId>,
+        ) -> Result<BTreeMap<BookingId, LessonMenuId>, Unavailable> {
+            self.booking_menus_asked
+                .lock()
+                .unwrap()
+                .push(booking_ids.clone());
+            Ok(booking_ids
+                .iter()
+                .filter_map(|id| match id.as_u128() {
+                    101 | 105 | 107 => Some((*id, MENU)),
+                    103 => Some((*id, OTHER_MENU)),
                     _ => None,
                 })
                 .collect())
@@ -281,11 +335,13 @@ mod tests {
         RecordingLookup,
         RecordingLookup,
         RecordingLookup,
+        RecordingLookup,
     >;
 
     fn use_case_with(sessions: Vec<LiveLessonSession>, lookup: RecordingLookup) -> UseCase {
         ListLiveLessonSessions::new(
             InMemoryLiveLessonSessionRepository::with_sessions(sessions),
+            lookup.clone(),
             lookup.clone(),
             lookup.clone(),
             lookup,
@@ -303,6 +359,7 @@ mod tests {
             coach_id,
             student_id: None,
             sport: None,
+            lesson_menu_id: None,
         }
     }
 
@@ -433,6 +490,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_lesson_menu_of_the_linked_bookings_narrows_the_sessions() {
+        // 通話を始めた予約（106）はメニューがなく、結び付いた予約（107）が MENU のグループレッスン（11 月 2 日）
+        let group = LiveLessonSession::restore(
+            SessionId::from_u128(6),
+            BookingId::from_u128(106),
+            STUDENT,
+            COACH,
+            vec![SessionBooking::new(
+                BookingId::from_u128(107),
+                OTHER_STUDENT,
+            )],
+            at(2, 12),
+            None,
+        )
+        .unwrap();
+        let sessions: Vec<LiveLessonSession> = sessions().into_iter().chain([group]).collect();
+        let lookup = RecordingLookup::default();
+        let history = use_case_with(sessions.clone(), lookup.clone())
+            .execute(ListLiveLessonSessionsQuery {
+                lesson_menu_id: Some(MENU),
+                ..query(1, 3, None)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&history),
+            [6, 1],
+            "ほかのメニュー・メニューのない予約・期間の外（予約 105）は出ない。開始の新しい順のまま"
+        );
+        assert_eq!(
+            *lookup.booking_menus_asked.lock().unwrap(),
+            [[101, 103, 104, 106, 107].map(BookingId::from_u128).into()],
+            "期間で選んだ後のセッションに結び付いた予約を重ねずに 1 回で問い合わせる"
+        );
+        assert_eq!(
+            *lookup.students_asked.lock().unwrap(),
+            [BTreeSet::from([STUDENT])],
+            "メニューで絞った後のセッションの生徒だけ表示名を問い合わせる"
+        );
+
+        for (lesson_menu_id, coach_id, student_id, sport, expected) in [
+            (OTHER_MENU, None, None, None, vec![3]),
+            // コーチ・生徒・競技の指定と組み合わさる
+            (MENU, Some(OTHER_COACH), None, None, vec![]),
+            (MENU, None, Some(OTHER_STUDENT), None, vec![6]),
+            (MENU, None, None, Some(Sport::Soccer), vec![]),
+            (OTHER_MENU, None, None, Some(Sport::Soccer), vec![3]),
+            // ないメニューは空の一覧
+            (LessonMenuId::from_u128(99), None, None, None, vec![]),
+        ] {
+            let history = use_case_with(sessions.clone(), RecordingLookup::default())
+                .execute(ListLiveLessonSessionsQuery {
+                    student_id,
+                    sport,
+                    lesson_menu_id: Some(lesson_menu_id),
+                    ..query(1, 3, coach_id)
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                ids(&history),
+                expected,
+                "{lesson_menu_id:?} {coach_id:?} {student_id:?} {sport:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn without_lesson_menu_the_booking_menus_are_not_asked() {
+        let lookup = RecordingLookup::default();
+        use_case(lookup.clone())
+            .execute(query(1, 3, None))
+            .await
+            .unwrap();
+        assert!(lookup.booking_menus_asked.lock().unwrap().is_empty());
+        // 期間に 1 件もなければ、メニューを指定しても問い合わせない
+        let lookup = RecordingLookup::default();
+        let history = use_case(lookup.clone())
+            .execute(ListLiveLessonSessionsQuery {
+                lesson_menu_id: Some(MENU),
+                ..query(10, 12, None)
+            })
+            .await
+            .unwrap();
+        assert!(history.sessions.is_empty());
+        assert!(lookup.booking_menus_asked.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn the_student_narrows_the_sessions_including_group_lessons_they_joined() {
         // 通話を始めたのは STUDENT で、OTHER_STUDENT の予約も結び付いたグループレッスン（11 月 2 日）
         let group = LiveLessonSession::restore(
@@ -481,6 +627,7 @@ mod tests {
                 coach_id: None,
                 student_id: None,
                 sport: None,
+                lesson_menu_id: None,
             })
             .await
             .unwrap();
@@ -514,6 +661,7 @@ mod tests {
                     coach_id: None,
                     student_id: None,
                     sport: None,
+                    lesson_menu_id: None,
                 },
                 DomainError::SessionPeriodTooLong { max_days: 31 },
             ),
@@ -532,6 +680,7 @@ mod tests {
                     coach_id: None,
                     student_id: None,
                     sport: None,
+                    lesson_menu_id: None,
                 })
                 .await
                 .is_ok()

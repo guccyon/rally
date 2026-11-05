@@ -146,6 +146,14 @@ impl Slot {
         coach_id.is_none_or(|coach_id| self.coach_id == coach_id)
     }
 
+    /// 需給を絞るレッスンメニューの指定に当てはまるか。指定があれば枠に結びついたメニュー（[`Self::lesson_menu_id`]）が
+    /// それと同じときだけ、なければどの枠も当てはまる。メニューのない枠・ないメニューの ID はどの枠にも当てはまらない
+    /// （数は 0 になる。予約の一覧の [`Booking::matches_lesson_menu`](super::Booking::matches_lesson_menu) と同じ扱い）。
+    /// 予約枠の需給が使う。
+    pub fn matches_lesson_menu(&self, lesson_menu_id: Option<LessonMenuId>) -> bool {
+        lesson_menu_id.is_none_or(|id| self.lesson_menu_id == Some(id))
+    }
+
     /// 需給を絞る競技の指定に当てはまるか。枠のコーチのアカウント `coach`（引けなければ `None`）の提供スポーツで決め
     /// （判定は [`CoachSportFilter`] の 1 か所。枠そのもののスポーツ [`Self::sport`] では決めない）、指定がなければ
     /// どの枠も当てはまる。指定があるときは、`coach` が枠のコーチのアカウントで競技を提供するときだけ当てはまる
@@ -718,6 +726,24 @@ mod tests {
         ] {
             assert_eq!(slot(1, 10, 11).with_lesson_menu(&menu), Err(expected));
         }
+    }
+
+    #[test]
+    fn matches_lesson_menu_only_the_bound_menu_or_any_without_a_menu() {
+        let menu = LessonMenuId::from_u128(9);
+        let bound = slot(1, 10, 11).with_restored_lesson_menu(Some(menu));
+        let unbound = slot(1, 10, 11);
+        assert!(bound.matches_lesson_menu(None), "指定がなければどの枠も");
+        assert!(unbound.matches_lesson_menu(None), "メニューのない枠も");
+        assert!(bound.matches_lesson_menu(Some(menu)));
+        assert!(
+            !bound.matches_lesson_menu(Some(LessonMenuId::from_u128(10))),
+            "別のメニュー（ないメニューの ID）は当てはまらない"
+        );
+        assert!(
+            !unbound.matches_lesson_menu(Some(menu)),
+            "メニューのない枠は指定があれば当てはまらない"
+        );
     }
 
     #[test]

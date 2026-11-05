@@ -1,4 +1,4 @@
-//! `GET /live-lesson-sessions`。admin-web の `listLiveLessonSessions`（本部が期間とコーチ・生徒・競技で見る通話セッションの
+//! `GET /live-lesson-sessions`。admin-web の `listLiveLessonSessions`（本部が期間とコーチ・生徒・競技・レッスンメニューで見る通話セッションの
 //! 記録の一覧）。本部だけが呼べる。同じパスの `POST /live-lesson-sessions`（開始。予約の参加者だけ）は
 //! [`crate::live_lesson_sessions`]、終わっていないまま時間の過ぎたセッションの一覧は
 //! [`crate::overdue_live_lesson_sessions`]。
@@ -9,8 +9,9 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     live_lesson::{
         ListLiveLessonSessions, ListLiveLessonSessionsError, ListLiveLessonSessionsQuery,
-        LiveLessonSessionHistory, LiveLessonSessionRepository, SessionCoachAccountLookup,
-        SessionCoachDisplayNameLookup, SessionStudentDisplayNameLookup, session_id_uuid,
+        LiveLessonSessionHistory, LiveLessonSessionRepository, SessionBookingLessonMenuLookup,
+        SessionCoachAccountLookup, SessionCoachDisplayNameLookup, SessionStudentDisplayNameLookup,
+        session_id_uuid,
     },
     scheduling::booking_id_uuid,
 };
@@ -24,14 +25,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::{admin_web_sport, date_from_contract, date_time_to_contract, date_to_contract},
+    contract::{
+        admin_web_sport, date_from_contract, date_time_to_contract, date_to_contract,
+        lesson_menu_id_from_contract,
+    },
     error::ApiError,
 };
 
 /// `GET /live-lesson-sessions` のハンドラーが使うユースケース。
-pub struct HeadquartersLiveLessonSessionsState<L, A, D, S> {
-    pub list_live_lesson_sessions: ListLiveLessonSessions<L, A, D, S>,
+pub struct HeadquartersLiveLessonSessionsState<L, A, D, S, M> {
+    pub list_live_lesson_sessions: ListLiveLessonSessions<L, A, D, S, M>,
 }
+
+/// ハンドラーが共有する [`HeadquartersLiveLessonSessionsState`]（axum の `State` で受け取る）。
+type Shared<L, A, D, S, M> = State<Arc<HeadquartersLiveLessonSessionsState<L, A, D, S, M>>>;
 
 /// admin-web の `listLiveLessonSessions` のクエリ。`from`・`to` は契約では必須で、ないときはハンドラーが 422 にする。
 #[derive(Deserialize)]
@@ -41,6 +48,7 @@ pub struct ListLiveLessonSessionsParams {
     coach_id: Option<String>,
     student_id: Option<String>,
     sport: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `LiveLessonSessionRecordList`。
@@ -69,12 +77,13 @@ pub struct LiveLessonSessionRecordBody {
 }
 
 /// `GET /live-lesson-sessions`（admin-web）。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が
-/// ない・`YYYY-MM-DD` の日付でないとき、`coach_id`・`student_id` が UUID でないとき、`sport` が `Sport` の値でないとき
+/// ない・`YYYY-MM-DD` の日付でないとき、`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき、`sport` が `Sport` の値でないとき
 /// （`listPendingVideoReviews` の `sport` と同じ）と、期間の違反（domain の
 /// [`domain::live_lesson::SessionHistoryCriteria::new`]）は 422。競技の決め方は domain の
-/// [`domain::live_lesson::SessionHistoryCriteria::matches_coach_sport`]。
-pub async fn list_live_lesson_sessions<L, A, D, S>(
-    State(state): State<Arc<HeadquartersLiveLessonSessionsState<L, A, D, S>>>,
+/// [`domain::live_lesson::SessionHistoryCriteria::matches_coach_sport`]、メニューの決め方は
+/// [`domain::live_lesson::SessionHistoryCriteria::matches_lesson_menu`]。
+pub async fn list_live_lesson_sessions<L, A, D, S, M>(
+    State(state): Shared<L, A, D, S, M>,
     params: Result<Query<ListLiveLessonSessionsParams>, QueryRejection>,
 ) -> Result<Json<LiveLessonSessionRecordListBody>, ApiError>
 where
@@ -82,6 +91,7 @@ where
     A: SessionCoachAccountLookup,
     D: SessionCoachDisplayNameLookup,
     S: SessionStudentDisplayNameLookup,
+    M: SessionBookingLessonMenuLookup,
 {
     let Query(params) =
         params.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
@@ -103,6 +113,11 @@ where
         coach_id: optional_account_id("coach_id", params.coach_id.as_deref())?,
         student_id: optional_account_id("student_id", params.student_id.as_deref())?,
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
+            .transpose()?,
     };
     let history = state
         .list_live_lesson_sessions
@@ -147,13 +162,13 @@ fn session_record_body(
     })
 }
 
-/// 本部が期間とコーチ・生徒・競技で見る通話セッションの記録の一覧（admin-web の `GET /live-lesson-sessions`）のルーター。
+/// 本部が期間とコーチ・生徒・競技・レッスンメニューで見る通話セッションの記録の一覧（admin-web の `GET /live-lesson-sessions`）のルーター。
 /// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。同じパスの `POST /live-lesson-sessions`
 /// （開始。予約の参加者だけ）は [`crate::live_lesson_sessions_router`] にあり、`merge` で 1 つのパスにまとまる。
 ///
 /// `GET /live-lesson-sessions` は本部だけ（コーチ・生徒は 403）。
-pub fn headquarters_live_lesson_sessions_router<L, A, D, S, T>(
-    list_live_lesson_sessions: ListLiveLessonSessions<L, A, D, S>,
+pub fn headquarters_live_lesson_sessions_router<L, A, D, S, M, T>(
+    list_live_lesson_sessions: ListLiveLessonSessions<L, A, D, S, M>,
     tokens: T,
 ) -> Router
 where
@@ -161,13 +176,14 @@ where
     A: SessionCoachAccountLookup + 'static,
     D: SessionCoachDisplayNameLookup + 'static,
     S: SessionStudentDisplayNameLookup + 'static,
+    M: SessionBookingLessonMenuLookup + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
         .route(
             "/live-lesson-sessions",
-            get(self::list_live_lesson_sessions::<L, A, D, S>),
+            get(self::list_live_lesson_sessions::<L, A, D, S, M>),
         )
         .route_layer(require_role(&[Role::Headquarters]))
         .with_state(Arc::new(HeadquartersLiveLessonSessionsState {

@@ -4,14 +4,19 @@ use std::{
 };
 
 use super::Video;
-use crate::{DomainError, catalog::Sport, identity::AccountId};
+use crate::{
+    DomainError,
+    catalog::{LessonMenuId, Sport},
+    identity::AccountId,
+};
 
 /// 本部が見る「返した動画添削の記録」の選び方（admin-web の `listReturnedVideoReviews`。規則の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `listReturnedVideoReviews`）。
 ///
 /// コーチが添削を返した動画（[`super::VideoStatus::Reviewed`]）を、返却の時刻が期間（開始 `starts_at` を含み、終了
 /// `ends_at` を含まない）に入るもの・任意のコーチ `coach_id` の動画・任意のスポーツ `sport` の動画（動画のスポーツの
-/// 決め方は返却待ちと同じ [`Video::is_in_sport`]）・任意の生徒 `student_id` が送った動画に絞る。期間は日付（日本時間）の始まりの 0 時から
+/// 決め方は返却待ちと同じ [`Video::is_in_sport`]）・任意の生徒 `student_id` が送った動画・任意のレッスンメニュー
+/// `lesson_menu_id` の動画（送った時点のメニューの写しで決める。返却待ちと同じ [`Video::matches_lesson_menu`]）に絞る。期間は日付（日本時間）の始まりの 0 時から
 /// 終わりの日付の翌日 0 時までにあたり、日付から時刻への変換（タイムゾーン）は application が決める。ここは期間の長さの
 /// 規則（1 日以上 [`Self::MAX_DAYS`] 日まで）と、かかった時間（[`Self::lead_hours`]）と、並べ方（返却の新しい順）を持つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +26,7 @@ pub struct ReturnedVideoReviewFilter {
     coach_id: Option<AccountId>,
     sport: Option<Sport>,
     student_id: Option<AccountId>,
+    lesson_menu_id: Option<LessonMenuId>,
 }
 
 impl ReturnedVideoReviewFilter {
@@ -32,7 +38,8 @@ impl ReturnedVideoReviewFilter {
     pub const MAX_DAYS: u16 = 31;
 
     /// 返却の時刻が `starts_at`（含む）から `ends_at`（含まない）までで、`coach_id` があればそのコーチの、`sport` が
-    /// あればそのスポーツの、`student_id` があればその生徒が送った動画。
+    /// あればそのスポーツの、`student_id` があればその生徒が送った、`lesson_menu_id` があれば送った時点のメニューがその
+    /// メニューの動画。
     /// 終了が開始より後でなければ [`DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts`]、[`Self::MAX_DAYS`] 日
     /// より長ければ [`DomainError::ReturnedVideoReviewPeriodTooLong`]。
     pub fn new(
@@ -41,6 +48,7 @@ impl ReturnedVideoReviewFilter {
         coach_id: Option<AccountId>,
         sport: Option<Sport>,
         student_id: Option<AccountId>,
+        lesson_menu_id: Option<LessonMenuId>,
     ) -> Result<Self, DomainError> {
         let length = match ends_at.duration_since(starts_at) {
             Ok(length) if !length.is_zero() => length,
@@ -57,6 +65,7 @@ impl ReturnedVideoReviewFilter {
             coach_id,
             sport,
             student_id,
+            lesson_menu_id,
         })
     }
 
@@ -80,6 +89,10 @@ impl ReturnedVideoReviewFilter {
         self.student_id
     }
 
+    pub const fn lesson_menu_id(&self) -> Option<LessonMenuId> {
+        self.lesson_menu_id
+    }
+
     /// 返却済みの `video` の、送付から返却までにかかった時間（時間。端数は切り捨て。数え方は
     /// [`Video::review_lead_hours`] の 1 か所）。返していなければ `None`。
     pub fn lead_hours(video: &Video) -> Option<u64> {
@@ -88,7 +101,8 @@ impl ReturnedVideoReviewFilter {
             .map(|review| video.review_lead_hours(review.returned_at()))
     }
 
-    /// `video` がこの条件の返却済みの動画か（添削を返している・返却が期間に入る・コーチが合う・スポーツが合う・生徒が合う）。
+    /// `video` がこの条件の返却済みの動画か（添削を返している・返却が期間に入る・コーチが合う・スポーツが合う・生徒が合う・
+    /// レッスンメニューが合う）。
     pub fn matches(&self, video: &Video) -> bool {
         video.review().is_some_and(|review| {
             self.starts_at <= review.returned_at() && review.returned_at() < self.ends_at
@@ -99,6 +113,7 @@ impl ReturnedVideoReviewFilter {
             && self
                 .student_id
                 .is_none_or(|student_id| video.student_id() == student_id)
+            && video.matches_lesson_menu(self.lesson_menu_id)
     }
 
     /// `videos` から条件に合う返却済みの動画だけを選び、返却の新しい順（同じ時刻は動画 ID の順）に並べる。
@@ -120,7 +135,10 @@ impl ReturnedVideoReviewFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::async_lesson::{ReviewComment, VideoId, VideoReviewId};
+    use crate::{
+        async_lesson::{ReviewComment, VideoId, VideoLessonMenu, VideoReviewId},
+        catalog::LessonMenuName,
+    };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(2);
@@ -177,11 +195,11 @@ mod tests {
     }
 
     fn filter(from: u32, to: u32, coach_id: Option<AccountId>) -> ReturnedVideoReviewFilter {
-        ReturnedVideoReviewFilter::new(day(from), day(to), coach_id, None, None).unwrap()
+        ReturnedVideoReviewFilter::new(day(from), day(to), coach_id, None, None, None).unwrap()
     }
 
     fn filter_in(from: u32, to: u32, sport: Sport) -> ReturnedVideoReviewFilter {
-        ReturnedVideoReviewFilter::new(day(from), day(to), None, Some(sport), None).unwrap()
+        ReturnedVideoReviewFilter::new(day(from), day(to), None, Some(sport), None, None).unwrap()
     }
 
     #[test]
@@ -194,7 +212,7 @@ mod tests {
         assert_eq!(filter_in(10, 11, Sport::Golf).sport(), Some(Sport::Golf));
         assert_eq!(one.student_id(), None);
         assert_eq!(
-            ReturnedVideoReviewFilter::new(day(10), day(11), None, None, Some(STUDENT))
+            ReturnedVideoReviewFilter::new(day(10), day(11), None, None, Some(STUDENT), None)
                 .unwrap()
                 .student_id(),
             Some(STUDENT)
@@ -205,7 +223,8 @@ mod tests {
                 day(10 + u32::from(ReturnedVideoReviewFilter::MAX_DAYS)),
                 None,
                 None,
-                None
+                None,
+                None,
             )
             .is_ok()
         );
@@ -215,7 +234,14 @@ mod tests {
     fn rejects_periods_that_end_before_or_when_they_start() {
         for ends_at in [day(10), day(9)] {
             assert_eq!(
-                ReturnedVideoReviewFilter::new(day(10), ends_at, None, Some(Sport::Golf), None),
+                ReturnedVideoReviewFilter::new(
+                    day(10),
+                    ends_at,
+                    None,
+                    Some(Sport::Golf),
+                    None,
+                    None
+                ),
                 Err(DomainError::ReturnedVideoReviewPeriodEndsBeforeItStarts)
             );
         }
@@ -230,7 +256,8 @@ mod tests {
                 ends_at + Duration::from_secs(1),
                 None,
                 Some(Sport::Golf),
-                None
+                None,
+                None,
             ),
             Err(DomainError::ReturnedVideoReviewPeriodTooLong { max_days: 31 })
         );
@@ -295,9 +322,15 @@ mod tests {
 
     #[test]
     fn sport_and_coach_narrow_together() {
-        let filter =
-            ReturnedVideoReviewFilter::new(day(10), day(17), Some(COACH), Some(Sport::Golf), None)
-                .unwrap();
+        let filter = ReturnedVideoReviewFilter::new(
+            day(10),
+            day(17),
+            Some(COACH),
+            Some(Sport::Golf),
+            None,
+            None,
+        )
+        .unwrap();
         assert!(filter.matches(&returned_in(1, Sport::Golf, COACH, day(10), day(11))));
         assert!(!filter.matches(&returned_in(2, Sport::Golf, OTHER_COACH, day(10), day(11))));
         assert!(!filter.matches(&returned(3, COACH, day(10), day(11))));
@@ -330,7 +363,7 @@ mod tests {
     #[test]
     fn student_keeps_only_videos_that_student_sent() {
         let filter =
-            ReturnedVideoReviewFilter::new(day(10), day(17), None, None, Some(OTHER_STUDENT))
+            ReturnedVideoReviewFilter::new(day(10), day(17), None, None, Some(OTHER_STUDENT), None)
                 .unwrap();
         assert!(filter.matches(&returned_by(1, OTHER_STUDENT, COACH, day(10), day(11))));
         assert!(!filter.matches(&returned(2, COACH, day(10), day(11))));
@@ -350,8 +383,15 @@ mod tests {
     fn student_narrows_together_with_coach_and_sport() {
         let video = returned_by(1, OTHER_STUDENT, COACH, day(10), day(11));
         let filter = |coach_id, sport| {
-            ReturnedVideoReviewFilter::new(day(10), day(17), coach_id, sport, Some(OTHER_STUDENT))
-                .unwrap()
+            ReturnedVideoReviewFilter::new(
+                day(10),
+                day(17),
+                coach_id,
+                sport,
+                Some(OTHER_STUDENT),
+                None,
+            )
+            .unwrap()
         };
         assert!(filter(Some(COACH), Some(Sport::Tennis)).matches(&video));
         assert!(!filter(Some(OTHER_COACH), None).matches(&video));
@@ -400,7 +440,7 @@ mod tests {
             returned_by(12, OTHER_STUDENT, COACH, day(10), day(16)),
         ]);
         let student_ids: Vec<u128> =
-            ReturnedVideoReviewFilter::new(day(10), day(17), None, None, Some(OTHER_STUDENT))
+            ReturnedVideoReviewFilter::new(day(10), day(17), None, None, Some(OTHER_STUDENT), None)
                 .unwrap()
                 .select(by_student)
                 .iter()
@@ -408,5 +448,172 @@ mod tests {
                 .collect();
         assert_eq!(student_ids, [12, 10, 11]);
         assert_eq!(ids(filter(20, 21, None)), Vec::<u128>::new());
+    }
+
+    const FORM: LessonMenuId = LessonMenuId::from_u128(50);
+    const SERVE: LessonMenuId = LessonMenuId::from_u128(51);
+
+    /// `id` の `sport` の動画を `STUDENT` が `coach` に `submitted_at` に送り、`returned_at` に返した。`menu` があれば
+    /// 送った時点のそのメニューの写し（名前は `name`）を持つ。
+    fn returned_with_menu(
+        id: u128,
+        sport: Sport,
+        coach: AccountId,
+        menu: Option<(LessonMenuId, &str)>,
+        submitted_at: SystemTime,
+        returned_at: SystemTime,
+    ) -> Video {
+        Video::restore(
+            VideoId::from_u128(id),
+            STUDENT,
+            coach,
+            sport,
+            submitted_at,
+            Some((
+                VideoReviewId::from_u128(id + 100),
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                returned_at,
+            )),
+            menu.map(|(menu, name)| {
+                VideoLessonMenu::restore(menu, LessonMenuName::new(name).unwrap())
+            }),
+        )
+        .unwrap()
+    }
+
+    fn filter_by_menu(
+        coach_id: Option<AccountId>,
+        sport: Option<Sport>,
+        student_id: Option<AccountId>,
+        lesson_menu_id: LessonMenuId,
+    ) -> ReturnedVideoReviewFilter {
+        ReturnedVideoReviewFilter::new(
+            day(10),
+            day(17),
+            coach_id,
+            sport,
+            student_id,
+            Some(lesson_menu_id),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn lesson_menu_id_keeps_only_videos_sent_with_that_menu() {
+        let by_form = filter_by_menu(None, None, None, FORM);
+        assert_eq!(by_form.lesson_menu_id(), Some(FORM));
+        assert_eq!(filter_in(10, 17, Sport::Golf).lesson_menu_id(), None);
+        assert!(by_form.matches(&returned_with_menu(
+            1,
+            Sport::Tennis,
+            COACH,
+            Some((FORM, "フォーム添削")),
+            day(10),
+            day(11)
+        )));
+        assert!(!by_form.matches(&returned_with_menu(
+            2,
+            Sport::Tennis,
+            COACH,
+            Some((SERVE, "サーブ添削")),
+            day(10),
+            day(11)
+        )));
+        // メニューを選ばずに送った動画は、メニューで絞れば入らない（絞らなければ入る）
+        let without_menu = returned_with_menu(3, Sport::Tennis, COACH, None, day(10), day(11));
+        assert!(!by_form.matches(&without_menu));
+        assert!(filter(10, 17, None).matches(&without_menu));
+        // 送った後にメニューの名前が直されていても、写しの ID で決める
+        assert!(by_form.matches(&returned_with_menu(
+            4,
+            Sport::Tennis,
+            COACH,
+            Some((FORM, "スイング添削")),
+            day(10),
+            day(11)
+        )));
+        // メニューが合っても期間の規則は変わらない（期間の外・返していない動画は含まない）
+        assert!(!by_form.matches(&returned_with_menu(
+            5,
+            Sport::Tennis,
+            COACH,
+            Some((FORM, "フォーム添削")),
+            day(1),
+            day(2)
+        )));
+        let form_pending = Video::restore(
+            VideoId::from_u128(6),
+            STUDENT,
+            COACH,
+            Sport::Tennis,
+            day(11),
+            None,
+            Some(VideoLessonMenu::restore(
+                FORM,
+                LessonMenuName::new("フォーム添削").unwrap(),
+            )),
+        )
+        .unwrap();
+        assert!(!by_form.matches(&form_pending));
+    }
+
+    #[test]
+    fn lesson_menu_id_narrows_together_with_the_other_filters_keeping_the_order() {
+        let form = Some((FORM, "フォーム添削"));
+        let videos = vec![
+            returned_with_menu(1, Sport::Tennis, COACH, form, day(9), day(11)),
+            returned_with_menu(2, Sport::Tennis, OTHER_COACH, form, day(10), day(15)),
+            returned_with_menu(3, Sport::Tennis, COACH, None, day(10), day(16)),
+            // 同じ返却の時刻は ID の順
+            returned_with_menu(5, Sport::Tennis, COACH, form, day(12), day(13) + HOUR),
+            returned_with_menu(4, Sport::Tennis, COACH, form, day(11), day(13) + HOUR),
+            returned_with_menu(
+                6,
+                Sport::Tennis,
+                COACH,
+                Some((SERVE, "サーブ添削")),
+                day(10),
+                day(14),
+            ),
+        ];
+        let ids = |filter: ReturnedVideoReviewFilter| -> Vec<u128> {
+            filter
+                .select(videos.clone())
+                .iter()
+                .map(|video| video.id().as_u128())
+                .collect()
+        };
+        assert_eq!(ids(filter_by_menu(None, None, None, FORM)), [2, 4, 5, 1]);
+        assert_eq!(
+            ids(filter_by_menu(Some(COACH), None, None, FORM)),
+            [4, 5, 1]
+        );
+        assert_eq!(
+            ids(filter_by_menu(
+                None,
+                Some(Sport::Tennis),
+                Some(STUDENT),
+                SERVE
+            )),
+            [6]
+        );
+        assert_eq!(
+            ids(filter_by_menu(None, Some(Sport::Golf), None, FORM)),
+            Vec::<u128>::new()
+        );
+        assert_eq!(
+            ids(filter_by_menu(None, None, Some(OTHER_STUDENT), FORM)),
+            Vec::<u128>::new()
+        );
+        // ないメニューの ID は空
+        assert_eq!(
+            ids(filter_by_menu(
+                None,
+                None,
+                None,
+                LessonMenuId::from_u128(99)
+            )),
+            Vec::<u128>::new()
+        );
     }
 }

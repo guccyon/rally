@@ -268,6 +268,19 @@ describe("coachApi", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
   });
 
+  test("listMyCoachSlots は期間を from・to のクエリにして呼び、期間がなければクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { slots: [] }));
+    await api.listMyCoachSlots({ from: "2026-11-09", to: "2026-11-15" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/me/slots");
+    expect(url.searchParams.get("from")).toBe("2026-11-09");
+    expect(url.searchParams.get("to")).toBe("2026-11-15");
+
+    fetchMock.mockResolvedValueOnce(json(200, { slots: [] }));
+    await api.listMyCoachSlots();
+    expect(new URL(fetchMock.mock.calls[1]![0].url).search).toBe("");
+  });
+
   test("listMyCoachSlots の 403 は権限の文言にする", async () => {
     const { api } = setup(json(403, { code: "forbidden", message: "forbidden" }));
     const result = await api.listMyCoachSlots();
@@ -319,6 +332,20 @@ describe("coachApi", () => {
     expect(request.method).toBe("GET");
     expect(new URL(request.url).pathname).toBe("/api/coaches/me/videos");
     expect(request.headers.get("Authorization")).toBe("Bearer mock.coach.abc");
+  });
+
+  test("listMyCoachVideos は条件なしならクエリを付けない", async () => {
+    const { api, fetchMock } = setup(json(200, { videos: [] }));
+    await api.listMyCoachVideos();
+    expect(new URL(fetchMock.mock.calls[0]![0].url).search).toBe("");
+  });
+
+  test("listMyCoachVideos は pending_only をクエリにする", async () => {
+    const { api, fetchMock } = setup(json(200, { videos: [] }));
+    await api.listMyCoachVideos({ pending_only: true });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/coaches/me/videos");
+    expect(url.searchParams.get("pending_only")).toBe("true");
   });
 
   test("listMyCoachVideos の 403 は権限の文言にする", async () => {

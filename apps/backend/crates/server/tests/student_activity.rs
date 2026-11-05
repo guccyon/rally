@@ -3,7 +3,9 @@
 //! 完了を記録したことが、これからの予約・キャンセルの件数・直近の受けたレッスンに出ること、送った動画の数と返却待ちの数が
 //! 本部の返却待ちの一覧（`GET /video-reviews/pending`）と同じ判定で数えられること、返信のないまま既定の時間の過ぎた
 //! スレッドの数を messaging の保存先から読み、`listUnansweredMessageThreads` に `student_id` だけを付けた一覧と同じ数に
-//! なること、何も保存しないこと、
+//! なること、その生徒がつけた直近の低い評価の件数と未対応の件数を評価の保存先から読み、`listLowRatedLessonReviews` に
+//! `student_id` だけ（と `handled=false`）を付けた一覧と同じ数になること（本部が対応済みの印を付けると未対応から外れること・
+//! 照会した時刻で変わることを含む）、何も保存しないこと、
 //! コーチ・生徒は 403、生徒でない ID は 404 であることを確かめる。契約の形の細かい検査は interface の
 //! `tests/student_activity.rs`。
 //!
@@ -18,6 +20,7 @@ use application::{
     },
     in_memory::{ManualClock, RecordingAnalyticsSink},
     messaging::MessageThreadRepository,
+    review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
     Router,
@@ -27,9 +30,13 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
+    lesson::LessonCompletionId,
     messaging::{MessageBody, MessageContent, MessageThread},
+    review::{LessonReview, LessonReviewComment, Rating},
 };
-use infra::{MockTokenService, PgAccountRepository, PgMessageThreadRepository};
+use infra::{
+    MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgMessageThreadRepository,
+};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -420,4 +427,149 @@ async fn counts_unanswered_message_threads_of_the_student_as_the_default_list_fr
             );
         }
     }
+}
+
+/// 生徒 `student` がコーチ `coach` に `submitted_at` に点 `rating` で付けた評価を保存先に直に書き（評価は完了したレッスンが
+/// 要り、そこまでの HTTP の流れは `lessons.rs` で通している。`coaches.rs` と同じ）、評価の ID を返す。
+async fn review(
+    reviews: &PgLessonReviewRepository,
+    student: AccountId,
+    coach: AccountId,
+    lesson: u128,
+    rating: i64,
+    submitted_at: SystemTime,
+) -> String {
+    let id = reviews.next_id();
+    reviews
+        .insert(LessonReview::restore(
+            id,
+            LessonCompletionId::from_u128(lesson),
+            student,
+            coach,
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("本部には見せない評価の本文").unwrap(),
+            submitted_at,
+        ))
+        .await
+        .unwrap();
+    lesson_review_id_uuid::format(id)
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn counts_low_rated_reviews_by_the_student_as_the_low_rated_list_from_postgres(pool: PgPool) {
+    let mut coaches = Vec::new();
+    for (email, name) in [
+        ("tanaka@example.com", "たなか"),
+        ("ito@example.com", "いとう"),
+    ] {
+        let (coach_id, _) = register(&pool, email, name, Role::Coach, vec![Sport::Tennis]).await;
+        coaches.push(account_id_uuid::parse(&coach_id).unwrap());
+    }
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let mut students = Vec::new();
+    for (email, name) in [
+        ("taro@example.com", "たろう"),
+        ("jiro@example.com", "じろう"),
+        ("saburo@example.com", "さぶろう"),
+    ] {
+        let (student_id, _) =
+            register(&pool, email, name, Role::Student, vec![Sport::Tennis]).await;
+        students.push(student_id);
+    }
+    let taro = account_id_uuid::parse(&students[0]).unwrap();
+    let jiro = account_id_uuid::parse(&students[1]).unwrap();
+    let day = 24 * 3600;
+    // たろうは日 0 に ★2（たなか）、日 10 に ★1（たなか）と ★2（いとう）と ★3（たなか）。じろうは日 10 に ★1（いとう）。
+    // さぶろうは評価していない
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    review(&reviews, taro, coaches[0], 1, 2, at(0)).await;
+    review(&reviews, taro, coaches[0], 2, 1, at(10 * day)).await;
+    let ito_review = review(&reviews, taro, coaches[1], 3, 2, at(10 * day)).await;
+    review(&reviews, taro, coaches[0], 4, 3, at(10 * day)).await;
+    review(&reviews, jiro, coaches[1], 5, 1, at(10 * day)).await;
+    let clock = ManualClock::new(at(20 * day));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    /// 生徒 1 人の利用の様子の（低い評価の件数, 未対応の件数）と、低い評価の一覧をその生徒で絞った
+    /// （件数, `handled=false` も付けた件数）を読む。
+    async fn counts(router: &Router, headquarters: &str, student_id: &str) -> [(u64, u64); 2] {
+        let (status, activity) = send(
+            router,
+            "GET",
+            &format!("/students/{student_id}/activity"),
+            Some(headquarters),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{activity}");
+        assert!(
+            !activity.to_string().contains("本部には見せない評価の本文"),
+            "評価の本文は載せない: {activity}"
+        );
+        let mut listed = [0, 0];
+        for (n, query) in ["", "&handled=false"].into_iter().enumerate() {
+            let (status, list) = send(
+                router,
+                "GET",
+                &format!("/lesson-reviews/low?student_id={student_id}{query}"),
+                Some(headquarters),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{list}");
+            listed[n] = list["reviews"].as_array().unwrap().len() as u64;
+        }
+        [
+            (
+                activity["low_rated_review_count"].as_u64().unwrap(),
+                activity["unhandled_low_rated_review_count"]
+                    .as_u64()
+                    .unwrap(),
+            ),
+            (listed[0], listed[1]),
+        ]
+    }
+
+    for (student_id, expected) in [
+        (&students[0], (3, 3)),
+        (&students[1], (1, 1)),
+        (&students[2], (0, 0)),
+    ] {
+        assert_eq!(
+            counts(&router, &headquarters, student_id).await,
+            [expected, expected],
+            "{student_id}: ★3・他の生徒の評価は数えず、評価されたコーチを問わない。その生徒で絞った一覧と同じ数"
+        );
+    }
+
+    // 本部が対応済みの印を付けると、未対応の件数から外れる（低い評価の件数は変わらない）
+    let (status, body) = send(
+        &router,
+        "PUT",
+        &format!("/lesson-reviews/{ito_review}/handling"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        counts(&router, &headquarters, &students[0]).await,
+        [(3, 2), (3, 2)]
+    );
+
+    // 照会した時刻が進んで、日 0 の ★2 が 30 日の外になれば外れる（30 日前ちょうどは含む）
+    clock.set(at(30 * day));
+    assert_eq!(
+        counts(&router, &headquarters, &students[0]).await,
+        [(3, 2), (3, 2)],
+        "30 日前ちょうどは含む"
+    );
+    clock.set(at(30 * day + 1));
+    assert_eq!(
+        counts(&router, &headquarters, &students[0]).await,
+        [(2, 1), (2, 1)]
+    );
 }

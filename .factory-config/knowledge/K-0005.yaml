@@ -1,0 +1,21 @@
+id: K-0005
+theme: 4
+kind: causal
+statement: >-
+  PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明の見出し）の
+  3 つで 1 つに揃っていないと、決まりに沿って書いた本文が、rubric にだけある見出し（背景・問題）の欠けで差し戻されたり、判定役が同じ指摘を
+  決まりの外として退けたりして、PR ごとに判断が割れる。実装役の報告の型だけを rubric に合わせても解けない（どれを正にするかを先に決める）。
+scope:
+  roles: [implement, inspect, judge]
+confidence: hypothesis
+evidence:
+  - case: C-0003
+  - case: C-0001
+  - pr: "396"
+  - event: "case.analyzed:40381"
+status: active
+verified_at: 2026-11-04
+review_by: 2026-12-04
+confidentiality: product
+related: [K-0001, K-0006]
+decided_by: committee:D-0006

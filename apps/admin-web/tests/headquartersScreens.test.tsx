@@ -22,10 +22,10 @@ const REPORT: Schemas["SlotSupplyReport"] = {
   window_end: "2026-10-27T03:00:00Z",
   sports: [
     { sport: "tennis", status: "insufficient", published_slots: 10, booking_students: 8 },
-    { sport: "golf", status: "sufficient", published_slots: 0, booking_students: 0 },
+    { sport: "golf", status: "not_applicable", published_slots: 0, booking_students: 0 },
     { sport: "baseball", status: "sufficient", published_slots: 12, booking_students: 3 },
     { sport: "soccer", status: "insufficient", published_slots: 5, booking_students: 4 },
-    { sport: "basketball", status: "sufficient", published_slots: 7, booking_students: 1 },
+    { sport: "basketball", status: "no_activity", published_slots: 0, booking_students: 0 },
     { sport: "swimming", status: "insufficient", published_slots: 2, booking_students: 6 },
   ],
 };
@@ -55,12 +55,44 @@ function coachesOf(coaches: Schemas["Coach"][] = COACHES) {
   return vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches } }));
 }
 
+const FOREHAND = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+const SWING = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
+
+function lessonMenu(
+  lessonMenuId: string,
+  name: string,
+  coach: Schemas["Coach"],
+  sport: Schemas["Sport"],
+): Schemas["CoachLessonMenu"] {
+  return {
+    lesson_menu_id: lessonMenuId,
+    name,
+    sport,
+    lesson_type: "live_lesson",
+    duration_minutes: 60,
+    is_published: true,
+    coach_id: coach.coach_id,
+    coach_display_name: coach.display_name,
+    created_at: "2026-10-01T00:00:00Z",
+    recent_booking_count: 1,
+  };
+}
+
+const LESSON_MENUS: Schemas["CoachLessonMenu"][] = [
+  lessonMenu(FOREHAND, "フォアハンドの基礎", COACHES[0]!, "tennis"),
+  lessonMenu(SWING, "スイングの見直し", COACHES[1]!, "golf"),
+];
+
+function menusOf(lessonMenus: Schemas["CoachLessonMenu"][] = LESSON_MENUS) {
+  return vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({ ok: true, data: { lesson_menus: lessonMenus } }));
+}
+
 // 高橋 コーチで絞ったときの応答（枠を出していないので、どのスポーツも枠が 0）
 const EMPTY_COACH_REPORT: Schemas["SlotSupplyReport"] = {
   ...PERIOD_REPORT,
   sports: PERIOD_REPORT.sports.map((supply) => ({
     ...supply,
-    status: "sufficient",
+    status: supply.sport === "golf" ? "not_applicable" : "no_activity",
     published_slots: 0,
     booking_students: 0,
   })),
@@ -79,7 +111,7 @@ describe("スポーツ別の予約枠の需給", () => {
       ok: true,
       data: REPORT,
     }));
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     const tennis = await screen.findByRole("row", { name: /テニス/ });
     expect(within(tennis).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
@@ -89,12 +121,23 @@ describe("スポーツ別の予約枠の需給", () => {
       "8",
     ]);
     const golf = screen.getByRole("row", { name: /ゴルフ/ });
+    // ゴルフは月額の契約の対象外で、枠も需要も 0 でも「足りている」と出さない（#900）
     expect(within(golf).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
       "ゴルフ",
-      "足りている",
+      "対象外",
       "0",
       "0",
     ]);
+    const basketball = screen.getByRole("row", { name: /バスケットボール/ });
+    expect(within(basketball).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "バスケットボール",
+      "枠も予約もない",
+      "0",
+      "0",
+    ]);
+    expect(
+      screen.getByText("対象外: 月額の契約の対象でないスポーツ（ゴルフ。ワンショットだけ）は、需給を判定しません。"),
+    ).toBeInTheDocument();
     const swimming = screen.getByRole("row", { name: /水泳/ });
     expect(within(swimming).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
       "水泳",
@@ -122,7 +165,7 @@ describe("スポーツ別の予約枠の需給", () => {
       ok: false,
       message: "権限がないためアクセスできません。",
     }));
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -134,7 +177,7 @@ describe("スポーツ別の予約枠の需給", () => {
       data: REPORT,
     }));
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await user.click(screen.getByRole("button", { name: "再集計" }));
@@ -145,7 +188,7 @@ describe("スポーツ別の予約枠の需給", () => {
 
   test("開いたときは期間を付けずに読み（API の既定の 30 日）、数えた期間の日付を期間の欄に入れる", async () => {
     const getSlotSupply = reportOf(REPORT);
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     await screen.findByRole("table");
     expect(getSlotSupply).toHaveBeenCalledWith({});
@@ -160,7 +203,7 @@ describe("スポーツ別の予約枠の需給", () => {
       .mockResolvedValueOnce({ ok: true, data: REPORT })
       .mockResolvedValueOnce({ ok: true, data: PERIOD_REPORT });
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-11-02", "2026-11-08");
@@ -175,7 +218,7 @@ describe("スポーツ別の予約枠の需給", () => {
   test("再集計は最後に「この条件で見る」で読んだ期間で読み直す", async () => {
     const getSlotSupply = reportOf(PERIOD_REPORT);
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-11-02", "2026-11-08");
@@ -193,7 +236,7 @@ describe("スポーツ別の予約枠の需給", () => {
   test("終了日が開始日より前・31 日を超える期間は送らずに理由を出す", async () => {
     const getSlotSupply = reportOf(REPORT);
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-11-08", "2026-11-07");
@@ -212,10 +255,10 @@ describe("スポーツ別の予約枠の需給", () => {
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間・コーチ・スポーツの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチとスポーツは一覧から選び直してください。",
+      "期間・コーチ・スポーツ・レッスンメニューの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・スポーツ・レッスンメニューは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -225,12 +268,12 @@ describe("スポーツ別の予約枠の需給", () => {
       ...PERIOD_REPORT,
       sports: PERIOD_REPORT.sports.map((supply) => ({
         ...supply,
-        status: "sufficient",
+        status: supply.sport === "golf" ? "not_applicable" : "no_activity",
         published_slots: 0,
         booking_students: 0,
       })),
     };
-    render(<SlotSupplyReport api={{ getSlotSupply: reportOf(empty), listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply: reportOf(empty), listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByText("この期間に開始する予約枠はなく、予約しようとした生徒もいません")).toBeInTheDocument();
     expect(screen.getByText(/集計の期間/)).toHaveTextContent("2026年11月2日（月） 〜 2026年11月8日（日）");
@@ -245,7 +288,7 @@ describe("スポーツ別の予約枠の需給", () => {
       .mockImplementationOnce(() => new Promise((resolve) => (resolveSlow = resolve)))
       .mockResolvedValueOnce({ ok: true, data: PERIOD_REPORT });
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-10-01", "2026-10-07");
@@ -261,7 +304,7 @@ describe("スポーツ別の予約枠の需給", () => {
   test("コーチの選択肢はコーチの一覧の順で、コーチを選んで「この条件で見る」で API の coach_id に渡して読み直し、どのコーチの需給かを見出しに出す", async () => {
     const getSlotSupply = reportOf(REPORT);
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     const select = screen.getByRole("combobox", { name: "コーチ" });
     await waitFor(() => expect(select).toBeEnabled());
@@ -296,7 +339,7 @@ describe("スポーツ別の予約枠の需給", () => {
       .mockResolvedValueOnce({ ok: true, data: REPORT })
       .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
 
@@ -322,7 +365,7 @@ describe("スポーツ別の予約枠の需給", () => {
   test("スポーツの選択肢は契約の順で、スポーツを選んで「この条件で見る」で API の sport に渡して読み直し、どの競技の需給かを見出しに出す", async () => {
     const getSlotSupply = reportOf(REPORT);
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     const select = screen.getByRole("combobox", { name: "スポーツ" });
     expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
@@ -359,7 +402,7 @@ describe("スポーツ別の予約枠の需給", () => {
       .mockResolvedValueOnce({ ok: true, data: REPORT })
       .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
 
     await changePeriod(user, "2026-11-02", "2026-11-08");
@@ -379,7 +422,7 @@ describe("スポーツ別の予約枠の需給", () => {
       .mockResolvedValueOnce({ ok: true, data: REPORT })
       .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
     const user = userEvent.setup();
-    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf() }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
     await screen.findByRole("table");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
 
@@ -414,12 +457,129 @@ describe("スポーツ別の予約枠の需給", () => {
     });
   });
 
+  test("レッスンメニューを選ぶと API の lesson_menu_id に渡して読み直し、どのメニューで絞っているかを出す。再集計も同じ条件で読む", async () => {
+    const getSlotSupply = vi
+      .fn<HeadquartersApi["getSlotSupply"]>()
+      .mockResolvedValueOnce({ ok: true, data: REPORT })
+      .mockResolvedValue({ ok: true, data: PERIOD_REPORT });
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
+    await screen.findByRole("table");
+    const select = screen.getByRole("combobox", { name: "レッスンメニュー" });
+    await waitFor(() => expect(select).toBeEnabled());
+    // 選択肢はレッスンメニューの一覧の返った順。同じ名前のメニューを見分けられるようにコーチの名前を添える
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "フォアハンドの基礎（鈴木 コーチ）",
+      "スイングの見直し（高橋 コーチ）",
+    ]);
+    expect(screen.queryByText(/^レッスンメニューで絞っています/)).not.toBeInTheDocument();
+
+    await user.selectOptions(select, "フォアハンドの基礎（鈴木 コーチ）");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-09-27", to: "2026-10-27", lesson_menu_id: FOREHAND });
+    expect(await screen.findByText(/^レッスンメニューで絞っています/)).toHaveTextContent(
+      "レッスンメニューで絞っています: フォアハンドの基礎",
+    );
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+
+    // 欄を変えただけでは再集計の条件は変わらない
+    await user.selectOptions(select, "すべて");
+    await user.click(screen.getByRole("button", { name: "再集計" }));
+    await screen.findByRole("table");
+    expect(getSlotSupply).toHaveBeenCalledTimes(3);
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-09-27", to: "2026-10-27", lesson_menu_id: FOREHAND });
+
+    // 「すべて」に戻して見れば lesson_menu_id を付けずに読み、絞っている表示も消す
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    await waitFor(() => expect(getSlotSupply).toHaveBeenCalledTimes(4));
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-09-27", to: "2026-10-27" });
+    await waitFor(() => expect(screen.queryByText(/^レッスンメニューで絞っています/)).not.toBeInTheDocument());
+  });
+
+  test("レッスンメニューだけで絞って 0 件なら、そのメニューの名前とそのメニューの枠がないことを出す", async () => {
+    const getSlotSupply = vi
+      .fn<HeadquartersApi["getSlotSupply"]>()
+      .mockResolvedValueOnce({ ok: true, data: REPORT })
+      .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toBeEnabled());
+
+    await changePeriod(user, "2026-11-02", "2026-11-08");
+    await user.selectOptions(screen.getByRole("combobox", { name: "レッスンメニュー" }), "スイングの見直し（高橋 コーチ）");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(getSlotSupply).toHaveBeenLastCalledWith({ from: "2026-11-02", to: "2026-11-08", lesson_menu_id: SWING });
+    expect(
+      await screen.findByText("この期間に開始するこのレッスンメニューの予約枠はなく、予約しようとした生徒もいません"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています/)).toHaveTextContent(
+      "レッスンメニューで絞っています: スイングの見直し",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // コーチ・スポーツで絞っていないので、どのコーチ・どの競技かの見出しは出さない
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  });
+
+  test("期間・コーチ・スポーツ・レッスンメニューを組み合わせて API に渡し、0 件なら条件に合う枠がないことと絞ったメニューを出す", async () => {
+    const getSlotSupply = vi
+      .fn<HeadquartersApi["getSlotSupply"]>()
+      .mockResolvedValueOnce({ ok: true, data: REPORT })
+      .mockResolvedValue({ ok: true, data: EMPTY_COACH_REPORT });
+    const user = userEvent.setup();
+    render(<SlotSupplyReport api={{ getSlotSupply, listCoaches: coachesOf(), listLessonMenus: menusOf() }} />);
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toBeEnabled());
+
+    await changePeriod(user, "2026-11-02", "2026-11-08");
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await user.selectOptions(screen.getByRole("combobox", { name: "レッスンメニュー" }), "フォアハンドの基礎（鈴木 コーチ）");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(getSlotSupply).toHaveBeenLastCalledWith({
+      from: "2026-11-02",
+      to: "2026-11-08",
+      coach_id: SUZUKI,
+      sport: "tennis",
+      lesson_menu_id: FOREHAND,
+    });
+    expect(
+      await screen.findByRole("heading", { name: "鈴木 コーチ の予約枠の需給（テニスを提供するコーチに限る）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("この期間に開始する条件に合う予約枠はなく、予約しようとした生徒もいません"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています/)).toHaveTextContent(
+      "レッスンメニューで絞っています: フォアハンドの基礎",
+    );
+  });
+
+  test("レッスンメニューの一覧が読めなくても需給を出し、レッスンメニューの絞り込みだけを使えなくする", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(<SlotSupplyReport api={{ getSlotSupply: reportOf(REPORT), listCoaches: coachesOf(), listLessonMenus }} />);
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "レッスンメニューの一覧を読めませんでした。サーバーに接続できません。",
+    );
+    expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toBeDisabled();
+    expect(listLessonMenus).toHaveBeenCalledWith({});
+  });
+
   test("コーチの一覧が読めなくても期間だけで需給を出し、コーチの絞り込みだけを使えなくする", async () => {
     const listCoaches = vi.fn<HeadquartersApi["listCoaches"]>(async () => ({
       ok: false,
       message: "サーバーに接続できません。",
     }));
-    render(<SlotSupplyReport api={{ getSlotSupply: reportOf(REPORT), listCoaches }} />);
+    render(<SlotSupplyReport api={{ getSlotSupply: reportOf(REPORT), listCoaches, listLessonMenus: menusOf() }} />);
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent("コーチの一覧を読めませんでした。サーバーに接続できません。");

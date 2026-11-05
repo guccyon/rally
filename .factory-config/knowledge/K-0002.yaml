@@ -27,4 +27,13 @@ enforcement:
         CHANGELOG を PR ごとの断片（changelog.d/<Issue 番号>.md）にし、取りまとめを別の工程にした
         （Engine ADR 0027、core-gates/changelog_compile.py、このリポジトリの changelog.d/README.md と CLAUDE.md）。
         この事例のあとに入ったもので、効き目（CHANGELOG の衝突が減ったか）はまだ確かめていない
+    - kind: ci_check
+      what: >-
+        PR の差分（merge-base から head）が CHANGELOG.md の [Unreleased] を直接変えていたら落とす検査
+        （tools/changelog-check/check.mjs）。断片を足していても直接の書き換えは落とす。取りまとめ（core-gates/changelog_compile.py。
+        足した行がすべて、その PR で消した断片の行か種類の見出し）と、版の切り出し（消した行がすべて版の項に移った）だけを通す。
+        PR ごとに走らせるワークフローは建設者が足す（ワーカーは .github/workflows/ を変えられない）
+      issue: 827
+      at: 2026-11-03
+      decided_by: committee:D-0001
 decided_by: committee:D-0001

@@ -16,14 +16,16 @@ export function coachApi(client: ApiClient) {
           body,
         }),
       ),
-    listMyCoachSlots: () => call(() => client.GET("/coaches/me/slots")),
+    listMyCoachSlots: (period: { from?: string; to?: string } = {}) =>
+      call(() => client.GET("/coaches/me/slots", { params: { query: period } })),
     withdrawMySlot: (slotId: string) =>
       call(() =>
         client.POST("/coaches/me/slots/{slot_id}/withdraw", {
           params: { path: { slot_id: slotId } },
         }),
       ),
-    listMyCoachVideos: () => call(() => client.GET("/coaches/me/videos")),
+    listMyCoachVideos: (filter: { pending_only?: boolean } = {}) =>
+      call(() => client.GET("/coaches/me/videos", { params: { query: filter } })),
     listMyCoachBookings: () => call(() => client.GET("/coaches/me/bookings")),
     startLiveLessonSession: (body: Schemas["StartLiveLessonSessionRequest"]) =>
       call(() => client.POST("/live-lesson-sessions", { body })),

@@ -9,6 +9,7 @@ use crate::{
     DomainError,
     catalog::Sport,
     identity::{AccountId, Coach},
+    lesson::LessonType,
 };
 
 /// コーチのレッスンメニュー（glossary の lesson「レッスン種別」）。集約。
@@ -175,6 +176,11 @@ impl LessonMenu {
         self.content.format
     }
 
+    /// レッスンの種類（同期か非同期か）。形式（[`Self::format`]）から決まる。
+    pub const fn lesson_type(&self) -> LessonType {
+        self.content.format.lesson_type()
+    }
+
     pub const fn name(&self) -> &LessonMenuName {
         &self.content.name
     }
@@ -210,7 +216,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{catalog::LessonDuration, lesson::LessonType};
+    use crate::catalog::LessonDuration;
 
     const COACH: AccountId = AccountId::from_u128(7);
     const OTHER_COACH: AccountId = AccountId::from_u128(8);
@@ -269,6 +275,20 @@ mod tests {
         assert_eq!(menu.description().as_str(), "初心者向け");
         assert!(menu.is_published());
         assert_eq!(menu.created_at(), at(10));
+    }
+
+    #[test]
+    fn the_lesson_type_follows_the_format() {
+        assert_eq!(menu().lesson_type(), LessonType::Live);
+        let mut menu = menu();
+        menu.revise(
+            COACH,
+            &coach(),
+            content(Sport::Tennis, LessonFormat::Async, "フォアの添削"),
+            true,
+        )
+        .unwrap();
+        assert_eq!(menu.lesson_type(), LessonType::Async, "直せば種類も変わる");
     }
 
     #[test]

@@ -6,6 +6,8 @@
 //! 評価されたコーチは評価 1 件に 1 つだけ返信（[`LessonReviewReply`]）を付けられ、付け直すと上書きする。
 //! 本部は低い評価（[`LowRatedReviewCriteria`] の点）に「対応済み」の印（[`LowRatedReviewHandling`]）を 1 つだけ付けられ、
 //! 2 回目は何も変えない。コーチ 1 人の直近の低い評価と、そのうち未対応の件数は [`CoachLowRatedReviewCount`] で数える。
+//! 本部がコーチの一覧を未対応の低い評価のあるコーチに絞る判定は [`UnhandledLowRatedCoachFilter`]。
+//! 生徒 1 人がつけた直近の低い評価と、そのうち未対応の件数は [`StudentLowRatedReviewCount`] で数える。
 //! 評価の一覧に添えるレッスンメニュー（[`ReviewLessonMenu`]）も、完了したレッスンの元（予約・動画）が持つ写しを読むだけ。
 
 mod coach_low_rated_review_count;
@@ -20,6 +22,8 @@ mod low_rated_review_handling;
 mod rating;
 mod review_error;
 mod review_lesson_menu;
+mod student_low_rated_review_count;
+mod unhandled_low_rated_coach_filter;
 
 pub use coach_low_rated_review_count::CoachLowRatedReviewCount;
 pub use coach_review_summary::CoachReviewSummary;
@@ -33,3 +37,5 @@ pub use low_rated_review_handling::LowRatedReviewHandling;
 pub use rating::Rating;
 pub use review_error::ReviewError;
 pub use review_lesson_menu::ReviewLessonMenu;
+pub use student_low_rated_review_count::StudentLowRatedReviewCount;
+pub use unhandled_low_rated_coach_filter::UnhandledLowRatedCoachFilter;

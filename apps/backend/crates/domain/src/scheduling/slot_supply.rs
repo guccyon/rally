@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{Booking, BookingPeriod, Slot, SlotStatus, SlotSupplyStatus};
-use crate::catalog::Sport;
+use crate::{catalog::Sport, entitlement::ContractType};
 
 /// スポーツ 1 つの予約枠の需給（admin-web の `getSlotSupply`。式と期間の正本は
 /// `specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。
@@ -17,8 +17,12 @@ use crate::catalog::Sport;
 /// - 予約しようとした生徒の数（`booking_students`）: そのスポーツの枠に予約を作った生徒の数（同じ生徒は 1 人。
 ///   確定・キャンセル・未確定を問わない。閉じた枠への予約も数える）
 ///
-/// 予約しようとした生徒が 1 人以上いて、公開した枠 1 つあたり [`SlotSupply::SHORTAGE_PERCENT`] % 以上いれば
-/// 「足りていない」、それ以外は「足りている」。検索は記録していないので数に入らない。
+/// 判定は上から順に決める（[`SlotSupply::status`]）。検索は記録していないので数に入らない。
+///
+/// 1. 月額の契約の対象でないスポーツ（ゴルフ。[`ContractType::covers`]）は、数を問わず「対象外」
+/// 2. 公開した枠も、予約しようとした生徒も 0 なら「枠も予約もない」（足りているかを数からは言えない）
+/// 3. 予約しようとした生徒が 1 人以上いて、公開した枠 1 つあたり [`SlotSupply::SHORTAGE_PERCENT`] % 以上いれば
+///    「足りていない」、それ以外は「足りている」
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotSupply {
     sport: Sport,
@@ -84,11 +88,16 @@ impl SlotSupply {
         self.booking_students
     }
 
-    /// 足りているか。予約しようとした生徒がいなければ（枠がなくても）足りている。
+    /// 足りているか。月額の契約の対象でないスポーツは数を問わず対象外、枠も予約しようとした生徒も 0 なら枠も予約もない。
+    /// それ以外で、予約しようとした生徒がいなければ足りている。
     pub const fn status(&self) -> SlotSupplyStatus {
         let students = self.booking_students as u64;
         let slots = self.published_slots as u64;
-        if students > 0 && students * 100 >= slots * Self::SHORTAGE_PERCENT as u64 {
+        if !ContractType::Monthly.covers(self.sport) {
+            SlotSupplyStatus::NotApplicable
+        } else if students == 0 && slots == 0 {
+            SlotSupplyStatus::NoActivity
+        } else if students > 0 && students * 100 >= slots * Self::SHORTAGE_PERCENT as u64 {
             SlotSupplyStatus::Insufficient
         } else {
             SlotSupplyStatus::Sufficient
@@ -189,9 +198,31 @@ mod tests {
     #[test]
     fn no_students_is_sufficient_and_students_without_slots_is_not() {
         let status = |slots, students| SlotSupply::new(Sport::Tennis, slots, students).status();
-        assert_eq!(status(0, 0), SlotSupplyStatus::Sufficient);
         assert_eq!(status(3, 0), SlotSupplyStatus::Sufficient);
         assert_eq!(status(0, 1), SlotSupplyStatus::Insufficient);
+    }
+
+    #[test]
+    fn no_slots_and_no_students_is_no_activity_for_monthly_sports() {
+        for sport in Sport::ALL.into_iter().filter(|s| *s != Sport::Golf) {
+            assert_eq!(
+                SlotSupply::new(sport, 0, 0).status(),
+                SlotSupplyStatus::NoActivity,
+                "{sport:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn golf_is_not_applicable_whatever_the_counts() {
+        // ゴルフは月額の契約の対象外（ワンショットだけ）。枠や予約があっても需給の判定をしない
+        for (slots, students) in [(0, 0), (3, 0), (0, 1), (10, 6), (10, 5)] {
+            assert_eq!(
+                SlotSupply::new(Sport::Golf, slots, students).status(),
+                SlotSupplyStatus::NotApplicable,
+                "{slots} 枠・{students} 人"
+            );
+        }
     }
 
     #[test]

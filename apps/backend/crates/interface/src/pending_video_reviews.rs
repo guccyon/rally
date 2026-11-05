@@ -2,8 +2,9 @@
 //! 返却を待っている動画添削の一覧）。本部だけが呼べる。クエリの `sport` があればそのスポーツの動画だけ（`Sport` の値で
 //! なければ 422）、`min_elapsed_hours` があれば送付からの経過時間がその時間以上の動画だけ（0〜2147483647 の整数でなければ
 //! 422）、`coach_id` があればそのコーチの動画だけ（UUID でなければ 422）、`student_id` があればその生徒が送った動画だけ
-//! （UUID でなければ 422。扱いは `listReturnedVideoReviews` の `student_id` と同じ）。経過時間の数え方と並べ方は domain の
-//! [`PendingVideoReviewFilter`]。
+//! （UUID でなければ 422。扱いは `listReturnedVideoReviews` の `student_id` と同じ）、`lesson_menu_id` があれば送った時点の
+//! レッスンメニューがそのメニューの動画だけ（UUID でなければ 422。扱いは `listBookings` の `lesson_menu_id` と同じ）。
+//! 経過時間の数え方と並べ方は domain の [`PendingVideoReviewFilter`]。
 
 use std::sync::Arc;
 
@@ -28,7 +29,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{TokenVerification, require_role},
-    contract::{admin_web_sport, date_time_to_contract, sport_to_contract},
+    contract::{
+        admin_web_sport, date_time_to_contract, lesson_menu_id_from_contract, sport_to_contract,
+    },
     error::ApiError,
 };
 
@@ -47,6 +50,7 @@ pub struct ListPendingVideoReviewsParams {
     min_elapsed_hours: Option<String>,
     coach_id: Option<String>,
     student_id: Option<String>,
+    lesson_menu_id: Option<String>,
 }
 
 /// admin-web の `PendingVideoReviewList`。
@@ -102,6 +106,11 @@ where
             .unwrap_or(0),
         coach_id: optional_account_id("coach_id", params.coach_id.as_deref())?,
         student_id: optional_account_id("student_id", params.student_id.as_deref())?,
+        lesson_menu_id: params
+            .lesson_menu_id
+            .as_deref()
+            .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
+            .transpose()?,
     };
     let list = state
         .list_pending_video_reviews

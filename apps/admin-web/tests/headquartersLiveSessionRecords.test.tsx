@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -80,6 +80,41 @@ function coachesOf(coaches: Schemas["Coach"][] = COACHES) {
   return vi.fn<HeadquartersApi["listCoaches"]>(async () => ({ ok: true, data: { coaches } }));
 }
 
+const MENU_FORE = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+const MENU_SERVE = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
+const MENU_SWING = "aaaaaaaa-aaaa-4aaa-8aaa-000000000003";
+
+function menu(
+  lessonMenuId: string,
+  name: string,
+  lessonType: Schemas["LessonType"],
+  coachDisplayName?: string,
+): Schemas["CoachLessonMenu"] {
+  return {
+    lesson_menu_id: lessonMenuId,
+    name,
+    sport: "tennis",
+    lesson_type: lessonType,
+    duration_minutes: lessonType === "live_lesson" ? 60 : null,
+    is_published: true,
+    coach_id: SUZUKI,
+    ...(coachDisplayName === undefined ? {} : { coach_display_name: coachDisplayName }),
+    created_at: "2026-10-01T00:00:00Z",
+    recent_booking_count: 0,
+  };
+}
+
+// レッスンメニューの一覧（listLessonMenus）が返す並び。同期のメニューだけを、この順のまま選択肢に出す。
+const MENUS: Schemas["CoachLessonMenu"][] = [
+  menu(MENU_SWING, "スイングの見直し", "live_lesson"),
+  menu(MENU_SERVE, "サーブの添削", "async_lesson", "鈴木 コーチ"),
+  menu(MENU_FORE, "フォアハンドの基礎", "live_lesson", "鈴木 コーチ"),
+];
+
+function lessonMenusOf(menus = MENUS) {
+  return vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({ ok: true, data: { lesson_menus: menus } }));
+}
+
 const TABLE = "ライブレッスンの記録の一覧";
 
 describe("既定の期間", () => {
@@ -93,7 +128,7 @@ describe("既定の期間", () => {
 describe("本部のライブレッスンの記録", () => {
   test("読み込み中を出し、既定の期間・すべてのコーチで読み、コーチ・生徒・開始・終了を API の順で表にする", async () => {
     const listLiveLessonSessions = listOf(SESSIONS);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: TABLE });
@@ -114,13 +149,14 @@ describe("本部のライブレッスンの記録", () => {
     expect(screen.getByLabelText("終了日")).toHaveValue("2026-10-26");
     expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue("");
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toHaveValue("");
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
   });
 
   test("コーチの選択肢はコーチの一覧の順で、期間とコーチを選び直して「この条件で見る」で読み直し、応答の期間を出す", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf([]);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await screen.findByText("この条件の通話の記録はありません");
 
     const select = screen.getByRole("combobox", { name: "コーチ" });
@@ -149,7 +185,7 @@ describe("本部のライブレッスンの記録", () => {
   test("スポーツの選択肢は返却待ちの動画添削と同じで、選んで「この条件で見る」で sport を付けて読み直す", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf(SESSIONS);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await screen.findByRole("table", { name: TABLE });
 
     const select = screen.getByRole("combobox", { name: "スポーツ" });
@@ -174,7 +210,7 @@ describe("本部のライブレッスンの記録", () => {
   test("スポーツは期間・コーチと組み合わせて読む", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf([]);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await screen.findByText("この条件の通話の記録はありません");
 
     await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
@@ -196,7 +232,7 @@ describe("本部のライブレッスンの記録", () => {
   });
 
   test("0 件なら「この条件の通話の記録はありません」と出し、表は出さない", async () => {
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByText("この条件の通話の記録はありません")).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
@@ -205,7 +241,7 @@ describe("本部のライブレッスンの記録", () => {
   test("終了日が開始日より前・31 日を超える期間は送らずに理由を出す", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf(SESSIONS);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await screen.findByRole("table", { name: TABLE });
 
     await user.clear(screen.getByLabelText("終了日"));
@@ -231,10 +267,10 @@ describe("本部のライブレッスンの記録", () => {
       message: "入力の内容が正しくありません。",
       code: "validation_failed",
     }));
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチは一覧から選び直してください。",
+      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチ・レッスンメニューは一覧から選び直してください。",
     );
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
   });
@@ -245,7 +281,7 @@ describe("本部のライブレッスンの記録", () => {
       message: "権限がないためアクセスできません。",
       code: "forbidden",
     }));
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/^権限がないためアクセスできません。$/);
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
@@ -258,7 +294,7 @@ describe("本部のライブレッスンの記録", () => {
       ok: false,
       message: "サーバーに接続できません。",
     }));
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches, listLessonMenus: lessonMenusOf() }} />);
 
     expect(await screen.findByRole("table", { name: TABLE })).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("コーチの一覧を読めませんでした。サーバーに接続できません。");
@@ -272,7 +308,7 @@ describe("本部のライブレッスンの記録", () => {
       if (coach_id === SUZUKI) await new Promise<void>((resolve) => (resolveSlow = resolve));
       return { ok: true, data: { from, to, sessions: coach_id === SUZUKI ? SESSIONS : [] } };
     });
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
     await screen.findByText("この条件の通話の記録はありません");
 
     const select = screen.getByRole("combobox", { name: "コーチ" });
@@ -289,10 +325,135 @@ describe("本部のライブレッスンの記録", () => {
   });
 
   test("セッションを終わらせる操作は出さない（ボタンは「この条件で見る」だけ）", async () => {
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf() }} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} />);
 
     await screen.findByRole("table", { name: TABLE });
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["この条件で見る"]);
+  });
+});
+
+describe("本部のライブレッスンの記録（レッスンメニューで絞る）", () => {
+  const MENU = "レッスンメニュー";
+
+  test("選択肢は「すべて」とレッスンメニューの一覧の同期のメニューを返った順で出し、読めるまでは選べない", async () => {
+    render(
+      <LiveSessionRecordList
+        api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: MENU })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: MENU })).toBeEnabled());
+    const options = within(screen.getByRole("combobox", { name: MENU })).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "すべて",
+      "スイングの見直し",
+      "フォアハンドの基礎（鈴木 コーチ）",
+    ]);
+    expect(options.map((option) => option.getAttribute("value"))).toEqual(["", MENU_SWING, MENU_FORE]);
+  });
+
+  test("メニューを選んで「この条件で見る」で lesson_menu_id を付けて読み直し、「すべて」に戻せば外す", async () => {
+    const user = userEvent.setup();
+    const listLiveLessonSessions = listOf(SESSIONS);
+    const listLessonMenus = lessonMenusOf();
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus }} />);
+    await screen.findByRole("table", { name: TABLE });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: MENU })).toBeEnabled());
+
+    await user.selectOptions(screen.getByRole("combobox", { name: MENU }), "フォアハンドの基礎（鈴木 コーチ）");
+    // 選んだだけでは読み直さず、絞っている表示も出さない。
+    expect(listLiveLessonSessions).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/^レッスンメニューで絞っています:/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listLiveLessonSessions).toHaveBeenCalledTimes(2);
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({
+      from: "2026-10-20",
+      to: "2026-10-26",
+      lesson_menu_id: MENU_FORE,
+    });
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: フォアハンドの基礎",
+    );
+    expect(await screen.findByRole("table", { name: TABLE })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: MENU }), "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+    expect(screen.queryByText(/^レッスンメニューで絞っています:/)).not.toBeInTheDocument();
+  });
+
+  test("メニューは期間・コーチ・スポーツ・生徒と組み合わせて読む", async () => {
+    const user = userEvent.setup();
+    const STUDENT_ID = "11111111-1111-4111-8111-000000000001";
+    const listLiveLessonSessions = listOf([]);
+    render(
+      <LiveSessionRecordList
+        api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
+        studentId={STUDENT_ID}
+      />,
+    );
+    await screen.findByText("この条件の通話の記録はありません");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: MENU })).toBeEnabled());
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "鈴木 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await user.selectOptions(screen.getByRole("combobox", { name: MENU }), "フォアハンドの基礎（鈴木 コーチ）");
+    await user.clear(screen.getByLabelText("開始日"));
+    await user.type(screen.getByLabelText("開始日"), "2026-10-01");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listLiveLessonSessions).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-26",
+      coach_id: SUZUKI,
+      sport: "tennis",
+      student_id: STUDENT_ID,
+      lesson_menu_id: MENU_FORE,
+    });
+    // ほかの条件もあるときの 0 件は「この条件の」と言い、どのメニューかは上に名前で出す。
+    expect(await screen.findByText("この条件の通話の記録はありません")).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: フォアハンドの基礎",
+    );
+  });
+
+  test("メニューだけで絞って 0 件なら、選んだメニューの名前と「このレッスンメニューの通話の記録はありません」を出す", async () => {
+    const user = userEvent.setup();
+    render(
+      <LiveSessionRecordList
+        api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }}
+      />,
+    );
+    await screen.findByText("この条件の通話の記録はありません");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: MENU })).toBeEnabled());
+
+    await user.selectOptions(screen.getByRole("combobox", { name: MENU }), "スイングの見直し");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(await screen.findByText("このレッスンメニューの通話の記録はありません")).toBeInTheDocument();
+    expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
+      "レッスンメニューで絞っています: スイングの見直し",
+    );
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・0 件")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
+  });
+
+  test("レッスンメニューの一覧が読めなくても記録は出し、レッスンメニューの絞り込みだけを使えなくする", async () => {
+    const listLessonMenus = vi.fn<HeadquartersApi["listLessonMenus"]>(async () => ({
+      ok: false,
+      message: "サーバーに接続できません。",
+    }));
+    render(
+      <LiveSessionRecordList api={{ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus }} />,
+    );
+
+    expect(await screen.findByRole("table", { name: TABLE })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "レッスンメニューの一覧を読めませんでした。サーバーに接続できません。",
+    );
+    expect(screen.getByRole("combobox", { name: MENU })).toBeDisabled();
   });
 });
 
@@ -311,6 +472,8 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
         submitted_video_count: 0,
         pending_video_review_count: 0,
         unanswered_message_thread_count: 0,
+        low_rated_review_count: 0,
+        unhandled_low_rated_review_count: 0,
       },
     }));
   }
@@ -327,7 +490,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
   test("studentId があれば student_id を付けて読み、期間・コーチ・スポーツを変えても絞り込みは残る", async () => {
     const user = userEvent.setup();
     const listLiveLessonSessions = listOf([SESSIONS[0]!]);
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId={STUDENT_ID} />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} studentId={STUDENT_ID} />);
 
     expect(screen.getByText(/この生徒のライブレッスンがいつ始まりいつ終わったか/)).toBeInTheDocument();
     expect(listLiveLessonSessions).toHaveBeenCalledWith({ from: "2026-10-20", to: "2026-10-26", student_id: STUDENT_ID });
@@ -350,7 +513,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
 
   test("生徒で絞って 0 件なら「この条件の通話の記録はありません」と出す", async () => {
     render(
-      <LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf() }} studentId={STUDENT_ID} />,
+      <LiveSessionRecordList api={{ listLiveLessonSessions: listOf([]), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} studentId={STUDENT_ID} />,
     );
 
     expect(await screen.findByText("この条件の通話の記録はありません")).toBeInTheDocument();
@@ -364,10 +527,10 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
       message: "入力の内容が正しくありません。",
       code: "validation_failed",
     }));
-    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf() }} studentId="not-a-uuid" />);
+    render(<LiveSessionRecordList api={{ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() }} studentId="not-a-uuid" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
+      "入力の内容が正しくありません。期間は 31 日までで、終了日は開始日と同じか後の日付にしてください。スポーツ・コーチ・レッスンメニューは一覧から選び直してください。生徒は生徒の一覧から選び直してください。",
     );
     expect(screen.queryByRole("table", { name: TABLE })).not.toBeInTheDocument();
   });
@@ -375,7 +538,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
   test("生徒で絞った画面は一覧の上に生徒の名前を出し、「すべての生徒の記録を見る」で外せる", async () => {
     const listLiveLessonSessions = listOf([SESSIONS[0]!]);
     const getStudentActivity = activityOf("山田 花子");
-    headquartersApiMock.mockReturnValue({ listLiveLessonSessions, listCoaches: coachesOf(), getStudentActivity });
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions, listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(), getStudentActivity });
     renderHome(STUDENT_ID);
 
     const region = screen.getByRole("region", { name: "ライブレッスンの記録" });
@@ -399,6 +562,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
     headquartersApiMock.mockReturnValue({
       listLiveLessonSessions: listOf([]),
       listCoaches: coachesOf(),
+      listLessonMenus: lessonMenusOf(),
       getStudentActivity,
     });
     renderHome(STUDENT_ID);
@@ -411,7 +575,7 @@ describe("本部のライブレッスンの記録（生徒で絞る）", () => {
 
   test("生徒で絞らない画面には生徒の絞り込みの表示がない", async () => {
     const getStudentActivity = activityOf("山田 花子");
-    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), getStudentActivity });
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf(), getStudentActivity });
     renderHome();
 
     await screen.findByRole("table", { name: TABLE });
@@ -437,7 +601,7 @@ describe("画面への配置", () => {
   });
 
   test("ライブレッスンの記録の画面は開いたときに一覧を読み、本部の画面へ戻れる", async () => {
-    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf() });
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() });
     saveSession({ role: "headquarters", token: "mock.headquarters.x" });
     render(
       <RoleGate role="headquarters">
@@ -452,7 +616,7 @@ describe("画面への配置", () => {
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
-    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf() });
+    headquartersApiMock.mockReturnValue({ listLiveLessonSessions: listOf(SESSIONS), listCoaches: coachesOf(), listLessonMenus: lessonMenusOf() });
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
       <RoleGate role="headquarters">
