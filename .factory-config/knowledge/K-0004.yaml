@@ -39,4 +39,15 @@ enforcement:
       issue: 934
       at: 2026-11-05
       decided_by: committee:D-0009
+    - kind: test
+      what: >-
+        tools/sendback-check/engine.test.mjs に、check.test.mjs と同じ 3 つの場合を Engine の本物の判定で確かめるテストを置いた。
+        engine_harness.py が Engine のチェックアウトから judgment.record_judged・dispatcher.act_on_judgment（と file_sendback・enqueue_body_fix・is_body_only）・
+        supervisor.inspector_approved を中身を変えずに取り出し、DB と GitHub を差し替えて動かして、起きた後続と basis を check.mjs の線に照らす。
+        PR #395 と同じ入力では起こさないこと、直っていない採用欠陥があればマージの前（review_fix）でも後（sendback）でも起こすことは今の Engine で通り、
+        Engine が adopt の件数で起こすように変わると落ちる。basis を分けて書く場合は今の Engine では外れる（採用 N の合計だけ）ので todo にしてあり、
+        Engine の basis の文を直すのと、CI で Engine を固定の版で取って ENGINE_DIR を向ける配線は建設者が入れる。それまで basis の担保は効いていない
+      issue: 935
+      at: 2026-11-05
+      decided_by: committee:D-0009
 decided_by: committee:D-0004
