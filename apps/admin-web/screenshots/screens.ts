@@ -281,6 +281,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返却の遅れている動画のあるコーチだけに絞った状態（URL のクエリ has_overdue_video=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-overdue-video",
+    title: "本部: コーチの受付（返却の遅れている動画のあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_overdue_video=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("返却の遅れている動画のあるコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",
