@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "PR 本文の見出しの構造（同じ ## 見出しの重なり、「## 工場の記録」の外の続きの記録）を決定論で検査する（知見 K-0001 の担保）",
+  "description": "PR 本文の見出しの構造（同じ ## 見出しの重なり、「## 工場の記録」の外の続きの記録）を決定論で検査する（知見 K-0001 の担保）。見出しの定義が CLAUDE.md・実装役の報告の型・rubric の PR-002 で揃っているかも見る（知見 K-0005 の担保）",
   "scripts": {
     "check": "node check.mjs",
     "test": "node --test"

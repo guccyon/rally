@@ -1,0 +1,8 @@
+{
+  "$comment": "PR 本文の ## 見出しの正（知見 K-0005 の担保。議決 D-0006、Issue #905）。並びは本文に書く順。CLAUDE.md の「書き方」、Engine の実装役の報告の型（orchestrator/worker/entrypoint.sh）、検査役の rubric（core-gates/rubric.yaml の PR-002 の check）はこの一覧と一致させる。照らし合わせは headings.test.mjs",
+  "headings": ["概要", "対応内容", "影響範囲・互換性", "動作確認", "補足", "仮決め", "知見"],
+  "known_drift": {
+    "$comment": "Engine 側のずれで、直すのに作用先（Engine）の人の承認が要り、まだ直っていないもの。今の値をそのまま書き、これ以外の値になったら（直ったときも）テストを落として、この記録を直させる",
+    "rubric": ["概要", "背景", "問題", "対応内容", "影響範囲", "動作確認", "補足"]
+  }
+}

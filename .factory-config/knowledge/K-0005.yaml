@@ -18,4 +18,18 @@ verified_at: 2026-11-04
 review_by: 2026-12-04
 confidentiality: product
 related: [K-0001, K-0006]
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        PR 本文の ## 見出しの正を tools/pr-body-check/headings.json に 1 つ置き、CLAUDE.md の PR の説明の見出し・
+        Engine の実装役の報告の型（orchestrator/worker/entrypoint.sh）・rubric の PR-002 の check がそれと一致するかを
+        決定論で照らすテスト（tools/pr-body-check/headings.mjs と headings.test.mjs）。正は CLAUDE.md の決まりに
+        実装役の報告の型の「仮決め」を足した並びに仮に決めた（どれを正にするかは人の承認で差し替えうる）。
+        rubric の PR-002 は背景・問題を含むままで、直すには Engine の承認が要るので、今の値を known_drift に記録し、
+        その値から変わったら落とす。rubric が直るまでは判断の割れは解けておらず、テストを走らせるワークフローもまだない（建設者が入れる）
+      issue: 905
+      at: 2026-11-05
+      decided_by: committee:D-0006
 decided_by: committee:D-0006
