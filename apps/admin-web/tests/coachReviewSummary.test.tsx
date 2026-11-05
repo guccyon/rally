@@ -101,10 +101,11 @@ describe("本部のコーチの評価", () => {
     expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID);
     const summary = await screen.findByLabelText("評価の件数と平均");
     expect(summaryOf(summary)).toEqual([
-      ["コーチ ID", COACH_ID],
       ["評価の件数", "12 件"],
       ["点の平均（1〜5）", "4.50"],
     ]);
+    // コーチは表示名で選ぶので、内部のコーチ ID は出さない（#897）。
+    expect(summary).not.toHaveTextContent(COACH_ID);
     const items = within(screen.getByRole("list", { name: "評価の一覧" })).getAllByRole("listitem");
     expect(items).toHaveLength(1);
     expect(items[0]).toHaveTextContent("5 点");
@@ -129,7 +130,6 @@ describe("本部のコーチの評価", () => {
 
     const summary = await screen.findByLabelText("評価の件数と平均");
     expect(summaryOf(summary)).toEqual([
-      ["コーチ ID", OTHER_COACH_ID],
       ["評価の件数", "0 件"],
       ["点の平均（1〜5）", "評価はまだありません"],
     ]);
@@ -204,7 +204,7 @@ describe("本部のコーチの評価", () => {
     resolveFirst({ ok: true, data: { coach_id: COACH_ID, review_count: 9, average_rating: 2 } });
 
     await waitFor(() => expect(api.getCoachReviewSummary).toHaveBeenCalledTimes(2));
-    expect(summaryOf(summary)).toContainEqual(["コーチ ID", OTHER_COACH_ID]);
+    expect(summaryOf(summary)).not.toContainEqual(["評価の件数", "9 件"]);
     expect(summaryOf(screen.getByLabelText("評価の件数と平均"))).toContainEqual(["評価の件数", "1 件"]);
   });
 
@@ -213,7 +213,7 @@ describe("本部のコーチの評価", () => {
     render(<CoachReviewPicker api={api} initialCoachId={COACH_ID} />);
 
     const summary = await screen.findByLabelText("評価の件数と平均");
-    expect(summaryOf(summary)).toContainEqual(["コーチ ID", COACH_ID]);
+    expect(summaryOf(summary)).toContainEqual(["評価の件数", "12 件"]);
     expect(screen.getByLabelText("コーチ")).toHaveValue(COACH_ID);
     expect(api.getCoachReviewSummary).toHaveBeenCalledTimes(1);
     expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID);
