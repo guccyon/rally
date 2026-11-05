@@ -1,0 +1,48 @@
+type: UserStory
+id: coach-replies-to-new-message
+title: "コーチが、生徒から届いた新しい相談に気づいて返事できる"
+actor: coach
+goal: "生徒の相談を待たせずに返す。返事が遅いと生徒は次の予約をためらい、コーチへの評価も下がる"
+reader: [coach, student]
+entry: "コーチが admin-web のコーチの画面でチャットのタブを開いている。生徒が生徒アプリから担当コーチとのチャットに相談を送る"
+exit: "コーチの画面のスレッドの一覧とメッセージの両方に生徒の相談が出ていて、コーチの返事が生徒アプリのチャットに届いている"
+preconditions:
+  - "生徒が月額契約を持ち（チャットは送り放題の受講権があるときだけ送れる）、そのコーチとの予約が確定している（確定したときにスレッドが開く）"
+  - "スレッドのメッセージはまだ 0 件でもよい"
+  - "コーチはチャットのタブでそのスレッドを選んでいる"
+steps:
+  - by: student
+    where: "student-app 担当コーチとのチャット"
+    do: "本文を書いて「送信する」を押し、続けてスタンプを送る"
+    sees: "送った本文とスタンプが自分のチャットに出る"
+  - where: "admin-web コーチの画面のチャット"
+    do: "「新しいメッセージを確かめる」を押す"
+    sees: "メッセージに生徒の 2 件が出る。上のスレッドの一覧でも、そのスレッドの最後のメッセージが生徒の相談になり、未読の数が増えている"
+  - where: "admin-web コーチの画面のチャット"
+    do: "返事を書いて送る"
+    sees: "返事がメッセージの末尾に出て、スレッドの一覧の最後のメッセージも返事になる"
+  - by: student
+    where: "student-app 担当コーチとのチャット"
+    do: "「新しいメッセージを確かめる」を押す"
+    sees: "コーチの返事が出る"
+must_not:
+  - "スレッドの一覧とメッセージが食い違う（一覧が「まだメッセージはありません」のまま、など）"
+  - "コーチが担当していない生徒のスレッドを読める・送れる"
+  - "生徒が自分以外の生徒のスレッドを読める・送れる"
+  - "送ったメッセージが二重に出る、または消える"
+touches:
+  apps: [student-app, admin-web]
+  contexts: [messaging]
+  terms: [message_thread, message, stamp]
+  operations:
+    - student-app.sendMessage
+    - student-app.listMessages
+    - admin-web.listMessageThreads
+    - admin-web.listMessages
+    - admin-web.sendMessage
+    - admin-web.markMessageThreadRead
+  events: [message.sent]
+origin:
+  issues: ["guccyon/rally#895"]
+  retro: true
+status: active
