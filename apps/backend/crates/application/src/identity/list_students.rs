@@ -2,13 +2,14 @@ use std::collections::BTreeSet;
 
 use domain::{
     async_lesson::PendingVideoStudentFilter, identity::AccountId,
-    messaging::UnansweredStudentFilter,
+    messaging::UnansweredStudentFilter, review::UnhandledLowRatedStudentFilter,
 };
 
 use super::{
     AccountRepository, ListStudentsQuery, StudentCoachBookingLookup, StudentContractLookup,
-    StudentLastBookingLookup, StudentOverview, StudentPendingVideoReviewCountsLookup,
-    StudentRecentBookingCountLookup, StudentUnansweredMessageThreadCountsLookup,
+    StudentLastBookingLookup, StudentLowRatedReviewCountsLookup, StudentOverview,
+    StudentPendingVideoReviewCountsLookup, StudentRecentBookingCountLookup,
+    StudentUnansweredMessageThreadCountsLookup,
 };
 use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 
@@ -25,10 +26,13 @@ use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 /// [`domain::messaging::StudentUnansweredMessageThreadCount::tally`] で、判定は [`UnansweredStudentFilter`]。絞るときだけ
 /// 問い合わせる）・返却待ちの動画のある（時計の今の時刻で async-lesson に [`StudentPendingVideoReviewCountsLookup`] で
 /// 問い合わせる。数え方は domain の [`domain::async_lesson::PendingVideoReviewFilter`] の既定の条件で、判定は
-/// [`PendingVideoStudentFilter`]。絞るときだけ問い合わせる）生徒だけに絞る。絞っても並べ方は変えない。条件がなければ
+/// [`PendingVideoStudentFilter`]。絞るときだけ問い合わせる）・未対応の低い評価をつけた（時計の今の時刻で review に
+/// [`StudentLowRatedReviewCountsLookup`] で問い合わせる。数え方は生徒 1 人の利用の様子と同じ domain の
+/// [`domain::review::StudentLowRatedReviewCount::tally`] で、判定は [`UnhandledLowRatedStudentFilter`]。絞るときだけ
+/// 問い合わせる）生徒だけに絞る。絞っても並べ方は変えない。条件がなければ
 /// すべての生徒。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListStudents<R, C, B, K, N, U, P, L> {
+pub struct ListStudents<R, C, B, K, N, U, P, W, L> {
     accounts: R,
     contracts: C,
     bookings: B,
@@ -36,10 +40,11 @@ pub struct ListStudents<R, C, B, K, N, U, P, L> {
     recent_bookings: N,
     unanswered_threads: U,
     pending_videos: P,
+    low_rated_reviews: W,
     clock: L,
 }
 
-impl<R, C, B, K, N, U, P, L> ListStudents<R, C, B, K, N, U, P, L>
+impl<R, C, B, K, N, U, P, W, L> ListStudents<R, C, B, K, N, U, P, W, L>
 where
     R: AccountRepository,
     C: StudentContractLookup,
@@ -48,6 +53,7 @@ where
     N: StudentRecentBookingCountLookup,
     U: StudentUnansweredMessageThreadCountsLookup,
     P: StudentPendingVideoReviewCountsLookup,
+    W: StudentLowRatedReviewCountsLookup,
     L: Clock,
 {
     #[allow(clippy::too_many_arguments)]
@@ -59,6 +65,7 @@ where
         recent_bookings: N,
         unanswered_threads: U,
         pending_videos: P,
+        low_rated_reviews: W,
         clock: L,
     ) -> Self {
         Self {
@@ -69,6 +76,7 @@ where
             recent_bookings,
             unanswered_threads,
             pending_videos,
+            low_rated_reviews,
             clock,
         }
     }
@@ -142,6 +150,25 @@ where
                 return Ok(Vec::new());
             }
         }
+        let low_rated = UnhandledLowRatedStudentFilter::new(query.has_unhandled_low_rated);
+        // 絞らないときは review に問い合わせない（今までどおり）
+        if low_rated.has_unhandled_low_rated() {
+            let student_ids: BTreeSet<AccountId> =
+                students.iter().map(|(account, _)| account.id()).collect();
+            let counts = self
+                .low_rated_reviews
+                .find_low_rated_review_counts(&student_ids, self.clock.now())
+                .await?;
+            // ポートは聞いた生徒をすべて返す。返さなかった生徒は 0 件として扱う（載せない）
+            students.retain(|(account, _)| {
+                counts
+                    .get(&account.id())
+                    .is_some_and(|count| low_rated.matches(count))
+            });
+            if students.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
         let student_ids: BTreeSet<AccountId> =
             students.iter().map(|(account, _)| account.id()).collect();
         let last_booked_at = self.bookings.find_last_booked_at(&student_ids).await?;
@@ -192,11 +219,16 @@ mod tests {
         catalog::Sport,
         entitlement::{ContractType, SubscriptionPlan},
         identity::{Account, Email, Role},
+        lesson::LessonCompletionId,
         messaging::{
             MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId,
             StudentUnansweredMessageThreadCount,
         },
         profile::{DisplayName, DisplayNameQuery},
+        review::{
+            LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating,
+            StudentLowRatedReviewCount,
+        },
     };
 
     use super::*;
@@ -404,6 +436,56 @@ mod tests {
         }
     }
 
+    /// 生徒 1 は未対応の低い評価（★1）が 1 件、生徒 6 は期間の始まりちょうどの未対応の低い評価（★2）と ★3、生徒 5 は
+    /// 対応済みの低い評価だけ（未対応は 0 件）。domain の [`StudentLowRatedReviewCount::tally`] で数え、聞いた生徒をすべて
+    /// 返す（生徒 2 は評価がなく 0 件）。問い合わせた ID と時刻を記録する。
+    #[derive(Default)]
+    struct FakeLowRatedReviews {
+        asked: Mutex<Vec<(BTreeSet<AccountId>, SystemTime)>>,
+    }
+
+    impl StudentLowRatedReviewCountsLookup for FakeLowRatedReviews {
+        async fn find_low_rated_review_counts(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+            now: SystemTime,
+        ) -> Result<BTreeMap<AccountId, StudentLowRatedReviewCount>, Unavailable> {
+            self.asked.lock().unwrap().push((student_ids.clone(), now));
+            const DAY: Duration = Duration::from_secs(24 * 3600);
+            let reviews = [
+                lesson_review(1, 1, 1, now - DAY),
+                lesson_review(2, 6, 2, now - 30 * DAY),
+                lesson_review(3, 6, 3, now - DAY),
+                lesson_review(4, 5, 1, now - DAY).with_handling(Some(LowRatedReviewHandling::new(
+                    AccountId::from_u128(4),
+                    now,
+                ))),
+            ];
+            Ok(student_ids
+                .iter()
+                .map(|&id| (id, StudentLowRatedReviewCount::tally(id, &reviews, now)))
+                .collect())
+        }
+    }
+
+    /// 生徒 `student` がコーチ 3 に `submitted_at` につけた点 `rating` の評価。
+    fn lesson_review(
+        id: u128,
+        student: u128,
+        rating: i64,
+        submitted_at: SystemTime,
+    ) -> LessonReview {
+        LessonReview::restore(
+            LessonReviewId::from_u128(id),
+            LessonCompletionId::from_u128(id),
+            AccountId::from_u128(student),
+            AccountId::from_u128(3),
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("いまひとつ").unwrap(),
+            submitted_at,
+        )
+    }
+
     /// 取り出せない保存先の偽物。
     struct Broken;
 
@@ -444,6 +526,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
 
@@ -499,6 +582,10 @@ mod tests {
             use_case.pending_videos.asked.lock().unwrap().is_empty(),
             "返却待ちの動画で絞らないときは async-lesson に問い合わせない"
         );
+        assert!(
+            use_case.low_rated_reviews.asked.lock().unwrap().is_empty(),
+            "未対応の低い評価で絞らないときは review に問い合わせない"
+        );
     }
 
     #[tokio::test]
@@ -535,6 +622,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
 
@@ -583,6 +671,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
 
@@ -608,6 +697,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         assert!(
@@ -651,6 +741,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let query = |sport| ListStudentsQuery {
@@ -706,6 +797,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -752,6 +844,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -762,6 +855,7 @@ mod tests {
             coach_id: None,
             has_unanswered: false,
             has_pending_video: false,
+            has_unhandled_low_rated: false,
         };
 
         assert_eq!(
@@ -794,6 +888,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let query = |coach: u128| ListStudentsQuery {
@@ -855,6 +950,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -930,6 +1026,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let query = ListStudentsQuery {
@@ -983,6 +1080,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -1048,6 +1146,7 @@ mod tests {
             coach_id: Some(AccountId::from_u128(3)),
             has_unanswered: true,
             has_pending_video: false,
+            has_unhandled_low_rated: false,
         };
         assert_eq!(listed(&use_case.execute(&all).await.unwrap()), [2]);
         assert_eq!(
@@ -1082,6 +1181,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let query = ListStudentsQuery {
@@ -1138,6 +1238,7 @@ mod tests {
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
             FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -1220,6 +1321,7 @@ mod tests {
             coach_id: Some(AccountId::from_u128(3)),
             has_unanswered: true,
             has_pending_video: true,
+            has_unhandled_low_rated: false,
         };
         assert_eq!(listed(&use_case.execute(&all).await.unwrap()), [6]);
 
@@ -1242,6 +1344,197 @@ mod tests {
             use_case.pending_videos.asked.lock().unwrap().len(),
             asked,
             "ほかの条件で残る生徒がいなければ async-lesson に問い合わせない"
+        );
+    }
+
+    #[tokio::test]
+    async fn has_unhandled_low_rated_lists_only_students_with_an_unhandled_low_review_in_the_same_order()
+     {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
+            FixedClock(at(NOW)),
+        );
+        let query = ListStudentsQuery {
+            has_unhandled_low_rated: true,
+            ..ListStudentsQuery::default()
+        };
+
+        let students = use_case.execute(&query).await.unwrap();
+        // 登録の新しい順はそのまま。評価のない生徒 2・対応済みの低い評価だけの生徒 5 は載らない
+        assert_eq!(listed(&students), [6, 1]);
+        assert_eq!(
+            students[1].contract,
+            Some(MONTHLY_PLUS),
+            "絞り込んでも受講権を添える"
+        );
+        assert_eq!(
+            *use_case.low_rated_reviews.asked.lock().unwrap(),
+            [([1, 2, 5, 6].map(AccountId::from_u128).into(), at(NOW))],
+            "生徒の ID をまとめて、時計の今の時刻で 1 回だけ問い合わせる"
+        );
+        let ids: BTreeSet<AccountId> = [1, 6].map(AccountId::from_u128).into();
+        assert_eq!(
+            *use_case.contracts.asked.lock().unwrap(),
+            std::slice::from_ref(&ids),
+            "絞り込んだあとの生徒の ID だけを entitlement に問い合わせる"
+        );
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            std::slice::from_ref(&ids)
+        );
+        assert!(use_case.unanswered_threads.asked.lock().unwrap().is_empty());
+        assert!(use_case.pending_videos.asked.lock().unwrap().is_empty());
+
+        let not_narrowed = ListStudentsQuery {
+            has_unhandled_low_rated: false,
+            ..ListStudentsQuery::default()
+        };
+        assert_eq!(
+            listed(&use_case.execute(&not_narrowed).await.unwrap()),
+            [2, 5, 6, 1],
+            "false なら絞らない"
+        );
+        assert_eq!(use_case.low_rated_reviews.asked.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn has_unhandled_low_rated_is_combined_with_other_conditions() {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            DatedBookings,
+            FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
+            FakeLowRatedReviews::default(),
+            FixedClock(at(NOW)),
+        );
+        let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
+        let low_rated = |query: ListStudentsQuery| ListStudentsQuery {
+            has_unhandled_low_rated: true,
+            ..query
+        };
+
+        let by_sport = |sport| {
+            low_rated(ListStudentsQuery {
+                sport: Some(sport),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_sport(Sport::Golf)).await.unwrap()),
+            [6]
+        );
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Soccer))
+                .await
+                .unwrap()
+                .is_empty(),
+            "サッカーの生徒 5 の低い評価は対応済み"
+        );
+
+        let by_name = |name: &str| {
+            low_rated(ListStudentsQuery {
+                name: DisplayNameQuery::new(name).unwrap(),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_name("なまえ1")).await.unwrap()),
+            [1]
+        );
+
+        let with_coach = |coach: u128| {
+            low_rated(ListStudentsQuery {
+                coach_id: Some(AccountId::from_u128(coach)),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&with_coach(3)).await.unwrap()),
+            [6],
+            "コーチ 3 を予約した生徒 2・5・6 のうち未対応の低い評価をつけた生徒"
+        );
+
+        let not_booked_since = low_rated(ListStudentsQuery {
+            not_booked_since: Some(nov1),
+            ..ListStudentsQuery::default()
+        });
+        assert_eq!(
+            listed(&use_case.execute(&not_booked_since).await.unwrap()),
+            [6, 1]
+        );
+
+        let with_unanswered = low_rated(ListStudentsQuery {
+            has_unanswered: true,
+            ..ListStudentsQuery::default()
+        });
+        assert_eq!(
+            listed(&use_case.execute(&with_unanswered).await.unwrap()),
+            [6],
+            "返事を待っているメッセージのある生徒 2・6 のうち未対応の低い評価をつけた生徒"
+        );
+        assert_eq!(
+            use_case.low_rated_reviews.asked.lock().unwrap().last(),
+            Some(&([2, 6].map(AccountId::from_u128).into(), at(NOW))),
+            "ほかの条件で絞ったあとの生徒の ID だけを問い合わせる"
+        );
+
+        let with_pending_video = low_rated(ListStudentsQuery {
+            has_pending_video: true,
+            ..ListStudentsQuery::default()
+        });
+        assert_eq!(
+            listed(&use_case.execute(&with_pending_video).await.unwrap()),
+            [6],
+            "返却待ちの動画のある生徒 5・6 のうち未対応の低い評価をつけた生徒"
+        );
+
+        let all = ListStudentsQuery {
+            name: DisplayNameQuery::new("なまえ").unwrap(),
+            sport: Some(Sport::Golf),
+            not_booked_since: Some(nov1),
+            coach_id: Some(AccountId::from_u128(3)),
+            has_unanswered: true,
+            has_pending_video: true,
+            has_unhandled_low_rated: true,
+        };
+        assert_eq!(listed(&use_case.execute(&all).await.unwrap()), [6]);
+
+        let asked = use_case.low_rated_reviews.asked.lock().unwrap().len();
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Baseball))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(use_case.execute(&with_coach(9)).await.unwrap().is_empty());
+        let no_pending_video = low_rated(ListStudentsQuery {
+            sport: Some(Sport::Tennis),
+            has_pending_video: true,
+            ..ListStudentsQuery::default()
+        });
+        assert!(
+            use_case
+                .execute(&no_pending_video)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            use_case.low_rated_reviews.asked.lock().unwrap().len(),
+            asked,
+            "ほかの条件で残る生徒がいなければ review に問い合わせない"
         );
     }
 }

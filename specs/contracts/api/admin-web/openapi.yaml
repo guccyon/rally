@@ -31,7 +31,8 @@ info:
     本部は生徒の一覧（スポーツ・受講権の契約種別と契約プラン・最後に予約した時刻・直近 30 日の予約の数・登録した時刻）を読む（`listStudents`）。
     スポーツと、ある日以降に予約していないかで絞れる（しばらく予約していない生徒を拾う）。コーチが休業するときにそのコーチの
     生徒にだけ連絡できるよう、そのコーチを予約したことがある生徒にも絞れる。添削の返事を待っている生徒を見つけるため、
-    返却待ちの動画のある生徒にも絞れる（`has_pending_video`）。
+    返却待ちの動画のある生徒にも絞れる（`has_pending_video`）。フォローの要る生徒を見つけるため、本部が未対応の低い評価を
+    つけた生徒にも絞れる（`has_unhandled_low_rated`）。
     本部は問い合わせに答えるため、生徒 1 人の利用の様子（表示名・これからの予約・直近の受けたレッスン・キャンセルの件数・
     返信のないまま時間の過ぎたチャットのスレッドの数・その生徒がつけた直近の低い評価の数と未対応の数）を読む（`getStudentActivity`。
     「コーチから返事が来ない」という問い合わせには、返事のないメッセージの多さを確かめる。生徒から問い合わせを受けたときは、
@@ -2098,8 +2099,18 @@ paths:
           `PendingVideoReviewFilter` の既定の条件で、絞り込みの判定は `PendingVideoStudentFilter`）。付けないとき・`false` は絞らない。
           `true` / `false` でなければ 422 `validation_failed`。動画の数や ID は返さない（中身は `listPendingVideoReviews`、
           数は `getStudentActivity` で見る）
-        - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video` は組み合わせられ、付けたものをすべて
-          満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
+        - 未対応の低い評価をつけた生徒で絞る（任意）: `has_unhandled_low_rated=true` を付ければ、`listLowRatedLessonReviews` に
+          その生徒の `student_id` と `handled=false` だけを付けたとき（既定のしきい値と期間。コーチ・スポーツ・送った日付・
+          レッスンメニューで絞らない。評価されたコーチを問わない）に載る評価が 1 件以上ある生徒、つまり `getStudentActivity` の
+          `unhandled_low_rated_review_count` が 1 以上の生徒だけを返す（フォローの要る生徒を見つける）。数え方は
+          `getStudentActivity` の `unhandled_low_rated_review_count` と同じ 1 か所（点 `rating` が 2 以下で、照会した時刻（サーバーの
+          現在時刻）の 30 日前（含む）から照会した時刻（含む）までに送られた評価のうち、本部がまだ対応済みの印を付けていない
+          （`markLowRatedLessonReviewHandled` をしていない）もの。実装は backend の domain `LowRatedReviewCriteria` の 1 か所で、
+          数は `StudentLowRatedReviewCount`、絞り込みの判定は `UnhandledLowRatedStudentFilter`）。付けないとき・`false` は絞らない。
+          `true` / `false` でなければ 422 `validation_failed`。評価の数や ID・本文は返さない（中身は `listLowRatedLessonReviews`、
+          数は `getStudentActivity` で見る）
+        - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video`・`has_unhandled_low_rated` は
+          組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
         - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
         - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
           足す）。生徒がいなければ `students` は空の配列
@@ -2107,7 +2118,7 @@ paths:
 
         行動イベントは発火しない。
       tags: [identity, entitlement, scheduling]
-      x-context: [identity, profile, entitlement, scheduling, messaging, async-lesson]
+      x-context: [identity, profile, entitlement, scheduling, messaging, async-lesson, review]
       x-analytics-events: []
       parameters:
         - name: q
@@ -2156,6 +2167,15 @@ paths:
             `true` なら `listPendingVideoReviews` にその生徒の `student_id` だけを付けたときに載る動画（返却待ちの動画）が
             1 件以上ある（`getStudentActivity` の `pending_video_review_count` が 1 以上の）生徒だけを返す（付けないとき・
             `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+          schema:
+            type: boolean
+        - name: has_unhandled_low_rated
+          in: query
+          required: false
+          description: |
+            `true` なら `listLowRatedLessonReviews` にその生徒の `student_id` と `handled=false` だけを付けたときに載る評価
+            （本部が未対応の低い評価）が 1 件以上ある（`getStudentActivity` の `unhandled_low_rated_review_count` が 1 以上の）
+            生徒だけを返す（付けないとき・`false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
           schema:
             type: boolean
       responses:
