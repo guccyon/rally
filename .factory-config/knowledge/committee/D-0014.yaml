@@ -1,0 +1,87 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0014
+pr: https://github.com/guccyon/rally/pull/959
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0010 の ci_check の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件足しただけなので、過去の議決とも K-0003・K-0006 とも矛盾も重複もありません。
+  - 足した solution は kind・what・issue・at・decided_by の形が issue 934・935・944 の既存の solution
+    と同じで、README の「決定論で担保した知見も消さず solutions に残す」決まりに合っています。
+  - D-0010 は ci_check を Engine の basis を直したあとで配線するよう求めていますが、今回は .github/workflows/
+    を配線せず、正しい判定が通る場合を todo にして順序を README に従うと書いているので、その順序と食い違いません。
+  - 'issue 945 の分は D-0010 の ci_check の案の一部だけなので、配線と本物の PR #395 のイベント列での確認が入ったときに、この
+    solution を置き換えずに別の solution として足し、案がどこまで満たされたかを読めるようにしてください。'
+  - D-0010〜D-0012 で繰り返し求めた「差し替えもないのに」という条件の出どころと verified_at・review_by の更新はまだ C-0002
+    にも K-0004 にも入っていないので、statement を直す次の変更セットでそろえてください。
+  - 効き目はまだ確かめていないと書かれているので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の solution は issue 945 と committee:D-0010 を指していて、D-0010 の enforcement
+    の ci_check の案（check.mjs --events --pr --summary を配線し、PR #395 のイベント列で落ちることを確かめる）のうちイベントの経路の分にそのまま対応しているので、一次記録に辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - '確かめたのは Engine の形にしたイベント列であって本物の PR #395 のイベント列ではなく、正しい判定が通る場合も todo のままだと自分で書いているので、confidence
+    は hypothesis のままが妥当です。'
+  - '本物の PR #395 のイベント列で followup_without_defect によって落ち、Engine の basis を直したあとに正しい判定が通ることを確かめるまでは、confirmed
+    に上げないでください。'
+  - D-0010 と D-0012 で求めた「差し替えもないのに」という条件の出どころは今回も C-0002 にも K-0004 にも書かれていないので、次の変更セットで事例記録か
+    issue に根拠を残してください。
+  - 差分に出てくるのはツールのパス・イベント名・PR と issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0010 の ci_check の案のうちイベントの経路の分を
+    issue 945 として enforcement.solutions に足しただけなので、担保の観点では採ってよいです。
+  - 足した分は engine.test.mjs が check.mjs を ci_check と同じ呼び方で走らせて確かめるテストで、.github/workflows/
+    にはまだ配線されていないので、kind が ci_check でも今は外れても何も止まらない点に注意が要ります。
+  - K-0004 の solutions は 5 件とも「効き目はまだ確かめていない」を文で書いているだけで、配線済みか・効き目を確かめたかを機械で読めないため、INDEX.md
+    の担保の列が deterministic と出ても実際には半分しか効いていないことが見えません。
+  - basis_not_split の todo は node の test の todo なので、Engine の basis を直して通るようになっても何も知らせず、ci_check
+    を配線してよい合図を人が見落とす恐れがあります。
+  - '配線のあとに本物の PR #395 のイベント列で落ち、Engine を直したあとの正しい判定が通ることを確かめるまで、confidence は hypothesis
+    のままが妥当です。'
+  - 差分に出てくるのはツールのパス・イベント名・PR と issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0010 の ci_check の案の一部の扱いを
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - '足した solution は kind: ci_check ですが、中身は engine.test.mjs が check.mjs を ci_check
+    と同じ呼び方で呼ぶテストで、CI の配線は入っていないので、読み手が D-0010 の ci_check の案は済んだと取り違えないよう、what に「配線前の経路の確かめ」とはっきり書くか、kind
+    を test にするのがよいです。'
+  - 確かめに使ったイベント列は engine_harness.py が作った Engine の形のもので、本物の制御プレーンのイベント列ではないので、実際のイベントで抜けや順序の違いがあると組み方が見誤るという反例はまだ消えていません。
+  - D-0010 の反対で挙げた、前の head の採用欠陥を後の head で直したときや supervisor.judge_enqueued が抜けたときに
+    head の区切りを見誤る場合は、今回のテストでも確かめられていないので、次の変更セットでその場合を足してください。
+  - statement にない「差し替えもないのに」という条件の出どころは D-0004・D-0009・D-0010・D-0011 で求められたままで、まだ C-0002
+    にも K-0004 にも書かれていないので、根拠を残すか別の知見に分けてください。
+  - '効き目はまだ確かめていないと自分で書いているので confidence は hypothesis のままが妥当で、Engine の basis を直して配線したあと、本物の
+    PR #395 のイベント列で落ち、正当な差し戻しは通ることを確かめるまで上げないでください。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: 'definitions/knowledge.yaml の enforcement.solutions に wired（CI や呼び出しに配線済みか）と
+    verified（本物の記録で効き目を確かめたか）の真偽の項目を足し、core-gates/knowledge_check.py が INDEX.md の担保の列に未配線・未確認を出し、すべて
+    wired: false の知見を deterministic と表示しないようにする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/sendback-check/engine.test.mjs の basis_not_split の todo を、外れることを期待して通ったら落ちる形（期待した失敗）に変え、Engine
+    の basis を直して通るようになったら CI が落ちて todo を外し ci_check を配線する合図になるようにする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'D-0010 の案のとおり、Engine の basis を直して engine.test.mjs を CI に配線したあとで、.github/workflows/
+    に check.mjs --events --pr --summary を PR ごとに走らせる手順を足し、本物の PR #395 のイベント列で落ちることを確かめてから
+    solutions の verified を true にする。'
