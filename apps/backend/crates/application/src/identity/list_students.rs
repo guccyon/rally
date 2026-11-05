@@ -1,11 +1,14 @@
 use std::collections::BTreeSet;
 
-use domain::{identity::AccountId, messaging::UnansweredStudentFilter};
+use domain::{
+    async_lesson::PendingVideoStudentFilter, identity::AccountId,
+    messaging::UnansweredStudentFilter,
+};
 
 use super::{
     AccountRepository, ListStudentsQuery, StudentCoachBookingLookup, StudentContractLookup,
-    StudentLastBookingLookup, StudentOverview, StudentRecentBookingCountLookup,
-    StudentUnansweredMessageThreadCountsLookup,
+    StudentLastBookingLookup, StudentOverview, StudentPendingVideoReviewCountsLookup,
+    StudentRecentBookingCountLookup, StudentUnansweredMessageThreadCountsLookup,
 };
 use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 
@@ -20,19 +23,23 @@ use crate::{Unavailable, clock::Clock, scheduling::calendar_day};
 /// 始まり以降に予約を作っていない生徒・返事を待っているメッセージのある（時計の今の時刻で messaging に
 /// [`StudentUnansweredMessageThreadCountsLookup`] で問い合わせる。数え方は domain の
 /// [`domain::messaging::StudentUnansweredMessageThreadCount::tally`] で、判定は [`UnansweredStudentFilter`]。絞るときだけ
-/// 問い合わせる）生徒だけに絞る。絞っても並べ方は変えない。条件がなければすべての生徒。
+/// 問い合わせる）・返却待ちの動画のある（時計の今の時刻で async-lesson に [`StudentPendingVideoReviewCountsLookup`] で
+/// 問い合わせる。数え方は domain の [`domain::async_lesson::PendingVideoReviewFilter`] の既定の条件で、判定は
+/// [`PendingVideoStudentFilter`]。絞るときだけ問い合わせる）生徒だけに絞る。絞っても並べ方は変えない。条件がなければ
+/// すべての生徒。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListStudents<R, C, B, K, N, U, L> {
+pub struct ListStudents<R, C, B, K, N, U, P, L> {
     accounts: R,
     contracts: C,
     bookings: B,
     coach_bookings: K,
     recent_bookings: N,
     unanswered_threads: U,
+    pending_videos: P,
     clock: L,
 }
 
-impl<R, C, B, K, N, U, L> ListStudents<R, C, B, K, N, U, L>
+impl<R, C, B, K, N, U, P, L> ListStudents<R, C, B, K, N, U, P, L>
 where
     R: AccountRepository,
     C: StudentContractLookup,
@@ -40,8 +47,10 @@ where
     K: StudentCoachBookingLookup,
     N: StudentRecentBookingCountLookup,
     U: StudentUnansweredMessageThreadCountsLookup,
+    P: StudentPendingVideoReviewCountsLookup,
     L: Clock,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         accounts: R,
         contracts: C,
@@ -49,6 +58,7 @@ where
         coach_bookings: K,
         recent_bookings: N,
         unanswered_threads: U,
+        pending_videos: P,
         clock: L,
     ) -> Self {
         Self {
@@ -58,6 +68,7 @@ where
             coach_bookings,
             recent_bookings,
             unanswered_threads,
+            pending_videos,
             clock,
         }
     }
@@ -109,6 +120,23 @@ where
                 counts
                     .get(&account.id())
                     .is_some_and(|count| unanswered.matches(count))
+            });
+            if students.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
+        let pending_video = PendingVideoStudentFilter::new(query.has_pending_video);
+        // 絞らないときは async-lesson に問い合わせない（今までどおり）
+        if pending_video.has_pending_video() {
+            let student_ids: BTreeSet<AccountId> =
+                students.iter().map(|(account, _)| account.id()).collect();
+            let counts = self
+                .pending_videos
+                .find_pending_video_review_counts(&student_ids, self.clock.now())
+                .await?;
+            // ポートは聞いた生徒をすべて返す。返さなかった生徒は 0 件として扱う（載せない）
+            students.retain(|(account, _)| {
+                pending_video.matches(counts.get(&account.id()).copied().unwrap_or(0))
             });
             if students.is_empty() {
                 return Ok(Vec::new());
@@ -348,6 +376,34 @@ mod tests {
         thread
     }
 
+    /// 生徒 5 は返却待ちの動画が 2 件、生徒 6 は 1 件。聞いた生徒をすべて返す（ほかの生徒は 0 件）。問い合わせた ID と
+    /// 時刻を記録する。
+    #[derive(Default)]
+    struct FakePendingVideos {
+        asked: Mutex<Vec<(BTreeSet<AccountId>, SystemTime)>>,
+    }
+
+    impl StudentPendingVideoReviewCountsLookup for FakePendingVideos {
+        async fn find_pending_video_review_counts(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+            now: SystemTime,
+        ) -> Result<BTreeMap<AccountId, u32>, Unavailable> {
+            self.asked.lock().unwrap().push((student_ids.clone(), now));
+            Ok(student_ids
+                .iter()
+                .map(|&id| {
+                    let count = match id.as_u128() {
+                        5 => 2,
+                        6 => 1,
+                        _ => 0,
+                    };
+                    (id, count)
+                })
+                .collect())
+        }
+    }
+
     /// 取り出せない保存先の偽物。
     struct Broken;
 
@@ -387,6 +443,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
 
@@ -438,6 +495,10 @@ mod tests {
             use_case.unanswered_threads.asked.lock().unwrap().is_empty(),
             "返事を待っているメッセージで絞らないときは messaging に問い合わせない"
         );
+        assert!(
+            use_case.pending_videos.asked.lock().unwrap().is_empty(),
+            "返却待ちの動画で絞らないときは async-lesson に問い合わせない"
+        );
     }
 
     #[tokio::test]
@@ -473,6 +534,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
 
@@ -520,6 +582,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
 
@@ -544,6 +607,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         assert!(
@@ -586,6 +650,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let query = |sport| ListStudentsQuery {
@@ -640,6 +705,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -685,6 +751,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -694,6 +761,7 @@ mod tests {
             not_booked_since: Some(nov1),
             coach_id: None,
             has_unanswered: false,
+            has_pending_video: false,
         };
 
         assert_eq!(
@@ -725,6 +793,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let query = |coach: u128| ListStudentsQuery {
@@ -785,6 +854,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -859,6 +929,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let query = ListStudentsQuery {
@@ -911,6 +982,7 @@ mod tests {
             FakeCoachBookings::default(),
             FakeRecentBookings::default(),
             FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
             FixedClock(at(NOW)),
         );
         let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
@@ -975,6 +1047,7 @@ mod tests {
             not_booked_since: Some(nov1),
             coach_id: Some(AccountId::from_u128(3)),
             has_unanswered: true,
+            has_pending_video: false,
         };
         assert_eq!(listed(&use_case.execute(&all).await.unwrap()), [2]);
         assert_eq!(
@@ -996,6 +1069,179 @@ mod tests {
             use_case.unanswered_threads.asked.lock().unwrap().len(),
             asked,
             "ほかの条件で残る生徒がいなければ messaging に問い合わせない"
+        );
+    }
+
+    #[tokio::test]
+    async fn has_pending_video_lists_only_students_with_a_pending_video_in_the_same_order() {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            FakeBookings::default(),
+            FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
+            FixedClock(at(NOW)),
+        );
+        let query = ListStudentsQuery {
+            has_pending_video: true,
+            ..ListStudentsQuery::default()
+        };
+
+        let students = use_case.execute(&query).await.unwrap();
+        // 登録の新しい順（同じ時刻は ID の順）はそのまま。返却待ちのない生徒 1・2 は載らない
+        assert_eq!(listed(&students), [5, 6]);
+        assert_eq!(
+            students[1].recent_booking_count, 1,
+            "絞り込んでも直近の予約の数を添える"
+        );
+        assert_eq!(
+            *use_case.pending_videos.asked.lock().unwrap(),
+            [([1, 2, 5, 6].map(AccountId::from_u128).into(), at(NOW))],
+            "生徒の ID をまとめて、時計の今の時刻で 1 回だけ問い合わせる"
+        );
+        let ids: BTreeSet<AccountId> = [5, 6].map(AccountId::from_u128).into();
+        assert_eq!(
+            *use_case.contracts.asked.lock().unwrap(),
+            std::slice::from_ref(&ids),
+            "絞り込んだあとの生徒の ID だけを entitlement に問い合わせる"
+        );
+        assert_eq!(
+            *use_case.bookings.asked.lock().unwrap(),
+            std::slice::from_ref(&ids)
+        );
+        assert!(
+            use_case.unanswered_threads.asked.lock().unwrap().is_empty(),
+            "返事を待っているメッセージで絞らないときは messaging に問い合わせない"
+        );
+
+        let not_narrowed = ListStudentsQuery {
+            has_pending_video: false,
+            ..ListStudentsQuery::default()
+        };
+        assert_eq!(
+            listed(&use_case.execute(&not_narrowed).await.unwrap()),
+            [2, 5, 6, 1],
+            "false なら絞らない"
+        );
+        assert_eq!(use_case.pending_videos.asked.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn has_pending_video_is_combined_with_other_conditions() {
+        let use_case = ListStudents::new(
+            accounts().await,
+            FakeContracts::default(),
+            DatedBookings,
+            FakeCoachBookings::default(),
+            FakeRecentBookings::default(),
+            FakeUnansweredThreads::default(),
+            FakePendingVideos::default(),
+            FixedClock(at(NOW)),
+        );
+        let nov1 = time::Date::from_calendar_date(2026, time::Month::November, 1).unwrap();
+        let pending_video = |query: ListStudentsQuery| ListStudentsQuery {
+            has_pending_video: true,
+            ..query
+        };
+
+        let by_sport = |sport| {
+            pending_video(ListStudentsQuery {
+                sport: Some(sport),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_sport(Sport::Golf)).await.unwrap()),
+            [6]
+        );
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Swimming))
+                .await
+                .unwrap()
+                .is_empty(),
+            "水泳の生徒 2 は返却待ちの動画がない"
+        );
+
+        let by_name = |name: &str| {
+            pending_video(ListStudentsQuery {
+                name: DisplayNameQuery::new(name).unwrap(),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&by_name("なまえ5")).await.unwrap()),
+            [5]
+        );
+
+        let with_coach = |coach: u128| {
+            pending_video(ListStudentsQuery {
+                coach_id: Some(AccountId::from_u128(coach)),
+                ..ListStudentsQuery::default()
+            })
+        };
+        assert_eq!(
+            listed(&use_case.execute(&with_coach(3)).await.unwrap()),
+            [5, 6],
+            "コーチ 3 を予約した生徒 2・5・6 のうち返却待ちの動画のある生徒"
+        );
+
+        let not_booked_since = pending_video(ListStudentsQuery {
+            not_booked_since: Some(nov1),
+            ..ListStudentsQuery::default()
+        });
+        assert_eq!(
+            listed(&use_case.execute(&not_booked_since).await.unwrap()),
+            [6],
+            "生徒 5 は日付の始まり以降に予約している"
+        );
+
+        let with_unanswered = pending_video(ListStudentsQuery {
+            has_unanswered: true,
+            ..ListStudentsQuery::default()
+        });
+        assert_eq!(
+            listed(&use_case.execute(&with_unanswered).await.unwrap()),
+            [6],
+            "返事を待っているメッセージのある生徒 2・6 のうち返却待ちの動画のある生徒"
+        );
+        assert_eq!(
+            use_case.pending_videos.asked.lock().unwrap().last(),
+            Some(&([2, 6].map(AccountId::from_u128).into(), at(NOW))),
+            "ほかの条件で絞ったあとの生徒の ID だけを問い合わせる"
+        );
+
+        let all = ListStudentsQuery {
+            name: DisplayNameQuery::new("なまえ").unwrap(),
+            sport: Some(Sport::Golf),
+            not_booked_since: Some(nov1),
+            coach_id: Some(AccountId::from_u128(3)),
+            has_unanswered: true,
+            has_pending_video: true,
+        };
+        assert_eq!(listed(&use_case.execute(&all).await.unwrap()), [6]);
+
+        let asked = use_case.pending_videos.asked.lock().unwrap().len();
+        assert!(
+            use_case
+                .execute(&by_sport(Sport::Baseball))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(use_case.execute(&with_coach(9)).await.unwrap().is_empty());
+        let no_unanswered = pending_video(ListStudentsQuery {
+            sport: Some(Sport::Soccer),
+            has_unanswered: true,
+            ..ListStudentsQuery::default()
+        });
+        assert!(use_case.execute(&no_unanswered).await.unwrap().is_empty());
+        assert_eq!(
+            use_case.pending_videos.asked.lock().unwrap().len(),
+            asked,
+            "ほかの条件で残る生徒がいなければ async-lesson に問い合わせない"
         );
     }
 }

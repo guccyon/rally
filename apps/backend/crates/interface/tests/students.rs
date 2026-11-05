@@ -3,12 +3,14 @@
 //! 検索語 `q` を付ければ表示名に部分一致する生徒だけを返し、長すぎる `q` は 422。`sport`・`not_booked_since` を付ければ
 //! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。`coach_id` を付ければ
 //! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。
-//! `has_unanswered=true` を付ければ返信のないまま既定の時間の過ぎたスレッドのある生徒だけを返し、真偽でなければ 422。この操作はパスパラメータを受けないので、
+//! `has_unanswered=true` を付ければ返信のないまま既定の時間の過ぎたスレッドのある生徒だけを返し、真偽でなければ 422。
+//! `has_pending_video=true` を付ければ返却待ちの動画のある生徒だけを返し、真偽でなければ 422。この操作はパスパラメータを受けないので、
 //! 404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::AsyncLessonStudentVideoActivityLookup,
     entitlement::EntitlementStudentContractLookup,
     identity::{
         AccessToken, AccountRepository, InvalidToken, ListStudents, TokenClaims, TokenIssuer,
@@ -17,6 +19,7 @@ use application::{
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
         InMemoryEntitlementRepository, InMemoryMessageThreadRepository, InMemorySlotRepository,
+        InMemoryVideoRepository,
     },
     messaging::MessagingStudentUnansweredMessageThreadCountLookup,
     scheduling::{
@@ -30,6 +33,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
     catalog::Sport,
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
@@ -116,6 +120,7 @@ fn now() -> SystemTime {
 
 /// 本部・コーチと、生徒 3 人（登録は月額の生徒 → ゴルフの生徒 → 新しい生徒の順）。月額の生徒は 2 回予約した。
 /// 月額の生徒はコーチに返信をもらっていないスレッドが、ゴルフの生徒はコーチが返したスレッドがある（[`threads`]）。
+/// 月額の生徒と新しい生徒は返却待ちの動画が、ゴルフの生徒は返却済みの動画だけがある（[`videos`]）。
 /// 照会した時刻は [`now`]。
 async fn app() -> Router {
     app_at(now()).await
@@ -172,7 +177,7 @@ async fn app_at(now: SystemTime) -> Router {
             .await
             .unwrap();
     }
-    router(accounts, entitlements, bookings, threads(), now)
+    router(accounts, entitlements, bookings, threads(), videos(), now)
 }
 
 /// `id` の `student` とコーチのスレッドを開き、`exchange` の順に（生徒が送ったか, 送信時刻）で本文を送る。
@@ -201,11 +206,38 @@ fn threads() -> InMemoryMessageThreadRepository {
     ])
 }
 
+/// 月額の生徒が送った返却待ちの動画と、新しい生徒が [`now`] より後に送った返却待ちの動画（経過時間を問わず返却待ち）と、
+/// ゴルフの生徒が送りコーチが返した動画。
+fn videos() -> InMemoryVideoRepository {
+    let pending = |id: u128, student: AccountId, sport: Sport, hour: u64| {
+        Video::submit(VideoId::from_u128(id), student, COACH, sport, at(hour))
+    };
+    InMemoryVideoRepository::with_videos([
+        pending(40, MONTHLY_STUDENT, Sport::Tennis, 2),
+        pending(41, NEW_STUDENT, Sport::Swimming, 30),
+        Video::restore(
+            VideoId::from_u128(42),
+            GOLF_STUDENT,
+            COACH,
+            Sport::Golf,
+            at(2),
+            Some((
+                VideoReviewId::from_u128(142),
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                at(3),
+            )),
+            None,
+        )
+        .unwrap(),
+    ])
+}
+
 fn router(
     accounts: InMemoryAccountRepository,
     entitlements: InMemoryEntitlementRepository,
     bookings: InMemoryBookingRepository,
     threads: InMemoryMessageThreadRepository,
+    videos: InMemoryVideoRepository,
     now: SystemTime,
 ) -> Router {
     interface::students_router(
@@ -216,6 +248,7 @@ fn router(
             SchedulingStudentCoachBookingLookup::new(bookings.clone()),
             SchedulingStudentRecentBookingCountLookup::new(bookings),
             MessagingStudentUnansweredMessageThreadCountLookup::new(threads),
+            AsyncLessonStudentVideoActivityLookup::new(videos),
             FixedClock(now),
         ),
         FakeTokens,
@@ -361,6 +394,7 @@ async fn recent_booking_count_leaves_out_cancelled_bookings() {
         InMemoryEntitlementRepository::default(),
         bookings,
         InMemoryMessageThreadRepository::default(),
+        InMemoryVideoRepository::default(),
         now(),
     );
 
@@ -442,6 +476,7 @@ async fn q_matches_ascii_letters_case_insensitively() {
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         InMemoryMessageThreadRepository::default(),
+        InMemoryVideoRepository::default(),
         now(),
     );
     let (status, body) = list_students_at(&router, "/students?q=yamada", Some(HEADQUARTERS)).await;
@@ -658,6 +693,69 @@ async fn has_unanswered_that_is_not_a_boolean_is_422() {
 }
 
 #[tokio::test]
+async fn has_pending_video_lists_only_students_with_a_pending_video() {
+    let router = app().await;
+    for (uri, expected) in [
+        // 新しい生徒と月額の生徒に返却待ちの動画がある。ゴルフの生徒は返却済みだけ
+        ("/students?has_pending_video=true", vec!["5", "3"]),
+        // false は絞らない
+        ("/students?has_pending_video=false", vec!["5", "4", "3"]),
+        // ほかの条件と組み合わせられる
+        ("/students?has_pending_video=true&sport=tennis", vec!["3"]),
+        ("/students?has_pending_video=true&sport=golf", vec![]),
+        (
+            "/students?has_pending_video=true&q=%E3%81%AA%E3%81%BE%E3%81%885",
+            vec!["5"],
+        ),
+        (
+            "/students?has_pending_video=true&coach_id=00000000-0000-0000-0000-000000000002",
+            vec!["3"],
+        ),
+        (
+            "/students?has_pending_video=true&not_booked_since=2026-10-01",
+            vec!["5"],
+        ),
+        (
+            "/students?has_pending_video=true&has_unanswered=true",
+            vec!["3"],
+        ),
+        (
+            "/students?has_pending_video=true&has_unanswered=true&sport=swimming",
+            vec![],
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) = list_students_at(
+        &router,
+        "/students?has_pending_video=true",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body["students"][1]["last_booked_at"], "2026-10-01T12:00:00Z",
+        "絞り込んでも最後に予約した時刻を添える"
+    );
+}
+
+#[tokio::test]
+async fn has_pending_video_that_is_not_a_boolean_is_422() {
+    let router = app().await;
+    for uri in [
+        "/students?has_pending_video=yes",
+        "/students?has_pending_video=1",
+        "/students?has_pending_video=",
+        "/students?has_pending_video=TRUE",
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn unknown_sport_or_malformed_date_is_422() {
     let router = app().await;
     for (uri, message) in [
@@ -697,6 +795,7 @@ async fn no_students_is_an_empty_list() {
         InMemoryEntitlementRepository::default(),
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         InMemoryMessageThreadRepository::default(),
+        InMemoryVideoRepository::default(),
         now(),
     );
     let (status, body) = list_students(&router, Some(HEADQUARTERS)).await;
@@ -761,6 +860,7 @@ async fn lookup_failure_is_500_internal_without_the_reason() {
             MessagingStudentUnansweredMessageThreadCountLookup::new(
                 InMemoryMessageThreadRepository::default(),
             ),
+            AsyncLessonStudentVideoActivityLookup::new(InMemoryVideoRepository::default()),
             FixedClock(now()),
         ),
         FakeTokens,

@@ -3,7 +3,8 @@
 //! 一覧の契約種別と契約プラン・最後に予約した時刻・直近 30 日の予約の数に出ること、スポーツと最後に予約した日（日本時間）で絞れること、
 //! 予約したことのあるコーチで絞れること（キャンセルした予約も数える）、Postgres に保存したスレッドのうち返信のないまま
 //! 既定の時間の過ぎたものがある生徒だけに絞れること（`getStudentActivity` の `unanswered_message_thread_count` と揃う）、
-//! コーチ・生徒は 403 であることを確かめる。契約の形の
+//! Postgres に保存した動画のうち返却を待っているものがある生徒だけに絞れること（`getStudentActivity` の
+//! `pending_video_review_count` と揃う）、コーチ・生徒は 403 であることを確かめる。契約の形の
 //! 細かい検査は interface の `tests/students.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -561,6 +562,148 @@ async fn headquarters_lists_only_students_with_unanswered_message_threads_from_p
         &router,
         "GET",
         "/students?has_unanswered=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student` が student-app の `POST /videos` でコーチ `coach_id` に `sport` の動画を送り、動画の ID を返す。
+async fn submit_video(router: &Router, student: &str, coach_id: &str, sport: &str) -> String {
+    let (status, body) = send(
+        router,
+        "POST",
+        "/videos",
+        Some(student),
+        Some(json!({ "coach_id": coach_id, "sport": sport, "content_type": "video/mp4" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["video_id"].as_str().unwrap().to_string()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_students_with_pending_videos_from_postgres(pool: PgPool) {
+    let (coach_id, coach) =
+        register_with_id(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let (swim_coach_id, _) = register_with_id(
+        &pool,
+        "swim@example.com",
+        Role::Coach,
+        vec![Sport::Swimming],
+    )
+    .await;
+    let headquarters = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let clock = ManualClock::new(at(60));
+    let router = server::router_with_postgres(
+        pool.clone(),
+        clock.clone(),
+        RecordingAnalyticsSink::default(),
+    );
+
+    let (taro, taro_token) = register_student(&router, "taro@example.com", "tennis").await;
+    clock.set(at(120));
+    let (jiro, jiro_token) = register_student(&router, "jiro@example.com", "tennis").await;
+    clock.set(at(180));
+    let (hanako, hanako_token) = register_student(&router, "hanako@example.com", "swimming").await;
+    clock.set(at(240));
+    let (shiro, _) = register_student(&router, "shiro@example.com", "tennis").await;
+    // たろうだけがコーチの枠を予約した
+    book_new_slot(&router, &taro_token, &coach, 10).await;
+
+    // たろうは返却待ちが 1 本。じろうは送った動画をコーチが返した。はなこ（水泳）は返却待ちが 2 本。しろうは動画がない
+    clock.set(at(300));
+    submit_video(&router, &taro_token, &coach_id, "tennis").await;
+    let returned = submit_video(&router, &jiro_token, &coach_id, "tennis").await;
+    for _ in 0..2 {
+        submit_video(&router, &hanako_token, &swim_coach_id, "swimming").await;
+    }
+    clock.set(at(360));
+    let (status, body) = send(
+        &router,
+        "POST",
+        &format!("/videos/{returned}/review"),
+        Some(&coach),
+        Some(json!({ "comment": "フォロースルーを大きく" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // はなこは返事を待っているメッセージもある
+    let hour = Duration::from_secs(3600);
+    let start = at(30 * 24 * 3600);
+    thread(
+        &PgMessageThreadRepository::new(pool),
+        &hanako,
+        &swim_coach_id,
+        at(0),
+        &[(true, start - hour * 72)],
+    )
+    .await;
+    clock.set(start);
+
+    let listed = |body: &Value| -> Vec<String> {
+        body["students"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["student_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let get = |path: String| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {body}");
+            body
+        }
+    };
+
+    // 登録の新しい順はそのまま
+    let expected = vec![hanako.clone(), taro.clone()];
+    let body = get("/students?has_pending_video=true".to_string()).await;
+    assert_eq!(listed(&body), expected, "{body}");
+    // 生徒 1 人の利用の様子の返却待ちの数が 1 以上の生徒と同じ
+    for student in [&taro, &jiro, &hanako, &shiro] {
+        let activity = get(format!("/students/{student}/activity")).await;
+        assert_eq!(
+            activity["pending_video_review_count"].as_u64().unwrap() > 0,
+            expected.contains(student),
+            "{student}: {activity}"
+        );
+    }
+
+    let body = get("/students?has_pending_video=false".to_string()).await;
+    assert_eq!(
+        listed(&body),
+        [shiro, hanako.clone(), jiro, taro.clone()],
+        "false は絞らない"
+    );
+    let body = get("/students?has_pending_video=true&sport=tennis".to_string()).await;
+    assert_eq!(listed(&body), std::slice::from_ref(&taro));
+    let body = get(format!(
+        "/students?has_pending_video=true&coach_id={coach_id}"
+    ))
+    .await;
+    assert_eq!(listed(&body), std::slice::from_ref(&taro));
+    assert_eq!(body["students"][0]["contract_type"], "subscription");
+    let body =
+        get("/students?has_pending_video=true&not_booked_since=2026-10-05".to_string()).await;
+    assert_eq!(
+        listed(&body),
+        std::slice::from_ref(&hanako),
+        "日本時間の 2026-10-05 に予約したたろうは外れる"
+    );
+    let body = get("/students?has_pending_video=true&has_unanswered=true".to_string()).await;
+    assert_eq!(listed(&body), [hanako]);
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/students?has_pending_video=yes",
         Some(&headquarters),
         None,
     )

@@ -1,19 +1,26 @@
-use std::time::SystemTime;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::SystemTime,
+};
 
 use domain::{async_lesson::PendingVideoReviewFilter, identity::AccountId};
 
 use super::VideoRepository;
 use crate::{
     Unavailable,
-    identity::{StudentVideoActivity, StudentVideoActivityLookup},
+    identity::{
+        StudentPendingVideoReviewCountsLookup, StudentVideoActivity, StudentVideoActivityLookup,
+    },
 };
 
-/// identity の [`StudentVideoActivityLookup`] の async-lesson による実装。動画の保存先から生徒の動画を読むだけで、
-/// 何も変えない。
+/// identity の [`StudentVideoActivityLookup`] と [`StudentPendingVideoReviewCountsLookup`] の async-lesson による実装。
+/// 動画の保存先から生徒の動画を読むだけで、何も変えない。
 ///
 /// 送った動画の数は、生徒が送った動画すべての数（状態を問わず、期間で絞らない）。返却待ちの数は、そのうち
 /// 本部が見る返却待ちの一覧（[`super::ListPendingVideoReviews`]）と同じ判定（domain の
 /// [`PendingVideoReviewFilter`] の既定の条件。スポーツ・コーチ・経過時間で絞らない）に合う動画の数。
+/// 生徒 1 人なら生徒の動画を読み（[`VideoRepository::videos_of_student`]）、複数の生徒なら返却待ちの動画を 1 回で読み
+/// （[`VideoRepository::videos_awaiting_review`]。`ListPendingVideoReviews` と同じ読み方）生徒ごとに分けて、同じ判定で数える。
 #[derive(Debug, Clone)]
 pub struct AsyncLessonStudentVideoActivityLookup<V> {
     videos: V,
@@ -36,14 +43,44 @@ where
     ) -> Result<StudentVideoActivity, Unavailable> {
         let videos = self.videos.videos_of_student(student_id).await?;
         let pending = PendingVideoReviewFilter::default().count(&videos, now);
-        let count = |count: usize| {
-            u32::try_from(count).map_err(|_| Unavailable::new("動画の数が数えられる範囲を超えた"))
-        };
         Ok(StudentVideoActivity {
             submitted_count: count(videos.len())?,
             pending_review_count: count(pending)?,
         })
     }
+}
+
+impl<V> StudentPendingVideoReviewCountsLookup for AsyncLessonStudentVideoActivityLookup<V>
+where
+    V: VideoRepository,
+{
+    async fn find_pending_video_review_counts(
+        &self,
+        student_ids: &BTreeSet<AccountId>,
+        now: SystemTime,
+    ) -> Result<BTreeMap<AccountId, u32>, Unavailable> {
+        if student_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let mut videos_of: BTreeMap<AccountId, Vec<_>> =
+            student_ids.iter().map(|id| (*id, Vec::new())).collect();
+        for video in self.videos.videos_awaiting_review().await? {
+            if let Some(videos) = videos_of.get_mut(&video.student_id()) {
+                videos.push(video);
+            }
+        }
+        videos_of
+            .into_iter()
+            .map(|(student_id, videos)| {
+                let pending = PendingVideoReviewFilter::default().count(&videos, now);
+                Ok((student_id, count(pending)?))
+            })
+            .collect()
+    }
+}
+
+fn count(count: usize) -> Result<u32, Unavailable> {
+    u32::try_from(count).map_err(|_| Unavailable::new("動画の数が数えられる範囲を超えた"))
 }
 
 #[cfg(test)]
@@ -115,6 +152,49 @@ mod tests {
                 submitted_count: 5,
                 pending_review_count: 3,
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn counts_pending_videos_of_each_student_the_same_as_one_student() {
+        let lookup =
+            AsyncLessonStudentVideoActivityLookup::new(InMemoryVideoRepository::with_videos([
+                video(1, STUDENT, COACH, Sport::Tennis, 1, false),
+                video(2, STUDENT, OTHER_COACH, Sport::Golf, 99, false),
+                video(3, STUDENT, COACH, Sport::Tennis, 60, false),
+                video(4, STUDENT, COACH, Sport::Tennis, 2, true),
+                // 返却済みだけの生徒は 0 件
+                video(7, OTHER_STUDENT, COACH, Sport::Tennis, 1, true),
+                // 聞いていない生徒の動画は数えない
+                video(8, AccountId::from_u128(9), COACH, Sport::Tennis, 1, false),
+            ]));
+        let third = AccountId::from_u128(3);
+        let counts = lookup
+            .find_pending_video_review_counts(&[STUDENT, OTHER_STUDENT, third].into(), at(50))
+            .await
+            .unwrap();
+        assert_eq!(
+            counts,
+            [(STUDENT, 3), (OTHER_STUDENT, 0), (third, 0)].into(),
+            "聞いた生徒をすべて返す（動画のない生徒も 0 件）"
+        );
+        for student_id in [STUDENT, OTHER_STUDENT, third] {
+            assert_eq!(
+                counts[&student_id],
+                lookup
+                    .find_video_activity(student_id, at(50))
+                    .await
+                    .unwrap()
+                    .pending_review_count,
+                "生徒 1 人の利用の様子の返却待ちの数と同じ: {student_id:?}"
+            );
+        }
+        assert!(
+            lookup
+                .find_pending_video_review_counts(&BTreeSet::new(), at(50))
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 
