@@ -58,7 +58,7 @@ describe("コーチの今月と先月の実績", () => {
     expect(within(table).getByRole("columnheader", { name: "今月（2026年10月）" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "先月（2026年9月）" })).toBeInTheDocument();
     expect(rowsOf(table)).toEqual([
-      ["通話（同期レッスン）", "5 回", "4 回"],
+      ["ビデオ通話（同期レッスン）", "5 回", "4 回"],
       ["動画添削（非同期レッスン）", "2 回", "0 回"],
       ["評価の件数", "3 件", "2 件"],
       ["点の平均（1〜5）", "4.67", "4.00"],
@@ -84,7 +84,7 @@ describe("コーチの今月と先月の実績", () => {
 
     const table = await screen.findByRole("table", { name: "今月と先月の実績" });
     expect(rowsOf(table)).toEqual([
-      ["通話（同期レッスン）", "0 回", "0 回"],
+      ["ビデオ通話（同期レッスン）", "0 回", "0 回"],
       ["動画添削（非同期レッスン）", "0 回", "0 回"],
       ["評価の件数", "0 件", "0 件"],
       ["点の平均（1〜5）", "評価はまだありません", "評価はまだありません"],
@@ -139,7 +139,7 @@ describe("コーチの今月と先月の実績", () => {
 
     const region = screen.getByRole("region", { name: "対応待ち" });
     const table = await within(region).findByRole("table", { name: "今月と先月の実績" });
-    expect(rowsOf(table)[0]).toEqual(["通話（同期レッスン）", "5 回", "4 回"]);
+    expect(rowsOf(table)[0]).toEqual(["ビデオ通話（同期レッスン）", "5 回", "4 回"]);
     // 実績は対応待ちの一覧より上に出す。
     const tasksHeading = await within(region).findByRole("heading", { name: /添削待ちの動画/ });
     expect(table.compareDocumentPosition(tasksHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

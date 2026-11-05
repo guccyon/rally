@@ -73,6 +73,7 @@ glossary_mapping:   # 画面の語は specs/glossary.yaml の ja を使う。言
     booking: 予約（状態は 確定待ち・確定済み・キャンセル済み）
     slot: スロット（状態は 公開中・予約済み・終了）
     live_lesson: 同期レッスン（画面では「ビデオ通話」と添えてよい）
+    live_lesson_session: "通話セッション（画面では「ビデオ通話」。admin-web の本部の画面で「ライブレッスン」「通話」とは書かない。#898）"
     async_lesson: 非同期レッスン（画面では「動画添削」と添えてよい）
     video_review: 動画添削
     lesson_completion: 完了したレッスン（一覧の題は「受けたレッスン」）

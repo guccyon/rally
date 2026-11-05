@@ -10,19 +10,19 @@ import { Section } from "@/components/ui/Section";
 import { BookingStudentFilter } from "./BookingStudentFilter";
 import { LiveSessionRecordList } from "./LiveSessionRecordList";
 
-/** 「ライブレッスンの記録」の画面の URL。 */
+/** 「ビデオ通話の記録」の画面の URL。 */
 export const LIVE_SESSION_RECORDS_PATH = "/headquarters/live-sessions";
 
 /** URL で生徒を絞った状態にするクエリの名前（`?student_id=`）。 */
 export const LIVE_SESSION_RECORDS_STUDENT_QUERY = "student_id";
 
-/** その生徒で絞った「ライブレッスンの記録」の画面の URL。 */
+/** その生徒で絞った「ビデオ通話の記録」の画面の URL。 */
 export function studentLiveSessionRecordsPath(studentId: string): string {
   return `${LIVE_SESSION_RECORDS_PATH}?${new URLSearchParams({ [LIVE_SESSION_RECORDS_STUDENT_QUERY]: studentId })}`;
 }
 
 /**
- * 本部の画面: 問い合わせを受けたときに、ライブレッスン（通話セッション）がいつ始まりいつ終わったかを期間・コーチ・スポーツ・レッスンメニューで引く。
+ * 本部の画面: 問い合わせを受けたときに、ビデオ通話（通話セッション）がいつ始まりいつ終わったかを期間・コーチ・スポーツ・レッスンメニューで引く。
  * `studentId`（URL の `?student_id=`）があれば、その生徒の記録だけに絞った状態で開き、一覧の上にその生徒の名前を出す。
  * 「すべての生徒の記録を見る」で生徒の絞り込みを外す（予約の画面の生徒の絞り込みと同じ形）。
  */
@@ -40,7 +40,7 @@ export function LiveSessionRecordsHome({ token, studentId }: { token: string; st
           </Link>
         )}
       </p>
-      <Section title="ライブレッスンの記録">
+      <Section title="ビデオ通話の記録">
         {studentId !== undefined && <BookingStudentFilter key={studentId} api={api} studentId={studentId} />}
         <LiveSessionRecordList key={studentId} api={api} studentId={studentId} />
       </Section>

@@ -72,7 +72,7 @@ describe("本部のコーチの様子", () => {
     const table = screen.getByRole("table", { name: "今月と先月の実績" });
     expect(within(table).getByRole("columnheader", { name: "今月（2026年11月）" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "先月（2026年10月）" })).toBeInTheDocument();
-    const live = within(table).getByRole("row", { name: /^通話（同期レッスン）/ });
+    const live = within(table).getByRole("row", { name: /^ビデオ通話（同期レッスン）/ });
     expect(within(live).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["3 回", "7 回"]);
     const asyncRow = within(table).getByRole("row", { name: /^動画添削（非同期レッスン）/ });
     expect(within(asyncRow).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["2 回", "1 回"]);

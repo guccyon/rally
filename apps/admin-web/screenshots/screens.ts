@@ -578,44 +578,44 @@ export const SCREENS: Screen[] = [
   },
   {
     id: "hq-overdue-live-sessions",
-    title: "本部: 終わっていない通話",
+    title: "本部: 終わっていないビデオ通話",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions",
   },
   {
     id: "hq-overdue-live-sessions-by-coach",
-    title: "本部: 終わっていない通話（コーチで絞る）",
+    title: "本部: 終わっていないビデオ通話（コーチで絞る）",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions?coach_id=22222222-2222-4222-8222-222222222222",
     open: async (page) => {
       await page.getByRole("combobox", { name: "コーチ" }).and(page.locator(":enabled")).waitFor();
-      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+      await page.getByRole("table", { name: "終わっていないビデオ通話の一覧" }).waitFor();
     },
   },
   {
     id: "hq-overdue-live-sessions-by-sport",
-    title: "本部: 終わっていない通話（スポーツで絞る）",
+    title: "本部: 終わっていないビデオ通話（スポーツで絞る）",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions?sport=tennis",
     open: async (page) => {
       await page.getByRole("combobox", { name: "スポーツ" }).and(page.locator(":enabled")).waitFor();
-      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+      await page.getByRole("table", { name: "終わっていないビデオ通話の一覧" }).waitFor();
     },
   },
   {
     id: "hq-overdue-live-sessions-by-coach-empty",
-    title: "本部: 終わっていない通話（コーチで絞って 0 件）",
+    title: "本部: 終わっていないビデオ通話（コーチで絞って 0 件）",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions",
     open: async (page) => {
       // 選択肢（コーチの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
       await page.getByRole("combobox", { name: "コーチ" }).selectOption({ label: "高橋 コーチ" });
-      await page.getByText("このコーチの終わっていない通話はありません").waitFor();
+      await page.getByText("このコーチの終わっていないビデオ通話はありません").waitFor();
     },
   },
   {
     id: "hq-overdue-live-sessions-invalid-coach",
-    title: "本部: 終わっていない通話（コーチの指定が正しくない 422）",
+    title: "本部: 終わっていないビデオ通話（コーチの指定が正しくない 422）",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions?coach_id=not-a-uuid",
     open: async (page) => {
@@ -624,18 +624,18 @@ export const SCREENS: Screen[] = [
   },
   {
     id: "hq-overdue-live-sessions-by-student",
-    title: "本部: 生徒 1 人の終わっていない通話",
+    title: "本部: 生徒 1 人の終わっていないビデオ通話",
     role: "headquarters",
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
     open: async (page) => {
-      await page.getByRole("link", { name: "この生徒の終わっていない通話を見る" }).click();
+      await page.getByRole("link", { name: "この生徒の終わっていないビデオ通話を見る" }).click();
       await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
-      await page.getByRole("table", { name: "終わっていない通話の一覧" }).waitFor();
+      await page.getByRole("table", { name: "終わっていないビデオ通話の一覧" }).waitFor();
     },
   },
   {
     id: "hq-overdue-live-sessions-invalid-student",
-    title: "本部: 終わっていない通話（生徒の指定が正しくない 422）",
+    title: "本部: 終わっていないビデオ通話（生徒の指定が正しくない 422）",
     role: "headquarters",
     path: "/headquarters/overdue-live-sessions?student_id=not-a-uuid",
     open: async (page) => {
@@ -644,24 +644,24 @@ export const SCREENS: Screen[] = [
   },
   {
     id: "hq-live-sessions",
-    title: "本部: ライブレッスンの記録",
+    title: "本部: ビデオ通話の記録",
     role: "headquarters",
     path: "/headquarters/live-sessions",
   },
   {
     id: "hq-live-sessions-by-student",
-    title: "本部: 生徒 1 人のライブレッスンの記録",
+    title: "本部: 生徒 1 人のビデオ通話の記録",
     role: "headquarters",
     path: "/headquarters/students/activity?student_id=11111111-1111-4111-8111-111111111111",
     open: async (page) => {
-      await page.getByRole("link", { name: "この生徒のライブレッスンの記録を見る" }).click();
+      await page.getByRole("link", { name: "この生徒のビデオ通話の記録を見る" }).click();
       await page.getByText(/^生徒で絞っています: 山田 花子$/).waitFor();
-      await page.getByRole("table", { name: "ライブレッスンの記録の一覧" }).waitFor();
+      await page.getByRole("table", { name: "ビデオ通話の記録の一覧" }).waitFor();
     },
   },
   {
     id: "hq-live-sessions-by-sport",
-    title: "本部: スポーツで絞ったライブレッスンの記録",
+    title: "本部: スポーツで絞ったビデオ通話の記録",
     role: "headquarters",
     path: "/headquarters/live-sessions",
     open: async (page) => {
@@ -672,18 +672,18 @@ export const SCREENS: Screen[] = [
   },
   {
     id: "hq-live-sessions-empty",
-    title: "本部: ライブレッスンの記録（0 件）",
+    title: "本部: ビデオ通話の記録（0 件）",
     role: "headquarters",
     path: "/headquarters/live-sessions",
     open: async (page) => {
       await page.getByLabel("コーチ").selectOption({ label: "高橋 コーチ" });
       await page.getByRole("button", { name: "この条件で見る" }).click();
-      await page.getByText("この条件の通話の記録はありません").waitFor();
+      await page.getByText("この条件のビデオ通話の記録はありません").waitFor();
     },
   },
   {
     id: "hq-live-sessions-by-lesson-menu",
-    title: "本部: ライブレッスンの記録（レッスンメニューで絞って 0 件のとき）",
+    title: "本部: ビデオ通話の記録（レッスンメニューで絞って 0 件のとき）",
     role: "headquarters",
     path: "/headquarters/live-sessions",
     open: async (page) => {
@@ -691,7 +691,7 @@ export const SCREENS: Screen[] = [
       await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
       await page.getByRole("button", { name: "この条件で見る" }).click();
       await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
-      await page.getByText("このレッスンメニューの通話の記録はありません").waitFor();
+      await page.getByText("このレッスンメニューのビデオ通話の記録はありません").waitFor();
     },
   },
   { id: "hq-announcements", title: "本部: お知らせ", role: "headquarters", path: "/headquarters/announcements" },

@@ -51,14 +51,14 @@ export function HeadquartersHome() {
           キャンセルされた予約を見る
         </Link>
       </Section>
-      <Section title="終わっていない通話">
+      <Section title="終わっていないビデオ通話">
         <Link href="/headquarters/overdue-live-sessions" className="text-primary underline">
-          時間の過ぎた通話を見る
+          時間の過ぎたビデオ通話を見る
         </Link>
       </Section>
-      <Section title="ライブレッスンの記録">
+      <Section title="ビデオ通話の記録">
         <Link href="/headquarters/live-sessions" className="text-primary underline">
-          通話の開始と終了の記録を見る
+          ビデオ通話の開始と終了の記録を見る
         </Link>
       </Section>
       <Section title="お知らせ">

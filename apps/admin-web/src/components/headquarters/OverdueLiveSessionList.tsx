@@ -24,7 +24,7 @@ type CoachesState =
 
 /**
  * URL に残す絞り込みの条件。`sport` はスポーツ（空ならすべてのスポーツ）、`coachId` はコーチの ID（空ならすべてのコーチ）、
- * `studentId` は生徒の ID（空ならすべての生徒）。生徒はライブレッスンの記録と同じく絞り込みの欄では選ばず、URL のクエリ
+ * `studentId` は生徒の ID（空ならすべての生徒）。生徒はビデオ通話の記録と同じく絞り込みの欄では選ばず、URL のクエリ
  * （生徒の利用の様子の画面からの入口）で受け取る。
  */
 export type OverdueLiveSessionFilter = { sport: Sport | ""; coachId: string; studentId: string };
@@ -62,10 +62,10 @@ const VALIDATION_HINT_WITH_STUDENT = `${VALIDATION_HINT}生徒は生徒の一覧
  * 絞っていれば「条件に合う」と言う（返却待ちの動画添削と同じ）。
  */
 function emptyMessageOf({ sport, coachId, studentId }: Filter): string {
-  if (sport !== "" || (coachId !== "" && studentId !== "")) return "条件に合う終わっていない通話はありません";
-  if (coachId !== "") return "このコーチの終わっていない通話はありません";
-  if (studentId !== "") return "この生徒の終わっていない通話はありません";
-  return "終わっていない通話はありません";
+  if (sport !== "" || (coachId !== "" && studentId !== "")) return "条件に合う終わっていないビデオ通話はありません";
+  if (coachId !== "") return "このコーチの終わっていないビデオ通話はありません";
+  if (studentId !== "") return "この生徒の終わっていないビデオ通話はありません";
+  return "終わっていないビデオ通話はありません";
 }
 
 function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filter: Filter): string {
@@ -74,7 +74,7 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filte
 }
 
 /**
- * 本部の「終わっていない通話」。始まったまま終了の記録がない通話セッションの一覧（listOverdueLiveLessonSessions）を、
+ * 本部の「終わっていないビデオ通話」。始まったまま終了の記録がない通話セッションの一覧（listOverdueLiveLessonSessions）を、
  * 開いたときと経過時間の下限・スポーツ・コーチを変えるたびに読み、コーチ・生徒・開始の日時・開始からの経過を出す。対象・並べ方は契約の
  * 正本どおり API が済ませているので、返った順（開始の古い順）のまま出し、使った下限は応答の値を添える。
  * スポーツの絞り込みは返却待ちの動画添削（PendingVideoReviewList）と同じ選択欄で、API の `sport` に渡す。
@@ -125,7 +125,7 @@ export function OverdueLiveSessionList({
     };
   }, [fetchSessions]);
 
-  // コーチの選択肢。読めなくても通話は経過時間とスポーツで引けるようにし、コーチの絞り込みだけを使えなくする。
+  // コーチの選択肢。読めなくてもビデオ通話は経過時間とスポーツで引けるようにし、コーチの絞り込みだけを使えなくする。
   useEffect(() => {
     let active = true;
     void api.listCoaches().then((response) => {
@@ -160,7 +160,7 @@ export function OverdueLiveSessionList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        始まったまま終了の記録がない{filter.studentId === "" ? "" : "この生徒の"}通話を、開始の古い順に見られます。終了し忘れや通話の切断で残ったものを見つけるための一覧です。スポーツを選ぶとそのスポーツのコーチの通話だけに、コーチを選ぶとそのコーチの通話だけに絞ります。
+        始まったまま終了の記録がない{filter.studentId === "" ? "" : "この生徒の"}ビデオ通話を、開始の古い順に見られます。終了し忘れやビデオ通話の切断で残ったものを見つけるための一覧です。スポーツを選ぶとそのスポーツのコーチのビデオ通話だけに、コーチを選ぶとそのコーチのビデオ通話だけに絞ります。
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="block">
@@ -222,14 +222,14 @@ export function OverdueLiveSessionList({
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
         <p className="text-sm text-text-muted">
-          開始から {state.list.older_than_hours} 時間以上たって、まだ終わっていない通話です。経過は読み込んだ時点のものです。
+          開始から {state.list.older_than_hours} 時間以上たって、まだ終わっていないビデオ通話です。経過は読み込んだ時点のものです。
         </p>
       )}
       {state.kind === "loaded" && state.list.sessions.length === 0 && (
         <p className="text-sm">{emptyMessageOf(filter)}</p>
       )}
       {state.kind === "loaded" && state.list.sessions.length > 0 && (
-        <table aria-label="終わっていない通話の一覧" className="w-full text-left text-sm">
+        <table aria-label="終わっていないビデオ通話の一覧" className="w-full text-left text-sm">
           <thead>
             <tr>
               <th className="py-1">コーチ</th>

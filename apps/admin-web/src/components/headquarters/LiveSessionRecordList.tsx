@@ -59,9 +59,9 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>, stude
  */
 function emptyMessageOf({ coachId, sport, lessonMenuId }: Filter, studentId: string | undefined): string {
   if (lessonMenuId !== "" && coachId === "" && sport === "" && studentId === undefined) {
-    return "このレッスンメニューの通話の記録はありません";
+    return "このレッスンメニューのビデオ通話の記録はありません";
   }
-  return "この条件の通話の記録はありません";
+  return "この条件のビデオ通話の記録はありません";
 }
 
 /** 「終了」の欄: 終了の日時と長さ（分）。終了の記録がなければ「終了の記録なし」。 */
@@ -72,7 +72,7 @@ function endLabel(session: Schemas["LiveLessonSessionRecord"]): string {
 }
 
 /**
- * 本部の「ライブレッスンの記録」。開始した日付（日本時間）の期間と任意のコーチ・スポーツ・レッスンメニューで、通話セッションの記録
+ * 本部の「ビデオ通話の記録」。開始した日付（日本時間）の期間と任意のコーチ・スポーツ・レッスンメニューで、通話セッションの記録
  * （listLiveLessonSessions）を読み、コーチ・生徒・開始・終了を出す。既定の期間は今日までの 7 日でコーチ・スポーツ・レッスンメニューはすべて。
  * 対象・並べ方は契約の正本どおり API が済ませているので、返った順（開始の新しい順）のまま出し、使った期間は応答の値を出す。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。
@@ -185,7 +185,7 @@ export function LiveSessionRecordList({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        {`通話を開始した日付（日本時間）とコーチ・スポーツ・レッスンメニューで、${studentId === undefined ? "" : "この生徒の"}ライブレッスンがいつ始まりいつ終わったかを開始の新しい順に見られます。期間は 31 日まで選べます。`}
+        {`開始した日付（日本時間）とコーチ・スポーツ・レッスンメニューで、${studentId === undefined ? "" : "この生徒の"}ビデオ通話がいつ始まりいつ終わったかを開始の新しい順に見られます。期間は 31 日まで選べます。`}
       </p>
       <form className="flex flex-wrap items-end gap-4" onSubmit={(event) => void submit(event)}>
         <label className="block">
@@ -296,7 +296,7 @@ function LoadedSessions({
       </p>
       {list.sessions.length === 0 && <p className="text-sm">{emptyMessage}</p>}
       {list.sessions.length > 0 && (
-        <table aria-label="ライブレッスンの記録の一覧" className="w-full text-left text-sm">
+        <table aria-label="ビデオ通話の記録の一覧" className="w-full text-left text-sm">
           <thead>
             <tr>
               <th className="py-1">コーチ</th>

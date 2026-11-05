@@ -97,7 +97,7 @@ export function coachNameQueryFailureMessage(response: Extract<Result<unknown>, 
 
 /** 「直近 30 日のレッスン」の数え方（契約の `listCoaches` の `recent_lesson_count` の説明を短くしたもの）。 */
 const RECENT_LESSON_COUNT_NOTE =
-  "直近 30 日のレッスンは、今日までの 30 日に完了した通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
+  "直近 30 日のレッスンは、今日までの 30 日に完了したビデオ通話（同期レッスン）と動画添削（非同期レッスン）の合計です。";
 
 /** 絞り込みの選択肢（契約の値）。URL のクエリの確かめにも使うので、凍結して公開する。 */
 export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(

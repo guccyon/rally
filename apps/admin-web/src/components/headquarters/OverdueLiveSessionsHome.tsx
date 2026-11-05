@@ -12,7 +12,7 @@ import { BookingStudentFilter } from "./BookingStudentFilter";
 import { OverdueLiveSessionList, type OverdueLiveSessionFilter } from "./OverdueLiveSessionList";
 import { SPORTS } from "./PendingVideoReviewList";
 
-/** 「終わっていない通話」の画面の URL。 */
+/** 「終わっていないビデオ通話」の画面の URL。 */
 export const OVERDUE_LIVE_SESSIONS_PATH = "/headquarters/overdue-live-sessions";
 
 /**
@@ -25,7 +25,7 @@ export const OVERDUE_LIVE_SESSIONS_STUDENT_QUERY = "student_id";
 
 const NO_FILTER: OverdueLiveSessionFilter = { sport: "", coachId: "", studentId: "" };
 
-/** 絞り込みを残した「終わっていない通話」の画面の URL。「すべて」（空）の条件はクエリに出さない。 */
+/** 絞り込みを残した「終わっていないビデオ通話」の画面の URL。「すべて」（空）の条件はクエリに出さない。 */
 export function overdueLiveSessionsPath(filter: OverdueLiveSessionFilter): string {
   const query = new URLSearchParams();
   if (filter.sport !== "") query.set(OVERDUE_LIVE_SESSIONS_SPORT_QUERY, filter.sport);
@@ -35,7 +35,7 @@ export function overdueLiveSessionsPath(filter: OverdueLiveSessionFilter): strin
   return search === "" ? OVERDUE_LIVE_SESSIONS_PATH : `${OVERDUE_LIVE_SESSIONS_PATH}?${search}`;
 }
 
-/** その生徒で絞った「終わっていない通話」の画面の URL。 */
+/** その生徒で絞った「終わっていないビデオ通話」の画面の URL。 */
 export function studentOverdueLiveSessionsPath(studentId: string): string {
   return overdueLiveSessionsPath({ ...NO_FILTER, studentId });
 }
@@ -55,9 +55,9 @@ export function overdueLiveSessionFilterFrom(params: Pick<URLSearchParams, "get"
 
 /**
  * 本部の画面: 始まったまま終了の記録がなく、時間の過ぎた通話セッションを見る。スポーツ・コーチ・生徒の絞り込みは URL のクエリ
- * （`?sport=&coach_id=&student_id=`）に残し、再読み込み・共有で同じ条件の通話を開く。
- * 生徒（`?student_id=`）で絞っていれば、ライブレッスンの記録と同じく一覧の上にその生徒の名前を出し、
- * 「すべての生徒の終わっていない通話を見る」で生徒の絞り込みだけを外す（スポーツ・コーチはいまの条件のまま残る）。
+ * （`?sport=&coach_id=&student_id=`）に残し、再読み込み・共有で同じ条件のビデオ通話を開く。
+ * 生徒（`?student_id=`）で絞っていれば、ビデオ通話の記録と同じく一覧の上にその生徒の名前を出し、
+ * 「すべての生徒の終わっていないビデオ通話を見る」で生徒の絞り込みだけを外す（スポーツ・コーチはいまの条件のまま残る）。
  */
 export function OverdueLiveSessionsHome({
   token,
@@ -87,11 +87,11 @@ export function OverdueLiveSessionsHome({
         </Link>
         {studentId !== "" && (
           <Link href={overdueLiveSessionsPath({ ...applied, studentId: "" })} className="text-primary underline">
-            すべての生徒の終わっていない通話を見る
+            すべての生徒の終わっていないビデオ通話を見る
           </Link>
         )}
       </p>
-      <Section title="終わっていない通話">
+      <Section title="終わっていないビデオ通話">
         {studentId !== "" && <BookingStudentFilter key={studentId} api={api} studentId={studentId} />}
         <OverdueLiveSessionList api={api} initialFilter={initialFilter} onFilterChange={keepInUrl} />
       </Section>

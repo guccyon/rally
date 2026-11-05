@@ -276,7 +276,7 @@ function lowReview(
 const SUZUKI_COACH = { id: COACH_ID, name: "鈴木 コーチ" };
 const TAKAHASHI_COACH = { id: COACH_ID_2, name: "高橋 コーチ" };
 
-// 終わっていない通話。経過は NOW 時点の値（開始の古い順）。名前の引けないコーチの行を 1 つ混ぜる。
+// 終わっていないビデオ通話。経過は NOW 時点の値（開始の古い順）。名前の引けないコーチの行を 1 つ混ぜる。
 const OVERDUE_SESSIONS: Schemas["OverdueLiveLessonSession"][] = [
   {
     session_id: id("5555", 1),
@@ -336,7 +336,7 @@ const NOTIFICATIONS: Schemas["Notification"][] = [
 
 /** 契約のパス（/api を除く）と、決まった応答。パスの {…} は 1 つの区切りに合う。 */
 /** `query` があれば、そのクエリの値がすべて一致するときだけ使う（同じパスの `query` のない応答より前に置く）。 */
-// ライブレッスンの記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
+// ビデオ通話の記録。開始の新しい順。通話中（終了の記録なし）の行と、名前の引けないコーチの行を混ぜる。
 // 既定の期間（今日までの 7 日）の応答。高橋 コーチで絞ったときは 0 件を返す（0 件の表示を撮る）。
 // 山田 花子で絞ったとき（生徒の利用の様子から開く）は山田 花子の行だけを返す。
 const LIVE_SESSION_RECORDS: Schemas["LiveLessonSessionRecord"][] = [
