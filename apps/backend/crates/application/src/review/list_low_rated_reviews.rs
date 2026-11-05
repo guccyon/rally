@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use domain::{identity::AccountId, review::LowRatedReviewCriteria};
+use domain::{
+    identity::AccountId,
+    review::{LowRatedReviewCriteria, ReviewLessonMenu},
+};
 
 use super::{
     LessonReviewRepository, ListLowRatedReviewsError, ListLowRatedReviewsQuery, LowRatedReviewList,
@@ -23,7 +26,9 @@ use crate::{clock::Clock, scheduling::calendar_day};
 /// 完了したレッスンのスポーツ（[`ReviewedLessonSportLookup`]。レッスンの元の枠・動画のスポーツ）がそれと同じ評価だけを残す
 /// （スポーツが引けない評価は残さない）。日付 `from`・`to` のどちらかを指定されたら、送った日付（日本時間。
 /// [`calendar_day`] で区切る）が `from` から `to` まで（両端を含む）の評価だけを残す（規則は domain の
-/// [`LessonReview::matches_period`](domain::review::LessonReview::matches_period)）。直近の期間（30 日）の外は期間を
+/// [`LessonReview::matches_period`](domain::review::LessonReview::matches_period)）。レッスンメニューを指定されたら、評価に
+/// 添えるメニュー（[`ReviewedLessonMenuLookup`]）がそれと同じ評価だけを残す（メニューのない評価・ないメニューなら残さない。
+/// 規則は domain の [`ReviewLessonMenu::matches_lesson_menu`]）。直近の期間（30 日）の外は期間を
 /// 指定しても載らない。`from` だけなら `from` から、`to` だけなら `to` までの 7 日で、期間の規則（`to` が `from` より前で
 /// ない・31 日まで）は本部が送ったお知らせの一覧（[`crate::notification::ListAnnouncements`]）と同じ
 /// [`calendar_day::period_ending`]・domain の [`domain::scheduling::BookingPeriod`]。各評価には、評価した完了した
@@ -69,8 +74,8 @@ where
     /// `query` の `sport` があれば、そのスポーツのレッスンの評価だけ。なければスポーツを問わない。`handled` があれば、本部の
     /// 対応済みの印があるか（`true`）・ないか（`false`）がそれと同じ評価だけ。なければ印を問わない。`coach_id` があれば、
     /// そのコーチが評価された評価だけ。なければコーチを問わない。`student_id` があれば、その生徒が評価した評価だけ。
-    /// なければ生徒を問わない。`from`・`to` のどちらかがあれば、送った日付がその期間の
-    /// 評価だけ。両方なければ期間で絞らない。期間が規則を満たさなければ [`ListLowRatedReviewsError::Invalid`]（評価は読まない）。
+    /// なければ生徒を問わない。`lesson_menu_id` があれば、添えるメニューがそのメニューの評価だけ。なければメニューを問わない。
+    /// `from`・`to` のどちらかがあれば、送った日付がその期間の評価だけ。両方なければ期間で絞らない。期間が規則を満たさなければ [`ListLowRatedReviewsError::Invalid`]（評価は読まない）。
     pub async fn execute(
         &self,
         query: ListLowRatedReviewsQuery,
@@ -82,6 +87,7 @@ where
             student_id,
             from,
             to,
+            lesson_menu_id,
         } = query;
         let period = match (from, to) {
             (None, None) => None,
@@ -120,15 +126,6 @@ where
             }
             reviews = of_sport;
         }
-        if reviews.is_empty() {
-            return Ok(LowRatedReviewList {
-                reviews,
-                lesson_menus: BTreeMap::new(),
-                coach_display_names: BTreeMap::new(),
-                student_display_names: BTreeMap::new(),
-            });
-        }
-
         let mut lesson_menus = BTreeMap::new();
         for review in &reviews {
             if let Some(menu) = self
@@ -139,6 +136,26 @@ where
                 lesson_menus.insert(review.lesson_id(), menu);
             }
         }
+        if lesson_menu_id.is_some() {
+            reviews.retain(|review| {
+                ReviewLessonMenu::matches_lesson_menu(
+                    lesson_menus.get(&review.lesson_id()),
+                    lesson_menu_id,
+                )
+            });
+            lesson_menus.retain(|_, menu| {
+                ReviewLessonMenu::matches_lesson_menu(Some(menu), lesson_menu_id)
+            });
+        }
+        if reviews.is_empty() {
+            return Ok(LowRatedReviewList {
+                reviews,
+                lesson_menus: BTreeMap::new(),
+                coach_display_names: BTreeMap::new(),
+                student_display_names: BTreeMap::new(),
+            });
+        }
+
         let coach_ids: BTreeSet<AccountId> = reviews.iter().map(|r| r.coach_id()).collect();
         let student_ids: BTreeSet<AccountId> = reviews.iter().map(|r| r.student_id()).collect();
         let coach_display_names = self
@@ -192,7 +209,7 @@ mod tests {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_404_800)
     }
 
-    /// レッスン 1 だけがメニュー（ID はレッスンと同じ数）を持つ。
+    /// レッスン 1 と 7 はメニュー 1、8 はメニュー 2 を持つ。他はメニューがない。
     struct FixedLessonMenus;
 
     impl ReviewedLessonMenuLookup for FixedLessonMenus {
@@ -200,7 +217,11 @@ mod tests {
             &self,
             lesson_id: LessonCompletionId,
         ) -> Result<Option<ReviewLessonMenu>, Unavailable> {
-            Ok((lesson_id.as_u128() == 1).then(|| menu(1)))
+            Ok(match lesson_id.as_u128() {
+                1 | 7 => Some(menu(1)),
+                8 => Some(menu(2)),
+                _ => None,
+            })
         }
     }
 
@@ -904,5 +925,127 @@ mod tests {
             assert!(list.reviews.is_empty(), "{student_id:?}");
         }
         assert_eq!(use_case.student_names.asked.lock().unwrap().len(), asked);
+    }
+
+    #[tokio::test]
+    async fn a_lesson_menu_keeps_only_low_reviews_with_that_menu() {
+        let handled = |review: LessonReview| {
+            review.with_handling(Some(LowRatedReviewHandling::new(
+                AccountId::from_u128(9),
+                now() - DAY,
+            )))
+        };
+        let use_case = use_case([
+            // メニュー 1・テニス
+            review(1, COACH, 1, now() - 3 * DAY),
+            // メニューのない評価
+            review(2, OTHER_COACH, 2, now() - DAY),
+            // ★3 は低い評価でない（メニュー 1 でも載らない）
+            review(3, COACH, 3, now() - DAY),
+            // メニュー 1・スポーツが引けない・対応済み
+            handled(review(7, OTHER_COACH, 2, now() - 2 * DAY)),
+            // メニュー 2
+            review(8, COACH, 1, now() - 4 * DAY),
+        ]);
+
+        let ids = |list: &LowRatedReviewList| -> Vec<u128> {
+            list.reviews.iter().map(|r| r.id().as_u128()).collect()
+        };
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(1)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [7, 1], "そのメニューの評価だけを、新しい順");
+        assert_eq!(
+            list.lesson_menus,
+            BTreeMap::from([
+                (LessonCompletionId::from_u128(1), menu(1)),
+                (LessonCompletionId::from_u128(7), menu(1)),
+            ]),
+            "載せる評価のメニューだけ"
+        );
+        assert_eq!(
+            use_case.coach_names.asked.lock().unwrap().clone(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "絞ったあとのコーチだけを問い合わせる"
+        );
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(2)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [8]);
+        assert_eq!(
+            list.lesson_menus,
+            BTreeMap::from([(LessonCompletionId::from_u128(8), menu(2))])
+        );
+
+        // 競技・対応済み・コーチと合わせて絞れる
+        let menu_1 = ListLowRatedReviewsQuery {
+            lesson_menu_id: Some(LessonMenuId::from_u128(1)),
+            ..Default::default()
+        };
+        for (query, expected) in [
+            (
+                ListLowRatedReviewsQuery {
+                    sport: Some(Sport::Tennis),
+                    ..menu_1
+                },
+                vec![1],
+            ),
+            (
+                ListLowRatedReviewsQuery {
+                    handled: Some(true),
+                    ..menu_1
+                },
+                vec![7],
+            ),
+            (
+                ListLowRatedReviewsQuery {
+                    coach_id: Some(COACH),
+                    ..menu_1
+                },
+                vec![1],
+            ),
+            (
+                ListLowRatedReviewsQuery {
+                    student_id: Some(AccountId::from_u128(107)),
+                    ..menu_1
+                },
+                vec![7],
+            ),
+            (
+                ListLowRatedReviewsQuery {
+                    coach_id: Some(OTHER_COACH),
+                    handled: Some(false),
+                    ..menu_1
+                },
+                vec![],
+            ),
+        ] {
+            assert_eq!(
+                ids(&use_case.execute(query).await.unwrap()),
+                expected,
+                "{query:?}"
+            );
+        }
+
+        // ないメニューの ID は空の一覧で、表示名を問い合わせない
+        let asked = use_case.coach_names.asked.lock().unwrap().len();
+        let list = use_case
+            .execute(ListLowRatedReviewsQuery {
+                lesson_menu_id: Some(LessonMenuId::from_u128(99)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(list.reviews.is_empty());
+        assert!(list.lesson_menus.is_empty());
+        assert_eq!(use_case.coach_names.asked.lock().unwrap().len(), asked);
     }
 }

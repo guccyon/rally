@@ -3,7 +3,8 @@
 //! 読み取りと、それを使う本部の低い評価の一覧（コーチ・生徒の表示名はアカウントの表から読む。スポーツで絞るときは
 //! レッスンのスポーツを予約の枠から読む）。評価へのコーチの返信の
 //! 保存と上書き、評価の ID での読み取り。低い評価への本部の対応済みの印の保存（2 回目は最初の印が残る）と、一覧の
-//! 未対応・対応済みの絞り込み。一覧の送った日付（日本時間）の期間での絞り込み。DB が印の形と付けたアカウントの役割を守ること。
+//! 未対応・対応済みの絞り込み。一覧の送った日付（日本時間）の期間での絞り込みと、レッスンメニュー（動画に保存した写し）での
+//! 絞り込み。DB が印の形と付けたアカウントの役割を守ること。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -13,6 +14,7 @@ mod support;
 use std::time::Duration;
 
 use application::{
+    async_lesson::VideoRepository,
     in_memory::{FixedClock, RecordingAnalyticsSink},
     lesson::{
         LessonCompletionLookup, LessonCompletionMenuLookup, LessonCompletionRepository,
@@ -30,7 +32,11 @@ use application::{
 };
 
 use domain::{
-    catalog::Sport,
+    async_lesson::{ReviewComment, Video},
+    catalog::{
+        LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+        LessonMenuName, Sport,
+    },
     identity::Role,
     lesson::{LessonCompletion, LessonCompletionId},
     review::{
@@ -466,6 +472,190 @@ async fn from_and_to_keep_only_low_reviews_submitted_in_the_days_in_japan(pool: 
     assert!(
         matches!(result, Err(ListLowRatedReviewsError::Invalid(_))),
         "{result:?}"
+    );
+}
+
+/// 新しい生徒とコーチ `coach` の、返した動画添削の完了記録。`menu` があれば送った動画にメニューの写しを残す。
+async fn video_lesson(
+    pool: &PgPool,
+    coach: domain::identity::AccountId,
+    menu: Option<&LessonMenu>,
+) -> LessonCompletion {
+    let student = support::student(pool).await;
+    let videos = PgVideoRepository::new(pool.clone());
+    let id = videos.next_video_id();
+    let video = match menu {
+        Some(menu) => {
+            Video::submit_with_lesson_menu(id, student, coach, Sport::Tennis, menu, at(1)).unwrap()
+        }
+        None => Video::submit(id, student, coach, Sport::Tennis, at(1)),
+    };
+    videos.insert(video.clone()).await.unwrap();
+    let review_id = videos.next_review_id();
+    let video = videos
+        .update(video.id(), |v| {
+            v.return_review(
+                review_id,
+                coach,
+                ReviewComment::new("よい").unwrap(),
+                true,
+                at(2),
+            )
+        })
+        .await
+        .unwrap();
+    let completions = PgLessonCompletionRepository::new(pool.clone());
+    let completion_id = completions.next_id();
+    completions
+        .record(student, |history| {
+            video.complete(completion_id, student, history, at(3))
+        })
+        .await
+        .unwrap()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_id_keeps_only_low_reviews_with_the_menu_copied_to_the_lesson(pool: PgPool) {
+    let now = at(24 * 40);
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    // メニューは catalog の持ち物で、写しは catalog の行がなくても保存できる
+    let menu = |id: u128, coach, name: &str| {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            coach,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Async,
+                name: LessonMenuName::new(name).unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            true,
+            at(0),
+        )
+    };
+    let form = menu(0x51, coach, "フォーム添削");
+    let other_form = menu(0x52, other_coach, "スイング添削");
+    let first = review_at(
+        &pool,
+        &video_lesson(&pool, coach, Some(&form)).await,
+        1,
+        now,
+    )
+    .await;
+    let second = review_at(
+        &pool,
+        &video_lesson(&pool, coach, Some(&form)).await,
+        2,
+        now - Duration::from_secs(3600),
+    )
+    .await;
+    // ★3 は低い評価でない
+    review_at(
+        &pool,
+        &video_lesson(&pool, coach, Some(&form)).await,
+        3,
+        now,
+    )
+    .await;
+    let other = review_at(
+        &pool,
+        &video_lesson(&pool, other_coach, Some(&other_form)).await,
+        1,
+        now,
+    )
+    .await;
+    // メニューを選ばずに送った動画と、メニューのない予約のレッスン
+    review_at(&pool, &video_lesson(&pool, coach, None).await, 1, now).await;
+    review_at(&pool, &completed_lesson(&pool).await, 1, now).await;
+
+    let accounts = PgAccountRepository::new(pool.clone());
+    let use_case = ListLowRatedReviews::new(
+        PgLessonReviewRepository::new(pool.clone()),
+        LessonCompletionMenuLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        LessonCompletionSportLookup::new(
+            PgLessonCompletionRepository::new(pool.clone()),
+            PgLiveLessonSessionRepository::new(pool.clone()),
+            SchedulingBookingLookup::new(PgBookingRepository::new(pool.clone())),
+            PgVideoRepository::new(pool.clone()),
+        ),
+        ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ProfileStudentDisplayNameLookup::new(accounts),
+        FixedClock(now),
+    );
+    let of_form = ListLowRatedReviewsQuery {
+        lesson_menu_id: Some(form.id()),
+        ..Default::default()
+    };
+    let list = use_case.execute(of_form).await.unwrap();
+    let mut expected = vec![first.clone(), second.clone()];
+    expected.sort_by_key(|review| (std::cmp::Reverse(review.submitted_at()), review.id()));
+    assert_eq!(
+        list.reviews, expected,
+        "そのメニューの低い評価だけを新しい順"
+    );
+    assert_eq!(list.lesson_menus.len(), 2);
+    for review in &list.reviews {
+        assert_eq!(list.lesson_menus[&review.lesson_id()].id(), form.id());
+    }
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery {
+                lesson_menu_id: Some(other_form.id()),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .reviews,
+        [other]
+    );
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery {
+                coach_id: Some(other_coach),
+                ..of_form
+            })
+            .await
+            .unwrap()
+            .reviews,
+        [] as [LessonReview; 0],
+        "ほかの絞り込みと合わせて絞れる"
+    );
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery {
+                student_id: Some(second.student_id()),
+                sport: Some(Sport::Tennis),
+                ..of_form
+            })
+            .await
+            .unwrap()
+            .reviews,
+        [second]
+    );
+    let unknown = use_case
+        .execute(ListLowRatedReviewsQuery {
+            lesson_menu_id: Some(LessonMenuId::from_u128(0x99)),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(unknown.reviews.is_empty(), "ないメニューの ID は空の一覧");
+    assert!(unknown.lesson_menus.is_empty());
+    assert_eq!(
+        use_case
+            .execute(ListLowRatedReviewsQuery::default())
+            .await
+            .unwrap()
+            .reviews
+            .len(),
+        5,
+        "指定しなければ今までどおり"
     );
 }
 

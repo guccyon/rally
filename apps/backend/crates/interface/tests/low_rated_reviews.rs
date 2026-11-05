@@ -637,6 +637,92 @@ async fn student_id_that_is_not_a_uuid_is_422_validation_failed() {
 }
 
 #[tokio::test]
+async fn lesson_menu_id_keeps_only_low_reviews_with_the_lesson_menu() {
+    let router = app().await;
+    let ids = |body: &Value| -> Vec<String> {
+        body["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|review| review["review_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let menu = "00000000-0000-0000-0000-000000000014";
+
+    let (status, body) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        &format!("?lesson_menu_id={menu}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        ids(&body),
+        ["00000000-0000-0000-0000-00000000000a"],
+        "そのメニューの低い評価（10）だけ。メニューのない評価（11・14）は載らない"
+    );
+    assert_eq!(body["reviews"][0]["lesson_menu"]["lesson_menu_id"], menu);
+    assert_eq!(
+        (body["max_rating"].clone(), body["period_days"].clone()),
+        (2.into(), 30.into())
+    );
+
+    // スポーツ・対応済み・コーチ・生徒と合わせて絞れる（10 はたなかコーチ・あおき・テニスで未対応）
+    for (query, expected) in [
+        ("sport=tennis", vec!["00000000-0000-0000-0000-00000000000a"]),
+        ("sport=golf", vec![]),
+        (
+            "handled=false",
+            vec!["00000000-0000-0000-0000-00000000000a"],
+        ),
+        ("handled=true", vec![]),
+        (
+            "coach_id=00000000-0000-0000-0000-000000000002",
+            vec!["00000000-0000-0000-0000-00000000000a"],
+        ),
+        ("coach_id=00000000-0000-0000-0000-000000000003", vec![]),
+        (
+            "student_id=00000000-0000-0000-0000-000000000004",
+            vec!["00000000-0000-0000-0000-00000000000a"],
+        ),
+    ] {
+        let (status, body) = list_with_query(
+            &router,
+            Some(HEADQUARTERS),
+            &format!("?lesson_menu_id={menu}&{query}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(ids(&body), expected, "{query}");
+    }
+
+    // ないメニューの ID は 404 にせず空の一覧
+    let (status, body) = list_with_query(
+        &router,
+        Some(HEADQUARTERS),
+        "?lesson_menu_id=00000000-0000-0000-0000-000000000063",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["reviews"], json!([]));
+}
+
+#[tokio::test]
+async fn lesson_menu_id_that_is_not_a_uuid_is_422_validation_failed() {
+    let router = app().await;
+    for query in [
+        "?lesson_menu_id=forehand",
+        "?lesson_menu_id=",
+        "?lesson_menu_id=20",
+    ] {
+        let (status, body) = list_with_query(&router, Some(HEADQUARTERS), query).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{query}");
+        assert_eq!(body["message"], "lesson_menu_id が UUID でない", "{query}");
+    }
+}
+
+#[tokio::test]
 async fn from_and_to_keep_only_low_reviews_submitted_in_the_days_in_japan() {
     let router = app().await;
     let ids = |body: &Value| -> Vec<String> {

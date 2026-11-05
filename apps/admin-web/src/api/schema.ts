@@ -570,8 +570,15 @@ export interface paths {
          *       6 日前から（どちらも 7 日）。1 日以上 31 日まで（`from` と `to` を含めて数える）。期間（照会した時刻から 30 日）の中を
          *       さらに絞るだけで、30 日より前の評価は `from`・`to` に入っても載らない。`sport`・`handled`・`coach_id`・`student_id` と
          *       合わせて付けられる。しきい値・並べ方とレスポンスの `period_days` は付けても変わらない
-         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id`・`student_id` が UUID でない
-         *       とき・`to` が `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`
+         *     - 絞り込み（任意）: `lesson_menu_id` を付ければ、評価に載せるレッスンメニュー（各評価の `lesson_menu` の `lesson_menu_id`。
+         *       評価した完了したレッスンの元（同期は予約、非同期は動画）が持つ、予約した・動画を送った時点のメニューの写し）がそのメニューの
+         *       評価だけ（特定のメニューに低い評価が集まっていないかを本部が確かめる）。元にメニューがない評価（`lesson_menu` が null の
+         *       評価）は、`lesson_menu_id` を付ければ出ない。メニューが後で直されても、写しの ID で決める（実装は backend の domain
+         *       `ReviewLessonMenu::matches_lesson_menu` の 1 か所）。`sport`・`handled`・`coach_id`・`student_id`・`from`・`to` と合わせて
+         *       付けられる。しきい値・期間・並べ方は付けても変わらない。付けなければ今までどおりメニューを問わない。扱いは `listBookings` の
+         *       `lesson_menu_id` と同じで、ないメニューの ID・低い評価のないメニューは、404 にせず `reviews` が空の配列
+         *     - `sport` が `Sport` の値でないとき・`handled` が `true` / `false` でないとき・`coach_id`・`student_id`・`lesson_menu_id` が
+         *       UUID でないとき・`to` が `from` より前・31 日を超える・`from` / `to` が `YYYY-MM-DD` の日付でないときは 422 `validation_failed`
          *       （`message` に理由。期間の理由は `listAnnouncements` と同じ）
          *     - ページング・件数の上限はない。該当する評価がなければ `reviews` は空の配列
          *     - 照会だけで、何も保存しない（評価の非表示・削除はしない）
@@ -4184,6 +4191,12 @@ export interface operations {
                 from?: string;
                 /** @description 送った期間の終わりの日付（日本時間。含む）。`from` だけを付ければ `from` から 7 日目。両方省けば期間で絞らない */
                 to?: string;
+                /**
+                 * @description あれば評価の `lesson_menu` の `lesson_menu_id`（完了したレッスンの元が持つメニューの写し）がこのメニューの評価だけに
+                 *     絞る。省けばメニューを問わない。メニューのない評価は、付ければ出ない。UUID でなければ 422 `validation_failed`。
+                 *     ないメニューの ID は、404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                lesson_menu_id?: string;
             };
             header?: never;
             path?: never;
