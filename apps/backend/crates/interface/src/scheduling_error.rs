@@ -34,12 +34,18 @@
 //!   `not_found`、停止中のコーチの停止（`CoachAlreadySuspended`）は 409 `coach_already_suspended`、受付中のコーチの再開
 //!   （`CoachNotSuspended`）は 409 `coach_not_suspended`、それ以外は停止・再開では起きないので 500（停止の理由が長すぎる
 //!   `CoachSuspensionReasonTooLong` は境界で理由を作るときに `From<SchedulingError>` で 422 にする）
+//! - 本部が見るコーチのお休みの期間の予約と枠・お休みにする操作（`getCoachLeavePreview`・`startCoachLeave`。
+//!   `CoachLeaveError`）: コーチがいない（コーチでないアカウントも）は 404 `not_found`、期間の誤り（`BookingPeriodEndsBeforeItStarts`・
+//!   `BookingPeriodTooLong`）と始まりが今日以前（`CoachLeaveStartsTooSoon`）と長すぎる一言（`CoachLeaveNoteTooLong`）は 422
+//!   `validation_failed`、期間の重なるお休み（`CoachLeaveOverlaps`）は 409 `coach_leave_overlaps`、確かめた後に期間の予約が
+//!   変わった（`CoachLeavePreviewOutdated`）は 409 `leave_preview_outdated`、それ以外はお休みでは起きない（保存した値の破損）ので 500
 //! - 境界で値を作るとき（定員の検証など。`From<SchedulingError>`）は、どの変種も 422 `validation_failed`
 //!
 //! 403 に当たる失敗はない（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
 
 use application::scheduling::{
-    CancelBookingError, ChangeCoachAcceptanceError, ConfirmBookingError, CreateBookingError,
+    CancelBookingError, ChangeCoachAcceptanceError, CoachLeaveError, ConfirmBookingError,
+    CreateBookingError,
     GetBookingError, ListBookingsError, PublishSlotError, WithdrawSlotError, slot_id_uuid,
 };
 use domain::scheduling::{SchedulingError, SlotStatus};
@@ -125,7 +131,11 @@ impl From<CreateBookingError> for ApiError {
             | SchedulingError::BookingPeriodTooLong { .. }
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::from(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::from(error),
         }
     }
 }
@@ -170,7 +180,11 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -214,7 +228,11 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -259,7 +277,11 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::from(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::from(error),
         }
     }
 }
@@ -308,7 +330,11 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -357,7 +383,11 @@ impl From<ListBookingsError> for ApiError {
             | SchedulingError::CoachAlreadySuspended
             | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
-            | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::internal(error),
         }
     }
 }
@@ -401,6 +431,61 @@ impl From<ChangeCoachAcceptanceError> for ApiError {
             | SchedulingError::SlotAlreadyStarted
             | SchedulingError::BookingPeriodEndsBeforeItStarts
             | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachNotAcceptingBookings
+            | SchedulingError::CoachSuspensionReasonTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveOverlaps
+            | SchedulingError::CoachLeavePreviewOutdated
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => Self::internal(error),
+        }
+    }
+}
+
+impl From<CoachLeaveError> for ApiError {
+    fn from(error: CoachLeaveError) -> Self {
+        let error = match error {
+            CoachLeaveError::CoachNotFound => return coach_not_found(),
+            CoachLeaveError::Invalid(error) => error,
+            CoachLeaveError::Unavailable(error) => return Self::internal(error),
+        };
+        match error {
+            SchedulingError::CoachLeaveOverlaps => {
+                Self::conflict("coach_leave_overlaps", describe(&error))
+            }
+            SchedulingError::CoachLeavePreviewOutdated => {
+                Self::conflict("leave_preview_outdated", describe(&error))
+            }
+            SchedulingError::BookingPeriodEndsBeforeItStarts
+            | SchedulingError::BookingPeriodTooLong { .. }
+            | SchedulingError::CoachLeaveStartsTooSoon
+            | SchedulingError::CoachLeaveNoteTooLong { .. } => {
+                Self::validation_failed(describe(&error))
+            }
+            SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotOverlaps { .. }
+            | SchedulingError::SlotOfAnotherCoach
+            | SchedulingError::SlotNotOpen { .. }
+            | SchedulingError::SlotCapacityOutOfRange { .. }
+            | SchedulingError::SlotNotBooked { .. }
+            | SchedulingError::SlotAlreadyBooked
+            | SchedulingError::SlotSeatsOverCapacity { .. }
+            | SchedulingError::SlotStatusMismatchesSeats { .. }
+            | SchedulingError::SlotAlreadyBookedByStudent
+            | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::BookingNotPending { .. }
+            | SchedulingError::BookingAlreadyCancelled
+            | SchedulingError::BookingOfAnotherStudent
+            | SchedulingError::BookingOfAnotherSlot
+            | SchedulingError::LiveLessonQuotaExceeded
+            | SchedulingError::LessonMenuOfAnotherCoach
+            | SchedulingError::LessonMenuNotPublished
+            | SchedulingError::LessonMenuNotLive
+            | SchedulingError::LessonMenuSportMismatch { .. }
+            | SchedulingError::SlotLengthMismatchesLessonMenu { .. }
+            | SchedulingError::SlotHasActiveBookings { .. }
+            | SchedulingError::SlotAlreadyStarted
+            | SchedulingError::CoachAlreadySuspended
+            | SchedulingError::CoachNotSuspended
             | SchedulingError::CoachNotAcceptingBookings
             | SchedulingError::CoachSuspensionReasonTooLong { .. } => Self::internal(error),
         }
@@ -481,6 +566,18 @@ fn describe(error: &SchedulingError) -> String {
         }
         SchedulingError::CoachSuspensionReasonTooLong { max } => {
             format!("受付を止める理由は {max} 文字まで")
+        }
+        SchedulingError::CoachLeaveStartsTooSoon => {
+            "お休みの始まりの日は明日以降にする".to_string()
+        }
+        SchedulingError::CoachLeaveOverlaps => {
+            "この期間に重なるお休みがもうある".to_string()
+        }
+        SchedulingError::CoachLeavePreviewOutdated => {
+            "期間の予約が確かめたあとに変わった（expected_booking_ids と今の予約が違う）".to_string()
+        }
+        SchedulingError::CoachLeaveNoteTooLong { max } => {
+            format!("生徒への一言は {max} 文字まで")
         }
     }
 }

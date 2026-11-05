@@ -208,6 +208,7 @@ mod tests {
                 booking_id: BookingId::from_u128(1),
                 consumes_quota: false,
                 cancelled_at: oct26(),
+                cancelled_by: domain::scheduling::BookingCanceller::Student,
             })
             .await
             .unwrap();

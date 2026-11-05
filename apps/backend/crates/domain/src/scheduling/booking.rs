@@ -31,6 +31,7 @@ pub struct Booking {
     created_at: SystemTime,
     confirmed_at: Option<SystemTime>,
     cancelled_at: Option<SystemTime>,
+    cancelled_by: Option<BookingCanceller>,
     lesson_menu: Option<BookingLessonMenu>,
 }
 
@@ -74,6 +75,7 @@ impl Booking {
             created_at: now,
             confirmed_at: None,
             cancelled_at: None,
+            cancelled_by: None,
             lesson_menu: None,
         })
     }
@@ -105,7 +107,8 @@ impl Booking {
     /// 保存先から読んだ予約を組み立てる（保存先の実装用）。コーチと開始時刻は予約したスロット `slot` のもの。
     ///
     /// 確定・キャンセルの時刻は `status` に合わせて保存先が持つ（DB の `bookings_status_timestamps`）。
-    /// 不変条件は作成・確定・キャンセルの時点で確かめたので、ここでは確かめない。
+    /// 不変条件は作成・確定・キャンセルの時点で確かめたので、ここでは確かめない。キャンセル済みの予約のキャンセルした人は
+    /// 予約した生徒とし、本部がキャンセルした予約は [`Booking::with_restored_canceller`] で戻す。
     #[allow(clippy::too_many_arguments)]
     pub const fn restore(
         id: BookingId,
@@ -128,8 +131,24 @@ impl Booking {
             created_at,
             confirmed_at,
             cancelled_at,
+            cancelled_by: match status {
+                BookingStatus::Cancelled => Some(BookingCanceller::Student),
+                BookingStatus::Pending | BookingStatus::Confirmed => None,
+            },
             lesson_menu: None,
         }
+    }
+
+    /// 保存先から読んだキャンセル済みの予約に、キャンセルした人 `canceller` を戻す（保存先の実装用。保存先がキャンセルした人を
+    /// 持たない行（本部のキャンセルができる前にキャンセルした予約）は `None` で、予約した生徒のまま）。キャンセルしていない
+    /// 予約には何もしない。
+    pub fn with_restored_canceller(mut self, canceller: Option<BookingCanceller>) -> Self {
+        if self.status == BookingStatus::Cancelled
+            && let Some(canceller) = canceller
+        {
+            self.cancelled_by = Some(canceller);
+        }
+        self
     }
 
     /// 予約した生徒 `student_id` が確定する。予約したスロット `slot` の席を確定に移し、確定した予約が定員に
@@ -178,22 +197,43 @@ impl Booking {
         if student_id != self.student_id {
             return Err(SchedulingError::BookingOfAnotherStudent);
         }
+        let decision = CancellationPolicy::decide(self, now);
+        self.cancel_as(BookingCanceller::Student, decision, slot, now)
+    }
+
+    /// 本部が `now` にキャンセルし（コーチのお休み。[`super::CoachLeave::start`] から呼ぶ）、キャンセル規定の判定を返す。
+    ///
+    /// 判定は [`CancellationPolicy::decide_for_headquarters`] だけが行う（生徒の都合でないので回数を消費しない）。スロットの
+    /// 席の空け方と失敗は [`Self::cancel`] と同じ（生徒は問わない）。キャンセルした人は [`BookingCanceller::Headquarters`]。
+    pub fn cancel_by_headquarters(
+        &mut self,
+        slot: &mut Slot,
+        now: SystemTime,
+    ) -> Result<CancellationDecision, SchedulingError> {
+        let decision = CancellationPolicy::decide_for_headquarters(self);
+        self.cancel_as(BookingCanceller::Headquarters, decision, slot, now)
+    }
+
+    /// `canceller` が `now` にキャンセルし、判定 `decision` を返す。予約したスロット `slot` の席を 1 つ空ける（確定済みなら
+    /// [`Slot::release`]、確定前なら [`Slot::release_hold`]）。失敗したときは予約もスロットも変えない。
+    fn cancel_as(
+        &mut self,
+        canceller: BookingCanceller,
+        decision: CancellationDecision,
+        slot: &mut Slot,
+        now: SystemTime,
+    ) -> Result<CancellationDecision, SchedulingError> {
         if slot.id() != self.slot_id {
             return Err(SchedulingError::BookingOfAnotherSlot);
         }
-        let decision = match self.status {
+        match self.status {
             BookingStatus::Cancelled => return Err(SchedulingError::BookingAlreadyCancelled),
-            BookingStatus::Pending => {
-                slot.release_hold();
-                CancellationPolicy::decide(self, now)
-            }
-            BookingStatus::Confirmed => {
-                slot.release()?;
-                CancellationPolicy::decide(self, now)
-            }
-        };
+            BookingStatus::Pending => slot.release_hold(),
+            BookingStatus::Confirmed => slot.release()?,
+        }
         self.status = BookingStatus::Cancelled;
         self.cancelled_at = Some(now);
+        self.cancelled_by = Some(canceller);
         Ok(decision)
     }
 
@@ -265,14 +305,11 @@ impl Booking {
 
     /// キャンセルした人。キャンセルしていなければ `None`。
     ///
-    /// キャンセルできるのは予約した生徒だけ（[`Self::cancel`]）なので、キャンセル済みの予約は
-    /// [`BookingCanceller::Student`]。保存先はキャンセルした人を持たず、ここが状態から決める唯一の場所（コーチ・本部が
-    /// キャンセルできるようにするときは、キャンセルした人を保存して読み戻す形に変える）。
+    /// 予約した生徒のキャンセル（[`Self::cancel`]）は [`BookingCanceller::Student`]、本部のキャンセル
+    /// （[`Self::cancel_by_headquarters`]）は [`BookingCanceller::Headquarters`]。保存先はキャンセルした人を保存して読み戻す
+    /// （[`Self::with_restored_canceller`]）。
     pub const fn cancelled_by(&self) -> Option<BookingCanceller> {
-        match self.status {
-            BookingStatus::Cancelled => Some(BookingCanceller::Student),
-            BookingStatus::Pending | BookingStatus::Confirmed => None,
-        }
+        self.cancelled_by
     }
 
     /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
@@ -372,6 +409,7 @@ mod tests {
     fn cancelled(mut booking: Booking) -> Booking {
         booking.status = BookingStatus::Cancelled;
         booking.cancelled_at = Some(NOW);
+        booking.cancelled_by = Some(BookingCanceller::Student);
         booking
     }
 
@@ -436,6 +474,68 @@ mod tests {
             Some(at(2)),
         );
         assert_eq!(restored.cancelled_by(), Some(BookingCanceller::Student));
+    }
+
+    #[test]
+    fn a_headquarters_cancel_frees_the_seat_without_consuming_quota() {
+        let mut slot = slot(10, SlotStatus::Open);
+        let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
+        booking.confirm(STUDENT, &mut slot, NOW).unwrap();
+        assert_eq!(slot.status(), SlotStatus::Booked);
+
+        // 開始（10 時）の 1 時間前でも、本部のキャンセルは回数を消費しない
+        let decision = booking.cancel_by_headquarters(&mut slot, at(9)).unwrap();
+
+        assert!(!decision.consumes_quota);
+        assert_eq!(booking.status(), BookingStatus::Cancelled);
+        assert_eq!(booking.cancelled_at(), Some(at(9)));
+        assert_eq!(booking.cancelled_by(), Some(BookingCanceller::Headquarters));
+        assert_eq!(slot.status(), SlotStatus::Open, "スロットは公開中に戻る");
+        assert_eq!(slot.remaining_seats(), 1);
+
+        // 2 回目は断り、何も変えない
+        let before = (booking.clone(), slot.clone());
+        assert_eq!(
+            booking.cancel_by_headquarters(&mut slot, at(9)),
+            Err(SchedulingError::BookingAlreadyCancelled)
+        );
+        assert_eq!((booking, slot), before);
+    }
+
+    #[test]
+    fn the_restored_canceller_applies_only_to_a_cancelled_booking() {
+        let slot = slot(10, SlotStatus::Open);
+        let restore = |status, cancelled_at| {
+            Booking::restore(
+                BookingId::from_u128(1),
+                STUDENT,
+                &slot,
+                false,
+                status,
+                NOW,
+                None,
+                cancelled_at,
+            )
+        };
+        let cancelled = restore(BookingStatus::Cancelled, Some(at(2)));
+        assert_eq!(
+            cancelled
+                .clone()
+                .with_restored_canceller(Some(BookingCanceller::Headquarters))
+                .cancelled_by(),
+            Some(BookingCanceller::Headquarters)
+        );
+        // 保存先がキャンセルした人を持たない行は予約した生徒のまま
+        assert_eq!(
+            cancelled.with_restored_canceller(None).cancelled_by(),
+            Some(BookingCanceller::Student)
+        );
+        assert_eq!(
+            restore(BookingStatus::Pending, None)
+                .with_restored_canceller(Some(BookingCanceller::Headquarters))
+                .cancelled_by(),
+            None
+        );
     }
 
     #[test]

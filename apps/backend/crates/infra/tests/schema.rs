@@ -134,6 +134,8 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "scheduling.bookings",
             "scheduling.coach_acceptance_changes",
             "scheduling.coach_acceptances",
+        "scheduling.coach_leave_bookings",
+        "scheduling.coach_leaves",
             "scheduling.slots",
         ]
     );
@@ -1680,13 +1682,13 @@ async fn a_student_has_at_most_one_first_lesson_per_table(pool: PgPool) {
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
-    use domain::scheduling::BookingStatus;
+    use domain::scheduling::{BookingCanceller, BookingStatus};
     use infra::{
         entitlement_values::{
             CONTRACT_TYPES, SUBSCRIPTION_PLANS, SUBSCRIPTION_STATUSES, contract_type_value,
             subscription_plan_value, subscription_status_value,
         },
-        scheduling_values::booking_status_value,
+        scheduling_values::{booking_canceller_value, booking_status_value},
     };
 
     let statuses: Vec<&str> = BookingStatus::ALL
@@ -1696,6 +1698,18 @@ async fn booking_and_entitlement_values_match_their_checks(pool: PgPool) {
     assert_eq!(
         check_values(&pool, "scheduling.bookings", "bookings_status_check").await,
         statuses
+    );
+    let cancellers: Vec<&str> = [
+        BookingCanceller::Student,
+        BookingCanceller::Coach,
+        BookingCanceller::Headquarters,
+    ]
+    .into_iter()
+    .map(booking_canceller_value)
+    .collect();
+    assert_eq!(
+        check_values(&pool, "scheduling.bookings", "bookings_cancelled_by_check").await,
+        cancellers
     );
     let contract_types: Vec<&str> = CONTRACT_TYPES
         .into_iter()

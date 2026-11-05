@@ -1,27 +1,32 @@
 use domain::identity::AccountId;
 
-use super::{AnnouncementRepository, MyNotification, NotificationRepository};
+use super::{
+    AnnouncementRepository, CoachLeaveNoticeLookup, MyNotification, NotificationRepository,
+};
 use crate::{Unavailable, clock::Clock};
 
 /// 自分のお知らせをすべて既読にするユースケース（student-app と admin-web の `markMyNotificationsRead`）。今の時刻で既読にし
 /// （すでに読んだものは最初に読んだ時刻のまま。何度呼んでもよい）、既読にしたあとの一覧（[`super::ListMyNotifications`]
 /// と同じ並び。本部が取り下げたお知らせは出さない）を返す。既読にするのは取り下げたものも含めて今までどおりすべて。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
-pub struct MarkMyNotificationsRead<N, A, C> {
+pub struct MarkMyNotificationsRead<N, A, L, C> {
     notifications: N,
     announcements: A,
+    coach_leaves: L,
     clock: C,
 }
 
-impl<N, A, C> MarkMyNotificationsRead<N, A, C>
+impl<N, A, L, C> MarkMyNotificationsRead<N, A, L, C>
 where
     N: NotificationRepository,
     A: AnnouncementRepository,
+    L: CoachLeaveNoticeLookup,
     C: Clock,
 {
-    pub fn new(notifications: N, announcements: A, clock: C) -> Self {
+    pub fn new(notifications: N, announcements: A, coach_leaves: L, clock: C) -> Self {
         Self {
             notifications,
             announcements,
+            coach_leaves,
             clock,
         }
     }
@@ -32,7 +37,7 @@ where
             .mark_all_read(recipient, self.clock.now())
             .await?;
         let notifications = self.notifications.find_by_recipient(recipient).await?;
-        MyNotification::attach(notifications, &self.announcements).await
+        MyNotification::attach(notifications, &self.announcements, &self.coach_leaves).await
     }
 }
 
@@ -51,7 +56,8 @@ mod tests {
 
     use super::*;
     use crate::in_memory::{
-        FixedClock, InMemoryAnnouncementRepository, InMemoryNotificationRepository,
+        FixedClock, FixedCoachLeaveNotices, InMemoryAnnouncementRepository,
+        InMemoryNotificationRepository,
     };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
@@ -92,6 +98,7 @@ mod tests {
         let listed: Vec<Notification> = MarkMyNotificationsRead::new(
             notifications.clone(),
             no_announcements(),
+            FixedCoachLeaveNotices::default(),
             FixedClock(at(30)),
         )
         .execute(STUDENT)
@@ -121,14 +128,18 @@ mod tests {
         );
 
         // 何度呼んでもよい
-        let again: Vec<Notification> =
-            MarkMyNotificationsRead::new(notifications, no_announcements(), FixedClock(at(40)))
-                .execute(STUDENT)
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|mine| mine.notification)
-                .collect();
+        let again: Vec<Notification> = MarkMyNotificationsRead::new(
+            notifications,
+            no_announcements(),
+            FixedCoachLeaveNotices::default(),
+            FixedClock(at(40)),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|mine| mine.notification)
+        .collect();
         assert_eq!(again, listed);
     }
 
@@ -151,6 +162,7 @@ mod tests {
         let listed = MarkMyNotificationsRead::new(
             notifications.clone(),
             no_announcements(),
+            FixedCoachLeaveNotices::default(),
             FixedClock(at(30)),
         )
         .execute(COACH)
@@ -192,6 +204,7 @@ mod tests {
         let listed = MarkMyNotificationsRead::new(
             notifications.clone(),
             InMemoryAnnouncementRepository::with_announcements([withdrawn]),
+            FixedCoachLeaveNotices::default(),
             FixedClock(at(30)),
         )
         .execute(STUDENT)
@@ -216,6 +229,7 @@ mod tests {
         let listed = MarkMyNotificationsRead::new(
             InMemoryNotificationRepository::default(),
             no_announcements(),
+            FixedCoachLeaveNotices::default(),
             FixedClock(at(30)),
         )
         .execute(STUDENT)

@@ -43,6 +43,10 @@ impl MockPushSender {
                 "push_notification {recipient} booking_received {}",
                 booking_id_uuid::format(booking_id)
             ),
+            PushNotification::BookingCancelledByHeadquarters { booking_id, .. } => format!(
+                "push_notification {recipient} booking_cancelled_by_headquarters {}",
+                booking_id_uuid::format(booking_id)
+            ),
             PushNotification::VideoReviewRequested { video_id, .. } => format!(
                 "push_notification {recipient} video_review_requested {}",
                 video_id_uuid::format(video_id)

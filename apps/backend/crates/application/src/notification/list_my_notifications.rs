@@ -1,33 +1,38 @@
 use domain::identity::AccountId;
 
-use super::{AnnouncementRepository, MyNotification, NotificationRepository};
+use super::{
+    AnnouncementRepository, CoachLeaveNoticeLookup, MyNotification, NotificationRepository,
+};
 use crate::Unavailable;
 
 /// 自分のお知らせの一覧のユースケース（student-app と admin-web の `listMyNotifications`。生徒もコーチも、自分が受け取る
 /// お知らせだけ）。照会だけで、何も保存しない。
 /// 作った時刻の新しい順で、受け取り設定でオフの種類のお知らせも含む。本部からのお知らせには送った記録を添える
-/// （[`MyNotification`]）。本部が取り下げたお知らせは出さない。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
-pub struct ListMyNotifications<N, A> {
+/// （[`MyNotification`]）。本部による予約のキャンセル（コーチのお休み）には日時と一言を添える。本部が取り下げたお知らせは出さない。誰が呼べるか（役割）は境界（interface）が確かめる。行動イベントは発火しない。
+pub struct ListMyNotifications<N, A, L> {
     notifications: N,
     announcements: A,
+    coach_leaves: L,
 }
 
-impl<N, A> ListMyNotifications<N, A>
+impl<N, A, L> ListMyNotifications<N, A, L>
 where
     N: NotificationRepository,
     A: AnnouncementRepository,
+    L: CoachLeaveNoticeLookup,
 {
-    pub fn new(notifications: N, announcements: A) -> Self {
+    pub fn new(notifications: N, announcements: A, coach_leaves: L) -> Self {
         Self {
             notifications,
             announcements,
+            coach_leaves,
         }
     }
 
     /// `recipient` は認証したアカウント。
     pub async fn execute(&self, recipient: AccountId) -> Result<Vec<MyNotification>, Unavailable> {
         let notifications = self.notifications.find_by_recipient(recipient).await?;
-        MyNotification::attach(notifications, &self.announcements).await
+        MyNotification::attach(notifications, &self.announcements, &self.coach_leaves).await
     }
 }
 
@@ -46,23 +51,30 @@ mod tests {
     };
 
     use super::*;
-    use crate::in_memory::{InMemoryAnnouncementRepository, InMemoryNotificationRepository};
+    use crate::in_memory::{
+        FixedCoachLeaveNotices, InMemoryAnnouncementRepository, InMemoryNotificationRepository,
+    };
+    use crate::notification::CoachLeaveNotice;
 
     /// 生徒・コーチの `recipient` のお知らせ（本部からのお知らせはない）の中身だけ
     async fn listed_of(
         notifications: InMemoryNotificationRepository,
         recipient: AccountId,
     ) -> Vec<Notification> {
-        ListMyNotifications::new(notifications, InMemoryAnnouncementRepository::default())
-            .execute(recipient)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|mine| {
-                assert_eq!(mine.announcement, None);
-                mine.notification
-            })
-            .collect()
+        ListMyNotifications::new(
+            notifications,
+            InMemoryAnnouncementRepository::default(),
+            FixedCoachLeaveNotices::default(),
+        )
+        .execute(recipient)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|mine| {
+            assert_eq!(mine.announcement, None);
+            mine.notification
+        })
+        .collect()
     }
 
     const STUDENT: AccountId = AccountId::from_u128(1);
@@ -187,23 +199,77 @@ mod tests {
         ]);
         let announcements =
             InMemoryAnnouncementRepository::with_announcements([announcement(8), sent.clone()]);
-        let listed = ListMyNotifications::new(notifications, announcements)
-            .execute(STUDENT)
-            .await
-            .unwrap();
+        let listed = ListMyNotifications::new(
+            notifications,
+            announcements,
+            FixedCoachLeaveNotices::default(),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap();
         assert_eq!(
             listed,
             [
                 MyNotification {
                     notification: to_student,
                     announcement: Some(sent),
+                    coach_leave: None,
                 },
                 MyNotification {
                     notification: confirmed(1, STUDENT, 10),
                     announcement: None,
+                    coach_leave: None,
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_headquarters_cancel_carries_the_coach_leave_notice() {
+        let cancelled = Notification::new(
+            NotificationId::from_u128(5),
+            PushNotification::BookingCancelledByHeadquarters {
+                student_id: STUDENT,
+                coach_id: COACH,
+                booking_id: BookingId::from_u128(3),
+            },
+            at(20),
+        );
+        let notice = CoachLeaveNotice {
+            coach_display_name: Some(domain::profile::DisplayName::new("山田 健").unwrap()),
+            starts_at: at(100),
+            ends_at: at(130),
+            note: domain::scheduling::CoachLeaveNote::new("ご迷惑をおかけします。").unwrap(),
+        };
+        let notifications = InMemoryNotificationRepository::with_notifications([
+            cancelled,
+            confirmed(1, STUDENT, 10),
+        ]);
+
+        let listed = ListMyNotifications::new(
+            notifications,
+            InMemoryAnnouncementRepository::default(),
+            FixedCoachLeaveNotices::with_notices([(BookingId::from_u128(3), notice.clone())]),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap();
+
+        let attached: Vec<_> = listed.iter().map(|mine| mine.coach_leave.clone()).collect();
+        assert_eq!(attached, vec![Some(notice), None], "予約の確定には添えない");
+
+        // お休みの記録が引けなければ添えない（一覧は出す）
+        let notifications = InMemoryNotificationRepository::with_notifications([cancelled]);
+        let listed = ListMyNotifications::new(
+            notifications,
+            InMemoryAnnouncementRepository::default(),
+            FixedCoachLeaveNotices::default(),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].coach_leave, None);
     }
 
     #[tokio::test]
@@ -222,10 +288,14 @@ mod tests {
         ]);
         let announcements =
             InMemoryAnnouncementRepository::with_announcements([withdrawn, kept.clone()]);
-        let listed = ListMyNotifications::new(notifications.clone(), announcements)
-            .execute(STUDENT)
-            .await
-            .unwrap();
+        let listed = ListMyNotifications::new(
+            notifications.clone(),
+            announcements,
+            FixedCoachLeaveNotices::default(),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap();
         assert_eq!(
             listed
                 .iter()
@@ -246,10 +316,13 @@ mod tests {
                 announcement(7).push_to(STUDENT),
                 at(30),
             )]);
-        let result =
-            ListMyNotifications::new(notifications, InMemoryAnnouncementRepository::default())
-                .execute(STUDENT)
-                .await;
+        let result = ListMyNotifications::new(
+            notifications,
+            InMemoryAnnouncementRepository::default(),
+            FixedCoachLeaveNotices::default(),
+        )
+        .execute(STUDENT)
+        .await;
         assert!(result.is_err(), "送った記録のないお知らせは保存先の破損");
     }
 }

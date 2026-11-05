@@ -22,6 +22,13 @@ pub enum PushNotification {
         coach_id: AccountId,
         booking_id: BookingId,
     },
+    /// 本部が予約をキャンセルした（コーチのお休み。`BookingCancelled` の `cancelled_by` が本部）ことを、予約した生徒に
+    /// 知らせる。本文（コーチの表示名・予約の日時・本部の一言）は境界のアダプタがお休みの記録から決める
+    BookingCancelledByHeadquarters {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+    },
     /// 生徒が動画を添削依頼として送った（`VideoReviewRequested`）ことを、依頼を受けたコーチに知らせる
     VideoReviewRequested {
         student_id: AccountId,
@@ -56,6 +63,7 @@ impl PushNotification {
     pub const fn recipient(&self) -> AccountId {
         match *self {
             PushNotification::BookingConfirmed { student_id, .. }
+            | PushNotification::BookingCancelledByHeadquarters { student_id, .. }
             | PushNotification::VideoReviewReturned { student_id, .. }
             | PushNotification::Announcement { student_id, .. } => student_id,
             PushNotification::BookingReceived { coach_id, .. }
@@ -73,10 +81,14 @@ impl PushNotification {
     }
 
     /// 通知の種類（受け取り設定でオン / オフを決める単位）。予約の確定は生徒への知らせもコーチへの知らせも同じ種類。
+    /// 本部による予約のキャンセルも、予約についての知らせとして予約の確定と同じ種類（受け取り設定の項目を増やさない）。
     pub const fn kind(&self) -> NotificationKind {
         match *self {
             PushNotification::BookingConfirmed { .. }
-            | PushNotification::BookingReceived { .. } => NotificationKind::BookingConfirmed,
+            | PushNotification::BookingReceived { .. }
+            | PushNotification::BookingCancelledByHeadquarters { .. } => {
+                NotificationKind::BookingConfirmed
+            }
             PushNotification::VideoReviewRequested { .. } => NotificationKind::VideoReviewRequested,
             PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
             PushNotification::MessageReceived { .. } => NotificationKind::MessageReceived,
@@ -126,6 +138,18 @@ mod tests {
             NotificationKind::BookingConfirmed,
             "コーチへの知らせも予約の確定の種類"
         );
+    }
+
+    #[test]
+    fn a_headquarters_cancel_goes_to_the_student_as_a_booking_notice() {
+        let notification = PushNotification::BookingCancelledByHeadquarters {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+        };
+        assert_eq!(notification.recipient(), STUDENT);
+        assert_eq!(notification.kind(), NotificationKind::BookingConfirmed);
+        assert_eq!(notification.announcement_id(), None);
     }
 
     #[test]
