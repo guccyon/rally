@@ -1,0 +1,84 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0018
+pr: https://github.com/guccyon/rally/pull/970
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0010 に足した enforcement.solutions の config は、D-0013 の enforce の案（同じ PR で 3 回を超えたら人の判断待ち、2
+    回目以降は引き継がない、CHANGELOG だけの衝突は機械的な解消か tier-small）と中身がそろっており、decided_by も committee:D-0013
+    で議決に辿れます。
+  - INDEX.md の K-0010 の行は enforcement の段が deterministic に変わっただけで、K-0010.yaml の enforcement.level
+    と食い違っておらず、ほかの行も変えていません。
+  - statement・confidence・evidence・status は変えておらず、効き目はまだ確かめていないと書いているので、confidence
+    は hypothesis のままが妥当です。
+  - CHANGELOG.md と changelog.d/ だけの衝突を機械的に解く線は、K-0002 の断片方式とは矛盾しませんが、CHANGELOG.md
+    の [Unreleased] で両方の行を残す解き方をすると K-0002 の ci_check（tools/changelog-check/check.mjs）で落ちることがあるので、建設者が配線するときは二つの線を一緒に確かめてください。
+  - D-0013 で consistency と dissent が求めた、statement の末尾「回数とともに PR 本文の追記も重なる」を削ることと related
+    に K-0008 を足すことは、今回 K-0010 を変えたのに入っていないので、次の変更セットで直してください。
+  - invalidate_when の「回数の上限か引き継ぎの打ち切りが入った」は、Engine が continuation.yaml を読むようになった時点で当たるので、そのときに廃止するか担保済みとして残すかを再確認してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0010 に足した enforcement.solutions は issue 954 と committee:D-0013 を指していて、D-0013
+    の担保の提案（同じ PR での回数の上限、2 回目以降は引き継がない、CHANGELOG だけの衝突は機械的に解く）と中身が一致するので、一次記録まで辿れます。
+  - test_policy.py が照らす「20 回の衝突」は C-0005 の process の観点の記録（13 時間に 20 回、agent_resumed=true）と同じ入力なので、担保のテストも事例記録に辿れます。
+  - what に「今の Engine では回数の上限と changelog.d/ を含む衝突の機械的な解消は外れるので todo にした」「効き目はまだ確かめていない」と正直に書いてあり、K-0001・K-0002・K-0004
+    の担保の書き方とも揃っています。
+  - 担保の線を置いただけで効き目も、cost_usd の増加がセッションの引き継ぎによるものかもまだ確かめていないので、confidence は hypothesis
+    のままが妥当で、上げないでください。
+  - INDEX.md の K-0010 の行の変更は enforcement.level が deterministic になったことだけで、K-0010.yaml
+    の値と食い違っていません。
+  - 差分にあるのは Issue の番号、ファイルとツールの名前、回数の数値だけで、利用者や人を特定できる情報は入っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0010 の enforcement.solutions は D-0013 の config の案（回数の上限 3 回、2 回目以降は引き継がない、CHANGELOG
+    だけの衝突は機械的に解く）をそのまま線にしており、policy.py と test_policy.py で C-0005 と同じ 20 回の衝突の入力を確かめているので、担保の記録として採ってよいです。
+  - INDEX.md の K-0010 の担保の段を context から deterministic に変えたのは、K-0010.yaml の enforcement.level
+    と合っています。
+  - ただし Engine が .factory-config/continuation.yaml を読んでおらず、test_engine.py も回数の上限と
+    changelog.d/ の機械的な解消を todo にしたままで CI に配線されていないので、今は線が書いてあるだけで再発は止まりません。
+  - C-0005 では 13 時間に 20 回走り 1 回の cost_usd が 1.95 から 10.36 に増えたので、外したときの痛さが大きく、test_engine.py
+    を PR ごとに走らせて todo が残ったまま忘れられないようにする ci_check を足す値打ちがあります。
+  - invalidate_when の 1 つ目は今回の担保が効いたときに満たされる条件なので、担保が効いたら廃止なのか確かめて confirmed に上げるのかを次の変更セットで書き分けてください。
+  - 担保の効き目は Engine に上限が入ったあとの衝突で、積まれた回数と 1 回ごとの cost_usd を一次記録で確かめるまで確かめられないので、confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0013 で決めた K-0010 の担保を enforcement.solutions に記録し、INDEX.md の担保の段を deterministic
+    に揃えるだけで、statement・scope・確かさは広げていないので、範囲が広すぎるとは判断しません。
+  - 「効き目はまだ確かめていない」と書いたまま level を deterministic にするのは K-0001・K-0004 と同じ扱いで、Engine
+    が今の形のときだけ外れる線を todo にしたことも明記されているので、記録としては採れます。
+  - 反例として、main で版の切り出しや changelog_compile.py の取りまとめが CHANGELOG.md の [Unreleased] から行を動かしたときに両方の行を残す機械的な解消をすると、行が重複したり消した断片が戻ったりするので、建設者はその入力を
+    test_policy.py に足してください。
+  - changelog.d/ は PR ごとの断片なので本来は衝突しにくく、そこで衝突したときは同じ Issue の断片を二つの PR が触った異常の可能性があり、両方の行を残して黙って解くと隠れるので、機械的な解消の対象を
+    CHANGELOG.md に絞るか changelog.d/ の衝突は人へ回すかを確かめてください。
+  - 同じ PR で 3 回までの上限に機械的に解いた衝突も数えるのかが書かれておらず、数えると C-0005 のような CHANGELOG だけの衝突が 4 回目で人の判断待ちになって手間が増えるので、上限はエージェントを使った続きのジョブだけを数えると明記するのが望ましいです。
+  - セッションの引き継ぎを 1 回目までにする線は、cost_usd の増え方を引き継ぎと他の要因で切り分けていない仮説（D-0013 の反対の票）の上に立つので、confidence
+    は hypothesis のままにし、引き継がない続きのジョブでも費用が増えたら K-0010 を見直してください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/conflict-check/test_engine.py を、Engine を固定の版（ENGINE_REF）でチェックアウトして
+    ENGINE_DIR を向け PR ごとに走らせるワークフローにし、CI（CI=true）では Engine のチェックアウトや conflict_step・ci_failure_step・continuation.enqueue・entrypoint.sh
+    の取り出しに失敗したら飛ばさずに落とす。回数の上限と changelog.d/ の機械的な解消の todo は Engine が今の形のときだけに狭め、Engine
+    が continuation.yaml を読むように変わった版で todo が残っていれば落とす（K-0004 の engine.test.mjs と order.mjs
+    と同じ形）。
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: test
+  proposal: '制御プレーンのイベント列（pr.conflicted と continue.enqueued、reason=conflict）から PR
+    ごとに conflict の続きのジョブの回数・agent_resumed・tier を組み、同じ PR で 4 回目が積まれた、2 回目以降で agent_resumed=true、CHANGELOG.md
+    と changelog.d/ だけの衝突で tier-large が積まれた、のどれかがあれば落とす検査を policy.py の線で書き、C-0005（PR
+    #659）のイベント列で落ちることを確かめる。'
