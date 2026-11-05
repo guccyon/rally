@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { TEMPLATE, checkBody, headings } from "./check.mjs";
+import { TEMPLATE, checkBody, headings, parseTemplate } from "./check.mjs";
 
 /** 新しい PR の本文（Engine の worker/entrypoint.sh が組む形）。 */
 const NEW_PR = `Closes #541
@@ -121,6 +121,40 @@ test("定義の見出しを全部使った本文は通る", () => {
 test("定義は CLAUDE.md の見出しの順に、仮決めを補足と知見の間に入れたもの", () => {
   assert.deepEqual(TEMPLATE.map((t) => t.text), ["概要", "対応内容", "影響範囲・互換性", "動作確認", "補足", "仮決め", "知見"]);
   assert.deepEqual(TEMPLATE.filter((t) => t.required).map((t) => t.text), ["概要", "対応内容"]);
+});
+
+test("定義は凍結してあり、生成した後で書き換えられない", () => {
+  assert.ok(Object.isFrozen(TEMPLATE));
+  assert.ok(TEMPLATE.every((t) => Object.isFrozen(t)));
+  assert.throws(() => { TEMPLATE.push({ text: "背景", required: true }); }, TypeError);
+  assert.throws(() => { TEMPLATE[0].required = false; }, TypeError);
+  assert.throws(() => { TEMPLATE[0].text = "背景"; }, TypeError);
+});
+
+test("不正な定義は生成するときに外す", () => {
+  const ok = { text: "概要", required: true };
+  for (const [data, why] of [
+    [null, /h2 が空でない配列でない/],
+    [{}, /h2 が空でない配列でない/],
+    [{ h2: [] }, /h2 が空でない配列でない/],
+    [{ h2: ["概要"] }, /h2\[0\] がオブジェクトでない/],
+    [{ h2: [{ ...ok, extra: 1 }] }, /知らない欄がある（extra）/],
+    [{ h2: [{ text: "", required: true }] }, /h2\[0\]\.text/],
+    [{ h2: [{ text: " 概要", required: true }] }, /h2\[0\]\.text/],
+    [{ h2: [{ text: "概\n要", required: true }] }, /h2\[0\]\.text/],
+    [{ h2: [{ text: 1, required: true }] }, /h2\[0\]\.text/],
+    [{ h2: [{ text: "概要", required: "yes" }] }, /h2\[0\]\.required/],
+    [{ h2: [ok, ok] }, /h2\[1\]\.text「概要」が重なっている/],
+  ]) {
+    assert.throws(() => parseTemplate(data), why);
+  }
+});
+
+test("定義を検証しても元のデータは凍結しない", () => {
+  const data = { h2: [{ text: "概要", required: true }] };
+  const t = parseTemplate(data);
+  assert.deepEqual(t, [{ text: "概要", required: true }]);
+  assert.ok(!Object.isFrozen(data.h2[0]));
 });
 
 test("必須の見出しが欠けると外れる", () => {
