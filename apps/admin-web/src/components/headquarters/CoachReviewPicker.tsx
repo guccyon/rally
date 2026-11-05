@@ -251,6 +251,7 @@ export function CoachReviewPicker({
           reviews={reviews.reviews.reviews}
           maxRating={reviews.maxRating}
           period={reviews.period}
+          showCoachId={false}
         />
       )}
     </div>
