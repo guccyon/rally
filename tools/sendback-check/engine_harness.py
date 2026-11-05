@@ -93,7 +93,8 @@ class FakeCursor:
             self._rows = [{"1": 1} for e in self.events if e["name"] == "gate.evaluated" and e["payload"].get("pr_url") == params[0]
                           and e["occurred_at"] > params[1]][:1]
         elif "name='judgment.judged'" in sql:
-            self._rows = [{"verdict": e["payload"].get("verdict")} for e in self.events if e["name"] == "judgment.judged"
+            # payload の項目をすべて返す（verdict のほか category など）。Engine の basis を欠陥と仮決めに分けて数える版でも同じ形で答える（Issue #961）
+            self._rows = [{**e["payload"], "verdict": e["payload"].get("verdict")} for e in self.events if e["name"] == "judgment.judged"
                           and e["payload"].get("pr_url") == params[0] and e["occurred_at"] > params[1]]
         elif "name='sendback.filed' and payload->>'fix_corr'" in sql:
             self._rows = []   # この PR は差し戻しの直しではない

@@ -119,4 +119,17 @@ enforcement:
       issue: 960
       at: 2026-11-05
       decided_by: committee:D-0014
+    - kind: test
+      what: >-
+        議決 D-0014 の test の案のうち、ワーカーの権限で入れられる分を入れた。Engine は別のリポジトリで、このリポジトリで「basis を直す PR」に当たるのは
+        ENGINE_REF を直した版に上げる PR なので、tools/sendback-check/engine.test.mjs に、Engine が今の形の basis（LEGACY_BASIS）を書かなくなったのに
+        engine.test.mjs に todo（order.mjs の todoLines と同じ数え方。todoWhileLegacy の t.todo を含む）が残っていれば落とすテストを足し、
+        その PR で todo を外して必須のテストにすることを機械で求めるようにした。今の形のうちは何も見ずに通る。engine_harness.py の偽の cursor は
+        judgment.judged の問い合わせに payload の項目をすべて返すようにし、欠陥と仮決めを分けて数える Engine でも同じ形で動くようにした。
+        basis を approvalBasis() の形に書き換えた Engine の写しで、todo が残っていればこのテストだけが落ち、todo を外すと (3)・(c) を含めすべて通ることを確かめた。
+        今の Engine（ENGINE_REF と手元の 71a4a89）はまだ adopt の合計だけを書くので (3) と (c) は todo のままで、basis を直すことと、そのあとの D-0010 の
+        check.mjs --events --pr --summary の ci_check の .github/workflows/ への配線（順序は order.mjs が見張る）は建設者が入れる。効き目はまだ確かめていない
+      issue: 961
+      at: 2026-11-05
+      decided_by: committee:D-0014
 decided_by: committee:D-0004
