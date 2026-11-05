@@ -1,6 +1,6 @@
 import type { IconName } from "./icons/paths";
 
-// 状態の色（specs/design/tokens.yaml の color.status と booking_state の neutral）。
+// 状態の色（specs/design/tokens.yaml の color.status と booking_state・slot_state の neutral）。
 // 状態は色と一緒に必ずアイコンか文字を出す。
 
 export type Status = "info" | "success" | "warning" | "danger" | "neutral";
@@ -11,7 +11,7 @@ export const STATUS_CONTAINER_CLASSES: Record<Status, string> = {
   success: "bg-success-container text-success-on-container",
   warning: "bg-warning-container text-warning-on-container",
   danger: "bg-danger-container text-danger-on-container",
-  neutral: "bg-surface text-text-muted",
+  neutral: "border border-border bg-surface text-text-muted",
 };
 
 /** アイコンの色（status の fg）。 */
@@ -30,4 +30,11 @@ export const STATUS_ICONS: Record<Status, IconName> = {
   warning: "schedule",
   danger: "error",
   neutral: "do_not_disturb_on",
+};
+
+/** スロットの状態（glossary の slot.states）と色の対応（tokens.yaml の color.slot_state）。 */
+export const SLOT_STATE_STATUS: Record<"open" | "booked" | "closed", Status> = {
+  open: "info",
+  booked: "success",
+  closed: "neutral",
 };

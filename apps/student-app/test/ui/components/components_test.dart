@@ -97,6 +97,21 @@ void main() {
     expect(text.style!.color, RallyColors.warning.onContainer);
   });
 
+  testWidgets('neutral の状態のタグは border の 1px の輪郭を付ける', (tester) async {
+    await pumpPart(
+      tester,
+      StatusTag(label: '終了', status: RallySlotState.closed.status),
+    );
+    final box = tester.widget<Container>(
+      find
+          .ancestor(of: find.text('終了'), matching: find.byType(Container))
+          .first,
+    );
+    final decoration = box.decoration! as BoxDecoration;
+    expect(decoration.color, RallyColors.surface);
+    expect(decoration.border, Border.all(color: RallyColors.border));
+  });
+
   testWidgets('スコアの面は、数字と単位と条件を 1 つの文で読み上げる', (tester) async {
     final handle = tester.ensureSemantics();
     await pumpPart(

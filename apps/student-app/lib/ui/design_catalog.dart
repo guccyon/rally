@@ -34,6 +34,8 @@ class CatalogEntry {
 
 /// components.yaml にあるが student-app のカタログに置かない部品と種類（`部品` か `部品 / 種類` → 理由）。
 const notInStudentCatalog = <String, String>{
+  'date_field':
+      'components.yaml の not_for に student-app では今は使わないとある（admin-web の一覧の絞り込み）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'notice / toast':
@@ -64,6 +66,13 @@ const _notices = {
   RallyStatus.success: '表示名を変更しました。',
   RallyStatus.warning: '開始まで 1 時間を切りました。',
   RallyStatus.danger: 'お知らせを読み込めませんでした。時間をおいてもう一度開いてください。',
+};
+
+/// スロットの状態の呼び名（glossary の slot.states）
+const _slotStateLabels = {
+  RallySlotState.open: '公開中',
+  RallySlotState.booked: '予約済み',
+  RallySlotState.closed: '終了',
 };
 
 const _statusLabels = {
@@ -196,6 +205,12 @@ final designCatalog = <CatalogEntry>[
       'status_tag',
       (_) => StatusTag(label: _statusLabels[status]!, status: status),
       example: status.name,
+    ),
+  for (final state in RallySlotState.values)
+    CatalogEntry(
+      'status_tag',
+      (_) => StatusTag(label: _slotStateLabels[state]!, status: state.status),
+      example: 'slot_state ${state.name}',
     ),
   CatalogEntry(
     'score_panel',

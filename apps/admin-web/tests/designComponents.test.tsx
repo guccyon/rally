@@ -1,5 +1,5 @@
 // デザインシステムの基本の部品（specs/design/components.yaml）。
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
@@ -9,11 +9,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
+import { DateField, DateRangeField } from "@/components/ui/DateField";
+import { dateRangeError, type DateRange } from "@/components/ui/dateRange";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRow } from "@/components/ui/ListRow";
 import { LoadingBar, SectionLoading } from "@/components/ui/Loading";
 import { Notice } from "@/components/ui/Notice";
 import { StatusTag } from "@/components/ui/StatusTag";
+import { SLOT_STATE_STATUS } from "@/components/ui/status";
 import { TextArea, TextField } from "@/components/ui/TextField";
 
 test("ボタンは種類ごとにトークンの色で、高さ 48px 以上の丸いボタン", () => {
@@ -222,4 +225,86 @@ test("表が幅に収まるときは、包みをフォーカスの止まる場�
   );
   expect(screen.queryByRole("region", { name: "受付の記録" })).not.toBeInTheDocument();
   expect(screen.getByRole("table", { name: "受付の記録" }).parentElement).not.toHaveAttribute("tabindex");
+});
+
+test("日付の欄は見えるラベルの付いた input type=date で、入力欄と同じ高さと輪郭", () => {
+  render(<DateField label="送る日" defaultValue="2026-10-28" />);
+  const field = screen.getByLabelText("送る日");
+  expect(field).toHaveAttribute("type", "date");
+  expect(field).toHaveValue("2026-10-28");
+  expect(field).toHaveClass("min-h-12", "border-border-strong", "rounded-md", "tabular-nums", "min-w-[10em]");
+});
+
+test("期間の欄は「期間」の group に開始日と終了日を並べ、変えた値を YYYY-MM-DD で返す", () => {
+  const onChange = vi.fn();
+  render(
+    <DateRangeField value={{ from: "2026-10-28", to: "2026-11-03" }} onChange={onChange} helper="31 日まで選べます" />,
+  );
+  const group = screen.getByRole("group", { name: "期間" });
+  expect(group.tagName).toBe("FIELDSET");
+  const from = screen.getByLabelText("開始日");
+  expect(from).toHaveValue("2026-10-28");
+  expect(from).toHaveAccessibleDescription("31 日まで選べます");
+  expect(screen.getByLabelText("終了日")).toHaveValue("2026-11-03");
+
+  fireEvent.change(screen.getByLabelText("終了日"), { target: { value: "2026-11-05" } });
+  expect(onChange).toHaveBeenLastCalledWith({ from: "2026-10-28", to: "2026-11-05" });
+});
+
+test("期間の誤りは group の下に 1 つ出し、印の欄だけに aria-invalid と説明を結ぶ", () => {
+  function Range({ value }: { value: DateRange }) {
+    const [range, setRange] = useState(value);
+    return <DateRangeField value={range} onChange={setRange} error={dateRangeError(range, 31)} />;
+  }
+  render(<Range value={{ from: "2026-11-03", to: "2026-10-28" }} />);
+  const message = "終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。";
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getByRole("alert")).toHaveTextContent(message);
+  expect(screen.getByLabelText("開始日")).not.toHaveAttribute("aria-invalid");
+  expect(screen.getByLabelText("終了日")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByLabelText("終了日")).toHaveAccessibleDescription(message);
+});
+
+test("既定の期間を読むあいだは欄を変えられず、読み込み中を伝える", () => {
+  render(<DateRangeField value={{ from: "", to: "" }} onChange={vi.fn()} helper="31 日まで選べます" loading />);
+  expect(screen.getByRole("group", { name: "期間" })).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByLabelText("開始日")).toBeDisabled();
+  expect(screen.getByLabelText("終了日")).toBeDisabled();
+  expect(screen.getByRole("status")).toHaveTextContent("期間を読み込んでいます…");
+});
+
+test.each([
+  [{ from: "", to: "2026-11-03" }, "開始日か終了日が空いています。両方を選んでください。", "from"],
+  [{ from: "2026-10-28", to: "" }, "開始日か終了日が空いています。両方を選んでください。", "to"],
+  [{ from: "", to: "" }, "開始日か終了日が空いています。両方を選んでください。", "both"],
+  [
+    { from: "2026-11-03", to: "2026-10-28" },
+    "終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。",
+    "to",
+  ],
+  [{ from: "2026-10-01", to: "2026-11-30" }, "選んだ期間は 61 日です。期間は 31 日までにしてください。", "both"],
+] as const)("期間 %o の誤りは「%s」で、印は %s", (range, message, mark) => {
+  expect(dateRangeError(range, 31)).toEqual({ message, mark });
+});
+
+test("期間は両端を含めて上限の日数までなら誤りにしない", () => {
+  expect(dateRangeError({ from: "2026-10-28", to: "2026-10-28" }, 31)).toBeNull();
+  expect(dateRangeError({ from: "2026-10-01", to: "2026-10-31" }, 31)).toBeNull();
+  expect(dateRangeError({ from: "2026-10-01", to: "2026-11-01" }, 31)?.message).toBe(
+    "選んだ期間は 32 日です。期間は 31 日までにしてください。",
+  );
+});
+
+test.each([
+  ["open", "公開中", "bg-info-container"],
+  ["booked", "予約済み", "bg-success-container"],
+  ["closed", "終了", "bg-surface"],
+] as const)("スロットの状態 %s は「%s」を slot_state の色（%s）で出す", (state, label, container) => {
+  render(<StatusTag label={label} status={SLOT_STATE_STATUS[state]} />);
+  expect(screen.getByText(label)).toHaveClass(container);
+});
+
+test("neutral の状態のタグは border の 1px の輪郭を付ける", () => {
+  render(<StatusTag label="キャンセル済み" status="neutral" />);
+  expect(screen.getByText("キャンセル済み")).toHaveClass("border", "border-border", "bg-surface", "text-text-muted");
 });

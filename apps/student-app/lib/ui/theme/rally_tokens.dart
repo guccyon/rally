@@ -54,7 +54,7 @@ abstract final class RallyColors {
     onContainer: Color(0xFF7A0F1E),
   );
 
-  /// 予約のキャンセル済みなどの中立（color.booking_state.cancelled）
+  /// 予約のキャンセル済み・スロットの終了などの中立（color.booking_state.cancelled・slot_state.closed）。輪郭は [border] の 1px
   static const neutral = RallyStatusColors(
     fg: textMuted,
     container: surface,
@@ -97,6 +97,19 @@ enum RallyStatus {
     warning => Icons.schedule_rounded,
     danger => Icons.error_outline_rounded,
     neutral => Icons.remove_circle_outline_rounded,
+  };
+}
+
+/// スロットの状態（glossary の slot.states）と色の対応（color.slot_state）。
+enum RallySlotState {
+  open,
+  booked,
+  closed;
+
+  RallyStatus get status => switch (this) {
+    open => RallyStatus.info,
+    booked => RallyStatus.success,
+    closed => RallyStatus.neutral,
   };
 }
 

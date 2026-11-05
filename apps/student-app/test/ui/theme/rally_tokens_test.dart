@@ -64,6 +64,16 @@ void main() {
     }
   });
 
+  test('スロットの状態の色は tokens.yaml の color.slot_state と同じ', () {
+    final slotState = color['slot_state'] as YamlMap;
+    final dart = {
+      for (final state in RallySlotState.values) state.name: state.status.name,
+    };
+    expect(dart, {
+      for (final entry in slotState.entries) entry.key: entry.value,
+    });
+  });
+
   test('余白・角丸・動きの段は tokens.yaml と同じ', () {
     final spacing = (tokens['spacing'] as YamlMap)['scale_px'] as YamlMap;
     expect(

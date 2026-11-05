@@ -35,6 +35,13 @@ color:
     pending: warning      # 確定待ち
     confirmed: success    # 確定済み
     cancelled: neutral    # キャンセル済み（text_muted の文字と surface の面）
+  slot_state:   # スロットの状態（glossary の slot.states）と色の対応（0.4.0 で足した。#455）
+    open: info            # 公開中。予約を待っている
+    booked: success       # 予約済み。予約が入った（確定待ちを含む。確定待ちかは予約の status_tag で別に出す）
+    closed: neutral       # 終了
+  state_rules:
+    - neutral は文字 text_muted・面 surface・輪郭 border 1px（booking_state と同じ）
+    - 状態の色はこの対応からだけ選ぶ。スロットと予約の状態を同じ行に出すときは両方の呼び名を出す
   scale:   # 濃淡の段階。roles にない段は使わない（足すときは governance の手順で）
     blue:  {50: "#E9EDF8", 600: "#3A54B0", 700: "#2E4590", 900: "#1E2A5C"}   # 0.2.0 で彩度を下げた（段の名前は同じ）
     lime:  {300: "#D4F53C"}
@@ -76,6 +83,8 @@ color:
     - {fg: warning.fg, bg: surface, ratio: 4.89}
     - {fg: warning.fg, bg: warning.container, ratio: 4.86}
     - {fg: warning.on_container, bg: warning.container, ratio: 9.67}
+    - {fg: info.on_container, bg: info.container, ratio: 11.64, note: slot_state の open（0.4.0）}
+    - {fg: info.fg, bg: info.container, ratio: 5.83, note: アイコン}
   not_allowed_pairs:   # 比が足りないので使わない
     - {fg: secondary, bg: background, ratio: 1.24}
     - {fg: primary, bg: inverse_surface, ratio: 2.72}

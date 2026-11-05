@@ -5,13 +5,15 @@ import { Button, type ButtonVariant } from "./Button";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DataTable, type DataTableColumn } from "./DataTable";
+import { DateField, DateRangeField } from "./DateField";
+import { dateRangeError, type DateRange } from "./dateRange";
 import { EmptyState } from "./EmptyState";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
 import { Notice } from "./Notice";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
-import type { Status } from "./status";
+import { SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
  * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -67,6 +69,27 @@ const STATUS_EXAMPLES: { status: Status; label: string }[] = [
   { status: "warning", label: "確定待ち" },
   { status: "danger", label: "受付停止" },
   { status: "neutral", label: "キャンセル済み" },
+];
+
+/** スロットの状態（glossary の slot.states）の見本。色は tokens.yaml の color.slot_state。 */
+const SLOT_STATE_EXAMPLES: {
+  state: keyof typeof SLOT_STATE_STATUS;
+  label: string;
+}[] = [
+  { state: "open", label: "公開中" },
+  { state: "booked", label: "予約済み" },
+  { state: "closed", label: "終了" },
+];
+
+/** 期間の見本（日付の欄と誤りの型）。上限は契約の 31 日。 */
+const MAX_DAYS = 31;
+const RANGE_EXAMPLES: { example: string; value: DateRange }[] = [
+  {
+    example: "終わりが始まりより前",
+    value: { from: "2026-11-03", to: "2026-10-28" },
+  },
+  { example: "31 日を超える", value: { from: "2026-10-01", to: "2026-11-30" } },
+  { example: "空の欄", value: { from: "2026-10-28", to: "" } },
 ];
 
 const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
@@ -162,7 +185,10 @@ const SUPPLY_ROWS: SupplyRow[] = [
   { coach: "佐藤 健", published: 8, booked: 2, comment: "—" },
 ];
 
-const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = { header: "コーチ", cell: (row) => row.coach };
+const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = {
+  header: "コーチ",
+  cell: (row) => row.coach,
+};
 
 const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
   SUPPLY_COACH_COLUMN,
@@ -263,6 +289,40 @@ export const CATALOG: CatalogEntry[] = [
     ];
   }),
   {
+    component: "date_field",
+    variant: "date",
+    state: "default",
+    render: () => <DateField label="送る日" defaultValue="2026-10-28" />,
+  },
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "default",
+    render: () => (
+      <DateRangeField value={{ from: "2026-10-28", to: "2026-11-03" }} onChange={noop} helper="31 日まで選べます" />
+    ),
+  },
+  ...RANGE_EXAMPLES.map(({ example, value }) => ({
+    component: "date_field",
+    variant: "date_range",
+    state: "error",
+    example,
+    render: () => (
+      <DateRangeField
+        value={value}
+        onChange={noop}
+        helper="31 日まで選べます"
+        error={dateRangeError(value, MAX_DAYS)}
+      />
+    ),
+  })),
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "loading",
+    render: () => <DateRangeField value={{ from: "", to: "" }} onChange={noop} loading />,
+  },
+  {
     component: "card",
     render: () => (
       <Card>
@@ -299,6 +359,11 @@ export const CATALOG: CatalogEntry[] = [
     component: "status_tag",
     example: status,
     render: () => <StatusTag label={label} status={status} />,
+  })),
+  ...SLOT_STATE_EXAMPLES.map(({ state, label }) => ({
+    component: "status_tag",
+    example: `slot_state ${state}`,
+    render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
   })),
   ...(["info", "success", "warning", "danger"] as const).map((state) => ({
     component: "notice",
