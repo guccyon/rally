@@ -20,4 +20,9 @@ pub struct ListCoachesQuery {
     /// `listUnansweredMessageThreads` に既定の条件とそのコーチの `coach_id` だけを付けたときに載るもの）が 1 件以上ある
     /// コーチだけ（判定は [`domain::messaging::UnansweredCoachFilter`]）。`false`（既定）なら絞らない
     pub has_unanswered: bool,
+    /// `true` なら返却待ちのうち送付から 48 時間以上たった動画（`getCoachOverview` の
+    /// `overdue_pending_video_review_count`。`listPendingVideoReviews` にそのコーチの `coach_id` と `min_elapsed_hours=48` を
+    /// 付けたときに載るもの）が 1 件以上あるコーチだけ（判定は [`domain::async_lesson::OverdueVideoCoachFilter`]）。
+    /// `false`（既定）なら絞らない
+    pub has_overdue_video: bool,
 }

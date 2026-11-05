@@ -1,11 +1,12 @@
 //! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
 //! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
 //! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチと、返事のない
-//! メッセージのあるコーチに絞れる。コーチは 403。
+//! メッセージのあるコーチと、返却の遅れている動画のあるコーチに絞れる。コーチは 403。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
+    async_lesson::AsyncLessonCoachPendingVideoReviewCountsLookup,
     catalog::CatalogPublishedLessonMenuCountLookup,
     identity::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
@@ -15,7 +16,7 @@ use application::{
         FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
         InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
         InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
-        InMemoryMessageThreadRepository,
+        InMemoryMessageThreadRepository, InMemoryVideoRepository,
     },
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
@@ -30,7 +31,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use domain::{
-    async_lesson::VideoId,
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
     catalog::{
         LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
         LessonMenuName, Sport,
@@ -200,12 +201,34 @@ fn message_thread(id: u128, coach_id: u128, exchange: &[(bool, SystemTime)]) -> 
     thread
 }
 
+/// テニスの生徒（3）がコーチ `coach_id` に `submitted_at` に送った動画。`returned` なら照会の時刻に返却済み。
+fn video(id: u128, coach_id: u128, submitted_at: SystemTime, returned: bool) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Sport::Tennis,
+        submitted_at,
+        returned.then(|| {
+            (
+                VideoReviewId::from_u128(id + 100),
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                now(),
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
 /// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。直近 30 日に終わったレッスンは
 /// コーチ 2 が通話 1・添削 1（30 日前ちょうどを含む。31 日前の添削は数えない）、コーチ 5 が添削 1。コーチ 4 は 0。
 /// 本部が見る直近の低い評価は、コーチ 4 が今日の ★1（未対応）と ★3、コーチ 2 が 30 日前ちょうどの ★2（未対応）、
 /// コーチ 5 が対応済みの ★2 と 31 日前の ★1（期間の外）。
 /// 返信のないまま既定の 24 時間の過ぎたスレッドは、コーチ 4 が 30 時間前の発言、コーチ 5 が 24 時間ちょうど前の発言。
 /// コーチ 2 は返信済みと 24 時間に 1 秒足りないものだけ。
+/// 返却待ちのうち送付から 48 時間以上たった動画は、コーチ 2 が 48 時間ちょうど前、コーチ 4 が 72 時間前のもの。
+/// コーチ 5 は 47 時間前の返却待ちと、200 時間前に送って返却済みのものだけ。
 fn app(accounts: InMemoryAccountRepository) -> Router {
     app_with(accounts, InMemoryCoachAcceptanceRepository::default())
 }
@@ -247,6 +270,12 @@ fn app_with(
         message_thread(3, 2, &[(true, now() - 50 * HOUR), (false, now() - HOUR)]),
         message_thread(4, 2, &[(true, now() - 24 * HOUR + Duration::from_secs(1))]),
     ]);
+    let videos = InMemoryVideoRepository::with_videos([
+        video(1, 2, now() - 48 * HOUR, false),
+        video(2, 4, now() - 72 * HOUR, false),
+        video(3, 5, now() - 47 * HOUR, false),
+        video(4, 5, now() - 200 * HOUR, true),
+    ]);
     let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
     interface::coaches_router(
         ListCoaches::new(
@@ -255,6 +284,7 @@ fn app_with(
             LessonCoachRecentLessonCountLookup::new(completions, FixedClock(now())),
             ReviewCoachLowRatedReviewCountLookup::new(low_rated_reviews, FixedClock(now())),
             MessagingCoachUnansweredMessageThreadCountLookup::new(threads, FixedClock(now())),
+            AsyncLessonCoachPendingVideoReviewCountsLookup::new(videos, FixedClock(now())),
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
@@ -619,6 +649,75 @@ async fn students_ignore_has_unanswered_as_before() {
         &router,
         "student-app",
         "?has_unanswered=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_overdue_videos_combined_with_other_filters() {
+    // 返却の遅れている動画はコーチ 4（停止中）と 2 にある。コーチ 5 は 48 時間に満たないものと返却済みだけ。
+    // たな = %E3%81%9F%E3%81%AA
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_overdue_video=true", vec![4, 2]),
+        // false・付けないときは絞らない
+        ("?has_overdue_video=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_overdue_video=true&sport=tennis", vec![4, 2]),
+        ("?has_overdue_video=true&sport=soccer", vec![]),
+        (
+            "?has_overdue_video=true&acceptance_status=suspended",
+            vec![4],
+        ),
+        (
+            "?has_overdue_video=true&acceptance_status=accepting",
+            vec![2],
+        ),
+        ("?has_overdue_video=true&inactive=true", vec![4]),
+        (
+            "?has_overdue_video=true&has_unhandled_low_rated=true",
+            vec![4, 2],
+        ),
+        ("?has_overdue_video=true&has_unanswered=true", vec![4]),
+        ("?has_overdue_video=true&q=%E3%81%9F%E3%81%AA", vec![2]),
+        (
+            "?has_overdue_video=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_overdue_video_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_overdue_video=yes",
+        "?has_overdue_video=1",
+        "?has_overdue_video=",
+        "?has_overdue_video=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_overdue_video_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_overdue_video=true",
         Some(STUDENT),
     )
     .await;

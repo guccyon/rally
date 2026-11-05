@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use domain::{
+    async_lesson::OverdueVideoCoachFilter,
     identity::AccountId,
     lesson::{CoachLessonCount, InactiveCoachFilter},
     messaging::UnansweredCoachFilter,
@@ -10,8 +11,9 @@ use domain::{
 };
 
 use super::{
-    CoachAcceptanceLookup, CoachLowRatedReviewCountLookup, CoachRecentLessonCountLookup,
-    CoachUnansweredMessageThreadCountsLookup, ListCoachesQuery, ListedCoach,
+    CoachAcceptanceLookup, CoachLowRatedReviewCountLookup, CoachPendingVideoReviewCountsLookup,
+    CoachRecentLessonCountLookup, CoachUnansweredMessageThreadCountsLookup, ListCoachesQuery,
+    ListedCoach,
 };
 use crate::{Unavailable, identity::AccountRepository};
 
@@ -31,25 +33,30 @@ use crate::{Unavailable, identity::AccountRepository};
 /// 返事のないメッセージのあるコーチ（`has_unanswered`。messaging に問い合わせる。
 /// [`CoachUnansweredMessageThreadCountsLookup`]。数え方は `getCoachOverview` と同じ domain の
 /// [`domain::messaging::CoachUnansweredMessageThreadCount::tally`] で、判定は [`UnansweredCoachFilter`]。絞るときだけ
-/// 問い合わせる）。
+/// 問い合わせる）・返却の遅れている動画のあるコーチ（`has_overdue_video`。async-lesson に問い合わせる。
+/// [`CoachPendingVideoReviewCountsLookup`]。数え方は `getCoachOverview` の `overdue_pending_video_review_count` と同じ
+/// domain の [`domain::async_lesson::CoachPendingVideoReviewCount::tally`] で、判定は [`OverdueVideoCoachFilter`]。
+/// 絞るときだけ問い合わせる）。
 /// 付けたものをすべて満たすもの、どれも付けなければ絞らない。
 /// 並べ方は絞っても変わらない。
 /// 誰が呼べるか（本部だけ）は境界（interface）が確かめる。
-pub struct ListCoaches<R, A, L, N, U> {
+pub struct ListCoaches<R, A, L, N, U, P> {
     accounts: R,
     acceptances: A,
     recent_lessons: L,
     low_rated_reviews: N,
     unanswered_threads: U,
+    pending_videos: P,
 }
 
-impl<R, A, L, N, U> ListCoaches<R, A, L, N, U>
+impl<R, A, L, N, U, P> ListCoaches<R, A, L, N, U, P>
 where
     R: AccountRepository,
     A: CoachAcceptanceLookup,
     L: CoachRecentLessonCountLookup,
     N: CoachLowRatedReviewCountLookup,
     U: CoachUnansweredMessageThreadCountsLookup,
+    P: CoachPendingVideoReviewCountsLookup,
 {
     pub fn new(
         accounts: R,
@@ -57,6 +64,7 @@ where
         recent_lessons: L,
         low_rated_reviews: N,
         unanswered_threads: U,
+        pending_videos: P,
     ) -> Self {
         Self {
             accounts,
@@ -64,6 +72,7 @@ where
             recent_lessons,
             low_rated_reviews,
             unanswered_threads,
+            pending_videos,
         }
     }
 
@@ -75,6 +84,7 @@ where
             inactive,
             has_unhandled_low_rated,
             has_unanswered,
+            has_overdue_video,
         } = query;
         let coaches: Vec<_> = self
             .accounts
@@ -147,6 +157,27 @@ where
         } else {
             coaches
         };
+        let overdue_video = OverdueVideoCoachFilter::new(*has_overdue_video);
+        // 絞らないときは async-lesson に問い合わせない（今までどおり）
+        let coaches: Vec<_> = if overdue_video.has_overdue_video() && !coaches.is_empty() {
+            let coach_ids: BTreeSet<AccountId> =
+                coaches.iter().map(|(account, _)| account.id()).collect();
+            let counts = self
+                .pending_videos
+                .find_pending_video_review_counts(&coach_ids)
+                .await?;
+            coaches
+                .into_iter()
+                // ポートは聞いたコーチをすべて返す。返さなかったコーチは 0 件として扱う（載せない）
+                .filter(|(account, _)| {
+                    counts
+                        .get(&account.id())
+                        .is_some_and(|count| overdue_video.matches(count))
+                })
+                .collect()
+        } else {
+            coaches
+        };
         let coach_ids: BTreeSet<AccountId> =
             coaches.iter().map(|(account, _)| account.id()).collect();
         let mut recent_lessons = if coach_ids.is_empty() {
@@ -177,7 +208,9 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        async_lesson::VideoId,
+        async_lesson::{
+            CoachPendingVideoReviewCount, ReviewComment, Video, VideoId, VideoReviewId,
+        },
         catalog::Sport,
         identity::{Account, Email, Role},
         lesson::{LessonCompletion, LessonCompletionId, LessonSource},
@@ -195,10 +228,11 @@ mod tests {
 
     use super::*;
     use crate::{
+        async_lesson::AsyncLessonCoachPendingVideoReviewCountsLookup,
         in_memory::{
             FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
             InMemoryLessonCompletionRepository, InMemoryLessonReviewRepository,
-            InMemoryMessageThreadRepository,
+            InMemoryMessageThreadRepository, InMemoryVideoRepository,
         },
         lesson::LessonCoachRecentLessonCountLookup,
         messaging::MessagingCoachUnansweredMessageThreadCountLookup,
@@ -338,6 +372,53 @@ mod tests {
         }
     }
 
+    type PendingVideos =
+        AsyncLessonCoachPendingVideoReviewCountsLookup<InMemoryVideoRepository, FixedClock>;
+
+    fn no_videos() -> PendingVideos {
+        pending_videos([])
+    }
+
+    fn pending_videos(videos: impl IntoIterator<Item = Video>) -> PendingVideos {
+        AsyncLessonCoachPendingVideoReviewCountsLookup::new(
+            InMemoryVideoRepository::with_videos(videos),
+            FixedClock(now()),
+        )
+    }
+
+    /// `id` の動画を生徒（`100 + id`）がコーチ `coach_id` に `submitted_at` に送る。`returned` なら照会の時刻に返却済み。
+    fn video(id: u128, coach_id: u128, submitted_at: SystemTime, returned: bool) -> Video {
+        Video::restore(
+            VideoId::from_u128(id),
+            AccountId::from_u128(100 + id),
+            AccountId::from_u128(coach_id),
+            Sport::Tennis,
+            submitted_at,
+            returned.then(|| {
+                (
+                    VideoReviewId::from_u128(id + 1000),
+                    ReviewComment::new("テイクバックが早い").unwrap(),
+                    now(),
+                )
+            }),
+            None,
+        )
+        .unwrap()
+    }
+
+    /// 呼ばれたら失敗する動画の問い合わせ（絞らないときは問い合わせないことを確かめる）。
+    struct UnreachablePendingVideos;
+
+    impl CoachPendingVideoReviewCountsLookup for UnreachablePendingVideos {
+        async fn find_pending_video_review_counts(
+            &self,
+            _coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<std::collections::BTreeMap<AccountId, CoachPendingVideoReviewCount>, Unavailable>
+        {
+            panic!("絞らないときは動画に問い合わせない")
+        }
+    }
+
     fn completion(id: u128, coach_id: u128, live: bool, at: SystemTime) -> LessonCompletion {
         let source = if live {
             LessonSource::Live(SessionId::from_u128(id))
@@ -387,6 +468,7 @@ mod tests {
             no_lessons(),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&ListCoachesQuery::default())
         .await
@@ -415,6 +497,7 @@ mod tests {
             no_lessons(),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&ListCoachesQuery::default())
         .await
@@ -449,6 +532,7 @@ mod tests {
             no_lessons(),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&ListCoachesQuery::default())
         .await
@@ -499,6 +583,7 @@ mod tests {
             no_lessons(),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&ListCoachesQuery {
             acceptance,
@@ -575,6 +660,7 @@ mod tests {
             ]),
             no_reviews(),
             no_threads(),
+            no_videos(),
         );
 
         let listed: Vec<_> = use_case
@@ -647,6 +733,7 @@ mod tests {
             ]),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&query)
         .await
@@ -754,6 +841,7 @@ mod tests {
                 review(6, 5, 1, now()),
             ]),
             no_threads(),
+            no_videos(),
         )
         .execute(&query)
         .await
@@ -846,6 +934,7 @@ mod tests {
             no_lessons(),
             UnreachableLowRatedReviews,
             no_threads(),
+            no_videos(),
         )
         .execute(&ListCoachesQuery {
             inactive: true,
@@ -894,6 +983,7 @@ mod tests {
                 message_thread(4, 3, &[(true, now() - 30 * HOUR)]),
                 // 生徒の ID をコーチとしたスレッドはない（生徒は載らない）
             ]),
+            no_videos(),
         )
         .execute(&query)
         .await
@@ -984,6 +1074,157 @@ mod tests {
             no_lessons(),
             no_reviews(),
             UnreachableUnansweredThreads,
+            no_videos(),
+        )
+        .execute(&ListCoachesQuery {
+            inactive: true,
+            sport: Some(Sport::Tennis),
+            ..ListCoachesQuery::default()
+        })
+        .await
+        .unwrap();
+        assert_eq!(coaches.len(), 1);
+    }
+
+    /// 返却の遅れている動画のあるコーチに絞った一覧（ID の並び）。たなか（1。テニス・停止中。48 時間ちょうど前の動画が
+    /// 返却待ち）・いとう（2。サッカーとテニス。返却待ちは 48 時間に 1 秒足りないものだけで、遅れた動画は返却済み）・うえの
+    /// （3。テニス。72 時間前の動画が返却待ちで、返事のないスレッドがある。今日通話 1）・えんどう（4。野球。動画なし）と、
+    /// テニスの生徒（5）。
+    async fn overdue_video(query: ListCoachesQuery) -> Vec<u128> {
+        let accounts = InMemoryAccountRepository::default();
+        for account in [
+            account(1, "たなか", Role::Coach, &[Sport::Tennis]),
+            account(2, "いとう", Role::Coach, &[Sport::Soccer, Sport::Tennis]),
+            account(3, "うえの", Role::Coach, &[Sport::Tennis]),
+            account(4, "えんどう", Role::Coach, &[Sport::Baseball]),
+            account(5, "あおき", Role::Student, &[Sport::Tennis]),
+        ] {
+            accounts.insert(account).await.unwrap();
+        }
+        let acceptances = InMemoryCoachAcceptanceRepository::default();
+        acceptances
+            .update(AccountId::from_u128(1), |a| {
+                a.suspend(
+                    HEADQUARTERS_ID,
+                    domain::scheduling::CoachSuspensionReason::default(),
+                    SystemTime::UNIX_EPOCH,
+                )
+            })
+            .await
+            .unwrap();
+        ListCoaches::new(
+            accounts,
+            SchedulingCoachAcceptanceLookup::new(acceptances),
+            recent_lessons([completion(1, 3, true, now())]),
+            no_reviews(),
+            unanswered_threads([message_thread(1, 3, &[(true, now() - 30 * HOUR)])]),
+            pending_videos([
+                video(1, 1, now() - 48 * HOUR, false),
+                video(2, 2, now() - 48 * HOUR + Duration::from_secs(1), false),
+                video(3, 2, now() - 200 * HOUR, true),
+                video(4, 3, now() - 72 * HOUR, false),
+                // 生徒の ID をコーチとした動画はない（生徒は載らない）
+            ]),
+        )
+        .execute(&query)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.account.id().as_u128())
+        .collect()
+    }
+
+    fn overdue_video_only() -> ListCoachesQuery {
+        ListCoachesQuery {
+            has_overdue_video: true,
+            ..ListCoachesQuery::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn has_overdue_video_lists_only_coaches_with_an_overdue_video_keeping_the_order() {
+        // 表示名の順（うえの・たなか）のまま。遅れていない・返却済み・動画のないコーチと生徒は載らない
+        assert_eq!(overdue_video(overdue_video_only()).await, [3, 1]);
+        // 付けなければ（false なら）今までどおりすべて
+        assert_eq!(
+            overdue_video(ListCoachesQuery::default()).await,
+            [2, 3, 4, 1]
+        );
+    }
+
+    #[tokio::test]
+    async fn has_overdue_video_is_combined_with_the_other_conditions() {
+        use CoachAcceptanceStatus::{Accepting, Suspended};
+        let query = |query: ListCoachesQuery| ListCoachesQuery {
+            has_overdue_video: true,
+            ..query
+        };
+        assert_eq!(
+            overdue_video(query(ListCoachesQuery {
+                acceptance: Some(Suspended),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [1]
+        );
+        assert_eq!(
+            overdue_video(query(ListCoachesQuery {
+                acceptance: Some(Accepting),
+                sport: Some(Sport::Tennis),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [3]
+        );
+        assert!(
+            overdue_video(query(ListCoachesQuery {
+                sport: Some(Sport::Soccer),
+                ..ListCoachesQuery::default()
+            }))
+            .await
+            .is_empty(),
+            "いとうの動画は遅れていないか返却済み"
+        );
+        assert_eq!(
+            overdue_video(query(ListCoachesQuery {
+                name: DisplayNameQuery::new("たな").unwrap(),
+                ..ListCoachesQuery::default()
+            }))
+            .await,
+            [1]
+        );
+        assert_eq!(
+            overdue_video(query(inactive_only())).await,
+            [1],
+            "うえのには直近のレッスンがある"
+        );
+        assert_eq!(
+            overdue_video(query(unanswered_only())).await,
+            [3],
+            "返事のないスレッドがあるのはうえのだけ"
+        );
+        assert!(
+            overdue_video(query(unhandled_low_rated_only()))
+                .await
+                .is_empty(),
+            "未対応の低い評価のあるコーチはいない"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_has_overdue_video_videos_are_not_looked_up() {
+        let accounts = InMemoryAccountRepository::default();
+        accounts
+            .insert(account(1, "たなか", Role::Coach, &[Sport::Tennis]))
+            .await
+            .unwrap();
+        let coaches = ListCoaches::new(
+            accounts,
+            no_suspension(),
+            no_lessons(),
+            no_reviews(),
+            no_threads(),
+            UnreachablePendingVideos,
         )
         .execute(&ListCoachesQuery {
             inactive: true,
@@ -1025,6 +1266,7 @@ mod tests {
             no_lessons(),
             no_reviews(),
             no_threads(),
+            no_videos(),
         )
         .execute(&query)
         .await
