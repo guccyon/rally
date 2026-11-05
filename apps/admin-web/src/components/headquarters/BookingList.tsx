@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { SPORT_LABELS, formatDay, formatTime, toJstDate } from "@/components/labels";
@@ -245,6 +246,35 @@ export function BookingList({
   );
 }
 
+/** 日ごとの予約の表の列。確定待ちのまま 24 時間以内に始まる予約は、状態のセルに文字のしるしを添える（行の面は highlightRow）。 */
+function bookingColumns(now: number): DataTableColumn<HeadquartersBooking>[] {
+  return [
+    {
+      header: "開始",
+      cell: ({ booking }) => (
+        <Link href={bookingDetailPath(booking.booking_id)} className="text-primary underline">
+          {formatTime(booking.starts_at)}
+        </Link>
+      ),
+    },
+    {
+      header: "状態",
+      cell: ({ booking }) => (
+        <>
+          <BookingStatusBadge status={booking.status} />
+          {isPendingSoon(booking, now) && (
+            <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">開始まで 24 時間以内</span>
+          )}
+        </>
+      ),
+    },
+    { header: "コーチ", cell: (item) => item.coach_display_name ?? NO_NAME },
+    { header: "生徒", cell: (item) => item.student_display_name ?? NO_NAME },
+    { header: "レッスンメニュー", cell: ({ booking }) => bookingLessonMenuLabel(booking.lesson_menu) },
+    { header: "種類", cell: ({ booking }) => (booking.is_trial ? "体験予約" : "—") },
+  ];
+}
+
 function LoadedBookings({
   period,
   trialOnly,
@@ -279,45 +309,13 @@ function LoadedBookings({
           <h3 className="mb-1 font-semibold">
             {formatDay(day)}（{items.length} 件）
           </h3>
-          <table aria-label={`${formatDay(day)} の予約`} className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="py-1">開始</th>
-                <th className="py-1">状態</th>
-                <th className="py-1">コーチ</th>
-                <th className="py-1">生徒</th>
-                <th className="py-1">レッスンメニュー</th>
-                <th className="py-1">種類</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const { booking } = item;
-                const soon = isPendingSoon(booking, now);
-                return (
-                  <tr key={booking.booking_id} className={`border-t ${soon ? "bg-danger-container" : ""}`}>
-                    <td className="py-1">
-                      <Link href={bookingDetailPath(booking.booking_id)} className="text-primary underline">
-                        {formatTime(booking.starts_at)}
-                      </Link>
-                    </td>
-                    <td className="py-1">
-                      <BookingStatusBadge status={booking.status} />
-                      {soon && (
-                        <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
-                          開始まで 24 時間以内
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-1">{item.coach_display_name ?? NO_NAME}</td>
-                    <td className="py-1">{item.student_display_name ?? NO_NAME}</td>
-                    <td className="py-1">{bookingLessonMenuLabel(booking.lesson_menu)}</td>
-                    <td className="py-1">{booking.is_trial ? "体験予約" : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable
+            label={`${formatDay(day)} の予約`}
+            columns={bookingColumns(now)}
+            rows={items}
+            rowKey={(item) => item.booking.booking_id}
+            highlightRow={(item) => isPendingSoon(item.booking, now)}
+          />
         </div>
       ))}
     </div>

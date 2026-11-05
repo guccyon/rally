@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime, formatElapsed } from "@/components/labels";
 
@@ -72,6 +73,14 @@ function failureMessage(response: Extract<Result<unknown>, { ok: false }>, filte
   if (response.code !== "validation_failed") return response.message;
   return `${response.message}${filter.studentId === "" ? VALIDATION_HINT : VALIDATION_HINT_WITH_STUDENT}`;
 }
+
+/** 終わっていないビデオ通話の表の列。 */
+const OVERDUE_COLUMNS: DataTableColumn<Schemas["OverdueLiveLessonSession"]>[] = [
+  { header: "コーチ", cell: (session) => session.coach_display_name ?? NO_NAME },
+  { header: "生徒", cell: (session) => session.student_display_name ?? NO_NAME },
+  { header: "開始", cell: (session) => formatDateTime(session.started_at) },
+  { header: "開始からの経過", variant: "numeric", cell: (session) => formatElapsed(session.elapsed_sec) },
+];
 
 /**
  * 本部の「終わっていないビデオ通話」。始まったまま終了の記録がない通話セッションの一覧（listOverdueLiveLessonSessions）を、
@@ -229,26 +238,12 @@ export function OverdueLiveSessionList({
         <p className="text-sm">{emptyMessageOf(filter)}</p>
       )}
       {state.kind === "loaded" && state.list.sessions.length > 0 && (
-        <table aria-label="終わっていないビデオ通話の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">生徒</th>
-              <th className="py-1">開始</th>
-              <th className="py-1">開始からの経過</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.list.sessions.map((session) => (
-              <tr key={session.session_id} className="border-t">
-                <td className="py-1">{session.coach_display_name ?? NO_NAME}</td>
-                <td className="py-1">{session.student_display_name ?? NO_NAME}</td>
-                <td className="py-1">{formatDateTime(session.started_at)}</td>
-                <td className="py-1">{formatElapsed(session.elapsed_sec)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="終わっていないビデオ通話の一覧"
+          columns={OVERDUE_COLUMNS}
+          rows={state.list.sessions}
+          rowKey={(session) => session.session_id}
+        />
       )}
     </div>
   );

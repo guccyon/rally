@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   COACH_ACCEPTANCE_STATUS_LABELS,
@@ -47,6 +48,23 @@ function updatedAtLabel(coach: IncompleteCoachProfile): string {
     ? `記録なし（登録: ${formatDateTime(coach.registered_at)}）`
     : formatDateTime(coach.updated_at);
 }
+
+/** 自己紹介の足りないコーチの一覧の列。 */
+const INCOMPLETE_COACH_PROFILE_COLUMNS: DataTableColumn<IncompleteCoachProfile>[] = [
+  {
+    header: "コーチ",
+    cell: (coach) => (
+      <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+        {coach.display_name}
+      </Link>
+    ),
+  },
+  {
+    header: "空の項目",
+    cell: (coach) => coach.missing_fields.map((field) => COACH_PROFILE_FIELD_LABELS[field]).join("、"),
+  },
+  { header: "最後に更新した日時", cell: updatedAtLabel },
+];
 
 /**
  * 本部の「自己紹介の足りないコーチ」。開いたときにプロフィールに空の項目があるコーチの一覧
@@ -188,30 +206,12 @@ export function IncompleteCoachProfileList({
         <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.coaches.length > 0 && (
-        <table aria-label="自己紹介の足りないコーチの一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">空の項目</th>
-              <th className="py-1">最後に更新した日時</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.coaches.map((coach) => (
-              <tr key={coach.coach_id} className="border-t">
-                <td className="py-1">
-                  <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
-                    {coach.display_name}
-                  </Link>
-                </td>
-                <td className="py-1">
-                  {coach.missing_fields.map((field) => COACH_PROFILE_FIELD_LABELS[field]).join("、")}
-                </td>
-                <td className="py-1">{updatedAtLabel(coach)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="自己紹介の足りないコーチの一覧"
+          columns={INCOMPLETE_COACH_PROFILE_COLUMNS}
+          rows={state.coaches}
+          rowKey={(coach) => coach.coach_id}
+        />
       )}
     </div>
   );

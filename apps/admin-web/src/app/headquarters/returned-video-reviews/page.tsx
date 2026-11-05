@@ -22,7 +22,7 @@ function ReturnedVideoReviewsScreen() {
   const searchParams = useSearchParams();
   const [initialFilter] = useState(() => returnedVideoReviewFilterFrom(searchParams));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <ReturnedVideoReviewsHome token={session.token} initialFilter={initialFilter} />}
     </RoleGate>
   );

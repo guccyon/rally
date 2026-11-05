@@ -138,13 +138,14 @@ describe("本部のレッスンメニュー", () => {
 
     const table = await screen.findByRole("table", { name: "レッスンメニューの一覧" });
     const header = within(table).getByRole("columnheader", { name: "直近 30 日の予約" });
-    expect(header).toHaveClass("text-right", "pr-4");
+    // 列のあいだは表の部品（DataTable）のセルの左右 8px ずつであける
+    expect(header).toHaveClass("text-right", "px-2");
     const counts = within(table)
       .getAllByRole("row")
       .slice(1)
       .map((row) => within(row).getAllByRole("cell")[5]!);
     expect(counts.map((cell) => cell.textContent)).toEqual(["128 件", "0 件"]);
-    for (const cell of counts) expect(cell).toHaveClass("text-right", "tabular-nums", "pr-4");
+    for (const cell of counts) expect(cell).toHaveClass("text-right", "tabular-nums", "whitespace-nowrap", "px-2");
     // 注記は契約の listLessonMenus の数え方（30 日の間に作られ、今キャンセルされていない予約）と同じことを言う。
     const note = screen.getByText(NOTE);
     expect(note).toHaveClass("text-xs", "text-text-muted");
