@@ -3,6 +3,8 @@
 #
 # rally は Gen1 の試行で、事業主が操業も自走する扱い（operated_by: business_owner）。
 # 宛先は Slack の 1 チャンネルだけ。事業主の宛先にすると、レポート 2 種と受信トレイ（事業主の判断が要る件）がすべてここに届く。
+# 定期レポートは Slack アプリ（ボットのトークン）で報告書（HTML）を添付し、本文は 3 行の要約だけにする（Incoming Webhook は添付できない）。
+# 受信トレイは今までどおり Incoming Webhook で送る。
 
 operated_by: business_owner
 
@@ -11,8 +13,24 @@ connections:
     party: business_owner
     via: slack_webhook
     secret: env:SLACK_WEBHOOK_URL_GEN1
+  gen1_app:
+    party: business_owner
+    via: slack_app            # ボットの権限は chat:write・files:write・channels:read
+    secret: env:SLACK_BOT_TOKEN_GEN1
 
 destinations:
   gen1_channel:
     connection: gen1_hook
     quiet: "22-7"             # 送らない時間（JST の時）。明けた最初の周回でまとめて送る
+  gen1_reports:
+    connection: gen1_app
+    channel: "#factory-gen1"
+    quiet: "22-7"
+
+routes:
+  report.factory_health:
+    - to: gen1_reports
+  report.product:
+    - to: gen1_reports
+  request.inbox:
+    - to: gen1_channel
