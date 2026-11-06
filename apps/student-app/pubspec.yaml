@@ -20,3 +20,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # 日時と回数の数字の書体（specs/design/tokens.yaml の typography.families.numeric）。SIL OFL 1.1 で、OFL.txt を LicenseRegistry に載せる
+  fonts:
+    - family: Barlow Condensed
+      fonts:
+        - asset: assets/fonts/BarlowCondensed-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/BarlowCondensed-ExtraBold.ttf
+          weight: 800
+  assets:
+    - assets/fonts/OFL.txt

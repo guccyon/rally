@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/rally_tokens.dart';
 
-/// カード（components.yaml の card）。1 件のまとまりを surface の面で囲む（影なし）。
+/// カード（components.yaml の card の plain）。1 件のまとまりを background に border の 1px で囲む（影なし。0.5.0 で surface の面をやめた）。
+/// 予約は [RallyBookingCard]（booking）。カードの中にカードを置かない。
 /// [onTap] があるときはカード全体を 1 つのボタンにする（中にボタンを置かない）。押すと primary_container の面。
 class RallyCard extends StatelessWidget {
   const RallyCard({
@@ -31,8 +32,12 @@ class RallyCard extends StatelessWidget {
       ),
     );
     return Material(
-      color: RallyColors.surface,
-      borderRadius: radius,
+      color: RallyColors.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: const BorderSide(color: RallyColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: onTap == null
           ? content
           : Semantics(

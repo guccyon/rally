@@ -144,10 +144,10 @@ describe("本部の予約", () => {
       expect(row).not.toHaveClass("bg-danger-container");
       expect(within(row).queryByText("開始まで 24 時間以内")).not.toBeInTheDocument();
     }
-    expect(within(soon).getByText("確定待ち")).toHaveClass("bg-warning-container");
-    expect(within(laterPending).getByText("確定待ち")).toHaveClass("bg-warning-container");
-    expect(within(confirmed).getByText("確定済み")).toHaveClass("bg-success-container");
-    expect(within(cancelled).getByText("キャンセル済み")).toHaveClass("bg-surface");
+    expect(within(within(soon).getByText("確定待ち")).getByTestId("status-dot")).toHaveClass("bg-warning");
+    expect(within(within(laterPending).getByText("確定待ち")).getByTestId("status-dot")).toHaveClass("bg-warning");
+    expect(within(within(confirmed).getByText("確定済み")).getByTestId("status-dot")).toHaveClass("bg-success");
+    expect(within(within(cancelled).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
   });
 
   test("始まってしまった確定待ちと、確定済みで近いものは目立たせない", async () => {

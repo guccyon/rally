@@ -30,6 +30,7 @@ npm run screenshots               # screenshots/out/ に <id>.png と <id>.json
 ## テーマと部品
 
 - `src/app/globals.css` の `@theme` に `specs/design/tokens.yaml` の色・角丸・書体を写した。Tailwind の既定の色・角丸・影は消してあり、色は役割の名前（`bg-primary`・`text-text-muted`・`bg-danger-container` など）、角丸は `rounded-sm` / `rounded-md` / `rounded-pill` だけを使う。値が正本と同じことを `tests/designTokens.test.ts` が確かめる
+- 日時と回数の大きな数字の書体 Barlow Condensed（700・800）は `public/fonts/` に woff2 を同梱し、`globals.css` の `@font-face` で同じオリジンから読む（`font-numeric`。外の URL と `next/font/google` は使わない）。SIL OFL 1.1 で、ライセンスは `public/fonts/OFL.txt`
 - 基本の部品（`specs/design/components.yaml`）は `src/components/ui/`（`Button`・`TextField` / `TextArea`・`Card`・`ListRow`・`Badge`・`StatusTag`・`Notice`・`EmptyState`・`Loading`・`ConfirmDialog`）。score_panel は admin-web では使わない。前からある共通の `Section`（欄）と `ResultMessage`（操作の結果の 1 行）も同じフォルダに置く
 - アイコンは Material Symbols Rounded の SVG を使う分だけ `src/components/ui/icons/` に同梱し（Apache License 2.0。出どころと一覧は同じフォルダの `README.md`）、`Icon` で描く。文字の記号でアイコンを代えない
 - 部品の種類と状態の見本を `src/components/ui/catalog.tsx` に並べ、`/design` で見られる（本番のメニューには出さない）。画面のキャプチャの `design-catalog` なので、部品を変えると PR のキャプチャに出る

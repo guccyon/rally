@@ -59,7 +59,7 @@ export function ConfirmDialog({
         </h2>
         <p id={bodyId}>{body}</p>
         <div className="flex justify-end gap-2">
-          <Button variant="text" disabled={busy} onClick={onCancel}>
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
           <Button variant={danger ? "danger" : "primary"} loading={busy} onClick={onConfirm}>

@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme/rally_tokens.dart';
 
-/// 一覧の行（components.yaml の list_row）。押すと詳細へ移る。
-/// 未読は左に primary の 4px の線と、題の前の「未読」のしるしで示し、読み上げでも「未読」と読む。
+/// 一覧の行（components.yaml の list_row）。background のまま面で囲わず、行のあいだに border の線。押すと詳細へ移る。
+/// 未読は左に primary の 4px の線と、題の前の「未読」のしるし（badge の count と同じ danger.fg の面）で示し、読み上げでも「未読」と読む。
+/// [selected] は primary_container の面と左に primary の 4px の線。
 class ListRow extends StatelessWidget {
   const ListRow({
     super.key,
@@ -12,6 +13,7 @@ class ListRow extends StatelessWidget {
     this.leading,
     this.trailing,
     this.unread = false,
+    this.selected = false,
     this.onTap,
   });
 
@@ -20,6 +22,7 @@ class ListRow extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool unread;
+  final bool selected;
   final VoidCallback? onTap;
 
   @override
@@ -27,7 +30,7 @@ class ListRow extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(
-          left: unread
+          left: unread || selected
               ? const BorderSide(color: RallyColors.primary, width: 4)
               : BorderSide.none,
           bottom: const BorderSide(color: RallyColors.border),
@@ -49,6 +52,8 @@ class ListRow extends StatelessWidget {
             trailing ??
             (onTap == null ? null : const Icon(Icons.chevron_right_rounded)),
         onTap: onTap,
+        // 選択中の面はテーマの selectedTileColor（primary_container）
+        selected: selected,
         splashColor: Colors.transparent,
         hoverColor: RallyColors.primaryContainer,
         focusColor: RallyColors.primaryContainer,
@@ -65,7 +70,7 @@ class _UnreadMark extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: RallySpacing.xs),
       decoration: BoxDecoration(
-        color: RallyColors.primary,
+        color: RallyColors.danger.fg,
         borderRadius: BorderRadius.circular(RallyRadius.sm),
       ),
       child: Text(

@@ -1,6 +1,6 @@
 // @vitest-environment node
 // globals.css の @theme が正本（specs/design/tokens.yaml）の色・角丸・書体と同じ値を持ち、Tailwind の既定の色を残していないこと。
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { expect, test } from "vitest";
 
@@ -20,11 +20,13 @@ function section(start: string, end: string): string {
 
 test("色の役割は tokens.yaml の color.roles と同じ", () => {
   const roles = [...section("  roles:", "  status:").matchAll(/^ {4}(\w+): "(#[0-9A-F]{6})"/gm)];
-  expect(roles.length).toBe(17);
+  expect(roles.length).toBe(18);
   for (const [, name, hex] of roles) {
     expect(cssVar(`color-${kebab(name ?? "")}`), name).toBe(hex?.toLowerCase());
   }
-  expect(cssVar("color-scrim")).toBe("rgba(16, 19, 26, 0.56)");
+  expect(cssVar("color-scrim")).toBe("rgba(14, 16, 19, 0.56)");
+  // 青（scale.blue）と 0.4.0 までの青みの灰は残さない（governance の lint の deprecated-token）
+  expect(css.toLowerCase()).not.toMatch(/#3a54b0|#2e4590|#e9edf8|#1e2a5c|#f1f3f8|#dde1ea|#4a5163|#7d8599|#10131a/);
 });
 
 test("状態の色は tokens.yaml の color.status と同じ", () => {
@@ -47,15 +49,25 @@ test("角丸と書体は tokens.yaml と同じで、Tailwind の既定の色・�
   expect(cssVar("radius-md")).toBe("12px");
   expect(cssVar("radius-pill")).toBe("999px");
   expect(cssVar("font-sans")).toBe('"noto sans cjk jp", "noto sans jp", sans-serif');
+  expect(cssVar("font-numeric")).toBe('"barlow condensed", "noto sans cjk jp", sans-serif');
+  expect(tokens).toContain(`numeric: "'Barlow Condensed', 'Noto Sans CJK JP', sans-serif"`);
   expect(cssVar("spacing")).toBe("4px");
   for (const reset of ["--color-*: initial", "--radius-*: initial", "--shadow-*: initial"]) {
     expect(css).toContain(reset);
   }
-  // Web フォントを読まない
-  expect(css).not.toMatch(/@import url|fonts\.googleapis/);
+  // Web フォントを読まない。数字の書体は同梱の woff2 を同じオリジン（public/fonts/）から読む
+  expect(css).not.toMatch(/@import url|fonts\.googleapis|https?:\/\//);
+  const sources = [...css.matchAll(/src: url\("([^"]+)"\)/g)].map(([, url]) => url);
+  expect(sources).toEqual(["/fonts/BarlowCondensed-Bold.woff2", "/fonts/BarlowCondensed-ExtraBold.woff2"]);
+  for (const url of sources) {
+    expect(existsSync(new URL(`../public${url}`, import.meta.url)), url).toBe(true);
+  }
+  expect(readFileSync(new URL("../public/fonts/OFL.txt", import.meta.url), "utf8")).toContain(
+    "SIL Open Font License, Version 1.1",
+  );
 });
 
-test("書体の段は tokens.yaml の typography.scale と同じ大きさ・行間・字間（admin-web の headline は 24px）", () => {
+test("書体の段は tokens.yaml の typography.scale と同じ大きさ・行間・字間（admin-web の headline は 28px・-0.02em）", () => {
   const scale = Object.fromEntries(
     [
       ...section("  scale:   # 大きさ", "  admin_web:").matchAll(
@@ -63,15 +75,26 @@ test("書体の段は tokens.yaml の typography.scale と同じ大きさ・行�
       ),
     ].map(([, name, size, lineHeight, letterSpacing]) => [name, { size, lineHeight, letterSpacing }]),
   );
-  expect(Object.keys(scale)).toEqual(["display", "headline", "title", "body", "small", "caption"]);
-  // display は admin-web では使わない（typography.admin_web）
-  const steps = { xs: "caption", sm: "small", base: "body", xl: "title", headline: "headline" } as const;
+  expect(Object.keys(scale)).toEqual(["display", "headline", "title", "figure", "figure_sm", "body", "small", "caption"]);
+  // display は admin-web では使わない。headline は admin-web の値（typography.admin_web）
+  const steps = {
+    xs: "caption",
+    sm: "small",
+    base: "body",
+    xl: "title",
+    headline: "headline",
+    figure: "figure",
+    "figure-sm": "figure_sm",
+  } as const;
   for (const [step, name] of Object.entries(steps)) {
     const token = scale[name];
-    if (step !== "headline") expect(cssVar(`text-${step}`), name).toBe(`${token?.size}px`);
-    expect(cssVar(`text-${step}--line-height`), name).toBe(token?.lineHeight);
-    expect(cssVar(`text-${step}--letter-spacing`), name).toBe(token?.letterSpacing);
+    if (step !== "headline") {
+      expect(cssVar(`text-${step}`), name).toBe(`${token?.size}px`);
+      expect(cssVar(`text-${step}--letter-spacing`), name).toBe(token?.letterSpacing);
+    }
+    expect(Number(cssVar(`text-${step}--line-height`)), name).toBe(Number(token?.lineHeight));
   }
-  expect(tokens).toMatch(/admin_web: admin-web は display を使わず、headline を 24px/);
-  expect(cssVar("text-headline")).toBe("24px");
+  expect(tokens).toMatch(/admin_web: admin-web は display を使わず、headline を 28px（字間 -0.02em）/);
+  expect(cssVar("text-headline")).toBe("28px");
+  expect(cssVar("text-headline--letter-spacing")).toBe("-0.02em");
 });
