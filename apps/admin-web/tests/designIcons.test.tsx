@@ -27,8 +27,8 @@ test("paths.ts は同梱の SVG と同じ名前と path を持ち、ライセン
   expect(readFileSync(join(dir, "LICENSE"), "utf8")).toContain("Apache License");
 });
 
-test("状態のタグと知らせは、状態ごとの SVG のアイコンを出し、読み上げない", () => {
-  const statuses: Status[] = ["info", "success", "warning", "danger", "neutral"];
+test("知らせの inline は状態ごとの SVG のアイコン、成功は完了の印のチェックを出し、読み上げない。状態のタグはアイコンでなく点", () => {
+  const statuses: Status[] = ["info", "warning", "danger", "neutral"];
   for (const status of statuses) {
     const { container, unmount } = render(
       <>
@@ -37,10 +37,14 @@ test("状態のタグと知らせは、状態ごとの SVG のアイコンを出
       </>,
     );
     const icons = container.querySelectorAll(`svg[data-icon="${STATUS_ICONS[status]}"]`);
-    expect(icons).toHaveLength(2);
+    expect(icons).toHaveLength(1);
     icons.forEach((icon) => expect(icon).toHaveAttribute("aria-hidden", "true"));
+    expect(container.querySelectorAll('[data-testid="status-dot"]')).toHaveLength(1);
     unmount();
   }
+  const { container } = render(<Notice message="お知らせを送りました" status="success" />);
+  expect(container.querySelector('[data-testid="done-mark"] svg[data-icon="check"]')).not.toBeNull();
+  expect(screen.getByTestId("done-mark")).toHaveAttribute("aria-hidden", "true");
 });
 
 test("入力欄の誤りと一覧の行の詳細へのしるしも SVG で、文字の記号を使わない", () => {

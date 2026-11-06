@@ -5,33 +5,55 @@
  * 名前は tokens.yaml の役割を kebab-case にしたもの（color.roles.text_muted → --color-text-muted → text-text-muted）。
  * Tailwind の既定の色・角丸・影は消し、トークンの名前だけを使えるようにする。値を変えるときは tokens.yaml を先に直す。
  */
+/*
+ * 数字の書体 Barlow Condensed（tokens.yaml の typography.families.numeric）。public/fonts/ に同梱した woff2 を同じオリジンから読む
+ * （外の URL と next/font/google は使わない）。ライセンスは public/fonts/OFL.txt。
+ */
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/BarlowCondensed-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/BarlowCondensed-ExtraBold.woff2") format("woff2");
+}
+
 @theme {
   --color-*: initial;
-  --color-primary: #3a54b0;
+  /* 0.5.0 で青をやめ、primary をインク・灰を中立の灰にした（「スコアボード」の方向） */
+  --color-primary: #0e1013; /* インク。inverse-surface の上に置かない */
   --color-on-primary: #ffffff;
-  --color-primary-pressed: #2e4590;
-  --color-primary-container: #e9edf8;
-  --color-on-primary-container: #1e2a5c;
-  --color-secondary: #d4f53c; /* 文字の色にしない */
-  --color-on-secondary: #10131a;
-  --color-text: #10131a;
-  --color-text-muted: #4a5163;
-  --color-background: #ffffff;
-  --color-surface: #f1f3f8;
-  --color-inverse-surface: #10131a;
+  --color-primary-pressed: #33372f;
+  --color-primary-container: #e4e6e0; /* 副のボタン・選択中の行・押下の面 */
+  --color-primary-container-pressed: #d6d9d0;
+  --color-on-primary-container: #0e1013;
+  --color-secondary: #d4f53c; /* 文字の色にしない。admin-web では使わない（濃い面を使わないため） */
+  --color-on-secondary: #0e1013;
+  --color-text: #0e1013;
+  --color-text-muted: #5b6058;
+  --color-background: #ffffff; /* 画面の地・カード・欄 */
+  --color-surface: #f2f3ee; /* 淡い面（空の表示・無効）。カードと欄を囲う面にしない */
+  --color-inverse-surface: #0e1013;
   --color-on-inverse-surface: #ffffff;
-  --color-on-inverse-surface-muted: #b8bfcc;
-  --color-border: #dde1ea; /* 飾りの区切り線だけ */
-  --color-border-strong: #7d8599; /* 入力欄・押せる部品の輪郭 */
-  --color-focus-ring: #3a54b0;
-  --color-scrim: rgba(16, 19, 26, 0.56);
+  --color-on-inverse-surface-muted: #b9bdb3;
+  --color-border: #e4e6e0; /* カードの輪郭と区切り線 */
+  --color-border-strong: #7a7f74; /* 入力欄の輪郭・中立の状態の点 */
+  --color-focus-ring: #667f00;
+  --color-scrim: rgba(14, 16, 19, 0.56);
   --color-transparent: transparent;
   --color-current: currentColor;
 
-  /* color.status。fg は文字・アイコン・輪郭、container は面、on-container は面の上の文字 */
-  --color-info: #3a54b0;
-  --color-info-container: #e9edf8;
-  --color-info-on-container: #1e2a5c;
+  /* color.status。fg は状態の点とアイコン。container は data_table の急ぎの行だけ（状態のタグと知らせの面にしない）、on-container は互換のため */
+  --color-info: #0e1013;
+  --color-info-container: #f2f3ee;
+  --color-info-on-container: #0e1013;
   --color-success: #0e7a3e;
   --color-success-container: #e2f6ea;
   --color-success-on-container: #0a4f28;
@@ -53,8 +75,10 @@
   --inset-shadow-*: initial;
   --drop-shadow-*: initial;
 
-  /* typography。admin-web は display を使わず、headline を 24px にする */
+  /* typography。admin-web は display を使わず、headline を 28px（字間 -0.02em）にする（typography.admin_web） */
   --font-sans: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+  /* 日時と回数の大きな数字だけ（figure）。同梱の Barlow Condensed（public/fonts/、SIL OFL 1.1） */
+  --font-numeric: "Barlow Condensed", "Noto Sans CJK JP", sans-serif;
   --text-xs: 12px; /* caption */
   --text-xs--line-height: 1.5;
   --text-xs--letter-spacing: 0.02em;
@@ -64,12 +88,18 @@
   --text-base: 16px; /* body */
   --text-base--line-height: 1.65;
   --text-base--letter-spacing: 0.01em;
-  --text-xl: 20px; /* title */
-  --text-xl--line-height: 1.25;
-  --text-xl--letter-spacing: -0.01em;
-  --text-headline: 24px;
-  --text-headline--line-height: 1.25;
-  --text-headline--letter-spacing: -0.01em;
+  --text-xl: 17px; /* title（太さは font-black） */
+  --text-xl--line-height: 1.4;
+  --text-xl--letter-spacing: 0em;
+  --text-headline: 28px;
+  --text-headline--line-height: 1.2;
+  --text-headline--letter-spacing: -0.02em;
+  --text-figure: 32px; /* figure。本部のホームとコーチのホームのまとめの数だけ（font-numeric） */
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: 0em;
+  --text-figure-sm: 22px; /* figure_sm */
+  --text-figure-sm--line-height: 1.1;
+  --text-figure-sm--letter-spacing: 0.01em;
 
   /* spacing.base_unit（p-2 = 8px、p-4 = 16px、p-6 = 24px、p-10 = 40px） */
   --spacing: 4px;
@@ -96,7 +126,7 @@
     font-feature-settings: "tnum";
   }
 
-  /* 区切り線は border、入力欄と押せる部品の輪郭は border-strong */
+  /* カードの輪郭と区切り線は border、入力欄の輪郭は border-strong */
   *,
   ::before,
   ::after {

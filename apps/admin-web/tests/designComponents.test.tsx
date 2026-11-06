@@ -15,11 +15,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ListRow } from "@/components/ui/ListRow";
 import { LoadingBar, SectionLoading } from "@/components/ui/Loading";
 import { Notice } from "@/components/ui/Notice";
+import { Section } from "@/components/ui/Section";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { SLOT_STATE_STATUS } from "@/components/ui/status";
 import { TextArea, TextField } from "@/components/ui/TextField";
 
-test("ボタンは種類ごとにトークンの色で、高さ 48px 以上の丸いボタン", () => {
+test("ボタンは種類ごとにトークンの色で、高さ 48px 以上・角丸 md（ピル型と線だけの副のボタンにしない）", () => {
   render(
     <>
       <Button>予約する</Button>
@@ -29,10 +30,13 @@ test("ボタンは種類ごとにトークンの色で、高さ 48px 以上の�
     </>,
   );
   const primary = screen.getByRole("button", { name: "予約する" });
-  expect(primary).toHaveClass("bg-primary", "text-on-primary", "rounded-pill", "min-h-12");
-  expect(screen.getByRole("button", { name: "保存する" })).toHaveClass("border-border-strong", "text-primary");
+  expect(primary).toHaveClass("bg-primary", "text-on-primary", "rounded-md", "min-h-12");
+  const secondary = screen.getByRole("button", { name: "保存する" });
+  expect(secondary).toHaveClass("bg-primary-container", "text-text", "active:bg-primary-container-pressed");
+  expect(secondary.className).not.toMatch(/\bborder\b/);
   expect(screen.getByRole("button", { name: "キャンセルする" })).toHaveClass("bg-danger");
-  expect(screen.getByRole("button", { name: "予約をすべて見る" })).toHaveClass("text-primary");
+  expect(screen.getByRole("button", { name: "予約をすべて見る" })).toHaveClass("text-primary", "underline", "decoration-2");
+  for (const button of screen.getAllByRole("button")) expect(button).not.toHaveClass("rounded-pill");
 });
 
 test("読み込み中のボタンはラベルを残して spinner を出し、押せない", async () => {
@@ -65,9 +69,23 @@ test("入力欄は見えるラベルを欄に結び付け、helper と誤りを�
   expect(screen.getByText("12 / 200")).toBeInTheDocument();
 });
 
-test("状態のタグは呼び名の文字を状態の面に出す", () => {
-  render(<StatusTag label="確定待ち" status="warning" />);
-  expect(screen.getByText("確定待ち")).toHaveClass("bg-warning-container", "text-warning-on-container");
+test("状態のタグは状態の色の点と呼び名の文字で出し、面の札にしない", () => {
+  render(
+    <>
+      <StatusTag label="確定待ち" status="warning" />
+      <StatusTag label="キャンセル済み" status="neutral" />
+      <StatusTag label="開始まで 24 時間以内" status="danger" urgent />
+    </>,
+  );
+  const pending = screen.getByText("確定待ち");
+  expect(pending).toHaveClass("text-text", "font-bold", "text-sm");
+  expect(pending.className).not.toMatch(/container/);
+  const [warning, neutral, urgent] = screen.getAllByTestId("status-dot");
+  expect(warning).toHaveClass("bg-warning", "size-2", "rounded-pill");
+  expect(neutral).toHaveClass("bg-border-strong");
+  expect(screen.getByText("キャンセル済み")).toHaveClass("text-text-muted");
+  expect(urgent).toHaveClass("bg-danger");
+  expect(screen.getByText("開始まで 24 時間以内")).toHaveClass("text-danger");
 });
 
 test("知らせは失敗を role=alert、成功を role=status で出す", () => {
@@ -78,8 +96,11 @@ test("知らせは失敗を role=alert、成功を role=status で出す", () =>
     </>,
   );
   expect(screen.getByRole("alert")).toHaveTextContent("予約を読み込めませんでした");
-  expect(screen.getByRole("alert")).toHaveClass("bg-danger-container");
+  // inline は白地に border の線と左の状態の色の 4px、成功は濃い面と完了の印
+  expect(screen.getByRole("alert")).toHaveClass("bg-background", "border-border", "border-l-4", "border-l-danger", "text-text");
   expect(screen.getByRole("status")).toHaveTextContent("受付を停止しました");
+  expect(screen.getByRole("status")).toHaveClass("bg-inverse-surface", "text-on-inverse-surface");
+  expect(screen.getByTestId("done-mark")).toHaveClass("bg-secondary", "rounded-pill");
 });
 
 test("一覧の行は未読を文字のしるしと左の線で示し、押すと詳細へ", async () => {
@@ -91,6 +112,18 @@ test("一覧の行は未読を文字のしるしと左の線で示し、押す�
   expect(row).toHaveClass("border-l-primary", "min-h-14");
   await userEvent.click(row);
   expect(onClick).toHaveBeenCalledOnce();
+});
+
+test("欄は面で囲わず、title の見出しの下に中身を置く", () => {
+  render(
+    <Section title="今日の予約">
+      <p>3 件</p>
+    </Section>,
+  );
+  const section = screen.getByRole("region", { name: "今日の予約" });
+  expect(section).toHaveClass("mb-10");
+  expect(section.className).not.toMatch(/bg-surface|rounded|p-4/);
+  expect(screen.getByRole("heading", { level: 2, name: "今日の予約" })).toHaveClass("text-xl", "font-black");
 });
 
 test("押せるカードは全体で 1 つのボタン、空の表示は一言と次の操作、読み込み中は文と bar", () => {
@@ -110,7 +143,9 @@ test("押せるカードは全体で 1 つのボタン、空の表示は一言�
       <Badge count={3} />
     </>,
   );
-  expect(screen.getByRole("button", { name: "10/28（水）12:00〜12:30" })).toHaveClass("bg-surface", "rounded-md");
+  const card = screen.getByRole("button", { name: "10/28（水）12:00〜12:30" });
+  expect(card).toHaveClass("bg-background", "border", "border-border", "rounded-md");
+  expect(card).not.toHaveClass("bg-surface");
   // 空の表示：screen は surface の面と primary、section は background の面と border の線と secondary。文は text の色
   const screenEmpty = screen.getByText("まだお知らせはありません").parentElement;
   expect(screenEmpty).toHaveClass("bg-surface", "text-text");
@@ -118,7 +153,7 @@ test("押せるカードは全体で 1 つのボタン、空の表示は一言�
   const sectionEmpty = screen.getByText("まだ低い評価はありません").parentElement;
   expect(sectionEmpty).toHaveClass("bg-background", "border-border", "text-text");
   expect(sectionEmpty).not.toHaveClass("bg-surface");
-  expect(screen.getByRole("button", { name: "評価の一覧を見る" })).toHaveClass("border-border-strong", "bg-background");
+  expect(screen.getByRole("button", { name: "評価の一覧を見る" })).toHaveClass("bg-primary-container");
   expect(screen.getByRole("status")).toHaveTextContent("予約を読み込んでいます…");
   expect(screen.getByRole("progressbar")).toBeInTheDocument();
   expect(screen.getByText("3")).toHaveClass("bg-danger");
@@ -196,7 +231,7 @@ test("表は包みの中で、見出しに scope があり、セルは段の余�
   expect(headers.map((th) => th.textContent)).toEqual(["コーチ", "公開した枠", "最新の一言"]);
   for (const th of headers) {
     expect(th).toHaveAttribute("scope", "col");
-    expect(th).toHaveClass("whitespace-nowrap", "px-2", "py-2");
+    expect(th).toHaveClass("whitespace-nowrap", "px-2", "py-2", "text-text-muted", "border-b-2", "border-b-primary");
   }
 
   // 並べ方は渡した順のまま
@@ -296,15 +331,19 @@ test("期間は両端を含めて上限の日数までなら誤りにしない",
 });
 
 test.each([
-  ["open", "公開中", "bg-info-container"],
-  ["booked", "予約済み", "bg-success-container"],
-  ["closed", "終了", "bg-surface"],
-] as const)("スロットの状態 %s は「%s」を slot_state の色（%s）で出す", (state, label, container) => {
+  ["open", "公開中", "bg-info"],
+  ["booked", "予約済み", "bg-success"],
+  ["closed", "終了", "bg-border-strong"],
+] as const)("スロットの状態 %s は「%s」を slot_state の色の点（%s）で出す", (state, label, dot) => {
   render(<StatusTag label={label} status={SLOT_STATE_STATUS[state]} />);
-  expect(screen.getByText(label)).toHaveClass(container);
+  expect(screen.getByText(label)).toBeInTheDocument();
+  expect(screen.getByTestId("status-dot")).toHaveClass(dot);
 });
 
-test("neutral の状態のタグは border の 1px の輪郭を付ける", () => {
+test("neutral の状態のタグは border-strong の点と text-muted の文字で、面と輪郭を付けない", () => {
   render(<StatusTag label="キャンセル済み" status="neutral" />);
-  expect(screen.getByText("キャンセル済み")).toHaveClass("border", "border-border", "bg-surface", "text-text-muted");
+  const tag = screen.getByText("キャンセル済み");
+  expect(tag).toHaveClass("text-text-muted");
+  expect(tag.className).not.toMatch(/bg-surface|\bborder\b/);
+  expect(screen.getByTestId("status-dot")).toHaveClass("bg-border-strong");
 });

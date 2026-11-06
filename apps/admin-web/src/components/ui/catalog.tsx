@@ -50,7 +50,12 @@ export const NOT_IN_ADMIN_WEB: {
   {
     component: "notice",
     variant: "toast",
-    reason: "admin-web の Notice は inline だけ（toast はまだない）",
+    reason: "admin-web の Notice は inline と success だけ（toast はまだない）",
+  },
+  {
+    component: "card",
+    variant: "booking",
+    reason: "admin-web は予約を data_table で見比べる（patterns の list）。日付のコマのライムは student-app の次のレッスンだけ",
   },
 ];
 
@@ -156,9 +161,7 @@ const BOOKING_COLUMNS: DataTableColumn<BookingRow>[] = [
     cell: (row) => (
       <span className="inline-flex gap-2">
         <StatusTag label={row.status.label} status={row.status.status} />
-        {row.urgent && (
-          <span className="rounded-sm bg-danger px-2 text-xs font-bold text-on-primary">開始まで 24 時間以内</span>
-        )}
+        {row.urgent && <StatusTag label="開始まで 24 時間以内" status="danger" urgent />}
       </span>
     ),
   },
@@ -209,9 +212,9 @@ const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
   },
 ];
 
-/** 表の見本を Section と同じ面（surface・padding 16px）に置く。 */
+/** 表の見本の枠。Section と同じく面で囲わない（0.5.0）。narrow は幅 360px。 */
 function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
-  return <div className={`rounded-md bg-surface p-4 ${narrow ? "w-[360px]" : ""}`}>{children}</div>;
+  return <div className={narrow ? "w-[360px]" : undefined}>{children}</div>;
 }
 
 /**
@@ -324,9 +327,10 @@ export const CATALOG: CatalogEntry[] = [
   },
   {
     component: "card",
+    variant: "plain",
     render: () => (
       <Card>
-        <p className="font-bold">10/28（水）12:00〜12:30</p>
+        <p className="text-xl font-black">10/28（水）12:00〜12:30</p>
         <p className="text-sm text-text-muted">テニス・コーチ: 鈴木</p>
         <StatusTag label="確定済み" status="success" />
       </Card>
@@ -334,10 +338,11 @@ export const CATALOG: CatalogEntry[] = [
   },
   {
     component: "card",
+    variant: "plain",
     example: "押せる",
     render: () => (
       <Card onClick={noop}>
-        <p className="font-bold">スイングの見直し</p>
+        <p className="text-xl font-black">スイングの見直し</p>
         <p className="text-sm text-text-muted">テニス・1 回 60 分</p>
       </Card>
     ),
@@ -357,20 +362,33 @@ export const CATALOG: CatalogEntry[] = [
   { component: "badge", variant: "dot", render: () => <Badge /> },
   ...STATUS_EXAMPLES.map(({ status, label }) => ({
     component: "status_tag",
+    variant: "default",
     example: status,
     render: () => <StatusTag label={label} status={status} />,
   })),
   ...SLOT_STATE_EXAMPLES.map(({ state, label }) => ({
     component: "status_tag",
+    variant: "default",
     example: `slot_state ${state}`,
     render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
   })),
-  ...(["info", "success", "warning", "danger"] as const).map((state) => ({
+  {
+    component: "status_tag",
+    variant: "urgent",
+    render: () => <StatusTag label="開始まで 24 時間以内" status="danger" urgent />,
+  },
+  ...(["info", "warning", "danger"] as const).map((state) => ({
     component: "notice",
     variant: "inline",
     state,
     render: () => <Notice message={NOTICE_MESSAGES[state]} status={state} />,
   })),
+  // 成功は inline ではなく濃い面と完了の印（notice.variants.success）
+  {
+    component: "notice",
+    variant: "success",
+    render: () => <Notice message={NOTICE_MESSAGES.success} status="success" />,
+  },
   {
     component: "empty_state",
     variant: "screen",
@@ -458,7 +476,7 @@ export const CATALOG: CatalogEntry[] = [
   {
     component: "data_table",
     variant: "text",
-    state: "highlight",
+    example: "急ぎの行",
     render: () => (
       <TableFrame>
         <DataTable

@@ -24,6 +24,7 @@ void main() {
       'on_primary': RallyColors.onPrimary,
       'primary_pressed': RallyColors.primaryPressed,
       'primary_container': RallyColors.primaryContainer,
+      'primary_container_pressed': RallyColors.primaryContainerPressed,
       'on_primary_container': RallyColors.onPrimaryContainer,
       'secondary': RallyColors.secondary,
       'on_secondary': RallyColors.onSecondary,
@@ -43,9 +44,9 @@ void main() {
     for (final MapEntry(:key, :value) in dart.entries) {
       expect(value, hex(roles[key]), reason: key);
     }
-    // scrim は rgba(16,19,26,0.56)
-    expect(roles['scrim'], 'rgba(16,19,26,0.56)');
-    expect(RallyColors.scrim.toARGB32(), 0x8F10131A);
+    // scrim は rgba(14,16,19,0.56)
+    expect(roles['scrim'], 'rgba(14,16,19,0.56)');
+    expect(RallyColors.scrim.toARGB32(), 0x8F0E1013);
   });
 
   test('状態の色は tokens.yaml の color.status と同じ', () {
@@ -108,12 +109,15 @@ void main() {
     );
   });
 
-  test('書体の段は tokens.yaml の typography.scale と同じ大きさ・太さ・行間', () {
-    final scale = (tokens['typography'] as YamlMap)['scale'] as YamlMap;
+  test('書体の段は tokens.yaml の typography.scale と同じ大きさ・太さ・行間・書体', () {
+    final typography = tokens['typography'] as YamlMap;
+    final scale = typography['scale'] as YamlMap;
     final dart = {
       'display': RallyTypography.display,
       'headline': RallyTypography.headline,
       'title': RallyTypography.title,
+      'figure': RallyTypography.figure,
+      'figure_sm': RallyTypography.figureSm,
       'body': RallyTypography.body,
       'small': RallyTypography.small,
       'caption': RallyTypography.caption,
@@ -132,11 +136,44 @@ void main() {
         closeTo(value.fontSize! * em, 1e-9),
         reason: key,
       );
-      expect(value.fontFamily, RallyTypography.family);
+      // family のない段は sans、numeric の段は数字の書体
+      expect(
+        value.fontFamily,
+        s['family'] == 'numeric'
+            ? RallyTypography.numericFamily
+            : RallyTypography.family,
+        reason: key,
+      );
     }
+    final families = typography['families'] as YamlMap;
+    expect(families['sans'], startsWith("'${RallyTypography.family}'"));
     expect(
-      (tokens['typography'] as YamlMap)['families']['sans'],
-      startsWith("'${RallyTypography.family}'"),
+      families['numeric'],
+      startsWith(
+        "'${RallyTypography.numericFamily}', '${RallyTypography.family}'",
+      ),
+    );
+  });
+
+  test('数字の書体は pubspec の fonts に同梱し、ライセンス（OFL.txt）も置く', () {
+    final pubspec =
+        loadYaml(File('pubspec.yaml').readAsStringSync()) as YamlMap;
+    final flutter = pubspec['flutter'] as YamlMap;
+    final fonts = (flutter['fonts'] as YamlList).cast<YamlMap>();
+    final numeric = fonts.singleWhere(
+      (f) => f['family'] == RallyTypography.numericFamily,
+    );
+    final weights = <int>{};
+    for (final font in (numeric['fonts'] as YamlList).cast<YamlMap>()) {
+      expect(File(font['asset'] as String).existsSync(), isTrue);
+      weights.add(font['weight'] as int);
+    }
+    // display は 800、figure と figure_sm は 700
+    expect(weights, {700, 800});
+    expect(flutter['assets'], contains('assets/fonts/OFL.txt'));
+    expect(
+      File('assets/fonts/OFL.txt').readAsStringSync(),
+      contains('SIL Open Font License, Version 1.1'),
     );
   });
 
@@ -149,9 +186,9 @@ void main() {
     expect(theme.colorScheme.outline, RallyColors.borderStrong);
     expect(theme.scaffoldBackgroundColor, RallyColors.background);
     expect(theme.textTheme.bodyMedium!.fontFamily, RallyTypography.family);
-    expect(theme.textTheme.headlineSmall!.fontSize, 28);
+    expect(theme.textTheme.headlineSmall!.fontSize, 32);
     expect(theme.cardTheme.elevation, 0);
-    expect(theme.cardTheme.color, RallyColors.surface);
+    expect(theme.cardTheme.color, RallyColors.background);
     expect(theme.appBarTheme.elevation, 0);
     expect(theme.dialogTheme.elevation, 0);
     expect(theme.colorScheme.shadow, Colors.transparent);

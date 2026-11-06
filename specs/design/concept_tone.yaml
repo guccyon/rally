@@ -7,28 +7,33 @@ concept:
   name: コートの熱（躍動して前へ）
   chosen_on: "2026-11-01"
   chosen_by: 人（HumanChoice concept_tone）
+  direction: scoreboard   # 0.5.0。人が 3 つの方向を同じ画面で比べて案 A「スコアボード」を選んだ（2026-11-05）
+  direction_why: 青のピル型のボタン・淡い色の札・青みの灰の「Bootstrap 感」をやめ、インクとライムと細長の数字でスコアボードの手応えに寄せる
 
 copy:   # コピーの 3 語とデザインの結びつき（0.2.0。カタログ 1 版目の README の表を正本に写した）
   line: コートの熱。次の練習へ、前のめりに。
   map:
     - phrase: コートの熱
-      design: 濃い面 inverse_surface に、ライム secondary の線と display の数字を置く
-      limit: 熱は 1 画面 1 か所（principles の one-hot-spot）
-      tokens: [color.roles.inverse_surface, color.roles.secondary, typography.scale.display, iconography.decoration]
+      design: 濃い面 inverse_surface に、ライム secondary の線と display の数字（numeric の細長の数字）を置く
+      limit: 熱は 1 画面 1 か所（principles の one-hot-spot）。ライムは score_panel・次のレッスンの日付のコマ・完了の印だけ
+      tokens: [color.roles.inverse_surface, color.roles.secondary, typography.scale.display, typography.families.numeric, iconography.decoration]
     - phrase: 次の練習へ
       design: 次の一手を一番前に置き、主なボタン（button の primary）は 1 画面に 1 つ。空の画面でも次の行動を示す（empty_state の action）
       limit: 次の一手が 2 つ並ぶ画面にしない（principles の next-move-first）
       tokens: [components.button.primary, components.empty_state, components.score_panel]
     - phrase: 前のめりに
-      design: 太い字（900・700）、-12° の帯、動詞で言い切るボタン、待たせない動き（motion の fast 120ms・base 200ms）
+      design: 太い字（900・700）、詰めた大きな見出し（headline 32px・-0.03em）、-12° の帯、角のあるインクのボタン、動詞で言い切る文言、待たせない動き（motion の fast 120ms・base 200ms）
       limit: 回数・日時・規定・誤りは勢いより正確さを先にする（principles の clear-before-hype）。誤りの知らせに勢いの言葉を使わない
       tokens: [typography.weights.black, typography.weights.bold, iconography.decoration, motion.durations_ms]
-  calm_primary: 主の色 primary は勢いを担わない。熱は inverse_surface と secondary が担い、primary は押せるもの・選択中の印として落ち着いた青（#3A54B0）にする（0.2.0。人が「青が強い」と指摘）
+  calm_primary: >-
+    主の色 primary は勢いを担わない。熱は inverse_surface と secondary が担う。primary は押せるもの・リンク・選択中の印で、inverse_surface と同じインク（#0E1013）にする。
+    青は使わない（0.5.0。人が「往年の Bootstrap 感」と指摘し、案 A「スコアボード」を選んだ 2026-11-05。0.2.0 の落ち着いた青 #3A54B0 から変えた）。
+    灰は青みを抜いた中立の灰。白地に細い線と、インクと太い数字の差で主役と脇役を分ける
 
 impression:
   who: 部活や趣味で体を動かすのが好きな生徒
   feel: 「早く練習したい、次も上手くなれる」と前のめりになってほしい
-  reference_image: スポーツの中継やスコアボードのような、勢いと手応えのある画面
+  reference_image: スポーツの中継やスコアボードのような、勢いと手応えのある画面。白い紙に黒いインクの数字、そこに 1 か所だけライムの光
   tradeoff: 勢いと次の練習への意欲を得るかわりに、強い色と太い字が多いと疲れやすく、落ち着いて読みたい大人や規定の説明には向きにくい。だから principles の 1 と 3 で抑える
 
 mood:
@@ -78,6 +83,8 @@ imagery:
     emphasis: 大事な入口はアイコンを濃い面に白抜きで置く
 
 difference:
+  - against: 汎用の UI キット（Bootstrap の btn-primary・btn-outline・alert・badge の既定の見え方）
+    ours: 青と淡い色の札を使わない。インクの角のあるボタン、点と字の状態、白地と細い線、細長の数字
   - against: よくあるレッスン予約のアプリ（白地に淡い色・カレンダー中心）
     ours: 残りの回数と次のレッスンをスコアボードの数字で見せ、次の練習へ押し出す
   - against: スポーツ用品の広告的な見た目（写真いっぱい・情報が少ない）

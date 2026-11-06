@@ -1,20 +1,29 @@
 import type { IconName } from "./icons/paths";
 
 // 状態の色（specs/design/tokens.yaml の color.status と booking_state・slot_state の neutral）。
-// 状態は色と一緒に必ずアイコンか文字を出す。
+// 状態は色の点かアイコンと一緒に、必ず glossary の呼び名の文字を出す。container の面の札と知らせは使わない（0.5.0）。
 
 export type Status = "info" | "success" | "warning" | "danger" | "neutral";
 
-/** 面と、面の上の文字（status_tag・notice の inline）。 */
-export const STATUS_CONTAINER_CLASSES: Record<Status, string> = {
-  info: "bg-info-container text-info-on-container",
-  success: "bg-success-container text-success-on-container",
-  warning: "bg-warning-container text-warning-on-container",
-  danger: "bg-danger-container text-danger-on-container",
-  neutral: "border border-border bg-surface text-text-muted",
+/** 状態の点（status_tag）。status の fg、neutral は border-strong。 */
+export const STATUS_DOT_CLASSES: Record<Status, string> = {
+  info: "bg-info",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  neutral: "bg-border-strong",
 };
 
-/** アイコンの色（status の fg）。 */
+/** notice の inline の左の 4px の線（status の fg）。 */
+export const STATUS_EDGE_CLASSES: Record<Status, string> = {
+  info: "border-l-info",
+  success: "border-l-success",
+  warning: "border-l-warning",
+  danger: "border-l-danger",
+  neutral: "border-l-border-strong",
+};
+
+/** アイコンの色（status の fg）。neutral は text-muted。 */
 export const STATUS_ICON_CLASSES: Record<Status, string> = {
   info: "text-info",
   success: "text-success",

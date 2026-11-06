@@ -117,12 +117,12 @@ describe("本部の生徒の利用の様子", () => {
     ]);
   });
 
-  test("これからの予約の状態は、本部の予約と同じ色の札で出す", async () => {
+  test("これからの予約の状態は、本部の予約と同じ状態のタグ（色の点と字）で出す", async () => {
     render(<StudentActivity api={{ getStudentActivity: activityOf(ACTIVITY) }} studentId={STUDENT_ID} />);
 
     const table = await screen.findByRole("table", { name: "これからの予約" });
-    expect(within(table).getByText("確定待ち")).toHaveClass("bg-warning-container", "text-warning-on-container");
-    expect(within(table).getByText("確定済み")).toHaveClass("bg-success-container", "text-success-on-container");
+    expect(within(within(table).getByText("確定待ち")).getByTestId("status-dot")).toHaveClass("bg-warning");
+    expect(within(within(table).getByText("確定済み")).getByTestId("status-dot")).toHaveClass("bg-success");
   });
 
   test("予約もレッスンも 0 件ならそれぞれその旨を出し、表は出さない（キャンセルの件数は 0 件）", async () => {
