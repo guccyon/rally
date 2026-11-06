@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use domain::{
     identity::AccountId,
-    scheduling::{Booking, BookingId, CancellationDecision, SchedulingError},
+    scheduling::{Booking, BookingCanceller, BookingId, CancellationDecision, SchedulingError},
 };
 use uuid::Uuid;
 
@@ -94,6 +94,7 @@ where
                 booking_id: booking.id(),
                 consumes_quota: decision.consumes_quota,
                 cancelled_at: now,
+                cancelled_by: BookingCanceller::Student,
             })
             .await;
         self.analytics
@@ -268,6 +269,7 @@ mod tests {
             booking_id,
             consumes_quota,
             cancelled_at: event_cancelled_at,
+            cancelled_by,
         } = &events[0]
         else {
             panic!("{:?}", events[0]);
@@ -287,6 +289,7 @@ mod tests {
             *consumes_quota,
             "開始の 23 時間前のキャンセルは回数を消費する"
         );
+        assert_eq!(*cancelled_by, BookingCanceller::Student);
         assert_eq!(events[0].name(), "BookingCancelled");
 
         let analytics = use_case.analytics().events();

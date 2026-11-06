@@ -56,6 +56,19 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId }, query: filter },
         }),
       ),
+    getCoachLeavePreview: (coachId: string, period: { from: string; to: string }) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/leave-preview", {
+          params: { path: { coach_id: coachId }, query: period },
+        }),
+      ),
+    startCoachLeave: (coachId: string, body: Schemas["StartCoachLeaveRequest"]) =>
+      call(() =>
+        client.POST("/coaches/{coach_id}/leaves", {
+          params: { path: { coach_id: coachId } },
+          body,
+        }),
+      ),
     getCoachOverview: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/overview", {

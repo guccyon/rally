@@ -2,7 +2,8 @@
 //!
 //! ペイロードは AsyncAPI の `required` の属性だけ。ID は UUID のハイフン区切り、時刻（`occurred_at` など）は
 //! RFC 3339（`format: date-time`）。`sender_role` は DB・行動イベントと同じ値
-//! （[`crate::messaging_values::message_sender_value`]）。契約との一致は `tests/domain_event_payload.rs` が確かめる。
+//! （[`crate::messaging_values::message_sender_value`]）、`cancelled_by` は DB と同じ値
+//! （[`crate::scheduling_values::booking_canceller_value`]）。契約との一致は `tests/domain_event_payload.rs` が確かめる。
 
 use std::time::SystemTime;
 
@@ -18,7 +19,7 @@ use application::{
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::messaging_values::message_sender_value;
+use crate::{messaging_values::message_sender_value, scheduling_values::booking_canceller_value};
 
 /// `event` のペイロード（JSON）。時刻が RFC 3339 で書けない（0〜9999 年の外）ときは失敗する。
 pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
@@ -44,6 +45,7 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
             booking_id,
             consumes_quota,
             cancelled_at,
+            cancelled_by,
         } => Ok(json!({
             "event_id": event_id.hyphenated().to_string(),
             "occurred_at": date_time(*occurred_at)?,
@@ -52,6 +54,7 @@ pub fn payload(event: &DomainEvent) -> Result<Value, time::error::Format> {
             "booking_id": booking_id_uuid::format(*booking_id),
             "consumes_quota": consumes_quota,
             "cancelled_at": date_time(*cancelled_at)?,
+            "cancelled_by": booking_canceller_value(*cancelled_by),
         })),
         DomainEvent::LessonCompleted {
             event_id,

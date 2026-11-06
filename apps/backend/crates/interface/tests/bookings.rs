@@ -870,11 +870,13 @@ async fn cancelling_a_confirmed_booking_23_hours_before_reopens_the_slot_and_con
         booking_id: event_booking,
         consumes_quota,
         cancelled_at,
+        cancelled_by,
     } = &events[1]
     else {
         panic!("{:?}", events[1]);
     };
     assert!(!event_id.is_nil());
+    assert_eq!(*cancelled_by, domain::scheduling::BookingCanceller::Student);
     assert_eq!(*occurred_at, SystemTime::UNIX_EPOCH + NOW);
     assert_eq!(*cancelled_at, SystemTime::UNIX_EPOCH + NOW);
     assert_eq!(*student_id, account_id(STUDENT));
