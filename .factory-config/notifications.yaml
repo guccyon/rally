@@ -24,7 +24,7 @@ destinations:
     quiet: "22-7"             # 送らない時間（JST の時）。明けた最初の周回でまとめて送る
   gen1_reports:
     connection: gen1_app
-    channel: "#factory-gen1"
+    channel: C0CG0JBEQGG        # #factory-gen1（公開）。名前で書くと工場が ID に引くが、今の版は非公開を見る権限まで要るので当面 ID で（factory-engine#236）
     quiet: "22-7"
 
 routes:
