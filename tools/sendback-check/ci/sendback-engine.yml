@@ -13,6 +13,8 @@
 # GitHub Actions では写しが .github/workflows/sendback-engine.yml にないと落とす。見張りを外す PR を止めるため（議決 D-0017、Issue #969）。
 # engine-test は engine.test.mjs の結果（TAP）を同じ手順で order.mjs --engine-report に渡し、check.mjs --events を呼ぶ手順があるのに
 # ENGINE_REF の Engine で (3) か (c) が通っていない（LEGACY_BASIS の todo など）ときに落とす（議決 D-0016、Issue #964）。
+# ENGINE_REF を固定したので Engine の判定の変化は ENGINE_REF を上げるまで見えない。同じ engine.test.mjs を Engine の既定のブランチの先頭で定期に走らせ、
+# 落ちたら ::error と Issue #948 への記録で知らせるのは ci/sendback-engine-head.yml（議決 D-0020、Issue #977。PR では走らせない）。
 name: sendback-engine
 
 on:
