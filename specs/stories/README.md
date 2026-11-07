@@ -14,6 +14,6 @@
 
 | id | 誰が | 流れ |
 |---|---|---|
-| `coach-replies-to-new-message` | コーチ | 生徒から届いた新しい相談に気づいて返事する（#895） |
+| `coach-replies-to-new-message` | コーチ | 生徒から届いた新しい相談に気づいて返事する（#895。未返信の印は #1048） |
 | `student-subscription-persists` | 生徒 | 月額契約を始め、翌日アプリを開き直しても契約が残っている |
 | `cs-traces-vanished-booking` | CS | 「予約が消えた」という問い合わせに、予約の経緯を追って答える |
