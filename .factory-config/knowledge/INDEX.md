@@ -15,4 +15,4 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0006 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |
 | K-0008 | 6 | causal | hypothesis | draft | context | 2026-11-04 | 2026-12-04 | 人の判断待ち（factory:needs-judgment）の停止中に PR が main と衝突（pr.conflicted）しても、衝突を解く contin |
 | K-0010 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 既定ブランチとの衝突のたびに、上限なしで、セッションを引き継ぐ（agent_resumed）tier-large の続きのジョブを積み直すと、 衝突が機械的（C |
-| K-0012 | 6 | causal | hypothesis | draft | context | 2026-11-07 | 2026-12-07 | 採用した指摘を直す続きのジョブ（body_fix など）が終わる前に supervisor が承認（inspector_approved）を出し、 直したことの |
+| K-0012 | 6 | causal | hypothesis | draft | context | 2026-11-07 | 2026-12-07 | 採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、  |
