@@ -1,6 +1,6 @@
 # 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
 id: D-0028
-pr: https://github.com/guccyon/rally/pull/1023
+pr: https://github.com/guccyon/rally/pull/1022
 decided_at: '2026-11-07'
 outcome: enforce
 requires_human: false
@@ -9,82 +9,71 @@ votes:
 - role: consistency
   vote: adopt
   reasons:
-  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0016 の 1 つめの ci_check
-    の案（D-0012 の順序の見張りを ENGINE_REF の Engine の結果でも見る）を enforcement.solutions に 1 件足しただけなので、D-0004
-    から D-0026 までの議決と矛盾しません。
-  - issue 953 の順序の見張り（engine_test_todo・engine_test_not_wired）を置き換えずに --engine-report
-    と engine_basis_not_passed で広げる形で、engine_test_not_wired の扱いもこれまでどおりと書いているので、既存の
-    solution と重なっても食い違ってもいません。
-  - '足した項目の kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と同じで、decided_by
-    を提案元の committee:D-0016 にし、wired: false・verified: false にしている点も README と D-0015
-    の決まりに合っています。'
-  - D-0010 から繰り返し求めている「差し替えもないのに」という条件の出どころと verified_at・review_by の更新は今回もまだなので、statement
-    を直す次の変更セットでそろえてください。
-  - ENGINE_REF の版の Engine では走らせておらず、PR ごとにも走っていないので、confidence は hypothesis のままが妥当です。
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 961 の test を 1 件足しただけです。そのため D-0004 から D-0026 までの議決とも、specs/ の規範とも矛盾しません。
+  - 足した項目は kind・what・issue・at・decided_by・wired・verified の形が既存の solutions と同じです。decided_by
+    を提案元の committee:D-0014 にしている点も、これまでの記録の揃え方と合っています。
+  - D-0014 の test の案は「basis を直す PR で todo を外して必須にする」というものです。今回の項目は、その PR に当たる ENGINE_REF
+    を上げる PR で todo が残っていれば落とすテストなので、案にそのまま応えています。
+  - issue 949 の solution（todo を LEGACY_BASIS のときだけに狭めた）や issue 953 の order.mjs の見張りと同じ
+    engine.test.mjs を指しています。ただし今回は todo の残りを機械で外させる別の段の記録なので、重複ではありません。
+  - D-0016 の 3 つめの ci_check の案（ENGINE_REF を上げた PR で (3)・(c) が必須として通ることを確かめる）とも重なります。次に
+    K-0004 を直すときに、この solution がその案の一部も満たすことを what に書き添えると辿りやすくなります。
+  - 'wired: false・verified: false で、.github/workflows/ から走っておらず効き目を確かめていないと明記しています。また
+    D-0015・D-0016・D-0020 で求めた「差し替えがあるときも起こす」条件の出どころもまだ statement や evidence にありません。このため
+    confidence は hypothesis のままが妥当です。'
   personal_data: false
 - role: evidence
   vote: adopt
   reasons:
-  - 足した ci_check の solution は issue 964 と committee:D-0016 を指していて、D-0016 の enforcement
-    の 1 つめの案（check.mjs --events の配線があるのに engine.test.mjs が未配線か ENGINE_REF の Engine
-    で (3) か (c) が LEGACY_BASIS の todo なら落とす）にそのまま対応しているので、一次記録に辿れます。
-  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
-    1 件足しただけなので、根拠の段は崩れていません。'
-  - 'ENGINE_REF の版の Engine では走らせておらず .github/workflows/ にも写していないと書き、wired: false・verified:
-    false にしているので、担保の強さを実態より強く書いていません。'
-  - node --test の本物の TAP の出力で todo なら落ち、通れば通ることを確かめたと書かれていますが、その TAP や走らせた記録が指されていないので、issue
-    964 か evidence にその記録を残してください。
-  - 'Engine の basis を直した版で (3) と (c) が通り、本物の PR #395 のイベント列で落ちることを確かめるまでは、confidence
-    は hypothesis のままが妥当です。'
-  - 差分に出てくるのはファイルのパス・定数名・エラーの名前・issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  - 足した test の solution は issue 961 と committee:D-0014 を指しており、D-0014 の enforcement
+    の 2 つめの案（basis を直す PR で engine.test.mjs の todo を外して必須にし、そのあとで D-0010 の ci_check
+    を配線する）とそのまま対応しているので、一次記録に辿れます。
+  - D-0014 の 1 つめの案（ci_check）は issue 960 の solution で記録済みで、今回の追加はもう一方の案を記録したものなので、同じ議決を二重に数えてはいません。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を足しただけなので、根拠の段は崩れていません。'
+  - 「approvalBasis() の形に書き換えた Engine の写しで確かめた」は手元の確認で、その写しの版と走らせた記録がどこにも残っていないので、issue
+    961 に写しの差分とテストの出力を残してください。
+  - 'engine.test.mjs は .github/workflows/ から走っておらず wired: false・verified: false と自分で書いているので、confidence
+    は hypothesis のままが妥当で、ENGINE_REF を上げた PR で CI が通った記録が残るまで confirmed に上げないでください。'
+  - 差分に出てくるのはファイルのパス・関数名・環境変数の名前・issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
   personal_data: false
 - role: enforcement
   vote: enforce
   reasons:
-  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0016 の 1 つめの ci_check
-    の案（順序の見張りを ENGINE_REF の Engine で走らせた結果でも見る）を issue 964 として enforcement.solutions
-    に 1 件足しただけなので、担保の観点では採ってよいです。
-  - (3) と (c) の名前を order.mjs の BASIS_TESTS に置いて engine.test.mjs もそれを使うので、テストの名前を変えると見張りが黙って外れる、という線のずれを決定論で防いでいる点は担保の向きとして正しいです。
-  - todo・飛ばした・落ちた・結果にない・通ったの 5 つの場合を order.test.mjs と本物の node --test の TAP で確かめており、線の引き方ははっきりしています。
-  - ただし、check.mjs --events を配線したのに order.mjs が --engine-report を渡されずに走った場合（wiring-order
-    のジョブだけの場合など）も落ちるかが what に書かれていないので、TAP がないことそのものを落とす線を決定論で足すべきです。
-  - '.github/workflows/ への写しと必須チェックへの登録は建設者に残っていて wired: false・verified: false と正しく書かれているので、今は外れても誰も止めない状態で、confidence
-    は hypothesis のままが妥当です。'
-  - solutions は 15 件になり、どれも未配線・未確認なので、新しい見張りを足すより建設者の写しと必須チェックの登録を先に進めないと、決定論の担保は効きません。
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0014 の test の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件足しただけなので、採ってよいです。
+  - Engine が LEGACY_BASIS を書かなくなったのに engine.test.mjs に todo が残っていれば落とすテストは、「basis
+    を直す PR で todo を外す」という人の手順を機械で求める形にしており、繰り返し起きる外し方を決定論で塞ぐ向きとして正しいです。
+  - ただし今の形かどうかを LEGACY_BASIS の文と合うかで見ているので、Engine が別の言い回しで adopt の合計だけを書くように変わると今の形と見なされず
+    todo を外すことを求め、そのあと (3) が必須で落ちるので向きは保たれますが、この流れを写しのテストで確かめておくべきです。
+  - engine.test.mjs も ci/sendback-engine.yml も .github/workflows/ からはまだ走っておらず必須のチェックでもないので、ENGINE_REF
+    を上げる PR でこのテストが走る保証がなく、今は外れても何も止まりません。
+  - 'solutions は 14 件になり wired: false・verified: false の記録が積み重なっているので、建設者の配線が入ったら効いたものと効いていないものを分けて整理してください。'
+  - 効き目を CI で確かめていないので confidence は hypothesis のままが妥当です。
   personal_data: false
 - role: dissent
   vote: adopt
   reasons:
-  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0016 の enforcement
-    の 1 つめの案（ENGINE_REF の Engine の結果でも順序を見張る）を issue 964 として enforcement.solutions
-    に 1 件足しただけなので、範囲は広すぎません。
-  - (3) と (c) が todo・飛ばした・落ちた・結果にない のどれでも engine_basis_not_passed で落とすので、テストの名前を変えたり消したりして見張りをすり抜ける反例は
-    BASIS_TESTS を共有したことでおおむね塞がれています。
-  - ただし order.mjs を --engine-report なしで呼ぶ wiring-order のジョブだけが走り engine-test のジョブが必須のチェックでない場合は、basis
-    の結果を見ずに通る反例が残るので、--engine-report がないときに check.mjs --events の配線があれば落とすか、engine-test
-    を必須のチェックにすることを建設者への手順に書いてください。
-  - 'ENGINE_REF の版の Engine では走らせておらず、.github/workflows/ にも写されていないので、wired: false・verified:
-    false の書き方は実態どおりで、効き目は確かめていないと読むべきです。'
-  - K-0004 の solutions は 15 件になり、同じ案の部分的な実装が議決ごとに積み重なって読みにくくなっているので、次に K-0004 を直す変更セットで配線待ちのものと満たし済みのものを分けて整理することを勧めます。
-  - basis の担保が本物の Engine でまだ効いていないので、confidence は hypothesis のままが妥当です。
+  - この PR は議決 D-0014 の test の案を K-0004 の enforcement.solutions に 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、範囲は広すぎません。
+  - 足したテストは Engine が LEGACY_BASIS を書いているあいだは何も見ずに通ると what に書いてあり、今の Engine のままでは何も止めないので、担保が効いていると読まないでください。
+  - todo の数え方は order.mjs の todoLines と同じ形に頼っているので、todo の代わりに t.skip やコメントアウトで (3)・(c)
+    を外すと捕まらないという反例があり、次に直すときに skip も数えるかを決めてください。
+  - Engine の basis が LEGACY_BASIS でも approvalBasis() の形でもない第三の形に変わった場合は、todo を外せと求められるだけで
+    (3) がどう落ちるかは確かめていないので、その場合も写しで確かめておくとよいです。
+  - 'engine.test.mjs は .github/workflows/ からまだ走らず wired: false・verified: false と正しく書いているので、confidence
+    は hypothesis のままが妥当です。'
+  - K-0004 の solutions は未配線の部分的な記録が 13 件に増えて読みにくくなっているので、建設者が配線した時点で済んだ項目をまとめ直すことを勧めます。
   personal_data: false
 enforcement:
 - knowledge: K-0004
   level: deterministic
   solution_kind: ci_check
-  proposal: tools/sendback-check/order.mjs で、.github/workflows/ に check.mjs --events
-    を呼ぶ手順があるのに --engine-report が渡されていないか TAP のファイルが空・存在しないときは engine_report_missing
-    で落とし、order.test.mjs でその場合を確かめる。
+  proposal: 建設者が tools/sendback-check/ci/sendback-engine.yml を .github/workflows/
+    に写して engine-test と wiring-order を branch protection の必須チェックにし、ENGINE_REF の行を変える
+    PR では paths の絞り込みに関わらず engine-test が必ず走ることを ci.test.mjs で確かめる。
 - knowledge: K-0004
   level: deterministic
   solution_kind: test
-  proposal: 'tools/sendback-check/ci.test.mjs に、ci/sendback-engine.yml の engine-test
-    のジョブが engine.test.mjs の TAP を engine-test.tap に出し、同じジョブの後の手順で continue-on-error
-    や if: なしに order.mjs --engine-report engine-test.tap を呼ぶ形かを見て、外れたら落とす検査を足す。'
-- knowledge: K-0004
-  level: deterministic
-  solution_kind: ci_check
-  proposal: D-0016・D-0017 の案のとおり、建設者が tools/sendback-check/ci/sendback-engine.yml
-    を .github/workflows/sendback-engine.yml に写し、engine-test と wiring-order を branch
-    protection の必須チェックにして、ENGINE_REF の Engine で engine_basis_not_passed が実際に落ちる記録を
-    issue 964 に残してから wired・verified を true にする。
+  proposal: engine.test.mjs の今の形の判定に、LEGACY_BASIS と文が違っても欠陥の採用数と仮決めの承認数を分けて書いていない
+    basis（adopt の合計だけの別の言い回し）に書き換えた Engine の写しを足し、todo を外すことを求めたうえで (3) が必須で落ちることを確かめる。

@@ -214,14 +214,30 @@ enforcement:
       decided_by: committee:D-0017
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0014 の test の案のうち、ワーカーの権限で入れられる分を入れた。Engine は別のリポジトリで、このリポジトリで「basis を直す PR」に当たるのは
+        ENGINE_REF を直した版に上げる PR なので、tools/sendback-check/engine.test.mjs に、Engine が今の形の basis（LEGACY_BASIS）を書かなくなったのに
+        engine.test.mjs に todo（order.mjs の todoLines と同じ数え方。todoWhileLegacy の t.todo を含む）が残っていれば落とすテストを足し、
+        その PR で todo を外して必須のテストにすることを機械で求めるようにした。今の形のうちは何も見ずに通る。engine_harness.py の偽の cursor は
+        judgment.judged の問い合わせに payload の項目をすべて返すようにし、欠陥と仮決めを分けて数える Engine でも同じ形で動くようにした。
+        basis を approvalBasis() の形に書き換えた Engine の写しで、todo が残っていればこのテストだけが落ち、todo を外すと (3)・(c) を含めすべて通ることを確かめた。
+        今の Engine はまだ adopt の合計だけを書くので (3) と (c) は todo のままで、basis を直して ENGINE_REF を上げることと、そのあとの D-0010 の
+        check.mjs --events --pr --summary の ci_check の .github/workflows/ への配線（順序は order.mjs が見張る）は建設者が入れる。
+        engine.test.mjs は .github/workflows/ からはまだ走っておらず（ci/sendback-engine.yml の写しは建設者）、効き目はまだ確かめていない
+      issue: 961
+      at: 2026-11-07
+      decided_by: committee:D-0014
+      wired: false
+      verified: false
     - kind: ci_check
       what: >-
         議決 D-0016 の ci_check の案（D-0012 の順序の見張りを、ENGINE_REF の Engine で走らせた結果でも見る）を入れた。
         tools/sendback-check/order.mjs に --engine-report（engine.test.mjs の node --test の TAP）を足し、.github/workflows/ に check.mjs --events を
         呼ぶ手順があるのに、その結果で (3)（basis を分けて書く）か (c)（Engine の正しい判定のイベント列が通る）が通っていなければ
         （LEGACY_BASIS の todo になった・飛ばされた・落ちた・結果にない）engine_basis_not_passed で落とす。engine.test.mjs が CI に配線されていないときは
-        これまでどおり engine_test_not_wired で落ちる。ci/sendback-engine.yml の engine-test のジョブが TAP を engine-test.tap に出し、次の手順で
-        order.mjs --engine-report に渡す。(3) と (c) の名前は order.mjs の BASIS_TESTS に置いて engine.test.mjs もそれを使う。
+        これまでどおり engine_test_not_wired で落ちる。ci/sendback-engine.yml の engine-test のジョブが TAP を engine-test.tap に出し、engine.test.mjs と
+        同じ手順の中で order.mjs --engine-report を走らせて失敗を rc に反映する（if: は使わない。D-0017 の見張りと両立させるため）。(3) と (c) の名前は order.mjs の BASIS_TESTS に置いて engine.test.mjs もそれを使う。
         order.test.mjs で todo・飛ばした・落ちた・結果にない・通った場合を確かめ、node --test の本物の TAP の出力でも todo で落ち、通れば通ることを確かめた。
         ENGINE_REF の版の Engine では走らせておらず、.github/workflows/ への写しは建設者なので、まだ PR ごとには走っておらず効き目は確かめていない
       issue: 964
