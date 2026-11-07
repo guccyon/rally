@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, knownStamp, STAMPS } from "@/components/labels";
 
@@ -52,7 +53,7 @@ function ReviewCard({
   return (
     <article
       aria-label={title}
-      className="space-y-2 rounded-md border-2 border-border bg-primary-container p-3 text-sm"
+      className="space-y-2 rounded-md border-2 border-border bg-background p-3 text-sm"
     >
       <h4 className="font-semibold">{title}</h4>
       {children}
@@ -201,17 +202,16 @@ export function MessageThreadView({
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-text-muted">まだ添削を返していません。</span>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               disabled={busy}
               onClick={() => {
                 setReviewingVideoId(video.video_id);
                 setResult(null);
               }}
-              className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
             >
               添削する
-            </button>
+            </Button>
           </div>
         )}
       </ReviewCard>
@@ -231,7 +231,7 @@ export function MessageThreadView({
     const mine = message.sender_role === "coach";
     const sender = mine ? "あなた" : message.sender_role === "student" ? studentName : "お知らせ";
     return (
-      <div className={`rounded-md p-2 text-sm ${mine ? "ml-8 bg-success-container" : "mr-8 bg-surface"}`}>
+      <div className={`rounded-md p-2 text-sm ${mine ? "ml-8 bg-primary-container" : "mr-8 bg-surface"}`}>
         <p className="text-xs font-semibold">{sender}</p>
         <p className="whitespace-pre-wrap">{message.body}</p>
         <p className="text-xs text-text-muted">
@@ -286,14 +286,13 @@ export function MessageThreadView({
     <section aria-label={`${studentName}とのチャット`} className="space-y-3 rounded-md border p-3">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">{studentName}とのチャット</h3>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           disabled={busy || state.kind === "loading"}
           onClick={() => void onReload()}
-          className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
         >
           新しいメッセージを確かめる
-        </button>
+        </Button>
       </div>
       {state.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
@@ -320,22 +319,17 @@ export function MessageThreadView({
             />
           </label>
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-            >
+            <Button type="submit" disabled={busy}>
               送る
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
               disabled={busy}
               aria-expanded={pickingStamp}
               onClick={() => setPickingStamp((current) => !current)}
-              className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
             >
               スタンプ
-            </button>
+            </Button>
           </div>
           {pickingStamp && (
             <fieldset className="space-y-2 rounded-md border p-2">

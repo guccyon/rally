@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { ROLE_LABELS, ROLES, type Role, saveSession } from "@/session/session";
 
 const HOME: Record<Role, string> = { coach: "/coach", headquarters: "/headquarters" };
@@ -56,9 +57,7 @@ export function LoginForm() {
           {error}
         </p>
       )}
-      <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
-        ログイン
-      </button>
+      <Button type="submit">ログイン</Button>
     </form>
   );
 }

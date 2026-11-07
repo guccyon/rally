@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { SLOT_STATE_STATUS } from "@/components/ui/status";
@@ -383,13 +384,9 @@ export function PublishSlotForm({
             ))}
           </select>
         </label>
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy}>
           枠を公開
-        </button>
+        </Button>
       </form>
       <p id="slot-lesson-menu-note" className="text-sm text-text-muted">
         {menus.kind === "loading" && "レッスンメニューを読み込み中…"}
@@ -425,13 +422,13 @@ export function PublishSlotForm({
             onChange={(event) => setDraftPeriod({ ...draftPeriod, to: event.target.value })}
           />
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button variant="secondary" type="submit">
           この期間で見る
-        </button>
+        </Button>
         {appliedPeriod !== null && (
-          <button type="button" className="rounded-pill border px-4 py-1" onClick={() => void clearPeriod()}>
+          <Button variant="secondary" onClick={() => void clearPeriod()}>
             期間を外す
-          </button>
+          </Button>
         )}
       </form>
       {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}

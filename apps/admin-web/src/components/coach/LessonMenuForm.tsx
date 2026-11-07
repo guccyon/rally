@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 
 import type { Schemas } from "@/api/client";
+import { Button } from "@/components/ui/Button";
 import { LESSON_TYPE_LABELS, SPORT_LABELS } from "@/components/labels";
 
 import {
@@ -164,17 +165,13 @@ export function LessonMenuForm({
         公開する（公開中のメニューだけが生徒に見えます）
       </label>
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy}>
           {submitLabel}
-        </button>
+        </Button>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="rounded-pill border px-4 py-1">
+          <Button variant="secondary" onClick={onCancel}>
             やめる
-          </button>
+          </Button>
         )}
       </div>
     </form>

@@ -6,6 +6,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Notice } from "@/components/ui/Notice";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { SPORT_LABELS, formatDay, formatTime, toJstDate } from "@/components/labels";
@@ -299,9 +300,7 @@ function LoadedBookings({
         {bookings.length} 件
       </p>
       {soonCount > 0 && (
-        <p className="rounded-md border border-danger bg-danger-container p-2 text-sm text-danger">
-          確定待ちのまま 24 時間以内に始まる予約が {soonCount} 件あります。
-        </p>
+        <Notice message={`確定待ちのまま 24 時間以内に始まる予約が ${soonCount} 件あります。`} status="warning" />
       )}
       {bookings.length === 0 && <p className="text-sm">{emptyMessage(trialOnly, byLessonMenu, sport)}</p>}
       {groupByDay(bookings).map(({ day, items }) => (

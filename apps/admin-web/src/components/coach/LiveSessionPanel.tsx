@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   BOOKING_STATUS_LABELS,
@@ -145,14 +146,13 @@ export function LiveSessionPanel({
                 bookings={list.upcoming}
                 renderAction={(item) =>
                   item.booking.status === "confirmed" && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="secondary"
                       disabled={busy || session?.status === "in_progress"}
                       onClick={() => void onStart(item.booking.booking_id)}
-                      className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
                     >
                       通話を開始
-                    </button>
+                    </Button>
                   )
                 }
               />
@@ -193,14 +193,9 @@ export function LiveSessionPanel({
       {session?.status === "in_progress" && (
         <>
           <p className="text-sm text-text-muted">映像はモックのため表示しません。</p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onEnd}
-            className="rounded-pill bg-danger px-4 py-1 text-on-primary disabled:opacity-50"
-          >
+          <Button variant="danger" disabled={busy} onClick={onEnd}>
             通話を終了
-          </button>
+          </Button>
         </>
       )}
       <ResultMessage result={result} />
