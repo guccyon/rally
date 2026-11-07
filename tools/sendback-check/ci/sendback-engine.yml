@@ -9,6 +9,8 @@
 # ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる。engine-test の最初の手順
 # （どのチェックアウトよりも前）で確かめ、違えば Engine を取らずに落とす（議決 D-0014、Issue #960。テストは ci.test.mjs）。
 # wiring-order は ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでこのファイルとずれたら落とす。
+# ci.test.mjs は、このファイルが必須のチェックにできる形（絞り込みのない pull_request・if: と continue-on-error なし・engine-test と wiring-order の名前と見張りの手順）かも見て、
+# GitHub Actions では写しが .github/workflows/sendback-engine.yml にないと落とす。見張りを外す PR を止めるため（議決 D-0017、Issue #969）。
 name: sendback-engine
 
 on:
