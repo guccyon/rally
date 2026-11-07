@@ -1,0 +1,34 @@
+id: OV-008
+title: "失敗は種類を型（専用のエラー型・エラーコード）で返し、利用者向けの文言は表示する境界で組み立てる"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#182"
+  - "github:guccyon/rally#184"
+  - "github:guccyon/rally#212"
+  - "github:guccyon/rally#216"
+  - "github:guccyon/rally#260"
+  - "github:guccyon/rally#354"
+  - "github:guccyon/rally#314"
+  - "github:guccyon/rally#357"
+signature: "rubric:ARCH-007"
+check:
+  kind: rubric
+  text: >-
+    追加・変更した失敗の経路が、種類を型で残さずに文言にしているときは欠陥とする。例: infra / application の関数が `Result<_, String>` や
+    `format!(...)`・文字列リテラルの `.into()` で作った `Box<dyn Error>` で失敗を返す（ほかの変種は型のあるエラーを包んでいるのに 1 つだけ文字列にする場合を含む）、
+    画面や API クライアントが `response.message === errorMessage(...)` のように表示用の文言を比べて失敗の種類（422 `validation_failed` など）を見分ける、
+    クライアントの境界で専用の例外に包むのが一部の失敗だけで、同じ「契約に反する応答」の項目の欠落・型違い（`as int` などの `TypeError`）が包まれずに漏れる。
+    専用のエラー型（Display と Error を実装した struct / enum の変種）や `code`・status で失敗を返し、文言は Display か表示する境界で組み立てている差分、
+    読み取りの側で型と必須の項目を確かめて境界が包む例外にそろえている差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-008/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-008/negative-1.diff" }
+  - { id: p2, polarity: positive, expect: fire, diff_ref: "file:rules/OV-008/positive-2.diff" }
+  - { id: n2, polarity: negative, expect: silent, diff_ref: "file:rules/OV-008/negative-2.diff" }
+  - { id: p3, polarity: positive, expect: fire, diff_ref: "file:rules/OV-008/positive-3.diff" }
+  - { id: n3, polarity: negative, expect: silent, diff_ref: "file:rules/OV-008/negative-3.diff" }
+  - { id: p4, polarity: positive, expect: fire, diff_ref: "file:rules/OV-008/positive-4.diff" }
+  - { id: n4, polarity: negative, expect: silent, diff_ref: "file:rules/OV-008/negative-4.diff" }
