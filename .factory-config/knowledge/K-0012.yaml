@@ -15,7 +15,7 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
-status: draft
+status: active
 verified_at: 2026-11-07
 review_by: 2026-12-07
 confidentiality: product
@@ -23,3 +23,4 @@ related: [K-0004, K-0006]
 invalidate_when:
   - "supervisor.merged が、採用した PR 本文の指摘を直す body_fix の終わりと、直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
   - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった"
+decided_by: committee:D-0032

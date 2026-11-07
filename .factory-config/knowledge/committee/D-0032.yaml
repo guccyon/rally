@@ -1,0 +1,88 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0032
+pr: https://github.com/guccyon/rally/pull/1051
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0011
+- K-0012
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0005 は C-0005 のときと同じ形で直されています（evidence を足し、verified_at・review_by・related だけを更新し、statement
+    と確かさは変えない）ので、変更セットの扱いとして妥当です。
+  - K-0011 は、K-0005 の statement にすでにある「判定役が決まりの外として退ける」という現象を、原因（judge の入力に rubric
+    の本文がない）の側から切り直したもので、重なりはあります。ただし、線引きを invalidate_when の 2 つ目で保っており、C-0003 で一度見送った件を
+    2 件目の事例で知見にした経緯も事例記録に書かれているので、過去の判断と矛盾しません。
+  - K-0012 は、K-0004（差し戻しを起こす条件）と K-0006（本文を組み直す持ち主）の外にある「直したことを確かめる前にマージする」という線で、related
+    と事例記録の keep の理由にその区別が書かれています。K-0006 の ci_check（本文だけの直しをマージ前の必須チェックにする、未配線）は、K-0012
+    の invalidate_when の 2 つ目と同じ手段を指しているので、次に直すときは互いに参照を揃えるとよいです。
+  - C-0003 にも「最後の body_fix（job 572）のあと、検査を通さずにマージされた」という同じ形の記録がありますが、K-0012 の evidence
+    と C-0006 の学び 3 では C-0005 を 2 件目としています。そのため、C-0003 を根拠に足すか、足さない理由を書くと、過去の事例との整合がとれます。
+  - K-0012 の「根拠の 2 件では、直し漏れが残った記録はまだない」は、C-0005 の題（採用済みの本文の指摘が残ったままマージ）と読み違えられやすい文です。「マージの時点では本文は直っていなかったが、直しは後で入った」と書き分けてください。
+  - specs/ は製品の領域の規範で、judge・body_fix・supervisor などの工場の役割に触れておらず矛盾はありません。根拠も 2 件で推測を含むので、K-0011・K-0012
+    とも confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0011・K-0012・K-0005 の追加の根拠は、どれも C-0006 と case.analyzed:370935 に辿れ、C-0006 には job
+    4297・4299 と gate.evaluated・pr.body_amended・supervisor.inspector_approved・supervisor.merged
+    の時刻が一次記録として書かれています。
+  - K-0011 が根拠にした C-0003 には「judge には OV-001 の本文が渡っていなかった」とあり、判定役に rubric の本文が渡らないという主張の
+    2 件目の根拠として成り立っています。
+  - K-0012 が根拠にした C-0005 には「merged が body_fix 3308 の終わりを待たずに実行された」とあり、2 件目の根拠になっていますが、C-0005
+    に inspector_approved の時刻は書かれていないので、承認が先に出たことの根拠は C-0006 の 1 件だけです。
+  - K-0012 は直し漏れが残った記録がないことを statement に書いて、害ではなく危険の形にとどめており、根拠の強さと書き方が合っています。
+  - 根拠は 2 件ずつで、介入による確かめもまだないので、K-0011・K-0012 の確かさは hypothesis のままが妥当で、K-0005 の確かさを変えないことも妥当です。
+  - 'C-0006 にある引用は判定役の解釈とイベント名・job 番号・PR 番号だけで、Issue #809 の中身も機能の説明に抽象化されており、利用者を特定できる情報は残っていません。'
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0012 は「body_fix が終わり、直した本文の見出しの確認が通るまで supervisor.merged を出さない」という線がはっきり引けて、C-0005・C-0006
+    の 2 件で繰り返しているので、決定論で担保する値打ちがあります。
+  - K-0012 の再検査には K-0006 の ci_check（tools/pr-body-check/check.mjs を pr.body_amended
+    でも起動して必須チェックにする案）をそのまま使えるので、作る費用は小さいです。
+  - K-0011 は「判定役のジョブの入力に、指摘が引く rubric_id の本文が入っているか」を入力の組み立てのテストで機械的に確かめられ、C-0003・C-0006
+    の 2 件で繰り返しています。
+  - K-0005 は根拠と日付を足しただけで、担保の観点で新しく決めることはありません。
+  - 'K-0011・K-0012 を active にする変更セットでは、enforcement.solutions に wired: false・verified:
+    false として記録してください。'
+  - K-0012 は害が出た記録がまだないので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - K-0012 は根拠の 2 件（C-0005・C-0006）で害が出ていないことを statement に書き、scope も body_fix と supervisor
+    に絞っているので、範囲が広すぎる問題はありません。
+  - K-0011 の statement は「rubric（PR-002・OV-001 など）」とすべての rubric に広げていますが、根拠は PR 本文の見出しの
+    rubric だけなので、次の再確認では PR 本文の rubric に絞るか、ほかの rubric の事例を足すのがよいです。
+  - K-0011 には反例のおそれがあり、PR-002 は state が candidate で L4 の rubric も shadow なので、判定役が
+    rubric の本文を持っていても CLAUDE.md を正として同じように退けた可能性があります。ただ、その場合は invalidate_when の 2
+    つ目で外せるので、採らない理由にはなりません。
+  - K-0011 の根拠の C-0003 は「rubric の本文が欠けて指摘が重複した」という別の結果の記録で、rubric にだけある要求を退けた例ではないので、K-0011
+    の確かさは hypothesis のままにすべきです。
+  - K-0005 に C-0006 を根拠として足すのは、検査役と判定役の基準が割れた部分では因果が同じで、statement を広げていないので妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: K-0006 の tools/pr-body-check/check.mjs を pull_request の edited と pr.body_amended
+    でも起動させてマージ前の必須チェックにし、supervisor.merged は採用した PR 本文の指摘に対する body_fix のジョブが終わり、そのあとの
+    head の本文でこのチェックが通ってから出す。C-0006 の記録（inspector_approved 14:25:02、body_amended 14:25:04、merged
+    14:25:06）を fixtures にして、マージが止まることを確かめる。
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: '制御プレーンのイベント列で、同じ PR について pr.body_amended のあとに本文の検査（gate.evaluated または
+    pr-body-check）がないまま supervisor.merged が来たら失敗にするテストを足し、C-0005（PR #659）と C-0006（PR
+    #821）の列が引っかかることを確かめる。'
+- knowledge: K-0011
+  level: deterministic
+  solution_kind: test
+  proposal: judge のジョブの入力を組み立てる処理のテストで、検査役の指摘が引くすべての rubric_id（PR-002・OV-001 など）について
+    rubric の本文が入力に入っていることを確かめ、どれか 1 つでも欠けたら失敗にする。C-0006 の指摘 7 件を fixtures にする。
