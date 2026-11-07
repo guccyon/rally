@@ -292,4 +292,17 @@ enforcement:
       decided_by: committee:D-0024
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0024 の test の案（check.py の label() と Engine の enforcement_label() が、手で選んだ組の外で食い違っても気づけない）を入れた。
+        tools/knowledge-enforcement-check/test_engine.py に、解決策 1 件の wired・verified の値（未記入・true・false・真偽でない値の "true"・1・null）の
+        直積を 0〜2 件並べた組（順序も変える）と dict でない項目を混ぜた組を、強さ（deterministic・context・checklist）と enforcement の形ごとに
+        label() と差分を当てた Engine の enforcement_label() に総当たりで渡し、すべての場合で同じ表示になること、3 つの表示をどれも通ることを確かめるテストを足した。
+        手元の Engine の写しで、wired の "true" を配線済みに数える改変と、verified を真偽でなく値の有無で見る改変（後者は手で選んだ組のテストでは通ってしまう）で落ちることを確かめた。
+        ci/knowledge-enforcement.yml の unittest discover で走るが、.github/workflows/ への写しは建設者なので、まだ PR ごとには走っておらず効き目は確かめていない
+      issue: 1015
+      at: 2026-11-07
+      decided_by: committee:D-0024
+      wired: false
+      verified: false
 decided_by: committee:D-0004

@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0037
+pr: https://github.com/guccyon/rally/pull/1078
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0036 までの議決や README の決まりと矛盾しません。
+  - 足した test は D-0024 の 3 つめの案（label() と Engine の enforcement_label() に同じ solutions
+    の組を総当たりで渡して同じ表示になるかを確かめる）とそのまま対応していて、decided_by を committee:D-0024 にしたのも合っています。
+  - issue 968 の test_engine.py は手で選んだ組で表示の一致を見るもので、今回の issue 1015 は組の直積で総当たりにするものなので、担う範囲が分かれていて重複ではありません。
+  - 'kind・what・issue・at・decided_by・wired・verified の形はほかの solutions と同じで、.github/workflows/
+    への写しは建設者だという記述と wired: false・verified: false も合っています。'
+  - Engine に差分が入っておらず本物の CI でも効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - D-0036 でも挙がったとおり、issue 962 から後の solutions は supervisor の差し戻しという K-0004 の主張ではなく知見の置き場の担保の表示を担っているので、建設者の配線が入ったときに別の知見へ移すか整理するかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution は issue 1015 と committee:D-0024 を指していて、D-0024 の test の案（test_engine.py
+    で label() と Engine の enforcement_label() に solutions の組を総当たりで渡し同じ表示を確かめる）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '手元の Engine の写しで改変を入れて落ちることを確かめたと書く一方、.github/workflows/ への写しがまだで PR ごとには走っていないと自分で書き
+    wired: false・verified: false としているので、記録の書き方は正直です。'
+  - Engine に差分が入り本物の CI で表示の一致と sendback の検査の効き目を確かめるまでは、confidence は hypothesis のままが妥当です。
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、値の名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  - この PR の範囲外ですが、issue 961（committee:D-0014）の solution の what が空のままなので、次に K-0004
+    を直す変更セットで中身を書いて根拠を辿れるようにしてください。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0024 の 3 つめの test
+    の案（label() と enforcement_label() を総当たりで照らす）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 総当たりの組は wired・verified の 6 つの値の直積を 0〜2 件、順序と dict でない項目まで含めていて、手で選んだ組では通ってしまう改変で落ちることも確かめているので、線の引きやすさと確かさは十分です。
+  - ただし効き目を確かめた 2 つの改変は手元の写しで一度だけ試したもので、テストが将来ゆるめられても気づけないので、その改変をテストの中に変異体として置き、変異体では必ず落ちることを毎回確かめるべきです。
+  - Engine のチェックアウトがないときに test_engine.py が飛ばされると総当たりが黙って走らなくなるので、engine.test.mjs と同じく
+    CI では飛ばさずに落とす形にするべきです。
+  - D-0024 の 1 つめの案（INDEX.md の担保の列と check.py の表示を全知見で照らす ci_check）はまだ入っておらず、総当たりのテストは関数どうしの一致しか見ないので、生成済みの
+    INDEX.md のずれは引き続き捕まえられません。
+  - 'wired: false・verified: false と書き、.github/workflows/ への写しが建設者待ちで PR ごとに走っていないと自分で書いているのは事実と合っているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0024 の test の案（label()
+    と enforcement_label() を総当たりで照らす）を入れた記録を enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'what に .github/workflows/ への写しがまだで PR ごとには走っておらず効き目を確かめていないことが書いてあり、wired: false・verified:
+    false とも合っていて言い過ぎていません。'
+  - 反例として、総当たりの値は未記入・true・false・"true"・1・null に限られ、"false" の文字列・0・空の文字列や、solutions
+    がリストでない・enforcement がない形は入っていないので、そこで二つの実装が食い違っても気づけないことを建設者が確かめてください。
+  - '反例として、二つの実装が同じ誤りを共有すれば表示は一致したまま誤るので、一致の確認だけでなく README の決まり（すべて wired: false なら
+    未配線）に照らした期待値の確認も残してください。'
+  - 比べている Engine は手元で差分を当てた写しで、ENGINE_REF の版や Engine の既定のブランチの先頭の本物ではないので、confidence
+    は hypothesis のままにしてください。
+  - K-0004 の solutions は 20 件になり、どれも未配線の記録が積み重なっているので、建設者の配線が入ったら効いたものと効いていないものを分けて整理することを勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/knowledge-enforcement-check/test_engine.py に、確かめた 2 つの改変（wired の
+    "true" を配線済みに数える、verified を値の有無で見る）を差分を当てた Engine の写しへさらに当てる変異体として置き、総当たりのテストがどの変異体でも必ず
+    1 件以上の食い違いを出すことを確かめるテストを足し、変異体が通ってしまったら落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: test_engine.py を、CI（CI=true）か ENGINE_DIR を渡したときは Engine のチェックアウトや ENGINE_REF
+    の版がなくても skip せずに落とすようにし、ci/knowledge-enforcement.yml の unittest discover の出力で
+    skipped が 1 件以上あれば落とす手順を足す。

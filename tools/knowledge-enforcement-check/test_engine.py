@@ -11,6 +11,7 @@ Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なけれ�
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import os
 import shutil
 import subprocess
@@ -32,6 +33,7 @@ spec.loader.exec_module(check)  # type: ignore[union-attr]
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 HAS_ENGINE = all((ENGINE / f).is_file() for f in FILES)
+MISSING = object()  # 総当たりで「項目を書いていない」を表す
 
 
 def sol(**flags):
@@ -77,6 +79,25 @@ class EnginePatchTest(unittest.TestCase):
         for x in cases + check.load(REPO):
             with self.subTest(x.get("id"), enforcement=x.get("enforcement")):
                 self.assertEqual(self.kc.enforcement_label(x), check.label(x))
+
+    def test_担保の表示が_check_py_の_label_と総当たりで同じ(self):
+        # 議決 D-0024、Issue #1015。解決策 1 件の状態は wired・verified の値の直積（未記入・true・false・真偽でない値）。
+        # その状態を 0〜2 件並べた組（順序も変える）と、dict でない項目を混ぜた組を、強さと enforcement の形ごとに渡す
+        values = (MISSING, True, False, "true", 1, None)
+        states = [{f: v for f, v in (("wired", w), ("verified", v)) if v is not MISSING} for w, v in itertools.product(values, repeat=2)]
+        groups = [[]] + [[s] for s in states] + [list(p) for p in itertools.product(states, repeat=2)]
+        groups += [[s, "x"] for s in states] + [["x"], [None]]
+        cases = [{"id": "K-9999"}, {"id": "K-9999", "enforcement": None}, {"id": "K-9999", "enforcement": {"level": "deterministic"}},
+                 {"id": "K-9999", "enforcement": {"level": "deterministic", "solutions": None}}]
+        cases += [k(level, *(sol(**s) if isinstance(s, dict) else s for s in g)) for level in ("deterministic", "context", "checklist") for g in groups]
+        got = {check.UNWIRED: 0, check.UNVERIFIED: 0, "deterministic": 0}
+        for x in cases:
+            want = check.label(x)
+            got[want] = got.get(want, 0) + 1
+            if self.kc.enforcement_label(x) != want:
+                self.fail(f"{x.get('enforcement')!r}: Engine は {self.kc.enforcement_label(x)!r}、check.py は {want!r}")
+        # 総当たりが 3 つの表示をどれも通っていること（組の作り方を壊して 1 つの表示に偏ったら気づく）
+        self.assertTrue(all(got[x] > 0 for x in (check.UNWIRED, check.UNVERIFIED, "deterministic", "context", "checklist")), got)
 
     def test_INDEX_md_の担保の列でK_0004_は未配線(self):
         items = [x for x in check.load(REPO)]
