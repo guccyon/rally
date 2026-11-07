@@ -1,4 +1,4 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,6 +30,13 @@ jobs:
 const ENGINE_TEST_FIXED = engineTestNow.replace(/^.*todoWhileLegacy\(t,.*$/gm, "").replace(/^const todoWhileLegacy.*$/m, "");
 
 const wf = (path, text) => ({ path: `.github/workflows/${path}`, text });
+/** ci/sendback-engine.yml の写しに check.mjs --events を呼ぶジョブを足した 1 つのワークフロー（needs は 1 行に書く形のまま入れる。null なら needs を書かない） */
+const sameWorkflow = (needs = "engine-test", base = template) => `${base.replace(/\n*$/, "\n")}
+  check:
+${needs === null ? "" : `    needs: ${needs}\n`}    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+${EVENTS_WORKFLOW.slice(EVENTS_WORKFLOW.indexOf("      - name: 差し戻し"))}`;
 const rules = (r) => r.errors.map((e) => e.rule).sort();
 
 test("今の engine.test.mjs には basis の場合の todo が残っていて、外した形には残らない", () => {
@@ -136,7 +143,7 @@ test("engine.test.mjs を CI に配線せずに check.mjs --events を配線す�
   const both = checkOrder({ workflows: [wf("sendback-check.yml", EVENTS_WORKFLOW)], engineTest: engineTestNow });
   assert.deepEqual(rules(both), ["engine_test_not_wired", "engine_test_todo"]);
   // engine.test.mjs を消して配線したときも落とす（見張りを黙って外さない）
-  assert.deepEqual(rules(checkOrder({ workflows: [wf("a.yml", template + EVENTS_WORKFLOW)], engineTest: null })), ["engine_test_todo"]);
+  assert.deepEqual(rules(checkOrder({ workflows: [wf("a.yml", sameWorkflow())], engineTest: null })), ["engine_test_todo"]);
 });
 
 test("todo を外し engine.test.mjs を CI に配線してから check.mjs --events を配線すれば通る（同じワークフローでも）", () => {
@@ -301,4 +308,83 @@ test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) �
   assert.match(none.stdout, /結果にない/);
   // 今のリポジトリ（まだ配線していない）では、結果のファイルがなくても通る
   assert.equal(spawnSync("node", [orderScript, "--engine-report", join(root, "none.tap")], { encoding: "utf8" }).status, 0);
+});
+
+// engine.test.mjs の手順やジョブを飛ばせる・落ちても通る形にした写しと、check.mjs --events のジョブが engine-test を待たない写し（議決 D-0025、Issue #1017）
+
+const ENGINE_STEP = "      - name: Engine の本物の判定のテスト（K-0004）\n";
+const ENGINE_JOB = "  engine-test:\n    runs-on: ubuntu-latest\n";
+const stepWith = (key) => template.replace(ENGINE_STEP, `${ENGINE_STEP}        ${key}\n`);
+const jobWith = (key) => template.replace(ENGINE_JOB, `${ENGINE_JOB}    ${key}\n`);
+/** engine.test.mjs を走らせたことにならない写し */
+const UNGATED_TEMPLATES = {
+  "手順に continue-on-error: true": stepWith("continue-on-error: true"),
+  "手順に continue-on-error: ${{ true }}": stepWith('continue-on-error: "${{ true }}"'),
+  "手順に if: false": stepWith("if: false"),
+  "手順に if: ${{ false }}": stepWith("if: ${{ false }}"),
+  "手順に if: github.event_name == 'push'": stepWith("if: github.event_name == 'push'"),
+  "ジョブに continue-on-error: true": jobWith("continue-on-error: true"),
+  "ジョブに if: false": jobWith("if: false"),
+  "ジョブに if: ${{ false }}": jobWith("if: ${{ false }}"),
+};
+
+test("engine.test.mjs の手順かジョブに continue-on-error か if: を付けた写しは、engine.test.mjs を走らせる手順に数えない", () => {
+  for (const [name, text] of Object.entries(UNGATED_TEMPLATES)) {
+    assert.notEqual(text, template, `${name}: 写しを作れていない`);
+    assert.ok(!runsEngineTest(text), name);
+  }
+  // continue-on-error: false はゲートのまま。ほかの手順・ジョブ（wiring-order）の continue-on-error・if: は見ない
+  assert.ok(runsEngineTest(stepWith("continue-on-error: false")));
+  assert.ok(runsEngineTest(jobWith("continue-on-error: ${{ false }}")));
+  assert.ok(runsEngineTest(template.replace("  wiring-order:\n    runs-on: ubuntu-latest\n", "  wiring-order:\n    if: false\n    runs-on: ubuntu-latest\n")));
+  // run の中の文字（シェルの if など）は手順の鍵に数えない
+  assert.ok(runsEngineTest(template.replace("          rc=0\n", "          if: true\n          rc=0\n")));
+  // jobs: のない手順だけの写しでも、手順の continue-on-error は見る
+  assert.ok(!runsEngineTest("steps:\n  - working-directory: tools/sendback-check\n    continue-on-error: true\n    run: npm test\n"));
+  assert.ok(!runsEngineTest("steps:\n  - if: false\n    working-directory: tools/sendback-check\n    run: npm test\n"));
+});
+
+test("engine.test.mjs を飛ばせる・落ちても通る形で配線して check.mjs --events を配線すると engine_test_not_wired で落ちる（同じワークフローでも）", () => {
+  for (const [name, text] of Object.entries(UNGATED_TEMPLATES)) {
+    const r = checkOrder({ workflows: [wf("sendback-engine.yml", text), wf("sendback-check.yml", EVENTS_WORKFLOW)], engineTest: ENGINE_TEST_FIXED });
+    assert.deepEqual(rules(r), ["engine_test_not_wired"], name);
+    assert.match(r.errors[0].message, /continue-on-error/, name);
+    const same = checkOrder({ workflows: [wf("sendback-engine.yml", sameWorkflow("engine-test", text))], engineTest: ENGINE_TEST_FIXED });
+    assert.deepEqual(rules(same), ["engine_test_not_wired"], name);
+  }
+});
+
+test("同じワークフローで check.mjs --events のジョブが engine.test.mjs のジョブを needs で待たないと engine_test_not_required で落ちる", () => {
+  const order = (text) => checkOrder({ workflows: [wf("sendback-engine.yml", text)], engineTest: ENGINE_TEST_FIXED });
+  for (const needs of [null, "wiring-order", "[wiring-order]", "other"]) {
+    const r = order(sameWorkflow(needs));
+    assert.deepEqual(rules(r), ["engine_test_not_required"], String(needs));
+    assert.match(r.errors[0].message, /\.github\/workflows\/sendback-engine\.yml の check のジョブが check\.mjs --events を呼ぶのに、.*engine-test を needs で待たない/);
+  }
+  // 同じジョブの中で engine.test.mjs の手順より前に呼ぶのも待たない
+  const before = template.replace(ENGINE_STEP, `${EVENTS_WORKFLOW.slice(EVENTS_WORKFLOW.indexOf("      - name: 差し戻し"))}${ENGINE_STEP}`);
+  assert.deepEqual(rules(order(before)), ["engine_test_not_required"]);
+  // needs で待てば通る（1 行・配列・列の形、間に別のジョブを挟む形も）
+  for (const needs of ["engine-test", "[wiring-order, engine-test]", '["engine-test"]', "\n      - wiring-order\n      - engine-test"]) {
+    assert.deepEqual(rules(order(sameWorkflow(needs))), [], needs);
+  }
+  const chained = sameWorkflow("gate") + "\n  gate:\n    needs: engine-test\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n";
+  assert.deepEqual(rules(order(chained)), []);
+  // 別のワークフローの間は needs で待てないので見ない（engine-test を必須のチェックにして止める）
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED })), []);
+  // todo が残っていれば両方で落ちる
+  assert.deepEqual(rules(checkOrder({ workflows: [wf("sendback-engine.yml", sameWorkflow(null))], engineTest: engineTestNow })),
+    ["engine_test_not_required", "engine_test_todo"]);
+});
+
+test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、continue-on-error を付けた engine.test.mjs で終了コード 1 を返す", () => {
+  const run = (root) => spawnSync("node", [orderScript, "--repo", root], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  const unwaited = run(fixture({ "sendback-engine.yml": sameWorkflow(null) }, ENGINE_TEST_FIXED));
+  assert.equal(unwaited.status, 1);
+  assert.match(unwaited.stdout, /^::error title=sendback-check engine_test_not_required::/m);
+  const ungated = run(fixture({ "sendback-engine.yml": UNGATED_TEMPLATES["手順に continue-on-error: true"], "sendback-check.yml": EVENTS_WORKFLOW },
+    ENGINE_TEST_FIXED));
+  assert.equal(ungated.status, 1);
+  assert.match(ungated.stdout, /^::error title=sendback-check engine_test_not_wired::/m);
+  assert.equal(run(fixture({ "sendback-engine.yml": sameWorkflow() }, ENGINE_TEST_FIXED)).status, 0);
 });

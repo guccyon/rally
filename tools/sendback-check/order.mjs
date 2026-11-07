@@ -8,7 +8,9 @@
 //
 // 見ること（.github/workflows/ に check.mjs --events を呼ぶ手順があるときだけ）:
 //   - engine.test.mjs に todo が残っている（engine_test_todo）
-//   - .github/workflows/ に engine.test.mjs を走らせる手順がない（engine_test_not_wired）
+//   - .github/workflows/ に engine.test.mjs を走らせる手順がない（engine_test_not_wired）。`if:` か `continue-on-error` を付けた手順・ジョブは数えない
+//   - 同じワークフローの engine.test.mjs を走らせるジョブを、check.mjs --events を呼ぶジョブが needs で待たない（engine_test_not_required）
+//     （この 2 つは議決 D-0025、Issue #1017）
 //   - --engine-report を渡したとき、ENGINE_REF の Engine で走らせた engine.test.mjs の結果で (3) か (c) が通っていない
 //     （LEGACY_BASIS の todo・飛ばした・落ちた・結果にない。engine_basis_not_passed。議決 D-0016、Issue #964）
 // check.mjs --events を GitHub Actions（GITHUB_ACTIONS=true）で動かしたときも、同じ見張りを先に通す（check.mjs の main）。
@@ -46,17 +48,76 @@ function logicalLines(text) {
   return out;
 }
 
-/** ワークフローを手順（`- ` で始まる列の要素）ごとに分け、手順の working-directory と行を返す。 */
-function steps(text) {
+const indentOf = (line) => line.match(/^\s*/)[0].length;
+
+/** 行の並びを手順（`- ` で始まる列の要素）ごとに分け、手順の working-directory と行と、手順の鍵の字下げ（列の要素でなければ null）を返す。 */
+function steps(lines) {
   const out = [];
-  let cur = { wd: "", lines: [] };
-  for (const line of logicalLines(text)) {
-    if (/^\s*-\s+[\w-]+:/.test(line)) { out.push(cur); cur = { wd: "", lines: [] }; }
+  let cur = { wd: "", lines: [], keyIndent: null };
+  for (const line of lines) {
+    const head = line.match(/^(\s*-\s+)[\w-]+:/);
+    if (head) { out.push(cur); cur = { wd: "", lines: [], keyIndent: head[1].length }; }
     const wd = line.match(/^\s*-?\s*working-directory:\s*["']?([^"'\s]+)/);
     if (wd) cur.wd = wd[1];
     cur.lines.push(line);
   }
   out.push(cur);
+  return out;
+}
+
+/**
+ * ワークフローをジョブ（`jobs:` の下の鍵）ごとに分け、{ id, keyIndent, lines } を返す。`jobs:` の外の行は id が空の 1 つにまとめる
+ * （`jobs:` のない手順だけの写しもそこで見る。keyIndent は null）。
+ */
+function jobs(text) {
+  const out = [];
+  const outside = { id: "", keyIndent: null, lines: [] };
+  let inJobs = false;
+  let idIndent = null;
+  let cur = null;
+  for (const line of logicalLines(text)) {
+    if (line.trim() === "") { (cur ?? outside).lines.push(line); continue; }
+    const ind = indentOf(line);
+    if (ind === 0) { inJobs = /^jobs:\s*$/.test(line); idIndent = null; cur = null; if (!inJobs) outside.lines.push(line); continue; }
+    if (!inJobs) { outside.lines.push(line); continue; }
+    idIndent ??= ind;
+    const id = ind === idIndent ? line.match(/^\s*([\w-]+):\s*$/) : null;
+    if (id) { cur = { id: id[1], keyIndent: null, lines: [] }; out.push(cur); continue; }
+    if (cur === null) continue;
+    cur.keyIndent ??= ind;
+    cur.lines.push(line);
+  }
+  return [outside, ...out];
+}
+
+/**
+ * その字下げの鍵に、走らせない（`if:`）か落ちても通す（`continue-on-error:` が false でない）指定があるか。
+ * `if:` は中身を問わず走らない場合があるとして数える（ci.test.mjs がひな形に `if:` と `continue-on-error` を許さないのと同じ線。議決 D-0025、Issue #1017）。
+ */
+function mayNotGate(lines, keyIndent) {
+  if (keyIndent === null) return false;
+  return lines.some((l) => {
+    const m = l.match(/^(\s*(?:-\s+)?)(if|continue-on-error):\s*(.*)$/);
+    if (!m || m[1].length !== keyIndent) return false;
+    return m[2] === "if" || !/^(?:false|["']?\$\{\{\s*false\s*\}\}["']?)$/.test(m[3].trim());
+  });
+}
+
+/** ジョブの needs（`needs: a`・`needs: [a, b]`・列の形）。 */
+function needsOf(job) {
+  const out = [];
+  job.lines.forEach((l, i) => {
+    const m = l.match(/^(\s*)needs:\s*(.*)$/);
+    if (!m || m[1].length !== job.keyIndent) return;
+    const inline = m[2].trim();
+    if (inline !== "") { out.push(...inline.replace(/^\[|\]$/g, "").split(",").map((n) => n.trim().replace(/^["']|["']$/g, "")).filter(Boolean)); return; }
+    for (const next of job.lines.slice(i + 1)) {
+      if (next.trim() === "") continue;
+      const item = next.match(/^(\s*)-\s+["']?([\w-]+)["']?\s*$/);
+      if (!item || item[1].length <= job.keyIndent) break;
+      out.push(item[2]);
+    }
+  });
   return out;
 }
 
@@ -146,23 +207,66 @@ function pathVars(text) {
  * （議決 D-0017、Issue #967）。scripts は tools/sendback-check/package.json の scripts、readFile はリポジトリの根からの道で中身（なければ null）を返す。
  */
 export function callsEventsCheck(text, { scripts = DEFAULT_SCRIPTS, readFile = () => null } = {}) {
-  const mentionsTool = logicalLines(text).some((l) => l.includes("sendback-check"));
-  const vars = pathVars(text);
-  return steps(text).some((s) => {
-    const r = invocation(s.lines, { wd: s.wd, mentionsTool, vars, scripts, readFile, depth: 0 });
-    return r.calls && r.events;
-  });
+  return eventsCheckJobs(text, { scripts, readFile }).length > 0;
 }
 
-/** ワークフローに engine.test.mjs を走らせる手順があるか（engine.test.mjs を名指しするか、tools/sendback-check で npm test・node --test を全部走らせる）。 */
+/** check.mjs --events を呼ぶ手順のあるジョブと、その手順の位置（ジョブの中の何番目の手順か）を [{ job, step }] で返す。 */
+function eventsCheckJobs(text, { scripts = DEFAULT_SCRIPTS, readFile = () => null } = {}) {
+  const mentionsTool = logicalLines(text).some((l) => l.includes("sendback-check"));
+  const vars = pathVars(text);
+  const out = [];
+  for (const job of jobs(text)) {
+    const step = steps(job.lines).findIndex((s) => {
+      const r = invocation(s.lines, { wd: s.wd, mentionsTool, vars, scripts, readFile, depth: 0 });
+      return r.calls && r.events;
+    });
+    if (step >= 0) out.push({ job, step });
+  }
+  return out;
+}
+
+/** 手順が engine.test.mjs を走らせるか（engine.test.mjs を名指しするか、tools/sendback-check で npm test・node --test を全部走らせる）。 */
+const stepRunsEngineTest = (s) => s.lines.some((l) => {
+  if (!inToolDir(s, l)) return false;
+  if (/\bnode\b.*--test\b.*\bengine\.test\.mjs\b/.test(l)) return true;
+  if (/\bnpm\b.*\btest\b/.test(l)) return true;
+  const nodeTest = l.match(/\bnode\b.*--test\b(.*)$/);
+  return Boolean(nodeTest) && !/\.mjs\b/.test(nodeTest[1]);   // ファイルを名指しすると engine.test.mjs が入らないことがある
+});
+
+/**
+ * engine.test.mjs を走らせ、落ちたらジョブを落とすジョブと、その手順の位置を [{ job, step }] で返す。手順かジョブに `if:` か
+ * `continue-on-error`（false でないもの）があれば、走らないか落ちても通るので数えない（議決 D-0025、Issue #1017）。
+ */
+function engineTestJobs(text) {
+  const out = [];
+  for (const job of jobs(text)) {
+    if (mayNotGate(job.lines.filter((l) => indentOf(l) === job.keyIndent), job.keyIndent)) continue;
+    const step = steps(job.lines).findIndex((s) => stepRunsEngineTest(s) && !mayNotGate(s.lines, s.keyIndent));
+    if (step >= 0) out.push({ job, step });
+  }
+  return out;
+}
+
+/** ワークフローに engine.test.mjs を走らせる手順があるか（`if:` か `continue-on-error` で飛ばせる・落ちても通る手順とジョブは数えない）。 */
 export function runsEngineTest(text) {
-  return steps(text).some((s) => s.lines.some((l) => {
-    if (!inToolDir(s, l)) return false;
-    if (/\bnode\b.*--test\b.*\bengine\.test\.mjs\b/.test(l)) return true;
-    if (/\bnpm\b.*\btest\b/.test(l)) return true;
-    const nodeTest = l.match(/\bnode\b.*--test\b(.*)$/);
-    return Boolean(nodeTest) && !/\.mjs\b/.test(nodeTest[1]);   // ファイルを名指しすると engine.test.mjs が入らないことがある
-  }));
+  return engineTestJobs(text).length > 0;
+}
+
+/**
+ * 同じワークフローに engine.test.mjs を走らせるジョブがあるのに、check.mjs --events を呼ぶジョブがそれを needs で（間を挟んでもよい）待たないもの。
+ * 同じジョブの中なら、engine.test.mjs の手順より後で呼べば待つと数える。別のワークフローの間は needs で待てないので見ない（必須のチェックで止める）。
+ * 議決 D-0025、Issue #1017。
+ */
+export function unwaitedEventsCheckJobs(text, { scripts = DEFAULT_SCRIPTS, readFile = () => null } = {}) {
+  const engine = engineTestJobs(text);
+  if (engine.length === 0) return [];
+  const engineIds = new Set(engine.map((e) => e.job.id).filter(Boolean));
+  const needs = new Map(jobs(text).filter((j) => j.id !== "").map((j) => [j.id, needsOf(j)]));
+  const waits = (id, seen = new Set()) => (needs.get(id) ?? []).some((n) => engineIds.has(n) || (!seen.has(n) && waits(n, seen.add(n))));
+  return eventsCheckJobs(text, { scripts, readFile })
+    .filter(({ job, step }) => !engine.some((e) => e.job.id === job.id && e.step < step) && !(job.id !== "" && waits(job.id)))
+    .map(({ job }) => ({ job: job.id, engineJobs: engine.map((e) => e.job.id).filter(Boolean) }));
 }
 
 /** engine.test.mjs に残っている todo（t.todo(…)・test.todo(…)・{ todo: … }）の行番号（1 始まり）。注釈の中は数えない。 */
@@ -222,7 +326,13 @@ export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFA
   }
   if (!workflows.some((w) => runsEngineTest(w.text))) {
     errors.push({ rule: "engine_test_not_wired", message: `${where} が check.mjs --events を呼ぶのに、.github/workflows/ に ${ENGINE_TEST} を走らせる手順がない`
-      + "（ci/sendback-engine.yml を先に写す）" });
+      + "（`if:` か `continue-on-error` を付けた手順・ジョブは数えない。ci/sendback-engine.yml を先に写す）" });
+  }
+  for (const w of workflows) {
+    for (const u of unwaitedEventsCheckJobs(w.text, { scripts, readFile })) {
+      errors.push({ rule: "engine_test_not_required", message: `${w.path} の ${u.job || "（ジョブの外）"} のジョブが check.mjs --events を呼ぶのに、`
+        + `同じワークフローで ${ENGINE_TEST} を走らせる ${u.engineJobs.join("・") || "ジョブ"} を needs で待たない（needs に足す）` });
+    }
   }
   return { wired: callers, errors };
 }
