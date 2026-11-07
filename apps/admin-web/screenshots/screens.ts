@@ -611,6 +611,10 @@ export const SCREENS: Screen[] = [
     title: "本部: キャンセルされた予約",
     role: "headquarters",
     path: "/headquarters/cancelled-bookings",
+    open: async (page) => {
+      // 読み込み中の文言は「キャンセルされた予約を読み込んでいます…」（「読み込み中」を含まない）なので、件数の行を待つ。
+      await page.getByText(/・\d+ 件$/).waitFor();
+    },
   },
   {
     id: "hq-cancelled-bookings-coach",
@@ -646,6 +650,27 @@ export const SCREENS: Screen[] = [
       await page.getByRole("combobox", { name: "スポーツ" }).selectOption({ label: "テニス" });
       await page.getByRole("button", { name: "この条件で見る" }).click();
       await page.getByText(/・テニス 2 件$/).waitFor();
+    },
+  },
+  {
+    id: "hq-cancelled-bookings-by-canceller",
+    title: "本部: キャンセルされた予約（キャンセルした人で絞る）",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings",
+    open: async (page) => {
+      await page.getByText(/・\d+ 件$/).waitFor();
+      await page.getByRole("combobox", { name: "キャンセルした人" }).selectOption({ label: "本部" });
+      await page.getByRole("button", { name: "この条件で見る" }).click();
+      await page.getByText(/・キャンセルした人: 本部・2 件$/).waitFor();
+    },
+  },
+  {
+    id: "hq-cancelled-bookings-by-canceller-empty",
+    title: "本部: キャンセルされた予約（キャンセルした人で絞って 0 件）",
+    role: "headquarters",
+    path: "/headquarters/cancelled-bookings?cancelled_by=coach",
+    open: async (page) => {
+      await page.getByText(/^この期間にコーチがキャンセルした予約はありません。/).waitFor();
     },
   },
   {

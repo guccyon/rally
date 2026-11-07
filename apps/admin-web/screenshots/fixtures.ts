@@ -1295,6 +1295,45 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["CancelledBookingList"],
   },
   {
+    // 本部で絞ったとき（hq-cancelled-bookings-by-canceller）。鈴木 コーチのお休みで本部がまとめてキャンセルした 2 件だけを返す。
+    method: "GET",
+    path: "/bookings/cancelled",
+    query: { cancelled_by: "headquarters" },
+    body: {
+      from: "2026-10-20",
+      to: "2026-10-26",
+      bookings: [
+        {
+          booking_id: id("4444", 24),
+          student_id: YAMADA.id,
+          student_display_name: YAMADA.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 3),
+          cancelled_at: at(-24),
+          cancelled_by: "headquarters",
+        },
+        {
+          booking_id: id("4444", 25),
+          student_id: SATO.id,
+          student_display_name: SATO.name,
+          coach_id: COACH_ID,
+          coach_display_name: SUZUKI_COACH.name,
+          starts_at: at(24 * 4),
+          cancelled_at: at(-24),
+          cancelled_by: "headquarters",
+        },
+      ],
+    } satisfies Schemas["CancelledBookingList"],
+  },
+  {
+    // コーチで絞ったとき（hq-cancelled-bookings-by-canceller-empty）。今コーチは予約をキャンセルできないので 0 件。
+    method: "GET",
+    path: "/bookings/cancelled",
+    query: { cancelled_by: "coach" },
+    body: { from: "2026-10-20", to: "2026-10-26", bookings: [] } satisfies Schemas["CancelledBookingList"],
+  },
+  {
     // テニスで絞ったとき（hq-cancelled-bookings-by-sport）。鈴木 コーチの枠のキャンセルだけを返す。
     method: "GET",
     path: "/bookings/cancelled",

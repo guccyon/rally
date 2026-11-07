@@ -596,6 +596,112 @@ async fn sport_narrows_to_bookings_of_coaches_offering_it_combined_with_the_othe
     );
 }
 
+/// 生徒 `student` が枠 `slot` を予約し、`cancelled_at` に本部がキャンセルする（コーチのお休み）。
+async fn book_cancelled_by_headquarters(
+    bookings: &InMemoryBookingRepository,
+    student: u128,
+    slot: u128,
+    cancelled_at: SystemTime,
+) -> Booking {
+    let booking = book(bookings, student, slot, None).await;
+    bookings
+        .update(booking.id(), |booking, slot| {
+            booking
+                .cancel_by_headquarters(slot, cancelled_at)
+                .map(|_| ())
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn cancelled_by_narrows_to_the_canceller_combined_with_the_other_conditions() {
+    let admin = support::Contract::load("admin-web");
+    let later = nov1(19 * DAY);
+    let slots = InMemorySlotRepository::with_slots([
+        slot(1, 42, later),
+        slot(2, 42, later + HOUR),
+        slot(3, 43, later + 2 * HOUR),
+        slot(4, 42, later + 3 * HOUR),
+        slot(5, 42, later + 4 * HOUR),
+    ]);
+    let bookings = InMemoryBookingRepository::new(slots);
+    let made = vec![
+        // あおき（3）が自分でキャンセルした
+        book(&bookings, 3, 1, Some(nov1(9 * HOUR))).await,
+        // たなか（42）・いとう（43）のお休みで本部がまとめてキャンセルした
+        book_cancelled_by_headquarters(&bookings, 3, 2, nov1(DAY + 10 * HOUR)).await,
+        book_cancelled_by_headquarters(
+            &bookings,
+            4,
+            3,
+            nov1(DAY + 10 * HOUR + Duration::from_secs(60)),
+        )
+        .await,
+        book_cancelled_by_headquarters(&bookings, 4, 4, nov1(DAY + 11 * HOUR)).await,
+        // 期間（11 月 1 日〜2 日）の外
+        book_cancelled_by_headquarters(&bookings, 3, 5, nov1(3 * DAY)).await,
+    ];
+    let app = app_at(nov1(10 * DAY), bookings).await;
+    let days = "from=2026-11-01&to=2026-11-02";
+
+    for (query, expected) in [
+        ("", vec![3, 2, 1, 0]),
+        ("&cancelled_by=headquarters", vec![3, 2, 1]),
+        ("&cancelled_by=student", vec![0]),
+        // コーチがキャンセルした予約はない。404 にせず空の配列
+        ("&cancelled_by=coach", vec![]),
+        // ほかの条件と組み合わせられる
+        (
+            "&cancelled_by=headquarters&coach_id=00000000-0000-0000-0000-00000000002a",
+            vec![3, 1],
+        ),
+        (
+            "&cancelled_by=headquarters&student_id=00000000-0000-0000-0000-000000000003",
+            vec![1],
+        ),
+        ("&cancelled_by=headquarters&sport=soccer", vec![2]),
+        ("&cancelled_by=student&sport=soccer", vec![]),
+        (
+            "&cancelled_by=headquarters&lesson_menu_id=00000000-0000-0000-0000-000000000032",
+            vec![],
+        ),
+    ] {
+        let (status, body) = get(&app, &format!("{PATH}?{days}{query}"), HEADQUARTERS).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        admin.assert_response("get", PATH, status, &body);
+        assert_eq!(booking_ids(&body), ids(&made, &expected), "{query}: {body}");
+        assert!(
+            body["bookings"].as_array().unwrap().iter().all(|row| {
+                query.is_empty()
+                    || query.contains(&format!("={}", row["cancelled_by"].as_str().unwrap()))
+            }),
+            "{query}: 載るのは絞ったキャンセルした人だけ: {body}"
+        );
+    }
+
+    // 期間の規則と省いた日付の決め方は変わらない
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?from=2026-11-02&to=2026-11-01&cancelled_by=headquarters"),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    let (status, body) = get(
+        &app,
+        &format!("{PATH}?from=2026-11-02&cancelled_by=headquarters"),
+        HEADQUARTERS,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&json!("2026-11-02"), &json!("2026-11-08"))
+    );
+    assert_eq!(booking_ids(&body), ids(&made, &[4, 3, 2, 1]));
+}
+
 #[tokio::test]
 async fn only_headquarters_lists_cancelled_bookings() {
     let admin = support::Contract::load("admin-web");
@@ -642,6 +748,13 @@ async fn invalid_days_are_422() {
         ("?sport=cricket", "未知のスポーツ: cricket"),
         ("?sport=Tennis", "未知のスポーツ: Tennis"),
         ("?sport=", "未知のスポーツ: "),
+        // cancelled_by は BookingCanceller の値だけ
+        ("?cancelled_by=none", "未知のキャンセルした人: none"),
+        (
+            "?cancelled_by=Headquarters",
+            "未知のキャンセルした人: Headquarters",
+        ),
+        ("?cancelled_by=", "未知のキャンセルした人: "),
     ] {
         let (status, body) = get(&app, &format!("{PATH}{query}"), HEADQUARTERS).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
