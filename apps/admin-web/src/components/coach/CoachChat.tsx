@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Badge } from "@/components/ui/Badge";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, knownStamp } from "@/components/labels";
 
@@ -52,8 +53,8 @@ function lastMessagePreview(message: Schemas["Message"]) {
 }
 
 /**
- * コーチのチャット。開いたときに自分が当事者のスレッドの一覧（listMessageThreads。API の順＝最後の出来事の新しい順）を、
- * 生徒の名前と未読の数と最後のメッセージとともに出し、選んだスレッドのメッセージと送信の欄（MessageThreadView）を開く。
+ * コーチのチャット。開いたときに自分が当事者のスレッドの一覧（listMessageThreads。API の順＝未返信を上に、その次に最後の出来事の
+ * 新しい順。並べ替えない）を、生徒の名前と未返信の印（`unanswered`）と未読の数と最後のメッセージとともに出し、選んだスレッドのメッセージと送信の欄（MessageThreadView）を開く。
  * `initialThreadId`（対応待ちから移ったときのスレッド）があれば、そのスレッドを選んだ状態で開く。
  */
 export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThreadId?: string }) {
@@ -128,6 +129,12 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
                 className={`block w-full px-3 py-2 text-left text-sm ${isSelected ? "bg-primary-container" : ""}`}
               >
                 <span className="font-semibold">{nameOf(thread)}</span>
+                {thread.unanswered && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs font-bold text-danger">
+                    <Badge />
+                    未返信
+                  </span>
+                )}
                 {thread.unread_count > 0 && (
                   <span className="ml-2 rounded-sm bg-danger px-2 text-xs text-on-primary">
                     未読 {thread.unread_count} 件

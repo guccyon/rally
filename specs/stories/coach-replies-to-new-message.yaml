@@ -47,9 +47,4 @@ touches:
 origin:
   issues: ["guccyon/rally#895", "guccyon/rally#1048"]
   retro: true
-known_gaps:
-  - step: 2
-    note: "API（admin-web.listMessageThreads）は未返信（unanswered）を返して上に並べるが、コーチの画面はまだ未返信の印を出さない（#1048 の画面のタスク）"
-  - step: 3
-    note: "コーチの画面はまだ未返信の印を出さないので、返事で印が消えるところは画面で見えない（#1048 の画面のタスク）"
 status: active

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 
@@ -196,6 +196,9 @@ describe("コーチのチャット", () => {
     expect(items[0]).toHaveTextContent(formatDateTime(SECOND_REQUEST.sent_at));
     expect(items[1]).not.toHaveTextContent("未読");
     expect(items[1]).toHaveTextContent("まだメッセージはありません");
+    // 未返信のスレッドがなければ、印は出さない（今までと同じ見え方）。
+    expect(list).not.toHaveTextContent("未返信");
+    expect(within(list).queryByTestId("badge-dot")).not.toBeInTheDocument();
     // 選ぶまではメッセージを読まない。
     expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
   });
@@ -360,6 +363,67 @@ describe("コーチのチャット", () => {
     expect(items[5]).toHaveTextContent("明日もよろしくお願いします");
     expect(screen.getByLabelText("送るメッセージ")).toHaveValue("");
     expect(api.listMessageThreads).toHaveBeenCalledTimes(2);
+  });
+
+  test("未返信のスレッドだけに「未返信」の印を出し、API の順のまま並べる", async () => {
+    // API は未返信を上に並べて返す。画面は並べ替えない（未返信でない佐藤さんを上にしても、そのまま出す）。
+    const threads = [
+      thread(THREAD_ID, STUDENT_ID, 0, COACH_TEXT),
+      { ...thread(OTHER_THREAD_ID, OTHER_STUDENT_ID, 1, STUDENT_TEXT), unanswered: true },
+    ];
+    setup({
+      listMessageThreads: vi.fn<CoachApi["listMessageThreads"]>(async () => ({ ok: true, data: { threads } })),
+    });
+
+    const list = await screen.findByRole("list", { name: "生徒とのチャット" });
+    const items = within(list).getAllByRole("button");
+    expect(items[0]).toHaveTextContent("佐藤さん");
+    expect(items[0]).not.toHaveTextContent("未返信");
+    expect(items[1]).toHaveTextContent("（名前を表示できません）");
+    expect(items[1]).toHaveTextContent("未返信");
+    // 印は既存の badge（点）と「未返信」の文字で出す。
+    expect(within(items[1]!).getByTestId("badge-dot")).toBeInTheDocument();
+    expect(within(items[0]!).queryByTestId("badge-dot")).not.toBeInTheDocument();
+  });
+
+  test("既読にしても未返信の印は残り、返事を送って一覧を取り直すと印が消える", async () => {
+    const unanswered = { ...thread(THREAD_ID, STUDENT_ID, 2, SECOND_REQUEST), unanswered: true };
+    const reply = message({
+      kind: "text",
+      sender_role: "coach",
+      body: "見ておきます",
+      sent_at: "2026-11-01T02:00:00Z",
+    });
+    const listMessageThreads = vi
+      .fn<CoachApi["listMessageThreads"]>()
+      .mockResolvedValueOnce({ ok: true, data: { threads: [unanswered] } })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { threads: [{ ...unanswered, unread_count: 0, last_message: reply, unanswered: false }] },
+      });
+    const markMessageThreadRead = vi.fn<CoachApi["markMessageThreadRead"]>(async () => ({
+      ok: true,
+      data: { ...unanswered, unread_count: 0 },
+    }));
+    const sendMessage = vi.fn<CoachApi["sendMessage"]>(async () => ({ ok: true, data: reply }));
+    const { user } = setup({ listMessageThreads, markMessageThreadRead, sendMessage });
+
+    const list = await screen.findByRole("list", { name: "生徒とのチャット" });
+    expect(within(list).getByRole("button", { name: /佐藤さん/ })).toHaveTextContent("未返信");
+
+    await openThread(user, /佐藤さん/);
+    const row = within(list).getByRole("button", { name: /佐藤さん/ });
+    expect(row).not.toHaveTextContent("未読");
+    expect(row).toHaveTextContent("未返信");
+
+    await user.type(screen.getByLabelText("送るメッセージ"), "見ておきます");
+    await user.click(screen.getByRole("button", { name: "送る" }));
+
+    expect(listMessageThreads).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(within(list).getByRole("button", { name: /佐藤さん/ })).not.toHaveTextContent("未返信"),
+    );
+    expect(within(list).getByRole("button", { name: /佐藤さん/ })).toHaveTextContent("見ておきます");
   });
 
   test("空白だけのメッセージは送らず、送れなければ文言を出して欄を残す", async () => {
