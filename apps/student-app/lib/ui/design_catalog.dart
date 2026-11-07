@@ -37,6 +37,8 @@ class CatalogEntry {
 const notInStudentCatalog = <String, String>{
   'date_field':
       'components.yaml の not_for に student-app では今は使わないとある（admin-web の一覧の絞り込み）',
+  'select':
+      'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'notice / toast':

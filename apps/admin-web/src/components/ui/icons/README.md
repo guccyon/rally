@@ -15,3 +15,4 @@
 | `error.svg` | 状態 danger と、入力欄の誤り（TextField） |
 | `do_not_disturb_on.svg` | 状態 neutral（キャンセル済みなど） |
 | `chevron_right.svg` | 一覧の行の詳細へ（ListRow） |
+| `expand_more.svg` | 選択欄の chevron（Select。取得 2026-11-07） |

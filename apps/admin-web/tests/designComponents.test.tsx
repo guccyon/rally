@@ -16,6 +16,7 @@ import { ListRow } from "@/components/ui/ListRow";
 import { LoadingBar, SectionLoading } from "@/components/ui/Loading";
 import { Notice } from "@/components/ui/Notice";
 import { Section } from "@/components/ui/Section";
+import { Select, selectLoadFailed, selectNotSelected } from "@/components/ui/Select";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { SLOT_STATE_STATUS } from "@/components/ui/status";
 import { TextArea, TextField } from "@/components/ui/TextField";
@@ -346,4 +347,78 @@ test("neutral の状態のタグは border-strong の点と text-muted の文字
   expect(tag).toHaveClass("text-text-muted");
   expect(tag.className).not.toMatch(/bg-surface|\bborder\b/);
   expect(screen.getByTestId("status-dot")).toHaveClass("bg-border-strong");
+});
+
+test("選択欄は見えるラベルの付いた select 要素で、入力欄と同じ高さと輪郭に、読み上げない chevron を置く", () => {
+  const onChange = vi.fn();
+  const { container } = render(
+    <Select label="コーチ" defaultValue="" onChange={onChange}>
+      <option value="">すべて</option>
+      <option value="c1">山田 花子</option>
+    </Select>,
+  );
+  const field = screen.getByRole("combobox", { name: "コーチ" });
+  expect(field.tagName).toBe("SELECT");
+  expect(field).toHaveValue("");
+  expect(field).toHaveClass("min-h-12", "border-border-strong", "rounded-md", "bg-background", "px-4", "pr-10");
+  expect(field).not.toHaveAttribute("aria-invalid");
+  expect(field.parentElement?.parentElement).toHaveClass("min-w-[10em]", "max-w-[20em]");
+  const chevron = container.querySelector('svg[data-icon="expand_more"]');
+  expect(chevron).toHaveAttribute("aria-hidden", "true");
+  expect(chevron).toHaveAttribute("width", "20");
+
+  fireEvent.change(field, { target: { value: "c1" } });
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(field).toHaveValue("c1");
+});
+
+test("選択肢を読むあいだは欄を変えられず、helper で読み込み中を伝える", () => {
+  render(
+    <Select label="コーチ" defaultValue="" loading>
+      <option value="">すべて</option>
+    </Select>,
+  );
+  const field = screen.getByRole("combobox", { name: "コーチ" });
+  expect(field).toBeDisabled();
+  expect(field).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("status")).toHaveTextContent("コーチの一覧を読み込んでいます…");
+  expect(field).toHaveAccessibleDescription("コーチの一覧を読み込んでいます…");
+});
+
+test("選択肢を読めないときは欄の下に読み直し方を出し、輪郭は誤りにしない", () => {
+  render(
+    <Select label="レッスンメニュー" defaultValue="" loadFailed>
+      <option value="">すべて</option>
+    </Select>,
+  );
+  const field = screen.getByRole("combobox", { name: "レッスンメニュー" });
+  const message = "レッスンメニューの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。";
+  expect(selectLoadFailed("レッスンメニュー")).toBe(message);
+  expect(field).toBeDisabled();
+  expect(field).not.toHaveAttribute("aria-invalid");
+  expect(screen.getByRole("alert")).toHaveTextContent(message);
+  expect(field).toHaveAccessibleDescription(message);
+});
+
+test("必須の欄を選んでいない誤りは aria-invalid と error_text で、押せない理由は helper に出す", () => {
+  render(
+    <>
+      <Select label="スポーツ" defaultValue="" error={selectNotSelected("スポーツ")} fullWidth>
+        <option value="">選んでください</option>
+        <option value="tennis">テニス</option>
+      </Select>
+      <Select label="対象" helper="お知らせを送っているあいだは変えられません。" disabled>
+        <option value="">生徒全員（ゴルフの生徒も含む）</option>
+      </Select>
+    </>,
+  );
+  const sport = screen.getByRole("combobox", { name: "スポーツ" });
+  expect(sport).toHaveAttribute("aria-invalid", "true");
+  expect(sport).toHaveAccessibleDescription("スポーツが選ばれていません。一覧から 1 つ選んでください。");
+  expect(sport.parentElement?.parentElement).not.toHaveClass("max-w-[20em]");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+  const target = screen.getByRole("combobox", { name: "対象" });
+  expect(target).toBeDisabled();
+  expect(target).toHaveAccessibleDescription("お知らせを送っているあいだは変えられません。");
 });

@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.5.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.6.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -58,6 +58,9 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
   - id: date-field-only
     target: admin-web の src/（src/components/ui/DateField.tsx を除く）
     detect: input type="date" を直に書いている要素
+  - id: select-only
+    target: admin-web の src/（src/components/ui/Select.tsx を除く）
+    detect: select 要素を直に書いている要素（0.6.0）
   - id: state-color-map
     detect: status_tag の色が booking_state・slot_state の対応と違う
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
@@ -94,3 +97,21 @@ changelog:
         - student-app の rally_tokens.dart と admin-web の globals.css の @theme・tests/designTokens.test.ts を新しい値にする（名前は同じ。primary_container_pressed・numeric・figure を足す）
         - Barlow Condensed（700・800）と OFL.txt を両アプリに同梱する（student-app は pubspec の fonts と LicenseRegistry、admin-web は public/fonts/ と @font-face）
         - 基本の部品（ボタン・カード・状態のタグ・知らせ・一覧の行・Section・表）を components.yaml の形にし、カタログを組み立て直す。PR に前後のキャプチャを付ける
+    - version: 0.6.0
+      date: "2026-11-07"
+      change: >-
+        components.yaml に select（選択欄。状態は通常・押下・フォーカス・無効・読み込み中・失敗・誤り、文言の型は load_failed と not_selected）と preview_css を足し、
+        text_field の not_for に版を書き足した。patterns.yaml の search_filter に admin_web_filter_row と should の基準を足し、structure を直した。lint に select-only を足した
+      reason: >-
+        #992 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。text_field と date_field の not_for が select を指すのに定義がなく、
+        admin-web の 18 の部品（本部 16・コーチ 2）の 46 の素の select が高さ・余白を画面ごとに変えていた。field は text_field と同じ形にし、トークンは足していない（色の組み合わせはどれも contrast_checked にある）。
+        既存の名前と値は消していない。must の追加はない
+      affects: >-
+        正本の上では admin-web の select のある画面（hq-bookings*・hq-cancelled-bookings*・hq-lesson-menus*・hq-slot-supply*・hq-live-sessions*・hq-overdue-live-sessions*・
+        hq-pending-video-reviews*・hq-returned-video-reviews*・hq-unanswered-messages*・hq-students*・hq-coaches*・hq-incomplete-coach-profiles*・hq-coach-reviews*・hq-low-reviews*・
+        hq-announcements*・hq-announcement-*・coach-slots*・coach-lesson-menus）と design-catalog。
+        この版で画面が変わるのは admin-web の design-catalog（Select の見本を足す）。素の select の Select への置き換えは別のタスク。student-app は変わらない
+      approved_by: 工場（新しい部品・should の基準・lint の追加）
+      migration:
+        - admin-web に Select（src/components/ui/Select.tsx）を足す。TextField の FIELD と FieldFrame の形を使い、右の余白 pr-10 と expand_more の Icon（20px・aria-hidden）を置く
+        - admin-web の DesignCatalog（/design）に preview の 7 つの状態の見本を足す。student-app のカタログには置かない（not_for）
