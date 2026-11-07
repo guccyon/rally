@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0030
+pr: https://github.com/guccyon/rally/pull/1036
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0019 の担保を 1 件足し、既存の 2 件に wired・verified
+    を書き足すだけで、statement・scope・confidence・invalidate_when は変えていないので、README の「担保した知見も消さず
+    solutions に残す」の決まりに合っています。
+  - '足した項目の decided_by: committee:D-0019 は、D-0019 の enforcement の案（entrypoint.sh で
+    gate.mjs を呼び、終了コード 1 で enqueue_body_fix に回し、engine.test.mjs の todo を外す）とそのまま対応していて、食い違いはありません。'
+  - D-0019 と D-0021 が「次に K-0001 を直す変更セットで wired・verified を書く」よう求めた点と、README の移行の決まりに、3
+    件すべてに書くことで応えています。
+  - '3 件とも wired: false・verified: false で、what にも配線と効き目の確認がまだと書いてあり、記述と真偽の値が一致しています。'
+  - 配線がまだなので invalidate_when の 2 つ目（本文の見出しの重なりを機械で検査するようになった）は満たされておらず、K-0001 は active・hypothesis
+    のままが妥当で、INDEX.md の行（deterministic・2026-11-05・2026-12-05）も YAML と一致しています。
+  - 新しい知見を足していないので影響を受ける知見の扱いを添える決まりは当たりませんが、建設者が配線したら同じ変更セットで wired を true にし、K-0001
+    の status を見直すかを決め、README の「2026-11-05 の時点で書いたのは K-0004 だけ」の記述も直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した 3 件目の solution は decided_by: committee:D-0019 を指しており、D-0019 の enforcement
+    の案（gate.mjs を gh pr edit の直前に呼び、終了コード 1 で enqueue_body_fix に回し、engine.test.mjs
+    の todo を外す）にそのまま辿れます。'
+  - 「C-0005 の 21 回の続きのジョブ」は C-0005 のなぜなぜの 1 つ目の記述と合っていて、根拠の数字を盛っていません。
+  - '既存の 2 件に足した wired: false・verified: false は、それぞれの what に「配線はまだ入っていない」「効き目はまだ確かめていない」とある記述と合っていて、D-0021
+    が求めた次の変更セットでの記入にも応えています。'
+  - 'D-0021 の反対の票に「gate.mjs のように建設者がすでに配線した解決策があると」という書きぶりがあるので、2 件目を wired: false
+    としたのが実際の配線の状態と合っているかは、issue 956 と Engine の記録で一度確かめてください。'
+  - issue 975・pr-body-gate.patch・engine.test.mjs の結果は知見の置き場の外の記録で、この材料では確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - 配線と効き目の確認がまだと明記しているので、confidence は hypothesis のまま上げないのが妥当で、差分には利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は D-0019 の ci_check の案のうちワーカーの権限で入れられる分（pr-body-gate.patch、act_on_body_gate
+    による body_fix への回し方、engine.test.mjs の (3) の todo 外し）を記録したもので、担保の観点で採ってよいです。
+  - '既存の 2 件と今回の 1 件に wired: false・verified: false を書いたことで、D-0019 と D-0021 が求めた K-0001
+    の未記入が埋まり、check.py が K-0001 を「未配線」と正しく出せるようになりました。'
+  - '見出しの重なりと「## 工場の記録」より後ろの ## は機械で引ける線で、C-0005 では 1 回目の追記から 21 回続けて検査・判定・body_fix
+    を使ったので、外したときの痛さは大きく、残りの配線を急ぐ理由は変わりません。'
+  - pr-body-gate.patch はまだ Engine に入っておらず ENGINE_REF も上がっていないので、今の Engine は関所を呼ばず、本文が壊れる繰り返しはまだ止まっていません。
+  - (3) を必須にしても ci/pr-body-engine.yml が .github/workflows/ に写されて必須のチェックになるまでは、関所を呼ばない
+    Engine で落ちる CI がどこでも走らないので、担保としてはまだ効いていません。
+  - 配線が入るまで効き目は確かめられないので confidence は hypothesis のままとし、配線が入ったときは invalidate_when の
+    2 つ目に当たるため、K-0001 の status を見直す変更セットを出してください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この差分は K-0001 の enforcement.solutions に D-0019 の案の一部を入れた記録を 1 件足し、既存の 2 件に wired:
+    false・verified: false を書き足すだけで、statement・scope・confidence・invalidate_when は変えていないので範囲は広がっていません。'
+  - '3 件とも wired: false・verified: false としていて、建設者が差分を Engine に入れて ENGINE_REF を上げるまで配線されていないと
+    what にも書いているので、担保が効いているように言い過ぎてはいません。'
+  - D-0021 は既存の項目の未記入を false と数えると決め、K-0001 を次に直す変更セットで書くよう求めていたので、今回書き足したのはその求めに沿っています。
+  - '反例として、続きのジョブの報告が「## 工場の記録」の下の ### に正しく入った本文を関所が止めないこと（誤検知がないこと）は「## 見出しのない報告は止めずに書く」以外に記録がないので、D-0019
+    の反対の票が求めた通る側のテストを次の変更セットで書き添えてください。'
+  - 終了コード 2・3 を人に回すとありますが、2 と 3 が何を指すかが知見の中に書かれていないので、次に直すときに一言添えてください。
+  - 配線が入って再発が止まったことを一次記録で確かめるまでは confidence は hypothesis のままが妥当で、そのときは invalidate_when
+    の 2 つ目に当たるので status の見直しも同じ変更セットで決めてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が tools/pr-body-check/engine/pr-body-gate.patch を Engine に入れて ENGINE_REF
+    を上げ、同じ変更で ci/pr-body-engine.yml を .github/workflows/ に写して branch protection の必須のチェックにする。関所を呼ばない
+    Engine では engine.test.mjs の (3) で CI が落ちることと、本物の続きのジョブで外れた本文が書かれず body_fix が積まれたことを記録してから、この
+    solution の wired と verified を true にする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: 'gate.test.mjs と engine.test.mjs に通る側の写しを足す。続きのジョブの報告が「## 工場の記録」の下の ###
+    に正しく入った本文と、## 見出しのない報告では関所が 0 を返して本文を書くことを確かめ、正しい更新まで止める誤検知がないことを必須のテストにする。'
