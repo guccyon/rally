@@ -1,6 +1,6 @@
 # 知見の担保の配線と効き目の検査
 
-知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作った。
+知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を足した。
 
 `K-0004` の解決策は 10 件になったが、どれも「効き目はまだ確かめていない」を `what` の文で書くだけで、`INDEX.md` の担保の列は `deterministic` と出ていた。配線も確認もしていない担保を決定論の担保と読み違えないように、真偽の項目にして機械で数える。
 
@@ -19,6 +19,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 | 項目 | 値 | 意味 |
 |---|---|---|
 | `wired` | `true` / `false` | CI（`.github/workflows/`）や Engine の呼び出しから実際に走るか。ひな形（`ci/*.yml`）を置いただけ、テストを書いただけは `false` |
+| `wired_by` | `{workflow, job, runs}` の列 | `wired: true` のときに必須。`workflow` は `.github/workflows/` の直下のファイル、`job` はその `jobs` の id、`runs` は呼ぶ検査の道（リポジトリの根から。例: `tools/sendback-check/order.mjs`）。`wired` が `true` でなければ見ない（議決 `D-0021`、Issue #986） |
 | `verified` | `true` / `false` | 本物の記録（実際の PR やイベント列）で、外れたときに落ちる・正しいときに通ることを確かめたか。写しや作った入力だけで確かめたものは `false` |
 
 書いていない項目は落とさず `false`（未記入）として数え、表示も `未配線` 側に倒す（`K-0002` の `config` のように実際は効いているかもしれない解決策も、書くまでは配線済みと出さない）。未記入の件数は出力の「未記入」に別に出すので、書いていないのか `false` と書いたのかは見分けられる。項目を書くのは足したり直したりした知見から順に（2026-11-05 の時点で書いたのは `K-0004` だけ。`K-0001`・`K-0002`・`K-0009` は次にその知見を直す変更セットで書く）。
@@ -27,6 +28,19 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 
 - `wired` か `verified` が真偽でない（`"true"`・`yes` など）
 - `wired` が `true` でないのに `verified` が `true`（配線してから本物の記録で確かめる）
+- `wired` が `true` なのに、`wired_by` がない・空・項目が欠けている、`workflow` が `.github/workflows/` の直下でない（ひな形の `ci/*.yml` は配線ではない）、`workflow`・`job`・`runs` のどれかが実在しない、その job が `runs` の検査を呼んでいない（下の「配線先の照合」）
+
+## 配線先の照合
+
+`wired` は書き手の申告なので、配線していないのに `true` と書かれても見抜けなかった（議決 `D-0021`、Issue #986）。`check.py` は `wired_by` の job の手順（`run`）が `runs` を呼んでいるかを、`tools/sendback-check/order.mjs` と同じやり方で照らす。
+
+- shell の注釈を落とし、行末の `\` でつないだ行を 1 行にして見る
+- 道は手順の `working-directory`（なければ job の `defaults.run.working-directory`）と、手順の中の `cd` の下か根から引く。`$GITHUB_WORKSPACE`・`${{ github.workspace }}` は根にする
+- ワークフロー・job・手順の `env` と shell の代入の変数（`$NAME`・`${NAME}`・`${{ env.NAME }}`）は値に置き換える
+- `npm`・`pnpm` の `run`・`run-script`・`test` は、そのディレクトリ（`--prefix` も）の `package.json` の scripts の中身を辿る。シェルのラッパー（`.sh`・`.bash`）は中身を読んで辿る（どちらも 3 段まで）
+- `runs` がテストのファイル（`test_*.py`・`*.test.mjs` など）のときは、そのディレクトリで `python3 -m unittest discover -s <ディレクトリ>` や、ファイルを名指ししない `node --test` を走らせる形も呼び出しに数える
+- `order.mjs` は取りこぼすと見張れないので迷う形を呼ぶ側に数えるが、ここで見逃すと配線していない担保を配線済みと読ませるので、逆に迷う形は呼んでいない側に数える（scripts にない名前・読めないラッパー・別の job の手順・`uses:` の手順・別のワークフローを呼ぶ job は数えない）。字面で偽の `if:`（`false`・`${{ false }}`）の job と手順も走らないので数えない
+- Engine の呼び出しだけで走る解決策は今の `wired_by` では書けない。書けるようになるまで `wired: false` のまま置く
 
 ## 担保の表示
 
