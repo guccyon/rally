@@ -375,4 +375,21 @@ enforcement:
       decided_by: committee:D-0028
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0031 の test の案（engine-head が engine_head_failed の 1 つの印でしか知らせないので、Engine の判定が変わったのか、
+        engine_harness.py の偽の cursor が Engine の先頭の新しい問い合わせ（judgment.decided など）を知らないだけなのかを見分けられない）を入れた。
+        tools/sendback-check/engine_harness.py の偽の cursor が知らない問い合わせを受けたら、判定の結果を出さずに標準エラーへ harness_unknown_query の印と
+        問い合わせを出して終了コード 3 で落ちる（Engine が例外を握りつぶしても、知らない問い合わせを引いたことを覚えておいて落とす）。
+        ci/sendback-engine-head.yml の記録の手順は、engine.test.mjs の出力にその印があれば engine_head_failed ではなく harness_unknown_query の ::error を出し、
+        Issue #948 にハーネスのずれとして知らない問い合わせと一緒に記録する（重ねない印は先頭の版と種類の組にした）。tools/sendback-check/ci.test.mjs で、
+        知らない judgment.decided の問い合わせを引く・その例外を握りつぶす・判定だけが変わる偽の Engine を作り、ハーネスから engine.test.mjs と記録の手順までを
+        通して、前の 2 つでは harness_unknown_query だけ、最後では engine_head_failed だけが出ることを確かめた。手元の Engine で judgment.pending_fixes の
+        問い合わせを偽の cursor から外すと harness_unknown_query で落ちることも確かめた。.github/workflows/ への写しは建設者が行うので、
+        まだ定期には走っておらず、この解決策も未配線・未確認
+      issue: 1046
+      at: 2026-11-07
+      decided_by: committee:D-0031
+      wired: false
+      verified: false
 decided_by: committee:D-0004

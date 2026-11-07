@@ -2,6 +2,8 @@
 # sendback-engine.yml の engine-test は Engine を ENGINE_REF の固定の版で取るので、Engine の判定が変わっても ENGINE_REF を上げるまで誰も気づかない。
 # この engine-head は同じテストを Engine の既定のブランチの先頭で走らせ、落ちたら ::error を出し、Issue #948 に先頭の版と落ちたテストを記録する。
 # 同じ先頭の版の記録が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかったときは毎回記録する。
+# engine_harness.py の偽の cursor が知らない問い合わせ（harness_unknown_query の印）で落ちたときは、Engine の判定の変化（engine_head_failed）と
+# 分けて harness_unknown_query として知らせ、記録する（ハーネスのずれ。議決 D-0031、Issue #1046）。
 # PR では走らせない（先頭の Engine の変化で PR を止めない。必須のチェックにもしない）。PR のコードを issues: write の権限で動かさないため、
 # sendback-engine.yml とは別のワークフローにした。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine-head.yml にそのまま写す。
@@ -63,8 +65,16 @@ jobs:
           pinned=ci/sendback-engine.yml
           if [ -f ../../.github/workflows/sendback-engine.yml ]; then pinned=../../.github/workflows/sendback-engine.yml; fi
           engine_ref=$(sed -n 's/^ *ENGINE_REF: *\([0-9a-f]*\) *$/\1/p' "$pinned" | head -n 1)
-          echo "::error title=sendback-engine-head engine_head_failed::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine.test.mjs が落ちた。ENGINE_REF（${engine_ref}）を上げる前に判定の変化を確かめる（Issue #${ISSUE} に記録する）"
-          marker="<!-- sendback-engine-head: ${head_sha:-unknown} -->"
+          unknown=""   # engine-head.txt には engine_harness.py の標準エラーも入る
+          if [ -f engine-head.txt ]; then unknown=$(grep -oE 'harness_unknown_query: .*' engine-head.txt | sort -u | head -n 5 || true); fi
+          if [ -n "$unknown" ]; then
+            kind=harness_unknown_query
+            echo "::error title=sendback-engine-head harness_unknown_query::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine_harness.py の偽の cursor が知らない問い合わせを受けて engine.test.mjs が落ちた。Engine の判定の変化ではなくハーネスのずれなので、engine_harness.py を先頭に合わせてから判定を確かめる（ENGINE_REF は ${engine_ref}。Issue #${ISSUE} に記録する）"
+          else
+            kind=engine_head_failed
+            echo "::error title=sendback-engine-head engine_head_failed::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine.test.mjs が落ちた。ENGINE_REF（${engine_ref}）を上げる前に判定の変化を確かめる（Issue #${ISSUE} に記録する）"
+          fi
+          marker="<!-- sendback-engine-head: ${head_sha:-unknown} ${kind} -->"
           recorded=""
           if [ -n "$head_sha" ]; then recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments" --paginate --jq '.[].body' || true); fi
           if [ -n "$head_sha" ] && grep -qF -- "$marker" <<< "$recorded"; then
@@ -73,8 +83,19 @@ jobs:
           fi
           {
             echo "$marker"
-            echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が落ちた（知見 K-0004、議決 D-0020）。"
-            echo "ENGINE_REF（\`${engine_ref}\`）を上げる前に、判定の変化を確かめる。"
+            if [ "$kind" = harness_unknown_query ]; then
+              echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が落ちた（\`harness_unknown_query\`。知見 K-0004、議決 D-0020・D-0031）。"
+              echo "\`engine_harness.py\` の偽の cursor が知らない問い合わせで、Engine の判定の変化ではなくハーネスのずれ。ハーネスを先頭に合わせてから判定を確かめる（ENGINE_REF は \`${engine_ref}\`）。"
+              echo
+              echo '知らない問い合わせ:'
+              echo
+              echo '```'
+              echo "$unknown"
+              echo '```'
+            else
+              echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が落ちた（\`engine_head_failed\`。知見 K-0004、議決 D-0020）。"
+              echo "ENGINE_REF（\`${engine_ref}\`）を上げる前に、判定の変化を確かめる。"
+            fi
             echo
             echo "- 実行: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo

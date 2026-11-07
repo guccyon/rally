@@ -7,6 +7,7 @@
 // 必須のチェック（engine-test・wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
 // ENGINE_REF の行を変える PR で engine-test が必ずその版で走る形か（ENGINE_REF の置き場所・needs・Engine を取る版）も、ひな形と写しで見る（議決 D-0028、Issue #1024）。
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
+// その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -312,7 +313,8 @@ test("先頭で落ちたら ::error を出し、Issue #948 に先頭の版・ENG
   assert.match(box.calls(), /^gh api repos\/guccyon\/rally\/issues\/948\/comments /m);
   assert.match(box.calls(), /^gh issue comment 948 --repo guccyon\/rally --body-file engine-head-comment\.md$/m);
   const body = readFileSync(join(box.dir, "engine-head-comment.md"), "utf8");
-  assert.ok(body.startsWith(`<!-- sendback-engine-head: ${HEAD} -->\n`));
+  assert.ok(body.startsWith(`<!-- sendback-engine-head: ${HEAD} engine_head_failed -->\n`));
+  assert.doesNotMatch(r.stdout, /harness_unknown_query/);
   assert.match(body, new RegExp(`\`${HEAD}\``));
   assert.match(body, new RegExp(`\`${ENGINE_REF}\``));
   assert.match(body, /^not ok 2 - \(3\) basis に欠陥の採用数と仮決めの承認数を分けて書く$/m);
@@ -320,7 +322,7 @@ test("先頭で落ちたら ::error を出し、Issue #948 に先頭の版・ENG
 });
 
 test("同じ先頭の記録が Issue #948 にすでにあれば足さない（::error は出す）", () => {
-  const box = sandbox({ gh: `[ "$1" = api ] && printf '%s\\n' "<!-- sendback-engine-head: ${HEAD} -->"; exit 0` });
+  const box = sandbox({ gh: `[ "$1" = api ] && printf '%s\\n' "<!-- sendback-engine-head: ${HEAD} engine_head_failed -->"; exit 0` });
   const r = runStep(headNotifyStep, box, { ENGINE_HEAD: HEAD });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^::error title=sendback-engine-head engine_head_failed::/m);
@@ -358,4 +360,97 @@ test("写し（.github/workflows/sendback-engine-head.yml）があれば、ひ�
   skip: existsSync(headCopyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
   assert.equal(readFileSync(headCopyPath, "utf8").trimEnd(), headTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
+});
+
+// ハーネスのずれと Engine の判定の変化を分ける（議決 D-0031、Issue #1046）。Engine の先頭が新しい問い合わせ（judgment.decided など）を引くと、
+// engine_harness.py の偽の cursor が知らずに engine.test.mjs が落ちるが、それは判定の変化ではない。ハーネスは harness_unknown_query の印で落ち、
+// engine-head はそれを engine_head_failed と分けて ::error と Issue #948 の記録に出す。偽の Engine で、ハーネスから記録の手順までを通して確かめる。
+const harnessPath = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
+/** 偽の Engine が引く、ハーネスの知らない問い合わせ（Engine の 1d811cd の judgment.decided に似せた形） */
+const UNKNOWN_SQL = "select d.id from events d where d.name='judgment.decided' and d.payload->>'reviewed_pr'=%s";
+
+/** engine_harness.py が取り出す関数だけを持つ偽の Engine を git のチェックアウトとして作る。inspector は inspector_approved の中身 */
+function fakeEngine({ inspector = '    return True, "承認"', act = "    pass" } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "sendback-fake-engine-"));
+  const disp = join(dir, "orchestrator", "dispatcher");
+  mkdirSync(disp, { recursive: true });
+  writeFileSync(join(disp, "judgment.py"), "def record_judged(cur, corr, job_id, pr_url, inp, verdicts, mode, note):\n    return {}\n");
+  writeFileSync(join(disp, "dispatcher.py"), [
+    "def _quote(s):\n    return s\n", "def is_body_only(d):\n    return False\n", "def enqueue_body_fix(*a, **k):\n    pass\n",
+    "def file_sendback(*a, **k):\n    pass\n", `def act_on_judgment(cur, repo, corr, job_id, pr_url, summary, mode):\n${act}\n`].join("\n"));
+  writeFileSync(join(disp, "supervisor.py"), `def inspector_approved(cur, pr_url, sha):\n${inspector}\n`);
+  for (const args of [["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x"]]) {
+    assert.equal(spawnSync("git", args, { cwd: dir }).status, 0);
+  }
+  return dir;
+}
+
+const UNKNOWN_ENGINE = { inspector: `    cur.execute("${UNKNOWN_SQL}", (pr_url,))\n    return True, "承認"` };
+// Engine が例外を握りつぶしても（supervisor.py には except Exception の箇所がある）、知らない問い合わせを引いたことで落とす
+const SWALLOWING_ENGINE = { inspector: `    try:\n        cur.execute("${UNKNOWN_SQL}", (pr_url,))\n    except Exception:\n        pass\n    return True, "承認"` };
+// 判定が変わった Engine（直すもののない PR でも差し戻しを起こす）。ハーネスは知っている問い合わせだけで動く
+const CHANGED_ENGINE = { act: '    record_event(cur, "sendback.filed", corr, job_id, {"pr_url": pr_url})' };
+
+const runHarness = (dir) => spawnSync("python3", ["-I", harnessPath, dir], {
+  input: JSON.stringify({ pr_url: "https://github.com/guccyon/rally/pull/395", merged: true, judgments: [] }), encoding: "utf8" });
+
+test("engine_harness.py は偽の cursor が知らない問い合わせを受けたら harness_unknown_query の印と終了コード 3 で落ち、判定の結果を出さない", () => {
+  for (const [name, engine] of [["そのまま落とす Engine", UNKNOWN_ENGINE], ["例外を握りつぶす Engine", SWALLOWING_ENGINE]]) {
+    const r = runHarness(fakeEngine(engine));
+    assert.equal(r.status, 3, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^harness_unknown_query: .*judgment\.decided/m, name);
+    assert.equal(r.stdout, "", name);
+  }
+  // 判定が変わっただけの Engine では印を出さずに結果を返す（落とすのは engine.test.mjs の判定のテスト）
+  const changed = runHarness(fakeEngine(CHANGED_ENGINE));
+  assert.equal(changed.status, 0, changed.stderr);
+  assert.doesNotMatch(changed.stderr, /harness_unknown_query/);
+  assert.deepEqual(JSON.parse(changed.stdout).followups, [{ kind: "sendback" }]);
+});
+
+/** sandbox に engine.test.mjs とその道具を写し、engine-head のテストの手順を本物の node で、記録の手順を偽の gh で動かす */
+function runEngineHead(engineDir, gh = "exit 0") {
+  const box = sandbox({ gh });
+  for (const f of ["engine.test.mjs", "engine_harness.py", "check.mjs", "order.mjs"]) {
+    writeFileSync(join(box.dir, f), readFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url))));
+  }
+  const ghEnv = join(box.root, "github_env");
+  const env = { ...process.env, ENGINE_DIR: engineDir, GITHUB_ENV: ghEnv, GITHUB_STEP_SUMMARY: join(box.root, "summary") };
+  delete env.NODE_TEST_CONTEXT;   // 外の node --test の子として報告させない
+  const test = spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(headTestStep)], { cwd: box.dir, env, encoding: "utf8" });
+  const head = readFileSync(ghEnv, "utf8").match(/^ENGINE_HEAD=(\S+)$/m)[1];
+  const notify = runStep(headNotifyStep, box, { ENGINE_HEAD: head });
+  const body = existsSync(join(box.dir, "engine-head-comment.md")) ? readFileSync(join(box.dir, "engine-head-comment.md"), "utf8") : "";
+  return { test, notify, head, body, calls: box.calls() };
+}
+
+test("先頭の Engine がハーネスの知らない問い合わせを引いて落ちたら、engine_head_failed ではなく harness_unknown_query で知らせて Issue #948 に記録する", () => {
+  const { test: headRun, notify, head, body, calls } = runEngineHead(fakeEngine(UNKNOWN_ENGINE));
+  assert.notEqual(headRun.status, 0, "engine.test.mjs が通った");
+  assert.equal(notify.status, 0, notify.stdout + notify.stderr);
+  assert.match(notify.stdout, new RegExp(`^::error title=sendback-engine-head harness_unknown_query::.*${head}.*ハーネスのずれ`, "m"));
+  assert.doesNotMatch(notify.stdout, /engine_head_failed/);
+  assert.match(calls, /^gh issue comment 948 --repo guccyon\/rally --body-file engine-head-comment\.md$/m);
+  assert.ok(body.startsWith(`<!-- sendback-engine-head: ${head} harness_unknown_query -->\n`), body);
+  assert.match(body, /ハーネスのずれ/);
+  assert.match(body, /^harness_unknown_query: .*judgment\.decided/m);
+  assert.match(body, /^not ok \d+ - \(1\) /m);
+});
+
+test("先頭の Engine の判定が変わって落ちたら、これまでどおり engine_head_failed で知らせ、harness_unknown_query は出さない", () => {
+  const { test: headRun, notify, head, body } = runEngineHead(fakeEngine(CHANGED_ENGINE));
+  assert.notEqual(headRun.status, 0, "engine.test.mjs が通った");
+  assert.equal(notify.status, 0, notify.stdout + notify.stderr);
+  assert.match(notify.stdout, new RegExp(`^::error title=sendback-engine-head engine_head_failed::.*${head}`, "m"));
+  assert.doesNotMatch(notify.stdout + body, /harness_unknown_query/);
+  assert.ok(body.startsWith(`<!-- sendback-engine-head: ${head} engine_head_failed -->\n`), body);
+  assert.match(body, /^not ok \d+ - \(1\) /m);
+});
+
+test("同じ先頭でも、ハーネスのずれの記録があるだけなら判定の変化の記録は足す（ハーネスを直したあとの実行を埋もれさせない）", () => {
+  const box = sandbox({ gh: `[ "$1" = api ] && printf '%s\\n' "<!-- sendback-engine-head: ${HEAD} harness_unknown_query -->"; exit 0` });
+  const r = runStep(headNotifyStep, box, { ENGINE_HEAD: HEAD });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^::error title=sendback-engine-head engine_head_failed::/m);
+  assert.match(box.calls(), /^gh issue comment 948 /m);
 });
