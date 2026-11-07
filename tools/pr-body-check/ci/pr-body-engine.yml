@@ -1,8 +1,9 @@
-# PR 本文の関所（tools/pr-body-check/gate.mjs）を Engine の本物の本文の組み込みで確かめる（知見 K-0001 の担保。議決 D-0013、Issue #956）。決定論（LLM を使わない）。
+# PR 本文の関所（tools/pr-body-check/gate.mjs）を Engine の本物の本文の組み込みで確かめる（知見 K-0001 の担保。議決 D-0013・D-0019、Issue #956・#975）。決定論（LLM を使わない）。
 # Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/pr-body-check のテスト（check.test.mjs・gate.test.mjs・engine.test.mjs）を PR ごとに走らせる。
 # ENGINE_DIR を渡すので、Engine のチェックアウトがないときや entrypoint.sh から本文を組む節を取り出せないときは飛ばさずに落ちる。
 # PR 本文そのものはここでは見ない（落ちると ci_failed の続きのジョブが積まれ、その summary がまた本文に足されるため。本文は Engine が更新の前に関所に照らす）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-engine.yml に写す。
+# engine.test.mjs の (3) に todo はないので、関所を呼ばない Engine の版では落ちる。engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げるのと同じ PR で写し、engine-test を必須のチェックにする（議決 D-0019）。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（tools/sendback-check/ci/sendback-engine.yml と同じ版にそろえる。上げるときはテストが通ることを確かめる）。
 name: pr-body-engine
 

@@ -1,13 +1,13 @@
 // Engine の本物の本文の組み込み（worker/entrypoint.sh の続きのジョブの節）と本文の直しの積み方（dispatcher.is_body_only・enqueue_body_fix）で、
 // 続きのジョブの summary を組み込んだ本文が関所（gate.mjs）に照らされ、外れたら本文を書かずに body_fix に回ることを確かめる
-// （知見 K-0001 の担保。議決 D-0013、Issue #956）。入力は事例 C-0005（PR #659）の 21 回の追記（c0005.mjs）。
+// （知見 K-0001 の担保。議決 D-0013、Issue #956。関所の配線の差分 engine/pr-body-gate.patch は議決 D-0019、Issue #975）。入力は事例 C-0005（PR #659）の 21 回の追記（c0005.mjs）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 // ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check の engine.test.mjs と同じ。議決 D-0011）。
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -104,13 +104,13 @@ test("(2) 関所の body_fix の入力は、Engine で本文だけの指摘と�
   assert.deepEqual(out.input, body_fix);
 });
 
-// 今の Engine の entrypoint.sh は、組み込んだ本文を関所に照らさずに gh pr edit で書く（tools/pr-body-check を呼んでいない）。
-// (3) は必須のテストだが、Engine がこの今の形（関所を呼んでいない）のときだけ todo にする（外れても落ちないが結果に出る）。
-// sendback-check の todoWhileLegacy（議決 D-0011）・continue-input-check の isLegacyInput と同じ扱い。Engine が関所を呼ぶようになったら、
-// その版からは、外れた本文を書くと落ちる。建設者が Engine に配線して ENGINE_DIR の版を上げたら、isLegacyEntrypoint と todo を消してよい
-const LEGACY_TODO = "Engine の entrypoint.sh が関所（tools/pr-body-check/gate.mjs）をまだ呼んでいない（建設者が配線したら必須になる）";
+// (3) は必須のテスト（議決 D-0019、Issue #975 で todo を外した）。Engine の entrypoint.sh が関所（tools/pr-body-check/gate.mjs）を
+// 呼ばない形なら、外れた本文を書くので落ちる。関所の配線は engine/pr-body-gate.patch で、(4)〜(6) がそれを当てた Engine の写しで確かめる。
+// 建設者が差分を Engine に入れて ENGINE_REF を上げると (3) が通る
+const PATCH = fileURLToPath(new URL("./engine/pr-body-gate.patch", import.meta.url));
+const PATCH_FILES = ["orchestrator/worker/entrypoint.sh", "orchestrator/dispatcher/dispatcher.py", "definitions/events.yaml"];
 
-/** Engine の entrypoint.sh が関所を呼ばない今の形か */
+/** Engine の entrypoint.sh が関所を呼ばない形か */
 export const isLegacyEntrypoint = (source) => !source.includes("tools/pr-body-check/gate.mjs");
 
 /** 偽の gh（pr view は持っている本文を返し、pr edit --body は本文を書き換える）。ほかの呼び出しは落とす。 */
@@ -133,20 +133,109 @@ esac
   return { dir, body: () => readFileSync(join(dir, "body"), "utf8") };
 }
 
-test("(3) Engine の本文の更新は、C-0005 の続きのジョブの本文が関所で外れたら、その本文を書かない",
-  { skip, todo: !skip && isLegacyEntrypoint(entrypoint) ? LEGACY_TODO : false }, () => {
-    need("update");
-    let current = engineNewBody();
-    REASONS.forEach((reason, i) => {
-      const gh = fakeGh(current);
-      const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
-      try {
-        bash(parts.update, { ...JOB, PATH: `${gh.dir}:${process.env.PATH}`, JOB_ID: String(2800 + i), CONTINUE_REASON: reason,
-          CONTINUE_PR: PR_NUMBER, PR_URL, SUMMARY: continuationSummary(reason, i), HANDOFF_DIR: handoff }, repoRoot);
-      } catch {
-        // 関所で止めたあとに終了コードで知らせる形でもよい。見るのは書いた本文だけ
-      }
-      assert.deepEqual(checkBody(gh.body()), [], `${i + 1} 回目（${reason}）の続きのジョブで、関所に外れる本文を書いた`);
-      current = gh.body();
-    });
+/**
+ * 本文の更新の節（update）を偽の gh で C-0005 の 21 回分動かし、回ごとに書かれた本文と引き継ぎ（HANDOFF_DIR）の body_gate.json を返す。
+ * 本文は前の回に書かれたものから続ける（書かなかった回は前の本文のまま）。
+ */
+function runUpdates(update, newBody) {
+  let current = newBody;
+  return REASONS.map((reason, i) => {
+    const gh = fakeGh(current);
+    const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+    const jobId = String(2800 + i);
+    let log = "";
+    try {
+      log = bash(update, { ...JOB, PATH: `${gh.dir}:${process.env.PATH}`, JOB_ID: jobId, CONTINUE_REASON: reason,
+        CONTINUE_PR: PR_NUMBER, PR_URL, SUMMARY: continuationSummary(reason, i), HANDOFF_DIR: handoff }, repoRoot);
+    } catch (e) {
+      // 関所で止めたあとに終了コードで知らせる形でもよい。見るのは書いた本文だけ
+      log = String(e.stdout || "");
+    }
+    current = gh.body();
+    const gateFile = join(handoff, "jobs", jobId, "body_gate.json");
+    return { reason, body: current, log, gate: existsSync(gateFile) ? JSON.parse(readFileSync(gateFile, "utf8")) : null };
   });
+}
+
+test("(3) Engine の本文の更新は、C-0005 の続きのジョブの本文が関所で外れたら、その本文を書かない", { skip }, () => {
+  need("update");
+  assert.ok(!isLegacyEntrypoint(entrypoint),
+    `Engine の entrypoint.sh が関所（tools/pr-body-check/gate.mjs）を呼んでいない（ENGINE_DIR=${engineDir}。engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げる）`);
+  runUpdates(parts.update, engineNewBody()).forEach(({ reason, body }, i) =>
+    assert.deepEqual(checkBody(body), [], `${i + 1} 回目（${reason}）の続きのジョブで、関所に外れる本文を書いた`));
+});
+
+/** ENGINE_DIR の Engine の写しに engine/pr-body-gate.patch を当てる（もう関所を呼んでいれば当てずに写すだけ）。写しの場所を返す。 */
+function patchedEngine() {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-engine-patched-"));
+  for (const f of PATCH_FILES) {
+    mkdirSync(dirname(join(dir, f)), { recursive: true });
+    copyFileSync(join(engineDir, f), join(dir, f));
+  }
+  if (isLegacyEntrypoint(entrypoint)) {
+    try {
+      execFileSync("git", ["apply", PATCH], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      assert.fail(`engine/pr-body-gate.patch が Engine（${engineDir}）に当たらない。今の Engine に合わせて作り直す: ${e.stderr || e.message}`);
+    }
+  }
+  // engine_harness.py は dispatcher の関数を取り出すときに judgment.py も読むので、写しに置く
+  copyFileSync(join(engineDir, "orchestrator/dispatcher/judgment.py"), join(dir, "orchestrator/dispatcher/judgment.py"));
+  return dir;
+}
+
+let patched;
+const patchedDir = () => (patched ??= patchedEngine());
+const patchedParts = () => snippets(readFileSync(join(patchedDir(), "orchestrator/worker/entrypoint.sh"), "utf8"));
+
+test("(4) 関所を配線した Engine（engine/pr-body-gate.patch）は、C-0005 の 21 回の続きのジョブで外れた本文を一度も書かず、外れた回の body_gate を残す", { skip }, () => {
+  const p = patchedParts();
+  assert.ok(p.update && !isLegacyEntrypoint(p.update), "差分を当てた entrypoint.sh の本文の更新の節が関所を呼んでいない");
+  const runs = runUpdates(p.update, engineNewBody());
+  runs.forEach(({ reason, body, gate: g, log }, i) => {
+    assert.deepEqual(checkBody(body), [], `${i + 1} 回目（${reason}）の続きのジョブで、関所に外れる本文を書いた`);
+    assert.equal(g?.rc, 1, `${i + 1} 回目（${reason}）で関所が外れた記録（body_gate.json の rc 1）がない`);
+    assert.equal(g.body_fix.pr_url, PR_URL);
+    assert.ok(g.body_fix.defects.length > 0 && g.body_fix.defects.every((d) => d.rubric_id === "PR-002" && /^PR 本文 \d+ 行目$/.test(d.location)));
+    assert.ok(g.pending_entry.includes(continuationSummary(reason, i).split("\n")[0]), "書かなかった続きのジョブの報告が body_gate に残っていない");
+    assert.match(log, /pr body gate blocked rc=1/);
+  });
+});
+
+test("(5) 関所を配線した Engine は、## 見出しを持たない続きのジョブの報告なら「## 工場の記録」の下の ### に足して書く（誤って止めない）", { skip }, () => {
+  const { update } = patchedParts();
+  let body = engineNewBody();
+  ["既定ブランチを取り込み、衝突を解いた。", "CI 落ちを直した。"].forEach((summary, i) => {
+    const gh = fakeGh(body);
+    const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+    const jobId = String(2900 + i);
+    bash(update, { ...JOB, PATH: `${gh.dir}:${process.env.PATH}`, JOB_ID: jobId, CONTINUE_REASON: i ? "ci_failed" : "conflict", CONTINUE_PR: PR_NUMBER, PR_URL,
+      SUMMARY: summary, HANDOFF_DIR: handoff }, repoRoot);
+    assert.ok(!existsSync(join(handoff, "jobs", jobId, "body_gate.json")), `${i + 1} 回目で関所に止められた`);
+    body = gh.body();
+    assert.ok(body.includes(summary), `${i + 1} 回目の続きのジョブの報告を書いていない`);
+    assert.deepEqual(checkBody(body), []);
+  });
+  assert.equal(body.match(/^### 続きのジョブの記録$/gm)?.length, 1, "続きのジョブの記録の見出しが 1 つの ### になっていない");
+});
+
+const bodyGate = (gateResult) =>
+  JSON.parse(execFileSync("python3", ["-I", harness, "--body-gate", patchedDir()], { input: JSON.stringify({ pr_url: PR_URL, body_gate: gateResult }), encoding: "utf8" }));
+
+test("(6) 関所を配線した Engine の dispatcher は、外れた（rc 1）結果で body_fix を積み、書かなかった報告も渡す。2・3 は人に回す", { skip }, () => {
+  const [first] = runUpdates(patchedParts().update, engineNewBody()).slice(0, 1);
+  const out = bodyGate(first.gate);
+  assert.deepEqual(out.jobs, [{ kind: "body_fix" }]);
+  assert.deepEqual(out.stoppages, []);
+  assert.ok(out.events.includes("pr.body_gate_blocked"));
+  assert.equal(out.input.pr_url, PR_URL);
+  assert.deepEqual(out.input.defects.slice(0, -1), first.gate.body_fix.defects);
+  const pending = out.input.defects.at(-1);
+  assert.equal(pending.location, "PR 本文 末尾");
+  assert.ok(pending.evidence.includes(first.gate.pending_entry.slice(0, 40)), "書かなかった続きのジョブの報告が body_fix に渡っていない");
+  for (const rc of [2, 3]) {
+    const r = bodyGate({ rc, body_fix: null, pending_entry: first.gate.pending_entry });
+    assert.deepEqual(r.jobs, [], `rc ${rc} で body_fix を積んだ`);
+    assert.deepEqual(r.stoppages.map((x) => x.category), ["human"], `rc ${rc} で人に回していない`);
+  }
+});

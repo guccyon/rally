@@ -1,0 +1,113 @@
+diff --git a/orchestrator/dispatcher/dispatcher.py b/orchestrator/dispatcher/dispatcher.py
+index 9ec5477..eb024c4 100644
+--- a/orchestrator/dispatcher/dispatcher.py
++++ b/orchestrator/dispatcher/dispatcher.py
+@@ -559,6 +559,12 @@ def run_job(job: dict, reattaching: bool = False):
+                         swap_label(repo, int(result["pr_number"]), [], [PROVISIONAL_LABEL])
+                 except Exception as e:  # noqa: BLE001
+                     log("provisional record failed", job_id, repr(e))
++            if cont and result and result.get("pr_url") and isinstance(result.get("body_gate"), dict):
++                # 続きのジョブの本文が関所で外れて書かなかった。body_fix か人に回す。記録の失敗でラインは止めない
++                try:
++                    act_on_body_gate(cur, repo, corr, job_id, result["pr_url"], int(result.get("pr_number") or cont["pr_number"]), result["body_gate"])
++                except Exception as e:  # noqa: BLE001
++                    log("body gate follow-up failed", job_id, repr(e))
+             if preempted_for:
+                 requeue_preempted(cur, job, preempted_for, (result or {}).get("cost_usd"))
+             elif state == "failed" and (err or "").startswith("exit=") and net_transient(lines) and requeue_transient(cur, job):
+@@ -893,6 +899,26 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
+     log("body_fix enqueued", pr_url, "job", jid)
+ 
+ 
++def act_on_body_gate(cur, repo: str, corr: str, job_id: int, pr_url: str, pr_number: int, gate: dict):
++    """続きのジョブの本文が製品の関所（rally の tools/pr-body-check/gate.mjs）で外れ、ワーカーが本文を書かなかった（rally の知見 K-0001）。
++    外れた（rc 1）なら判定役を待たず検査役にも回さずに body_fix を積む。書かなかった続きのジョブの報告は、工場の記録の下の ### に入れる指摘として渡す。
++    読めない（rc 2）・見出しの定義が不正（rc 3）は本文を直しても通らないので、人に回す"""
++    rc = gate.get("rc")
++    defects = [d for d in ((gate.get("body_fix") or {}).get("defects") or []) if is_body_only(d)]
++    record_event(cur, "pr.body_gate_blocked", corr, job_id, {"pr_url": pr_url, "rc": rc, "defects": len(defects)})
++    if rc == 1 and defects:
++        entry = (gate.get("pending_entry") or "").strip()
++        if entry:
++            defects.append({"rubric_id": defects[0].get("rubric_id"), "severity": "should", "location": "PR 本文 末尾",
++                            "evidence": "続きのジョブの報告を本文に書いていない（関所で外れたため）:\n" + entry[:4000],
++                            "remediation_hint": "この報告の ## 見出しを ### 以下に下げて、「## 工場の記録」の下に入れる"})
++        enqueue_body_fix(cur, repo, corr, pr_url, pr_number, defects)
++        return
++    stoppage.open_stoppage(cur, f"body_gate:{pr_url}", "human", f"PR 本文の関所が終了コード {rc} で本文を書かせなかった",
++                           waiting_for="人による PR 本文と見出しの定義（tools/pr-body-check/template.json）の確認",
++                           correlation_id=corr, job_id=job_id, detected_by="supervisor")
++
++
+ def act_on_judgment(cur, repo: str, corr: str, job_id: int, pr_url: str, summary: dict, mode: str):
+     pr_number = int(pr_url.rsplit("/", 1)[1])
+     labels = [f"factory:judged:{mode}"]
+diff --git a/orchestrator/worker/entrypoint.sh b/orchestrator/worker/entrypoint.sh
+index c0f0495..1397713 100755
+--- a/orchestrator/worker/entrypoint.sh
++++ b/orchestrator/worker/entrypoint.sh
+@@ -361,14 +361,36 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
+   # 続きのジョブの報告は、本文の末尾に折りたたんで 1 件ずつ足す。見出しのまま足すと、衝突の解消が重なった PR で
+   # 同じ見出しが 11 回並び、元の概要が埋もれた（2026-11-02 rally #657）
+   ENTRY=$(printf '<details><summary>%s（job %s、turns %s、$%s）</summary>\n\n%s\n\n- model: %s\n</details>' "${SECTION_TITLE}" "${JOB_ID}" "${TURNS}" "${COST}" "${SUMMARY}" "${MODEL}")
+-  if grep -q '^## 続きのジョブの記録$' <<<"${OLD_BODY}"; then
++  # 記録の見出しは「## 工場の記録」の下の ### にする（## のまま足すと工場の記録の外に出て、関所で外れる。rally の知見 K-0001）
++  if grep -qE '^##{1,2} 続きのジョブの記録$' <<<"${OLD_BODY}"; then
+     NEW_BODY=$(printf '%s\n%s\n' "${OLD_BODY}" "${ENTRY}")
+   else
+-    NEW_BODY=$(printf '%s\n\n## 続きのジョブの記録\n\n%s\n' "${OLD_BODY}" "${ENTRY}")
++    NEW_BODY=$(printf '%s\n\n### 続きのジョブの記録\n\n%s\n' "${OLD_BODY}" "${ENTRY}")
+   fi
++  FINISHED=""
+   if [ "${CONTINUE_REASON}" = "incomplete" ] && [ -z "${INCOMPLETE}" ]; then
+     # 仕上がったら未完了の印を外し、Issue を閉じる参照に直してドラフトを外す
+     NEW_BODY=$(printf '%s' "${NEW_BODY}" | sed -e '/^\*\*未完了\*\*:/d' -e "s/^Refs #${ISSUE_NUMBER}$/Closes #${ISSUE_NUMBER}/")
++    FINISHED=1
++  fi
++  # 書く前に、製品のリポジトリの関所（tools/pr-body-check/gate.mjs）に組んだ本文を照らす（rally の知見 K-0001・議決 D-0019）。
++  # 外れたら（1）本文を書かず、関所の出力（body_fix の入力）を FACTORY_RESULT の body_gate に載せて dispatcher に body_fix を積ませる。
++  # 読めない（2）・見出しの定義が不正（3）ときも書かない（dispatcher が人に回す）。関所のないリポジトリでは今までどおり書く
++  GATE_RC=0
++  GATE_OUT=""
++  if [ -f tools/pr-body-check/gate.mjs ]; then
++    GATE_OUT=$(printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL}") || GATE_RC=$?
++  fi
++  if [ "${GATE_RC}" -ne 0 ]; then
++    BODY_FIX_JSON=$(jq -c . <<<"${GATE_OUT}" 2>/dev/null) || BODY_FIX_JSON=null
++    [ -n "${BODY_FIX_JSON}" ] || BODY_FIX_JSON=null
++    BODY_GATE=$(jq -nc --arg rc "${GATE_RC}" --argjson body_fix "${BODY_FIX_JSON}" --arg entry "${ENTRY}" \
++      '{rc:($rc|tonumber), body_fix:$body_fix, pending_entry:$entry}')
++    if [ -n "${HANDOFF_DIR}" ]; then
++      mkdir -p "${HANDOFF_DIR}/jobs/${JOB_ID}" && printf '%s\n' "${BODY_GATE}" > "${HANDOFF_DIR}/jobs/${JOB_ID}/body_gate.json" || true
++    fi
++    echo "[worker] pr body gate blocked rc=${GATE_RC} pr=${PR_URL}; body not written"
++  elif [ -n "${FINISHED}" ]; then
+     gh pr edit "${CONTINUE_PR}" -R "${REPO}" --title "${TITLE} (#${ISSUE_NUMBER})" --body "${NEW_BODY}" >/dev/null
+     gh pr ready "${CONTINUE_PR}" -R "${REPO}" >/dev/null || true
+   else
+@@ -405,8 +427,8 @@ if ! git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" | grep -vqE '(\.md$|
+ 
+ echo "FACTORY_RESULT:$(jq -nc --arg pr "${PR_URL}" --arg n "${PR_NUMBER}" --argjson usage "${USAGE}" --arg cost "${COST}" --arg model "${MODEL}" --arg turns "${TURNS}" --arg ct "${CHANGE_TYPE}" --arg files "${CHANGED}" \
+   --argjson lessons "${LESSONS_JSON}" --arg provisional "${PROVISIONAL}" --argjson knowledge "${KNOWLEDGE_IDS}" \
+-  --arg incomplete "${INCOMPLETE}" --arg rc "${CLAUDE_RC}" \
+-  '{pr_url:$pr, pr_number:($n|tonumber), usage:$usage, cost_usd:($cost|tonumber), model:$model, num_turns:($turns|tonumber), change_types:[$ct], files:$files, lessons:$lessons, provisional_raw:$provisional, knowledge_ids:$knowledge, incomplete:($incomplete=="1"), claude_exit:($rc|tonumber)}')"
++  --arg incomplete "${INCOMPLETE}" --arg rc "${CLAUDE_RC}" --argjson body_gate "${BODY_GATE:-null}" \
++  '{pr_url:$pr, pr_number:($n|tonumber), usage:$usage, cost_usd:($cost|tonumber), model:$model, num_turns:($turns|tonumber), change_types:[$ct], files:$files, lessons:$lessons, provisional_raw:$provisional, knowledge_ids:$knowledge, incomplete:($incomplete=="1"), claude_exit:($rc|tonumber), body_gate:$body_gate}')"
+ # 途中終了なら、PR は残したうえでジョブとしては失敗にする（dispatcher が factory:failed にして rerun を案内する）
+ # 最後の行を `[ … ] && exit 4` にすると、条件が偽のときスクリプトの終了コードが 1 になる（T08 job 30 で成功が失敗扱いになった）
+ if [ -n "${INCOMPLETE}" ]; then exit 4; fi
+diff --git a/definitions/events.yaml b/definitions/events.yaml
+index 1ae38d5..4f6057e 100644
+--- a/definitions/events.yaml
++++ b/definitions/events.yaml
+@@ -386,6 +386,10 @@ events:
+     source: control_plane
+     required: [pr_url, defects, chars]
+     note: "PR 本文だけの指摘を本文の追記で直した（body_fix のジョブ）。差し戻しの回数に数えない"
++  pr.body_gate_blocked:
++    source: control_plane
++    required: [pr_url, rc, defects]
++    note: "続きのジョブの本文が製品の関所（rally の tools/pr-body-check/gate.mjs）で外れ、ワーカーが本文を書かなかった。rc 1 は body_fix を積み（判定役を待たない）、2・3 は人へ回す（停止として開く）"
+   learn.retrospected:
+     source: control_plane
+     required: [day, signals, clusters, rubric_candidates]
