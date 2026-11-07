@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0035
+pr: https://github.com/guccyon/rally/pull/1061
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - D-0021 の schema の案は、Engine の definitions/knowledge.yaml に wired・verified を足し、knowledge_check.py
+    に label() を移すもので、D-0017 の差分（issue 968）と同じなので、新しい解決策を足さずに既存の項目に追記した扱いは重複を避けていて妥当です。
+  - '追記したあとも K-0004 の statement・scope・evidence・confidence は変わっておらず、この解決策は wired: false・verified:
+    false のままなので、「ENGINE_REF の版では確かめていない」という文と合っています。'
+  - README の「2026-11-05 の時点で書いたのは K-0004 だけ」は D-0021 の consistency と dissent が直すよう求めた文で、今回それを
+    2026-11-07 の状態に直しています。
+  - K-0001 の 3 件と K-0010 の 2 件の解決策はすべて wired・verified を持ち、K-0002・K-0006・K-0009 の解決策には持たないものが残っているので、README
+    の新しい文は各知見の実際の状態と合っています。
+  - INDEX.md の担保の列が今も deterministic と出ることは README と K-0004 の文の両方に書いてあり、食い違いはありません。
+  - Engine の先頭（a7fae10）で確かめただけで、ENGINE_REF の版でも本物の記録でも確かめていないので、confidence は hypothesis
+    のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0004 の schema の解決策（issue 968、committee:D-0017）に足した文は、議決 D-0021 の enforcement
+    の schema の案（Engine の definitions/knowledge.yaml に wired・verified を足し、knowledge_check.py
+    で INDEX.md に「未配線」を出す）と中身が同じで、同じ差分で満たすという主張は D-0021 の記録に辿れます。
+  - '足した文は手元の Engine の先頭（a7fae10）の写しで確かめたことだけを書き、ENGINE_REF の版では確かめていないと断っていて、wired:
+    false・verified: false もそのままなので、記録より強く言っていません。'
+  - 'ただし Issue #987 と D-0021 への結び付きが what の文の中にしかなく、issue は 968、decided_by は committee:D-0017
+    のままなので、次にこの解決策を直すときは decided_by に committee:D-0021 を足すなど、機械で辿れる形にしてください。'
+  - README の「すべての解決策に書いたのは K-0001・K-0004・K-0010、未記入が残るのは K-0002・K-0006・K-0009」は、head
+    の各 K-*.yaml の solutions と wired・verified の項目の数と照らして合っており、D-0021 が求めた README の古い文の直しにも当たります。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）は変えておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはツールのパス・コミットの短い番号・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・evidence・confidence と wired・verified の値を変えず、issue 968
+    の解決策の what に D-0021 の schema の案も同じ差分で満たすことと確かめた範囲を書き足しただけなので、担保の観点では採ってよいです。
+  - '確かめたのは手元の Engine の先頭（a7fae10）の写しだけで ENGINE_REF の版では確かめていないと書いており、wired: false・verified:
+    false のままにしているので、担保の状態を実態より強く見せていません。'
+  - README の「すべての解決策に書いたのは K-0001・K-0004・K-0010」「未記入が残るのは K-0002・K-0006・K-0009」は今の
+    K-*.yaml の中身と合っていますが、D-0021 で古くなると指摘された文がこの PR で手で直されたように、知見に項目を書くたびに同じずれが繰り返し起きます。
+  - この一覧は check.py がすでに数えている未記入の件数から機械で出せて線がはっきりしており、作る費用も小さいので、手で書く文に頼らず決定論で担保するのがよいです。
+  - test_engine.py を ENGINE_REF の版で CI から走らせる配線がまだなので、D-0017・D-0021 の schema の担保は今も外れても何も止まらず、建設者の配線が入るまでは効いていないものとして扱ってください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0017 の解決策（issue 968）の
+    what に D-0021 の schema の案（Issue #987）も同じ差分で満たしたことと確かめた範囲を 1 文足し、README の時点の記述を直しただけなので、範囲は広すぎません。'
+  - D-0021 の schema の案（definitions/knowledge.yaml に wired・verified を足し、knowledge_check.py
+    に label() を移して「未配線」「deterministic（未確認）」を出す）は D-0017 の knowledge-enforcement.patch
+    の中身と同じなので、新しい解決策を足さずに既存の項目へ書き足す扱いは重複を避けていて妥当です。
+  - '確かめたのは手元の Engine の先頭（a7fae10）の写しだけで ENGINE_REF の版では確かめていないと書き、wired: false・verified:
+    false も変えていないので、記録より強く言っていません。'
+  - '反例として、D-0034 の schema の案が求める wired_by は D-0017 の差分に入っておらず、Engine の definitions/knowledge.yaml
+    が知らない項目を落とす作りなら、最初に wired: true と wired_by を書いた知見が Engine で落ちるので、Issue #987 で満たしたのは
+    D-0021 の案までで wired_by は別に残ると建設者が差分を当てるときに確かめてください。'
+  - README の「2026-11-07 の時点ですべての解決策に書いたのは K-0001・K-0004・K-0010」は K-0001・K-0010 の各解決策に
+    wired・verified があり、K-0002・K-0006・K-0009 にはないことと合っていますが、日付付きの列挙はまた古くなるので、次に K-0002・K-0006・K-0009
+    を直す変更セットで README も一緒に直してください。
+  - どの解決策も未配線・未確認のままなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/knowledge-enforcement-check/test_check.py に、README.md の「すべての解決策に
+    wired・verified を書いた知見」「未記入の解決策が残る知見」の id の一覧が、check.py が K-*.yaml から数えた結果と一致しなければ落ちるテストを足す（あるいは
+    README からこの一覧を外し、check.py の出力で示す）。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: ci/knowledge-enforcement.yml を .github/workflows/ に写すとき、test_engine.py
+    を ENGINE_REF の版の Engine で走らせる手順を必須チェックに入れ、knowledge-enforcement.patch が ENGINE_REF
+    に当たらないか足したテストが落ちれば PR を止める。
