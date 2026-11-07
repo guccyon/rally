@@ -157,6 +157,21 @@ enforcement:
       verified: false
     - kind: schema
       what: >-
+        議決 D-0016 の schema の案（D-0015 と同じ案を Engine の側で満たす）のうち、ワーカーの権限で入れられる分を入れた。同じ案の議決 D-0017（issue 968）の
+        tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が先に入ったので、Engine に当てる差分はそれ 1 本にまとめ、
+        この Issue では Engine の core-gates/tests/test_knowledge_check.py に足すテスト（wired・verified が真偽でないとき、wired でないのに verified が true の
+        ときに落ちること、INDEX.md の担保の列が wired の解決策がなければ「未配線」、wired かつ verified がなければ「deterministic（未確認）」になること）を
+        その差分に足した。tools/knowledge-enforcement-check/test_engine.py が、Engine（ENGINE_REF の版）の写しに差分を当てて足したテストが通ることも
+        確かめる（pytest があるとき。ci/knowledge-enforcement.yml で入れる）。差分を Engine に入れて knowledge-check.yml の ENGINE_REF を上げ INDEX.md を
+        作り直すことと、ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、INDEX.md の担保の列は今も deterministic のままで、
+        この解決策も未配線・未確認
+      issue: 965
+      at: 2026-11-07
+      decided_by: committee:D-0016
+      wired: false
+      verified: false
+    - kind: schema
+      what: >-
         議決 D-0017（D-0015・D-0016 と同じ schema の案）のうち、Engine の側の変更を差分にして入れた。tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が、
         Engine の definitions/knowledge.yaml の enforcement に solution_flags（wired・verified）と index_labels（未配線・deterministic（未確認）・deterministic）を足し、
         core-gates/knowledge_check.py に check.py の label() と同じ線の enforcement_label() を足して INDEX.md の担保の列をその値にし、
