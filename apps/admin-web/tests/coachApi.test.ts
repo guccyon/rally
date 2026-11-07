@@ -108,7 +108,7 @@ describe("coachApi", () => {
     expect(result).toEqual({
       ok: false,
       code: "slot_not_started",
-      message: "枠の開始時刻になるまで、ビデオ通話は始められません。",
+      message: "この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。",
     });
   });
 
