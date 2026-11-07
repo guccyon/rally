@@ -10,6 +10,7 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   slot_has_active_booking: "予約が入っている枠は取り下げられません。",
   slot_already_started: "始まった枠は取り下げられません。",
   slot_already_closed: "この枠はすでに取り下げられています。",
+  slot_not_started: "枠の開始時刻になるまで、ビデオ通話は始められません。",
   invalid_booking_state: "予約が確定していないか、キャンセルされています。",
   invalid_session_state: "この通話はすでに開始済みか、終了しています。",
   invalid_video_state: "この動画の添削はすでに返却済みです。",

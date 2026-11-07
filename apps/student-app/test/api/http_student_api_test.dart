@@ -933,6 +933,25 @@ void main() {
     expect(errorMessageOf(exception), '今月のビデオ通話の枠を使い切っています。');
   });
 
+  test('枠の開始より前の通話の開始（409 slot_not_started）は開始時刻を待つ文言にする', () async {
+    final api = apiReplying(409, {
+      'code': 'slot_not_started',
+      'message': 'before the slot starts',
+    });
+
+    final error = await api
+        .startLiveLessonSession(
+          const StartLiveLessonSessionRequest(bookingId: 'b1'),
+        )
+        .then<Object?>((_) => null, onError: (Object e) => e);
+
+    expect(
+      (error as StudentApiException).error!.code,
+      ErrorCode.slotNotStarted,
+    );
+    expect(errorMessageOf(error), 'ビデオ通話は予約の開始時刻から始められます。');
+  });
+
   test('知らない ErrorCode は汎用のエラーとして扱う', () async {
     final api = apiReplying(409, {'code': 'something_new', 'message': '...'});
 

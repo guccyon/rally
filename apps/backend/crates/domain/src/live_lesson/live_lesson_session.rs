@@ -42,6 +42,9 @@ impl LiveLessonSession {
     ///
     /// - 開始できるのは予約の生徒かコーチだけ（[`DomainError::NotASessionParticipant`]）
     /// - 確定した予約にしか開始できない（[`DomainError::BookingNotConfirmed`]）
+    /// - 予約したスロットの開始時刻より前には開始できない（[`DomainError::LiveLessonSessionBeforeSlotStart`]。開始時刻
+    ///   ちょうどからは開始できる）。完了したレッスンはセッションの終了の後にしか記録できないので、枠の開始より前に
+    ///   完了したレッスンはできない（Issue #899）
     /// - 同じ予約のセッションは 1 つ（[`DomainError::LiveLessonSessionAlreadyStarted`]。既存のグループレッスンの
     ///   セッションに入るのは [`LiveLessonSession::ensure_can_join`]）
     pub fn start(
@@ -58,6 +61,11 @@ impl LiveLessonSession {
         if booking.status() != BookingStatus::Confirmed {
             return Err(DomainError::BookingNotConfirmed {
                 status: booking.status(),
+            });
+        }
+        if now < booking.starts_at() {
+            return Err(DomainError::LiveLessonSessionBeforeSlotStart {
+                starts_at: booking.starts_at(),
             });
         }
         if existing.is_some_and(|session| session.links(booking.id())) {
@@ -465,6 +473,30 @@ mod tests {
             LiveLessonSession::start(SESSION, STUDENT, &cancelled, &[], None, at(600)),
             Err(DomainError::BookingNotConfirmed {
                 status: BookingStatus::Cancelled
+            })
+        );
+    }
+
+    #[test]
+    fn a_session_cannot_start_before_the_slot_starts() {
+        // 枠は 600 分から。1 分前は参加者のどちらからも断り、開始時刻ちょうどからは始められる（Issue #899）
+        let booking = confirmed();
+        for participant in [STUDENT, COACH] {
+            assert_eq!(
+                LiveLessonSession::start(SESSION, participant, &booking, &[], None, at(599)),
+                Err(DomainError::LiveLessonSessionBeforeSlotStart { starts_at: at(600) })
+            );
+            assert!(
+                LiveLessonSession::start(SESSION, participant, &booking, &[], None, at(600))
+                    .is_ok()
+            );
+        }
+        // 確定していない予約は、開始時刻より前でも状態の誤りを返す
+        let (pending, _) = pending();
+        assert_eq!(
+            LiveLessonSession::start(SESSION, STUDENT, &pending, &[], None, at(0)),
+            Err(DomainError::BookingNotConfirmed {
+                status: BookingStatus::Pending
             })
         );
     }

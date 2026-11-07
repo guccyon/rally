@@ -223,6 +223,7 @@ enum ErrorCode {
   liveLessonSessionEndedByHeadquarters(
     'live_lesson_session_ended_by_headquarters',
   ),
+  slotNotStarted('slot_not_started'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。
   unknown('');

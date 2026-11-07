@@ -43,6 +43,9 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
         DomainError::LiveLessonSessionAlreadyStarted => {
             "この予約の通話セッションはすでにある".to_string()
         }
+        DomainError::LiveLessonSessionBeforeSlotStart { .. } => {
+            "予約したスロットの開始時刻より前なので、通話を開始できない".to_string()
+        }
         DomainError::LiveLessonSessionAlreadyEnded => "通話セッションは終了済み".to_string(),
         DomainError::SessionEndsBeforeItStarts => "通話セッションの終了が開始より前".to_string(),
         DomainError::InvalidPacketLossRate => "パケット損失率は 0〜100（%）".to_string(),
@@ -243,6 +246,12 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionAlreadyStarted),
             "この予約の通話セッションはすでにある"
+        );
+        assert_eq!(
+            domain_error(&DomainError::LiveLessonSessionBeforeSlotStart {
+                starts_at: std::time::SystemTime::UNIX_EPOCH
+            }),
+            "予約したスロットの開始時刻より前なので、通話を開始できない"
         );
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionAlreadyEnded),
