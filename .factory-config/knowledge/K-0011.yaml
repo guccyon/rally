@@ -23,4 +23,22 @@ related: [K-0005]
 invalidate_when:
   - "judge のジョブの入力に、指摘が引く rubric_id の本文が添えられるようになった"
   - "rubric の本文を入力に持つ判定役でも、rubric にだけある要求を同じように決まりの外として退けた（原因は rubric の本文が渡らないことではなく、K-0005 の定義の分かれだけだった）"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        judge のジョブの入力を組む Engine の本物の処理（core-gates/judge.py の main）を、GitHub・git・エージェントを差し替えて動かし、
+        検査役の指摘が引くすべての rubric_id について、正本の rubric の本文（Engine の core-gates/rubric.yaml の check、
+        製品の overlay のルールの check.text）が入力に入っていることを確かめ、どれか 1 つでも欠けたら外れるテストにした
+        （tools/judge-input-check/。線は line.mjs、Engine の本物の組み立ては engine.test.mjs と engine_harness.py）。
+        C-0006 の指摘 7 件（仮決め 5 件と、PR-002・OV-001）を fixtures にした。今の Engine は core-gates/rubric.yaml だけから本文を引くので
+        PR-002 の本文は入るが OV-001 の本文は入らず、外れる。Engine が overlay の本文を 1 つも渡さない今の形のときだけ todo にしていて、
+        core の本文の欠けと overlay の本文の一部の欠けは落ちる。judge.py で overlay の本文も渡すことは建設者が Engine に入れ、
+        CI への組み込みもまだないので、効き目はまだ確かめていない
+      issue: 1054
+      at: 2026-11-07
+      decided_by: committee:D-0033
+      wired: false
+      verified: false
 decided_by: committee:D-0033
