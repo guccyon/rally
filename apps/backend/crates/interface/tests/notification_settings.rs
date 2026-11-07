@@ -305,6 +305,7 @@ async fn a_student_who_has_not_changed_anything_gets_every_kind_on() {
             "video_review_returned": true,
             "message_received": true,
             "announcement": true,
+            "booking_cancelled_by_headquarters": true,
         })
     );
     assert!(settings.all().is_empty(), "照会では保存しない");
@@ -319,7 +320,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
         &router,
         "PUT",
         Some(STUDENT),
-        Some(r#"{ "message_received": false, "announcement": false }"#),
+        Some(r#"{ "message_received": false, "announcement": false, "booking_cancelled_by_headquarters": false }"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -331,10 +332,11 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
             "video_review_returned": true,
             "message_received": false,
             "announcement": false,
+            "booking_cancelled_by_headquarters": false,
         })
     );
 
-    // 書かなかった種類（メッセージ・本部からのお知らせ）は今の設定のまま。空のオブジェクトは何も変えない
+    // 書かなかった種類（メッセージ・本部からのお知らせ・本部による予約のキャンセル）は今の設定のまま。空のオブジェクトは何も変えない
     let (status, body) = call(
         &router,
         "PUT",
@@ -354,6 +356,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
                 "video_review_returned": true,
                 "message_received": false,
                 "announcement": false,
+                "booking_cancelled_by_headquarters": false,
             })
         );
     }
@@ -364,7 +367,8 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
             [
                 NotificationKind::BookingConfirmed,
                 NotificationKind::MessageReceived,
-                NotificationKind::Announcement
+                NotificationKind::Announcement,
+                NotificationKind::BookingCancelledByHeadquarters
             ]
         )]
     );

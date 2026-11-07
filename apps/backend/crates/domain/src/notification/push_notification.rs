@@ -81,13 +81,13 @@ impl PushNotification {
     }
 
     /// 通知の種類（受け取り設定でオン / オフを決める単位）。予約の確定は生徒への知らせもコーチへの知らせも同じ種類。
-    /// 本部による予約のキャンセルも、予約についての知らせとして予約の確定と同じ種類（受け取り設定の項目を増やさない）。
+    /// 本部による予約のキャンセルは予約の確定とは別の種類（確定の通知を切っても、キャンセルの知らせは届く）。
     pub const fn kind(&self) -> NotificationKind {
         match *self {
             PushNotification::BookingConfirmed { .. }
-            | PushNotification::BookingReceived { .. }
-            | PushNotification::BookingCancelledByHeadquarters { .. } => {
-                NotificationKind::BookingConfirmed
+            | PushNotification::BookingReceived { .. } => NotificationKind::BookingConfirmed,
+            PushNotification::BookingCancelledByHeadquarters { .. } => {
+                NotificationKind::BookingCancelledByHeadquarters
             }
             PushNotification::VideoReviewRequested { .. } => NotificationKind::VideoReviewRequested,
             PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
@@ -141,14 +141,17 @@ mod tests {
     }
 
     #[test]
-    fn a_headquarters_cancel_goes_to_the_student_as_a_booking_notice() {
+    fn a_headquarters_cancel_goes_to_the_student_as_its_own_kind() {
         let notification = PushNotification::BookingCancelledByHeadquarters {
             student_id: STUDENT,
             coach_id: COACH,
             booking_id: BookingId::from_u128(3),
         };
         assert_eq!(notification.recipient(), STUDENT);
-        assert_eq!(notification.kind(), NotificationKind::BookingConfirmed);
+        assert_eq!(
+            notification.kind(),
+            NotificationKind::BookingCancelledByHeadquarters
+        );
         assert_eq!(notification.announcement_id(), None);
     }
 

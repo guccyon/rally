@@ -13,6 +13,7 @@ pub const fn notification_kind_value(kind: NotificationKind) -> &'static str {
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",
         NotificationKind::Announcement => "announcement",
+        NotificationKind::BookingCancelledByHeadquarters => "booking_cancelled_by_headquarters",
     }
 }
 

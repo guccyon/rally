@@ -5,7 +5,7 @@
 //! お知らせの種類（domain の `NotificationKind`）と契約の `NotificationKind` の値の対応と、プッシュ通知の中身から
 //! 本文（利用者に見せる文言）を決める対応はこのファイルだけに置く。本部からのお知らせの本文は、送った記録の題と本文を
 //! 改行でつないだもの。本部による予約のキャンセル（コーチのお休み）の本文は [`crate::coach_leave_text`] が決める（種類は
-//! 予約の通知 `booking_confirmed`）。
+//! `booking_cancelled_by_headquarters`）。
 
 use std::sync::Arc;
 
@@ -135,10 +135,12 @@ fn notification_body(mine: &MyNotification) -> Result<NotificationBody, ApiError
 }
 
 /// student-app・admin-web の `NotificationKind` の値（student-app の受け取り設定の項目名と同じ綴り）。各契約の enum には
-/// その利用者が受け取る種類だけを載せる（添削の依頼はコーチだけ、添削の返却と本部からのお知らせは生徒だけが受け取る）。
+/// その利用者が受け取る種類だけを載せる（添削の依頼はコーチだけ、添削の返却と本部からのお知らせと本部による予約の
+/// キャンセルは生徒だけが受け取る）。
 const fn notification_kind_to_contract(kind: NotificationKind) -> &'static str {
     match kind {
         NotificationKind::BookingConfirmed => "booking_confirmed",
+        NotificationKind::BookingCancelledByHeadquarters => "booking_cancelled_by_headquarters",
         NotificationKind::VideoReviewRequested => "video_review_requested",
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",

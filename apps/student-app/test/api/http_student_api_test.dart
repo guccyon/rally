@@ -701,6 +701,7 @@ void main() {
     final settings = {
       'student_id': 's1',
       'booking_confirmed': true,
+      'booking_cancelled_by_headquarters': true,
       'video_review_returned': true,
       'message_received': true,
       'announcement': true,
@@ -728,6 +729,7 @@ void main() {
     expect(jsonDecode(sent.single.body), {'video_review_returned': false});
     expect(updated.videoReviewReturned, isFalse);
     expect(updated.bookingConfirmed, isTrue);
+    expect(updated.bookingCancelledByHeadquarters, isTrue);
     expect(updated.messageReceived, isTrue);
   });
 
