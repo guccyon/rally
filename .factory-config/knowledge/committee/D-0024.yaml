@@ -1,0 +1,86 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0024
+pr: https://github.com/guccyon/rally/pull/1013
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0015・D-0016・D-0017・D-0021
+    で繰り返し出た schema の案のうち Engine の側の分を差分にして入れた記録を enforcement.solutions に 1 件足しただけなので、過去の議決と矛盾しません。
+  - 足した solution の中身（definitions/knowledge.yaml に wired・verified と表示の値を足し、core-gates/knowledge_check.py
+    に label() と同じ線の enforcement_label() を移す）は D-0021 の schema の案とそのまま同じで、issue 962
+    の solution（check.py の側）とは担う範囲が分かれているので、重複ではありません。
+  - 'kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と同じで、wired: false・verified:
+    false も「差分を当てて ENGINE_REF を上げるのは建設者」という what の文と合っています。'
+  - INDEX.md の担保の列が今も deterministic のままだという記述は README の決まりと INDEX.md の K-0004 の行の両方と合っていて、README
+    を直す必要もありません。
+  - decided_by を committee:D-0017 にしたのは what の書き方と合っていますが、同じ案を最も具体的に出したのは D-0021 なので、次に
+    K-0004 を直す変更セットで what に D-0021 も添えてください。
+  - Engine に差分はまだ当たっておらず効き目も確かめていないので、confidence は hypothesis のままが妥当で、D-0009 以降に先送りした
+    verified_at・review_by の更新などは次の変更セットでまとめてそろえてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した schema の solution は issue 968 と committee:D-0017 を指していて、D-0017 の schema の案（definitions/knowledge.yaml
+    に wired と verified を足し、core-gates/knowledge_check.py が INDEX.md に未配線・未確認を出す）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '差分を当てたのは test_engine.py の中の Engine の写しだけで、ENGINE_REF を上げることも .github/workflows/
+    への配線もまだで、INDEX.md は今も deterministic のままだと自分で書き、wired: false・verified: false としているので、記録の書き方は正直です。'
+  - 'confidence は hypothesis のままが妥当で、Engine に差分が入り INDEX.md で K-0004 が「未配線」と出て、sendback
+    の検査が PR #395 の流れで効くことを確かめるまでは confirmed に上げないでください。'
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、ラベルの名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0017 と D-0021 の schema
+    の案のうち Engine の側の分を差分（knowledge-enforcement.patch）と test_engine.py にして記録を 1 件足しただけなので、担保の観点では採ってよいです。
+  - 表示の線を check.py の label() と Engine の enforcement_label() の 2 か所に持つことになり、片方だけ変わると
+    INDEX.md と check.py の表示がずれるので、test_engine.py の一致の確認を、差分を当てたあとも CI で INDEX.md の担保の列と
+    check.py の表示を全件で照らす形で続けるべきです。
+  - 差分は ENGINE_REF の版に当てる前提なので、Engine の先頭が進んで差分が当たらなくなったことを建設者が当てるときまで気づけない痛さがあり、git
+    apply --check で当たるかを CI で見る担保が安く確かです。
+  - 'wired: false・verified: false と書き、INDEX.md の担保の列が今も deterministic のままだと自分で書いているのは事実と合っており、差分を当てて
+    ENGINE_REF を上げ --index を作り直すまでは効き目がないので、confidence は hypothesis のままが妥当です。'
+  - 'K-0004 の solutions は 11 件になり、どれも未配線のまま記録だけが積み重なっているので、D-0021 の wired_by の案（wired:
+    true には配線先の実在を照らす）と合わせて、建設者の配線が入ったときに wired・verified を機械で確かめて更新するべきです。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0017 の schema の案のうち
+    Engine の側の変更を差分にした記録を enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - '記録には差分を当てていないこと、INDEX.md の担保の列が今も deterministic であること、wired: false・verified:
+    false であることが書いてあり、担保が効いているように言い過ぎていません。'
+  - 反例として、Engine の main が ENGINE_REF より先に進んで core-gates/knowledge_check.py や definitions/knowledge.yaml
+    が変わると knowledge-enforcement.patch が当たらなくなり、test_engine.py は古い ENGINE_REF の写しで通り続けるので、建設者が差分を当てる前に今の
+    Engine で当たることを確かめてください。
+  - check.py の label() と Engine の enforcement_label() に同じ線が二つ置かれるので、Engine に入れたあとは
+    check.py の側を Engine を呼ぶ形にするか廃止して、片方だけ直されてずれる反例を残さないでください。
+  - K-0004 の solutions は 11 件になり配線待ちの記録が積み重なっているので、建設者の配線が入ったら効いたものと効いていないものを分けて整理することを勧めます。
+  - 差分を当てた Engine で INDEX.md の K-0004 が「未配線」と出ることも本物の CI で確かめていないので、confidence は hypothesis
+    のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: ci/knowledge-enforcement.yml に、knowledge/INDEX.md の担保の列と tools/knowledge-enforcement-check/check.py
+    の label() の表示を全知見で照らす手順を足し、ずれたら落とす（Engine に差分を当てて --index を作り直すまでは既知のずれとして todo
+    にし、ENGINE_REF を上げた版から必須にする）。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が
+    ENGINE_REF の版と Engine の既定のブランチの先頭に git apply --check で当たるかを定期（schedule）と PR ごとに確かめ、当たらなければ
+    ::error で落として issue 968 に知らせる。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: test_engine.py に、check.py の label() と差分を当てた Engine の enforcement_label()
+    へ同じ solutions の組（未記入・wired のみ・wired かつ verified・真偽でない値）を総当たりで渡し、すべての場合で同じ表示になることを確かめるテストを足す。
