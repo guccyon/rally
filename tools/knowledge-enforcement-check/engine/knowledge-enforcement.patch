@@ -65,6 +65,36 @@ index a4765dc..f70e1f1 100644
      if not rows:
          out.append("| — | | | | | | | | まだない |")
      return "\n".join(out) + "\n"
+diff --git a/core-gates/tests/test_knowledge_check.py b/core-gates/tests/test_knowledge_check.py
+index 9905c73..8b034c7 100644
+--- a/core-gates/tests/test_knowledge_check.py
++++ b/core-gates/tests/test_knowledge_check.py
+@@ -109,3 +109,25 @@ def test_index_must_be_regenerated_and_inventory_lists_stale(tmp_path, capsys):
+     capsys.readouterr()
+     kc.main(["--repo", str(r), "--inventory", "--today", "2027-02-01"])
+     assert '"K-0001"' in capsys.readouterr().out
++
++
++DET = GOOD + "enforcement:\n  level: deterministic\n  solutions:\n    - {kind: lint, what: UI 文言の禁止語, issue: 318%s}\n"
++
++
++def test_solution_flags_must_be_bool_and_verified_needs_wired(tmp_path):
++    rc, out = run(tmp_path, {"K-0001.yaml": DET % ", wired: \"true\", verified: false"})
++    assert rc == 1 and "wired は true か false" in out
++    (tmp_path / "d").mkdir()
++    rc, out = run(tmp_path / "d", {"K-0001.yaml": DET % ", wired: false, verified: true"})
++    assert rc == 1 and "wired でないのに verified が true" in out
++
++
++def test_index_label_does_not_show_unwired_as_deterministic(tmp_path):
++    for flags, want in [("", "未配線"), (", wired: false, verified: false", "未配線"),
++                        (", wired: true, verified: false", "deterministic（未確認）"), (", wired: true, verified: true", "| deterministic |")]:
++        d = tmp_path / str(abs(hash(flags)))
++        d.mkdir()
++        rc, out = run(d, {"K-0001.yaml": DET % flags})
++        assert rc == 0, out
++        assert want in (d / kc.ROOT / "INDEX.md").read_text(encoding="utf-8")
++    assert kc.enforcement_label({"enforcement": {"level": "checklist"}}) == "checklist" and kc.enforcement_label({}) == "context"
 diff --git a/definitions/knowledge.yaml b/definitions/knowledge.yaml
 index 3af45dc..873810c 100644
 --- a/definitions/knowledge.yaml

@@ -1,7 +1,8 @@
-"""Engine の knowledge_check.py に担保の表示を移す差分のテスト（議決 D-0017、Issue #968）。
+"""Engine の knowledge_check.py に担保の表示を移す差分のテスト（議決 D-0016・D-0017、Issue #965・#968）。
 
 engine/knowledge-enforcement.patch を Engine のチェックアウトの写しに当て、INDEX.md の担保の列と solutions の真偽の検査が
-check.py と同じ線になることを確かめる。Engine がもう差分を取り込んでいれば（enforcement_label がある）当てずにそのまま確かめる。
+check.py と同じ線になること、差分で Engine の core-gates/tests/test_knowledge_check.py に足したテストが通ること（pytest があるとき）を
+確かめる。Engine がもう差分を取り込んでいれば（enforcement_label がある）当てずにそのまま確かめる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
 
@@ -13,6 +14,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import date
@@ -21,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
-FILES = ("core-gates/knowledge_check.py", "definitions/knowledge.yaml")
+FILES = ("core-gates/knowledge_check.py", "definitions/knowledge.yaml", "core-gates/tests/test_knowledge_check.py")
 
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_e", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
@@ -103,6 +105,12 @@ class EnginePatchTest(unittest.TestCase):
         self.assertEqual(enf["index_labels"], {"unwired": check.UNWIRED, "unverified": check.UNVERIFIED, "deterministic": "deterministic"})
         self.assertEqual(sorted(enf["solution_flags"]), sorted(self.kc.SOLUTION_FLAGS))
         self.assertEqual((self.kc.UNWIRED, self.kc.UNVERIFIED), (check.UNWIRED, check.UNVERIFIED))
+
+    def test_Engine_に足したテストが通る(self):
+        if importlib.util.find_spec("pytest") is None:
+            self.skipTest("pytest がない")
+        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", FILES[2]], cwd=self.dir, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
 if __name__ == "__main__":
