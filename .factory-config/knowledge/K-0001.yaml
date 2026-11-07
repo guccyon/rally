@@ -73,4 +73,24 @@ enforcement:
       decided_by: committee:D-0019
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0032（Issue #1037 の起票時の番号は D-0030。PR #1036）の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて
+        ENGINE_REF を上げ、同じ変更で ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにし、関所を呼ばない Engine で
+        engine.test.mjs の (3) が落ちることと、本物の続きのジョブで外れた本文が書かれず body_fix が積まれたことを記録してから wired と verified を true にする）のうち、
+        ワーカーの権限で入れられる分を入れた。tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）が、ひな形と写しで、on が絞り込みのない
+        pull_request だけで if:・continue-on-error・needs がなく、ENGINE_REF がワークフローの env に 40 桁の SHA で 1 行だけあり Engine を取る ref がそれを使い、
+        テストの手順が ENGINE_DIR を渡して道を渡さずに node --test で全部走らせ exit $rc で落ちることを見て、21 の直しで外れることを確かめた。
+        ENGINE_REF が tools/sendback-check/ci/sendback-engine.yml と同じ版か、写しが ENGINE_REF の行のほかでひな形とずれていないかも見る。
+        sendback-engine.yml にも engine-test のジョブがあり、同じ名前では必須のチェックがどちらの報告でも満たされるので、ひな形の engine-test に
+        name: pr-body-engine-test を付けた。tools/pr-body-check/protection.mjs が gh api の branch protection（古い形か rulesets）の JSON を読み、
+        写しがない（workflow_not_copied）・チェックの名前が違う（check_name_changed）・必須にない（required_check_missing）・ほかのジョブも同じ名前を
+        報告する（check_name_shared）で落とすことを protection.test.mjs で確かめた。手元の Engine（2490db6）では (3) が落ち、差分を当てた写しでは
+        npm test が全部通ることを確かめたが、今の ENGINE_REF（9fee9c2）の版は手元になく走らせていない。差分を Engine に入れること・写すこと・必須にすること・
+        本物の続きのジョブでの記録は建設者が行うので（README の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1037
+      at: 2026-11-07
+      decided_by: committee:D-0032
+      wired: false
+      verified: false
 decided_by: committee:D-0001

@@ -1,6 +1,6 @@
 # PR 本文の見出しの検査
 
-PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。
+PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。
 
 続きのジョブ（衝突の解消・CI 落ちの直しなど）の報告が、新しい PR と同じ見出しの組（`## 概要`・`## 対応内容` など）のまま本文の末尾に足されると、同じ見出しが 2 回出る。これを検査役（LLM）と判定役まで流さず、本文を更新した直後に止めるためのもの。差し戻しの直しで本文の末尾に追記するだけだと、見出しの順が崩れたり必須の見出しが欠けたりする（K-0006）ので、それも見る。
 
@@ -10,7 +10,7 @@ gh pr view <番号> --json body --jq .body | node check.mjs     # --body を省�
 npm test
 ```
 
-依存はない（Node.js だけ。`engine.test.mjs` は bash・jq・git・Python 3 と Engine のチェックアウトも使う）。
+依存はない（Node.js だけ。`engine.test.mjs` は bash・jq・git・Python 3 と Engine のチェックアウトも使う。`protection.mjs` は branch protection の JSON の読み方を `tools/sendback-check/protection.mjs` から使う）。
 
 ## 見ること
 
@@ -56,7 +56,7 @@ printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL
 
 ## テスト
 
-`npm test` で 3 つを走らせる。
+`npm test` で 5 つを走らせる。
 
 - `check.test.mjs`: 見出しの検査（`check.mjs`）
 - `gate.test.mjs`: 関所。事例 `C-0005`（PR #659）の 21 回の追記（conflict が 20 回、ci_failed が 1 回。どれも新しい PR と同じ `## 概要`・`## 対応内容`・`## 動作確認` を持つ summary）と同じ入力で落ち、1 回目の追記でもう落ちることを確かめる。入力は `c0005.mjs` が組む（本文そのものは記録にないので、事例に書かれた形を組み直したもの）
@@ -71,6 +71,8 @@ printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL
   - (7) 4000 字を超える報告も切らずに、引き継ぎの `body_gate.json` と body_fix の指摘に全文が渡る
   - (8) 未完了の続きが仕上がった回（`CONTINUE_REASON=incomplete`・`INCOMPLETE` が空）に関所で外れても、報告を足さない本文で仕上げ（未完了の印を消す・`Refs` を `Closes` に直す・題を戻す・ドラフトを外す）だけは済ませ、`finished.applied` を true で残す。報告は body_fix に回し、人には回さない
   - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
+- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形（下の「配線の手順（建設者）」）
+- `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh
@@ -116,4 +118,40 @@ Engine は別のリポジトリなので、次は建設者が入れる。その�
 - `dispatcher.py`: 続きのジョブの結果に `body_gate` があれば `act_on_body_gate` を呼ぶ。`rc` 1 は判定役を待たずに `enqueue_body_fix` で body_fix を積み、書かなかった報告を切らずに全文で、引き継ぎの場所を添えて「PR 本文 末尾」の指摘として渡す。`rc` 2・3 は停止（`body_gate:<PR の URL>`、human）を開く。仕上げを書けなかった（`finished.applied` が false）ときは、body_fix では行を消したりドラフトを外したりできないので、停止（`body_gate_finish:<PR の URL>`、human）を開いてやることを待ち事項に書く。どちらも `pr.body_gate_blocked` を残す
 - `definitions/events.yaml`: `pr.body_gate_blocked` を足す
 
-`ci/pr-body-engine.yml` は、Engine を固定の版で取って `ENGINE_DIR` を向け、このディレクトリのテストを PR ごとに走らせる CI。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/pr-body-engine.yml` に写し、`engine-test` をブランチ保護の必須チェックにする（議決 `D-0019`）。(3) に `todo` がないので、関所を呼ばない Engine の版（今の `ENGINE_REF`）のままだと落ちる。差分を Engine に入れて `ENGINE_REF` を上げるのと同じ PR で写す。この CI では PR 本文そのものは見ない（落ちると `ci_failed` の続きのジョブが積まれ、その summary がまた本文に足されて、この知見の形を増やすため）。本文は上の「マージ前の必須チェック」で見るが、同じ理由で、そのチェックが落ちたときは `ci_failed` の続きのジョブを積まず、関所と同じく body_fix に回す（建設者が Engine の dispatcher で分ける）。
+`ci/pr-body-engine.yml` は、Engine を固定の版で取って `ENGINE_DIR` を向け、このディレクトリのテストを PR ごとに走らせる CI。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/pr-body-engine.yml` に写し、`engine-test`（チェックの名前は `pr-body-engine-test`）をブランチ保護の必須チェックにする（議決 `D-0019`。手順と見張りは下の「配線の手順（建設者）」）。(3) に `todo` がないので、関所を呼ばない Engine の版（今の `ENGINE_REF`）のままだと落ちる。差分を Engine に入れて `ENGINE_REF` を上げるのと同じ PR で写す。この CI では PR 本文そのものは見ない（落ちると `ci_failed` の続きのジョブが積まれ、その summary がまた本文に足されて、この知見の形を増やすため）。本文は上の「マージ前の必須チェック」で見るが、同じ理由で、そのチェックが落ちたときは `ci_failed` の続きのジョブを積まず、関所と同じく body_fix に回す（建設者が Engine の dispatcher で分ける）。
+
+## 配線の手順（建設者）
+
+議決 `D-0032`（Issue #1037）の案。Engine に差分を入れて `ENGINE_REF` を上げ、同じ PR で `ci/pr-body-engine.yml` を `.github/workflows/pr-body-engine.yml` に写して、`engine-test` のジョブを必須のチェックにする。ワーカーの権限で入れたのは、その配線が効く形かの見張り（`ci.test.mjs`）と、必須になったかの照合（`protection.mjs`）まで。
+
+`ci.test.mjs`（`engine-test` の `node --test` の中で走る）が、ひな形と写しで次を見て、外れたら落とす。
+
+- `on` が絞り込みのない `pull_request` だけ（`paths`・`paths-ignore`・`branches`・`types` は中身を問わず外れ）。`if:`・`continue-on-error`・`engine-test` の `needs` がない
+- `ENGINE_REF` がワークフローの `env` に 40 桁のコミット SHA で 1 行だけあり（ジョブや手順の `env`・`GITHUB_ENV` で上書きしない）、Engine を取る手順の `ref` が `${{ env.ENGINE_REF }}`
+- テストの手順が `tools/pr-body-check` で `ENGINE_DIR` を渡し、道を渡さずに `node --test` で全部のテストを走らせ、`exit $rc` で落ちる
+- `engine-test` の `name:` が `pr-body-engine-test`。`tools/sendback-check/ci/sendback-engine.yml` にも `engine-test` のジョブがあるので、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらない
+- ひな形の `ENGINE_REF` が `tools/sendback-check/ci/sendback-engine.yml` と同じ版。写しがあれば、`ENGINE_REF` の行のほかがひな形と同じで、`.github/workflows/sendback-engine.yml` の写しとも同じ版。GitHub Actions で写しがなければ落ちる
+
+`protection.mjs` は、`gh api` で取り出した branch protection（古い形か rulesets）の JSON を読み、写しの `engine-test` が報告するチェックの名前（`pr-body-engine-test`）が必須のチェックにあるかを照らす。branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせず建設者が走らせる。
+
+```sh
+gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # か gh api repos/{owner}/{repo}/rules/branches/main
+node tools/pr-body-check/protection.mjs --protection protection.json      # リポジトリの根から
+```
+
+| rule | 外れる形 |
+|---|---|
+| `workflow_not_copied` | `.github/workflows/pr-body-engine.yml` がないか、`engine-test` のジョブがない |
+| `check_name_changed` | `engine-test` のチェックの名前が `pr-body-engine-test` でない |
+| `required_check_missing` | そのチェックの名前が必須のチェックにない（`engine-test` の id だけを必須にしても外れる） |
+| `check_name_shared` | `.github/workflows/` のほかのジョブも同じチェックの名前を報告する |
+
+終了コードは 0 = 通る、1 = 外れた、2 = 読めなかった。今のリポジトリには写しがないので `workflow_not_copied` で落ちる。
+
+順序:
+
+1. 写す前に、今の `ENGINE_REF`（関所を呼ばない Engine）を `ENGINE_DIR` にして `engine.test.mjs` の (3) が落ちることを記録する（`CI=true ENGINE_DIR=<Engine> node --test engine.test.mjs`）
+2. `engine/pr-body-gate.patch` を Engine に入れ、`ENGINE_REF` をその版に上げる（`ci/pr-body-engine.yml` と `tools/sendback-check/ci/sendback-engine.yml` の両方。どちらのテストも通る版にする）。同じ PR で `ci/pr-body-engine.yml` を写し、`pr-body-engine-test` が通ることを確かめる
+3. `pr-body-engine-test` を必須のチェックにし、`protection.mjs` が 0 で終わることを記録する
+4. 本物の続きのジョブで、関所に外れた本文が書かれず（`pr.body_gate_blocked`）、body_fix が積まれた（`job.enqueued`）ことを記録する
+5. 1〜4 の記録を Issue #1037 に残してから、知見 `K-0001` のこの解決策の `wired` を `true`（`wired_by` に `.github/workflows/pr-body-engine.yml`・`engine-test`・`tools/pr-body-check/engine.test.mjs`）に、`verified` を `true` にする
