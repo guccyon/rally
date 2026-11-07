@@ -1,0 +1,11 @@
+{
+  "source": "事例 C-0006（PR #821、case.analyzed:370935）の記録を組み直したもの。時刻は事例に書かれたとおり。head の SHA と body_fix の積まれた時刻は記録にないので置き換えた（head は c0006-head、body_fix の job.enqueued は検査役の指摘の後・承認の前に置いた）",
+  "events": [
+    { "name": "supervisor.judge_enqueued", "at": "14:23:16", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/821", "head_sha": "c0006-head" } },
+    { "name": "job.enqueued", "job_id": 4299, "payload": { "by": "judge", "kind": "body_fix", "pr_url": "https://github.com/guccyon/rally/pull/821" } },
+    { "name": "supervisor.inspector_approved", "at": "14:25:02", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/821", "head_sha": "c0006-head", "basis": "judge が 7 件を裁いた" } },
+    { "name": "job.finished", "job_id": 4299, "at": "14:25:04", "payload": { "state": "succeeded" } },
+    { "name": "pr.body_amended", "job_id": 4299, "at": "14:25:04", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/821", "defects": 1 } },
+    { "name": "supervisor.merged", "at": "14:25:06", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/821", "head_sha": "c0006-head" } }
+  ]
+}

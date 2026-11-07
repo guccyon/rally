@@ -1,0 +1,11 @@
+{
+  "source": "事例 C-0005（PR #659、case.analyzed:274379）の記録を組み直したもの。merged（20:08:43）と body_fix 3308 の終わり（20:08:50）の時刻は事例に書かれたとおり。head の SHA と body_fix の積まれた時刻は記録にないので置き換えた（head は c0005-head）",
+  "events": [
+    { "name": "supervisor.judge_enqueued", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/659", "head_sha": "c0005-head" } },
+    { "name": "job.enqueued", "job_id": 3308, "payload": { "by": "judge", "kind": "body_fix", "pr_url": "https://github.com/guccyon/rally/pull/659" } },
+    { "name": "supervisor.inspector_approved", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/659", "head_sha": "c0005-head", "basis": "judge が裁いた" } },
+    { "name": "supervisor.merged", "at": "20:08:43", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/659", "head_sha": "c0005-head" } },
+    { "name": "job.finished", "job_id": 3308, "at": "20:08:50", "payload": { "state": "succeeded" } },
+    { "name": "pr.body_amended", "job_id": 3308, "at": "20:08:50", "payload": { "pr_url": "https://github.com/guccyon/rally/pull/659", "defects": 1 } }
+  ]
+}

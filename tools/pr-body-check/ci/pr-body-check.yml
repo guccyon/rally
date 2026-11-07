@@ -1,0 +1,32 @@
+# PR 本文の見出しの検査（tools/pr-body-check/check.mjs）を、マージ前の必須チェックにする（知見 K-0006・K-0012 の担保。議決 D-0006・D-0033、Issue #906・#1052）。決定論（LLM を使わない）。
+# head_sha の変わらない本文だけの直し（body_fix の pr.body_amended。gh pr edit で本文を書くと pull_request の edited が起きる）でも走るよう、edited でも起動する。
+# 本文は github.event.pull_request.body を環境変数で受けて標準入力に渡す（${{ }} で run に直接埋めない）。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-check.yml に写し、pr-body-check をブランチ保護の必須チェックにする。
+# Engine の supervisor は、body_fix が終わったあとにこのチェックが通ったことを pr.body_checked に残し、merge-gate.mjs が通ってから supervisor.merged を出す（README の「マージの前の関所」）。
+# このチェックが落ちたときは ci_failed の続きのジョブを積まず、body_fix に回す（続きのジョブの summary がまた本文に足されて K-0001 の形を増やすため）。
+name: pr-body-check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-body-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body-check:
+    name: pr-body-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PR 本文の見出しを照らす
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$BODY" | node tools/pr-body-check/check.mjs

@@ -24,3 +24,21 @@ invalidate_when:
   - "supervisor.merged が、採用した PR 本文の指摘を直す body_fix の終わりと、直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
   - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった"
 decided_by: committee:D-0033
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: ci_check
+      what: >-
+        議決 D-0033 の ci_check の案（Issue #1052 の起票時の番号は D-0032）を入れた。tools/pr-body-check/merge-gate.mjs が、PR の制御プレーンのイベント列から、
+        その PR の body_fix のジョブ（job.enqueued の kind: body_fix と、job_id で結んだ job.finished・pr.body_amended・pr.body_amend_failed）がすべて終わり、
+        最後の body_fix が終わったあとにマージする head の本文の再検査（pr.body_checked、または今の本文を --body で渡して check.mjs で照らしたもの）が通るまで、
+        終了コード 1（body_fix_running・body_fix_failed・body_not_rechecked・body_check_failed）でマージを止める関所。--audit は過去の supervisor.merged ごとに
+        直前までの列で関所を引いて見直す。C-0006（inspector_approved 14:25:02、body_amended 14:25:04、merged 14:25:06）と C-0005（body_fix 3308 の終わり 20:08:50 より前の
+        merged 20:08:43）の記録を tools/pr-body-check/fixtures/ にし、merge-gate.test.mjs でどちらもマージが止まることと、再検査が通れば止めないことを確かめた。
+        K-0006 の check.mjs を pull_request の edited でも起動させる必須チェックのひな形 tools/pr-body-check/ci/pr-body-check.yml も置いた。
+        .github/workflows/ への写しと必須のチェック、Engine の supervisor が merge-gate.mjs を呼ぶことと pr.body_checked を残すことは建設者が行うので、未配線・未確認
+      issue: 1052
+      at: 2026-11-07
+      decided_by: committee:D-0033
+      wired: false
+      verified: false
