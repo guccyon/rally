@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # Engine の固定した版（40 桁のコミット SHA）。engine/knowledge-enforcement.patch がこの版に当たり、担保の表示が check.py と同じ線になるかを
+  # test_engine.py で確かめる（議決 D-0017、Issue #968）。knowledge-check.yml の ENGINE_REF と同じ版にそろえる
+  ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
+
 concurrency:
   group: knowledge-enforcement-${{ github.ref }}
   cancel-in-progress: true
@@ -30,7 +35,14 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 検査のテスト
+      - uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - name: 検査のテスト（Engine に移す差分のテストを含む）
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
         run: |
           python3 -m pip install --quiet pyyaml
           python3 -m unittest discover -s tools/knowledge-enforcement-check

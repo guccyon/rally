@@ -1,0 +1,87 @@
+diff --git a/core-gates/knowledge_check.py b/core-gates/knowledge_check.py
+index a4765dc..f70e1f1 100644
+--- a/core-gates/knowledge_check.py
++++ b/core-gates/knowledge_check.py
+@@ -6,7 +6,9 @@
+   - 期限: review_by が確かさの既定の日数（仮説 30 日・確認済み 90 日）を超えていない。settled は期限なしでよいが、担保（enforcement.solutions）か規範（evidence の spec）が要る
+   - 参照: supersedes と superseded_by が両側にある、置き換えられた知見が active のまま残っていない、evidence の case が cases/ にある
+   - 個人情報: 知見・事例記録・議決の全文に、メール・電話番号・利用者 ID の形（UUID）・カード番号・IP アドレス・秘密情報の形がない
+-  - 一覧: INDEX.md が中身から作った一覧と一致する（--index で作り直す）
++  - 担保: enforcement.solutions の wired・verified は真偽で、wired でないのに verified にしない
++  - 一覧: INDEX.md が中身から作った一覧と一致する（--index で作り直す）。担保の列は deterministic でも、配線済み（wired）の解決策がなければ
++    「未配線」、配線済みで効き目を確かめた（verified）解決策がなければ「deterministic（未確認）」と出す
+ 
+ 製品の CI は Engine の固定した版のこのファイルだけを取って動かすので、値はここに持つ（正本は definitions/knowledge.yaml）。
+ 
+@@ -37,6 +39,8 @@ STATUSES = ["draft", "active", "stale", "superseded", "retired"]
+ EVIDENCE_KINDS = ["case", "pr", "issue", "session", "event", "spec", "restricted"]
+ LEVELS = ["context", "checklist", "deterministic"]
+ SOLUTION_KINDS = ["lint", "test", "type", "schema", "ci_check", "config", "overlay_rule"]
++SOLUTION_FLAGS = ["wired", "verified"]   # 書いていなければ false として数える
++UNWIRED, UNVERIFIED = "未配線", "deterministic（未確認）"
+ CONFIDENTIALITY = ["product", "client", "public"]
+ ID_RE = re.compile(r"^K-\d{4,}$")
+ CASE_RE = re.compile(r"^C-\d{4,}$")
+@@ -153,6 +157,12 @@ def check_item(k: dict, cases: set[str], decisions: set[str]) -> list[str]:
+         for s in enf.get("solutions") or []:
+             if not isinstance(s, dict) or s.get("kind") not in SOLUTION_KINDS or not s.get("what"):
+                 e.append(f"{f}: enforcement.solutions の各項目は kind（{SOLUTION_KINDS}）と what が要る")
++                continue
++            for flag in SOLUTION_FLAGS:
++                if flag in s and not isinstance(s[flag], bool):
++                    e.append(f"{f}: enforcement.solutions の {flag} は true か false（{s[flag]!r}）")
++            if s.get("verified") is True and s.get("wired") is not True:
++                e.append(f"{f}: enforcement.solutions で wired でないのに verified が true（配線してから本物の記録で確かめる）")
+     if conf == "settled":
+         has_solution = enf.get("level") == "deterministic" and enf.get("solutions")
+         has_norm = any(isinstance(ev, dict) and "spec" in ev for ev in k.get("evidence") or [])
+@@ -207,6 +217,20 @@ def check_pii(repo: Path) -> list[str]:
+     return e
+ 
+ 
++def enforcement_label(k: dict) -> str:
++    """INDEX.md の担保の列。deterministic でも、配線済み（wired）の解決策がなければ未配線、配線済みで効き目を確かめた（verified）ものがなければ未確認"""
++    enf = k.get("enforcement") or {}
++    level = enf.get("level", "context") if isinstance(enf, dict) else "context"
++    if level != "deterministic":
++        return str(level)
++    sols = [s for s in enf.get("solutions") or [] if isinstance(s, dict)]
++    if not any(s.get("wired") is True for s in sols):
++        return UNWIRED
++    if not any(s.get("wired") is True and s.get("verified") is True for s in sols):
++        return UNVERIFIED
++    return "deterministic"
++
++
+ def index_md(items: list[dict], today: date) -> str:
+     rows = sorted(items, key=lambda k: (k.get("theme") or 0, str(k.get("id"))))
+     out = ["# 知見の一覧（自動生成。手で編集しない）", "", "core-gates/knowledge_check.py --index で作り直す。期限は review_by。", "",
+@@ -216,7 +240,7 @@ def index_md(items: list[dict], today: date) -> str:
+         due = f"{review}{'（過ぎた）' if review and review < today and k.get('status') == 'active' else ''}" if review else "—"
+         stmt = " ".join(str(k.get("statement") or "").split())[:80]
+         out.append(f"| {k.get('id')} | {k.get('theme')} | {k.get('kind')} | {k.get('confidence')} | {k.get('status')} | "
+-                   f"{(k.get('enforcement') or {}).get('level', 'context')} | {k.get('verified_at')} | {due} | {stmt} |")
++                   f"{enforcement_label(k)} | {k.get('verified_at')} | {due} | {stmt} |")
+     if not rows:
+         out.append("| — | | | | | | | | まだない |")
+     return "\n".join(out) + "\n"
+diff --git a/definitions/knowledge.yaml b/definitions/knowledge.yaml
+index 3af45dc..873810c 100644
+--- a/definitions/knowledge.yaml
++++ b/definitions/knowledge.yaml
+@@ -37,6 +37,15 @@ knowledge:
+     levels: [context, checklist, deterministic]
+     solution_kinds: [lint, test, type, schema, ci_check, config, overlay_rule]
+     note: "決定論で担保しても知見は消さず、どの解決策で担保したかを solutions に残す（Issue・PR・時期・議決）"
++    # 解決策の各項目の真偽（議決 D-0015・D-0016・D-0017）。書いていなければ false として数える。wired でないのに verified にはできない
++    solution_flags:
++      wired: "CI（.github/workflows/）や Engine の呼び出しから実際に走るか。ひな形を置いただけ、テストを書いただけは false"
++      verified: "本物の記録（実際の PR やイベント列）で、外れたときに落ちる・正しいときに通ることを確かめたか"
++    # INDEX.md の担保の列（core-gates/knowledge_check.py の enforcement_label）。deterministic でも配線・確認が済むまでそうは出さない
++    index_labels:
++      unwired: "未配線"                    # deterministic で、wired: true の解決策が 1 件もない（解決策がない場合も）
++      unverified: "deterministic（未確認）"  # wired: true はあるが、wired かつ verified の解決策が 1 件もない
++      deterministic: "deterministic"       # wired かつ verified の解決策が 1 件以上
+   confidentiality: [product, client, public]
+ 
+ # エージェントに渡す知見（2026-10-31 オーナー）
