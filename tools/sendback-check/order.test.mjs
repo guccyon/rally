@@ -1,4 +1,4 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。TAP のないまま通さないのは議決 D-0029、Issue #1026）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, loadRepo, parseTapReport, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, loadRepo, parseTapReport, REPO_ROOT, runsEngineTest, runsOrderWithReport, todoLines }
+  from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -179,7 +180,7 @@ test("CLI: order.mjs --repo は外れたら終了コード 1 で ::error と要�
   assert.match(readFileSync(summary, "utf8"), /外れた `engine_test_todo`/);
 
   const good = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
-  assert.equal(spawnSync("node", [orderScript, "--repo", good], { encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync("node", [orderScript, "--repo", good, "--engine-report-elsewhere"], { encoding: "utf8" }).status, 0);
   assert.equal(spawnSync("node", [orderScript], { encoding: "utf8" }).status, 0);   // 今のリポジトリはまだ配線していない
 });
 
@@ -192,7 +193,7 @@ test("CLI: order.mjs --repo は npm scripts とラッパーのスクリプトを
     assert.match(r.stdout, /^engine_test_todo: /m, name);
     assert.match(r.stdout, /^engine_test_not_wired: /m, name);
     const good = fixture({ "sendback-engine.yml": template, "sendback-check.yml": WRAPPED_WORKFLOWS[name] }, ENGINE_TEST_FIXED, files);
-    assert.equal(spawnSync("node", [orderScript, "--repo", good], { encoding: "utf8" }).status, 0, name);
+    assert.equal(spawnSync("node", [orderScript, "--repo", good, "--engine-report-elsewhere"], { encoding: "utf8" }).status, 0, name);
   }
   // ラッパーがなければ（読めなければ）、--events を中に入れた npm scripts は名前からは --events を呼ぶと分からない
   const noScripts = fixture({ "sendback-check.yml": WRAPPED_WORKFLOWS["--events を中に入れた npm scripts"] }, engineTestNow);
@@ -293,7 +294,7 @@ test("(3) と (c) が通った結果なら落ちず、check.mjs --events を配�
   assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), engineReport: "" }), { wired: [], errors: [] });
 });
 
-test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) が todo なら終了コード 1、ファイルがなければ結果にないとして見る", () => {
+test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) が todo なら終了コード 1、ファイルがなければ engine_report_missing", () => {
   const root = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
   const runOrder = (report) => spawnSync("node", [orderScript, "--repo", root, "--engine-report", report],
     { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
@@ -305,7 +306,8 @@ test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) �
   assert.equal(runOrder(join(root, "fixed.tap")).status, 0);
   const none = runOrder(join(root, "none.tap"));
   assert.equal(none.status, 1);
-  assert.match(none.stdout, /結果にない/);
+  assert.match(none.stdout, /^::error title=sendback-check engine_report_missing::.*TAP のファイル（.*none\.tap）が存在しない/m);
+  assert.doesNotMatch(none.stdout, /engine_basis_not_passed/);
   // 今のリポジトリ（まだ配線していない）では、結果のファイルがなくても通る
   assert.equal(spawnSync("node", [orderScript, "--engine-report", join(root, "none.tap")], { encoding: "utf8" }).status, 0);
 });
@@ -378,7 +380,8 @@ test("同じワークフローで check.mjs --events のジョブが engine.test
 });
 
 test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、continue-on-error を付けた engine.test.mjs で終了コード 1 を返す", () => {
-  const run = (root) => spawnSync("node", [orderScript, "--repo", root], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  const run = (root) => spawnSync("node", [orderScript, "--repo", root, "--engine-report-elsewhere"], { env: { ...process.env, GITHUB_ACTIONS: "true" },
+    encoding: "utf8" });
   const unwaited = run(fixture({ "sendback-engine.yml": sameWorkflow(null) }, ENGINE_TEST_FIXED));
   assert.equal(unwaited.status, 1);
   assert.match(unwaited.stdout, /^::error title=sendback-check engine_test_not_required::/m);
@@ -387,4 +390,67 @@ test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、conti
   assert.equal(ungated.status, 1);
   assert.match(ungated.stdout, /^::error title=sendback-check engine_test_not_wired::/m);
   assert.equal(run(fixture({ "sendback-engine.yml": sameWorkflow() }, ENGINE_TEST_FIXED)).status, 0);
+});
+
+// --engine-report が渡されていないか TAP のファイルが空・存在しないまま通さない（議決 D-0029、Issue #1026）
+
+test("check.mjs --events を配線したのに TAP がない（渡されていない・存在しない・空）と engine_report_missing で落ちる", () => {
+  const order = (opts) => checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, requireEngineReport: "here", ...opts });
+  const notPassed = order({});
+  assert.deepEqual(rules(notPassed), ["engine_report_missing"]);
+  assert.match(notPassed.errors[0].message, /--engine-report が渡されていない/);
+  const absent = order({ engineReport: null, engineReportPath: "engine-test.tap" });
+  assert.deepEqual(rules(absent), ["engine_report_missing"]);
+  assert.match(absent.errors[0].message, /TAP のファイル（engine-test\.tap）が存在しない/);
+  for (const empty of ["", "\n  \n"]) {
+    const r = order({ engineReport: empty, engineReportPath: "engine-test.tap" });
+    assert.deepEqual(rules(r), ["engine_report_missing"], JSON.stringify(empty));
+    assert.match(r.errors[0].message, /TAP のファイル（engine-test\.tap）が空/);
+  }
+  // TAP があれば中身で見る（通れば通り、todo なら engine_basis_not_passed）
+  assert.deepEqual(rules(order({ engineReport: tap() })), []);
+  assert.deepEqual(rules(order({ engineReport: tap({ basis: LEGACY_TODO }) })), ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  // 配線していなければ TAP がなくても通る（今のリポジトリ）
+  assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), requireEngineReport: "here" }), { wired: [], errors: [] });
+  // 求めないとき（check.mjs の main からの見張り）は今までどおり
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED })), []);
+});
+
+test("--engine-report-elsewhere では、order.mjs --engine-report を飛ばさずに呼ぶ手順が .github/workflows/ にないと engine_report_missing で落ちる", () => {
+  const order = (workflows) => rules(checkOrder({ workflows, engineTest: ENGINE_TEST_FIXED, requireEngineReport: "elsewhere" }));
+  assert.ok(runsOrderWithReport(template));
+  assert.deepEqual(order(WIRED), []);
+  // engine-test の手順から --engine-report を外す・TAP の道を渡さない・手順かジョブを飛ばせるようにすると、Engine の結果を見る手順がない
+  const withoutReport = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs ");
+  const noPath = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs --engine-report --summary x ");
+  assert.notEqual(withoutReport, template);
+  for (const [name, text] of Object.entries({ "--engine-report を外す": withoutReport, "TAP の道を渡さない": noPath,
+    "手順に if:": stepWith("if: false"), "ジョブに continue-on-error: true": jobWith("continue-on-error: true") })) {
+    assert.ok(!runsOrderWithReport(text), name);
+    assert.ok(order([wf("sendback-engine.yml", text), wf("sendback-check.yml", EVENTS_WORKFLOW)]).includes("engine_report_missing"), name);
+  }
+  // check.mjs --events だけを配線して engine-test を写していないときも落ちる
+  assert.deepEqual(order([wf("sendback-check.yml", EVENTS_WORKFLOW)]), ["engine_report_missing", "engine_test_not_wired"]);
+});
+
+test("CLI: order.mjs は --engine-report なしで、配線していれば engine_report_missing で終了コード 1、--engine-report-elsewhere ならほかの手順を見る", () => {
+  const root = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
+  const run = (...args) => spawnSync("node", [orderScript, "--repo", root, ...args], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  const bare = run();
+  assert.equal(bare.status, 1);
+  assert.match(bare.stdout, /^::error title=sendback-check engine_report_missing::.*--engine-report が渡されていない/m);
+  writeFileSync(join(root, "empty.tap"), "");
+  const empty = run("--engine-report", join(root, "empty.tap"));
+  assert.equal(empty.status, 1);
+  assert.match(empty.stdout, /^::error title=sendback-check engine_report_missing::.*が空/m);
+  assert.equal(run("--engine-report-elsewhere").status, 0);
+  // 2 つを一緒に渡すのは読めなかったとして終了コード 2
+  writeFileSync(join(root, "fixed.tap"), tap());
+  assert.equal(run("--engine-report", join(root, "fixed.tap"), "--engine-report-elsewhere").status, 2);
+  const elsewhere = fixture({ "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
+  const r = spawnSync("node", [orderScript, "--repo", elsewhere, "--engine-report-elsewhere"], { encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^engine_report_missing: .*order\.mjs --engine-report を呼ぶ手順がない/m);
+  // 今のリポジトリ（まだ配線していない）では、--engine-report なしでも通る
+  assert.equal(spawnSync("node", [orderScript], { encoding: "utf8" }).status, 0);
 });
