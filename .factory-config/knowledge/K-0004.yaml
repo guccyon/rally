@@ -277,4 +277,19 @@ enforcement:
       decided_by: committee:D-0021
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0024 の ci_check の案（Engine に移す差分が ENGINE_REF の版に当たらなくなっても、建設者が当てるときまで気づけない）を入れた。
+        tools/knowledge-enforcement-check/test_engine_patch.py が .github/workflows/knowledge-check.yml の ENGINE_REF を読み、Engine のチェックアウトから
+        その版を名指しで取り出して engine/knowledge-enforcement.patch を git apply --check で当て、当たらず、しかも Engine 側にまだ入っていない
+        （git apply --reverse --check も通らず enforcement_label もない）ときは patch_stale で落とす。当たるか、もう入っていれば通る。
+        CI でチェックアウトに ENGINE_REF の版がなければ落ちるので、ci/knowledge-enforcement.yml の ENGINE_REF のずれでも落ちる。作った git の版で
+        当たる・入っている・入れたあと変わった・どちらでもないの判定を確かめ、ENGINE_REF の版の Engine に今の差分が当たって通ること、文脈を壊した差分で
+        patch_stale で落ちることを手元で確かめた。ci/knowledge-enforcement.yml の unittest discover で走るが、.github/workflows/ への写しは建設者なので、
+        まだ PR ごとには走っておらず効き目は確かめていない。Engine の既定のブランチの先頭と定期（schedule）で確かめる分は入れていない
+      issue: 1014
+      at: 2026-11-07
+      decided_by: committee:D-0024
+      wired: false
+      verified: false
 decided_by: committee:D-0004

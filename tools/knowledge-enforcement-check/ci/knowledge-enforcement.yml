@@ -12,6 +12,8 @@ permissions:
 env:
   # Engine の固定した版（40 桁のコミット SHA）。engine/knowledge-enforcement.patch がこの版に当たり、担保の表示が check.py と同じ線になるかを
   # test_engine.py で確かめる（議決 D-0016・D-0017、Issue #965・#968）。knowledge-check.yml の ENGINE_REF と同じ版にそろえる
+  # （test_engine_patch.py が knowledge-check.yml の ENGINE_REF の版をこのチェックアウトから取り出し、差分が当たらずまだ入ってもいなければ
+  # patch_stale で落とす。版がそろっていないとチェックアウトにその版がなく落ちる。議決 D-0024、Issue #1014）
   ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
 
 concurrency:
@@ -40,7 +42,7 @@ jobs:
           repository: guccyon/factory-engine
           ref: ${{ env.ENGINE_REF }}
           path: .engine
-      - name: 検査のテスト（Engine に移す差分のテストを含む）
+      - name: 検査のテスト（Engine に移す差分のテストと、差分が ENGINE_REF に当たるかの patch_stale を含む）
         env:
           ENGINE_DIR: ${{ github.workspace }}/.engine
         run: |
