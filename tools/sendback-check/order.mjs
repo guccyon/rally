@@ -10,8 +10,9 @@
 //   - engine.test.mjs に todo が残っている（engine_test_todo）
 //   - .github/workflows/ に engine.test.mjs を走らせる手順がない（engine_test_not_wired）
 // check.mjs --events を GitHub Actions（GITHUB_ACTIONS=true）で動かしたときも、同じ見張りを先に通す（check.mjs の main）。
+// 呼ぶ手順は npm scripts・シェルのラッパー・引数の順序を変えた呼び方も辿って見つける（議決 D-0017、Issue #967）。
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -54,11 +55,95 @@ function steps(text) {
 /** その手順の行が tools/sendback-check の中で動くか（working-directory か、行の中の道で）。 */
 const inToolDir = (step, line) => step.wd.replace(/\/$/, "").endsWith(TOOL_DIR) || line.includes(TOOL_DIR);
 
-/** ワークフローに check.mjs --events を呼ぶ手順があるか。取りこぼすと見張れないので、迷う形は呼ぶ側に数える。 */
-export function callsEventsCheck(text) {
-  const mentionsTool = text.includes("sendback-check");
-  return steps(text).some((s) => s.lines.some((l) =>
-    /--events\b/.test(l) && (/sendback-check\/check\.mjs/.test(l) || (mentionsTool && /\bcheck\.mjs\b|\bnpm\s+run\s+check\b/.test(l)))));
+/** tools/sendback-check/package.json の scripts（npm run の名前から中身を引く）。読めなければ check だけ。 */
+function readToolScripts(root) {
+  const path = join(root, TOOL_DIR, "package.json");
+  if (!existsSync(path)) return { check: "node check.mjs" };
+  return JSON.parse(readFileSync(path, "utf8")).scripts ?? {};
+}
+
+/** このリポジトリの tools/sendback-check/package.json の scripts。callsEventsCheck に渡さないときに使う。 */
+export const TOOL_SCRIPTS = readToolScripts(REPO_ROOT);
+
+/** 手順の行に出てくるスクリプトのファイルの道（シェルや node のラッパー）。check.mjs・order.mjs そのものとテスト（*.test.*）は除く。 */
+const scriptPaths = (line) => [...line.matchAll(/(?:^|[\s"'=(])((?:\.{0,2}\/)?[\w.\/-]+\.(?:sh|bash|mjs|cjs|js))\b/g)]
+  .map((m) => m[1]).filter((p) => !/(^|\/)(check|order)\.mjs$|\.test\.[cm]?js$/.test(p));
+
+/** 道をリポジトリの根からの道にする（working-directory の下か、根から）。根の外に出る道は捨てる。 */
+function resolvePaths(wd, path) {
+  const out = [];
+  for (const base of [wd, ""]) {
+    const parts = [];
+    let ok = true;
+    for (const seg of `${base}/${path}`.split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") { if (parts.length === 0) { ok = false; break; } parts.pop(); } else parts.push(seg);
+    }
+    if (ok && !out.includes(parts.join("/"))) out.push(parts.join("/"));
+  }
+  return out;
+}
+
+/** 行の npm・pnpm の run（run-script）が呼ぶ scripts の名前（--prefix などの前置きは飛ばす）。 */
+function npmRun(line) {
+  const m = line.match(/\b(?:npm|pnpm)\b(?:\s+\S+)*?\s+(?:run|run-script)\s+([\w:.-]+)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * 手順（行の並び）が check.mjs を呼ぶか（calls）と、呼び方に --events が入っているか（events）。
+ * 直に呼ぶ（道・working-directory・cd・変数・シェルの関数で）ほか、tools/sendback-check の npm scripts と、
+ * リポジトリの中のラッパーのスクリプト（readFile で読める）を中まで辿る。--events は手順のどこにあっても数える（引数を後から足す形のため）。
+ */
+function invocation(lines, { wd, mentionsTool, vars, scripts, readFile, depth }) {
+  const text = lines.join("\n");
+  let events = /--events\b/.test(text);
+  let calls = false;
+  const toolCtx = mentionsTool || wd.includes("sendback-check") || text.includes("sendback-check");   // cd してから呼ぶ形も
+  for (const l of lines) {
+    if (/sendback-check\/check\.mjs\b/.test(l) || (toolCtx && /\bcheck\.mjs\b/.test(l))) calls = true;
+    if (vars.some((v) => new RegExp(`\\$\\{?${v}\\b|\\benv\\.${v}\\b`).test(l))) calls = true;
+    const name = toolCtx ? npmRun(l) : null;
+    if (name) {
+      const body = scripts[name];
+      // 名前が scripts にない（読めない）ときは、取りこぼさないよう check を名乗るものを呼ぶ側に数える
+      if (body === undefined ? /^check\b/.test(name) : /\bcheck\.mjs\b/.test(body)) calls = true;
+      if (body !== undefined && /--events\b/.test(body)) events = true;
+    }
+    if (depth < 3) {
+      for (const p of scriptPaths(l)) {
+        for (const rel of resolvePaths(wd, p)) {
+          const inner = readFile(rel);
+          if (inner == null) continue;
+          const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+          const r = invocation(logicalLines(inner), { wd: dir, mentionsTool: inner.includes("sendback-check") || dir.includes(TOOL_DIR),
+            vars: [...vars, ...pathVars(inner)], scripts, readFile, depth: depth + 1 });
+          if (r.calls) { calls = true; events ||= r.events; }
+        }
+      }
+    }
+  }
+  return { calls, events };
+}
+
+/** check.mjs の道（tools/sendback-check/check.mjs）を入れた変数の名前（YAML の env と shell の代入）。 */
+function pathVars(text) {
+  return [...new Set(logicalLines(text).flatMap((l) =>
+    [...l.matchAll(/\b([A-Za-z_]\w*)\s*[:=]\s*["']?[^"'\s]*sendback-check\/check\.mjs/g)].map((m) => m[1])))];
+}
+
+/**
+ * ワークフローに check.mjs --events を呼ぶ手順があるか。取りこぼすと見張れないので、迷う形は呼ぶ側に数える。
+ * 呼び方は直の node のほか、npm scripts（--prefix・run-script を含む）、シェルのラッパー、引数の順序を変えたもの、変数や関数を経たものも見る
+ * （議決 D-0017、Issue #967）。scripts は tools/sendback-check/package.json の scripts、readFile はリポジトリの根からの道で中身（なければ null）を返す。
+ */
+export function callsEventsCheck(text, { scripts = TOOL_SCRIPTS, readFile = () => null } = {}) {
+  const mentionsTool = logicalLines(text).some((l) => l.includes("sendback-check"));
+  const vars = pathVars(text);
+  return steps(text).some((s) => {
+    const r = invocation(s.lines, { wd: s.wd, mentionsTool, vars, scripts, readFile, depth: 0 });
+    return r.calls && r.events;
+  });
 }
 
 /** ワークフローに engine.test.mjs を走らせる手順があるか（engine.test.mjs を名指しするか、tools/sendback-check で npm test・node --test を全部走らせる）。 */
@@ -82,9 +167,12 @@ export function todoLines(source) {
   return out;
 }
 
-/** 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。 */
-export function checkOrder({ workflows, engineTest }) {
-  const callers = workflows.filter((w) => callsEventsCheck(w.text)).map((w) => w.path);
+/**
+ * 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。
+ * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
+ */
+export function checkOrder({ workflows, engineTest, scripts = TOOL_SCRIPTS, readFile = () => null }) {
+  const callers = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
   if (callers.length === 0) return { wired: [], errors: [] };
   const errors = [];
   const where = callers.join("・");
@@ -104,7 +192,7 @@ export function checkOrder({ workflows, engineTest }) {
   return { wired: callers, errors };
 }
 
-/** リポジトリの .github/workflows/ と engine.test.mjs を読む。 */
+/** リポジトリの .github/workflows/ と engine.test.mjs、tools/sendback-check/package.json の scripts を読み、ラッパーのスクリプトを読む関数を添える。 */
 export function loadRepo(root) {
   const dir = join(root, ".github/workflows");
   const workflows = existsSync(dir)
@@ -112,7 +200,11 @@ export function loadRepo(root) {
       .map((f) => ({ path: `.github/workflows/${f}`, text: readFileSync(join(dir, f), "utf8") }))
     : [];
   const testPath = join(root, ENGINE_TEST);
-  return { workflows, engineTest: existsSync(testPath) ? readFileSync(testPath, "utf8") : null };
+  const readFile = (rel) => {
+    const path = join(root, rel);
+    return rel !== "" && existsSync(path) && statSync(path).isFile() ? readFileSync(path, "utf8") : null;
+  };
+  return { workflows, engineTest: existsSync(testPath) ? readFileSync(testPath, "utf8") : null, scripts: readToolScripts(root), readFile };
 }
 
 /** 結果を GitHub Actions の ::error（annotate）か「rule: 理由」の行にする。 */

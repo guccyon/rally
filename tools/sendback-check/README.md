@@ -131,7 +131,8 @@ PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差
 | `engine_test_todo` | `engine.test.mjs` に todo（`t.todo(…)`・`test.todo(…)`・`{ todo: … }`）が残っている（basis の場合の `todoWhileLegacy` を含む）。`engine.test.mjs` がないときも |
 | `engine_test_not_wired` | `.github/workflows/` に `engine.test.mjs` を走らせる手順がない（`engine.test.mjs` を名指しした `node --test` か、`tools/sendback-check` で `npm test`・ファイルを名指ししない `node --test`） |
 
-- 呼ぶ手順は、注釈を除いた行で `--events` と `tools/sendback-check/check.mjs`（`sendback-check` を含むワークフローなら `check.mjs` か `npm run check`）が並ぶもの。取りこぼすと見張れないので、迷う形は呼ぶ側に数える
+- 呼ぶ手順は、注釈を除いた手順（`- ` で始まる列の要素）の中に `--events` と check.mjs の呼び出しが並ぶもの。check.mjs の呼び出しは `tools/sendback-check/check.mjs` の道か、`sendback-check` が出てくるワークフロー・手順（`working-directory`・`cd`・`npm --prefix`）での `check.mjs`・`npm`（`pnpm`）の `run`・`run-script`。`--events` は手順のどこにあってもよい（引数の順序を変えた形、継ぎ行、配列や関数で渡す形）。取りこぼすと見張れないので、迷う形は呼ぶ側に数える
+- 包んだ呼び方も辿る（議決 `D-0017`、Issue #967）。`npm run` は `tools/sendback-check/package.json` の scripts の中身を引き（中に `check.mjs` があれば呼び出し、`--events` があればそれも数える。scripts にない名前は `check` で始まれば呼び出しに数える）、手順の行に出てくるスクリプトのファイル（`.sh`・`.bash`・`.mjs`・`.cjs`・`.js`。テストと `check.mjs`・`order.mjs` は除く）はリポジトリの中にあれば中身を読んで同じ線で見る（3 段まで）。`tools/sendback-check/check.mjs` の道を入れた変数（`env` や shell の代入）を `$NAME`・`${NAME}`・`env.NAME` で使う手順も呼び出しに数える。どの形で落ちるかは `order.test.mjs` のワークフローの写しで確かめている
 - 走らせる場所は 2 つ。`ci/sendback-engine.yml` の `wiring-order` のジョブ（`node tools/sendback-check/order.mjs`）と、`check.mjs --events` を GitHub Actions（`GITHUB_ACTIONS=true`）で動かしたとき（`GITHUB_WORKSPACE` のリポジトリを見て、外れたら記録が通っても終了コード 1）。後者があるので、`ci/sendback-engine.yml` を写さずに `check.mjs --events` だけを配線しても落ちる
 - 通すには、Engine の basis を直して `ENGINE_REF` を上げ、`LEGACY_BASIS` と `todoWhileLegacy` を消し、`ci/sendback-engine.yml` を `.github/workflows/` に写してから `check.mjs --events` の手順を足す
 - 終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった。`GITHUB_ACTIONS=true` のときは `::error title=sendback-check <rule>::…` の形で出す
