@@ -1,0 +1,95 @@
+guccyon/rally#212（添削依頼・返却をチャットに載せる）のうち、指摘の箇所 apps/backend/crates/application/src/messaging/message_thread_subscriber.rs（MessageThreadSubscriber::post の map_err）の hunk だけを gh pr diff から切り出したもの。NotFound だけを文字列リテラルの Box<dyn Error> にしている。
+diff --git a/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs b/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
+index f0de8109..e3e8a94b 100644
+--- a/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
++++ b/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
+@@ -1,16 +1,31 @@
+-use std::error::Error;
++use std::{error::Error, time::SystemTime};
++
++use domain::{
++    DomainError,
++    identity::AccountId,
++    messaging::{MessageId, MessageThread},
++};
+ 
+ use super::{
+     MessageThreadRepository, OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
++    UpdateMessageThreadError,
+ };
+ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
+ 
+-/// messaging による境界間イベントの購読。予約の確定（`BookingConfirmed`）で、その生徒とコーチのスレッドを開く
+-/// （[`OpenMessageThread`]。開いた時刻は `occurred_at`）。
++/// messaging による境界間イベントの購読。
++///
++/// - 予約の確定（`BookingConfirmed`）で、その生徒とコーチのスレッドを開く（[`OpenMessageThread`]。開いた時刻は
++///   `occurred_at`）。Gen1 は担当コーチを確定する matching がないので、確定した予約のコーチを担当コーチとみなす
++///   （予約をキャンセルしてもスレッドは閉じない）
++/// - 添削依頼（async-lesson の `VideoReviewRequested`）と添削の返却（`VideoReviewReturned`）で、その生徒とコーチの
++///   スレッドに（なければ `occurred_at` に開いて）添削依頼・添削の返却のメッセージを足す（送信時刻は `occurred_at`）。
++///   チャットは会話でありレッスンのログでもある（docs/adr/0009 の答え合わせ）。メッセージは動画・添削を ID で指すだけで、
++///   添削の有無・回数・状態は async-lesson が持つ。チャットの送り放題の判定（`ChatGate`）は通さず、境界間イベント
++///   `MessageSent` と行動イベント `message.sent` も出さない（当事者が送ったのではなく、プッシュ通知は
++///   notification が async-lesson のイベントから送る）
+ ///
+-/// Gen1 は担当コーチを確定する matching がないので、確定した予約のコーチを担当コーチとみなす（予約をキャンセル
+-/// してもスレッドは閉じない）。同じ生徒とコーチのスレッドは 1 つなので、同じイベントが 2 回届いても結果は
+-/// 変わらない。ほかのイベントは何もしない。
++/// 同じ生徒とコーチのスレッドは 1 つで、同じ動画の添削依頼・返却はスレッドに 1 通ずつなので、同じイベントが 2 回
++/// 届いても結果は変わらない。ほかのイベントは何もしない。
+ pub struct MessageThreadSubscriber<T> {
+     open: OpenMessageThread<T>,
+ }
+@@ -28,6 +43,51 @@ where
+     pub fn threads(&self) -> &T {
+         self.open.threads()
+     }
++
++    /// 生徒 `student_id` とコーチ `coach_id` のスレッドを（なければ `at` に開いて）返す。
++    async fn open(
++        &self,
++        student_id: AccountId,
++        coach_id: AccountId,
++        at: SystemTime,
++    ) -> Result<MessageThread, Box<dyn Error + Send + Sync>> {
++        self.open
++            .execute(OpenMessageThreadCommand {
++                student_id,
++                coach_id,
++                at,
++            })
++            .await
++            .map_err(|error| match error {
++                OpenMessageThreadError::Invalid(error) => error.into(),
++                OpenMessageThreadError::Unavailable(error) => error.into(),
++            })
++    }
++
++    /// 生徒 `student_id` とコーチ `coach_id` のスレッドを（なければ `at` に開いて）、`post` でメッセージを足して保存する。
++    /// `post` は新しいメッセージの ID を受け取る。
++    async fn post<F>(
++        &self,
++        student_id: AccountId,
++        coach_id: AccountId,
++        at: SystemTime,
++        post: F,
++    ) -> Result<(), Box<dyn Error + Send + Sync>>
++    where
++        F: FnOnce(&mut MessageThread, MessageId) -> Result<(), DomainError> + Send,
++    {
++        let thread = self.open(student_id, coach_id, at).await?;
++        let message_id = self.threads().next_message_id();
++        self.threads()
++            .update(thread.id(), |thread| post(thread, message_id))
++            .await
++            .map(|_| ())
++            .map_err(|error| match error {
++                UpdateMessageThreadError::NotFound => "開いたスレッドがない".into(),
++                UpdateMessageThreadError::Rejected(error) => error.into(),
++                UpdateMessageThreadError::Unavailable(error) => error.into(),
++            })
++    }
+ }
+ 
+ impl<T> DomainEventSubscriber for MessageThreadSubscriber<T>

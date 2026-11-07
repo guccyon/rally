@@ -1,0 +1,65 @@
+guccyon/rally#216（#212 の差し戻しの修正）のうち、指摘の箇所 message_thread_subscriber.rs の本体の hunk と、足したエラー型 message_thread_subscriber_error.rs の hunk だけを gh pr diff から切り出したもの。NotFound を MessageThreadSubscriberError::ThreadVanished にして返す。
+diff --git a/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs b/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
+index e3e8a94b..c2ba35fe 100644
+--- a/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
++++ b/apps/backend/crates/application/src/messaging/message_thread_subscriber.rs
+@@ -7,8 +7,8 @@ use domain::{
+ };
+ 
+ use super::{
+-    MessageThreadRepository, OpenMessageThread, OpenMessageThreadCommand, OpenMessageThreadError,
+-    UpdateMessageThreadError,
++    MessageThreadRepository, MessageThreadSubscriberError, OpenMessageThread,
++    OpenMessageThreadCommand, OpenMessageThreadError, UpdateMessageThreadError,
+ };
+ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
+ 
+@@ -26,6 +26,9 @@ use crate::domain_event::{DomainEvent, DomainEventSubscriber};
+ ///
+ /// 同じ生徒とコーチのスレッドは 1 つで、同じ動画の添削依頼・返却はスレッドに 1 通ずつなので、同じイベントが 2 回
+ /// 届いても結果は変わらない。ほかのイベントは何もしない。
++///
++/// 失敗は型のあるエラーを包んで返す（不変条件の違反は `DomainError`、保存先の障害は [`crate::Unavailable`]、
++/// 開いたスレッドがメッセージを足すときになかったら [`MessageThreadSubscriberError::ThreadVanished`]）。
+ pub struct MessageThreadSubscriber<T> {
+     open: OpenMessageThread<T>,
+ }
+@@ -83,7 +86,9 @@ where
+             .await
+             .map(|_| ())
+             .map_err(|error| match error {
+-                UpdateMessageThreadError::NotFound => "開いたスレッドがない".into(),
++                UpdateMessageThreadError::NotFound => {
++                    MessageThreadSubscriberError::ThreadVanished.into()
++                }
+                 UpdateMessageThreadError::Rejected(error) => error.into(),
+                 UpdateMessageThreadError::Unavailable(error) => error.into(),
+             })
+diff --git a/apps/backend/crates/application/src/messaging/message_thread_subscriber_error.rs b/apps/backend/crates/application/src/messaging/message_thread_subscriber_error.rs
+new file mode 100644
+index 00000000..28b80fee
+--- /dev/null
++++ b/apps/backend/crates/application/src/messaging/message_thread_subscriber_error.rs
+@@ -0,0 +1,22 @@
++use std::{error::Error, fmt};
++
++/// messaging の購読（[`super::MessageThreadSubscriber`]）に固有の失敗。
++///
++/// 不変条件の違反（`DomainError`）と保存先の障害（[`crate::Unavailable`]）はそれぞれの型のまま返すので、ここには
++/// 購読の手順でしか起きない失敗だけを置く。呼び出し側は `downcast_ref` で見分ける。`Display` は診断用で、
++/// 利用者向けの文言は表示する境界で組み立てる。
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum MessageThreadSubscriberError {
++    /// 開いた（または既にあった）スレッドに、メッセージを足そうとしたときにはなかった
++    ThreadVanished,
++}
++
++impl fmt::Display for MessageThreadSubscriberError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            Self::ThreadVanished => f.write_str("message thread vanished after it was opened"),
++        }
++    }
++}
++
++impl Error for MessageThreadSubscriberError {}
