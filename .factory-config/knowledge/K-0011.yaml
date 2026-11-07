@@ -1,0 +1,22 @@
+id: K-0011
+theme: 4
+kind: causal
+statement: >-
+  判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、
+  判定役は指摘の根拠を確かめられず、手元にあるリポジトリの決まり（CLAUDE.md など）だけで裁いて reject に寄り、
+  検査役と判定役で同じ成果物の正しい形の基準が割れる。
+scope:
+  roles: [judge, inspect]
+confidence: hypothesis
+evidence:
+  - case: C-0006
+  - pr: 821
+  - event: "case.analyzed:370935"
+status: draft
+verified_at: 2026-11-07
+review_by: 2026-12-07
+confidentiality: product
+related: [K-0005]
+invalidate_when:
+  - "judge のジョブの入力に、指摘が引く rubric_id の本文が添えられるようになった"
+  - "rubric の本文を入力に持つ判定役でも、同じように根拠を確かめられないまま reject に寄った（rubric の本文の有無が原因でなかった）"
