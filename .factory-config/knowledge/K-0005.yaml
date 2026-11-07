@@ -16,9 +16,12 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0006
+  - pr: 821
+  - event: "case.analyzed:370935"
 status: active
-verified_at: 2026-11-05
-review_by: 2026-12-05
+verified_at: 2026-11-07
+review_by: 2026-12-07
 confidentiality: product
-related: [K-0001, K-0006]
+related: [K-0001, K-0006, K-0011]
 decided_by: committee:D-0006
