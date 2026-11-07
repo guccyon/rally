@@ -71,4 +71,19 @@ enforcement:
       decided_by: committee:D-0030
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0030（Issue #1035 の起票時の番号は D-0029。PR #1033）の test の案を入れた。events.py の「記録がない項目は照らさずに件数を出す」を、
+        Engine が今の形（job.finished に agent_resumed と解き方の tier（agent_tier）を出さない版）のときだけの扱いに狭めた。engine_harness.py の finished が
+        Engine の dispatcher.py のうちワーカーを動かし終えたジョブの job.finished（cost_usd を持つ record_event）の欄を構文木から読み、test_events.py の
+        EngineFinishedTest が、記録のそろったイベント列の job.finished をその欄だけにし（job.started の model_tier も外す）、events.py で組んだときの
+        agent_resumed と tier の照らせない件数が 1 以上なら落とす。Engine がどちらも出さない今の形のときだけ todo で飛ばし（K-0004 の engine.test.mjs の
+        todo と同じ形）、片方だけを出す版はもう片方が照らせずに落ちる。ENGINE_DIR を渡したときと CI=true では飛ばさずに落とす。ENGINE_REF（2490db6）の
+        Engine では todo になること、dispatcher.py に agent_resumed だけを足した写しでは落ち、両方を足した写しでは通ることを確かめた。job.finished に
+        それらを足して ENGINE_REF を上げるのと、ひな形 ci/conflict-check.yml を .github/workflows/ に写すのは建設者なので、効き目はまだ確かめていない
+      issue: 1035
+      at: 2026-11-07
+      decided_by: committee:D-0030
+      wired: false
+      verified: false
 decided_by: committee:D-0013
