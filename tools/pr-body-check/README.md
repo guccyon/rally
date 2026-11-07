@@ -1,12 +1,14 @@
 # PR 本文の見出しの検査
 
-PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。
+PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1052 の起票時の番号は `D-0032`。PR #1051）の案と Issue #1052 で、本文の直し（body_fix）が終わって直した本文の再検査が通るまでマージを止める関所（`merge-gate.mjs`）と、本文だけの直しでも走る必須チェックのひな形（`ci/pr-body-check.yml`）を足した。
 
 続きのジョブ（衝突の解消・CI 落ちの直しなど）の報告が、新しい PR と同じ見出しの組（`## 概要`・`## 対応内容` など）のまま本文の末尾に足されると、同じ見出しが 2 回出る。これを検査役（LLM）と判定役まで流さず、本文を更新した直後に止めるためのもの。差し戻しの直しで本文の末尾に追記するだけだと、見出しの順が崩れたり必須の見出しが欠けたりする（K-0006）ので、それも見る。
 
 ```sh
 node check.mjs --body <本文のファイル> [--json <出力先>]
 gh pr view <番号> --json body --jq .body | node check.mjs     # --body を省くと標準入力から読む
+node merge-gate.mjs --events <制御プレーンのイベント> --pr <PR の URL> [--head <SHA>] [--body <今の本文>]   # マージの前の関所
+node merge-gate.mjs --events <制御プレーンのイベント> --audit                                     # 過去のマージの見直し
 npm test
 ```
 
@@ -56,7 +58,7 @@ printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL
 
 ## テスト
 
-`npm test` で 5 つを走らせる。
+`npm test` で 6 つを走らせる。
 
 - `check.test.mjs`: 見出しの検査（`check.mjs`）
 - `gate.test.mjs`: 関所。事例 `C-0005`（PR #659）の 21 回の追記（conflict が 20 回、ci_failed が 1 回。どれも新しい PR と同じ `## 概要`・`## 対応内容`・`## 動作確認` を持つ summary）と同じ入力で落ち、1 回目の追記でもう落ちることを確かめる。入力は `c0005.mjs` が組む（本文そのものは記録にないので、事例に書かれた形を組み直したもの）。通る側の写しとして、同じ 21 回の報告を「## 工場の記録」の下の `### 続きのジョブ（job N）の記録` に、見出しを `###`・`####` に下げて、または `## ` 見出しのない形で足した本文では、毎回 `gate` が書いてよいと返し、CLI が 0 で何も出さないことも確かめる（誤検知がないこと。議決 `D-0032` の test の案、Issue #1038）
@@ -74,6 +76,7 @@ printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL
   - (10) 同じ写しで、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038）。Engine がもう関所を呼んでいれば差分を当てずに写すので、配線したあとは本物の本文の更新を確かめる
 - `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形（下の「配線の手順（建設者）」）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
+- `merge-gate.test.mjs`: マージの前の関所（`merge-gate.mjs`）。事例 `C-0006`（PR #821。inspector_approved 14:25:02・body_amended 14:25:04・merged 14:25:06）と `C-0005`（PR #659。body_fix 3308 の終わり 20:08:50 より前の merged 20:08:43）の記録（`fixtures/`）で、マージが止まることを確かめる。`ci/pr-body-check.yml` の形も見る
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh
@@ -85,7 +88,7 @@ python3 engine_harness.py --body-gate /path/to/factory-engine < gate.json   # ac
 
 ## マージ前の必須チェック（建設者）
 
-head_sha の変わらない本文だけの直しも通すため、CI では `pull_request` の `opened`・`synchronize`・`reopened` に加えて `edited` でも起動させ、マージ前の必須チェックにする（議決 D-0006）。本文は `github.event.pull_request.body` を環境変数で受けて標準入力に渡す（`${{ }}` で run に直接埋めない）。
+head_sha の変わらない本文だけの直しも通すため、CI では `pull_request` の `opened`・`synchronize`・`reopened` に加えて `edited` でも起動させ、マージ前の必須チェックにする（議決 D-0006・D-0033）。body_fix は `gh pr edit` で本文を書くので、`pr.body_amended` の直しでも `edited` で走る。ひな形は `ci/pr-body-check.yml`（ジョブの id とチェックの名前は `pr-body-check`）で、建設者が `.github/workflows/pr-body-check.yml` に写し、`pr-body-check` を必須のチェックにする。本文は `github.event.pull_request.body` を環境変数で受けて標準入力に渡す（`${{ }}` で run に直接埋めない）。
 
 ```yaml
 on:
@@ -104,6 +107,33 @@ jobs:
 なお、Engine の `orchestrator/worker/entrypoint.sh` は今、続きのジョブの報告を `## 工場の記録` の後ろに `## 続きのジョブの記録` として足すので、そのままでは `outside_factory_record`・`continuation_outside_record` で外れる。必須チェックにする前に、Engine 側でその見出しを `### ` に下げる（K-0001 の線。Engine への作用なので人の承認が要る）。下げる直しは `engine/pr-body-gate.patch` に入れてある。
 
 このワークフローとブランチ保護の必須チェックは、ワーカーの権限の外なので建設者が入れる。
+
+## マージの前の関所（`merge-gate.mjs`）
+
+知見 `K-0012` の担保（議決 `D-0033` の案、Issue #1052）。supervisor が検査役の承認（`supervisor.inspector_approved`）を出したあと、マージ（`PUT .../merge` と `supervisor.merged`）の前に呼び、その PR の制御プレーンのイベント列から、マージしてよいかを返す。事例 `C-0006` では、承認（14:25:02）が body_fix（job 4299）の終わりより前に出て、本文を直した（`pr.body_amended` 14:25:04）約 1 秒後に再検査なしでマージ（14:25:06）された。
+
+- 終了コード: 0 = マージしてよい、1 = マージしない（次の周期で引き直す）、2 = 読めなかった（マージしない）、3 = 見出しの定義が不正（`--body` を照らしていない。マージしない）
+- 1 のときの標準出力: 外れた理由ごとに「rule: 理由」。`--json <出力先>` で `{ ok, errors: [{ rule, message, job_id? }] }` を書く
+- イベントは `sendback-check` の `--events` と同じ形（JSON の配列・`{ "events": [...] }`・JSONL。古い順）。1 件は `{ name, payload, job_id? }`。`job.finished` には `pr_url` がないので、body_fix のジョブとは events の `job_id` で結ぶ
+
+| rule | 止める形 |
+|---|---|
+| `body_fix_running` | その PR の body_fix（`job.enqueued` の `kind: body_fix`）に、まだ `job.finished`・`pr.body_amended`・`pr.body_amend_failed` がない |
+| `body_fix_failed` | body_fix が本文を直せなかった（`job.finished` の `state` が `succeeded` でないか `pr.body_amend_failed`）。人に回す |
+| `body_not_rechecked` | 最後の body_fix が終わったあとに、マージする head（`--head`。省けばその PR のイベントの最後の `head_sha`）の本文の再検査（`pr.body_checked`）がない |
+| `body_check_failed` | 最後の body_fix が終わったあとの、その head の最後の再検査が `ok: false` |
+
+body_fix のない PR は待つものがないので 0 を返す。body_fix の `job.enqueued` に `job_id` がないとき・`pr.body_checked` の `ok` が真偽でないときは、黙って通さずに 2 にする。
+
+直した本文の再検査は `pr.body_checked`（`{ pr_url, head_sha, ok }`）で受ける。`pr.ci_passed` は head ごとに 1 回しか残らない（dedupe が `pr.ci_passed:<PR>@<head>`）ので、head の変わらない本文だけの直しのあとの結果を表せない。Engine が、body_fix の終わりより後に完了した `pr-body-check` のチェック（`ci/pr-body-check.yml`。`edited` で走る）の結果をこの名前で残す。今の本文を `--body` で渡せば、列の終わり（直しのあと）の再検査として `check.mjs` で照らしたものも数える（Engine が `gh` で取った本文を渡す形）。
+
+`--audit` は過去の記録の見直しで、`supervisor.merged` ごとにその直前までの列で関所を引き、外れたマージがあれば 1 で落ちる（`--summary` に表を書く）。`fixtures/c0006.events.json`・`fixtures/c0005.events.json` はどちらも外れる。
+
+Engine（別のリポジトリ）に入れることは建設者が行う。ワーカーは Engine を変えられず、`.github/workflows/` も変えられないので、まだ配線しておらず、本物の記録での効き目も確かめていない。
+
+1. `dispatcher/supervisor.py` のマージの節で、`supervisor.inspector_approved` を記録する前に、その PR のイベント（`job_id` を添える）を `merge-gate.mjs --pr <URL> --head <SHA>` に渡し、0 でなければ承認もマージもせずに次の周期に回す（2・3 は停止を開いて人に回す）
+2. `pr-body-check` のチェックが body_fix の終わりより後に完了したら、その結果を `pr.body_checked`（`definitions/events.yaml` に足す）として残す。チェックが落ちたら `ci_failed` の続きのジョブではなく body_fix に回す
+3. 上の 2 つと `ci/pr-body-check.yml` の写し・必須のチェックを入れたら、本物の body_fix のある PR で、再検査の前にマージが止まり（`merge-gate.mjs` が 1）、再検査が通ってからマージされたことを記録し、知見 `K-0012` のこの解決策の `wired`・`verified` を `true` にする
 
 ## Engine に入れること（建設者）
 
