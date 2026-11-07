@@ -375,4 +375,21 @@ enforcement:
       decided_by: committee:D-0028
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0029（PR #1023。Issue #1026 は D-0028 と書いているが、この案は D-0029 の議決にある）の ci_check の案（.github/workflows/ に
+        check.mjs --events を呼ぶ手順があるのに --engine-report が渡されていないか TAP のファイルが空・存在しないときは engine_report_missing で落とす）を
+        tools/sendback-check/order.mjs に入れた。CLI は配線があれば TAP を必ず求め、渡されていない・ファイルがない・空（空白だけ）のどれでも
+        engine_report_missing で終了コード 1 にする（ファイルがないときに (3) と (c) が「結果にない」で外れていた形を置き換えた）。TAP のない
+        ci/sendback-engine.yml の wiring-order のジョブは --engine-report-elsewhere を付け、代わりに .github/workflows/ に order.mjs --engine-report <TAP> を
+        `if:` や continue-on-error なしに呼ぶ手順がなければ同じ rule で落とす（D-0029 の反対の票が挙げた、wiring-order だけが走って Engine の結果を見ずに通る場合）。
+        tools/sendback-check/order.test.mjs で、渡されていない・存在しない・空・空白だけ・ほかの手順から --engine-report を外す・TAP の道を渡さない・
+        手順に if:・ジョブに continue-on-error のときに落ち、TAP があれば中身で見ること、配線していない今のリポジトリでは通ることを確かめた。
+        check.mjs --events を GitHub Actions で動かしたときの見張りは同じジョブに TAP がないので求めない。.github/workflows/ への写しは建設者が行うので、
+        まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1026
+      at: 2026-11-07
+      decided_by: committee:D-0029
+      wired: false
+      verified: false
 decided_by: committee:D-0004

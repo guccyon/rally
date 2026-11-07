@@ -1,6 +1,6 @@
 // check.mjs の ci_check を配線する順序を決定論で見張る（知見 K-0004 の担保。議決 D-0012、Issue #953）。LLM を使わない。
 //
-//   node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mjs の TAP>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]   # --repo を省くとこのファイルから 2 つ上
+//   node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mjs の TAP> | --engine-report-elsewhere] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]   # --repo を省くとこのファイルから 2 つ上
 //   終了コード: 0 = 通る（まだ配線していないか、順序を守って配線した）、1 = 外れた、2 = 読めなかった
 //
 // 順序（議決 D-0010、README の「配線の順序」）: Engine の basis を直して engine.test.mjs の todo を外し、engine.test.mjs を CI に配線してから、
@@ -13,6 +13,9 @@
 //     （この 2 つは議決 D-0025、Issue #1017）
 //   - --engine-report を渡したとき、ENGINE_REF の Engine で走らせた engine.test.mjs の結果で (3) か (c) が通っていない
 //     （LEGACY_BASIS の todo・飛ばした・落ちた・結果にない。engine_basis_not_passed。議決 D-0016、Issue #964）
+//   - --engine-report が渡されていないか、TAP のファイルが空・存在しない（engine_report_missing。議決 D-0029、Issue #1026）。
+//     Engine の結果を見ずに通さないため。TAP のないジョブ（wiring-order）は --engine-report-elsewhere を付け、代わりに
+//     .github/workflows/ に order.mjs --engine-report を呼ぶ手順（`if:` か `continue-on-error` を付けた手順・ジョブは数えない）があるかを見る
 // check.mjs --events を GitHub Actions（GITHUB_ACTIONS=true）で動かしたときも、同じ見張りを先に通す（check.mjs の main）。
 // 呼ぶ手順は npm scripts・シェルのラッパー・引数の順序を変えた呼び方も辿って見つける（議決 D-0017、Issue #967）。
 
@@ -254,6 +257,16 @@ export function runsEngineTest(text) {
 }
 
 /**
+ * ワークフローに order.mjs --engine-report <TAP> を呼ぶ手順があるか（`if:` か `continue-on-error` で飛ばせる・落ちても通る手順とジョブは数えない）。
+ * --engine-report-elsewhere で走らせたときに、Engine の結果を見る手順がほかにあるかを確かめる（議決 D-0029、Issue #1026）。
+ */
+export function runsOrderWithReport(text) {
+  return jobs(text).some((job) => !mayNotGate(job.lines.filter((l) => indentOf(l) === job.keyIndent), job.keyIndent)
+    && steps(job.lines).some((s) => !mayNotGate(s.lines, s.keyIndent)
+      && s.lines.some((l) => /\border\.mjs\b.*--engine-report(?:=|\s+)(?!-)\S/.test(l))));
+}
+
+/**
  * 同じワークフローに engine.test.mjs を走らせるジョブがあるのに、check.mjs --events を呼ぶジョブがそれを needs で（間を挟んでもよい）待たないもの。
  * 同じジョブの中なら、engine.test.mjs の手順より後で呼べば待つと数える。別のワークフローの間は needs で待てないので見ない（必須のチェックで止める）。
  * 議決 D-0025、Issue #1017。
@@ -300,8 +313,11 @@ const STATUS_TEXT = { todo: " todo になった（Engine の basis がまだ LEG
  * 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。
  * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
  * engineReport は ENGINE_REF の Engine で走らせた engine.test.mjs の TAP（渡さなければ結果は見ない。議決 D-0016、Issue #964）。
+ * requireEngineReport が "here" なら engineReport がない（null）か空のときに、"elsewhere" なら workflows に order.mjs --engine-report を呼ぶ
+ * 手順がないときに engine_report_missing で外す（order.mjs の main が使う。議決 D-0029、Issue #1026）。engineReportPath は理由の文に出す TAP の道。
  */
-export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFAULT_SCRIPTS, readFile = () => null }) {
+export function checkOrder({ workflows, engineTest, engineReport, requireEngineReport = null, engineReportPath = null, scripts = DEFAULT_SCRIPTS,
+  readFile = () => null }) {
   const callers = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
   if (callers.length === 0) return { wired: [], errors: [] };
   const errors = [];
@@ -315,7 +331,17 @@ export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFA
         + `（${todos.join("・")} 行目）。Engine の basis を直して todo を外してから配線する` });
     }
   }
-  if (engineReport != null) {
+  const reportMissing = requireEngineReport === "here" && (engineReport == null || engineReport.trim() === "");
+  if (reportMissing) {
+    const why = engineReportPath == null ? "--engine-report が渡されていない"
+      : engineReport == null ? `TAP のファイル（${engineReportPath}）が存在しない` : `TAP のファイル（${engineReportPath}）が空`;
+    errors.push({ rule: "engine_report_missing", message: `${where} が check.mjs --events を呼ぶのに、${why}。`
+      + `ENGINE_REF の Engine で ${ENGINE_TEST} を走らせた TAP を --engine-report に渡す（Engine の結果を見ずに通さない）` });
+  } else if (requireEngineReport === "elsewhere" && !workflows.some((w) => runsOrderWithReport(w.text))) {
+    errors.push({ rule: "engine_report_missing", message: `${where} が check.mjs --events を呼ぶのに、.github/workflows/ に order.mjs --engine-report を呼ぶ手順がない`
+      + "（`if:` か `continue-on-error` を付けた手順・ジョブは数えない。ci/sendback-engine.yml の engine-test を先に写す）" });
+  }
+  if (engineReport != null && !reportMissing) {
     const results = parseTapReport(engineReport);
     for (const [label, name] of Object.entries(BASIS_TESTS)) {
       const status = results[name];
@@ -366,14 +392,16 @@ export function renderSummary({ wired, errors }) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { repo: { type: "string" }, "engine-report": { type: "string" }, json: { type: "string" },
-    summary: { type: "string" } } });
+  const { values } = parseArgs({ options: { repo: { type: "string" }, "engine-report": { type: "string" },
+    "engine-report-elsewhere": { type: "boolean" }, json: { type: "string" }, summary: { type: "string" } } });
   let result;
   try {
-    // 結果のファイルがない（Engine のテストまで進まなかった）ときは結果が空として見る。配線していれば (3) と (c) が「結果にない」で外れる
     const report = values["engine-report"];
-    const engineReport = report == null ? undefined : existsSync(report) ? readFileSync(report, "utf8") : "";
-    result = checkOrder({ ...loadRepo(values.repo ?? REPO_ROOT), engineReport });
+    if (report != null && values["engine-report-elsewhere"]) throw new Error("--engine-report と --engine-report-elsewhere は一緒に渡さない");
+    // 結果のファイルがない・空（Engine のテストまで進まなかった）ときと渡されていないときは、配線していれば engine_report_missing で外れる
+    const engineReport = report != null && existsSync(report) ? readFileSync(report, "utf8") : null;
+    result = checkOrder({ ...loadRepo(values.repo ?? REPO_ROOT), engineReport, engineReportPath: report ?? null,
+      requireEngineReport: values["engine-report-elsewhere"] ? "elsewhere" : "here" });
   } catch (e) {
     console.error(`sendback-check order: 読めなかった: ${e.message}`);
     process.exit(2);
