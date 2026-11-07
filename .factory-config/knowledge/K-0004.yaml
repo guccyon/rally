@@ -179,7 +179,9 @@ enforcement:
         担保の表示が label() と同じになること、INDEX.md で K-0004 が「未配線」と出ること、真偽の検査が落ちる・通ることを確かめ、
         ci/knowledge-enforcement.yml で Engine を ENGINE_REF の版で取って走らせるようにした。Engine は別のリポジトリで、差分を当てて ENGINE_REF を上げ
         --index を作り直すこと、ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、INDEX.md の担保の列は今も deterministic のままで、
-        この解決策も未配線・未確認
+        この解決策も未配線・未確認。議決 D-0021 の schema の案（Issue #987）も同じ案なので、新しい差分も解決策も足さずこの差分で満たし、
+        Issue #987 で手元の Engine の先頭（a7fae10）の写しに差分が当たり、test_engine.py（ENGINE_DIR を向けて）と差分で Engine に足した
+        test_knowledge_check.py のテストが通ることを確かめた（ENGINE_REF の版では確かめていない）
       issue: 968
       at: 2026-11-07
       decided_by: committee:D-0017
@@ -271,20 +273,6 @@ enforcement:
         ファイルや job や runs がない・ほかの job や検査を呼ぶだけ・注釈の中だけのときに落ち、包んだ呼び方では通ることを確かめた。
         今のリポジトリには wired: true の解決策がなく、check.py も .github/workflows/ にはまだ写していない（建設者）ので、PR ごとには走っておらず効き目は確かめていない
       issue: 986
-      at: 2026-11-07
-      decided_by: committee:D-0021
-      wired: false
-      verified: false
-    - kind: schema
-      what: >-
-        議決 D-0021 の schema の案（Engine の definitions/knowledge.yaml の enforcement.solutions に wired・verified の真偽を足し、
-        core-gates/knowledge_check.py に check.py の label() を移して INDEX.md の担保の列に「未配線」「deterministic（未確認）」を出す）は、
-        議決 D-0015・D-0016・D-0017 と同じ案で、Issue #965・#968 で置いた tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が満たすので、
-        新しい差分は作らずその担保として記録し、差分と README に D-0021 を書き足した。手元の Engine の先頭（a7fae10）の写しに差分が当たり、
-        test_engine.py（ENGINE_DIR を向けて）と差分で Engine に足した test_knowledge_check.py のテストが通ることを確かめた。Engine は別のリポジトリで、
-        差分を当てて knowledge-check.yml の ENGINE_REF を上げ --index を作り直すことは建設者が行うので、INDEX.md の担保の列は今も deterministic のままで、
-        この解決策も未配線・未確認
-      issue: 987
       at: 2026-11-07
       decided_by: committee:D-0021
       wired: false
