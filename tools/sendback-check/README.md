@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0017` と Issue #969 でひな形が必須のチェックにできる形かを見張る手順を `ci.test.mjs` に足し、議決 `D-0016` と Issue #964 で配線の順序の見張りに `ENGINE_REF` の Engine で走らせた `engine.test.mjs` の結果（(3) と (c) が todo になっていないか）を足した、議決 `D-0014` と Issue #961 で Engine の basis が直ったのに todo が残っていれば落とすテストを `engine.test.mjs` に足し、議決 `D-0020` と Issue #977 で `engine.test.mjs` を Engine の既定のブランチの先頭でも定期に走らせて落ちたら知らせる形（`ci/sendback-engine-head.yml`）を足した、議決 `D-0026` と Issue #1018 で写しのジョブが branch protection の必須のチェックに入っているかを照らす検査（`protection.mjs`）を足し、議決 `D-0028` と Issue #1024 で `ENGINE_REF` の行を変える PR で `engine-test` が必ずその版で走るかを見張る手順を `ci.test.mjs` に足し、同じ議決と Issue #1025 で Engine が別の言い回しで adopt の合計だけを書いても (3) が必須で落ちることを Engine の写しで確かめるテストを `engine.test.mjs` に足し、議決 `D-0031` と Issue #1046 で `engine_harness.py` の偽の cursor が知らない問い合わせを `harness_unknown_query` で落とし、`engine-head` がそれを `engine_head_failed`（判定の変化）と分けて知らせる形にした。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0017` と Issue #969 でひな形が必須のチェックにできる形かを見張る手順を `ci.test.mjs` に足し、議決 `D-0016` と Issue #964 で配線の順序の見張りに `ENGINE_REF` の Engine で走らせた `engine.test.mjs` の結果（(3) と (c) が todo になっていないか）を足した、議決 `D-0014` と Issue #961 で Engine の basis が直ったのに todo が残っていれば落とすテストを `engine.test.mjs` に足し、議決 `D-0020` と Issue #977 で `engine.test.mjs` を Engine の既定のブランチの先頭でも定期に走らせて落ちたら知らせる形（`ci/sendback-engine-head.yml`）を足した、議決 `D-0026` と Issue #1018 で写しのジョブが branch protection の必須のチェックに入っているかを照らす検査（`protection.mjs`）を足し、議決 `D-0028` と Issue #1024 で `ENGINE_REF` の行を変える PR で `engine-test` が必ずその版で走るかを見張る手順を `ci.test.mjs` に足し、同じ議決と Issue #1025 で Engine が別の言い回しで adopt の合計だけを書いても (3) が必須で落ちることを Engine の写しで確かめるテストを `engine.test.mjs` に足し、議決 `D-0031` と Issue #1046 で `engine_harness.py` の偽の cursor が知らない問い合わせを `harness_unknown_query` で落とし、`engine-head` がそれを `engine_head_failed`（判定の変化）と分けて知らせる形にし、議決 `D-0031` と Issue #1047 で `engine-head` が通ったときも Issue #948 に記録し、その記録が残っているかを照らす検査（`head-record.mjs`）を足した。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -12,6 +12,7 @@ node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mj
 npm test                         # Engine の本物の判定のテスト（engine.test.mjs）も走る
 node --test ci.test.mjs           # ci/sendback-engine.yml の ENGINE_REF の見張り・必須のチェックにできる形か・.github/workflows/ の写しとのずれ、ci/sendback-engine-head.yml の形と記録の手順
 node protection.mjs --protection <gh api の branch protection の JSON> [--repo <リポジトリの根>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 必須のチェックの照合
+node head-record.mjs --comments <gh api の Issue #948 のコメントの JSON> [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # engine-head の記録の照合
 ```
 
 依存はない（Node.js だけ。`engine.test.mjs` は Python 3 と Engine のチェックアウトも使う）。
@@ -132,11 +133,24 @@ PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウト
 
 `engine-test` は Engine を `ENGINE_REF` の固定の版で取るので、Engine の判定が変わっても `ENGINE_REF` を上げるまで誰も気づかない（議決 `D-0020`、Issue #977）。`ci/sendback-engine-head.yml` の `engine-head` のジョブが、同じ `engine.test.mjs` を Engine の既定のブランチの先頭（`ref` を付けないチェックアウト）で 1 日 1 回（UTC 19:30、JST 4:30）と手動（`workflow_dispatch`）で走らせる。
 
+- 記録の手順は、テストの手順が通っても落ちても走る（`if: always()`）。テストの手順（`id: head-test`）の結果（`steps.head-test.outcome`）が `success` なら `::error` を出さず、Issue #948 に `engine_head_passed` として先頭の版・その時の `ENGINE_REF`・実行の URL を記録する。`success` でない（落ちた・飛ばされた・取り消された）ときは下の落ちたときの記録にする（議決 `D-0031`、Issue #1047。落ちたときだけ記録していると、先頭で通り続ける限り「先頭の Engine での実行の記録」が残らず、Issue #977 の解決策の `wired`・`verified` を確かめられない）
 - 落ちたら `::error title=sendback-engine-head engine_head_failed::…` を出し、Issue #948 に先頭の版・その時の `ENGINE_REF`（`.github/workflows/sendback-engine.yml` の写しがあればその版、なければひな形の版）・落ちたテスト（TAP の `not ok` の行）・実行の URL を記録する。`ENGINE_REF` を上げる前に、判定がどう変わったかをそこで確かめる
 - `engine.test.mjs` の出力（`engine-head.txt`。`engine_harness.py` の標準エラーも入る）に `harness_unknown_query` の印があれば、`engine_head_failed` ではなく `::error title=sendback-engine-head harness_unknown_query::…` を出し、Issue #948 にハーネスのずれとして、知らない問い合わせ（5 件まで）と一緒に記録する。Engine の判定の変化ではないので、`engine_harness.py` を先頭に合わせてから判定を確かめる（議決 `D-0031`、Issue #1046）。印があればほかのテストの落ち方に関わらずこちらにする（ハーネスが合わないうちは判定のテストの結果を信じられない）
-- 同じ先頭の版の同じ種類の記録（`<!-- sendback-engine-head: <SHA> <engine_head_failed か harness_unknown_query> -->` の印）が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかった（Engine を取れなかった）ときと、これまでの記録が読めなかったときは毎回足す。記録に失敗したらその手順も落ちる
+- 同じ先頭の版の同じ種類の記録（`<!-- sendback-engine-head: <SHA> <engine_head_passed・engine_head_failed・harness_unknown_query のどれか> -->` の印）が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかった（Engine を取れなかった）ときと、これまでの記録が読めなかったときは毎回足す。記録に失敗したらその手順も落ちる
 - PR では走らせない。必須のチェックにもしない（先頭の Engine の変化で PR を止めない）。Issue に記録するので `issues: write` が要り、PR のコードをその権限で動かさないため `sendback-engine.yml` とは別のワークフローにした
-- 建設者が `.github/workflows/sendback-engine-head.yml` にそのまま写す。`ci.test.mjs` がこのひな形の形（schedule と手動だけ・Engine を `ref` なしで取る・`ENGINE_DIR` を向けて `engine.test.mjs` を走らせる・落ちたときだけ記録する）と、記録の手順を偽の `gh` で動かした振る舞い、写しがあればひな形と同じかを見る。偽の Engine（ハーネスの知らない `judgment.decided` の問い合わせを引く・その例外を握りつぶす・判定だけが変わる）で、`engine_harness.py` から `engine.test.mjs`、記録の手順までを通して、`harness_unknown_query` と `engine_head_failed` が分かれて出ることも見る
+- 建設者が `.github/workflows/sendback-engine-head.yml` にそのまま写す。`ci.test.mjs` がこのひな形の形（schedule と手動だけ・Engine を `ref` なしで取る・`ENGINE_DIR` を向けて `engine.test.mjs` を走らせる・通ったときも落ちたときも記録の手順を走らせる）と、記録の手順を偽の `gh` で動かした振る舞い（通ったら `engine_head_passed` で記録し、通っていなければそう記録しない）、写しがあればひな形と同じかを見る。偽の Engine（ハーネスの知らない `judgment.decided` の問い合わせを引く・その例外を握りつぶす・判定だけが変わる）で、`engine_harness.py` から `engine.test.mjs`、記録の手順までを通して、`harness_unknown_query` と `engine_head_failed` が分かれて出ることも見る
+
+#### 記録の照合（`head-record.mjs`）
+
+議決 `D-0031` は、建設者が `ci/sendback-engine-head.yml` を `.github/workflows/` に写して schedule で走らせ、先頭の Engine での実行の記録（通った・落ちた）が Issue #948 に 1 件残ってから、Issue #977 の解決策の `wired` と `verified` を `true` にすると決めた。その「1 件残ってから」を `head-record.mjs` が照らす（Issue #1047）。
+
+| rule | 外れる状態 |
+|---|---|
+| `head_record_missing` | Issue #948 に `engine-head` の記録がない。記録に数えるのは、`github-actions[bot]` が書いたコメントで、最初の行が `<!-- sendback-engine-head: <40 桁の SHA> <engine_head_passed・engine_head_failed・harness_unknown_query> -->` で、本文に実行の URL（`/actions/runs/<番号>`）があるものだけ（人が印を写したコメントと、先頭の版が取れなかった `unknown` の記録は数えない） |
+
+- Issue のコメントは PR ごとには読まないので、建設者が写して schedule か手動で 1 回走らせたあと、`gh api repos/{owner}/{repo}/issues/948/comments --paginate --jq '.[]'` の出力（1 行 1 件。JSON の配列でもよい）を `--comments` に渡して走らせる
+- 終了コードは 0 = 通る、1 = 外れた、2 = 読めなかった（JSON でない・`--comments` がない）。`GITHUB_ACTIONS=true` では `::error title=sendback-check <rule>::…` の形で出す。通ると記録ごとに種類・先頭の版・実行の URL を 1 行ずつ出す
+- 通ってから、`K-0004` の Issue #977 の解決策の `wired` を `true`（`wired_by` に `.github/workflows/sendback-engine-head.yml` の `engine-head` と `tools/sendback-check/engine.test.mjs`）にし、`verified` を `true` にする。`head-record.mjs` の出力の実行の URL を what に書き足す
 
 ## 呼び出す場所
 
