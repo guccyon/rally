@@ -3,8 +3,8 @@ theme: 6
 kind: causal
 statement: >-
   既定ブランチとの衝突のたびに、上限なしで、セッションを引き継ぐ（agent_resumed）tier-large の続きのジョブを積み直すと、
-  衝突が機械的（CHANGELOG だけなど）で作業が数ターンで終わっても、引き継いだ文脈の分だけ 1 回ごとのコストが増え続け、
-  回数とともに PR 本文の追記も重なる。
+  衝突が機械的（CHANGELOG だけなど）で作業が数ターンで終わっても、引き継いだ文脈の分だけ 1 回ごとのコストが増え続ける
+  （回数とともに PR 本文の追記が重なることは K-0001 の主張）。
 scope:
   roles: [supervisor, implement]
 confidence: hypothesis
@@ -16,7 +16,7 @@ status: active
 verified_at: 2026-11-05
 review_by: 2026-12-05
 confidentiality: product
-related: [K-0002, K-0001]
+related: [K-0002, K-0001, K-0008]
 invalidate_when:
   - "conflict の続きのジョブに回数の上限か、セッションの引き継ぎの打ち切りが入った"
   - "CHANGELOG だけのような機械的な衝突が tier-small か機械的な解消に回るようになった"
@@ -80,7 +80,10 @@ enforcement:
         agent_resumed と tier の照らせない件数が 1 以上なら落とす。Engine がどちらも出さない今の形のときだけ todo で飛ばし（K-0004 の engine.test.mjs の
         todo と同じ形）、片方だけを出す版はもう片方が照らせずに落ちる。ENGINE_DIR を渡したときと CI=true では飛ばさずに落とす。ENGINE_REF（2490db6）の
         Engine では todo になること、dispatcher.py に agent_resumed だけを足した写しでは落ち、両方を足した写しでは通ることを確かめた。job.finished に
-        それらを足して ENGINE_REF を上げるのと、ひな形 ci/conflict-check.yml を .github/workflows/ に写すのは建設者なので、効き目はまだ確かめていない
+        それらを足して ENGINE_REF を上げるのと、ひな形 ci/conflict-check.yml を .github/workflows/ に写すのは建設者なので、効き目はまだ確かめていない。
+        議決 D-0042 の test の案が求める test_watch.py の同じ検査は入れていない（watch.py は events.py の records_from_events で組んだ記録を check で
+        照らすだけで、記録がない項目を照らさない扱いも events.py と同じなので、Engine の job.finished で照らせない回があれば EngineFinishedTest が先に落ちる。
+        test_watch.py に足すのは D-0042 の案のチケット）
       issue: 1035
       at: 2026-11-07
       decided_by: committee:D-0030
