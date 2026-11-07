@@ -375,4 +375,21 @@ enforcement:
       decided_by: committee:D-0028
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0028（PR #1023）の test の案（ci.test.mjs に、ci/sendback-engine.yml の engine-test が engine.test.mjs の TAP を engine-test.tap に出し、
+        同じジョブの後で continue-on-error や if: なしに order.mjs --engine-report engine-test.tap を呼ぶ形かを見て、外れたら落とす検査を足す）を入れた。
+        tools/sendback-check/ci.test.mjs の engineReportProblems が、engine-test の手順を engine.test.mjs を走らせる手順から偽の node で
+        GitHub Actions と同じ順に動かし（落ちた手順で止める）、order.mjs が engine.test.mjs の後で --engine-report に engine-test.tap を受け取り、
+        その中身が tap の reporter の出した TAP であること、order.mjs が落ちたら（|| true や exit 0 で握りつぶさず）engine-test も落ちること、
+        engine.test.mjs から後ろの手順とジョブに if: と continue-on-error がないことを、ひな形と写しの両方で見る。
+        今のひな形（同じ手順で呼ぶ形）と後ろの手順に if: なしで分けた形が通ること、呼び出しを外す・--engine-report を外す・|| true・exit 0・
+        別の TAP を渡す・TAP を別の名前に出す・tap の reporter を外す・engine.test.mjs より前に呼ぶ・後ろの手順に if: always() か continue-on-error を付ける・
+        テストの手順に continue-on-error を付ける・wiring-order で呼ぶの 13 の直しで外れることを確かめた。ci.test.mjs は wiring-order のジョブで走るが、
+        .github/workflows/ への写しは建設者なので、まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1027
+      at: 2026-11-07
+      decided_by: committee:D-0028
+      wired: false
+      verified: false
 decided_by: committee:D-0004

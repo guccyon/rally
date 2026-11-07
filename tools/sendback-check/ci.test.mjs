@@ -6,6 +6,7 @@
 // 写しとのずれも見るので、見張りを外す変更はひな形と写しを一緒に直しても wiring-order で落ちる。写しを消す・ジョブの名前を変える変更は、
 // 必須のチェック（engine-test・wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
 // ENGINE_REF の行を変える PR で engine-test が必ずその版で走る形か（ENGINE_REF の置き場所・needs・Engine を取る版）も、ひな形と写しで見る（議決 D-0028、Issue #1024）。
+// engine-test が engine.test.mjs の TAP を engine-test.tap に出し、order.mjs --engine-report に渡して外れたら落ちる形かも、手順を偽の node で動かして見る（議決 D-0028、Issue #1027）。
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -204,6 +205,146 @@ test("ENGINE_REF の行を変える PR で engine-test を走らせない・別�
   assert.equal(withoutRef(cases["手順の env で ENGINE_REF を上書きする"]), withoutRef(template));
 });
 
+// engine-test が engine.test.mjs の結果を order.mjs --engine-report に渡して、外れたら落ちるか（議決 D-0028、Issue #1027）。
+// 渡す手順が消える・別の TAP を渡す・`|| true` や exit 0 で落ちても通す形だと、ENGINE_REF の Engine で (3) か (c) が通っていなくても
+// engine-test が通り、配線の順序の見張り（D-0016）が効かない。書き方の言い回しで逃げられないよう、engine-test の手順を偽の node で
+// GitHub Actions と同じ順に動かし（落ちた手順で止める）、振る舞いで見る。
+
+/** 手順の run の中身（`run: |` の塊か 1 行の run）。run のない手順は null。`${{ … }}` は値に置き換える。 */
+function stepRun(step, values) {
+  const block = step.findIndex((l) => /^\s*(- )?run: \|\s*$/.test(l));
+  const script = block >= 0 ? runScript(step) : step.map((l) => l.match(/^\s*(?:- )?run: (?![|>])(.+)$/)?.[1]).find((s) => s != null);
+  return script == null ? null : `${script}\n`.replace(/\$\{\{\s*([^}]*?)\s*\}\}/g, (_, k) => values[k] ?? "");
+}
+
+/** 偽の node。engine.test.mjs なら --test-reporter と --test-reporter-destination の組ごとに出し、order.mjs なら --engine-report の中身を記録する。 */
+const FAKE_NODE = `import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+const args = process.argv.slice(2);
+const log = (o) => appendFileSync(process.env.FAKE_LOG, JSON.stringify(o) + "\\n");
+const value = (name) => {
+  const out = [];
+  args.forEach((a, i) => { if (a === name) out.push(args[i + 1]); else if (a.startsWith(name + "=")) out.push(a.slice(name.length + 1)); });
+  return out;
+};
+if (args.includes("--test") && args.some((a) => /(^|\\/)engine\\.test\\.mjs$/.test(a))) {
+  const dests = value("--test-reporter-destination");
+  value("--test-reporter").forEach((r, i) => {
+    const text = r === "tap" ? "TAP version 13\\nok 1 - (3)\\n1..1\\n" : "spec の出力\\n";
+    const dest = dests[i] ?? "stdout";
+    if (dest === "stdout") process.stdout.write(text); else if (dest === "stderr") process.stderr.write(text); else writeFileSync(dest, text);
+  });
+  log({ engineTest: true });
+  process.exit(Number(process.env.FAKE_TEST_RC));
+}
+if (args.some((a) => /(^|\\/)order\\.mjs$/.test(a))) {
+  const report = value("--engine-report")[0];
+  const path = report == null ? null : resolve(report);
+  log({ order: true, report: path, tap: path != null && existsSync(path) && readFileSync(path, "utf8").startsWith("TAP version 13") });
+  process.exit(Number(process.env.FAKE_ORDER_RC));
+}
+`;
+
+/** engine-test の手順を、engine.test.mjs を走らせる手順から偽の node で順に動かす。落ちた手順で止める（if: は使わない形なので見ない）。 */
+function simulateEngineTest(text, { testRc, orderRc }) {
+  const root = mkdtempSync(join(tmpdir(), "sendback-engine-report-"));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(root, "fake-node.mjs"), FAKE_NODE);
+  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nexec "${process.execPath}" "${join(root, "fake-node.mjs")}" "$@"\n`);
+  chmodSync(join(bin, "node"), 0o755);
+  const log = join(root, "calls.jsonl");
+  const steps = jobSteps(text, "engine-test");
+  const start = steps.findIndex((s) => /node --test (.* )?engine\.test\.mjs(\s|$)/.test(stepRun(s, {}) ?? ""));
+  let status = 0;
+  for (const step of start < 0 ? [] : steps.slice(start)) {
+    const script = stepRun(step, { "github.workspace": root, "env.ENGINE_REF": ENGINE_REF });
+    if (script == null) continue;
+    const cwd = join(root, step.map((l) => l.match(/^\s*(?:- )?working-directory: (\S+)\s*$/)?.[1]).find((d) => d != null) ?? "");
+    mkdirSync(cwd, { recursive: true });
+    const shell = step.some((l) => /^\s*(- )?shell: bash\s*$/.test(l)) ? ["--noprofile", "--norc", "-e", "-o", "pipefail"] : ["-e"];
+    status = spawnSync("bash", [...shell, "-c", script], {
+      cwd,
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: log, FAKE_TEST_RC: String(testRc), FAKE_ORDER_RC: String(orderRc),
+        ENGINE_REF, GITHUB_STEP_SUMMARY: join(root, "summary"), GITHUB_WORKSPACE: root },
+      encoding: "utf8",
+    }).status;
+    if (status !== 0) break;
+  }
+  const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : [];
+  return { ran: start >= 0, status, calls };
+}
+
+/** engine-test が engine.test.mjs の TAP を engine-test.tap に出し、order.mjs --engine-report に渡して外れたら落ちるかの外れ（空なら通る）。注釈の行は見ない。 */
+function engineReportProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const body = jobBody(lines.join("\n"), "engine-test");
+  if (body === null) return ["engine-test のジョブがない（必須のチェックの名前）"];
+  if (body.some((l) => /^ {4}(continue-on-error|if):/.test(l))) problems.push("engine-test のジョブに if: か continue-on-error があると、飛ばされるか落ちても通る");
+  const steps = jobSteps(lines.join("\n"), "engine-test");
+  const start = steps.findIndex((s) => /node --test (.* )?engine\.test\.mjs(\s|$)/.test(stepRun(s, {}) ?? ""));
+  if (start < 0) return [...problems, "engine-test が engine.test.mjs を走らせていない"];
+  // engine.test.mjs の手順から order.mjs を呼ぶ手順まで（後ろの手順も含む）に if: と continue-on-error がないこと
+  for (const step of steps.slice(start)) {
+    if (step.some((l) => /^\s*(- )?(continue-on-error|if):/.test(l))) {
+      problems.push(`engine-test の手順「${step[0].trim()}」に if: か continue-on-error がある（order.mjs --engine-report が飛ばされるか、落ちても通る）`);
+    }
+  }
+  const pass = simulateEngineTest(lines.join("\n"), { testRc: 0, orderRc: 0 });
+  const orders = pass.calls.filter((c) => c.order);
+  if (pass.status !== 0) problems.push("engine.test.mjs と order.mjs が通っても engine-test が通らない");
+  if (orders.length === 0) problems.push("engine-test が engine.test.mjs の後で order.mjs --engine-report を呼ばない");
+  for (const c of orders) {
+    if (c.report == null) problems.push("order.mjs に --engine-report を渡していない");
+    else if (!c.report.endsWith("/engine-test.tap")) problems.push(`order.mjs --engine-report に engine-test.tap でないファイル（${c.report.split("/").pop()}）を渡している`);
+    else if (!c.tap) problems.push("order.mjs --engine-report に渡す engine-test.tap が、その前に engine.test.mjs が出した TAP でない");
+  }
+  if (orders.length > 0 && simulateEngineTest(lines.join("\n"), { testRc: 0, orderRc: 1 }).status === 0) {
+    problems.push("order.mjs --engine-report が外れても engine-test が通る（|| true や exit 0 で落ちても止めない）");
+  }
+  if (simulateEngineTest(lines.join("\n"), { testRc: 1, orderRc: 0 }).status === 0) problems.push("engine.test.mjs が落ちても engine-test が通る");
+  return problems;
+}
+
+test("ひな形の engine-test は engine.test.mjs の TAP を engine-test.tap に出し、order.mjs --engine-report に渡して、外れたら落ちる", () => {
+  assert.deepEqual(engineReportProblems(template), []);
+  const r = simulateEngineTest(template, { testRc: 1, orderRc: 1 });
+  assert.equal(r.status, 1);
+  // テストが落ちても結果は渡す（同じ手順で呼ぶので）
+  assert.ok(r.calls.some((c) => c.order && c.tap), "engine.test.mjs が落ちたときに order.mjs --engine-report を呼んでいない");
+});
+
+test("order.mjs --engine-report を外す・別の TAP を渡す・落ちても通す・飛ばせる形にする直しは外れになり、後ろの手順に if: なしで分けるのは通る", () => {
+  const ORDER = "          node order.mjs --engine-report engine-test.tap --summary \"$GITHUB_STEP_SUMMARY\" || rc=1\n";
+  const later = (extra) => `${template.replace(ORDER, "").trimEnd()}\n      - name: 配線の順序（engine-test の結果）\n${extra}`
+    + "        working-directory: tools/sendback-check\n        run: node order.mjs --engine-report engine-test.tap --summary \"$GITHUB_STEP_SUMMARY\"\n";
+  assert.ok(template.includes(ORDER), "ひな形の order.mjs の行が変わった。このテストの置き換えを直す");
+  const cases = {
+    "order.mjs の呼び出しを外す": template.replace(ORDER, ""),
+    "--engine-report を外す": template.replace("node order.mjs --engine-report engine-test.tap", "node order.mjs"),
+    "|| true で落ちても通す": template.replace(ORDER, ORDER.replace("|| rc=1", "|| true")),
+    "exit 0 で終える": template.replace("          exit $rc\n", "          exit 0\n"),
+    "別の TAP を渡す": template.replace("--engine-report engine-test.tap", "--engine-report other.tap"),
+    "TAP を別の名前に出す": template.replace("--test-reporter-destination=engine-test.tap", "--test-reporter-destination=engine.tap"),
+    "両方を別の名前にする": template.replace("--test-reporter-destination=engine-test.tap", "--test-reporter-destination=engine.tap")
+      .replace("--engine-report engine-test.tap", "--engine-report engine.tap"),
+    "TAP の reporter を外す": template.replace("--test-reporter=tap --test-reporter-destination=engine-test.tap", "--test-reporter=spec --test-reporter-destination=engine-test.tap"),
+    "engine.test.mjs より前に呼ぶ": template.replace(ORDER, "").replace("          rc=0\n", `          rc=0\n${ORDER}`),
+    "後ろの手順で if: always() を付けて呼ぶ": later("        if: always()\n"),
+    "後ろの手順で continue-on-error を付けて呼ぶ": later("        continue-on-error: true\n"),
+    "テストの手順に continue-on-error を付ける": template.replace("      - name: Engine の本物の判定のテスト（K-0004）\n",
+      "      - name: Engine の本物の判定のテスト（K-0004）\n        continue-on-error: true\n"),
+    "wiring-order で呼ぶ": template.replace(ORDER, "").replace("\n  engine-test:\n",
+      "      - run: node tools/sendback-check/order.mjs --engine-report tools/sendback-check/engine-test.tap\n\n  engine-test:\n"),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(engineReportProblems(text), [], `${name} が通った`);
+  }
+  assert.deepEqual(engineReportProblems(later("")), [], "後ろの手順に if: なしで分けた形が外れになった");
+});
+
 test("GitHub Actions では写し（.github/workflows/sendback-engine.yml）がなければ落ちる（別の名前に写すとずれを見張れない）", {
   skip: process.env.GITHUB_ACTIONS === "true" ? false : "GitHub Actions の外",
 }, () => {
@@ -216,6 +357,7 @@ test("写し（.github/workflows/sendback-engine.yml）があれば、ENGINE_REF
   const copy = readFileSync(copyPath, "utf8");
   assert.equal(withoutRef(copy), withoutRef(template), "写しが ENGINE_REF の行のほかでひな形とずれている。ひな形を直してから写し直す");
   assert.deepEqual(engineRefRunProblems(copy), [], "写しの ENGINE_REF の行を変えても engine-test がその版で走らない");
+  assert.deepEqual(engineReportProblems(copy), [], "写しの engine-test が engine.test.mjs の結果を order.mjs --engine-report に渡して落とす形でない");
   const ref = copy.match(/^\s*ENGINE_REF:\s*(\S+)\s*$/m)?.[1];
   assert.equal(runGuard(ref ?? "").status, 0, `写しの ENGINE_REF（${ref}）が 40 桁のコミット SHA でない`);
 });
