@@ -951,7 +951,10 @@ void main() {
       (error as StudentApiException).error!.code,
       ErrorCode.slotNotStarted,
     );
-    expect(errorMessageOf(error), 'ビデオ通話は予約の開始時刻から始められます。');
+    expect(
+      errorMessageOf(error),
+      'この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。',
+    );
   });
 
   test('知らない ErrorCode は汎用のエラーとして扱う', () async {
