@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { callsEventsCheck, checkOrder, loadRepo, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
+import { callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, loadRepo, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -190,6 +190,18 @@ test("CLI: order.mjs --repo は npm scripts とラッパーのスクリプトを
   // ラッパーがなければ（読めなければ）、--events を中に入れた npm scripts は名前からは --events を呼ぶと分からない
   const noScripts = fixture({ "sendback-check.yml": WRAPPED_WORKFLOWS["--events を中に入れた npm scripts"] }, engineTestNow);
   assert.equal(spawnSync("node", [orderScript, "--repo", noScripts], { encoding: "utf8" }).status, 0);
+  // package.json が壊れていれば、import の時点ではなく loadRepo で読めなかったとして終了コード 2
+  const broken = fixture({ "sendback-check.yml": WRAPPED_WORKFLOWS["--events を中に入れた npm scripts"] }, engineTestNow,
+    { "tools/sendback-check/package.json": "{ scripts" });
+  const r = spawnSync("node", [orderScript, "--repo", broken], { encoding: "utf8" });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^sendback-check order: 読めなかった: /m);
+});
+
+test("scripts を渡さないときの既定は定数で、order.mjs を import してもファイルを読まない", () => {
+  assert.deepEqual(DEFAULT_SCRIPTS, { check: "node check.mjs" });
+  assert.ok(callsEventsCheck("steps:\n  - run: npm --prefix tools/sendback-check run check -- --events e.json\n"));
+  assert.ok(!callsEventsCheck("steps:\n  - run: npm --prefix tools/sendback-check run check:events -- --pr 12\n"));
 });
 
 test("CLI: check.mjs --events を GitHub Actions で動かすと、通る記録でも配線の順序が外れていれば落ちる", () => {

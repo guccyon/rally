@@ -55,15 +55,15 @@ function steps(text) {
 /** その手順の行が tools/sendback-check の中で動くか（working-directory か、行の中の道で）。 */
 const inToolDir = (step, line) => step.wd.replace(/\/$/, "").endsWith(TOOL_DIR) || line.includes(TOOL_DIR);
 
-/** tools/sendback-check/package.json の scripts（npm run の名前から中身を引く）。読めなければ check だけ。 */
+/** scripts を渡さないときの既定（tools/sendback-check/package.json の check と同じ）。ファイルは読まない（読むのは loadRepo だけ）。 */
+export const DEFAULT_SCRIPTS = Object.freeze({ check: "node check.mjs" });
+
+/** tools/sendback-check/package.json の scripts（npm run の名前から中身を引く）。ファイルがなければ既定。loadRepo から呼ぶ。 */
 function readToolScripts(root) {
   const path = join(root, TOOL_DIR, "package.json");
-  if (!existsSync(path)) return { check: "node check.mjs" };
+  if (!existsSync(path)) return DEFAULT_SCRIPTS;
   return JSON.parse(readFileSync(path, "utf8")).scripts ?? {};
 }
-
-/** このリポジトリの tools/sendback-check/package.json の scripts。callsEventsCheck に渡さないときに使う。 */
-export const TOOL_SCRIPTS = readToolScripts(REPO_ROOT);
 
 /** 手順の行に出てくるスクリプトのファイルの道（シェルや node のラッパー）。check.mjs・order.mjs そのものとテスト（*.test.*）は除く。 */
 const scriptPaths = (line) => [...line.matchAll(/(?:^|[\s"'=(])((?:\.{0,2}\/)?[\w.\/-]+\.(?:sh|bash|mjs|cjs|js))\b/g)]
@@ -137,7 +137,7 @@ function pathVars(text) {
  * 呼び方は直の node のほか、npm scripts（--prefix・run-script を含む）、シェルのラッパー、引数の順序を変えたもの、変数や関数を経たものも見る
  * （議決 D-0017、Issue #967）。scripts は tools/sendback-check/package.json の scripts、readFile はリポジトリの根からの道で中身（なければ null）を返す。
  */
-export function callsEventsCheck(text, { scripts = TOOL_SCRIPTS, readFile = () => null } = {}) {
+export function callsEventsCheck(text, { scripts = DEFAULT_SCRIPTS, readFile = () => null } = {}) {
   const mentionsTool = logicalLines(text).some((l) => l.includes("sendback-check"));
   const vars = pathVars(text);
   return steps(text).some((s) => {
@@ -171,7 +171,7 @@ export function todoLines(source) {
  * 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。
  * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
  */
-export function checkOrder({ workflows, engineTest, scripts = TOOL_SCRIPTS, readFile = () => null }) {
+export function checkOrder({ workflows, engineTest, scripts = DEFAULT_SCRIPTS, readFile = () => null }) {
   const callers = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
   if (callers.length === 0) return { wired: [], errors: [] };
   const errors = [];
