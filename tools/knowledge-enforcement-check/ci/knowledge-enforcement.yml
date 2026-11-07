@@ -13,6 +13,10 @@ concurrency:
   group: knowledge-enforcement-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # engine/knowledge_check.patch を当てて確かめる Engine の版（knowledge-check.yml の ENGINE_REF と同じにする）
+  ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
+
 jobs:
   enforcement:
     runs-on: ubuntu-latest
@@ -30,9 +34,17 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 検査のテスト
+      - name: Engine の差分を当てる元を取る（Engine の固定した版）
         run: |
-          python3 -m pip install --quiet pyyaml
+          for f in definitions/knowledge.yaml core-gates/knowledge_check.py core-gates/tests/test_knowledge_check.py; do
+            mkdir -p "/tmp/engine/$(dirname "$f")"
+            curl -fsSL -o "/tmp/engine/$f" "https://raw.githubusercontent.com/guccyon/factory-engine/${ENGINE_REF}/$f"
+          done
+      - name: 検査のテスト
+        env:
+          ENGINE_DIR: /tmp/engine
+        run: |
+          python3 -m pip install --quiet pyyaml pytest
           python3 -m unittest discover -s tools/knowledge-enforcement-check
       - name: 担保の配線と効き目
         env:
