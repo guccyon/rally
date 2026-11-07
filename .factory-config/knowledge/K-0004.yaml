@@ -322,4 +322,21 @@ enforcement:
       decided_by: committee:D-0026
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0026（PR #1016。Issue #1018 は D-0025 と書いているが、この案は D-0026 の議決にある）の ci_check の案（D-0017・D-0020 の案のとおり
+        ci/sendback-engine.yml の wiring-order と engine-test を .github/workflows/ に写して branch protection の必須チェックに入れ、本物の配線の PR で
+        順序の見張りが落ちる・通ることを記録してから wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        写しを消す PR や ci.test.mjs ごと見張りを書き換える PR は必須のチェックでしか止まらないので、tools/sendback-check/protection.mjs が
+        gh api の branch protection（古い形か rulesets）の JSON を読み、.github/workflows/sendback-engine.yml の engine-test と wiring-order が報告する
+        チェックの名前（ジョブの name: があればそれ）が必須のチェックにあるかを照らし、写しかジョブがなければ workflow_not_copied、必須にないと
+        required_check_missing で落とす。protection.test.mjs で両方の JSON の形・片方だけ必須・保護がない・name: で名前が変わる・写しがない場合を確かめた。
+        branch protection は PR の GITHUB_TOKEN では読めないので PR ごとには走らせず、写すこと・必須にすること・protection.mjs の結果と本物の配線の PR で
+        wiring-order が落ちる・通る実行を Issue #948 に記録すること（順序は tools/sendback-check/README の「必須のチェックの照合」）は建設者が行う。
+        今のリポジトリには写しがなく protection.mjs は workflow_not_copied で落ちるので、この解決策も未配線・未確認
+      issue: 1018
+      at: 2026-11-07
+      decided_by: committee:D-0026
+      wired: false
+      verified: false
 decided_by: committee:D-0004
