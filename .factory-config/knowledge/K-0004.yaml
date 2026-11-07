@@ -356,4 +356,23 @@ enforcement:
       decided_by: committee:D-0028
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0028（PR #1022。Issue #1025 は D-0027 と書いているが、この案は D-0028 の議決にある）の test の案（engine.test.mjs の今の形の判定に、
+        LEGACY_BASIS と文が違っても欠陥の採用数と仮決めの承認数を分けて書いていない basis に書き換えた Engine の写しを足し、todo を外すことを求めたうえで
+        (3) が必須で落ちることを確かめる）を入れた。tools/sendback-check/engine.test.mjs の (3) と「todo を外す」のテストの中身を、Engine の道を
+        受け取る関数（basisCase・todoRemovalCase）にし、Engine の orchestrator/dispatcher を一時ディレクトリに写して inspector_approved の basis の文を
+        adopt の合計だけの別の言い回し 4 つ（ADOPT_TOTAL_VARIANTS）に書き換えた写しで動かすテストを足した。写しごとに、basis が LEGACY_BASIS に合わず
+        basis_not_split で外れること、todo が残っていれば todo を外すことを求めて落ち、todo の行を除けば通ること、(3) が todo にならずに落ちることを見る。
+        今の形の文のままの写しでは (3) が todo になることも比べとして見る（D-0028 の反対の票が挙げた、LEGACY_BASIS でも approvalBasis() の形でもない
+        第三の形の場合にあたる）。手元の Engine で、LEGACY_BASIS を adopt の合計の言い回し全般に広げる改変、todoWhileLegacy が basis を問わず todo にする
+        改変、todo を外させる判定が approvalBasis() と合わない basis を今の形と見なす改変のどれでもこのテストだけが落ちることを確かめた。
+        手元の Engine の judgment.pending_fixes の問い合わせを engine_harness.py の偽の cursor が知らずに落ちていたので、空を返すようにした。
+        Engine が今の形の basis を書かなくなったら写しは作れないので何も見ずに通る。engine.test.mjs は .github/workflows/ からはまだ走っておらず
+        （ci/sendback-engine.yml の写しは建設者）、この解決策も未配線・未確認
+      issue: 1025
+      at: 2026-11-07
+      decided_by: committee:D-0028
+      wired: false
+      verified: false
 decided_by: committee:D-0004
