@@ -5,6 +5,7 @@
 // ひな形が必須のチェックにできる形（PR ごとに必ず走り、落ちたら止める）で、見張りの手順を持っていることも見る（議決 D-0017、Issue #969）。
 // 写しとのずれも見るので、見張りを外す変更はひな形と写しを一緒に直しても wiring-order で落ちる。写しを消す・ジョブの名前を変える変更は、
 // 必須のチェック（engine-test・wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
+// ENGINE_REF の行を変える PR で engine-test が必ずその版で走る形か（ENGINE_REF の置き場所・needs・Engine を取る版）も、ひな形と写しで見る（議決 D-0028、Issue #1024）。
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -127,6 +128,82 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
   }
 });
 
+// ENGINE_REF の行を変える PR で engine-test が必ず走るか（議決 D-0028、Issue #1024）。Engine を上げる PR が変えるのは写しの ENGINE_REF の行だけなので、
+// その PR で engine-test が飛ばされる・別の版で走ると、上げた版の Engine を確かめないまま通る。paths で絞ると写しを含めても含めなくても
+// 書き方しだいで走らない PR が出るので、絞り込みの中身は問わず絞り込み自体を外れにする（requiredCheckProblems）。ここではそのほかに、
+// ENGINE_REF がワークフローの env に 1 行だけあり（ずれの比べ方は ENGINE_REF の行を無視するので、2 行目で上書きされると見逃す）、
+// engine-test が needs で待って飛ばされず、見張りの手順と Engine を取る手順がその ENGINE_REF を使うことを見る。
+
+/** ENGINE_REF の行を変える PR で engine-test が走り、その版の Engine を確かめるかの外れ（空なら通る）。注釈の行は見ない。 */
+function engineRefRunProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  // ENGINE_REF を決める行: YAML の env の項目、GITHUB_ENV への書き込み、シェルの代入（echo の文の中の「ENGINE_REF=」は数えない）
+  const refLines = lines.filter((l) => /^\s*(- )?ENGINE_REF:/.test(l) || (/ENGINE_REF/.test(l) && /GITHUB_ENV/.test(l))
+    || /(^|[\s;&|(])(export\s+)?ENGINE_REF=/.test(l));
+  const env = lines.findIndex((l) => /^env:\s*$/.test(l));
+  const envBody = env < 0 ? [] : lines.slice(env + 1, lines.findIndex((l, i) => i > env && /^\S/.test(l)));
+  if (refLines.length !== 1 || !envBody.some((l) => /^ {2}ENGINE_REF: \S+\s*$/.test(l))) {
+    problems.push("ENGINE_REF はワークフローの env に 1 行だけ置く（ジョブや手順の env・GITHUB_ENV で上書きすると、ENGINE_REF の行を変えても別の版で走る）");
+  }
+  const engine = jobBody(lines.join("\n"), "engine-test");
+  if (engine === null) return [...problems, "engine-test のジョブがない（必須のチェックの名前）"];
+  if (engine.some((l) => /^ {4}needs:/.test(l))) problems.push("engine-test に needs があると、待つジョブが落ちたときに飛ばされて走らない");
+  const steps = jobSteps(lines.join("\n"), "engine-test");
+  if (!/ENGINE_REF が 40 桁のコミット SHA か/.test(steps[0]?.[0] ?? "") || !steps[0].some((l) => /"\$ENGINE_REF"/.test(l))) {
+    problems.push("engine-test の最初の手順が ENGINE_REF の見張りでない");
+  }
+  const checkout = steps.find((s) => s.some((l) => /repository: guccyon\/factory-engine/.test(l)));
+  if (!checkout?.some((l) => /^\s*ref: \$\{\{ env\.ENGINE_REF \}\}\s*$/.test(l))) {
+    problems.push("Engine を取る手順の ref が ${{ env.ENGINE_REF }} でない（ENGINE_REF の行を変えても取る版が変わらない）");
+  }
+  return problems;
+}
+
+test("ENGINE_REF の行を変える PR でも、ひな形は必須のチェックにできる形のまま engine-test がその版で走る", () => {
+  assert.deepEqual(engineRefRunProblems(template), []);
+  const bumped = template.replace(ENGINE_REF, "0123456789abcdef0123456789abcdef01234567");
+  assert.equal(withoutRef(bumped), withoutRef(template), "ENGINE_REF の行のほかが変わった");
+  assert.deepEqual(requiredCheckProblems(bumped), []);
+  assert.deepEqual(engineRefRunProblems(bumped), []);
+  assert.equal(runGuard(bumped.match(/^\s*ENGINE_REF:\s*(\S+)\s*$/m)[1]).status, 0);
+});
+
+test("ENGINE_REF の行を変える PR で engine-test を走らせない・別の版で走らせる直しは、paths の中身に関わらず外れになる", () => {
+  const onPr = "  pull_request:\n";
+  const cases = {
+    "paths で写しを含めて絞る": template.replace(onPr, `${onPr}    paths: [".github/workflows/sendback-engine.yml", "tools/sendback-check/**"]\n`),
+    "paths で写しを含めずに絞る": template.replace(onPr, `${onPr}    paths: ["tools/sendback-check/**"]\n`),
+    "paths の列で絞る": template.replace(onPr, `${onPr}    paths:\n      - "tools/**"\n`),
+    "paths-ignore で .github を外す": template.replace(onPr, `${onPr}    paths-ignore: [".github/**"]\n`),
+    "paths-ignore で写しを外す": template.replace(onPr, `${onPr}    paths-ignore:\n      - ".github/workflows/sendback-engine.yml"\n`),
+    "branches で絞る": template.replace(onPr, `${onPr}    branches: [release]\n`),
+    "engine-test が needs で待つ": template.replace("  engine-test:\n    runs-on", "  engine-test:\n    needs: wiring-order\n    runs-on"),
+    "engine-test の needs を列で書く": template.replace("  engine-test:\n    runs-on", "  engine-test:\n    needs:\n      - wiring-order\n    runs-on"),
+    "ジョブの env で ENGINE_REF を上書きする": template.replace("  engine-test:\n    runs-on: ubuntu-latest\n",
+      `  engine-test:\n    runs-on: ubuntu-latest\n    env:\n      ENGINE_REF: ${"f".repeat(40)}\n`),
+    "手順の env で ENGINE_REF を上書きする": template.replace("          ENGINE_DIR: ${{ github.workspace }}/.engine\n",
+      `          ENGINE_DIR: \${{ github.workspace }}/.engine\n          ENGINE_REF: ${"f".repeat(40)}\n`),
+    "GITHUB_ENV で ENGINE_REF を上書きする": template.replace("          echo \"ENGINE_REF=${ENGINE_REF}\"\n",
+      `          echo "ENGINE_REF=\${ENGINE_REF}"\n          echo "ENGINE_REF=${"f".repeat(40)}" >> "$GITHUB_ENV"\n`),
+    "ENGINE_REF をワークフローの env から外す": template.replace(/^env:\n {2}ENGINE_REF: .*\n/m, ""),
+    "Engine を取る版を書き込む": template.replace("ref: ${{ env.ENGINE_REF }}", `ref: ${ENGINE_REF}`),
+    "Engine を取る版を外す": template.replace(/^ {10}ref: \$\{\{ env\.ENGINE_REF \}\}\n/m, ""),
+    "見張りの手順を後ろに回す": template.replace(/^ {6}- name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）\n(?: {8}.*\n)+?(?= {6}- )/m, ""),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual([...requiredCheckProblems(text), ...engineRefRunProblems(text)], [], `${name} が通った`);
+  }
+  // paths・branches は requiredCheckProblems が、ENGINE_REF の置き場所・needs・取る版は engineRefRunProblems が見る
+  for (const name of ["ジョブの env で ENGINE_REF を上書きする", "手順の env で ENGINE_REF を上書きする", "GITHUB_ENV で ENGINE_REF を上書きする",
+    "engine-test が needs で待つ", "engine-test の needs を列で書く", "Engine を取る版を書き込む"]) {
+    assert.notDeepEqual(engineRefRunProblems(cases[name]), [], `${name} を engineRefRunProblems が見逃した`);
+  }
+  // 写しで ENGINE_REF の行を足して上書きしても、ずれの比べ方（ENGINE_REF の行を無視する）では同じに見える。その分を engineRefRunProblems で止める
+  assert.equal(withoutRef(cases["手順の env で ENGINE_REF を上書きする"]), withoutRef(template));
+});
+
 test("GitHub Actions では写し（.github/workflows/sendback-engine.yml）がなければ落ちる（別の名前に写すとずれを見張れない）", {
   skip: process.env.GITHUB_ACTIONS === "true" ? false : "GitHub Actions の外",
 }, () => {
@@ -138,6 +215,7 @@ test("写し（.github/workflows/sendback-engine.yml）があれば、ENGINE_REF
 }, () => {
   const copy = readFileSync(copyPath, "utf8");
   assert.equal(withoutRef(copy), withoutRef(template), "写しが ENGINE_REF の行のほかでひな形とずれている。ひな形を直してから写し直す");
+  assert.deepEqual(engineRefRunProblems(copy), [], "写しの ENGINE_REF の行を変えても engine-test がその版で走らない");
   const ref = copy.match(/^\s*ENGINE_REF:\s*(\S+)\s*$/m)?.[1];
   assert.equal(runGuard(ref ?? "").status, 0, `写しの ENGINE_REF（${ref}）が 40 桁のコミット SHA でない`);
 });
