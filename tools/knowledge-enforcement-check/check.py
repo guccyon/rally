@@ -6,6 +6,12 @@
   - verified: 本物の記録で効き目を確かめたか（wired でないのに verified にはできない）
 書いていない項目は落とさず false（未記入）として数え、未記入の件数を別に出す。
 
+配線先の照合（議決 D-0021、Issue #986）: wired が true の解決策には wired_by（{workflow, job, runs} の列）を必須にし、
+.github/workflows/ のそのファイルとジョブが実在して、ジョブの手順が runs の検査を呼んでいるかを
+tools/sendback-check/order.mjs と同じやり方（注釈と行末の \ を畳んだ行、working-directory と cd、変数、npm scripts、
+ラッパーのスクリプトを 3 段まで辿る）で照らし、なければ落とす。order.mjs と違い、迷う形は呼んでいない側に数える
+（ここで見逃すと配線していない担保を配線済みと読ませるため）。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -22,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +37,9 @@ ROOT = ".factory-config/knowledge"
 FLAGS = ("wired", "verified")
 UNWIRED = "未配線"
 UNVERIFIED = "deterministic（未確認）"
+WORKFLOWS = ".github/workflows"
+WIRED_BY_KEYS = ("workflow", "job", "runs")
+SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
 def load_yaml(path: Path):
@@ -72,6 +82,159 @@ def check_item(k: dict) -> list[str]:
                 e.append(f"{where}: {flag} は true か false（{s[flag]!r}）")
         if s.get("verified") is True and s.get("wired") is not True:
             e.append(f"{where}: wired でないのに verified が true（配線してから本物の記録で確かめる）")
+    return e
+
+
+def logical_lines(text: str) -> list[str]:
+    """shell の注釈（行頭か空白の後ろの #）を落とし、行末の \\ でつないだ行を 1 行にする（order.mjs の logicalLines と同じ）。"""
+    out, cur = [], None
+    for raw in text.splitlines():
+        line = re.sub(r"(^|\s)#.*$", "", raw).rstrip()
+        cur = line if cur is None else f"{cur} {line.strip()}"
+        if cur.endswith("\\"):
+            cur = cur[:-1]
+        else:
+            out.append(cur)
+            cur = None
+    if cur is not None:
+        out.append(cur)
+    return out
+
+
+def norm(base: str, path: str) -> str | None:
+    """base（リポジトリの根からの道）の下の path を根からの道にする。根の外に出る道は None。"""
+    parts: list[str] = []
+    for seg in f"{base}/{path}".split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if not parts:
+                return None
+            parts.pop()
+        else:
+            parts.append(seg)
+    return "/".join(parts)
+
+
+def runs_off(cond) -> bool:
+    """if: が字面で偽（false・${{ false }}）なら走らない"""
+    if cond is False:
+        return True
+    return isinstance(cond, str) and re.fullmatch(r"\s*(\$\{\{\s*)?false(\s*\}\})?\s*", cond) is not None
+
+
+def expand(line: str, env: dict) -> str:
+    """${{ env.NAME }}・${NAME}・$NAME を値に置き換える。github.workspace と GITHUB_WORKSPACE は根（空の道）にする。"""
+    line = re.sub(r"\$\{\{\s*github\.workspace\s*\}\}/?|\$\{?GITHUB_WORKSPACE\}?/?", "", line)
+    line = re.sub(r"\$\{\{\s*env\.(\w+)\s*\}\}", lambda m: str(env.get(m.group(1), m.group(0))), line)
+    return re.sub(r"\$\{(\w+)\}|\$(\w+)", lambda m: str(env.get(m.group(1) or m.group(2), m.group(0))), line)
+
+
+def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int = 0) -> bool:
+    """行の並び（1 つの手順の run か、ラッパーのスクリプト）が target（根からの道）の検査を呼ぶか。
+
+    直の道（cwd か根から）、npm・pnpm の run（cwd の package.json の scripts）、unittest discover・node --test で
+    target のあるディレクトリのテストを全部走らせる形、中身を読めるラッパーのスクリプト（3 段まで）を辿る。
+    """
+    env = dict(env)
+    tdir, tname = target.rsplit("/", 1) if "/" in target else ("", target)
+    is_test = re.match(r"test_.*\.py$|.*\.test\.[cm]?js$", tname) is not None
+    for raw in lines:
+        for m in re.finditer(r"(?:^|[;&|]\s*|\bexport\s+)([A-Za-z_]\w*)=([\"']?)([^\"'\s;]*)\2", raw):
+            env[m.group(1)] = expand(m.group(3), env)
+        line = expand(raw, env)
+        for m in re.finditer(r"(?:^|[;&|]\s*)cd\s+[\"']?([^\"'\s;&|]+)", line):
+            cwd = norm(cwd, m.group(1)) or ""
+        for m in SCRIPT_RE.finditer(line):
+            for base in dict.fromkeys((cwd, "")):
+                rel = norm(base, m.group(1))
+                if rel is None:
+                    continue
+                if rel == target:
+                    return True
+                inner = read(rel) if depth < 3 and rel.rsplit(".", 1)[-1] in ("sh", "bash") else None
+                if inner is not None and calls(logical_lines(inner), target, cwd, env, read, depth + 1):
+                    return True
+        npm = re.search(r"\b(?:npm|pnpm)\b((?:\s+\S+)*?)\s+(?:run|run-script)\s+([\w:.-]+)|\b(?:npm|pnpm)\s+(test)\b", line)
+        if npm and depth < 3:
+            prefix = re.search(r"--prefix[=\s]+[\"']?([^\"'\s]+)", npm.group(1) or "")
+            pdir = norm(cwd, prefix.group(1)) if prefix else cwd
+            pkg = read(f"{pdir}/package.json" if pdir else "package.json") if pdir is not None else None
+            try:
+                body = (json.loads(pkg).get("scripts") or {}).get(npm.group(2) or npm.group(3)) if pkg else None
+            except ValueError:
+                body = None
+            if isinstance(body, str) and calls(logical_lines(body), target, pdir, env, read, depth + 1):
+                return True
+        if is_test:
+            node = re.search(r"\bnode\b.*--test\b(.*)$", line)
+            if node and cwd == tdir and not re.search(r"\.[cm]?js\b", node.group(1)) and tname.endswith("js"):
+                return True
+            disc = re.search(r"\bunittest\s+discover\b(.*)$", line)
+            if disc and tname.endswith(".py"):
+                start = re.search(r"(?:-s|--start-directory)[=\s]+[\"']?([^\"'\s]+)", disc.group(1))
+                if norm(cwd, start.group(1) if start else ".") == tdir:
+                    return True
+    return False
+
+
+def job_calls(workflow: dict, job_id: str, target: str, read) -> bool:
+    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない）"""
+    job = (workflow.get("jobs") or {}).get(job_id)
+    if not isinstance(job, dict) or runs_off(job.get("if")):
+        return False
+    wenv = {**(workflow.get("env") or {}), **(job.get("env") or {})}
+    wd = (((job.get("defaults") or {}).get("run") or {}).get("working-directory")) or ""
+    for step in job.get("steps") or []:
+        if not isinstance(step, dict) or not isinstance(step.get("run"), str) or runs_off(step.get("if")):
+            continue
+        env = {**wenv, **(step.get("env") or {})}
+        cwd = norm("", expand(str(step.get("working-directory") or wd), env)) or ""
+        if calls(logical_lines(step["run"]), target, cwd, env, read):
+            return True
+    return False
+
+
+def check_wiring(k: dict, repo: Path) -> list[str]:
+    """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+
+    def read(rel: str) -> str | None:
+        p = repo / rel
+        return p.read_text(encoding="utf-8") if rel and p.is_file() else None
+
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True:
+            continue
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        wb = s.get("wired_by")
+        if not isinstance(wb, list) or not wb:
+            e.append(f"{where}: wired が true なのに wired_by（配線先の workflow・job・runs の列）がない")
+            continue
+        for j, w in enumerate(wb):
+            at = f"{where}: wired_by[{j}]"
+            if not isinstance(w, dict) or not all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS):
+                e.append(f"{at}: workflow・job・runs を文字列で書く（{w!r}）")
+                continue
+            wf, job, target = w["workflow"], w["job"], norm("", w["runs"])
+            if not re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", wf):
+                e.append(f"{at}: workflow は {WORKFLOWS}/ の直下のファイル（{wf}。ひな形の ci/*.yml は配線ではない）")
+                continue
+            if read(wf) is None:
+                e.append(f"{at}: {wf} がない")
+                continue
+            if not target or read(target) is None:
+                e.append(f"{at}: runs の {w['runs']} がない")
+                continue
+            try:
+                doc = load_yaml(repo / wf)
+            except Exception as x:  # noqa: BLE001
+                e.append(f"{at}: {wf} が読めない（{x}）")
+                continue
+            if not isinstance(doc, dict) or not isinstance((doc.get("jobs") or {}).get(job), dict):
+                e.append(f"{at}: {wf} に job {job} がない")
+            elif not job_calls(doc, job, target, read):
+                e.append(f"{at}: {wf} の job {job} が {target} を呼んでいない")
     return e
 
 
@@ -118,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k)]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo))]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")

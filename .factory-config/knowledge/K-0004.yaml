@@ -261,4 +261,18 @@ enforcement:
       decided_by: committee:D-0020
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0021 の ci_check の案（wired は書き手の申告で、配線していないのに wired: true と書かれても見抜けなかった）を入れた。
+        tools/knowledge-enforcement-check/check.py が、wired: true の解決策には wired_by（.github/workflows/ のファイル・job・runs（呼ぶ検査の道）の列）を必須にし、
+        そのファイルと job が実在して、job の手順が runs の検査を呼んでいるかを order.mjs と同じやり方（注釈と行末の \ を畳んだ行、working-directory と cd、
+        変数、npm scripts、ラッパーのスクリプトを 3 段まで、unittest discover・node --test でテストを全部走らせる形）で照らし、なければ落とす。
+        order.mjs と違い迷う形は呼んでいない側に数え、ひな形の ci/*.yml と字面で偽の if: のジョブ・手順は配線先にしない。test_check.py で、wired_by がない・
+        ファイルや job や runs がない・ほかの job や検査を呼ぶだけ・注釈の中だけのときに落ち、包んだ呼び方では通ることを確かめた。
+        今のリポジトリには wired: true の解決策がなく、check.py も .github/workflows/ にはまだ写していない（建設者）ので、PR ごとには走っておらず効き目は確かめていない
+      issue: 986
+      at: 2026-11-07
+      decided_by: committee:D-0021
+      wired: false
+      verified: false
 decided_by: committee:D-0004
