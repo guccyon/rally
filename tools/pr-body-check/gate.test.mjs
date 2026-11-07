@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { PR_URL, REASONS, continuationSummary, legacyBody, newPrBody } from "./c0005.mjs";
+import { PR_URL, REASONS, continuationSummary, demotedSummary, legacyBody, newPrBody, plainSummary, recordedBodies } from "./c0005.mjs";
 import { RUBRIC_ID, gate } from "./gate.mjs";
 
 test("新しい PR の本文は書いてよい", () => {
@@ -75,4 +75,38 @@ test("CLI は見出しの定義が不正なら 3 で終わり、body_fix の入�
   writeFileSync(join(dir, "body.md"), newPrBody());
   assert.throws(() => execFileSync("node", [join(dir, "gate.mjs"), "--pr-url", PR_URL, "--body", join(dir, "body.md")], { stdio: "pipe", encoding: "utf8" }),
     (e) => e.status === 3 && e.stdout === "" && /見出しの定義が不正: h2\[0\]\.required が真偽値でない/.test(e.stderr));
+});
+
+// 通る側の写し（議決 D-0032 の test の案、Issue #1038）。C-0005 と同じ 21 回の続きのジョブでも、報告が「## 工場の記録」の下に
+// 正しく入っていれば、関所は毎回 0（書いてよい）を返す。正しい更新まで止める誤検知を必須のテストで落とす
+const PASSING = [
+  ["報告の見出しを ### に下げた", (reason, i) => demotedSummary(reason, i, 3)],
+  ["報告の見出しを記録の ### の下の #### に下げた", (reason, i) => demotedSummary(reason, i, 4)],
+  ["報告に ## 見出しがない", plainSummary],
+];
+
+for (const [label, report] of PASSING) {
+  test(`C-0005 の 21 回の続きのジョブでも、${label}本文は毎回書いてよい（誤検知がない）`, () => {
+    const bodies = recordedBodies(newPrBody(), report);
+    assert.equal(bodies.length, 21);
+    bodies.forEach((body, i) => {
+      assert.ok(body.includes(report(REASONS[i], i)), `${i + 1} 回目の報告が本文にない`);
+      assert.deepEqual(gate(body, PR_URL), { ok: true, errors: [], body_fix: null }, `${i + 1} 回目（${REASONS[i]}）の正しい更新を関所が止めた`);
+    });
+  });
+}
+
+test("CLI は正しく入った続きのジョブの報告の本文で 0 を返し、body_fix の入力を出さない", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-gate-pass-"));
+  const script = fileURLToPath(new URL("./gate.mjs", import.meta.url));
+  PASSING.forEach(([, report], k) => {
+    const bodies = recordedBodies(newPrBody(), report);
+    for (const [n, body] of [[1, bodies[0]], [21, bodies.at(-1)]]) {
+      const file = join(dir, `pass-${k}-${n}.md`);
+      writeFileSync(file, body);
+      // 0 以外なら execFileSync が投げる
+      assert.equal(execFileSync("node", [script, "--pr-url", PR_URL, "--body", file], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }), "");
+      assert.equal(execFileSync("node", [script, "--pr-url", PR_URL], { input: body, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }), "");
+    }
+  });
 });

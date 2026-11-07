@@ -56,3 +56,27 @@ ${FIRST_SUMMARY}
 export function legacyBody(newPrBody) {
   return REASONS.reduce((body, reason, i) => `${body}\n\n${continuationSummary(reason, i)}\n`, newPrBody);
 }
+
+// 通る側の写し（議決 D-0032 の test の案、Issue #1038）。同じ 21 回の続きのジョブを、報告が「## 工場の記録」の下に正しく入る形で組む。
+// 関所がこれを止めない（誤検知がない）ことを gate.test.mjs と engine.test.mjs が確かめる。
+
+/** 続きのジョブ（i 回目）の summary の ## 見出しを、depth の階層（既定は ###）に下げた報告。 */
+export function demotedSummary(reason, i, depth = 3) {
+  return continuationSummary(reason, i).replace(/^## /gm, `${"#".repeat(depth)} `);
+}
+
+/** 続きのジョブ（i 回目）の、## 見出しを持たない報告（見出しなしの文と箇条書きだけ）。 */
+export function plainSummary(reason, i) {
+  return continuationSummary(reason, i).split("\n").filter((l) => !l.startsWith("## ") && l !== "").join("\n");
+}
+
+/** 21 回の続きのジョブの報告を、1 回ごとに「### 続きのジョブ（job N）の記録」の下へ足した本文の並び（i 回目の追記のあとの本文が i 番目）。 */
+export function recordedBodies(newPrBody, report) {
+  const bodies = [];
+  REASONS.reduce((body, reason, i) => {
+    const next = `${body}\n### 続きのジョブ（job ${2800 + i}）の記録\n\n${report(reason, i)}\n`;
+    bodies.push(next);
+    return next;
+  }, newPrBody);
+  return bodies;
+}

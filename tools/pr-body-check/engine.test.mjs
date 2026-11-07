@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FIRST_SUMMARY, ISSUE, PR_URL, REASONS, continuationSummary, legacyBody, newPrBody } from "./c0005.mjs";
+import { FIRST_SUMMARY, ISSUE, PR_URL, REASONS, continuationSummary, demotedSummary, legacyBody, newPrBody, plainSummary } from "./c0005.mjs";
 import { checkBody } from "./check.mjs";
 import { gate } from "./gate.mjs";
 
@@ -310,3 +310,55 @@ test("(9) 仕上がった回で、報告を足さない本文も関所で外れ�
   const r = bodyGate({ ...g, rc: 3, body_fix: null });
   assert.deepEqual(r.stoppages.map((x) => x.key), [`body_gate_finish:${PR_URL}`, `body_gate:${PR_URL}`]);
 });
+
+/** 関所（gate.mjs）を呼んだ回と終了コードを残す node の包み。ほかの呼び出しはそのまま本物の node に渡す。 */
+function gateRecorder() {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-gate-recorder-"));
+  writeFileSync(join(dir, "gate_calls"), "");
+  writeFileSync(join(dir, "node"), `#!/usr/bin/env bash
+"${process.execPath}" "$@"
+rc=$?
+case " $* " in *" tools/pr-body-check/gate.mjs "*) echo "$rc" >> "${dir}/gate_calls" ;; esac
+exit $rc
+`);
+  chmodSync(join(dir, "node"), 0o755);
+  return { dir, rcs: () => readFileSync(join(dir, "gate_calls"), "utf8").trim().split("\n").filter(Boolean).map(Number) };
+}
+
+// (10) は通る側の写し（議決 D-0032 の test の案、Issue #1038）。C-0005 と同じ 21 回の続きのジョブでも、報告が「## 工場の記録」の下に
+// 正しく入る形（報告の見出しが ### 以下、または ## 見出しがない）なら、関所は毎回 0 を返し、Engine はその本文を書く。正しい更新まで止める誤検知を落とす。
+// Engine がもう関所を呼んでいれば patchedEngine は差分を当てずに写すので、配線したあとの本物の Engine の本文の更新をそのまま確かめる
+const PASSING = [
+  ["報告の見出しを ### に下げた", (reason, i) => demotedSummary(reason, i, 3)],
+  ["報告の見出しを #### に下げた", (reason, i) => demotedSummary(reason, i, 4)],
+  ["報告に ## 見出しがない", plainSummary],
+];
+
+for (const [label, report] of PASSING) {
+  test(`(10) 関所を配線した Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`, { skip }, () => {
+    const { update } = patchedParts();
+    let body = engineNewBody();
+    REASONS.forEach((reason, i) => {
+      const summary = report(reason, i);
+      const gh = fakeGh(body);
+      const rec = gateRecorder();
+      const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+      const jobId = String(3000 + i);
+      const log = bash(update, { ...JOB, PATH: `${rec.dir}:${gh.dir}:${process.env.PATH}`, JOB_ID: jobId, CONTINUE_REASON: reason, CONTINUE_PR: PR_NUMBER, PR_URL,
+        SUMMARY: summary, HANDOFF_DIR: handoff }, repoRoot);
+      const at = `${i + 1} 回目（${reason}）`;
+      assert.deepEqual(rec.rcs(), [0], `${at}で関所を 1 回呼んで 0 を返していない`);
+      assert.ok(!existsSync(join(handoff, "jobs", jobId, "body_gate.json")), `${at}で関所に止められた`);
+      assert.doesNotMatch(log, /pr body gate blocked/, `${at}で関所に止められた`);
+      assert.match(log, /\[worker\] continued pr=/);
+      assert.ok(gh.calls().includes("pr edit"), `${at}で本文を書いていない`);
+      const written = gh.body();
+      assert.ok(written.startsWith(body.trimEnd()), `${at}で前の本文を残していない`);
+      assert.ok(written.includes(summary), `${at}の続きのジョブの報告を書いていない`);
+      assert.deepEqual(checkBody(written), [], `${at}で書いた本文が関所に外れる`);
+      body = written;
+    });
+    assert.equal(body.match(/^### 続きのジョブの記録$/gm)?.length, 1, "続きのジョブの記録の見出しが 1 つの ### になっていない");
+    assert.equal(body.match(/^## 概要$/gm)?.length, 1, "「## 概要」が重なった");
+  });
+}

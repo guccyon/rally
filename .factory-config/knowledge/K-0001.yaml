@@ -93,4 +93,22 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0032（Issue #1038 の起票時の番号は D-0030。PR #1036）の test の案を入れた。通る側の写しとして、c0005.mjs が C-0005 と同じ 21 回の
+        続きのジョブの報告を「## 工場の記録」の下の「### 続きのジョブ（job N）の記録」に、報告の見出しを ### か #### に下げて、または ## 見出しのない形で足した本文を組む。
+        tools/pr-body-check/gate.test.mjs が、その 3 通りの形の 21 回の追記のどの回の本文でも gate が書いてよい（errors が空、body_fix が null）と返し、
+        CLI が終了コード 0 で何も出さないことを確かめる（関所の終了コードは 0 = 書いてよい、1 = 本文を書かずに body_fix に回す、2 = 本文か --pr-url を読めなかった、
+        3 = 見出しの定義 template.json が不正。どれも gate.mjs の冒頭に書いてある）。engine.test.mjs の (10) が、関所を配線した Engine の写し
+        （Engine がもう関所を呼んでいれば差分を当てずに写す）の本文の更新の節を偽の gh で同じ 3 通りの形の 21 回分動かし、node を包んで関所が毎回 1 回呼ばれて 0 を返し、
+        body_gate.json を残さずに本文を書き、書いた本文が関所に通ることを確かめる。どれも todo や飛ばしのない必須のテストで、check.mjs で ### の見出しの重なりも外れにする
+        誤検知の書き換えを入れると、3 通りの形のうち見出しを持つ 2 通りで gate.test.mjs・engine.test.mjs・CLI のテストの計 5 件が落ちることを確かめた。
+        手元の Engine（2490db6）を ENGINE_DIR にして (3) のほかは全部通ることを確かめた（(3) は関所を呼ばない Engine なので前から落ちる）。
+        engine.test.mjs が走る CI（tools/pr-body-check/ci/pr-body-engine.yml）はまだ .github/workflows/ に写されておらず（手順は tools/pr-body-check/README.md の
+        「配線の手順（建設者）」）、gate.test.mjs を走らせる CI もまだないので、配線されておらず効き目は確かめていない
+      issue: 1038
+      at: 2026-11-07
+      decided_by: committee:D-0032
+      wired: false
+      verified: false
 decided_by: committee:D-0001
