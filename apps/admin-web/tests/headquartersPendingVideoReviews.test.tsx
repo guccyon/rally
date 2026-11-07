@@ -153,6 +153,8 @@ describe("本部の返却待ちの動画添削", () => {
     const table = await screen.findByRole("table", { name: "返却待ちの動画添削の一覧" });
 
     expect(screen.getByText("48 時間以上たったものが 2 件あります。")).toBeInTheDocument();
+    // 注意の知らせ（Notice の warning）として出す
+    expect(screen.getByRole("status")).toHaveTextContent("48 時間以上たったものが 2 件あります。");
     const [h89, h48, h47, h6] = within(table).getAllByRole("row").slice(1) as [
       HTMLElement,
       HTMLElement,

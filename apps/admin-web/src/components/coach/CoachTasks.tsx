@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import type { Result } from "@/api/call";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
@@ -10,8 +11,6 @@ import { bookingLessonMenuLabel } from "./bookingLessonMenu";
 import type { PendingTasks } from "./pendingTasks";
 import { UNKNOWN_NAME } from "./studentNames";
 import { videoLessonMenuLabel } from "./videoLessonMenu";
-
-const BUTTON = "rounded-pill bg-primary px-3 py-1 text-on-primary";
 
 /** 対応待ちの 1 種類（見出し・件数・一覧）。一覧の API が失敗したときはその文言だけを出す。 */
 function TaskGroup<T>({
@@ -83,9 +82,9 @@ export function CoachTasks({
                 <span className="block text-text-muted">{videoLessonMenuLabel(video.lesson_menu)}</span>
               )}
             </span>
-            <button type="button" onClick={() => onOpenVideo(video.video_id)} className={BUTTON}>
+            <Button variant="secondary" onClick={() => onOpenVideo(video.video_id)}>
               添削する
-            </button>
+            </Button>
           </li>
         )}
       />
@@ -110,9 +109,9 @@ export function CoachTasks({
                 </span>
               )}
             </span>
-            <button type="button" onClick={onOpenBookings} className={BUTTON}>
+            <Button variant="secondary" onClick={onOpenBookings}>
               予約を見る
-            </button>
+            </Button>
           </li>
         )}
       />
@@ -130,9 +129,9 @@ export function CoachTasks({
                 未読 {thread.unread_count} 件
               </span>
             </span>
-            <button type="button" onClick={() => onOpenThread(thread.thread_id)} className={BUTTON}>
+            <Button variant="secondary" onClick={() => onOpenThread(thread.thread_id)}>
               チャットを開く
-            </button>
+            </Button>
           </li>
         )}
       />

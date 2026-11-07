@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { errorMessage } from "@/api/errorMessage";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS } from "@/components/labels";
 
@@ -173,20 +174,19 @@ export function LessonMenus({
                   <td className="py-1">{durationLabel(menu)}</td>
                   <td className="py-1">{menu.is_published ? "公開中" : "非公開"}</td>
                   <td className="space-x-2 py-1">
-                    <button
-                      type="button"
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       aria-label={`「${menu.name}」を編集`}
                       onClick={() => {
                         setEditing({ kind: "edit", menu });
                         setResult(null);
                       }}
-                      className="rounded-pill border px-2 disabled:opacity-50"
                     >
                       編集
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       aria-label={
                         menu.is_published
@@ -194,10 +194,9 @@ export function LessonMenus({
                           : `「${menu.name}」を公開する`
                       }
                       onClick={() => void setPublished(menu, !menu.is_published)}
-                      className="rounded-pill border px-2 disabled:opacity-50"
                     >
                       {menu.is_published ? "非公開にする" : "公開する"}
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

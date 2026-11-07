@@ -137,6 +137,8 @@ describe("本部の予約", () => {
     await screen.findByRole("table", { name: "2026年10月26日（月） の予約" });
 
     expect(screen.getByText("確定待ちのまま 24 時間以内に始まる予約が 1 件あります。")).toBeInTheDocument();
+    // 注意の知らせ（Notice の warning）として出す
+    expect(screen.getByRole("status")).toHaveTextContent("確定待ちのまま 24 時間以内に始まる予約が 1 件あります。");
     const [soon, confirmed] = bodyRows("2026年10月26日（月） の予約") as [HTMLElement, HTMLElement];
     const [laterPending, cancelled] = bodyRows("2026年10月28日（水） の予約") as [HTMLElement, HTMLElement];
     expect(soon).toHaveClass("bg-danger-container");

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { clearSession, ROLE_LABELS, type Role, type Session } from "@/session/session";
 import { useSession } from "@/session/useSession";
 
@@ -44,16 +45,15 @@ export function RoleGate({
     <div className={`mx-auto ${WIDTH_CLASSES[width]} px-4 py-6 min-[600px]:px-6`}>
       <header className="mb-6 flex items-center justify-between border-b pb-3">
         <h1 className="text-headline font-black">Rally 管理画面（{ROLE_LABELS[role]}）</h1>
-        <button
-          type="button"
-          className="rounded-pill border px-3 py-1 text-sm"
+        <Button
+          variant="secondary"
           onClick={() => {
             clearSession();
             router.replace("/");
           }}
         >
           ログアウト
-        </button>
+        </Button>
       </header>
       {children(session)}
     </div>
