@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0047
+pr: https://github.com/guccyon/rally/pull/1113
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0031 の 2 つ目の enforcement
+    の案（ci_check）のうちワーカーの権限で入れられる分を enforcement.solutions に 1 件足しただけなので、D-0004 から D-0046
+    までの議決と矛盾しません。
+  - '足した solution は kind・what・issue・at・decided_by・wired・verified の形が既存の solutions
+    と同じで、decided_by を提案元の committee:D-0031 にし、wired: false・verified: false にしているのも
+    README の決まりと合っています。'
+  - issue 1046 の solution（harness_unknown_query で落とす test）や issue 977 の solution（engine-head
+    の定期実行）とは、通ったときも記録を残すことと記録の有無を head-record.mjs で数えることという別の段なので重複ではありません。
+  - issue 977 の what はまだ「落ちたら記録する」「同じ先頭の版の記録があれば足さない」のままなので、建設者が配線して 977 の wired を
+    true にする変更セットで、その what を今の振る舞い（通ったときも記録し、版と種類の組で重ねない）にそろえてください。
+  - head-record.mjs は harness_unknown_query の記録も数えますが、D-0031 の proposal は「通った・落ちた」記録が残ってから
+    issue 977 を確かめたことにするとしているので、その記録だけで 977 の verified を true にしてよいかは配線の変更セットで書き分けてください。
+  - 'D-0031 と D-0046 の反対の票は先頭の記録を Issue #948 から分けるよう勧めましたが、D-0031 の proposal が Issue
+    #948 を指しているので矛盾ではなく、配線も本物の記録もまだないので confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の solution は issue 1047 と committee:D-0031 を指しており、D-0031 の 2 つ目の
+    enforcement の案（sendback-engine-head.yml を写して schedule で走らせ、Issue #948 に通った・落ちたの記録が
+    1 件残ってから issue 977 の solution の wired と verified を true にする）とそのまま対応しているので、一次記録に辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - '「手元の Engine の先頭 b0a267d では engine.test.mjs が通る」は手元の観察で、その実行の記録がまだどこにもないので、写したあとの最初の
+    engine_head_passed の記録が Issue #948 に残ったら、その URL を what か evidence に書き足してください。'
+  - '写しも定期の実行も head-record.mjs の実行も建設者に残っていて、wired: false・verified: false と自分で書いているので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはパス・ジョブ名・印の名前・コミットの短い SHA・Issue と議決の番号・github-actions[bot] というボットの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0031 の ci_check の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件記録しただけなので、採ってよいです。
+  - 'engine-head が落ちたときしか記録しなかった穴を if: always() と engine_head_passed の印で埋め、記録の有無を
+    head-record.mjs が決まった線（github-actions[bot]・40 桁の SHA・印・実行の URL）で数えて head_record_missing
+    で落とすので、繰り返しと線の引きやすさの点で筋がよいです。'
+  - ci.test.mjs と head-record.test.mjs が偽の gh で、重ねないこと・success でないときに通ったと書かないこと・人が写した印や
+    URL のないコメントを数えないことを確かめているので、誤って記録ありと判定する痛い外し方は抑えられています。
+  - 'ただし issue 977 の解決策の wired と verified を true にする条件（Issue #948 に記録が 1 件残っていること）は、今は建設者が
+    head-record.mjs を手で走らせて判断するだけなので、記録のないまま true に書き換える PR を止める決定論の線がまだありません。'
+  - '写しも schedule の実行も記録もまだないので、wired: false・verified: false の記録は正しく、confidence は
+    hypothesis のままが妥当です。'
+  - 差分にあるのはパス・印・Issue と議決の番号・短い SHA だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0031 の ci_check の案のうちワーカーの権限で入れた分を
+    solution として 1 件足すだけなので、範囲は広すぎません。
+  - '新しい solution は wired: false・verified: false で、写しと schedule の実行と head-record.mjs
+    の実行が建設者に残っていることを正直に書いているので、効き目を言い過ぎてはいません。'
+  - 反例として、head-record.mjs は harness_unknown_query の記録も 1 件に数えますが、これは Engine の判定を見られなかった実行なので、D-0031
+    の「通った・落ちた」の記録とは言えず、これだけで issue 977 の wired と verified を true にしないよう次の変更セットで分けてください。
+  - '先頭の版ごとに engine_head_passed を記録するので Engine の先頭が頻繁に動くと Issue #948 のコメントが増え続ける恐れがあり、配線するときに記録の間引きを考えてください。'
+  - 確かさは hypothesis のままでよく、この PR で上げる・下げる理由はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/knowledge-enforcement-check/check.py に、K-0004 の issue 977 の解決策（と
+    engine-head に関わる解決策）が verified: true になっている変更では tools/sendback-check/head-record.mjs
+    を走らせ、head_record_missing なら落とす照合を足し、Issue #948 に engine-head の記録が残る前に verified
+    を true にする PR を止める。'
