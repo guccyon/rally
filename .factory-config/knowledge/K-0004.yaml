@@ -245,4 +245,20 @@ enforcement:
       decided_by: committee:D-0016
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0020 の ci_check の案（ENGINE_REF の固定の版に加えて Engine の既定のブランチの先頭でも engine.test.mjs を定期に走らせ、
+        落ちたら ENGINE_REF を上げる前に判定の変化がわかるよう知らせる）を入れた。tools/sendback-check/ci/sendback-engine-head.yml の engine-head が、
+        Engine を ref なしで（既定のブランチの先頭で）取って ENGINE_DIR を向け、engine-test と同じ engine.test.mjs を 1 日 1 回と手動で走らせ、落ちたら
+        ::error（engine_head_failed）を出して Issue #948 に先頭の版・その時の ENGINE_REF・落ちたテスト・実行の URL を記録する（同じ先頭の版の記録があれば足さない）。
+        Issue に書くので issues: write が要り、PR のコードをその権限で動かさないため、また先頭の変化で PR を止めないため、sendback-engine.yml とは別の
+        ワークフローにして PR では走らせない。ci.test.mjs が形と、記録の手順を偽の gh で動かした振る舞い（記録する・重ねない・版が取れないときも記録する・
+        記録に失敗したら落ちる）と写しとのずれを確かめる。手元の Engine の先頭（1d811cd）では、偽の cursor が judgment.decided の問い合わせを知らずに
+        engine.test.mjs の (1) から (c) が落ちることを確かめた（この判定の変化はまだ ENGINE_REF には入っていない）。.github/workflows/ への写しは建設者が行うので、
+        まだ定期には走っておらず効き目は確かめていない
+      issue: 977
+      at: 2026-11-07
+      decided_by: committee:D-0020
+      wired: false
+      verified: false
 decided_by: committee:D-0004
