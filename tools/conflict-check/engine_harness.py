@@ -3,16 +3,18 @@
 test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく、Engine の次の処理をそのまま動かして結果を返す。
 
 - supervisor（積む側）: orchestrator/dispatcher/supervisor.py の conflict_step・ci_failure_step と、continuation.py（enqueue・attempts・pending）。
-  同じ PR が head ごとに衝突し続ける流れ（C-0005 の PR #659）を周期ごとに回し、積んだ続きのジョブ（attempt・model_tier）と、開いた停止を返す
+  同じ PR が head ごとに衝突し続ける流れ（C-0005 の PR #659）を周期ごとに回し、積んだ続きのジョブ（attempt・model_tier）と、開いた停止を返す。
+  積んだ続きのジョブの解き方（エージェントか機械的か）は job.finished の agent_tier・cost_usd に残す（--resolved。既定は agent）
 - worker（解く側）: orchestrator/worker/entrypoint.sh の、衝突を機械的に解く手順（SEEN_CONFLICTS= から「[worker] continue」の echo の前まで）。
-  一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）を返す
+  一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）と、
+  機械的に解いた結果が policy.py の verify_mechanical（K-0002 の check.mjs）に通ったか（verified）を返す
 - worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブでエージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
 
 supervisor.py は読み込むと DB と GitHub に繋ぐので、使う関数だけを構文木から取り出して、偽の cursor と停止・GitHub の差し替えを渡して動かす。
 entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは一時ファイルの置き場（/work/cl.* を一時ディレクトリに）だけ。
 
-  python3 engine_harness.py supervisor <Engine のチェックアウト> [--heads N]
-  python3 engine_harness.py worker <Engine のチェックアウト> <衝突させるファイル>...
+  python3 engine_harness.py supervisor <Engine のチェックアウト> [--heads N] [--resolved agent|mechanical]
+  python3 engine_harness.py worker <Engine のチェックアウト> [--changelog direct|compiled] <衝突させるファイル>...
   python3 engine_harness.py resume <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
 """
@@ -26,6 +28,9 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # python3 -I で動かしても隣の policy.py を読む
+import policy  # noqa: E402
 
 SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
 CONTINUATION = "orchestrator/dispatcher/continuation.py"
@@ -173,9 +178,13 @@ def state_args_lines(engine: Path) -> str:
 
 
 # ------------------------------------------------------------------ supervisor
-def supervisor(engine: Path, heads: int) -> dict:
+RESOLVED = {"agent": {"agent_tier": "tier-large", "cost_usd": 1.95}, "mechanical": {"agent_tier": "none", "cost_usd": 0}}
+
+
+def supervisor(engine: Path, heads: int, resolved: str = "agent") -> dict:
     """同じ PR が head ごとに衝突し続ける流れを、supervisor の周期（merge_step の conflict_step → ci_failure_step）で回す。
     積んだ続きのジョブは終わって新しい head を push し、その head もまた衝突する（C-0005 の PR #659 と同じ流れ）。
+    続きのジョブの解き方は resolved（agent = エージェントで解いた、mechanical = 機械的に解いて検査に通った）で、job.finished に残す。
     積まなかった周期で止める（新しい head が来ない）"""
     continuation = load_continuation(engine)
     stoppages: list[dict] = []
@@ -204,6 +213,8 @@ def supervisor(engine: Path, heads: int) -> dict:
         cycles.append({"head_sha": sha, "enqueued": [{"attempt": cont.get(j["id"], {}).get("attempt"), "reason": cont.get(j["id"], {}).get("reason"),
                                                       "model_tier": j.get("model_tier")} for j in new_jobs],
                        "stoppages": stoppages[before_stop:]})
+        for j in new_jobs:
+            cur.add_event("job.finished", {"state": "succeeded", **RESOLVED[resolved]}, job_id=j["id"])
         for j in cur.jobs:
             j["state"] = "done"   # 続きのジョブが終わって push した（次の head）
         if not new_jobs:
@@ -216,8 +227,10 @@ def _git(cwd: Path, *args: str, check=True) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=check, capture_output=True, text=True).stdout
 
 
-def conflicted_repo(root: Path, files: list[str]) -> Path:
-    """既定ブランチ（main）と PR のブランチ（pr）が files の同じ場所を変えた一時のリポジトリを作り、pr に main を取り込んで衝突させる"""
+def conflicted_repo(root: Path, files: list[str], changelog: str = "direct") -> Path:
+    """既定ブランチ（main）と PR のブランチ（pr）が files の同じ場所を変えた一時のリポジトリを作り、pr に main を取り込んで衝突させる。
+    CHANGELOG.md の変え方は changelog で選ぶ。direct = PR が [Unreleased] に直接 1 行足した（K-0002 の検査に通らない）、
+    compiled = PR が断片 changelog.d/10.md を [Unreleased] に取りまとめた（断片を消して行を移した。検査に通る）。main はどちらも 1 行足す"""
     repo = root / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -226,6 +239,7 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
     (repo / "CHANGELOG.md").write_text("# 変更履歴\n\n## [Unreleased]\n\n### 追加\n- 前からある行（#1）\n\n## [0.1.0]\n", encoding="utf-8")
     (repo / "changelog.d").mkdir()
     (repo / "changelog.d/README.md").write_text("# 断片\n", encoding="utf-8")
+    (repo / "changelog.d/10.md").write_text("### 追加\n- 断片の行（#10）\n", encoding="utf-8")
     (repo / "src").mkdir()
     (repo / "src/app.txt").write_text("value = 1\n", encoding="utf-8")
     _git(repo, "add", "-A")
@@ -236,7 +250,10 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
         for f in files:
             path = repo / f
             path.parent.mkdir(parents=True, exist_ok=True)
-            if f == "CHANGELOG.md":
+            if f == "CHANGELOG.md" and side == "pr" and changelog == "compiled":
+                path.write_text(path.read_text(encoding="utf-8").replace("（#1）\n", "（#1）\n- 断片の行（#10）\n"), encoding="utf-8")
+                (repo / "changelog.d/10.md").unlink()
+            elif f == "CHANGELOG.md":
                 path.write_text(path.read_text(encoding="utf-8").replace("（#1）\n", f"（#1）\n- {side} の行（#{side}）\n"), encoding="utf-8")
             elif f.startswith("changelog.d/"):
                 path.write_text(f"### 追加\n- {side} の断片（#{side}）\n", encoding="utf-8")   # 同じ名前の断片を両方が足す（add/add）
@@ -253,12 +270,13 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
     return repo
 
 
-def worker(engine: Path, files: list[str]) -> dict:
-    """entrypoint.sh の衝突を機械的に解く手順を、本物の衝突の上で動かす"""
+def worker(engine: Path, files: list[str], changelog: str = "direct") -> dict:
+    """entrypoint.sh の衝突を機械的に解く手順を、本物の衝突の上で動かす。機械的に解けたら（MECHANICAL があり衝突が残っていない）
+    取り込みをコミットして、policy.py の verify_mechanical（K-0002 の check.mjs）にかけた結果を verified に返す（解けなければ None）"""
     block = mechanical_block(engine)
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        repo = conflicted_repo(root, files)
+        repo = conflicted_repo(root, files, changelog)
         script = ("set -euo pipefail\n"
                   'CONFLICTS=$(git diff --name-only --diff-filter=U | tr \'\\n\' \' \')\n'
                   'BEFORE="${CONFLICTS}"\n'
@@ -271,9 +289,15 @@ def worker(engine: Path, files: list[str]) -> dict:
             raise SystemExit(f"entrypoint.sh の衝突を解く手順が落ちた（{p.returncode}）: {p.stderr[-500:]}")
         out = json.loads(p.stdout.strip().splitlines()[-1])
         markers = sorted(f for f in files if (repo / f).is_file() and "<<<<<<<" in (repo / f).read_text(encoding="utf-8"))
+        unmerged = sorted(_git(repo, "diff", "--name-only", "--diff-filter=U").split())
+        verified = None
+        if out["mechanical"] and not out["conflicts"].split() and not unmerged and not markers:
+            _git(repo, "commit", "-q", "--no-edit")
+            v = policy.verify_mechanical(policy.load(), repo, "main")
+            verified = v["ok"]
         return {"before": sorted(out["before"].split()), "conflicts": sorted(out["conflicts"].split()),
                 "agent": not out["mechanical"], "mechanical": out["mechanical"], "markers": markers,
-                "unmerged": sorted(_git(repo, "diff", "--name-only", "--diff-filter=U").split())}
+                "unmerged": unmerged, "verified": verified}
 
 
 def resume(engine: Path) -> dict:
@@ -302,9 +326,15 @@ def main(argv: list[str]):
     if len(argv) == 2 and argv[0] == "--check":
         out = check(Path(argv[1]))
     elif len(argv) >= 2 and argv[0] == "supervisor":
-        out = supervisor(Path(argv[1]), int(argv[argv.index("--heads") + 1]) if "--heads" in argv else 6)
+        out = supervisor(Path(argv[1]), int(argv[argv.index("--heads") + 1]) if "--heads" in argv else 6,
+                         argv[argv.index("--resolved") + 1] if "--resolved" in argv else "agent")
     elif len(argv) >= 3 and argv[0] == "worker":
-        out = worker(Path(argv[1]), argv[2:])
+        rest = argv[2:]
+        changelog = "direct"
+        if "--changelog" in rest:
+            k = rest.index("--changelog")
+            changelog, rest = rest[k + 1], rest[:k] + rest[k + 2:]
+        out = worker(Path(argv[1]), rest, changelog)
     elif len(argv) == 2 and argv[0] == "resume":
         out = resume(Path(argv[1]))
     else:

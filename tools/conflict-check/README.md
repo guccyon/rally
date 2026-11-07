@@ -9,20 +9,36 @@ python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # �
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
 ```
 
-依存は Python 3 と PyYAML（Engine の `core-gates/knowledge_check.py` と同じ）。`test_engine.py` は git・bash・jq と Engine のチェックアウトも使う。
+依存は Python 3 と PyYAML（Engine の `core-gates/knowledge_check.py` と同じ）。機械的な解消の検査（`verify_mechanical`）とそのテストは git と node も使う（node か git がなければ飛ばす。CI（`CI=true`）では飛ばさない）。`test_engine.py` は bash・jq と Engine のチェックアウトも使う。
 
 ## 線（`.factory-config/continuation.yaml` の `conflict`）
 
 | 欄 | 値 | 意味 |
 |---|---|---|
-| `max_attempts_per_pr` | 3 | 同じ PR で積む conflict の続きのジョブの上限。数えるのは `continue.enqueued`（reason=conflict）の件数で、機械的に解いた回も数える |
+| `max_attempts_per_pr` | 3 | 同じ PR の conflict の続きのジョブのうち、エージェントを呼び出して解いた回の上限。機械的に解いた回（`mechanical.verify` の検査に通った回）は数えない。上限に達したら次の衝突では積まない |
 | `on_limit` | `stoppage` | 上限を超えて衝突したら積まず、衝突の停止（`ci:<PR の URL>`）を開いて人の判断待ちにする |
 | `resume_session_until_attempt` | 1 | セッションを引き継いでよい（agent_resumed=true）のはこの回まで。2 回目以降は新しいセッション |
 | `mechanical.paths` | `CHANGELOG.md`・`changelog.d/` | 衝突したファイルがすべてこれに当たるなら、エージェントを使わずに両方の行を残して解く（`git merge-file --union`）。末尾が `/` のものはディレクトリの下のすべて |
 | `mechanical.agent_tier` | `none` | 機械的に解くときはエージェントを使わない（tier なし） |
+| `mechanical.verify` | `tools/changelog-check/check.mjs` | 機械的に解いてコミットした結果を確かめる決定論の検査（K-0002）。`node <verify> --base <既定ブランチ> --head HEAD` が終了コード 0 のときだけ機械的な解消として扱う。通らなければ（読めなかった 2 も含む）エージェント（`agent_tier`）で解き、その回は上限に数える |
 | `agent_tier` | `tier-large` | ほかのファイルも衝突したときにエージェントで解く段 |
 
-判定は `policy.py` の `enqueue_decision`（次の衝突で積むか、人に回すか）・`may_resume`（その回が引き継いでよいか）・`resolution`（衝突したファイルからの解き方と tier）。
+判定は `policy.py` の次のもの。
+
+- `enqueue_decision`（次の衝突で積むか、人に回すか）: 渡すのは、これまでにエージェントで解いた回の数（`agent_attempts`）
+- `may_resume`（その回が引き継いでよいか）
+- `resolution`（衝突したファイルと検査の結果からの解き方と tier、上限に数えるか（`counts`））: 衝突したファイルが `mechanical.paths` だけで、検査に通った（`verified=True`）かまだ検査していない（`None`）なら機械的（数えない）。検査に通らなかった（`False`）か、ほかのファイルも衝突したならエージェント（数える）
+- `verify_mechanical`（機械的に解いた結果を `mechanical.verify` の検査にかける）
+
+`test_policy.py` は、次のことを確かめる。
+
+- C-0005 と同じ CHANGELOG だけの衝突が 20 回続いても、機械的に解けて検査に通っていれば毎回積み、人の判断待ちに上がらない
+- 機械的に解いた回を挟んでも、エージェントで解いた 3 回のあとの衝突で停止（`stoppage`）にする。CHANGELOG だけでも検査に通らずエージェントで解いた回は数える
+- 両方の行を残す解き方（`git merge-file --union`）と K-0002 の検査を一緒に（議決 `D-0023`、起票時の番号は `D-0018`）。一時の git リポジトリで本物の衝突を起こして解き、`check.mjs` にかける
+  - 取りまとめどうしの `CHANGELOG.md` の衝突: 両方の行が残り、検査に通るので機械的な解消になる
+  - PR が `[Unreleased]` を直接書き換えていた衝突: 検査に通らない（終了コード 1）のでエージェントで解き、上限に数える
+  - 同じ名前の断片（`changelog.d/`）どうしの衝突: 両方の行が残り、検査に通る
+  - 検査が読めなかった（終了コード 2）ときも、エージェントに回す
 
 ## 制御プレーンのイベント列の検査（`events.py`）
 
@@ -71,20 +87,23 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録に足すのも建設者
 - この検査を PR ごと・supervisor の周期ごとに走らせる配線（イベントを出す手順と `.github/workflows/`）はまだない
 
+`over_limit` と `agent_for_mechanical` は、上限に数えるのをエージェントの回だけにした線（Issue #1010）にまだ合わせていない。`over_limit` は機械的に解いた回も含めて `continue.enqueued` の順番で数え、`agent_for_mechanical` は K-0002 の検査に通らずにエージェントで解いた回も外れとして出す。合わせるのは別のチケット。
+
 ## Engine の本物の処理のテスト（`test_engine.py`）
 
 `test_policy.py` が確かめるのは `policy.py` の線（参照の実装）。`test_engine.py` は `engine_harness.py` で Engine の本物の処理を動かし、その結果を線に照らす。関数と手順の中身には手を入れない。
 
 - supervisor（積む側）: `orchestrator/dispatcher/supervisor.py` の `conflict_step`・`ci_failure_step` を取り出し、`continuation.py`（`enqueue`・`attempts`・`pending`）をそのまま読み込んで、DB（events・jobs・tickets）と停止・GitHub を差し替えて動かす。同じ PR が head ごとに衝突し続ける流れを supervisor の周期（`merge_step` と同じ順）で回す
-- worker（解く側）: `orchestrator/worker/entrypoint.sh` の衝突を機械的に解く手順（`SEEN_CONFLICTS=` の行から `[worker] continue` の echo の前まで）を、一時の git リポジトリで本物の衝突を起こしてから bash で動かす。変えるのは一時ファイルの置き場（`/work/cl.*`）だけ
+- supervisor の続きのジョブの解き方は、`job.finished` の `agent_tier`・`cost_usd` に残す（`--resolved agent` は tier-large、`--resolved mechanical` は none と費用 0）
+- worker（解く側）: `orchestrator/worker/entrypoint.sh` の衝突を機械的に解く手順（`SEEN_CONFLICTS=` の行から `[worker] continue` の echo の前まで）を、一時の git リポジトリで本物の衝突を起こしてから bash で動かす。変えるのは一時ファイルの置き場（`/work/cl.*`）だけ。機械的に解けたら取り込みをコミットし、`policy.py` の `verify_mechanical`（K-0002 の検査）にかけた結果を返す。`CHANGELOG.md` の衝突は `--changelog compiled`（PR が断片を取りまとめた。検査に通る）か `--changelog direct`（PR が `[Unreleased]` を直接書き換えた。検査に通らない）で起こす
 - worker（引き継ぎ）: `entrypoint.sh` の `STATE_ARGS` の行を conflict と ci_failed の環境で動かし、エージェントに `--state-dir`（セッションの引き継ぎ）を渡すかを見る
 
 | テスト | 確かめること |
 |---|---|
 | (0) | 取り出す関数と手順がすべて Engine にある。名前や置き場が変わったら落ちる |
-| (1) | 上限（3 回）を超えた衝突では続きのジョブを積まず、衝突の停止（`ci:`）を開いて人の判断待ちにする。上限までは tier-large で積み、停止は開かない |
+| (1) | エージェントで解いた回が上限（3 回）を超えた衝突では続きのジョブを積まず、衝突の停止（`ci:`）を開いて人の判断待ちにする。上限までは tier-large で積み、停止は開かない。機械的に解いた回は 6 回続いても数えず、停止を開かない |
 | (2) | 2 回目以降の conflict の続きのジョブはセッションを引き継がない |
-| (3) | `CHANGELOG.md` だけの衝突、`changelog.d/` を含む CHANGELOG だけの衝突はエージェントを使わずに解く（衝突も衝突の印も残らない）。ほかのファイルも衝突したらエージェントに渡す |
+| (3) | `CHANGELOG.md` だけの衝突、`changelog.d/` を含む CHANGELOG だけの衝突はエージェントを使わずに解く（衝突も衝突の印も残らず、K-0002 の検査に通る）。解いた結果が検査に通らなければエージェントに渡す。ほかのファイルも衝突したらエージェントに渡す |
 
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（`tools/sendback-check/engine.test.mjs` と同じ。議決 `D-0011`）
 - 偽の cursor が知らない問い合わせが来たとき、取り出した手順が落ちたときも落ちる（黙って通さない）
@@ -96,16 +115,18 @@ python3 -B tools/conflict-check/engine_harness.py --check /path/to/factory-engin
 
 ### 今の Engine
 
-2026-11-05 の Engine（`main` の `9fee9c2`）で走らせた結果。外れている線は、Engine が今の形のときだけ `todo:` の理由で飛ばす（結果に出る）。Engine の振る舞いが今の形から変わったら、その版からは線に合わないと落ちる。
+2026-11-05 の Engine（`main` の `9fee9c2`）で走らせた結果（2026-11-07 に `main` の `2490db6` でも同じ）。外れている線は、Engine が今の形のときだけ `todo:` の理由で飛ばす（結果に出る）。Engine の振る舞いが今の形から変わったら、その版からは線に合わないと落ちる。
 
 | 線 | 今の Engine | テスト |
 |---|---|---|
 | 回数の上限（3 回）と人への上げ | 外れる。conflict は head ごとに 1 回で、回数では切らない（ADR 0016、`continuation.py` の `enqueue`）。6 回の衝突で 6 回積み、停止は開かない | (1) の上限は `todo` |
+| 機械的に解いた回は上限に数えない | 合う（回数で切らないので）。上限を入れるときに `continue.enqueued` の件数で数えると外れる（`continuation.attempts` のままでは機械的に解いた回も数える） | (1) の機械的な回は必須 |
 | 2 回目以降はセッションを引き継がない | 合う。conflict のときは `--state-dir` を渡さない（2026-11-02 から。引き継がない分、1 回目も新しいセッション） | (2) は必須 |
 | CHANGELOG.md だけの衝突を機械的に解く | 合う（2026-11-02 から） | (3) は必須 |
 | changelog.d/ を含む CHANGELOG だけの衝突を機械的に解く | 外れる。機械的に解くのは衝突が `CHANGELOG.md` だけのときだけ | (3) の断片は `todo` |
+| 機械的に解いた結果を K-0002 の検査で確かめる | 外れる。両方の行を残して解いたら、検査にかけずにそのまま機械的な解消にする（`[Unreleased]` を直接書き換えていた PR でも） | (3) の検査に通らない衝突は `todo` |
 
-建設者が Engine を線に合わせる（`continuation.enqueue` か `conflict_step` に `max_attempts_per_pr` の上限を入れて、超えたら積まずに `ci_failure_step` の停止に任せる。`entrypoint.sh` の機械的な解消を `mechanical.paths` に広げる）。そのあと `test_engine.py` の `legacy_supervisor`・`legacy_worker` と `todo_while_legacy` の呼び出しを消す。Engine がこの設定を読む配線（今は値を Engine 側の定数に写すことになる）も建設者が決める。
+建設者が Engine を線に合わせる（`continuation.enqueue` か `conflict_step` に `max_attempts_per_pr` の上限を入れて、超えたら積まずに `ci_failure_step` の停止に任せる。数えるのはエージェントで解いた回だけ。`entrypoint.sh` の機械的な解消を `mechanical.paths` に広げ、解いた結果を `mechanical.verify` の検査にかけて、通らなければ衝突の状態に戻してエージェントに渡す）。そのあと `test_engine.py` の `legacy_supervisor`・`legacy_worker`・`legacy_unverified` と `todo_while_legacy` の呼び出しを消す。Engine がこの設定を読む配線（今は値を Engine 側の定数に写すことになる）も建設者が決める。
 
 ### CI への組み込み
 

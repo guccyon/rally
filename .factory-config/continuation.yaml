@@ -2,15 +2,16 @@
 # orchestrator/worker/entrypoint.sh の衝突の解消）。この製品で Engine に守ってほしい線を機械可読で持つ。
 # 知見 K-0010 の担保（議決 D-0013、Issue #954）。線を Engine の本物の処理に照らすのは tools/conflict-check/（README）。
 # Engine はまだこのファイルを読まない。読ませる配線と、今の Engine が外れている線（README の「今の Engine」）を Engine に入れるのは建設者。
-# 値を緩める変更（上限を上げる・機械的に解くパスを減らす・引き継ぎを許す回数を増やす）は人の承認が要る。
+# 値を緩める変更（上限を上げる・機械的に解くパスを減らす・引き継ぎを許す回数を増やす・機械的な解消の検査（mechanical.verify）を外す）は人の承認が要る。
 schema_version: "0.1"
 decided:
   - { date: "2026-11-05", by: committee, note: "議決 D-0013 の担保の案（K-0010）。上限は案の例の 3 回をそのまま置いた（仮置き）" }
+  - { date: "2026-11-07", by: owner, note: "差し戻し（Issue #1010）。上限に数えるのはエージェントを呼び出した回だけ。機械的な解消は K-0002 の検査に通ったときだけ" }
 
 # 既定ブランチとの衝突（supervisor が pr.conflicted / mergeable_state=dirty で積む continue の reason=conflict）
 conflict:
-  # 同じ PR で積む conflict の続きのジョブの上限。数えるのは continue.enqueued（reason=conflict）の件数で、
-  # 機械的に解いた回も数える（積む時点では衝突したファイルが分からないため）。上限に達したら次の衝突では積まない
+  # 同じ PR の conflict の続きのジョブのうち、エージェントを呼び出して解いた回の上限。機械的に解いた回（mechanical の検査に通った回）は数えない
+  # （CHANGELOG だけの衝突が続いても人の判断待ちに上がらない。議決 D-0023 の dissent）。上限に達したら次の衝突では積まない
   max_attempts_per_pr: 3
   # 上限を超えて衝突したときの扱い。stoppage = 衝突の停止（ci:<PR の URL>）を開いて人の判断待ちにする（supervisor の ci_failure_step と同じ停止）
   on_limit: stoppage
@@ -21,4 +22,8 @@ conflict:
   mechanical:
     paths: ["CHANGELOG.md", "changelog.d/"]
     agent_tier: none
+    # 機械的に解いた結果を確かめる決定論の検査（K-0002。リポジトリの根からのパス）。解いてコミットした head を既定ブランチに対して
+    # node <verify> --base <既定ブランチ> --head HEAD で走らせ、終了コード 0 のときだけ機械的な解消として扱う。
+    # 通らなければ（読めなかった 2 も含む）エージェント（agent_tier）で解き、その回は max_attempts_per_pr に数える
+    verify: tools/changelog-check/check.mjs
   agent_tier: tier-large
