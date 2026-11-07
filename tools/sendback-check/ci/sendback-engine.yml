@@ -9,7 +9,9 @@
 # ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる。engine-test の最初の手順
 # （どのチェックアウトよりも前）で確かめ、違えば Engine を取らずに落とす（議決 D-0014、Issue #960。テストは ci.test.mjs）。
 # wiring-order は ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでこのファイルとずれたら落とす。
-# engine-test は engine.test.mjs の結果（TAP）を order.mjs --engine-report に渡し、check.mjs --events を呼ぶ手順があるのに
+# ci.test.mjs は、このファイルが必須のチェックにできる形（絞り込みのない pull_request・if: と continue-on-error なし・engine-test と wiring-order の名前と見張りの手順）かも見て、
+# GitHub Actions では写しが .github/workflows/sendback-engine.yml にないと落とす。見張りを外す PR を止めるため（議決 D-0017、Issue #969）。
+# engine-test は engine.test.mjs の結果（TAP）を同じ手順で order.mjs --engine-report に渡し、check.mjs --events を呼ぶ手順があるのに
 # ENGINE_REF の Engine で (3) か (c) が通っていない（LEGACY_BASIS の todo など）ときに落とす（議決 D-0016、Issue #964）。
 name: sendback-engine
 
@@ -70,12 +72,10 @@ jobs:
           ENGINE_DIR: ${{ github.workspace }}/.engine
         run: |
           rc=0
-          node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=engine-test.tap \
-            engine.test.mjs > engine-test.txt 2>&1 || rc=$?
+          node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=engine-test.tap engine.test.mjs \
+            > engine-test.txt 2>&1 || rc=$?
           { echo "## sendback-engine（ENGINE_REF=${ENGINE_REF}）"; echo; echo '```'; cat engine-test.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cat engine-test.txt
+          # ENGINE_REF の Engine で basis の場合が通ってから配線しているか。テストが落ちても結果を見るため同じ手順で走らせる（if: は使わない）
+          node order.mjs --engine-report engine-test.tap --summary "$GITHUB_STEP_SUMMARY" || rc=1
           exit $rc
-      - name: ENGINE_REF の Engine で basis の場合が通ってから配線しているか（K-0004）
-        if: ${{ !cancelled() }}
-        working-directory: tools/sendback-check
-        run: node order.mjs --engine-report engine-test.tap --summary "$GITHUB_STEP_SUMMARY"

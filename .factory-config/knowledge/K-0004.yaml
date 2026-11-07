@@ -201,6 +201,21 @@ enforcement:
       verified: false
     - kind: ci_check
       what: >-
+        議決 D-0017 の ci_check の案（tools/sendback-check/ci/sendback-engine.yml を .github/workflows/ に写して PR ごとに走らせ、ブランチ保護の必須チェックに入れて、
+        見張りそのものを外す PR も止める）のうち、ワーカーの権限で入れられる分を入れた。tools/sendback-check/ci.test.mjs（wiring-order のジョブで走る）が、
+        ひな形が必須のチェックにできる形か（on が絞り込みのない pull_request だけ・if: と continue-on-error がない・wiring-order が order.mjs と ci.test.mjs を、
+        engine-test が ENGINE_DIR を向けて engine.test.mjs を走らせる）を見て、外れたら落とす。写しとのずれも見るので、見張りを外す・飛ばす・絞る変更は
+        ひな形と写しを一緒に直しても落ちる。GitHub Actions では写しが .github/workflows/sendback-engine.yml にないと落とす（別の名前に写すとずれを見張れない）。
+        外す・飛ばす・絞る 11 の直しのひな形で外れることを ci.test.mjs で確かめた。.github/workflows/ に写すことと、engine-test と wiring-order を
+        branch protection の必須チェックにすること（写しを消す・ジョブの名前を変える PR はそこで止まる）は建設者が行うので、まだ PR ごとには走っておらず、
+        この解決策も未配線・未確認
+      issue: 969
+      at: 2026-11-07
+      decided_by: committee:D-0017
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
         議決 D-0016 の ci_check の案（D-0012 の順序の見張りを、ENGINE_REF の Engine で走らせた結果でも見る）を入れた。
         tools/sendback-check/order.mjs に --engine-report（engine.test.mjs の node --test の TAP）を足し、.github/workflows/ に check.mjs --events を
         呼ぶ手順があるのに、その結果で (3)（basis を分けて書く）か (c)（Engine の正しい判定のイベント列が通る）が通っていなければ

@@ -256,8 +256,8 @@ test("engine.test.mjs の (3) と (c) は BASIS_TESTS の名前で、engine-test
   assert.match(engineTestNow, /^test\(BASIS_TESTS\["\(c\)"\], \{ skip \}/m);
   const dest = template.match(/--test-reporter=tap --test-reporter-destination=(\S+)/)?.[1];
   assert.ok(dest, "engine-test が engine.test.mjs の TAP をファイルに出していない");
-  assert.match(template, new RegExp(`^\\s*run: node order\\.mjs --engine-report ${dest.replace(/\./g, "\\.")} `, "m"));
-  assert.match(template, /if: \$\{\{ !cancelled\(\) \}\}\n\s*working-directory: tools\/sendback-check\n\s*run: node order\.mjs --engine-report/);
+  // テストが落ちても結果を見るよう、engine.test.mjs と同じ手順で渡す（ci.test.mjs が if: を許さないので、別の手順に分けない）
+  assert.match(template, new RegExp(`engine\\.test\\.mjs[^]*\\n\\s*node order\\.mjs --engine-report ${dest.replace(/\./g, "\\.")} [^\\n]*\\|\\| rc=1\\n\\s*exit \\$rc\\n`));
   // 結果を渡す手順そのものは check.mjs --events の配線に数えない
   assert.deepEqual(checkOrder({ workflows: [wf("sendback-engine.yml", template)], engineTest: engineTestNow }), { wired: [], errors: [] });
 });
