@@ -185,4 +185,18 @@ enforcement:
       decided_by: committee:D-0017
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0017 の test の案を入れた。tools/sendback-check/order.test.mjs に、check.mjs --events を npm scripts（working-directory・--prefix・
+        run-script・--events を中に入れた scripts）、シェルのラッパー（リポジトリの中の .sh に --events を渡す・中で --events を付ける）、
+        引数の順序を変えた呼び方（--pr N --events・--events= を最後の継ぎ行に置く・配列や関数で渡す）、env の変数や cd を経た呼び方で配線した
+        ワークフローの写しを足し、order.mjs がそれらも check.mjs --events の配線として見つけて engine_test_todo・engine_test_not_wired で落とし、
+        順序を守れば通ることを確かめた。今の order.mjs は npm --prefix・run-script・変数・関数・ラッパーを経た呼び方を見逃したので、order.mjs を
+        手順ごとに見て npm scripts の中身（tools/sendback-check/package.json）とラッパーのファイルを辿るように直した。order.mjs は
+        .github/workflows/ からはまだ走っておらず（ci/sendback-engine.yml の写しは建設者）、本物の配線の PR では効き目を確かめていない
+      issue: 967
+      at: 2026-11-07
+      decided_by: committee:D-0017
+      wired: false
+      verified: false
 decided_by: committee:D-0004
