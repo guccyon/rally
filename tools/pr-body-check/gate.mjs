@@ -3,7 +3,8 @@
 // body_fix に回す入力（Engine の dispatcher.enqueue_body_fix が job.enqueued の input に入れる形）を返す。
 //
 //   node gate.mjs --pr-url <PR の URL> [--body <組み込んだ本文のファイル>] [--json <出力先>]   # --body を省くと標準入力から読む
-//   終了コード: 0 = 本文を書いてよい、1 = 本文を書かずに body_fix に回す、2 = 読めなかった（本文は書かない）
+//   終了コード: 0 = 本文を書いてよい、1 = 本文を書かずに body_fix に回す、2 = 読めなかった（本文は書かない）、
+//             3 = 見出しの定義（template.json）が不正（本文は照らしておらず書かない。body_fix には回さない）
 //   標準出力: 1 のときは body_fix の入力の JSON 1 行。0 のときは何も出さない
 //
 // 呼ぶ場所: Engine の worker/entrypoint.sh が続きのジョブ（pr.head_updated・handoff.saved になる push）で NEW_BODY を組んだあと、
@@ -12,7 +13,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { FACTORY_RECORD, checkBody } from "./check.mjs";
+import { EXIT_TEMPLATE_ERROR, FACTORY_RECORD, TemplateError, checkBody } from "./check.mjs";
 
 /** 本文の構成の指摘の id（Engine の core-gates/rubric.yaml）。検査役が同じ欠陥に付ける id に揃え、採用済みの指摘と同じ線で数えられるようにする。 */
 export const RUBRIC_ID = "PR-002";
@@ -57,7 +58,14 @@ function main() {
     console.error(`pr-body-check gate: 本文を読めなかった: ${e.message}`);
     process.exit(2);
   }
-  const result = gate(body, values["pr-url"]);
+  let result;
+  try {
+    result = gate(body, values["pr-url"]);
+  } catch (e) {
+    if (!(e instanceof TemplateError)) throw e;
+    console.error(`pr-body-check gate: 見出しの定義が不正: ${e.reason}`);
+    process.exit(EXIT_TEMPLATE_ERROR);
+  }
   if (values.json) writeFileSync(values.json, JSON.stringify(result, null, 2) + "\n");
   for (const e of result.errors) console.error(`${e.line} 行目: ${e.message}`);
   if (!result.ok) console.log(JSON.stringify(result.body_fix));
