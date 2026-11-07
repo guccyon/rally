@@ -8,6 +8,7 @@ import { expect, test } from "vitest";
 import { ICON_PATHS } from "@/components/ui/icons/paths";
 import { ListRow } from "@/components/ui/ListRow";
 import { Notice } from "@/components/ui/Notice";
+import { Select } from "@/components/ui/Select";
 import { STATUS_ICONS, type Status } from "@/components/ui/status";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { TextField } from "@/components/ui/TextField";
@@ -47,15 +48,19 @@ test("知らせの inline は状態ごとの SVG のアイコン、成功は完�
   expect(screen.getByTestId("done-mark")).toHaveAttribute("aria-hidden", "true");
 });
 
-test("入力欄の誤りと一覧の行の詳細へのしるしも SVG で、文字の記号を使わない", () => {
+test("入力欄の誤り・一覧の行の詳細へのしるし・選択欄の chevron も SVG で、文字の記号を使わない", () => {
   const { container } = render(
     <>
       <TextField label="表示名" error="表示名は 1〜20 文字で入れてください。" />
       <ListRow title="コーチから返事が届きました" onClick={() => {}} />
+      <Select label="コーチ">
+        <option value="">すべて</option>
+      </Select>
     </>,
   );
   expect(container.querySelector('svg[data-icon="error"]')).not.toBeNull();
   expect(container.querySelector('svg[data-icon="chevron_right"]')).not.toBeNull();
+  expect(container.querySelector('svg[data-icon="expand_more"]')).not.toBeNull();
   expect(screen.getByRole("button", { name: "コーチから返事が届きました" })).toBeInTheDocument();
   expect(container.textContent).not.toMatch(/[⚠›ℹ✓◷]/);
 });

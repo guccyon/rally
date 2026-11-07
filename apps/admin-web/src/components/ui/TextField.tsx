@@ -14,31 +14,44 @@ type FieldProps = {
   counter?: string;
 };
 
-const FIELD =
+/** 欄の形（text_field の field）。date_field・select も同じ形で描く。 */
+export const FIELD =
   "block w-full rounded-md border border-border-strong bg-background px-4 text-base text-text focus:border-focus-ring focus:outline-2 focus:outline-focus-ring disabled:bg-surface disabled:text-text-muted aria-invalid:border-2 aria-invalid:border-danger";
 
-function FieldFrame({
+/** ラベル・欄・helper・error_text の並び。helperRole・errorRole は読み込み中（status）と読めなかったこと（alert）に使う。 */
+export function FieldFrame({
   id,
   label,
   helper,
   error,
   counter,
+  helperRole,
+  errorRole,
+  className,
   children,
-}: FieldProps & { id: string; children: ReactNode }) {
+}: FieldProps & {
+  id: string;
+  helperRole?: "status";
+  errorRole?: "alert";
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="space-y-1">
+    <div className={["space-y-1", className].filter(Boolean).join(" ")}>
       <label htmlFor={id} className="block text-sm font-bold text-text">
         {label}
       </label>
       {children}
       {(helper || counter) && (
         <div className="flex justify-between gap-2 text-sm text-text-muted">
-          <span id={`${id}-helper`}>{helper}</span>
+          <span id={`${id}-helper`} role={helperRole}>
+            {helper}
+          </span>
           {counter && <span>{counter}</span>}
         </div>
       )}
       {error && (
-        <p id={`${id}-error`} className="flex items-start gap-1 text-sm text-danger">
+        <p id={`${id}-error`} role={errorRole} className="flex items-start gap-1 text-sm text-danger">
           <Icon name="error" size={20} />
           {error}
         </p>
@@ -47,7 +60,7 @@ function FieldFrame({
   );
 }
 
-function describedBy(id: string, { helper, error }: FieldProps) {
+export function describedBy(id: string, { helper, error }: FieldProps) {
   return [helper && `${id}-helper`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
 }
 

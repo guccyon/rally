@@ -11,6 +11,7 @@ import { EmptyState } from "./EmptyState";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
 import { Notice } from "./Notice";
+import { Select, selectNotSelected } from "./Select";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
 import { SLOT_STATE_STATUS, type Status } from "./status";
@@ -96,6 +97,27 @@ const RANGE_EXAMPLES: { example: string; value: DateRange }[] = [
   { example: "31 日を超える", value: { from: "2026-10-01", to: "2026-11-30" } },
   { example: "空の欄", value: { from: "2026-10-28", to: "" } },
 ];
+
+/** 選択欄の見本の選択肢。先頭の行は絞り込みなら「すべて」、必須の欄なら「選んでください」（値は空）。 */
+function CoachOptions() {
+  return (
+    <>
+      <option value="">すべて</option>
+      <option value="c1">山田 花子</option>
+      <option value="c2">佐藤 健</option>
+    </>
+  );
+}
+
+function SportOptions({ first }: { first: string }) {
+  return (
+    <>
+      <option value="">{first}</option>
+      <option value="tennis">テニス</option>
+      <option value="baseball">野球</option>
+    </>
+  );
+}
 
 const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
   info: "11月から、コートの予約はアプリから行えます。",
@@ -324,6 +346,75 @@ export const CATALOG: CatalogEntry[] = [
     variant: "date_range",
     state: "loading",
     render: () => <DateRangeField value={{ from: "", to: "" }} onChange={noop} loading />,
+  },
+  {
+    component: "select",
+    state: "default",
+    render: () => (
+      <Select label="コーチ" defaultValue="">
+        <CoachOptions />
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "disabled",
+    render: () => (
+      <Select label="対象" helper="お知らせを送っているあいだは変えられません。" defaultValue="tennis" disabled>
+        <option value="">生徒全員（ゴルフの生徒も含む）</option>
+        <option value="tennis">テニスの生徒</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "loading",
+    render: () => (
+      <Select label="コーチ" defaultValue="" loading>
+        <option value="">すべて</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "failed",
+    render: () => (
+      <Select label="レッスンメニュー" defaultValue="" loadFailed>
+        <option value="">すべて</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "error",
+    render: () => (
+      <Select label="スポーツ" defaultValue="" error={selectNotSelected("スポーツ")} fullWidth>
+        <SportOptions first="選んでください" />
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "default",
+    example: "絞り込みの行",
+    render: () => (
+      <div className="flex flex-wrap items-end gap-4">
+        <DateField label="開始日" defaultValue="2026-10-28" />
+        <Select label="コーチ" defaultValue="c1">
+          <CoachOptions />
+        </Select>
+        <Select label="スポーツ" defaultValue="">
+          <SportOptions first="すべて" />
+        </Select>
+        <Select label="キャンセルした人" defaultValue="student">
+          <option value="">すべて</option>
+          <option value="student">生徒</option>
+          <option value="coach">コーチ</option>
+          <option value="headquarters">本部</option>
+        </Select>
+        <Button>この条件で見る</Button>
+      </div>
+    ),
   },
   {
     component: "card",

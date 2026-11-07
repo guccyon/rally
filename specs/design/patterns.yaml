@@ -74,8 +74,16 @@ patterns:
   - id: search_filter
     ja: 検索と絞り込み
     examples_in_app: スロットの検索・コーチを探す・本部の生徒の一覧（スポーツで絞り込み）・予約の一覧（日付の期間）
-    structure: [絞り込みの欄（スポーツはチップか select、日付は期間）, 件数, 一覧]
+    structure: [絞り込みの欄（student-app のスポーツはチップ、admin-web の決まった選択肢は select、日付は date_field）, 件数, 一覧]
     behavior: 選んだらすぐ一覧を読み直す（「検索する」のボタンは文字の検索だけ）。選んだ条件は一覧の上に残す。0 件は empty_state で条件の変え方を書く
+    admin_web_filter_row: >-
+      絞り込みの欄（select・date_field・text_field）は label を上にして横に gap md 16px で並べ、収まらなければ折り返す。
+      欄の高さは 48px にそろえ、「この条件で見る」などのボタン（admin-web の 48px）は欄の下端にそろえる（0.6.0）
+    rules:
+      - level: should
+        statement: 絞り込みの決まった選択肢は select の部品にし、先頭の行は「すべて」にする
+        why: どの画面でも「すべて」が条件なしの意味になり、本部が絞り込みを覚え直さない
+        check: design_inspector
 
   - id: states
     ja: 空・読み込み中・失敗
