@@ -1,0 +1,127 @@
+"""watch.py（イベント列で線から外れた PR に衝突の停止を開く見張り）のテスト（知見 K-0010 の担保。議決 D-0030・Issue #1034）。Engine は要らない。
+Engine の本物の stoppage.open_stoppage に渡して動かすのは test_engine.py の (4)"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import events  # noqa: E402
+import policy  # noqa: E402
+import watch  # noqa: E402
+from test_events import C0005, URL, stream  # noqa: E402
+
+PR659 = "https://github.com/guccyon/rally/pull/659"
+
+
+def run(path: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-I", "-B", str(HERE / "watch.py"), "--events", str(path), *args], capture_output=True, text=True)
+
+
+class FakeStoppage:
+    """Engine の stoppage.open_stoppage と同じ引数で受け、同じ key は開き直さない（Engine は dedupe_key で 1 回だけ開く）"""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+        self.keys: set[str] = set()
+
+    def open_stoppage(self, cur, key, category, what, *, waiting_for="", cause="", detected_by="watcher", started_at=None, prevention="",
+                      correlation_id=None, job_id=None, quiet=False):
+        self.calls.append({"key": key, "category": category, "what": what, "waiting_for": waiting_for, "detected_by": detected_by,
+                           "correlation_id": correlation_id, "job_id": job_id})
+        if key in self.keys:
+            return False
+        self.keys.add(key)
+        return True
+
+
+class StoppagesTest(unittest.TestCase):
+    def setUp(self):
+        self.c = policy.load()
+
+    def test_C0005のイベント列ではPR659に衝突の停止を1つ開く(self):
+        found = watch.stoppages(self.c, events.parse_events(C0005.read_text(encoding="utf-8")))
+        self.assertEqual([s["key"] for s in found], [f"ci:{PR659}"])
+        s = found[0]
+        self.assertEqual(s["rules"], ["agent_for_mechanical", "over_limit", "resumed_after_limit"])
+        self.assertEqual((s["category"], s["detected_by"]), ("ticket", "conflict-check"))
+        self.assertEqual(s["job_id"], 9001)   # 線から外れた最初の回
+        self.assertIn("最初は 1 回目", s["what"])
+        self.assertIn("人の判断待ち", s["waiting_for"])
+
+    def test_3つのruleのどれか1つでも停止を開く(self):
+        cases = {
+            "over_limit": stream([{"resumed": False}] * 4),
+            "resumed_after_limit": stream([{"resumed": True}, {"resumed": True}]),
+            "agent_for_mechanical": stream([{"files": ["CHANGELOG.md"], "cost": 1.2}]),
+        }
+        for rule, evs in cases.items():
+            with self.subTest(rule=rule):
+                found = watch.stoppages(self.c, evs)
+                self.assertEqual([(s["key"], s["rules"]) for s in found], [(f"ci:{URL}", [rule])])
+
+    def test_線どおりの積み方と照らせないだけのPRには開かない(self):
+        ok = stream([{"resumed": True, "files": ["CHANGELOG.md", "src/a.rs"]}, {"resumed": False, "files": ["CHANGELOG.md"], "cost": 0},
+                     {"resumed": False}, {"skip": True}])
+        unknown = [e for e in stream([{"files": ["CHANGELOG.md"]}] * 2, url=URL.replace("/1", "/2")) if e["name"] != "job.started"]
+        self.assertEqual(watch.stoppages(self.c, ok + unknown), [])
+
+    def test_外れたPRだけに開きprで絞れる(self):
+        other = URL.replace("/1", "/2")
+        evs = stream([{"resumed": False}] * 4) + stream([{"resumed": False}] * 2, url=other)
+        self.assertEqual([s["pr_url"] for s in watch.stoppages(self.c, evs)], [URL])
+        self.assertEqual(watch.stoppages(self.c, evs, other), [])
+
+    def test_correlation_idは外れた回のcontinue_enqueuedから取る(self):
+        evs = stream([{"resumed": False}] * 4)
+        for e in evs:
+            if e["name"] == "continue.enqueued":
+                e["correlation_id"] = "github:guccyon/rally#1"
+        self.assertEqual(watch.stoppages(self.c, evs)[0]["correlation_id"], "github:guccyon/rally#1")
+
+
+class ApplyTest(unittest.TestCase):
+    def test_open_stoppageで開き同じkeyは開き直さない(self):
+        found = watch.stoppages(policy.load(), events.parse_events(C0005.read_text(encoding="utf-8")))
+        st = FakeStoppage()
+        self.assertEqual(watch.apply(object(), st, found), [f"ci:{PR659}"])
+        self.assertEqual(watch.apply(object(), st, found), [])   # 次の周期
+        self.assertEqual(st.calls[0]["category"], "ticket")
+        self.assertEqual(st.calls[0]["job_id"], 9001)
+
+    def test_開く停止がなければ呼ばない(self):
+        st = types.SimpleNamespace(open_stoppage=lambda *a, **k: self.fail("開く停止がないのに呼んだ"))
+        self.assertEqual(watch.apply(object(), st, []), [])
+
+
+class CommandTest(unittest.TestCase):
+    def test_C0005は終了コード1で開く停止を出す(self):
+        p = run(C0005)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn(f"open ci:{PR659} (agent_for_mechanical, over_limit, resumed_after_limit)", p.stdout)
+        d = json.loads(run(C0005, "--json").stdout)
+        self.assertEqual([s["key"] for s in d["stoppages"]], [f"ci:{PR659}"])
+
+    def test_開く停止がなければ終了コード0で読めなければ2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok = Path(tmp) / "ok.jsonl"
+            ok.write_text("\n".join(json.dumps(e) for e in stream([{"resumed": True}])), encoding="utf-8")
+            p = run(ok)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertIn("開く停止 0 件", p.stdout)
+            bad = Path(tmp) / "bad.json"
+            bad.write_text("{", encoding="utf-8")
+            self.assertEqual(run(bad).returncode, 2)
+            self.assertEqual(run(Path(tmp) / "none.json").returncode, 2)
+            self.assertEqual(run(ok, "--config", str(Path(tmp) / "none.yaml")).returncode, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

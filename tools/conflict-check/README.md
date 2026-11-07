@@ -5,7 +5,7 @@
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
-python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査のテストと、Engine の本物の処理のテスト
+python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテストと、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
 ```
 
@@ -73,7 +73,7 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
 
 ```sql
-select coalesce(json_agg(json_build_object('id', e.id, 'name', e.name, 'job_id', e.job_id, 'payload', e.payload) order by e.id), '[]')
+select coalesce(json_agg(json_build_object('id', e.id, 'name', e.name, 'job_id', e.job_id, 'correlation_id', e.correlation_id, 'payload', e.payload) order by e.id), '[]')
 from events e
 where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url' = :'pr_url')
    or (e.name in ('job.started', 'job.finished', 'conflict.files')
@@ -85,9 +85,30 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 
 - agent_resumed は制御プレーンの events に載っていない（ワーカーのログの `[worker] agent resumed=` の行と、チケットのボリュームの `ticket.json` だけ）。載るまでは `resumed_after_limit` は照らせず、件数に出る。`job.finished` に `agent_resumed` を足すのは建設者
 - tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録に足すのも建設者
-- この検査を PR ごと・supervisor の周期ごとに走らせる配線（イベントを出す手順と `.github/workflows/`）はまだない
+- この検査を supervisor の周期ごとに走らせる呼び出しは `watch.py`（下の「supervisor の周期ごとの見張り」）、PR ごとのテストの CI はひな形 `ci/conflict-check.yml` に置いた（議決 `D-0030`、Issue #1034）。どちらもまだ配線していない（Engine の supervisor と `.github/workflows/` は建設者）
 
 `over_limit` と `agent_for_mechanical` は、上限に数えるのをエージェントの回だけにした線（Issue #1010）にまだ合わせていない。`over_limit` は機械的に解いた回も含めて `continue.enqueued` の順番で数え、`agent_for_mechanical` は K-0002 の検査に通らずにエージェントで解いた回も外れとして出す。合わせるのは別のチケット。
+
+## supervisor の周期ごとの見張り（`watch.py`）
+
+`events.py` で外れた PR に、衝突の停止（`ci:<PR の URL>`）を開いて人の判断待ちにする。委員会の議決 `D-0030`（Issue #1034 の起票時の番号は `D-0029`。PR #1033）と Issue #1034 で作った。外れたかの判定は `events.py` の `records_from_events`・`check` をそのまま使う。
+
+```sh
+python3 -B tools/conflict-check/watch.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
+python3 -B tools/conflict-check/watch.py --events tools/conflict-check/fixtures/c0005-pr659-events.json   # C-0005 の流れ。PR #659 に停止を 1 つ開く。終了コード 1
+```
+
+- `stoppages(policy, events)`: `over_limit`・`resumed_after_limit`・`agent_for_mechanical` のどれかが出た PR ごとに、開く停止を 1 つ返す。key は `ci:<PR の URL>`、category は `ticket`（`ci_failure_step` が開く衝突の停止と同じ）、`detected_by` は `conflict-check`。`what` には外れた rule と最初に外れた回の理由、`job_id` はその回のジョブ、`correlation_id` はその回の `continue.enqueued` の `correlation_id`（イベント列にあれば）。外れのない PR と、記録がなく照らせなかっただけの PR には開かない
+- `apply(cur, stoppage, found)`: Engine の `orchestrator/dispatcher/stoppage.py` の `open_stoppage` で開き、新しく開いた key を返す。同じ key がすでに開いていれば Engine が開き直さない（`stoppage.opened:<key>` の dedupe）ので、周期ごとに呼んでよい
+- 終了コード: 0 = 開く停止がない、1 = 開く停止がある、2 = 記録か設定を読めなかった（`events.py` と同じ）。`--json` は `{ "stoppages": [...] }`
+- `test_watch.py` が、C-0005 の流れで PR #659 に停止を 1 つ開くこと、3 つの rule のどれか 1 つでも開くこと、線どおりの積み方・照らせないだけの PR には開かないこと、次の周期で開き直さないことを確かめる。Engine の本物の `open_stoppage` に渡して動かすのは `test_engine.py` の (4)
+
+supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure_step` の後（または `conflict_step` で続きのジョブを積んだ直後）に、その PR のイベント列（上の SQL）を引いて `watch.stoppages` と `watch.apply` を呼ぶ。停止が開けば `waiting_for_human` が `ci:` を見るので、その PR は同時に流す枠から外れる。
+
+今の Engine との違い:
+
+- `ci_failure_step` は、次の head で CI が通ったときと人の判断待ちの間に同じ `ci:` の停止を閉じる。閉じたあとは `stoppage.opened:<key>` の dedupe で同じ key を開き直せない（Engine の `ci:` の停止すべてに共通）。見張りの停止を閉じないようにするか、key を分けるかは配線のときに建設者が決める
+- `conflict_step` は停止が開いていても衝突を解く続きのジョブを積む（`awaiting_decision` は `ci:` を見ない）。見張りの停止で積むのを止めるのも配線のときに入れる
 
 ## Engine の本物の処理のテスト（`test_engine.py`）
 
@@ -97,6 +118,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - supervisor の続きのジョブの解き方は、`job.finished` の `agent_tier`・`cost_usd` に残す（`--resolved agent` は tier-large、`--resolved mechanical` は none と費用 0）
 - worker（解く側）: `orchestrator/worker/entrypoint.sh` の衝突を機械的に解く手順（`SEEN_CONFLICTS=` の行から `[worker] continue` の echo の前まで）を、一時の git リポジトリで本物の衝突を起こしてから bash で動かす。変えるのは一時ファイルの置き場（`/work/cl.*`）だけ。機械的に解けたら取り込みをコミットし、`policy.py` の `verify_mechanical`（K-0002 の検査）にかけた結果を返す。`CHANGELOG.md` の衝突は `--changelog compiled`（PR が断片を取りまとめた。検査に通る）か `--changelog direct`（PR が `[Unreleased]` を直接書き換えた。検査に通らない）で起こす
 - worker（引き継ぎ）: `entrypoint.sh` の `STATE_ARGS` の行を conflict と ci_failed の環境で動かし、エージェントに `--state-dir`（セッションの引き継ぎ）を渡すかを見る
+- watch（見張り）: `orchestrator/dispatcher/stoppage.py` をそのまま読み込み、`watch.py` の `apply` から本物の `open_stoppage` を呼ぶ。偽の cursor は `on conflict (dedupe_key) do nothing` の insert を真似る
 
 | テスト | 確かめること |
 |---|---|
@@ -104,6 +126,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 | (1) | エージェントで解いた回が上限（3 回）を超えた衝突では続きのジョブを積まず、衝突の停止（`ci:`）を開いて人の判断待ちにする。上限までは tier-large で積み、停止は開かない。機械的に解いた回は 6 回続いても数えず、停止を開かない |
 | (2) | 2 回目以降の conflict の続きのジョブはセッションを引き継がない |
 | (3) | `CHANGELOG.md` だけの衝突、`changelog.d/` を含む CHANGELOG だけの衝突はエージェントを使わずに解く（衝突も衝突の印も残らず、K-0002 の検査に通る）。解いた結果が検査に通らなければエージェントに渡す。ほかのファイルも衝突したらエージェントに渡す |
+| (4) | `watch.py` の `apply` を `stoppage.py` の本物の `open_stoppage`（`psycopg` の `Jsonb` を差し替え、通知はログだけ）に渡し、C-0005 のイベント列で `ci:` の停止を category `ticket` で 1 つ開き、もう一度回しても開き直さない（議決 `D-0030`、Issue #1034） |
 
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（`tools/sendback-check/engine.test.mjs` と同じ。議決 `D-0011`）
 - 偽の cursor が知らない問い合わせが来たとき、取り出した手順が落ちたときも落ちる（黙って通さない）
@@ -130,4 +153,6 @@ python3 -B tools/conflict-check/engine_harness.py --check /path/to/factory-engin
 
 ### CI への組み込み
 
-ワーカーは `.github/workflows/` を変えられないので、建設者が足す。PR ごとに Engine を固定した版でチェックアウトして `ENGINE_DIR` を向け、上のコマンドを走らせる（`tools/sendback-check/ci/sendback-engine.yml` の Engine のチェックアウトと同じ形でよい）。
+PR ごとのワークフローのひな形を `ci/conflict-check.yml` に置いた（議決 `D-0030`、Issue #1034）。Engine を固定した版（`ENGINE_REF`。2026-11-07 に走らせた `main` の `2490db6`）でチェックアウトして `ENGINE_DIR` を向け、`CI=true` で `unittest discover` を走らせる（`test_policy.py`・`test_events.py`・`test_watch.py`・`test_engine.py`・`test_ci.py`）。`CI=true` と `ENGINE_DIR` を渡すので、fixtures が読めない・Engine のチェックアウトがない・`engine_harness.py` が関数や手順を取り出せない・node か git がないときは飛ばさずに落ちる。Engine が今の形のときだけの `todo` は飛ばしとして結果に出る。
+
+ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/conflict-check.yml` に写す。写すときに変えてよいのは `ENGINE_REF` の行だけ。`test_ci.py` がひな形の形（絞り込みのない `pull_request`・`if:` と `continue-on-error` なし・`ENGINE_REF` が 40 桁の SHA で最初の手順で確かめる・`CI=true` と `ENGINE_DIR` を渡してテストを走らせる）と、写しがあれば `ENGINE_REF` の行のほかがひな形と同じかを見る。写したら `conflict-check` を必須のチェックにするのも建設者。

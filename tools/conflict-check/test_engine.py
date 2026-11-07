@@ -67,7 +67,7 @@ class EngineTest(unittest.TestCase):
 
     def test_0_取り出す関数と手順がすべてEngineにある(self):
         out = harness("--check", self.engine)
-        for name in ("conflict_step", "ci_failure_step", "enqueue", "attempts", "pending"):
+        for name in ("conflict_step", "ci_failure_step", "enqueue", "attempts", "pending", "open_stoppage"):
             self.assertIn(name, out["functions"])
         self.assertEqual(out["entrypoint"], ["mechanical", "state_args"])
 
@@ -137,6 +137,14 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(policy.resolution(self.c, out["before"])["mode"], "agent")
         self.assertTrue(out["agent"], f"機械的に解いてしまった: {out}")
         self.assertIn("src/app.txt", out["conflicts"])
+
+    def test_4_線から外れたイベント列の見張りはEngineの停止で衝突の停止を開いて人の判断待ちにする(self):
+        out = harness("watch", self.engine, "--events", str(HERE / "fixtures" / "c0005-pr659-events.json"))
+        key = "ci:https://github.com/guccyon/rally/pull/659"
+        self.assertEqual(out["opened"], [key], f"C-0005 のイベント列で衝突の停止を開かない: {out}")
+        self.assertEqual(out["reopened"], [], "次の周期で同じ停止を開き直した")
+        self.assertEqual([(r["key"], r["category"], r["detected_by"], r["job_id"]) for r in out["recorded"]], [(key, "ticket", "conflict-check", 9001)])
+        self.assertEqual(out["recorded"][0]["dedupe_key"], f"stoppage.opened:{key}")
 
 
 if __name__ == "__main__":
