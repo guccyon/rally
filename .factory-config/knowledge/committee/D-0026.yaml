@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0026
+pr: https://github.com/guccyon/rally/pull/1019
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えていません。D-0017 の 3 つめの案（ci_check、sendback-engine.yml
+    を必須チェックにする）のうち、ワーカーの権限で入れられる分の記録を enforcement.solutions に 1 件足しただけなので、D-0004 から
+    D-0025 までの議決と矛盾しません。
+  - 'issue 960 の solution もすでに ci.test.mjs で写しとのずれを見ていますが、今回はひな形が必須チェックにできる形か（絞り込みのない
+    pull_request・if: と continue-on-error がない）を見る別の段なので、重複ではなく続きとして読めます。'
+  - 'kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と同じで、wired: false・verified:
+    false も「写すことと必須チェックにすることは建設者が行う」という what の文と合っています。'
+  - 同じ ci_check の案は D-0014 と D-0020 の 2 つめの案でも重ねて出ているので、次に K-0004 を直す変更セットで、what か
+    decided_by に D-0014・D-0020 も添えてください。
+  - D-0009 以降に先送りした verified_at・review_by の更新などは今回も入っていないので、次の変更セットでまとめてそろえてください。
+  - 見張りはまだ .github/workflows/ からも必須チェックとしても走っておらず、効き目も確かめていないので、confidence は hypothesis
+    のままが妥当です。また specs/ の製品の用語や業務ルールともぶつかりません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 969 と committee:D-0017 を指していて、D-0017 の enforcement
+    の ci_check の案（sendback-engine.yml を .github/workflows/ に写して必須チェックにし、見張りを外す PR
+    も止める）のうちワーカーの権限で入れられる分とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - 'ci.test.mjs で確かめたのはひな形の 11 の直しだけで、.github/workflows/ への写しと branch protection
+    の必須チェックはまだと自分で書き、wired: false・verified: false にしているので、記録と状態が合っています。'
+  - '本物の PR で engine-test と wiring-order が必須チェックとして走り、PR #395 の流れで落ちて直した版で通ることを確かめるまでは、confidence
+    は hypothesis のままが妥当で confirmed に上げないでください。'
+  - 差分に出てくるのは issue の番号、議決の id、ツールとワークフローのパス、ジョブの名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えておらず、D-0017 の ci_check
+    の案（sendback-engine.yml を必須のチェックにして見張りを外す PR も止める）のうち、ワーカーの権限で入れられる分を enforcement.solutions
+    に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 見張りを外す・飛ばす・絞る変更（on の絞り込み、if:、continue-on-error、ジョブから order.mjs や engine.test.mjs
+    を抜くこと）を、人のレビューではなく ci.test.mjs がひな形と写しの両方で止める形にしています。繰り返し起きる外し方を安い費用で確かに止められ、11
+    の直しで落ちることも確かめているので、担保の作りとして妥当です。
+  - 写しの名前を .github/workflows/sendback-engine.yml に固定して、別の名前の写しでずれの見張りを逃れる抜け道を塞いだ点も、線が引きやすく確かです。
+  - ただし、ブランチ保護で engine-test と wiring-order が必須のチェックになっているかはリポジトリのファイルからは見えません。写しを消す
+    PR やジョブの名前を変える PR を止める最後の守りが、建設者の手作業と文だけに残っています。
+  - 'そこで、ブランチ保護の required_status_checks を GitHub の API で読み、engine-test と wiring-order
+    がなければ落とす検査を足し、それが通ってから wired: true に変えるようにすべきです。'
+  - 'wired: false・verified: false は実態どおりで、本物の PR ではまだ走っていないので、confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0017 の ci_check の案（issue 969）を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence は変えていないので、範囲は広すぎません。
+  - ci.test.mjs は写しがある wiring-order のジョブの中でしか走らないので、写しそのものを消す PR はこの検査では止まらず、branch
+    protection の必須チェックだけが頼りになるという反例が残り、本文もそう書いているので記録としては正直です。
+  - 形の検査は on・if:・continue-on-error を見ますが、run の行に || true を付ける、timeout-minutes を極端に短くする、merge_group
+    を使うマージキューで pull_request だけでは必須チェックが来ない、といった外し方を 11 の直しが含むかは読めないので、次の変更セットで ci.test.mjs
+    にその場合を足してください。
+  - '確かめたのはひな形と写しの組だけで、.github/workflows/ にも必須チェックにも入っておらず wired: false・verified:
+    false と書いているので、confidence は hypothesis のままが妥当です。'
+  - K-0004 の solutions は 13 件になり、同じ D-0017 の案に応える記録が 2 件並ぶなど配線待ちの記録が積み重なっているので、建設者の配線が入ったときに効いたものと効いていないものを分けて整理することを改めて勧めます。
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパスなどの識別子だけで、人を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci.test.mjs（または別の検査）に手順を足す。GitHub Actions で走るときに
+    gh api repos/{owner}/{repo}/branches/{default}/protection/required_status_checks
+    を読み、engine-test と wiring-order が contexts（checks）になければ required_check_missing
+    の ::error で落とす。この検査が通るまで issue 969 の solution の wired を true にしないことを、tools/knowledge-enforcement-check/check.py
+    で照らす。
