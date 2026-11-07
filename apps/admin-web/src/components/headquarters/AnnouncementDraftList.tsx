@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import { announcementTargetLabel, formatDateTime } from "@/components/labels";
+import { Button } from "@/components/ui/Button";
 
 import { draftTitleOf } from "./announcementInput";
 
@@ -23,35 +24,21 @@ function DeleteDraftAction({ onDelete }: { onDelete: () => Promise<void> }) {
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        className="rounded-pill border border-danger px-2 py-0.5 text-danger"
-        onClick={() => setConfirming(true)}
-      >
+      <Button variant="secondary" onClick={() => setConfirming(true)}>
         消す
-      </button>
+      </Button>
     );
   }
   return (
     <div role="group" aria-label="下書きを消す前の確認" className="space-y-1">
       <p className="text-xs">この下書きを消しますか？消した下書きは戻せません。</p>
       <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
-          onClick={() => void confirm()}
-        >
+        <Button variant="danger" disabled={busy} onClick={() => void confirm()}>
           消すのを確定
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-          onClick={() => setConfirming(false)}
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
           やめる
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -85,16 +72,12 @@ export function AnnouncementDraftList({ drafts, openedId, onOpen, onSend, onDele
             {announcementTargetLabel(draft.sport)}・最後に直した日時 {formatDateTime(draft.updated_at)}
           </p>
           <div className="mt-2 flex flex-wrap items-start gap-2">
-            <button type="button" className="rounded-pill border px-2 py-0.5" onClick={() => onOpen(draft)}>
+            <Button variant="secondary" onClick={() => onOpen(draft)}>
               開いて直す
-            </button>
-            <button
-              type="button"
-              className="rounded-pill border border-primary px-2 py-0.5 text-primary"
-              onClick={() => onSend(draft)}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => onSend(draft)}>
               送る
-            </button>
+            </Button>
             <DeleteDraftAction onDelete={() => onDelete(draft)} />
           </div>
         </li>

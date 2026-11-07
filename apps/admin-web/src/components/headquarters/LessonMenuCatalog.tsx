@@ -12,6 +12,7 @@ import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/l
 import { lessonMenuBookingListPath } from "./BookingListHome";
 import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
 import { lessonMenuPublicationHistoryPath } from "./LessonMenuPublicationHistoryHome";
+import { Button } from "@/components/ui/Button";
 
 type Sport = Schemas["Sport"];
 type LessonType = Schemas["LessonType"];
@@ -332,9 +333,9 @@ export function LessonMenuCatalog({
               onChange={(event) => setQueryDraft(event.target.value)}
             />
           </label>
-          <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+          <Button type="submit" variant="secondary">
             探す
-          </button>
+          </Button>
         </form>
         <label className="block">
           スポーツ

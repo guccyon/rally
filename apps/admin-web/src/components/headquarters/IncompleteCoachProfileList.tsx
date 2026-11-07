@@ -16,6 +16,7 @@ import {
 
 import { ACCEPTANCE_STATUSES, SPORTS, coachNameQuery, coachNameQueryFailureMessage } from "./CoachAcceptanceList";
 import { coachOverviewPath } from "./CoachOverviewHome";
+import { Button } from "@/components/ui/Button";
 
 type IncompleteCoachProfile = Schemas["IncompleteCoachProfile"];
 type Sport = Schemas["Sport"];
@@ -163,9 +164,9 @@ export function IncompleteCoachProfileList({
             onChange={(event) => setQueryDraft(event.target.value)}
           />
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           探す
-        </button>
+        </Button>
         <label className="block">
           スポーツ
           <select

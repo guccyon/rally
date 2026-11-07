@@ -23,6 +23,7 @@ import {
 } from "./announcementInput";
 import { MAX_PERIOD_DAYS, type Period, periodError, recentPeriod } from "./bookingPeriod";
 import { SPORTS } from "./PendingVideoReviewList";
+import { Button } from "@/components/ui/Button";
 
 type Announcement = Schemas["Announcement"];
 type AnnouncementDraft = Schemas["AnnouncementDraft"];
@@ -532,9 +533,9 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
               下書き{opened ? `「${draftTitleOf(opened)}」` : ""}
               を開いています。送ると下書きは消え、送ったお知らせに移ります。
             </span>
-            <button type="button" className="rounded-pill border px-2 py-0.5" onClick={startNew}>
+            <Button variant="secondary" onClick={startNew}>
               新しく書く
-            </button>
+            </Button>
           </div>
         )}
         <AnnouncementForm
@@ -573,13 +574,13 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
               onChange={(event) => setDraftListPeriod({ ...draftListPeriod, to: event.target.value })}
             />
           </label>
-          <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+          <Button type="submit" variant="secondary">
             この期間で見る
-          </button>
+          </Button>
           {draftPeriodApplied && (
-            <button type="button" className="rounded-pill border px-4 py-1" onClick={() => void clearDraftPeriod()}>
+            <Button variant="secondary" onClick={() => void clearDraftPeriod()}>
               期間を外す
-            </button>
+            </Button>
           )}
         </form>
         {draftPeriodError !== null && <ResultMessage result={{ ok: false, message: draftPeriodError }} />}
@@ -594,9 +595,9 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
                 onChange={(event) => setDraftQueryDraft(event.target.value)}
               />
             </label>
-            <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+            <Button type="submit" variant="secondary">
               探す
-            </button>
+            </Button>
           </form>
           <label className="block">
             スポーツ
@@ -656,9 +657,9 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
                 onChange={(event) => setDraftPeriod({ ...draftPeriod, to: event.target.value })}
               />
             </label>
-            <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+            <Button type="submit" variant="secondary">
               この期間で見る
-            </button>
+            </Button>
           </form>
           {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}
           <div className="flex flex-wrap items-end gap-4">
@@ -672,9 +673,9 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
                   onChange={(event) => setQueryDraft(event.target.value)}
                 />
               </label>
-              <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+              <Button type="submit" variant="secondary">
                 探す
-              </button>
+              </Button>
             </form>
             <label className="block">
               スポーツ
