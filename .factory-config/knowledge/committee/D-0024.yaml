@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0024
+pr: https://github.com/guccyon/rally/pull/1012
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0016 の schema の案のうち
+    Engine の側の分を enforcement.solutions に 1 件足しただけなので、D-0004 から D-0021 までの議決と矛盾しません。
+  - 足した solution は kind・what・issue・at・decided_by・wired・verified の形が issue 962 の既存の
+    solution と同じで、issue 962 は check.py の側、今回は Engine の差分の側なので重複ではなく続きとして読めます。
+  - INDEX.md の担保の列は Engine に差分が入るまで deterministic のままと書いており、README の決まりと D-0021 の記録と食い違いません。
+  - 同じ Engine の案は D-0017 と D-0021 でも重ねて出ているので、差分が Engine に入って wired を true にするときは、どの議決の案を満たしたかを
+    decided_by か what に併記してください。
+  - '差分を置いただけで Engine にも .github/workflows/ にも入っておらず wired: false・verified: false
+    と正直に書いているので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した schema の solution は issue 965 と committee:D-0016 を指していて、D-0016 の enforcement
+    の 2 つめの案（D-0015 の案のとおり definitions/knowledge.yaml に wired と verified を足し、core-gates/knowledge_check.py
+    の INDEX.md の担保の列を未配線・未確認と出す）に対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - test_engine_patch.py で差分を当てた Engine の写しで確かめたと書かれていますが、どの ENGINE_REF の版で走らせたかと走らせた記録が指されていないので、issue
+    965 にその版と結果を残してください。
+  - '差分は Engine の別のリポジトリにまだ入っておらず、wired: false・verified: false と書かれているとおり効き目は確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイルのパス・関数名・項目名・issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0016 の schema の案のうちワーカーの権限で入れられる分を
+    issue 965 として enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - '足した solution は wired: false・verified: false と正直に書かれていて、check.py の label() では
+    K-0004 が「未配線」と出るので、D-0015 で求めた表示の弱さを記録の側では埋めています。'
+  - ただし Engine に差分が入っておらず ENGINE_REF も上がっていないので、INDEX.md の担保の列は今も deterministic のままで、表示と実態のずれを止める決定論はまだ効いていません。
+  - 差分を patch ファイルとして置く形は、Engine が先に進むと当たらなくなっても誰も気づかないので、当たらないことを CI で落とす見張りが要ります。
+  - 同じ「未配線・未確認」の solution が 11 件に増え、繰り返しは十分で線も引きやすいので、新しい記録を足すより建設者の配線を進めるほうが効きます。
+  - Engine に差分が入り、INDEX.md の担保の列が本物の CI で「未配線」と出ることを確かめるまで、confidence は hypothesis
+    のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0016 の schema の案（D-0015
+    と同じ案を Engine の側で満たす）のうちワーカーの権限で入れられる分を enforcement.solutions に kind: schema として
+    1 件足しただけなので、範囲は広すぎません。'
+  - '足した解決策を wired: false・verified: false とし、INDEX.md の担保の列が今も deterministic のままだと書いているので、担保が効いていると取り違える反例はありません。'
+  - ただし knowledge_check.patch は ENGINE_REF の版に当てる差分なので、Engine が先に進むと当たらなくなるか、Engine
+    に入った版だと誤って見なして当てずに通るという反例が残ります。test_engine_patch.py が差分を当てられないときや、Engine に入ったかどうかを決められないときは、飛ばさずに落ちることを確かめてください。
+  - test_engine_patch.py が確かめるのは、このリポジトリの知見で作った INDEX.md の表示と K-0004 が「未配線」になることだけです。項目を書いていない
+    K-0001・K-0002・K-0009 が未記入のまま「未配線」と出ること、未記入の件数が check.py と合うことも同じテストで確かめるとよいです。
+  - solutions は 10 件を超えましたが、どれも未配線・未確認です。同じ知見に記録だけが増えて担保が効いていない状態が続いているので、次は配線する建設者の作業を先に進めるべきです。
+  - 効き目はまだ確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/knowledge-enforcement-check/test_engine_patch.py を PR ごとに走らせ、knowledge-check.yml
+    の ENGINE_REF の Engine に engine/knowledge_check.patch が当たらず、しかも Engine 側にまだ入っていないときは
+    patch_stale で落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: check.py に、ENGINE_REF の Engine が index_label を持つ版になったら INDEX.md の担保の列が知見ごとに
+    label() と一致することを照らし、ずれていれば index_label_mismatch で落とす手順を足し、ENGINE_REF を上げる PR で
+    INDEX.md の作り直し忘れを止める。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0021 の案のとおり、建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して
+    check.py と test_engine_patch.py を必須チェックにし、そのあとで issue 962・965 の solution の wired
+    を true にする。
