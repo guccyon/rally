@@ -1,5 +1,5 @@
 // Engine の本物の判定（judgment.record_judged → dispatcher.act_on_judgment、supervisor.inspector_approved）を
-// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010・D-0011、Issue #935・#944・#945・#949）。
+// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010・D-0011・D-0014、Issue #935・#944・#945・#949・#961）。
 // 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 // ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（議決 D-0011、Issue #948）。
@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { approvalBasis, checkRecord } from "./check.mjs";
+import { todoLines } from "./order.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -98,6 +99,18 @@ test("(3) Engine の inspector_approved の basis に欠陥の採用数と仮決
   todoWhileLegacy(t, out.basis);
   assert.equal(out.basis, approvalBasis(judgments));
   assert.deepEqual(checkRecord({ merged: false, judgments, followups: out.followups, basis: out.basis }), []);
+});
+
+// 議決 D-0014 は、Engine の basis を直す PR で todo を外して必須にするとした（Issue #961）。Engine は別のリポジトリなので、このリポジトリで
+// その PR に当たるのは ENGINE_REF を直した版に上げる PR。Engine が今の形の basis を書かなくなったのに todo（todoWhileLegacy・t.todo(…) など。
+// order.mjs の todoLines と同じ数え方）が残っていたら、その PR で落とす。todo を消し忘れると order.mjs の engine_test_todo で ci_check を配線できない
+test("(3) Engine の basis が今の形（adopt の合計だけ）でなくなったら、同じ PR で engine.test.mjs の todo を外す", { skip }, () => {
+  const judgments = [...PR_395.judgments, defect("adopt", "BE-003", { location: "apps/backend/src/x.rs" })];
+  const { basis } = engine({ ...PR_395, merged: false, judgments });
+  if (LEGACY_BASIS.test(basis ?? "")) return;   // 今の形のうちは todo を残してよい
+  const todos = todoLines(readFileSync(fileURLToPath(import.meta.url), "utf8"));
+  assert.deepEqual(todos, [], `Engine の basis が今の形でない（${basis}）のに engine.test.mjs に todo が残っている（${todos.join("・")} 行目）。`
+    + "LEGACY_BASIS・todoWhileLegacy と todo を消して必須のテストにする");
 });
 
 // イベントの経路（Issue #945）: Engine が記録したイベント列を、README の SQL と同じ形で check.mjs に渡す。

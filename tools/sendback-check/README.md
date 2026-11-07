@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足した。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0014` と Issue #961 で Engine の basis が直ったのに todo が残っていれば落とすテストを `engine.test.mjs` に足した。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -93,7 +93,7 @@ basis の文の形は `approvalBasis()` が返すもの（`judge が N 件を裁
 - (1) PR #395 と同じ入力では後続を起こさない、(2) 直っていない採用欠陥があればマージの前（`review_fix`）でも後（`sendback`）でも起こす、shadow のルールの指摘は起こさない、(3) basis に欠陥の採用数と仮決めの承認数を分けて書く
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（議決 `D-0011`、Issue #948）
 - (0) は `engine_harness.py --check` で、`record_judged`・`act_on_judgment`・`file_sendback`・`enqueue_body_fix`・`is_body_only`・`inspector_approved` をすべて取り出せるかを見る。チェックアウトがない・ファイルがない・関数の名前や置き場が変わったときは落ちる
-- (3) は必須のテスト（議決 `D-0011`、Issue #949）。ただし Engine が今の形の basis（`judge が N 件を裁いた（採用 N。採用した指摘は続きのジョブか差し戻しで直す）`。`LEGACY_BASIS`）を書くときだけは `todo` にする（外れても落ちないが結果には出る）。Engine の basis がこの形から変わったら、その版からは `approvalBasis()` と合わないと落ちる（分けて書いても数や文がずれれば落ちる）。建設者が Engine の basis を `approvalBasis()` の形に合わせ、`ENGINE_REF` をその版に上げたら、`LEGACY_BASIS` と `todoWhileLegacy` も消してよい。`todo` のうちに `check.mjs` の ci_check を配線すると、すべての承認が `basis_not_split` で落ちるので、配線は Engine の basis を直して (3) が通った後にする
+- (3) は必須のテスト（議決 `D-0011`、Issue #949）。ただし Engine が今の形の basis（`judge が N 件を裁いた（採用 N。採用した指摘は続きのジョブか差し戻しで直す）`。`LEGACY_BASIS`）を書くときだけは `todo` にする（外れても落ちないが結果には出る）。Engine の basis がこの形から変わったら、その版からは `approvalBasis()` と合わないと落ちる（分けて書いても数や文がずれれば落ちる）。建設者が Engine の basis を `approvalBasis()` の形に合わせ、`ENGINE_REF` をその版に上げる PR で、`LEGACY_BASIS` と `todoWhileLegacy` と todo を消して必須のテストにする（議決 `D-0014`、Issue #961）。Engine が今の形の basis を書かなくなったのに `engine.test.mjs` に todo（`order.mjs` の `todoLines` と同じ数え方）が残っていると、「(3) Engine の basis が今の形（adopt の合計だけ）でなくなったら、同じ PR で engine.test.mjs の todo を外す」のテストで落ちる（今の形のうちは何も見ずに通る）。`engine_harness.py` の偽の cursor は `judgment.judged` の問い合わせに payload の項目（`verdict` のほか `category` など）をすべて返すので、Engine が欠陥（`category` が `inspection`）と仮決めを分けて数える版でも同じ形で動く。`todo` のうちに `check.mjs` の ci_check を配線すると、すべての承認が `basis_not_split` で落ちるので、配線は Engine の basis を直して (3) が通った後にする
 - イベントの経路（Issue #945）: `engine_harness.py` は Engine が記録したイベントを、上の「制御プレーンから出すときの例」の SQL と同じ形（同じ名前に絞り、`judgment.judged` に Judgment を添える）でも返す（`events`）。`supervisor.inspector_approved` と `supervisor.merged` は supervisor の周期が記録する形で足す。テストはそれを ci_check と同じ呼び方（`--events --pr --summary`、`GITHUB_ACTIONS=true`）で `check.mjs` に渡し、(a) 上の場合のイベント列が 1 つの head に組めて後続の判定が線に合うこと、(b) PR #395 と同じ入力のイベント列に Engine の形の `sendback.filed` を足した流れが `followup_without_defect` で落ちること（`::error` と要約も）を確かめる
 - (c) Engine の正しい判定のイベント列が `check.mjs --events` で通る（終了コード 0）。(3) と同じく、Engine が今の形の basis を書くときだけ `todo` にする（今の Engine では `basis_not_split` で落ちる）。これが通ることが ci_check を配線してよい合図
 - 取り出す関数の名前が Engine で変わると `engine_harness.py` は終了コードを 0 以外にして落ちる。偽の cursor が知らない問い合わせが来たときも落ちる（黙って通さない）
@@ -117,7 +117,7 @@ PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差
 
 配線の順序（議決 `D-0010`）:
 
-1. Engine の `inspector_approved` の basis を `approvalBasis()` の形にし、`ENGINE_REF` をその版に上げて `engine.test.mjs` の (3) と (c) が通ることを確かめる（(3) と (c) は Issue #949 で、今の形の basis のときだけ `todo` にする必須のテストにした）
+1. Engine の `inspector_approved` の basis を `approvalBasis()` の形にし、`ENGINE_REF` をその版に上げて `engine.test.mjs` の (3) と (c) が通ることを確かめる。同じ PR で `LEGACY_BASIS`・`todoWhileLegacy` と todo を消す（消し忘れると `engine.test.mjs` が落ちる。Issue #961）（(3) と (c) は Issue #949 で、今の形の basis のときだけ `todo` にする必須のテストにした）
 2. CI で Engine を固定の版（`ENGINE_REF`）で取って `ENGINE_DIR` を向け、`npm test` を走らせる
 3. 上の SQL で PR のイベント列を `events.json` に出す手順と、下の `check.mjs --events` の手順を足す（PR ごとと、supervisor が差し戻し・続きのジョブを起こしたとき）
 4. 本物の PR #395 のイベント列で `followup_without_defect` で落ちることを確かめ、`K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す
