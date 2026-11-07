@@ -1,6 +1,6 @@
 // check.mjs の ci_check を配線する順序を決定論で見張る（知見 K-0004 の担保。議決 D-0012、Issue #953）。LLM を使わない。
 //
-//   node order.mjs [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]   # --repo を省くとこのファイルから 2 つ上
+//   node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mjs の TAP>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]   # --repo を省くとこのファイルから 2 つ上
 //   終了コード: 0 = 通る（まだ配線していないか、順序を守って配線した）、1 = 外れた、2 = 読めなかった
 //
 // 順序（議決 D-0010、README の「配線の順序」）: Engine の basis を直して engine.test.mjs の todo を外し、engine.test.mjs を CI に配線してから、
@@ -9,6 +9,8 @@
 // 見ること（.github/workflows/ に check.mjs --events を呼ぶ手順があるときだけ）:
 //   - engine.test.mjs に todo が残っている（engine_test_todo）
 //   - .github/workflows/ に engine.test.mjs を走らせる手順がない（engine_test_not_wired）
+//   - --engine-report を渡したとき、ENGINE_REF の Engine で走らせた engine.test.mjs の結果で (3) か (c) が通っていない
+//     （LEGACY_BASIS の todo・飛ばした・落ちた・結果にない。engine_basis_not_passed。議決 D-0016、Issue #964）
 // check.mjs --events を GitHub Actions（GITHUB_ACTIONS=true）で動かしたときも、同じ見張りを先に通す（check.mjs の main）。
 // 呼ぶ手順は npm scripts・シェルのラッパー・引数の順序を変えた呼び方も辿って見つける（議決 D-0017、Issue #967）。
 
@@ -23,6 +25,12 @@ export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const ENGINE_TEST = "tools/sendback-check/engine.test.mjs";
 
 const TOOL_DIR = "tools/sendback-check";
+
+/** engine.test.mjs の basis の場合のテストの名前。engine.test.mjs もこれを使うので、名前を変えても結果から引ける。 */
+export const BASIS_TESTS = Object.freeze({
+  "(3)": "(3) Engine の inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書く",
+  "(c)": "イベントの経路: Engine の正しい判定のイベント列は check.mjs --events で通る（ci_check を配線してよい合図）",
+});
 
 /** YAML と shell の注釈（行頭か空白の後ろの #）を落とし、行末の \ でつないだ行を 1 行にする。 */
 function logicalLines(text) {
@@ -167,11 +175,29 @@ export function todoLines(source) {
   return out;
 }
 
+/** node --test の TAP の出力から、上の段のテストの結果を { name: "pass" | "fail" | "todo" | "skip" } で返す。 */
+export function parseTapReport(text) {
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^(not )?ok \d+ - (.*)$/);
+    if (!m) continue;
+    // 名前の中の # は \# に逃がしてあるので、逃がしていない「 # 」から後ろが指示（TODO・SKIP）
+    const d = m[2].match(/^((?:[^#\\]|\\.)*?)(?:\s+#\s*(TODO|SKIP)\b.*)?$/i);
+    const name = (d ? d[1] : m[2]).replace(/\\(.)/g, "$1").trim();
+    const directive = d?.[2]?.toUpperCase();
+    out[name] = directive === "TODO" ? "todo" : directive === "SKIP" ? "skip" : m[1] ? "fail" : "pass";
+  }
+  return out;
+}
+
+const STATUS_TEXT = { todo: " todo になった（Engine の basis がまだ LEGACY_BASIS の形）", skip: "飛ばされた", fail: "落ちた" };
+
 /**
  * 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。
  * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
+ * engineReport は ENGINE_REF の Engine で走らせた engine.test.mjs の TAP（渡さなければ結果は見ない。議決 D-0016、Issue #964）。
  */
-export function checkOrder({ workflows, engineTest, scripts = DEFAULT_SCRIPTS, readFile = () => null }) {
+export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFAULT_SCRIPTS, readFile = () => null }) {
   const callers = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
   if (callers.length === 0) return { wired: [], errors: [] };
   const errors = [];
@@ -183,6 +209,15 @@ export function checkOrder({ workflows, engineTest, scripts = DEFAULT_SCRIPTS, r
     if (todos.length > 0) {
       errors.push({ rule: "engine_test_todo", message: `${where} が check.mjs --events を呼ぶのに、${ENGINE_TEST} に todo が残っている`
         + `（${todos.join("・")} 行目）。Engine の basis を直して todo を外してから配線する` });
+    }
+  }
+  if (engineReport != null) {
+    const results = parseTapReport(engineReport);
+    for (const [label, name] of Object.entries(BASIS_TESTS)) {
+      const status = results[name];
+      if (status === "pass") continue;
+      errors.push({ rule: "engine_basis_not_passed", message: `${where} が check.mjs --events を呼ぶのに、ENGINE_REF の Engine で ${ENGINE_TEST} の ${label}`
+        + `（${name}）が${STATUS_TEXT[status] ?? "結果にない"}。Engine の basis を approvalBasis() の形に直して ENGINE_REF を上げてから配線する` });
     }
   }
   if (!workflows.some((w) => runsEngineTest(w.text))) {
@@ -221,10 +256,14 @@ export function renderSummary({ wired, errors }) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { repo: { type: "string" }, json: { type: "string" }, summary: { type: "string" } } });
+  const { values } = parseArgs({ options: { repo: { type: "string" }, "engine-report": { type: "string" }, json: { type: "string" },
+    summary: { type: "string" } } });
   let result;
   try {
-    result = checkOrder(loadRepo(values.repo ?? REPO_ROOT));
+    // 結果のファイルがない（Engine のテストまで進まなかった）ときは結果が空として見る。配線していれば (3) と (c) が「結果にない」で外れる
+    const report = values["engine-report"];
+    const engineReport = report == null ? undefined : existsSync(report) ? readFileSync(report, "utf8") : "";
+    result = checkOrder({ ...loadRepo(values.repo ?? REPO_ROOT), engineReport });
   } catch (e) {
     console.error(`sendback-check order: 読めなかった: ${e.message}`);
     process.exit(2);

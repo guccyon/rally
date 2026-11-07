@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足した。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0016` と Issue #964 で配線の順序の見張りに `ENGINE_REF` の Engine で走らせた `engine.test.mjs` の結果（(3) と (c) が todo になっていないか）を足した。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -8,7 +8,7 @@ judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥�
 node check.mjs --record <PR の記録の JSON> [--json <出力先>]
 node check.mjs < record.json     # --record を省くと標準入力から読む
 node check.mjs --events <制御プレーンのイベントの JSON か JSONL> [--pr <PR の URL>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]
-node order.mjs [--repo <リポジトリの根>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 配線の順序の見張り
+node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mjs の TAP>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 配線の順序の見張り
 npm test                         # Engine の本物の判定のテスト（engine.test.mjs）も走る
 node --test ci.test.mjs           # ci/sendback-engine.yml の ENGINE_REF の見張りと、.github/workflows/ の写しとのずれ
 ```
@@ -130,10 +130,12 @@ PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差
 |---|---|
 | `engine_test_todo` | `engine.test.mjs` に todo（`t.todo(…)`・`test.todo(…)`・`{ todo: … }`）が残っている（basis の場合の `todoWhileLegacy` を含む）。`engine.test.mjs` がないときも |
 | `engine_test_not_wired` | `.github/workflows/` に `engine.test.mjs` を走らせる手順がない（`engine.test.mjs` を名指しした `node --test` か、`tools/sendback-check` で `npm test`・ファイルを名指ししない `node --test`） |
+| `engine_basis_not_passed` | `--engine-report` で渡した `engine.test.mjs` の結果（`ENGINE_REF` の Engine で走らせた TAP）で、(3) か (c) が通っていない（`LEGACY_BASIS` の todo になった・飛ばされた・落ちた・結果にない）。議決 `D-0016`、Issue #964 |
 
 - 呼ぶ手順は、注釈を除いた手順（`- ` で始まる列の要素）の中に `--events` と check.mjs の呼び出しが並ぶもの。check.mjs の呼び出しは `tools/sendback-check/check.mjs` の道か、`sendback-check` が出てくるワークフロー・手順（`working-directory`・`cd`・`npm --prefix`）での `check.mjs`・`npm`（`pnpm`）の `run`・`run-script`。`--events` は手順のどこにあってもよい（引数の順序を変えた形、継ぎ行、配列や関数で渡す形）。取りこぼすと見張れないので、迷う形は呼ぶ側に数える
 - 包んだ呼び方も辿る（議決 `D-0017`、Issue #967）。`npm run` は `tools/sendback-check/package.json` の scripts の中身を引き（中に `check.mjs` があれば呼び出し、`--events` があればそれも数える。scripts にない名前は `check` で始まれば呼び出しに数える）、手順の行に出てくるスクリプトのファイル（`.sh`・`.bash`・`.mjs`・`.cjs`・`.js`。テストと `check.mjs`・`order.mjs` は除く）はリポジトリの中にあれば中身を読んで同じ線で見る（3 段まで）。`tools/sendback-check/check.mjs` の道を入れた変数（`env` や shell の代入）を `$NAME`・`${NAME}`・`env.NAME` で使う手順も呼び出しに数える。どの形で落ちるかは `order.test.mjs` のワークフローの写しで確かめている
 - 走らせる場所は 2 つ。`ci/sendback-engine.yml` の `wiring-order` のジョブ（`node tools/sendback-check/order.mjs`）と、`check.mjs --events` を GitHub Actions（`GITHUB_ACTIONS=true`）で動かしたとき（`GITHUB_WORKSPACE` のリポジトリを見て、外れたら記録が通っても終了コード 1）。後者があるので、`ci/sendback-engine.yml` を写さずに `check.mjs --events` だけを配線しても落ちる
+- `engine_basis_not_passed` は書いたもの（todo の行）ではなく、走らせた結果を見る。`ci/sendback-engine.yml` の `engine-test` のジョブが `engine.test.mjs` の結果を TAP で `engine-test.tap` にも出し、次の手順（`if: ${{ !cancelled() }}`。テストが落ちても走る）で `node order.mjs --engine-report engine-test.tap` に渡す。(3) と (c) の名前は `order.mjs` の `BASIS_TESTS` に置き、`engine.test.mjs` もそれを使う。結果のファイルがない（Engine のテストまで進まなかった）ときは、配線していれば「結果にない」で落ちる
 - 通すには、Engine の basis を直して `ENGINE_REF` を上げ、`LEGACY_BASIS` と `todoWhileLegacy` を消し、`ci/sendback-engine.yml` を `.github/workflows/` に写してから `check.mjs --events` の手順を足す
 - 終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった。`GITHUB_ACTIONS=true` のときは `::error title=sendback-check <rule>::…` の形で出す
 
