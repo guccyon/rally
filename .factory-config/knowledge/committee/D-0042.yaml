@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0042
+pr: https://github.com/guccyon/rally/pull/1095
+decided_at: '2026-11-07'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0029 の enforcement
+    の 1 つめの ci_check の案（check.mjs --events の配線があるのに --engine-report が渡されないか TAP が空・存在しないときは
+    engine_report_missing で落とす）を enforcement.solutions に 1 件足しただけで、議決の proposal と中身が合っています。
+  - 'Issue #1026 が D-0028 と書いている食い違いを what に明記し、decided_by を案の出どころの committee:D-0029
+    にしているので、議決の記録とずれていません。'
+  - 'issue 964 の解決策が「結果にない」を engine_basis_not_passed で落とすと書いているのに対し、今回は TAP のファイルがない場合だけを
+    engine_report_missing に置き換えたと範囲を限っており、if: を使わない線も 964 と同じなので、既存の solution と矛盾も重複もしていません。'
+  - --engine-report-elsewhere の手順を求める部分は D-0029 の 2 つめの test の案（ci.test.mjs で engine-test
+    のジョブが order.mjs --engine-report を呼ぶ形を見る）と近いので、その案を入れる変更セットでは今回の order.mjs の見張りとの役割の分け方を
+    what に書いてください。
+  - 'wired: false・verified: false と書き、.github/workflows/ への写しが建設者に残っていることを明記しているので、README
+    と D-0021 の決まりに合っており、confidence は hypothesis のままが妥当です。'
+  - K-0004 の solutions は 26 件になり、D-0010 以降求めている statement の「差し替えもないのに」の条件と verified_at・review_by
+    の更新もまだなので、次に K-0004 を直す変更セットで配線待ちと満たし済みを分けて整理してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 1026 と committee:D-0029 を指していて、D-0029 の enforcement
+    の 1 つめの案（--engine-report が渡されていないか TAP が空・存在しないときは engine_report_missing で落とす）にそのまま対応しているので、一次記録に辿れます。
+  - 'Issue #1026 が D-0028 と書いている食い違いを what の中で明記し、decided_by を案が実際に載っている committee:D-0029
+    にしているので、出どころの取り違えはありません。'
+  - '--engine-report-elsewhere と、if: や continue-on-error なしに order.mjs --engine-report
+    を呼ぶ手順の照合は D-0029 の案の文面より広いですが、D-0029 の dissent の票が挙げた反例を出どころとして書いているので辿れます。'
+  - order.test.mjs で確かめた場合を並べていますが、テストを走らせた出力や記録が指されていないので、issue 1026 か evidence にその記録を残してください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、wired:
+    false・verified: false で .github/workflows/ では未配線・未確認と書いているので、confidence は hypothesis
+    のままが妥当です。'
+  - 差分に出てくるのはファイルのパス・オプション名・エラーの名前・issue と PR の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0029 の ci_check
+    の案（--engine-report がないか TAP が空・存在しないときに engine_report_missing で落とす）を issue 1026
+    として enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 渡されていない・ファイルがない・空・空白だけを同じ engine_report_missing の終了コード 1 にまとめ、ファイルがないときに「結果にない」で外れていた形を置き換えたので、線が一つになり引きやすくなっています。
+  - 'D-0029 の反対の票が挙げた wiring-order だけが走る場合を --engine-report-elsewhere と「if: や continue-on-error
+    なしに order.mjs --engine-report を呼ぶ手順」の照合で塞いでおり、すり抜けの道を決定論で閉じる向きは正しいです。'
+  - '.github/workflows/ への写しと必須チェックへの登録は建設者に残っていて wired: false・verified: false と正しく書かれているので、今は外れても誰も止めない状態で、confidence
+    は hypothesis のままが妥当です。'
+  - K-0004 の solutions はどれも未配線・未確認のまま積み重なっており、新しい見張りの案を足すより建設者の写しと必須チェックへの登録を先に進めないと決定論の担保は効かないので、今回は新たな
+    enforcement を求めません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0029 の enforcement
+    の 1 つめの ci_check の案を issue 1026 として enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'D-0029 の反対の票が挙げた、wiring-order だけが走って Engine の結果を見ずに通る反例は、--engine-report-elsewhere
+    のときに if: や continue-on-error なしの order.mjs --engine-report <TAP> の手順を求めることでおおむね塞がれています。'
+  - ただし --engine-report-elsewhere を付けたときに求める手順は、必須でないワークフローや on の paths で走らない場所にあっても数えられそうなので、すり抜けの反例が残ります。その手順が
+    engine-test のジョブにあって必須のチェックになっていることを、建設者の手順か ci.test.mjs で確かめてください。
+  - check.mjs --events を GitHub Actions で動かすときの見張りは TAP を求めないという除外があり、ここが Engine の結果を見ない抜け道にならない理由を
+    what か issue 1026 に書いておくべきです。
+  - K-0004 の solutions は未配線・未確認のものがさらに積み重なって 16 件になったので、次に K-0004 を直す変更セットで、配線待ちのものと満たし済みのものを分けて整理することを改めて勧めます。
+  - 'wired: false・verified: false で、本物の Engine でも PR ごとにも走っていないので、confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+enforcement: []
