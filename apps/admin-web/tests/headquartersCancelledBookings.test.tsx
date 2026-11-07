@@ -8,6 +8,7 @@ import { RoleGate } from "@/components/RoleGate";
 import { CancelledBookingList } from "@/components/headquarters/CancelledBookingList";
 import {
   CancelledBookingsHome,
+  cancelledBookingCancellerOf,
   cancelledBookingSportOf,
   cancelledBookingsPath,
 } from "@/components/headquarters/CancelledBookingsHome";
@@ -124,7 +125,12 @@ describe("本部のキャンセルされた予約", () => {
     const listCancelledBookings = listOf(BOOKINGS);
     render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} />);
 
-    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(screen.getByText("キャンセルされた予約を読み込んでいます…")).toBeInTheDocument();
+    // 期間は API の既定を読むまで変えられない。キャンセルした人は固定の選択肢なので読み込み中も選べる。
+    expect(screen.getByText("期間を読み込んでいます…")).toBeInTheDocument();
+    expect(screen.getByLabelText("開始日")).toBeDisabled();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "キャンセルした人" })).toBeEnabled();
     const table = await screen.findByRole("table", { name: "キャンセルされた予約の一覧" });
     expect(listCancelledBookings).toHaveBeenCalledTimes(1);
     expect(listCancelledBookings).toHaveBeenCalledWith({});
@@ -145,7 +151,9 @@ describe("本部のキャンセルされた予約", () => {
         "記録なし",
       ],
     ]);
-    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+    expect(screen.queryByText("キャンセルされた予約を読み込んでいます…")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("開始日")).toBeEnabled();
   });
 
   test("API の既定で実際に使った期間を件数とともに出し、期間の欄にも入れる", async () => {
@@ -186,7 +194,7 @@ describe("本部のキャンセルされた予約", () => {
     expect(listCancelledBookings).toHaveBeenCalledTimes(1);
   });
 
-  test("API の 422 は、期間・コーチ・レッスンメニュー・スポーツのどこを直すかを添えた理由を出し、一覧は出さない", async () => {
+  test("API の 422 は、期間・コーチ・レッスンメニュー・スポーツ・キャンセルした人のどこを直すかを添えた理由を出し、一覧は出さない", async () => {
     const listCancelledBookings = vi.fn<HeadquartersApi["listCancelledBookings"]>(async () => ({
       ok: false,
       code: "validation_failed",
@@ -195,34 +203,36 @@ describe("本部のキャンセルされた予約", () => {
     render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "期間・コーチ・レッスンメニュー・スポーツの指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・レッスンメニュー・スポーツは一覧から選び直してください。",
+      "期間・コーチ・レッスンメニュー・スポーツ・キャンセルした人の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と同じかそれより後の日付にしてください。コーチ・レッスンメニュー・スポーツ・キャンセルした人は一覧から選び直してください。",
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  test("後から変えた期間の結果だけを出す（前の期間の遅れた結果で上書きしない）", async () => {
+  test("読み直しのあいだは「この条件で見る」を loading にして押せなくし（二重押しで送らない）、一覧を「読み込んでいます…」にする", async () => {
     let resolveSlow: (value: Response) => void = () => {};
     const listCancelledBookings = vi
       .fn<HeadquartersApi["listCancelledBookings"]>()
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", bookings: BOOKINGS } })
-      .mockImplementationOnce(() => new Promise((resolve) => (resolveSlow = resolve)))
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { from: "2026-10-25", to: "2026-10-26", bookings: [BOOKINGS[0]!] },
-      });
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSlow = resolve)));
     const user = userEvent.setup();
     render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} />);
     await screen.findByRole("table");
 
-    await changePeriod(user, "2026-10-01", "2026-10-10");
-    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
     await changePeriod(user, "2026-10-25", "2026-10-26");
-    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
-    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
-    resolveSlow({ ok: true, data: { from: "2026-10-01", to: "2026-10-10", bookings: [BOOKINGS[1]!] } });
+    const button = screen.getByRole("button", { name: "この条件で見る" });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(within(button).getByTestId("spinner")).toBeInTheDocument();
+    expect(screen.getByText("キャンセルされた予約を読み込んでいます…")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    await user.click(button);
+    expect(listCancelledBookings).toHaveBeenCalledTimes(2);
 
+    resolveSlow({ ok: true, data: { from: "2026-10-25", to: "2026-10-26", bookings: [BOOKINGS[0]!] } });
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2));
     expect(screen.getByRole("row", { name: /佐藤 太郎/ })).toBeInTheDocument();
+    expect(button).toBeEnabled();
   });
 
   test("コーチの選択肢はコーチの一覧の順で、期間とコーチを選んで「この条件で見る」で API の from / to / coach_id に渡して読み直す", async () => {
@@ -259,6 +269,7 @@ describe("本部のキャンセルされた予約", () => {
       coachId: TAKAHASHI,
       lessonMenuId: "",
       sport: "",
+      cancelledBy: "",
     });
 
     await user.selectOptions(select, "すべて");
@@ -286,7 +297,7 @@ describe("本部のキャンセルされた予約", () => {
       />,
     );
 
-    expect(await screen.findByText("この期間にこのコーチの枠でキャンセルされた予約はありません")).toBeInTheDocument();
+    expect(await screen.findByText("この期間にこのコーチの枠でキャンセルされた予約はありません。")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -340,6 +351,7 @@ describe("本部のキャンセルされた予約", () => {
       coachId: "",
       lessonMenuId: FOREHAND,
       sport: "",
+      cancelledBy: "",
     });
     expect(await screen.findByText(/^レッスンメニューで絞っています:/)).toHaveTextContent(
       "レッスンメニューで絞っています: フォアハンドの基礎",
@@ -375,7 +387,7 @@ describe("本部のキャンセルされた予約", () => {
       lesson_menu_id: SWING,
     });
     expect(
-      await screen.findByText("この期間にこのコーチの枠のこのレッスンメニューでキャンセルされた予約はありません"),
+      await screen.findByText("この期間にこのコーチの枠のこのレッスンメニューでキャンセルされた予約はありません。"),
     ).toBeInTheDocument();
   });
 
@@ -389,7 +401,7 @@ describe("本部のキャンセルされた予約", () => {
     );
 
     expect(
-      await screen.findByText("この期間にこのレッスンメニューでキャンセルされた予約はありません"),
+      await screen.findByText("この期間にこのレッスンメニューでキャンセルされた予約はありません。"),
     ).toBeInTheDocument();
     expect(listCancelledBookings).toHaveBeenCalledWith({ lesson_menu_id: SWING });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "レッスンメニュー" })).toHaveValue(SWING));
@@ -446,6 +458,7 @@ describe("本部のキャンセルされた予約", () => {
       coachId: "",
       lessonMenuId: "",
       sport: "tennis",
+      cancelledBy: "",
     });
     expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・テニス 1 件")).toBeInTheDocument();
 
@@ -479,26 +492,163 @@ describe("本部のキャンセルされた予約", () => {
       sport: "golf",
     });
     expect(
-      await screen.findByText("この期間にゴルフのこのコーチの枠のこのレッスンメニューでキャンセルされた予約はありません"),
+      await screen.findByText("この期間にゴルフのこのコーチの枠のこのレッスンメニューでキャンセルされた予約はありません。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("2026年10月1日（木） 〜 2026年10月31日（土）・ゴルフ 0 件")).toBeInTheDocument();
+    // 0 件のときは件数を出さない
+    expect(screen.getByText("2026年10月1日（木） 〜 2026年10月31日（土）・ゴルフ")).toBeInTheDocument();
   });
 
   test("渡されたスポーツ（URL のクエリ）で開き、期間は付けずに読んでスポーツの欄にも入れる。0 件ならその競技のことだと言う", async () => {
     const listCancelledBookings = listOf([]);
     render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} initialSport="swimming" />);
 
-    expect(await screen.findByText("この期間に水泳でキャンセルされた予約はありません")).toBeInTheDocument();
+    expect(await screen.findByText("この期間に水泳でキャンセルされた予約はありません。")).toBeInTheDocument();
     expect(listCancelledBookings).toHaveBeenCalledWith({ sport: "swimming" });
     expect(screen.getByRole("combobox", { name: "スポーツ" })).toHaveValue("swimming");
     expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
   });
 
-  test("0 件なら「この期間にキャンセルされた予約はありません」と出し、表は出さない", async () => {
+  test("キャンセルした人の選択肢は「すべて」・生徒・コーチ・本部で、選んで「この条件で見る」で API の cancelled_by に渡して読み直し、件数の行に選んだキャンセルした人を出す", async () => {
+    const byHeadquarters: Schemas["CancelledBooking"] = { ...BOOKINGS[0]!, cancelled_by: "headquarters" };
+    const listCancelledBookings = vi
+      .fn<HeadquartersApi["listCancelledBookings"]>()
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", bookings: BOOKINGS } })
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", bookings: [byHeadquarters] } })
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", bookings: BOOKINGS } });
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} onFilterChange={onFilterChange} />,
+    );
+    await screen.findByRole("table");
+
+    const select = screen.getByRole("combobox", { name: "キャンセルした人" });
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "すべて",
+      "生徒",
+      "コーチ",
+      "本部",
+    ]);
+    await user.selectOptions(select, "本部");
+    // 選んだだけでは読み直さず、件数の行にも出さない（ほかの絞り込みと同じく「この条件で見る」で読み直す）。
+    expect(listCancelledBookings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/キャンセルした人: /)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listCancelledBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-20",
+      to: "2026-10-26",
+      cancelled_by: "headquarters",
+    });
+    expect(onFilterChange).toHaveBeenCalledWith({
+      period: { from: "2026-10-20", to: "2026-10-26" },
+      coachId: "",
+      lessonMenuId: "",
+      sport: "",
+      cancelledBy: "headquarters",
+    });
+    expect(
+      await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・キャンセルした人: 本部・1 件"),
+    ).toHaveAttribute("role", "status");
+    // 本部で絞っても「キャンセルした人」の列は消さない
+    const table = screen.getByRole("table", { name: "キャンセルされた予約の一覧" });
+    expect(within(table).getByRole("columnheader", { name: "キャンセルした人" })).toBeInTheDocument();
+    expect(cellsOf(within(table).getAllByRole("row")[1]!).at(-1)).toBe("本部");
+
+    // 「すべて」に戻せば cancelled_by を付けずに読み直す
+    await user.selectOptions(select, "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listCancelledBookings).toHaveBeenLastCalledWith({ from: "2026-10-20", to: "2026-10-26" });
+    expect(await screen.findByText("2026年10月20日（火） 〜 2026年10月26日（月）・2 件")).toBeInTheDocument();
+  });
+
+  test("キャンセルした人とスポーツ・コーチを組み合わせて送り、件数の行にはキャンセルした人とスポーツの件数を並べる", async () => {
+    const listCancelledBookings = vi
+      .fn<HeadquartersApi["listCancelledBookings"]>()
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-20", to: "2026-10-26", bookings: BOOKINGS } })
+      .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-01", to: "2026-10-31", bookings: [BOOKINGS[0]!] } });
+    const user = userEvent.setup();
+    render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} />);
+    await screen.findByRole("table");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "コーチ" })).toBeEnabled());
+
+    await changePeriod(user, "2026-10-01", "2026-10-31");
+    await user.selectOptions(screen.getByRole("combobox", { name: "コーチ" }), "高橋 コーチ");
+    await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "テニス");
+    await user.selectOptions(screen.getByRole("combobox", { name: "キャンセルした人" }), "生徒");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(listCancelledBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      coach_id: TAKAHASHI,
+      sport: "tennis",
+      cancelled_by: "student",
+    });
+    expect(
+      await screen.findByText("2026年10月1日（木） 〜 2026年10月31日（土）・キャンセルした人: 生徒・テニス 1 件"),
+    ).toBeInTheDocument();
+  });
+
+  test("渡されたキャンセルした人（URL のクエリ）で開いて読み、0 件なら件数を出さずに、その人がキャンセルした予約がないことと条件の変え方を出す", async () => {
+    const listCancelledBookings = listOf([]);
+    render(
+      <CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} initialCancelledBy="headquarters" />,
+    );
+
+    expect(
+      await screen.findByText(
+        "この期間に本部がキャンセルした予約はありません。キャンセルした人を「すべて」にするか、期間を変えて見てください。",
+      ),
+    ).toBeInTheDocument();
+    expect(listCancelledBookings).toHaveBeenCalledWith({ cancelled_by: "headquarters" });
+    expect(screen.getByRole("combobox", { name: "キャンセルした人" })).toHaveValue("headquarters");
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・キャンセルした人: 本部")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // 0 件の表示にボタンは置かない（画面の primary は「この条件で見る」の 1 つ）
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  test("コーチとキャンセルした人で絞って 0 件なら、このコーチの枠でその人がキャンセルした予約はないと言う", async () => {
+    render(
+      <CancelledBookingList
+        api={{ listCancelledBookings: listOf([]), ...choicesOf() }}
+        initialCoachId={SUZUKI}
+        initialCancelledBy="coach"
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        "この期間にこのコーチの枠でコーチがキャンセルした予約はありません。キャンセルした人を「すべて」にするか、期間を変えて見てください。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  test("期間が正しくなければ送らず、選んだキャンセルした人は消さない", async () => {
+    const listCancelledBookings = listOf(BOOKINGS);
+    const user = userEvent.setup();
+    render(<CancelledBookingList api={{ listCancelledBookings, ...choicesOf() }} />);
+    await screen.findByRole("table");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "キャンセルした人" }), "本部");
+    await changePeriod(user, "2026-10-20", "2026-10-19");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。",
+    );
+    expect(listCancelledBookings).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("combobox", { name: "キャンセルした人" })).toHaveValue("headquarters");
+  });
+
+  test("0 件なら「この期間にキャンセルされた予約はありません。」と出し、件数の行に件数を出さず、表は出さない", async () => {
     render(<CancelledBookingList api={{ listCancelledBookings: listOf([]), ...choicesOf() }} />);
 
-    expect(await screen.findByText("この期間にキャンセルされた予約はありません")).toBeInTheDocument();
-    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）・0 件")).toBeInTheDocument();
+    expect(await screen.findByText("この期間にキャンセルされた予約はありません。")).toBeInTheDocument();
+    expect(screen.getByText("2026年10月20日（火） 〜 2026年10月26日（月）")).toBeInTheDocument();
+    expect(screen.queryByText(/0 件/)).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -512,8 +662,8 @@ describe("本部のキャンセルされた予約", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByText("この期間にキャンセルされた予約はありません")).not.toBeInTheDocument();
-    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+    expect(screen.queryByText("この期間にキャンセルされた予約はありません。")).not.toBeInTheDocument();
+    expect(screen.queryByText("キャンセルされた予約を読み込んでいます…")).not.toBeInTheDocument();
   });
 });
 
@@ -532,6 +682,28 @@ describe("絞り込みの URL", () => {
     expect(cancelledBookingsPath({ coachId: TAKAHASHI, lessonMenuId: FOREHAND, sport: "tennis" })).toBe(
       `/headquarters/cancelled-bookings?coach_id=${TAKAHASHI}&lesson_menu_id=${FOREHAND}&sport=tennis`,
     );
+  });
+
+  test("キャンセルした人を契約のクエリの名前 cancelled_by で URL に残し、「すべて」なら出さない", () => {
+    expect(cancelledBookingsPath({ coachId: "", lessonMenuId: "", sport: "", cancelledBy: "headquarters" })).toBe(
+      "/headquarters/cancelled-bookings?cancelled_by=headquarters",
+    );
+    expect(cancelledBookingsPath({ coachId: TAKAHASHI, lessonMenuId: "", sport: "tennis", cancelledBy: "student" })).toBe(
+      `/headquarters/cancelled-bookings?coach_id=${TAKAHASHI}&sport=tennis&cancelled_by=student`,
+    );
+    expect(cancelledBookingsPath({ coachId: "", lessonMenuId: "", sport: "", cancelledBy: "" })).toBe(
+      "/headquarters/cancelled-bookings",
+    );
+  });
+
+  test("URL のクエリのキャンセルした人は BookingCanceller の値だけを使い、ないかそれ以外の値なら「すべて」で開く", () => {
+    expect(cancelledBookingCancellerOf("student")).toBe("student");
+    expect(cancelledBookingCancellerOf("coach")).toBe("coach");
+    expect(cancelledBookingCancellerOf("headquarters")).toBe("headquarters");
+    expect(cancelledBookingCancellerOf(null)).toBe("");
+    expect(cancelledBookingCancellerOf("")).toBe("");
+    expect(cancelledBookingCancellerOf("Headquarters")).toBe("");
+    expect(cancelledBookingCancellerOf("none")).toBe("");
   });
 
   test("URL のクエリのスポーツは Sport の値だけを使い、ないか Sport の値でなければ「すべて」で開く", () => {
@@ -628,6 +800,29 @@ describe("画面への配置", () => {
     expect(replace).toHaveBeenCalledWith(`/headquarters/cancelled-bookings?coach_id=${SUZUKI}&sport=tennis`, {
       scroll: false,
     });
+  });
+
+  test("URL のクエリのキャンセルした人で開き、「この条件で見る」を押すと URL のクエリに残し、「すべて」に戻すと消す", async () => {
+    const listCancelledBookings = listOf(BOOKINGS);
+    headquartersApiMock.mockReturnValue({
+      listCancelledBookings,
+      listCoaches: coachesOf(),
+      listLessonMenus: lessonMenusOf(),
+    });
+    const user = userEvent.setup();
+    render(<CancelledBookingsHome token="mock.headquarters.x" initialCancelledBy="headquarters" />);
+    await screen.findByRole("table", { name: "キャンセルされた予約の一覧" });
+    expect(listCancelledBookings).toHaveBeenCalledWith({ cancelled_by: "headquarters" });
+
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/cancelled-bookings?cancelled_by=headquarters", {
+      scroll: false,
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "この条件で見る" })).toBeEnabled());
+    await user.selectOptions(screen.getByLabelText("キャンセルした人"), "すべて");
+    await user.click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(replace).toHaveBeenLastCalledWith("/headquarters/cancelled-bookings", { scroll: false });
   });
 
   test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {

@@ -787,6 +787,14 @@ describe("headquartersApi", () => {
     expect(url.searchParams.get("lesson_menu_id")).toBe(lessonMenuId);
   });
 
+  test("listCancelledBookings はキャンセルした人をクエリの cancelled_by にする", async () => {
+    const { api, fetchMock } = setup(json(200, { from: "2026-10-20", to: "2026-10-26", bookings: [] }));
+    await api.listCancelledBookings({ from: "2026-10-20", to: "2026-10-26", cancelled_by: "headquarters" });
+    const url = new URL(fetchMock.mock.calls[0]![0].url);
+    expect(url.pathname).toBe("/api/bookings/cancelled");
+    expect(url.searchParams.get("cancelled_by")).toBe("headquarters");
+  });
+
   test("listCancelledBookings は期間を省けばクエリを付けない", async () => {
     const { api, fetchMock } = setup(json(200, { from: "2026-10-20", to: "2026-10-26", bookings: [] }));
     await api.listCancelledBookings({});

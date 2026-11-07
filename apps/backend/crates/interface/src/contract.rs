@@ -168,6 +168,18 @@ pub(crate) const fn booking_canceller_to_contract(canceller: BookingCanceller) -
     }
 }
 
+/// admin-web の `listCancelledBookings` の `cancelled_by` を読む。契約の `BookingCanceller` の enum にない値は 422。
+pub(crate) fn booking_canceller_from_contract(value: &str) -> Result<BookingCanceller, ApiError> {
+    [
+        BookingCanceller::Student,
+        BookingCanceller::Coach,
+        BookingCanceller::Headquarters,
+    ]
+    .into_iter()
+    .find(|canceller| booking_canceller_to_contract(*canceller) == value)
+    .ok_or_else(|| ApiError::validation_failed(format!("未知のキャンセルした人: {value}")))
+}
+
 /// admin-web の `listBookings` の `status` を読む。契約の enum にない値は 422。
 pub(crate) fn booking_status_from_contract(value: &str) -> Result<BookingStatus, ApiError> {
     BookingStatus::ALL
@@ -466,6 +478,15 @@ mod tests {
             .map(booking_canceller_to_contract),
             ["student", "coach", "headquarters"]
         );
+        for value in ["student", "coach", "headquarters"] {
+            assert_eq!(
+                booking_canceller_to_contract(booking_canceller_from_contract(value).unwrap()),
+                value
+            );
+        }
+        for value in ["", "Student", "hq", "none", "student,coach"] {
+            assert!(booking_canceller_from_contract(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]
