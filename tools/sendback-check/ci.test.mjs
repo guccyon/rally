@@ -116,7 +116,7 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
     "order.mjs を外す": template.replace(/^ {8}run: node tools\/sendback-check\/order\.mjs.*\n/m, "        run: echo skip\n"),
     "ci.test.mjs を外す": template.replace(/^ {8}run: node --test --test-reporter=spec ci\.test\.mjs\n/m, "        run: echo skip\n"),
     "ENGINE_DIR を外す": template.replace(/^ {10}ENGINE_DIR: .*\n/m, ""),
-    "engine.test.mjs を外す": template.replace("node --test --test-reporter=spec engine.test.mjs", "true"),
+    "engine.test.mjs を外す": template.replace("--test-reporter-destination=engine-test.tap engine.test.mjs", "--test-reporter-destination=engine-test.tap"),
   };
   for (const [name, text] of Object.entries(cases)) {
     assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
