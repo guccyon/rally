@@ -1,4 +1,5 @@
-// PR 本文の見出しの構造を決定論で検査する（知見 K-0001 の担保。議決 D-0001、Issue #826）。LLM を使わない。
+// PR 本文の見出しの構造を決定論で検査する（知見 K-0001 の担保。議決 D-0001、Issue #826。
+// 知見 K-0006 の担保として、見出しの定義（template.json）との照合を足した。議決 D-0006、Issue #906）。LLM を使わない。
 //
 //   node check.mjs [--body <本文のファイル>] [--json <出力先>]    # --body を省くと標準入力から読む
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
@@ -7,12 +8,43 @@
 //   - 同じ「## 」見出しが 2 回以上ない（続きのジョブが新しい PR と同じ見出しの組を末尾に足すと重なる）
 //   - 「## 工場の記録」より後ろに「## 」以上の見出しがない（続きのジョブの記録は「## 工場の記録」の下の「### 」に入れる）
 //   - 「続きのジョブ」の見出しが「## 工場の記録」の下の「### 」以下にある
+//   - template.json の必須の「## 」見出しが欠けていない
+//   - template.json の「## 」見出しが定義の順に並んでいる
+//   - template.json にない「## 」以上の見出し（工場の記録・続きのジョブの報告など）が、定義の見出しの最後のものより後ろにある
 // コードブロック（``` と ~~~）の中の行は見出しとして数えない。
 //
 // 呼び出し: 本文の更新の前の関所 gate.mjs（議決 D-0013、Issue #956）がこの checkBody を使う。外れたら本文を書かずに body_fix に回す。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+
+/**
+ * 見出しの定義（template.json の中身）を検証し、凍結した「## 」見出しの一覧を返す。
+ * h2 が空でない配列で、各要素が空でない 1 行の text と真偽値の required だけを持ち、text が重ならないこと。外れたら投げる。
+ */
+export function parseTemplate(data) {
+  const fail = (why) => { throw new Error(`pr-body-check: 見出しの定義が不正: ${why}`); };
+  if (data === null || typeof data !== "object" || !Array.isArray(data.h2) || data.h2.length === 0) {
+    fail("h2 が空でない配列でない");
+  }
+  const texts = new Set();
+  const h2 = data.h2.map((t, i) => {
+    if (t === null || typeof t !== "object" || Array.isArray(t)) fail(`h2[${i}] がオブジェクトでない`);
+    const extra = Object.keys(t).filter((k) => k !== "text" && k !== "required");
+    if (extra.length > 0) fail(`h2[${i}] に知らない欄がある（${extra.join("・")}）`);
+    if (typeof t.text !== "string" || t.text.trim() === "" || t.text !== t.text.trim() || /[\r\n]/.test(t.text)) {
+      fail(`h2[${i}].text が前後に空白のない 1 行の文字列でない`);
+    }
+    if (typeof t.required !== "boolean") fail(`h2[${i}].required が真偽値でない`);
+    if (texts.has(t.text)) fail(`h2[${i}].text「${t.text}」が重なっている`);
+    texts.add(t.text);
+    return Object.freeze({ text: t.text, required: t.required });
+  });
+  return Object.freeze(h2);
+}
+
+/** PR 本文の「## 」見出しの定義（順・必須か）。CLAUDE.md の「PR の説明」と実装役の報告の型から取った 1 つの定義。凍結してある。 */
+export const TEMPLATE = parseTemplate(JSON.parse(readFileSync(new URL("./template.json", import.meta.url), "utf8")));
 
 /** 工場の記録の見出し（Engine の worker/entrypoint.sh が新しい PR の本文に付ける）。 */
 export const FACTORY_RECORD = "工場の記録";
@@ -67,7 +99,45 @@ export function checkBody(body) {
     }
   }
 
-  return errors.sort((a, b) => a.line - b.line);
+  errors.push(...checkTemplate(hs));
+  return errors.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
+}
+
+/** 見出しを定義（TEMPLATE）と照らす。必須の欠け・順の違い・定義の外の見出しの位置を見る。 */
+function checkTemplate(hs) {
+  const errors = [];
+  const order = new Map(TEMPLATE.map((t, i) => [t.text, i]));
+  const top = hs.filter((h) => h.level <= 2);
+  const inTemplate = top.filter((h) => h.level === 2 && order.has(h.text));
+
+  for (const t of TEMPLATE.filter((t) => t.required)) {
+    if (!inTemplate.some((h) => h.text === t.text)) {
+      errors.push({ rule: "missing_required", line: null, heading: t.text,
+        message: `必須の見出し「## ${t.text}」がない` });
+    }
+  }
+
+  // 重なり（duplicate_h2）の 2 回目は、順の違いにも定義の見出しの終わりにも数えない
+  const firsts = inTemplate.filter((h, i) => inTemplate.findIndex((x) => x.text === h.text) === i);
+  let last = null;
+  for (const h of firsts) {
+    if (last !== null && order.get(h.text) < order.get(last.text)) {
+      errors.push({ rule: "template_order", line: h.line, heading: h.text,
+        message: `「## ${h.text}」が「## ${last.text}」（${last.line} 行目）より後ろにある。見出しは ${TEMPLATE.map((t) => t.text).join(" / ")} の順にする` });
+    } else {
+      last = h;
+    }
+  }
+
+  const end = firsts.length === 0 ? 0 : firsts[firsts.length - 1].line;
+  for (const h of top) {
+    if (h.level === 2 && order.has(h.text)) continue;
+    if (h.line < end) {
+      errors.push({ rule: "outside_template", line: h.line, heading: h.text,
+        message: `定義にない見出し「${"#".repeat(h.level)} ${h.text}」が定義の見出しの間にある。定義の見出しの最後より後ろに置くか ### 以下にする` });
+    }
+  }
+  return errors;
 }
 
 function main() {
@@ -81,7 +151,7 @@ function main() {
   }
   const errors = checkBody(body);
   if (values.json) writeFileSync(values.json, JSON.stringify({ ok: errors.length === 0, errors }, null, 2) + "\n");
-  for (const e of errors) console.log(`${e.line} 行目: ${e.message}`);
+  for (const e of errors) console.log(`${e.line === null ? "本文" : `${e.line} 行目`}: ${e.message}`);
   console.log(`pr-body-check: 見出し ${headings(body).length} 件、外れ ${errors.length} 件`);
   process.exit(errors.length === 0 ? 0 : 1);
 }

@@ -11,6 +11,6 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0009 | 4 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役 （続きのジョブの s |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
-| K-0006 | 6 | causal | hypothesis | active | context | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |
+| K-0006 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |
 | K-0008 | 6 | causal | hypothesis | draft | context | 2026-11-04 | 2026-12-04 | 人の判断待ち（factory:needs-judgment）の停止中に PR が main と衝突（pr.conflicted）しても、衝突を解く contin |
 | K-0010 | 6 | causal | hypothesis | active | context | 2026-11-05 | 2026-12-05 | 既定ブランチとの衝突のたびに、上限なしで、セッションを引き継ぐ（agent_resumed）tier-large の続きのジョブを積み直すと、 衝突が機械的（C |

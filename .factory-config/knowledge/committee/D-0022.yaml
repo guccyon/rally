@@ -1,0 +1,65 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0022
+pr: https://github.com/guccyon/rally/pull/930
+decided_at: '2026-11-05'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は D-0006 の議決（K-0006 を ci_check で担保）を K-0006 の enforcement.solutions に記録するだけで、主張・確かさ・状態を変えておらず、D-0006
+    の担保案と K-0001 の enforcement の書き方とも揃っています。
+  - INDEX.md の K-0006 の行は enforcement の列が context から deterministic に変わっただけで、K-0006.yaml
+    の enforcement.level と一致しており、自動生成の結果と矛盾しません。
+  - 検査は K-0001 向けの tools/pr-body-check/check.mjs を広げたもので、D-0006 の担保役が言った「別の検査を作らず同じ検査を広げる」に沿っていて、重複はありません。
+  - 'ただし check.mjs を K-0001 と共有するので、K-0001 の solutions の what（「## 工場の記録」より後ろに ## を置かない）と
+    K-0006 の what（定義の外の見出しは定義の最後より後ろ）が同じ道具の別の決まりとして読めるよう、次に直すときに K-0001 にも広げたことを書き添えるとよいです。'
+  - template.json は「CLAUDE.md の見出しに仮決めを足した順」で、K-0005 の言う見出しの正はまだ人が決めていないので、正が決まったら
+    template.json とこの記録を合わせて直す必要があります。
+  - 配線が入っておらず効き目も確かめていないと明記されているので、K-0006 の confidence は hypothesis のままが妥当で、D-0006
+    で求めた verified_at の直しと「テンプレートの順」の書き直しは別の PR で扱えば足ります。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0006 に足した enforcement.solutions は decided_by: committee:D-0006 と issue 906
+    を持ち、D-0006 の担保案（K-0001 向けの tools/pr-body-check/check.mjs を広げ、pull_request の edited
+    や pr.body_amended でも起動させる）と中身が合うので、一次記録に辿れます。'
+  - 記録の形は K-0001 の enforcement（issue 826・at・decided_by）と同じで、配線がまだ入らず効き目を確かめていないことも正直に書かれているので、記録として妥当です。
+  - 見出しの定義 tools/pr-body-check/template.json は「CLAUDE.md の見出しに仮決めを足した順」とあるのに、その仮決めを誰がどこで決めたかの記録がないので、次に直すときに決めた
+    Issue か議決を what か evidence に足してください。
+  - INDEX.md で level が deterministic になっても検査はまだ必須チェックに配線されていないので、配線して本文だけの直しで PR-002
+    の差し戻しが減ったのを数えるまでは confidence は hypothesis のままが妥当です。
+  - 今回の差分は番号・ファイル名・イベント名だけで、利用者を特定できる氏名・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は D-0006 で担保の票が出した K-0006 向けの ci_check の案（必須の見出しの欠け・順の違い・同じ ## 見出しの重複・定義の外の見出しの位置）を
+    enforcement.solutions に記録しただけで、案の中身とずれていません。'
+  - 新しい検査を作らず K-0001 向けの tools/pr-body-check/check.mjs を広げたのは D-0006 の費用を小さくする方針どおりで、見出しを並べて比べるだけなので線も引きやすいです。
+  - pull_request の edited や pr.body_amended で起動させて head_sha の変わらない本文だけの直しも必須チェックにする想定は、C-0003
+    の job 572 が再検査なしでマージされた抜け道を塞ぐもので、外したときの痛さに見合っています。
+  - 配線がまだで効き目を確かめていないことを what に正直に書いており、K-0001・K-0002 と同じ書き方なので level を deterministic
+    にしてよいです。
+  - tools/pr-body-check/template.json は仮決めの定義なので、K-0005 の正を人が決めたときに template.json
+    をその 1 つの定義に合わせ直すことを issue 906 で追ってください。
+  - 確かさは C-0003 の 1 件が根拠なので hypothesis のままが妥当で、配線が入ったあとに PR-002 による差し戻しが減ったかを数えれば
+    confirmed に上げる材料になります。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0006 で可決した K-0006 の ci_check 案を enforcement.solutions に書き足すだけで、主張・範囲・確かさは変えていないので、範囲を広げすぎてはいません。
+  - '記録した検査は D-0006 の案どおり K-0001 向けの tools/pr-body-check/check.mjs を広げたもので、K-0001
+    の「## 工場の記録より後ろに ## 見出しがない」決まりとも食い違わず、反例は見つかりません。'
+  - 反例になりうる点として、tools/pr-body-check/template.json は CLAUDE.md の見出しに「仮決め」を足した定義なので、K-0005
+    の正を人が決める前に配線すると、D-0006 の担保票が心配した「定義の割れを機械で固める」ことになります。配線の前に、正の見出しの決定を待つと書き添えるとよいです。
+  - enforcement.level を deterministic にしていますが、この検査が見るのは見出しの順と重複だけで、K-0006 で悪化させる条件とした
+    body_fix と implement の並列の書き換えは担保していません。D-0006 の checklist 案はまだ入っていないので、知見全体が決定論で担保されたと読まれないよう注意が要ります。
+  - 配線は入っておらず効き目もまだ確かめていないので、confidence は hypothesis のままが妥当です。配線したあとに PR-002 による差し戻しが減ったかを数えてから上げるべきです。
+  - INDEX.md の変更は enforcement の段を自動生成で反映しただけで、手で書き換えた形跡はありません。
+  personal_data: false
+enforcement: []
