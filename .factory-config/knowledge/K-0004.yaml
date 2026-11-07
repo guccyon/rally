@@ -339,4 +339,24 @@ enforcement:
       decided_by: committee:D-0026
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0026（PR #1019）の ci_check の案（ci.test.mjs に、GitHub Actions で gh api の required_status_checks を読み、
+        engine-test と wiring-order がなければ required_check_missing の ::error で落とす手順を足し、それが通るまで Issue #969 の解決策を
+        wired にしないことを check.py で照らす）を入れた。tools/sendback-check/protection.mjs に checkProtectionInActions を足し、
+        既定のブランチ（イベントの repository.default_branch か gh api repos/{owner}/{repo}）の
+        gh api repos/{owner}/{repo}/branches/{default}/protection/required_status_checks を読んで、写し（なければひな形）のジョブが報告する
+        チェックの名前が contexts か checks にあるかを照らす。保護か必須のチェックがない 404 は必須のチェックが空として required_check_missing、
+        権限がないなどで読めなければ protection_unreadable で落とす（読めないのを通る側に数えない）。ci.test.mjs が GITHUB_ACTIONS=true のときに
+        それを呼んで ::error を出して落ちる。protection.test.mjs で偽の gh を使い、そろっている・片方だけ・404・403・gh がない・
+        既定のブランチをイベントか API から引く・写しの name: で照らす場合を確かめた。tools/knowledge-enforcement-check/check.py に配線の前提
+        （PREREQUISITES）を足し、Issue #969 の解決策が wired: true なのに wired_by に .github/workflows/sendback-engine.yml の wiring-order が
+        tools/sendback-check/ci.test.mjs を呼ぶ配線を含めないか、ci.test.mjs がこの照合を呼んでいなければ落とす。branch protection は PR の
+        GITHUB_TOKEN では読めないので、読める権限のトークンをひな形と写しの ci.test.mjs の手順に GH_TOKEN で渡すこと（秘密情報と権限は建設者）と、
+        .github/workflows/ への写しは建設者が行う。まだ GitHub Actions では走っておらず、この解決策も未配線・未確認
+      issue: 1020
+      at: 2026-11-07
+      decided_by: committee:D-0026
+      wired: false
+      verified: false
 decided_by: committee:D-0004

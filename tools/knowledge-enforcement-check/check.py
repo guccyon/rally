@@ -12,6 +12,11 @@ tools/sendback-check/order.mjs と同じやり方（注釈と行末の \ を畳�
 ラッパーのスクリプトを 3 段まで辿る）で照らし、なければ落とす。order.mjs と違い、迷う形は呼んでいない側に数える
 （ここで見逃すと配線していない担保を配線済みと読ませるため）。
 
+配線の前提（議決 D-0026、Issue #1020）: PREREQUISITES に挙げた解決策は、前提の検査が PR ごとに走って通るまで wired にしない。
+wired が true なら、wired_by に前提の配線（workflow・job・runs）を含め、runs のファイルが前提の検査（guard の印）を持つことを照らす。
+配線が本物かは上の配線先の照合が見るので、前提の検査が落ちればその PR の CI も落ちる。K-0004 の Issue #969 の解決策
+（必須のチェックにできる形の見張り）は、wiring-order の ci.test.mjs が engine-test と wiring-order を必須のチェックに見つけるまで wired にしない。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -39,6 +44,16 @@ UNWIRED = "未配線"
 UNVERIFIED = "deterministic（未確認）"
 WORKFLOWS = ".github/workflows"
 WIRED_BY_KEYS = ("workflow", "job", "runs")
+# 配線の前提（議決 D-0026、Issue #1020）。(知見の id, 解決策の issue) → wired にする前に PR ごとに通っていなければならない検査
+PREREQUISITES = {
+    ("K-0004", 969): {
+        "workflow": ".github/workflows/sendback-engine.yml",
+        "job": "wiring-order",
+        "runs": "tools/sendback-check/ci.test.mjs",
+        "guard": "checkProtectionInActions(",
+        "why": "engine-test と wiring-order が既定のブランチの必須のチェックにあることを ci.test.mjs が GitHub Actions で確かめる（required_check_missing）",
+    },
+}
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -238,6 +253,27 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def check_prerequisites(k: dict, repo: Path) -> list[str]:
+    """PREREQUISITES の解決策が、前提の検査を wired_by に含めずに wired になっていないかを照らす（議決 D-0026、Issue #1020）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True:
+            continue
+        pre = PREREQUISITES.get((k.get("id"), s.get("issue")))
+        if pre is None:
+            continue
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        want = {key: pre[key] for key in WIRED_BY_KEYS}
+        wb = s.get("wired_by") if isinstance(s.get("wired_by"), list) else []
+        if not any(isinstance(w, dict) and {key: w.get(key) for key in WIRED_BY_KEYS} == want for w in wb):
+            e.append(f"{where}: 前提の検査が通るまで wired にしない。wired_by に {want['workflow']} の job {want['job']} が {want['runs']} を呼ぶ配線を含める（{pre['why']}）")
+            continue
+        p = repo / pre["runs"]
+        if not p.is_file() or pre["guard"] not in p.read_text(encoding="utf-8"):
+            e.append(f"{where}: 前提の検査が {pre['runs']} にない（{pre['guard']} を呼んでいない。{pre['why']}）")
+    return e
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -281,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo))]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_prerequisites(k, Path(a.repo))]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")

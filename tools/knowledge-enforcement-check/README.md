@@ -28,6 +28,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 
 - `wired` か `verified` が真偽でない（`"true"`・`yes` など）
 - `wired` が `true` でないのに `verified` が `true`（配線してから本物の記録で確かめる）
+- 配線の前提（下）のある解決策が、前提の配線を `wired_by` に含めずに、か前提の検査がないのに `wired: true`
 - `wired` が `true` なのに、`wired_by` がない・空・項目が欠けている、`workflow` が `.github/workflows/` の直下でない（ひな形の `ci/*.yml` は配線ではない）、`workflow`・`job`・`runs` のどれかが実在しない、その job が `runs` の検査を呼んでいない（下の「配線先の照合」）
 
 ## 配線先の照合
@@ -41,6 +42,14 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `runs` がテストのファイル（`test_*.py`・`*.test.mjs` など）のときは、そのディレクトリで `python3 -m unittest discover -s <ディレクトリ>` や、ファイルを名指ししない `node --test` を走らせる形も呼び出しに数える
 - `order.mjs` は取りこぼすと見張れないので迷う形を呼ぶ側に数えるが、ここで見逃すと配線していない担保を配線済みと読ませるので、逆に迷う形は呼んでいない側に数える（scripts にない名前・読めないラッパー・別の job の手順・`uses:` の手順・別のワークフローを呼ぶ job は数えない）。字面で偽の `if:`（`false`・`${{ false }}`）の job と手順も走らないので数えない
 - Engine の呼び出しだけで走る解決策は今の `wired_by` では書けない。書けるようになるまで `wired: false` のまま置く
+
+## 配線の前提
+
+前提の検査が PR ごとに走って通るまで `wired` にしてはいけない解決策を、`check.py` の `PREREQUISITES` に（知見の id, 解決策の `issue`）で挙げる（議決 `D-0026`、Issue #1020）。その解決策が `wired: true` なら、`wired_by` に前提の配線（`workflow`・`job`・`runs` が同じもの）を含めることと、`runs` のファイルが前提の検査（`guard` の印）を持つことを照らす。配線が本物かは上の「配線先の照合」が見るので、前提の検査が落ちればその PR の CI も落ちる。
+
+| 知見 | 解決策 | 前提の配線 | 前提の検査 |
+|---|---|---|---|
+| `K-0004` | Issue #969（必須のチェックにできる形の見張り） | `.github/workflows/sendback-engine.yml` の `wiring-order` が `tools/sendback-check/ci.test.mjs` を呼ぶ | `ci.test.mjs` が GitHub Actions で `checkProtectionInActions()` を呼び、`engine-test` と `wiring-order` が既定のブランチの必須のチェックになければ `required_check_missing` で落ちる（`tools/sendback-check/README` の「GitHub Actions での照合」） |
 
 ## 担保の表示
 

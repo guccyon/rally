@@ -5,6 +5,18 @@
 // ひな形が必須のチェックにできる形（PR ごとに必ず走り、落ちたら止める）で、見張りの手順を持っていることも見る（議決 D-0017、Issue #969）。
 // 写しとのずれも見るので、見張りを外す変更はひな形と写しを一緒に直しても wiring-order で落ちる。写しを消す・ジョブの名前を変える変更は、
 // 必須のチェック（engine-test・wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
+// GitHub Actions では、その 2 つが既定のブランチの必須のチェックに入っているかも gh api で読んで見る（議決 D-0026、Issue #1020）。
+// 写しがあっても、engine-test と wiring-order が既定のブランチの必須のチェックになければ、写しを消す・ci.test.mjs ごと見張りを書き換える PR は止まらない。
+// GitHub Actions では gh api …/branches/{既定のブランチ}/protection/required_status_checks を読み、contexts（checks）になければ落とす（議決 D-0026、Issue #1020）。
+// この検査が通るまで、K-0004 の Issue #969 の解決策は wired にしない（tools/knowledge-enforcement-check/check.py が照らす）。
+test("GitHub Actions では engine-test と wiring-order が既定のブランチの必須のチェックになければ required_check_missing で落ちる", {
+  skip: process.env.GITHUB_ACTIONS === "true" ? false : "GitHub Actions の外",
+}, () => {
+  const r = checkProtectionInActions();
+  for (const line of formatErrors(r.errors, true)) console.log(line);
+  assert.deepEqual(r.errors, [], `${r.branch ?? "既定のブランチ"} の必須のチェック: ${r.contexts.join("・") || "なし"}`);
+});
+
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -13,6 +25,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { checkProtectionInActions, formatErrors } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), "utf8");
 const copyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));

@@ -14,9 +14,16 @@
 // 見ること:
 //   - 写し（.github/workflows/sendback-engine.yml）がないか、engine-test・wiring-order のジョブがない（workflow_not_copied）
 //   - そのジョブが報告するチェックの名前（ジョブの name: があればそれ、なければ id）が必須のチェックにない（required_check_missing）
+//
+// GitHub Actions で走るとき（ci.test.mjs が wiring-order で呼ぶ。議決 D-0026、Issue #1020）は、JSON を渡さずに
+// gh api repos/{owner}/{repo}/branches/{既定のブランチ}/protection/required_status_checks を自分で読む（readRequiredChecks）。
+// 保護か必須のチェックがない（404 の Branch not protected・Required status checks not enabled）なら必須のチェックが空として
+// required_check_missing、ほかの理由で読めなければ protection_unreadable で落とす（読めないのを通る側に数えない）。
 
+import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { REPO_ROOT } from "./order.mjs";
@@ -28,8 +35,9 @@ export const REQUIRED_JOBS = Object.freeze(["engine-test", "wiring-order"]);
 
 /**
  * branch protection の JSON から必須のチェックの名前を取り出す。
- * 古い形（required_status_checks の contexts と checks[].context）と rulesets（type が required_status_checks の規則の
- * parameters.required_status_checks[].context）のどちらも読む。保護がない（404 の { message } など）なら空。
+ * 古い形（required_status_checks の contexts と checks[].context）、その required_status_checks だけ（…/protection/required_status_checks の
+ * 応答。contexts と checks が根にある）、rulesets（type が required_status_checks の規則の parameters.required_status_checks[].context）を読む。
+ * 保護がない（404 の { message } など）なら空。
  */
 export function requiredContexts(protection) {
   const names = new Set();
@@ -40,7 +48,7 @@ export function requiredContexts(protection) {
       for (const c of rule.parameters?.required_status_checks ?? []) add(c?.context);
     }
   } else if (protection && typeof protection === "object") {
-    const rsc = protection.required_status_checks;
+    const rsc = "required_status_checks" in protection ? protection.required_status_checks : protection;
     for (const c of rsc?.contexts ?? []) add(c);
     for (const c of rsc?.checks ?? []) add(c?.context);
   } else {
@@ -84,6 +92,58 @@ export function checkProtection({ workflow, protection }) {
     }
   }
   return { contexts: [...contexts], errors };
+}
+
+/** 保護か必須のチェックがないことを表す 404 の message（読めなかったのではなく、必須のチェックが空）。 */
+const NOT_PROTECTED = /\b(Branch not protected|Required status checks not enabled)\b/;
+
+/** gh を呼んで標準出力を返す。落ちたら gh の出力（応答の JSON か stderr）を message に持つ Error を投げる。 */
+function ghApi(args, { gh = "gh", env = process.env } = {}) {
+  const r = spawnSync(gh, ["api", ...args], { env, encoding: "utf8" });
+  if (r.status === 0) return r.stdout;
+  let message = (r.stderr || r.error?.message || "").trim();
+  try { message = JSON.parse(r.stdout).message ?? message; } catch { /* 応答が JSON でない */ }
+  const err = new Error(message || `gh api ${args[0]} が終了コード ${r.status} で落ちた`);
+  err.apiMessage = message;
+  throw err;
+}
+
+/**
+ * 既定のブランチの必須のチェックを gh api で読む（GitHub Actions で走るとき。議決 D-0026、Issue #1020）。
+ * 既定のブランチは GITHUB_EVENT_PATH のイベントの repository.default_branch、なければ gh api repos/{owner}/{repo} で引く。
+ * 返すのは requiredContexts() に渡せる JSON と、引いたブランチ。読めなければ Error を投げる（保護がないときは空の JSON を返す）。
+ */
+export function readRequiredChecks({ env = process.env, gh = "gh" } = {}) {
+  const repository = env.GITHUB_REPOSITORY;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "")) throw new Error(`GITHUB_REPOSITORY（${repository ?? ""}）が owner/repo の形でない`);
+  let branch = null;
+  if (env.GITHUB_EVENT_PATH && existsSync(env.GITHUB_EVENT_PATH)) {
+    try { branch = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"))?.repository?.default_branch ?? null; } catch { branch = null; }
+  }
+  if (typeof branch !== "string" || branch === "") branch = ghApi([`repos/${repository}`, "--jq", ".default_branch"], { gh, env }).trim();
+  if (branch === "") throw new Error(`${repository} の既定のブランチが引けない`);
+  try {
+    const out = ghApi([`repos/${repository}/branches/${encodeURIComponent(branch)}/protection/required_status_checks`], { gh, env });
+    return { branch, protection: JSON.parse(out) };
+  } catch (e) {
+    if (NOT_PROTECTED.test(e.apiMessage ?? "")) return { branch, protection: { contexts: [], checks: [] } };
+    throw new Error(`${branch} の必須のチェックを読めない（${e.message}）。branch protection を読める権限のトークンを GH_TOKEN に渡す`);
+  }
+}
+
+/**
+ * GitHub Actions での照合（ci.test.mjs が呼ぶ）。gh api で読んだ必須のチェックと、写し（なければひな形）のジョブのチェックの名前を照らす。
+ * 写しがないことは ci.test.mjs の別のテストが落とすので、ここではひな形の名前で照らす。読めなければ protection_unreadable。
+ */
+export function checkProtectionInActions({ env = process.env, gh = "gh", repo = REPO_ROOT } = {}) {
+  const copy = join(repo, COPY);
+  const workflow = readFileSync(existsSync(copy) ? copy : fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), "utf8");
+  try {
+    const { branch, protection } = readRequiredChecks({ env, gh });
+    return { branch, ...checkProtection({ workflow, protection }) };
+  } catch (e) {
+    return { branch: null, contexts: [], errors: [{ rule: "protection_unreadable", message: e.message }] };
+  }
 }
 
 export function formatErrors(errors, annotate) {

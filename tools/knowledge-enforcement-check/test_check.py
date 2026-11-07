@@ -217,6 +217,65 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(check.main(["--repo", str(d)]), 1)
 
 
+class PrerequisiteTest(unittest.TestCase):
+    """配線の前提（議決 D-0026、Issue #1020）: K-0004 の Issue #969 の解決策は、ci.test.mjs の必須のチェックの照合が通るまで wired にしない"""
+
+    PRE = check.PREREQUISITES[("K-0004", 969)]
+    WB = {key: check.PREREQUISITES[("K-0004", 969)][key] for key in check.WIRED_BY_KEYS}
+
+    def repo(self, ci_test: str | None) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        if ci_test is not None:
+            (d / self.PRE["runs"]).parent.mkdir(parents=True)
+            (d / self.PRE["runs"]).write_text(ci_test, encoding="utf-8")
+        return d
+
+    def errors(self, d: Path, *sols, kid="K-0004") -> list[str]:
+        return check.check_prerequisites({**k("deterministic", *sols), "id": kid}, d)
+
+    def test_wired_でなければ見ない(self):
+        d = self.repo(None)
+        self.assertEqual(self.errors(d, sol(issue=969, wired=False), sol(issue=969), sol(issue=969, wired="true")), [])
+
+    def test_前提の配線を_wired_by_に含めずに_wired_にすると落ちる(self):
+        d = self.repo("checkProtectionInActions();\n")
+        other = {"workflow": ".github/workflows/sendback-engine.yml", "job": "engine-test", "runs": "tools/sendback-check/engine.test.mjs"}
+        for wb in (None, [], [other], [{**self.WB, "job": "engine-test"}]):
+            e = self.errors(d, sol(issue=969, wired=True, wired_by=wb))
+            self.assertEqual(len(e), 1, wb)
+            self.assertIn("前提の検査が通るまで wired にしない", e[0])
+            self.assertIn("required_check_missing", e[0])
+
+    def test_前提の検査がファイルにないと落ちる(self):
+        for text in (None, "test('x', () => {});\n"):
+            e = self.errors(self.repo(text), sol(issue=969, wired=True, wired_by=[self.WB]))
+            self.assertEqual(len(e), 1, text)
+            self.assertIn("前提の検査が tools/sendback-check/ci.test.mjs にない", e[0])
+
+    def test_前提の配線と検査があれば通る(self):
+        d = self.repo("const r = checkProtectionInActions();\n")
+        self.assertEqual(self.errors(d, sol(issue=969, wired=True, wired_by=[self.WB, {"workflow": "x", "job": "y", "runs": "z"}])), [])
+
+    def test_ほかの知見と解決策は見ない(self):
+        d = self.repo(None)
+        self.assertEqual(self.errors(d, sol(issue=960, wired=True)), [])
+        self.assertEqual(self.errors(d, sol(issue=969, wired=True), kid="K-0001"), [])
+
+    def test_このリポジトリの_ci_test_mjs_は前提の検査を持つ(self):
+        self.assertIn(self.PRE["guard"], (REPO / self.PRE["runs"]).read_text(encoding="utf-8"))
+
+    def test_main_で落とす(self):
+        d = self.repo("checkProtectionInActions();\n")
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 969, wired: false, verified: false}\n")
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 969, wired: true, verified: false, wired_by: [{workflow: .github/workflows/w.yml, job: j, runs: x.py}]}\n")
+        self.assertEqual(check.main(["--repo", str(d)]), 1)
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 
