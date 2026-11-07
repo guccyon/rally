@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createApiClient, type Schemas } from "@/api/client";
 import { coachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Section";
 
 import { CoachChat } from "./CoachChat";
@@ -102,12 +103,11 @@ export function CoachHome({ token }: { token: string }) {
   return (
     <>
       <div className="mb-2 flex justify-end">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           aria-pressed={tab === "notifications"}
           aria-label={unreadNotifications > 0 ? `お知らせ（未読 ${unreadNotifications} 件）` : undefined}
           onClick={() => open("notifications")}
-          className={`rounded-pill border px-3 py-1 text-sm ${tab === "notifications" ? "bg-surface font-semibold" : ""}`}
         >
           お知らせ
           {unreadNotifications > 0 && (
@@ -115,7 +115,7 @@ export function CoachHome({ token }: { token: string }) {
               {unreadNotifications}
             </span>
           )}
-        </button>
+        </Button>
       </div>
       <div role="tablist" aria-label="コーチのメニュー" className="mb-6 flex flex-wrap gap-1 border-b">
         {TABS.map((item) => {

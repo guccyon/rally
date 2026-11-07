@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
@@ -164,13 +165,9 @@ export function ReturnVideoReviewForm({
                         {selected?.video_id === video.video_id ? (
                           <span className="text-text-muted">選択中</span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => onSelect(video)}
-                            className="rounded-pill bg-primary px-3 py-1 text-on-primary disabled:opacity-50"
-                          >
+                          <Button variant="secondary" onClick={() => onSelect(video)}>
                             添削する
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>

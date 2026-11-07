@@ -6,6 +6,7 @@ import type { Schemas } from "@/api/client";
 import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Notice } from "@/components/ui/Notice";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime } from "@/components/labels";
 
@@ -315,9 +316,7 @@ export function PendingVideoReviewList({
         </p>
       )}
       {overdueCount > 0 && (
-        <p className="rounded-md border border-danger bg-danger-container p-2 text-sm text-danger">
-          {OVERDUE_ELAPSED_HOURS} 時間以上たったものが {overdueCount} 件あります。
-        </p>
+        <Notice message={`${OVERDUE_ELAPSED_HOURS} 時間以上たったものが ${overdueCount} 件あります。`} status="warning" />
       )}
       {state.kind === "loaded" && state.list.videos.length === 0 && (
         <p className="text-sm">{emptyMessageOf(filter)}</p>

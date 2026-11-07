@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 
 // 契約の UpdateCoachProfileRequest.bio の maxLength（Unicode のコードポイントで数える）。
@@ -98,13 +99,9 @@ export function CoachProfileForm({
             ? `${BIO_MAX_LENGTH} 文字を ${-remaining} 文字超えています`
             : `あと ${remaining} 文字`}
         </p>
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy}>
           保存する
-        </button>
+        </Button>
       </form>
       <ResultMessage result={result} />
     </div>

@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
@@ -87,21 +88,12 @@ export function VideoReviewCommentForm({
         />
       </label>
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy}>
           添削を返却
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          className="rounded-pill border px-4 py-1 disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={onCancel}>
           やめる
-        </button>
+        </Button>
       </div>
       <ResultMessage result={error ? { ok: false, message: error } : null} />
     </form>
