@@ -305,4 +305,21 @@ enforcement:
       decided_by: committee:D-0024
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0026（PR #1016。Issue #1017 は D-0025 と書いているが、この案は D-0026 の議決にある）の test の案（engine.test.mjs を配線しても、
+        飛ばせる・落ちても通る形や、check.mjs --events のジョブがそれを待たない形だと、配線の順序の見張りが通ってしまう）を入れた。
+        tools/sendback-check/order.mjs が、手順かジョブに if:（中身を問わない）か continue-on-error（false のほか）を付けた engine.test.mjs の手順を
+        走らせる手順に数えず engine_test_not_wired で落とし、engine.test.mjs を走らせるジョブと同じワークフローにある check.mjs --events のジョブが
+        それを needs で（間を挟んでもよい）待たないか、同じジョブで engine.test.mjs の手順より前に呼ぶときは新しい engine_test_not_required で落とすようにした。
+        tools/sendback-check/order.test.mjs に、ci/sendback-engine.yml の engine-test の手順とジョブに continue-on-error: true・if: false などを付けた写しと、
+        check.mjs --events のジョブが needs を持たない・engine-test 以外だけを待つ写しを足し、それぞれその rule で落ちること、needs で待つ形（1 行・配列・列・
+        間に別のジョブを挟む形）と continue-on-error: false では通ることを確かめた。別のワークフローの間は needs で待てないので見ず、engine-test を必須のチェックにして止める。
+        order.mjs は ci/sendback-engine.yml の wiring-order と、GitHub Actions での check.mjs --events で走るが、.github/workflows/ への写しは建設者なので、
+        まだ PR ごとには走っておらず効き目は確かめていない
+      issue: 1017
+      at: 2026-11-07
+      decided_by: committee:D-0026
+      wired: false
+      verified: false
 decided_by: committee:D-0004

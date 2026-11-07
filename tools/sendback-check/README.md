@@ -134,12 +134,13 @@ PR ごと（PR の更新か、検査役の承認の後）と、supervisor が差
 
 ### 配線の順序の見張り（`order.mjs`）
 
-上の順序を人の注意ではなく機械で守る（議決 `D-0012`、Issue #953）。`.github/workflows/` に `check.mjs --events` を呼ぶ手順があるときだけ、次のどちらかで落とす。呼ぶ手順がなければ（今のリポジトリ）何も見ずに通る。
+上の順序を人の注意ではなく機械で守る（議決 `D-0012`、Issue #953）。`.github/workflows/` に `check.mjs --events` を呼ぶ手順があるときだけ、次のどれかで落とす。呼ぶ手順がなければ（今のリポジトリ）何も見ずに通る。
 
 | rule | 外れる状態 |
 |---|---|
 | `engine_test_todo` | `engine.test.mjs` に todo（`t.todo(…)`・`test.todo(…)`・`{ todo: … }`）が残っている（basis の場合の `todoWhileLegacy` を含む）。`engine.test.mjs` がないときも |
-| `engine_test_not_wired` | `.github/workflows/` に `engine.test.mjs` を走らせる手順がない（`engine.test.mjs` を名指しした `node --test` か、`tools/sendback-check` で `npm test`・ファイルを名指ししない `node --test`） |
+| `engine_test_not_wired` | `.github/workflows/` に `engine.test.mjs` を走らせる手順がない（`engine.test.mjs` を名指しした `node --test` か、`tools/sendback-check` で `npm test`・ファイルを名指ししない `node --test`）。手順かジョブに `if:`（中身を問わない）か `continue-on-error`（`false` のほか）を付けたものは、飛ばせるか落ちても通るので数えない（議決 `D-0025`、Issue #1017） |
+| `engine_test_not_required` | `engine.test.mjs` を走らせるジョブと同じワークフローにある `check.mjs --events` のジョブが、それを `needs` で待たない（間に別のジョブを挟んで待つのはよい。同じジョブなら `engine.test.mjs` の手順より後で呼ぶ）。別のワークフローの間は `needs` で待てないので見ない（`engine-test` を必須のチェックにして止める）。議決 `D-0025`、Issue #1017 |
 | `engine_basis_not_passed` | `--engine-report` で渡した `engine.test.mjs` の結果（`ENGINE_REF` の Engine で走らせた TAP）で、(3) か (c) が通っていない（`LEGACY_BASIS` の todo になった・飛ばされた・落ちた・結果にない）。議決 `D-0016`、Issue #964 |
 
 - 呼ぶ手順は、注釈を除いた手順（`- ` で始まる列の要素）の中に `--events` と check.mjs の呼び出しが並ぶもの。check.mjs の呼び出しは `tools/sendback-check/check.mjs` の道か、`sendback-check` が出てくるワークフロー・手順（`working-directory`・`cd`・`npm --prefix`）での `check.mjs`・`npm`（`pnpm`）の `run`・`run-script`。`--events` は手順のどこにあってもよい（引数の順序を変えた形、継ぎ行、配列や関数で渡す形）。取りこぼすと見張れないので、迷う形は呼ぶ側に数える
