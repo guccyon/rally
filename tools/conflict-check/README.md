@@ -38,9 +38,11 @@ python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # �
 | (1) | 上限（3 回）を超えた衝突では続きのジョブを積まず、衝突の停止（`ci:`）を開いて人の判断待ちにする。上限までは tier-large で積み、停止は開かない |
 | (2) | 2 回目以降の conflict の続きのジョブはセッションを引き継がない |
 | (3) | `CHANGELOG.md` だけの衝突、`changelog.d/` を含む CHANGELOG だけの衝突はエージェントを使わずに解く（衝突も衝突の印も残らない）。ほかのファイルも衝突したらエージェントに渡す |
+| todo の範囲（Engine は要らない） | todo が Engine の今の形（`legacy_supervisor`・`legacy_worker`）にだけ効くこと、Engine が `continuation.yaml` を読む版では todo にせずに落とすこと（`todo_or_fail`）、`ENGINE_DIR` を渡したときと `CI=true` では Engine がなくても飛ばさずに落ちること |
 
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（`tools/sendback-check/engine.test.mjs` と同じ。議決 `D-0011`）
 - 偽の cursor が知らない問い合わせが来たとき、取り出した手順が落ちたときも落ちる（黙って通さない）
+- `engine_harness.py --check` は、Engine の `orchestrator/` の `.py`・`.sh` に `continuation.yaml` の文字があるファイルを `reads_config` で返す。これが空でない（Engine がこの設定を読む版）のに Engine が今の形のままなら、todo にせずに落とす（議決 `D-0018`、Issue #971。`tools/sendback-check/order.mjs` と同じく、todo のまま次へ進ませない）
 
 ```sh
 ENGINE_DIR=/path/to/factory-engine python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v
@@ -58,8 +60,10 @@ python3 -B tools/conflict-check/engine_harness.py --check /path/to/factory-engin
 | CHANGELOG.md だけの衝突を機械的に解く | 合う（2026-11-02 から） | (3) は必須 |
 | changelog.d/ を含む CHANGELOG だけの衝突を機械的に解く | 外れる。機械的に解くのは衝突が `CHANGELOG.md` だけのときだけ | (3) の断片は `todo` |
 
-建設者が Engine を線に合わせる（`continuation.enqueue` か `conflict_step` に `max_attempts_per_pr` の上限を入れて、超えたら積まずに `ci_failure_step` の停止に任せる。`entrypoint.sh` の機械的な解消を `mechanical.paths` に広げる）。そのあと `test_engine.py` の `legacy_supervisor`・`legacy_worker` と `todo_while_legacy` の呼び出しを消す。Engine がこの設定を読む配線（今は値を Engine 側の定数に写すことになる）も建設者が決める。
+Engine が `continuation.yaml` を読むようにした版では、上の todo は飛ばさずに落ちる（設定を読んでも線に合っていないため）。建設者が Engine を線に合わせる（`continuation.enqueue` か `conflict_step` に `max_attempts_per_pr` の上限を入れて、超えたら積まずに `ci_failure_step` の停止に任せる。`entrypoint.sh` の機械的な解消を `mechanical.paths` に広げる）。そのあと `test_engine.py` の `legacy_supervisor`・`legacy_worker` と `todo_while_legacy` の呼び出しを消す。Engine がこの設定を読む配線（今は値を Engine 側の定数に写すことになる）も建設者が決める。
 
 ### CI への組み込み
 
-ワーカーは `.github/workflows/` を変えられないので、建設者が足す。PR ごとに Engine を固定した版でチェックアウトして `ENGINE_DIR` を向け、上のコマンドを走らせる（`tools/sendback-check/ci/sendback-engine.yml` の Engine のチェックアウトと同じ形でよい）。
+PR ごとに走らせるワークフローのひな形は `ci/conflict-engine.yml`（議決 `D-0018`、Issue #971）。最初の手順で `ENGINE_REF` が 40 桁のコミット SHA かを確かめ（違えば `engine_ref_not_sha` で Engine を取らずに落とす）、Engine を `ENGINE_REF` の版で `.engine` に取って `ENGINE_DIR` を向け、`CI=true` で上のテストを走らせる。Engine のチェックアウトや取り出しに失敗したら飛ばさずに落ちる。結果は Job Summary に出す。
+
+ワーカーは `.github/workflows/` を変えられないので、建設者が `ci/conflict-engine.yml` を `.github/workflows/conflict-engine.yml` に写す（変えてよいのは `ENGINE_REF` の行だけ）。写したら branch protection で `engine-test` を必須のチェックにする。`test_ci.py` がひな形の形（SHA の確かめが最初の手順で、通る・落ちる場合）と、写しが `ENGINE_REF` の行のほかでひな形とずれていないこと（写したあと）を確かめる。写すまでこの検査は PR ごとには走らない。

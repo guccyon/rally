@@ -1,0 +1,57 @@
+# 衝突の続きのジョブの積み方を Engine の本物の処理で確かめる（知見 K-0010 の担保。議決 D-0018、Issue #971）。決定論（LLM を使わない）。
+# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/conflict-check/ のテスト（test_policy.py・test_engine.py）を PR ごとに走らせる。
+# CI=true と ENGINE_DIR を渡すので、Engine のチェックアウトがないときや、engine_harness.py が conflict_step・ci_failure_step・
+# continuation.enqueue（attempts・pending）・entrypoint.sh の手順を取り出せないときは飛ばさずに落ちる。
+# 回数の上限と changelog.d/ の機械的な解消の todo は Engine が今の形のときだけで、Engine が continuation.yaml を読む版になっても
+# 今の形のままなら落ちる（test_engine.py の todo_or_fail）。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/conflict-engine.yml に写す。
+# 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、test_engine.py が通ることを確かめる）。
+# ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる（最初の手順で確かめる。テストは test_ci.py）。
+name: conflict-engine
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conflict-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 9fee9c2b3d8d2dd22db63e8989d839cd982fd046
+
+jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0010）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=conflict-engine engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする。ブランチ名やタグは動くので使わない（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine の本物の衝突の扱いのテスト（K-0010）
+        env:
+          CI: "true"
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          python3 -m pip install --quiet pyyaml
+          rc=0
+          python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v > conflict-engine.txt 2>&1 || rc=$?
+          { echo "## conflict-engine（ENGINE_REF=${ENGINE_REF}）"; echo; echo '```'; cat conflict-engine.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat conflict-engine.txt
+          exit $rc

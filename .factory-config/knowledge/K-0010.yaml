@@ -37,4 +37,22 @@ enforcement:
       issue: 954
       at: 2026-11-05
       decided_by: committee:D-0013
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        tools/conflict-check/test_engine.py を PR ごとに走らせるワークフローのひな形を tools/conflict-check/ci/conflict-engine.yml に置いた。
+        最初の手順で ENGINE_REF が 40 桁のコミット SHA かを確かめ（違えば engine_ref_not_sha で落とす）、Engine を固定の版（ENGINE_REF）で
+        チェックアウトして ENGINE_DIR を向け、CI=true で走らせるので、Engine のチェックアウトや conflict_step・ci_failure_step・continuation.enqueue・
+        entrypoint.sh の手順の取り出しに失敗したら飛ばさずに落ちる（Engine のない CI=true・ENGINE_DIR で落ちることを test_engine.py で確かめる）。
+        engine_harness.py --check が Engine の orchestrator/ で continuation.yaml を名前で指すファイルを reads_config で返し、
+        回数の上限と changelog.d/ の機械的な解消の todo は、Engine が今の形で continuation.yaml を読まないときだけにした。continuation.yaml を読む版で
+        今の形のままなら todo にせずに落とす（今の Engine の orchestrator/ に continuation.yaml の 1 行を足した写しで 3 件落ちることを確かめた）。
+        ひな形の形は test_ci.py で確かめる。.github/workflows/ に写して engine-test を必須のチェックにするのは建設者なので、まだ PR ごとには走っておらず、
+        今の Engine では上限と changelog.d/ の解消は todo のままで、効き目はまだ確かめていない
+      issue: 971
+      at: 2026-11-07
+      decided_by: committee:D-0018
+      wired: false
+      verified: false
 decided_by: committee:D-0013

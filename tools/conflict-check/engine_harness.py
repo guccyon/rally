@@ -15,6 +15,9 @@ entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは
   python3 engine_harness.py worker <Engine のチェックアウト> <衝突させるファイル>...
   python3 engine_harness.py resume <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
+
+--check は、Engine が設定 continuation.yaml を読むか（orchestrator/ の .py・.sh に CONFIG_MARK の文字があるか）も reads_config で返す。
+test_engine.py は、Engine がこれを読む版になっても今の形（LEGACY_*）のままなら todo にせずに落とす（議決 D-0018・Issue #971）。
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ MECHANICAL_END = 'echo "[worker] continue ${CONTINUE_REASON}'
 PR_URL = "https://github.com/guccyon/rally/pull/659"
 REPO = "guccyon/rally"
 BRANCH = "factory/issue-648-job-1"
+CONFIG_MARK = "continuation.yaml"   # Engine が製品の .factory-config/continuation.yaml を読むようになった印
 
 
 class Jsonb:
@@ -289,13 +293,21 @@ def resume(engine: Path) -> dict:
     return out
 
 
+def reads_config(engine: Path) -> list[str]:
+    """Engine の orchestrator/ で、設定 continuation.yaml を名前で指しているファイル（Engine のチェックアウトからの相対パス）"""
+    files = sorted(p for ext in ("*.py", "*.sh") for p in (engine / "orchestrator").rglob(ext) if p.is_file())
+    return [str(p.relative_to(engine)) for p in files if CONFIG_MARK in p.read_text(encoding="utf-8", errors="replace")]
+
+
 def check(engine: Path) -> dict:
-    """動かさず、取り出す関数と手順がすべて Engine のチェックアウトにあるかだけを見る（CI で飛ばさずに落とすため）"""
+    """動かさず、取り出す関数と手順がすべて Engine のチェックアウトにあるかだけを見る（CI で飛ばさずに落とすため）。
+    あわせて Engine が設定 continuation.yaml を読む版か（reads_config）を返す"""
     load_continuation(engine)
     _functions(_need(engine, SUPERVISOR), SUPERVISOR_FUNCTIONS, {"__name__": "engine_harness_scope"})
     mechanical_block(engine)
     state_args_lines(engine)
-    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS, "entrypoint": ["mechanical", "state_args"]}
+    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS, "entrypoint": ["mechanical", "state_args"],
+            "reads_config": reads_config(engine)}
 
 
 def main(argv: list[str]):
