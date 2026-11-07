@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0041
+pr: https://github.com/guccyon/rally/pull/1092
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1025 の test を 1 件足しただけなので、D-0004 からこれまでの議決とも specs/ の規範とも矛盾しません。
+  - 足した項目の kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と揃っており、README
+    の wired・verified を必ず書く決まりにも合っています。
+  - 'decided_by を committee:D-0028 にした点は D-0028 の enforcement の 2 つめの案（adopt の合計だけの別の言い回しの
+    basis の写しで todo を外させ (3) が必須で落ちることを確かめる）と中身が一致し、Issue #1025 の D-0027 という書き違いを
+    what で断る扱いも D-0040 で認めた issue 1024 の記録と同じです。'
+  - D-0040 の整合の票が求めた「D-0028 の 2 つめの案を次の変更セットで記録する」ことと、D-0028 の反対の票が挙げた第三の形の basis
+    の場合に応えており、過去の議決の宿題を閉じる向きです。
+  - issue 961 の solution と同じ engine.test.mjs の todo を外させるテストを指していますが、今回は LEGACY_BASIS
+    と文が違う basis の写しで確かめる別の段だと what に書いてあるので、重複ではありません。
+  - 'wired: false・verified: false で .github/workflows/ から走っていないと明記しているので、confidence
+    は hypothesis のままが妥当で、solutions が 17 件に増えたので建設者の配線の時点でまとめ直すことを勧めます。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 1025 と committee:D-0028 を指しており、D-0028 の enforcement
+    の 2 つめの案（adopt の合計だけの別の言い回しの写しで todo を外させ (3) が必須で落ちることを確かめる）と中身がそのまま対応しているので、一次記録に辿れます。
+  - 'Issue #1025 が D-0027 と書いているずれは what に書き添えられていて、D-0028.yaml の pr が #1022 で案も一致するので、decided_by
+    を committee:D-0028 にしたのは正しいです。'
+  - D-0028 の dissent の票が挙げた第三の形の場合を比べとして見ると書いてあり、議決の中の指摘にも辿れます。
+  - 「手元の Engine で 3 つの改変で落ちることを確かめた」と engine_harness.py の偽の cursor を直した件は手元の確認で記録の置き場がないので、issue
+    1025 に改変の差分とテストの出力を残してください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、wired:
+    false・verified: false と自分で書いているので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイルの道・関数名・定数名・issue と PR の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0028 の 2 つめの enforcement
+    の案（adopt の合計だけの別の言い回しの basis の写しで (3) が必須で落ちることを確かめる test）を enforcement.solutions
+    に 1 件足しただけなので、採ってよいです。
+  - ADOPT_TOTAL_VARIANTS の写しで basis_not_split・todo を外す求め・(3) の必須の落ち方を確かめ、3 つの改変でこのテストだけが落ちることも確かめているので、D-0028
+    の反対の票が挙げた第三の形の穴を決定論で塞ぐ向きとして正しいです。
+  - ただし Engine が今の形の basis を書かなくなると写しが作れず何も見ずに通るので、緑の結果が担保の効き目と区別できず、外したときに気づけません。
+  - engine.test.mjs は .github/workflows/ から走っておらず必須のチェックでもないので、このテストも今は外れても何も止めず、配線は
+    D-0028・D-0039・D-0040 の ci_check の案で既に求めているのでここでは重ねません。
+  - 'Issue と議決の番号のずれ（Issue #1017・#1018・#1024・#1025）が 4 回続いており、decided_by を手で直す手順は繰り返し外れうるので、機械で照らすべきです。'
+  - 'wired: false・verified: false で CI での効き目の記録がないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0028 の 2 つめの案（adopt の合計だけの別の言い回しの basis
+    の写しで (3) が落ちることを確かめる test）に当たる記録を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、範囲は広すぎません。
+  - 反例として、ADOPT_TOTAL_VARIANTS は手で選んだ 4 つの言い回しだけで、Engine が欠陥と仮決めを両方書くが数を取り違える形など adopt
+    の合計でない誤った basis は見ていないので、担保の範囲をこの 4 つの形より広く読まないでください。
+  - engine_harness.py の偽の cursor が judgment.pending_fixes に空を返すようにしたので、まだ入っていない仮決めの差し替えがあるときに起こす側の道はこのハーネスでは確かめられなくなっており、次に直すときにその場合を別に試すかを決めてください。
+  - Engine が今の形の basis を書かなくなると写しが作れず何も見ずに通ると what に書いてあるので、そのときは黙って通さず skip として出すかを決めてください。
+  - 「このテストだけが落ちる」は手元の Engine の 3 つの改変での確認だけで、D-0028 の反対の票が挙げた t.skip やコメントアウトで (3)
+    を外す反例にはまだ答えていません。
+  - 'wired: false・verified: false で .github/workflows/ からまだ走っていないと正しく書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/sendback-check/engine.test.mjs の basisCase・todoRemovalCase で、Engine
+    の inspector_approved に今の形の basis の文が見つからず写しが作れないときは、黙って通さず t.skip に理由（legacy_basis_not_found）を付けて飛ばし、order.mjs
+    の todoLines と同じ数え方でその skip も数えて、ENGINE_REF を上げる PR では skip が残っていれば落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: tools/knowledge-enforcement-check/check.py で、enforcement.solutions の decided_by
+    が指す committee/D-NNNN.yaml があること、その議決の enforcement に同じ knowledge の id と同じ kind（solution_kind）の案があることを照らし、なければ
+    decision_mismatch で落とす。

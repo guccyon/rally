@@ -96,6 +96,8 @@ class FakeCursor:
             # payload の項目をすべて返す（verdict のほか category など）。Engine の basis を欠陥と仮決めに分けて数える版でも同じ形で答える（Issue #961）
             self._rows = [{**e["payload"], "verdict": e["payload"].get("verdict")} for e in self.events if e["name"] == "judgment.judged"
                           and e["payload"].get("pr_url") == params[0] and e["occurred_at"] > params[1]]
+        elif "d.name='judgment.decided'" in sql and "judgment.fix_enqueued" in sql:
+            self._rows = []   # 人が直す答えを出して、まだ同じ担当に渡していない判断はない（judgment.pending_fixes）
         elif "name='sendback.filed' and payload->>'fix_corr'" in sql:
             self._rows = []   # この PR は差し戻しの直しではない
         elif "count(*)" in sql and "sendback.filed" in sql:
