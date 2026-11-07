@@ -29,7 +29,7 @@ python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 
 ## 担保の表示
 
-`check.py` の出力に出す値（`label()`）。Engine の `knowledge_check.py` に移したら `INDEX.md` の担保の列もこの値になる予定で、それまで `INDEX.md` は `enforcement.level` のまま出る。
+`check.py` の出力に出す値（`label()`）。Engine の `knowledge_check.py` に移したら（下の「Engine に移す差分」）`INDEX.md` の担保の列もこの値になる予定で、それまで `INDEX.md` は `enforcement.level` のまま出る。
 
 | 強さ（`enforcement.level`） | 解決策 | 表示 |
 |---|---|---|
@@ -40,7 +40,20 @@ python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 
 `check.py` の表示では、すべて `wired: false`（未記入を含む）の知見を `deterministic` と出さない。
 
+## Engine に移す差分
+
+Engine（別のリポジトリ）に入れる変更を `engine/knowledge-enforcement.patch` に置いた（議決 `D-0017`、Issue #968）。ワーカーは Engine を変えられないので、差分として置き、建設者が Engine に当てる。
+
+- `definitions/knowledge.yaml` の `knowledge.enforcement` に `solution_flags`（`wired`・`verified`）と `index_labels`（上の表示の 3 つ）を足す
+- `core-gates/knowledge_check.py` に `enforcement_label()`（`check.py` の `label()` と同じ線）を足し、`index_md()` の担保の列をその値にする。`check_item()` で、`wired`・`verified` が真偽でないときと、`wired` でないのに `verified` が `true` のときに落とす
+
+`test_engine.py` が、Engine のチェックアウトの写しに差分を当てて（Engine がもう取り込んでいれば当てずに）、担保の表示が `label()` と同じになること、`INDEX.md` で `K-0004` が `未配線` と出ること、真偽の検査が落ちる・通ること、このリポジトリの知見が作り直した `INDEX.md` で通ることを確かめる。Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばし、`ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす。差分が Engine に当たらなくなったら今の Engine に合わせて作り直す。
+
+```sh
+ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowledge-enforcement-check
+```
+
 ## まだ入っていないもの（建設者が入れる）
 
-- Engine（別のリポジトリ）の `definitions/knowledge.yaml` の `knowledge.enforcement` に `wired`・`verified` を足すことと、`core-gates/knowledge_check.py` の `index_md()` の担保の列を上の表示にすること（`label()` をそのまま移す）。製品の CI（`knowledge-check`）は Engine の固定の版（`ENGINE_REF`）の `knowledge_check.py` で `INDEX.md` を作り直して比べるので、それまで `INDEX.md` の担保の列は `deterministic` のまま。`ENGINE_REF` を上げる PR で `--index` を作り直す
-- `ci/knowledge-enforcement.yml` を `.github/workflows/` に写して PR ごとに走らせること。写すまでこの検査は未配線
+- `engine/knowledge-enforcement.patch` を Engine に当てること。製品の CI（`knowledge-check`）は Engine の固定の版（`ENGINE_REF`）の `knowledge_check.py` で `INDEX.md` を作り直して比べるので、当てた版に `ENGINE_REF` を上げるまで `INDEX.md` の担保の列は `deterministic` のまま。`ENGINE_REF` を上げる PR で `--index` を作り直す（`K-0004` などが `未配線` になる）。上げたあとは `test_engine.py` は差分を当てずに Engine の版をそのまま確かめるので、差分のファイルは消してよい
+- `ci/knowledge-enforcement.yml` を `.github/workflows/` に写して PR ごとに走らせること。写すまでこの検査は未配線。写すときは `ENGINE_REF` を `knowledge-check.yml` と同じ版にそろえる

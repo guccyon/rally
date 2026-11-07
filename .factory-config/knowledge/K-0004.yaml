@@ -155,4 +155,19 @@ enforcement:
       decided_by: committee:D-0015
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0017（D-0015・D-0016 と同じ schema の案）のうち、Engine の側の変更を差分にして入れた。tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が、
+        Engine の definitions/knowledge.yaml の enforcement に solution_flags（wired・verified）と index_labels（未配線・deterministic（未確認）・deterministic）を足し、
+        core-gates/knowledge_check.py に check.py の label() と同じ線の enforcement_label() を足して INDEX.md の担保の列をその値にし、
+        wired・verified が真偽でないときと wired でないのに verified が true のときに落とす。test_engine.py が Engine のチェックアウトの写しに差分を当て、
+        担保の表示が label() と同じになること、INDEX.md で K-0004 が「未配線」と出ること、真偽の検査が落ちる・通ることを確かめ、
+        ci/knowledge-enforcement.yml で Engine を ENGINE_REF の版で取って走らせるようにした。Engine は別のリポジトリで、差分を当てて ENGINE_REF を上げ
+        --index を作り直すこと、ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、INDEX.md の担保の列は今も deterministic のままで、
+        この解決策も未配線・未確認
+      issue: 968
+      at: 2026-11-07
+      decided_by: committee:D-0017
+      wired: false
+      verified: false
 decided_by: committee:D-0004
