@@ -73,6 +73,8 @@ class NotificationsScreen extends ConsumerWidget {
 
   static IconData _iconOf(NotificationKind? kind) => switch (kind) {
     NotificationKind.bookingConfirmed => Icons.event_available_outlined,
+    NotificationKind.bookingCancelledByHeadquarters =>
+      Icons.event_busy_outlined,
     NotificationKind.videoReviewReturned => Icons.rate_review_outlined,
     NotificationKind.messageReceived => Icons.chat_bubble_outline,
     NotificationKind.announcement => Icons.campaign_outlined,

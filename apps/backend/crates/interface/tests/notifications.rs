@@ -479,8 +479,8 @@ async fn a_headquarters_cancel_shows_the_coach_the_time_and_the_note() {
     let (status, body) = send(&router, "GET", "/notifications/me", Some(STUDENT)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        body["notifications"][0]["kind"], "booking_confirmed",
-        "予約の通知の種類"
+        body["notifications"][0]["kind"], "booking_cancelled_by_headquarters",
+        "予約の確定とは別の種類"
     );
     assert_eq!(
         body["notifications"][0]["body"],

@@ -41,6 +41,12 @@ void main() {
     body: '予約が確定しました',
     minutesAgo: 1,
   );
+  final cancelled = notification(
+    'n-cancelled',
+    kind: NotificationKind.bookingCancelledByHeadquarters,
+    body: 'コーチのお休みで予約をキャンセルしました',
+    minutesAgo: 1,
+  );
   final review = notification(
     'n-review',
     kind: NotificationKind.videoReviewReturned,
@@ -168,6 +174,19 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(formatDateTime(message.createdAt)), findsOneWidget);
+    });
+
+    testWidgets('本部による予約のキャンセルは、予約の確定と別のアイコン（カレンダーにバツ）で出す', (tester) async {
+      await pumpHome(
+        tester,
+        FakeStudentApi(notifications: [booking, cancelled]),
+      );
+      await openNotifications(tester);
+
+      IconData? iconOf(ApiNotification n) =>
+          (tester.widget<ListTile>(tileOf(n)).leading! as Icon).icon;
+      expect(iconOf(booking), Icons.event_available_outlined);
+      expect(iconOf(cancelled), Icons.event_busy_outlined);
     });
 
     testWidgets('開いたらすべて既読にし、閉じてホームに戻るとしるしが消える', (tester) async {
@@ -312,6 +331,19 @@ void main() {
       await tester.tap(find.byTooltip('お知らせを閉じる'));
       await tester.pumpAndSettle();
       expect(container.read(studentFlowProvider).step, FlowStep.home);
+    });
+
+    testWidgets('本部による予約のキャンセルも自分の予約を開く', (tester) async {
+      final api = FakeStudentApi(notifications: [cancelled]);
+      final container = await pumpHome(tester, api);
+      await openNotifications(tester);
+      api.calls.clear();
+
+      await tester.tap(tileOf(cancelled));
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['listMyBookings']);
+      expect(container.read(studentFlowProvider).step, FlowStep.myBookings);
     });
 
     testWidgets('添削の返却は自分の動画（添削結果の入口）を開き、閉じるとお知らせに戻る', (tester) async {

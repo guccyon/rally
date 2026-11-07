@@ -63,6 +63,7 @@ void main() {
   test('通知の種類は、いつ届く通知かで書く', () {
     expect(NotificationKind.values.map(notificationKindLabel), [
       '予約が確定したとき',
+      'コーチのお休みで予約がキャンセルされたとき',
       '動画の添削が返ってきたとき',
       '担当コーチからメッセージが届いたとき',
       '本部からのお知らせが届いたとき',

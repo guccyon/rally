@@ -596,6 +596,7 @@ abstract final class Fixtures {
   static const notificationSettings = NotificationSettings(
     studentId: studentId,
     bookingConfirmed: true,
+    bookingCancelledByHeadquarters: true,
     videoReviewReturned: true,
     messageReceived: true,
     announcement: true,

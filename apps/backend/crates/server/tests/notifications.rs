@@ -661,6 +661,7 @@ async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
     let all_on = json!({
         "student_id": account["student"]["student_id"],
         "booking_confirmed": true,
+        "booking_cancelled_by_headquarters": true,
         "video_review_returned": true,
         "message_received": true,
         "announcement": true,
@@ -681,13 +682,14 @@ async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
 
     let mut expected = all_on;
     expected["video_review_returned"] = json!(false);
+    expected["booking_cancelled_by_headquarters"] = json!(false);
     assert_eq!(
         call(
             &router,
             "PUT",
             "/notification-settings/me",
             Some(student),
-            json!({ "video_review_returned": false }),
+            json!({ "video_review_returned": false, "booking_cancelled_by_headquarters": false }),
             StatusCode::OK,
         )
         .await,

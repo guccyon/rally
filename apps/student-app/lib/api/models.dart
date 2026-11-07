@@ -190,6 +190,7 @@ enum StampId {
 /// お知らせ（[ApiNotification]）の種類は後方互換に増えうるので、知らない値は [tryFromWire] が null にする。
 enum NotificationKind {
   bookingConfirmed('booking_confirmed'),
+  bookingCancelledByHeadquarters('booking_cancelled_by_headquarters'),
   videoReviewReturned('video_review_returned'),
   messageReceived('message_received'),
   announcement('announcement');
@@ -1763,6 +1764,7 @@ class NotificationSettings {
   const NotificationSettings({
     required this.studentId,
     required this.bookingConfirmed,
+    required this.bookingCancelledByHeadquarters,
     required this.videoReviewReturned,
     required this.messageReceived,
     required this.announcement,
@@ -1772,6 +1774,9 @@ class NotificationSettings {
 
   /// 予約が確定したときの通知を受け取るか
   final bool bookingConfirmed;
+
+  /// コーチのお休みで本部が予約をキャンセルしたときの通知を受け取るか
+  final bool bookingCancelledByHeadquarters;
 
   /// 動画の添削が返却されたときの通知を受け取るか
   final bool videoReviewReturned;
@@ -1785,6 +1790,8 @@ class NotificationSettings {
   /// [kind] の通知を受け取るか
   bool receives(NotificationKind kind) => switch (kind) {
     NotificationKind.bookingConfirmed => bookingConfirmed,
+    NotificationKind.bookingCancelledByHeadquarters =>
+      bookingCancelledByHeadquarters,
     NotificationKind.videoReviewReturned => videoReviewReturned,
     NotificationKind.messageReceived => messageReceived,
     NotificationKind.announcement => announcement,
@@ -1797,6 +1804,10 @@ class NotificationSettings {
         bookingConfirmed: kind == NotificationKind.bookingConfirmed
             ? receives
             : bookingConfirmed,
+        bookingCancelledByHeadquarters:
+            kind == NotificationKind.bookingCancelledByHeadquarters
+            ? receives
+            : bookingCancelledByHeadquarters,
         videoReviewReturned: kind == NotificationKind.videoReviewReturned
             ? receives
             : videoReviewReturned,
@@ -1812,6 +1823,8 @@ class NotificationSettings {
       NotificationSettings(
         studentId: json['student_id'] as String,
         bookingConfirmed: json['booking_confirmed'] as bool,
+        bookingCancelledByHeadquarters:
+            json['booking_cancelled_by_headquarters'] as bool,
         videoReviewReturned: json['video_review_returned'] as bool,
         messageReceived: json['message_received'] as bool,
         announcement: json['announcement'] as bool,
@@ -1822,6 +1835,7 @@ class NotificationSettings {
 class UpdateNotificationSettingsRequest {
   const UpdateNotificationSettingsRequest({
     this.bookingConfirmed,
+    this.bookingCancelledByHeadquarters,
     this.videoReviewReturned,
     this.messageReceived,
     this.announcement,
@@ -1835,6 +1849,10 @@ class UpdateNotificationSettingsRequest {
     NotificationKind.bookingConfirmed => UpdateNotificationSettingsRequest(
       bookingConfirmed: receives,
     ),
+    NotificationKind.bookingCancelledByHeadquarters =>
+      UpdateNotificationSettingsRequest(
+        bookingCancelledByHeadquarters: receives,
+      ),
     NotificationKind.videoReviewReturned => UpdateNotificationSettingsRequest(
       videoReviewReturned: receives,
     ),
@@ -1847,12 +1865,14 @@ class UpdateNotificationSettingsRequest {
   };
 
   final bool? bookingConfirmed;
+  final bool? bookingCancelledByHeadquarters;
   final bool? videoReviewReturned;
   final bool? messageReceived;
   final bool? announcement;
 
   Map<String, dynamic> toJson() => {
     'booking_confirmed': ?bookingConfirmed,
+    'booking_cancelled_by_headquarters': ?bookingCancelledByHeadquarters,
     'video_review_returned': ?videoReviewReturned,
     'message_received': ?messageReceived,
     'announcement': ?announcement,

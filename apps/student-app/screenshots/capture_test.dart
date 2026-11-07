@@ -176,6 +176,14 @@ FakeStudentApi _api() => FakeStudentApi(
       isRead: false,
     ),
     ApiNotification(
+      notificationId: '99999999-9999-4999-8999-999999999993',
+      kind: NotificationKind.bookingCancelledByHeadquarters,
+      body:
+          'コーチのお休みで予約をキャンセルしました\n佐藤 コーチのお休みのため、10/30（金）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。',
+      createdAt: Fixtures.now.subtract(const Duration(hours: 5)),
+      isRead: false,
+    ),
+    ApiNotification(
       notificationId: '99999999-9999-4999-8999-999999999992',
       kind: NotificationKind.videoReviewReturned,
       body: '佐藤 コーチが動画の添削を返しました。',

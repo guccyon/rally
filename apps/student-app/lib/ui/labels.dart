@@ -186,6 +186,7 @@ String ratingChoiceLabel(int rating) => '$rating　${ratingLabel(rating)}';
 /// 通知の種類の文言。生徒に伝わるよう、いつ届く通知かで書く
 String notificationKindLabel(NotificationKind kind) => switch (kind) {
   NotificationKind.bookingConfirmed => '予約が確定したとき',
+  NotificationKind.bookingCancelledByHeadquarters => 'コーチのお休みで予約がキャンセルされたとき',
   NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
   NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
   NotificationKind.announcement => '本部からのお知らせが届いたとき',
