@@ -8,6 +8,7 @@
 //! 2 回目は何も変えない。コーチ 1 人の直近の低い評価と、そのうち未対応の件数は [`CoachLowRatedReviewCount`] で数える。
 //! 本部がコーチの一覧を未対応の低い評価のあるコーチに絞る判定は [`UnhandledLowRatedCoachFilter`]。
 //! 生徒 1 人がつけた直近の低い評価と、そのうち未対応の件数は [`StudentLowRatedReviewCount`] で数える。
+//! 本部が生徒の一覧を未対応の低い評価をつけた生徒に絞る判定は [`UnhandledLowRatedStudentFilter`]。
 //! 評価の一覧に添えるレッスンメニュー（[`ReviewLessonMenu`]）も、完了したレッスンの元（予約・動画）が持つ写しを読むだけ。
 
 mod coach_low_rated_review_count;
@@ -24,6 +25,7 @@ mod review_error;
 mod review_lesson_menu;
 mod student_low_rated_review_count;
 mod unhandled_low_rated_coach_filter;
+mod unhandled_low_rated_student_filter;
 
 pub use coach_low_rated_review_count::CoachLowRatedReviewCount;
 pub use coach_review_summary::CoachReviewSummary;
@@ -39,3 +41,4 @@ pub use review_error::ReviewError;
 pub use review_lesson_menu::ReviewLessonMenu;
 pub use student_low_rated_review_count::StudentLowRatedReviewCount;
 pub use unhandled_low_rated_coach_filter::UnhandledLowRatedCoachFilter;
+pub use unhandled_low_rated_student_filter::UnhandledLowRatedStudentFilter;

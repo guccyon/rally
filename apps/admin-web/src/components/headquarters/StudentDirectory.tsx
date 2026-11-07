@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   CONTRACT_TYPE_LABELS,
@@ -32,20 +33,71 @@ type CoachesState =
 /**
  * 絞り込みの条件。`notBookedSince` は日付の入力欄の値（YYYY-MM-DD。空なら絞らない）。
  * `coachId` は予約したことのあるコーチの ID（空なら絞らない）。
- * `hasUnanswered` が true なら返事を待っているメッセージのある生徒だけ（契約の `has_unanswered`。false なら絞らない）。
+ * 切り替え（true なら絞る。false なら絞らない）は、`hasUnanswered` が返事を待っているメッセージのある生徒だけ（契約の `has_unanswered`）、
+ * `hasPendingVideo` が返却待ちの動画のある生徒だけ（`has_pending_video`）、`hasUnhandledLowRated` が未対応の低い評価をつけた生徒だけ
+ * （`has_unhandled_low_rated`）。
  */
-type Filter = { sport: Sport | ""; notBookedSince: string; coachId: string; hasUnanswered: boolean };
+type Filter = {
+  sport: Sport | "";
+  notBookedSince: string;
+  coachId: string;
+  hasUnanswered: boolean;
+  hasPendingVideo: boolean;
+  hasUnhandledLowRated: boolean;
+};
 
-const NO_FILTER: Filter = { sport: "", notBookedSince: "", coachId: "", hasUnanswered: false };
+const NO_FILTER: Filter = {
+  sport: "",
+  notBookedSince: "",
+  coachId: "",
+  hasUnanswered: false,
+  hasPendingVideo: false,
+  hasUnhandledLowRated: false,
+};
+
+type ToggleKey = "hasUnanswered" | "hasPendingVideo" | "hasUnhandledLowRated";
 
 /**
- * 0 件のときの文言。返事を待っているメッセージのある生徒だけに絞っているときは、その条件を文言に含める
+ * 切り替えの並びと言い方。`label` は切り替えの文言。0 件の文言では、途中に並べるときは `joined`（「…があり」）、
+ * 最後は `last`（「…のある」）で生徒にかける（コーチの受付の切り替えと同じ形）。
+ */
+const TOGGLES: readonly { key: ToggleKey; label: string; joined: string; last: string }[] = [
+  {
+    key: "hasUnanswered",
+    label: "返事を待っているメッセージのある生徒だけ",
+    joined: "返事を待っているメッセージがあり",
+    last: "返事を待っているメッセージのある",
+  },
+  {
+    key: "hasPendingVideo",
+    label: "返却待ちの動画のある生徒だけ",
+    joined: "返却待ちの動画があり",
+    last: "返却待ちの動画のある",
+  },
+  {
+    key: "hasUnhandledLowRated",
+    label: "未対応の低い評価をつけた生徒だけ",
+    joined: "未対応の低い評価をつけ",
+    last: "未対応の低い評価をつけた",
+  },
+];
+
+/** 切り替えで絞っているときの、0 件の文言の主語（どれも外していれば null）。 */
+function toggledSubject(filter: Filter): string | null {
+  const phrases = TOGGLES.filter(({ key }) => filter[key]);
+  const last = phrases.at(-1);
+  if (last === undefined) return null;
+  return [...phrases.slice(0, -1).map(({ joined }) => joined), `${last.last}生徒`].join("、");
+}
+
+/**
+ * 0 件のときの文言。切り替えで絞っているときは、その条件を文言に含める
  * （コーチの受付の「直近 30 日にレッスンのないコーチだけ」と同じ形）。
  */
 function emptyMessage(filter: Filter): string {
   const others = filter.sport !== "" || filter.notBookedSince !== "" || filter.coachId !== "";
-  if (filter.hasUnanswered) {
-    const subject = "返事を待っているメッセージのある生徒";
+  const subject = toggledSubject(filter);
+  if (subject !== null) {
     return others ? `${subject}のうち、条件に合う生徒はいません` : `${subject}はいません`;
   }
   return others ? "条件に合う生徒はいません" : "まだ生徒はいません";
@@ -77,9 +129,31 @@ function planLabel(student: Student): string {
   return student.plan === null ? contract : `${contract}（${SUBSCRIPTION_PLAN_LABELS[student.plan]}）`;
 }
 
+/** 生徒の一覧の列。 */
+const STUDENT_COLUMNS: DataTableColumn<Student>[] = [
+  {
+    header: "表示名",
+    cell: (student) => (
+      <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
+        {student.display_name}
+      </Link>
+    ),
+  },
+  { header: "スポーツ", cell: (student) => SPORT_LABELS[student.sport] },
+  { header: "契約プラン", cell: planLabel },
+  {
+    header: "最後に予約した日",
+    cell: (student) =>
+      student.last_booked_at === null ? "まだ予約がありません" : formatDate(student.last_booked_at),
+  },
+  { header: "直近 30 日の予約", variant: "numeric", cell: (student) => `${student.recent_booking_count} 件` },
+  { header: "登録日", cell: (student) => formatDate(student.registered_at) },
+];
+
 /**
  * 本部の「生徒」。生徒の一覧（listStudents）を出す。絞り込み（スポーツ・この日以降に予約していない・予約したことのあるコーチ・
- * 返事を待っているメッセージのある生徒だけ）は API の `sport` / `not_booked_since` / `coach_id` / `has_unanswered` に渡し、並びは契約の正本どおり返った順（登録の新しい順）のまま出す。
+ * 返事を待っているメッセージのある生徒だけ・返却待ちの動画のある生徒だけ・未対応の低い評価をつけた生徒だけ）は API の `sport` /
+ * `not_booked_since` / `coach_id` / `has_unanswered` / `has_pending_video` / `has_unhandled_low_rated` に渡し、並びは契約の正本どおり返った順（登録の新しい順）のまま出す。
  * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約が正本で、画面は返った値を「n 件」で出すだけ。0 も「0 件」）
  * を出し、表の上に数え方を添える（並べ替え・絞り込みには使わない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL のクエリ）のコーチで絞って開き、
@@ -107,6 +181,8 @@ export function StudentDirectory({
         ...(next.notBookedSince === "" ? {} : { not_booked_since: next.notBookedSince }),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
         ...(next.hasUnanswered ? { has_unanswered: true } : {}),
+        ...(next.hasPendingVideo ? { has_pending_video: true } : {}),
+        ...(next.hasUnhandledLowRated ? { has_unhandled_low_rated: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", students: response.data.students }
@@ -220,19 +296,21 @@ export function StudentDirectory({
             {unknownCoach && <option value={filter.coachId}>{UNKNOWN_COACH}</option>}
           </select>
         </label>
-        <label className="flex items-center gap-1 py-1">
-          <input
-            type="checkbox"
-            checked={filter.hasUnanswered}
-            onChange={(event) =>
-              void changeFilter({
-                ...filter,
-                hasUnanswered: event.target.checked,
-              })
-            }
-          />
-          返事を待っているメッセージのある生徒だけ
-        </label>
+        {TOGGLES.map(({ key, label }) => (
+          <label key={key} className="flex items-center gap-1 py-1">
+            <input
+              type="checkbox"
+              checked={filter[key]}
+              onChange={(event) =>
+                void changeFilter({
+                  ...filter,
+                  [key]: event.target.checked,
+                })
+              }
+            />
+            {label}
+          </label>
+        ))}
       </div>
       {coaches.kind === "failed" && (
         <ResultMessage
@@ -247,38 +325,12 @@ export function StudentDirectory({
       {state.kind === "loaded" && state.students.length > 0 && (
         <>
           <p className="text-sm">{RECENT_BOOKING_COUNT_NOTE}</p>
-          <table aria-label="生徒の一覧" className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="py-1">表示名</th>
-                <th className="py-1">スポーツ</th>
-                <th className="py-1">契約プラン</th>
-                <th className="py-1">最後に予約した日</th>
-                <th className="py-1">直近 30 日の予約</th>
-                <th className="py-1">登録日</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.students.map((student) => (
-                <tr key={student.student_id} className="border-t">
-                  <td className="py-1">
-                    <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
-                      {student.display_name}
-                    </Link>
-                  </td>
-                  <td className="py-1">{SPORT_LABELS[student.sport]}</td>
-                  <td className="py-1">{planLabel(student)}</td>
-                  <td className="py-1">
-                    {student.last_booked_at === null
-                      ? "まだ予約がありません"
-                      : formatDate(student.last_booked_at)}
-                  </td>
-                  <td className="py-1">{student.recent_booking_count} 件</td>
-                  <td className="py-1">{formatDate(student.registered_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            label="生徒の一覧"
+            columns={STUDENT_COLUMNS}
+            rows={state.students}
+            rowKey={(student) => student.student_id}
+          />
         </>
       )}
     </div>

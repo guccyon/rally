@@ -22,7 +22,7 @@ function OverdueLiveSessionsScreen() {
   const searchParams = useSearchParams();
   const [initialFilter] = useState(() => overdueLiveSessionFilterFrom(searchParams));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <OverdueLiveSessionsHome token={session.token} initialFilter={initialFilter} />}
     </RoleGate>
   );

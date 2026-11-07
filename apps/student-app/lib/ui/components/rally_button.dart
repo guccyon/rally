@@ -18,7 +18,8 @@ enum RallyButtonVariant {
   text,
 }
 
-/// ボタン（components.yaml の button）。文言は動詞で終える。
+/// ボタン（components.yaml の button）。文言は動詞で終える。角丸 md・高さ 56px・太さ 900（形はテーマの FilledButton）。
+/// secondary は primary_container の塗りで線を付けない（線だけの副のボタンは使わない）。
 /// [loading] のあいだはラベルを残したまま spinner を前に出し、押せなくする（二度押しで同じ操作を 2 回送らない）。
 class RallyButton extends StatelessWidget {
   const RallyButton({
@@ -70,14 +71,16 @@ class RallyButton extends StatelessWidget {
           RallyColors.danger.onContainer,
         ),
       ),
-      RallyButtonVariant.secondary =>
-        leading == null
-            ? OutlinedButton(onPressed: onPressed, child: child)
-            : OutlinedButton.icon(
-                onPressed: onPressed,
-                icon: leading,
-                label: child,
-              ),
+      RallyButtonVariant.secondary => _filled(
+        onPressed,
+        leading,
+        child,
+        _colors(
+          RallyColors.primaryContainer,
+          RallyColors.text,
+          RallyColors.primaryContainerPressed,
+        ),
+      ),
       RallyButtonVariant.text =>
         leading == null
             ? TextButton(onPressed: onPressed, child: child)

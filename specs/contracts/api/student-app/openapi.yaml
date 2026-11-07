@@ -2611,7 +2611,8 @@ components:
       type: string
       description: |
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
-        汎用のお知らせとして扱う）。
+        汎用のお知らせとして扱う）。`booking_confirmed` は予約の通知で、予約の確定と、コーチのお休みで本部が予約を
+        キャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）の両方。
       enum: [booking_confirmed, video_review_returned, message_received, announcement]
 
     Notification:
@@ -2629,7 +2630,8 @@ components:
           minLength: 1
           description: |
             表示用の本文（例「予約が確定しました」）。サーバーが種類と中身から決める。本部からのお知らせは
-            題と本文を改行でつないだもの
+            題と本文を改行でつないだもの。コーチのお休みで本部が予約をキャンセルしたことの知らせは、題・コーチの表示名と予約の
+            日時を書いた本文・本部の一言（あれば）を改行でつないだもの
         created_at:
           type: string
           format: date-time

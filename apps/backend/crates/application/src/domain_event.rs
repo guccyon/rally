@@ -12,7 +12,7 @@ use domain::{
     identity::AccountId,
     lesson::LessonCompletionId,
     messaging::{MessageId, MessageSender, MessageThreadId},
-    scheduling::BookingId,
+    scheduling::{BookingCanceller, BookingId},
 };
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ pub enum DomainEvent {
     },
     /// `BookingCancelled`（scheduling が発行し、entitlement・notification・analytics が購読する）。
     /// 回数を消費するかは scheduling が判定して `consumes_quota` に載せ、消費は entitlement が行う
-    /// （docs/adr/0002 Q2）
+    /// （docs/adr/0002 Q2）。notification は本部のキャンセル（`cancelled_by` が本部。コーチのお休み）を予約した生徒に知らせる
     BookingCancelled {
         /// イベント 1 件ごとの一意な ID（購読側の重複排除に使う）
         event_id: Uuid,
@@ -43,6 +43,8 @@ pub enum DomainEvent {
         /// キャンセル規定（domain の `CancellationPolicy`）による判定
         consumes_quota: bool,
         cancelled_at: SystemTime,
+        /// キャンセルした人（予約した生徒か、コーチのお休みで本部か）
+        cancelled_by: BookingCanceller,
     },
     /// `LessonCompleted`（live-lesson・async-lesson が発行し、billing・review・analytics が購読する）。
     /// レッスン（通話セッション・添削を返した動画）の完了が記録された

@@ -14,4 +14,145 @@ verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
 related: [K-0003]
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        差し戻しか続きのジョブを起こすのは、直っていない採用欠陥（defect が null でなく verdict が adopt）か、
+        まだ入っていない仮決めの差し替えが 1 件以上あるときだけ、という判定の線をテストにした（tools/sendback-check/check.test.mjs）。
+        PR #395 と同じ入力（仮決めの adopt 3 件、欠陥の reject 2 件、マージ済み）では起こさないこと、
+        直っていない採用欠陥があればマージの前後に関わらず起こすこと、
+        inspector_approved の basis に欠陥の採用数と仮決めの承認数を分けて書くことを確かめる。
+        PR の記録を照らす検査（tools/sendback-check/check.mjs）も付けた。Engine の basis は今も adopt の合計だけを書くので外れる。
+        Engine の判定と basis の文をこの線に合わせることと呼び出しの配線はまだ入っていないので、効き目はまだ確かめていない
+      issue: 902
+      at: 2026-11-05
+      decided_by: committee:D-0004
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        tools/sendback-check/check.mjs に、制御プレーンのイベント列（supervisor.judge_enqueued で head を区切り、judgment.judged と
+        Judgment、sendback.filed、continue.enqueued、body_fix の job.enqueued、supervisor.inspector_approved）から PR と head ごとの記録を組む
+        入口（--events・--pr）と、GitHub Actions の ::error と要約（--summary）を足し、PR ごと（か supervisor が差し戻し・続きのジョブを起こしたとき）に走らせて
+        落とす検査にした。直っていない採用欠陥も差し替えもないのに差し戻しか続きのジョブが起きた head（PR #395 の記録の流れ）と、
+        basis が adopt の合計だけの承認で外れる。.github/workflows/ の配線と制御プレーンからイベントを出す経路は建設者が足すので、効き目はまだ確かめていない
+      issue: 934
+      at: 2026-11-05
+      decided_by: committee:D-0009
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        tools/sendback-check/engine.test.mjs に、check.test.mjs と同じ 3 つの場合を Engine の本物の判定で確かめるテストを置いた。
+        engine_harness.py が Engine のチェックアウトから judgment.record_judged・dispatcher.act_on_judgment（と file_sendback・enqueue_body_fix・is_body_only）・
+        supervisor.inspector_approved を中身を変えずに取り出し、DB と GitHub を差し替えて動かして、起きた後続と basis を check.mjs の線に照らす。
+        PR #395 と同じ入力では起こさないこと、直っていない採用欠陥があればマージの前（review_fix）でも後（sendback）でも起こすことは今の Engine で通り、
+        Engine が adopt の件数で起こすように変わると落ちる。basis を分けて書く場合は今の Engine では外れる（採用 N の合計だけ）ので todo にしてあり、
+        Engine の basis の文を直すのと、CI で Engine を固定の版で取って ENGINE_DIR を向ける配線は建設者が入れる。それまで basis の担保は効いていない
+      issue: 935
+      at: 2026-11-05
+      decided_by: committee:D-0009
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0010 の test の案（Engine の supervisor の判定と inspector_approved の basis に、check.test.mjs と同じ 3 つの場合のテストを置き、
+        ci_check の配線より先に入れる）は、Issue #935 で置いた tools/sendback-check/engine.test.mjs と engine_harness.py で満たすので、新しいテストは作らず
+        その担保として記録した。今の Engine で走らせ、PR #395 と同じ入力では起こさないこと、直っていない採用欠陥があればマージの前（review_fix）でも
+        後（sendback）でも起こすことは通り、basis を分けて書く場合は外れる（採用 N の合計だけ）ので todo のままにした。todo のうちに check.mjs の
+        ci_check を配線するとすべての承認が basis_not_split で落ちるので、Engine の basis を直して todo を外し、engine.test.mjs を CI に配線してから
+        ci_check を配線する順序を engine.test.mjs と README に書いた。CI の配線はまだなので効き目は確かめていない
+      issue: 944
+      at: 2026-11-05
+      decided_by: committee:D-0010
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        tools/sendback-check/engine.test.mjs を、ENGINE_DIR を渡したときと CI（CI=true）では Engine のチェックアウトがなくても飛ばさずに落とすようにし、
+        engine_harness.py に --check（record_judged・act_on_judgment・file_sendback・enqueue_body_fix・is_body_only・inspector_approved を
+        すべて取り出せるかだけを見る）を足して、取り出せなければ落ちるテスト（engine.test.mjs の (0)）にした。Engine を固定の版（ENGINE_REF のコミット）でチェックアウトして
+        ENGINE_DIR を向け、engine.test.mjs を PR ごとに走らせるワークフローを tools/sendback-check/ci/sendback-engine.yml に置いた。
+        .github/workflows/ に写すのは建設者なので、写すまで PR ごとには走っておらず効き目はまだ確かめていない。basis を分けて書く場合は今も todo のまま
+      issue: 948
+      at: 2026-11-05
+      decided_by: committee:D-0011
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0010 の ci_check の案のうち、ワーカーの権限で入れられるイベントの経路の分を入れた。engine_harness.py が Engine の記録したイベントを
+        README の「制御プレーンから出すときの例」の SQL と同じ形（judgment.judged に Judgment を添える）で返し、engine.test.mjs がそれを ci_check と同じ呼び方
+        （check.mjs --events --pr --summary、GITHUB_ACTIONS=true）で渡して、Engine の形のイベント列が 1 つの head に組めて後続の判定が線に合うことと、
+        PR #395 と同じ入力のイベント列に Engine の形の sendback.filed を足した流れが followup_without_defect で落ちることを確かめた。
+        Engine の正しい判定のイベント列が通ること（ci_check を配線してよい合図）は、今の Engine の basis が adopt の合計だけで basis_not_split で落ちるので todo にした。
+        Engine の basis の直しと .github/workflows/ の配線と制御プレーンからイベントを出す手順は建設者が入れるので（順序は README）、
+        本物の PR #395 のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 945
+      at: 2026-11-05
+      decided_by: committee:D-0010
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0011 の test の案のうち、ワーカーの権限で入れられる分を入れた。tools/sendback-check/engine.test.mjs の basis の場合（(3)）と
+        Engine の正しい判定のイベント列が check.mjs --events で通る場合（(c)）の todo を外して必須のテストにし、todo は Engine が今の形の basis
+        （judge が N 件を裁いた（採用 N。…）。LEGACY_BASIS）を書くときだけに狭めた。Engine の basis がこの形から変わったら、その版からは
+        approvalBasis() と合わないと落ちる（分けて書いても数がずれれば落ちることを、basis を書き換えた Engine の写しで確かめた）。
+        todo が今の形だけに効くことも Engine なしで走るテストにした。Engine は別のリポジトリで、inspector_approved の basis を直すことと、
+        そのあとの D-0010 の check.mjs の ci_check の配線は建設者が入れるので（順序は README）、今の Engine（ENGINE_REF）では (3) と (c) は
+        まだ todo で、basis の担保の効き目はまだ確かめていない
+      issue: 949
+      at: 2026-11-05
+      decided_by: committee:D-0011
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0012 の ci_check の案（配線の順序の見張り）を入れた。tools/sendback-check/order.mjs が .github/workflows/ を読み、
+        check.mjs --events を呼ぶ手順があるのに、engine.test.mjs に todo（basis の場合の todoWhileLegacy を含む）が残っていれば engine_test_todo、
+        engine.test.mjs を走らせる手順がなければ engine_test_not_wired で落とす。呼ぶ手順がなければ通る（今のリポジトリ）。
+        ci/sendback-engine.yml に PR ごとに走らせる wiring-order のジョブを足し、check.mjs --events を GitHub Actions で動かしたときも
+        同じ見張りを先に通すようにしたので、ci/sendback-engine.yml を写さずに check.mjs --events だけを配線しても落ちる。
+        順序を守った配線・守らない配線のワークフローの写しで落ちる・通ることを order.test.mjs で確かめた。.github/workflows/ への写しは建設者なので、
+        wiring-order のジョブはまだ PR ごとには走っておらず、本物の配線の PR では効き目はまだ確かめていない
+      issue: 953
+      at: 2026-11-05
+      decided_by: committee:D-0012
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0014 の ci_check の案のうち、ワーカーの権限で入れられる分を入れた。tools/sendback-check/ci/sendback-engine.yml の engine-test の
+        最初の手順（どのチェックアウトよりも前）で ENGINE_REF が 40 桁のコミット SHA（小文字の 16 進）かを確かめ、ブランチ名・タグ・短い SHA なら
+        engine_ref_not_sha の ::error で Engine を取らずに落とすようにした（今の ENGINE_REF は 9fee9c2b3d8d2dd22db63e8989d839cd982fd046）。
+        tools/sendback-check/ci.test.mjs がその手順をワークフローから取り出して bash で動かし、通る・落ちる場合を確かめる。wiring-order のジョブで
+        ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでひな形とずれたら落とすようにした。
+        .github/workflows/ に写して branch protection の必須チェックにすること、PR #395 と同じ入力で本物の判定が起こさないことが CI で通った記録を
+        issue 948 に残すことは建設者が行うので、まだ PR ごとには走っておらず効き目はまだ確かめていない。basis を分けて書く場合は今も todo のまま
+      issue: 960
+      at: 2026-11-05
+      decided_by: committee:D-0014
+      wired: false
+      verified: false
+    - kind: schema
+      what: >-
+        議決 D-0015 の schema の案のうち、ワーカーの権限で入れられる分を入れた。enforcement.solutions の各項目に wired（CI や呼び出しに配線済みか）と
+        verified（本物の記録で効き目を確かめたか）の真偽の項目を足し、この知見の解決策にはすべて wired: false・verified: false を書いた
+        （どの検査も .github/workflows/ からはまだ走っていない）。tools/knowledge-enforcement-check/check.py が、wired・verified が真偽でないとき、
+        wired でないのに verified が true のときに落とし、担保の表示を出す。check.py の表示では、level が deterministic でも wired の解決策が 1 件もなければ
+        「未配線」、wired はあるが wired かつ verified が 1 件もなければ「deterministic（未確認）」と出し、deterministic とは出さない（この知見は「未配線」）。
+        項目を書いたのはこの知見だけで、同じく solutions を持つ K-0001・K-0002・K-0009 はそのまま置き（次にその知見を直す変更セットで実際の配線と確認の状態を書く）、
+        書くまでは項目がないのを落とさず未記入（false）として数えて「未配線」と出し、未記入の件数を別に出す。
+        test_check.py でその場合分けとこのリポジトリの記録を確かめる。Engine は別のリポジトリで、definitions/knowledge.yaml に項目を足すことと、
+        core-gates/knowledge_check.py の INDEX.md の担保の列を同じ表示にすること（check.py の label() を移す）は建設者が入れるので、
+        INDEX.md の担保の列は今も deterministic のまま。check.py を PR ごとに走らせる配線（ci/knowledge-enforcement.yml を .github/workflows/ に写す）も建設者で、
+        この解決策も未配線・未確認
+      issue: 962
+      at: 2026-11-05
+      decided_by: committee:D-0015
+      wired: false
+      verified: false
 decided_by: committee:D-0004

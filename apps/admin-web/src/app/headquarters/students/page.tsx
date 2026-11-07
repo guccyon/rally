@@ -12,7 +12,7 @@ function StudentDirectoryContent() {
   const searchParams = useSearchParams();
   const [initialCoachId] = useState(() => searchParams.get(STUDENT_DIRECTORY_COACH_QUERY) || undefined);
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <StudentDirectoryHome token={session.token} initialCoachId={initialCoachId} />}
     </RoleGate>
   );

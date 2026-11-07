@@ -1,0 +1,23 @@
+id: K-0010
+theme: 6
+kind: causal
+statement: >-
+  既定ブランチとの衝突のたびに、上限なしで、セッションを引き継ぐ（agent_resumed）tier-large の続きのジョブを積み直すと、
+  衝突が機械的（CHANGELOG だけなど）で作業が数ターンで終わっても、引き継いだ文脈の分だけ 1 回ごとのコストが増え続け、
+  回数とともに PR 本文の追記も重なる。
+scope:
+  roles: [supervisor, implement]
+confidence: hypothesis
+evidence:
+  - case: C-0005
+  - pr: 659
+  - event: "case.analyzed:274379"
+status: active
+verified_at: 2026-11-05
+review_by: 2026-12-05
+confidentiality: product
+related: [K-0002, K-0001]
+invalidate_when:
+  - "conflict の続きのジョブに回数の上限か、セッションの引き継ぎの打ち切りが入った"
+  - "CHANGELOG だけのような機械的な衝突が tier-small か機械的な解消に回るようになった"
+decided_by: committee:D-0013

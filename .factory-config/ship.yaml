@@ -14,18 +14,56 @@ images:
     context: apps/admin-web
     env: ADMIN_WEB_IMAGE
     build_args: { NODE_IMAGE: "factory-worker:p0" }
+  # 生徒アプリの Web 版（Flutter）。工場の手元の Flutter のイメージで作る
+  student-web:
+    context: apps/student-app
+    env: STUDENT_WEB_IMAGE
+    build_args: { FLUTTER_IMAGE: "factory-worker:flutter", FLUTTER_USER: "worker", NODE_IMAGE: "factory-worker:p0" }
 environments:
   staging:
-    env: { BACKEND_PORT: 18080, ADMIN_WEB_PORT: 13000, POSTGRES_IMAGE: "postgres:17-alpine" }
+    env: { BACKEND_PORT: 18080, ADMIN_WEB_PORT: 13000, STUDENT_WEB_PORT: 13100, POSTGRES_IMAGE: "postgres:17-alpine" }
   prod:
     approval: true
-    env: { BACKEND_PORT: 28080, ADMIN_WEB_PORT: 23000, POSTGRES_IMAGE: "postgres:17-alpine" }
+    env: { BACKEND_PORT: 28080, ADMIN_WEB_PORT: 23000, STUDENT_WEB_PORT: 23100, POSTGRES_IMAGE: "postgres:17-alpine" }
 # 合成シード（apps/backend/README の「合成シード」）。shipper が環境ごとに 1 回だけ、起動を確かめたあとに書く。
 # 種を固定するので同じデータになる。prod には書かない（本番相当の環境は空から始める）
 seed:
   environments: [staging]
   service: backend
   command: ["seed", "--seed", "42"]
+# 触れる環境（factory-engine の ADR 0028 の touchable_env）。Gen1 は staging を QA の環境と兼ねる。
+# shipper は出したあと、入口の URL（工場の SHIP_TOUCH_HOST とその環境のポート）とログインの手がかりを release.touchable に残す。
+# bind_env は人の端末から届く待ち受けを渡す compose の変数（工場の SHIP_TOUCH_BIND。未設定なら 127.0.0.1 のまま）。
+# reset は「シードから入れ直す」ときに DB を空にするコマンド（staging だけ。合成シードしかない環境なので消してよい）
+touch:
+  environments: [staging]
+  bind_env: WEB_BIND_HOST
+  entries:
+    - { label: "生徒アプリ（スマートフォンのブラウザで開く。最初にアカウントを登録する）", port_env: STUDENT_WEB_PORT, path: /, qr: true }
+    - { label: "本部・コーチの管理画面（ロールを選び、下のトークンでログイン）", port_env: ADMIN_WEB_PORT, path: /, qr: true }
+  # ログインの手がかり。出力は JSON の配列 [{"label": ..., "value": ...}]（モックのトークン。apps/backend の README の「認証」）
+  accounts:
+    service: postgres
+    command:
+      - psql
+      - -U
+      - rally
+      - -d
+      - rally
+      - -At
+      - -c
+      - >-
+        select coalesce(json_agg(a), '[]') from (
+          select '本部（モックのトークン。どの ID でも本部として通る）' as label,
+                 'mock.headquarters.00000000-0000-4000-8000-000000000001' as value
+          union all
+          select * from (select 'コーチ: ' || display_name, 'mock.coach.' || account_id
+                         from identity.accounts where role = 'coach' order by created_at, account_id limit 3) c
+        ) a
+  reset:
+    service: postgres
+    command: ["psql", "-U", "rally", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
+              "-c", "drop database if exists rally with (force)", "-c", "create database rally owner rally"]
 verify:
   service: backend
   url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること

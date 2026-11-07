@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime } from "@/components/labels";
 
@@ -69,6 +70,14 @@ function emptyMessageOf({ coachId, studentId }: Filter, olderThanHours: number):
 function elapsedHoursOf(thread: { elapsed_sec: number }): number {
   return Math.floor(thread.elapsed_sec / 3600);
 }
+
+/** 返事のないメッセージの表の列。 */
+const THREAD_COLUMNS: DataTableColumn<Schemas["UnansweredMessageThread"]>[] = [
+  { header: "生徒", cell: (thread) => thread.student_display_name ?? "（名前を表示できません）" },
+  { header: "担当のコーチ", cell: (thread) => thread.coach_display_name ?? "（名前を表示できません）" },
+  { header: "待ち始めた日時", cell: (thread) => formatDateTime(thread.waiting_since) },
+  { header: "経過", variant: "numeric", cell: (thread) => `${elapsedHoursOf(thread)} 時間` },
+];
 
 /**
  * 本部の「返事のないメッセージ」。生徒からのメッセージにコーチが返事をしていないスレッドの一覧（listUnansweredMessageThreads）を出す。
@@ -200,26 +209,12 @@ export function UnansweredMessageThreadList({
         <p className="text-sm">{emptyMessageOf(filter, state.list.older_than_hours)}</p>
       )}
       {state.kind === "loaded" && state.list.threads.length > 0 && (
-        <table aria-label="返事のないメッセージの一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">生徒</th>
-              <th className="py-1">担当のコーチ</th>
-              <th className="py-1">待ち始めた日時</th>
-              <th className="py-1">経過</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.list.threads.map((thread) => (
-              <tr key={thread.thread_id} className="border-t">
-                <td className="py-1">{thread.student_display_name ?? "（名前を表示できません）"}</td>
-                <td className="py-1">{thread.coach_display_name ?? "（名前を表示できません）"}</td>
-                <td className="py-1">{formatDateTime(thread.waiting_since)}</td>
-                <td className="py-1">{elapsedHoursOf(thread)} 時間</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="返事のないメッセージの一覧"
+          columns={THREAD_COLUMNS}
+          rows={state.list.threads}
+          rowKey={(thread) => thread.thread_id}
+        />
       )}
     </div>
   );

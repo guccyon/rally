@@ -1,0 +1,79 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0011
+pr: https://github.com/guccyon/rally/pull/947
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0009 の enforcement
+    の 2 つめの案（tools/sendback-check の写しではなく Engine の本物の判定へのテスト）を enforcement.solutions
+    に記録しただけなので、過去の議決と矛盾しません。
+  - 足した solution は kind・what・issue・at・decided_by の形が既存の test と ci_check の solution
+    と同じで、decided_by を提案元の committee:D-0009 にしている点も前の ci_check の記録と合っています。
+  - enforcement.level と INDEX.md の K-0004 の担保の列はすでに deterministic なので、INDEX.md を変えていないことと整合しています。
+  - basis を分けて書く場合を todo にして「basis の担保は効いていない」と明記しているのは、D-0010 の担当が挙げた「Engine の basis
+    を直す前に配線すると落ちる」という順序の問題とも食い違わず、正直な記録です。
+  - テストは check.test.mjs と同じ 3 つの場合を使うので、D-0009 と D-0010 で求めた「差し替えがあるときも起こす」という条件の出どころはまだ
+    C-0002 にも K-0004 にも書かれておらず、次の変更セットで理由を残し K-0003 の線引きとずれないか確かめてください。
+  - 効き目は Engine の配線と basis の修正が入るまで確かめられないので confidence は hypothesis のままが妥当で、D-0004
+    から求めている verified_at と review_by の更新も statement を直す次の機会にそろえてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 935 と committee:D-0009 を指していて、D-0009 の enforcement
+    の 2 つめの案（写しではなく Engine の本物の判定に同じ 3 つの場合のテストを置く）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を足しただけなので、根拠の段は崩れていません。'
+  - '今の Engine で PR #395 と同じ入力では起こさないテストが通ると書かれているので、PR #395 のときの Engine の版で同じテストが落ちるかを確かめて、K-0004
+    の原因の主張が当時の判定に当てはまったことを C-0002 か issue 935 に残してください。'
+  - テストが通った・外れたという結果は文で書かれているだけで、走らせた CI の記録や Engine の版がまだ指されていないので、ENGINE_DIR の配線が入ったら走らせた記録を
+    evidence か issue 935 に残すと辿りやすくなります。
+  - basis の担保は todo で効いておらず CI の配線もまだなので、confidence は hypothesis のままが妥当で、Engine の
+    basis を直して本物の判定で 3 つの場合が通るのを確かめるまで confirmed に上げないでください。
+  - 差分に出てくるのは関数名・ファイルのパス・PR と issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0009 と D-0010 の test の案（参照の実装ではなく Engine の本物の判定を確かめる）を K-0004 の enforcement.solutions
+    に記録したもので、statement も confidence も変えていないので採ってよいです。
+  - engine.test.mjs は Engine の judgment.record_judged・dispatcher.act_on_judgment・supervisor.inspector_approved
+    を中身を変えずに動かすので、check.mjs の写しだけを見ていた前の test の弱さを埋めており、担保の向きは正しいです。
+  - ただし CI で Engine を固定の版で取って ENGINE_DIR を向ける配線がまだなく、今は外れても誰も止めないので、決定論の担保はまだ効いていません。
+  - engine_harness.py は関数を名前で取り出すので、Engine の関数名や置き場が変わったときや ENGINE_DIR がないときにテストが飛ばされて黙って通るおそれがあり、CI
+    では取り出しに失敗したら落とすようにしてください。
+  - basis を分けて書く場合が todo のままなので、Engine の basis の文を直したら同じ PR で todo を外して必須のテストにしないと、basis
+    の担保はいつまでも効きません。
+  - 'D-0010 の順序どおり、この engine.test.mjs を CI に配線して Engine の basis を直してから check.mjs の
+    ci_check を配線し、PR #395 と同じ入力が本物の判定で通ることを CI で確かめるまで confidence は hypothesis のままにしてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は D-0009 と D-0010 の 2 つめの担保の案（Engine の本物の判定へのテスト）を K-0004 の enforcement.solutions
+    に kind: test として 1 件足しただけで、statement も scope も evidence も confidence も変えていないので、範囲は広すぎません。'
+  - engine_harness.py は Engine のチェックアウトから judgment.record_judged・dispatcher.act_on_judgment・supervisor.inspector_approved
+    を名前で取り出すので、Engine で関数の名前や置き場が変わると判定が正しくても落ちるか、ENGINE_DIR がないときに黙って飛ばされて通る反例がありうるため、取り出せないときは必ず落ちる作りにしてください。
+  - basis を分けて書く場合は todo で、CI の配線（ENGINE_DIR と固定の版）もまだなので、今は Engine が adopt の件数で起こすように変わっても誰も止めず、担保は効いていないと読むべきです。
+  - 「まだ入っていない仮決めの差し替えが 1 件以上あるとき」に起こす場合は Engine の本物の判定で確かめておらず、D-0004・D-0009・D-0010
+    で求めたこの条件の出どころもまだ C-0002 にも K-0004 にも書かれていないので、次の変更セットで根拠を残すか別の知見に分けてください。
+  - D-0010 で挙がった、前の head の採用欠陥を後の head で直したときに見誤る反例は、このテストの 3 つの場合では見ていないので、確かめるときに足してください。
+  - '効き目はまだ確かめていないので confidence は hypothesis のままにし、Engine の basis を直して CI に配線したあと
+    PR #395 と同じ入力で本物の判定が起こさないことを確かめてから confirmed に上げてください。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: CI のジョブで Engine を固定の版（コミットかタグ）でチェックアウトして ENGINE_DIR を向け、tools/sendback-check/engine.test.mjs
+    を PR ごとに走らせる。ENGINE_DIR がないときや engine_harness.py が record_judged・act_on_judgment・file_sendback・enqueue_body_fix・is_body_only・inspector_approved
+    のどれかを取り出せないときは skip ではなく失敗にする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: Engine の inspector_approved の basis を欠陥の採用数と仮決めの承認数に分けて書くよう直す PR で、engine.test.mjs
+    の basis の場合の todo を外して必須のテストにし、そのあとで D-0010 の check.mjs の ci_check を配線する。

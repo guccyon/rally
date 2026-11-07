@@ -497,6 +497,17 @@ export const FIXTURES: Fixture[] = [
     } satisfies Schemas["LowRatedLessonReviewList"],
   },
   {
+    // フォアハンドの基礎で絞ったとき（hq-low-reviews-lesson-menu）はそのメニューの行だけを返す（メニューのない行は外れる）。
+    method: "GET",
+    path: "/lesson-reviews/low",
+    query: { lesson_menu_id: MENU_FORE.lesson_menu_id },
+    body: {
+      max_rating: 2,
+      period_days: 30,
+      reviews: LOW_REVIEWS.filter((review) => review.lesson_menu?.lesson_menu_id === MENU_FORE.lesson_menu_id),
+    } satisfies Schemas["LowRatedLessonReviewList"],
+  },
+  {
     // ゴルフで絞ったとき（hq-low-reviews-sport-empty）は 0 件。
     method: "GET",
     path: "/lesson-reviews/low",
@@ -624,6 +635,73 @@ export const FIXTURES: Fixture[] = [
         },
       ],
     } satisfies Schemas["CoachAcceptanceChangeList"],
+  },
+  {
+    // コーチのお休みの期間（10/28〜11/3）の予約と枠。確定済みの体験予約・メニューつきの確定待ちと、予約のない枠
+    method: "GET",
+    path: "/coaches/{coach_id}/leave-preview",
+    body: {
+      coach: { coach_id: COACH_ID, display_name: "鈴木 コーチ", sports: ["tennis"], acceptance_status: "accepting" },
+      from: "2026-10-28",
+      to: "2026-11-03",
+      bookings: [
+        {
+          booking_id: id("bbbb", 901),
+          slot_id: id("dddd", 901),
+          starts_at: at(48 + 7),
+          ends_at: at(48 + 7.5),
+          status: "confirmed",
+          is_trial: true,
+          student_id: STUDENT_ID,
+          student_display_name: "山田 花子",
+        },
+        {
+          booking_id: id("bbbb", 902),
+          slot_id: id("dddd", 902),
+          starts_at: at(72 + 8),
+          ends_at: at(72 + 9),
+          status: "pending",
+          is_trial: false,
+          lesson_menu_name: "フォアハンドの基礎",
+          student_id: STUDENT_ID_2,
+          student_display_name: "佐藤 次郎",
+        },
+      ],
+      open_slots: [
+        {
+          slot_id: id("dddd", 903),
+          starts_at: at(96 + 7),
+          ends_at: at(96 + 7.5),
+          capacity: 1,
+        },
+      ],
+      slot_count: 3,
+      student_count: 2,
+      notification_preview: {
+        title: "コーチのお休みで予約をキャンセルしました",
+        body: "鈴木 コーチ コーチのお休みのため、10/28（水）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。",
+      },
+    } satisfies Schemas["CoachLeavePreview"],
+  },
+  {
+    method: "POST",
+    path: "/coaches/{coach_id}/leaves",
+    status: 201,
+    body: {
+      coach_leave: {
+        coach_leave_id: id("eeee", 901),
+        coach_id: COACH_ID,
+        from: "2026-10-28",
+        to: "2026-11-03",
+        note: "",
+        created_by: HEADQUARTERS_ID,
+        created_at: at(0),
+      },
+      cancelled_booking_ids: [id("bbbb", 901), id("bbbb", 902)],
+      cancelled_booking_count: 2,
+      notified_student_count: 2,
+      withdrawn_slot_count: 3,
+    } satisfies Schemas["CoachLeaveResult"],
   },
   {
     method: "GET",
@@ -887,6 +965,15 @@ export const FIXTURES: Fixture[] = [
           recent_booking_count: 7,
         },
       ],
+    } satisfies Schemas["CoachLessonMenuList"],
+  },
+  {
+    method: "GET",
+    path: "/lesson-menus",
+    // レッスンの種類で非同期だけ（下の一覧のうち「サーブの添削」）。
+    query: { lesson_type: "async_lesson" },
+    body: {
+      lesson_menus: [{ ...MENU_SERVE, coach_display_name: "鈴木 コーチ", recent_booking_count: 3 }],
     } satisfies Schemas["CoachLessonMenuList"],
   },
   {

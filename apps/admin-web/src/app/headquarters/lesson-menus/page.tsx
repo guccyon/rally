@@ -19,7 +19,7 @@ function LessonMenuCatalogContent() {
     query: searchParams.get(LESSON_MENU_NAME_QUERY) || undefined,
   }));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => (
         <LessonMenuCatalogHome
           token={session.token}

@@ -218,7 +218,8 @@ export interface paths {
          *       表示名 `coach_display_name`）・枠の開始 `starts_at`・キャンセルした時刻 `cancelled_at`・キャンセルした人 `cancelled_by` を
          *       載せる。アカウントが引けないときはその表示名を載せない
          *     - `cancelled_by` は `BookingCanceller`（生徒・コーチ・本部）。キャンセルした人の記録がなければ null。今キャンセルできるのは
-         *       予約した生徒（student-app の `cancelBooking`）だけなので `student`
+         *       予約した生徒（student-app の `cancelBooking`。`student`）と、コーチのお休みで本部（`startCoachLeave`。`headquarters`）。
+         *       キャンセルした人を残し始める前の生徒のキャンセルも `student`
          *     - キャンセルの理由・返金や決済の情報は返さない。照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
@@ -768,6 +769,86 @@ export interface paths {
         get: operations["listCoachAcceptanceChanges"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/leave-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * コーチのお休みの期間の予約と枠（本部）
+         * @description コーチ 1 人をお休みにする前に、お休みの期間（日本時間の日付の `from` から `to` まで。両端を含む）に始まる予約と枠を返す。
+         *     本部がお休みにする操作（`startCoachLeave`）の前に、何がキャンセル・取り下げになるかを確かめるのに使う。本部の役割の
+         *     トークンだけが呼べる（コーチ・生徒は 403）。照会だけで、何も保存しない。
+         *
+         *     - `from`・`to` は必須。期間の規則は `listBookings` と同じ（1 日以上 31 日まで・日本時間）に加え、`from` は明日以降
+         *       （今日以前は 422 `validation_failed`。今日のうちに始まる・通話中の予約を巻き込まない）。`from` / `to` がない・
+         *       `YYYY-MM-DD` の日付でない・`to` が `from` より前・31 日を超えるときも 422
+         *     - `coach` はコーチの表示名・提供スポーツ・今の受付の状態。停止中のコーチもお休みにできる
+         *     - `bookings` は期間に始まる枠への有効な予約（確定待ち・確定済み。キャンセル済みは載らない）。枠の開始の早い順（同じ開始は
+         *       `booking_id` の順）。グループレッスンの枠は予約ごとに 1 件
+         *     - `open_slots` は期間に始まる公開中の枠のうち、有効な予約のないもの（開始の早い順）。予約のある枠は `bookings` に出るので
+         *       重ねて載せない
+         *     - `slot_count` は取り下げる枠の数（期間に始まる、終了でない枠。予約のある枠を含む）。`student_count` は知らせる生徒の人数
+         *       （同じ生徒は 1 人）
+         *     - `notification_preview` は生徒に届くお知らせの見本（題と、1 件目の予約の日時で書いた本文。本部の一言は含まない）。
+         *       文面の正本はサーバーで、日時は予約ごとに入る。予約がなければ載らない
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *
+         *     境界間イベント・行動イベントは発火しない。
+         */
+        get: operations["getCoachLeavePreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coaches/{coach_id}/leaves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * コーチのお休み（本部）
+         * @description コーチ 1 人をお休みにする。お休みの期間（`from` から `to` まで。規則は `getCoachLeavePreview` と同じ）に始まる有効な予約を
+         *     すべて本部のキャンセルにし、予約した生徒に予約ごとにお知らせを送り、期間の枠をすべて取り下げて、お休みの記録を 1 件残す。
+         *     全部か何もしないかで、失敗したときは予約も枠も変えない。本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。
+         *
+         *     - `expected_booking_ids` は本部が `getCoachLeavePreview` で確かめた予約の ID（`bookings` の `booking_id` のすべて）。
+         *       今の期間の有効な予約の ID と違えば（確かめたあとに予約が入った・キャンセルされた）409 `leave_preview_outdated`
+         *     - 同じコーチの期間の重なるお休みがもうあれば 409 `coach_leave_overlaps`（同じ期間の 2 回目もこれで断る）
+         *     - 予約のキャンセル: キャンセルした人は本部（`listCancelledBookings` の `cancelled_by` が `headquarters`）。生徒の都合で
+         *       ないので、キャンセル規定によらず回数を消費しない（境界間イベント `BookingCancelled` の `consumes_quota` は false。
+         *       判定は scheduling の 1 か所）。確定で使ったビデオ通話の暦月の枠は戻る
+         *     - お知らせ: 予約した生徒に予約ごとに 1 件（student-app の `listMyNotifications` に、種類 `booking_confirmed`（予約の通知）で
+         *       題「コーチのお休みで予約をキャンセルしました」と、コーチの表示名・予約の日時・枠を使わないこと・ほかの枠やコーチを
+         *       探せることの本文、`note` があれば改行して後ろに付けたもの）。プッシュ通知は生徒の受け取り設定の `booking_confirmed` に従う
+         *     - 枠の取り下げ: 期間に始まる終了でない枠をすべて終了（`closed`）にする（予約のあった枠も、キャンセルのあとに）。生徒の
+         *       検索に出なくなる。期間の外の予約と枠はそのまま。お休みのあとにコーチが期間に公開した枠は取り下げない
+         *     - `note` は生徒への一言（0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに送る）。省けば空文字列。
+         *       201 文字以上は 422 `validation_failed`
+         *     - 日付・期間の誤り（`from` が今日以前を含む）・UUID でない `expected_booking_ids`・JSON でない本文は 422 `validation_failed`
+         *     - `coach_id` がコーチでないアカウント・ないアカウント・UUID でないときは 404 `not_found`
+         *     - 取り消し（キャンセルした予約を元に戻す）はない。コーチの受付（`suspendCoach`）は変えない
+         *
+         *     キャンセルした予約ごとに境界間イベント `BookingCancelled`（`cancelled_by: headquarters`）を発行する。行動イベント
+         *     （`booking.cancelled`・`slot.withdrawn`）は発火しない（本部の運営の操作で、`suspendCoach` と同じ扱い）。
+         */
+        post: operations["startCoachLeave"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1326,8 +1407,18 @@ export interface paths {
          *       `PendingVideoReviewFilter` の既定の条件で、絞り込みの判定は `PendingVideoStudentFilter`）。付けないとき・`false` は絞らない。
          *       `true` / `false` でなければ 422 `validation_failed`。動画の数や ID は返さない（中身は `listPendingVideoReviews`、
          *       数は `getStudentActivity` で見る）
-         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video` は組み合わせられ、付けたものをすべて
-         *       満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
+         *     - 未対応の低い評価をつけた生徒で絞る（任意）: `has_unhandled_low_rated=true` を付ければ、`listLowRatedLessonReviews` に
+         *       その生徒の `student_id` と `handled=false` だけを付けたとき（既定のしきい値と期間。コーチ・スポーツ・送った日付・
+         *       レッスンメニューで絞らない。評価されたコーチを問わない）に載る評価が 1 件以上ある生徒、つまり `getStudentActivity` の
+         *       `unhandled_low_rated_review_count` が 1 以上の生徒だけを返す（フォローの要る生徒を見つける）。数え方は
+         *       `getStudentActivity` の `unhandled_low_rated_review_count` と同じ 1 か所（点 `rating` が 2 以下で、照会した時刻（サーバーの
+         *       現在時刻）の 30 日前（含む）から照会した時刻（含む）までに送られた評価のうち、本部がまだ対応済みの印を付けていない
+         *       （`markLowRatedLessonReviewHandled` をしていない）もの。実装は backend の domain `LowRatedReviewCriteria` の 1 か所で、
+         *       数は `StudentLowRatedReviewCount`、絞り込みの判定は `UnhandledLowRatedStudentFilter`）。付けないとき・`false` は絞らない。
+         *       `true` / `false` でなければ 422 `validation_failed`。評価の数や ID・本文は返さない（中身は `listLowRatedLessonReviews`、
+         *       数は `getStudentActivity` で見る）
+         *     - `q`・`sport`・`not_booked_since`・`coach_id`・`has_unanswered`・`has_pending_video`・`has_unhandled_low_rated` は
+         *       組み合わせられ、付けたものをすべて満たす生徒だけを返す（並べ方は上と同じ）。どれも付けなければ今までどおりすべての生徒
          *     - `q` は前後の空白を除いて 50 文字（Unicode のコードポイントの数。表示名の上限と同じ）まで。超えたら 422 `validation_failed`
          *     - 表示名以外（メールアドレスなど）では探さない。ページング・件数の上限はない（Gen1 の生徒の数は小さい前提。増えたら別の操作で
          *       足す）。生徒がいなければ `students` は空の配列
@@ -3741,11 +3832,126 @@ export interface components {
             /** @description 最後に直した時刻の新しい順（同じ時刻なら後に作ったものが先） */
             announcement_drafts: components["schemas"]["AnnouncementDraft"][];
         };
+        /** @description お休みにするコーチ（`getCoachLeavePreview`） */
+        CoachLeaveCoach: {
+            /** Format: uuid */
+            coach_id: string;
+            display_name: string;
+            /** @description コーチの提供スポーツ */
+            sports: components["schemas"]["Sport"][];
+            acceptance_status: components["schemas"]["CoachAcceptanceStatus"];
+        };
+        /** @description お休みの期間の有効な予約 1 件（`getCoachLeavePreview`） */
+        CoachLeaveBooking: {
+            /** Format: uuid */
+            booking_id: string;
+            /** Format: uuid */
+            slot_id: string;
+            /**
+             * Format: date-time
+             * @description 予約した枠の開始
+             */
+            starts_at: string;
+            /**
+             * Format: date-time
+             * @description 予約した枠の終了
+             */
+            ends_at: string;
+            status: components["schemas"]["BookingStatus"];
+            is_trial: boolean;
+            /** @description 予約した時点のレッスンメニューの名前。メニューのない予約は載らない */
+            lesson_menu_name?: string;
+            /** Format: uuid */
+            student_id: string;
+            /** @description 予約した生徒の表示名。引けないときは載らない */
+            student_display_name?: string;
+        };
+        /** @description お休みの期間の、公開中で有効な予約のない枠 1 件（`getCoachLeavePreview`） */
+        CoachLeaveSlot: {
+            /** Format: uuid */
+            slot_id: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            capacity: number;
+            /** @description 枠に結びついたレッスンメニューの名前。メニューのない枠・引けないメニューは載らない */
+            lesson_menu_name?: string;
+        };
+        /** @description 生徒に届くお知らせの見本（文面の正本はサーバー。日時は 1 件目の予約のもの。本部の一言は含まない） */
+        CoachLeaveNotificationPreview: {
+            title: string;
+            body: string;
+        };
+        /** @description コーチのお休みの期間の予約と枠（`getCoachLeavePreview`） */
+        CoachLeavePreview: {
+            coach: components["schemas"]["CoachLeaveCoach"];
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            /** @description 枠の開始の早い順 */
+            bookings: components["schemas"]["CoachLeaveBooking"][];
+            /** @description 枠の開始の早い順 */
+            open_slots: components["schemas"]["CoachLeaveSlot"][];
+            /** @description 取り下げる枠の数（予約のある枠を含む） */
+            slot_count: number;
+            /** @description 知らせる生徒の人数（同じ生徒は 1 人） */
+            student_count: number;
+            notification_preview?: components["schemas"]["CoachLeaveNotificationPreview"];
+        };
+        StartCoachLeaveRequest: {
+            /**
+             * Format: date
+             * @description お休みの始まりの日付（日本時間。含む）。明日以降
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description お休みの終わりの日付（日本時間。含む）
+             */
+            to: string;
+            /** @description 生徒への一言（任意。お知らせの本文の後ろに付く） */
+            note?: string;
+            /** @description `getCoachLeavePreview` で確かめた予約の ID のすべて */
+            expected_booking_ids: string[];
+        };
+        /** @description コーチのお休みの記録（本部が期間の予約をまとめてキャンセルし、枠を取り下げた記録。書き換えない） */
+        CoachLeave: {
+            /** Format: uuid */
+            coach_leave_id: string;
+            /** Format: uuid */
+            coach_id: string;
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            /** @description 生徒への一言（書かなければ空文字列） */
+            note: string;
+            /**
+             * Format: uuid
+             * @description 操作した本部のアカウント
+             */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description お休みにした結果（`startCoachLeave`） */
+        CoachLeaveResult: {
+            coach_leave: components["schemas"]["CoachLeave"];
+            /** @description キャンセルした予約の ID（枠の開始の早い順） */
+            cancelled_booking_ids: string[];
+            cancelled_booking_count: number;
+            /** @description お知らせを送った生徒の人数（同じ生徒は 1 人） */
+            notified_student_count: number;
+            /** @description 取り下げた枠の数（予約のあった枠を含む） */
+            withdrawn_slot_count: number;
+        };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn" | "leave_preview_outdated" | "coach_leave_overlaps";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -4387,6 +4593,68 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    getCoachLeavePreview: {
+        parameters: {
+            query: {
+                /** @description お休みの始まりの日付（日本時間。含む）。明日以降 */
+                from: string;
+                /** @description お休みの終わりの日付（日本時間。含む） */
+                to: string;
+            };
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description お休みの期間の予約と枠 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachLeavePreview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    startCoachLeave: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                coach_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartCoachLeaveRequest"];
+            };
+        };
+        responses: {
+            /** @description お休みにした記録と件数 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachLeaveResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
     getCoachOverview: {
         parameters: {
             query?: never;
@@ -4771,6 +5039,12 @@ export interface operations {
                  *     `false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
                  */
                 has_pending_video?: boolean;
+                /**
+                 * @description `true` なら `listLowRatedLessonReviews` にその生徒の `student_id` と `handled=false` だけを付けたときに載る評価
+                 *     （本部が未対応の低い評価）が 1 件以上ある（`getStudentActivity` の `unhandled_low_rated_review_count` が 1 以上の）
+                 *     生徒だけを返す（付けないとき・`false` は絞らない）。`true` / `false` でなければ 422 `validation_failed`
+                 */
+                has_unhandled_low_rated?: boolean;
             };
             header?: never;
             path?: never;

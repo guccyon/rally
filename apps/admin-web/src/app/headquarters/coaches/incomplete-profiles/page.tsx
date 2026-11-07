@@ -15,7 +15,7 @@ function IncompleteCoachProfilesContent() {
   const searchParams = useSearchParams();
   const [initialFilter] = useState(() => incompleteCoachProfileFilterFrom(searchParams));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <IncompleteCoachProfilesHome token={session.token} initialFilter={initialFilter} />}
     </RoleGate>
   );

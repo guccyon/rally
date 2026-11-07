@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0009
+pr: https://github.com/guccyon/rally/pull/933
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement を変えず、D-0004 の enforcement の提案（PR #395 と同じ入力では起こさない、直っていない採用欠陥があればマージの前後に関わらず起こす、basis
+    を分けて書く）に沿ったテストを enforcement.solutions に記録しただけなので、過去の議決と矛盾しません。'
+  - enforcement の書き方（level・kind・what・issue・at・decided_by、配線がまだで効き目は未確認と明記）は K-0001
+    と K-0002 の前例と同じ形で、README の「決定論で担保した知見も消さず solutions に残す」決まりにも合っています。
+  - INDEX.md の K-0004 の担保の列を context から deterministic に変えたのは、K-0004.yaml の enforcement.level
+    と一致し、D-0004 の enforcement の担当が求めた更新とも合っています。
+  - テストの線に「まだ入っていない仮決めの差し替えが 1 件以上あるとき」という K-0004 の statement にも D-0004 の提案にもない起こす条件が足されているので、D-0004
+    の反対の担当が挙げた反例への答えとして次の変更セットで C-0002 か K-0004 に理由を書き、K-0003 の「2 つの意味」の線引きとずれないか確かめてください。
+  - K-0003 の schema の担保はまだ入っておらず INDEX でも context のままなので、K-0003 の扱いはそのままで整合しており、関わる
+    K-0001 の内容にも影響しません。
+  - 効き目は確かめていないので confidence は hypothesis のままが妥当で、D-0004 の整合の票が求めた verified_at と review_by
+    の更新はこの PR でもまだなので、statement を直す次の機会にそろえてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した enforcement.solutions は issue 902 と議決 committee:D-0004 を指しており、D-0004 の enforcement
+    の提案（PR #395 と同じ入力で起こさない、直っていない採用欠陥があればマージの前後に関わらず起こす、basis に 2 つの数を分けて書く）の 3 点とそのまま対応しているので、一次記録に辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、記録だけの変更なので根拠の段は崩れていません。'
+  - 'Engine の判定と配線がまだで効き目を確かめていないと自分で書いているので、confidence を hypothesis に留めるのは妥当で、PR
+    #395 と同じ入力で Engine が sendback を起こさないことを確かめるまで confirmed に上げないでください。'
+  - 判定の線に足された「まだ入っていない仮決めの差し替えが 1 件以上あるとき」という条件は C-0002 にも D-0004 にも出てこないので、issue
+    902 にその根拠を書くか、事例記録に出どころを残すと辿りやすくなります。
+  - INDEX.md の担保の列を context から deterministic に変えたのは、D-0004 の enforcement 担当の求めと K-0004
+    の enforcement.level に合っています。
+  - 差分には利用者や人を特定できる情報はなく、出てくるのは PR・issue の番号とファイルのパスだけです。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'K-0004 の enforcement は D-0004 の担保の案（PR #395 と同じ入力で起こさない、直っていない採用欠陥ならマージの前後に関わらず起こす、basis
+    を分けて書く）の 3 点をそのまま kind: test に写していて、K-0002 と同じ形で記録されているので採ってよいです。'
+  - ただしテストが確かめているのは tools/sendback-check の判定の線で、Engine の supervisor の判定そのものではなく、呼び出しの配線もまだないので、今のままでは外れても誰も止めず、決定論の担保としては半分です。
+  - 効き目はまだ確かめていないと正直に書かれているので、INDEX.md の担保の列を deterministic にするのはよいですが、配線と Engine
+    側の担保が入るまでは context の文脈も外さないでください。
+  - テストの線に D-0004 の案になかった「まだ入っていない仮決めの差し替えが 1 件以上あるとき」が足されていて、これは statement の主張を超える条件なので、根拠の事例か議決で確かめてから線に含めてください。
+  - '確かさは hypothesis のままが妥当で、Engine の判定を線に合わせたあと PR #395 と同じ入力の再現で sendback が起きないことを確かめてから
+    confirmed に上げてください。'
+  - D-0004 で K-0003 に出したスキーマの担保はこの PR に入っておらず、用語の承認と合わせて別に進める前提なのでこの票の妨げにはしません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0004 の enforce の議決どおり、K-0004 に enforcement.solutions を足して INDEX.md の担保の列を
+    deterministic にしただけで、statement も scope も広げていないので、範囲は広すぎません。
+  - テストの線はマージ済みかを条件にせず、直っていない採用欠陥があればマージの前後に関わらず起こすので、D-0003 で挙がったマージ済みの反例にはもう当たりません。
+  - テストの線には「まだ入っていない仮決めの差し替えが 1 件以上あるときも起こす」という、K-0004 の statement にない 2 つめの起こす条件が入っています。これは
+    D-0004 で反対の担当が挙げた反例の候補に答えるものですが、K-0004 の主張の外にあるので、確かめるときは K-0003 と一緒に見て、要るなら別の知見に分けてください。
+  - テストは tools/sendback-check にある線の写しを確かめるだけで、Engine の supervisor の判定はまだ配線されておらず、basis
+    も今は外れると書かれています。担保の列が deterministic でも、実際に効いているわけではない点に注意が要ります。
+  - '効き目は確かめておらず、supervisor の集計のコードやほかの事例もまだ見ていないので、confidence は hypothesis のままにし、Engine
+    の配線のあとに PR #395 と同じ入力で起きないことを本物の判定で確かめてから上げてください。'
+  - '足した文に利用者や人を特定できる情報はなく、出てくるのは Issue 902 や PR #395 などの番号とツールのパスだけです。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/check.mjs を PR ごと（または supervisor が sendback・続きのジョブを起こしたとき）に走らせ、judgment.judged
+    の記録に直っていない採用欠陥（defect が null でなく verdict が adopt）が 0 件なのに sendback か続きのジョブが起きていたら、また
+    inspector_approved の basis が adopt の合計だけなら落とす検査として配線する（.github/workflows/ は建設者が足す）。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'Engine の supervisor の判定と basis を書くところに、tools/sendback-check/check.test.mjs
+    と同じ 3 つの場合（PR #395 と同じ入力では起こさない、直っていない採用欠陥があればマージの前後に関わらず起こす、basis に欠陥の採用数と仮決めの承認数を分けて書く）のテストを置き、参照の実装ではなく本物の判定を担保する。'

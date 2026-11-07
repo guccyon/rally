@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { LESSON_TYPE_LABELS, SPORT_LABELS, formatDateTime } from "@/components/labels";
 
@@ -13,6 +14,7 @@ import { LessonMenuPublicationAction } from "./LessonMenuPublicationAction";
 import { lessonMenuPublicationHistoryPath } from "./LessonMenuPublicationHistoryHome";
 
 type Sport = Schemas["Sport"];
+type LessonType = Schemas["LessonType"];
 type LessonMenu = Schemas["CoachLessonMenu"];
 
 type State =
@@ -35,12 +37,14 @@ export type LessonMenuCatalogQuery = { coachId: string; q: string };
 type Filter = {
   q: string;
   sport: Sport | "";
+  lessonType: LessonType | "";
   publishedOnly: boolean;
   coachId: string;
   unbookedOnly: boolean;
 };
 
 const SPORTS = Object.keys(SPORT_LABELS) as Sport[];
+const LESSON_TYPES = Object.keys(LESSON_TYPE_LABELS) as LessonType[];
 
 /** 名前の検索語の上限（契約の `listLessonMenus` の `q`。前後の空白を除いて数える）。 */
 const MAX_QUERY_LENGTH = 40;
@@ -56,14 +60,17 @@ function queryError(q: string): string | null {
   return [...q].length > MAX_QUERY_LENGTH ? QUERY_TOO_LONG : null;
 }
 
-/** 0 件のときの文言。直近 30 日に予約のないメニューだけに絞っているときは、その条件を文言に含める。 */
+/**
+ * 0 件のときの文言。直近 30 日に予約のないメニューだけ・レッスンの種類で絞っているときは、その条件（種類は表示名）を文言に含める。
+ */
 function emptyMessage(filter: Filter): string {
-  if (!filter.unbookedOnly) return "条件に合うメニューはありません";
+  if (!filter.unbookedOnly && filter.lessonType === "") return "条件に合うメニューはありません";
+  const subject = `${filter.unbookedOnly ? "直近 30 日に予約のない" : ""}${
+    filter.lessonType === "" ? "" : `${LESSON_TYPE_LABELS[filter.lessonType]}の`
+  }メニュー`;
   const others =
     filter.q !== "" || filter.sport !== "" || filter.publishedOnly || filter.coachId !== "";
-  return others
-    ? "直近 30 日に予約のないメニューのうち、条件に合うメニューはありません"
-    : "直近 30 日に予約のないメニューはありません";
+  return others ? `${subject}のうち、条件に合うメニューはありません` : `${subject}はありません`;
 }
 
 function durationLabel(menu: LessonMenu): string {
@@ -87,15 +94,17 @@ function PublicationCell({ menu }: { menu: LessonMenu }) {
 
 /**
  * 本部の「レッスンメニュー」。すべてのコーチのメニューを横断で出す（listLessonMenus）。
- * 絞り込み（名前・スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけ）は API の `q` / `sport` / `published` / `coach_id` / `unbooked` に渡し、
+ * 絞り込み（名前・スポーツ・レッスンの種類・公開中だけ・コーチ・直近 30 日に予約のないメニューだけ）は
+ * API の `q` / `sport` / `lesson_type` / `published` / `coach_id` / `unbooked` に渡し、
  * 並びは契約の正本どおり返った順のまま出す。
- * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけは選んだときに読み直す
+ * 名前の検索語は入力して「探す」（または Enter）で確定し、スポーツ・レッスンの種類・公開中だけ・コーチ・直近 30 日に予約のないメニューだけは選んだときに読み直す
  * （「直近 30 日に予約のないメニューだけ」を入れたら `unbooked=true` を付けて読み直し、外したら付けずに読み直す。URL には残さない）。
- * スポーツ・公開中だけ・コーチ・直近 30 日に予約のないメニューだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * スポーツ・レッスンの種類・公開中だけ・コーチ・直近 30 日に予約のないメニューだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
  * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * コーチの選択肢はコーチの一覧（listCoaches）の返った順。`initialCoachId`（URL の `?coach_id=`）があれば、そのコーチで絞って開く
  * （コーチの一覧にない ID でも絞り込みはそのまま API に渡し、契約どおり 0 件になる）。`initialQuery`（URL の `?q=`）があれば、その名前で絞って開く。
- * 0 件のときは、直近 30 日に予約のないメニューだけに絞っていればその条件を含めた文言を出す。
+ * レッスンの種類の選択肢と表示名は `LESSON_TYPE_LABELS` の 1 か所から取る（URL には残さない）。
+ * 0 件のときは、直近 30 日に予約のないメニューだけ・レッスンの種類で絞っていればその条件を含めた文言を出す。
  * 絞り込みを変えるたびに、コーチと名前の検索語を `onQueryChange` で知らせる（画面は URL のクエリに残す）。
  * 各行には直近 30 日の予約の数（`recent_booking_count`。数え方は契約の正本）を右寄せ・等幅の数字で出し、隣の「公開」の列との間をあける（並び替えには使わない）。
  * その数は、そのメニューで絞った「予約」の画面（`?lesson_menu_id=`）へのリンクにする。
@@ -120,6 +129,7 @@ export function LessonMenuCatalog({
   const [filter, setFilter] = useState<Filter>({
     q: initialQ,
     sport: "",
+    lessonType: "",
     publishedOnly: false,
     coachId: initialCoachId ?? "",
     unbookedOnly: false,
@@ -138,6 +148,7 @@ export function LessonMenuCatalog({
       const response = await api.listLessonMenus({
         ...(next.q === "" ? {} : { q: next.q }),
         ...(next.sport === "" ? {} : { sport: next.sport }),
+        ...(next.lessonType === "" ? {} : { lesson_type: next.lessonType }),
         ...(next.publishedOnly ? { published: true } : {}),
         ...(next.coachId === "" ? {} : { coach_id: next.coachId }),
         ...(next.unbookedOnly ? { unbooked: true } : {}),
@@ -159,6 +170,7 @@ export function LessonMenuCatalog({
     void fetchMenus({
       q: initialQ,
       sport: "",
+      lessonType: "",
       publishedOnly: false,
       coachId: initialCoachId ?? "",
       unbookedOnly: false,
@@ -255,6 +267,57 @@ export function LessonMenuCatalog({
     if (response.code !== undefined) await reload(filter);
   }
 
+  /** 一覧の列。操作の列は確かめる文と理由の欄を開くので、文の列（long_text）として折り返す。 */
+  const columns: DataTableColumn<LessonMenu>[] = [
+    { header: "スポーツ", cell: (menu) => SPORT_LABELS[menu.sport] },
+    { header: "コーチ", cell: (menu) => menu.coach_display_name ?? "（名前を表示できません）" },
+    { header: "名前", cell: (menu) => menu.name },
+    { header: "種類", cell: (menu) => LESSON_TYPE_LABELS[menu.lesson_type] },
+    { header: "時間", variant: "numeric", cell: durationLabel },
+    {
+      header: "直近 30 日の予約",
+      variant: "numeric",
+      cell: (menu) => (
+        <Link
+          href={lessonMenuBookingListPath(menu.lesson_menu_id)}
+          aria-label={`「${menu.name}」の予約を見る`}
+          className="text-primary underline"
+        >
+          {menu.recent_booking_count} 件
+        </Link>
+      ),
+    },
+    { header: "公開", cell: (menu) => <PublicationCell menu={menu} /> },
+    {
+      header: "操作",
+      variant: "long_text",
+      cell: (menu) => (
+        <>
+          <LessonMenuPublicationAction
+            menu={menu}
+            onUnpublish={async (reason) =>
+              changePublication(
+                menu,
+                await api.unpublishLessonMenu(menu.lesson_menu_id, reason === "" ? {} : { reason }),
+                "非公開にしました",
+              )
+            }
+            onRepublish={async () =>
+              changePublication(menu, await api.republishLessonMenu(menu.lesson_menu_id), "公開に戻しました")
+            }
+          />
+          <Link
+            href={lessonMenuPublicationHistoryPath(menu.lesson_menu_id)}
+            aria-label={`「${menu.name}」の公開の記録を見る`}
+            className="ml-2 text-primary underline"
+          >
+            記録
+          </Link>
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <p className="text-sm">コーチが登録したレッスンメニューを、コーチをまたいで見られます。</p>
@@ -286,6 +349,23 @@ export function LessonMenuCatalog({
             {SPORTS.map((sport) => (
               <option key={sport} value={sport}>
                 {SPORT_LABELS[sport]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          レッスンの種類
+          <select
+            className="mt-1 block rounded-md border px-2 py-1"
+            value={filter.lessonType}
+            onChange={(event) =>
+              void commitFilter({ lessonType: event.target.value as LessonType | "" })
+            }
+          >
+            <option value="">すべて</option>
+            {LESSON_TYPES.map((lessonType) => (
+              <option key={lessonType} value={lessonType}>
+                {LESSON_TYPE_LABELS[lessonType]}
               </option>
             ))}
           </select>
@@ -343,72 +423,12 @@ export function LessonMenuCatalog({
         <p className="text-sm">{emptyMessage(filter)}</p>
       )}
       {state.kind === "loaded" && state.menus.length > 0 && (
-        <table aria-label="レッスンメニューの一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">スポーツ</th>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">名前</th>
-              <th className="py-1">種類</th>
-              <th className="py-1">時間</th>
-              <th className="py-1 pr-4 text-right">直近 30 日の予約</th>
-              <th className="py-1">公開</th>
-              <th className="py-1">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.menus.map((menu) => (
-              <tr key={menu.lesson_menu_id} className="border-t">
-                <td className="py-1">{SPORT_LABELS[menu.sport]}</td>
-                <td className="py-1">{menu.coach_display_name ?? "（名前を表示できません）"}</td>
-                <td className="py-1">{menu.name}</td>
-                <td className="py-1">{LESSON_TYPE_LABELS[menu.lesson_type]}</td>
-                <td className="py-1">{durationLabel(menu)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">
-                  <Link
-                    href={lessonMenuBookingListPath(menu.lesson_menu_id)}
-                    aria-label={`「${menu.name}」の予約を見る`}
-                    className="text-primary underline"
-                  >
-                    {menu.recent_booking_count} 件
-                  </Link>
-                </td>
-                <td className="py-1">
-                  <PublicationCell menu={menu} />
-                </td>
-                <td className="py-1">
-                  <LessonMenuPublicationAction
-                    menu={menu}
-                    onUnpublish={async (reason) =>
-                      changePublication(
-                        menu,
-                        await api.unpublishLessonMenu(
-                          menu.lesson_menu_id,
-                          reason === "" ? {} : { reason },
-                        ),
-                        "非公開にしました",
-                      )
-                    }
-                    onRepublish={async () =>
-                      changePublication(
-                        menu,
-                        await api.republishLessonMenu(menu.lesson_menu_id),
-                        "公開に戻しました",
-                      )
-                    }
-                  />
-                  <Link
-                    href={lessonMenuPublicationHistoryPath(menu.lesson_menu_id)}
-                    aria-label={`「${menu.name}」の公開の記録を見る`}
-                    className="ml-2 text-primary underline"
-                  >
-                    記録
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="レッスンメニューの一覧"
+          columns={columns}
+          rows={state.menus}
+          rowKey={(menu) => menu.lesson_menu_id}
+        />
       )}
       {state.kind === "loaded" && state.menus.length > 0 && (
         // 数え方は契約の listLessonMenus（照会した時刻の 30 日前から、キャンセルされていない予約）に合わせる。

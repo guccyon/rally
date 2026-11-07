@@ -15,7 +15,7 @@ function PendingVideoReviewsContent() {
   const searchParams = useSearchParams();
   const [initialFilter] = useState(() => pendingVideoReviewFilterFrom(searchParams));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <PendingVideoReviewsHome token={session.token} initialFilter={initialFilter} />}
     </RoleGate>
   );

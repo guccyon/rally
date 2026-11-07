@@ -1,0 +1,32 @@
+guccyon/rally#189（D40: 予約枠に定員を持たせる）の PR 本文を、検査の時点の形（後から工場が追記した「## 知見」を除く）で PR_BODY.md の追加行として置いたもの。PR 本文は gh pr diff に出ないため。
+diff --git a/PR_BODY.md b/PR_BODY.md
+new file mode 100644
+--- /dev/null
++++ b/PR_BODY.md
+@@ -0,0 +1,26 @@
++Closes #185
++
++## 概要
++予約枠に定員（1〜6 人、既定 1）を持たせ、定員まで予約を受けるようにした（変更シナリオ cs-004 グループレッスンの 1 本目）。定員 1 の枠の振る舞いは今と同じ。ワーカーが 80 ターンの上限で途中終了したため、クライアントの型と試験の同期、CHANGELOG、この本文は builder が仕上げた。
++
++## 対応内容
++- domain: `SlotCapacity`（1〜6）と `SlotSeats`（有効な予約の数）。確定した予約が定員に達したら `Booked`、キャンセルで空けば `Open`。同じ生徒の同じ枠への 2 回目の予約は拒む
++- application: 枠の公開で定員を受け取る（省略は 1）。予約の作成・確定・キャンセル、検索・コーチの枠の一覧・需給を定員に合わせた。live-lesson と完了の記録は型の変更に合わせた最小の追従だけ（複数人の通話は次の #186）
++- infra: マイグレーション `20261028000006_expand_slot_capacity.sql`（枠の定員の列、既定 1。1 枠 1 予約の一意の制約を expand の範囲で緩めた）、保存先の実装と Postgres の試験
++- interface・契約: admin-web の `publishSlot` に任意の `capacity`、枠の応答（両アプリ）に `capacity` と `remaining_seats`
++- クライアント: admin-web の `schema.ts` を生成し直し、試験の枠に項目を足した。student-app の `Slot` に `capacity`・`remainingSeats`、契約の一致の試験
++- 試験: `server/tests/group_slots.rs`（定員 3 の枠に 3 人が予約でき 4 人目は 409）ほか
++
++### 実際に手を入れたコンテキストと expected_contexts との差
++- expected_contexts は catalog・scheduling・live-lesson・entitlement・billing（cs-004 全体）。この 1 本目で手を入れたのは scheduling が中心で、live-lesson と lesson は型の追従だけ。catalog（Gen1 にモデルがない）・entitlement（枠の消費は予約ごとのまま）・billing（Gen1 の範囲外）には手が入っていない
++
++## 影響範囲・互換性
++- 応答に必須の項目を足し、リクエストに任意の項目を足しただけ（L1 の違反なし）
++- DB は expand。既存の枠は定員 1
++
++## 動作確認
++- CI の backend・compat・mutation が通過（ワーカーの差分）
++- builder の手元で admin-web の型の検査・lint・テスト（92 件）、student-app の `flutter analyze` と `flutter test`（101 件）が通った
++
++## 補足
++- 画面（#187・#188）と複数人の通話（#186）は後のチケット

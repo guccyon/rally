@@ -6,6 +6,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { COACH_ACCEPTANCE_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
@@ -27,6 +28,7 @@ type State =
  * `inactive` が true なら直近 30 日にレッスンのないコーチだけ（契約の `inactive`。false なら絞らない）。
  * `hasUnhandledLowRated` が true なら未対応の低い評価のあるコーチだけ（契約の `has_unhandled_low_rated`。false なら絞らない）。
  * `hasUnanswered` が true なら返事のないメッセージのあるコーチだけ（契約の `has_unanswered`。false なら絞らない）。
+ * `hasOverdueVideo` が true なら返却の遅れている動画のあるコーチだけ（契約の `has_overdue_video`。false なら絞らない）。
  */
 export type CoachAcceptanceFilter = {
   acceptanceStatus: AcceptanceStatus | "";
@@ -35,6 +37,7 @@ export type CoachAcceptanceFilter = {
   inactive: boolean;
   hasUnhandledLowRated: boolean;
   hasUnanswered: boolean;
+  hasOverdueVideo: boolean;
 };
 type Filter = CoachAcceptanceFilter;
 
@@ -45,13 +48,15 @@ const NO_FILTER: Filter = {
   inactive: false,
   hasUnhandledLowRated: false,
   hasUnanswered: false,
+  hasOverdueVideo: false,
 };
 
 /** 切り替えの条件の言い方。途中に並べるときは「…がなく」「…があり」、最後は「…のない」「…のある」でコーチにかける。 */
-const TOGGLE_PHRASES: readonly { key: "inactive" | "hasUnhandledLowRated" | "hasUnanswered"; joined: string; last: string }[] = [
+const TOGGLE_PHRASES: readonly { key: "inactive" | "hasUnhandledLowRated" | "hasUnanswered" | "hasOverdueVideo"; joined: string; last: string }[] = [
   { key: "inactive", joined: "直近 30 日にレッスンがなく", last: "直近 30 日にレッスンのない" },
   { key: "hasUnhandledLowRated", joined: "未対応の低い評価があり", last: "未対応の低い評価のある" },
   { key: "hasUnanswered", joined: "返事のないメッセージがあり", last: "返事のないメッセージのある" },
+  { key: "hasOverdueVideo", joined: "返却の遅れている動画があり", last: "返却の遅れている動画のある" },
 ];
 
 /** 切り替えで絞っているときの、0 件の文言の主語（どれも外していれば null）。 */
@@ -63,8 +68,8 @@ function toggledSubject(filter: Filter): string | null {
 }
 
 /**
- * 0 件のときの文言。直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけに
- * 絞っているときは、その条件を文言に含める。
+ * 0 件のときの文言。直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけ・
+ * 返却の遅れている動画のあるコーチだけに絞っているときは、その条件を文言に含める。
  */
 function emptyMessage(filter: Filter): string {
   const others = filter.acceptanceStatus !== "" || filter.sport !== "" || filter.q !== "";
@@ -105,6 +110,20 @@ export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
 );
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
+/** コーチの一覧の列（操作の列は送る処理が要るので、一覧の中で足す）。 */
+const COACH_COLUMNS: DataTableColumn<Coach>[] = [
+  {
+    header: "表示名",
+    cell: (coach) => (
+      <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+        {coach.display_name}
+      </Link>
+    ),
+  },
+  { header: "受付", cell: (coach) => <CoachAcceptanceBadge status={coach.acceptance_status} /> },
+  { header: "直近 30 日のレッスン", variant: "numeric", cell: (coach) => `${coach.recent_lesson_count} 回` },
+];
+
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態と直近 30 日のレッスンの数
  * （`recent_lesson_count`。数え方は契約が正本で、画面は返った値を「n 回」で出すだけ。0 も「0 回」）を出す。
@@ -115,8 +134,10 @@ export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) 
  * 「直近 30 日にレッスンのないコーチだけ」を入れたら `inactive=true` を付けて読み直し、外したら付けずに読み直す。
  * 「未対応の低い評価のあるコーチだけ」も同じく、入れたら `has_unhandled_low_rated=true` を付けて読み直し、外したら付けずに読み直す。
  * 「返事のないメッセージのあるコーチだけ」も同じく、入れたら `has_unanswered=true` を付けて読み直し、外したら付けずに読み直す。
+ * 「返却の遅れている動画のあるコーチだけ」も同じく、入れたら `has_overdue_video=true` を付けて読み直し、外したら付けずに読み直す。
  * 表示名の検索欄は「探す」（または Enter）で確定し、前後の空白を除いた語を `q` に渡して読み直す（空なら絞らない）。
- * 上限を超える語は送らずに理由を出す。受付の状態・スポーツ・直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
+ * 上限を超える語は送らずに理由を出す。受付の状態・スポーツ・直近 30 日にレッスンのないコーチだけ・未対応の低い評価のあるコーチだけ・返事のないメッセージのあるコーチだけ・
+ * 返却の遅れている動画のあるコーチだけを変えたときも、検索欄に入っている語を一緒に確定して読み直す
  * （欄に見えている語と一覧に効いている条件を常に一致させる。語が上限を超えていれば理由を出し、条件は変えない）。
  * `initialFilter`（URL のクエリ）の条件で開き、変えたら `onFilterChange` で知らせる（URL に残すのは呼ぶ側）。
  * 止めた・再開したあとは、今の条件で一覧を読み直す（受付の状態で絞っていれば、変わった行は一覧から外れる）。
@@ -148,6 +169,7 @@ export function CoachAcceptanceList({
         ...(next.inactive ? { inactive: true } : {}),
         ...(next.hasUnhandledLowRated ? { has_unhandled_low_rated: true } : {}),
         ...(next.hasUnanswered ? { has_unanswered: true } : {}),
+        ...(next.hasOverdueVideo ? { has_overdue_video: true } : {}),
       });
       return response.ok
         ? { kind: "loaded", coaches: response.data.coaches }
@@ -174,6 +196,7 @@ export function CoachAcceptanceList({
     inactive: initialInactive,
     hasUnhandledLowRated: initialHasUnhandledLowRated,
     hasUnanswered: initialHasUnanswered,
+    hasOverdueVideo: initialHasOverdueVideo,
   } = initialFilter;
   useEffect(() => {
     let active = true;
@@ -185,6 +208,7 @@ export function CoachAcceptanceList({
       inactive: initialInactive,
       hasUnhandledLowRated: initialHasUnhandledLowRated,
       hasUnanswered: initialHasUnanswered,
+      hasOverdueVideo: initialHasOverdueVideo,
     }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
@@ -199,6 +223,7 @@ export function CoachAcceptanceList({
     initialInactive,
     initialHasUnhandledLowRated,
     initialHasUnanswered,
+    initialHasOverdueVideo,
   ]);
 
   async function changeFilter(next: Filter) {
@@ -212,7 +237,9 @@ export function CoachAcceptanceList({
 
   // 検索欄の語を確定し、条件 change と合わせて読み直す。語が上限を超えていれば理由を出し、条件は変えない。
   async function commitFilter(
-    change: Partial<Pick<Filter, "acceptanceStatus" | "sport" | "inactive" | "hasUnhandledLowRated" | "hasUnanswered">>,
+    change: Partial<
+      Pick<Filter, "acceptanceStatus" | "sport" | "inactive" | "hasUnhandledLowRated" | "hasUnanswered" | "hasOverdueVideo">
+    >,
   ) {
     const query = coachNameQuery(queryDraft);
     if (!query.ok) {
@@ -340,6 +367,14 @@ export function CoachAcceptanceList({
           />
           返事のないメッセージのあるコーチだけ
         </label>
+        <label className="flex items-center gap-1 py-1">
+          <input
+            type="checkbox"
+            checked={filter.hasOverdueVideo}
+            onChange={(event) => void commitFilter({ hasOverdueVideo: event.target.checked })}
+          />
+          返却の遅れている動画のあるコーチだけ
+        </label>
       </form>
       {queryError !== null && <ResultMessage result={{ ok: false, message: queryError }} />}
       <ResultMessage result={result} />
@@ -351,39 +386,27 @@ export function CoachAcceptanceList({
       {state.kind === "loaded" && state.coaches.length > 0 && (
         <>
           <p className="text-sm">{RECENT_LESSON_COUNT_NOTE}</p>
-          <table aria-label="コーチの一覧" className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="py-1">表示名</th>
-                <th className="py-1">受付</th>
-                <th className="py-1">直近 30 日のレッスン</th>
-                <th className="py-1">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.coaches.map((coach) => (
-                <tr key={coach.coach_id} className="border-t align-top">
-                  <td className="py-1">
-                    <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
-                      {coach.display_name}
-                    </Link>
-                  </td>
-                  <td className="py-1">
-                    <CoachAcceptanceBadge status={coach.acceptance_status} />
-                  </td>
-                  <td className="py-1">{coach.recent_lesson_count} 回</td>
-                  <td className="py-1">
-                    <CoachAcceptanceAction
-                      // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
-                      key={coach.acceptance_status}
-                      status={coach.acceptance_status}
-                      onConfirm={(reason) => changeAcceptance(coach, reason)}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            label="コーチの一覧"
+            columns={[
+              ...COACH_COLUMNS,
+              {
+                header: "操作",
+                // 確かめの文と理由の欄が出るので、文の列として折り返す。
+                variant: "long_text",
+                cell: (coach) => (
+                  <CoachAcceptanceAction
+                    // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
+                    key={coach.acceptance_status}
+                    status={coach.acceptance_status}
+                    onConfirm={(reason) => changeAcceptance(coach, reason)}
+                  />
+                ),
+              },
+            ]}
+            rows={state.coaches}
+            rowKey={(coach) => coach.coach_id}
+          />
         </>
       )}
     </div>

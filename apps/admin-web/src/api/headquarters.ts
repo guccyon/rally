@@ -22,6 +22,7 @@ export function headquartersApi(client: ApiClient) {
         inactive?: boolean;
         has_unhandled_low_rated?: boolean;
         has_unanswered?: boolean;
+        has_overdue_video?: boolean;
       } = {},
     ) => call(() => client.GET("/coaches", { params: { query: filter } })),
     getCoachReviewSummary: (coachId: string) =>
@@ -55,6 +56,19 @@ export function headquartersApi(client: ApiClient) {
           params: { path: { coach_id: coachId }, query: filter },
         }),
       ),
+    getCoachLeavePreview: (coachId: string, period: { from: string; to: string }) =>
+      call(() =>
+        client.GET("/coaches/{coach_id}/leave-preview", {
+          params: { path: { coach_id: coachId }, query: period },
+        }),
+      ),
+    startCoachLeave: (coachId: string, body: Schemas["StartCoachLeaveRequest"]) =>
+      call(() =>
+        client.POST("/coaches/{coach_id}/leaves", {
+          params: { path: { coach_id: coachId } },
+          body,
+        }),
+      ),
     getCoachOverview: (coachId: string) =>
       call(() =>
         client.GET("/coaches/{coach_id}/overview", {
@@ -73,6 +87,7 @@ export function headquartersApi(client: ApiClient) {
         from?: string;
         to?: string;
         student_id?: string;
+        lesson_menu_id?: string;
       } = {},
     ) =>
       call(() => client.GET("/lesson-reviews/low", { params: { query: filter } })),
@@ -117,6 +132,7 @@ export function headquartersApi(client: ApiClient) {
     listLessonMenus: (filter: {
       q?: string;
       sport?: Schemas["Sport"];
+      lesson_type?: Schemas["LessonType"];
       published?: boolean;
       coach_id?: string;
       unbooked?: boolean;
@@ -147,6 +163,8 @@ export function headquartersApi(client: ApiClient) {
         not_booked_since?: string;
         coach_id?: string;
         has_unanswered?: boolean;
+        has_pending_video?: boolean;
+        has_unhandled_low_rated?: boolean;
       } = {},
     ) =>
       call(() => client.GET("/students", { params: { query: filter } })),

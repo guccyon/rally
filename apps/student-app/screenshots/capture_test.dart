@@ -203,6 +203,7 @@ class _WriteComparator extends GoldenFileComparator {
 }
 
 /// 日本語が四角にならないよう、日本語のフォントを既定の書体（Roboto）とテーマの書体（RallyTypography.family）として読み込む。
+/// 日時と回数の数字は同梱の Barlow Condensed（RallyTypography.numericFamily）を読み込む。
 /// アイコンは Flutter の SDK に入っている Material Icons を読み込む。
 Future<void> _loadFonts() async {
   final candidates = [
@@ -221,6 +222,17 @@ Future<void> _loadFonts() async {
       await (FontLoader(family)..addFont(Future.value(bytes))).load();
     }
   }
+  // 数字の書体（pubspec の fonts に同梱した Barlow Condensed）。flutter test は pubspec の fonts を読まないので、ここで読み込む
+  final numeric = FontLoader(RallyTypography.numericFamily);
+  for (final name in ['Bold', 'ExtraBold']) {
+    final file = File('assets/fonts/BarlowCondensed-$name.ttf');
+    if (file.existsSync()) {
+      numeric.addFont(
+        Future.value(ByteData.sublistView(file.readAsBytesSync())),
+      );
+    }
+  }
+  await numeric.load();
   final flutterRoot = Platform.environment['FLUTTER_ROOT'];
   final icons = File(
     '$flutterRoot/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',

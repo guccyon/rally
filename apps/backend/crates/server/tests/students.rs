@@ -4,7 +4,8 @@
 //! 予約したことのあるコーチで絞れること（キャンセルした予約も数える）、Postgres に保存したスレッドのうち返信のないまま
 //! 既定の時間の過ぎたものがある生徒だけに絞れること（`getStudentActivity` の `unanswered_message_thread_count` と揃う）、
 //! Postgres に保存した動画のうち返却を待っているものがある生徒だけに絞れること（`getStudentActivity` の
-//! `pending_video_review_count` と揃う）、コーチ・生徒は 403 であることを確かめる。契約の形の
+//! `pending_video_review_count` と揃う）、Postgres に保存した評価のうち本部が未対応の直近の低い評価をつけた生徒だけに
+//! 絞れること（`getStudentActivity` の `unhandled_low_rated_review_count` と揃う）、コーチ・生徒は 403 であることを確かめる。契約の形の
 //! 細かい検査は interface の `tests/students.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
@@ -18,6 +19,7 @@ use application::{
     },
     in_memory::{ManualClock, RecordingAnalyticsSink},
     messaging::MessageThreadRepository,
+    review::{LessonReviewRepository, lesson_review_id_uuid},
 };
 use axum::{
     Router,
@@ -27,9 +29,13 @@ use axum::{
 use domain::{
     catalog::Sport,
     identity::{AccountId, Role},
+    lesson::LessonCompletionId,
     messaging::{MessageBody, MessageContent, MessageThread},
+    review::{LessonReview, LessonReviewComment, Rating},
 };
-use infra::{MockTokenService, PgAccountRepository, PgMessageThreadRepository};
+use infra::{
+    MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgMessageThreadRepository,
+};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -704,6 +710,159 @@ async fn headquarters_lists_only_students_with_pending_videos_from_postgres(pool
         &router,
         "GET",
         "/students?has_pending_video=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student` がコーチ `coach` に `submitted_at` に点 `rating` で付けた評価を保存先に直に書き（評価は完了したレッスンが
+/// 要り、そこまでの HTTP の流れは `lessons.rs` で通している。`student_activity.rs` と同じ）、評価の ID を返す。
+async fn review(
+    reviews: &PgLessonReviewRepository,
+    student: &str,
+    coach: &str,
+    lesson: u128,
+    rating: i64,
+    submitted_at: SystemTime,
+) -> String {
+    let id = reviews.next_id();
+    reviews
+        .insert(LessonReview::restore(
+            id,
+            LessonCompletionId::from_u128(lesson),
+            account_id_uuid::parse(student).unwrap(),
+            account_id_uuid::parse(coach).unwrap(),
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("本部には見せない評価の本文").unwrap(),
+            submitted_at,
+        ))
+        .await
+        .unwrap();
+    lesson_review_id_uuid::format(id)
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_students_with_unhandled_low_rated_reviews_from_postgres(
+    pool: PgPool,
+) {
+    let (coach_id, coach) =
+        register_with_id(&pool, "coach@example.com", Role::Coach, vec![Sport::Tennis]).await;
+    let headquarters = register(&pool, "hq@example.com", Role::Headquarters, vec![]).await;
+    let clock = ManualClock::new(at(60));
+    let router = server::router_with_postgres(
+        pool.clone(),
+        clock.clone(),
+        RecordingAnalyticsSink::default(),
+    );
+
+    let (taro, taro_token) = register_student(&router, "taro@example.com", "tennis").await;
+    clock.set(at(120));
+    let (jiro, _) = register_student(&router, "jiro@example.com", "tennis").await;
+    clock.set(at(180));
+    let (hanako, _) = register_student(&router, "hanako@example.com", "swimming").await;
+    clock.set(at(240));
+    let (shiro, _) = register_student(&router, "shiro@example.com", "tennis").await;
+    // たろうだけがコーチの枠を予約した
+    book_new_slot(&router, &taro_token, &coach, 10).await;
+
+    // たろうは日 10 に ★1。じろうは日 10 に ★2 で、本部が対応済みにする。はなこ（水泳）は日 0 に ★2。しろうは ★3 だけ
+    let day = 24 * 3600;
+    let reviews = PgLessonReviewRepository::new(pool);
+    review(&reviews, &taro, &coach_id, 1, 1, at(10 * day)).await;
+    let jiro_review = review(&reviews, &jiro, &coach_id, 2, 2, at(10 * day)).await;
+    review(&reviews, &hanako, &coach_id, 3, 2, at(0)).await;
+    review(&reviews, &shiro, &coach_id, 4, 3, at(10 * day)).await;
+    clock.set(at(20 * day));
+    let (status, body) = send(
+        &router,
+        "PUT",
+        &format!("/lesson-reviews/{jiro_review}/handling"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let listed = |body: &Value| -> Vec<String> {
+        body["students"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["student_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let get = |path: String| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {body}");
+            body
+        }
+    };
+
+    // 登録の新しい順はそのまま
+    let expected = vec![hanako.clone(), taro.clone()];
+    let body = get("/students?has_unhandled_low_rated=true".to_string()).await;
+    assert_eq!(listed(&body), expected, "{body}");
+    assert!(
+        !body.to_string().contains("本部には見せない評価の本文"),
+        "評価の本文は載せない: {body}"
+    );
+    // 生徒 1 人の利用の様子の未対応の低い評価の数が 1 以上の生徒と同じ
+    for student in [&taro, &jiro, &hanako, &shiro] {
+        let activity = get(format!("/students/{student}/activity")).await;
+        assert_eq!(
+            activity["unhandled_low_rated_review_count"]
+                .as_u64()
+                .unwrap()
+                > 0,
+            expected.contains(student),
+            "{student}: {activity}"
+        );
+    }
+
+    let body = get("/students?has_unhandled_low_rated=false".to_string()).await;
+    assert_eq!(
+        listed(&body),
+        [shiro, hanako.clone(), jiro, taro.clone()],
+        "false は絞らない"
+    );
+    let body = get("/students?has_unhandled_low_rated=true&sport=tennis".to_string()).await;
+    assert_eq!(listed(&body), std::slice::from_ref(&taro));
+    let body = get(format!(
+        "/students?has_unhandled_low_rated=true&coach_id={coach_id}"
+    ))
+    .await;
+    assert_eq!(listed(&body), std::slice::from_ref(&taro));
+    assert_eq!(body["students"][0]["contract_type"], "subscription");
+    let body =
+        get("/students?has_unhandled_low_rated=true&not_booked_since=2026-10-05".to_string()).await;
+    assert_eq!(
+        listed(&body),
+        std::slice::from_ref(&hanako),
+        "日本時間の 2026-10-05 に予約したたろうは外れる"
+    );
+    let body =
+        get("/students?has_unhandled_low_rated=true&has_pending_video=true".to_string()).await;
+    assert!(listed(&body).is_empty(), "{body}");
+
+    // 照会した時刻が進んで、日 0 の ★2 が 30 日の外になれば外れる（30 日前ちょうどは含む）
+    clock.set(at(30 * day));
+    let body = get("/students?has_unhandled_low_rated=true".to_string()).await;
+    assert_eq!(listed(&body), expected, "30 日前ちょうどは含む");
+    clock.set(at(30 * day + 1));
+    let body = get("/students?has_unhandled_low_rated=true".to_string()).await;
+    assert_eq!(listed(&body), [taro]);
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/students?has_unhandled_low_rated=yes",
         Some(&headquarters),
         None,
     )

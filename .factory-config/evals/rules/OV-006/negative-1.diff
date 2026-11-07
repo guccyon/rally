@@ -1,0 +1,69 @@
+guccyon/rally#191（差し戻し: D40 の CODE-001 の修正）の PR 本文を PR_BODY.md の追加行として置いたもの。PR 本文は gh pr diff に出ないため。
+diff --git a/PR_BODY.md b/PR_BODY.md
+new file mode 100644
+--- /dev/null
++++ b/PR_BODY.md
+@@ -0,0 +1,63 @@
++Closes #190
++
++## 概要
++差し戻し #190 への対応です。保存先から読み戻すときに席の数と状態を確かめるようにしました。`SlotSeats::restore` は有効な予約が定員を超えたら、`Slot::restore` は状態と確定した予約の数が合わなければ、エラーを返します。テストの fixture も状態に合う席の数で作り直しました。
++
++## 対応内容
++- `SlotSeats::restore` の戻り値を `Result<Self, DomainError>` にしました。未確定と確定を足した数が定員を超えると `DomainError::SlotSeatsOverCapacity { capacity, active }` を返します。「数が定員を超えていても確かめない」というコメントと、それを前提にしたテスト（`restore(1, 2, 0)` で残りの席が 0）は消し、超えたら拒むテストに替えました。
++- `Slot::restore` で状態と席の整合を確かめるようにしました。予約済み（`Booked`）なら確定した予約が定員ちょうど、公開中（`Open`）なら定員未満で、合わなければ `DomainError::SlotStatusMismatchesSeats { status }` を返します。閉じた枠（`Closed`）は確かめません。成り立つ組み合わせと成り立たない組み合わせのテストを足しました。
++- infra の `slot_from_row` で、`SlotSeats::restore` のエラーを `Unavailable` に移しました（`Slot::restore` のエラーと同じ扱い）。
++- interface の `message.rs` に、足した 2 つの変種の文言とそのテストを足しました。
++- テストの fixture を、状態に合う席の数で作るように直しました。予約済みの枠は確定した予約で埋めます（定員 1 なら `SlotSeats::restore(ONE, 0, 1)`、`booking.rs` の `slot_with_capacity` は定員と同じ数）。
++  - domain: `booking.rs`・`coach_calendar.rs`・`slot_supply.rs`
++  - application: `create_booking.rs`・`search_slots.rs`
++  - infra のテスト: `pg_booking_repository.rs` の `restore(..)` に `.unwrap()` を足しました。
++- `infra/tests/pg_slot_repository.rs` で、`set_status(.., "booked")` で確定した予約のない予約済みの枠を作っていた 2 か所を、`support::confirmed_booking` で予約を確定して埋める形に替えました。
++  - 重なりの検査は `is_err()` だけを見ていました。読み戻しが失敗しても通ってしまうので、`SlotOverlaps { existing }` が返ることまで確かめるようにしました。
++
++## 影響範囲・互換性
++- API の契約と DB のスキーマは変えていません。
++- 保存先の席の数と状態が合わない行（予約済みなのに確定した予約が定員に満たない、など）を読むと、黙って読み続けずに `Unavailable` になります。予約・確定・キャンセルは状態と予約の行を同じトランザクションで変えるので、普通に使っていればこの状態にはなりません。
++
++## 動作確認
++`apps/backend` で次を実行し、すべて通りました。
++- `cargo fmt --all -- --check`
++- `cargo clippy --all-targets -- -D warnings`
++- `cargo test -- --include-ignored`（`DATABASE_URL` の Postgres に向けて実行。DB が要る `#[ignore]` のテストを含めて 675 件、失敗 0）
++  - 並列でビルドするとリンクの途中で失敗した（メモリ不足によるものと思われる）ので、`-j 2` で実行しています。
++
++## 補足
++- 状態を引数に取っても予約済みでは呼ばれない fixture（interface のテストなど）は、`SlotSeats::default()` のまま残しました。予約済みで呼べば `restore` の `unwrap` で落ちるので、不整合な枠は作れません。
++- `CHANGELOG.md` には足していません（下の仮決め scope-1）。
++
++## 仮決め
++### interface id-1: 不整合を表すエラーの形をどうするか
++- 選んだ: `DomainError` に `SlotSeatsOverCapacity { capacity: u8, active: u32 }` と `SlotStatusMismatchesSeats { status: SlotStatus }` の 2 つの変種を足す
++- 他の案: 2 つの検査を 1 つの変種にまとめる／既存の `SlotAlreadyBooked` を使い回す
++- 根拠: `apps/backend/crates/domain/src/error.rs`（「ドメインの不変条件の違反。モデルの生成時に返す」）、Issue #190「直し方の手がかり」
++- 解釈: `SlotAlreadyBooked` は予約の時点で満席を拒むエラーで、意味が違う。2 つの検査は破れている不変条件が違うので、変種も分けた。文言は CLAUDE.md の規約どおり interface の `message.rs` に置いた
++- 確信度: 0.7
++- 影響: `domain/src/error.rs`、`interface/src/message.rs`。契約は変えていない
++### design_choice id-2: 閉じた枠（Closed）の状態と席を確かめるか
++- 選んだ: 確かめない（定員を超えないことだけを `SlotSeats::restore` で確かめる）
++- 他の案: Closed なら有効な予約が 0 件であることを求める
++- 根拠: Issue #190 の手がかり（Booked と Open の条件しか書いていない）、`slot.rs` の既存テスト `closed_slot_takes_no_bookings_and_cannot_be_released`（Closed で確定した予約 1 件の枠を作る）、`specs/contracts/api/admin-web/openapi.yaml` の SlotStatus の説明（closed はコーチが閉じた、とだけある）
++- 解釈: 予約が入った枠を閉じたときに予約がどうなるかは仕様に書いていないので、ここで決めずに制約を足さなかった
++- 確信度: 0.65
++- 影響: `domain/src/scheduling/slot.rs`
++### scope id-3: CHANGELOG に足すか
++- 選んだ: 足さない
++- 他の案: `[Unreleased]` に「保存先の不整合な枠を読み戻しで拒む」と 1 行足す
++- 根拠: `CLAUDE.md`「書き方」（利用者や API の利用者に見える変更は CHANGELOG に足す）
++- 解釈: 契約も、普通に使っているときの振る舞いも変わらない、内部の検証の強化なので、利用者に見える変更ではないと読んだ
++- 確信度: 0.6
++- 影響: `CHANGELOG.md`（変えていない）
++
++## 知見
++- `apps/backend` で `cargo test` を並列でビルドすると、`server` のテストのリンクが `linking with cc failed` で落ちることがある（メモリ不足によるものと思われる）。`-j 2` を付けると通る。
++- infra の DB のテストで `set_status(.., "booked")` を使うと、確定した予約のない予約済みの枠ができて、読み戻しが `Unavailable` になる。予約済みの枠は `support::confirmed_booking` で作る。
++
++## 工場の記録
++- job: 191（attempt は dispatcher の記録を参照）
++- model: claude-opus-5-5、turns: 27、cost(API 換算): $1.206445
++- 権限: P0 は PR 作成まで。マージは人間の判断（manifest.yaml autonomy）

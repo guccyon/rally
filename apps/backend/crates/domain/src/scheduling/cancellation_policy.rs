@@ -24,6 +24,16 @@ impl CancellationPolicy {
         CancellationDecision { consumes_quota }
     }
 
+    /// 本部が予約 `booking` をキャンセルしたとき（コーチのお休み。[`super::Booking::cancel_by_headquarters`]）の判定。
+    ///
+    /// 生徒の都合でないので、いつキャンセルしても `consumes_quota: false`（entitlement は確定で使った枠を戻す）。
+    /// 開始までの時間・予約の状態は見ない。
+    pub fn decide_for_headquarters(_booking: &Booking) -> CancellationDecision {
+        CancellationDecision {
+            consumes_quota: false,
+        }
+    }
+
     /// 予約 `booking` を回数を使わずにキャンセルできる境目（開始時刻の 24 時間前）。この時刻ちょうど以降の
     /// キャンセルは回数を消費する。開始時刻から 24 時間を引けない（時刻の範囲の外）ときは `None` で、いつ
     /// キャンセルしても消費する。
@@ -118,6 +128,12 @@ mod tests {
         assert!(consumes_quota(24 * HOUR));
         assert!(consumes_quota(24 * HOUR - Duration::from_nanos(1)));
         assert!(!consumes_quota(24 * HOUR + Duration::from_nanos(1)));
+    }
+
+    #[test]
+    fn a_headquarters_cancel_never_consumes_quota() {
+        // 生徒の都合でないので、開始の直前でも消費しない
+        assert!(!CancellationPolicy::decide_for_headquarters(&booking()).consumes_quota);
     }
 
     #[test]

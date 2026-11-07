@@ -4,8 +4,9 @@
 //! そのスポーツの・その日（日本時間）以降に予約していない生徒だけを返し、値が不正なら 422。`coach_id` を付ければ
 //! そのコーチを予約したことがある生徒だけを返し（ない・コーチでない ID は空の一覧）、UUID でなければ 422。
 //! `has_unanswered=true` を付ければ返信のないまま既定の時間の過ぎたスレッドのある生徒だけを返し、真偽でなければ 422。
-//! `has_pending_video=true` を付ければ返却待ちの動画のある生徒だけを返し、真偽でなければ 422。この操作はパスパラメータを受けないので、
-//! 404（見つからない）の応答はない。
+//! `has_pending_video=true` を付ければ返却待ちの動画のある生徒だけを返し、真偽でなければ 422。
+//! `has_unhandled_low_rated=true` を付ければ本部が未対応の直近の低い評価をつけた生徒だけを返し、真偽でなければ 422。
+//! この操作はパスパラメータを受けないので、404（見つからない）の応答はない。
 
 use std::time::{Duration, SystemTime};
 
@@ -18,10 +19,11 @@ use application::{
     },
     in_memory::{
         FixedClock, InMemoryAccountRepository, InMemoryBookingRepository,
-        InMemoryEntitlementRepository, InMemoryMessageThreadRepository, InMemorySlotRepository,
-        InMemoryVideoRepository,
+        InMemoryEntitlementRepository, InMemoryLessonReviewRepository,
+        InMemoryMessageThreadRepository, InMemorySlotRepository, InMemoryVideoRepository,
     },
     messaging::MessagingStudentUnansweredMessageThreadCountLookup,
+    review::ReviewStudentLowRatedReviewCountLookup,
     scheduling::{
         BookingRepository, SchedulingStudentCoachBookingLookup, SchedulingStudentLastBookingLookup,
         SchedulingStudentRecentBookingCountLookup,
@@ -39,8 +41,10 @@ use domain::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{Account, AccountId, Email, Role},
+    lesson::LessonCompletionId,
     messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
     profile::DisplayName,
+    review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
     scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
 };
 use serde_json::{Value, json};
@@ -121,7 +125,8 @@ fn now() -> SystemTime {
 /// 本部・コーチと、生徒 3 人（登録は月額の生徒 → ゴルフの生徒 → 新しい生徒の順）。月額の生徒は 2 回予約した。
 /// 月額の生徒はコーチに返信をもらっていないスレッドが、ゴルフの生徒はコーチが返したスレッドがある（[`threads`]）。
 /// 月額の生徒と新しい生徒は返却待ちの動画が、ゴルフの生徒は返却済みの動画だけがある（[`videos`]）。
-/// 照会した時刻は [`now`]。
+/// 新しい生徒とゴルフの生徒は本部が未対応の低い評価を、月額の生徒は対応済みの低い評価と数えない評価だけをつけた
+/// （[`reviews`]）。照会した時刻は [`now`]。
 async fn app() -> Router {
     app_at(now()).await
 }
@@ -177,7 +182,15 @@ async fn app_at(now: SystemTime) -> Router {
             .await
             .unwrap();
     }
-    router(accounts, entitlements, bookings, threads(), videos(), now)
+    router(
+        accounts,
+        entitlements,
+        bookings,
+        threads(),
+        videos(),
+        reviews(),
+        now,
+    )
 }
 
 /// `id` の `student` とコーチのスレッドを開き、`exchange` の順に（生徒が送ったか, 送信時刻）で本文を送る。
@@ -232,12 +245,45 @@ fn videos() -> InMemoryVideoRepository {
     ])
 }
 
+/// 生徒がコーチにつけた評価。新しい生徒は未対応の ★2、ゴルフの生徒は未対応の ★1。月額の生徒は対応済みの ★1・★4・
+/// 31 日前の未対応の ★1（どれも未対応の低い評価に数えない）。
+fn reviews() -> InMemoryLessonReviewRepository {
+    let review = |id: u128, student: AccountId, rating: i64, submitted_at: SystemTime| {
+        LessonReview::restore(
+            LessonReviewId::from_u128(id),
+            LessonCompletionId::from_u128(id),
+            student,
+            COACH,
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("本部には見せない本文").unwrap(),
+            submitted_at,
+        )
+    };
+    InMemoryLessonReviewRepository::with_reviews([
+        review(50, NEW_STUDENT, 2, at(20)),
+        review(51, GOLF_STUDENT, 1, at(5)),
+        review(52, MONTHLY_STUDENT, 1, at(6)).with_handling(Some(LowRatedReviewHandling::new(
+            AccountId::from_u128(1),
+            at(7),
+        ))),
+        review(53, MONTHLY_STUDENT, 4, at(8)),
+        review(
+            54,
+            MONTHLY_STUDENT,
+            1,
+            now() - Duration::from_secs(31 * 24 * 3600),
+        ),
+    ])
+}
+
+#[allow(clippy::too_many_arguments)]
 fn router(
     accounts: InMemoryAccountRepository,
     entitlements: InMemoryEntitlementRepository,
     bookings: InMemoryBookingRepository,
     threads: InMemoryMessageThreadRepository,
     videos: InMemoryVideoRepository,
+    reviews: InMemoryLessonReviewRepository,
     now: SystemTime,
 ) -> Router {
     interface::students_router(
@@ -249,6 +295,7 @@ fn router(
             SchedulingStudentRecentBookingCountLookup::new(bookings),
             MessagingStudentUnansweredMessageThreadCountLookup::new(threads),
             AsyncLessonStudentVideoActivityLookup::new(videos),
+            ReviewStudentLowRatedReviewCountLookup::new(reviews),
             FixedClock(now),
         ),
         FakeTokens,
@@ -395,6 +442,7 @@ async fn recent_booking_count_leaves_out_cancelled_bookings() {
         bookings,
         InMemoryMessageThreadRepository::default(),
         InMemoryVideoRepository::default(),
+        InMemoryLessonReviewRepository::default(),
         now(),
     );
 
@@ -477,6 +525,7 @@ async fn q_matches_ascii_letters_case_insensitively() {
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         InMemoryMessageThreadRepository::default(),
         InMemoryVideoRepository::default(),
+        InMemoryLessonReviewRepository::default(),
         now(),
     );
     let (status, body) = list_students_at(&router, "/students?q=yamada", Some(HEADQUARTERS)).await;
@@ -756,6 +805,89 @@ async fn has_pending_video_that_is_not_a_boolean_is_422() {
 }
 
 #[tokio::test]
+async fn has_unhandled_low_rated_lists_only_students_with_an_unhandled_low_review() {
+    let router = app().await;
+    for (uri, expected) in [
+        // 新しい生徒とゴルフの生徒が未対応の低い評価をつけた。月額の生徒は対応済み・★4・31 日前だけ
+        ("/students?has_unhandled_low_rated=true", vec!["5", "4"]),
+        // false は絞らない
+        (
+            "/students?has_unhandled_low_rated=false",
+            vec!["5", "4", "3"],
+        ),
+        // ほかの条件と組み合わせられる
+        (
+            "/students?has_unhandled_low_rated=true&sport=golf",
+            vec!["4"],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&sport=tennis",
+            vec![],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&q=%E3%81%AA%E3%81%BE%E3%81%885",
+            vec!["5"],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&coach_id=00000000-0000-0000-0000-000000000002",
+            vec![],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&not_booked_since=2026-10-01",
+            vec!["5", "4"],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&has_pending_video=true",
+            vec!["5"],
+        ),
+        (
+            "/students?has_unhandled_low_rated=true&has_unanswered=true",
+            vec![],
+        ),
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        assert_eq!(listed_ids(&body), expected, "{uri}");
+    }
+    let (_, body) = list_students_at(
+        &router,
+        "/students?has_unhandled_low_rated=true&sport=golf",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body["students"][0]["contract_type"], "one_shot",
+        "絞り込んでも受講権を添える"
+    );
+
+    // 期間は照会した時刻から数える（ゴルフの生徒の評価の 30 日後の 1 秒後には外れる）
+    let later = app_at(at(5) + Duration::from_secs(30 * 24 * 3600 + 1)).await;
+    let (status, body) = list_students_at(
+        &later,
+        "/students?has_unhandled_low_rated=true",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(listed_ids(&body), vec!["5"]);
+}
+
+#[tokio::test]
+async fn has_unhandled_low_rated_that_is_not_a_boolean_is_422() {
+    let router = app().await;
+    for uri in [
+        "/students?has_unhandled_low_rated=yes",
+        "/students?has_unhandled_low_rated=1",
+        "/students?has_unhandled_low_rated=",
+        "/students?has_unhandled_low_rated=TRUE",
+    ] {
+        let (status, body) = list_students_at(&router, uri, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        assert_eq!(body["code"], "validation_failed", "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn unknown_sport_or_malformed_date_is_422() {
     let router = app().await;
     for (uri, message) in [
@@ -796,6 +928,7 @@ async fn no_students_is_an_empty_list() {
         InMemoryBookingRepository::new(InMemorySlotRepository::default()),
         InMemoryMessageThreadRepository::default(),
         InMemoryVideoRepository::default(),
+        InMemoryLessonReviewRepository::default(),
         now(),
     );
     let (status, body) = list_students(&router, Some(HEADQUARTERS)).await;
@@ -861,6 +994,7 @@ async fn lookup_failure_is_500_internal_without_the_reason() {
                 InMemoryMessageThreadRepository::default(),
             ),
             AsyncLessonStudentVideoActivityLookup::new(InMemoryVideoRepository::default()),
+            ReviewStudentLowRatedReviewCountLookup::new(InMemoryLessonReviewRepository::default()),
             FixedClock(now()),
         ),
         FakeTokens,

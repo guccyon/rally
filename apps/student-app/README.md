@@ -11,6 +11,14 @@ flutter test      # ウィジェットテスト（API はモック）と一周�
 flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（既定はバックエンドの既定の待ち受け）
 ```
 
+## 触れる環境の Web 版（出荷用イメージ）
+
+工場の shipper が Release ごとに `Dockerfile` で Web 版のイメージ（`rally-student-web:<版>`）を作り、`deploy/compose.yaml` の `student-web` として staging に立てる（factory-engine の ADR 0028 の touchable_env）。人はスマートフォンのブラウザで URL か QR から開く。
+
+- `web/` はリポジトリに置かず、作るときに `flutter create --platforms=web` で雛形を足す（`lib/` は上書きしない）
+- 接続先は `--dart-define=RALLY_API_URL=/api`。相対の値は開いたページのオリジンからの相対として解く（`lib/state/student_flow.dart`）。`deploy/serve.mjs` が同じオリジンの `/api/*` をバックエンドへ中継するので、CORS も backend の公開も要らない
+- CanvasKit は CDN から取らずにイメージに入れる（`--no-web-resources-cdn`）。日本語の字形は Flutter が実行時に Noto の字形を取りに行く（端末がインターネットにつながっている前提）
+
 ## 画面
 
 画面遷移は状態（`lib/state/student_flow.dart` の `FlowStep`）だけで決まる。API を呼ぶのは `lib/state/` の Notifier だけで、画面は状態を表示してそのメソッドを呼ぶ。チャット（スレッドの一覧・メッセージ・添削の依頼と返却）の状態と操作は `lib/state/chat.dart` の `ChatState` / `ChatNotifier`（`chatProvider`）、完了したレッスンの評価（この端末で送った評価・評価済みと分かっているレッスン）の状態と操作は `lib/state/lesson_review.dart` の `LessonReviewState` / `LessonReviewNotifier`（`lessonReviewProvider`）、月額契約と受講権（契約プランの一覧・この端末で始めた契約・受講権と、受講権がまだないこと）の状態と操作は `lib/state/subscription.dart` の `SubscriptionState` / `SubscriptionNotifier`（`subscriptionProvider`。ホームの「今月のビデオ通話」の欄もここの受講権を読む）、コーチを探す画面（生徒のスポーツのコーチの一覧と、読めなかったこと）の状態と操作は `lib/state/coach_search.dart` の `CoachSearchState` / `CoachSearchNotifier`（`coachSearchProvider`）、コーチの紹介（選んだコーチ・戻り先・欄ごとの読んだ値と、読めなかった欄）の状態と操作は `lib/state/coach_profile.dart` の `CoachProfileState` / `CoachProfileNotifier`（`coachProfileProvider`。お気に入りの切り替えもここ）、お気に入りのコーチ（ホームの欄の一覧）の状態と操作は `lib/state/favorite_coaches.dart` の `FavoriteCoachesState` / `FavoriteCoachesNotifier`（`favoriteCoachesProvider`）、お知らせ（読んだ一覧・読めなかったこと・開いたときに未読だったもの）の状態と操作は `lib/state/notifications.dart` の `NotificationsState` / `NotificationsNotifier`（`notificationsProvider`。ホームのアプリバーの「お知らせ」のしるしもここの一覧を読む）、受けたレッスン（読んだ一覧・読めなかったこと・評価の画面に進んだレッスン）の状態と操作は `lib/state/lesson_completions.dart` の `LessonCompletionsState` / `LessonCompletionsNotifier`（`lessonCompletionsProvider`）、それ以外は `StudentFlowState` / `StudentFlowNotifier`（`studentFlowProvider`）に置く。段（`FlowStep`）と、API を呼んでいる間の印（`busy`）・直前の操作の失敗の文言（`errorMessage`）はアプリで 1 つなので `StudentFlowState` に持ち、`ChatNotifier` と `LessonReviewNotifier` と `SubscriptionNotifier` と `CoachSearchNotifier` と `CoachProfileNotifier` と `FavoriteCoachesNotifier` と `NotificationsNotifier` と `LessonCompletionsNotifier` も段の移動は `StudentFlowNotifier.moveTo`、API の呼び出しは `StudentFlowNotifier.run` を通す。評価する完了したレッスン（`lesson`）は完了記録の結果なので `StudentFlowState` に残す。契約するスポーツは登録した生徒（`student`）のものなので `StudentFlowState` から読み、ホームで読めなかった欄（`homeFailures`）もホームの全体の状態として `StudentFlowState` に残す。
@@ -41,6 +49,7 @@ flutter run --dart-define=RALLY_API_URL=http://127.0.0.1:8080   # 接続先（�
 ## テーマと部品
 
 - テーマは `lib/ui/theme/rally_theme.dart` の `buildRallyTheme()`。色・書体・余白・角丸は `lib/ui/theme/rally_tokens.dart`（`RallyColors` など）で、正本は `specs/design/tokens.yaml`。値が正本と同じことを `test/ui/theme/rally_tokens_test.dart` が確かめる
+- 日時と回数の大きな数字の書体 Barlow Condensed（700・800）は `assets/fonts/` に同梱し、pubspec の `fonts` で読む（`RallyTypography.numericFamily`）。SIL OFL 1.1 で、`assets/fonts/OFL.txt` を `main.dart` で `LicenseRegistry` に載せる
 - 基本の部品（`specs/design/components.yaml`）は `lib/ui/components/`（`RallyButton`・`StatusTag`・`ScorePanel`・`Notice`・`EmptyState`・`SectionLoading`・`RallyCard`・`ListRow`・`showConfirmDialog`）。入力欄・しるし・読み込み中の bar はテーマ（`InputDecorationTheme` など）で合わせる
 - 部品の種類と状態の見本を `lib/ui/design_catalog.dart` に並べ、`lib/screens/design_catalog_screen.dart` で見る（アプリの流れからは開けない）。画面のキャプチャの `design-catalog`（縦に伸ばして下まで 1 枚）なので、部品を変えると PR のキャプチャに出る
 - components.yaml に部品・種類を足したら `design_catalog.dart` にも見本を足す。置けないものは `notInStudentCatalog` に理由とともに書く（`test/ui/design_catalog_test.dart` が突き合わせる）
@@ -54,7 +63,7 @@ SCREENSHOT_DIR=$PWD/screenshots/out flutter test screenshots/   # <id>.png と <
 ```
 
 - 撮る画面とたどり方は `screenshots/capture_test.dart` の `screens`。アプリ全体を `test/support` の `FakeStudentApi` で動かし、登録から押してたどる。時刻は `Fixtures.now` に固定、画面はスマートフォンの縦（390×844 の 3 倍）
-- 日本語は IPA ゴシック（`fonts-ipafont-gothic`。別のフォントは `SCREENSHOT_FONT` で渡す）を、既定の書体とテーマの書体（`RallyTypography.family`）の両方の名前で読み込んで描く。絵文字は四角になる
+- 日本語は IPA ゴシック（`fonts-ipafont-gothic`。別のフォントは `SCREENSHOT_FONT` で渡す）を、既定の書体とテーマの書体（`RallyTypography.family`）の両方の名前で読み込んで描く。数字の書体は `assets/fonts/` の Barlow Condensed を読み込む。絵文字は四角になる
 - 画面を足した・押す文言を変えたら `screens` を直す。id は前後の突き合わせに使うので変えない
 - `SCREENSHOT_DIR` がないときは撮らない（`flutter test` の既定の対象 `test/` にも入れていない）
 

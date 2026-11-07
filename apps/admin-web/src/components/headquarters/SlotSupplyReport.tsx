@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   formatDateTime,
@@ -58,6 +59,19 @@ const STATUS_CLASS_NAMES: Record<Schemas["SlotSupplyStatus"], string> = {
   no_activity: "text-text-muted",
   not_applicable: "text-text-muted",
 };
+
+/** 需給の表の列。 */
+const SUPPLY_COLUMNS: DataTableColumn<Schemas["SlotSupply"]>[] = [
+  { header: "スポーツ", cell: (supply) => SPORT_LABELS[supply.sport] },
+  {
+    header: "判定",
+    cell: (supply) => (
+      <span className={STATUS_CLASS_NAMES[supply.status]}>{SLOT_SUPPLY_STATUS_LABELS[supply.status]}</span>
+    ),
+  },
+  { header: "公開した枠の数", variant: "numeric", cell: (supply) => supply.published_slots },
+  { header: "予約しようとした生徒の数", variant: "numeric", cell: (supply) => supply.booking_students },
+];
 
 // 対象外の理由（契約の `getSlotSupply` の判定の 1）。
 const NOT_APPLICABLE_NOTE = "対象外: 月額の契約の対象でないスポーツ（ゴルフ。ワンショットだけ）は、需給を判定しません。";
@@ -372,26 +386,12 @@ function LoadedReport({
         <p className="text-sm">{emptyMessageOf(coachName, sport, lessonMenuId)}</p>
       )}
       {!isEmpty(report) && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th>スポーツ</th>
-              <th>判定</th>
-              <th>公開した枠の数</th>
-              <th>予約しようとした生徒の数</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.sports.map((supply) => (
-              <tr key={supply.sport}>
-                <td>{SPORT_LABELS[supply.sport]}</td>
-                <td className={STATUS_CLASS_NAMES[supply.status]}>{SLOT_SUPPLY_STATUS_LABELS[supply.status]}</td>
-                <td>{supply.published_slots}</td>
-                <td>{supply.booking_students}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="スポーツ別の予約枠の需給"
+          columns={SUPPLY_COLUMNS}
+          rows={report.sports}
+          rowKey={(supply) => supply.sport}
+        />
       )}
       {!isEmpty(report) && report.sports.some((supply) => supply.status === "not_applicable") && (
         <p className="text-sm text-text-muted">{NOT_APPLICABLE_NOTE}</p>

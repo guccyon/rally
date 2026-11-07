@@ -1,10 +1,11 @@
 //! scheduling の値と、DB に保存する文字列の対応表。
 //!
-//! `scheduling.slots.status`・`scheduling.bookings.status`・`scheduling.coach_acceptances.status`（CHECK 制約の値）は
-//! この表だけを通す。`sport` は
+//! `scheduling.slots.status`・`scheduling.bookings.status`・`scheduling.bookings.cancelled_by`・
+//! `scheduling.coach_acceptances.status`（CHECK 制約の値）はこの表だけを通す。キャンセルした人の値は境界間イベント
+//! `BookingCancelled` の `cancelled_by`（[`crate::domain_event_payload`]）も同じ。`sport` は
 //! [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/schema.rs` が確かめる。
 
-use domain::scheduling::{BookingStatus, CoachAcceptanceStatus, SlotStatus};
+use domain::scheduling::{BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus};
 
 /// `scheduling.slots.status` の値。
 pub const fn slot_status_value(status: SlotStatus) -> &'static str {
@@ -36,6 +37,25 @@ pub fn booking_status_from_value(value: &str) -> Option<BookingStatus> {
         .find(|status| booking_status_value(*status) == value)
 }
 
+/// `scheduling.bookings.cancelled_by` の値（境界間イベント `BookingCancelled` の `cancelled_by` も同じ）。
+pub const fn booking_canceller_value(canceller: BookingCanceller) -> &'static str {
+    match canceller {
+        BookingCanceller::Student => "student",
+        BookingCanceller::Coach => "coach",
+        BookingCanceller::Headquarters => "headquarters",
+    }
+}
+
+pub fn booking_canceller_from_value(value: &str) -> Option<BookingCanceller> {
+    [
+        BookingCanceller::Student,
+        BookingCanceller::Coach,
+        BookingCanceller::Headquarters,
+    ]
+    .into_iter()
+    .find(|canceller| booking_canceller_value(*canceller) == value)
+}
+
 /// `scheduling.coach_acceptances.status` の値。
 pub const fn coach_acceptance_status_value(status: CoachAcceptanceStatus) -> &'static str {
     match status {
@@ -53,6 +73,21 @@ pub fn coach_acceptance_status_from_value(value: &str) -> Option<CoachAcceptance
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn booking_canceller_values_round_trip() {
+        for canceller in [
+            BookingCanceller::Student,
+            BookingCanceller::Coach,
+            BookingCanceller::Headquarters,
+        ] {
+            assert_eq!(
+                booking_canceller_from_value(booking_canceller_value(canceller)),
+                Some(canceller)
+            );
+        }
+        assert_eq!(booking_canceller_from_value("system"), None);
+    }
 
     #[test]
     fn values_round_trip() {

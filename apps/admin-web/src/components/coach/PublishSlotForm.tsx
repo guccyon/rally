@@ -5,6 +5,8 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
 import { ResultMessage } from "@/components/ui/ResultMessage";
+import { StatusTag } from "@/components/ui/StatusTag";
+import { SLOT_STATE_STATUS } from "@/components/ui/status";
 import { MAX_PERIOD_DAYS, type Period, periodError } from "@/components/headquarters/bookingPeriod";
 import { formatDateTime, formatDay, SLOT_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
@@ -110,7 +112,9 @@ function SlotTable({
             <td className="py-1">
               {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
             </td>
-            <td className="py-1">{SLOT_STATUS_LABELS[item.slot.status]}</td>
+            <td className="py-1">
+              <StatusTag label={SLOT_STATUS_LABELS[item.slot.status]} status={SLOT_STATE_STATUS[item.slot.status]} />
+            </td>
             <td className="py-1">
               {item.has_active_booking ? "予約あり" : "予約なし"}
               {/* 定員 1 の枠（マンツーマン）は今までどおり予約の有無だけを出す。 */}

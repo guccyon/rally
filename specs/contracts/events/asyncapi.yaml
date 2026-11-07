@@ -27,7 +27,10 @@ channels:
       予約がキャンセルされた。回数（ビデオ通話の暦月の枠）を消費するかはキャンセル規定に従って scheduling が判定し、
       consumes_quota に載せる。消費の実行は entitlement が行う（docs/adr/0002 Q2。購読側は判定し直さない）。
       entitlement は consumes_quota が true ならその予約で枠を使ったことにし（確定で使っていればそのまま）、
-      false なら確定で使った枠を戻す（docs/adr/0005）。
+      false なら確定で使った枠を戻す（docs/adr/0005）。キャンセルした人を cancelled_by に載せる。本部のキャンセル
+      （コーチのお休み。admin-web の startCoachLeave）は生徒の都合でないので、キャンセル規定によらず consumes_quota は
+      false（判定は scheduling の 1 か所。不変条件 3）。notification は本部のキャンセルを購読し、予約した生徒に予約ごとに
+      知らせる（お知らせとして残し、プッシュ通知は受け取り設定の booking_confirmed に従う）。
     x-publisher: [scheduling]
     x-subscribers: [entitlement, notification, analytics]
     messages:
@@ -142,7 +145,7 @@ components:
         booking_id: { type: string }
     BookingCancelledPayload:
       type: object
-      required: [event_id, occurred_at, student_id, coach_id, booking_id, consumes_quota, cancelled_at]
+      required: [event_id, occurred_at, student_id, coach_id, booking_id, consumes_quota, cancelled_at, cancelled_by]
       properties:
         event_id: { $ref: '#/components/schemas/EventId' }
         occurred_at: { $ref: '#/components/schemas/OccurredAt' }
@@ -156,6 +159,12 @@ components:
           type: string
           format: date-time
           description: キャンセルした時刻
+        cancelled_by:
+          type: string
+          enum: [student, coach, headquarters]
+          description: |
+            キャンセルした人。student: 予約した生徒（cancelBooking）/ headquarters: コーチのお休みで本部（admin-web の
+            startCoachLeave。consumes_quota はいつも false）/ coach: 契約の値として先に置く（今は発行しない）
     LessonCompletedPayload:
       type: object
       required: [event_id, occurred_at, student_id, coach_id, lesson_id]

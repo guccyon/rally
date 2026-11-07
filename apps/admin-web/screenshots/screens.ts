@@ -209,6 +209,20 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // レッスンメニューを選んで読み直した状態（一覧の上に絞っているメニューの名前を出す）。
+    id: "hq-low-reviews-lesson-menu",
+    title: "本部: 低い評価（レッスンメニューで絞る）",
+    role: "headquarters",
+    path: "/headquarters/low-reviews",
+    open: async (page) => {
+      await page.getByRole("list", { name: "低い評価の一覧" }).waitFor();
+      // 選択肢（レッスンメニューの一覧）を読むまでは欄が使えないので、selectOption が使えるようになるまで待つ。
+      await page.getByRole("combobox", { name: "レッスンメニュー" }).selectOption({ label: "フォアハンドの基礎（鈴木 コーチ）" });
+      await page.getByText(/^レッスンメニューで絞っています: フォアハンドの基礎$/).waitFor();
+      await page.getByText("説明が早口で、何を直せばいいのか分かりにくかったです。").waitFor({ state: "detached" });
+    },
+  },
+  {
     // スポーツで絞って 0 件の状態（選んだ条件を含めた空の表示）。
     id: "hq-low-reviews-sport-empty",
     title: "本部: 低い評価（スポーツで絞って 0 件）",
@@ -281,6 +295,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    // 返却の遅れている動画のあるコーチだけに絞った状態（URL のクエリ has_overdue_video=true で開く。該当がなければ空の表示）。
+    id: "hq-coaches-overdue-video",
+    title: "本部: コーチの受付（返却の遅れている動画のあるコーチだけ）",
+    role: "headquarters",
+    path: "/headquarters/coaches?has_overdue_video=true",
+    open: async (page) => {
+      await page
+        .getByRole("table", { name: "コーチの一覧" })
+        .or(page.getByText("返却の遅れている動画のあるコーチはいません"))
+        .waitFor();
+    },
+  },
+  {
     id: "hq-coach-suspend",
     title: "本部: コーチの受付の停止の確認",
     role: "headquarters",
@@ -299,6 +326,64 @@ export const SCREENS: Screen[] = [
       await page.getByRole("link", { name: "鈴木 コーチ" }).click();
       await page.getByRole("heading", { name: "鈴木 コーチ" }).waitFor();
       await page.getByRole("table", { name: "受付の記録" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave",
+    title: "本部: コーチのお休み（期間がまだ空）",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page
+        .getByRole("navigation", { name: "このコーチで開く画面" })
+        .getByRole("link", { name: "お休み", exact: true })
+        .click();
+      await page.getByRole("heading", { name: "コーチのお休み" }).waitFor();
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-preview",
+    title: "本部: コーチのお休み（期間の予約と枠）",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-confirm",
+    title: "本部: コーチのお休みの確認",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+      await page.getByRole("button", { name: "お休みにする" }).click();
+      await page.getByRole("alertdialog").waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-done",
+    title: "本部: コーチをお休みにした結果",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+      await page.getByRole("button", { name: "お休みにする" }).click();
+      await page.getByRole("button", { name: "キャンセルしてお休みにする" }).click();
+      await page.getByRole("button", { name: "キャンセルされた予約を見る" }).waitFor();
     },
   },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
@@ -321,6 +406,19 @@ export const SCREENS: Screen[] = [
       await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
       await page.getByLabel("直近 30 日に予約のないメニューだけ").check();
       await page.getByRole("row", { name: /パターの距離感/ }).waitFor();
+      await page.getByRole("row", { name: /フォアハンドの基礎/ }).waitFor({ state: "detached" });
+    },
+  },
+  {
+    // レッスンの種類で非同期だけに絞った状態（URL には残さないので、開いてから選ぶ）。
+    id: "hq-lesson-menus-lesson-type",
+    title: "本部: レッスンメニュー（レッスンの種類で絞る）",
+    role: "headquarters",
+    path: "/headquarters/lesson-menus",
+    open: async (page) => {
+      await page.getByRole("table", { name: "レッスンメニューの一覧" }).waitFor();
+      await page.getByRole("combobox", { name: "レッスンの種類" }).selectOption({ label: "非同期（動画の添削）" });
+      await page.getByRole("row", { name: /サーブの添削/ }).waitFor();
       await page.getByRole("row", { name: /フォアハンドの基礎/ }).waitFor({ state: "detached" });
     },
   },
@@ -399,6 +497,36 @@ export const SCREENS: Screen[] = [
       await page
         .getByRole("table", { name: "生徒の一覧" })
         .or(page.getByText("返事を待っているメッセージのある生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
+    // 返却待ちの動画のある生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-pending-video",
+    title: "本部: 生徒（返却待ちの動画のある生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "返却待ちの動画のある生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("返却待ちの動画のある生徒はいません"))
+        .waitFor();
+    },
+  },
+  {
+    // 未対応の低い評価をつけた生徒だけに絞った状態（切り替えを入れる。該当がなければ空の表示）。
+    id: "hq-students-has-unhandled-low-rated",
+    title: "本部: 生徒（未対応の低い評価をつけた生徒だけ）",
+    role: "headquarters",
+    path: "/headquarters/students",
+    open: async (page) => {
+      await page.getByRole("table", { name: "生徒の一覧" }).or(page.getByText("まだ生徒はいません")).waitFor();
+      await page.getByRole("checkbox", { name: "未対応の低い評価をつけた生徒だけ" }).check();
+      await page
+        .getByRole("table", { name: "生徒の一覧" })
+        .or(page.getByText("未対応の低い評価をつけた生徒はいません"))
         .waitFor();
     },
   },

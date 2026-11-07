@@ -3,20 +3,23 @@ import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 
 /**
- * 一覧の行（specs/design/components.yaml の list_row）。押すと詳細へ移る。
- * 未読は左に primary の 4px の線と、題の前の「未読」のしるしで示す（文字なので読み上げでも「未読」と読む）。
+ * 一覧の行（specs/design/components.yaml の list_row）。background のまま面で囲わず、行のあいだに border の線。押すと詳細へ移る。
+ * 未読は左に primary の 4px の線と、題の前の「未読」のしるし（badge の count と同じ danger の面）で示す（文字なので読み上げでも「未読」と読む）。
+ * selected は primary-container の面と左に primary の 4px の線。
  */
 export function ListRow({
   title,
   subtitle,
   trailing,
   unread = false,
+  selected = false,
   onClick,
 }: {
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
   unread?: boolean;
+  selected?: boolean;
   onClick?: () => void;
 }) {
   const body = (
@@ -24,7 +27,7 @@ export function ListRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 font-bold">
           {unread && (
-            <span className="rounded-sm bg-primary px-1 text-xs text-on-primary">未読</span>
+            <span className="rounded-sm bg-danger px-1 text-xs text-on-primary">未読</span>
           )}
           <span className="truncate">{title}</span>
         </span>
@@ -35,8 +38,8 @@ export function ListRow({
     </>
   );
   const className = `flex min-h-14 w-full items-center gap-2 border-b px-4 py-2 text-left ${
-    unread ? "border-l-4 border-l-primary" : ""
-  }`;
+    unread || selected ? "border-l-4 border-l-primary" : ""
+  } ${selected ? "bg-primary-container" : "bg-background"}`;
   return onClick ? (
     <button type="button" onClick={onClick} className={`${className} active:bg-primary-container`}>
       {body}

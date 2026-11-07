@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0010
+pr: https://github.com/guccyon/rally/pull/943
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0009 の enforcement
+    の提案（tools/sendback-check/check.mjs を PR ごとに走らせて落とす ci_check）を enforcement.solutions
+    に記録しただけなので、過去の議決と矛盾しません。
+  - 足した solution は kind・what・issue・at・decided_by の形が既存の test の solution や K-0001 の
+    ci_check と同じで、README の「決定論で担保した知見も消さず solutions に残す」決まりに合っています。
+  - enforcement.level と INDEX.md の K-0004 の担保の列はすでに deterministic なので、INDEX.md を変えていないことと整合しています。
+  - 検査の線の「差し替えもないのに」という条件は前の test の solution と同じ線ですが D-0009 の proposal の文より条件が 1 つ多いので、D-0009
+    で求められた理由を C-0002 か K-0004 に書き、K-0003 の「2 つの意味」の線引きとずれないことを次の変更セットで確かめてください。
+  - body_fix の job.enqueued を続きのジョブに数える点は K-0006 の領域に触れますが、K-0006 は直し方、K-0004 は起こす条件の主張で重複はなく、K-0006
+    はそのままでよく、specs/ にも sendback や supervisor の定義はないので製品の規範ともぶつかりません。
+  - 配線とイベントの経路がまだで効き目を確かめていないので confidence は hypothesis のままが妥当で、D-0004 と D-0009 で求めた
+    verified_at と review_by の更新は今回もまだなので、statement を直す次の機会にそろえてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solutions は issue 934 と committee:D-0009 を指しており、D-0009 の enforcement
+    の ci_check の提案（直っていない採用欠陥が 0 件なのに sendback か続きのジョブが起きたら落とす、basis が adopt の合計だけなら落とす、PR
+    ごとに走らせる）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、担保の記録を足しただけなので根拠の段は崩れていません。'
+  - '配線（.github/workflows/）と制御プレーンからイベントを出す経路がまだで効き目を確かめていないと自分で書いているので、confidence
+    は hypothesis のままが妥当で、本物のイベント列で PR #395 の流れが落ちることを確かめるまで confirmed に上げないでください。'
+  - 検査の線にある「差し替えもないのに」という条件は、D-0009 でも指摘されたとおり C-0002 にも D-0004 にも出どころがまだ書かれていないので、issue
+    902 か 934 か事例記録に根拠を残すと辿りやすくなります。
+  - 差分に出てくるのはイベント名・ツールのパス・PR と issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は D-0009 の enforcement の 1 つめの案（tools/sendback-check/check.mjs を PR ごとに走らせて落とす検査）を
+    kind: ci_check として K-0004 の enforcement.solutions に記録したもので、statement も confidence
+    も変えていないので採ってよいです。'
+  - 判定の線は「直っていない採用欠陥も差し替えもないのに差し戻しか続きのジョブが起きた head」という機械で判定できる条件で、supervisor の判定は
+    PR ごとに必ず通り繰り返し起こるので、文脈より CI の検査で担保するのが確かです。
+  - ただし .github/workflows/ の配線と制御プレーンからイベントを出す経路はまだなく、今は外れても何も止まらないので、配線が入るまでは決定論の担保はまだ半分です。
+  - Engine は今も basis に adopt の合計だけを書くので、Engine を直す前にこの ci_check を配線するとすべての承認で落ちてしまうため、Engine
+    の判定と basis を先に直してから配線してください。
+  - D-0009 の 2 つめの案（tools/sendback-check の写しではなく Engine の supervisor の本物の判定へのテスト）はこの
+    PR にも入っていないので、引き続き担保として残します。
+  - '効き目は確かめていないので confidence は hypothesis のままが妥当で、配線のあとに PR #395 と同じイベント列で検査が落ち、Engine
+    を直したあとは通ることを確かめてから confirmed に上げてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は D-0009 の enforcement の案（kind: ci_check）を K-0004 の enforcement.solutions
+    に記録しただけで、statement も scope も evidence も変えていないので、範囲は広すぎません。'
+  - 検査は「basis が adopt の合計だけの承認」でも落ちますが、Engine は今も adopt の合計だけを書くので、配線するとほぼすべての PR
+    が落ちる反例があり、Engine の basis を直してから配線する順序を issue 934 に書いておくべきです。
+  - 検査の線にも「差し替えがないのに」という K-0004 の statement にない条件が残っていて、D-0004 と D-0009 で根拠を残すよう求めた点はまだ
+    C-0002 にも K-0004 にも書かれていないので、次の変更セットで出どころを残すか別の知見に分けてください。
+  - supervisor.judge_enqueued で head を区切る組み方は、前の head の採用欠陥を後の head で直したときや、イベントが抜けたときに見誤る反例がありうるので、確かめるときはこの場合も見てください。
+  - '配線も制御プレーンからのイベントもまだで効き目を確かめていないと書かれているので、confidence は hypothesis のままにし、本物のイベント列で
+    PR #395 の流れが落ち、正当な差し戻しは落ちないことを確かめてから上げてください。'
+  - 足した文に利用者や人を特定できる情報はなく、出てくるのは PR・issue の番号、イベント名、ツールのパスだけです。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'Engine の supervisor の判定と inspector_approved の basis を書くところに、tools/sendback-check/check.test.mjs
+    と同じ 3 つの場合（PR #395 と同じ入力では起こさない、直っていない採用欠陥があればマージの前後に関わらず起こす、basis に欠陥の採用数と仮決めの承認数を分けて書く）のテストを置き、参照の実装ではなく本物の判定を担保する。ci_check
+    の配線より先に入れる。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'Engine の判定と basis を直したあとで、.github/workflows/ に tools/sendback-check/check.mjs
+    --events --pr --summary を PR ごと（と supervisor が sendback・続きのジョブを起こしたとき）に走らせる手順を足し、制御プレーンからイベント列を渡す経路を配線する。配線したら
+    PR #395 のイベント列で落ちることを確かめ、enforcement.solutions の what を「効き目を確かめた」に更新する。'

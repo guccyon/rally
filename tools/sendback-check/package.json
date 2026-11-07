@@ -1,0 +1,11 @@
+{
+  "name": "rally-sendback-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "supervisor が差し戻し・続きのジョブを起こす判定と、検査役の承認の根拠の書き方を決定論で検査する（知見 K-0004 の担保）",
+  "scripts": {
+    "check": "node check.mjs",
+    "test": "node --test"
+  }
+}

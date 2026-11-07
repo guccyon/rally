@@ -19,6 +19,11 @@ pub fn of(at: SystemTime) -> Date {
     OffsetDateTime::from(at).to_offset(OFFSET).date()
 }
 
+/// `at` の日本時間の日時（画面やお知らせに日時を書くとき。曜日・時・分を読む）。
+pub fn local(at: SystemTime) -> OffsetDateTime {
+    OffsetDateTime::from(at).to_offset(OFFSET)
+}
+
 /// 日付 `date` の始まり（日本時間の 0 時）。
 pub fn start(date: Date) -> SystemTime {
     date.with_time(Time::MIDNIGHT).assume_offset(OFFSET).into()
@@ -27,6 +32,20 @@ pub fn start(date: Date) -> SystemTime {
 /// 日付 `date` の終わり（翌日の日本時間の 0 時。含まない）。夏時間がないので始まりの 24 時間後。
 pub fn end(date: Date) -> SystemTime {
     start(date) + BookingPeriod::DAY
+}
+
+/// 日付（日本時間）の `from` から `to` まで（両端を含む）の期間（admin-web の `getCoachLeavePreview`・`startCoachLeave`。
+/// どちらの日付も省けない）。期間の規則は [`period`] と同じ domain の [`BookingPeriod::new`] で、違反はその [`SchedulingError`]。
+pub fn days(from: Date, to: Date) -> Result<BookingPeriod, SchedulingError> {
+    BookingPeriod::new(start(from), end(to))
+}
+
+/// 日付で決めた期間 `period`（[`days`]）の始まりの日と終わりの日（両端を含む）。
+pub fn dates_of(period: BookingPeriod) -> (Date, Date) {
+    (
+        of(period.starts_at()),
+        of(period.ends_at() - std::time::Duration::from_nanos(1)),
+    )
 }
 
 /// 日付（日本時間）の `from` から `to` まで（両端を含む）の期間と、実際に使った `from`・`to`（admin-web の
@@ -82,6 +101,26 @@ mod tests {
 
     fn date(month: Month, day: u8) -> Date {
         Date::from_calendar_date(2026, month, day).unwrap()
+    }
+
+    #[test]
+    fn days_round_trip_through_the_period() {
+        let period = days(date(Month::November, 10), date(Month::November, 16)).unwrap();
+        assert_eq!(period.starts_at(), start(date(Month::November, 10)));
+        assert_eq!(period.ends_at(), end(date(Month::November, 16)));
+        assert_eq!(
+            dates_of(period),
+            (date(Month::November, 10), date(Month::November, 16))
+        );
+        let one = days(date(Month::November, 10), date(Month::November, 10)).unwrap();
+        assert_eq!(
+            dates_of(one),
+            (date(Month::November, 10), date(Month::November, 10))
+        );
+        assert_eq!(
+            days(date(Month::November, 10), date(Month::November, 9)),
+            Err(SchedulingError::BookingPeriodEndsBeforeItStarts)
+        );
     }
 
     #[test]

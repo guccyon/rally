@@ -11,7 +11,10 @@
 //! [`CoachBookedStudents`] の 1 か所。本部が見るコーチ 1 人の直近にキャンセルされた予約の数の数え方は
 //! [`CoachRecentCancelledBookingCount`] の 1 か所。
 //! コーチが新しい予約を受け付けるか（受付中・停止中。本部が止める・再開する）は [`CoachAcceptance`]、止めた・再開した記録は
-//! [`CoachAcceptanceChange`]（止めた記録は理由 [`CoachSuspensionReason`] を持つ）。不変条件の違反は
+//! [`CoachAcceptanceChange`]（止めた記録は理由 [`CoachSuspensionReason`] を持つ）。コーチのお休み（本部が期間の予約を
+//! まとめてキャンセルし、枠を取り下げた記録）は [`CoachLeave`]（依頼は [`CoachLeaveRequest`]、生徒への一言は
+//! [`CoachLeaveNote`]、キャンセルした予約の写しは [`CoachLeaveBooking`]）。期間の何を片づけるかは [`CoachLeaveTargets`] の
+//! 1 か所（本部が確かめる一覧とお休みにする操作が共に使う）。不変条件の違反は
 //! [`SchedulingError`]。
 
 mod booking;
@@ -29,6 +32,12 @@ mod coach_acceptance_change;
 mod coach_acceptance_status;
 mod coach_booked_students;
 mod coach_calendar;
+mod coach_leave;
+mod coach_leave_booking;
+mod coach_leave_id;
+mod coach_leave_note;
+mod coach_leave_request;
+mod coach_leave_targets;
 mod coach_recent_cancelled_booking_count;
 mod coach_suspension_reason;
 mod recent_lesson_menu_bookings;
@@ -58,6 +67,12 @@ pub use coach_acceptance_change::CoachAcceptanceChange;
 pub use coach_acceptance_status::CoachAcceptanceStatus;
 pub use coach_booked_students::CoachBookedStudents;
 pub use coach_calendar::CoachCalendar;
+pub use coach_leave::CoachLeave;
+pub use coach_leave_booking::CoachLeaveBooking;
+pub use coach_leave_id::CoachLeaveId;
+pub use coach_leave_note::CoachLeaveNote;
+pub use coach_leave_request::CoachLeaveRequest;
+pub use coach_leave_targets::CoachLeaveTargets;
 pub use coach_recent_cancelled_booking_count::CoachRecentCancelledBookingCount;
 pub use coach_suspension_reason::CoachSuspensionReason;
 pub use recent_lesson_menu_bookings::RecentLessonMenuBookings;

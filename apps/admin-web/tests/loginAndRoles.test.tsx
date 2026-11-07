@@ -57,6 +57,22 @@ describe("ロールでの出し分け", () => {
     expect(replace).toHaveBeenCalledWith("/");
   });
 
+  test("枠の幅は既定で reading（768px）、本部の一覧の画面は wide（1280px）にする", () => {
+    saveSession({ role: "headquarters", token: "t" });
+    const { unmount } = render(<RoleGate role="headquarters">{() => <p>読む画面</p>}</RoleGate>);
+    expect(screen.getByText("読む画面").parentElement).toHaveClass("mx-auto", "max-w-[768px]", "px-4", "min-[600px]:px-6");
+    unmount();
+
+    render(
+      <RoleGate role="headquarters" width="wide">
+        {() => <p>一覧の画面</p>}
+      </RoleGate>,
+    );
+    const frame = screen.getByText("一覧の画面").parentElement;
+    expect(frame).toHaveClass("mx-auto", "max-w-[1280px]", "[&_p]:max-w-[40em]");
+    expect(frame).not.toHaveClass("max-w-[768px]");
+  });
+
   test("未ログインならログイン画面へ戻す", () => {
     render(<RoleGate role="headquarters">{() => <HeadquartersHome />}</RoleGate>);
 

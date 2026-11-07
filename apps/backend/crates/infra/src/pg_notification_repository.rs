@@ -22,8 +22,9 @@ use sqlx::{
 use crate::{
     messaging_values::{message_sender_from_value, message_sender_value},
     notification_values::{
-        ANNOUNCEMENT, BOOKING_CONFIRMED, BOOKING_RECEIVED, MESSAGE_RECEIVED,
-        VIDEO_REVIEW_REQUESTED, VIDEO_REVIEW_RETURNED, push_notification_kind_value,
+        ANNOUNCEMENT, BOOKING_CANCELLED_BY_HEADQUARTERS, BOOKING_CONFIRMED, BOOKING_RECEIVED,
+        MESSAGE_RECEIVED, VIDEO_REVIEW_REQUESTED, VIDEO_REVIEW_RETURNED,
+        push_notification_kind_value,
     },
     pg_support::timestamp,
 };
@@ -285,6 +286,11 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
             coach_id,
             booking_id: booking_id_uuid::from_uuid(booking_id.ok_or_else(broken)?),
         },
+        BOOKING_CANCELLED_BY_HEADQUARTERS => PushNotification::BookingCancelledByHeadquarters {
+            student_id,
+            coach_id,
+            booking_id: booking_id_uuid::from_uuid(booking_id.ok_or_else(broken)?),
+        },
         VIDEO_REVIEW_REQUESTED => PushNotification::VideoReviewRequested {
             student_id,
             coach_id,
@@ -339,6 +345,11 @@ fn parties(push: &PushNotification) -> (AccountId, Option<AccountId>) {
             coach_id,
             ..
         }
+        | PushNotification::BookingCancelledByHeadquarters {
+            student_id,
+            coach_id,
+            ..
+        }
         | PushNotification::VideoReviewRequested {
             student_id,
             coach_id,
@@ -361,7 +372,8 @@ fn parties(push: &PushNotification) -> (AccountId, Option<AccountId>) {
 fn push_columns(push: &PushNotification) -> PushColumns {
     match *push {
         PushNotification::BookingConfirmed { booking_id, .. }
-        | PushNotification::BookingReceived { booking_id, .. } => (
+        | PushNotification::BookingReceived { booking_id, .. }
+        | PushNotification::BookingCancelledByHeadquarters { booking_id, .. } => (
             Some(booking_id_uuid::to_uuid(booking_id)),
             None,
             None,

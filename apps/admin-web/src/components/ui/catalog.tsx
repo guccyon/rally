@@ -4,13 +4,16 @@ import { Badge } from "./Badge";
 import { Button, type ButtonVariant } from "./Button";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DataTable, type DataTableColumn } from "./DataTable";
+import { DateField, DateRangeField } from "./DateField";
+import { dateRangeError, type DateRange } from "./dateRange";
 import { EmptyState } from "./EmptyState";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
 import { Notice } from "./Notice";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
-import type { Status } from "./status";
+import { SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
  * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -25,11 +28,35 @@ export type CatalogEntry = {
 };
 
 /** components.yaml にあるが admin-web では使わない部品と種類（理由は components.yaml の not_for・各部品の注記）。 */
-export const NOT_IN_ADMIN_WEB: { component: string; variant?: string; reason: string }[] = [
-  { component: "score_panel", reason: "components.yaml の not_for に admin-web とある" },
-  { component: "button", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
-  { component: "badge", variant: "on_dark", reason: "admin-web は濃い面（inverse_surface）を使わない" },
-  { component: "notice", variant: "toast", reason: "admin-web の Notice は inline だけ（toast はまだない）" },
+export const NOT_IN_ADMIN_WEB: {
+  component: string;
+  variant?: string;
+  reason: string;
+}[] = [
+  {
+    component: "score_panel",
+    reason: "components.yaml の not_for に admin-web とある",
+  },
+  {
+    component: "button",
+    variant: "on_dark",
+    reason: "admin-web は濃い面（inverse_surface）を使わない",
+  },
+  {
+    component: "badge",
+    variant: "on_dark",
+    reason: "admin-web は濃い面（inverse_surface）を使わない",
+  },
+  {
+    component: "notice",
+    variant: "toast",
+    reason: "admin-web の Notice は inline と success だけ（toast はまだない）",
+  },
+  {
+    component: "card",
+    variant: "booking",
+    reason: "admin-web は予約を data_table で見比べる（patterns の list）。日付のコマのライムは student-app の次のレッスンだけ",
+  },
 ];
 
 const noop = () => {};
@@ -49,12 +76,146 @@ const STATUS_EXAMPLES: { status: Status; label: string }[] = [
   { status: "neutral", label: "キャンセル済み" },
 ];
 
+/** スロットの状態（glossary の slot.states）の見本。色は tokens.yaml の color.slot_state。 */
+const SLOT_STATE_EXAMPLES: {
+  state: keyof typeof SLOT_STATE_STATUS;
+  label: string;
+}[] = [
+  { state: "open", label: "公開中" },
+  { state: "booked", label: "予約済み" },
+  { state: "closed", label: "終了" },
+];
+
+/** 期間の見本（日付の欄と誤りの型）。上限は契約の 31 日。 */
+const MAX_DAYS = 31;
+const RANGE_EXAMPLES: { example: string; value: DateRange }[] = [
+  {
+    example: "終わりが始まりより前",
+    value: { from: "2026-11-03", to: "2026-10-28" },
+  },
+  { example: "31 日を超える", value: { from: "2026-10-01", to: "2026-11-30" } },
+  { example: "空の欄", value: { from: "2026-10-28", to: "" } },
+];
+
 const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
   info: "11月から、コートの予約はアプリから行えます。",
   success: "お知らせを 12 人の生徒に送りました。",
   warning: "開始まで 1 時間を切った確定待ちの予約があります。",
   danger: "予約を読み込めませんでした。時間をおいてもう一度開いてください。",
 };
+
+type BookingRow = {
+  id: string;
+  start: string;
+  status: { label: string; status: Status };
+  coach: string;
+  student: string;
+  menu: string;
+  kind: string;
+  urgent?: boolean;
+};
+
+const CONFIRMED_BOOKING: BookingRow = {
+  id: "b1",
+  start: "12:00",
+  status: { label: "確定済み", status: "success" },
+  coach: "山田 花子",
+  student: "鈴木 一郎",
+  menu: "フォアハンドの基礎（30 分）",
+  kind: "—",
+};
+
+const PENDING_BOOKING: BookingRow = {
+  id: "b2",
+  start: "18:00",
+  status: { label: "確定待ち", status: "warning" },
+  coach: "佐藤 健",
+  student: "田中 美咲",
+  menu: "バッティングの基本（30 分）",
+  kind: "体験予約",
+};
+
+const CANCELLED_BOOKING: BookingRow = {
+  id: "b3",
+  start: "19:30",
+  status: { label: "キャンセル済み", status: "neutral" },
+  coach: "山田 花子",
+  student: "高橋 蓮",
+  menu: "サーブの安定（30 分）",
+  kind: "—",
+};
+
+const BOOKING_ROWS = [CONFIRMED_BOOKING, PENDING_BOOKING, CANCELLED_BOOKING];
+
+const BOOKING_COLUMNS: DataTableColumn<BookingRow>[] = [
+  {
+    header: "開始",
+    cell: (row) => (
+      <a href="#" className="text-primary underline">
+        {row.start}
+      </a>
+    ),
+  },
+  {
+    header: "状態",
+    cell: (row) => (
+      <span className="inline-flex gap-2">
+        <StatusTag label={row.status.label} status={row.status.status} />
+        {row.urgent && <StatusTag label="開始まで 24 時間以内" status="danger" urgent />}
+      </span>
+    ),
+  },
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "生徒", cell: (row) => row.student },
+  { header: "レッスンメニュー", cell: (row) => row.menu },
+  { header: "種類", cell: (row) => row.kind },
+];
+
+type SupplyRow = {
+  coach: string;
+  published: number;
+  booked: number;
+  comment: string;
+};
+
+const SUPPLY_ROWS: SupplyRow[] = [
+  {
+    coach: "山田 花子",
+    published: 12,
+    booked: 9,
+    comment: "フォームを動画で見せてもらえて、直すところがよく分かりました。",
+  },
+  { coach: "佐藤 健", published: 8, booked: 2, comment: "—" },
+];
+
+const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = {
+  header: "コーチ",
+  cell: (row) => row.coach,
+};
+
+const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
+  SUPPLY_COACH_COLUMN,
+  {
+    header: "公開した枠",
+    variant: "numeric",
+    cell: (row) => `${row.published} 件`,
+  },
+  {
+    header: "予約された枠",
+    variant: "numeric",
+    cell: (row) => `${row.booked} 件`,
+  },
+  {
+    header: "埋まった割合",
+    variant: "numeric",
+    cell: (row) => `${Math.round((row.booked / row.published) * 100)}%`,
+  },
+];
+
+/** 表の見本の枠。Section と同じく面で囲わない（0.5.0）。narrow は幅 360px。 */
+function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
+  return <div className={narrow ? "w-[360px]" : undefined}>{children}</div>;
+}
 
 /**
  * 確認のダイアログは画面全体に重ねる部品なので、transform を付けた枠を基準にしてその中だけに重ねる
@@ -98,7 +259,11 @@ export const CATALOG: CatalogEntry[] = [
     const Field = variant === "single_line" ? TextField : TextArea;
     const props =
       variant === "single_line"
-        ? { label: "表示名", helper: "20 文字まで", defaultValue: "鈴木 コーチ" }
+        ? {
+            label: "表示名",
+            helper: "20 文字まで",
+            defaultValue: "鈴木 コーチ",
+          }
         : {
             label: "自己紹介",
             helper: "500 文字まで",
@@ -106,8 +271,18 @@ export const CATALOG: CatalogEntry[] = [
             defaultValue: "テニスを教えて 10 年になります。",
           };
     return [
-      { component: "text_field", variant, state: "default", render: () => <Field {...props} /> },
-      { component: "text_field", variant, state: "disabled", render: () => <Field {...props} disabled /> },
+      {
+        component: "text_field",
+        variant,
+        state: "default",
+        render: () => <Field {...props} />,
+      },
+      {
+        component: "text_field",
+        variant,
+        state: "disabled",
+        render: () => <Field {...props} disabled />,
+      },
       {
         component: "text_field",
         variant,
@@ -117,10 +292,45 @@ export const CATALOG: CatalogEntry[] = [
     ];
   }),
   {
+    component: "date_field",
+    variant: "date",
+    state: "default",
+    render: () => <DateField label="送る日" defaultValue="2026-10-28" />,
+  },
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "default",
+    render: () => (
+      <DateRangeField value={{ from: "2026-10-28", to: "2026-11-03" }} onChange={noop} helper="31 日まで選べます" />
+    ),
+  },
+  ...RANGE_EXAMPLES.map(({ example, value }) => ({
+    component: "date_field",
+    variant: "date_range",
+    state: "error",
+    example,
+    render: () => (
+      <DateRangeField
+        value={value}
+        onChange={noop}
+        helper="31 日まで選べます"
+        error={dateRangeError(value, MAX_DAYS)}
+      />
+    ),
+  })),
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "loading",
+    render: () => <DateRangeField value={{ from: "", to: "" }} onChange={noop} loading />,
+  },
+  {
     component: "card",
+    variant: "plain",
     render: () => (
       <Card>
-        <p className="font-bold">10/28（水）12:00〜12:30</p>
+        <p className="text-xl font-black">10/28（水）12:00〜12:30</p>
         <p className="text-sm text-text-muted">テニス・コーチ: 鈴木</p>
         <StatusTag label="確定済み" status="success" />
       </Card>
@@ -128,10 +338,11 @@ export const CATALOG: CatalogEntry[] = [
   },
   {
     component: "card",
+    variant: "plain",
     example: "押せる",
     render: () => (
       <Card onClick={noop}>
-        <p className="font-bold">スイングの見直し</p>
+        <p className="text-xl font-black">スイングの見直し</p>
         <p className="text-sm text-text-muted">テニス・1 回 60 分</p>
       </Card>
     ),
@@ -151,15 +362,33 @@ export const CATALOG: CatalogEntry[] = [
   { component: "badge", variant: "dot", render: () => <Badge /> },
   ...STATUS_EXAMPLES.map(({ status, label }) => ({
     component: "status_tag",
+    variant: "default",
     example: status,
     render: () => <StatusTag label={label} status={status} />,
   })),
-  ...(["info", "success", "warning", "danger"] as const).map((state) => ({
+  ...SLOT_STATE_EXAMPLES.map(({ state, label }) => ({
+    component: "status_tag",
+    variant: "default",
+    example: `slot_state ${state}`,
+    render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
+  })),
+  {
+    component: "status_tag",
+    variant: "urgent",
+    render: () => <StatusTag label="開始まで 24 時間以内" status="danger" urgent />,
+  },
+  ...(["info", "warning", "danger"] as const).map((state) => ({
     component: "notice",
     variant: "inline",
     state,
     render: () => <Notice message={NOTICE_MESSAGES[state]} status={state} />,
   })),
+  // 成功は inline ではなく濃い面と完了の印（notice.variants.success）
+  {
+    component: "notice",
+    variant: "success",
+    render: () => <Notice message={NOTICE_MESSAGES.success} status="success" />,
+  },
   {
     component: "empty_state",
     variant: "screen",
@@ -183,8 +412,83 @@ export const CATALOG: CatalogEntry[] = [
     ),
   },
   { component: "loading", variant: "bar", render: () => <LoadingBar /> },
-  { component: "loading", variant: "section_text", render: () => <SectionLoading message="予約を読み込んでいます…" /> },
+  {
+    component: "loading",
+    variant: "section_text",
+    render: () => <SectionLoading message="予約を読み込んでいます…" />,
+  },
   { component: "loading", variant: "spinner", render: () => <Spinner /> },
+  {
+    component: "data_table",
+    variant: "text",
+    render: () => (
+      <TableFrame>
+        <DataTable label="10/28（水）の予約" columns={BOOKING_COLUMNS} rows={BOOKING_ROWS} rowKey={(row) => row.id} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "numeric",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの予約枠の需給"
+          columns={SUPPLY_COLUMNS}
+          rows={SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "long_text",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの最新の一言"
+          columns={[
+            SUPPLY_COACH_COLUMN,
+            {
+              header: "最新の一言",
+              variant: "long_text",
+              cell: (row) => row.comment,
+            },
+          ]}
+          rows={SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "text",
+    state: "narrow",
+    render: () => (
+      <TableFrame narrow>
+        <p className="mb-2 max-w-[40em] text-sm">10/28（水）〜 11/3（火）・3 件</p>
+        <DataTable label="10/28（水）の予約" columns={BOOKING_COLUMNS} rows={BOOKING_ROWS} rowKey={(row) => row.id} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "text",
+    example: "急ぎの行",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="10/28（水）の予約"
+          columns={BOOKING_COLUMNS}
+          rows={[{ ...PENDING_BOOKING, id: "b0", start: "9:00", urgent: true }, CONFIRMED_BOOKING]}
+          rowKey={(row) => row.id}
+          highlightRow={(row) => row.urgent === true}
+        />
+      </TableFrame>
+    ),
+  },
   ...([false, true] as const).map((danger) => ({
     component: "confirm_dialog",
     example: danger ? "危険な操作" : "送る前の確認",
