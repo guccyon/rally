@@ -37,4 +37,22 @@ enforcement:
       issue: 954
       at: 2026-11-05
       decided_by: committee:D-0013
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0023（Issue #972 の起票時の番号は D-0018。PR #970）の test の案を入れた。tools/conflict-check/events.py が制御プレーンのイベント列
+        （pr.conflicted と continue.enqueued の reason=conflict に、job_id で job.started・job.finished・conflict.files を結ぶ）から PR ごとに
+        conflict の続きのジョブの回数・agent_resumed・tier・衝突したファイルを組み、policy.py の線（continuation.yaml の conflict）に照らして、
+        同じ PR で 4 回目が積まれた（over_limit）、2 回目以降で agent_resumed=true（resumed_after_limit）、CHANGELOG.md と changelog.d/ だけの衝突で
+        tier-large で解いた（agent_for_mechanical）のどれかがあれば終了コード 1 で落とす。test_events.py で、C-0005 の流れ（PR #659 の 20 回の衝突。
+        事例記録の事実だけを Engine のイベントの形に組み直した fixtures/c0005-pr659-events.json）が 3 つの rule のすべてで落ち、線どおりの積み方は通ることを確かめた。
+        今の Engine は agent_resumed を制御プレーンの events に載せず（ワーカーのログと ticket.json だけ）、機械的に解いた回の tier も費用 0 でしか分からないので、
+        記録がない項目は照らさずに件数を出す。job.finished に agent_resumed と解き方の tier を足すこと、イベントを出してこの検査を PR ごとか supervisor の周期ごとに
+        走らせる配線は建設者が入れるので、本物の PR #659 のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 972
+      at: 2026-11-07
+      decided_by: committee:D-0023
+      wired: false
+      verified: false
 decided_by: committee:D-0013

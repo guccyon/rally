@@ -2,10 +2,10 @@
 
 既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。
 
-PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理がそれに合っているかを見る。
+PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
-python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、Engine の本物の処理のテスト
+python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査のテストと、Engine の本物の処理のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
 ```
 
@@ -23,6 +23,53 @@ python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # �
 | `agent_tier` | `tier-large` | ほかのファイルも衝突したときにエージェントで解く段 |
 
 判定は `policy.py` の `enqueue_decision`（次の衝突で積むか、人に回すか）・`may_resume`（その回が引き継いでよいか）・`resolution`（衝突したファイルからの解き方と tier）。
+
+## 制御プレーンのイベント列の検査（`events.py`）
+
+起きた記録（制御プレーンの events）を PR ごとに組んで、上の線に照らす。委員会の議決 `D-0023`（Issue #972 の起票時の番号は `D-0018`）と Issue #972 で作った。線は `policy.py` の `enqueue_decision`・`may_resume`・`resolution` をそのまま使う。
+
+```sh
+python3 -B tools/conflict-check/events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
+python3 -B tools/conflict-check/events.py --events tools/conflict-check/fixtures/c0005-pr659-events.json   # C-0005 の流れ。終了コード 1
+```
+
+PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何回目か・agent_resumed・tier・衝突したファイルを組む。`job.started`・`job.finished`・`conflict.files` は `job_id` で結ぶ。
+
+| 項目 | 読むところ |
+|---|---|
+| 何回目か | PR ごとの `continue.enqueued`（reason=conflict）の順番。`payload.attempt` のほうが大きければそれ（イベント列が途中から始まっていても下回らない） |
+| agent_resumed | `continue.enqueued` か `job.finished` の `payload.agent_resumed`（真偽） |
+| tier | `continue.enqueued` か `job.finished` の `payload.agent_tier` があればそれ。なければ `job.finished` の `cost_usd` が 0 の回は `none`（エージェントを使わなかった。worker の `entrypoint.sh` は機械的に解いた回の費用を 0 にする）。ほかは `job.started` の `model_tier` |
+| 衝突したファイル | `conflict.files` の `payload.files`（dispatcher がワーカーのログから記録する。機械的に解く前に衝突していたファイル） |
+
+| rule | 外れる記録 |
+|---|---|
+| `over_limit` | 同じ PR で `max_attempts_per_pr` を超えて積まれた（今の線では 4 回目以降） |
+| `resumed_after_limit` | `resume_session_until_attempt` より後の回（今の線では 2 回目以降）で agent_resumed=true |
+| `agent_for_mechanical` | 衝突したファイルが `mechanical.paths`（`CHANGELOG.md` と `changelog.d/`）だけなのに、エージェントの tier（tier-large など）で解いた |
+
+- 記録がなく分からない項目（agent_resumed・tier・衝突したファイル）はその rule を照らさず、PR ごとに件数を出す（`--json` では `unknown`）。`pr.conflicted` は衝突した head の数として出す
+- 終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった（JSON・JSONL として読めない、`name` のない件がある、`payload` がオブジェクトでない）
+- 標準出力: 外れた回ごとに `<PR の URL> attempt=<回> job=<job_id> <rule>: 理由` と、PR ごとと全体の件数の行。`--json` は `{ "ok", "prs": [{ "pr_url", "attempts", "conflicted_heads", "unknown", "errors" }] }`
+- `test_events.py` が、`fixtures/c0005-pr659-events.json`（C-0005 の流れ）で 3 つの rule がすべて落ちること（`over_limit` 17 件・`resumed_after_limit` 19 件・`agent_for_mechanical` 19 件）と、線どおりの積み方が通ることを確かめる
+- `fixtures/c0005-pr659-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0005.md`）にある事実だけを Engine のイベントの形に組み直したもの（制御プレーンの events はワーカーから読めない）。id・job_id・head_sha は仮の値。13 回目は衝突したファイルの記録を置かず、照らせない回にした
+
+制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
+
+```sql
+select coalesce(json_agg(json_build_object('id', e.id, 'name', e.name, 'job_id', e.job_id, 'payload', e.payload) order by e.id), '[]')
+from events e
+where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url' = :'pr_url')
+   or (e.name in ('job.started', 'job.finished', 'conflict.files')
+       and e.job_id in (select c.job_id from events c where c.name = 'continue.enqueued' and c.payload->>'reason' = 'conflict'
+                                                         and c.payload->>'pr_url' = :'pr_url'));
+```
+
+2026-11-07 の Engine（`main` の `03974c0`）の記録との違い:
+
+- agent_resumed は制御プレーンの events に載っていない（ワーカーのログの `[worker] agent resumed=` の行と、チケットのボリュームの `ticket.json` だけ）。載るまでは `resumed_after_limit` は照らせず、件数に出る。`job.finished` に `agent_resumed` を足すのは建設者
+- tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録に足すのも建設者
+- この検査を PR ごと・supervisor の周期ごとに走らせる配線（イベントを出す手順と `.github/workflows/`）はまだない
 
 ## Engine の本物の処理のテスト（`test_engine.py`）
 
