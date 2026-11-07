@@ -275,4 +275,18 @@ enforcement:
       decided_by: committee:D-0021
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0021 の schema の案（Engine の definitions/knowledge.yaml の enforcement.solutions に wired・verified の真偽を足し、
+        core-gates/knowledge_check.py に check.py の label() を移して INDEX.md の担保の列に「未配線」「deterministic（未確認）」を出す）は、
+        議決 D-0015・D-0016・D-0017 と同じ案で、Issue #965・#968 で置いた tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch が満たすので、
+        新しい差分は作らずその担保として記録し、差分と README に D-0021 を書き足した。手元の Engine の先頭（a7fae10）の写しに差分が当たり、
+        test_engine.py（ENGINE_DIR を向けて）と差分で Engine に足した test_knowledge_check.py のテストが通ることを確かめた。Engine は別のリポジトリで、
+        差分を当てて knowledge-check.yml の ENGINE_REF を上げ --index を作り直すことは建設者が行うので、INDEX.md の担保の列は今も deterministic のままで、
+        この解決策も未配線・未確認
+      issue: 987
+      at: 2026-11-07
+      decided_by: committee:D-0021
+      wired: false
+      verified: false
 decided_by: committee:D-0004
