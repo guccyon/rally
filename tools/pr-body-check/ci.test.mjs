@@ -8,7 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { CHECK_NAME } from "./protection.mjs";
+import { jobCheckNames } from "../sendback-check/protection.mjs";
+import { CHECK_NAME, REQUIRED_JOB } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/pr-body-engine.yml", import.meta.url)), "utf8");
 const copyPath = fileURLToPath(new URL("../../.github/workflows/pr-body-engine.yml", import.meta.url));
@@ -54,9 +55,10 @@ function workflowProblems(text) {
   if (refLines.length !== 1 || !/^[0-9a-f]{40}$/.test(engineRef(lines.join("\n")) ?? "")) {
     problems.push("ENGINE_REF はワークフローの env に 40 桁のコミット SHA で 1 行だけ置く（上書きや動く名前だと、ENGINE_REF の行を変えても別の版で走る）");
   }
-  const engine = jobBody(lines, "engine-test");
+  const engine = jobBody(lines, REQUIRED_JOB);
   if (engine === null) return [...problems, "engine-test のジョブがない（必須のチェックにするジョブ）"];
-  if (!engine.some((l) => l === `    name: ${CHECK_NAME}`)) {
+  // チェックの名前は protection.mjs と同じ読み方（jobCheckNames）で見る
+  if (jobCheckNames(lines.join("\n")).get(REQUIRED_JOB) !== CHECK_NAME) {
     problems.push(`engine-test の name: を ${CHECK_NAME} にする（sendback-engine.yml の engine-test と同じ名前だと、必須のチェックがどちらでも満たされる）`);
   }
   if (engine.some((l) => /^ {4}needs:/.test(l))) problems.push("engine-test に needs があると、待つジョブが落ちたときに飛ばされて走らない");
