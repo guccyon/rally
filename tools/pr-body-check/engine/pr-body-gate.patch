@@ -1,8 +1,8 @@
 diff --git a/orchestrator/dispatcher/dispatcher.py b/orchestrator/dispatcher/dispatcher.py
-index 9ec5477..eb024c4 100644
+index 4b3ce86..237aff8 100644
 --- a/orchestrator/dispatcher/dispatcher.py
 +++ b/orchestrator/dispatcher/dispatcher.py
-@@ -559,6 +559,12 @@ def run_job(job: dict, reattaching: bool = False):
+@@ -561,6 +561,12 @@ def run_job(job: dict, reattaching: bool = False):
                          swap_label(repo, int(result["pr_number"]), [], [PROVISIONAL_LABEL])
                  except Exception as e:  # noqa: BLE001
                      log("provisional record failed", job_id, repr(e))
@@ -15,7 +15,7 @@ index 9ec5477..eb024c4 100644
              if preempted_for:
                  requeue_preempted(cur, job, preempted_for, (result or {}).get("cost_usd"))
              elif state == "failed" and (err or "").startswith("exit=") and net_transient(lines) and requeue_transient(cur, job):
-@@ -893,6 +899,26 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
+@@ -895,6 +901,30 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
      log("body_fix enqueued", pr_url, "job", jid)
  
  
@@ -29,9 +29,13 @@ index 9ec5477..eb024c4 100644
 +    if rc == 1 and defects:
 +        entry = (gate.get("pending_entry") or "").strip()
 +        if entry:
++            # 報告は切らずに全文を渡す（body_fix はこの evidence から本文を組み直すので、切ると切った分が本文に戻らない）。
++            # 引き継ぎに残した全文の場所も添える
++            handoff = gate.get("handoff")
 +            defects.append({"rubric_id": defects[0].get("rubric_id"), "severity": "should", "location": "PR 本文 末尾",
-+                            "evidence": "続きのジョブの報告を本文に書いていない（関所で外れたため）:\n" + entry[:4000],
-+                            "remediation_hint": "この報告の ## 見出しを ### 以下に下げて、「## 工場の記録」の下に入れる"})
++                            "evidence": "続きのジョブの報告を本文に書いていない（関所で外れたため）:\n" + entry
++                                        + (f"\n\n（同じ全文を引き継ぎの {handoff} の pending_entry に残した）" if handoff else ""),
++                            "remediation_hint": "この報告の全文を、## 見出しを ### 以下に下げて「## 工場の記録」の下に入れる"})
 +        enqueue_body_fix(cur, repo, corr, pr_url, pr_number, defects)
 +        return
 +    stoppage.open_stoppage(cur, f"body_gate:{pr_url}", "human", f"PR 本文の関所が終了コード {rc} で本文を書かせなかった",
@@ -43,10 +47,10 @@ index 9ec5477..eb024c4 100644
      pr_number = int(pr_url.rsplit("/", 1)[1])
      labels = [f"factory:judged:{mode}"]
 diff --git a/orchestrator/worker/entrypoint.sh b/orchestrator/worker/entrypoint.sh
-index c0f0495..1397713 100755
+index c0f0495..31d5b9f 100755
 --- a/orchestrator/worker/entrypoint.sh
 +++ b/orchestrator/worker/entrypoint.sh
-@@ -361,14 +361,36 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
+@@ -361,14 +361,38 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
    # 続きのジョブの報告は、本文の末尾に折りたたんで 1 件ずつ足す。見出しのまま足すと、衝突の解消が重なった PR で
    # 同じ見出しが 11 回並び、元の概要が埋もれた（2026-11-02 rally #657）
    ENTRY=$(printf '<details><summary>%s（job %s、turns %s、$%s）</summary>\n\n%s\n\n- model: %s\n</details>' "${SECTION_TITLE}" "${JOB_ID}" "${TURNS}" "${COST}" "${SUMMARY}" "${MODEL}")
@@ -75,8 +79,10 @@ index c0f0495..1397713 100755
 +  if [ "${GATE_RC}" -ne 0 ]; then
 +    BODY_FIX_JSON=$(jq -c . <<<"${GATE_OUT}" 2>/dev/null) || BODY_FIX_JSON=null
 +    [ -n "${BODY_FIX_JSON}" ] || BODY_FIX_JSON=null
++    # pending_entry は書かなかった報告の全文（切らない）。handoff は同じ全文を残す引き継ぎのファイル（HANDOFF_DIR がなければ null）
 +    BODY_GATE=$(jq -nc --arg rc "${GATE_RC}" --argjson body_fix "${BODY_FIX_JSON}" --arg entry "${ENTRY}" \
-+      '{rc:($rc|tonumber), body_fix:$body_fix, pending_entry:$entry}')
++      --arg handoff "${HANDOFF_DIR:+${HANDOFF_DIR}/jobs/${JOB_ID}/body_gate.json}" \
++      '{rc:($rc|tonumber), body_fix:$body_fix, pending_entry:$entry, handoff:(if $handoff == "" then null else $handoff end)}')
 +    if [ -n "${HANDOFF_DIR}" ]; then
 +      mkdir -p "${HANDOFF_DIR}/jobs/${JOB_ID}" && printf '%s\n' "${BODY_GATE}" > "${HANDOFF_DIR}/jobs/${JOB_ID}/body_gate.json" || true
 +    fi
@@ -85,7 +91,7 @@ index c0f0495..1397713 100755
      gh pr edit "${CONTINUE_PR}" -R "${REPO}" --title "${TITLE} (#${ISSUE_NUMBER})" --body "${NEW_BODY}" >/dev/null
      gh pr ready "${CONTINUE_PR}" -R "${REPO}" >/dev/null || true
    else
-@@ -405,8 +427,8 @@ if ! git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" | grep -vqE '(\.md$|
+@@ -405,8 +429,8 @@ if ! git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" | grep -vqE '(\.md$|
  
  echo "FACTORY_RESULT:$(jq -nc --arg pr "${PR_URL}" --arg n "${PR_NUMBER}" --argjson usage "${USAGE}" --arg cost "${COST}" --arg model "${MODEL}" --arg turns "${TURNS}" --arg ct "${CHANGE_TYPE}" --arg files "${CHANGED}" \
    --argjson lessons "${LESSONS_JSON}" --arg provisional "${PROVISIONAL}" --argjson knowledge "${KNOWLEDGE_IDS}" \
@@ -97,10 +103,10 @@ index c0f0495..1397713 100755
  # 最後の行を `[ … ] && exit 4` にすると、条件が偽のときスクリプトの終了コードが 1 になる（T08 job 30 で成功が失敗扱いになった）
  if [ -n "${INCOMPLETE}" ]; then exit 4; fi
 diff --git a/definitions/events.yaml b/definitions/events.yaml
-index 1ae38d5..4f6057e 100644
+index 53a9f98..4a5d742 100644
 --- a/definitions/events.yaml
 +++ b/definitions/events.yaml
-@@ -386,6 +386,10 @@ events:
+@@ -402,6 +402,10 @@ events:
      source: control_plane
      required: [pr_url, defects, chars]
      note: "PR 本文だけの指摘を本文の追記で直した（body_fix のジョブ）。差し戻しの回数に数えない"

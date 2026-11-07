@@ -232,10 +232,29 @@ test("(6) 関所を配線した Engine の dispatcher は、外れた（rc 1）�
   assert.deepEqual(out.input.defects.slice(0, -1), first.gate.body_fix.defects);
   const pending = out.input.defects.at(-1);
   assert.equal(pending.location, "PR 本文 末尾");
-  assert.ok(pending.evidence.includes(first.gate.pending_entry.slice(0, 40)), "書かなかった続きのジョブの報告が body_fix に渡っていない");
+  assert.ok(pending.evidence.includes(first.gate.pending_entry.trim()), "書かなかった続きのジョブの報告の全文が body_fix に渡っていない");
+  assert.ok(first.gate.handoff?.endsWith("/jobs/2800/body_gate.json"), "body_gate に引き継ぎの全文の場所がない");
+  assert.ok(pending.evidence.includes(first.gate.handoff), "body_fix の指摘に引き継ぎの全文の場所がない");
   for (const rc of [2, 3]) {
-    const r = bodyGate({ rc, body_fix: null, pending_entry: first.gate.pending_entry });
+    const r = bodyGate({ rc, body_fix: null, pending_entry: first.gate.pending_entry, handoff: first.gate.handoff });
     assert.deepEqual(r.jobs, [], `rc ${rc} で body_fix を積んだ`);
     assert.deepEqual(r.stoppages.map((x) => x.category), ["human"], `rc ${rc} で人に回していない`);
   }
+});
+
+test("(7) 関所を配線した Engine は、4000 字を超える続きのジョブの報告も切らずに body_gate と body_fix の指摘に渡す", { skip }, () => {
+  const long = ["## 概要", "長い報告の頭。", ...Array.from({ length: 300 }, (_, i) => `- 変えたこと ${i}: ${"あ".repeat(20)}`), "長い報告の終わり。"].join("\n");
+  assert.ok(long.length > 4000);
+  const gh = fakeGh(engineNewBody());
+  const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+  bash(patchedParts().update, { ...JOB, PATH: `${gh.dir}:${process.env.PATH}`, JOB_ID: "2950", CONTINUE_REASON: "conflict", CONTINUE_PR: PR_NUMBER, PR_URL,
+    SUMMARY: long, HANDOFF_DIR: handoff }, repoRoot);
+  assert.equal(gh.body(), engineNewBody(), "外れた本文を書いた");
+  const g = JSON.parse(readFileSync(join(handoff, "jobs", "2950", "body_gate.json"), "utf8"));
+  assert.equal(g.rc, 1);
+  assert.ok(g.pending_entry.includes(long), "引き継ぎの body_gate.json に報告の全文がない");
+  assert.equal(g.handoff, join(handoff, "jobs", "2950", "body_gate.json"));
+  const pending = bodyGate(g).input.defects.at(-1);
+  assert.ok(pending.evidence.includes(long), "4000 字を超える報告が body_fix の指摘で切れた");
+  assert.ok(pending.evidence.includes(g.handoff));
 });

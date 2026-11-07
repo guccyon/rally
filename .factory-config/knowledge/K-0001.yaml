@@ -61,7 +61,7 @@ enforcement:
         議決 D-0019 の ci_check の案のうち、ワーカーの権限で入れられる分を入れた。tools/pr-body-check/engine/pr-body-gate.patch が Engine に当てる差分で、
         worker/entrypoint.sh の続きのジョブの節で、NEW_BODY を gh pr edit に渡す直前に tools/pr-body-check/gate.mjs を呼び、0 以外なら本文を書かずに
         関所の出力（rubric_id PR-002・location「PR 本文 N 行目」の body_fix の入力）と書かなかった報告を FACTORY_RESULT の body_gate と引き継ぎに残し、
-        dispatcher の act_on_body_gate が終了コード 1 なら判定役を待たずに enqueue_body_fix で body_fix を積み（書かなかった報告も指摘として渡す）、2・3 なら人に回す。
+        dispatcher の act_on_body_gate が終了コード 1 なら判定役を待たずに enqueue_body_fix で body_fix を積み（書かなかった報告も切らずに全文を、引き継ぎの場所を添えて指摘として渡す）、2・3 なら人に回す。
         続きのジョブの記録の見出しも「## 工場の記録」の下の ### に下げ、## 見出しのない報告は止めずに書く。engine.test.mjs の (3)「外れた本文を書かない」の todo を外して
         必須にしたので、関所を呼ばない Engine（今の ENGINE_REF と手元の Engine）では落ちる。差分を当てた Engine の写しでは C-0005 の 21 回の続きのジョブで
         外れた本文を一度も書かず body_fix が積まれること（(4)〜(6)）、差分を当てた Engine 全体の写しを ENGINE_DIR にすると (3) を含め全部通ることを確かめた。
