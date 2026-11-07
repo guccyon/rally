@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0040
+pr: https://github.com/guccyon/rally/pull/1090
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1024 の ci_check を 1 件足しただけなので、D-0004 からこれまでの議決とも specs/ の規範とも矛盾しません。
+  - 足した項目の kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と揃っていて、README
+    の wired・verified を必ず書く決まりにも合っています。
+  - 'decided_by を committee:D-0028 にした点は、D-0028 の enforcement の 1 つめの案（ci_check で
+    ENGINE_REF の行を変える PR でも engine-test が必ず走ることを ci.test.mjs で確かめる）と中身が一致しており、Issue
+    #1024 の D-0027 という書き違いを what で断っている扱いも D-0026 の記録の揃え方と同じです。'
+  - issue 969 の solution と同じ ci.test.mjs を指していますが、今回は ENGINE_REF の上書き・needs・取る版の見張りを足した別の段だと
+    what に書いてあるので、重複ではありません。
+  - D-0028 の 2 つめの案（adopt の合計だけを書く別の言い回しの basis の写しで (3) が落ちることを確かめる test）はこの PR では入っていないので、次に
+    K-0004 を直す変更セットで記録するか残すかを書き添えると辿りやすくなります。
+  - 'wired: false・verified: false で、.github/workflows/ への写しと必須チェックへの登録が建設者待ちだと明記しているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 1024 と committee:D-0028 を指しています。D-0028 の enforcement
+    の 1 つめの案（sendback-engine.yml を .github/workflows/ に写して必須チェックにし、ENGINE_REF の行を変える
+    PR で engine-test が必ず走ることを ci.test.mjs で確かめる）にそのまま当たるので、一次記録に辿れます。
+  - 'Issue #1024 が D-0027 と書いているずれは what の中で書き添えられています。D-0028.yaml の pr は #1022 で、案の中身も一致するので、decided_by
+    を committee:D-0028 にしたのは正しいです。'
+  - 「15 の直しで外れることを確かめた」は手元での確認で、その直しの一覧と走らせた出力がどこにも残っていません。issue 1024 にテストの出力を残してください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっていません。担保の記録を足しただけなので、根拠の段は崩れていません。'
+  - 'wired: false・verified: false で、.github/workflows/ から走っていないと自分で明記しています。このため confidence
+    は hypothesis のままが妥当です。ENGINE_REF を上げる本物の PR で engine-test が必須として走った記録が残るまで、confirmed
+    に上げないでください。'
+  - 差分に出てくるのはファイルのパス・ジョブ名・環境変数の名前・issue と PR の番号・議決の id だけです。利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0028 の ci_check の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件足しただけなので、採ってよいです。
+  - ENGINE_REF の 2 行目の上書きや needs、paths・paths-ignore・branches の絞り込みを ci.test.mjs で中身を問わず外れにする見張りは、Engine
+    を上げる PR で engine-test が走らない外し方を機械で塞ぐ形で、向きは正しいです。
+  - ただし ci/sendback-engine.yml はまだ .github/workflows/ に写されておらず、engine-test と wiring-order
+    も branch protection の必須チェックになっていないので、今は外れても何も止まりません。
+  - 必須チェックにしたかどうかは人の手順のままで繰り返し抜けやすく、外すと ENGINE_REF を上げる PR が素通りして痛いので、branch protection
+    の必須チェックの一覧を CI で照らす決定論の担保を足すべきです。
+  - 'what に Issue #1024 が D-0027 と書いているずれを注記していますが、decided_by は committee:D-0028 で議決の記録と合っているので、担保の記録としては問題ありません。'
+  - 'wired: false・verified: false で効き目を CI で確かめていないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0028 の ci_check の案に当たる記録を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、範囲は広すぎません。
+  - 足した what は D-0028 の enforcement の 1 つめの案（写して必須にし、ENGINE_REF の行を変える PR で engine-test
+    が必ず走ることを ci.test.mjs で確かめる）とそのまま対応しており、写しと必須化は建設者に残すと分けて書いているので、案より広いことを主張していません。
+  - 反例として、見張りが挙げる絞り込みは paths・paths-ignore・branches だけなので、branches-ignore や pull_request
+    の types（例えば opened だけ）で synchronize のときに engine-test が走らない形が捕まるかを次に直すときに確かめてください。
+  - ENGINE_REF の見張りはワークフローの env と GITHUB_ENV の上書きを見ていますが、Engine を取る手順を再利用ワークフローや composite
+    action に移して ref を別の入力で渡す形は反例として残るので、その形も外れにするかを決めてください。
+  - 'ci.test.mjs の確認はワークフローの静的な形を見るだけで、ENGINE_REF を上げる本物の PR で engine-test が走った記録はまだないので、wired:
+    false・verified: false のまま、confidence も hypothesis のままが妥当です。'
+  - 'Issue の番号と議決の id がずれている（Issue #1024 は D-0027 と書く）注記が D-0026 に続いて繰り返されているので、Issue
+    の側を直すか、K-0004 の solutions が 16 件に増えた時点で建設者の配線と合わせてまとめ直すことを勧めます。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が tools/sendback-check/ci/sendback-engine.yml を .github/workflows/
+    に写し、engine-test と wiring-order を branch protection の必須チェックにしたうえで、gh api で main
+    の required_status_checks に engine-test と wiring-order が入っていることを確かめるジョブを足し、外れていれば落とす。そのあとで
+    ENGINE_REF を上げる PR で engine-test が走って通った記録を残してから wired と verified を true にする。

@@ -339,4 +339,21 @@ enforcement:
       decided_by: committee:D-0026
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0028（PR #1022。Issue #1024 は D-0027 と書いているが、この案は D-0028 の議決にある）の ci_check の案（ci/sendback-engine.yml を
+        .github/workflows/ に写して engine-test と wiring-order を branch protection の必須チェックにし、ENGINE_REF の行を変える PR では paths の
+        絞り込みに関わらず engine-test が必ず走ることを ci.test.mjs で確かめる）のうち、ワーカーの権限で入れられる分を入れた。
+        Engine を上げる PR が変えるのは写しの ENGINE_REF の行だけなので、tools/sendback-check/ci.test.mjs（wiring-order のジョブで走る）が、
+        on の paths・paths-ignore・branches の絞り込みを中身を問わず外れにする見張り（issue 969）に加えて、ENGINE_REF がワークフローの env に
+        1 行だけあり（ジョブや手順の env・GITHUB_ENV で上書きしない。ずれの比べ方は ENGINE_REF の行を無視するので 2 行目の上書きを見逃していた）、
+        engine-test に needs がなく、最初の手順が ENGINE_REF の見張りで、Engine を取る手順の ref が env.ENGINE_REF であることを、ひな形と写しの両方で見て
+        外れたら落とす。ENGINE_REF の行だけを変えたひな形が通ること、写しを含める・含めない paths・paths-ignore・branches の絞り込み、needs、
+        ENGINE_REF の上書き・取り外し、取る版の書き込みなど 15 の直しで外れることを確かめた。.github/workflows/ に写すことと必須チェックにすることは
+        建設者が行うので、まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1024
+      at: 2026-11-07
+      decided_by: committee:D-0028
+      wired: false
+      verified: false
 decided_by: committee:D-0004
