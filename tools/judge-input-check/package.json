@@ -1,0 +1,10 @@
+{
+  "name": "rally-judge-input-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "judge のジョブの入力に、検査役の指摘が引くすべての rubric の本文が入ることを決定論で検査する（知見 K-0011 の担保）",
+  "scripts": {
+    "test": "node --test"
+  }
+}
