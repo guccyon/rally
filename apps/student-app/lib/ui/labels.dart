@@ -72,15 +72,34 @@ String formatDateTime(DateTime value) {
 
 /// 端末のタイムゾーンで、開始から終了までを 1 行に。例: `10/28（水）3:00〜4:00`。
 /// 終了が別の日なら終了にも日付を付ける。例: `10/28（水）23:30〜10/29（木）0:30`
-String formatTimeRange(DateTime start, DateTime end) {
+String formatTimeRange(DateTime start, DateTime end) =>
+    '${_dayLabel(start.toLocal())}${formatClockRange(start, end)}';
+
+/// 端末のタイムゾーンで、開始から終了までの時刻（予約のカードの題。日付はカードの日付のコマに出す）。例: `3:00〜4:00`。
+/// 終了が別の日なら終了には日付を付ける。例: `23:30〜10/29（木）0:30`
+String formatClockRange(DateTime start, DateTime end) {
   final from = start.toLocal();
   final to = end.toLocal();
-  String day(DateTime d) => '${d.month}/${d.day}（${_weekdays[d.weekday - 1]}）';
-  String time(DateTime d) => '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
   final sameDay =
       from.year == to.year && from.month == to.month && from.day == to.day;
-  return '${day(from)}${time(from)}〜${sameDay ? '' : day(to)}${time(to)}';
+  return '${_clockLabel(from)}〜${sameDay ? '' : _dayLabel(to)}${_clockLabel(to)}';
 }
+
+/// 予約のカードの日付のコマ（端末のタイムゾーンで）。例: `10月`・`28`・`水`
+({String month, String day, String weekday}) dateBlockLabels(DateTime start) {
+  final local = start.toLocal();
+  return (
+    month: '${local.month}月',
+    day: '${local.day}',
+    weekday: _weekdays[local.weekday - 1],
+  );
+}
+
+String _dayLabel(DateTime d) =>
+    '${d.month}/${d.day}（${_weekdays[d.weekday - 1]}）';
+
+String _clockLabel(DateTime d) =>
+    '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
 
 const _weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 

@@ -90,6 +90,25 @@ void main() {
     );
   });
 
+  test('予約のカードの題は時刻だけにし、別の日に終わるときだけ終わりに日付を付ける。日付はコマに分けて出す', () {
+    expect(
+      formatClockRange(DateTime(2026, 10, 28, 3), DateTime(2026, 10, 28, 4)),
+      '3:00〜4:00',
+    );
+    expect(
+      formatClockRange(
+        DateTime(2026, 10, 28, 23, 30),
+        DateTime(2026, 10, 29, 0, 30),
+      ),
+      '23:30〜10/29（木）0:30',
+    );
+    expect(dateBlockLabels(DateTime(2026, 11, 1, 18, 30)), (
+      month: '11月',
+      day: '1',
+      weekday: '日',
+    ));
+  });
+
   test('月額契約のプランの選択肢は、名前と応答のビデオ通話の暦月の上限で出す', () {
     expect(
       subscriptionPlanChoiceLabel(

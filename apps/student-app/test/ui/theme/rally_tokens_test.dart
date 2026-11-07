@@ -65,6 +65,17 @@ void main() {
     }
   });
 
+  test('予約の状態の色は tokens.yaml の color.booking_state と同じ', () {
+    final bookingState = color['booking_state'] as YamlMap;
+    final dart = {
+      for (final state in RallyBookingState.values)
+        state.name: state.status.name,
+    };
+    expect(dart, {
+      for (final entry in bookingState.entries) entry.key: entry.value,
+    });
+  });
+
   test('スロットの状態の色は tokens.yaml の color.slot_state と同じ', () {
     final slotState = color['slot_state'] as YamlMap;
     final dart = {
