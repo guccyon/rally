@@ -1,6 +1,6 @@
 // デザインシステムの正本（specs/design/）から部品のカタログを組み立てる。
 // 色・書体・余白・角丸は tokens.yaml、部品の見本は components.yaml の preview と preview_css、コピーは concept_tone.yaml の copy。
-// 正本だけを読み、手で書いた見本を持たない。Web フォントは読まない（書体は tokens.yaml の typography.families.sans）。
+// 正本だけを読み、手で書いた見本を持たない。Web フォントは読まない（書体は tokens.yaml の typography.families の sans と numeric の名前で指定するだけ）。
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,15 +40,16 @@ export function tokenVariables(tokens) {
   for (const [step, px] of Object.entries(tokens.spacing.scale_px)) vars[`space-${step}`] = `${px}px`;
   for (const [step, px] of Object.entries(tokens.shape.radius_px)) vars[`radius-${step}`] = `${px}px`;
   vars["font-sans"] = tokens.typography.families.sans;
+  vars["font-numeric"] = tokens.typography.families.numeric;
   return vars;
 }
 
-/** typography.scale の段ごとの class（.type-display など）。preview の html が使う。 */
+/** typography.scale の段ごとの class（.type-display・.type-figure-sm など）。preview の html が使う。family のある段はその書体。 */
 export function typeClasses(tokens) {
   return Object.entries(tokens.typography.scale)
     .map(
       ([name, s]) =>
-        `.type-${name}{font-size:${s.size}px;font-weight:${s.weight};line-height:${s.line_height};letter-spacing:${s.letter_spacing}}`,
+        `.type-${kebab(name)}{${s.family ? `font-family:var(--font-${kebab(s.family)});` : ""}font-size:${s.size}px;font-weight:${s.weight};line-height:${s.line_height};letter-spacing:${s.letter_spacing}}`,
     )
     .join("\n");
 }
@@ -113,11 +114,11 @@ function typeSection({ tokens }) {
   const rows = Object.entries(tokens.typography.scale)
     .map(
       ([name, s]) =>
-        `<div class="cat-type"><div class="cat-meta type-small"><b>${escape(name)}</b><br><span class="cat-muted">${s.size}px・${s.weight}・${s.line_height}・${escape(s.letter_spacing)}</span></div><div class="type-${name}">${escape(s.sample)}</div></div>`,
+        `<div class="cat-type"><div class="cat-meta type-small"><b>${escape(name)}</b><br><span class="cat-muted">${s.size}px・${s.weight}・${s.line_height}・${escape(s.letter_spacing)}${s.family ? `・${escape(s.family)}` : ""}</span></div><div class="type-${kebab(name)}">${escape(s.sample)}</div></div>`,
     )
     .join("");
   return `<section class="cat-section" aria-labelledby="type"><h2 id="type" class="type-headline">書体</h2>
-<p class="type-small cat-muted">${escape(tokens.typography.families.sans)}。${escape(tokens.typography.sample_rule)}</p>${rows}</section>`;
+<p class="type-small cat-muted">sans ${escape(tokens.typography.families.sans)}。numeric ${escape(tokens.typography.families.numeric)}。${escape(tokens.typography.sample_rule)}</p>${rows}</section>`;
 }
 
 function shapeSection({ tokens }) {
@@ -179,7 +180,7 @@ ${spec.components.preview_css.trim()}
 <main class="cat">
 <header class="cat-hero"><i class="cat-band"></i>
 <div class="cat-eb type-small">rally デザインシステム ${escape(version)}・コンセプト ${escape(spec.concept.concept.id)}</div>
-<h1 class="type-display cat-line">${escape(copy.line)}</h1>
+<h1 class="type-headline cat-line">${escape(copy.line)}</h1>
 <div class="cat-eb type-small">${escape(spec.concept.concept.name)}</div>
 </header>
 ${conceptSection(spec)}

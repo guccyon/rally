@@ -5,6 +5,10 @@
 # engine.test.mjs に todo が残っているか、engine.test.mjs を走らせる手順がないときに落ちる（Engine は要らない）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine.yml に写す。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、engine.test.mjs が通ることを確かめる）。
+# 写したら branch protection で engine-test と wiring-order を必須のチェックにする（議決 D-0014、Issue #960）。
+# ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる。engine-test の最初の手順
+# （どのチェックアウトよりも前）で確かめ、違えば Engine を取らずに落とす（議決 D-0014、Issue #960。テストは ci.test.mjs）。
+# wiring-order は ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでこのファイルとずれたら落とす。
 name: sendback-engine
 
 on:
@@ -30,10 +34,21 @@ jobs:
           node-version: 22
       - name: check.mjs の ci_check の配線の順序（K-0004）
         run: node tools/sendback-check/order.mjs --summary "$GITHUB_STEP_SUMMARY"
+      - name: ENGINE_REF の見張りと写しのずれ（K-0004）
+        working-directory: tools/sendback-check
+        run: node --test --test-reporter=spec ci.test.mjs
 
   engine-test:
     runs-on: ubuntu-latest
     steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=sendback-engine engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする。ブランチ名やタグは動くので使わない（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
       - uses: actions/checkout@v4
       - name: Engine を取る（固定した版）
         uses: actions/checkout@v4

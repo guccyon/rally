@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'components/booking_card.dart';
 import 'components/confirm_dialog.dart';
 import 'components/empty_state.dart';
 import 'components/list_row.dart';
@@ -34,6 +35,8 @@ class CatalogEntry {
 
 /// components.yaml にあるが student-app のカタログに置かない部品と種類（`部品` か `部品 / 種類` → 理由）。
 const notInStudentCatalog = <String, String>{
+  'date_field':
+      'components.yaml の not_for に student-app では今は使わないとある（admin-web の一覧の絞り込み）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'notice / toast':
@@ -64,6 +67,13 @@ const _notices = {
   RallyStatus.success: '表示名を変更しました。',
   RallyStatus.warning: '開始まで 1 時間を切りました。',
   RallyStatus.danger: 'お知らせを読み込めませんでした。時間をおいてもう一度開いてください。',
+};
+
+/// スロットの状態の呼び名（glossary の slot.states）
+const _slotStateLabels = {
+  RallySlotState.open: '公開中',
+  RallySlotState.booked: '予約済み',
+  RallySlotState.closed: '終了',
 };
 
 const _statusLabels = {
@@ -127,22 +137,61 @@ final designCatalog = <CatalogEntry>[
       ),
   CatalogEntry(
     'card',
-    (_) => const RallyCard(
+    (_) => RallyCard(
       children: [
-        Text('10/28（水）12:00〜12:30'),
-        Text('テニス・コーチ: 山田'),
-        StatusTag(label: '確定済み', status: RallyStatus.success),
+        Text('山田 花子', style: RallyTypography.title),
+        Text(
+          'テニス・評価 4.8（12 件）',
+          style: RallyTypography.small.copyWith(color: RallyColors.textMuted),
+        ),
       ],
     ),
+    variant: 'plain',
   ),
   CatalogEntry(
     'card',
-    (_) => const RallyCard(
+    (_) => RallyCard(
       onTap: _noop,
       semanticsLabel: 'スイングの見直し、テニス、1 回 60 分',
-      children: [Text('スイングの見直し'), Text('テニス・1 回 60 分')],
+      children: [
+        Text('スイングの見直し', style: RallyTypography.title),
+        Text(
+          'テニス・1 回 60 分',
+          style: RallyTypography.small.copyWith(color: RallyColors.textMuted),
+        ),
+      ],
     ),
+    variant: 'plain',
     example: '押せる',
+  ),
+  CatalogEntry(
+    'card',
+    (_) => const RallyBookingCard(
+      month: '10月',
+      day: '28',
+      weekday: '水',
+      time: '12:00〜12:30',
+      meta: 'テニス・コーチ: 山田',
+      status: StatusTag(label: '確定済み', status: RallyStatus.success),
+      next: true,
+      onTap: _noop,
+      semanticsLabel: '10/28（水）12:00〜12:30、テニス・コーチ: 山田、確定済み',
+    ),
+    variant: 'booking',
+    example: '次のレッスン',
+  ),
+  CatalogEntry(
+    'card',
+    (_) => const RallyBookingCard(
+      month: '11月',
+      day: '4',
+      weekday: '水',
+      time: '18:00〜18:30',
+      meta: '野球・コーチ: 佐藤',
+      status: StatusTag(label: '確定待ち', status: RallyStatus.warning),
+    ),
+    variant: 'booking',
+    example: '確定待ち',
   ),
   CatalogEntry(
     'list_row',
@@ -195,12 +244,30 @@ final designCatalog = <CatalogEntry>[
     CatalogEntry(
       'status_tag',
       (_) => StatusTag(label: _statusLabels[status]!, status: status),
+      variant: 'default',
       example: status.name,
     ),
+  for (final state in RallySlotState.values)
+    CatalogEntry(
+      'status_tag',
+      (_) => StatusTag(label: _slotStateLabels[state]!, status: state.status),
+      variant: 'default',
+      example: 'slot_state ${state.name}',
+    ),
+  CatalogEntry(
+    'status_tag',
+    (_) => const StatusTag(
+      label: '開始まで 24 時間以内',
+      status: RallyStatus.danger,
+      urgent: true,
+    ),
+    variant: 'urgent',
+  ),
   CatalogEntry(
     'score_panel',
     (_) => const ScorePanel(
       eyebrow: '今月のビデオ通話',
+      prefix: '残り',
       number: '2',
       unit: '回',
       note: '月 2 回のうち（プラン: スタンダード）',
@@ -211,13 +278,22 @@ final designCatalog = <CatalogEntry>[
       ),
     ),
   ),
-  for (final status in _notices.keys)
+  for (final status in _notices.keys.where((s) => s != RallyStatus.success))
     CatalogEntry(
       'notice',
       (_) => Notice(message: _notices[status]!, status: status),
       variant: 'inline',
       state: status.name,
     ),
+  // 成功は inline ではなく濃い面と完了の印（notice.variants.success）
+  CatalogEntry(
+    'notice',
+    (_) => Notice(
+      message: _notices[RallyStatus.success]!,
+      status: RallyStatus.success,
+    ),
+    variant: 'success',
+  ),
   CatalogEntry(
     'empty_state',
     (_) => const EmptyState(

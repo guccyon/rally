@@ -11,7 +11,7 @@ export type DataTableColumn<Row> = {
   cell: (row: Row) => ReactNode;
 };
 
-/** 見出しとセルに共通の余白。左右 sm 8px で列のあいだは md 16px、先頭の左と最後の右は 0（Section の padding にそろえる）。 */
+/** 見出しとセルに共通の余白。左右 sm 8px で列のあいだは md 16px、先頭の左と最後の右は 0（Section の見出しと左をそろえる）。 */
 const EDGE_CLASSES = "px-2 py-2 first:pl-0 last:pr-0";
 
 /** 種類ごとの寄せと折り返し。折り返してよいのは long_text の列だけ（文節で折る）。 */
@@ -68,7 +68,7 @@ export function DataTable<Row>({
               <th
                 key={column.header}
                 scope="col"
-                className={`${EDGE_CLASSES} whitespace-nowrap border-b align-bottom font-bold ${
+                className={`${EDGE_CLASSES} whitespace-nowrap border-b-2 border-b-primary align-bottom font-bold text-text-muted ${
                   column.variant === "numeric" ? "text-right" : ""
                 }`}
               >

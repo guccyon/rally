@@ -14,6 +14,7 @@ import { lessonMenuOptionLabel } from "./CancelledBookingList";
 import { coachReviewSummaryPath } from "./CoachReviewSummaryHome";
 import { LowRatedReviewHandlingAction } from "./LowRatedReviewHandlingAction";
 import { SPORTS } from "./PendingVideoReviewList";
+import { Button } from "@/components/ui/Button";
 
 type LowRatedReview = Schemas["LowRatedLessonReview"];
 
@@ -367,13 +368,13 @@ export function LowRatedReviewList({
             onChange={(event) => setDraftPeriod({ ...draftPeriod, to: event.target.value })}
           />
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           この期間で見る
-        </button>
+        </Button>
         {filter.period !== null && (
-          <button type="button" className="rounded-pill border px-4 py-1" onClick={() => void clearPeriod()}>
+          <Button variant="secondary" onClick={() => void clearPeriod()}>
             期間を外す
-          </button>
+          </Button>
         )}
       </form>
       {periodDraftError !== null && <ResultMessage result={{ ok: false, message: periodDraftError }} />}

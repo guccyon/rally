@@ -2,7 +2,8 @@
 /// ごと（本部からのお知らせは 1 つ）に 1 つ。外部での文字列表現は境界のアダプタが決める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum NotificationKind {
-    /// 予約の確定（`BookingConfirmed`）の通知。生徒への確定の知らせと、コーチへの新しい予約の知らせの両方
+    /// 予約の確定（`BookingConfirmed`）の通知。生徒への確定の知らせと、コーチへの新しい予約の知らせの両方。本部による予約の
+    /// キャンセル（コーチのお休み）の生徒への知らせも、予約についての知らせとしてこの種類に入れる
     BookingConfirmed,
     /// 動画の添削の依頼（`VideoReviewRequested`）の通知。依頼を受けたコーチへの知らせ
     VideoReviewRequested,

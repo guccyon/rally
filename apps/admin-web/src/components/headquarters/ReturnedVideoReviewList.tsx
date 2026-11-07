@@ -11,6 +11,7 @@ import { SPORT_LABELS, formatDateTime, formatDay } from "@/components/labels";
 import { BookingLessonMenuFilter } from "./BookingLessonMenuFilter";
 import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";
 import { lessonMenuOptionLabel } from "./CancelledBookingList";
+import { Button } from "@/components/ui/Button";
 
 type Sport = Schemas["Sport"];
 
@@ -278,9 +279,9 @@ export function ReturnedVideoReviewList({
               ))}
           </select>
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           この条件で見る
-        </button>
+        </Button>
       </form>
       {coaches.kind === "failed" && (
         <ResultMessage

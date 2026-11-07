@@ -17,6 +17,6 @@ npm test            # 置いてある catalog.html が今の正本と同じか�
 | 色・書体・余白と角丸 | `tokens.yaml`（書体の見本は `typography.scale` の `sample`） |
 | 部品 | `components.yaml` の各部品の `preview` と `preview_css` |
 
-CSS の変数は admin-web の `@theme` と同じ名前（`--color-primary`・`--radius-md`・`--space-sm`。状態の色は `--color-<状態>-fg` / `-container` / `-on-container`）で `tokens.yaml` から作る。書体の段は `.type-<段>` の class。Web フォントは読まず、書体は `typography.families.sans` の名前で指定するだけなので、`catalog.png` は撮った端末に Noto Sans CJK JP（か Noto Sans JP）がないと別のゴシックで出る。
+CSS の変数は admin-web の `@theme` と同じ名前（`--color-primary`・`--radius-md`・`--space-sm`。状態の色は `--color-<状態>-fg` / `-container` / `-on-container`）で `tokens.yaml` から作る。書体の段は `.type-<段>` の class（`figure_sm` は `.type-figure-sm`。`family: numeric` の段は `--font-numeric`）。Web フォントは読まず、書体は `typography.families` の `sans` と `numeric` の名前で指定するだけなので、`catalog.png` は撮った端末に Noto Sans CJK JP（か Noto Sans JP）と Barlow Condensed（`apps/student-app/assets/fonts/` にある）がないと別の書体で出る。
 
 正本を直したら作り直して同じ変更に入れる。`catalog.html` と `catalog.png` は手で直さない。

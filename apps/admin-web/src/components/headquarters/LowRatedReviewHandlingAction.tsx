@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 
 /**
  * 低い評価の行の「対応済みにする」。押したら行の中で確かめ（ブラウザの confirm は使わない）、確定で送る。
@@ -26,14 +27,9 @@ export function LowRatedReviewHandlingAction({
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        aria-label={`${label}を対応済みにする`}
-        className="rounded-pill border border-primary px-2 py-0.5 text-primary"
-        onClick={() => setConfirming(true)}
-      >
+      <Button variant="secondary" aria-label={`${label}を対応済みにする`} onClick={() => setConfirming(true)}>
         対応済みにする
-      </button>
+      </Button>
     );
   }
   return (
@@ -42,22 +38,12 @@ export function LowRatedReviewHandlingAction({
         この評価を対応済みにしますか？「未対応だけ」の一覧に出なくなります。対応済みは外せません。
       </p>
       <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill bg-primary px-2 py-0.5 text-on-primary disabled:opacity-50"
-          onClick={() => void confirm()}
-        >
+        <Button disabled={busy} onClick={() => void confirm()}>
           {busy ? "対応済みにしています…" : "対応済みを確定"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-          onClick={() => setConfirming(false)}
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
           やめる
-        </button>
+        </Button>
       </div>
     </div>
   );

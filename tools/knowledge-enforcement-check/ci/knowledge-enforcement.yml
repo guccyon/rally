@@ -1,0 +1,49 @@
+# 知見の担保の配線と効き目の検査（tools/knowledge-enforcement-check/、知見 K-0004 の担保、議決 D-0015）。決定論（LLM を使わない）。
+# .github/workflows/ に写すのは建設者（ワーカーの権限にない）。写すまでこの検査は PR ごとには走らない。
+# PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければジョブを落とす。ほかの PR では結果を Job Summary に残すだけ
+name: knowledge-enforcement
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knowledge-enforcement-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  enforcement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 担保の記録を変えた PR か
+        id: scope
+        env:
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^(\.factory-config/knowledge/|tools/knowledge-enforcement-check/)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 検査のテスト
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -m unittest discover -s tools/knowledge-enforcement-check
+      - name: 担保の配線と効き目
+        env:
+          CHANGED: ${{ steps.scope.outputs.changed }}
+        run: |
+          rc=0
+          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" || rc=$?
+          if [ "$CHANGED" = "true" ]; then exit $rc; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: knowledge-enforcement
+          path: knowledge-enforcement.json
+          if-no-files-found: ignore

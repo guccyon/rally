@@ -8,8 +8,11 @@ import '../state/favorite_coaches.dart';
 import '../state/lesson_completions.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
+import '../ui/components/booking_card.dart';
+import '../ui/components/status_tag.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/theme/rally_tokens.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
 /// お気に入りのコーチ（`listFavoriteCoaches`）・コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口を
@@ -99,23 +102,11 @@ class _BookingsSection extends ConsumerWidget {
         else if (state.myBookings != null && upcoming.isEmpty)
           const Text('まだこれからの予約はありません。')
         else
-          for (final item in upcoming)
-            Card(
-              child: ListTile(
-                title: Text(
-                  formatTimeRange(item.slot.startsAt, item.slot.endsAt),
-                ),
-                subtitle: Text(
-                  [
-                    sportLabel(item.slot.sport),
-                    if (item.booking.lessonMenu case final menu?)
-                      bookingLessonMenuLabel(menu),
-                    if (item.slot.coachDisplayName case final name?)
-                      'コーチ: $name',
-                    bookingStatusLabel(item.booking.status),
-                  ].join('・'),
-                ),
-              ),
+          // 開始の近い順なので、先頭が次のレッスン（日付のコマをライムにするのは 1 つだけ）
+          for (final (index, item) in upcoming.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: RallySpacing.sm),
+              child: _BookingCard(item, next: index == 0),
             ),
         Wrap(
           spacing: 8,
@@ -140,6 +131,42 @@ class _BookingsSection extends ConsumerWidget {
     );
   }
 }
+
+/// これからの予約の 1 件（components.yaml の card の booking）。押せない（予約の操作は「予約をすべて見る」の先）
+class _BookingCard extends StatelessWidget {
+  const _BookingCard(this.item, {required this.next});
+
+  final MyBooking item;
+  final bool next;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = dateBlockLabels(item.slot.startsAt);
+    return RallyBookingCard(
+      month: date.month,
+      day: date.day,
+      weekday: date.weekday,
+      time: formatClockRange(item.slot.startsAt, item.slot.endsAt),
+      meta: [
+        sportLabel(item.slot.sport),
+        if (item.booking.lessonMenu case final menu?)
+          bookingLessonMenuLabel(menu),
+        if (item.slot.coachDisplayName case final name?) 'コーチ: $name',
+      ].join('・'),
+      status: StatusTag(
+        label: bookingStatusLabel(item.booking.status),
+        status: _bookingState(item.booking.status).status,
+      ),
+      next: next,
+    );
+  }
+}
+
+RallyBookingState _bookingState(BookingStatus status) => switch (status) {
+  BookingStatus.pending => RallyBookingState.pending,
+  BookingStatus.confirmed => RallyBookingState.confirmed,
+  BookingStatus.cancelled => RallyBookingState.cancelled,
+};
 
 /// お気に入りのコーチ（お気に入りに入れた時刻の新しい順にすべて。押すとそのコーチの紹介を開き、戻るとホームに戻る）。
 /// 0 件なら欄ごと出さない（読み込み中と読めなかったときは見出しと旨を出す）

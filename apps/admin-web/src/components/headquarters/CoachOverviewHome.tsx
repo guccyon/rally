@@ -21,7 +21,7 @@ export function coachOverviewPath(coachId: string): string {
 
 /**
  * 本部の画面: コーチの受付の一覧の行から開く、コーチ 1 人の様子と受付の記録。
- * 上にそのコーチで開く画面（評価・低い評価・レッスンメニュー・予約）へのリンクの並びを置く。
+ * 上にそのコーチで開く画面（評価・低い評価・レッスンメニュー・予約・お休み）へのリンクの並びを置く。
  * コーチの ID がなければリンクの並びと受付の記録の欄は出さない（様子の欄が「見つかりません」を出す）。
  */
 export function CoachOverviewHome({ token, coachId }: { token: string; coachId: string | undefined }) {

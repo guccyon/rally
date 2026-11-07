@@ -16,6 +16,7 @@ WORKDIR /build
 COPY --chown=${FLUTTER_USER} pubspec.yaml pubspec.lock ./
 RUN flutter config --enable-web >/dev/null && flutter pub get
 COPY --chown=${FLUTTER_USER} lib lib
+COPY --chown=${FLUTTER_USER} assets assets
 COPY --chown=${FLUTTER_USER} analysis_options.yaml ./
 # web/ はリポジトリに置いていない（ios/ android/ と同じ）。作るときに雛形を足す（lib は上書きしない）
 RUN flutter create --platforms=web --project-name rally_student_app --org jp.rally . >/dev/null \

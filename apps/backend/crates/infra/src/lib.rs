@@ -25,6 +25,7 @@ mod pg_announcement_draft_repository;
 mod pg_announcement_repository;
 mod pg_booking_repository;
 mod pg_coach_acceptance_repository;
+mod pg_coach_leave_repository;
 mod pg_entitlement_repository;
 mod pg_favorite_coach_repository;
 mod pg_lesson_completion_repository;

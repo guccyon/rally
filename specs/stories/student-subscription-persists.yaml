@@ -1,0 +1,48 @@
+type: UserStory
+id: student-subscription-persists
+title: "生徒が月額契約を始め、翌日アプリを開き直しても契約が残っている"
+actor: student
+goal: "お金を払った契約が消えないと安心して、ビデオ通話の予約に進める。契約が消えると問い合わせと解約につながる"
+reader: [student]
+entry: "月額契約のない生徒が、生徒アプリのホームで「まだ月額契約はありません」を見て契約の画面を開く"
+exit: "翌日、生徒がアプリを開き直すと、ホームに契約したプランと今月のビデオ通話の残りの回数が出ている"
+preconditions:
+  - "生徒はゴルフ以外のスポーツで登録していて、月額契約はまだない"
+time:
+  - "契約したあと、サーバーの再起動をはさむ"
+  - "翌日（日本時間の日付が変わったあと）にアプリを開き直す"
+steps:
+  - where: "student-app ホーム"
+    do: "月額契約の欄から契約の画面を開く"
+    sees: "スポーツと、動画とチャットは送り放題・ビデオ通話はプランの回数まで、の説明。プランごとのビデオ通話の回数"
+  - where: "student-app 月額契約"
+    do: "プランを選んで「月額契約を始める」を押す"
+    sees: "「月額契約を開始しました」と、選んだプラン・開始の日時・今月のビデオ通話の回数"
+  - where: "student-app ホーム"
+    do: "ホームに戻る"
+    sees: "契約したプランと今月のビデオ通話の残りの回数"
+  - where: "student-app（翌日、アプリを開き直す）"
+    do: "アプリを開き、同じ生徒として使い始める"
+    sees: "ホームに前日と同じプランと残りの回数が出ている。契約の画面に戻されない"
+must_not:
+  - "再起動や日付の変わり目で契約が消える、またはプランが変わる"
+  - "同じ生徒に月額契約が 2 つできる"
+  - "ほかの生徒の契約や残りの回数が見える"
+  - "決済がモックなのに請求が起きたように見える文言を出す"
+touches:
+  apps: [student-app]
+  contexts: [entitlement, identity]
+  terms: [subscription, subscription_plan, entitlement]
+  operations:
+    - student-app.listSubscriptionPlans
+    - student-app.startSubscription
+    - student-app.getMyEntitlement
+  events: [subscription.started]
+origin:
+  issues: []
+  note: "2026-11-04 のデモの準備で、月額契約がバックエンドのメモリにしかないことが見つかった（factory-engine の ADR 0028 の文脈）"
+  retro: true
+known_gaps:
+  - step: 4
+    note: "生徒アプリはログインの状態を端末に残さず、ログインの画面もない（登録だけ）。アプリを開き直すと同じ生徒として戻れない"
+status: active

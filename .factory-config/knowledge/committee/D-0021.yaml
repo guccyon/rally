@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0021
+pr: https://github.com/guccyon/rally/pull/985
+decided_at: '2026-11-06'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0015 の schema の案（D-0016・D-0017
+    でも引き続き求めた wired と verified の項目）のうちワーカーの権限で入れられる分を入れただけなので、過去の議決と矛盾しません。
+  - '既存の 9 件の solution をすべて wired: false・verified: false にしたのは、どの検査も .github/workflows/
+    からはまだ走っておらず効き目も確かめていないという各 what の文と合っています。'
+  - 同じく solutions を持つ K-0001・K-0002・K-0009 を「そのまま」としてどう扱うかを書き、書くまでは未記入として false に数えると
+    README に決めたので、変更セットの決まりに沿っています。
+  - D-0019 が K-0001 の担保に wired・verified を付けるよう求めた点は今回は先送りなので、K-0001 を次に直す変更セットで必ず書いてください。
+  - README に足した「2026-11-05 の時点で書いたのは K-0004 だけ」という文はほかの知見に項目を書くと古くなるので、そのたびに同じ変更セットで
+    README も直してください。
+  - INDEX.md の担保の列が Engine の core-gates/knowledge_check.py を直すまで deterministic のまま出ることを
+    README に書いてあり、INDEX.md の K-0004 の行とも合っていて、効き目は未確認なので confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した schema の解決策は issue 962 と committee:D-0015 を指し、D-0015 の enforcement の schema
+    の案（solutions に wired・verified の真偽を足し、すべて wired: false の知見を deterministic と出さない）のうちワーカーの権限で入れられる分にそのまま対応しているので、一次記録に辿れます。'
+  - '既存の 9 件の解決策に足した wired: false・verified: false は、どれも what に「.github/workflows/
+    に写すのは建設者」「効き目はまだ確かめていない」と書かれている記録と合っていて、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、担保の状態を機械で読める形にしただけなので、根拠の段は崩れていません。'
+  - 'どの解決策も未配線・未確認で、本物の PR #395 のイベント列でも確かめていないので、confidence は hypothesis のままが妥当で、verified
+    が true の解決策が出るまでは上げないでください。'
+  - README に足した決まりは K-0001・K-0002・K-0009 を未記入（false）として数えると書いていて、記録のない状態を配線済みと読ませないので、根拠のない主張を増やしません。
+  - 差分に出てくるのはツールのパス・項目名・issue の番号・議決の id・知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0015 の schema の案のうちワーカーの権限で入れられる分を入れ、K-0004 の solutions に wired・verified
+    を真偽で書いたので、担保の状態を文ではなく機械で読めるようになり、担保の観点では採ってよいです。
+  - 'すべて wired: false・verified: false と正直に書き、check.py が「未配線」と出すようにしたことで、INDEX.md の
+    deterministic という表示が実際の効き目を隠す問題が減ります。'
+  - ただし check.py 自体が .github/workflows/ に配線されておらず、INDEX.md の担保の列も Engine の knowledge_check.py
+    が直るまで deterministic のままなので、今は外れても何も止まりません。
+  - 'wired は書き手が自分で申告する真偽なので、配線していないのに wired: true と書かれても今の check.py では見抜けず、外したときに担保の表示がまた実態とずれる恐れがあります。'
+  - K-0001・K-0002・K-0009 の未記入を落とさず false として数え件数を別に出す扱いは、移行の費用を抑えつつ見落としを防ぐ線として妥当です。
+  - どの solution も効き目を本物の記録でまだ確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0015 の schema の案のうちワーカーの権限で入れられる分（wired・verified
+    の項目と check.py の表示）だけを入れているので、範囲は広すぎません。
+  - wired・verified を書いたのは K-0004 だけで、K-0001・K-0002・K-0009 は未記入（false）として数え、未記入の件数を別に出すと
+    README に書いているので、ほかの知見を黙って書き換える形にはなっていません。
+  - 反例として、K-0001 の gate.mjs のように建設者がすでに配線した解決策があると、未記入を false と数える check.py はそれを「未配線」と出しますが、これは安全側に外れる向きなので採らない理由にはなりません。
+  - D-0019 は wired・verified の項目が入ったら K-0001 の担保にも付けるよう求めていたので、次に K-0001 を直す変更セットでは実際の配線の状態を確かめて書いてください。
+  - INDEX.md の担保の列は Engine の core-gates/knowledge_check.py が直るまで deterministic のままで、check.py
+    の「未配線」と表示が食い違うので、読み手が INDEX.md だけを見て担保済みと取り違えないよう、建設者の作業が入るまでこの食い違いを覚えておいてください。
+  - README の「2026-11-05 の時点で書いたのは K-0004 だけ」は、ほかの知見に項目を書いた時点で古くなるので、そのときの変更セットで README
+    の文も直してください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/knowledge-enforcement-check/check.py で、wired: true の solution には配線先（例:
+    wired_by に .github/workflows/ のファイルと job 名）を必須にし、そのファイルと job が実在して該当の検査を呼んでいることを
+    order.mjs と同じやり方で照らし、なければ落とす。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0015・D-0016・D-0017 の案のとおり、建設者が ci/knowledge-enforcement.yml を .github/workflows/
+    に写して check.py を PR ごとに走らせ、そのあとで本 solution（issue 962）の wired を true にする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: Engine の definitions/knowledge.yaml の enforcement.solutions に wired・verified
+    の真偽を足し、core-gates/knowledge_check.py に check.py の label() を移して INDEX.md の担保の列に「未配線」「deterministic（未確認）」を出す。

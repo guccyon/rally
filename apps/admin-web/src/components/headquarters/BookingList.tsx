@@ -14,6 +14,7 @@ import { bookingDetailPath } from "./BookingDetailHome";
 import { BookingStatusBadge } from "./BookingStatusBadge";
 import { type Period, defaultPeriod, isPendingSoon, periodError } from "./bookingPeriod";
 import { SPORTS } from "./PendingVideoReviewList";
+import { Button } from "@/components/ui/Button";
 
 type HeadquartersBooking = Schemas["HeadquartersBooking"];
 type Sport = Schemas["Sport"];
@@ -202,9 +203,9 @@ export function BookingList({
             onChange={(event) => setDraft({ ...draft, to: event.target.value })}
           />
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           この期間で見る
-        </button>
+        </Button>
         <label className="flex items-center gap-1 py-1">
           <input
             type="checkbox"

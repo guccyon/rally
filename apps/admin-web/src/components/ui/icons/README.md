@@ -8,6 +8,7 @@
 
 | ファイル | 使うところ |
 |---|---|
+| `check.svg` | 完了の印（成功の Notice のライムの丸の中。取得 2026-11-06） |
 | `info.svg` | 状態 info（StatusTag・Notice） |
 | `check_circle.svg` | 状態 success |
 | `schedule.svg` | 状態 warning（確定待ちなど） |

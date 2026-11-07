@@ -13,6 +13,7 @@ import { COACH_ACCEPTANCE_STATUS_LABELS, SPORT_LABELS } from "@/components/label
 import { CoachAcceptanceAction } from "./CoachAcceptanceAction";
 import { CoachAcceptanceBadge } from "./CoachAcceptanceBadge";
 import { coachOverviewPath } from "./CoachOverviewHome";
+import { Button } from "@/components/ui/Button";
 
 type Coach = Schemas["Coach"];
 type AcceptanceStatus = Schemas["CoachAcceptanceStatus"];
@@ -302,9 +303,9 @@ export function CoachAcceptanceList({
             onChange={(event) => setQueryDraft(event.target.value)}
           />
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           探す
-        </button>
+        </Button>
         <label className="block">
           受付の状態
           <select

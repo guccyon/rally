@@ -4,7 +4,8 @@
 //!
 //! お知らせの種類（domain の `NotificationKind`）と契約の `NotificationKind` の値の対応と、プッシュ通知の中身から
 //! 本文（利用者に見せる文言）を決める対応はこのファイルだけに置く。本部からのお知らせの本文は、送った記録の題と本文を
-//! 改行でつないだもの。
+//! 改行でつないだもの。本部による予約のキャンセル（コーチのお休み）の本文は [`crate::coach_leave_text`] が決める（種類は
+//! 予約の通知 `booking_confirmed`）。
 
 use std::sync::Arc;
 
@@ -12,8 +13,8 @@ use application::{
     clock::Clock,
     identity::TokenVerifier,
     notification::{
-        AnnouncementRepository, ListMyNotifications, MarkMyNotificationsRead, MyNotification,
-        NotificationRepository, notification_id_uuid,
+        AnnouncementRepository, CoachLeaveNoticeLookup, ListMyNotifications,
+        MarkMyNotificationsRead, MyNotification, NotificationRepository, notification_id_uuid,
     },
 };
 use axum::{
@@ -30,14 +31,15 @@ use serde::Serialize;
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
+    coach_leave_text::coach_leave_notification_text,
     contract::date_time_to_contract,
     error::ApiError,
 };
 
 /// `/notifications/me` のハンドラーが使うユースケース。
-pub struct NotificationsState<N, A, C> {
-    pub list_my_notifications: ListMyNotifications<N, A>,
-    pub mark_my_notifications_read: MarkMyNotificationsRead<N, A, C>,
+pub struct NotificationsState<N, A, L, C> {
+    pub list_my_notifications: ListMyNotifications<N, A, L>,
+    pub mark_my_notifications_read: MarkMyNotificationsRead<N, A, L, C>,
 }
 
 /// student-app・admin-web の `NotificationList`。
@@ -58,13 +60,14 @@ pub struct NotificationBody {
 
 /// `GET /notifications/me`。生徒とコーチが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
 /// アカウントが受け取るお知らせ。
-pub async fn list_my_notifications<N, A, C>(
-    State(state): State<Arc<NotificationsState<N, A, C>>>,
+pub async fn list_my_notifications<N, A, L, C>(
+    State(state): State<Arc<NotificationsState<N, A, L, C>>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<NotificationListBody>, ApiError>
 where
     N: NotificationRepository,
     A: AnnouncementRepository,
+    L: CoachLeaveNoticeLookup,
     C: Clock,
 {
     let notifications = state
@@ -77,13 +80,14 @@ where
 
 /// `POST /notifications/me/read`。生徒とコーチが呼べる（役割は `require_role` の層が確かめる）。既読にするのはトークンの
 /// アカウントが受け取るお知らせだけで、既読にしたあとの一覧を返す。
-pub async fn mark_my_notifications_read<N, A, C>(
-    State(state): State<Arc<NotificationsState<N, A, C>>>,
+pub async fn mark_my_notifications_read<N, A, L, C>(
+    State(state): State<Arc<NotificationsState<N, A, L, C>>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<NotificationListBody>, ApiError>
 where
     N: NotificationRepository,
     A: AnnouncementRepository,
+    L: CoachLeaveNoticeLookup,
     C: Clock,
 {
     let notifications = state
@@ -107,9 +111,12 @@ fn notification_list_body(
 
 fn notification_body(mine: &MyNotification) -> Result<NotificationBody, ApiError> {
     let notification = &mine.notification;
-    let body = match &mine.announcement {
-        Some(announcement) => announcement_text(announcement),
-        None => notification_text(&notification.push())
+    let body = match (&mine.announcement, notification.push()) {
+        (Some(announcement), _) => announcement_text(announcement),
+        (None, PushNotification::BookingCancelledByHeadquarters { .. }) => {
+            coach_leave_notification_text(mine.coach_leave.as_ref())
+        }
+        (None, _) => notification_text(&notification.push())
             .ok_or_else(|| {
                 ApiError::internal(format!(
                     "お知らせ {} に本部からのお知らせの記録がない",
@@ -139,8 +146,8 @@ const fn notification_kind_to_contract(kind: NotificationKind) -> &'static str {
     }
 }
 
-/// お知らせの本文。受け取る側（生徒・コーチ）に合わせた文言にする。本部からのお知らせは送った記録から決めるので `None`
-/// （[`announcement_text`]）。
+/// お知らせの本文。受け取る側（生徒・コーチ）に合わせた文言にする。本部からのお知らせは送った記録から決め
+/// （[`announcement_text`]）、本部による予約のキャンセルはお休みの記録から決める（[`coach_leave_notification_text`]）ので `None`。
 const fn notification_text(push: &PushNotification) -> Option<&'static str> {
     Some(match push {
         PushNotification::BookingConfirmed { .. } => "予約が確定しました",
@@ -155,7 +162,8 @@ const fn notification_text(push: &PushNotification) -> Option<&'static str> {
             sender: MessageSender::Student,
             ..
         } => "生徒からメッセージが届きました",
-        PushNotification::Announcement { .. } => return None,
+        PushNotification::Announcement { .. }
+        | PushNotification::BookingCancelledByHeadquarters { .. } => return None,
     })
 }
 
@@ -172,14 +180,15 @@ fn announcement_text(announcement: &Announcement) -> String {
 /// 組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// どちらも生徒とコーチだけ（本部は 403）で、扱うのはトークンのアカウント自身が受け取るお知らせだけ。
-pub fn notifications_router<N, A, C, T>(
-    list_my_notifications: ListMyNotifications<N, A>,
-    mark_my_notifications_read: MarkMyNotificationsRead<N, A, C>,
+pub fn notifications_router<N, A, L, C, T>(
+    list_my_notifications: ListMyNotifications<N, A, L>,
+    mark_my_notifications_read: MarkMyNotificationsRead<N, A, L, C>,
     tokens: T,
 ) -> Router
 where
     N: NotificationRepository + 'static,
     A: AnnouncementRepository + 'static,
+    L: CoachLeaveNoticeLookup + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
@@ -187,11 +196,11 @@ where
     Router::new()
         .route(
             "/notifications/me",
-            get(self::list_my_notifications::<N, A, C>),
+            get(self::list_my_notifications::<N, A, L, C>),
         )
         .route(
             "/notifications/me/read",
-            post(self::mark_my_notifications_read::<N, A, C>),
+            post(self::mark_my_notifications_read::<N, A, L, C>),
         )
         .route_layer(require_role(&[Role::Student, Role::Coach]))
         .with_state(Arc::new(NotificationsState {

@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
+import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { lengthOf } from "@/components/coach/lessonMenuInput";
 import { SPORT_LABELS, announcementTargetLabel } from "@/components/labels";
@@ -150,22 +151,12 @@ export function AnnouncementForm({ send, onSent, saveDraft, initial = EMPTY_INPU
           </div>
         </dl>
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50"
-            onClick={() => void confirm()}
-          >
+          <Button disabled={busy} onClick={() => void confirm()}>
             {busy ? "送っています…" : "送るのを確定"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-pill border px-4 py-1 disabled:opacity-50"
-            onClick={() => setConfirming(false)}
-          >
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
             直す
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -223,18 +214,13 @@ export function AnnouncementForm({ send, onSent, saveDraft, initial = EMPTY_INPU
         お知らせは対象の生徒全員のお知らせの一覧に届きます。プッシュ通知は、お知らせの通知を受け取る設定にしている生徒にだけ送ります。
       </p>
       <div className="flex gap-2">
-        <button type="submit" disabled={busy} className="rounded-pill bg-primary px-4 py-1 text-on-primary disabled:opacity-50">
+        <Button type="submit" disabled={busy}>
           内容を確かめる
-        </button>
+        </Button>
         {saveDraft && (
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-pill border px-4 py-1 disabled:opacity-50"
-            onClick={() => void save()}
-          >
+          <Button variant="secondary" disabled={busy} onClick={() => void save()}>
             {busy ? "保存しています…" : "下書きに保存"}
-          </button>
+          </Button>
         )}
       </div>
       {saveDraft && (

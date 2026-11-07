@@ -29,15 +29,17 @@ pub const VIDEO_REVIEW_REQUESTED: &str = "video_review_requested";
 pub const VIDEO_REVIEW_RETURNED: &str = "video_review_returned";
 pub const MESSAGE_RECEIVED: &str = "message_received";
 pub const ANNOUNCEMENT: &str = "announcement";
+pub const BOOKING_CANCELLED_BY_HEADQUARTERS: &str = "booking_cancelled_by_headquarters";
 
 /// `notification.notifications.kind` のすべての値（CHECK 制約の値の順）。
-pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 6] = [
+pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 7] = [
     BOOKING_CONFIRMED,
     BOOKING_RECEIVED,
     VIDEO_REVIEW_REQUESTED,
     VIDEO_REVIEW_RETURNED,
     MESSAGE_RECEIVED,
     ANNOUNCEMENT,
+    BOOKING_CANCELLED_BY_HEADQUARTERS,
 ];
 
 /// `notification.notifications.kind` の値（プッシュ通知の変種ごと）。
@@ -45,6 +47,9 @@ pub const fn push_notification_kind_value(notification: &PushNotification) -> &'
     match notification {
         PushNotification::BookingConfirmed { .. } => BOOKING_CONFIRMED,
         PushNotification::BookingReceived { .. } => BOOKING_RECEIVED,
+        PushNotification::BookingCancelledByHeadquarters { .. } => {
+            BOOKING_CANCELLED_BY_HEADQUARTERS
+        }
         PushNotification::VideoReviewRequested { .. } => VIDEO_REVIEW_REQUESTED,
         PushNotification::VideoReviewReturned { .. } => VIDEO_REVIEW_RETURNED,
         PushNotification::MessageReceived { .. } => MESSAGE_RECEIVED,

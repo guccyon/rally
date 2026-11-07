@@ -1,6 +1,6 @@
 # 部品。オンボーディングでは基本の部品だけ。値は tokens.yaml の名前で書く
 # 基準の書き方: level（must | should | may）・statement・why・check（deterministic | design_inspector | human）
-# 状態の共通: pressed は fast 120ms で色を変える / disabled は押せない理由を近くに文で出す / loading は二度押しを止める
+# 状態の共通: pressed は fast 120ms / disabled は押せない理由を文で / loading は二度押しを止める
 schema_version: "0.1"
 status: draft
 section: components
@@ -11,24 +11,25 @@ components:
     ja: ボタン
     lifecycle: trial
     use: 画面の操作を 1 つ実行する（予約する・送る・保存する）
-    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢 → チップ（未定義。足りなければ提案する）
+    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢 → チップ（未定義）
     parts: [container, label, leading_icon（任意）, spinner]
-    variants:
-      primary:   {container: primary, label: on_primary, radius: pill, note: 1 画面に 1 つ}
-      secondary: {container: background, border: border_strong, label: primary, radius: pill}
-      on_dark:   {container: secondary, label: on_secondary, radius: pill, note: inverse_surface の面の中だけ}
-      danger:    {container: danger.fg, label: on_primary, radius: pill, note: 取り消せない操作の確認の中だけ}
-      text:      {container: なし, label: primary, note: 補助の操作（「予約をすべて見る」）}
-    size: {height_px: 48, padding_x_px: 24, label: "title 以下。16px・700"}
+    variants:   # 0.5.0 で radius を pill から md に、secondary を線から塗りにした
+      primary:   {container: primary, label: on_primary, radius: md, note: 1 画面に 1 つ}
+      secondary: {container: primary_container, border: なし, label: text, radius: md}
+      on_dark:   {container: secondary, label: on_secondary, radius: md, note: inverse_surface の面の中だけ}
+      danger:    {container: danger.fg, label: on_primary, radius: md, note: 取り消せない操作の確認の中だけ}
+      text:      {container: なし, label: primary, underline: 2px, note: 補助の操作（「予約をすべて見る」）}
+    size: {height_px: 56, admin_web_height_px: 48, padding_x_px: 24, label: "16px・900（admin-web は 700）"}
     states:
       default: 上の variants
-      pressed: primary は primary_pressed、secondary と text は primary_container の面
-      disabled: 面 surface・文字 text_muted・輪郭なし
+      pressed: primary は primary_pressed、secondary は primary_container_pressed、text は primary_container の面
+      focus: focus_ring 2px、間 2px（濃い面の上は secondary）
+      disabled: 面 surface・文字 text_muted。近くに押せない理由を文で出す
       loading: ラベルを残したまま spinner を前に出し、押せなくする
       error: ボタンは変えず、notice で失敗を出す
     behavior: 押したら結果が出るまで loading。二度押しで同じ操作を 2 回送らない
     wording: 動詞で終える（「予約する」「動画を送る」）。「OK」「はい」を使わない
-    a11y: 文字のないボタンは読み上げのラベル。押せる範囲は 48×48px 以上
+    a11y: 文字のないボタンは読み上げのラベル。押せる範囲は 48px 以上
     rules:
       - level: should
         statement: 主なボタン（primary）は 1 画面に 1 つまで
@@ -38,27 +39,30 @@ components:
         statement: ボタンの文言は動詞で終える
         why: 押すと何が起きるかが文言だけで分かる
         check: deterministic
+      - level: should
+        statement: ボタンの角丸は md 12px。ピル型（pill）と、線だけの副のボタンを使わない
+        why: 汎用の UI キットの見た目に戻らない（人の指摘 2026-11-05）
+        check: deterministic
     examples:
       good: 「スロットを探して予約する」が primary、「予約をすべて見る」が text
-      bad: 「予約する」と「コーチを探す」がどちらも primary で並ぶ
+      bad: 青いピル型の主ボタンと、灰の線に青い字の副ボタンが並ぶ
     preview:
       - label: "primary"
-        html: "<div class=\"pv\"><span class=\"btn btn-primary\">スロットを探して予約する</span></div>"
-      - label: "押下"
-        html: "<div class=\"pv\"><span class=\"btn btn-pressed\">スロットを探して予約する</span></div>"
+        html: '<div class="pv"><span class="btn btn-primary">スロットを探して予約する</span></div>'
+      - label: "押下・フォーカス"
+        html: '<div class="pv row-x"><span class="btn btn-pressed">予約する</span><span class="btn btn-primary is-focus">予約する</span></div>'
       - label: "secondary・text"
-        html: "<div class=\"pv\"><span class=\"btn btn-secondary\">コーチを探す</span> <span class=\"btn btn-text\">予約をすべて見る</span></div>"
+        html: '<div class="pv row-x"><span class="btn btn-secondary">コーチを探す</span><span class="btn btn-text">予約をすべて見る</span></div>'
       - label: "読み込み中"
-        html: "<div class=\"pv\"><span class=\"btn btn-primary\" aria-busy=\"true\"><i class=\"spin\"></i>予約する</span></div>"
+        html: '<div class="pv"><span class="btn btn-primary" aria-busy="true"><i class="spin"></i>予約する</span></div>'
       - label: "無効"
-        html: "<div class=\"pv\"><span class=\"btn btn-disabled\" aria-disabled=\"true\">予約する</span><p class=\"type-small hint\">スロットを選ぶと予約できます。</p></div>"
-
+        html: '<div class="pv"><span class="btn btn-disabled" aria-disabled="true">予約する</span><p class="type-small hint">スロットを選ぶと予約できます。</p></div>'
 
   - id: text_field
     ja: 入力欄
     lifecycle: trial
     use: 文字を 1 行か数行入れる（表示名・チャットの本文・評価の一言・自己紹介）
-    not_for: 決まった選択肢 → 選択欄（select）かラジオ。オンとオフ → スイッチ
+    not_for: 決まった選択肢 → 選択欄（select）かラジオ。オンとオフ → スイッチ。日付と期間 → date_field（0.4.0）
     parts: [label, field, helper, counter（上限のある欄）, error_text]
     variants: {single_line: 高さ 48px, multi_line: 3 行から伸びる}
     style: {field: background, border: border_strong 1px, radius: md, label: small 700 text, helper: small text_muted}
@@ -80,129 +84,166 @@ components:
       bad: placeholder「一言を入力」だけ
     preview:
       - label: "通常"
-        html: "<div class=\"pv tf\"><label class=\"type-small\">表示名</label><div class=\"field type-body\">山田 太郎</div><div class=\"help type-small\"><span>1〜20 文字</span><span>5 / 20</span></div></div>"
-      - label: "フォーカス"
-        html: "<div class=\"pv tf focus\"><label class=\"type-small\">一言</label><div class=\"field type-body\">フォームが分かりやすかったです</div><div class=\"help type-small\"><span>200 文字まで</span><span>15 / 200</span></div></div>"
+        html: '<div class="pv tf"><label class="type-small">表示名</label><div class="field type-body">山田 太郎</div><div class="help type-small"><span>1〜20 文字</span><span>5 / 20</span></div></div>'
       - label: "誤り"
-        html: "<div class=\"pv tf err\"><label class=\"type-small\">表示名</label><div class=\"field type-body\"></div><div class=\"etext type-small\" role=\"alert\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v6M12 16.5v.5\"/></svg>表示名は 1〜20 文字で入れてください。</div></div>"
-      - label: "無効"
-        html: "<div class=\"pv tf off\"><label class=\"type-small\">メールアドレス</label><div class=\"field type-body\">taro@example.jp</div><div class=\"help type-small\"><span>メールアドレスはここでは変えられません。</span></div></div>"
+        html: '<div class="pv tf err"><label class="type-small">表示名</label><div class="field type-body"></div><div class="etext type-small" role="alert"><i class="ic">!</i>表示名は 1〜20 文字で入れてください。</div></div>'
 
+  - id: date_field
+    ja: 日付の欄
+    lifecycle: trial
+    use: 日付を 1 つ、または期間（開始日と終了日）を選ぶ。admin-web の本部とコーチの一覧の絞り込み
+    not_for: 日付でない文字 → text_field。決まった期間だけ（「直近 7 日」）→ select。student-app では今は使わない
+    parts: [group（fieldset）, legend, label, field（input type=date）, picker_icon, separator（〜）, helper, error_text]
+    variants:
+      date: {fields: 1}
+      date_range: {fields: 2, order: 開始日 〜 終了日, gap: sm 8px, narrow: 1 行に収まらなければ縦に並べ、separator は出さない}
+    style: {field: text_field と同じ（background・border_strong 1px・radius md・高さ 48px・左右 md 16px）, value: body・tnum, min_width: 10em, legend: small 700, separator: body text_muted, helper: small text_muted}
+    value_format: 欄の中は端末の日付の形（2026/10/28）。送る値は日本時間の YYYY-MM-DD
+    states:
+      default: border_strong 1px
+      pressed: 押すと端末の日付の選び方が開く。開いているあいだは focus と同じ見た目
+      focus: focus_ring 2px
+      disabled: 面 surface・文字 text_muted。loading のときだけ（権限がなければ欄ごと出さない）
+      loading: 既定の期間を API から読むあいだ。disabled の見た目と aria-busy、helper に「期間を読み込んでいます…」。読み直しのあいだは欄を変えられるままにし、ボタンを loading に
+      error: 直す欄の輪郭を danger.fg 2px にし、group の下に error_text を 1 つ
+    errors:   # 何が起きたかと、どうすればよいか
+      empty: {mark: 空の欄, text: 開始日か終了日が空いています。両方を選んでください。}
+      end_before_start: {mark: 終了日, text: 終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。}
+      too_long: {mark: 両方, text: "選んだ期間は {days} 日です。期間は {max} 日までにしてください。", note: days は両端を含めて数える。max は契約の上限（今は 31）}
+    behavior: >-
+      期間は 2 つの欄をそろえてから「この期間で見る」で読み直す（patterns の search_filter の「選んだらすぐ読み直す」の例外）。
+      誤りは送るときに確かめ、欄を変えたら消す。誤りの最初の欄へフォーカス。422 は notice で出し、日付を消さない
+    wording: legend「期間」、ラベル「開始日」「終了日」、helper「31 日まで選べます」、ボタン「この期間で見る」（ほかの絞り込みと一緒なら「この条件で見る」）
+    a11y: range は fieldset と legend で読む。各欄に label（text_field の must が効く）。error_text を aria-describedby で印の欄に結び、aria-invalid を付ける
+    rules:
+      - level: should
+        statement: 日付と期間の欄は date_field で描き、画面に input type=date を直に書かない
+        why: 欄の高さと誤りの出し方が画面ごとにずれると、本部が絞り込みを画面ごとに覚え直す
+        check: deterministic
+      - level: should
+        statement: 期間の誤りは errors の型の文言で出し、直す欄だけに印を付ける
+        why: どちらの日付を直すかが文と印で分かる
+        check: design_inspector
+    examples:
+      good: 「期間」の下に「開始日 2026/10/28 〜 終了日 2026/11/03」
+      bad: ラベルのない日付の欄が 2 つで、誤りは「入力が正しくありません」だけ
+    preview:
+      - label: "通常（date_range）"
+        html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf"><label class="type-small">終了日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div></div><div class="help type-small"><span>31 日まで選べます</span></div></fieldset></div>'
+      - label: "誤り（終わりが始まりより前）"
+        html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。</div></fieldset></div>'
+      - label: "誤り（31 日を超える）"
+        html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf err"><label class="type-small">開始日</label><div class="field type-body">2026/10/01<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/11/30<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>選んだ期間は 61 日です。期間は 31 日までにしてください。</div></fieldset></div>'
+      - label: "読み込み中（既定の期間を読む）"
+        html: '<div class="pv df"><fieldset class="dr" aria-busy="true"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf off"><label class="type-small">開始日</label><div class="field type-body"><i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf off"><label class="type-small">終了日</label><div class="field type-body"><i class="cal"></i></div></div></div><div class="help type-small" role="status"><span>期間を読み込んでいます…</span></div></fieldset></div>'
 
   - id: card
     ja: カード
     lifecycle: trial
-    use: 1 件のまとまり（予約・コーチ・添削）を面で囲む
-    not_for: 文 1 行だけ → list_row。画面の主役の数字 → score_panel
-    parts: [container, title, meta, status_tag（任意）, action（任意）]
-    style: {container: surface, radius: md, padding_px: 16, gap_px: 8, shadow: なし}
-    states: {pressed: 押せるカードは primary_container の面, disabled: 使わない}
+    use: 1 件のまとまり（予約・コーチ・添削）を囲む
+    not_for: 文 1 行だけ → list_row。主役の数字 → score_panel
+    parts: [container, date_block（予約だけ）, title, meta, status_tag（任意）, action（任意）]
+    variants:   # 0.5.0 で surface の面から白地＋細い線にした
+      plain:   {container: background, border: border 1px, radius: md, padding_px: 16, gap_px: 8, title: title}
+      booking: {date_block: "幅 64px・角丸 sm・surface に月と曜日（caption）と日（figure）", title: figure_sm の時刻, note: 次のレッスンだけ date_block を secondary}
+    style: {shadow: なし, nest: カードの中にカードを置かない}
+    states: {pressed: primary_container の面, disabled: 使わない}
     behavior: カード全体を押せるときは中にボタンを置かない（押せる場所を 1 つにする）
-    a11y: 押せるカードは 1 つのボタンとして読み上げ、題・日時・状態を 1 つの文で読む
+    a11y: 押せるカードは 1 つのボタンとして、日時・題・状態を 1 つの文で読む
+    rules:
+      - level: should
+        statement: ライムの date_block は 1 画面に 1 つ（次のレッスンだけ）。ほかの予約のコマは surface
+        why: ライムが並ぶと、どれが次の練習か分からなくなる（principles の one-hot-spot）
+        check: design_inspector
     examples:
-      good: "題「10/28（水）12:00〜12:30」・meta「テニス・コーチ: 山田」・status_tag「確定済み」"
-      bad: カードの中にカードを重ねる
+      good: "date_block「10月 28 水」・題「12:00〜12:30」・meta「テニス・コーチ: 山田」・status_tag「確定済み」"
+      bad: 灰の面のカードを灰の面の欄に重ね、全部のコマをライムにする
     preview:
-      - label: "確定済み"
-        html: "<div class=\"pv card\"><div class=\"type-title\">10/28（水）12:00〜12:30</div><div class=\"type-small muted\">テニス・コーチ: 山田</div><span class=\"tag tag-success type-caption\">確定済み</span></div>"
-      - label: "確定待ち"
-        html: "<div class=\"pv card\"><div class=\"type-title\">11/4（水）18:00〜18:30</div><div class=\"type-small muted\">野球・コーチ: 佐藤</div><span class=\"tag tag-warning type-caption\">確定待ち</span></div>"
-      - label: "押下"
-        html: "<div class=\"pv card is-pressed\"><div class=\"type-title\">10/28（水）12:00〜12:30</div><div class=\"type-small muted\">テニス・コーチ: 山田</div><span class=\"tag tag-success type-caption\">確定済み</span></div>"
-
+      - label: "予約（次のレッスン）"
+        html: '<div class="pv card bk"><div class="koma next"><span class="type-caption">10月</span><span class="type-figure">28</span><span class="type-caption">水</span></div><div class="bd"><div class="type-figure-sm">12:00〜12:30</div><div class="type-small muted">テニス・コーチ: 山田</div><span class="tag type-small"><i class="d d-success"></i>確定済み</span></div></div>'
+      - label: "予約（確定待ち）"
+        html: '<div class="pv card bk"><div class="koma"><span class="type-caption">11月</span><span class="type-figure">4</span><span class="type-caption">水</span></div><div class="bd"><div class="type-figure-sm">18:00〜18:30</div><div class="type-small muted">野球・コーチ: 佐藤</div><span class="tag type-small"><i class="d d-warning"></i>確定待ち</span></div></div>'
+      - label: "plain（コーチ）"
+        html: '<div class="pv card"><div class="type-title">山田 花子</div><div class="type-small muted">テニス・評価 4.8（12 件）</div></div>'
 
   - id: list_row
     ja: 一覧の行
     lifecycle: trial
-    use: 同じ形のものを並べ、押すと詳細へ移る（お知らせ・スレッド・受けたレッスン・admin-web の一覧）
+    use: 同じ形のものを並べ、押すと詳細へ移る（お知らせ・スレッド・受けたレッスン）
     not_for: 1 件に操作が 2 つ以上 → card
     parts: [leading（アイコンか顔写真。任意）, title, subtitle, trailing（しるし・chevron）]
-    style: {min_height_px: 56, padding_x_px: 16, divider: border, title: body 700, subtitle: small text_muted}
-    states: {pressed: primary_container, unread: 左に primary の 4px の線と、title の前に「未読」のしるし}
+    style: {container: background, min_height_px: 56, padding_x_px: 16, divider: border（行のあいだだけ）, title: body 700, subtitle: small text_muted}
+    states: {pressed: primary_container, selected: primary_container の面と左に primary の 4px の線, unread: 左に primary の 4px の線と、title の前に「未読」のしるし}
     a11y: 未読は色と線だけでなく、読み上げで「未読」と読む
     examples:
       good: 「コーチから返事が届きました」・「10/27 18:04」・未読のしるし
-      bad: 未読を太字だけで示す
+      bad: 未読を太字だけで示す。行ごとに灰の面で囲う
     preview:
       - label: "通常"
-        html: "<div class=\"pv row\"><div class=\"main\"><div class=\"type-body t\">本部からのお知らせ</div><div class=\"type-small muted\">10/27 9:00</div></div><span class=\"muted\">›</span></div>"
+        html: '<div class="pv row"><div class="main"><div class="type-body t">本部からのお知らせ</div><div class="type-small muted">10/27 9:00</div></div><span class="muted">›</span></div>'
       - label: "未読"
-        html: "<div class=\"pv row unread\"><div class=\"main\"><div class=\"type-body t\"><span class=\"badge type-caption\">未読</span> コーチから返事が届きました</div><div class=\"type-small muted\">10/27 18:04</div></div><span class=\"muted\">›</span></div>"
-      - label: "押下"
-        html: "<div class=\"pv row is-pressed\"><div class=\"main\"><div class=\"type-body t\">テニス・コーチ: 山田</div><div class=\"type-small muted\">10/21 受けたレッスン</div></div><span class=\"muted\">›</span></div>"
-
+        html: '<div class="pv row unread"><div class="main"><div class="type-body t"><span class="badge type-caption">未読</span> コーチから返事が届きました</div><div class="type-small muted">10/27 18:04</div></div><span class="muted">›</span></div>'
 
   - id: data_table
     ja: 表
-    lifecycle: trial   # 0.3.0 で足した。admin-web の一覧の表（BookingList・StudentDirectory・CoachAcceptanceList など）の決まり
-    use: admin-web で、同じ項目を持つものを列で見比べる（本部の予約・生徒・コーチ・レッスンメニュー・返却待ちの動画添削の一覧、予約枠の需給）
-    not_for: スマホの student-app と、1 件の項目が 3 つまで → list_row。1 件ごとに操作が 2 つ以上 → card。1 件の詳細 → detail の型
-    parts: [wrapper（横に動く包み）, table（aria-label に表の名前）, header_cell（th）, cell（td）, row, row_highlight（任意）]
+    lifecycle: trial
+    use: admin-web で、同じ項目を持つものを列で見比べる（本部の予約・生徒・コーチ・レッスンメニューの一覧など）
+    not_for: student-app と、項目が 3 つまで → list_row。操作が 2 つ以上 → card。詳細 → detail の型
+    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）]
     variants:
-      text: {align: left, wrap: しない, note: 日時・名前・状態・種類・メニューの名前など短い値}
-      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・枠の数・割合。単位も同じセルに 1 行で（「12 件」「75%」）}
-      long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・お知らせの題など文の列だけ}
+      text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）}
+      long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・題など文の列だけ}
     style:
-      wrapper: {overflow_x: auto, max_width: 100%, note: 1 段の幅いっぱい。ページではなくここだけが横に動く}
+      wrapper: {overflow_x: auto, max_width: 100%, container: background（0.5.0 で surface の面をやめた）}
       table: {width: 100%, min_width: max-content, border_collapse: collapse}
-      header_cell: {type: small, weight: 700, color: text, align: left, wrap: しない, divider: border の 1px（下）}
-      cell: {type: small, color: text, padding_y: sm 8px, padding_x: sm 8px, column_gap: md 16px（隣のセルの padding_x の和）, min_height_px: 48, vertical_align: middle, divider: border の 1px（上）}
-      edge: 先頭のセルの左と最後のセルの右の padding は 0（Section の padding md 16px にそろえる）
-      row_highlight: {container: danger.container, note: 急ぎの行（確定待ちのまま 24 時間以内に始まる予約）。色と一緒に文字のしるし（danger.fg の面と on_primary の文字「開始まで 24 時間以内」）を出す}
-      link: primary の文字と下線（詳細へ移るセル。開始の日時など 1 列だけ）
+      header_cell: {type: small 700, color: text_muted, divider: primary の 2px（下）}
+      cell: {type: small, color: text, padding: sm 8px（列のあいだ md 16px）, min_height_px: 48, vertical_align: middle, divider: border の 1px（上）}
+      edge: 先頭のセルの左と最後のセルの右の padding は 0
+      row_highlight: {container: danger.container, note: 確定待ちのまま 24 時間以内に始まる予約。status_tag の urgent と一緒に}
+      link: primary の文字と下線（開始の日時など 1 列だけ）
     states:
-      default: 上の style
-      narrow: 1 段の幅に収まらないときは wrapper が横に動く。列は細くせず、セルは折り返さない
-      highlight: row_highlight の面と、状態のセルに status_tag
-      loading: 表を出さず、loading の section_text（「予約を読み込んでいます…」）
-      empty: 表を出さず、empty_state（section）。見出しの行だけの表にしない
+      narrow: 幅に収まらないときは wrapper だけが横に動く。列は細くせず、セルは折り返さない
+      loading: 表を出さず、loading の section_text
+      empty: 表を出さず、empty_state（section）
       error: 表を出さず、notice の inline（danger）
-    behavior: >-
-      並べ方は API が返した順のまま（patterns の list）。wrapper が横に動くときは、キーボードの矢印でも動かせるよう wrapper にフォーカスを置ける。
-      行全体を押せるようにはしない（詳細へは link のセルから）
-    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」「生徒」「レッスンメニュー」「種類」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」
-    a11y: >-
-      table に aria-label（「10/28（水）の予約」）、th に scope="col"。wrapper が横に動くときは role="region" と aria-label（表と同じ名前）と tabindex="0" を付け、
-      フォーカスは focus_ring 2px で見せる。row_highlight は色だけでなく status_tag の文字で伝える
+    behavior: 並べ方は API が返した順のまま。行全体を押せるようにはしない（詳細へは link のセルから）
+    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」
+    a11y: table に aria-label、th に scope="col"。wrapper が横に動くときは role="region"・aria-label・tabindex="0" を付け、focus_ring 2px で見せる
     rules:
       - level: should
-        statement: セルは単語の途中で折り返さない。見出し・日時・数字・名前・状態・種類のセルは 1 行（white-space nowrap）にし、折り返してよいのは long_text の列だけ
-        why: 「12:00」や「体験予/約」が 2 行に割れると、本部が一覧を見比べるときに読み違え、行の高さもそろわない
+        statement: セルは単語の途中で折り返さない。折り返してよいのは long_text の列だけ
+        why: 「12:00」や「体験予/約」が割れると、本部が一覧を読み違える
         check: design_inspector
       - level: should
-        statement: 列と列のあいだの余白は spacing の段から取る（セルの左右 sm 8px で、列のあいだ md 16px）。段にない余白（py-1 の 4px だけ、12px など）を使わない
-        why: 列がくっつくと、隣の列の値と続けて読んでしまう（生徒の名前とメニューの名前など）
+        statement: 列のあいだの余白は spacing の段から取る（セルの左右 sm 8px）。段にない余白を使わない
+        why: 列がくっつくと、隣の列の値と続けて読んでしまう
         check: deterministic
       - level: should
-        statement: 表が幅に収まらないときは wrapper だけを横に動かし（overflow-x auto）、ページ全体（body）は横に動かさない
-        why: 画面の見出し・絞り込み・件数の文は動かずに読めたまま、表の続きの列だけを見に行ける
+        statement: 表が幅に収まらないときは wrapper だけを横に動かし、ページ全体は横に動かさない
+        why: 見出し・絞り込み・件数の文は動かずに読める
         check: deterministic
       - level: should
-        statement: 本部の一覧の画面は content_width_px の wide（1280px まで）に置き、表を reading（768px）の枠に押し込まない
-        why: PC の広い画面があるのに表が 550px ほどに縮み、列が折り返して読めなくなっていた（#896）
+        statement: 本部の一覧の画面は content_width_px の wide に置き、表を reading の枠に押し込まない
+        why: 表が 550px ほどに縮み、列が折り返して読めなくなっていた（#896）
         check: design_inspector
       - level: may
-        statement: 横に動くとき、先頭の列（開始・名前）を左に固定してよい（position sticky。面は表の下の面と同じ色）
-        why: 右の列を見ているときも、どの行かが分かる
+        statement: 横に動くとき、先頭の列を左に固定してよい（面は background）
+        why: どの行かが分かる
         check: design_inspector
     examples:
-      good: PC で 6 列の予約の表が 1 行ずつ並び、開始「12:00」・状態「確定済み」・レッスンメニュー「フォアハンドの基礎」がどれも 1 行。スマホの幅では表だけが横に動く
-      bad: 768px の枠の中で「レッスンメニュー」の見出しが「レッスンメ/ニュー」と割れ、隣の列と 4px しか離れていない。ページ全体が横に動いて画面の見出しが切れる
+      good: PC で 6 列の予約の表が 1 行ずつ並ぶ
+      bad: 見出しが「レッスンメ/ニュー」と割れ、ページ全体が横に動く
     preview:
-      - label: "PC 幅（wide）"
-        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"10/28（水）の予約\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr><tr><td><span class=\"lnk\">18:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class=\"lnk\">19:30</span></td><td><span class=\"tag tag-neutral type-caption\">キャンセル済み</span></td><td>山田 花子</td><td>高橋 蓮</td><td>サーブの安定（30 分）</td><td>—</td></tr></tbody></table></div></div>"
-      - label: "狭い幅（表の包みだけが横に動く）"
-        html: "<div class=\"pv w sectp\"><p class=\"type-small\">10/28（水）〜 11/3（火）・3 件</p><div class=\"tbl-wrap\" role=\"region\" aria-label=\"10/28（水）の予約\" tabindex=\"0\"><table class=\"tbl type-small\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr><tr><td><span class=\"lnk\">18:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr></tbody></table></div></div>"
-      - label: "急ぎの行（row_highlight）"
-        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"10/28（水）の予約\"><thead><tr><th scope=\"col\">開始</th><th scope=\"col\">状態</th><th scope=\"col\">コーチ</th><th scope=\"col\">生徒</th><th scope=\"col\">レッスンメニュー</th><th scope=\"col\">種類</th></tr></thead><tbody><tr class=\"hl\"><td><span class=\"lnk\">9:00</span></td><td><span class=\"tag tag-warning type-caption\">確定待ち</span> <span class=\"tag tag-danger type-caption\">開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class=\"lnk\">12:00</span></td><td><span class=\"tag tag-success type-caption\">確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr></tbody></table></div></div>"
-      - label: "数字の列（numeric）と文の列（long_text）"
-        html: "<div class=\"pv tblw sectp\"><div class=\"tbl-wrap\"><table class=\"tbl type-small\" aria-label=\"コーチごとの予約枠の需給\"><thead><tr><th scope=\"col\">コーチ</th><th scope=\"col\" class=\"num\">公開した枠</th><th scope=\"col\" class=\"num\">予約された枠</th><th scope=\"col\" class=\"num\">埋まった割合</th><th scope=\"col\">最新の一言</th></tr></thead><tbody><tr><td>山田 花子</td><td class=\"num\">12 件</td><td class=\"num\">9 件</td><td class=\"num\">75%</td><td class=\"long\">フォームを動画で見せてもらえて、直すところがよく分かりました。</td></tr><tr><td>佐藤 健</td><td class=\"num\">8 件</td><td class=\"num\">2 件</td><td class=\"num\">25%</td><td class=\"long\">—</td></tr></tbody></table></div></div>"
-
+      - label: "PC 幅（wide）と急ぎの行"
+        html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">生徒</th><th scope="col">レッスンメニュー</th><th scope="col">種類</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class="lnk">12:00</span></td><td><span class="tag"><i class="d d-success"></i>確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr></tbody></table></div></div>'
+      - label: "狭い幅・数字の列"
+        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">予約された枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">9 件</td><td class="num">75%</td></tr><tr><td>佐藤 健</td><td class="num">8 件</td><td class="num">2 件</td><td class="num">25%</td></tr></tbody></table></div></div>'
 
   - id: badge
     ja: しるし
     lifecycle: trial
-    use: 未読の数・状態の小さな印
+    use: 未読の数・未読の小さな印
     parts: [container, label]
     variants:
       count: {container: danger.fg, label: on_primary, radius: sm, min_size_px: 20}
@@ -211,41 +252,46 @@ components:
     a11y: 入口のラベルに数を足す（「チャット、未読 3 件」）
     preview:
       - label: "count"
-        html: "<div class=\"pv\"><span class=\"entry type-body\">チャット <span class=\"badge type-caption\" aria-label=\"未読 3 件\">3</span></span></div>"
+        html: '<div class="pv"><span class="entry type-body">チャット <span class="badge type-caption" aria-label="未読 3 件">3</span></span></div>'
       - label: "dot"
-        html: "<div class=\"pv\"><span class=\"entry type-body\">お知らせ <span class=\"dot\" aria-label=\"未読あり\"></span></span></div>"
-      - label: "on_dark"
-        html: "<div class=\"pv panel dark\"><span class=\"entry type-body\">返ってきた添削 <span class=\"badge dark type-caption\">1</span></span></div>"
-
+        html: '<div class="pv"><span class="entry type-body">お知らせ <span class="dot" aria-label="未読あり"></span></span></div>'
 
   - id: status_tag
     ja: 状態のタグ
     lifecycle: trial
     use: 予約・動画添削・スロットの状態を出す（呼び名は glossary の states）
-    style: {container: "status.*.container", label: "status.*.on_container, caption 12px 700", radius: sm, icon: 16px}
+    colors: 予約は booking_state、スロットは slot_state の対応で色を選ぶ
+    parts: [dot, label]
+    style: {container: なし（0.5.0）, dot: "8px。status.*.fg（neutral は border_strong）", label: "small 700。text（neutral は text_muted）", gap: xs}
+    variants: {default: 点と字, urgent: data_table の急ぎの行だけ。字も danger.fg}
     rules:
       - level: must
         statement: 状態は色だけでなく、glossary の呼び名の文字を出す
         why: 色の見分けが難しい生徒も、読み上げの利用者も状態が分かる
         check: design_inspector
+      - level: should
+        statement: 状態のタグを淡い色の面（status.*.container）の札にしない。点と字で出す
+        why: 札が並ぶと汎用の UI キットに見え、主役の数字より目立つ（人の指摘 2026-11-05）
+        check: deterministic
     examples:
-      good: 「確定待ち」（warning の面と時計のアイコン）
-      bad: 黄色の点だけ
+      good: 「確定待ち」（warning の点とインクの字）
+      bad: 黄色の点だけ。淡い黄色の面に茶色の字の札
     preview:
       - label: "確定待ち（warning）"
-        html: "<div class=\"pv\"><span class=\"tag tag-warning type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>確定待ち</span></div>"
+        html: '<div class="pv"><span class="tag type-small"><i class="d d-warning"></i>確定待ち</span></div>'
       - label: "確定済み（success）"
-        html: "<div class=\"pv\"><span class=\"tag tag-success type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M5 12l4 4 10-10\"/></svg>確定済み</span></div>"
+        html: '<div class="pv"><span class="tag type-small"><i class="d d-success"></i>確定済み</span></div>'
       - label: "キャンセル済み（neutral）"
-        html: "<div class=\"pv\"><span class=\"tag tag-neutral type-caption\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M6 6l12 12M18 6L6 18\"/></svg>キャンセル済み</span></div>"
-
+        html: '<div class="pv"><span class="tag type-small muted"><i class="d d-neutral"></i>キャンセル済み</span></div>'
+      - label: "スロットの状態（slot_state: open・booked・closed）"
+        html: '<div class="pv tags"><span class="tag type-small"><i class="d d-info"></i>公開中</span><span class="tag type-small"><i class="d d-success"></i>予約済み</span><span class="tag type-small muted"><i class="d d-neutral"></i>終了</span></div>'
 
   - id: score_panel
     ja: スコアの面
     lifecycle: trial
-    use: 画面の主役の数字を 1 つ見せる（今月のビデオ通話の残り・次のレッスンの日時）
+    use: 画面の主役の数字を 1 つ見せる（ビデオ通話の残り・次のレッスンの日時）
     not_for: 一覧・規定の説明・admin-web
-    parts: [container, eyebrow（small）, number（display）, unit（title）, note（small）, decoration（斜めの帯。任意）, action（on_dark のボタン。任意）]
+    parts: [container, eyebrow（small）, number（display）, unit（title）, note（small）, decoration（任意）, action（on_dark。任意）]
     style: {container: inverse_surface, text: on_inverse_surface, eyebrow: on_inverse_surface_muted, accent: secondary の 4px の下線, radius: md, padding_px: 24}
     rules:
       - level: should
@@ -262,37 +308,34 @@ components:
       bad: 「2」だけを大きく、何の数かがない
     preview:
       - label: "残りの回数"
-        html: "<div class=\"pv w panel dark\" aria-label=\"今月のビデオ通話、残り 2 回、月 2 回のうち\"><i class=\"band\"></i><div class=\"eb type-small\">今月のビデオ通話</div><div><span class=\"num type-display\">2</span> <span class=\"type-title\">回</span></div><div class=\"note note-d type-small\">月 2 回のうち（プラン: スタンダード）</div></div>"
+        html: '<div class="pv w panel dark" aria-label="今月のビデオ通話、残り 2 回、月 2 回のうち"><i class="band"></i><div class="eb type-small">今月のビデオ通話</div><div class="numrow"><span class="type-small">残り</span><span class="num type-display">2</span><span class="type-title">回</span></div><div class="note note-d type-small">月 2 回のうち（プラン: スタンダード）</div></div>'
       - label: "空のホーム（on_dark のボタン）"
-        html: "<div class=\"pv w panel dark\"><i class=\"band\"></i><div class=\"eb type-small\">はじめての練習</div><div class=\"type-headline\">まずは体験予約</div><span class=\"btn btn-on-dark\" style=\"align-self:flex-start\">コーチを探す</span></div>"
-
+        html: '<div class="pv w panel dark"><i class="band"></i><div class="eb type-small">はじめての練習</div><div class="type-headline">まずは体験予約</div><span class="btn btn-on-dark" style="align-self:flex-start">コーチを探す</span></div>'
 
   - id: notice
     ja: 知らせ
     lifecycle: trial
-    use: 操作の結果と、欄が読めなかったことを伝える
-    variants:
-      inline: {container: "status.*.container", text: "status.*.on_container", icon: "status.*.fg", radius: md, note: 欄の中か画面の上。消えない}
-      toast: {container: inverse_surface, text: on_inverse_surface, radius: md, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上}
+    use: 操作の結果と、読めなかったことを伝える
+    variants:   # 0.5.0 で淡い面をやめた。角丸は md
+      inline: {container: background, border: "border 1px と左に status.*.fg の 4px", text: text, icon: "status.*.fg", note: 失敗・注意・情報。消えない}
+      success: {container: inverse_surface, text: on_inverse_surface, mark: 完了の印（secondary の丸にチェック）, note: 成功だけ。inverse_surface の 1 か所に数えない}
+      toast: {container: inverse_surface, mark: 完了の印, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上}
     states: [info, success, warning, danger]
     behavior: 失敗は inline で、直すか閉じるまで残す。toast は失敗に使わない
     wording: 失敗は「何が起きたか」と「どうすればよいか」の 2 文（content.yaml）
-    a11y: 成功は role=status（Flutter は liveRegion）、失敗は role=alert
+    a11y: 成功は role=status（Flutter は liveRegion）、失敗は role=alert。印は読み上げない
     rules:
       - level: should
         statement: 失敗の知らせは自動で消さない
         why: 読み終わる前に消えると、生徒は何が起きたか分からず同じ操作をくり返す
         check: design_inspector
     preview:
-      - label: "成功（inline）"
-        html: "<div class=\"pv notice n-success type-body\" role=\"status\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M5 12l4 4 10-10\"/></svg><p>予約が確定しました。</p></div>"
+      - label: "成功（濃い面と完了の印）"
+        html: '<div class="pv notice n-success type-body" role="status"><i class="mark">✓</i><p>予約が確定しました</p></div>'
       - label: "失敗（inline）"
-        html: "<div class=\"pv notice n-danger type-body\" role=\"alert\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v6M12 16.5v.5\"/></svg><p>予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。</p></div>"
+        html: '<div class="pv notice n-danger type-body" role="alert"><i class="ic">!</i><p>予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。</p></div>'
       - label: "注意（inline）"
-        html: "<div class=\"pv notice n-warning type-body\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.25\" stroke-linecap=\"round\"><path d=\"M12 3l10 18H2z\"/><path d=\"M12 10v4M12 17.5v.5\"/></svg><p>今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p></div>"
-      - label: "toast（成功だけ）"
-        html: "<div class=\"pv notice toast type-body\" role=\"status\"><p>メッセージを送りました</p></div>"
-
+        html: '<div class="pv notice n-warning type-body"><i class="ic">!</i><p>今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p></div>'
 
   - id: empty_state
     ja: 空の表示
@@ -300,16 +343,16 @@ components:
     use: 一覧や欄に 0 件のとき。背中を押す一言と次の操作を出す
     not_for: 読めなかったとき → notice（danger）。読み込み中 → loading
     parts: [container, message（body）, action（button。任意）]
-    variants:   # 0.2.0 で決めた（人の判断 2026-11-02）
+    variants:
       screen:  {when: 画面にほかの主な操作（primary）がない, container: surface, action: button の primary}
       section: {when: 欄だけが空で、画面にほかの primary がある, container: background と border の 1px の線, action: button の secondary}
-    style: {radius: md, padding_px: 24, gap_px: 16, text: text（0.2.0 で text_muted から変えた）}
+    style: {radius: md, padding_px: 24, gap_px: 16, text: text}
     wording: 背中を押す一言と次の操作（「まだこれからの予約はありません。コーチを探して始めましょう」）
     a11y: message を見出しの次に読み、action は動詞のボタンとして読む
     rules:
       - level: should
         statement: surface の面の上に button の secondary を置かない（欄だけが空のときは section の形にする）
-        why: 白い面のボタンが薄い灰色の面に沈み、次の操作が読みにくい（人の指摘 2026-11-02）
+        why: 淡い灰の副のボタンが淡い灰の面に沈み、次の操作が読みにくい（人の指摘 2026-11-02）
         check: design_inspector
       - level: should
         statement: empty_state の action は、画面にほかの primary がなければ primary、あれば secondary にする
@@ -317,39 +360,35 @@ components:
         check: design_inspector
     examples:
       good: 予約が 0 件の一覧で、文と primary の「コーチを探す」
-      bad: surface の面に secondary の「コーチを探す」と text_muted の文。空白のまま、または「データがありません」
+      bad: surface の面に secondary の「コーチを探す」。空白のまま、または「データがありません」
     preview:
       - label: "screen（ほかに primary がない）"
-        html: "<div class=\"pv empty empty-screen\"><p class=\"type-body\">まだこれからの予約はありません。コーチを探して始めましょう</p><span class=\"btn btn-primary\">コーチを探す</span></div>"
+        html: '<div class="pv empty empty-screen"><p class="type-body">まだこれからの予約はありません。コーチを探して始めましょう</p><span class="btn btn-primary">コーチを探す</span></div>'
       - label: "section（画面に primary がある）"
-        html: "<div class=\"pv empty empty-section\"><p class=\"type-body\">まだこれからの予約はありません。</p><span class=\"btn btn-secondary\">コーチを探す</span></div>"
-      - label: "文だけ"
-        html: "<div class=\"pv empty empty-screen\"><p class=\"type-body\">まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。</p></div>"
-
+        html: '<div class="pv empty empty-section"><p class="type-body">まだこれからの予約はありません。</p><span class="btn btn-secondary">コーチを探す</span></div>'
 
   - id: loading
     ja: 読み込み中
     lifecycle: trial
     use: API を読んでいるあいだ
     variants:
-      bar: {color: primary, track: primary_container, height_px: 4, note: 画面の上。画面全体の読み込み}
+      bar: {color: primary, track: primary_container, height_px: 4, note: 画面全体}
       section_text: {text: "「〜を読み込んでいます…」small text_muted", note: 欄ごとの読み込み}
       spinner: {size_px: 20, note: ボタンの中だけ}
-    behavior: 300ms より速く終わるときは出さない。読み込み中も読めた欄はそのまま出す
+    behavior: 300ms より速く終わるときは出さない。読めた欄はそのまま出す
     a11y: 読み込みの始まりと終わりを読み上げに伝える
     preview:
       - label: "bar（画面全体）"
-        html: "<div class=\"pv\"><div class=\"bar\" role=\"progressbar\" aria-label=\"ホームを読み込んでいます\"><i></i></div><div class=\"type-headline\">ホーム</div></div>"
+        html: '<div class="pv"><div class="bar" role="progressbar" aria-label="ホームを読み込んでいます"><i></i></div><div class="type-headline">ホーム</div></div>'
       - label: "section_text（欄ごと）"
-        html: "<div class=\"pv sect\"><h4 class=\"type-title\">お気に入りのコーチ</h4><p class=\"type-small muted\" role=\"status\">お気に入りのコーチを読み込んでいます…</p></div>"
-
+        html: '<div class="pv sect"><h4 class="type-title">お気に入りのコーチ</h4><p class="type-small muted" role="status">お気に入りのコーチを読み込んでいます…</p></div>'
 
   - id: confirm_dialog
     ja: 確認のダイアログ
     lifecycle: trial
     use: 送る前の確認と、取り消せない操作（予約のキャンセル・受付の停止・メニューの非公開）
     not_for: 取り消せる操作 → 確認なしで実行し、notice で結果を出す
-    parts: [title（疑問の文）, body（対象と結果と条件）, cancel_action（text）, confirm_action（primary か danger）]
+    parts: [title（疑問の文）, body（対象と結果と条件）, cancel_action（secondary）, confirm_action（primary か danger）]
     style: {container: background, radius: md, padding_px: 24, scrim: scrim, max_width_px: 400}
     behavior: 開いたらフォーカスを題へ。cancel_action を左、confirm_action を右。外を押す・戻るは cancel と同じ
     wording: 題「予約をキャンセルしますか？」、confirm は動詞（「キャンセルする」）、cancel は「やめる」
@@ -363,88 +402,94 @@ components:
       bad: 題「よろしいですか？」・ボタン「OK」
     preview:
       - label: "取り消せない操作（danger）"
-        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">予約をキャンセルしますか？</h4><p class=\"type-body\">10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p><div class=\"acts\"><span class=\"btn btn-text\">やめる</span><span class=\"btn btn-danger\">キャンセルする</span></div></div></div>"
+        html: '<div class="pv w scrim"><div class="dlg" role="dialog"><h4 class="type-title">予約をキャンセルしますか？</h4><p class="type-body">10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p><div class="acts"><span class="btn btn-secondary">やめる</span><span class="btn btn-danger">キャンセルする</span></div></div></div>'
       - label: "送る前の確認（primary）"
-        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">体験予約を申し込みますか？</h4><p class=\"type-body\">11/4（水）18:00〜18:30 の野球の体験予約を申し込みます。コーチが確定すると、チャットが開きます。</p><div class=\"acts\"><span class=\"btn btn-text\">やめる</span><span class=\"btn btn-primary\">申し込む</span></div></div></div>"
-      - label: "読み込み中"
-        html: "<div class=\"pv w scrim\"><div class=\"dlg\" role=\"dialog\"><h4 class=\"type-title\">受付を停止しますか？</h4><p class=\"type-body\">コーチ: 山田 の受付を停止します。新しい予約を受け付けなくなります。確定済みの予約はそのまま残ります。</p><div class=\"acts\"><span class=\"btn btn-disabled\">やめる</span><span class=\"btn btn-danger\" aria-busy=\"true\"><i class=\"spin\"></i>停止する</span></div></div></div>"
+        html: '<div class="pv w scrim"><div class="dlg" role="dialog"><h4 class="type-title">体験予約を申し込みますか？</h4><p class="type-body">11/4（水）18:00〜18:30 の野球の体験予約を申し込みます。コーチが確定すると、チャットが開きます。</p><div class="acts"><span class="btn btn-secondary">やめる</span><span class="btn btn-primary">申し込む</span></div></div></div>'
 
 preview_css: |
+  .pv,.pv *{box-sizing:border-box}
   .pv{font-family:var(--font-sans);color:var(--color-text);width:320px}
-  .pv.w{width:360px}
-  .pv p{margin:0}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-sm);min-height:48px;padding:0 var(--space-lg);border-radius:var(--radius-pill);border:1px solid transparent;font:700 16px/1.25 var(--font-sans);letter-spacing:0.01em;white-space:nowrap}
+  .pv.w{width:360px}.pv.tblw{width:960px}.pv p,.pv h4{margin:0}
+  .type-display,.type-figure,.type-figure-sm{font-family:var(--font-numeric);font-variant-numeric:tabular-nums}
+  .row-x,.acts{display:flex;gap:var(--space-sm)}.acts{justify-content:flex-end}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-sm);min-height:56px;padding:0 var(--space-lg);border-radius:var(--radius-md);font:900 16px/1.25 var(--font-sans);white-space:nowrap}
   .btn-primary{background:var(--color-primary);color:var(--color-on-primary)}
   .btn-pressed{background:var(--color-primary-pressed);color:var(--color-on-primary)}
-  .btn-secondary{background:var(--color-background);border-color:var(--color-border-strong);color:var(--color-primary)}
-  .btn-secondary.is-pressed{background:var(--color-primary-container)}
-  .btn-text{background:none;color:var(--color-primary);padding:0 var(--space-md)}
+  .is-focus{outline:2px solid var(--color-focus-ring);outline-offset:2px}
+  .btn-secondary{background:var(--color-primary-container)}
+  .btn-text{color:var(--color-primary);padding:0 var(--space-sm);text-decoration:underline 2px;text-underline-offset:4px}
   .btn-danger{background:var(--color-danger-fg);color:var(--color-on-primary)}
   .btn-on-dark{background:var(--color-secondary);color:var(--color-on-secondary)}
   .btn-disabled{background:var(--color-surface);color:var(--color-text-muted)}
-  .spin{width:16px;height:16px;border-radius:var(--radius-pill);border:2px solid currentColor;border-right-color:transparent;display:inline-block}
-  .hint{color:var(--color-text-muted);margin-top:var(--space-sm)}
+  .spin{width:16px;height:16px;border-radius:var(--radius-pill);border:2px solid currentColor;border-right-color:transparent}
+  .hint,.muted,.tf .help,.panel .eb,.note-d{color:var(--color-text-muted)}
+  .panel .eb,.note-d{color:var(--color-on-inverse-surface-muted)}
+  .ic,.mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:var(--radius-pill);font:900 12px/1 var(--font-sans);font-style:normal}
+  .ic{border:2px solid currentColor}
+  .mark{background:var(--color-secondary);color:var(--color-on-secondary)}
   .tf label{display:block;font-weight:700;margin-bottom:var(--space-xs)}
-  .tf .field{min-height:48px;display:flex;align-items:center;padding:0 var(--space-md);background:var(--color-background);border:1px solid var(--color-border-strong);border-radius:var(--radius-md)}
+  .tf .field{min-height:48px;display:flex;align-items:center;padding:0 var(--space-md);border:1px solid var(--color-border-strong);border-radius:var(--radius-md)}
   .tf.focus .field{border:2px solid var(--color-focus-ring)}
   .tf.err .field{border:2px solid var(--color-danger-fg)}
-  .tf.off .field{background:var(--color-surface);color:var(--color-text-muted)}
-  .tf .help{display:flex;justify-content:space-between;color:var(--color-text-muted);margin-top:var(--space-xs)}
-  .tf .etext{display:flex;gap:var(--space-xs);align-items:center;color:var(--color-danger-fg);margin-top:var(--space-xs)}
-  .card{background:var(--color-surface);border-radius:var(--radius-md);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
-  .card.is-pressed{background:var(--color-primary-container)}
-  .muted{color:var(--color-text-muted)}
-  .tag{display:inline-flex;align-items:center;gap:var(--space-xs);padding:0 var(--space-sm);border-radius:var(--radius-sm);align-self:flex-start}
-  .tag-warning{background:var(--color-warning-container);color:var(--color-warning-on-container)}
-  .tag-success{background:var(--color-success-container);color:var(--color-success-on-container)}
-  .tag-neutral{background:var(--color-surface);color:var(--color-text-muted);border:1px solid var(--color-border)}
-  .row{display:flex;align-items:center;gap:var(--space-md);min-height:56px;padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--color-border);background:var(--color-background)}
-  .row.unread{box-shadow:none;border-left:4px solid var(--color-primary)}
-  .row.is-pressed{background:var(--color-primary-container)}
-  .row .main{flex:1}
-  .row .t{font-weight:700}
+  .tf .help,.tf .etext{display:flex;justify-content:space-between;gap:var(--space-xs);margin-top:var(--space-xs)}
+  .tf .etext{justify-content:flex-start;align-items:center;color:var(--color-danger-fg)}
+  .card{border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
+  .card.bk{flex-direction:row;gap:var(--space-md)}
+  .koma{flex:none;width:64px;border-radius:var(--radius-sm);background:var(--color-surface);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:var(--space-sm) 0}
+  .koma.next{background:var(--color-secondary);color:var(--color-on-secondary)}
+  .bd{display:flex;flex-direction:column;gap:var(--space-xs)}
+  .tag{display:inline-flex;align-items:center;gap:var(--space-xs);font-weight:700;white-space:nowrap;align-self:flex-start}
+  .d,.dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);flex:none}
+  .d-success{background:var(--color-success-fg)}.d-warning{background:var(--color-warning-fg)}
+  .d-danger,.dot{background:var(--color-danger-fg)}.d-neutral{background:var(--color-border-strong)}
+  .tag-urgent{color:var(--color-danger-fg)}
+  .row{display:flex;align-items:center;gap:var(--space-md);min-height:56px;padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--color-border)}
+  .row.unread{border-left:4px solid var(--color-primary)}
+  .row.is-pressed,.card.is-pressed{background:var(--color-primary-container)}
+  .row .main{flex:1}.row .t{font-weight:700}
   .badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 var(--space-xs);border-radius:var(--radius-sm);background:var(--color-danger-fg);color:var(--color-on-primary)}
-  .badge.dark{background:var(--color-secondary);color:var(--color-on-secondary)}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);background:var(--color-danger-fg)}
   .entry{display:inline-flex;align-items:center;gap:var(--space-sm)}
-  .dark{background:var(--color-inverse-surface);color:var(--color-on-inverse-surface)}
+  .dark,.n-success{background:var(--color-inverse-surface);color:var(--color-on-inverse-surface)}
   .panel{border-radius:var(--radius-md);padding:var(--space-lg);position:relative;overflow:hidden;display:flex;flex-direction:column;gap:var(--space-sm)}
-  .panel .eb{color:var(--color-on-inverse-surface-muted)}
-  .panel .num{border-bottom:4px solid var(--color-secondary);display:inline-block;margin-bottom:var(--space-xs);align-self:flex-start;font-variant-numeric:tabular-nums}
+  .numrow{display:flex;align-items:baseline;gap:var(--space-sm)}
+  .panel .num{border-bottom:4px solid var(--color-secondary);padding-bottom:var(--space-xs)}
   .panel .band{position:absolute;right:-24px;top:16px;width:120px;height:16px;background:var(--color-secondary);transform:rotate(-12deg)}
   .panel .eb,.panel .note{position:relative}
-  .note-d{color:var(--color-on-inverse-surface-muted)}
   .notice{display:flex;gap:var(--space-sm);align-items:flex-start;padding:var(--space-md);border-radius:var(--radius-md)}
-  .n-success{background:var(--color-success-container);color:var(--color-success-on-container)}
-  .n-success svg{color:var(--color-success-fg)}
-  .n-danger{background:var(--color-danger-container);color:var(--color-danger-on-container)}
-  .n-danger svg{color:var(--color-danger-fg)}
-  .n-warning{background:var(--color-warning-container);color:var(--color-warning-on-container)}
-  .n-warning svg{color:var(--color-warning-fg)}
-  .toast{background:var(--color-inverse-surface);color:var(--color-on-inverse-surface)}
-  .notice svg{flex:none;margin-top:var(--space-xs)}
-  .empty{border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md);align-items:flex-start;color:var(--color-text)}
+  .notice .ic,.notice .mark{margin-top:var(--space-xs)}
+  .n-danger,.n-warning{border:1px solid var(--color-border);border-left:4px solid var(--color-danger-fg)}
+  .n-warning{border-left-color:var(--color-warning-fg)}
+  .n-danger .ic{color:var(--color-danger-fg)}.n-warning .ic{color:var(--color-warning-fg)}
+  .n-success{font-weight:700}
+  .empty{border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md);align-items:flex-start}
   .empty-screen{background:var(--color-surface)}
-  .empty-section{background:var(--color-background);border:1px solid var(--color-border)}
-  .sect h4{margin:0 0 var(--space-sm)}
+  .empty-section{border:1px solid var(--color-border)}
+  .sect h4{margin-bottom:var(--space-sm)}
   .bar{height:4px;background:var(--color-primary-container);border-radius:var(--radius-pill);overflow:hidden;margin-bottom:var(--space-md)}
   .bar i{display:block;width:40%;height:100%;background:var(--color-primary)}
   .scrim{background:var(--color-scrim);padding:var(--space-lg);border-radius:var(--radius-md)}
   .dlg{background:var(--color-background);border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md)}
-  .dlg h4{margin:0}
-  .acts{display:flex;justify-content:flex-end;gap:var(--space-sm)}
-  .tag-danger{background:var(--color-danger-fg);color:var(--color-on-primary)}
-  .pv.tblw{width:960px}
-  .sectp{background:var(--color-surface);border-radius:var(--radius-md);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
   .tbl-wrap{overflow-x:auto;max-width:100%}
   .tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}
   .tbl{width:100%;min-width:max-content;border-collapse:collapse;text-align:left}
-  .tbl th{font-weight:700;white-space:nowrap;padding:var(--space-sm);border-bottom:1px solid var(--color-border);vertical-align:bottom}
-  .tbl td{white-space:nowrap;padding:var(--space-sm);height:48px;box-sizing:border-box;border-top:1px solid var(--color-border);vertical-align:middle}
+  .tbl th,.tbl td{white-space:nowrap;padding:var(--space-sm);vertical-align:middle}
+  .tbl th{color:var(--color-text-muted);border-bottom:2px solid var(--color-primary)}
+  .tbl td{height:48px;border-top:1px solid var(--color-border)}
   .tbl th:first-child,.tbl td:first-child{padding-left:0}
   .tbl th:last-child,.tbl td:last-child{padding-right:0}
   .tbl .num{text-align:right;font-variant-numeric:tabular-nums}
-  .tbl td.long{white-space:normal;word-break:auto-phrase;min-width:12em;max-width:40em}
   .tbl tr.hl td{background:var(--color-danger-container)}
-  .tbl .tag{vertical-align:middle}
   .lnk{color:var(--color-primary);text-decoration:underline}
+  .tags{display:flex;gap:var(--space-md);flex-wrap:wrap}
+  .d-info{background:var(--color-info-fg)}
+  .tf.off .field{background:var(--color-surface);color:var(--color-text-muted)}
+  .pv.df{width:400px}
+  .dr{border:0;margin:0;padding:0;min-width:0}
+  .dr legend{padding:0;font-weight:700;margin-bottom:var(--space-sm)}
+  .dr-row{display:flex;align-items:flex-end;gap:var(--space-sm)}
+  .dr-row .tf{flex:1;min-width:0}
+  .dr .tf .field{justify-content:space-between;gap:var(--space-sm);font-variant-numeric:tabular-nums}
+  .dr .cal{flex:none;width:16px;height:16px;border:2px solid var(--color-text-muted);border-top-width:5px;border-radius:var(--radius-sm)}
+  .dr .sep{color:var(--color-text-muted);min-height:48px;display:flex;align-items:center}
+  .dr .help{display:flex;color:var(--color-text-muted);margin-top:var(--space-sm)}
+  .dr .etext{display:flex;gap:var(--space-xs);align-items:flex-start;color:var(--color-danger-fg);margin-top:var(--space-sm);word-break:auto-phrase}

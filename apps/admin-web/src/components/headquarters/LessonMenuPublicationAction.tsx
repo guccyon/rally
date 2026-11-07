@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import { lengthOf } from "@/components/coach/lessonMenuInput";
+import { Button } from "@/components/ui/Button";
 
 /** 本部が非公開にするときの理由の上限（契約の UnpublishLessonMenuRequest.reason。コードポイントで数える）。 */
 export const UNPUBLISH_REASON_MAX_LENGTH = 200;
@@ -41,22 +42,17 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
 
   if (!confirming) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         aria-label={
           unpublishedByHeadquarters
             ? `「${menu.name}」を公開に戻す`
             : `「${menu.name}」を非公開にする`
         }
-        className={
-          unpublishedByHeadquarters
-            ? "rounded-md border px-2 py-0.5"
-            : "rounded-pill border border-danger px-2 py-0.5 text-danger"
-        }
         onClick={() => setConfirming(true)}
       >
         {unpublishedByHeadquarters ? "公開に戻す" : "非公開にする"}
-      </button>
+      </Button>
     );
   }
 
@@ -67,22 +63,12 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
           このメニューを公開に戻しますか？生徒の一覧にまた出て、コーチが自分で公開・非公開を決められるようになります。
         </p>
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-pill bg-primary px-2 py-0.5 text-on-primary disabled:opacity-50"
-            onClick={() => void confirm()}
-          >
+          <Button disabled={busy} onClick={() => void confirm()}>
             {busy ? "公開に戻しています…" : "公開に戻すのを確定"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-            onClick={cancel}
-          >
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={cancel}>
             やめる
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -110,22 +96,12 @@ export function LessonMenuPublicationAction({ menu, onUnpublish, onRepublish }: 
           : `あと ${remaining} 文字`}
       </span>
       <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={busy || remaining < 0}
-          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
-          onClick={() => void confirm()}
-        >
+        <Button variant="danger" disabled={busy || remaining < 0} onClick={() => void confirm()}>
           {busy ? "非公開にしています…" : "非公開を確定"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-          onClick={cancel}
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={cancel}>
           やめる
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import { BookingLessonMenuFilter } from "./BookingLessonMenuFilter";
 import { MAX_PERIOD_DAYS, type Period, periodError } from "./bookingPeriod";
 import { lessonMenuOptionLabel } from "./CancelledBookingList";
 import { SPORTS } from "./PendingVideoReviewList";
+import { Button } from "@/components/ui/Button";
 
 type Sport = Schemas["Sport"];
 
@@ -272,17 +273,12 @@ export function SlotSupplyReport({
               ))}
           </select>
         </label>
-        <button type="submit" className="rounded-pill bg-primary px-4 py-1 text-on-primary">
+        <Button type="submit" variant="secondary">
           この条件で見る
-        </button>
-        <button
-          type="button"
-          disabled={state.kind === "loading"}
-          onClick={() => void load(applied)}
-          className="rounded-pill border px-3 py-1 text-sm disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="secondary" disabled={state.kind === "loading"} onClick={() => void load(applied)}>
           再集計
-        </button>
+        </Button>
       </form>
       {coaches.kind === "failed" && (
         <ResultMessage

@@ -5,13 +5,15 @@ import { Button, type ButtonVariant } from "./Button";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DataTable, type DataTableColumn } from "./DataTable";
+import { DateField, DateRangeField } from "./DateField";
+import { dateRangeError, type DateRange } from "./dateRange";
 import { EmptyState } from "./EmptyState";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
 import { Notice } from "./Notice";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
-import type { Status } from "./status";
+import { SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
  * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -48,7 +50,12 @@ export const NOT_IN_ADMIN_WEB: {
   {
     component: "notice",
     variant: "toast",
-    reason: "admin-web の Notice は inline だけ（toast はまだない）",
+    reason: "admin-web の Notice は inline と success だけ（toast はまだない）",
+  },
+  {
+    component: "card",
+    variant: "booking",
+    reason: "admin-web は予約を data_table で見比べる（patterns の list）。日付のコマのライムは student-app の次のレッスンだけ",
   },
 ];
 
@@ -67,6 +74,27 @@ const STATUS_EXAMPLES: { status: Status; label: string }[] = [
   { status: "warning", label: "確定待ち" },
   { status: "danger", label: "受付停止" },
   { status: "neutral", label: "キャンセル済み" },
+];
+
+/** スロットの状態（glossary の slot.states）の見本。色は tokens.yaml の color.slot_state。 */
+const SLOT_STATE_EXAMPLES: {
+  state: keyof typeof SLOT_STATE_STATUS;
+  label: string;
+}[] = [
+  { state: "open", label: "公開中" },
+  { state: "booked", label: "予約済み" },
+  { state: "closed", label: "終了" },
+];
+
+/** 期間の見本（日付の欄と誤りの型）。上限は契約の 31 日。 */
+const MAX_DAYS = 31;
+const RANGE_EXAMPLES: { example: string; value: DateRange }[] = [
+  {
+    example: "終わりが始まりより前",
+    value: { from: "2026-11-03", to: "2026-10-28" },
+  },
+  { example: "31 日を超える", value: { from: "2026-10-01", to: "2026-11-30" } },
+  { example: "空の欄", value: { from: "2026-10-28", to: "" } },
 ];
 
 const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
@@ -133,9 +161,7 @@ const BOOKING_COLUMNS: DataTableColumn<BookingRow>[] = [
     cell: (row) => (
       <span className="inline-flex gap-2">
         <StatusTag label={row.status.label} status={row.status.status} />
-        {row.urgent && (
-          <span className="rounded-sm bg-danger px-2 text-xs font-bold text-on-primary">開始まで 24 時間以内</span>
-        )}
+        {row.urgent && <StatusTag label="開始まで 24 時間以内" status="danger" urgent />}
       </span>
     ),
   },
@@ -162,7 +188,10 @@ const SUPPLY_ROWS: SupplyRow[] = [
   { coach: "佐藤 健", published: 8, booked: 2, comment: "—" },
 ];
 
-const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = { header: "コーチ", cell: (row) => row.coach };
+const SUPPLY_COACH_COLUMN: DataTableColumn<SupplyRow> = {
+  header: "コーチ",
+  cell: (row) => row.coach,
+};
 
 const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
   SUPPLY_COACH_COLUMN,
@@ -183,9 +212,9 @@ const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
   },
 ];
 
-/** 表の見本を Section と同じ面（surface・padding 16px）に置く。 */
+/** 表の見本の枠。Section と同じく面で囲わない（0.5.0）。narrow は幅 360px。 */
 function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
-  return <div className={`rounded-md bg-surface p-4 ${narrow ? "w-[360px]" : ""}`}>{children}</div>;
+  return <div className={narrow ? "w-[360px]" : undefined}>{children}</div>;
 }
 
 /**
@@ -263,10 +292,45 @@ export const CATALOG: CatalogEntry[] = [
     ];
   }),
   {
+    component: "date_field",
+    variant: "date",
+    state: "default",
+    render: () => <DateField label="送る日" defaultValue="2026-10-28" />,
+  },
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "default",
+    render: () => (
+      <DateRangeField value={{ from: "2026-10-28", to: "2026-11-03" }} onChange={noop} helper="31 日まで選べます" />
+    ),
+  },
+  ...RANGE_EXAMPLES.map(({ example, value }) => ({
+    component: "date_field",
+    variant: "date_range",
+    state: "error",
+    example,
+    render: () => (
+      <DateRangeField
+        value={value}
+        onChange={noop}
+        helper="31 日まで選べます"
+        error={dateRangeError(value, MAX_DAYS)}
+      />
+    ),
+  })),
+  {
+    component: "date_field",
+    variant: "date_range",
+    state: "loading",
+    render: () => <DateRangeField value={{ from: "", to: "" }} onChange={noop} loading />,
+  },
+  {
     component: "card",
+    variant: "plain",
     render: () => (
       <Card>
-        <p className="font-bold">10/28（水）12:00〜12:30</p>
+        <p className="text-xl font-black">10/28（水）12:00〜12:30</p>
         <p className="text-sm text-text-muted">テニス・コーチ: 鈴木</p>
         <StatusTag label="確定済み" status="success" />
       </Card>
@@ -274,10 +338,11 @@ export const CATALOG: CatalogEntry[] = [
   },
   {
     component: "card",
+    variant: "plain",
     example: "押せる",
     render: () => (
       <Card onClick={noop}>
-        <p className="font-bold">スイングの見直し</p>
+        <p className="text-xl font-black">スイングの見直し</p>
         <p className="text-sm text-text-muted">テニス・1 回 60 分</p>
       </Card>
     ),
@@ -297,15 +362,33 @@ export const CATALOG: CatalogEntry[] = [
   { component: "badge", variant: "dot", render: () => <Badge /> },
   ...STATUS_EXAMPLES.map(({ status, label }) => ({
     component: "status_tag",
+    variant: "default",
     example: status,
     render: () => <StatusTag label={label} status={status} />,
   })),
-  ...(["info", "success", "warning", "danger"] as const).map((state) => ({
+  ...SLOT_STATE_EXAMPLES.map(({ state, label }) => ({
+    component: "status_tag",
+    variant: "default",
+    example: `slot_state ${state}`,
+    render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
+  })),
+  {
+    component: "status_tag",
+    variant: "urgent",
+    render: () => <StatusTag label="開始まで 24 時間以内" status="danger" urgent />,
+  },
+  ...(["info", "warning", "danger"] as const).map((state) => ({
     component: "notice",
     variant: "inline",
     state,
     render: () => <Notice message={NOTICE_MESSAGES[state]} status={state} />,
   })),
+  // 成功は inline ではなく濃い面と完了の印（notice.variants.success）
+  {
+    component: "notice",
+    variant: "success",
+    render: () => <Notice message={NOTICE_MESSAGES.success} status="success" />,
+  },
   {
     component: "empty_state",
     variant: "screen",
@@ -393,7 +476,7 @@ export const CATALOG: CatalogEntry[] = [
   {
     component: "data_table",
     variant: "text",
-    state: "highlight",
+    example: "急ぎの行",
     render: () => (
       <TableFrame>
         <DataTable

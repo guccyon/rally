@@ -1,0 +1,48 @@
+# PR 本文の関所（tools/pr-body-check/gate.mjs）を Engine の本物の本文の組み込みで確かめる（知見 K-0001 の担保。議決 D-0013、Issue #956）。決定論（LLM を使わない）。
+# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/pr-body-check のテスト（check.test.mjs・gate.test.mjs・engine.test.mjs）を PR ごとに走らせる。
+# ENGINE_DIR を渡すので、Engine のチェックアウトがないときや entrypoint.sh から本文を組む節を取り出せないときは飛ばさずに落ちる。
+# PR 本文そのものはここでは見ない（落ちると ci_failed の続きのジョブが積まれ、その summary がまた本文に足されるため。本文は Engine が更新の前に関所に照らす）。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-engine.yml に写す。
+# 写すときに変えてよいのは ENGINE_REF の行だけ（tools/sendback-check/ci/sendback-engine.yml と同じ版にそろえる。上げるときはテストが通ることを確かめる）。
+name: pr-body-engine
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-body-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 9fee9c2b3d8d2dd22db63e8989d839cd982fd046
+
+jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: PR 本文の関所のテスト（K-0001）
+        working-directory: tools/pr-body-check
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          rc=0
+          node --test --test-reporter=spec > pr-body-test.txt 2>&1 || rc=$?
+          { echo "## pr-body-engine（ENGINE_REF=${ENGINE_REF}）"; echo; echo '```'; cat pr-body-test.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat pr-body-test.txt
+          exit $rc

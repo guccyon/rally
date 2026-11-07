@@ -266,7 +266,7 @@ describe("コーチの様子の上のリンクの並び", () => {
       .map((link) => [link.textContent, link.getAttribute("href")]);
   }
 
-  test("評価・低い評価・レッスンメニュー・予約の順に並び、評価・メニュー・予約はそのコーチで開く", () => {
+  test("評価・低い評価・レッスンメニュー・予約・お休みの順に並び、評価・メニュー・予約・お休みはそのコーチで開く", () => {
     render(<CoachRelatedLinks coachId={COACH_ID} />);
 
     expect(linksOf()).toEqual([
@@ -274,6 +274,7 @@ describe("コーチの様子の上のリンクの並び", () => {
       ["低い評価", "/headquarters/low-reviews"],
       ["レッスンメニュー", `/headquarters/lesson-menus?coach_id=${COACH_ID}`],
       ["予約", `/headquarters/bookings?coach_id=${COACH_ID}`],
+      ["お休み", `/headquarters/coaches/leave?coach_id=${COACH_ID}`],
     ]);
   });
 
@@ -282,7 +283,7 @@ describe("コーチの様子の上のリンクの並び", () => {
     render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
 
     expect(screen.getAllByText("読み込み中…").length).toBeGreaterThan(0);
-    expect(linksOf()).toHaveLength(4);
+    expect(linksOf()).toHaveLength(5);
   });
 
   test("様子が読み込めなくてもリンクの並びは残る", async () => {
@@ -290,7 +291,7 @@ describe("コーチの様子の上のリンクの並び", () => {
     render(<CoachOverviewHome token="mock.headquarters.abc" coachId={COACH_ID} />);
 
     expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
-    expect(linksOf()).toHaveLength(4);
+    expect(linksOf()).toHaveLength(5);
   });
 
   test("コーチの ID がなければリンクの並びは出さない", () => {
