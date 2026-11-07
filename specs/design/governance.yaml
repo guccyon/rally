@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.2.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.5.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -36,54 +36,61 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
   - id: no-shadow
     detect: elevation が 0 でない・box-shadow
   - id: font-family
-    detect: Noto Sans CJK JP 以外の font-family と、Web フォントの読み込み（@import url・fonts.googleapis）
+    detect: Noto Sans CJK JP 以外の font-family と、Web フォントの読み込み（@import url・fonts.googleapis・next/font/google・外の URL の @font-face）
+    allow: Barlow Condensed（tokens.yaml の typography.families.numeric。アプリに同梱したファイルを同じオリジンか pubspec の fonts で読むときだけ。0.5.0 で足した）
+  - id: deprecated-token
+    detect: scale.blue の値（#3A54B0 など）と 0.4.0 までの灰の値（#F1F3F8・#DDE1EA・#4A5163・#7D8599・#10131A）
+  - id: button-shape
+    detect: 角丸が md でないボタン（rounded-full・StadiumBorder）と、線だけの副のボタン（OutlinedButton）
+  - id: status-tag-shape
+    detect: 状態のタグの status の container の面（bg-success-container など。data_table の急ぎの行は除く）
   - id: one-score-panel
     detect: 1 画面に score_panel が 2 つ以上
   - id: a11y-labels
     detect: tooltip のない IconButton、aria-label のないアイコンだけのボタン、label のない入力欄
+  - id: table-no-page-scroll
+    target: admin-web の screens.ts の画面
+    detect: 幅 360px と 1024px で document の scrollWidth が画面の幅を超える（ページ全体が横に動く）。table が overflow-x の包みの外にある。表の th・td に段にない余白（py-1 だけ・px-3 など）
   - id: target-size
     detect: 48px 未満の押せる部品
   - id: glossary-terms
     detect: 文言の中の glossary にない言い換え（例「予約枠」を画面の題に使う。glossary は「スロット」）
+  - id: date-field-only
+    target: admin-web の src/（src/components/ui/DateField.tsx を除く）
+    detect: input type="date" を直に書いている要素
+  - id: state-color-map
+    detect: status_tag の色が booking_state・slot_state の対応と違う
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
+
+requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
+  - id: checkbox
+    from: "#455（プロダクトデザイナー役、ADR 0025）"
+    stage: 保留
+    note: 案 b（予約ごとに選ぶ）でだけ使うので 0.4.0 では足さない。案 b を選んだら checkbox と「すべて選ぶ」を足すタスクを切る
 
 changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
   entries:
-    - version: 0.1.0
-      date: "2026-11-01"
-      change: デザインシステムの最初の正本。コンセプト rally-court（人が選んだ）から principles・concept_tone・tokens・components・patterns・content・accessibility を作った
-      reason: rally にはデザインシステムがなかった。Issue の言う既存のトークン（#398）はリポジトリに見当たらず、今のアプリは student-app が ThemeData(colorSchemeSeed teal)、admin-web が Tailwind の既定の色（gray・green-700・red-600）だけだった。壊す名前はないので、コンセプトの値をそのまま正本にした
-      affects: student-app と admin-web の全画面（テーマの色・書体・角丸・余白が変わる。キャプチャ #401 は全画面で差分が出る）
-      approved_by: 人（コンセプトの選択）、工場（基準）
-      migration:
-        - student-app は ThemeData を tokens.yaml から作り（colorSchemeSeed をやめる）、Noto Sans CJK JP を同梱する
-        - admin-web は globals.css の @theme に tokens.yaml の色・角丸・余白を写し、gray・green・red の class を役割の名前に置き換える
-        - 今の文言は変えない（content.yaml は今の文言に合わせて書いた）
-    - version: 0.1.1
-      date: "2026-11-02"
-      change: tokens.yaml の typography.families に bundling_status（student-app の書体の同梱がまだであること）を書き足した。admin-web の @theme に書体の段の字間（letter_spacing）を写した
-      reason: 正本は student-app に Noto Sans CJK JP を同梱すると書くが、pubspec に fonts がなく、正本と実際がずれていた。admin-web は書体の段の大きさと行間だけを写し、字間が抜けていた
-      affects: admin-web の全画面（text-xs・text-sm・text-base・text-xl・text-headline の字間が変わる）。student-app は変わらない
-      approved_by: 工場（文の直しとトークンの写し）
-    - version: 0.2.0
-      date: "2026-11-02"
+    # 0.1.0〜0.4.0 は要点だけ（0.5.0 で縮めた）。全文は specs/design/CHANGELOG.md
+    - {version: 0.1.0, date: "2026-11-01", change: デザインシステムの最初の正本（コンセプト rally-court）, affects: 両アプリの全画面, approved_by: 人（コンセプトの選択）、工場（基準）}
+    - {version: 0.1.1, date: "2026-11-02", change: typography.families に bundling_status を書き足し、admin-web の @theme に字間を写した, affects: admin-web の全画面, approved_by: 工場}
+    - {version: 0.2.0, date: "2026-11-02", change: 青の値の彩度を下げ、copy と calm_primary、empty_state の variants、全部の部品の preview を足した, affects: 両アプリの全画面, approved_by: 人（色の値・concept_tone）、工場（部品と見本）}
+    - {version: 0.3.0, date: "2026-11-05", change: admin-web の幅（content_width_px の reading と wide）と data_table を足し、lint に table-no-page-scroll を足した, affects: admin-web の本部の一覧の画面, approved_by: 工場}
+    - {version: 0.4.0, date: "2026-11-05", change: date_field と color.slot_state・state_rules を足し、lint に date-field-only・state-color-map、requests に checkbox（保留）を足した, affects: admin-web の期間の欄のある画面・coach-slots*・design-catalog, approved_by: 工場}
+    - version: 0.5.0
+      date: "2026-11-06"
       change: >-
-        tokens.yaml の青の値を変えた（primary・focus_ring・info.fg #1E3FD0→#3A54B0、primary_pressed #1A2FA8→#2E4590、
-        primary_container・info.container #E6EBFF→#E9EDF8、on_primary_container・info.on_container #14246E→#1E2A5C。scale.blue も同じ段で）と contrast_checked の比。
-        concept_tone.yaml に copy（コピーの 3 語とデザインの結びつき）を足した。components.yaml の empty_state に variants（screen・section）と基準を足し、文を text_muted から text にした。
-        全部の部品に preview（状態ごとの見本）と preview_css を足し、正本からカタログを組み立てられるようにした。typography.scale に日本語の sample を足した
+        「スコアボード」の方向に見直した。色の役割の値（青→インク #0E1013、青みの灰→中立の灰、focus_ring→#667F00）と contrast_checked、数字の書体 numeric（Barlow Condensed）と書体の段（display・headline・title の値、figure・figure_sm を足した）、
+        ボタンの角丸（pill→md）、カードと欄（surface の面→background と border の線）、部品 button・card・status_tag・notice・list_row・data_table、concept_tone の calm_primary、principles の one-hot-spot、patterns の Section、lint。
+        値の前後と全文は specs/design/CHANGELOG.md の 0.5.0
       reason: >-
-        人が見本のカタログを見て「青が強い」「空の表示のボタンが読みにくい」と指摘し、彩度を下げた値と empty_state の形を決めた（2026-11-02）。
-        名前は変えず値だけを変えた。新しい値も WCAG 2.2 AA を満たす（primary は background で 6.83、surface で 6.15、primary_container で 5.83）。
-        primary を inverse_surface の上に置かない決まりは変わらない（2.72）
-      affects: >-
-        student-app と admin-web の全画面（screens.ts と capture_test.dart のすべての id。主なボタン・リンク・選択中・フォーカス・info の色が落ち着く）。
-        empty_state を使う画面（student-app のホームの各欄・admin-web の一覧の 0 件）はボタンの種類と文の色が変わる
-      approved_by: 人（色の役割の値の変更・concept_tone の変更、2026-11-02）、工場（部品の基準と見本）
+        人がカタログ 0.3.0 を見て「往年の Bootstrap 感があって垢抜けない」と指摘し、3 つの方向を比べて案 A「スコアボード」を選んだ（2026-11-05）。
+        名前は消さず値だけを変えた（scale.blue は残して 1.0.0 で消す）。新しい値も WCAG 2.2 AA を満たす（primary は background で 19.05、text_muted は surface で 5.78、focus_ring は白で 4.56・インクの上で 4.17）。
+        0.x の間は 0.2.0 と同じく、名前を保った値の変更と追加を minor とする
+      affects: student-app と admin-web の全画面（screens.ts と capture_test.dart のすべての id）。予約のカード・状態のタグ・知らせ・admin-web の Section は形も変わる
+      approved_by: 人（色の役割の値・concept_tone と principles の変更・書体の追加、2026-11-05）、工場（部品の基準・lint・見本）
       migration:
-        - student-app の lib/ui/theme/rally_tokens.dart の RallyColors の値を新しい値にする（名前は同じ）
-        - admin-web の src/app/globals.css の @theme の値と tests/designTokens.test.ts の期待の値を新しい値にする
-        - EmptyState（admin-web の src/components/ui/EmptyState.tsx・student-app の lib/ui/components/empty_state.dart）は文を text にし、variant（screen・section）を受けて、screen は surface の面と primary、section は background の面と border の線と secondary にする
-        - 見た目が変わる PR には前後のキャプチャを付ける
+        - student-app の rally_tokens.dart と admin-web の globals.css の @theme・tests/designTokens.test.ts を新しい値にする（名前は同じ。primary_container_pressed・numeric・figure を足す）
+        - Barlow Condensed（700・800）と OFL.txt を両アプリに同梱する（student-app は pubspec の fonts と LicenseRegistry、admin-web は public/fonts/ と @font-face）
+        - 基本の部品（ボタン・カード・状態のタグ・知らせ・一覧の行・Section・表）を components.yaml の形にし、カタログを組み立て直す。PR に前後のキャプチャを付ける

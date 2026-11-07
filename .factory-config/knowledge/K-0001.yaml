@@ -16,14 +16,17 @@ evidence:
   - case: C-0004
   - pr: 534
   - event: "case.analyzed:113588"
+  - case: C-0005
+  - pr: 659
+  - event: "case.analyzed:274379"
 status: active
-verified_at: 2026-11-04
-review_by: 2026-12-04
+verified_at: 2026-11-05
+review_by: 2026-12-05
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
-related: [K-0003, K-0004]
+related: [K-0003, K-0004, K-0009, K-0010]
 enforcement:
   level: deterministic
   solutions:
@@ -36,4 +39,17 @@ enforcement:
       issue: 826
       at: 2026-11-03
       decided_by: committee:D-0001
+    - kind: ci_check
+      what: >-
+        本文の更新の前の関所 tools/pr-body-check/gate.mjs を足した。続きのジョブの summary を組み込んだ本文（gh pr edit の前の NEW_BODY）を
+        check.mjs の checkBody に照らし、同じ ## 見出しの重なりや「## 工場の記録」より後ろの ## があれば終了コード 1 で本文を書かせず、
+        body_fix の入力（rubric_id PR-002、location「PR 本文 N 行目」）を返す。gate.test.mjs で、C-0005 の 21 回の追記（conflict 20 回・ci_failed 1 回）と
+        同じ入力で落ち、1 回目の追記でもう落ちることを確かめた。engine.test.mjs が、Engine の worker/entrypoint.sh の本文を組む節と
+        dispatcher の is_body_only・enqueue_body_fix を中身を変えずに動かし、今の Engine の組み込みでも C-0005 の入力で落ちること、
+        関所の入力で body_fix が積まれることを確かめる。Engine の本文の更新が外れた本文を書かないことも必須のテストにしたが、今の Engine は関所を呼ばないので
+        その形のときだけ todo にした（関所を呼ぶ形にした Engine の写しでは通ることを確かめた）。entrypoint.sh への配線と body_fix への回し方、
+        CI（ci/pr-body-engine.yml を .github/workflows/ に写す）は建設者が入れるので、効き目はまだ確かめていない
+      issue: 956
+      at: 2026-11-05
+      decided_by: committee:D-0013
 decided_by: committee:D-0001

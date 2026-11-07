@@ -6,6 +6,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { COACH_ACCEPTANCE_STATUS_LABELS, SPORT_LABELS } from "@/components/labels";
 
@@ -108,6 +109,20 @@ export const ACCEPTANCE_STATUSES: readonly AcceptanceStatus[] = Object.freeze(
   Object.keys(COACH_ACCEPTANCE_STATUS_LABELS) as AcceptanceStatus[],
 );
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
+
+/** コーチの一覧の列（操作の列は送る処理が要るので、一覧の中で足す）。 */
+const COACH_COLUMNS: DataTableColumn<Coach>[] = [
+  {
+    header: "表示名",
+    cell: (coach) => (
+      <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
+        {coach.display_name}
+      </Link>
+    ),
+  },
+  { header: "受付", cell: (coach) => <CoachAcceptanceBadge status={coach.acceptance_status} /> },
+  { header: "直近 30 日のレッスン", variant: "numeric", cell: (coach) => `${coach.recent_lesson_count} 回` },
+];
 
 /**
  * 本部の「コーチの受付」。開いたときにコーチの一覧（listCoaches）を読み、各行に表示名と受付の状態と直近 30 日のレッスンの数
@@ -371,39 +386,27 @@ export function CoachAcceptanceList({
       {state.kind === "loaded" && state.coaches.length > 0 && (
         <>
           <p className="text-sm">{RECENT_LESSON_COUNT_NOTE}</p>
-          <table aria-label="コーチの一覧" className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="py-1">表示名</th>
-                <th className="py-1">受付</th>
-                <th className="py-1">直近 30 日のレッスン</th>
-                <th className="py-1">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.coaches.map((coach) => (
-                <tr key={coach.coach_id} className="border-t align-top">
-                  <td className="py-1">
-                    <Link href={coachOverviewPath(coach.coach_id)} className="text-primary underline">
-                      {coach.display_name}
-                    </Link>
-                  </td>
-                  <td className="py-1">
-                    <CoachAcceptanceBadge status={coach.acceptance_status} />
-                  </td>
-                  <td className="py-1">{coach.recent_lesson_count} 回</td>
-                  <td className="py-1">
-                    <CoachAcceptanceAction
-                      // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
-                      key={coach.acceptance_status}
-                      status={coach.acceptance_status}
-                      onConfirm={(reason) => changeAcceptance(coach, reason)}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            label="コーチの一覧"
+            columns={[
+              ...COACH_COLUMNS,
+              {
+                header: "操作",
+                // 確かめの文と理由の欄が出るので、文の列として折り返す。
+                variant: "long_text",
+                cell: (coach) => (
+                  <CoachAcceptanceAction
+                    // 状態が変わったら確かめ中の表示を捨て、新しい状態のボタンから出し直す。
+                    key={coach.acceptance_status}
+                    status={coach.acceptance_status}
+                    onConfirm={(reason) => changeAcceptance(coach, reason)}
+                  />
+                ),
+              },
+            ]}
+            rows={state.coaches}
+            rowKey={(coach) => coach.coach_id}
+          />
         </>
       )}
     </div>

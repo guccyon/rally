@@ -15,7 +15,7 @@ function UnansweredMessageThreadsContent() {
   const searchParams = useSearchParams();
   const [initialFilter] = useState(() => unansweredMessageThreadFilterFrom(searchParams));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => <UnansweredMessageThreadsHome token={session.token} initialFilter={initialFilter} />}
     </RoleGate>
   );

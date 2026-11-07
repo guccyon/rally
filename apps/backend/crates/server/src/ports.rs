@@ -18,7 +18,9 @@ use application::{
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
-    scheduling::{BookingRepository, CoachAcceptanceRepository, SlotRepository},
+    scheduling::{
+        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository, SlotRepository,
+    },
 };
 
 /// 機能ごとの組み立てに渡すポートの実装。どれも複製を返し、複製は同じ中身を読み書きする。
@@ -27,7 +29,7 @@ use application::{
 pub(crate) trait Ports {
     type Accounts: AccountRepository + CoachProfileRepository + Clone + 'static;
     type Slots: SlotRepository + Clone + 'static;
-    type Bookings: BookingRepository + Clone + 'static;
+    type Bookings: BookingRepository + CoachLeaveRepository + Clone + 'static;
     type Entitlements: EntitlementRepository + Clone + 'static;
     type Sessions: LiveLessonSessionRepository + Clone + 'static;
     type Videos: VideoRepository + Clone + 'static;

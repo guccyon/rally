@@ -13,7 +13,7 @@
 //   - template.json にない「## 」以上の見出し（工場の記録・続きのジョブの報告など）が、定義の見出しの最後のものより後ろにある
 // コードブロック（``` と ~~~）の中の行は見出しとして数えない。
 //
-// 想定する呼び出し: PR 本文の更新（pr.head_updated・handoff.saved）のあと、検査役に回す前。外れたら検査役に回さずに止める。
+// 呼び出し: 本文の更新の前の関所 gate.mjs（議決 D-0013、Issue #956）がこの checkBody を使う。外れたら本文を書かずに body_fix に回す。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";

@@ -1,0 +1,22 @@
+id: OV-006
+title: "工場のワーカーが作った PR の本文に「## 知見」を書き、後の作業に効く事実を残す"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#88"
+  - "github:guccyon/rally#97"
+  - "github:guccyon/rally#189"
+  - "github:guccyon/rally#191"
+signature: "rubric:PROC-002"
+check:
+  kind: rubric
+  text: >-
+    工場のワーカーが作った PR（本文に「## 工場の記録」の job がある、または本文にワーカー・builder が作業したと書いてある）の本文に「## 知見」の節がなく、
+    本文や差分から残すべき事実が読み取れる（ワーカーがターン上限で途中終了し builder が仕上げた、環境の制約で回避した、差し戻しを受けた原因、
+    モックの制約に合わせたタプルの購読や `&mut` で席を持つ設計・数を保存せず行から数えるなど、コメントや「## 対応内容」にだけ書いた設計の判断がある）ときは欠陥とする。
+    「## 知見」があり、次の作業に効く事実（原因と教訓、設計の判断の理由、環境での回避の手順など）が 1 行以上具体的に書いてある本文は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-006/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-006/negative-1.diff" }

@@ -8,6 +8,7 @@ import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/coach_profile.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/components/booking_card.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
@@ -125,26 +126,29 @@ void main() {
       'booking-soon',
       'booking-later',
     ]);
-    for (final item in upcoming) {
-      expect(
-        find.text(formatTimeRange(item.slot.startsAt, item.slot.endsAt)),
-        findsOneWidget,
-      );
-    }
-    expect(find.text('テニス・コーチ: 佐藤・確定済み'), findsNWidgets(2));
-    expect(find.text('サッカー・コーチ: 鈴木・確定待ち'), findsOneWidget);
+    // 予約は RallyBookingCard で、日付はコマに、題は時刻、meta にスポーツ・コーチ、状態は StatusTag
+    final cards = find.byType(RallyBookingCard);
     // 4 件目・キャンセル済み・終わった予約は出さない
-    for (final item in [
-      fourth,
-      Fixtures.myBookings[2],
-      Fixtures.myBookings[3],
-    ]) {
-      expect(
-        find.text(formatTimeRange(item.slot.startsAt, item.slot.endsAt)),
-        findsNothing,
-      );
+    expect(cards, findsNWidgets(3));
+    for (final (index, item) in upcoming.indexed) {
+      final card = tester.widget<RallyBookingCard>(cards.at(index));
+      final start = item.slot.startsAt.toLocal();
+      expect(card.month, '${start.month}月');
+      expect(card.day, '${start.day}');
+      expect(card.time, formatClockRange(item.slot.startsAt, item.slot.endsAt));
+      // 次のレッスン（いちばん近い予約）だけライムのコマ
+      expect(card.next, index == 0);
     }
-
+    expect(find.text('テニス・コーチ: 佐藤'), findsNWidgets(2));
+    expect(find.text('サッカー・コーチ: 鈴木'), findsOneWidget);
+    expect(
+      find.descendant(of: cards, matching: find.text('確定済み')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: cards, matching: find.text('確定待ち')),
+      findsOneWidget,
+    );
     expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
     expect(find.text('プラン: スタンダード'), findsOneWidget);
 
@@ -181,12 +185,9 @@ void main() {
     );
     await pumpHome(tester, api);
 
-    expect(
-      find.text('テニス・メニュー: フォアハンドの基礎（1 回 60 分）・コーチ: 佐藤・確定済み'),
-      findsOneWidget,
-    );
-    expect(find.text('テニス・メニュー: サーブの動画添削・確定済み'), findsOneWidget);
-    expect(find.text('テニス・コーチ: 佐藤・確定済み'), findsOneWidget);
+    expect(find.text('テニス・メニュー: フォアハンドの基礎（1 回 60 分）・コーチ: 佐藤'), findsOneWidget);
+    expect(find.text('テニス・メニュー: サーブの動画添削'), findsOneWidget);
+    expect(find.text('テニス・コーチ: 佐藤'), findsOneWidget);
   });
 
   testWidgets('コーチとのやり取りは、未読のあるスレッドと最後が添削の依頼・返却のスレッドを新しい順に出す', (tester) async {
@@ -284,7 +285,7 @@ void main() {
       // 画面全体の失敗の文言は出さない
       expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsNothing);
       expect(
-        find.text('サッカー・コーチ: 鈴木・確定待ち'),
+        find.text('サッカー・コーチ: 鈴木'),
         operationId == 'listMyBookings' ? findsNothing : findsOneWidget,
       );
       expect(

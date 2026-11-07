@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Schemas } from "@/api/client";
 import type { Result } from "@/api/call";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime } from "@/components/labels";
 
@@ -84,6 +85,30 @@ export const OVERDUE_ELAPSED_HOURS = 48;
 function isOverdue(video: { elapsed_hours: number }): boolean {
   return video.elapsed_hours >= OVERDUE_ELAPSED_HOURS;
 }
+
+const NO_NAME = "（名前を表示できません）";
+
+/** 返却待ちの動画添削の一覧の列。経過が 48 時間以上の行は、色だけで伝えないよう経過のセルに札を添える。 */
+const PENDING_VIDEO_REVIEW_COLUMNS: DataTableColumn<Schemas["PendingVideoReviewList"]["videos"][number]>[] = [
+  { header: "生徒", cell: (video) => video.student_display_name ?? NO_NAME },
+  { header: "担当のコーチ", cell: (video) => video.coach_display_name ?? NO_NAME },
+  { header: "スポーツ", cell: (video) => SPORT_LABELS[video.sport] },
+  { header: "送った日時", cell: (video) => formatDateTime(video.submitted_at) },
+  {
+    header: "経過",
+    variant: "numeric",
+    cell: (video) => (
+      <>
+        {video.elapsed_hours} 時間
+        {isOverdue(video) && (
+          <span className="ml-2 rounded-md bg-danger px-2 text-xs text-on-primary">
+            {OVERDUE_ELAPSED_HOURS} 時間超
+          </span>
+        )}
+      </>
+    ),
+  },
+];
 
 /**
  * 本部の「返却待ちの動画添削」。コーチがまだ返していない動画添削の一覧（listPendingVideoReviews）を出す。
@@ -298,38 +323,13 @@ export function PendingVideoReviewList({
         <p className="text-sm">{emptyMessageOf(filter)}</p>
       )}
       {state.kind === "loaded" && state.list.videos.length > 0 && (
-        <table aria-label="返却待ちの動画添削の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">生徒</th>
-              <th className="py-1">担当のコーチ</th>
-              <th className="py-1">スポーツ</th>
-              <th className="py-1">送った日時</th>
-              <th className="py-1">経過</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.list.videos.map((video) => {
-              const overdue = isOverdue(video);
-              return (
-                <tr key={video.video_id} className={`border-t ${overdue ? "bg-danger-container" : ""}`}>
-                  <td className="py-1">{video.student_display_name ?? "（名前を表示できません）"}</td>
-                  <td className="py-1">{video.coach_display_name ?? "（名前を表示できません）"}</td>
-                  <td className="py-1">{SPORT_LABELS[video.sport]}</td>
-                  <td className="py-1">{formatDateTime(video.submitted_at)}</td>
-                  <td className="py-1">
-                    {video.elapsed_hours} 時間
-                    {overdue && (
-                      <span className="ml-2 rounded-md bg-danger px-2 text-xs text-on-primary">
-                        {OVERDUE_ELAPSED_HOURS} 時間超
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <DataTable
+          label="返却待ちの動画添削の一覧"
+          columns={PENDING_VIDEO_REVIEW_COLUMNS}
+          rows={state.list.videos}
+          rowKey={(video) => video.video_id}
+          highlightRow={isOverdue}
+        />
       )}
     </div>
   );

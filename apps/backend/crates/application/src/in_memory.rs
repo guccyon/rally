@@ -24,8 +24,9 @@ use domain::{
     profile::{CoachBio, DisplayName, DisplayNameQuery},
     review::{LessonReview, LessonReviewId, LessonReviewReply, LowRatedReviewHandling},
     scheduling::{
-        Booking, BookingId, CoachAcceptance, CoachAcceptanceChange, CoachAcceptanceStatus,
-        CoachCalendar, SchedulingError, Slot, SlotId,
+        Booking, BookingId, BookingPeriod, CoachAcceptance, CoachAcceptanceChange,
+        CoachAcceptanceStatus, CoachCalendar, CoachLeave, CoachLeaveId, SchedulingError, Slot,
+        SlotId,
     },
 };
 
@@ -54,16 +55,17 @@ use crate::{
         MessageThreadRepository, UpdateMessageThreadError, message_id_uuid, message_thread_id_uuid,
     },
     notification::{
-        AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
-        NotificationSettingsRepository, PushSender, announcement_draft_id_uuid,
-        announcement_id_uuid, notification_id_uuid,
+        AnnouncementDraftRepository, AnnouncementRepository, CoachLeaveNotice,
+        CoachLeaveNoticeLookup, NotificationRepository, NotificationSettingsRepository, PushSender,
+        announcement_draft_id_uuid, announcement_id_uuid, notification_id_uuid,
     },
     profile::CoachProfileRepository,
     review::{InsertReviewError, LessonReviewRepository, lesson_review_id_uuid},
     scheduling::{
-        AddToCalendarError, BookingRepository, CoachAcceptanceRepository, ReserveSlotError,
-        SlotCriteria, SlotRepository, UpdateBookingError, UpdateCoachAcceptanceError,
-        UpdateSlotError, booking_id_uuid, slot_id_uuid,
+        AddToCalendarError, BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository,
+        ReserveSlotError, SaveCoachLeaveError, SlotCriteria, SlotRepository, UpdateBookingError,
+        UpdateCoachAcceptanceError, UpdateSlotError, booking_id_uuid, coach_leave_id_uuid,
+        slot_id_uuid,
     },
 };
 
@@ -342,14 +344,16 @@ impl SlotRepository for InMemorySlotRepository {
     }
 }
 
-/// [`BookingRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
+/// [`BookingRepository`] と [`CoachLeaveRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
 ///
 /// スロットは渡した [`InMemorySlotRepository`] と共有する（確定でスロットが埋まる）。読み取りから保存までは
-/// スロット → 予約の順に 2 つのロックを取った中で行うので、予約の作成・確定とスロットの公開は直列になる。
+/// スロット → 予約（→ お休みの記録）の順にロックを取った中で行うので、予約の作成・確定・キャンセルとスロットの公開と
+/// コーチのお休みは直列になる。
 #[derive(Debug, Clone)]
 pub struct InMemoryBookingRepository {
     slots: InMemorySlotRepository,
     bookings: Arc<Mutex<Vec<Booking>>>,
+    leaves: Arc<Mutex<Vec<CoachLeave>>>,
 }
 
 impl InMemoryBookingRepository {
@@ -357,7 +361,13 @@ impl InMemoryBookingRepository {
         Self {
             slots,
             bookings: Arc::default(),
+            leaves: Arc::default(),
         }
+    }
+
+    /// 保存したお休みの記録（保存した順）。
+    pub fn coach_leaves(&self) -> Vec<CoachLeave> {
+        self.leaves.lock().unwrap().clone()
     }
 
     /// 共有しているスロットの保存先。
@@ -610,6 +620,130 @@ impl BookingRepository for InMemoryBookingRepository {
                     && b.created_at() >= created_since
             })
             .cloned()
+            .collect())
+    }
+}
+
+impl CoachLeaveRepository for InMemoryBookingRepository {
+    fn next_coach_leave_id(&self) -> CoachLeaveId {
+        coach_leave_id_uuid::from_uuid(uuid::Uuid::new_v4())
+    }
+
+    async fn coach_slots_starting_in(
+        &self,
+        coach_id: AccountId,
+        period: BookingPeriod,
+    ) -> Result<(Vec<Slot>, Vec<Booking>), Unavailable> {
+        let slots = self.slots.slots.lock().unwrap();
+        let bookings = self.bookings.lock().unwrap();
+        Ok(coach_calendar_in(&slots, &bookings, coach_id, period))
+    }
+
+    async fn start_coach_leave<F>(
+        &self,
+        coach_id: AccountId,
+        period: BookingPeriod,
+        start: F,
+    ) -> Result<CoachLeave, SaveCoachLeaveError>
+    where
+        F: FnOnce(
+                &mut [Slot],
+                &mut [Booking],
+                &[CoachLeave],
+            ) -> Result<CoachLeave, SchedulingError>
+            + Send,
+    {
+        let mut slots = self.slots.slots.lock().unwrap();
+        let mut bookings = self.bookings.lock().unwrap();
+        let mut leaves = self.leaves.lock().unwrap();
+        // 失敗したときに書きかけを残さないよう、写しに適用してから書き戻す
+        let (mut next_slots, mut next_bookings) =
+            coach_calendar_in(&slots, &bookings, coach_id, period);
+        let existing: Vec<CoachLeave> = leaves
+            .iter()
+            .filter(|leave| leave.coach_id() == coach_id)
+            .cloned()
+            .collect();
+        let leave = start(&mut next_slots, &mut next_bookings, &existing)
+            .map_err(SaveCoachLeaveError::Rejected)?;
+        for next in next_slots {
+            if let Some(slot) = slots.iter_mut().find(|slot| slot.id() == next.id()) {
+                *slot = next;
+            }
+        }
+        for next in next_bookings {
+            if let Some(booking) = bookings.iter_mut().find(|b| b.id() == next.id()) {
+                *booking = next;
+            }
+        }
+        leaves.push(leave.clone());
+        Ok(leave)
+    }
+
+    async fn coach_leaves_of_bookings(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> Result<Vec<CoachLeave>, Unavailable> {
+        Ok(self
+            .leaves
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|leave| {
+                leave
+                    .cancelled_bookings()
+                    .iter()
+                    .any(|booking| booking_ids.contains(&booking.booking_id()))
+            })
+            .cloned()
+            .collect())
+    }
+}
+
+/// `coach_id` のコーチの、開始が `period` に入る枠と、それらの枠への予約。
+fn coach_calendar_in(
+    slots: &[Slot],
+    bookings: &[Booking],
+    coach_id: AccountId,
+    period: BookingPeriod,
+) -> (Vec<Slot>, Vec<Booking>) {
+    let found: Vec<Slot> = slots
+        .iter()
+        .filter(|s| s.coach_id() == coach_id && period.includes(s.starts_at()))
+        .cloned()
+        .collect();
+    let booked = bookings
+        .iter()
+        .filter(|b| found.iter().any(|s| s.id() == b.slot_id()))
+        .cloned()
+        .collect();
+    (found, booked)
+}
+
+/// [`CoachLeaveNoticeLookup`] のテスト用の実装。決めた中身を予約の ID で返す。
+#[derive(Debug, Clone, Default)]
+pub struct FixedCoachLeaveNotices {
+    notices: BTreeMap<BookingId, CoachLeaveNotice>,
+}
+
+impl FixedCoachLeaveNotices {
+    pub fn with_notices(notices: impl IntoIterator<Item = (BookingId, CoachLeaveNotice)>) -> Self {
+        Self {
+            notices: notices.into_iter().collect(),
+        }
+    }
+}
+
+impl CoachLeaveNoticeLookup for FixedCoachLeaveNotices {
+    async fn find_coach_leave_notices(
+        &self,
+        booking_ids: &BTreeSet<BookingId>,
+    ) -> Result<BTreeMap<BookingId, CoachLeaveNotice>, Unavailable> {
+        Ok(self
+            .notices
+            .iter()
+            .filter(|(id, _)| booking_ids.contains(id))
+            .map(|(id, notice)| (*id, notice.clone()))
             .collect())
     }
 }

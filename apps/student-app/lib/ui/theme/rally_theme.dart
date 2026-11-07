@@ -4,6 +4,8 @@ import 'rally_tokens.dart';
 
 /// 生徒アプリのテーマ。specs/design/tokens.yaml の色・書体・余白・角丸から作る（影は使わない）。
 /// 明るい配色だけで、端末がダークでもこのテーマで出す（color.dark_mode.gen1）。
+/// ボタンは角丸 md・高さ 56px・太さ 900 で、ピル型と線だけの副のボタンは使わない（components.yaml の button）。
+/// 画面に残る OutlinedButton も副のボタン（primary_container の塗り・線なし）の見た目で出す。
 ThemeData buildRallyTheme() {
   final scheme = ColorScheme(
     brightness: Brightness.light,
@@ -62,10 +64,19 @@ ThemeData buildRallyTheme() {
     borderRadius: BorderRadius.circular(RallyRadius.md),
   );
   const buttonPadding = EdgeInsets.symmetric(horizontal: RallySpacing.lg);
-  const buttonSize = Size(RallySpacing.touchTarget, RallySpacing.touchTarget);
+  const buttonSize = Size(RallySpacing.touchTarget, RallySpacing.buttonHeight);
+  const iconButtonSize = Size(
+    RallySpacing.touchTarget,
+    RallySpacing.touchTarget,
+  );
 
-  final primaryButton = ButtonStyle(
-    shape: const WidgetStatePropertyAll(pill),
+  /// 面のあるボタン（primary・secondary）の形。フォーカスは focus_ring 2px
+  ButtonStyle filledButton({
+    required Color container,
+    required Color pressed,
+    required Color label,
+  }) => ButtonStyle(
+    shape: WidgetStatePropertyAll(md),
     minimumSize: const WidgetStatePropertyAll(buttonSize),
     padding: const WidgetStatePropertyAll(buttonPadding),
     textStyle: WidgetStatePropertyAll(RallyTypography.label),
@@ -73,17 +84,30 @@ ThemeData buildRallyTheme() {
     animationDuration: RallyMotion.fast,
     backgroundColor: WidgetStateProperty.resolveWith((states) {
       if (states.contains(WidgetState.disabled)) return RallyColors.surface;
-      if (states.contains(WidgetState.pressed)) {
-        return RallyColors.primaryPressed;
-      }
-      return RallyColors.primary;
+      if (states.contains(WidgetState.pressed)) return pressed;
+      return container;
     }),
     foregroundColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.disabled)
-          ? RallyColors.textMuted
-          : RallyColors.onPrimary,
+      (states) =>
+          states.contains(WidgetState.disabled) ? RallyColors.textMuted : label,
+    ),
+    side: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.focused)
+          ? const BorderSide(color: RallyColors.focusRing, width: 2)
+          : BorderSide.none,
     ),
     overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+  );
+
+  final primaryButton = filledButton(
+    container: RallyColors.primary,
+    pressed: RallyColors.primaryPressed,
+    label: RallyColors.onPrimary,
+  );
+  final secondaryButton = filledButton(
+    container: RallyColors.primaryContainer,
+    pressed: RallyColors.primaryContainerPressed,
+    label: RallyColors.text,
   );
 
   OutlineInputBorder inputBorder(Color color, double width) =>
@@ -118,41 +142,27 @@ ThemeData buildRallyTheme() {
     ),
     filledButtonTheme: FilledButtonThemeData(style: primaryButton),
     elevatedButtonTheme: ElevatedButtonThemeData(style: primaryButton),
-    outlinedButtonTheme: OutlinedButtonThemeData(
-      style: ButtonStyle(
-        shape: const WidgetStatePropertyAll(pill),
-        minimumSize: const WidgetStatePropertyAll(buttonSize),
-        padding: const WidgetStatePropertyAll(buttonPadding),
-        textStyle: WidgetStatePropertyAll(RallyTypography.label),
-        animationDuration: RallyMotion.fast,
-        backgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) return RallyColors.surface;
-          if (states.contains(WidgetState.pressed)) {
-            return RallyColors.primaryContainer;
-          }
-          return RallyColors.background;
-        }),
-        foregroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
-              ? RallyColors.textMuted
-              : RallyColors.primary,
-        ),
-        side: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
-              ? BorderSide.none
-              : const BorderSide(color: RallyColors.borderStrong),
-        ),
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-      ),
-    ),
+    // 線だけの副のボタンは使わない。OutlinedButton も secondary の塗りで出す（governance の lint の button-shape）
+    outlinedButtonTheme: OutlinedButtonThemeData(style: secondaryButton),
     textButtonTheme: TextButtonThemeData(
       style: ButtonStyle(
-        shape: const WidgetStatePropertyAll(pill),
+        shape: WidgetStatePropertyAll(md),
         minimumSize: const WidgetStatePropertyAll(buttonSize),
         padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: RallySpacing.md),
+          EdgeInsets.symmetric(horizontal: RallySpacing.sm),
         ),
-        textStyle: WidgetStatePropertyAll(RallyTypography.label),
+        // 補助の操作は下線 2px（button.variants.text）
+        textStyle: WidgetStatePropertyAll(
+          RallyTypography.label.copyWith(
+            decoration: TextDecoration.underline,
+            decorationThickness: 2,
+          ),
+        ),
+        side: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.focused)
+              ? const BorderSide(color: RallyColors.focusRing, width: 2)
+              : BorderSide.none,
+        ),
         animationDuration: RallyMotion.fast,
         backgroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.pressed)
@@ -168,7 +178,7 @@ ThemeData buildRallyTheme() {
       ),
     ),
     iconButtonTheme: const IconButtonThemeData(
-      style: ButtonStyle(minimumSize: WidgetStatePropertyAll(buttonSize)),
+      style: ButtonStyle(minimumSize: WidgetStatePropertyAll(iconButtonSize)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -198,13 +208,14 @@ ThemeData buildRallyTheme() {
       focusedErrorBorder: inputBorder(RallyColors.danger.fg, 2),
       disabledBorder: inputBorder(RallyColors.border, 1),
     ),
+    // カードは白地に border の 1px（surface の面で囲わない）
     cardTheme: CardThemeData(
-      color: RallyColors.surface,
+      color: RallyColors.background,
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: RallySpacing.xs),
-      shape: md,
+      shape: md.copyWith(side: const BorderSide(color: RallyColors.border)),
     ),
     listTileTheme: ListTileThemeData(
       minTileHeight: 56,
@@ -217,9 +228,10 @@ ThemeData buildRallyTheme() {
         color: RallyColors.textMuted,
       ),
       iconColor: RallyColors.text,
-      selectedColor: RallyColors.onPrimaryContainer,
+      selectedColor: RallyColors.text,
       selectedTileColor: RallyColors.primaryContainer,
     ),
+    // ピル型は絞り込みのチップだけ（shape.usage.pill）
     chipTheme: ChipThemeData(
       shape: pill,
       side: const BorderSide(color: RallyColors.borderStrong),
@@ -273,7 +285,7 @@ ThemeData buildRallyTheme() {
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
-        minimumSize: const WidgetStatePropertyAll(buttonSize),
+        minimumSize: const WidgetStatePropertyAll(iconButtonSize),
         side: const WidgetStatePropertyAll(
           BorderSide(color: RallyColors.borderStrong),
         ),

@@ -328,6 +328,64 @@ export const SCREENS: Screen[] = [
       await page.getByRole("table", { name: "受付の記録" }).waitFor();
     },
   },
+  {
+    id: "hq-coach-leave",
+    title: "本部: コーチのお休み（期間がまだ空）",
+    role: "headquarters",
+    path: "/headquarters/coach-overview?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page
+        .getByRole("navigation", { name: "このコーチで開く画面" })
+        .getByRole("link", { name: "お休み", exact: true })
+        .click();
+      await page.getByRole("heading", { name: "コーチのお休み" }).waitFor();
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-preview",
+    title: "本部: コーチのお休み（期間の予約と枠）",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-confirm",
+    title: "本部: コーチのお休みの確認",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+      await page.getByRole("button", { name: "お休みにする" }).click();
+      await page.getByRole("alertdialog").waitFor();
+    },
+  },
+  {
+    id: "hq-coach-leave-done",
+    title: "本部: コーチをお休みにした結果",
+    role: "headquarters",
+    path: "/headquarters/coaches/leave?coach_id=22222222-2222-4222-8222-222222222222",
+    open: async (page) => {
+      await page.getByRole("definition").filter({ hasText: "鈴木 コーチ" }).waitFor();
+      await page.getByLabel("始まりの日").fill("2026-10-28");
+      await page.getByLabel("終わりの日").fill("2026-11-03");
+      await page.getByRole("button", { name: "期間の予約と枠を確かめる" }).click();
+      await page.getByRole("list", { name: "期間の予約の一覧" }).waitFor();
+      await page.getByRole("button", { name: "お休みにする" }).click();
+      await page.getByRole("button", { name: "キャンセルしてお休みにする" }).click();
+      await page.getByRole("button", { name: "キャンセルされた予約を見る" }).waitFor();
+    },
+  },
   { id: "hq-lesson-menus", title: "本部: レッスンメニュー", role: "headquarters", path: "/headquarters/lesson-menus" },
   {
     id: "hq-lesson-menus-search",

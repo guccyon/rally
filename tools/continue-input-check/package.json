@@ -1,0 +1,10 @@
+{
+  "name": "rally-continue-input-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "続きのジョブ（conflict・ci_failed）の入力に、未解消の採用済みの指摘と body_fix が残した本文の決まりが入ることを決定論で検査する（知見 K-0009 の担保）",
+  "scripts": {
+    "test": "node --test"
+  }
+}

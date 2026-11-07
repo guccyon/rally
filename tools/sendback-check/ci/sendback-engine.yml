@@ -1,0 +1,74 @@
+# 差し戻し・続きのジョブの判定を Engine の本物の判定で確かめる（知見 K-0004 の担保。議決 D-0011、Issue #948）。決定論（LLM を使わない）。
+# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/sendback-check/engine.test.mjs を PR ごとに走らせる。
+# ENGINE_DIR を渡すので、Engine のチェックアウトがないときや engine_harness.py が判定の関数を取り出せないときは飛ばさずに落ちる。
+# wiring-order は配線の順序の見張り（議決 D-0012、Issue #953）。.github/workflows/ に check.mjs --events を呼ぶ手順があるのに、
+# engine.test.mjs に todo が残っているか、engine.test.mjs を走らせる手順がないときに落ちる（Engine は要らない）。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine.yml に写す。
+# 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、engine.test.mjs が通ることを確かめる）。
+# 写したら branch protection で engine-test と wiring-order を必須のチェックにする（議決 D-0014、Issue #960）。
+# ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる。engine-test の最初の手順
+# （どのチェックアウトよりも前）で確かめ、違えば Engine を取らずに落とす（議決 D-0014、Issue #960。テストは ci.test.mjs）。
+# wiring-order は ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでこのファイルとずれたら落とす。
+name: sendback-engine
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sendback-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 9fee9c2b3d8d2dd22db63e8989d839cd982fd046
+
+jobs:
+  wiring-order:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: check.mjs の ci_check の配線の順序（K-0004）
+        run: node tools/sendback-check/order.mjs --summary "$GITHUB_STEP_SUMMARY"
+      - name: ENGINE_REF の見張りと写しのずれ（K-0004）
+        working-directory: tools/sendback-check
+        run: node --test --test-reporter=spec ci.test.mjs
+
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=sendback-engine engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする。ブランチ名やタグは動くので使わない（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine の本物の判定のテスト（K-0004）
+        working-directory: tools/sendback-check
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          rc=0
+          node --test --test-reporter=spec engine.test.mjs > engine-test.txt 2>&1 || rc=$?
+          { echo "## sendback-engine（ENGINE_REF=${ENGINE_REF}）"; echo; echo '```'; cat engine-test.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat engine-test.txt
+          exit $rc

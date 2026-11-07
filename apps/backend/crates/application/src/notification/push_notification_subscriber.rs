@@ -1,6 +1,9 @@
 use std::{collections::HashSet, error::Error, sync::Mutex};
 
-use domain::notification::{Notification, PushNotification};
+use domain::{
+    notification::{Notification, PushNotification},
+    scheduling::BookingCanceller,
+};
 use uuid::Uuid;
 
 use super::{NotificationRepository, NotificationSettingsRepository, PushSender};
@@ -9,7 +12,8 @@ use crate::{
     domain_event::{DomainEvent, DomainEventSubscriber},
 };
 
-/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、添削の依頼
+/// notification による境界間イベントの購読。予約の確定（`BookingConfirmed`）で生徒とコーチに 1 件ずつ、本部による予約の
+/// キャンセル（`BookingCancelled` の `cancelled_by` が本部。コーチのお休み）で予約した生徒に、添削の依頼
 /// （`VideoReviewRequested`）でコーチに、添削の返却（`VideoReviewReturned`）で生徒に、メッセージの送信（`MessageSent`）で受け手（送り手でない側の当事者）にプッシュ通知を
 /// 送る（[`PushNotification`]。受け取る人は [`PushNotification::recipient`]）。発行元のコンテキストは notification を直接
 /// 呼ばない（context-map の向き）。
@@ -180,6 +184,24 @@ where
                         thread_id,
                         message_id,
                         sender: sender_role,
+                    }],
+                )
+                .await
+            }
+            DomainEvent::BookingCancelled {
+                event_id,
+                student_id,
+                coach_id,
+                booking_id,
+                cancelled_by: BookingCanceller::Headquarters,
+                ..
+            } => {
+                self.send_once(
+                    event_id,
+                    &[PushNotification::BookingCancelledByHeadquarters {
+                        student_id,
+                        coach_id,
+                        booking_id,
                     }],
                 )
                 .await
@@ -438,6 +460,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_headquarters_cancel_notifies_the_student_once_and_follows_the_booking_setting() {
+        let event_id = Uuid::new_v4();
+        let cancelled = DomainEvent::BookingCancelled {
+            event_id,
+            occurred_at: oct26(),
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+            consumes_quota: false,
+            cancelled_at: oct26(),
+            cancelled_by: BookingCanceller::Headquarters,
+        };
+        let expected = PushNotification::BookingCancelledByHeadquarters {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+        };
+        let subscriber = subscriber_with(RecordingPushSender::default(), all_on());
+        subscriber.handle(&cancelled).await.unwrap();
+        // 再送では送らない
+        subscriber.handle(&cancelled).await.unwrap();
+        assert_eq!(subscriber.sender().sent(), vec![expected]);
+        assert_eq!(recorded(&subscriber), vec![expected]);
+
+        // 予約の通知をオフにした生徒にはプッシュ通知を送らず、お知らせだけを残す
+        let mut settings = NotificationSettings::new(STUDENT);
+        settings.set(NotificationKind::BookingConfirmed, false);
+        let quiet = InMemoryNotificationSettingsRepository::with_settings([settings]);
+        let subscriber = subscriber_with(RecordingPushSender::default(), quiet);
+        subscriber.handle(&cancelled).await.unwrap();
+        assert!(subscriber.sender().sent().is_empty());
+        assert_eq!(recorded(&subscriber), vec![expected]);
+    }
+
+    #[tokio::test]
     async fn other_events_send_nothing() {
         let subscriber = subscriber_with(RecordingPushSender::default(), all_on());
         subscriber
@@ -449,6 +506,7 @@ mod tests {
                 booking_id: BookingId::from_u128(1),
                 consumes_quota: false,
                 cancelled_at: oct26(),
+                cancelled_by: domain::scheduling::BookingCanceller::Student,
             })
             .await
             .unwrap();

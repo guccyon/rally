@@ -4,7 +4,7 @@ import '../theme/rally_tokens.dart';
 import 'rally_button.dart';
 
 /// 確認のダイアログ（components.yaml の confirm_dialog）を開き、確定したら true を返す。
-/// 題は疑問の文、本文に対象と結果と条件を省かずに書く。cancel（「やめる」）を左、confirm を右に置き、
+/// 題は疑問の文、本文に対象と結果と条件を省かずに書く。cancel（「やめる」、secondary）を左、confirm を右に置き、
 /// 外を押す・戻るは cancel と同じ。[danger] は取り消せない操作の確認。
 Future<bool> showConfirmDialog(
   BuildContext context, {
@@ -30,7 +30,7 @@ Future<bool> showConfirmDialog(
       actions: [
         RallyButton(
           label: cancelLabel,
-          variant: RallyButtonVariant.text,
+          variant: RallyButtonVariant.secondary,
           onPressed: () => Navigator.of(context).pop(false),
         ),
         RallyButton(

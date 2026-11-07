@@ -20,7 +20,7 @@ function CancelledBookingsContent() {
   const [initialLessonMenuId] = useState(() => searchParams.get(CANCELLED_BOOKING_LESSON_MENU_QUERY) ?? "");
   const [initialSport] = useState(() => cancelledBookingSportOf(searchParams.get(CANCELLED_BOOKING_SPORT_QUERY)));
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => (
         <CancelledBookingsHome
           token={session.token}

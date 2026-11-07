@@ -1,0 +1,89 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0016
+pr: https://github.com/guccyon/rally/pull/963
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0011 の test の案（basis
+    の場合の todo を外して必須のテストにする）のうちワーカーの権限で入れられる分を enforcement.solutions に 1 件足しただけなので、D-0004・D-0009〜D-0011
+    の議決と矛盾しません。
+  - 足した solution は kind・what・issue・at・decided_by の形が既存の solutions と同じで、decided_by
+    を提案元の committee:D-0011 にしている点も D-0010・D-0012・D-0014 の揃え方と合っています。
+  - Engine の basis の直しと D-0010 の check.mjs の ci_check の配線を建設者に残し、順序を README に寄せている点は
+    D-0010 と D-0011 で決めた順序（basis を直してから ci_check を配線する）と食い違いません。
+  - what の中で「todo を外して必須のテストにし」と「今の Engine では (3) と (c) はまだ todo」が並んでいて読み違えやすいので、次に
+    K-0004 を直すときに「LEGACY_BASIS の Engine では todo、それ以外では必須」と一文で書き分けてください。
+  - D-0010 から繰り返し求めている「差し替えもないのに」という条件の出どころと verified_at・review_by の更新は今回もまだなので、statement
+    を直す次の変更セットでそろえてください。
+  - basis の担保の効き目はまだ確かめていないと書かれているので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 949 と committee:D-0011 を指していて、D-0011 の enforcement
+    の 2 つめの案（Engine の basis を直したら engine.test.mjs の basis の場合の todo を外して必須にする）のうちワーカーの権限で入れられる分に対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を足しただけなので、根拠の段は崩れていません。'
+  - 「todo を外して必須のテストにした」と「今の Engine では (3) と (c) はまだ todo」が同じ文に並んでいて読み違えやすいので、todo
+    は LEGACY_BASIS の形のときだけに残るという条件を先に書くと辿りやすくなります。
+  - basis を書き換えた Engine の写しで落ちることを確かめたと書かれていますが、その写しや走らせた記録が指されていないので、issue 949 か
+    evidence にその記録を残してください。
+  - 今の Engine（ENGINE_REF）では basis の担保は todo のままで効き目を確かめていないので、confidence は hypothesis
+    のままが妥当で、Engine の basis を直して (3) と (c) が本物の判定で通るまで confirmed に上げないでください。
+  - 差分に出てくるのはファイルのパス・関数名・定数名・issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0011 の test の案のうちワーカーの権限で入れられる分を
+    issue 949 として enforcement.solutions に足しただけなので、担保の観点では採ってよいです。
+  - todo を Engine が LEGACY_BASIS を書くときだけに狭め、それ以外の basis は approvalBasis() と合わなければ落ちる形にしたのは、D-0015
+    で挙げた「直っても何も知らせない todo」の弱さをかなり埋めており、担保の向きは正しいです。
+  - ただし今の ENGINE_REF では (3) と (c) はまだ todo で、engine.test.mjs も .github/workflows/
+    に写されていないので、今は外れても誰も止めず、決定論の担保はまだ効いていません。
+  - D-0012 で求めた順序の見張り（check.mjs の ci_check を配線したのに engine.test.mjs が未配線か basis の場合が
+    todo のままなら落とす）はまだ入っておらず、README の順序を人の注意で守っている状態です。
+  - solutions は今回で 7 件になり、どれも「効き目はまだ確かめていない」を文で書くだけなので、D-0015 の wired と verified の項目を入れないと
+    INDEX.md の deterministic の表示が実態より強く見えます。
+  - 'Engine の basis を直して CI に配線し、本物の PR #395 のイベント列で落ち、正しい判定が通ることを確かめるまで、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0011 の test の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に kind: test として 1 件足しただけなので、範囲は広すぎません。'
+  - todo を LEGACY_BASIS の形のときだけに狭めたので、Engine の basis が別の形に変わればその版から必須のテストとして効き、D-0015
+    で挙がった「basis を直しても todo が黙って残る」反例はおおむね消えています。
+  - ただし Engine が今の LEGACY_BASIS の形のまま採用 N の数を間違えて書く場合は todo に飲まれて落ちないという反例が残るので、todo
+    の間も N が judge の裁いた件数と合うことだけは必須で確かめてください。
+  - 「分けて書いても数がずれれば落ちる」ことは basis を書き換えた Engine の写しで確かめただけで本物の Engine の版ではないので、Engine
+    の basis を直した版で同じことを確かめるまで効き目は確かめていないと読むべきです。
+  - what の前半に「todo を外して必須のテストにし」とあり、後半に「今の Engine では (3) と (c) はまだ todo」とあるので、読み手が担保は効いていると取り違えないよう「今の形では
+    todo、形が変われば必須」と 1 文で書くとよいです。
+  - 効き目はまだ確かめておらず、「差し替えがあるときも起こす」という条件の出どころも C-0002 や K-0004 にまだ書かれていないので、confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0012 の案のとおり、.github/workflows/ に check.mjs --events を呼ぶ手順があるのに、engine.test.mjs
+    が CI に配線されていないとき、または ENGINE_REF の Engine で (3) か (c) が LEGACY_BASIS の todo になったときは落とす順序の見張りを
+    CI に足す。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: 'D-0015 の案のとおり、definitions/knowledge.yaml の enforcement.solutions に wired
+    と verified の真偽の項目を足し、core-gates/knowledge_check.py が INDEX.md の担保の列に未配線・未確認を出して、すべて
+    wired: false の知見を deterministic と表示しないようにする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci/sendback-engine.yml を .github/workflows/ に写して
+    engine.test.mjs を PR ごとに走らせ、Engine の basis を直した版に ENGINE_REF を上げた PR で (3) と (c)
+    が todo でなく必須として通ることを確かめてから check.mjs の ci_check を配線する。

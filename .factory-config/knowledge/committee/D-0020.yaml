@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0020
+pr: https://github.com/guccyon/rally/pull/976
+decided_at: '2026-11-05'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えておらず、D-0014 の ci_check
+    の案のうちワーカーの権限で入れられる分（ENGINE_REF が 40 桁のコミット SHA かを最初の手順で確かめる）を enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0017 までの議決と矛盾しません。
+  - 足した solution は kind・what・issue・at・decided_by の形が既存の solutions と同じで、decided_by
+    を提案元の committee:D-0014 にしている点も、これまでの記録の揃え方と合っています。
+  - issue 948 の solution の「落ちる (0) のテスト」を「engine.test.mjs の (0)」と書き直したのは、D-0014 で
+    4 つの担当がそろって求めた直しにそのまま応えたもので、既存の記録の意味は変わっていません。
+  - issue 948 と同じ sendback-engine.yml を指していますが、今回は ENGINE_REF を SHA に固定する見張りと写しのずれの検査という別の段の記録なので、重複ではありません。
+  - '.github/workflows/ への写しと branch protection、PR #395 の入力で CI が通った記録は建設者の作業として残し、効き目を確かめていないと明記しているので、confidence
+    は hypothesis のままが妥当です。'
+  - D-0015・D-0016 で求めた「差し替えがあるときも起こす」条件の出どころと、LEGACY_BASIS のときだけ todo という書き分けはまだ statement
+    や evidence に入っていないので、次に K-0004 を直す変更セットでそろえてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 960 と committee:D-0014 を指しており、D-0014 の ci_check
+    の案（ENGINE_REF が 40 桁のコミット SHA かをワークフローの最初の手順で確かめて違えば落とす）とそのまま対応しているので、一次記録に辿れます。
+  - D-0014 の evidence 担当が求めた ENGINE_REF の版（9fee9c2b3d8d2dd22db63e8989d839cd982fd046）を
+    what に書き、issue 948 の solution の「落ちる (0) のテスト」を「engine.test.mjs の (0)」と書き直したので、記録が前より辿りやすくなっています。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を足して文言を直しただけなので、根拠の段は崩れていません。'
+  - 'ワークフローは .github/workflows/ に写されておらず効き目を確かめていないと自分で書いているので、confidence は hypothesis
+    のままが妥当で、PR #395 と同じ入力で CI が通った記録が issue 948 に残るまで confirmed に上げないでください。'
+  - D-0015 で挙がった「差し替えがあるときも起こす」条件の出どころは今回も C-0002 に書かれていないので、statement を直す次の変更セットで事例記録か
+    evidence に足してください。
+  - 差分に出てくるのはファイルのパス・関数名・環境変数・コミット SHA・issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0014 の ci_check の案のうちワーカーの権限で入れられる分（ENGINE_REF
+    が 40 桁の小文字 16 進の SHA でなければ engine_ref_not_sha で落とす手順と、その手順を ci.test.mjs で確かめること）を
+    enforcement.solutions に記録しただけなので、採ってよいです。
+  - ENGINE_REF の形の確かめはどのチェックアウトよりも前に置かれ、通る・落ちる場合を ci.test.mjs が bash で動かして確かめるので、動く参照で結果がぶれる穴は決定論で線が引けています。
+  - 前回の議決で直すよう求めた「落ちる (0) のテスト」の書き方を「engine.test.mjs の (0)」と何を指すかわかる形に直しているので、その指摘には応えています。
+  - ただし sendback-engine.yml はまだ .github/workflows/ に写されず必須チェックでもないので、Engine が adopt
+    の件数で起こすように変わっても今は何も止まらず、決定論の担保はまだ効いていません。
+  - ENGINE_REF を固定したので、Engine 側の判定が変わってもこのリポジトリで ENGINE_REF を上げるまで誰も気づかないという、外したときに痛い穴が新しく残っています。
+  - 効き目を CI の記録で確かめるまで confidence は hypothesis のままにしてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0014 の ci_check の案のうちワーカーの権限で入れられる分の記録を
+    enforcement.solutions に 1 件足し、D-0014 で指摘された「(0)」を「engine.test.mjs の (0)」に直しただけなので、範囲は広すぎません。
+  - ENGINE_REF が 40 桁の小文字の SHA かを見るのは形だけなので、存在しないコミットや Engine の古い版を指したままの SHA という反例は捕まらず、D-0014
+    で挙がった「ENGINE_REF を上げる手順と頻度」の穴は今回も残っていると読むべきです。
+  - 写しとひな形のずれの検査は ENGINE_REF の行を除くので、ENGINE_REF を古い SHA に戻す変更はこの検査では落ちず、Engine 側の判定の変化は
+    ENGINE_REF を上げる PR が来るまで見えません。
+  - ワークフローは .github/workflows/ に写されておらず必須のチェックでもなく、basis の場合も todo のままなので、what に書いてある通り担保はまだ効いていません。
+  - K-0004 の solutions は 9 件になり配線待ちの記録が積み重なっているので、建設者の配線が入ったら効いたものと効いていないものを分けて整理してください。
+  - 効き目を CI で確かめた記録がまだないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci/sendback-engine.yml の engine-test を、ENGINE_REF
+    の固定の版に加えて Engine の既定のブランチの先頭でも定期（schedule）に走らせ、先頭で engine.test.mjs が落ちたら ENGINE_REF
+    を上げる前に判定の変化がわかるよう ::error と issue 948 への記録で知らせる。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'D-0014・D-0017 の案のとおり、sendback-engine.yml（engine_ref_not_sha の手順・wiring-order・engine-test
+    の各ジョブ）を .github/workflows/ に写して branch protection の必須チェックにし、PR #395 と同じ入力で本物の判定が起こさないことが
+    CI で通った記録を issue 948 に残してから what を「効き目を確かめた」に更新する。'

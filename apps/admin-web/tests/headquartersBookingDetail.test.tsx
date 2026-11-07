@@ -101,14 +101,14 @@ describe("本部の予約の詳細", () => {
     ]);
   });
 
-  test("今の状態と記録の状態は、予約の一覧と同じ色の札で出す", async () => {
+  test("今の状態と記録の状態は、予約の一覧と同じ状態のタグ（色の点と字）で出す", async () => {
     render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
 
     const table = await screen.findByRole("table", { name: "状態が変わった記録" });
     const current = screen.getAllByRole("definition")[5]!;
-    expect(within(current).getByText("キャンセル済み")).toHaveClass("bg-surface", "text-text-muted");
-    expect(within(table).getByText("確定済み")).toHaveClass("bg-success-container", "text-success-on-container");
-    expect(within(table).getByText("キャンセル済み")).toHaveClass("bg-surface", "text-text-muted");
+    expect(within(within(current).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
+    expect(within(within(table).getByText("確定済み")).getByTestId("status-dot")).toHaveClass("bg-success");
+    expect(within(within(table).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
   });
 
   test("名前が引けない・メニューがない・体験予約でない・日をまたぐ枠は、それぞれの形で出す", async () => {

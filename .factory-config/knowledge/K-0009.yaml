@@ -1,0 +1,39 @@
+id: K-0009
+theme: 4
+kind: causal
+statement: >-
+  検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役
+  （続きのジョブの summary と Engine の追記）の入力に入らないと、body_fix が本文を直しても次の取り込みでまた崩れ、
+  同じ指摘が採用され続ける。
+scope:
+  roles: [implement, body_fix, judge]
+confidence: hypothesis
+evidence:
+  - case: C-0005
+  - pr: 659
+  - event: "case.analyzed:274379"
+status: active
+verified_at: 2026-11-05
+review_by: 2026-12-05
+confidentiality: product
+related: [K-0001, K-0006]
+invalidate_when:
+  - "continue（conflict/ci_failed）の implement ジョブの入力に、未解消の採用済みの指摘と body_fix が決めた本文の決まりが入るようになった"
+  - "続きのジョブの報告が PR 本文に入るときに、決まり（## を足さないなど）が機械で守られるようになった"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        continue（conflict・ci_failed）の implement ジョブがワーカーに渡す入力に、その PR の未解消の採用済みの指摘の id（adopted_defects[].rubric_id）と
+        body_fix が残した本文の決まり（pr.body_amended の rules を body_rules に）が入ることを、線（tools/continue-input-check/line.mjs）と
+        そのテスト（line.test.mjs）にした。採用済みの指摘がある PR で入力にその id がなければ missing_defect_id、入力を渡さなければ input_missing で落ちる。
+        tools/continue-input-check/engine.test.mjs が、engine_harness.py で Engine の record_judged・act_on_judgment・conflict_step・ci_fix_step・
+        continuation.enqueue を中身を変えずに取り出して動かし（judge が PR-002 を採用 → body_fix → 衝突か CI 落ちで続きのジョブ）、渡す入力を線に照らす。
+        今の Engine は conflict に入力を渡さず、ci_failed には CI の合図（head_sha・failed）だけを渡すので外れ、その今の形のときだけ todo にした。
+        形が変わったら id と決まりがなければ落ちることは Engine の写しで確かめた。Engine の入力の組み立てと body_fix の rules の記録、
+        CI への配線は建設者が入れるので、効き目はまだ確かめていない
+      issue: 955
+      at: 2026-11-05
+      decided_by: committee:D-0013
+decided_by: committee:D-0013

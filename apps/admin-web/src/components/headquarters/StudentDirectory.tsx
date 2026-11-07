@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   CONTRACT_TYPE_LABELS,
@@ -127,6 +128,27 @@ function planLabel(student: Student): string {
   const contract = CONTRACT_TYPE_LABELS[student.contract_type];
   return student.plan === null ? contract : `${contract}（${SUBSCRIPTION_PLAN_LABELS[student.plan]}）`;
 }
+
+/** 生徒の一覧の列。 */
+const STUDENT_COLUMNS: DataTableColumn<Student>[] = [
+  {
+    header: "表示名",
+    cell: (student) => (
+      <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
+        {student.display_name}
+      </Link>
+    ),
+  },
+  { header: "スポーツ", cell: (student) => SPORT_LABELS[student.sport] },
+  { header: "契約プラン", cell: planLabel },
+  {
+    header: "最後に予約した日",
+    cell: (student) =>
+      student.last_booked_at === null ? "まだ予約がありません" : formatDate(student.last_booked_at),
+  },
+  { header: "直近 30 日の予約", variant: "numeric", cell: (student) => `${student.recent_booking_count} 件` },
+  { header: "登録日", cell: (student) => formatDate(student.registered_at) },
+];
 
 /**
  * 本部の「生徒」。生徒の一覧（listStudents）を出す。絞り込み（スポーツ・この日以降に予約していない・予約したことのあるコーチ・
@@ -303,38 +325,12 @@ export function StudentDirectory({
       {state.kind === "loaded" && state.students.length > 0 && (
         <>
           <p className="text-sm">{RECENT_BOOKING_COUNT_NOTE}</p>
-          <table aria-label="生徒の一覧" className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th className="py-1">表示名</th>
-                <th className="py-1">スポーツ</th>
-                <th className="py-1">契約プラン</th>
-                <th className="py-1">最後に予約した日</th>
-                <th className="py-1">直近 30 日の予約</th>
-                <th className="py-1">登録日</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.students.map((student) => (
-                <tr key={student.student_id} className="border-t">
-                  <td className="py-1">
-                    <Link href={studentActivityPath(student.student_id)} className="text-primary underline">
-                      {student.display_name}
-                    </Link>
-                  </td>
-                  <td className="py-1">{SPORT_LABELS[student.sport]}</td>
-                  <td className="py-1">{planLabel(student)}</td>
-                  <td className="py-1">
-                    {student.last_booked_at === null
-                      ? "まだ予約がありません"
-                      : formatDate(student.last_booked_at)}
-                  </td>
-                  <td className="py-1">{student.recent_booking_count} 件</td>
-                  <td className="py-1">{formatDate(student.registered_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            label="生徒の一覧"
+            columns={STUDENT_COLUMNS}
+            rows={state.students}
+            rowKey={(student) => student.student_id}
+          />
         </>
       )}
     </div>

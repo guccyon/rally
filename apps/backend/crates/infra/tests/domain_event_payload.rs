@@ -125,6 +125,7 @@ fn booking_cancelled(consumes_quota: bool) -> DomainEvent {
         booking_id: BookingId::from_u128(3),
         consumes_quota,
         cancelled_at: oct26(),
+        cancelled_by: domain::scheduling::BookingCanceller::Student,
     }
 }
 

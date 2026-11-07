@@ -1,0 +1,66 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0018
+pr: https://github.com/guccyon/rally/pull/973
+decided_at: '2026-11-05'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0009 に enforcement.solutions を 1 件足すだけで、statement・scope・確かさ・invalidate_when
+    を変えていないので、README の「決定論で担保した知見も消さず、どの解決策で担保したかを残す」の決まりに沿っています。
+  - '足した test の担保は D-0013 の enforcement の案（continue の implement ジョブの入力に未解消の採用済みの指摘の
+    id と body_fix の決まりが入ることを確かめ、なければ落とす）をそのまま実装したもので、decided_by: committee:D-0013
+    とも食い違いません。'
+  - 線とテストを tools/ に置き engine_harness.py で Engine の処理を中身を変えずに取り出して照らす形は、K-0004 の tools/sendback-check/engine.test.mjs（D-0009・D-0010）と同じやり方で、既存の担保の書き方と矛盾しません。
+  - この担保は続きのジョブの入力の中身を確かめるもので、K-0001 の tools/pr-body-check/check.mjs（本文の見出しの検査）とは確かめる対象が違うので重複とはみなしません。
+  - INDEX.md の K-0009 の行は担保の段が context から deterministic に変わっただけで K-0009.yaml の enforcement.level
+    と一致しており、新しい知見を足していないので既存の知見の扱いを添える必要もなく、specs/ の用語や規範ともぶつかりません。
+  - '今の Engine では todo で効き目はまだ確かめていないと明記され、invalidate_when の条件もまだ満たしていないので、status:
+    active と confidence: hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0009 に足した enforcement.solutions は issue 955 と committee:D-0013 を指しており、D-0013
+    の enforcement 担当が出した K-0009 の test の案（採用済みの指摘の id がなければ落とす）とそのまま対応するので、一次記録に辿れます。
+  - what に「Engine の入力の組み立てと body_fix の rules の記録、CI への配線は建設者が入れるので、効き目はまだ確かめていない」と書いてあり、confidence
+    を hypothesis のままにしているのは妥当です。
+  - 今の Engine の形では engine.test.mjs を todo にしているので、この担保は再発を止めた証拠にはならず、配線が入って続きのジョブの実際の入力を一次記録で確かめるまで
+    confirmed に上げないでください。
+  - 「形が変わったら落ちることは Engine の写しで確かめた」は実行の記録（CI の run や PR）を指していないので、次の変更セットで確かめた記録の場所を書き足すと辿りやすくなります。
+  - INDEX.md の K-0009 の行は enforcement.level の deterministic に合わせた変更だけで、K-0009.yaml
+    の値と食い違っていません。
+  - 差分に出てくるのは issue 番号・議決の id・ツールのパス・Engine の関数名・rubric の id だけで、利用者や人を特定できる情報は含まれていません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は、D-0013 で K-0009 に求めた test の担保を enforcement.solutions に記録するもので、提案と担保の中身が合っています（担保は、続きのジョブの入力に未解消の採用済みの指摘の
+    id と body_fix の本文の決まりが入ることを確かめます）。
+  - 線（tools/continue-input-check/line.mjs）は missing_defect_id と input_missing の 2
+    つの落ち方を持ち、engine_harness.py で Engine の関数を中身を変えずに動かして照らすので、指示の文に頼るより確かで、繰り返しにも効きます。
+  - 今の Engine の形のときだけ todo にしたのは、配線がまだないうちに CI を赤くしないための線の引き方として妥当で、形が変われば落ちることを写しで確かめたと書かれています。
+  - 効き目をまだ確かめていないことを what に書いたうえで、K-0002・K-0004 と同じ書き方で level を deterministic にしており、INDEX.md
+    の行も K-0009.yaml の値と食い違っていません。
+  - todo が残ったままだと担保が効かないことに気づきにくいので、Engine の入力の組み立てと body_fix の rules の記録が入ったら todo
+    を外し、そのことを次の変更セットに記録してください（K-0001 の tools/pr-body-check/check.mjs の配線も、D-0013 のとおり引き続き進めてください）。
+  - 担保が効いて同じ指摘の採用が止まったことを一次記録で確かめるまでは、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0013 で決めた K-0009 の test の案を enforcement.solutions に記録するだけで、statement・scope・確かさは変えていないので、範囲は広がっていません。
+  - 記録には「今の Engine では todo で外れる」「効き目はまだ確かめていない」と書いてあり、担保が効いているように言い過ぎていないので、K-0004
+    の記録と同じ扱いとして採ってよいです。
+  - ただし今の形のときだけ todo にしているため、Engine が変わらない限りこのテストは通り続け、欠陥が残ったまま緑に見えるという反例があるので、INDEX
+    の deterministic は「線はあるがまだ効いていない」と読むべきです。
+  - statement は「Engine の追記」も書き足す役に含めていますが、このテストが見るのは continue（conflict・ci_failed）の
+    implement ジョブの入力だけなので、Engine 自身の追記は担保の外にあることを次の変更セットで書き足してください。
+  - 線は pr.body_amended の rules という、body_fix がまだ記録していない形を前提にしているので、建設者が別の名前や形で入れたときに線が合わなくなるおそれがあり、配線の際に名前をそろえることを確かめてください。
+  - 入力に指摘の id と決まりを渡しても、ワーカーが K-0006 の側で本文を組み直さず崩れ続ける反例は D-0013 の反対意見のとおりまだ切れていないので、confidence
+    は hypothesis のままにしてください。
+  personal_data: false
+enforcement: []

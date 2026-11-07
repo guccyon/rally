@@ -23,6 +23,9 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   lesson_menu_not_unpublished_by_headquarters: "このメニューは本部が非公開にしたものではありません。",
   lesson_review_not_low_rated: "低い評価ではないため、対応済みにできません。",
   announcement_already_withdrawn: "このお知らせはすでに取り下げられています。",
+  leave_preview_outdated:
+    "期間の予約が確かめたあとに変わったため、お休みにできませんでした。予約も枠も変えていません。「期間の予約と枠を確かめる」で読み直してから、もう一度「お休みにする」を押してください。",
+  coach_leave_overlaps: "この期間に重なるお休みがもうあります。期間を変えて確かめ直してください。",
 };
 
 const UNKNOWN = "エラーが発生しました。時間をおいてやり直してください。";

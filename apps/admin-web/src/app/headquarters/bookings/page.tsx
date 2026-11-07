@@ -19,7 +19,7 @@ function BookingListContent() {
   const studentId = searchParams.get(BOOKINGS_STUDENT_QUERY) || undefined;
   const lessonMenuId = searchParams.get(BOOKINGS_LESSON_MENU_QUERY) || undefined;
   return (
-    <RoleGate role="headquarters">
+    <RoleGate role="headquarters" width="wide">
       {(session) => (
         <BookingListHome token={session.token} coachId={coachId} studentId={studentId} lessonMenuId={lessonMenuId} />
       )}

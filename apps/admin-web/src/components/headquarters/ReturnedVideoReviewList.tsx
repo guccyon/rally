@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { SPORT_LABELS, formatDateTime, formatDay } from "@/components/labels";
 
@@ -47,6 +48,16 @@ const NO_FILTER: Filter = { period: null, coachId: "", sport: "", studentId: "",
 export const SPORTS: readonly Sport[] = Object.freeze(Object.keys(SPORT_LABELS) as Sport[]);
 
 const NO_NAME = "（名前を表示できません）";
+
+/** 返した動画添削の一覧の列。 */
+const RETURNED_VIDEO_REVIEW_COLUMNS: DataTableColumn<Schemas["ReturnedVideoReviewList"]["reviews"][number]>[] = [
+  { header: "生徒", cell: (review) => review.student_display_name ?? NO_NAME },
+  { header: "コーチ", cell: (review) => review.coach_display_name ?? NO_NAME },
+  { header: "スポーツ", cell: (review) => SPORT_LABELS[review.sport] },
+  { header: "送った日時", cell: (review) => formatDateTime(review.submitted_at) },
+  { header: "返した日時", cell: (review) => formatDateTime(review.returned_at) },
+  { header: "かかった時間", variant: "numeric", cell: (review) => `${review.lead_time_hours} 時間` },
+];
 
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 // レッスンメニューは選択肢から選んでいればふつうは来ない（URL のクエリを手で書き換えたときなど）。
@@ -326,30 +337,12 @@ function LoadedReviews({
         <p className="text-sm">{emptyMessage}</p>
       )}
       {list.reviews.length > 0 && (
-        <table aria-label="返した動画添削の一覧" className="w-full text-left text-sm">
-          <thead>
-            <tr>
-              <th className="py-1">生徒</th>
-              <th className="py-1">コーチ</th>
-              <th className="py-1">スポーツ</th>
-              <th className="py-1">送った日時</th>
-              <th className="py-1">返した日時</th>
-              <th className="py-1">かかった時間</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.reviews.map((review) => (
-              <tr key={review.video_id} className="border-t">
-                <td className="py-1">{review.student_display_name ?? NO_NAME}</td>
-                <td className="py-1">{review.coach_display_name ?? NO_NAME}</td>
-                <td className="py-1">{SPORT_LABELS[review.sport]}</td>
-                <td className="py-1">{formatDateTime(review.submitted_at)}</td>
-                <td className="py-1">{formatDateTime(review.returned_at)}</td>
-                <td className="py-1">{review.lead_time_hours} 時間</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          label="返した動画添削の一覧"
+          columns={RETURNED_VIDEO_REVIEW_COLUMNS}
+          rows={list.reviews}
+          rowKey={(review) => review.video_id}
+        />
       )}
     </div>
   );

@@ -12,11 +12,14 @@ evidence:
   - case: C-0003
   - pr: "396"
   - event: "case.analyzed:40381"
+  - case: C-0005
+  - pr: 659
+  - event: "case.analyzed:274379"
 status: active
-verified_at: 2026-11-01
-review_by: 2026-12-01
+verified_at: 2026-11-05
+review_by: 2026-12-05
 confidentiality: product
-related: [K-0001, K-0005]
+related: [K-0001, K-0005, K-0009]
 decided_by: committee:D-0006
 enforcement:
   level: deterministic
