@@ -80,3 +80,10 @@ export function recordedBodies(newPrBody, report) {
   }, newPrBody);
   return bodies;
 }
+
+/** 通る側の報告の形（表示の名前と、i 回目の報告を組む関数の組）。gate.test.mjs と engine.test.mjs が同じ表を使う。 */
+export const PASSING_REPORTS = [
+  ["報告の見出しを ### に下げた", (reason, i) => demotedSummary(reason, i, 3)],
+  ["報告の見出しを記録の ### の下の #### に下げた", (reason, i) => demotedSummary(reason, i, 4)],
+  ["報告に ## 見出しがない", plainSummary],
+];

@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FIRST_SUMMARY, ISSUE, PR_URL, REASONS, continuationSummary, demotedSummary, legacyBody, newPrBody, plainSummary } from "./c0005.mjs";
+import { FIRST_SUMMARY, ISSUE, PASSING_REPORTS, PR_URL, REASONS, continuationSummary, legacyBody, newPrBody } from "./c0005.mjs";
 import { checkBody } from "./check.mjs";
 import { gate } from "./gate.mjs";
 
@@ -328,13 +328,7 @@ exit $rc
 // (10) は通る側の写し（議決 D-0032 の test の案、Issue #1038）。C-0005 と同じ 21 回の続きのジョブでも、報告が「## 工場の記録」の下に
 // 正しく入る形（報告の見出しが ### 以下、または ## 見出しがない）なら、関所は毎回 0 を返し、Engine はその本文を書く。正しい更新まで止める誤検知を落とす。
 // Engine がもう関所を呼んでいれば patchedEngine は差分を当てずに写すので、配線したあとの本物の Engine の本文の更新をそのまま確かめる
-const PASSING = [
-  ["報告の見出しを ### に下げた", (reason, i) => demotedSummary(reason, i, 3)],
-  ["報告の見出しを #### に下げた", (reason, i) => demotedSummary(reason, i, 4)],
-  ["報告に ## 見出しがない", plainSummary],
-];
-
-for (const [label, report] of PASSING) {
+for (const [label, report] of PASSING_REPORTS) {
   test(`(10) 関所を配線した Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`, { skip }, () => {
     const { update } = patchedParts();
     let body = engineNewBody();
