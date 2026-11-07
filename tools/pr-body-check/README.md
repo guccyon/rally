@@ -27,15 +27,16 @@ npm test
 
 ## 見出しの定義（`template.json`）
 
-PR 本文の `## ` 見出しの順と、必須かどうかの 1 つの定義。CLAUDE.md の「PR の説明は 概要 / 対応内容 / 影響範囲・互換性 / 動作確認 / 補足 / 知見 の見出しで」に、実装役の報告の型にある `仮決め` を `補足` と `知見` の間に入れた。該当しない見出しは省くので、必須は `概要` と `対応内容` だけ。
+PR 本文の `## ` 見出しの順と、必須かどうかの 1 つの定義。順は `概要 / 背景 / 問題 / 対応内容 / 影響範囲・互換性 / 動作確認 / 補足 / 仮決め / 知見`。該当しない見出しは省くので、必須は `概要` と `対応内容` だけ。
 
-`check.mjs` は読み込むときに定義を検証する（`h2` が空でない配列で、各要素は前後に空白のない 1 行の `text` と真偽値の `required` だけを持ち、`text` が重ならない）。外れたら読み込みの時点で投げ、検査を始めない。検証した定義は配列も要素も凍結した `TEMPLATE` として公開するので、後から書き換えられない。
+見出しの正はこのファイルに置く（知見 `K-0005` の線でオーナーが決めた。Issue #936）。CLAUDE.md の「書き方」の「PR の説明は … の見出しで」は同じ順にそろえてあり、`check.test.mjs` が両者の一致を確かめる。Engine の rubric の `PR-002`（`core-gates/rubric.yaml`）の見出しの列（概要・背景・問題・対応内容・影響範囲・動作確認・補足）は同じ順だが、`影響範囲` の名前と `仮決め`・`知見` がない点がまだ食い違う。Engine は別のリポジトリなので、建設者がこの定義に合わせる。
 
-見出しの正をどこに置くか（CLAUDE.md・実装役の報告の型・Engine の rubric の PR-002 のどれを正にするか）は、知見 `K-0005` の線で人が決める。決まったらこのファイルをその正に合わせる。
+`check.mjs` は初めて照らすときに定義を読んで検証する（`h2` が空でない配列で、各要素は前後に空白のない 1 行の `text` と真偽値の `required` だけを持ち、`text` が重ならない）。読めない・JSON でない・外れたら専用の `TemplateError` を投げ、本文を照らさない。モジュールの読み込み時には投げないので、表示と終了コード（3）は境界の `main` が組む。検証した定義は配列も要素も凍結して `loadTemplate()` が返すので、後から書き換えられない。
 
 ## 結果
 
-- 終了コード: 0 = 通る、1 = 外れた、2 = 本文を読めなかった
+- 終了コード: 0 = 通る、1 = 外れた、2 = 本文を読めなかった、3 = 見出しの定義（`template.json`）が不正（本文は照らしていない。本文を直しても通らないので、定義を直す）
+- 3 のときは標準エラーに「pr-body-check: 見出しの定義が不正: 理由」を出し、標準出力と `--json` には何も書かない
 - 標準出力: 外れた箇所ごとに「N 行目: 理由」（本文全体の外れ、つまり `missing_required` は「本文: 理由」）と、最後に件数の 1 行
 - `--json`: `{ "ok": bool, "errors": [{ "rule", "line", "heading", "message" }] }`。`missing_required` の `line` は `null`
 
@@ -47,7 +48,7 @@ PR 本文の `## ` 見出しの順と、必須かどうかの 1 つの定義。C
 printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL}"   # リポジトリの根から
 ```
 
-- 終了コード: 0 = 本文を書いてよい、1 = 本文を書かずに body_fix に回す、2 = 読めなかった（本文は書かない）
+- 終了コード: 0 = 本文を書いてよい、1 = 本文を書かずに body_fix に回す、2 = 読めなかった（本文は書かない）、3 = 見出しの定義が不正（本文は書かない。body_fix には回さず、定義を直す）
 - 1 のときの標準出力: body_fix の入力の JSON 1 行。Engine の `dispatcher.enqueue_body_fix` が `job.enqueued` の `input` に入れる形（`{ pr_url, defects: [{ rubric_id, severity, location, evidence, remediation_hint }] }`）
   - `rubric_id` は本文の構成の指摘 `PR-002`（Engine の `core-gates/rubric.yaml`）、`severity` は `should`
   - `location` は「PR 本文 N 行目」（Engine の `is_body_only` が本文だけの指摘と読む形）。`evidence` は「pr-body-check <rule>: 理由」
@@ -98,7 +99,7 @@ jobs:
 
 Engine は別のリポジトリなので、次は建設者が入れる。入れて `ENGINE_DIR` の版を上げたら、`engine.test.mjs` の `isLegacyEntrypoint` と `todo` を消してよい。
 
-1. `worker/entrypoint.sh` の続きのジョブの節で、`NEW_BODY` を組んだあと `gh pr edit` の前に、リポジトリに `tools/pr-body-check/gate.mjs` があれば `NEW_BODY` を照らす。1（か 2）なら `gh pr edit` で本文を書かず、標準出力の body_fix の入力と組んだ本文（続きのジョブの報告）を引き継ぎ（`HANDOFF_DIR`）と `FACTORY_RESULT` に残す。push した head（`pr.head_updated`）と引き継ぎ（`handoff.saved`）は今のまま
+1. `worker/entrypoint.sh` の続きのジョブの節で、`NEW_BODY` を組んだあと `gh pr edit` の前に、リポジトリに `tools/pr-body-check/gate.mjs` があれば `NEW_BODY` を照らす。1（か 2）なら `gh pr edit` で本文を書かず、標準出力の body_fix の入力と組んだ本文（続きのジョブの報告）を引き継ぎ（`HANDOFF_DIR`）と `FACTORY_RESULT` に残す。3（見出しの定義が不正）なら本文を書かず、body_fix には回さずに人に回す（本文を直しても通らない）。push した head（`pr.head_updated`）と引き継ぎ（`handoff.saved`）は今のまま
 2. dispatcher が、その結果を見て `enqueue_body_fix` で body_fix を積む（判定役を待たない。検査役にも回さない）。body_fix には、書かなかった続きのジョブの報告を「## 工場の記録」の下の `###` に入れて本文を組み直すよう渡す
 3. body_fix が直した本文も関所に照らし、まだ外れたら人に回す（同じ直しを繰り返さない）
 

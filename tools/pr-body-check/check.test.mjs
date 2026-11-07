@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { TEMPLATE, checkBody, headings, parseTemplate } from "./check.mjs";
+import { EXIT_TEMPLATE_ERROR, TemplateError, checkBody, headings, loadTemplate, parseTemplate } from "./check.mjs";
+
+const TEMPLATE = loadTemplate();
 
 /** 新しい PR の本文（Engine の worker/entrypoint.sh が組む形）。 */
 const NEW_PR = `Closes #541
@@ -118,12 +120,16 @@ test("定義の見出しを全部使った本文は通る", () => {
   assert.deepEqual(checkBody(FULL_PR), []);
 });
 
-test("定義は CLAUDE.md の見出しの順に、仮決めを補足と知見の間に入れたもの", () => {
-  assert.deepEqual(TEMPLATE.map((t) => t.text), ["概要", "対応内容", "影響範囲・互換性", "動作確認", "補足", "仮決め", "知見"]);
+test("定義は CLAUDE.md の「PR の説明」の見出しの順と同じ", () => {
+  assert.deepEqual(TEMPLATE.map((t) => t.text),
+    ["概要", "背景", "問題", "対応内容", "影響範囲・互換性", "動作確認", "補足", "仮決め", "知見"]);
+  const claude = readFileSync(new URL("../../CLAUDE.md", import.meta.url), "utf8").match(/PR の説明は (.+?) の見出しで/);
+  assert.deepEqual(claude[1].split(" / "), TEMPLATE.map((t) => t.text));
   assert.deepEqual(TEMPLATE.filter((t) => t.required).map((t) => t.text), ["概要", "対応内容"]);
 });
 
 test("定義は凍結してあり、生成した後で書き換えられない", () => {
+  assert.equal(loadTemplate(), TEMPLATE);
   assert.ok(Object.isFrozen(TEMPLATE));
   assert.ok(TEMPLATE.every((t) => Object.isFrozen(t)));
   assert.throws(() => { TEMPLATE.push({ text: "背景", required: true }); }, TypeError);
@@ -146,7 +152,7 @@ test("不正な定義は生成するときに外す", () => {
     [{ h2: [{ text: "概要", required: "yes" }] }, /h2\[0\]\.required/],
     [{ h2: [ok, ok] }, /h2\[1\]\.text「概要」が重なっている/],
   ]) {
-    assert.throws(() => parseTemplate(data), why);
+    assert.throws(() => parseTemplate(data), (e) => e instanceof TemplateError && why.test(e.message));
   }
 });
 
@@ -185,7 +191,7 @@ test("重なりの 2 回目は順の違いに数えない", () => {
 test("定義にない ## 見出しが定義の見出しの間にあると外れる", () => {
   const body = FULL_PR.replace("## 補足", "## 続きのジョブの報告\n- 衝突を解いた\n\n## 補足");
   assert.deepEqual(rules(body), ["continuation_outside_record", "outside_template"]);
-  assert.deepEqual(rules("## 概要\n\n## 背景\n\n## 対応内容\n"), ["outside_template"]);
+  assert.deepEqual(rules("## 概要\n\n## 参考\n\n## 対応内容\n"), ["outside_template"]);
 });
 
 test("「## 工場の記録」が定義の見出しより前にあると外れる", () => {
@@ -194,7 +200,14 @@ test("「## 工場の記録」が定義の見出しより前にあると外れ�
 });
 
 test("定義にない見出しは、定義の見出しの最後より後ろか ### 以下なら通る", () => {
-  assert.deepEqual(checkBody("## 概要\n### 背景\n\n## 対応内容\n\n## 参考\n- x\n"), []);
+  assert.deepEqual(checkBody("## 概要\n### 参考\n\n## 対応内容\n\n## 参考\n- x\n"), []);
+});
+
+test("背景・問題は定義の見出しなので、概要と対応内容の間に置けば通り、省いてもよい", () => {
+  assert.deepEqual(checkBody("## 概要\na\n\n## 背景\nb\n\n## 問題\nc\n\n## 対応内容\nd\n"), []);
+  assert.deepEqual(checkBody("## 概要\na\n\n## 問題\nc\n\n## 対応内容\nd\n"), []);
+  assert.deepEqual(rules("## 概要\na\n\n## 対応内容\nd\n\n## 背景\nb\n"), ["template_order"]);
+  assert.deepEqual(rules("## 概要\na\n\n## 問題\nc\n\n## 背景\nb\n\n## 対応内容\nd\n"), ["template_order"]);
 });
 
 test("CLI は外れたら 1 で終わり、JSON を書く", () => {
@@ -214,4 +227,29 @@ test("CLI は外れたら 1 で終わり、JSON を書く", () => {
   const stdin = execFileSync("node", [script], { input: NEW_PR, encoding: "utf8" });
   assert.match(stdin, /外れ 0 件/);
   assert.throws(() => execFileSync("node", [script, "--body", join(dir, "none.md")], { stdio: "pipe" }), (e) => e.status === 2);
+});
+
+/** check.mjs を、壊した template.json と一緒に一時ディレクトリへ写す。 */
+function brokenCopy(template) {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-template-"));
+  copyFileSync(fileURLToPath(new URL("./check.mjs", import.meta.url)), join(dir, "check.mjs"));
+  writeFileSync(join(dir, "template.json"), template);
+  writeFileSync(join(dir, "body.md"), NEW_PR);
+  return dir;
+}
+
+test("定義が不正なら、読み込みでは止まらず、CLI が本文を照らさずに 3 で終わる（外れの 1 と見分ける）", () => {
+  assert.equal(EXIT_TEMPLATE_ERROR, 3);
+  for (const [template, why] of [
+    [JSON.stringify({ h2: [{ text: "概要", required: true, extra: 1 }] }), /見出しの定義が不正: h2\[0\] に知らない欄がある（extra）/],
+    [JSON.stringify({ h2: [] }), /見出しの定義が不正: h2 が空でない配列でない/],
+    ["{ not json", /見出しの定義が不正: template\.json を読めなかった/],
+  ]) {
+    const dir = brokenCopy(template);
+    const script = join(dir, "check.mjs");
+    execFileSync("node", ["--input-type=module", "-e", `await import(${JSON.stringify(`file://${script}`)})`]);
+    assert.throws(() => execFileSync("node", [script, "--body", join(dir, "body.md"), "--json", join(dir, "out.json")], { stdio: "pipe", encoding: "utf8" }),
+      (e) => e.status === EXIT_TEMPLATE_ERROR && why.test(e.stderr) && !/^\s+at /m.test(e.stderr) && e.stdout === "");
+    assert.throws(() => readFileSync(join(dir, "out.json")), { code: "ENOENT" });
+  }
 });

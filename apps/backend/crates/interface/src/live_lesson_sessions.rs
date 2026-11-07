@@ -107,6 +107,9 @@ where
                 error @ DomainError::BookingNotConfirmed { .. },
             ) => ApiError::conflict("invalid_booking_state", message::domain_error(&error)),
             StartLiveLessonSessionError::Invalid(
+                error @ DomainError::LiveLessonSessionBeforeSlotStart { .. },
+            ) => ApiError::conflict("slot_not_started", message::domain_error(&error)),
+            StartLiveLessonSessionError::Invalid(
                 error @ DomainError::LiveLessonSessionAlreadyStarted,
             ) => ApiError::conflict("invalid_session_state", message::domain_error(&error)),
             StartLiveLessonSessionError::Invalid(error) => ApiError::internal(error),

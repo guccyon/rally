@@ -407,6 +407,26 @@ async fn a_booking_that_is_not_confirmed_cannot_be_started() {
 }
 
 #[tokio::test]
+async fn a_session_cannot_start_before_the_slot_starts() {
+    let app = app();
+    let booking_id = app.confirmed_booking().await;
+    // スロットの開始（10:00）の 1 秒前は、生徒からもコーチからも始められない（Issue #899）
+    app.clock.set(nov1_10() - Duration::from_secs(1));
+
+    for token in [STUDENT, COACH] {
+        let (status, body) = app.start(token, &booking_id).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "slot_not_started");
+    }
+    assert!(app.call_events().is_empty(), "call.started を発火しない");
+
+    // 開始時刻ちょうどからは始められる
+    app.clock.set(nov1_10());
+    let (status, body) = app.start(STUDENT, &booking_id).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
+#[tokio::test]
 async fn starting_and_ending_records_the_session_and_the_four_metrics() {
     let app = app();
     let booking_id = app.confirmed_booking().await;

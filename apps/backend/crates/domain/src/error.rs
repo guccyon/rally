@@ -28,6 +28,8 @@ pub enum DomainError {
     },
     /// 予約の通話セッションはすでにある（同じ予約のセッションは 1 つ）
     LiveLessonSessionAlreadyStarted,
+    /// 予約したスロットの開始時刻（`starts_at`）より前なので、通話を開始できない
+    LiveLessonSessionBeforeSlotStart { starts_at: std::time::SystemTime },
     /// 通話セッションはすでに終了している
     LiveLessonSessionAlreadyEnded,
     /// 通話セッションの終了が開始より前
