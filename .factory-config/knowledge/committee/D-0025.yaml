@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0025
+pr: https://github.com/guccyon/rally/pull/1016
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0024 までの議決と矛盾しません。
+  - 足した test の solution は D-0017 の 1 つ目の案（npm スクリプト・シェルのラッパー・引数の順序を変えた呼び方の写しを order.test.mjs
+    に足す）に応えるもので、既存の solutions に同じ記録はないので重複ではありません。
+  - '形は既存の solutions と同じで、decided_by を提案元の committee:D-0017 にし、wired: false・verified:
+    false と書いている点も README の決まりと合っています。'
+  - 影響を受ける知見は K-0004 だけで、K-0001・K-0003 の related も変わらないので、1 本の PR にした変更セットの扱いは妥当です。
+  - 'D-0017 の dissent が挙げた continue-on-error や if: false の反例と、D-0009 から求めている verified_at・review_by
+    の更新はまだ入っていないので、次に K-0004 を直す変更セットでそろえてください。'
+  - order.mjs は .github/workflows/ からまだ走っておらず本物の配線で確かめていないので confidence は hypothesis
+    のままが妥当で、specs/ の製品の規範とも用語や主張はぶつかりません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 967 と committee:D-0017 を指していて、D-0017 の test の案（npm
+    スクリプト・シェルのラッパー・引数の順序を変えた呼び方の写しを order.test.mjs に足し、order.mjs が engine_test_todo・engine_test_not_wired
+    で落とすことを確かめる）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '確かめたのは order.test.mjs のワークフローの写しだけで、order.mjs は .github/workflows/ からまだ走っておらず本物の配線の
+    PR で効き目を確かめていないと自分で書き、wired: false・verified: false としているので、記録の書き方は正直です。'
+  - 'confidence は hypothesis のままが妥当で、Engine の basis を直して engine.test.mjs と check.mjs
+    の ci_check を実際に配線し、PR #395 の流れで落ちて直したあとは通ることを確かめるまでは confirmed に上げないでください。'
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、engine_test_todo などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0017 の test の案（npm
+    scripts・ラッパー・引数の順序を変えた呼び方の写しを order.test.mjs に足す）を issue 967 として enforcement.solutions
+    に足しただけなので、担保の観点では採ってよいです。
+  - order.mjs が npm --prefix・run-script・変数・関数・ラッパーを経た呼び方を見逃していたのを写しで見つけて直したことは、D-0017
+    で担保の担当が指摘した抜け道に応えています。
+  - ただしシェルの呼び方を静的に辿るのはきりがなく、eval や別のリポジトリのアクションを経れば今も抜けられるので、順序の守りの本体は check.mjs --events
+    自身が engine.test.mjs の todo や未配線を見て落ちる実行時の守りに置き、静的な辿りは補助とすべきです。
+  - 'D-0017 で反対の担当が挙げた、engine.test.mjs の手順が continue-on-error や if: false で止めない、または
+    needs で check.mjs --events より先に通らない配線を通してしまう反例はまだ塞がれていません。'
+  - 'wired: false・verified: false と正直に書かれており、order.mjs も .github/workflows/ から走っていないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に、D-0017 の test の案（order.test.mjs に npm
+    scripts・ラッパー・引数の順序を変えた呼び方の写しを足す）を issue 967 として入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - order.mjs は静的に読むので、composite action や再利用ワークフロー（uses:）、eval や別の言語のスクリプトを経た呼び方など、写しに入っていない呼び方では今も見逃す反例が残ります。
+  - 'D-0017 の反対の担当が挙げた、engine.test.mjs の手順が continue-on-error や if: false で実際には止めない配線、needs
+    の順序を守らない配線という反例は、この記録ではまだ扱われていないので、次に K-0004 を直す変更セットで order.mjs を狭めてください。'
+  - what の中に order.mjs 本体を直したことが書かれていますが kind は test のままなので、検査の直しと試験の追加を読み分けられるように書き分けを勧めます。
+  - 確かめたのはワークフローの写しだけで、order.mjs は .github/workflows/ からまだ走っておらず本物の配線の PR では効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。
+  - 'K-0004 の solutions は 12 件になり wired: false・verified: false の記録が積み重なっているので、建設者の配線が入ったときに効いたものと効いていないものを分けて整理することを改めて勧めます。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/sendback-check/order.test.mjs に、engine.test.mjs の手順やジョブに continue-on-error:
+    true や if: false を付けた写しと、check.mjs --events のジョブが needs で engine-test のジョブを待たない写しを足し、order.mjs
+    がそれらを engine_test_not_wired（か新しい engine_test_not_required）で落とすように直して確かめる。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: check.mjs --events が GITHUB_ACTIONS=true のとき、どの呼び方（npm scripts・ラッパー・eval・変数）を経ても自分で
+    order.mjs の見張りを先に走らせ、engine.test.mjs に todo が残るか未配線なら ::error で落ちること（fail-closed）を、呼び方を変えた複数の起動で確かめるテストを置き、静的な辿りが見逃しても守りが効くことを担保する。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0017・D-0020 の案のとおり、tools/sendback-check/ci/sendback-engine.yml（wiring-order
+    と engine-test のジョブ）を .github/workflows/ に写して branch protection の必須チェックに入れ、本物の配線の
+    PR で順序の見張りが落ちる・通ることを記録してから、この solution の wired と verified を true にする。
