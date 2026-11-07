@@ -69,6 +69,8 @@ printf '%s' "${NEW_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "${PR_URL
   - (5) 同じ写しで、`## ` 見出しを持たない続きのジョブの報告は止めずに「## 工場の記録」の下の `### 続きのジョブの記録` に足して書く（誤検知しない）
   - (6) 同じ写しの dispatcher の `act_on_body_gate` が、`rc` 1 の結果で body_fix を 1 件積み（関所の指摘に、書かなかった報告の全文と引き継ぎの場所を「PR 本文 末尾」の指摘として足す）、`rc` 2・3 では積まずに人に回す（停止を開く）
   - (7) 4000 字を超える報告も切らずに、引き継ぎの `body_gate.json` と body_fix の指摘に全文が渡る
+  - (8) 未完了の続きが仕上がった回（`CONTINUE_REASON=incomplete`・`INCOMPLETE` が空）に関所で外れても、報告を足さない本文で仕上げ（未完了の印を消す・`Refs` を `Closes` に直す・題を戻す・ドラフトを外す）だけは済ませ、`finished.applied` を true で残す。報告は body_fix に回し、人には回さない
+  - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh
@@ -110,8 +112,8 @@ Engine は別のリポジトリなので、次は建設者が入れる。その�
 
 差分が入れるのは 1 と 2（3 は入れていない）:
 
-- `entrypoint.sh`: 続きのジョブの記録の見出しを `### 続きのジョブの記録`（「## 工場の記録」の下）にする（前の `## 続きのジョブの記録` がある本文にはその下に足す）。未完了の印を外す直しのあとの `NEW_BODY` を、`gh pr edit` の前に関所に照らし、0 以外なら `gh pr edit`・`gh pr ready` を呼ばず、`{ rc, body_fix, pending_entry, handoff }`（`pending_entry` は書かなかった報告の全文で切らない。`handoff` はそれを残した引き継ぎのファイル）を `FACTORY_RESULT` の `body_gate` と引き継ぎの `jobs/<job>/body_gate.json` に残す。関所のないリポジトリでは今までどおり書く
-- `dispatcher.py`: 続きのジョブの結果に `body_gate` があれば `act_on_body_gate` を呼ぶ。`rc` 1 は判定役を待たずに `enqueue_body_fix` で body_fix を積み、書かなかった報告を切らずに全文で、引き継ぎの場所を添えて「PR 本文 末尾」の指摘として渡す。`rc` 2・3 は停止（`body_gate:<PR の URL>`、human）を開く。どちらも `pr.body_gate_blocked` を残す
+- `entrypoint.sh`: 続きのジョブの記録の見出しを `### 続きのジョブの記録`（「## 工場の記録」の下）にする（前の `## 続きのジョブの記録` がある本文にはその下に足す）。未完了の印を外す直しのあとの `NEW_BODY` を、`gh pr edit` の前に関所に照らし、0 以外なら `gh pr edit`・`gh pr ready` を呼ばず、`{ rc, body_fix, pending_entry, finished, handoff }`（`pending_entry` は書かなかった報告の全文で切らない。`finished` は未完了の続きが仕上がった回だけで、仕上げを済ませたか（`applied`）と題・Issue の番号。`handoff` はそれを残した引き継ぎのファイル）を `FACTORY_RESULT` の `body_gate` と引き継ぎの `jobs/<job>/body_gate.json` に残す。仕上がった回は、報告を足さない本文が関所に通れば、それで仕上げ（未完了の印・`Closes`・題・`gh pr ready`）だけを先に書く。関所のないリポジトリでは今までどおり書く
+- `dispatcher.py`: 続きのジョブの結果に `body_gate` があれば `act_on_body_gate` を呼ぶ。`rc` 1 は判定役を待たずに `enqueue_body_fix` で body_fix を積み、書かなかった報告を切らずに全文で、引き継ぎの場所を添えて「PR 本文 末尾」の指摘として渡す。`rc` 2・3 は停止（`body_gate:<PR の URL>`、human）を開く。仕上げを書けなかった（`finished.applied` が false）ときは、body_fix では行を消したりドラフトを外したりできないので、停止（`body_gate_finish:<PR の URL>`、human）を開いてやることを待ち事項に書く。どちらも `pr.body_gate_blocked` を残す
 - `definitions/events.yaml`: `pr.body_gate_blocked` を足す
 
 `ci/pr-body-engine.yml` は、Engine を固定の版で取って `ENGINE_DIR` を向け、このディレクトリのテストを PR ごとに走らせる CI。ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/pr-body-engine.yml` に写し、`engine-test` をブランチ保護の必須チェックにする（議決 `D-0019`）。(3) に `todo` がないので、関所を呼ばない Engine の版（今の `ENGINE_REF`）のままだと落ちる。差分を Engine に入れて `ENGINE_REF` を上げるのと同じ PR で写す。この CI では PR 本文そのものは見ない（落ちると `ci_failed` の続きのジョブが積まれ、その summary がまた本文に足されて、この知見の形を増やすため）。本文は上の「マージ前の必須チェック」で見るが、同じ理由で、そのチェックが落ちたときは `ci_failed` の続きのジョブを積まず、関所と同じく body_fix に回す（建設者が Engine の dispatcher で分ける）。

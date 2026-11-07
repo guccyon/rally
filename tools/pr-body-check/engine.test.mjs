@@ -113,16 +113,19 @@ const PATCH_FILES = ["orchestrator/worker/entrypoint.sh", "orchestrator/dispatch
 /** Engine の entrypoint.sh が関所を呼ばない形か */
 export const isLegacyEntrypoint = (source) => !source.includes("tools/pr-body-check/gate.mjs");
 
-/** 偽の gh（pr view は持っている本文を返し、pr edit --body は本文を書き換える）。ほかの呼び出しは落とす。 */
+/** 偽の gh（pr view は持っている本文を返し、pr edit --body は本文を、--title は題を書き換える）。呼び出しは calls に残し、ほかの呼び出しは落とす。 */
 function fakeGh(body) {
   const dir = mkdtempSync(join(tmpdir(), "pr-body-engine-"));
   writeFileSync(join(dir, "body"), body);
+  writeFileSync(join(dir, "calls"), "");
   writeFileSync(join(dir, "gh"), `#!/usr/bin/env bash
+echo "$1 $2" >> "${dir}/calls"
 case "$1 $2" in
   "pr view") cat "${dir}/body"; echo ;;
   "pr edit")
     while [ $# -gt 0 ]; do
       if [ "$1" = "--body" ]; then printf '%s' "$2" > "${dir}/body"; fi
+      if [ "$1" = "--title" ]; then printf '%s' "$2" > "${dir}/title"; fi
       shift
     done ;;
   "pr ready") ;;
@@ -130,7 +133,8 @@ case "$1 $2" in
 esac
 `);
   chmodSync(join(dir, "gh"), 0o755);
-  return { dir, body: () => readFileSync(join(dir, "body"), "utf8") };
+  return { dir, body: () => readFileSync(join(dir, "body"), "utf8"), calls: () => readFileSync(join(dir, "calls"), "utf8").trim().split("\n").filter(Boolean),
+    title: () => (existsSync(join(dir, "title")) ? readFileSync(join(dir, "title"), "utf8") : null) };
 }
 
 /**
@@ -257,4 +261,52 @@ test("(7) 関所を配線した Engine は、4000 字を超える続きのジョ
   const pending = bodyGate(g).input.defects.at(-1);
   assert.ok(pending.evidence.includes(long), "4000 字を超える報告が body_fix の指摘で切れた");
   assert.ok(pending.evidence.includes(g.handoff));
+});
+
+/** Engine の PR_BODY で、途中終了した（未完了の印と Refs を持つドラフトの）PR の本文を組む。 */
+const engineIncompleteBody = () =>
+  need("prBody") || bash(`${parts.prBody}\nprintf '%s' "$PR_BODY"`, { ...JOB, JOB_ID: "2790", SUMMARY: FIRST_SUMMARY, INCOMPLETE: "1", CLAUDE_RC: "1", LINK_KW: "Refs" });
+
+/** 差分を当てた本文の更新の節を、未完了の続きが仕上がった回（CONTINUE_REASON=incomplete・INCOMPLETE が空）として 1 回動かす。 */
+function runFinished(oldBody, summary) {
+  const gh = fakeGh(oldBody);
+  const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+  const log = bash(patchedParts().update, { ...JOB, PATH: `${gh.dir}:${process.env.PATH}`, JOB_ID: "2960", CONTINUE_REASON: "incomplete", INCOMPLETE: "",
+    CONTINUE_PR: PR_NUMBER, PR_URL, SUMMARY: summary, HANDOFF_DIR: handoff }, repoRoot);
+  const gateFile = join(handoff, "jobs", "2960", "body_gate.json");
+  return { gh, log, gate: existsSync(gateFile) ? JSON.parse(readFileSync(gateFile, "utf8")) : null };
+}
+
+test("(8) 関所を配線した Engine は、未完了の続きが仕上がった回に関所で外れても、仕上げ（未完了の印・Closes・題・ドラフト）は済ませる", { skip }, () => {
+  const old = engineIncompleteBody();
+  assert.match(old, /^\*\*未完了\*\*:/m);
+  assert.match(old, new RegExp(`^Refs #${ISSUE}$`, "m"));
+  const { gh, gate: g } = runFinished(old, continuationSummary("incomplete", 0));
+  assert.equal(g?.rc, 1, "続きのジョブの報告が関所で外れていない（この場合を確かめられない）");
+  assert.deepEqual(g.finished, { applied: true, title: `${JOB.TITLE} (#${ISSUE})`, issue_number: ISSUE, remove_incomplete_mark: true, refs_to_closes: true, mark_ready: true });
+  const body = gh.body();
+  assert.doesNotMatch(body, /^\*\*未完了\*\*:/m, "未完了の印が残っている");
+  assert.match(body, new RegExp(`^Closes #${ISSUE}$`, "m"), "Refs を Closes に直していない");
+  assert.ok(!body.includes(g.pending_entry.trim()), "外れた報告を書いた");
+  assert.deepEqual(checkBody(body), []);
+  assert.equal(gh.title(), `${JOB.TITLE} (#${ISSUE})`);
+  assert.ok(gh.calls().includes("pr ready"), "ドラフトを外していない");
+  const out = bodyGate(g);
+  assert.deepEqual(out.jobs, [{ kind: "body_fix" }], "書かなかった報告を body_fix に回していない");
+  assert.deepEqual(out.stoppages, [], "仕上げは済んでいるのに人に回した");
+});
+
+test("(9) 仕上がった回で、報告を足さない本文も関所で外れたら、仕上げも書かずに finished.applied を false で残し、dispatcher が人に回す", { skip }, () => {
+  const old = `${engineIncompleteBody()}\n\n## 概要\n\n前から重なっていた見出し\n`;
+  assert.ok(checkBody(old).length > 0);
+  const { gh, gate: g } = runFinished(old, "仕上げた。");
+  assert.equal(g?.rc, 1);
+  assert.equal(g.finished.applied, false);
+  assert.equal(gh.body(), old, "外れた本文を書いた");
+  assert.ok(!gh.calls().includes("pr ready") && !gh.calls().includes("pr edit"), "関所で外れたのに PR を書き換えた");
+  const out = bodyGate(g);
+  assert.deepEqual(out.jobs, [{ kind: "body_fix" }]);
+  assert.deepEqual(out.stoppages, [{ key: `body_gate_finish:${PR_URL}`, category: "human" }], "書けなかった仕上げを人に回していない");
+  const r = bodyGate({ ...g, rc: 3, body_fix: null });
+  assert.deepEqual(r.stoppages.map((x) => x.key), [`body_gate_finish:${PR_URL}`, `body_gate:${PR_URL}`]);
 });
