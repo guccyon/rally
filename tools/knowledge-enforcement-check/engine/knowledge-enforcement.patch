@@ -103,7 +103,7 @@ index 3af45dc..873810c 100644
      levels: [context, checklist, deterministic]
      solution_kinds: [lint, test, type, schema, ci_check, config, overlay_rule]
      note: "決定論で担保しても知見は消さず、どの解決策で担保したかを solutions に残す（Issue・PR・時期・議決）"
-+    # 解決策の各項目の真偽（議決 D-0015・D-0016・D-0017）。書いていなければ false として数える。wired でないのに verified にはできない
++    # 解決策の各項目の真偽（議決 D-0015・D-0016・D-0017・D-0021）。書いていなければ false として数える。wired でないのに verified にはできない
 +    solution_flags:
 +      wired: "CI（.github/workflows/）や Engine の呼び出しから実際に走るか。ひな形を置いただけ、テストを書いただけは false"
 +      verified: "本物の記録（実際の PR やイベント列）で、外れたときに落ちる・正しいときに通ることを確かめたか"

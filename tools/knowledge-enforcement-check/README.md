@@ -22,7 +22,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 | `wired_by` | `{workflow, job, runs}` の列 | `wired: true` のときに必須。`workflow` は `.github/workflows/` の直下のファイル、`job` はその `jobs` の id、`runs` は呼ぶ検査の道（リポジトリの根から。例: `tools/sendback-check/order.mjs`）。`wired` が `true` でなければ見ない（議決 `D-0021`、Issue #986） |
 | `verified` | `true` / `false` | 本物の記録（実際の PR やイベント列）で、外れたときに落ちる・正しいときに通ることを確かめたか。写しや作った入力だけで確かめたものは `false` |
 
-書いていない項目は落とさず `false`（未記入）として数え、表示も `未配線` 側に倒す（`K-0002` の `config` のように実際は効いているかもしれない解決策も、書くまでは配線済みと出さない）。未記入の件数は出力の「未記入」に別に出すので、書いていないのか `false` と書いたのかは見分けられる。項目を書くのは足したり直したりした知見から順に（2026-11-05 の時点で書いたのは `K-0004` だけ。`K-0001`・`K-0002`・`K-0009` は次にその知見を直す変更セットで書く）。
+書いていない項目は落とさず `false`（未記入）として数え、表示も `未配線` 側に倒す（`K-0002` の `config` のように実際は効いているかもしれない解決策も、書くまでは配線済みと出さない）。未記入の件数は出力の「未記入」に別に出すので、書いていないのか `false` と書いたのかは見分けられる。項目を書くのは足したり直したりした知見から順に（2026-11-07 の時点ですべての解決策に書いたのは `K-0001`・`K-0004`・`K-0010`。`K-0002`・`K-0006`・`K-0009` の未記入の解決策は次にその知見を直す変更セットで書く）。
 
 ## 落とすもの
 
@@ -57,7 +57,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 
 ## Engine に移す差分
 
-Engine（別のリポジトリ）に入れる変更を `engine/knowledge-enforcement.patch` に置いた（議決 `D-0016`・`D-0017`、Issue #965・#968。同じ案を 2 つの Issue で作ったので差分は 1 本にまとめた）。ワーカーは Engine を変えられないので、差分として置き、建設者が Engine に当てる。
+Engine（別のリポジトリ）に入れる変更を `engine/knowledge-enforcement.patch` に置いた（議決 `D-0016`・`D-0017`、Issue #965・#968。同じ案を 2 つの Issue で作ったので差分は 1 本にまとめた）。議決 `D-0021` の schema の案（Issue #987）も同じ案なので、新しい差分は作らずこの差分で満たす。ワーカーは Engine を変えられないので、差分として置き、建設者が Engine に当てる。
 
 - `definitions/knowledge.yaml` の `knowledge.enforcement` に `solution_flags`（`wired`・`verified`）と `index_labels`（上の表示の 3 つ）を足す
 - `core-gates/knowledge_check.py` に `enforcement_label()`（`check.py` の `label()` と同じ線）を足し、`index_md()` の担保の列をその値にする。`check_item()` で、`wired`・`verified` が真偽でないときと、`wired` でないのに `verified` が `true` のときに落とす
