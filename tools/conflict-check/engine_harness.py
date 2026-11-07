@@ -11,6 +11,8 @@ test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく�
 - worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブでエージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
 - watch（見張り）: watch.py の apply を、orchestrator/dispatcher/stoppage.py の本物の open_stoppage に渡して動かす（議決 D-0030・Issue #1034）。
   イベント列から開いた停止と、同じイベント列でもう一度回したときに開き直したか（同じ key は開き直さない）を返す
+- finished（記録の欄）: orchestrator/dispatcher/dispatcher.py が、ワーカーを動かし終えたジョブに出す job.finished（cost_usd を持つもの）の
+  payload の欄を構文木から読んで返す（動かさない。議決 D-0030・Issue #1035）。test_events.py が、Engine が agent_resumed と解き方の tier を出すかを見る
 
 supervisor.py は読み込むと DB と GitHub に繋ぐので、使う関数だけを構文木から取り出して、偽の cursor と停止・GitHub の差し替えを渡して動かす。
 entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは一時ファイルの置き場（/work/cl.* を一時ディレクトリに）だけ。
@@ -19,6 +21,7 @@ entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは
   python3 engine_harness.py worker <Engine のチェックアウト> [--changelog direct|compiled] <衝突させるファイル>...
   python3 engine_harness.py resume <Engine のチェックアウト>
   python3 engine_harness.py watch <Engine のチェックアウト> --events <イベントの JSON か JSONL>
+  python3 engine_harness.py finished <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
 """
 from __future__ import annotations
@@ -40,6 +43,7 @@ import watch as watch_  # noqa: E402
 SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
 CONTINUATION = "orchestrator/dispatcher/continuation.py"
 STOPPAGE = "orchestrator/dispatcher/stoppage.py"
+DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
 ENTRYPOINT = "orchestrator/worker/entrypoint.sh"
 SUPERVISOR_FUNCTIONS = ["conflict_step", "ci_failure_step"]
 CONTINUATION_FUNCTIONS = ["enqueue", "attempts", "pending"]
@@ -273,6 +277,23 @@ def watch(engine: Path, events_path: Path) -> dict:
                          for e in cur.events if e["name"] == "stoppage.opened"]}
 
 
+# ------------------------------------------------------------------ finished
+def finished(engine: Path) -> dict:
+    """dispatcher.py の record_event(cur, "job.finished", corr, job_id, {...}) のうち、ワーカーを動かし終えたもの（payload に cost_usd を持つ）の
+    payload の欄を返す。payload が辞書の式でない（変数や関数で組む）か、そういう呼び出しがなければ読めないので落とす"""
+    path = _need(engine, DISPATCHER)
+    calls = [n for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+             if isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", None)) == "record_event"
+             and len(n.args) >= 2 and isinstance(n.args[1], ast.Constant) and n.args[1].value == "job.finished"]
+    if any(len(c.args) < 5 or not isinstance(c.args[4], ast.Dict) for c in calls):
+        raise SystemExit(f"Engine の {DISPATCHER} の job.finished の payload が辞書の式でない（出し方が変わったら engine_harness.py を合わせる）")
+    keys = [[k.value for k in c.args[4].keys if isinstance(k, ast.Constant)] for c in calls]
+    ran = [k for k in keys if "cost_usd" in k]
+    if not ran:
+        raise SystemExit(f"Engine の {DISPATCHER} に、cost_usd を持つ job.finished がない（出し方が変わったら engine_harness.py を合わせる）")
+    return {"fields": sorted({f for k in ran for f in k})}
+
+
 # ------------------------------------------------------------------ worker
 def _git(cwd: Path, *args: str, check=True) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=check, capture_output=True, text=True).stdout
@@ -391,6 +412,8 @@ def main(argv: list[str]):
         out = resume(Path(argv[1]))
     elif len(argv) == 4 and argv[0] == "watch" and argv[2] == "--events":
         out = watch(Path(argv[1]), Path(argv[3]))
+    elif len(argv) == 2 and argv[0] == "finished":
+        out = finished(Path(argv[1]))
     else:
         raise SystemExit(__doc__)
     json.dump(out, sys.stdout, ensure_ascii=False)

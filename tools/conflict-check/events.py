@@ -6,6 +6,10 @@
   resumed_after_limit   resume_session_until_attempt より後の回（今の線では 2 回目以降）で agent_resumed=true
   agent_for_mechanical  衝突したファイルが mechanical.paths（CHANGELOG.md と changelog.d/）だけなのに、エージェントの tier（tier-large など）で解いた
 
+記録がない項目（agent_resumed・tier・衝突したファイル）は照らさずに件数を出す。これは Engine が今の形（job.finished に agent_resumed と
+解き方の tier（agent_tier）を出さない版）のときだけの扱いで、それらを出す版の Engine で agent_resumed か tier の照らせない件数が 1 以上なら
+test_events.py の EngineFinishedTest が落とす（議決 D-0030・Issue #1035）
+
   python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
   終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった
 """

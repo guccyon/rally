@@ -5,7 +5,7 @@
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
-python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテストと、Engine の本物の処理のテストと、CI のひな形の形のテスト
+python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査（Engine の job.finished の欄を含む）・見張りのテストと、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
 ```
 
@@ -65,6 +65,7 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 | `agent_for_mechanical` | 衝突したファイルが `mechanical.paths`（`CHANGELOG.md` と `changelog.d/`）だけなのに、エージェントの tier（tier-large など）で解いた |
 
 - 記録がなく分からない項目（agent_resumed・tier・衝突したファイル）はその rule を照らさず、PR ごとに件数を出す（`--json` では `unknown`）。`pr.conflicted` は衝突した head の数として出す
+  - これは Engine が今の形（`job.finished` に `agent_resumed` と解き方の tier（`agent_tier`）を出さない版）のときだけの扱い（議決 `D-0030`、Issue #1035。下の「Engine の job.finished の欄のテスト」）
 - 終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった（JSON・JSONL として読めない、`name` のない件がある、`payload` がオブジェクトでない）
 - 標準出力: 外れた回ごとに `<PR の URL> attempt=<回> job=<job_id> <rule>: 理由` と、PR ごとと全体の件数の行。`--json` は `{ "ok", "prs": [{ "pr_url", "attempts", "conflicted_heads", "unknown", "errors" }] }`
 - `test_events.py` が、`fixtures/c0005-pr659-events.json`（C-0005 の流れ）で 3 つの rule がすべて落ちること（`over_limit` 17 件・`resumed_after_limit` 19 件・`agent_for_mechanical` 19 件）と、線どおりの積み方が通ることを確かめる
@@ -83,11 +84,21 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 
 2026-11-07 の Engine（`main` の `03974c0`）の記録との違い:
 
-- agent_resumed は制御プレーンの events に載っていない（ワーカーのログの `[worker] agent resumed=` の行と、チケットのボリュームの `ticket.json` だけ）。載るまでは `resumed_after_limit` は照らせず、件数に出る。`job.finished` に `agent_resumed` を足すのは建設者
-- tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録に足すのも建設者
+- agent_resumed は制御プレーンの events に載っていない（ワーカーのログの `[worker] agent resumed=` の行と、チケットのボリュームの `ticket.json` だけ）。載るまでは `resumed_after_limit` は照らせず、件数に出る。`job.finished` に `agent_resumed` を足すのは建設者。足した版からは照らせない件数が 1 以上で `EngineFinishedTest` が落ちる
+- tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録（`job.finished`）に足すのも建設者。足した版からは照らせない件数が 1 以上で `EngineFinishedTest` が落ちる
 - この検査を supervisor の周期ごとに走らせる呼び出しは `watch.py`（下の「supervisor の周期ごとの見張り」）、PR ごとのテストの CI はひな形 `ci/conflict-check.yml` に置いた（議決 `D-0030`、Issue #1034）。どちらもまだ配線していない（Engine の supervisor と `.github/workflows/` は建設者）
 
 `over_limit` と `agent_for_mechanical` は、上限に数えるのをエージェントの回だけにした線（Issue #1010）にまだ合わせていない。`over_limit` は機械的に解いた回も含めて `continue.enqueued` の順番で数え、`agent_for_mechanical` は K-0002 の検査に通らずにエージェントで解いた回も外れとして出す。合わせるのは別のチケット。
+
+### Engine の job.finished の欄のテスト（`test_events.py` の `EngineFinishedTest`）
+
+「記録がない項目は照らさずに件数を出す」を、Engine が今の形のときだけに狭める（議決 `D-0030`（Issue #1035 の起票時の番号は `D-0029`。PR #1033）、Issue #1035。K-0004 の `engine.test.mjs` の todo と同じ形）。
+
+- `engine_harness.py finished <Engine のチェックアウト>` が、Engine の `orchestrator/dispatcher/dispatcher.py` のうちワーカーを動かし終えたジョブに出す `job.finished`（payload に `cost_usd` を持つ `record_event`）の欄を構文木から読む（動かさない）。payload が辞書の式でないか、そういう呼び出しがなければ落ちる
+- テストのイベント列（エージェントで解いた回・機械的に解いた回・引き継がない回で、記録がそろったもの）の `job.finished` を Engine が出す欄だけにし、`job.started` の `model_tier`（積んだ段。解き方の tier ではない）も外して `events.py` で組み、`agent_resumed` と `tier` の照らせない件数が 0 かを見る
+- Engine が今の形（`agent_resumed` も `agent_tier` も出さない。`legacy_finished`）のときだけ `todo:` の理由で飛ばす。どちらかを出す版からは必須で、片方だけを出す版はもう片方が照らせずに落ちる。欄の名前を変えて出した版も今の形と見るので、その時は `FINISHED_FIELDS` を合わせる
+- Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ（`ENGINE_DIR` を渡したときと `CI=true` では飛ばさずに落とす）。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
+- 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す
 
 ## supervisor の周期ごとの見張り（`watch.py`）
 
