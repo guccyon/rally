@@ -23,4 +23,4 @@ related: [K-0004, K-0006]
 invalidate_when:
   - "supervisor.merged が、採用した PR 本文の指摘を直す body_fix の終わりと、直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
   - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった"
-decided_by: committee:D-0032
+decided_by: committee:D-0033

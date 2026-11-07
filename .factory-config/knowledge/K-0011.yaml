@@ -23,4 +23,4 @@ related: [K-0005]
 invalidate_when:
   - "judge のジョブの入力に、指摘が引く rubric_id の本文が添えられるようになった"
   - "rubric の本文を入力に持つ判定役でも、rubric にだけある要求を同じように決まりの外として退けた（原因は rubric の本文が渡らないことではなく、K-0005 の定義の分かれだけだった）"
-decided_by: committee:D-0032
+decided_by: committee:D-0033
