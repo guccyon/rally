@@ -3055,12 +3055,24 @@ paths:
       operationId: listMessageThreads
       summary: スレッドの一覧
       description: |
-        認証したアカウントが当事者（生徒・担当コーチ）のチャットのスレッドを、最後の出来事（最後のメッセージの送信、
-        なければスレッドを開いた時刻）の新しい順に返す。同じ時刻はスレッド ID の順。当事者のスレッドがなければ空。
+        認証したアカウントが当事者（生徒・担当コーチ）のチャットのスレッドを返す。当事者のスレッドがなければ空。
         スレッドは予約が確定したときに、その生徒とコーチの組に 1 つ開く（境界間イベント `BookingConfirmed` を
         messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
         `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
-        student-app の `listMessageThreads`（生徒）と同じ操作・同じ形で、admin-web ではコーチが呼ぶ。
+        student-app の `listMessageThreads`（生徒）と同じ操作で、admin-web ではコーチが呼ぶ。形は student-app と同じに、
+        コーチがまだ返事をしていないか（`unanswered`）を足したもの。
+
+        - 未返信 `unanswered`: 最後の発言が生徒のもの。発言は当事者がチャットとして送ったメッセージ（`kind` が `text` か
+          `stamp`）だけで、添削依頼・添削の返却（`video_review_request` / `video_review_returned`）と送り手がシステムの
+          メッセージは数えない（`listUnansweredMessageThreads` と同じ数え方。ただし経過の時間は問わない）。生徒が送ると真になり、
+          コーチが発言すると偽になる。既読かどうかは問わない（既読にしても未返信のまま）。発言がまだなければ偽
+        - 並べ方:
+          1. 未返信のスレッドを上に、生徒の最後の発言の送信時刻の新しい順
+          2. その次に、未返信でないスレッドを最後の出来事（最後のメッセージの送信、なければスレッドを開いた時刻）の新しい順
+          3. 同じ時刻はスレッド ID の順
+          未返信のスレッドがなければ、最後の出来事の新しい順だけになる
+        - 呼んだコーチが担当するスレッドだけを返す（他のコーチのスレッドは返らない）
+        - 照会だけで、何も保存しない（既読にしない・通知を送らない）
       tags: [messaging]
       x-context: messaging
       responses:
@@ -5719,8 +5731,8 @@ components:
 
     MessageThread:
       type: object
-      description: glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマと同じ形
-      required: [thread_id, student_id, coach_id, opened_at, unread_count]
+      description: glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマに、未返信（`unanswered`）を足した形
+      required: [thread_id, student_id, coach_id, opened_at, unread_count, unanswered]
       properties:
         thread_id:
           type: string
@@ -5744,6 +5756,9 @@ components:
           type: integer
           minimum: 0
           description: 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数
+        unanswered:
+          type: boolean
+          description: コーチがまだ返事をしていない（最後の発言が生徒のもの）か。数え方は `listMessageThreads` の説明
 
     MessageThreadList:
       type: object
@@ -5751,7 +5766,7 @@ components:
       properties:
         threads:
           type: array
-          description: 最後の出来事の新しい順
+          description: 未返信（`unanswered`）を上に生徒の最後の発言の新しい順、その次に最後の出来事の新しい順（`listMessageThreads` の説明）
           items:
             $ref: "#/components/schemas/MessageThread"
 

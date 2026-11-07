@@ -761,6 +761,70 @@ async fn students_without_monthly_cannot_send_but_their_coach_can() {
 }
 
 #[tokio::test]
+async fn the_coach_sees_unanswered_threads_first_until_replying() {
+    let app = app();
+    let thread = thread_path(THREAD);
+    let trial = thread_path(TRIAL_THREAD);
+    let flags = |body: &Value| -> Vec<(Value, Value)> {
+        body["threads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| (t["thread_id"].clone(), t["unanswered"].clone()))
+            .collect()
+    };
+
+    // 発言がまだなければ未返信ではなく、並びは最後の出来事の順（同じ時刻は ID の順）のまま
+    let (status, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        flags(&body),
+        [(json!(thread), json!(false)), (json!(trial), json!(false))]
+    );
+
+    // 生徒が送ると未返信になり、あとでコーチが別のスレッドに送っても上に並ぶ
+    app.sent(STUDENT, THREAD, "サーブのトスが安定しません")
+        .await;
+    app.clock.set(minutes(2));
+    app.sent(COACH, TRIAL_THREAD, "体験のご予約ありがとうございます")
+        .await;
+    let (_, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(
+        flags(&body),
+        [(json!(thread), json!(true)), (json!(trial), json!(false))]
+    );
+
+    // 既読にしても未返信のまま
+    app.clock.set(minutes(3));
+    let (status, read) = app.mark_read(Some(COACH), &thread).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["unanswered"], true);
+
+    // コーチが返すと未返信でなくなる
+    app.clock.set(minutes(4));
+    app.sent(COACH, THREAD, "トスを上げる手を最後まで伸ばしましょう")
+        .await;
+    let (_, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(
+        flags(&body),
+        [(json!(thread), json!(false)), (json!(trial), json!(false))]
+    );
+
+    // 他のコーチのスレッドは返らない。添削依頼だけのスレッドは未返信ではない
+    let (_, body) = app.list_threads(Some(REVIEW_COACH)).await;
+    assert_eq!(
+        flags(&body),
+        [(json!(thread_path(REVIEW_THREAD)), json!(false))]
+    );
+    let (_, body) = app.list_threads(Some(OTHER_COACH)).await;
+    assert_eq!(body["threads"], json!([]));
+
+    // 生徒の一覧（student-app の契約）には載せない
+    let (_, body) = app.list_threads(Some(STUDENT)).await;
+    assert!(body["threads"][0].get("unanswered").is_none(), "{body}");
+}
+
+#[tokio::test]
 async fn others_see_no_thread() {
     let app = app();
     let thread = thread_path(THREAD);

@@ -80,6 +80,7 @@ function thread(threadId: string, studentId: string, unread: number): Schemas["M
     opened_at: "2026-10-01T01:00:00Z",
     last_message: null,
     unread_count: unread,
+    unanswered: false,
   };
 }
 
