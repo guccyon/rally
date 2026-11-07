@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0031
+pr: https://github.com/guccyon/rally/pull/1045
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0020 の ci_check の案（Engine
+    の既定のブランチの先頭でも engine.test.mjs を定期に走らせて知らせる）を enforcement.solutions に 1 件足しただけなので、D-0004
+    から D-0026 までの議決と矛盾しません。
+  - '足した solution は kind・what・issue・at・decided_by・wired・verified の形が既存の solutions
+    と同じで、decided_by を提案元の committee:D-0020 にし、wired: false・verified: false にしているのも
+    README の決まりと合っています。'
+  - 'D-0020 の案は sendback-engine.yml の engine-test を定期に走らせる形でしたが、issues: write の権限を
+    PR のコードに渡さず PR を止めないために sendback-engine-head.yml という別のワークフローにした理由が what に書いてあるので、案の趣旨から外れていません。'
+  - issue 948 の solution（ENGINE_REF の固定の版で PR ごとに走らせる）や D-0024 の git apply --check
+    の案とは、先頭の版を定期に見て知らせるという別の段なので重複ではありません。
+  - 手元の Engine の先頭（1d811cd）で judgment.decided の問い合わせが増えて (1) から (c) が落ちたという記録は、README
+    の「制御プレーンから出すときの例」と check.mjs が前提にする judgment.judged の形と今後ずれるおそれがあるので、ENGINE_REF
+    を上げる変更セットでそれらと K-0004 の what をそろえてください。
+  - 効き目はまだ確かめておらず、先頭で落ちた記録も ENGINE_REF には入っていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の solution は issue 977 と committee:D-0020 を指していて、D-0020 の 1 つ目の
+    enforcement の案（Engine の既定のブランチの先頭でも engine.test.mjs を定期に走らせ、::error と Issue #948
+    への記録で知らせる）とそのまま対応しているので、一次記録に辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - '手元の Engine の先頭（1d811cd）で (1) から (c) が落ちたのは、偽の cursor が judgment.decided の問い合わせを知らないためで、Engine
+    の判定が変わったとはまだ示せていないので、次に直すときは「判定の変化」ではなく「ハーネスが合わなくなった変化」と書き分け、その実行の記録を Issue #948
+    か #977 に残してください。'
+  - '写しが .github/workflows/ になく、定期の実行も効き目もまだ確かめていない（wired: false・verified: false）と自分で書いているので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはパス・ジョブ名・環境変数・コミットの短い SHA・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0020 の ci_check の案（Engine
+    の既定のブランチの先頭で engine.test.mjs を定期に走らせて知らせる）を enforcement.solutions に 1 件記録しただけなので、採ってよいです。
+  - 'D-0020 で挙げた「ENGINE_REF を固定したので Engine 側の判定の変化に気づけない」穴に、毎日の決定論の検査と Issue #948
+    への重ならない記録で線を引いており、ci.test.mjs が偽の gh で記録する・重ねない・失敗したら落ちることを確かめているので、繰り返しと確かさの点で筋がよいです。'
+  - 手元の先頭（1d811cd）で (1) から (c) が落ちた原因は、偽の cursor が judgment.decided の問い合わせを知らないことで、判定そのものの変化ではなく
+    engine_harness.py の差し替えのずれの可能性が高いので、engine_head_failed のままでは「判定が変わった」と「ハーネスが古い」を見分けられず、外したときに誤った警報で
+    ENGINE_REF の判断を誤らせます。
+  - 'sendback-engine-head.yml はまだ .github/workflows/ に写されておらず定期に走っていないので、wired: false・verified:
+    false の記録は正しく、担保はまだ効いていません。'
+  - 効き目を本物の定期の実行で確かめた記録がないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0020 の ci_check の案（Engine
+    の既定のブランチの先頭でも engine.test.mjs を定期に走らせる）の記録を enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 手元の先頭（1d811cd）で落ちた理由は偽の cursor が judgment.decided の問い合わせを知らないことで、Engine の判定そのものの変化ではないので、what
+    の「この判定の変化」という書き方は言い過ぎで、次に K-0004 を直す変更セットで「テストの足場のずれ」と書き分けてください。
+  - engine_head_failed はテストの足場が古いだけで落ちたときと判定が本当に変わったときを見分けないので、写した直後から誤報が続いて知らせが読まれなくなるという反例があり、先に
+    engine.test.mjs の偽の cursor を先頭に合わせる必要があります。
+  - 'Issue #948 は D-0014・D-0020 で「PR #395 と同じ入力で CI が通った記録」を残す先とされているので、先頭の失敗の記録まで同じ
+    Issue に積むと効き目の記録が埋もれるおそれがあり、別の Issue に分けることを勧めます。'
+  - 'engine-head は PR では走らないので、このワークフロー自体の変更は ci.test.mjs の偽の gh でしか確かめられず、.github/workflows/
+    に写すまで wired: false・verified: false のままと書いてあるとおり、担保はまだ効いていません。'
+  - 効き目を確かめた記録がなく K-0004 の solutions は 16 件まで積み重なっているので、confidence は hypothesis のままにし、配線が入ったら効いたものと効いていないものを分けて整理してください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/sendback-check/engine_harness.py の偽の cursor が知らない問い合わせ（今の judgment.decided
+    など）を受けたら harness_unknown_query という別の印で落とすようにし、engine-head がそれを engine_head_failed
+    と分けて ::error と Issue #948 の記録に出すことを ci.test.mjs で確かめ、ハーネスのずれと Engine の判定の変化を見分けられるようにする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/sendback-check/ci/sendback-engine-head.yml を .github/workflows/
+    に写して schedule で走らせ、先頭の Engine での実行の記録（通った・落ちた）が Issue #948 に 1 件残ってから、この solution（issue
+    977）の wired と verified を true にする。'

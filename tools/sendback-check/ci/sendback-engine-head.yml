@@ -1,0 +1,87 @@
+# 差し戻し・続きのジョブの判定のテスト（engine.test.mjs）を、Engine の既定のブランチの先頭でも定期に走らせる（知見 K-0004 の担保。議決 D-0020、Issue #977）。決定論（LLM を使わない）。
+# sendback-engine.yml の engine-test は Engine を ENGINE_REF の固定の版で取るので、Engine の判定が変わっても ENGINE_REF を上げるまで誰も気づかない。
+# この engine-head は同じテストを Engine の既定のブランチの先頭で走らせ、落ちたら ::error を出し、Issue #948 に先頭の版と落ちたテストを記録する。
+# 同じ先頭の版の記録が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかったときは毎回記録する。
+# PR では走らせない（先頭の Engine の変化で PR を止めない。必須のチェックにもしない）。PR のコードを issues: write の権限で動かさないため、
+# sendback-engine.yml とは別のワークフローにした。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine-head.yml にそのまま写す。
+# ci.test.mjs（sendback-engine.yml の wiring-order で走る）が、このファイルの形・記録の手順の振る舞い・写しとのずれを見る。
+name: sendback-engine-head
+
+on:
+  schedule:
+    - cron: "30 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sendback-engine-head
+  cancel-in-progress: false
+
+env:
+  ISSUE: "948"
+
+jobs:
+  engine-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine を取る（既定のブランチの先頭）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          path: .engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine の先頭で本物の判定のテスト（K-0004）
+        working-directory: tools/sendback-check
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          head_sha=$(git -C "$ENGINE_DIR" rev-parse HEAD)
+          echo "ENGINE_HEAD=${head_sha}" >> "$GITHUB_ENV"
+          rc=0
+          node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=engine-head.tap engine.test.mjs \
+            > engine-head.txt 2>&1 || rc=$?
+          { echo "## sendback-engine-head（Engine の先頭 ${head_sha}）"; echo; echo '```'; cat engine-head.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat engine-head.txt
+          exit $rc
+      - name: 先頭で落ちたことを知らせて Issue に記録する（K-0004）
+        if: failure()
+        working-directory: tools/sendback-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head_sha="${ENGINE_HEAD:-}"
+          pinned=ci/sendback-engine.yml
+          if [ -f ../../.github/workflows/sendback-engine.yml ]; then pinned=../../.github/workflows/sendback-engine.yml; fi
+          engine_ref=$(sed -n 's/^ *ENGINE_REF: *\([0-9a-f]*\) *$/\1/p' "$pinned" | head -n 1)
+          echo "::error title=sendback-engine-head engine_head_failed::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine.test.mjs が落ちた。ENGINE_REF（${engine_ref}）を上げる前に判定の変化を確かめる（Issue #${ISSUE} に記録する）"
+          marker="<!-- sendback-engine-head: ${head_sha:-unknown} -->"
+          recorded=""
+          if [ -n "$head_sha" ]; then recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments" --paginate --jq '.[].body' || true); fi
+          if [ -n "$head_sha" ] && grep -qF -- "$marker" <<< "$recorded"; then
+            echo "Issue #${ISSUE} に同じ先頭（${head_sha}）の記録があるので足さない"
+            exit 0
+          fi
+          {
+            echo "$marker"
+            echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が落ちた（知見 K-0004、議決 D-0020）。"
+            echo "ENGINE_REF（\`${engine_ref}\`）を上げる前に、判定の変化を確かめる。"
+            echo
+            echo "- 実行: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '落ちたテスト:'
+            echo
+            echo '```'
+            if [ -f engine-head.tap ]; then grep -E '^ *not ok ' engine-head.tap | head -n 20; fi
+            echo '```'
+          } > engine-head-comment.md
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file engine-head-comment.md
