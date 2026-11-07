@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0036
+pr: https://github.com/guccyon/rally/pull/1075
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0024 までの議決や README の決まりと矛盾しません。
+  - 足した ci_check は D-0024 の 2 つめの案（knowledge-enforcement.patch が当たるかを git apply --check
+    で確かめる）を満たす記録で、issue 968 の差分そのものや issue 965 の test_engine.py（差分を当てた写しでテストが通るか）とは担う範囲が分かれているので、重複ではありません。
+  - D-0024 の案は ENGINE_REF の版と Engine の既定のブランチの先頭の両方を、定期と PR ごとに見るものですが、what の末尾で先頭と
+    schedule の分は入れていないと書いているので、議決の案を全部満たしたように言い過ぎてはいません。
+  - 同じ見張り（test_engine_patch.py が当たらずまだ入っていない差分を patch_stale で落とす）は D-0025 の enforcement
+    の 1 つめの案と同じなので、次に K-0004 を直す変更セットで what か decided_by に D-0025 も添えてください（D-0025
+    の案にある engine/knowledge_check.patch という名前は、実際の knowledge-enforcement.patch のことだと読めます）。
+  - 'kind・what・issue・at・decided_by・wired・verified の形はほかの solutions と同じで、.github/workflows/
+    への写しは建設者だという記述と wired: false・verified: false も合っているので、confidence は hypothesis
+    のままが妥当です。'
+  - issue 962 から後の solutions は、supervisor の差し戻しという K-0004 の主張ではなく、知見の置き場の担保の表示と Engine
+    に当てる差分の見張りを担っているので、建設者の配線が入ったときに、wired・verified の担保を扱う別の知見に移すか整理するかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 1014 と committee:D-0024 を指していて、D-0024 の 2 つめの案（knowledge-enforcement.patch
+    が ENGINE_REF の版に git apply --check で当たるかを確かめる）と対応しているので、一次記録に辿れます。
+  - patch_stale で落とす形は D-0025 の 1 つめの案とほぼ同じ文なので、次に K-0004 を直す変更セットで what か decided_by
+    に D-0025 も添えてください。
+  - D-0024 の案のうち Engine の既定のブランチの先頭と定期（schedule）で確かめる分と issue 968 への知らせは入れていないと書いているので、案を全部満たしたと言い過ぎていません。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '確かめたのは手元の Engine だけで、.github/workflows/ への写しもまだなので、wired: false・verified: false
+    と confidence: hypothesis のままが妥当で、PR ごとに走って効き目を確かめるまでは上げないでください。'
+  - 差分に出てくるのは issue の番号・議決の id・ツールのパス・判定の名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0024 の 2 つ目の ci_check
+    の案のうち ENGINE_REF の版に engine/knowledge-enforcement.patch が git apply --check で当たるかを見る分を
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - git apply --check と --reverse --check で「当たる・もう入っている・どちらでもない」を分ける線は、毎回同じ答えが出て安く作れ、外すと建設者が当てるときまで気づけない痛さを先に止めるので、決定論の担保として筋がよいです。
+  - ただし D-0024 の案にあった Engine の既定のブランチの先頭と定期（schedule）で確かめて issue 968 に知らせる分は入っておらず、ENGINE_REF
+    が古いまま先頭だけが進むと、この検査は通り続けて差分が当たらなくなったことを見落とします。
+  - 「もう入っている」の判定に enforcement_label があるかを使うと、差分の一部だけが Engine に入った版でも通ってしまうので、--reverse
+    --check が通るときだけを入っていると数え、enforcement_label だけで通す場合は警告にするのが確かです。
+  - 'what に .github/workflows/ への写しは建設者で、まだ PR ごとには走っていないと書き、wired: false・verified:
+    false としているのは事実と合っており、効き目を確かめるまで confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0024 の ci_check の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'what に、ENGINE_REF の版だけを見ていて Engine の既定のブランチの先頭と定期（schedule）の確認は入れていないこと、.github/workflows/
+    への写しがまだで効き目を確かめていないことが書いてあり、wired: false・verified: false とも合っていて言い過ぎていません。'
+  - 反例として、Engine 側に enforcement_label という名前だけが別の中身で入っていると、差分が当たらないのに「もう入っている」として通るので、名前があるかではなく差分を逆に当てられるかや表示の一致で判定するよう建設者が確かめてください。
+  - 反例として、.github/workflows/knowledge-check.yml の写しがまだないあいだは ENGINE_REF を読む元がないか古いままになり得るので、そのとき検査が飛ばずに落ちるのか、ひな形の
+    ci/knowledge-enforcement.yml を読むのかを確かめてください。
+  - Engine の先頭が ENGINE_REF より先に進んで差分が当たらなくなる場合は今回の検査では見えないので、D-0024 の案の残り（先頭と定期で見て
+    issue 968 に知らせる）を次の変更セットで入れ、K-0004 に積み重なった担保の仕組みの解決策（12 件）は別の知見に分けるか整理することを勧めます。
+  - 効き目をまだ確かめていないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci/sendback-engine-head.yml と同じ形の別のワークフロー（PR では走らせず、1
+    日 1 回と手動）で、Engine を ref なしで既定のブランチの先頭から取り、test_engine_patch.py を ENGINE_REF の代わりに先頭の版へ向けて走らせ、patch_stale
+    なら ::error を出して issue 968 に先頭の版・その時の ENGINE_REF・実行の URL を記録する（同じ先頭の版の記録があれば足さない）。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: test_engine_patch.py の「もう入っている」の判定を git apply --reverse --check が通るときだけにし、enforcement_label
+    はあるが --reverse --check が通らない版（差分の一部だけが入った・入れたあと変わった）では patch_partially_applied
+    として落とすか ::warning を出す場合を、作った git の版のテストに足す。
