@@ -55,4 +55,20 @@ enforcement:
       decided_by: committee:D-0023
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0030（Issue #1034 の起票時の番号は D-0029。PR #1033）の ci_check の案を入れた。tools/conflict-check/watch.py が、supervisor の周期ごと
+        （または conflict の続きのジョブを積むたび）に制御プレーンのイベント列を events.py で照らし、over_limit・resumed_after_limit・agent_for_mechanical の
+        どれかが出た PR ごとに、Engine の stoppage.open_stoppage で衝突の停止（ci:<PR の URL>、category は ticket）を開いて人の判断待ちにする（同じ key は開き直さない）。
+        test_watch.py で C-0005 の流れ（fixtures/c0005-pr659-events.json）で PR #659 に停止を 1 つ開き、線どおりの積み方と照らせないだけの PR には開かないことを、
+        test_engine.py の (4) で Engine の本物の open_stoppage に渡して開き、次の周期で開き直さないことを確かめた。あわせて PR ごとの CI のひな形
+        tools/conflict-check/ci/conflict-check.yml を置き、ENGINE_REF（2490db6）の Engine で test_events.py・test_engine.py・test_watch.py・test_policy.py を
+        CI=true と ENGINE_DIR を渡して走らせる（fixtures や Engine の取り出しに失敗したら飛ばさずに落とす）。ひな形の形は test_ci.py が見る。
+        supervisor の merge_step から watch を呼ぶ配線（ci_failure_step が同じ ci: の停止を閉じる・conflict_step が ci: の停止を見ずに積むことの扱いも含む）と、
+        ひな形を .github/workflows/conflict-check.yml に写して必須のチェックにするのは建設者なので、本物のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 1034
+      at: 2026-11-07
+      decided_by: committee:D-0030
+      wired: false
+      verified: false
 decided_by: committee:D-0013
