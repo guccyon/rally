@@ -1,7 +1,9 @@
 # 差し戻し・続きのジョブの判定のテスト（engine.test.mjs）を、Engine の既定のブランチの先頭でも定期に走らせる（知見 K-0004 の担保。議決 D-0020、Issue #977）。決定論（LLM を使わない）。
 # sendback-engine.yml の engine-test は Engine を ENGINE_REF の固定の版で取るので、Engine の判定が変わっても ENGINE_REF を上げるまで誰も気づかない。
 # この engine-head は同じテストを Engine の既定のブランチの先頭で走らせ、落ちたら ::error を出し、Issue #948 に先頭の版と落ちたテストを記録する。
-# 同じ先頭の版の記録が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかったときは毎回記録する。
+# 通ったときも Issue #948 に engine_head_passed として記録する（先頭の Engine での実行の記録が 1 件残ってから、Issue #977 の解決策の
+# wired と verified を true にするため。記録があるかは head-record.mjs で照らす。議決 D-0031、Issue #1047）。
+# 同じ先頭の版の同じ種類の記録が #948 にすでにあれば足さない（毎日同じ記録を積まない）。先頭の版が取れなかったときは毎回記録する。
 # engine_harness.py の偽の cursor が知らない問い合わせ（harness_unknown_query の印）で落ちたときは、Engine の判定の変化（engine_head_failed）と
 # 分けて harness_unknown_query として知らせ、記録する（ハーネスのずれ。議決 D-0031、Issue #1046）。
 # PR では走らせない（先頭の Engine の変化で PR を止めない。必須のチェックにもしない）。PR のコードを issues: write の権限で動かさないため、
@@ -43,6 +45,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Engine の先頭で本物の判定のテスト（K-0004）
+        id: head-test
         working-directory: tools/sendback-check
         env:
           ENGINE_DIR: ${{ github.workspace }}/.engine
@@ -55,19 +58,24 @@ jobs:
           { echo "## sendback-engine-head（Engine の先頭 ${head_sha}）"; echo; echo '```'; cat engine-head.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cat engine-head.txt
           exit $rc
-      - name: 先頭で落ちたことを知らせて Issue に記録する（K-0004）
-        if: failure()
+      - name: 先頭での結果（通った・落ちた）を知らせて Issue に記録する（K-0004）
+        if: always()
         working-directory: tools/sendback-check
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_OUTCOME: ${{ steps.head-test.outcome }}
         run: |
           head_sha="${ENGINE_HEAD:-}"
+          outcome="${HEAD_OUTCOME:-failure}"   # テストの手順が通った（success）ときだけ通ったとして記録する
           pinned=ci/sendback-engine.yml
           if [ -f ../../.github/workflows/sendback-engine.yml ]; then pinned=../../.github/workflows/sendback-engine.yml; fi
           engine_ref=$(sed -n 's/^ *ENGINE_REF: *\([0-9a-f]*\) *$/\1/p' "$pinned" | head -n 1)
           unknown=""   # engine-head.txt には engine_harness.py の標準エラーも入る
           if [ -f engine-head.txt ]; then unknown=$(grep -oE 'harness_unknown_query: .*' engine-head.txt | sort -u | head -n 5 || true); fi
-          if [ -n "$unknown" ]; then
+          if [ "$outcome" = success ]; then
+            kind=engine_head_passed
+            echo "Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine.test.mjs が通った（ENGINE_REF は ${engine_ref}。Issue #${ISSUE} に記録する）"
+          elif [ -n "$unknown" ]; then
             kind=harness_unknown_query
             echo "::error title=sendback-engine-head harness_unknown_query::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で engine_harness.py の偽の cursor が知らない問い合わせを受けて engine.test.mjs が落ちた。Engine の判定の変化ではなくハーネスのずれなので、engine_harness.py を先頭に合わせてから判定を確かめる（ENGINE_REF は ${engine_ref}。Issue #${ISSUE} に記録する）"
           else
@@ -83,7 +91,10 @@ jobs:
           fi
           {
             echo "$marker"
-            if [ "$kind" = harness_unknown_query ]; then
+            if [ "$kind" = engine_head_passed ]; then
+              echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が通った（\`engine_head_passed\`。知見 K-0004、議決 D-0020・D-0031）。"
+              echo "ENGINE_REF は \`${engine_ref}\`。"
+            elif [ "$kind" = harness_unknown_query ]; then
               echo "Engine の既定のブランチの先頭（\`${head_sha:-版を取れなかった}\`）で \`tools/sendback-check/engine.test.mjs\` が落ちた（\`harness_unknown_query\`。知見 K-0004、議決 D-0020・D-0031）。"
               echo "\`engine_harness.py\` の偽の cursor が知らない問い合わせで、Engine の判定の変化ではなくハーネスのずれ。ハーネスを先頭に合わせてから判定を確かめる（ENGINE_REF は \`${engine_ref}\`）。"
               echo
@@ -98,11 +109,13 @@ jobs:
             fi
             echo
             echo "- 実行: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo
-            echo '落ちたテスト:'
-            echo
-            echo '```'
-            if [ -f engine-head.tap ]; then grep -E '^ *not ok ' engine-head.tap | head -n 20; fi
-            echo '```'
+            if [ "$kind" != engine_head_passed ]; then
+              echo
+              echo '落ちたテスト:'
+              echo
+              echo '```'
+              if [ -f engine-head.tap ]; then grep -E '^ *not ok ' engine-head.tap | head -n 20; fi
+              echo '```'
+            fi
           } > engine-head-comment.md
           gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file engine-head-comment.md

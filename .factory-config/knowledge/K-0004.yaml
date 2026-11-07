@@ -392,4 +392,21 @@ enforcement:
       decided_by: committee:D-0031
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0031 の ci_check の案（建設者が ci/sendback-engine-head.yml を .github/workflows/ に写して schedule で走らせ、先頭の Engine での
+        実行の記録（通った・落ちた）が Issue #948 に 1 件残ってから issue 977 の解決策の wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        engine-head は落ちたときだけ記録していたので、先頭で通り続ける限り記録が残らなかった（手元の Engine の先頭 b0a267d では engine.test.mjs が通る）。
+        ci/sendback-engine-head.yml の記録の手順を if: always() にし、テストの手順（id: head-test）の結果が success のときは ::error を出さずに
+        engine_head_passed の印で先頭の版・ENGINE_REF・実行の URL を Issue #948 に記録する（同じ先頭の版の同じ種類の記録があれば足さない。success でなければこれまでどおり落ちたときの記録）。
+        記録が残っているかは新しい tools/sendback-check/head-record.mjs が、gh api の Issue #948 のコメントから github-actions[bot] が書いた、最初の行が
+        engine-head の印（40 桁の SHA と engine_head_passed・engine_head_failed・harness_unknown_query）で実行の URL のあるコメントを数え、なければ head_record_missing で落とす。
+        ci.test.mjs で通ったときの記録・重ねないこと・success でないときは通ったと書かないことを偽の gh で確かめ、head-record.test.mjs で記録に数えるもの・数えないもの
+        （人が写した印・unknown の版・URL がない）と終了コードを確かめた。.github/workflows/ への写しと schedule の実行、head-record.mjs を走らせることは建設者が行うので、
+        まだ記録はなく、この解決策も issue 977 の解決策も未配線・未確認
+      issue: 1047
+      at: 2026-11-07
+      decided_by: committee:D-0031
+      wired: false
+      verified: false
 decided_by: committee:D-0004

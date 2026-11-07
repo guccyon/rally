@@ -8,6 +8,7 @@
 // ENGINE_REF の行を変える PR で engine-test が必ずその版で走る形か（ENGINE_REF の置き場所・needs・Engine を取る版）も、ひな形と写しで見る（議決 D-0028、Issue #1024）。
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 // その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
+// 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,6 +16,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { headRecords } from "./head-record.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), "utf8");
 const copyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));
@@ -233,7 +236,7 @@ const headTemplate = readFileSync(fileURLToPath(new URL("./ci/sendback-engine-he
 const headCopyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine-head.yml", import.meta.url));
 const headSteps = jobSteps(headTemplate, "engine-head");
 const headTestStep = headSteps.find((s) => /Engine の先頭で本物の判定のテスト/.test(s[0]));
-const headNotifyStep = headSteps.find((s) => /先頭で落ちたことを知らせて Issue に記録する/.test(s[0]));
+const headNotifyStep = headSteps.find((s) => /先頭での結果（通った・落ちた）を知らせて Issue に記録する/.test(s[0]));
 
 /** 一時のディレクトリに tools/sendback-check の形と、呼び出しを log に書く偽のコマンドを置く。 */
 function sandbox(fakes) {
@@ -279,7 +282,9 @@ test("engine-head は Engine を既定のブランチの先頭で取り（ref �
   assert.ok(headTestStep.some((l) => /^\s*working-directory: tools\/sendback-check$/.test(l)));
   assert.match(runScript(headTestStep), /node --test (.* )?engine\.test\.mjs(\s|$)/);
   assert.ok(!headTestStep.some((l) => /^\s*if:/.test(l)), "テストの手順を飛ばさない");
-  assert.ok(headNotifyStep.some((l) => /^\s*if: failure\(\)$/.test(l)), "記録の手順は落ちたときだけ走らせる");
+  assert.ok(headTestStep.some((l) => /^\s*id: head-test$/.test(l)), "記録の手順がテストの結果を読めるよう id を付ける");
+  assert.ok(headNotifyStep.some((l) => /^\s*if: always\(\)$/.test(l)), "記録の手順は通ったときも落ちたときも走らせる");
+  assert.ok(headNotifyStep.some((l) => /^\s*HEAD_OUTCOME: \$\{\{ steps\.head-test\.outcome \}\}$/.test(l)), "テストの手順の結果を渡していない");
   assert.ok(headSteps.indexOf(headTestStep) < headSteps.indexOf(headNotifyStep));
 });
 
@@ -453,4 +458,40 @@ test("同じ先頭でも、ハーネスのずれの記録があるだけなら�
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^::error title=sendback-engine-head engine_head_failed::/m);
   assert.match(box.calls(), /^gh issue comment 948 /m);
+});
+
+// 通ったときも記録する（議決 D-0031、Issue #1047）。先頭の Engine での実行の記録（通った・落ちた）が #948 に 1 件残ってから、
+// Issue #977 の解決策の wired と verified を true にするため。落ちたときだけ記録していると、通り続ける限り記録が残らない。
+test("先頭で通ったら ::error を出さず、Issue #948 に engine_head_passed として先頭の版・ENGINE_REF・実行の URL を記録する", () => {
+  const box = sandbox({ gh: `[ "$1" = api ] && printf '%s\\n' "<!-- sendback-engine-head: ${HEAD} engine_head_failed -->"; exit 0` });
+  writeFileSync(join(box.dir, "engine-head.tap"), TAP);
+  const r = runStep(headNotifyStep, box, { ENGINE_HEAD: HEAD, HEAD_OUTCOME: "success" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout, /::error/);
+  assert.match(r.stdout, new RegExp(`${HEAD}.*通った`));
+  assert.match(box.calls(), /^gh issue comment 948 --repo guccyon\/rally --body-file engine-head-comment\.md$/m);
+  const body = readFileSync(join(box.dir, "engine-head-comment.md"), "utf8");
+  assert.ok(body.startsWith(`<!-- sendback-engine-head: ${HEAD} engine_head_passed -->\n`), body);
+  assert.match(body, new RegExp(`\`${ENGINE_REF}\``));
+  assert.match(body, /https:\/\/github\.com\/guccyon\/rally\/actions\/runs\/123/);
+  assert.doesNotMatch(body, /落ちたテスト|not ok/, "通ったときは落ちたテストを書かない");
+  // 書いた記録は head-record.mjs が engine-head の記録に数える
+  assert.deepEqual(headRecords([{ user: { login: "github-actions[bot]" }, body }]).map((x) => [x.head, x.kind]), [[HEAD, "engine_head_passed"]]);
+});
+
+test("同じ先頭の通った記録が Issue #948 にすでにあれば足さない（毎日同じ記録を積まない）", () => {
+  const box = sandbox({ gh: `[ "$1" = api ] && printf '%s\\n' "<!-- sendback-engine-head: ${HEAD} engine_head_passed -->"; exit 0` });
+  const r = runStep(headNotifyStep, box, { ENGINE_HEAD: HEAD, HEAD_OUTCOME: "success" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(box.calls(), /^gh issue comment/m);
+});
+
+test("テストの手順が通っていない（failure・skipped・cancelled・渡されない）ときは通ったとして記録しない", () => {
+  for (const outcome of ["failure", "skipped", "cancelled", undefined]) {
+    const box = sandbox({ gh: "exit 0" });
+    const r = runStep(headNotifyStep, box, { ENGINE_HEAD: HEAD, ...(outcome === undefined ? {} : { HEAD_OUTCOME: outcome }) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^::error title=sendback-engine-head engine_head_failed::/m, String(outcome));
+    assert.ok(readFileSync(join(box.dir, "engine-head-comment.md"), "utf8").startsWith(`<!-- sendback-engine-head: ${HEAD} engine_head_failed -->\n`));
+  }
 });
