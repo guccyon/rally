@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0039
+pr: https://github.com/guccyon/rally/pull/1086
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0038 までの議決や README の決まり、specs/ の規範と矛盾しません。
+  - '足した ci_check は D-0026 の enforcement の 3 つめの案（sendback-engine.yml を写して branch
+    protection の必須チェックに入れ、本物の配線の PR で記録してから wired と verified を true にする）に応えており、decided_by:
+    committee:D-0026 は正しいです。'
+  - 'Issue #1018 が D-0025 と書いている取り違えを what の中で明かしており、D-0038 で Issue #1017 について認めた扱いと同じなので一貫しています。'
+  - 既存の issue 969 の ci_check（ci.test.mjs でひな形と写しの形を見る）と issue 960 の ci_check とは、protection.mjs
+    が branch protection の必須チェックに名前があるかを照らす点で範囲が分かれており、重複ではありません。
+  - 'wired: false・verified: false と書き、写しも必須化もまだで protection.mjs が workflow_not_copied
+    で落ちると正直に書いているので、confidence は hypothesis のままが妥当です。'
+  - D-0036 が求めた patch_stale の solution への D-0025 の併記、D-0037 が挙げた issue 961 の空の what、D-0026
+    が勧めた order.mjs の直しと試験の書き分けは今回も手つかずなので、次に K-0004 を直す変更セットでまとめて片づけてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution の decided_by の committee:D-0026 は、knowledge/committee/D-0026.yaml
+    の 3 つめの enforcement（ci_check、sendback-engine.yml を .github/workflows/ に写して必須チェックにする案）と中身が合っていて、一次記録に辿れます。
+  - 'Issue #1018 が D-0025 と書いている取り違えを what の中で明かしており、D-0025 の案は sendback-check の配線の案ではないので、辿り先を
+    D-0026 にしたのは正しいです。'
+  - 今のリポジトリには写しがなく protection.mjs が workflow_not_copied で落ちると書き、wired と verified をどちらも
+    false にしているので、効き目を言い過ぎていません。
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の配線の PR で落ちる・通る記録がまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 'Issue #1018 の本文も D-0026 に直しておくと、あとで記録を辿る人が迷いません。'
+  - 差分にあるのは issue と PR の番号、議決の id、ツールのパス、rule の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に、D-0026 の 3 つ目の案（ci_check）のうちワーカーの権限で入れられる分を
+    issue 1018 として 1 件足しただけで、statement・scope・evidence・confidence は変えていないので、担保の観点では採ってよいです。
+  - 写しを消す PR や見張りごと書き換える PR は必須のチェックでしか止まらないという見立ては正しく、branch protection の JSON を照らす
+    protection.mjs は線がはっきりしていて、決定論で担保する対象として向いています。
+  - ただし protection.mjs は PR の GITHUB_TOKEN では走らず、建設者が手で走らせて記録するだけなので、必須のチェックが後で外されても誰も気づかないという、外したときに痛い穴が残っています。
+  - この穴は、branch protection を読める権限のトークンで protection.mjs を schedule（cron）と workflow_dispatch
+    で走らせ、落ちたら Issue を開くワークフローにすれば決定論で塞げ、作る費用も小さいです。
+  - 'protection.mjs が workflow_not_copied で落ちる今の状態を正直に書いて wired: false・verified: false
+    としているので、確かさは hypothesis のままが妥当です。'
+  - 'K-0004 の solutions は wired: false の記録が積み重なっているので、check.py の表示で未配線の件数が増え続けていることを見える形にして、建設者の配線を急がせることを勧めます。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に ci_check の記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - protection.mjs はチェックの名前だけで照らすので、別のワークフローや別のアプリが同じ名前（engine-test・wiring-order）のチェックを報告すれば、必須のチェックが満たされてしまうという反例が残ります。
+  - 必須のチェックがあっても、管理者に効かない（enforce_admins が false）、rulesets に迂回できる人がいる、ruleset が evaluate
+    のままで効いていない、という外し方は required_check_missing では捕まらないので、次の変更セットで protection.test.mjs
+    にその場合を足してください。
+  - 足した記録の中身は D-0027 の enforcement の案（gh api で必須のチェックを読み required_check_missing で落とす）とほぼ同じなので、decided_by
+    を committee:D-0026 だけにせず committee:D-0027 にも辿れるように書くことを勧めます。
+  - '今のリポジトリには写しがなく protection.mjs は workflow_not_copied で落ちると本文自身が書き、wired: false・verified:
+    false としているので、confidence は hypothesis のままが妥当です。'
+  - K-0004 の solutions は配線待ちの記録がさらに積み重なったので、建設者の配線が入ったときに効いたものと効いていないものを分けて整理することを改めて勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: branch protection を読める権限のトークン（GitHub App か administration:read の fine-grained
+    PAT）で tools/sendback-check/protection.mjs を schedule（毎日）と workflow_dispatch で走らせる
+    .github/workflows/sendback-protection.yml を置き、workflow_not_copied か required_check_missing
+    で落ちたら Issue を開くか更新して、必須のチェックが後で外されたことを検出する。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'tools/knowledge-enforcement-check/check.py で、issue 1018 の solution を
+    wired: true にするときは wired_by に protection.mjs を呼ぶ schedule のジョブを必須にし、手で走らせた記録だけでは
+    wired にできないようにする。'
