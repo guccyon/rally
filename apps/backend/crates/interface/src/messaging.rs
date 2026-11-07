@@ -1,5 +1,7 @@
 //! `/message-threads`。student-app と admin-web（コーチ）の、生徒と担当コーチの 1 対 1 のチャット
-//! （`listMessageThreads`・`listMessages`・`sendMessage`・`markMessageThreadRead`）。両方のアプリで同じ操作・同じ形。
+//! （`listMessageThreads`・`listMessages`・`sendMessage`・`markMessageThreadRead`）。両方のアプリで同じ操作・同じ形で、
+//! admin-web の `MessageThread` だけに、コーチがまだ返事をしていないか（`unanswered`）が足してある（担当コーチが
+//! 呼んだときだけ出す）。
 //!
 //! 役割では絞らず、スレッドの当事者（生徒・担当コーチ）かをユースケースが確かめる。当事者でないアカウントには
 //! スレッドがあることも知らせない（404）。生徒がチャットの送り放題（月額）を持たなければ送信は 403
@@ -91,6 +93,7 @@ pub struct MessageJson {
 }
 
 /// student-app・admin-web の `MessageThread`。`unread_count` は呼んだアカウントにとっての未読の数。
+/// `unanswered`（admin-web だけの項目）は呼んだのが担当コーチのときだけ出す（student-app の契約は変えない）。
 #[derive(Serialize)]
 pub struct MessageThreadJson {
     thread_id: String,
@@ -99,6 +102,8 @@ pub struct MessageThreadJson {
     opened_at: String,
     last_message: Option<MessageJson>,
     unread_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unanswered: Option<bool>,
 }
 
 /// student-app・admin-web の `MessageThreadList`。
@@ -114,7 +119,8 @@ pub struct MessageListJson {
     messages: Vec<MessageJson>,
 }
 
-/// `GET /message-threads`。認証したアカウントが当事者のスレッドを、最後の出来事の新しい順に返す。
+/// `GET /message-threads`。認証したアカウントが当事者のスレッドを返す。担当コーチには未返信のスレッドを上に、
+/// 残りを最後の出来事の新しい順に（並べ方は [`ListMessageThreads`]）。
 pub async fn list_message_threads<T, G, A, P, C>(
     State(state): State<Shared<T, G, A, P, C>>,
     account: AuthenticatedAccount,
@@ -276,6 +282,7 @@ fn thread_json(thread: &MessageThread, reader: AccountId) -> Result<MessageThrea
             .map(|message| message_json(thread, message))
             .transpose()?,
         unread_count: thread.unread_count_for(reader),
+        unanswered: (thread.coach_id() == reader).then(|| thread.is_unanswered()),
     })
 }
 

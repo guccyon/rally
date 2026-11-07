@@ -265,6 +265,32 @@ impl MessageThread {
             })
     }
 
+    /// コーチがまだ返事をしていない（未返信の）なら、生徒の最後の発言の送信時刻。未返信でなければ `None`。
+    ///
+    /// 未返信は、最後の発言が生徒のものであること（[`Self::awaiting_coach_reply_since`] と同じく、発言は本文・スタンプ
+    /// だけで、添削依頼・添削の返却とシステムのメッセージは数えない）。生徒が続けて送れば、最後の 1 通の時刻になる。
+    /// 経過の時間は問わない（既読かどうかも問わない）。コーチが発言すると `None` に戻る。
+    pub fn unanswered_student_message_at(&self) -> Option<SystemTime> {
+        self.messages
+            .iter()
+            .rev()
+            .filter(|message| message.content().kind().is_chat())
+            .find_map(|message| {
+                message
+                    .author()
+                    .participant()
+                    .map(|sender| (sender, message))
+            })
+            .and_then(|(sender, message)| {
+                (sender == MessageSender::Student).then(|| message.sent_at())
+            })
+    }
+
+    /// コーチがまだ返事をしていない（最後の発言が生徒のもの）か（[`Self::unanswered_student_message_at`]）。
+    pub fn is_unanswered(&self) -> bool {
+        self.unanswered_student_message_at().is_some()
+    }
+
     /// 当事者 `sender` のアカウント。
     pub const fn account_of(&self, sender: MessageSender) -> AccountId {
         match sender {
@@ -883,6 +909,59 @@ mod tests {
             .send(message(5), STUDENT, text("まだでしょうか"), true, at(5))
             .unwrap();
         assert_eq!(thread.awaiting_coach_reply_since(), Some(at(4)));
+    }
+
+    #[test]
+    fn a_thread_is_unanswered_while_the_last_chat_message_is_the_students() {
+        let mut thread = opened();
+        assert!(!thread.is_unanswered(), "発言がまだない");
+        thread
+            .send(message(1), STUDENT, text("質問です"), true, at(1))
+            .unwrap();
+        assert_eq!(thread.unanswered_student_message_at(), Some(at(1)));
+        thread
+            .send(
+                message(2),
+                STUDENT,
+                MessageContent::Stamp(Stamp::Question),
+                true,
+                at(2),
+            )
+            .unwrap();
+        assert_eq!(
+            thread.unanswered_student_message_at(),
+            Some(at(2)),
+            "続けて送ると生徒の最後の発言の時刻になる"
+        );
+        thread
+            .send(message(3), COACH, text("お答えします"), true, at(3))
+            .unwrap();
+        assert!(!thread.is_unanswered(), "コーチが返した");
+        assert_eq!(thread.unanswered_student_message_at(), None);
+        thread
+            .send(message(4), STUDENT, text("もう 1 つ"), true, at(4))
+            .unwrap();
+        assert!(thread.is_unanswered());
+    }
+
+    #[test]
+    fn video_review_messages_do_not_make_or_answer_an_unanswered_thread() {
+        let mut thread = opened();
+        thread
+            .post_video_review_request(message(1), VIDEO, at(1))
+            .unwrap();
+        assert!(!thread.is_unanswered(), "添削依頼だけでは未返信にならない");
+        thread
+            .send(message(2), STUDENT, text("動画を送りました"), true, at(2))
+            .unwrap();
+        thread
+            .post_video_review_return(message(3), VIDEO, REVIEW, at(3))
+            .unwrap();
+        assert_eq!(
+            thread.unanswered_student_message_at(),
+            Some(at(2)),
+            "添削の返却はチャットの返信に数えない"
+        );
     }
 
     #[test]

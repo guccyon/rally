@@ -230,6 +230,8 @@ const THREADS: Schemas["MessageThread"][] = [
     opened_at: at(-24 * 7),
     last_message: MESSAGES[3]!,
     unread_count: 2,
+    // 最後の発言が生徒なので未返信
+    unanswered: true,
   },
 ];
 
