@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -66,4 +66,13 @@ test("CLI は書いてよければ 0、外れたら 1 で body_fix の入力を�
   assert.equal(execFileSync("node", [script, "--pr-url", PR_URL], { input: newPrBody(), encoding: "utf8" }), "");
   assert.throws(() => execFileSync("node", [script, "--pr-url", PR_URL, "--body", join(dir, "none.md")], { stdio: "pipe" }), (e) => e.status === 2);
   assert.throws(() => execFileSync("node", [script, "--body", join(dir, "ok.md")], { stdio: "pipe" }), (e) => e.status === 2);
+});
+
+test("CLI は見出しの定義が不正なら 3 で終わり、body_fix の入力を出さない", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-gate-template-"));
+  for (const f of ["check.mjs", "gate.mjs"]) copyFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url)), join(dir, f));
+  writeFileSync(join(dir, "template.json"), JSON.stringify({ h2: [{ text: "概要", required: "yes" }] }));
+  writeFileSync(join(dir, "body.md"), newPrBody());
+  assert.throws(() => execFileSync("node", [join(dir, "gate.mjs"), "--pr-url", PR_URL, "--body", join(dir, "body.md")], { stdio: "pipe", encoding: "utf8" }),
+    (e) => e.status === 3 && e.stdout === "" && /見出しの定義が不正: h2\[0\]\.required が真偽値でない/.test(e.stderr));
 });

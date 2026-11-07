@@ -1,6 +1,8 @@
 {
   "h2": [
     { "text": "概要", "required": true },
+    { "text": "背景", "required": false },
+    { "text": "問題", "required": false },
     { "text": "対応内容", "required": true },
     { "text": "影響範囲・互換性", "required": false },
     { "text": "動作確認", "required": false },

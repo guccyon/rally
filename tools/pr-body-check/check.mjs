@@ -2,7 +2,7 @@
 // 知見 K-0006 の担保として、見出しの定義（template.json）との照合を足した。議決 D-0006、Issue #906）。LLM を使わない。
 //
 //   node check.mjs [--body <本文のファイル>] [--json <出力先>]    # --body を省くと標準入力から読む
-//   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
+//   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった、3 = 見出しの定義（template.json）が不正（本文は照らしていない）
 //
 // 見ること:
 //   - 同じ「## 」見出しが 2 回以上ない（続きのジョブが新しい PR と同じ見出しの組を末尾に足すと重なる）
@@ -18,12 +18,24 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
+/** 見出しの定義（template.json）が不正なときに投げる。表示と終了コード（3）は境界の main で組む。 */
+export class TemplateError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = "TemplateError";
+    this.reason = reason;
+  }
+}
+
+/** 定義が不正なときの終了コード（本文の外れの 1 と見分けるため）。 */
+export const EXIT_TEMPLATE_ERROR = 3;
+
 /**
  * 見出しの定義（template.json の中身）を検証し、凍結した「## 」見出しの一覧を返す。
- * h2 が空でない配列で、各要素が空でない 1 行の text と真偽値の required だけを持ち、text が重ならないこと。外れたら投げる。
+ * h2 が空でない配列で、各要素が空でない 1 行の text と真偽値の required だけを持ち、text が重ならないこと。外れたら TemplateError を投げる。
  */
 export function parseTemplate(data) {
-  const fail = (why) => { throw new Error(`pr-body-check: 見出しの定義が不正: ${why}`); };
+  const fail = (why) => { throw new TemplateError(why); };
   if (data === null || typeof data !== "object" || !Array.isArray(data.h2) || data.h2.length === 0) {
     fail("h2 が空でない配列でない");
   }
@@ -43,8 +55,24 @@ export function parseTemplate(data) {
   return Object.freeze(h2);
 }
 
-/** PR 本文の「## 」見出しの定義（順・必須か）。CLAUDE.md の「PR の説明」と実装役の報告の型から取った 1 つの定義。凍結してある。 */
-export const TEMPLATE = parseTemplate(JSON.parse(readFileSync(new URL("./template.json", import.meta.url), "utf8")));
+let template = null;
+
+/**
+ * PR 本文の「## 」見出しの定義（順・必須か）を template.json から読んで返す。CLAUDE.md の「PR の説明」と同じ順の 1 つの定義。凍結してある。
+ * モジュールの読み込み時ではなく初めて使うときに読む。読めない・JSON でない・不正なら TemplateError を投げる（検査を始めない）。
+ */
+export function loadTemplate() {
+  if (template === null) {
+    let data;
+    try {
+      data = JSON.parse(readFileSync(new URL("./template.json", import.meta.url), "utf8"));
+    } catch (e) {
+      throw new TemplateError(`template.json を読めなかった（${e.message}）`);
+    }
+    template = parseTemplate(data);
+  }
+  return template;
+}
 
 /** 工場の記録の見出し（Engine の worker/entrypoint.sh が新しい PR の本文に付ける）。 */
 export const FACTORY_RECORD = "工場の記録";
@@ -103,8 +131,9 @@ export function checkBody(body) {
   return errors.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }
 
-/** 見出しを定義（TEMPLATE）と照らす。必須の欠け・順の違い・定義の外の見出しの位置を見る。 */
+/** 見出しを定義（loadTemplate）と照らす。必須の欠け・順の違い・定義の外の見出しの位置を見る。 */
 function checkTemplate(hs) {
+  const TEMPLATE = loadTemplate();
   const errors = [];
   const order = new Map(TEMPLATE.map((t, i) => [t.text, i]));
   const top = hs.filter((h) => h.level <= 2);
@@ -149,7 +178,14 @@ function main() {
     console.error(`pr-body-check: 本文を読めなかった: ${e.message}`);
     process.exit(2);
   }
-  const errors = checkBody(body);
+  let errors;
+  try {
+    errors = checkBody(body);
+  } catch (e) {
+    if (!(e instanceof TemplateError)) throw e;
+    console.error(`pr-body-check: 見出しの定義が不正: ${e.reason}`);
+    process.exit(EXIT_TEMPLATE_ERROR);
+  }
   if (values.json) writeFileSync(values.json, JSON.stringify({ ok: errors.length === 0, errors }, null, 2) + "\n");
   for (const e of errors) console.log(`${e.line === null ? "本文" : `${e.line} 行目`}: ${e.message}`);
   console.log(`pr-body-check: 見出し ${headings(body).length} 件、外れ ${errors.length} 件`);
