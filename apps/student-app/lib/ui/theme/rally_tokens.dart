@@ -117,6 +117,19 @@ enum RallyStatus {
   };
 }
 
+/// 予約の状態（glossary の booking.states）と色の対応（color.booking_state）。
+enum RallyBookingState {
+  pending,
+  confirmed,
+  cancelled;
+
+  RallyStatus get status => switch (this) {
+    pending => RallyStatus.warning,
+    confirmed => RallyStatus.success,
+    cancelled => RallyStatus.neutral,
+  };
+}
+
 /// スロットの状態（glossary の slot.states）と色の対応（color.slot_state）。
 enum RallySlotState {
   open,
