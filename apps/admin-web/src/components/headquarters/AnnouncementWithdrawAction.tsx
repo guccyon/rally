@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { Schemas } from "@/api/client";
+import { Button } from "@/components/ui/Button";
 
 type Props = {
   announcement: Schemas["Announcement"];
@@ -27,14 +28,13 @@ export function AnnouncementWithdrawAction({ announcement, onWithdraw }: Props) 
 
   if (!confirming) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         aria-label={`「${announcement.title}」を取り下げる`}
-        className="rounded-pill border border-danger px-2 py-0.5 text-danger"
         onClick={() => setConfirming(true)}
       >
         取り下げる
-      </button>
+      </Button>
     );
   }
 
@@ -44,22 +44,12 @@ export function AnnouncementWithdrawAction({ announcement, onWithdraw }: Props) 
         このお知らせを取り下げますか？生徒のお知らせの一覧に出なくなります。取り下げは戻せず、届いたプッシュ通知も取り消せません。
       </p>
       <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill bg-danger px-2 py-0.5 text-on-primary disabled:opacity-50"
-          onClick={() => void confirm()}
-        >
+        <Button variant="danger" disabled={busy} onClick={() => void confirm()}>
           {busy ? "取り下げています…" : "取り下げを確定"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-          onClick={() => setConfirming(false)}
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
           やめる
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -4,28 +4,27 @@ import { useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import { lengthOf } from "@/components/coach/lessonMenuInput";
+import { Button, type ButtonVariant } from "@/components/ui/Button";
 
 /** 本部が受付を止めるときの理由の上限（契約の SuspendCoachRequest.reason。コードポイントで数える）。 */
 export const SUSPEND_REASON_MAX_LENGTH = 200;
 
 const ACTIONS: Record<
   Schemas["CoachAcceptanceStatus"],
-  { button: string; question: string; confirm: string; buttonClass: string; confirmClass: string }
+  { button: string; question: string; confirm: string; confirmVariant: ButtonVariant }
 > = {
   accepting: {
     button: "受付を止める",
     question:
       "このコーチの受付を止めますか？新しい予約を受け付けなくなり、枠は生徒の検索に出なくなります。入っている予約はそのままです。",
     confirm: "停止を確定",
-    buttonClass: "border-danger text-danger",
-    confirmClass: "bg-danger",
+    confirmVariant: "danger",
   },
   suspended: {
     button: "再開する",
     question: "このコーチの受付を再開しますか？公開中の枠がまた生徒の検索に出て、予約できるようになります。",
     confirm: "再開を確定",
-    buttonClass: "border-primary text-primary",
-    confirmClass: "bg-primary",
+    confirmVariant: "primary",
   },
 };
 
@@ -63,13 +62,9 @@ export function CoachAcceptanceAction({
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        className={`rounded-pill border px-2 py-0.5 ${action.buttonClass}`}
-        onClick={() => setConfirming(true)}
-      >
+      <Button variant="secondary" onClick={() => setConfirming(true)}>
         {action.button}
-      </button>
+      </Button>
     );
   }
   return (
@@ -96,22 +91,16 @@ export function CoachAcceptanceAction({
         </>
       )}
       <div className="flex gap-2">
-        <button
-          type="button"
+        <Button
+          variant={action.confirmVariant}
           disabled={busy || (suspending && remaining < 0)}
-          className={`rounded-pill px-2 py-0.5 text-on-primary disabled:opacity-50 ${action.confirmClass}`}
           onClick={() => void confirm()}
         >
           {action.confirm}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-pill border px-2 py-0.5 disabled:opacity-50"
-          onClick={cancel}
-        >
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={cancel}>
           やめる
-        </button>
+        </Button>
       </div>
     </div>
   );
