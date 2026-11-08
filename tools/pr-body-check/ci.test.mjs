@@ -175,13 +175,17 @@ test("ずれの比べ方は ENGINE_REF の行だけを無視する", () => {
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が、ワークフローの node --test の実行の対象から外れていないことの見張り
 // （知見 K-0001 の担保。議決 D-0045 の ci_check の案、Issue #1109）。ワークフローの側の道・名前・NODE_OPTIONS による絞り込みは workflowProblems で見るので、
 // ここではテストのファイルの側で外していないかを見る。gate.test.mjs には飛ばしを置かない。engine.test.mjs の飛ばしは、ENGINE_DIR を渡すと
-// false になる共通の skip（ワークフローは ENGINE_DIR を渡す）だけにする。どちらも todo・only・test.skip・t.skip などを置かない。注釈の行は見ない。
+// false になる共通の skip（ワークフローは ENGINE_DIR を渡す）と、(10) が本物で確かめるようになったら飛ぶ (11) の差分の写しの飛ばしだけにする
+// （Issue #1110）。どちらも todo・only・test.skip・t.skip などを置かない。注釈の行は見ない。
 const GATE_TEST = "gate.test.mjs";
 const ENGINE_TEST = "engine.test.mjs";
 const readTest = (name) => readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8");
 const ENGINE_REQUIRED = 'const required = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";';
 const ENGINE_SKIP = /^const skip = required \|\| existsSync\(entrypointPath\) \? false : `[^`]*`;$/;
 const PASSING_LOOP = "for (const [label, report] of PASSING_REPORTS) {";
+// (11) の飛ばし。Engine が関所を呼ぶようになったときだけ飛ぶ（(10) は飛ばない）
+const PATCHED_SKIP = '    { skip: skip || (engineWired ? "Engine がもう関所を呼ぶので、(10) が ENGINE_REF の Engine そのもので確かめる" : false) }, () => {';
+const PATCHED_TEST = "  test(`(11) ";
 
 /** 注釈の行を除いたコードの行。 */
 const codeLines = (text) => text.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l));
@@ -205,7 +209,9 @@ function exclusionProblems(name, text) {
       problems.push(`${name}: skip は required のときに false になる 1 つの宣言だけにする（上書きや別の skip で (10) を飛ばせる）`);
     }
     // skip を使ってよいのは宣言と、テストの { skip } だけ（{ skip: true } などで個別に飛ばさない）
-    if (lines.some((l) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => \{$/.test(l))) {
+    // (11) の飛ばしは、(11) のテストの直後の行でだけ認める
+    if (lines.some((l, i) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => \{$/.test(l)
+      && !(l === PATCHED_SKIP && (lines[i - 1] ?? "").startsWith(PATCHED_TEST)))) {
       problems.push(`${name}: 共通の skip のほかの飛ばしがある`);
     }
     if (!/^\s+test\(`\(10\) .*, \{ skip \}, \(\) => \{$/.test(lines[loop + 1] ?? "")) problems.push(`${name}: (10) が通る側の 3 通りの形を回すテストになっていない`);
@@ -247,6 +253,7 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       "ENGINE_DIR を渡しても飛ばす": engineText.replace(ENGINE_REQUIRED, 'const required = process.env.CI === "true";'),
       "skip を常に飛ばす形にする": engineText.replace(/^const skip = required \|\| /m, "const skip = "),
       "(10) を回すループを外す": engineText.replace(PASSING_LOOP, "for (const [label, report] of []) {"),
+      "(10) に (11) の飛ばしを付ける": engineText.replace(/(\(10\) [^\n]*誤って止めない）`), \{ skip \}, \(\) => \{/, `$1,\n${PATCHED_SKIP}`),
     },
   };
   for (const [file, byName] of Object.entries(cases)) {
@@ -278,7 +285,10 @@ const GATE_PASSING_NAMES = [
 ];
 /** engine.test.mjs の (10) の名前（通る側の 3 通りの形）。 */
 const ENGINE_PASSING_NAMES = PASSING_REPORTS.map(([label]) =>
-  `(10) 関所を配線した Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
+  `(10) ENGINE_REF の Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
+/** engine.test.mjs の (11) の名前。Engine が関所を呼ぶようになったら飛ぶので、その skip は集計から除く。 */
+const ENGINE_PATCHED_NAMES = PASSING_REPORTS.map(([label]) =>
+  `(11) 関所の配線の差分を当てた Engine の写しは、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
 
 /** テストのファイルを node --test の TAP で走らせた出力。外の node --test の NODE_TEST_CONTEXT を渡すと TAP で出さないので外す。終了コードは見ない。 */
 function runTap(file, cwd = RUN_TOOL_DIR) {
@@ -293,16 +303,18 @@ const tapCount = (tap, ...keys) => {
   return m ? Number(m[1]) : null;
 };
 
-/** 走らせた結果で、通る側のテストが pass と数えられず、skip・todo が 0 でないときの外れ（空なら通る）。 */
-function runReportProblems(file, tap, names) {
+/** 走らせた結果で、通る側のテストが pass と数えられず、skip・todo が 0 でない（maySkip の名前のテストの skip は除く）ときの外れ（空なら通る）。 */
+function runReportProblems(file, tap, names, maySkip = []) {
   const problems = [];
   const results = parseTapReport(tap);
   for (const name of names) {
     const got = results[name];
     if (got !== "pass") problems.push(`${file}: 「${name}」が pass と数えられていない（${got ?? "実行されていない"}）`);
   }
+  const allowedSkips = maySkip.filter((name) => results[name] === "skip").length;
   for (const [label, keys] of [["skip", ["skipped", "skip"]], ["todo", ["todo"]]]) {
-    const n = tapCount(tap, ...keys);
+    const counted = tapCount(tap, ...keys);
+    const n = counted === null || label !== "skip" ? counted : counted - allowedSkips;
     if (n === null) problems.push(`${file}: TAP に ${label} の数がない（node --test が最後まで走っていない）`);
     else if (n !== 0) problems.push(`${file}: ${label} の数が ${n}（0 でない）`);
   }
@@ -317,7 +329,7 @@ test("gate.test.mjs を TAP で走らせると、通る側のテストが pass �
 test("engine.test.mjs を TAP で走らせると、(10) が通る側の 3 通りの形で pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
   assert.ok(PASSING_REPORTS.length >= 3, "通る側の形（c0005.mjs の PASSING_REPORTS）が 3 通りない");
   const tap = runTap(ENGINE_TEST);
-  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES), [], tap);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], tap);
 });
 
 test("走らせた結果の見張りは、(10) や通る側のテストの skip・todo・失敗・欠け、ほかのテストの skip・todo、途中で止まった TAP を外れにする", () => {
@@ -327,6 +339,14 @@ test("走らせた結果の見張りは、(10) や通る側のテストの skip�
   const okAll = ENGINE_PASSING_NAMES.map((n) => `ok - ${esc(n)}`);
   const [first, ...rest] = ENGINE_PASSING_NAMES;
   assert.deepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, "not ok - (3) 関所を呼ばない Engine で落ちる"]), ENGINE_PASSING_NAMES), []);
+  // Engine が関所を呼ぶようになって (11) が飛ぶのは外れにしない（Issue #1110）
+  const patchedSkipped = ENGINE_PATCHED_NAMES.map((n) => `ok - ${esc(n)} # SKIP Engine がもう関所を呼ぶ`);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, ...patchedSkipped], { skipped: patchedSkipped.length }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), []);
+  assert.notDeepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, ...patchedSkipped], { skipped: patchedSkipped.length + 1 }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], "(11) のほかの skip が通った");
+  assert.notDeepEqual(runReportProblems(ENGINE_TEST, tap([`ok - ${esc(first)} # SKIP まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { skipped: 1 }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], "(10) の skip が通った");
   const cases = {
     "(10) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { skipped: 1 }),
     "(10) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { todo: 1 }),

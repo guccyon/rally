@@ -325,34 +325,55 @@ exit $rc
   return { dir, rcs: () => readFileSync(join(dir, "gate_calls"), "utf8").trim().split("\n").filter(Boolean).map(Number) };
 }
 
-// (10) は通る側の写し（議決 D-0032 の test の案、Issue #1038）。C-0005 と同じ 21 回の続きのジョブでも、報告が「## 工場の記録」の下に
-// 正しく入る形（報告の見出しが ### 以下、または ## 見出しがない）なら、関所は毎回 0 を返し、Engine はその本文を書く。正しい更新まで止める誤検知を落とす。
-// Engine がもう関所を呼んでいれば patchedEngine は差分を当てずに写すので、配線したあとの本物の Engine の本文の更新をそのまま確かめる
-for (const [label, report] of PASSING_REPORTS) {
-  test(`(10) 関所を配線した Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`, { skip }, () => {
-    const { update } = patchedParts();
-    let body = engineNewBody();
-    REASONS.forEach((reason, i) => {
-      const summary = report(reason, i);
-      const gh = fakeGh(body);
-      const rec = gateRecorder();
-      const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
-      const jobId = String(3000 + i);
-      const log = bash(update, { ...JOB, PATH: `${rec.dir}:${gh.dir}:${process.env.PATH}`, JOB_ID: jobId, CONTINUE_REASON: reason, CONTINUE_PR: PR_NUMBER, PR_URL,
-        SUMMARY: summary, HANDOFF_DIR: handoff }, repoRoot);
-      const at = `${i + 1} 回目（${reason}）`;
-      assert.deepEqual(rec.rcs(), [0], `${at}で関所を 1 回呼んで 0 を返していない`);
-      assert.ok(!existsSync(join(handoff, "jobs", jobId, "body_gate.json")), `${at}で関所に止められた`);
-      assert.doesNotMatch(log, /pr body gate blocked/, `${at}で関所に止められた`);
-      assert.match(log, /\[worker\] continued pr=/);
-      assert.ok(gh.calls().includes("pr edit"), `${at}で本文を書いていない`);
-      const written = gh.body();
-      assert.ok(written.startsWith(body.trimEnd()), `${at}で前の本文を残していない`);
-      assert.ok(written.includes(summary), `${at}の続きのジョブの報告を書いていない`);
-      assert.deepEqual(checkBody(written), [], `${at}で書いた本文が関所に外れる`);
-      body = written;
-    });
-    assert.equal(body.match(/^### 続きのジョブの記録$/gm)?.length, 1, "続きのジョブの記録の見出しが 1 つの ### になっていない");
-    assert.equal(body.match(/^## 概要$/gm)?.length, 1, "「## 概要」が重なった");
+/**
+ * C-0005 と同じ 21 回の続きのジョブの報告（report）を、本文の更新の節（update）で前の回の本文に続けて動かし、
+ * 毎回関所を 1 回呼んで 0 が返り、body_gate.json を残さずに本文を書き、書いた本文が関所に通ることを確かめる。
+ */
+function assertWritesEveryTime(update, report) {
+  let body = engineNewBody();
+  REASONS.forEach((reason, i) => {
+    const summary = report(reason, i);
+    const gh = fakeGh(body);
+    const rec = gateRecorder();
+    const handoff = mkdtempSync(join(tmpdir(), "pr-body-handoff-"));
+    const jobId = String(3000 + i);
+    const log = bash(update, { ...JOB, PATH: `${rec.dir}:${gh.dir}:${process.env.PATH}`, JOB_ID: jobId, CONTINUE_REASON: reason, CONTINUE_PR: PR_NUMBER, PR_URL,
+      SUMMARY: summary, HANDOFF_DIR: handoff }, repoRoot);
+    const at = `${i + 1} 回目（${reason}）`;
+    assert.deepEqual(rec.rcs(), [0], `${at}で関所を 1 回呼んで 0 を返していない`);
+    assert.ok(!existsSync(join(handoff, "jobs", jobId, "body_gate.json")), `${at}で関所に止められた`);
+    assert.doesNotMatch(log, /pr body gate blocked/, `${at}で関所に止められた`);
+    assert.match(log, /\[worker\] continued pr=/);
+    assert.ok(gh.calls().includes("pr edit"), `${at}で本文を書いていない`);
+    const written = gh.body();
+    assert.ok(written.startsWith(body.trimEnd()), `${at}で前の本文を残していない`);
+    assert.ok(written.includes(summary), `${at}の続きのジョブの報告を書いていない`);
+    assert.deepEqual(checkBody(written), [], `${at}で書いた本文が関所に外れる`);
+    body = written;
   });
+  assert.equal(body.match(/^### 続きのジョブの記録$/gm)?.length, 1, "続きのジョブの記録の見出しが 1 つの ### になっていない");
+  assert.equal(body.match(/^## 概要$/gm)?.length, 1, "「## 概要」が重なった");
+}
+
+// (10) は通る側の本物（議決 D-0032 の test の案、Issue #1038。議決 D-0045 の test の案、Issue #1110 で写しから本物に替えた）。
+// C-0005 と同じ 21 回の続きのジョブでも、報告が「## 工場の記録」の下に正しく入る形（報告の見出しが ### 以下、または ## 見出しがない）なら、
+// 関所は毎回 0 を返し、Engine はその本文を書く。差分を当てた写しではなく、ENGINE_DIR（CI では ENGINE_REF の版）の entrypoint.sh そのものの
+// 本文の更新の節を動かすので、Engine に入った配線が正しい更新まで止める誤検知を落とす。必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる
+for (const [label, report] of PASSING_REPORTS) {
+  test(`(10) ENGINE_REF の Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`, { skip }, () => {
+    need("update");
+    assert.ok(!isLegacyEntrypoint(parts.update),
+      `Engine の本文の更新の節が関所（tools/pr-body-check/gate.mjs）を呼んでいない（ENGINE_DIR=${engineDir}。engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げる）`);
+    assertWritesEveryTime(parts.update, report);
+  });
+}
+
+// (11) は差分の通る側の写し。Engine がまだ関所を呼ばない間だけ、engine/pr-body-gate.patch を当てた写しで (10) と同じことを確かめ、
+// 差分そのものが正しい更新まで止めないことを見る。Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす
+const engineWired = Boolean(parts.update) && !isLegacyEntrypoint(parts.update);
+for (const [label, report] of PASSING_REPORTS) {
+  test(`(11) 関所の配線の差分を当てた Engine の写しは、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`,
+    { skip: skip || (engineWired ? "Engine がもう関所を呼ぶので、(10) が ENGINE_REF の Engine そのもので確かめる" : false) }, () => {
+      assertWritesEveryTime(patchedParts().update, report);
+    });
 }
