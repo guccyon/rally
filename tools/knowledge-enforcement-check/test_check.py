@@ -217,6 +217,81 @@ class WiringTest(unittest.TestCase):
         self.assertEqual(check.main(["--repo", str(d)]), 1)
 
 
+class VerificationTest(unittest.TestCase):
+    """verified: true の解決策の確認の記録の照合（議決 D-0034、Issue #1059）"""
+
+    def repo(self, *cases: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        (d / check.ROOT / "cases").mkdir(parents=True)
+        for c in cases:
+            (d / check.ROOT / "cases" / f"{c}.md").write_text(f"# {c}\n", encoding="utf-8")
+        return d
+
+    def errors(self, d: Path, verified_by=None, **flags) -> list[str]:
+        s = sol(wired=True, verified=True, **flags)
+        if verified_by is not None:
+            s["verified_by"] = verified_by
+        return check.check_verification(k("deterministic", s), d)
+
+    def test_事例記録を指せば通る(self):
+        d = self.repo("C-0001")
+        self.assertEqual(self.errors(d, [{"case": "C-0001"}]), [])
+        self.assertEqual(self.errors(d, [{"case": "C-0001"}, {"pr": 395}, {"event": "case.analyzed:40376"}]), [])
+
+    def test_verified_by_がなければ落ちる(self):
+        for vb in (None, [], {"case": "C-0001"}):
+            e = self.errors(self.repo("C-0001"), vb)
+            self.assertEqual(len(e), 1, vb)
+            self.assertIn("verified_by（確かめた本物の記録を指す case・pr・event の列）がない", e[0])
+
+    def test_事例記録がなければ落ちる(self):
+        e = self.errors(self.repo("C-0001"), [{"case": "C-0002"}])
+        self.assertEqual(len(e), 1)
+        self.assertIn("事例記録 C-0002 が .factory-config/knowledge/cases/ にない", e[0])
+
+    def test_pr_と_event_だけでは落ちる(self):
+        e = self.errors(self.repo("C-0001"), [{"pr": 395}, {"event": "case.analyzed:40376"}])
+        self.assertEqual(len(e), 1)
+        self.assertIn("事例記録（case）が 1 件もない", e[0])
+
+    def test_形の崩れた参照は落ちる(self):
+        d = self.repo("C-0001")
+        for v, msg in (({"case": "C-1"}, "case は C-NNNN"), ({"pr": "395"}, "pr は PR の番号"), ({"pr": True}, "pr は PR の番号"),
+                       ({"pr": 0}, "pr は PR の番号"), ({"event": "case.analyzed"}, "event は <種類>:<id>"),
+                       ({"issue": 1}, "種類は case・pr・event"), ({"case": "C-0001", "pr": 1}, "1 項目に 1 つの参照"), ("C-0001", "1 項目に 1 つの参照")):
+            e = self.errors(d, [{"case": "C-0001"}, v])
+            self.assertEqual(len(e), 1, v)
+            self.assertIn(msg, e[0])
+
+    def test_確認していない解決策は見ない(self):
+        d = self.repo()
+        sols = (sol(wired=True, verified=False), sol(wired=True), sol(wired=True, verified="true"), sol(verified=False, verified_by=[{"pr": "x"}]))
+        self.assertEqual(check.check_verification(k("deterministic", *sols), d), [])
+
+    def test_配線していなければ_verified_by_があっても落ちる(self):
+        d = self.repo("C-0001")
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 1, wired: false, verified: true, verified_by: [{case: C-0001}]}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("wired でないのに verified が true", errors[0])
+
+    def test_main_で落とす(self):
+        d = self.repo("C-0001")
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 1, wired: false, verified: false, verified_by: [{case: C-0009}]}\n"
+                       "    - {kind: ci_check, what: x, issue: 2, wired: false, verified: true, verified_by: [{case: C-0009}]}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertTrue(any("issue 2）: verified_by[0]: 事例記録 C-0009" in x for x in errors), errors)
+        self.assertFalse(any("issue 1）" in x for x in errors), errors)
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 
