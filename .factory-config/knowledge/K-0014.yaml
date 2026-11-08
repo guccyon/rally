@@ -65,4 +65,98 @@ enforcement:
       decided_by: committee:D-0049
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0101（Issue #1207 の起票時の番号は D-0073。PR #1204）の ci_check の案（Engine に tools/conflict-check/engine/conflict-files.patch を当てたあと、
+        定期か PR ごとのワークフローで tools/conflict-check/schema.py を直近の窓のイベント列に対して走らせ、issue 1136 の項目を wired: true にして
+        wired_by にそのワークフローのファイル・job・schema.py の道を書く。適用日より前のイベントは照らさない）のうち、ワーカーの権限で入れられる分を入れた。
+        schema.py に --since（Engine に差分を当てた時刻）を足し、occurred_at がそれより前のイベントは照らさず、occurred_at がない・読めないイベントがあれば
+        照らすかを決められないので終了コード 2 にした。制御プレーンの events から直近の窓（差分を当てた時刻と直近 8 日の始まりの遅いほうから後）の
+        pr.conflicted・continue.enqueued・handoff.saved を引く tools/conflict-check/window-events.sql と、毎日と手動でそれを読んで schema.py に --since を
+        渡して照らす定期のワークフローのひな形 tools/conflict-check/ci/conflict-schema.yml（job conflict-schema）を置いた。ひな形の差分を当てた時刻
+        （CONFLICT_FILES_SINCE）は空にしてあり、空か時差つきの時刻でなければ照らさずに落ち、events を読む接続先（シークレット CONFLICT_EVENTS_DATABASE_URL）が
+        ない・読めないときも落ちる（差分の前の Engine のイベントで落ちることも、照らさずに緑になることもない）。PR には紐づかない記録を見るので PR ごとには
+        走らせない。test_schema.py の SinceTest がその絞り方を、test_schema_ci.py がひな形の形と手順の振る舞い（時刻の確かめ・シークレットのないとき・外れの
+        終了コードを握りつぶさないこと・写しのずれ）を確かめた。SQL を Postgres で走らせる WindowSqlTest は psql と DATABASE_URL のある環境だけで走り、
+        作業した環境には psql がなく飛ばした。あわせて tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に
+        この解決策と issue 1136 の解決策を挙げ、.github/workflows/conflict-schema.yml の schedule でも走るジョブから schema.py を呼ぶ wired_by の項目が
+        ないと wired: true にできないようにした（test_check.py の ConflictSchemaScheduleTest）。ワーカーは .github/workflows/ を変えられず、Engine は
+        別のリポジトリなので、差分を Engine に当てて Engine がこの欄を載せて出すようにすること、ひな形を写して CONFLICT_FILES_SINCE に当てた時刻を書くこと、
+        シークレットを置くこと、2 つの解決策を wired: true にして wired_by を書くことは建設者が行う（tools/conflict-check/README.md の
+        「直近の窓のイベント列の定期の照合」）。まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1207
+      at: 2026-11-08
+      decided_by: committee:D-0101
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0101（Issue #1208 の起票時の番号は D-0073。PR #1204）の test の案（D-0049 の 1 つ目の案どおり tools/conflict-check/events.py に
+        rule missing_conflict_files を足し、continue.enqueued(reason=conflict) と同じ job_id の conflict.files がその場にないものを落とす）を入れた。
+        rule・C-0007 の流れの fixtures/c0007-pr290-pr295-events.json・その場で載せた列が通るテストは issue 1135 の解決策ですでに入っていたので、
+        この案では、その rule が issue 1136 の解決策（conflict-files.yaml）の欄 conflict_files も読むようにした。continue.enqueued の payload に
+        conflict_files が conflict-files.yaml の形（空でない文字列の列で 1 件以上。判定は schema.py の field_error を使う）で載っていれば積んだその場の記録として通し、衝突したファイルにもその列を
+        使う（conflict.files より先に見る）。形どおりでなければ載っていないとみなし、今までどおり conflict.files で見る。Engine が
+        engine/conflict-files.patch どおりに欄を載せたあとも missing_conflict_files が落とし続けて、2 つの解決策が食い違わないようにするため。
+        test_events.py の MissingConflictFilesTest で、C-0007 の流れ（PR #290 のジョブ 309 は backfill だけ、PR #295 のジョブ 318・325・338 は記録なし）が
+        4 件落ちること、その列から conflict.files を外して continue.enqueued に conflict_files を載せた列がコマンドでも通ること、空の列・null・空白だけ・
+        文字列の列でない conflict_files は落ちること、その列が worker_log・backfill の記録より先に見られ K-0010 の agent_for_mechanical にも使われることを
+        確かめた。pr.conflicted の conflict_files は続きのジョブと job_id で結べないので見ない。Engine はまだ欄を載せず、この検査を走らせる配線も
+        建設者が入れるので、本物のイベント列では確かめておらず、未配線・未確認
+      issue: 1208
+      at: 2026-11-08
+      decided_by: committee:D-0101
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0076（Issue #1214 の起票時の番号は D-0074。PR #1203）の ci_check の案（Engine が積む時点で conflict.files を出すようになったら、
+        tools/conflict-check/events.py の record_check（missing_conflict_files）を本物のイベント列に対して走らせる CI のジョブを .github/workflows/ に置き、
+        wired_by にそのジョブを書いて wired: true にする。そのあと C-0007 と同じ形の衝突で落ちないことを事例記録で確かめて verified: true にする）のうち、
+        ワーカーの権限で入れられる分を入れた。issue 1207 の解決策の定期のワークフローのひな形 tools/conflict-check/ci/conflict-schema.yml に
+        ジョブ conflict-record を足し、制御プレーンの events から直近の窓（差分を当てた時刻 CONFLICT_FILES_SINCE と直近 8 日の始まりの遅いほうから後）に
+        積まれた continue.enqueued(reason=conflict) と、同じ job_id の job.started・job.finished・conflict.files を引く tools/conflict-check/record-events.sql を
+        読んで、events.py --record-only --since で照らすようにした。events.py に、record_check だけを出して K-0010 の線（check）を照らさない --record-only と、
+        schema.py と同じ線で occurred_at が差分を当てた時刻より前のイベントを組まない --since（occurred_at がない・読めなければ終了コード 2）を足した。
+        CONFLICT_FILES_SINCE とシークレット CONFLICT_EVENTS_DATABASE_URL は conflict-schema と分け合い、時刻が空か形が違う・シークレットがない・
+        events を読めないときは照らさずに落ちる。test_events.py の RecordOnlySinceTest で、C-0007 の流れ（fixtures/c0007-pr290-pr295-events.json）が
+        --record-only で missing_conflict_files の 4 件だけで落ち、同じ形の衝突でも continue.enqueued に conflict_files を載せた列は通ること、--since の絞り方を、
+        test_schema_ci.py の RecordTemplateTest でジョブの形と手順の振る舞いを、RecordSqlTest で SQL を Postgres の使い捨ての schema で走らせて
+        差分の前・窓の外・衝突でない続きを出さず、出した列を events.py が組めることを確かめた。あわせて tools/knowledge-enforcement-check/check.py の
+        REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW にこの解決策を挙げ、.github/workflows/conflict-schema.yml の schedule でも走るジョブから
+        events.py を呼ぶ wired_by の項目がないと wired: true にできないようにした（test_check.py の ConflictRecordScheduleTest）。ワーカーは
+        .github/workflows/ を変えられず、Engine は別のリポジトリなので、Engine に engine/conflict-files.patch を当てて積むときに衝突したファイルを
+        載せるようにすること、ひな形を写して CONFLICT_FILES_SINCE を書きシークレットを置くこと、wired: true にして wired_by
+        （job conflict-record・runs tools/conflict-check/events.py）を書くこと、C-0007 と同じ形の衝突で落ちないことを事例記録で確かめて
+        verified: true にすることは建設者が行う（tools/conflict-check/README.md の「直近の窓に積まれた衝突の続きのジョブの定期の照合」）。
+        まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1214
+      at: 2026-11-08
+      decided_by: committee:D-0076
+      wired: false
+      verified: false
+    - kind: schema
+      what: >-
+        議決 D-0076（Issue #1213 の起票時の番号は D-0074。PR #1203）の schema の案（D-0049 の schema の案を別の項目として記録し、
+        pr.conflicted・continue.enqueued(reason=conflict)・handoff の衝突したファイルを必須にして空や null のイベントを出せないようにする。
+        handoff は test で見ていないので、ここで担保する）を入れた。D-0049 の schema の案の項目（decided_by: committee:D-0049、wired: false、
+        verified: false）と、3 つのイベントに conflict_files を必須にする定義 tools/conflict-check/conflict-files.yaml・schema.py・
+        engine/conflict-files.patch は issue 1136 の解決策ですでに入っていたので、この案では、handoff が events.py の missing_conflict_files にも
+        事例記録の fixtures にもなく、handoff.saved の線が Engine のイベントに本当に効くかを誰も見ていなかったところを担保した。
+        tools/conflict-check/engine_harness.py に handoff を足し、Engine の orchestrator/dispatcher/dispatcher.py が出す handoff.saved の
+        payload の欄を構文木から読む（動かさない。辞書の式でないか呼び出しがなければ落ちる）。test_schema.py の EngineHandoffTest で、
+        conflict-files.yaml の handoff.saved の required_when の欄（continue_reason）を Engine が出していること（欄の名前がずれると衝突の続きの
+        handoff.saved が conflict_files なしで黙って通る）と、その欄の形のイベントが continue_reason=conflict なら conflict_files がない・空の列で
+        落ち、載せれば通り、衝突でない続きと続きでないジョブでは要らないことを、手元の Engine（main の 9f8f6b4）で確かめた。今の Engine は
+        handoff.saved に conflict_files を出さないので、Engine の衝突の続きの handoff.saved はすべて missing_field で落ちる。
+        あわせて tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW にこの解決策を挙げ、
+        .github/workflows/conflict-schema.yml の schedule でも走るジョブから schema.py を呼ぶ wired_by の項目がないと wired: true にできないようにした
+        （test_check.py の ConflictSchemaScheduleTest）。Engine に engine/conflict-files.patch を当てて handoff.saved にも衝突したファイルを載せること、
+        schema.py を定期に走らせる配線（ひな形 ci/conflict-schema.yml の conflict-schema のジョブ）は建設者が入れるので、本物のイベント列では
+        確かめておらず、未配線・未確認
+      issue: 1213
+      at: 2026-11-08
+      decided_by: committee:D-0076
+      wired: false
+      verified: false
 decided_by: committee:D-0049

@@ -1,13 +1,14 @@
 # 衝突の続きのジョブの検査
 
-既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135）。
+既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135。`continue.enqueued` の欄 `conflict_files` を読むのは議決 `D-0101`（Issue #1208 の起票時の番号は `D-0073`）、Issue #1208）。`schema.py` を直近の窓のイベント列に対して定期に走らせるひな形 `ci/conflict-schema.yml` も `K-0014` の担保（議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`）、Issue #1207）。同じひな形の `conflict-record` のジョブ（`record-events.sql` で読んだ直近の窓に積まれた衝突の続きのジョブを `events.py --record-only` で照らす）も `K-0014` の担保（議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`）、Issue #1214）。
 
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
 python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテスト（どちらも Engine の job.finished の欄を含む）と、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
-python3 -B tools/conflict-check/schema.py --events <イベントの JSON か JSONL> [--defs <定義>] [--json]   # 衝突したファイルの列が載っているか（K-0014。下の「衝突したファイルの列の定義」）
+python3 -B tools/conflict-check/schema.py --events <イベントの JSON か JSONL> [--defs <定義>] [--since <時刻>] [--json]   # 衝突したファイルの列が載っているか（K-0014。下の「衝突したファイルの列の定義」）
+python3 -B tools/conflict-check/events.py --events <イベントの JSON か JSONL> --record-only [--since <時刻>]   # 衝突したファイルがその場で記録されたかだけを見る（K-0014。下の「直近の窓に積まれた衝突の続きのジョブの定期の照合」）
 ```
 
 依存は Python 3 と PyYAML（Engine の `core-gates/knowledge_check.py` と同じ）。機械的な解消の検査（`verify_mechanical`）とそのテストは git と node も使う（node か git がなければ飛ばす。CI（`CI=true`）では飛ばさない）。`test_engine.py` は bash・jq と Engine のチェックアウトも使う。
@@ -80,14 +81,16 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 衝突を解く続きのジョブに、衝突したファイルがその場で記録されていない回を落とす。知見 `K-0014`（記録がないと、同じファイルの衝突が繰り返している型が集計で見えない）の担保で、委員会の議決 `D-0049`（PR #1127）と Issue #1135 で作った。
 
 - 線は議決 `D-0049` の test の案どおり「`continue.enqueued`（reason=conflict）の時点で載っているか」。同じ `job_id` の `conflict.files` が、そのジョブの `job.started`・`job.finished` より前（イベント列の順。`id` があれば `id` の順）にあればその場で載ったとみなす
+- `continue.enqueued` の payload に衝突したファイルの欄 `conflict_files`が `conflict-files.yaml` の定義の形（空でない文字列の列で 1 件以上）で載っていれば、積んだその場の記録として通し、衝突したファイルにもその列を使う（`conflict.files` より先に見る）。形の判定は `schema.py` の `field_error` を使う（`events.py` では判定を持たない。定義を読めなければ終了コード 2）。形どおりでない（空の列・null・文字列の列でない）ときは載っていないとみなし、`conflict.files` で見る（議決 `D-0101`、Issue #1208。Engine が `engine/conflict-files.patch` どおりに欄を載せたあとも、この検査が落とし続けないように）
 - 外れにするのは、`conflict.files` がない回、`payload.source` が `backfill`（`factoryctl learn backfill-conflicts` で後から埋めた）のものしかない回、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない回。`source` のない記録は位置だけで見る。衝突がなかった回の空の列（`files: []`）は、その場で載っていれば通る
 - 終わっていない回・終わらずに止まった回（`job.finished` がない回）も照らす。積んだ時点で載っているはずなので、終わるのを待たない。積んだだけでまだ動き出していない回も、載っていなければ落ちる
 - backfill の中身（衝突したファイル）は、上の 3 つの rule（`agent_for_mechanical` など）にはそのまま使う
 - `continuation.yaml` の線ではないので、`check` ではなく `record_check` が出す。`events.py` のコマンドの終了コード・標準出力・`--json` の `errors` には一緒に出るが、`watch.py` は `check` だけを使うので、記録の欠けだけでは停止を開かない
-- `test_events.py` の `MissingConflictFilesTest` が確かめること: `fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ちる（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）。`conflict.files` を `continue.enqueued` のすぐ後ろに載せた列は通る。今の Engine の形（ジョブの終わりに `worker_log` で記録）の回と、終わらずに止まった回で載っていないものは落ちる
+- `test_events.py` の `MissingConflictFilesTest` が確かめること: `fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ちる（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）。`conflict.files` を `continue.enqueued` のすぐ後ろに載せた列と、`conflict.files` を外して `continue.enqueued` に `conflict_files` を載せた列は通る（形どおりでない `conflict_files` は落ちる）。今の Engine の形（ジョブの終わりに `worker_log` で記録）の回と、終わらずに止まった回で載っていないものは落ちる
 - `fixtures/c0007-pr290-pr295-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0007.md`）にある事実だけを Engine のイベントの形に組み直したもの。id・head_sha・ブランチ名は仮の値。PR #295 の 3 回の tier・費用・agent_resumed は事例記録にないので置かない
 - 2026-11-08 の Engine（`main` の `57069a8`）は、`conflict.files` を `continue.enqueued` や `pr.conflicted` には載せず、ジョブが終わってからワーカーのログから記録する（`dispatcher.py` の `process_learn.record_conflict_files`、`source: worker_log`）。この記録は積んだ時点のものではないので、今の Engine の記録はすべて `missing_conflict_files` で落ちる（K-0014 が指す欠けがまだ残っている）。Engine が積むときに `conflict.files` を記録する（議決 `D-0049` の schema の案。`continue.enqueued`・`pr.conflicted`・handoff に衝突したファイルを必須の項目にする）のは建設者。イベントを出してこの検査を走らせる配線も建設者
-- handoff は制御プレーンのイベント列にないので、この検査では見ない。`continue.enqueued` の payload に衝突したファイルの欄を足す形も、欄の名前が決まっていないので読まない（Engine が入れたら別のチケットで合わせる）
+- 本物のイベント列に対しては、ひな形 `ci/conflict-schema.yml` の `conflict-record` のジョブが毎日と手動で走らせる（下の「直近の窓に積まれた衝突の続きのジョブの定期の照合」。議決 `D-0076`、Issue #1214）
+- handoff（`handoff.saved`）はこの検査では見ない（積んだ時点ではなくジョブの終わりに出るため）。衝突の続きの `handoff.saved` に衝突したファイルが載っているかは `schema.py` が見る（下の「衝突したファイルの列の定義」。議決 `D-0076`、Issue #1213）。`pr.conflicted` の `conflict_files` も見ない（続きのジョブとは `job_id` で結べないため。欄があるかは `schema.py` が見る）
 
 制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
 
@@ -164,8 +167,43 @@ supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure
 - 定義は `conflict-files.yaml`（Engine の `definitions/events.yaml` の `events` と同じ形の抜き書き。`required`・`required_when`・`fields`）。`schema.py` はこの定義か、`--defs` で渡した Engine の `events.yaml` でイベント列を照らし、外れがあれば終了コード 1、記録か定義を読めなければ 2
 - Engine は別のリポジトリなので、Engine の定義に同じ欄を足す差分を `engine/conflict-files.patch` に置いた。`test_schema.py` の `EngineDefsTest` が、Engine のチェックアウトの `definitions/events.yaml` の写しに差分を当て（もう入っていればそのまま）、Engine の定義が `conflict-files.yaml` とそろうことを確かめる。Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
 - C-0005 の流れ（`fixtures/c0005-pr659-events.json`）は、今の Engine の形どおりイベントに衝突したファイルが載らず（`conflict.files` を `job_id` で結ぶだけ）、`pr.conflicted` と `continue.enqueued`（reason=conflict）のすべてが `missing_field` で落ちる
+- handoff は `events.py` の `missing_conflict_files` では見ず、事例記録の fixtures にも `handoff.saved` がないので、`test_schema.py` の `EngineHandoffTest` が Engine の `orchestrator/dispatcher/dispatcher.py` の `handoff.saved` の payload の欄を `engine_harness.py handoff` で構文木から読み（動かさない）、`conflict-files.yaml` の `required_when` の欄（`continue_reason`）を Engine が出していること（欄の名前がずれると、衝突の続きの `handoff.saved` が `conflict_files` なしで黙って通るため）と、その欄の形のイベントが衝突の続きなら `conflict_files` がない・空の列で落ち、載せれば通り、衝突でない続きと続きでないジョブでは要らないことを確かめる（議決 `D-0076`（Issue #1213 の起票時の番号は `D-0074`。PR #1203）、Issue #1213）。payload が辞書の式でないか `handoff.saved` を出す呼び出しがなければ落ちる。Engine のチェックアウトの渡し方と飛ばし方は `EngineDefsTest` と同じ
 
-配線は建設者が入れる。差分を Engine に当てることと、Engine がこの欄を載せてイベントを出すこと（`pr_events.py` の `pr.conflicted` は GitHub の `mergeable_state` からしか衝突を知らないので、衝突したファイルを求める手順が要る。`continuation.enqueue` と `dispatcher.py` の `handoff.saved` も同じ）、欄がない・空のイベントを出さないこと、`schema.py` を周期ごとか PR ごとに走らせることが要る。入るまでは `K-0014` の解決策は `wired: false`・`verified: false`。
+配線は建設者が入れる。差分を Engine に当てることと、Engine がこの欄を載せてイベントを出すこと（`pr_events.py` の `pr.conflicted` は GitHub の `mergeable_state` からしか衝突を知らないので、衝突したファイルを求める手順が要る。`continuation.enqueue` と `dispatcher.py` の `handoff.saved` も同じ）、欄がない・空のイベントを出さないこと、`schema.py` を定期に走らせること（下の「直近の窓のイベント列の定期の照合」）が要る。入るまでは `K-0014` の解決策は `wired: false`・`verified: false`。
+
+### 直近の窓のイベント列の定期の照合（`ci/conflict-schema.yml`・`window-events.sql`）
+
+`schema.py` を、制御プレーンの直近の窓のイベント列に対して毎日と手動で走らせるワークフローのひな形。議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`。PR #1204）と Issue #1207 で作った。
+
+```sh
+psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 -v since=<差分を当てた時刻> -v window_days=8 -f tools/conflict-check/window-events.sql > conflict-events.json
+python3 -B tools/conflict-check/schema.py --events conflict-events.json --since <差分を当てた時刻>
+```
+
+- `window-events.sql` は、`conflict-files.yaml` の 3 つのイベントのうち、`occurred_at` が差分を当てた時刻（`since`）と直近 `window_days` 日の始まりの遅いほうから後のものを、`schema.py` の `--events` に渡す JSON の配列（`id`・`name`・`occurred_at`・`job_id`・`correlation_id`・`payload`）で出す
+- `schema.py` の `--since` は、`occurred_at` がそれより前のイベントを照らさない（SQL で絞ったあとも同じ線で絞る）。差分の前の Engine はこの欄を出さないので、前のイベントまで照らすとすべて `missing_field` で落ちる。`--since` を渡したのに `occurred_at` がない・時差つきの ISO 8601 で読めないイベントがあれば、照らすかを決められないので終了コード 2。`--json` は照らさなかった件数を `skipped` に出す
+- ひな形の `conflict-schema` のジョブは、`CONFLICT_FILES_SINCE` が空か時差つきの ISO 8601 の時刻でなければ最初の手順で `conflict_files_since_missing`、シークレット `CONFLICT_EVENTS_DATABASE_URL` がないか events を読めなければ `events_unreadable` で落ちる（照らさずに緑にしない）。外れがあれば `schema.py` の終了コードで落ち、結果を手順の要約に出す。窓（`WINDOW_DAYS`）は 8 日（毎日の実行が 1 回飛んでも見落とさない幅）
+- PR には紐づかない記録を見るので、PR ごとには走らせない（落ちても PR を止めない。直すのは Engine）
+- `test_schema_ci.py` が、ひな形の形（`schedule` の cron と `workflow_dispatch`・`if:` と `continue-on-error` なし）、時刻の確かめ、シークレットのないとき、外れの終了コードを握りつぶさないこと、`window-events.sql` の照らすイベントが定義と同じこと、写しがあれば `CONFLICT_FILES_SINCE` の行のほかがひな形と同じでその値が時刻であることを見る。`WindowSqlTest` は SQL を `DATABASE_URL` の Postgres の使い捨ての schema で走らせ、差分を当てる前・窓の外・ほかのイベントを出さないことを見る（psql か `DATABASE_URL` がなければ飛ばす）。どちらもひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
+
+建設者が入れること（ワーカーは `.github/workflows/` を変えられず、Engine は別のリポジトリ）: 差分を Engine に当てて、Engine が衝突したファイルの列を載せてイベントを出すようにする。そのあとこのひな形を `.github/workflows/conflict-schema.yml` に写し、`CONFLICT_FILES_SINCE` に差分を当てた時刻を書く（写すときに変えてよいのはその行だけ）。events を読むだけの権限の接続先をシークレット `CONFLICT_EVENTS_DATABASE_URL` に置く。手動で走らせて通ったら、`K-0014` の issue 1136 と 1207 の解決策を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-schema.yml, job: conflict-schema, runs: tools/conflict-check/schema.py}` と、`{workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py}`（`tools/knowledge-enforcement-check/README.md` の「どの解決策にも求める `check.py` の配線」）を書く。`tools/knowledge-enforcement-check/check.py` が、`.github/workflows/conflict-schema.yml` の schedule でも走るジョブから `schema.py` を呼ぶ項目がなければ落とす（「定期の配線の必須」）。
+
+### 直近の窓に積まれた衝突の続きのジョブの定期の照合（`ci/conflict-schema.yml` の `conflict-record`・`record-events.sql`）
+
+`events.py` の rule `missing_conflict_files` を、制御プレーンの直近の窓に積まれた衝突の続きのジョブに対して毎日と手動で走らせるジョブ。上の `conflict-schema` と同じひな形に置き、`CONFLICT_FILES_SINCE`・`WINDOW_DAYS`・シークレット `CONFLICT_EVENTS_DATABASE_URL` を分け合う（Engine が積む時点で衝突したファイルを載せるのは同じ `engine/conflict-files.patch` なので、照らし始める時刻も同じ）。議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`。PR #1203）の ci_check の案と Issue #1214 で作った。
+
+```sh
+psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 -v since=<差分を当てた時刻> -v window_days=8 -f tools/conflict-check/record-events.sql > conflict-record-events.json
+python3 -B tools/conflict-check/events.py --events conflict-record-events.json --since <差分を当てた時刻> --record-only
+```
+
+- `record-events.sql` は、`occurred_at` が差分を当てた時刻（`since`）と直近 `window_days` 日の始まりの遅いほうから後の `continue.enqueued`（reason=conflict）と、同じ `job_id` の `job.started`・`job.finished`・`conflict.files` を、`events.py` の `--events` に渡す JSON の配列（`window-events.sql` と同じ列）で `id` の順に出す。結ぶイベントは窓の前でも出す（積んだ時点より前か後かは `events.py` が `id` の順で見る）
+- `events.py` の `--record-only` は `record_check`（`missing_conflict_files`）だけを出し、`continuation.yaml` の線（`over_limit` など。`check`）は照らさない（そちらは `watch.py` の見張り。ここで落とすと記録の欠けと積み方の外れが混ざる）
+- `events.py` の `--since` は `schema.py` の `--since` と同じ線で、`occurred_at` がそれより前のイベントを組まない。`occurred_at` がない・時差つきの ISO 8601 で読めないイベントがあれば終了コード 2
+- ジョブの手順と落ち方は `conflict-schema` と同じ（`CONFLICT_FILES_SINCE` が時刻でなければ `conflict_files_since_missing`、シークレットがないか events を読めなければ `events_unreadable`、外れがあれば `events.py` の終了コード 1 で落ち、結果を手順の要約に出す）。`needs` はなく、`conflict-schema` が落ちても照らす
+- `test_events.py` の `RecordOnlySinceTest` が、C-0007 の流れ（`fixtures/c0007-pr290-pr295-events.json`）が `--record-only` で `missing_conflict_files` の 4 件だけで落ちること、同じ形の衝突でも `continue.enqueued` に `conflict_files` を載せた列は通ること（PR #290 の K-0010 の `agent_for_mechanical` も出さない）、`--since` の絞り方と読めない時刻を確かめる。`test_schema_ci.py` の `RecordTemplateTest` がジョブの形と手順の振る舞いを、`RecordSqlTest` が SQL を `DATABASE_URL` の Postgres の使い捨ての schema で走らせて、差分を当てる前・窓の外・衝突でない続き・ほかのイベントを出さず、出した列を `events.py` が組めることを見る（psql か `DATABASE_URL` がなければ飛ばす）
+
+建設者が入れること: 上の `conflict-schema` と同じく、差分を Engine に当てて積むときに衝突したファイルを載せるようにしてから、ひな形を `.github/workflows/conflict-schema.yml` に写す（`conflict-record` のジョブも一緒に写る）。手動で走らせて通ったら、`K-0014` の issue 1214 の解決策を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-schema.yml, job: conflict-record, runs: tools/conflict-check/events.py}` と、`{workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py}` を書く。`tools/knowledge-enforcement-check/check.py` が、`.github/workflows/conflict-schema.yml` の schedule でも走るジョブから `events.py` を呼ぶ項目がなければ落とす（「定期の配線の必須」）。そのあと、C-0007 と同じ形の衝突（`CHANGELOG.md` だけの衝突の続きのジョブ）が窓に入った回で落ちなかったことを事例記録に残し、`verified: true` と `verified_by` を書く。
 
 ## Engine の本物の処理のテスト（`test_engine.py`）
 

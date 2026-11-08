@@ -1,0 +1,82 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0106
+pr: https://github.com/guccyon/rally/pull/1282
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に D-0100 の 1 つ目の test の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・evidence・confidence・invalidate_when とトップの decided_by:
+    committee:D-0033 は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - 書く予定の wired_by（.github/workflows/pr-body-engine.yml の engine-test）は、K-0012 の issue
+    1131 の ci_check や K-0001 の pr-body-engine-test と同じ写しの同じジョブなので、別の検査を作らず重複も矛盾もありませんが、配線する変更セットではこの
+    3 つの wired をまとめて揃えてください。
+  - 'wired: false・verified: false と what の「まだ配線されておらず効き目は確かめていない」が一致し、invalidate_when
+    のどちらもまだ満たされないので、K-0012 は active・hypothesis のままが妥当で確かさを変える理由はありません。'
+  - D-0100 と D-0105 の票が求めた待ちの境目（body_fix のジョブの開始ではなく本文の書き換えの後に始まった検査に絞る）と、1 つ目の test
+    の what が supervisor.body_rechecked を数える書き方になっていない点はこの差分でも手つかずなので、建設者が配線する前の変更セットで応えてください。
+  - D-0100 の票では engine.test.mjs の待ちのテストを (11) と呼び、この記録と前の記録では (12) と呼んでいるので、次に K-0012
+    を直すときは番号の書き方を揃えてください。
+  - 差分は工場の担保の記録だけで製品の用語や業務ルールを定めておらず、specs/ の glossary.yaml・context-map.yaml と重なるところもありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0100 を指していて、D-0100 の enforcement にある 1
+    つ目の test の案（3 つのテストを pull_request ごとに走らせる）に当たるので、議決まで辿れます。'
+  - 'Issue #1197 の起票時の番号を D-0071、PR を #1192 と書いていて、D-0100 の pr と前の ci_check の項目（Issue
+    #1196）の書き方とも合うので、出どころを辿れます。'
+  - '確かめた内容は手元の Engine（9f8f6b4）とテストの写しの上だけで、ワークフローの写しはまだなく PR ごとには走っていないと書き、wired:
+    false・verified: false にしているので、効き目を言い過ぎていません。'
+  - (12) の中の条件付きの早い return のように pass と数えられる外し方は見ていないと、見張りの届かない範囲を自分で書いているのは根拠の示し方として妥当です。
+  - 担保の記録を 1 件足しただけで statement・evidence・confidence・invalidate_when は変えておらず、本物のイベント列での確かめもないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、テストの番号、コミットの短い id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0100 の 2 つ目の案（test）のうちワーカーの権限で入れられる分の記録を
+    1 件足すだけで、statement・scope・confidence・invalidate_when は変えていません。
+  - (12) のテストの名前が見張りの一覧の 6 件と同じで、TAP の結果で SKIP・TODO のない ok と数えられ、集計の skip・todo が 0
+    かを見る線は、走らせた結果だけで機械的に引けるので決定論の担保に向いています。
+  - 'check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO で 3 つのテストを呼ぶ wired_by
+    の項目がないと wired: true にできなくしたのは、配線したと言い過ぎる外し方を前もって止める作りで、作る費用に見合っています。'
+  - ただし (12) の中で条件付きの早い return をして pass と数えられる外し方はまだ見ておらず、テストを残したまま中身を空にする書き換えが通る穴が残っています。
+  - 'ワークフローの写しも必須チェックもまだないので wired: false・verified: false のままが正しく、本物の記録での確かめもないので
+    K-0012 の確かさは hypothesis のままが妥当です。'
+  - D-0100 の 3 つ目の案（recheck.mjs が数える gate.evaluated を本文を見る gate に絞る）はこの差分でも手つかずなので、次に
+    K-0012 を直す変更セットで応えてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0100 の 1 つ目の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - 'wired: false・verified: false で、what にも「まだ配線されておらず効き目は確かめていない」とあるので効き目を言い過ぎておらず、確かさは
+    hypothesis のままが妥当です。'
+  - 反例として what 自身が認めるとおり、(12) の中に条件付きの早い return を入れて飛ばさずに pass と数えさせる書き換えは見張りをすり抜けるので、次に
+    K-0012 を直すときは (12) の中で待ちを確かめる assert が実際に走った回数を数えるなどで塞いでください。
+  - ci.test.mjs は (12) を見張りますが、ci.test.mjs 自身の見張りのテストを skip・削除する書き換えを見るものは what に書かれていないので、見張りの見張りが要らない理由か、check.py
+    の wired_by の runs でそれを止められるかを書き添えてください。
+  - 集計の skip から (11) を除いているのは、(11) が skip されても落ちない窓なので、除く理由と (11) が担保の線に関わらないことを what
+    に書いてください。
+  - 必須のチェックの名前を、前の ci_check の記録では engine-test、この記録では pr-body-engine-test と書いていて、建設者が違う名前を登録する反例になりうるので、次の変更セットでどちらかに揃えてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: engine.test.mjs の (12) の 6 件のテストで t.plan（または最後に到達したことを示す印）を使って期待するアサーションの数を固定し、ci.test.mjs
+    で TAP の結果からその数どおりにアサーションが走ったことを照らして、条件付きの早い return で中身を飛ばして pass と数えられる書き換えをマージ前に落とす。
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/pr-body-engine.yml
+    に写して pr-body-engine-test を必須チェックにし、wired_by に {workflow: .github/workflows/pr-body-engine.yml,
+    job: engine-test} を runs が recheck.test.mjs・engine.test.mjs・ci.test.mjs の 3 項目で書いて
+    wired: true にし、check.py の PrBodyEngineTestsWiringTest で照らす。'

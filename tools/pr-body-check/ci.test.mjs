@@ -2,10 +2,12 @@
 // 建設者がこのひな形を .github/workflows/pr-body-engine.yml に写し、engine-test を必須のチェックにすると、関所を呼ばない Engine の版では
 // engine.test.mjs の (3) で落ちる。その止め方が効くのは、ひな形が PR ごとに必ず走り、落ちたら止め、ENGINE_REF の行を変えた PR でその版の
 // Engine を確かめる形のときだけなので、それを見る。写しがあれば ENGINE_REF の行のほかがひな形と同じかも見る（写すときに変えてよいのはその行だけ）。
+// そのずれの見張りが、見張りを外さない直しのずれも落とし、どの行かを返すことを確かめる（知見 K-0012 の担保。議決 D-0074 の ci_check の案、Issue #1205）。
 // このテストは engine-test の node --test の中で走るので、写しから見張りを外す変更も同じジョブで落ちる。
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
+// engine.test.mjs の (12)（本文の直しのあとの再検査を待つ merge_step の線。知見 K-0012 の担保）も、TAP で走らせた結果で pass と数えられたかを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071）の test の案、Issue #1197）。
 // (10) と、そこから呼ぶ assertWritesEveryTime に、条件付きの早い return・短絡・三項・try/catch のような飛ばさずに pass になる外し方がないことも見る（議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案、Issue #1187）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
@@ -31,8 +33,8 @@ const sendbackTemplate = readFileSync(fileURLToPath(new URL("../sendback-check/c
 const sendbackCopyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));
 
 const engineRef = (text) => text.match(/^ {2}ENGINE_REF:\s*(\S+)\s*$/m)?.[1];
-/** ENGINE_REF の行を除いた中身（ずれの比べ方）。 */
-const withoutRef = (text) => text.split(/\r?\n/).filter((l) => !/^\s*ENGINE_REF:/.test(l)).join("\n").trimEnd();
+/** ENGINE_REF の行（ワークフローの env の 1 行。engineRef が読む行）を除いた中身（ずれの比べ方）。ほかの深さの ENGINE_REF: はずれに数える。 */
+const withoutRef = (text) => text.split(/\r?\n/).filter((l) => !/^ {2}ENGINE_REF:/.test(l)).join("\n").trimEnd();
 
 /** ジョブの本体（`  <job>:` の次の行から次のジョブの前まで）。 */
 function jobBody(lines, job) {
@@ -156,21 +158,82 @@ test("GitHub Actions では写し（.github/workflows/pr-body-engine.yml）が�
   assert.ok(existsSync(copyPath), "写しが .github/workflows/pr-body-engine.yml にない。ひな形はこの名前に写す");
 });
 
+// 写しとひな形のずれの見張り（知見 K-0012 の担保。議決 D-0074（Issue #1205 の起票時の番号は D-0072。PR #1202）の ci_check の案、Issue #1205）。
+// 写すときに変えてよいのは ENGINE_REF の行だけなので、写しの中身がほかの 1 行でもひな形とずれたら落とす。ずれは見張り（workflowProblems）を
+// 外さない直し（手順の名前・Node の版・要約の書き出し・足した手順など）でも落とし、どの行がずれたかを返す。このテストは写しの engine-test の中で走るので、
+// 写しから ci.test.mjs を外す直しはここでは止まらない。それは tools/knowledge-enforcement-check/check.py が、この解決策の wired_by に
+// 写しの pull_request のジョブから ci.test.mjs を呼ぶ項目を求めて止める（K-0012 の issue 1205 の解決策の requires_check）。
+
+/** 写しの外れ（空なら通る）。ENGINE_REF の行のほかのずれ・見張りの外れ・写しの sendback-engine.yml との版のずれ（sendbackCopy を渡したとき）。 */
+function copyProblems(copy, base, sendbackCopy = null) {
+  const problems = [];
+  const a = withoutRef(copy).split("\n");
+  const b = withoutRef(base).split("\n");
+  const at = a.findIndex((l, i) => l !== b[i]);
+  if (at >= 0 || a.length !== b.length) {
+    const i = at >= 0 ? at : Math.min(a.length, b.length);
+    problems.push(`写しが ENGINE_REF の行のほかでひな形とずれている（ENGINE_REF の行を除いて ${i + 1} 行目。写し: ${JSON.stringify(a[i] ?? null)}、`
+      + `ひな形: ${JSON.stringify(b[i] ?? null)}）。ひな形を直してから写し直す`);
+  }
+  problems.push(...workflowProblems(copy).map((p) => `写し: ${p}`));
+  if (sendbackCopy !== null && engineRef(copy) !== engineRef(sendbackCopy)) {
+    problems.push("写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている");
+  }
+  return problems;
+}
+
 test("写し（.github/workflows/pr-body-engine.yml）があれば、ENGINE_REF の行のほかはひな形と同じで、その版も見張りを通る", {
   skip: existsSync(copyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
-  const copy = readFileSync(copyPath, "utf8");
-  assert.equal(withoutRef(copy), withoutRef(template), "写しが ENGINE_REF の行のほかでひな形とずれている。ひな形を直してから写し直す");
-  assert.deepEqual(workflowProblems(copy), []);
-  if (existsSync(sendbackCopyPath)) {
-    assert.equal(engineRef(copy), engineRef(readFileSync(sendbackCopyPath, "utf8")),
-      "写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている");
-  }
+  const sendbackCopy = existsSync(sendbackCopyPath) ? readFileSync(sendbackCopyPath, "utf8") : null;
+  assert.deepEqual(copyProblems(readFileSync(copyPath, "utf8"), template, sendbackCopy), []);
 });
 
 test("ずれの比べ方は ENGINE_REF の行だけを無視する", () => {
   assert.equal(withoutRef(template.replace(engineRef(template), "0".repeat(40))), withoutRef(template));
   assert.notEqual(withoutRef(template.replace(`name: ${CHECK_NAME}`, "name: engine-test")), withoutRef(template));
+});
+
+test("ひな形をそのまま写した写しと、ENGINE_REF の行だけを変えた写しは通る", () => {
+  assert.deepEqual(copyProblems(template, template), []);
+  assert.deepEqual(copyProblems(template.replace(/\n/g, "\r\n"), template), []);
+  const bumped = template.replace(engineRef(template), "0123456789abcdef0123456789abcdef01234567");
+  assert.deepEqual(copyProblems(bumped, template), []);
+  assert.deepEqual(copyProblems(bumped, template, sendbackTemplate.replace(engineRef(sendbackTemplate), engineRef(bumped))), []);
+});
+
+test("ENGINE_REF の行のほかでひな形とずれた写しは、見張りを外さない直しでも外れになる", () => {
+  const testStep = "          node --test --test-reporter=spec > pr-body-test.txt 2>&1 || rc=$?\n";
+  const cases = {
+    "注釈を書き換える": template.replace("# ワーカーは .github/workflows/ を変えられないので", "# 建設者が"),
+    "手順の名前を変える": template.replace("      - name: PR 本文の関所のテスト（K-0001）\n", "      - name: PR 本文のテスト\n"),
+    "Node の版を変える": template.replace("node-version: 22", "node-version: 20"),
+    "Python の手順を外す": template.replace(/^ {6}- uses: actions\/setup-python@v5\n {8}with:\n {10}python-version: "3\.12"\n/m, ""),
+    "要約に書き出さない": template.replace(/^ {10}\{ echo "## pr-body-engine.*\n/m, ""),
+    "テストの前に手順を足す": template.replace(testStep, `          npm ci\n${testStep}`),
+    "concurrency で取り消さない": template.replace("cancel-in-progress: true", "cancel-in-progress: false"),
+    "末尾にジョブを足す": `${template.trimEnd()}\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: "true"\n`,
+    "ログに出さない": template.replace(/^ {10}cat pr-body-test\.txt\n/m, ""),
+  };
+  for (const [name, copy] of Object.entries(cases)) {
+    assert.notEqual(copy.trimEnd(), template.trimEnd(), `${name}: 置き換えが効いていない`);
+    assert.deepEqual(workflowProblems(copy), [], `${name}: 見張りでも落ちる直しなので、ずれの見張りの確かめにならない`);
+    const problems = copyProblems(copy, template);
+    assert.equal(problems.length, 1, `${name}: ${problems.join(" / ")}`);
+    assert.match(problems[0], /^写しが ENGINE_REF の行のほかでひな形とずれている（ENGINE_REF の行を除いて \d+ 行目/, name);
+  }
+});
+
+test("写しの見張りを外す直しと、ENGINE_REF を別の深さに足す・sendback-engine.yml の写しと版がずれる写しも外れになる", () => {
+  const narrowed = template.replace("node --test --test-reporter=spec >", "node --test --test-reporter=spec recheck.test.mjs >");
+  assert.ok(copyProblems(narrowed, template).some((p) => p.startsWith("写しが ENGINE_REF の行のほかで")));
+  assert.ok(copyProblems(narrowed, template).some((p) => p.startsWith("写し: ")));
+  const override = template.replace("          ENGINE_DIR: ${{ github.workspace }}/.engine\n",
+    `          ENGINE_DIR: \${{ github.workspace }}/.engine\n          ENGINE_REF: ${"f".repeat(40)}\n`);
+  assert.notEqual(override, template);
+  assert.ok(copyProblems(override, template).some((p) => p.startsWith("写しが ENGINE_REF の行のほかで")), "手順の env の ENGINE_REF をずれに数えていない");
+  const otherRef = sendbackTemplate.replace(engineRef(sendbackTemplate), "0".repeat(40));
+  assert.deepEqual(copyProblems(template, template, otherRef), ["写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている"]);
 });
 
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が、ワークフローの node --test の実行の対象から外れていないことの見張り
@@ -412,9 +475,13 @@ test("gate.test.mjs を TAP で走らせると、通る側のテストが pass �
   assert.deepEqual(runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES), [], tap);
 });
 
+/** engine.test.mjs の TAP（(10) と (12) の見張りで 1 回だけ走らせる）。 */
+let engineTap;
+const runEngineTap = () => (engineTap ??= runTap(ENGINE_TEST));
+
 test("engine.test.mjs を TAP で走らせると、(10) が通る側の 3 通りの形で pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
   assert.ok(PASSING_REPORTS.length >= 3, "通る側の形（c0005.mjs の PASSING_REPORTS）が 3 通りない");
-  const tap = runTap(ENGINE_TEST);
+  const tap = runEngineTap();
   assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], tap);
 });
 
@@ -458,6 +525,56 @@ test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip�
   const problems = runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES);
   assert.equal(problems.filter((p) => /pass と数えられていない（skip）/.test(p)).length, PASSING_REPORTS.length, tap);
   assert.ok(problems.includes(`${GATE_TEST}: skip の数が ${PASSING_REPORTS.length}（0 でない）`), tap);
+});
+
+// engine.test.mjs の (12)（知見 K-0012 の担保。Engine の supervisor の merge_step がマージの前に本文の直しの終わりと直した本文の pr-body-check を待つ線）も、
+// ひな形の engine-test の node --test で走らせた結果で pass と数えられ、skip・todo が 0 かを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071。PR #1192）の
+// test の案、Issue #1197）。(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは、ここで外れになる。(12) の名前の一覧は
+// engine.test.mjs の (12) のテストと同じにする（足したらここにも足す。足さないと、新しい (12) が飛ばされても見張れない）。注釈の行は見ない。
+const ENGINE_RECHECK_NAMES = [
+  "(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ",
+  "(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ",
+  "(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）",
+  "(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る",
+  "(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）",
+  "(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）",
+];
+
+/** engine.test.mjs のコードの行にある (12) のテストの名前。 */
+const recheckWaitNames = (text) => codeLines(text).map((l) => l.match(/^test\("(\(12\) [^"]*)"/)?.[1]).filter(Boolean);
+
+test("engine.test.mjs の (12) のテストは、見張る名前の一覧と同じだけある", () => {
+  assert.deepEqual(recheckWaitNames(readTest(ENGINE_TEST)), ENGINE_RECHECK_NAMES);
+});
+
+test("engine.test.mjs を TAP で走らせると、(12) の再検査の待ちの線が pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
+  const tap = runEngineTap();
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], tap);
+});
+
+test("(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは外れになる", () => {
+  const engineText = readTest(ENGINE_TEST);
+  const [first] = ENGINE_RECHECK_NAMES;
+  const renamed = engineText.replace(`test("${first}"`, `test("${first.replace("(12) ", "(13) ")}"`);
+  const removed = engineText.replace(`test("${first}"`, `void (() => ("${first}"`);
+  for (const [name, text] of [["(12) の名前を変える", renamed], ["(12) を消す", removed]]) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(recheckWaitNames(text), ENGINE_RECHECK_NAMES, `${name} が通った`);
+  }
+  const esc = (n) => n.replace(/[#\\]/g, "\\$&");
+  const tap = (lines, { skipped = 0, todo = 0 } = {}) =>
+    ["TAP version 13", ...lines.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)), `1..${lines.length}`, `# tests ${lines.length}`, `# skipped ${skipped}`, `# todo ${todo}`].join("\n");
+  const rest = ENGINE_RECHECK_NAMES.slice(1).map((n) => `ok - ${esc(n)}`);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([`ok - ${esc(first)}`, ...rest]), ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), []);
+  const cases = {
+    "(12) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest], { skipped: 1 }),
+    "(12) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest], { todo: 1 }),
+    "(12) が落ちた（待ちを外した差分や Engine）": tap([`not ok - ${esc(first)}`, ...rest]),
+    "(12) が走っていない": tap(rest),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], `${name} が通った`);
+  }
 });
 
 // recheck.test.mjs（知見 K-0012 の担保）も、ひな形の engine-test の node --test で走る（議決 D-0050 の ci_check の案、Issue #1131）。

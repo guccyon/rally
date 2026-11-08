@@ -7,7 +7,10 @@ Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED
 todo は照らせない件数を理由に添えて test_engine.py の todo で数え、終わりに件数を出す。知見 K-0010 の review_by を過ぎても
 今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
 
-MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る
+MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る。
+continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）。
+RecordOnlySinceTest は、直近の窓の本物のイベント列を定期に照らすジョブ（ci/conflict-schema.yml の conflict-record）が使う --record-only と
+--since を見る（議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）
 """
 from __future__ import annotations
 
@@ -17,8 +20,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
+from unittest import mock
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -28,6 +34,7 @@ sys.path.insert(0, str(HERE))
 
 import events  # noqa: E402
 import policy  # noqa: E402
+import schema  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
@@ -39,7 +46,7 @@ URL = "https://github.com/guccyon/rally/pull/1"
 def stream(attempts: list[dict], url: str = URL) -> list[dict]:
     """attempts の各項目（resumed・tier・files・cost）から、Engine の形のイベント列を作る。files は積んだ直後（job.started の前）に
     conflict.files として載せる（source は既定で supervisor）。late があれば今の Engine と同じく job.finished のあとに載せ（source は既定で
-    worker_log）、stop があれば job.finished を出さない（終わらずに止まった回）"""
+    worker_log）、stop があれば job.finished を出さない（終わらずに止まった回）。inline があれば continue.enqueued の payload の conflict_files に置く"""
     out, i = [], 0
 
     def add(name, payload, job_id=None):
@@ -52,7 +59,10 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
         add("pr.conflicted", {"pr_url": url, "head_sha": sha})
         if a.get("skip"):
             continue   # 上限を超えたので積まなかった（停止を開いた）
-        add("continue.enqueued", {"pr_url": url, "head_sha": sha, "reason": "conflict", "attempt": n}, job)
+        enq = {"pr_url": url, "head_sha": sha, "reason": "conflict", "attempt": n}
+        if "inline" in a:
+            enq["conflict_files"] = a["inline"]
+        add("continue.enqueued", enq, job)
         if "files" in a and not a.get("late"):
             add("conflict.files", {"files": a["files"], "source": a.get("source", "supervisor")}, job)
         add("job.started", {"model_tier": a.get("tier", "tier-large")}, job)
@@ -227,6 +237,52 @@ class MissingConflictFilesTest(unittest.TestCase):
                {"name": "job.finished", "job_id": 900, "payload": {"state": "succeeded"}}]
         self.assertEqual(recorded(evs), Counter())
 
+    def test_C0007の流れでcontinue_enqueuedにconflict_filesを載せれば通る(self):
+        # 議決 D-0101: schema の案（conflict-files.yaml）の形で Engine が積むときに載せた列。backfill の conflict.files は外す
+        evs = [e for e in events.parse_events(C0007.read_text(encoding="utf-8")) if e["name"] != "conflict.files"]
+        for e in evs:
+            if e["name"] == "continue.enqueued":
+                e["payload"]["conflict_files"] = ["CHANGELOG.md"]
+        self.assertEqual(recorded(evs), Counter())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.json"
+            path.write_text(json.dumps(evs), encoding="utf-8")
+            p = run(path, "--pr", "https://github.com/guccyon/rally/pull/295")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_continue_enqueuedのconflict_filesが形どおりでなければ載っていないとみなす(self):
+        # schema.py の bad_field・missing_field と同じ線（空でない文字列の列で 1 件以上）。ほかの記録がなければ落ちる
+        for bad in ([], None, [""], ["  "], "CHANGELOG.md", [1]):
+            self.assertEqual(recorded(stream([{"inline": bad}])), Counter({"missing_conflict_files": 1}), bad)
+            self.assertIsNotNone(schema.field_error(schema.load()["continue.enqueued"]["fields"]["conflict_files"], bad), bad)   # 判定は schema.py と同じ
+        # 形どおりでなくても、その場の conflict.files があれば今までどおり通る
+        self.assertEqual(recorded(stream([{"inline": [], "files": ["a.ts"]}])), Counter())
+
+    def test_conflict_filesの定義を読めなければDefsErrorでコマンドは終了コード2(self):
+        # 項目がない・YAML として読めない定義は schema.DefsError に包む（素の KeyError・YAMLError を漏らさない）
+        cases = ({}, {"continue.enqueued": {"required": [], "required_when": [], "fields": {}}}, yaml.YAMLError("壊れた定義"))
+        self.addCleanup(events._inline_spec.cache_clear)
+        for case in cases:
+            events._inline_spec.cache_clear()
+            load = mock.Mock(side_effect=case) if isinstance(case, Exception) else mock.Mock(return_value=case)
+            with mock.patch.object(schema, "load", load):
+                with self.assertRaises(schema.DefsError, msg=case):
+                    events.records_from_events(stream([{"inline": ["a.ts"]}]))
+                events._inline_spec.cache_clear()
+                err = StringIO()
+                with redirect_stderr(err):
+                    self.assertEqual(events.main(["--events", str(C0007)]), 2, case)
+                self.assertIn("conflict-files.yaml", err.getvalue())
+
+    def test_continue_enqueuedのconflict_filesはworker_logやbackfillより先に見る(self):
+        self.assertEqual(recorded(stream([{"inline": ["a.ts"], "files": ["a.ts"], "late": True},
+                                          {"inline": ["a.ts"], "files": ["a.ts"], "source": "backfill"},
+                                          {"inline": ["a.ts"], "stop": True}])), Counter())
+        # K-0010 の線にもその列を使う（CHANGELOG.md だけの衝突を tier-large で解いた回）
+        evs = stream([{"inline": ["CHANGELOG.md"], "cost": 1.2}])
+        self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 1}))
+        self.assertEqual(events.records_from_events(evs)[URL]["attempts"][0]["files"], ["CHANGELOG.md"])
+
 
 # 「記録がない項目は照らさずに件数を出す」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
 # それらを出す版の Engine（ENGINE_REF で固定）では、照らせない件数が 1 以上なら落とす（議決 D-0030・Issue #1035）
@@ -352,6 +408,64 @@ class EngineFinishedTest(unittest.TestCase):
         self.assertEqual(finished_unknown(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列に照らせない回がある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")
+
+
+def timed(evs: list[dict], start: str = "2026-11-10T00:00:00+00:00") -> list[dict]:
+    """イベント列の各件に、start から 1 分ずつ進む occurred_at を付ける"""
+    t0 = datetime.fromisoformat(start)
+    return [{**e, "occurred_at": (t0 + timedelta(minutes=i)).isoformat()} for i, e in enumerate(evs)]
+
+
+class RecordOnlySinceTest(unittest.TestCase):
+    """--record-only は record_check（missing_conflict_files）だけを出し、--since は差分を当てた時刻より前のイベントを組まない
+    （知見 K-0014 の担保。議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）"""
+
+    def write(self, evs: list[dict]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        path = Path(t.name) / "events.json"
+        path.write_text(json.dumps(evs), encoding="utf-8")
+        return path
+
+    def test_C0007のイベント列はrecord_onlyでもmissing_conflict_filesだけで落ちる(self):
+        d = json.loads(run(C0007, "--record-only", "--json").stdout)
+        self.assertFalse(d["ok"])
+        self.assertEqual(Counter(e["rule"] for r in d["prs"] for e in r["errors"]), Counter({"missing_conflict_files": 4}))   # agent_for_mechanical は出さない
+        self.assertEqual(run(C0007, "--record-only").returncode, 1)
+
+    def test_C0007と同じ形の衝突でもcontinue_enqueuedにconflict_filesを載せればrecord_onlyで通る(self):
+        # 差分を当てた Engine の形。PR #290 の CHANGELOG.md だけを tier-large で解いた回（K-0010 の agent_for_mechanical）も、record_only では照らさない
+        evs = [e for e in events.parse_events(C0007.read_text(encoding="utf-8")) if e["name"] != "conflict.files"]
+        for e in evs:
+            if e["name"] == "continue.enqueued":
+                e["payload"]["conflict_files"] = ["CHANGELOG.md"]
+        p = run(self.write(evs), "--record-only")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(run(self.write(evs)).returncode, 1)   # --record-only がなければ K-0010 の線でも照らす
+
+    def test_sinceより前のイベントは組まない(self):
+        old = stream([{}], url="https://github.com/guccyon/rally/pull/2")                     # 差分の前の Engine の回（記録なし）
+        new = stream([{"inline": ["CHANGELOG.md"]}])
+        evs = timed(old) + timed(new, "2026-11-10T01:00:00+00:00")
+        evs = [{**e, "id": i} for i, e in enumerate(evs, 1)]
+        path = self.write(evs)
+        self.assertEqual(run(path, "--record-only").returncode, 1)
+        p = run(path, "--record-only", "--since", "2026-11-10T09:30:00+09:00")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(f"より前の {len(old)} 件は照らさない", p.stdout)
+        late = timed(stream([{}], url="https://github.com/guccyon/rally/pull/3"), "2026-11-10T02:00:00+00:00")
+        p = run(self.write(evs + [{**e, "id": len(evs) + i} for i, e in enumerate(late, 1)]), "--record-only", "--since", "2026-11-10T00:30:00Z")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("pull/3 attempt=1 job=101 missing_conflict_files", p.stdout)
+
+    def test_sinceで絞れないか時刻が読めなければ終了コード2(self):
+        evs = timed(stream([{}]))
+        del evs[1]["occurred_at"]
+        self.assertEqual(run(self.write(evs), "--since", "2026-11-10T00:00:00Z").returncode, 2)
+        good = self.write(timed(stream([{"inline": ["a.ts"]}])))
+        for since in ("2026-11-10", "2026-11-10T00:00:00", "main"):
+            self.assertEqual(run(good, "--since", since).returncode, 2, since)
+        self.assertEqual(run(good, "--since", "2026-11-10T00:00:00Z").returncode, 0)
 
 
 class InputTest(unittest.TestCase):

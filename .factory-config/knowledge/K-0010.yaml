@@ -89,6 +89,8 @@ enforcement:
       issue: 1035
       at: 2026-11-07
       decided_by: committee:D-0030
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
       wired: false
       verified: false
     - kind: test
@@ -120,6 +122,8 @@ enforcement:
       issue: 1103
       at: 2026-11-08
       decided_by: committee:D-0043
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
       wired: false
       verified: false
     - kind: ci_check

@@ -3,8 +3,13 @@
 schema.py が conflict-files.yaml の定義で、pr.conflicted・continue.enqueued（reason=conflict）・handoff.saved（continue_reason=conflict）の
 conflict_files がない・null・空の列・文字列の列でないイベントを落とし、載せたイベントを通すことを見る。C-0005 の流れ（fixtures/c0005-pr659-events.json。
 今の Engine の形でイベントに衝突したファイルが載らず、conflict.files を job_id で結ぶだけ）は落ちる。
+SinceTest は --since（Engine に差分を当てた時刻）より前のイベントを照らさず、occurred_at がないか読めなければ読めなかったとすることを見る
+（議決 D-0101・Issue #1207。定期のワークフローのひな形 ci/conflict-schema.yml が直近の窓のイベント列に使う）。
 
 EngineDefsTest は engine/conflict-files.patch を Engine の definitions/events.yaml の写しに当て、Engine の定義が conflict-files.yaml とそろうかを見る。
+EngineHandoffTest は Engine の dispatcher.py が出す handoff.saved の payload の欄を engine_harness.py で読み（動かさない）、conflict-files.yaml の
+handoff.saved の required_when の欄（continue_reason）を Engine が出していて、衝突の続きの handoff.saved に conflict_files の要る線が Engine の
+イベントの形にそのまま効くかを見る（議決 D-0076・Issue #1213。handoff は events.py の missing_conflict_files では見ないので、ここで担保する）。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（test_engine.py と同じ）。
 
@@ -33,6 +38,8 @@ ENGINE_DIR = Path(os.environ.get("ENGINE_DIR") or HERE.parents[2] / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 HAVE_ENGINE = (ENGINE_DIR / "definitions" / "events.yaml").is_file()
 SKIP = None if REQUIRED or HAVE_ENGINE else f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE_DIR}）"
+HAVE_DISPATCHER = (ENGINE_DIR / "orchestrator" / "dispatcher" / "dispatcher.py").is_file()
+SKIP_DISPATCHER = None if REQUIRED or HAVE_DISPATCHER else f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE_DIR}）"
 PR = "https://github.com/guccyon/rally/pull/290"
 
 
@@ -109,6 +116,48 @@ class SchemaTest(unittest.TestCase):
                         schema.load(p)
 
 
+def at(e: dict, occurred_at) -> dict:
+    return {**e, "occurred_at": occurred_at}
+
+
+APPLIED = "2026-11-10T00:00:00+00:00"
+
+
+class SinceTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.defs = schema.load()
+        cls.since = schema.parse_time(APPLIED)
+
+    def test_差分を当てる前のイベントは照らさない(self):
+        events = [at(conflicted(), "2026-11-09T23:59:59+00:00"), at(enqueued(), "2026-11-09T12:00:00Z"),
+                  at(conflicted(conflict_files=["CHANGELOG.md"]), APPLIED)]
+        self.assertEqual(schema.check(self.defs, events, self.since), [])
+        self.assertEqual(schema.before(events, self.since), {0, 1})
+        self.assertEqual(len(schema.check(self.defs, events)), 2)   # 渡さなければ前のイベントも照らす
+        self.assertEqual(schema.check(self.defs, events, skip={0, 1}), [])   # before の結果を渡しても同じ
+
+    def test_当てた後のイベントは照らして落とす(self):
+        events = [at(conflicted(), "2026-11-09T00:00:00+00:00"), at(enqueued(), "2026-11-10T09:00:00+09:00"),
+                  at(saved(conflict_files=[]), "2026-11-11T00:00:00.123456+00:00")]
+        errors = schema.check(self.defs, events, self.since)
+        self.assertEqual([(x["index"], x["name"], x["rule"]) for x in errors],
+                         [(1, "continue.enqueued", "missing_field"), (2, "handoff.saved", "bad_field")])   # 添え字は渡した列のまま
+
+    def test_occurred_atがないか読めないイベントは絞れない(self):
+        events = [[conflicted(conflict_files=["a"])]] + [[at(conflicted(conflict_files=["a"]), v)]
+                                                        for v in (None, "", "2026-11-10", "2026-11-10T00:00:00", "きのう", 1762732800)]
+        for e in events:
+            with self.assertRaises(ev.EventsError, msg=e):
+                schema.check(self.defs, e, self.since)
+        self.assertEqual(schema.check(self.defs, [conflicted(conflict_files=["a"])]), [])   # 渡さなければ見ない
+
+    def test_時差のない時刻は読まない(self):
+        with self.assertRaises(ValueError):
+            schema.parse_time("2026-11-10T00:00:00")
+        self.assertEqual(schema.parse_time("2026-11-10T09:00:00+09:00"), self.since)
+
+
 class CliTest(unittest.TestCase):
     def run_cli(self, events: list[dict], *args: str) -> subprocess.CompletedProcess:
         with tempfile.TemporaryDirectory() as t:
@@ -124,6 +173,18 @@ class CliTest(unittest.TestCase):
         self.assertEqual(json.loads(r.stdout)["errors"][0]["rule"], "missing_field")
         self.assertEqual(self.run_cli([conflicted()], "--defs", str(HERE / "no-such.yaml")).returncode, 2)
         self.assertEqual(subprocess.run([sys.executable, "-I", "-B", str(HERE / "schema.py")], capture_output=True).returncode, 2)
+
+    def test_sinceの終了コード(self):
+        old, new = at(conflicted(), "2026-11-09T00:00:00Z"), at(conflicted(conflict_files=["CHANGELOG.md"]), "2026-11-10T00:00:01Z")
+        r = self.run_cli([old, new], "--since", APPLIED, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), {"ok": True, "errors": [], "skipped": 1})
+        self.assertEqual(self.run_cli([old, new]).returncode, 1)
+        self.assertEqual(self.run_cli([old, at(conflicted(), "2026-11-10T00:00:01Z")], "--since", APPLIED).returncode, 1)
+        self.assertEqual(self.run_cli([conflicted(conflict_files=["a"])], "--since", APPLIED).returncode, 2)   # occurred_at がない
+        for bad in ("", "2026-11-10T00:00:00", "main"):
+            self.assertEqual(self.run_cli([new], "--since", bad).returncode, 2, bad)
+        self.assertEqual(self.run_cli([new], "--since").returncode, 2)
 
 
 @unittest.skipIf(SKIP, SKIP)
@@ -163,6 +224,42 @@ class EngineDefsTest(unittest.TestCase):
                                                     enqueued("ci_failed"), saved(None)]), [])
         self.assertEqual([(x["name"], x["rule"]) for x in schema.check(self.engine, [conflicted(conflict_files=[]), enqueued(), saved()])],
                          [("pr.conflicted", "bad_field"), ("continue.enqueued", "missing_field"), ("handoff.saved", "missing_field")])
+
+
+@unittest.skipIf(SKIP_DISPATCHER, SKIP_DISPATCHER)
+class EngineHandoffTest(unittest.TestCase):
+    """Engine の dispatcher.py が出す handoff.saved の形で、衝突の続きなら conflict_files が要る線が効くか（議決 D-0076・Issue #1213）"""
+
+    @classmethod
+    def setUpClass(cls):
+        import test_engine   # 同じ ENGINE_DIR で engine_harness.py を動かす
+        cls.calls = test_engine.harness("handoff", str(ENGINE_DIR))["calls"]
+        cls.defs = schema.load()
+
+    def event(self, keys: list[str], continue_reason, files=None) -> dict:
+        payload = {k: "x" for k in keys if k != "conflict_files"}
+        payload["continue_reason"] = continue_reason
+        if files is not None:
+            payload["conflict_files"] = files
+        return {"name": "handoff.saved", "job_id": 1, "payload": payload}
+
+    def test_Engineは衝突の続きかを定義の欄で出す(self):
+        when = {k for r in self.defs["handoff.saved"]["required_when"] for k in r["when"]}
+        self.assertEqual(when, {"continue_reason"})
+        for keys in self.calls:
+            with self.subTest(keys=keys):
+                # 欄の名前がずれると required_when が効かず、衝突の続きの handoff.saved が conflict_files なしで黙って通る
+                self.assertLessEqual(when, set(keys))
+
+    def test_Engineの形の衝突の続きはconflict_filesがなければ落ちて載せれば通る(self):
+        for keys in self.calls:
+            with self.subTest(keys=keys):
+                rules = lambda e: [x["rule"] for x in schema.check(self.defs, [e])]  # noqa: E731
+                self.assertEqual(rules(self.event(keys, "conflict")), ["missing_field"])
+                self.assertEqual(rules(self.event(keys, "conflict", [])), ["bad_field"])
+                self.assertEqual(rules(self.event(keys, "conflict", ["CHANGELOG.md"])), [])
+                self.assertEqual(rules(self.event(keys, None)), [])
+                self.assertEqual(rules(self.event(keys, "ci_failed")), [])
 
 
 if __name__ == "__main__":

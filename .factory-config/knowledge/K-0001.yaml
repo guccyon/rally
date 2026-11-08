@@ -238,6 +238,9 @@ enforcement:
       issue: 1182
       at: 2026-11-08
       decided_by: committee:D-0070
+      requires_check:
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: test

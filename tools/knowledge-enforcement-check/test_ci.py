@@ -481,9 +481,11 @@ def scope_targets(items: list[dict]) -> list[str]:
     """enforcement のジョブが落とす範囲に入れる道。check.py が呼ぶことを求める検査とそのワークフロー、K-*.yaml の wired_by の workflow・runs"""
     out = [f"{check.ROOT}/K-0010.yaml", check.KNOWLEDGE_CHECK, ".github/workflows/conflict-check.yml", COPY_REL]
     out += list(check.REQUIRED_SCHEDULE.values()) + [wf for wf, _ in check.REQUIRED_SCHEDULE_WORKFLOW.values()]
-    out += [t for t, _ in check.REQUIRED_PR.values()] + [t for ts in check.REQUIRED_RUNS.values() for t in ts]
+    out += [t for ts in check.REQUIRED_RUNS.values() for t in ts]
     for k in items:
         for s in check.solutions(k):
+            # 解決策の requires_check に書いた検査とワークフロー（議決 D-0077（起票時の番号は D-0075）、Issue #1216）
+            out += [x for t, wf in (check.required_checks(s)[0] if isinstance(s, dict) else []) for x in (t, wf) if x]
             for w in (s.get("wired_by") if isinstance(s, dict) and isinstance(s.get("wired_by"), list) else []):
                 out += [check.norm("", w[key]) or w[key] for key in ("workflow", "runs") if isinstance(w, dict) and isinstance(w.get(key), str)]
     return list(dict.fromkeys(out))

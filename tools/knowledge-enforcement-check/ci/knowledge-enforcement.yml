@@ -6,12 +6,14 @@
 # 続けて test_ci.py --log で、unittest.TestCase を定義するのに discover の既定の形（test*.py）に合わず拾われないファイルと、
 # その出力にテストが 1 件も走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
-# enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059 の解決策を wired: true にし、wired_by に
+# enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059・1129 の解決策を wired: true にし、wired_by に
 # {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
-# （pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129）。
-# README の一覧と K-*.yaml がずれた PR で enforcement のジョブの test_check.py が落ちる実行を記録してから、K-0004 の issue 1062 の解決策を
-# wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/test_check.py} を書く
-# （pull_request のジョブから test_check.py を呼ぶ項目がないと check.py が落とす。議決 D-0052、Issue #1139）。
+# （この写しの pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129。議決 D-0072、Issue #1200）。
+# .factory-config/knowledge/README.md の一覧と K-*.yaml がずれた PR で enforcement のジョブの test_check.py が落ちる実行を
+# .factory-config/knowledge/cases/ の事例記録に残してから、K-0004 の issue 1062 と issue 1138 の解決策を
+# wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/test_check.py} を、
+# verified_by にその事例記録を書く（この写しの pull_request のジョブから test_check.py を呼ぶ項目がないと check.py が落とす。
+# 議決 D-0052、Issue #1139。議決 D-0075、Issue #1215）。
 # engine/knowledge-enforcement.patch が ENGINE_REF に当たらない PR で engine-test のジョブが落ちる実行を記録してから、K-0004 の issue 1063・1144 の解決策を
 # wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: engine-test, runs: tools/knowledge-enforcement-check/test_engine_patch.py} を書く
 # （pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
