@@ -1,0 +1,82 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0090
+pr: https://github.com/guccyon/rally/pull/1261
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりと矛盾しません。
+  - '足した test の項目は D-0070（PR #1181）の enforcement の 2 つ目の案（node --test を TAP で走らせ、gate.test.mjs
+    の通る側と engine.test.mjs の (10) が pass と数えられ skip・todo が 0 であることを見る）とそのまま対応しており、decided_by:
+    committee:D-0070 と issue 1183 の対応も食い違っていません。'
+  - 'what の「Issue #1183 の起票時の番号は D-0067」は、D-0067 が K-0010 についての PR #1175 の議決であることと合わせて読むと起票時の仮番号の注記にとどまり、正しい議決は
+    D-0070 と書かれているので取り違えにはなりません。'
+  - 既存の issue 1109 の項目（字面の見張り）を置き換えずに「加えて」実行結果で見る項目として別に記録しているので、重複ではなく D-0070 の dissent・enforcement
+    が挙げた別名の skip のすり抜けへの応えとして整合しています。
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致し、K-0001 を README
+    の記入済みの一覧に置いたままにできる形なので、test_check.py の照合とも食い違いません。'
+  - 配線も本物の記録での確認もまだなので K-0001 の confidence は hypothesis のままが妥当で、建設者が ci/pr-body-engine.yml
+    を写したら同じ変更セットで同じ配線を待つ solutions の wired をそろえて直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0070 と issue 1183 を指していて、D-0070 の enforcement
+    の 2 つ目の案（node --test を tap で走らせた結果から gate.test.mjs の通る側と engine.test.mjs の (10)
+    が skip・todo なしで pass と数えられたことを確かめる）と中身が一致するので、一次記録に辿れます。'
+  - 'what の「起票時の番号は D-0067」は、置き場の D-0067 が別の PR #1175（K-0010）の議決であることと合っていて、番号の食い違いを断り書きしているだけなので、根拠の取り違えではありません。'
+  - 手元の Engine（dcc3b1e）で通ったことや外す直しが外れになったことは置き場の外の記録で、この材料では確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - '条件付きの早い return は捕まえられないこと、配線されておらず効き目を確かめていないことを what に書いていて、wired: false・verified:
+    false とも合っており、言い過ぎていません。'
+  - statement・evidence・confidence は変えておらず、配線も本物の記録での確認もまだなので、K-0001 の confidence は
+    hypothesis のままが妥当です。
+  - 差分にあるのはファイルの道・議決や Issue や PR の番号・Engine のコミットなど工場の識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は議決 D-0070 の test の案（走らせた TAP の結果から通る側のテストと (10) が SKIP・TODO なしの ok と数えられることを見る）を
+    K-0001 の enforcement.solutions に 1 件足すだけで、担保の観点で採ってよいです。
+  - D-0045 の字面の見張りは別名の t.skip ですり抜けられましたが、今回は実行の結果を数えるので、飛ばし・todo・欠け・describe の下への移動・集計のない
+    TAP まで決定論で落とせるようになり、線が確かになっています。
+  - 残る穴はテストの中の条件付きの早い return のように飛ばさずに pass と数えられる外し方で、what にもそう書かれており、これは node:test
+    の t.plan で期待する検査の数を宣言させれば決定論で塞げます。
+  - 'K-0001 の solutions は今回の 1 件を含めて 8 件すべて wired: false で、ci/pr-body-engine.yml を
+    .github/workflows/ に写して pr-body-engine-test を必須にする同じ 1 つの配線を待っているので、配線が担保の効き目を決める残りの一手です。'
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致しており、担保を言い過ぎていません。'
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - 足した test の項目は議決 D-0070 の 2 件目の案（node --test を TAP で走らせ、gate.test.mjs の通る側と engine.test.mjs
+    の (10) が skip・todo なしで pass と数えられたかを見る）にそのまま対応していて、1 件目の配線の案を入れたとは書いていないので言い過ぎていません。
+  - 反例として、テストの中の条件付きの早い return のように飛ばさずに pass と数えられる外し方は捕まえられないと what 自身が認めており、手元で
+    ENGINE_DIR も CI=true もないと engine.test.mjs の側を飛ばす抜け道も残るので、配線のあと本物の CI の記録で (10)
+    が実際に走ったことを確かめてください。
+  - '「起票時の番号は D-0067」という但し書きは、別の PR #1175 の議決 D-0067 と取り違えられうるので、次に直すときは Issue #1183
+    の旧番号だと分かる書き方にすると紛れが減ります。'
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致しており、配線も本物の記録での確認もまだなので
+    K-0001 の confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: gate.test.mjs の通る側のテストと engine.test.mjs の (10) の各テストの頭で t.plan(n) により期待する
+    assert の数を宣言させ、ci.test.mjs が該当するテストに t.plan があることを形で見て、TAP の結果でも plan の不一致がないことを照らし、条件付きの早い
+    return で assert を飛ばす外し方も落とす。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/ に写して
+    pr-body-engine-test を既定ブランチの必須のチェックに登録し、本物の CI の実行記録で ci.test.mjs の TAP の照合が (10)
+    の ok を数えたことを事例記録に残してから、今回の solutions の wired と verified を true にして wired_by・verified_by
+    を書く。
