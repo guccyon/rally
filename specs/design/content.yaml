@@ -18,6 +18,11 @@ notation:
     in_sentence: "文の中は「10月28日 3時まで」のように月日と時（今の freeCancelUntilLabel の形）"
     year: 今年でなければ「2027/1/5（火）」と年を足す
     timezone: 端末のタイムゾーンで出す
+    countdown:   # 開始までの残り時間（0.7.0。#1040）
+      form: 「あと 2:48」（分:秒、秒は 2 桁）。1 時間未満だけ
+      type: 数字は figure_sm（numeric）、「あと」は sans の small 700
+      read_aloud: 「開始まで あと 2 分 48 秒」を 1 分ごとと 0 になったときだけ role=status で読む。0 は「開始時刻になりました。入室できます」
+      clock: サーバーの時刻に合わせた時計で数える（端末の時計を使わない）
   labels: "ラベルと値は半角のコロンとスペースで「コーチ: 山田」「メニュー: フォーム改善」（今の labels.dart の形）"
   sport_names: [テニス, 野球, サッカー, バスケットボール, 水泳]
 
@@ -39,6 +44,13 @@ actions:
     resume: 受付を再開する
     unpublish: 非公開にする
     republish: 公開に戻す
+    join: 入室する
+    mic_off: マイクを切る
+    mic_on: マイクを入れる
+    camera_off: カメラを切る
+    camera_on: カメラを入れる
+    test_speaker: スピーカーを試す
+    stop_test_sound: 試し音を止める
   rules:
     - level: should
       statement: 同じ操作には、アプリと admin-web で同じ動詞を使う
@@ -52,6 +64,10 @@ errors:
     - 「このスロットは満席になりました。ほかのスロットを選んでください。」
     - 「表示名は 1〜20 文字で入れてください。」
   avoid: [エラーコードだけ, 「不正な値です」, 「問題が発生しました」だけ, 感嘆符, 勢いの言葉（「ドンマイ」など）]
+  prejoin:   # 入室前チェック（0.7.0。stories の文）
+    too_early: 「開始 5 分前から入室前チェックができます（11:55 から）」
+    denied: 「カメラ（マイク）が使えません。端末の設定で許可すると確かめられます。」（admin-web は「ブラウザーの設定」）
+    none: 「カメラ（マイク）が見つかりません。なくても、開始時刻から入室できます。」
   server_text: サーバーが返す文言（errorMessage.ts・error_message.dart）はこの決まりで書き、画面では書き換えずに出す
   rules:
     - level: should
@@ -88,6 +104,7 @@ glossary_mapping:   # 画面の語は specs/glossary.yaml の ja を使う。言
     lesson_menu: "レッスンメニュー（行の中は「メニュー: 名前」）"
     coach_acceptance: コーチの受付（受付中・停止中）
     slot_capacity: 定員（残りは「席」）
+    prejoin_check: 入室前チェック
   rules:
     - level: should
       statement: 画面の語は glossary の ja を使い、同じものを別の語で呼ばない

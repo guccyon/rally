@@ -5,7 +5,7 @@ actor: cs
 goal: "生徒の不安と不満をその場で解く。経緯が分からないと、調べるのに開発者を呼ぶことになり、返事が遅れる"
 reader: [cs, student]
 entry: "生徒から「予約していたレッスンが消えた」と問い合わせが来る。CS は生徒の名前と、だいたいのレッスンの日時を聞いている"
-exit: "CS が、その予約がいつ・誰の操作で・どの状態に変わったか、キャンセルでビデオ通話の回数を消費したかを、生徒に説明できる"
+exit: "CS が、その予約がいつ・誰の操作で・どの状態に変わったか、キャンセルでビデオ通話の回数を消費したか、コーチのお休みでキャンセルされたならそのお休みの期間と操作した本部の記録を、生徒に説明できる"
 preconditions:
   - "生徒が予約を確定し、そのあと開始の 24 時間前より後にキャンセルした予約がある"
   - "同じ生徒に、ほかに確定した予約がある"
@@ -18,7 +18,7 @@ steps:
     sees: "予約の詳細に、生徒・コーチ・レッスンメニュー・枠の時刻・今の状態と、状態が変わった記録"
   - where: "admin-web 本部の予約の詳細"
     do: "状態が変わった記録を読む"
-    sees: "確定した日時とキャンセルした日時、誰の操作でキャンセルしたか、開始の何時間前か、回数を消費したか"
+    sees: "確定した日時とキャンセルした日時、誰の操作でキャンセルしたか、開始の何時間前か、回数を消費したか。コーチのお休みでキャンセルされたなら、そのお休みの期間と、操作した本部の記録（本部のアカウントと時刻）"
 must_not:
   - "CS が予約を探すのに生徒やコーチの ID を知っている必要がある"
   - "キャンセルした予約が一覧から消えて、「なかったこと」に見える"
@@ -27,12 +27,13 @@ must_not:
 touches:
   apps: [admin-web, student-app]
   contexts: [scheduling, entitlement, identity]
-  terms: [booking, slot, cancellation_policy]
+  terms: [booking, slot, cancellation_policy, coach_leave]
   operations:
     - student-app.cancelBooking
     - admin-web.listBookings
     - admin-web.listCancelledBookings
     - admin-web.getBooking
+    - admin-web.startCoachLeave
   events: [booking.created, booking.confirmed, booking.cancelled]
 origin:
   issues: []
@@ -40,5 +41,12 @@ origin:
   retro: true
 known_gaps:
   - step: 3
-    note: "状態が変わった記録（BookingStatusChange）は日時と変わった後の状態だけで、キャンセルした人・開始の何時間前か・回数を消費したかが出ない"
+    note: >-
+      予約の詳細（getBooking）の状態が変わった記録（BookingStatusChange）は日時と変わった後の状態だけで、キャンセルした人・
+      開始の何時間前か・回数を消費したかが出ない。キャンセルした人は「キャンセルされた予約」（listCancelledBookings の
+      cancelled_by）にしか出ず、予約の詳細から読めない
+  - step: 3
+    note: >-
+      コーチのお休み（coach_leave）でキャンセルされた予約から、そのお休みの記録（期間・操作した本部のアカウント・時刻）を
+      たどる手段が本部の画面と契約にない。記録は startCoachLeave の応答（CoachLeave）と DB にだけ残る
 status: active

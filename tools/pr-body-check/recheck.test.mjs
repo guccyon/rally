@@ -8,10 +8,31 @@ import { fileURLToPath } from "node:url";
 
 import { checkEvents } from "./recheck.mjs";
 
-// 事例の記録（.factory-config/knowledge/cases/C-0005.md・C-0006.md の「出来事」）から組み直したイベント列。
+// 事例の記録（.factory-config/knowledge/cases/C-0003.md・C-0005.md・C-0006.md の「出来事」）から組み直したイベント列。
 // イベントそのものは事例の記録にないので、事例に書かれた時刻・job・順を制御プレーンのイベントの形（Engine の dispatcher・supervisor が書く名前と payload）にした。
 const URL_659 = "https://github.com/guccyon/rally/pull/659";
 const URL_821 = "https://github.com/guccyon/rally/pull/821";
+const URL_396 = "https://github.com/guccyon/rally/pull/396";
+
+/**
+ * C-0003（PR #396）: 2 回目の検査（job 570）の 14:21:30 のあと、最後の本文の直し（job 572）を積んで終わり、head_sha が変わらないまま
+ * 検査をもう一度通さずに 14:23:30 にマージした。記録にあるのは検査の job と時刻・job 563・564・572・マージの時刻だけなので、
+ * 直しの積みと終わり・承認の時刻は記録の順を崩さない範囲で置いた（1 回目の直しの job 563 は 2 回目の検査より前に終わっている）。
+ */
+function c0003() {
+  const pr = { pr_url: URL_396 };
+  return [
+    { name: "gate.evaluated", job_id: 560, payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-01T14:15:47+09:00" },
+    { name: "job.enqueued", job_id: 563, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:16:30+09:00" },
+    { name: "job.enqueued", job_id: 564, payload: { ...pr, by: "judge", kind: "implement" }, occurred_at: "2026-11-01T14:16:30+09:00" },
+    { name: "pr.body_amended", job_id: 563, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:18:00+09:00" },
+    { name: "gate.evaluated", job_id: 570, payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-01T14:21:30+09:00" },
+    { name: "job.enqueued", job_id: 572, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:22:00+09:00" },
+    { name: "pr.body_amended", job_id: 572, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:23:00+09:00" },
+    { name: "supervisor.inspector_approved", payload: { ...pr, head_sha: "c1" }, occurred_at: "2026-11-01T14:23:20+09:00" },
+    { name: "supervisor.merged", payload: { ...pr, head_sha: "c1" }, occurred_at: "2026-11-01T14:23:30+09:00" },
+  ];
+}
 
 /** C-0005（PR #659）の最後の周回: 本文の直し（job 3308）を積み、終わる前の 20:08:43 にマージし、本文が直されたのは 20:08:50。 */
 function c0005() {
@@ -63,6 +84,19 @@ test("C-0005 の列は、本文の直しが終わる前にマージしたので�
   assert.deepEqual(rules(r), ["merged_before_body_fix_finished"]);
   assert.equal(r.errors[0].pr_url, URL_659);
   assert.match(r.errors[0].message, /job 3308/);
+});
+
+test("C-0003 の列は、最後の本文の直し（job 572）のあと検査を通さずにマージしたので落ちる", () => {
+  const r = checkEvents(c0003());
+  assert.equal(r.merges, 1);
+  assert.deepEqual(rules(r), ["merged_without_body_recheck"]);
+  assert.equal(r.errors[0].pr_url, URL_396);
+  assert.match(r.errors[0].message, /job 572/);
+  // 1 回目の直し（job 563）は 2 回目の検査（job 570）で再検査されているので、job 572 の直しがなければ通る
+  const upTo570 = c0003().filter((e) => e.job_id !== 572);
+  assert.deepEqual(checkEvents(upTo570).errors, []);
+  // job 572 の直しのあとに本文を検査し直してからマージすれば通る
+  assert.deepEqual(checkEvents(before(c0003(), "supervisor.merged", recheck(URL_396))).errors, []);
 });
 
 test("2 つの事例を混ぜた列でも、PR ごとに 1 件ずつ落ちる", () => {
