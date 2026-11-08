@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0083
+pr: https://github.com/guccyon/rally/pull/1236
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1158 の ci_check を 1 件足しただけなので、README の変更セットの決まりや specs/ の規範と矛盾しません。
+  - '足した解決策は D-0059 の enforcement の ci_check の案（protection.mjs を定期と PR ごとに走らせ、required_check_missing・check_name_changed・check_name_shared
+    で ::error を出して落とす）と中身が合っていて、decided_by: committee:D-0059 と、起票時の番号 D-0056 の添え書きも
+    D-0055 のときと同じ書き方でそろっています。'
+  - 定期と手動で走る形（D-0039、issue 1087）を作り直さずに同じ sendback-protection.yml に protection-pr
+    のジョブを足しており、issue 1087 の解決策や D-0061 の REQUIRED_SCHEDULE と重ならず、それを広げる形になっています。
+  - 'issue 1087 の解決策の what には、ひな形は schedule と手動だけで走ると書いてありますが、今回 pull_request と protection-pr
+    のジョブを足し、issues: write を移したので、次に K-0004 を直す変更セットでその記述が古くなったことを書き添えてください。'
+  - '新しい解決策にも wired: false・verified: false を書いているので、README の「すべての解決策に書いた知見」の一覧や test_check.py
+    の照らし合わせと食い違わず、写しも本物の実行もまだなので confidence は hypothesis のままが妥当です。'
+  - D-0056・D-0059 が繰り返し勧めたとおり、K-0004 には置き場の担保の解決策がたまり続けているので、主張に沿う解決策と分ける整理を委員会で別に決めてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の解決策は issue 1158 と committee:D-0059 を指していて、D-0059 の enforcement にある
+    ci_check の案（protection.mjs を定期と PR ごとに走らせ、required_check_missing・check_name_changed・check_name_shared
+    で落とす）とそのまま対応しているので、一次記録に辿れます。
+  - 'Issue #1158 の起票時の番号が D-0056 だったことを what に明かしており、knowledge/committee/D-0059.yaml
+    の pr が #1155 であることとも合うので、番号のずれで根拠を見失うことはありません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - '確かめたのは ci.test.mjs の偽の gh と test_check.py のひな形だけで、.github/workflows/ への写しも branch
+    protection の本物の読み取りも Issue #948 や事例記録への記録もまだないため、wired: false・verified: false
+    と confidence: hypothesis のままが妥当です。'
+  - 案になかった workflow_not_copied の外れ方を足した点は、wired にするときの実行記録で効き目を事例記録に残して裏づけてください。
+  - 差分に出てくるのは issue と PR の番号、議決の id、ツールのパス、ジョブと rule の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0059 の ci_check の案のうちワーカーの権限で入れられる分の記録を
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 'protection-pr を contents: read だけにして Issue を開かせず、check.py の REQUIRED_SCHEDULE
+    と REQUIRED_PR の両方に組を足して片方だけの配線では wired: true にできないようにしたのは、線がはっきりした決定論の担保で筋がよいです。'
+  - 'branch protection の API は GITHUB_TOKEN の contents: read では読めず、フォークからの PR ではシークレットも渡らないので、protection-pr
+    は配線しても protection_unreadable で毎回落ちるか、建設者が飛ばす条件を足して黙って抜ける恐れがあります。'
+  - D-0059 の 2 つ目の案（check.mjs --events が GITHUB_ACTIONS=true のとき order.mjs の見張りを先に走らせる実行時の守り）はまだ入っておらず、branch
+    protection の設定に頼らない守りは今もありません。
+  - 'wired: false・verified: false と正直に書かれ、本物の PR で落ちた記録も Issue #948 や事例記録への記録もまだないので、confidence
+    は hypothesis のままが妥当です。'
+  - K-0004 に置き場の担保の解決策が積み重なっている点は D-0059・D-0072 でも指摘済みで、配線が入ったら主張の担保と分ける変更セットを別に出すことを勧めます。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0059 の ci_check の案のうちワーカーの権限で入れられる分の記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'wired: false・verified: false と書き、.github/workflows/ への写しも PR で落ちた実行の記録もまだないと
+    what に明かしているので、効き目を言い過ぎてはおらず、confidence は hypothesis のままが妥当です。'
+  - '反例として、branch protection の API は contents: read の GITHUB_TOKEN では読めないので protection-pr
+    はシークレットのトークンに頼ることになり、フォークや Dependabot からの pull_request ではシークレットが渡らず毎回 protection_unreadable
+    で落ちるおそれがあります。'
+  - 'この反例は未配線の今は採否に響きませんが、建設者が写して wired: true にする変更セットでは、シークレットが渡らない PR での動きを what
+    か事例記録に書いてください。'
+  - 差し戻しの判定の主張である K-0004 に知見の置き場や branch protection の担保を積み続けている点は D-0048・D-0053・D-0056・D-0072・D-0081
+    で指摘済みで、今回も採否には響きませんが、別の知見に分けるかを委員会で見直してください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/sendback-check/ci.test.mjs に、protection-pr がトークンのない実行（フォークからの PR
+    を含む）で protection_unreadable を出して落ちることに加え、if: や continue-on-error でその失敗を黙って飛ばす写しを落とすことを足し、ci.test.mjs
+    と protection.mjs の読み手に GITHUB_TOKEN ではなく administration: read を持つシークレットのトークンを使うことを確かめる。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'D-0059 の 2 つ目の案のとおり、check.mjs --events が GITHUB_ACTIONS=true のとき order.mjs
+    の見張りを先に走らせ、engine.test.mjs が未配線・todo・continue-on-error・if: 付きなら ::error で落とすようにし、branch
+    protection の設定が外れても実行時に止まることをテストで確かめる。'
