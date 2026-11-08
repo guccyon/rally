@@ -41,7 +41,13 @@ enforcement:
         headings_mismatch で落ちることを確かめた。照らすのは CI で、followers.test.mjs は ci/pr-body-engine.yml の node --test の中で
         ENGINE_DIR の Engine の rubric を照らす（ENGINE_DIR を渡したときと CI=true では飛ばさない）。手元の Engine（57069a8）の PR-002 は
         まだ食い違うので落ちる。Engine の PR-002 を template.json に合わせて ENGINE_REF を上げること、ci/pr-body-engine.yml を
-        .github/workflows/ に写して必須のチェックにすることは建設者が行うので、まだ配線されておらず効き目は確かめていない
+        .github/workflows/ に写して必須のチェックにすることは建設者が行うので、まだ配線されておらず効き目は確かめていない。
+        種類を config にしたのは Issue #1121（委員会の週 1 の定例の決定）の解決策の種類に従ったためで、担保の中心は正本と合わせる側を
+        followers.json の設定で決めたことにあり、followers.test.mjs はその設定を CI で照らす手段。議決 D-0006 の案（solution_kind は test）とは
+        種類が違い、D-0006 に config の案はないので decided_by は書いていない（書くと knowledge-enforcement-check の decision_mismatch で落ちる）。
+        D-0006 の案は実装役の報告の型と判定役が参照する決まりも照らす対象にしているが、followers.json に入れたのは CLAUDE.md（判定役が参照する
+        リポジトリの決まり）と rubric の PR-002 だけで、実装役の報告の型（Engine 側）はまだ照らしていない。担保はこの範囲にとどまるので、
+        confidence は hypothesis のまま
       issue: 1121
       at: 2026-11-08
       wired: false
