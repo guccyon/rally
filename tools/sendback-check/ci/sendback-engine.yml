@@ -3,6 +3,8 @@
 # ENGINE_DIR を渡すので、Engine のチェックアウトがないときや engine_harness.py が判定の関数を取り出せないときは飛ばさずに落ちる。
 # wiring-order は配線の順序の見張り（議決 D-0012、Issue #953）。.github/workflows/ に check.mjs --events を呼ぶ手順があるのに、
 # engine.test.mjs に todo が残っているか、engine.test.mjs を走らせる手順がないときに落ちる（Engine は要らない）。
+# wiring-order には engine.test.mjs の TAP がないので --engine-report-elsewhere を付け、代わりに order.mjs --engine-report を呼ぶ手順
+# （engine-test）が .github/workflows/ にあるかを見る（engine_report_missing。議決 D-0029、Issue #1026）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine.yml に写す。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、engine.test.mjs が通ることを確かめる）。
 # 写したら branch protection で engine-test と wiring-order のジョブ（が報告するチェック）を必須のチェックにする（議決 D-0014、Issue #960）。
@@ -18,6 +20,10 @@
 # ENGINE_REF の Engine で (3) か (c) が通っていない（LEGACY_BASIS の todo など）ときに落とす（議決 D-0016、Issue #964）。
 # ENGINE_REF を固定したので Engine の判定の変化は ENGINE_REF を上げるまで見えない。同じ engine.test.mjs を Engine の既定のブランチの先頭で定期に走らせ、
 # 落ちたら ::error と Issue #948 への記録で知らせるのは ci/sendback-engine-head.yml（議決 D-0020、Issue #977。PR では走らせない）。
+# required-checks は engine-test と wiring-order が main の必須のチェックに入っているかを PR ごとに照らし、外れていれば落とす（議決 D-0040、Issue #1091）。
+# 必須にし忘れると、写しを消す・見張りを書き換える PR が止まらないため。gh api でブランチ（protection の要約）と rulesets の JSON を取り、
+# protection.mjs に渡す。どちらも PR の GITHUB_TOKEN（contents: read）で読める（branches/main/protection は管理者の権限が要るので使わない）。
+# 写しがないと workflow_not_copied、必須にないと required_check_missing、JSON が取れないと protection_unreadable で落ちる。
 name: sendback-engine
 
 on:
@@ -43,10 +49,32 @@ jobs:
         with:
           node-version: 22
       - name: check.mjs の ci_check の配線の順序（K-0004）
-        run: node tools/sendback-check/order.mjs --summary "$GITHUB_STEP_SUMMARY"
+        run: node tools/sendback-check/order.mjs --engine-report-elsewhere --summary "$GITHUB_STEP_SUMMARY"
       - name: ENGINE_REF の見張りと写しのずれ（K-0004）
         working-directory: tools/sendback-check
         run: node --test --test-reporter=spec ci.test.mjs
+
+  required-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: engine-test と wiring-order が main の必須のチェックか（K-0004）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fetch() {
+            if ! gh api "repos/${GITHUB_REPOSITORY}/$1" > "$2"; then
+              echo "::error title=sendback-check protection_unreadable::gh api repos/${GITHUB_REPOSITORY}/$1 が読めなかった。必須のチェックを照らせないので落とす"
+              exit 1
+            fi
+          }
+          fetch branches/main protection-branch.json
+          fetch rules/branches/main protection-rules.json
+          node tools/sendback-check/protection.mjs --protection protection-branch.json --protection protection-rules.json --summary "$GITHUB_STEP_SUMMARY"
 
   engine-test:
     name: sendback-engine-test

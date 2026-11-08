@@ -51,15 +51,4 @@ origin:
   issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009"]
   note: "窓口の相談 2（依頼者 builder）。Google Meet の入室前の体験を手本にする。通話はモックのまま、カメラ・マイク・スピーカーは PC の本物を使う。コーチは Gen1 では admin-web のコーチのロール（docs/adr/0002 Q3）"
   retro: false
-known_gaps:
-  - step: 1
-    note: "入室前チェックがない。確定した予約の行の「通話を開始」は開始時刻と関係なく押せ、すぐに通話を始める"
-  - step: 2
-    note: "コーチの画面はカメラ・マイクを使っていない（「映像はモックのため表示しません」）"
-  - step: 3
-    note: "マイクの音量の表示がない"
-  - step: 4
-    note: "スピーカーの試し音がない"
-  - step: 5
-    note: "開始時刻の前でも「通話を開始」を押せ、押してから 409 slot_not_started の文言（#1009）で知る"
 status: active

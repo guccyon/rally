@@ -1,0 +1,23 @@
+# 衝突したファイルの列（conflict_files）を必須にする制御プレーンのイベントの定義（知見 K-0014 の担保。議決 D-0049・Issue #1136）。
+# Engine の definitions/events.yaml の events と同じ形の抜き書き。engine/conflict-files.patch が Engine の同じイベントに同じ欄を足し、
+# test_schema.py がこの定義と差分を当てた Engine の定義がそろうかを見る。schema.py はこの定義（か --defs で渡した Engine の events.yaml）でイベント列を照らす。
+#   required       いつも要る欄（null は欄がないのと同じに数える）
+#   required_when  payload の欄が when の値のときだけ要る欄
+#   fields         欄の形。paths は空でない文字列（ファイルの道）の列で、min_items 件以上
+events:
+  pr.conflicted:
+    required: [conflict_files]
+    fields:
+      conflict_files: {type: paths, min_items: 1}
+  continue.enqueued:
+    required_when:
+      - when: {reason: conflict}
+        fields: [conflict_files]
+    fields:
+      conflict_files: {type: paths, min_items: 1}
+  handoff.saved:
+    required_when:
+      - when: {continue_reason: conflict}
+        fields: [conflict_files]
+    fields:
+      conflict_files: {type: paths, min_items: 1}

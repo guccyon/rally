@@ -1,0 +1,64 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0104
+pr: https://github.com/guccyon/rally/pull/1279
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0006 に足した ci_check（Issue #1193）は、議決 D-0071 の担保票と enforcement の案（knowledge:
+    K-0006、solution_fields_missing）をそのまま記録しており、decided_by: committee:D-0071 も合っているので、過去の議決と矛盾しません。'
+  - '知見の置き場そのものを照らす検査を、きっかけになった知見の solutions に置くのは K-0004 の Issue #986・#1059・#1138
+    と同じ扱いで、前例と揃っています。'
+  - 'README の決まりと D-0071 の整合の票が求めたとおり、K-0006 の #906 の解決策に wired: false・verified: false
+    を書き足し、README の一覧で K-0006 を記入済みへ移して未記入を K-0009 だけにしたので、README と K-0006 の中身が揃いました。'
+  - statement・scope・evidence・related は変えていないので、関わる K-0001・K-0005・K-0009・K-0012 の扱いは「そのまま」で足り、specs/
+    の用語や業務ルールと重なるところもありません。
+  - README の一覧は test_check.py が check.py の数えた結果と順まで照らすので、差分に出ていない test_check.py の期待値も
+    K-0006 を記入済みへ移す形に合っているかを CI で確かめ、#906 を配線するときは D-0100 のとおり K-0012 と wired を揃えてください。
+  - 二つの解決策とも配線しておらず効き目も確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0006 に足した解決策は issue: 1193・at: 2026-11-08・decided_by: committee:D-0071 を持ち、D-0071
+    の enforcement にある K-0006 の ci_check の案（check.py に solution_fields_missing を足す）と中身が合うので、一次記録に辿れます。'
+  - '「Issue #906 の解決策に書き忘れたことから」という由来は、D-0071 の enforcement の票が K-0006 の解決策に wired・verified
+    がないと指摘した記録と合っており、言い過ぎではありません。'
+  - '既存の解決策と新しい解決策の両方に wired: false・verified: false を書き、.github/workflows/ への配線と効き目の確認がまだであることを本文にも書いているので、確かめた範囲を正直に記録しています。'
+  - README で K-0006 を書き終えた一覧に移し K-0009 だけを未記入として残したのは、K-0009 の解決策に wired・verified
+    がない今の記録と合っています。
+  - tools/knowledge-enforcement-check/check.py と ci/knowledge-enforcement.yml の中身はこの材料に含まれず
+    --base の挙動は照らせないので、verified を true にするときは実際の CI の記録を cases/ か verified_by から辿れるようにしてください。
+  - statement と evidence は変わらず配線も本物の記録での確認もないので confidence は hypothesis のままが妥当で、差分には
+    Issue 番号・議決の id・ファイルの道しかなく利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'K-0006 の 2 つの解決策は、どちらも wired: false・verified: false と書かれ、本文の「配線は建設者の権限でまだ入っておらず効き目は確かめていない」と合っているので、担保の状態を言い過ぎていません。'
+  - 書き足した ci_check は D-0071 の担保票が求めた solution_fields_missing の検査をそのまま記録したもので、判定は真偽の欄があるかないかだけなので線が引きやすく、新しく決定論を足す必要はありません。
+  - README の書き終えた知見の一覧に K-0006 を移した変更は tools/knowledge-enforcement-check/test_check.py
+    が check.py の数えた結果と順まで照らすので、この記述の食い違いはすでに決定論で止まります。
+  - 'solution_fields_missing の検査は ci/knowledge-enforcement.yml のひな形が .github/workflows/
+    に写されて必須のチェックになるまで効かないので、配線したら wired: true と wired_by を書き、本物の変更セットで落ちることを確かめてから
+    verified を上げてください。'
+  - 解決策がどれも未配線で効き目も確かめていないので、K-0006 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'K-0006 の #906 の解決策に wired: false・verified: false を足し、README の一覧で K-0006 を書き終えた側に移したのは、D-0071
+    の担保票と整合票が求めた直しそのもので、主張・scope・evidence は広がっていないので採らない理由は見当たりません。'
+  - '新しい ci_check（Issue #1193、solution_fields_missing）は PR 本文の見出しという K-0006 の主張ではなく知見の置き場の決まりを守る検査なので、のちにこれだけ
+    wired: true になると check.py の表示で K-0006 が「未配線」でなくなり、本文の検査（#906）は未配線のままなのに担保済みに見えるという反例があります。'
+  - D-0071 の議決が K-0006 に付けると決めているので今回は採りますが、配線する変更セットでは、この検査を知見の置き場の決まりを扱う別の知見か README
+    の決まりの側に移すか、知見ごとの表示を解決策の種類ごとに分けることを考えてください。
+  - README の「書かずに直すと --base を渡した check.py が solution_fields_missing で落とす」は道具の動きとしては正しいですが、.github/workflows/
+    にまだ配線されていないので、マージを止めるのは配線のあとだと読み手が分かるように書き添えるとよいです。
+  - どちらの解決策も配線と効き目の確かめがまだなので、K-0006 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []

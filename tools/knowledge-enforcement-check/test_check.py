@@ -4,8 +4,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -297,12 +300,14 @@ class ScheduleTest(unittest.TestCase):
     """K-0004 の issue 1018 の解決策は schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0039、Issue #1088）"""
 
     PROT = "tools/sendback-check/protection.mjs"
+    # issue 1018 は sendback-protection.yml のジョブしか数えない（議決 D-0060、Issue #1160。下の SendbackProtectionWorkflowTest）
+    WF = ".github/workflows/sendback-protection.yml"
 
     def repo(self, workflow: str) -> Path:
         t = tempfile.TemporaryDirectory()
         self.addCleanup(t.cleanup)
         d = Path(t.name)
-        for rel, text in {self.PROT: "", ".github/workflows/p.yml": workflow}.items():
+        for rel, text in {self.PROT: "", self.WF: workflow}.items():
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
             (d / rel).write_text(text, encoding="utf-8")
         return d
@@ -312,7 +317,7 @@ class ScheduleTest(unittest.TestCase):
                 f"      - {step_if}run: node {self.PROT}\n")
 
     def errors(self, d: Path, kid="K-0004", issue=1018, wired=True, runs=None) -> list[str]:
-        wb = [{"workflow": ".github/workflows/p.yml", "job": "protection", "runs": runs or self.PROT}]
+        wb = [{"workflow": self.WF, "job": "protection", "runs": runs or self.PROT}]
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
         return check.check_schedule(item, d)
@@ -336,6 +341,38 @@ class ScheduleTest(unittest.TestCase):
                                 ("    if: github.event_name == 'schedule' && github.event_name != 'schedule'\n", ""),
                                 ("", "if: ${{ github.event_name == 'workflow_dispatch' }}\n        "), ("    if: false\n", "")):
             self.assertEqual(len(self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if)))), 1, (job_if, step_if))
+
+    def test_if_は決まった形だけを許す(self):
+        """議決 D-0061（起票時の番号は D-0058）、Issue #1163。if: は無いか、github.event_name == '…' を || でつないで 'schedule' を含む形だけ"""
+        for job_if, step_if in (("    if: github.event_name == 'schedule'\n", ""), ("    if: ${{ github.event_name == 'schedule' }}\n", ""),
+                                ("    if: github.event_name=='workflow_dispatch'||github.event_name=='schedule'\n", ""),
+                                ("", "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\n        "),
+                                ("    if: github.event_name == 'schedule'\n", "if: ${{ github.event_name == 'schedule' }}\n        ")):
+            self.assertEqual(self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if))), [], (job_if, step_if))
+
+    def test_決まった形でない_if_は_schedule_を含んでも数えない(self):
+        """|| や && でほかの条件をつなぐ・needs や always() を見る・真偽の値の if: は、schedule で飛ばしうるので走らない側に数える（議決 D-0061、Issue #1163）"""
+        for cond in ("github.event_name == 'schedule' && needs.gate.outputs.skip != 'true'",
+                     "github.event_name == 'schedule' && false",
+                     "github.event_name == 'push' || (github.event_name == 'schedule' && false)",
+                     "github.event_name == 'schedule' || needs.gate.result == 'success'",
+                     "needs.gate.result == 'success' && github.event_name == 'schedule'",
+                     "always() && github.event_name == 'schedule'",
+                     "github.event_name == 'schedule' || always()",
+                     "github.event_name == \"schedule\"",
+                     "github.event_name != 'push' || github.event_name == 'schedule'",
+                     "contains(github.event_name, 'schedule')",
+                     "always()", "success()", "true", "${{ true }}",
+                     "${{ github.event_name == 'schedule' }} && false"):
+            for job_if, step_if in ((f"    if: {cond}\n", ""), ("", f"if: {json.dumps(cond)}\n        ")):
+                e = self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if)))
+                self.assertEqual(len(e), 1, (job_if, step_if))
+                self.assertIn("議決 D-0061", e[0])
+
+    def test_許可リストの読み方(self):
+        self.assertFalse(check.off_schedule(None))
+        for cond in (True, False, 1, "", "${{ }}", "github.event_name == 'schedule' ||", "|| github.event_name == 'schedule'"):
+            self.assertTrue(check.off_schedule(cond), cond)
 
     def test_ほかの検査を呼ぶ項目だけでは落ちる(self):
         d = self.repo(self.wf(self.SCHEDULE))
@@ -370,12 +407,86 @@ class ScheduleTest(unittest.TestCase):
     def test_main_で落とす(self):
         d = self.repo(self.wf("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: ci_check, what: x, issue: 1018, wired: true, wired_by: [{{workflow: .github/workflows/p.yml, job: protection, runs: {self.PROT}}}]}}\n")
+                       f"    - {{kind: ci_check, what: x, issue: 1018, wired: true, wired_by: [{{workflow: {self.WF}, job: protection, runs: {self.PROT}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1018）: wired にするには", errors[0])
+
+
+class SendbackProtectionWorkflowTest(unittest.TestCase):
+    """K-0004 の issue 1087 と 1018 の解決策は .github/workflows/sendback-protection.yml の schedule のジョブから protection.mjs を呼ばないと
+    wired にできない（議決 D-0060（起票時の番号は D-0056）、Issue #1160）"""
+
+    PROT = ScheduleTest.PROT
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection.yml"
+    WF = ".github/workflows/sendback-protection.yml"
+    OTHER = ".github/workflows/protection.yml"
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", **files}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, issue: int, wf=None, job="protection", kid="K-0004") -> list[str]:
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": True, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": self.PROT}]}]}}
+        return check.check_schedule(item, d)
+
+    def test_対象に挙げてある(self):
+        for issue in (1087, 1018):
+            self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", issue)], self.PROT)
+            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0004", issue)][0], self.WF)
+        self.assertNotIn(("K-0004", 1158), check.REQUIRED_SCHEDULE_WORKFLOW)
+        self.assertNotIn(("K-0001", 1106), check.REQUIRED_SCHEDULE_WORKFLOW)
+
+    def test_ひな形をそのまま写した_protection_のジョブなら通る(self):
+        d = self.repo({self.WF: self.template()})
+        for issue in (1087, 1018):
+            self.assertEqual(self.errors(d, issue), [], issue)
+
+    def test_ほかのワークフローの_schedule_のジョブでは落ちる(self):
+        d = self.repo({self.WF: self.template(), self.OTHER: self.template()})
+        for issue in (1087, 1018):
+            e = self.errors(d, issue, wf=self.OTHER)
+            self.assertEqual(len(e), 1, (issue, e))
+            self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
+            self.assertIn("議決 D-0039・D-0060", e[0])
+
+    def test_写しが_schedule_で走らなければ落ちる(self):
+        no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.template())
+        d = self.repo({self.WF: no_sched})
+        for issue in (1087, 1018):
+            self.assertEqual(len(self.errors(d, issue)), 1, issue)
+        # pull_request でしか走らない protection-pr のジョブも数えない
+        d = self.repo({self.WF: self.template()})
+        self.assertEqual(len(self.errors(d, 1087, job="protection-pr")), 1)
+
+    def test_ほかの解決策はワークフローの名前を問わない(self):
+        d = self.repo({self.OTHER: self.template()})
+        self.assertEqual(self.errors(d, 1158, wf=self.OTHER), [])
+        self.assertEqual(self.errors(d, 1087, wf=self.OTHER, kid="K-0001"), [])
+
+    def test_main_で落とす(self):
+        d = self.repo({self.OTHER: self.template()})
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1087, wired: true, wired_by: [{{workflow: {self.OTHER}, job: protection, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1087）: wired にするには", errors[0])
+        self.assertIn(self.WF, errors[0])
 
 
 class PullRequestTest(unittest.TestCase):
@@ -596,6 +707,308 @@ class ReadmeListPullRequestTest(unittest.TestCase):
         self.assertIn("issue 1062）: wired にするには", errors[0])
 
 
+class EnginePatchPullRequestTest(unittest.TestCase):
+    """K-0004 の issue 1063・1144 の解決策（Engine に移す差分を ENGINE_REF の版で確かめる engine-test のジョブ）は pull_request のジョブから
+    test_engine_patch.py を呼ばないと wired にできない（議決 D-0053、Issue #1144）"""
+
+    PATCH = "tools/knowledge-enforcement-check/test_engine_patch.py"
+    CHECK, TEMPLATE, WF = KnowledgeCheckPullRequestTest.CHECK, KnowledgeCheckPullRequestTest.TEMPLATE, KnowledgeCheckPullRequestTest.WF
+    template = KnowledgeCheckPullRequestTest.template
+
+    def repo(self, workflow: str) -> Path:
+        d = KnowledgeCheckPullRequestTest.repo(self, workflow)
+        (d / self.PATCH).write_text("", encoding="utf-8")
+        return d
+
+    def errors(self, d: Path, issue=1144, kid="K-0004", wired=True, job="engine-test", runs=None) -> list[str]:
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PATCH}]}]}}
+        return check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        for issue in (1063, 1144):
+            self.assertEqual(check.REQUIRED_PR[("K-0004", issue)], (self.PATCH, "D-0053"), issue)
+
+    def test_ひな形をそのまま写した_engine_test_のジョブなら通る(self):
+        d = self.repo(self.template())
+        for issue in (1063, 1144):
+            self.assertEqual(self.errors(d, issue=issue), [], issue)
+
+    def test_定期や手動だけのワークフローでは落ちる(self):
+        for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n    branches: [main]\n"):
+            for issue in (1063, 1144):
+                e = self.errors(self.repo(self.template(on)), issue=issue)
+                self.assertEqual(len(e), 1, (on, issue, e))
+                self.assertIn("on.pull_request", e[0])
+                self.assertIn(self.PATCH, e[0])
+                self.assertIn("議決 D-0053", e[0])
+
+    def test_enforcement_のジョブや_check_py_を指す項目では落ちる(self):
+        d = self.repo(self.template())
+        e = check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.PATCH}]}]}}, d)
+        self.assertEqual(len(e), 1, e)
+        e = check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1063, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.CHECK}]}]}}, d)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.PATCH, e[0])
+
+    def test_テストを走らせない_engine_test_のジョブでは落ちる(self):
+        step = "          python3 -B -m unittest discover -s tools/knowledge-enforcement-check -v 2>&1 | tee knowledge-enforcement-unittest.log\n"
+        text = self.template().replace(step, "", 1)
+        self.assertNotEqual(text, self.template())
+        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}},
+            self.repo(text))), 1)
+
+    def test_pull_request_では走らないジョブは数えない(self):
+        text = self.template().replace("  engine-test:\n    runs-on: ubuntu-latest\n",
+                                       "  engine-test:\n    if: github.event_name != 'pull_request'\n    runs-on: ubuntu-latest\n", 1)
+        self.assertNotEqual(text, self.template())
+        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1063, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}},
+            self.repo(text))), 1)
+
+    def test_配線していない解決策とほかの知見は見ない(self):
+        d = self.repo(self.template("  workflow_dispatch:\n"))
+        self.assertEqual(self.errors(d, wired=False), [])
+        self.assertEqual(check.check_pull_request({"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}}, d), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.template("  workflow_dispatch:\n"))
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1144, wired: true, wired_by: [{{workflow: {self.WF}, job: engine-test, runs: {self.PATCH}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1144）: wired にするには", errors[0])
+
+
+class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
+    """K-0004 の issue 1158 の解決策は schedule のジョブと pull_request のジョブの両方から protection.mjs を呼ばないと wired にできない
+    （議決 D-0059（起票時の番号は D-0056）、Issue #1158）"""
+
+    PROT = ScheduleTest.PROT
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection.yml"
+    WF = ".github/workflows/sendback-protection.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", "tools/sendback-check/order.mjs": "", self.WF: workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, jobs=("protection", "protection-pr"), issue=1158, kid="K-0004", wired=True, runs=None) -> list[str]:
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PROT} for job in jobs]}]}}
+        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1158)], self.PROT)
+        self.assertEqual(check.REQUIRED_PR[("K-0004", 1158)], (self.PROT, "D-0059"))
+
+    def test_ひな形をそのまま写した_protection_と_protection_pr_なら通る(self):
+        self.assertEqual(self.errors(self.repo(self.template())), [])
+
+    def test_片方のジョブだけでは落ちる(self):
+        d = self.repo(self.template())
+        e = self.errors(d, jobs=("protection",))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        self.assertIn("議決 D-0059", e[0])
+        e = self.errors(d, jobs=("protection-pr",))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_pull_request_か_schedule_を外した写しでは落ちる(self):
+        no_pr = self.template().replace("  workflow_dispatch:\n  pull_request:\n", "  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, self.template())
+        e = self.errors(self.repo(no_pr))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.template())
+        e = self.errors(self.repo(no_sched))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_pull_request_では走らない_protection_pr_は数えない(self):
+        text = self.template().replace("    if: github.event_name == 'pull_request'\n", "    if: github.event_name != 'pull_request'\n", 1)
+        self.assertNotEqual(text, self.template())
+        self.assertEqual(len(self.errors(self.repo(text))), 1)
+
+    def test_protection_mjs_を呼ばない項目では落ちる(self):
+        e = self.errors(self.repo(self.template()), runs="tools/sendback-check/order.mjs")
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 2, e)
+
+    def test_配線していない解決策とほかの解決策は見ない(self):
+        d = self.repo("on:\n  workflow_dispatch:\njobs: {}\n")
+        self.assertEqual(self.errors(d, wired=False), [])
+        self.assertEqual(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1018, "wired": True, "wired_by": [{"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}, d), [])
+
+
+
+class SendbackHeartbeatScheduleTest(unittest.TestCase):
+    """K-0004 の issue 1162 の解決策は schedule でも走るジョブから heartbeat.mjs を呼ばないと wired にできない
+    （議決 D-0061（起票時の番号は D-0058）、Issue #1162）"""
+
+    HB = "tools/sendback-check/heartbeat.mjs"
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection-heartbeat.yml"
+    WF = ".github/workflows/sendback-protection-heartbeat.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.HB: "", self.WF: workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, runs=None, wired=True) -> list[str]:
+        item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1162, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": "heartbeat", "runs": runs or self.HB}]}]}}
+        return check.check_schedule(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1162)], self.HB)
+        self.assertNotIn(("K-0004", 1162), check.REQUIRED_PR)
+
+    def test_ひな形をそのまま写した_heartbeat_なら通る(self):
+        self.assertEqual(self.errors(self.repo(self.template())), [])
+
+    def test_schedule_を外した写しでは落ちる(self):
+        text = self.template().replace('  schedule:\n    - cron: "0 8 * * *"\n', "", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo(text))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_heartbeat_mjs_を呼ばない項目では落ちる(self):
+        e = self.errors(self.repo(self.template()), runs=ScheduleTest.PROT)
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+
+    def test_配線していなければ見ない(self):
+        self.assertEqual(self.errors(self.repo("on:\n  workflow_dispatch:\njobs: {}\n"), wired=False), [])
+
+class PrBodyEngineWiringTest(unittest.TestCase):
+    """K-0001 の issue 1182 の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
+    .github/workflows/pr-body-protection.yml の schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0070（起票時の番号は D-0067）、Issue #1182）"""
+
+    ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
+    PROT = "tools/pr-body-check/protection.mjs"
+    ENGINE_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-engine.yml"
+    PROT_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-protection.yml"
+    ENGINE_WF = ".github/workflows/pr-body-engine.yml"
+    PROT_WF = ".github/workflows/pr-body-protection.yml"
+    OTHER = ".github/workflows/pr-body.yml"
+    WIRED_BY = ((ENGINE_WF, "engine-test", ENGINE_TEST), (PROT_WF, "protection", PROT))
+
+    def repo(self, files: dict[str, str] | None = None) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        base = {self.ENGINE_TEST: "", self.PROT: "", self.ENGINE_WF: self.engine(), self.PROT_WF: self.protection()}
+        for rel, text in {**base, **(files or {})}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def engine(self) -> str:
+        return self.ENGINE_TEMPLATE.read_text(encoding="utf-8")
+
+    def protection(self) -> str:
+        return self.PROT_TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, wired_by=WIRED_BY, issue=1182, wired=True) -> list[str]:
+        item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf, "job": job, "runs": runs} for wf, job, runs in wired_by]}]}}
+        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1182)], self.PROT)
+        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1182)], (self.PROT_WF, "D-0070"))
+        self.assertEqual(check.REQUIRED_PR[("K-0001", 1182)], (self.ENGINE_TEST, "D-0070"))
+        self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0001", 1182)], self.ENGINE_WF)
+
+    def test_2_つのひな形をそのまま写したジョブなら通る(self):
+        self.assertEqual(self.errors(self.repo()), [])
+
+    def test_片方の項目だけでは落ちる(self):
+        d = self.repo()
+        e = self.errors(d, wired_by=self.WIRED_BY[:1])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.schedule（cron）のある {self.PROT_WF} で", e[0])
+        self.assertIn("議決 D-0070", e[0])
+        e = self.errors(d, wired_by=self.WIRED_BY[1:])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.pull_request のある {self.ENGINE_WF} で", e[0])
+        self.assertIn("議決 D-0070", e[0])
+
+    def test_ほかのワークフローのジョブでは落ちる(self):
+        d = self.repo({self.OTHER: self.engine()})
+        e = self.errors(d, wired_by=((self.OTHER, "engine-test", self.ENGINE_TEST), self.WIRED_BY[1]))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.ENGINE_WF, e[0])
+        d = self.repo({self.OTHER: self.protection()})
+        e = self.errors(d, wired_by=(self.WIRED_BY[0], (self.OTHER, "protection", self.PROT)))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.PROT_WF, e[0])
+
+    def test_pull_request_か_schedule_を外した写しでは落ちる(self):
+        no_pr = self.engine().replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, self.engine())
+        e = self.errors(self.repo({self.ENGINE_WF: no_pr}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        no_sched = self.protection().replace('  schedule:\n    - cron: "30 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.protection())
+        e = self.errors(self.repo({self.PROT_WF: no_sched}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_テストを走らせない_engine_test_では落ちる(self):
+        text = self.engine().replace("node --test --test-reporter=spec", "node --test --test-reporter=spec check.test.mjs", 1)
+        self.assertNotEqual(text, self.engine())
+        e = self.errors(self.repo({self.ENGINE_WF: text}))
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+        self.assertIn("engine.test.mjs", e[0])
+
+    def test_配線していない解決策とほかの解決策は見ない(self):
+        d = self.repo({self.ENGINE_WF: "on:\n  workflow_dispatch:\njobs: {}\n", self.PROT_WF: "on:\n  workflow_dispatch:\njobs: {}\n"})
+        self.assertEqual(self.errors(d, wired=False), [])
+        # issue 1106 の解決策は REQUIRED_PR に挙げておらず、ワークフローの名前も問わない
+        d = self.repo({self.OTHER: self.protection()})
+        self.assertEqual(self.errors(d, wired_by=((self.OTHER, "protection", self.PROT),), issue=1106), [])
+
+    def test_main_で落とす(self):
+        d = self.repo()
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1182, wired: true, wired_by: [{{workflow: {self.PROT_WF}, job: protection, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1182）: wired にするには", errors[0])
+        self.assertIn(self.ENGINE_WF, errors[0])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
@@ -731,6 +1144,299 @@ class RequiredRunsTest(unittest.TestCase):
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1100）: wired にするには", errors[0])
+
+
+class HeadRecordTest(unittest.TestCase):
+    """K-0004 の engine-head に関わる解決策は Issue #948 に engine-head の記録が残るまで verified にできない（議決 D-0047、Issue #1114）"""
+
+    HEAD = "a" * 40
+    RUN = "https://github.com/guccyon/rally/actions/runs/123"
+
+    def comments(self, *bodies: str, login: str = "github-actions[bot]", text: str | None = None) -> str:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        p = Path(t.name) / "comments.jsonl"
+        p.write_text(text if text is not None else "".join(json.dumps({"user": {"login": login}, "body": b}) + "\n" for b in bodies), encoding="utf-8")
+        return str(p)
+
+    def record(self, kind="engine_head_passed") -> str:
+        return f"<!-- sendback-engine-head: {self.HEAD} {kind} -->\n先頭で走らせた。\n\n- 実行: {self.RUN}\n"
+
+    @staticmethod
+    def k4(*sols):
+        return {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": list(sols)}}
+
+    @staticmethod
+    def verified(issue: int):
+        return {"kind": "ci_check", "what": "x", "issue": issue, "wired": True, "verified": True}
+
+    def test_記録があれば通る(self):
+        for kind in ("engine_head_passed", "engine_head_failed"):
+            self.assertEqual(check.check_head_record(self.k4(self.verified(977)), self.comments("ほか", self.record(kind))), [], kind)
+
+    def test_記録がなければ_head_record_missing_で落ちる(self):
+        for name, comments in (("コメントがない", self.comments()), ("ほかの記録だけ", self.comments("PR #395 と同じ入力で通った")),
+                               ("人が写した印", self.comments(self.record(), login="tessan"))):
+            for issue in (977, 1046, 1047):
+                e = check.check_head_record(self.k4(self.verified(issue)), comments)
+                self.assertEqual(len(e), 1, (name, issue))
+                self.assertIn(f"issue {issue}）: head_record_missing: Issue #948 に engine-head", e[0])
+
+    def test_コメントを渡していない_読めないときは_head_record_unchecked_で落ちる(self):
+        for comments in (None, "/nonexistent/comments.jsonl", self.comments(text="{}\nnot json\n")):
+            e = check.check_head_record(self.k4(self.verified(977)), comments)
+            self.assertEqual(len(e), 1, comments)
+            self.assertIn("head_record_unchecked", e[0])
+
+    def test_head_record_mjs_が結果を出さずに抜けたら通さない(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        fake = Path(t.name) / "head-record.mjs"
+        fake.write_text("process.exit(0);\n", encoding="utf-8")
+        e = check.check_head_record(self.k4(self.verified(977)), self.comments(self.record()), script=fake)
+        self.assertEqual(len(e), 1)
+        self.assertIn("head_record_unchecked", e[0])
+
+    def test_対象でない解決策と確認していない解決策は見ない(self):
+        sols = (dict(self.verified(977), verified=False), dict(self.verified(977), verified="true"), self.verified(1018), self.verified(1076))
+        self.assertEqual(check.check_head_record(self.k4(*sols), None, script=Path("/nonexistent.mjs")), [])
+        other = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [self.verified(977)]}}
+        self.assertEqual(check.check_head_record(other, None, script=Path("/nonexistent.mjs")), [])
+
+    def test_head_record_mjs_は_1_回だけ走らせる(self):
+        cache: dict = {}
+        comments = self.comments()
+        self.assertEqual(len(check.check_head_record(self.k4(self.verified(977), self.verified(1047)), comments, cache)), 2)
+        cache["result"] = None  # 走らせ直さず覚えた結果を使う
+        self.assertEqual(check.check_head_record(self.k4(self.verified(977)), comments, cache), [])
+
+    def test_main_で落とす(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 977, wired: false, verified: true}\n")
+        out = d / "out.json"
+        for comments, rule in ((None, "head_record_unchecked"), (self.comments(), "head_record_missing")):
+            argv = ["--repo", str(d), "--json", str(out)] + (["--head-comments", comments] if comments else [])
+            self.assertEqual(check.main(argv), 1)
+            errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+            self.assertTrue(any(f"issue 977）: {rule}" in x for x in errors), errors)
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out), "--head-comments", self.comments(self.record())]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertFalse(any("head_record" in x for x in errors), errors)
+
+
+class ReviewByHoldTest(unittest.TestCase):
+    """K-0010 の review_by を前の版より後ろへ動かす PR では、ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす
+    （議決 D-0067（起票時の番号は D-0066）、Issue #1178）。Engine は一時の git リポジトリに dispatcher.py の job.finished だけを置いて作る"""
+
+    LEGACY = ["state", "cost_usd", "exit"]
+    BEFORE = "2026-12-05"
+
+    @staticmethod
+    def git(cwd: Path, *args: str) -> str:
+        return subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args], cwd=cwd,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def tmp(self) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        return Path(t.name)
+
+    def engine(self, *versions: list[str]) -> tuple[Path, list[str]]:
+        """versions の欄ごとに job.finished を出す dispatcher.py の版を積んだ Engine と、各版の SHA"""
+        d, shas = self.tmp(), []
+        self.git(d, "init", "-q")
+        f = d / check.ENGINE_DISPATCHER
+        f.parent.mkdir(parents=True)
+        for fields in versions:
+            payload = ", ".join(f'"{x}": None' for x in fields)
+            f.write_text(f'def run(cur, corr, job_id):\n    record_event(cur, "job.finished", corr, job_id, {{{payload}}})\n', encoding="utf-8")
+            self.git(d, "add", "-A")
+            self.git(d, "commit", "-q", "-m", "v")
+            shas.append(self.git(d, "rev-parse", "HEAD"))
+        return d, shas
+
+    def repo(self, ref: str, after: str | None, before: str | None = BEFORE, copy_ref: str | None = None) -> Path:
+        """base の版の K-0010 の review_by が before、作業ツリーで after。conflict-check のひな形の ENGINE_REF は ref（copy_ref があれば写しも置く）"""
+        d = self.tmp()
+        shutil.copytree(REPO / "tools/conflict-check", d / "tools/conflict-check", ignore=shutil.ignore_patterns("__pycache__", "fixtures"))
+        tpl = d / check.CONFLICT_CHECK_WORKFLOWS[1]
+        tpl.write_text(check.ENGINE_REF_RE.sub(f"  ENGINE_REF: {ref}", tpl.read_text(encoding="utf-8")), encoding="utf-8")
+        if copy_ref is not None:
+            (d / check.WORKFLOWS).mkdir(parents=True)
+            (d / check.CONFLICT_CHECK_WORKFLOWS[0]).write_text(f"env:\n  ENGINE_REF: {copy_ref}\n", encoding="utf-8")
+        self.git(d, "init", "-q")
+        if before is not None:
+            self.knowledge(d, before)
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "base")
+        self.knowledge(d, after)
+        return d
+
+    def knowledge(self, d: Path, review_by: str | None):
+        MainTest.write(None, d, "K-0010.yaml", "id: K-0010\n" + (f"review_by: {review_by}\n" if review_by is not None else ""))
+
+    def errors(self, d: Path, engine: Path | None, base="HEAD") -> list[str]:
+        return [e for x in check.load(d) for e in check.check_review_by_hold(x, d, base, engine)]
+
+    def test_延ばさなければ_Engine_なしでも見ない(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        for after in (self.BEFORE, "2026-12-01"):
+            self.assertEqual(self.errors(self.repo(sha, after), None), [], after)
+
+    def test_延ばして_Engine_が今の形なら落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        e = self.errors(self.repo(sha, "2027-01-05"), eng)
+        self.assertEqual(len(e), 1, e)
+        for s in ("K-0010.yaml: review_by_hold: review_by を 2026-12-05 から 2027-01-05 へ動かす", sha, "EngineFinishedTest が todo のまま", "議決 D-0067"):
+            self.assertIn(s, e[0])
+
+    def test_review_by_を読めなくしても延ばしたとみなす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        for after in (None, "いつか"):
+            self.assertEqual(len(self.errors(self.repo(sha, after), eng)), 1, after)
+
+    def test_延ばしても_Engine_が欄を出す版なら通る(self):
+        eng, shas = self.engine(self.LEGACY, self.LEGACY + ["agent_resumed"], self.LEGACY + ["agent_tier"], self.LEGACY + ["agent_resumed", "agent_tier"])
+        self.assertEqual(len(self.errors(self.repo(shas[0], "2027-01-05"), eng)), 1)
+        for sha in shas[1:]:   # 片方だけの版は todo でなく EngineFinishedTest そのものが落ちるので、ここでは落とさない
+            self.assertEqual(self.errors(self.repo(sha, "2027-01-05"), eng), [], sha)
+
+    def test_写しがあれば写しの_ENGINE_REF_を見る(self):
+        eng, (old, new) = self.engine(self.LEGACY, self.LEGACY + ["agent_resumed", "agent_tier"])
+        self.assertEqual(self.errors(self.repo(old, "2027-01-05", copy_ref=new), eng), [])
+        e = self.errors(self.repo(new, "2027-01-05", copy_ref=old), eng)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(".github/workflows/conflict-check.yml", e[0])
+
+    def test_照らせなければ落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        other, (missing,) = self.engine(["state", "exit"])   # cost_usd を持つ job.finished がない（engine_harness.py が読めない）
+        no_fields = self.repo(sha, "2027-01-05")
+        (no_fields / check.CONFLICT_EVENTS_TEST).write_text("X = 1\n", encoding="utf-8")
+        cases = {"Engine を渡さない": (self.repo(sha, "2027-01-05"), None, "engine_missing", "--engine か ENGINE_DIR"),
+                 "Engine に版がない": (self.repo(missing, "2027-01-05"), eng, "engine_ref_missing", f"ENGINE_REF {missing} の版がない"),
+                 "欄を読めない": (self.repo(missing, "2027-01-05"), other, "finished_unreadable", "finished が落ちた"),
+                 "ENGINE_REF が SHA でない": (self.repo("main", "2027-01-05"), eng, "engine_ref_invalid", "40 桁のコミット SHA"),
+                 "FINISHED_FIELDS がない": (no_fields, eng, "fields_unreadable", "FINISHED_FIELDS がない")}
+        for name, (d, engine, kind, msg) in cases.items():
+            e = self.errors(d, engine)
+            self.assertEqual(len(e), 1, name)
+            self.assertIn(f"K-0010.yaml: review_by_unverifiable（{kind}）: ", e[0], name)
+            self.assertIn("照らせない", e[0], name)
+            self.assertIn(msg, e[0], name)
+
+    def test_照らせないこと以外の例外は照らせないに混ぜない(self):
+        """実装の不具合（KeyError など）は review_by_unverifiable の行にせず、そのまま上げる（指摘 ARCH-007）"""
+        eng, (sha,) = self.engine(self.LEGACY)
+        d = self.repo(sha, "2027-01-05")
+        with mock.patch.object(check, "engine_finished_legacy", side_effect=KeyError("fields")), self.assertRaises(KeyError):
+            self.errors(d, eng)
+
+    def test_前の版を渡さない_前の版にない_ほかの知見は見ない(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05"), None, base=None), [])
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05", before=None), None), [])
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05", before="いつか"), None), [])
+        d = self.repo(sha, "2027-01-05")
+        self.assertEqual(check.check_review_by_hold({"id": "K-0004", "_file": "K-0010.yaml"}, d, "HEAD", None), [])
+
+    def test_前の版が読めなければ落とす(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        e = self.errors(self.repo(sha, self.BEFORE), None, base="origin/none")
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("K-0010.yaml: review_by_unverifiable（base_unreadable）: ", e[0])
+        self.assertIn("前の版 origin/none がリポジトリにない", e[0])
+
+    def test_main_で落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        d = self.repo(sha, "2027-01-05")
+        self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD", "--engine", str(eng)]), 1)
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
+
+    def test_求める欄は_test_events_py_の_FINISHED_FIELDS(self):
+        self.assertEqual(check.finished_fields_required(REPO), ("agent_resumed", "agent_tier"))
+
+
+class SolutionFieldsTest(unittest.TestCase):
+    """PR の差分で変わった K-*.yaml の解決策に wired と verified の両方がなければ solution_fields_missing で落とす（議決 D-0071、Issue #1193）。
+    base の版は一時の git リポジトリに積んで作る"""
+
+    OPEN = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n    - {kind: ci_check, what: x, issue: 906}\n"
+    DONE = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n    - {kind: ci_check, what: x, issue: 906, wired: false, verified: false}\n"
+
+    def repo(self, before: str | None, after: str | None) -> Path:
+        """base の版の K-0006.yaml が before（None ならなし）、作業ツリーで after（None なら base のまま）"""
+        d = ReviewByHoldTest.tmp(self)
+        ReviewByHoldTest.git(d, "init", "-q")
+        if before is not None:
+            MainTest.write(None, d, "K-0006.yaml", before)
+        (d / "README.md").write_text("x\n", encoding="utf-8")
+        ReviewByHoldTest.git(d, "add", "-A")
+        ReviewByHoldTest.git(d, "commit", "-q", "-m", "base")
+        if after is not None:
+            MainTest.write(None, d, "K-0006.yaml", after)
+        return d
+
+    def errors(self, d: Path, base: str | None = "HEAD") -> list[str]:
+        return [e for x in check.load(d) for e in check.check_solution_fields(x, d, base)]
+
+    def test_未記入のまま直すと落とす(self):
+        e = self.errors(self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y")))
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, e[0])
+        self.assertIn("enforcement.solutions[0]（ci_check、issue 906）に wired・verified がない", e[0])
+
+    def test_片方だけの記入も落とす(self):
+        e = self.errors(self.repo(self.OPEN, self.OPEN.replace("issue: 906}", "issue: 906, wired: false}")))
+        self.assertEqual(len(e), 1)
+        self.assertIn("に verified がない", e[0])
+
+    def test_新しく足した知見の未記入も落とす(self):
+        e = self.errors(self.repo(None, self.OPEN))
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, e[0])
+
+    def test_未記入の解決策ごとに_1_行(self):
+        two = self.OPEN + "    - {kind: test, what: z, issue: 1193}\n"
+        e = self.errors(self.repo(self.OPEN, two))
+        self.assertEqual([("solutions[0]" in x, "solutions[1]" in x) for x in e], [(True, False), (False, True)])
+
+    def test_書き足して直せば通る(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.DONE)), [])
+
+    def test_変えていない知見の未記入は見ない(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, None)), [])
+
+    def test_base_を渡さなければ見ない(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y")), None), [])
+
+    def test_分かれ目より後に_base_で変わった知見は差分に数えない(self):
+        # PR の分岐のあとで base 側だけが知見を直しても、この PR の差分ではない（merge-base と比べる）
+        d = self.repo(self.OPEN, None)
+        ReviewByHoldTest.git(d, "checkout", "-q", "-b", "base")
+        MainTest.write(None, d, "K-0006.yaml", self.OPEN.replace("what: x", "what: base"))
+        ReviewByHoldTest.git(d, "commit", "-q", "-am", "base が進む")
+        ReviewByHoldTest.git(d, "checkout", "-q", "-")
+        self.assertEqual(self.errors(d, "base"), [])
+        MainTest.write(None, d, "K-0006.yaml", self.OPEN.replace("what: x", "what: pr"))
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, self.errors(d, "base")[0])
+
+    def test_分かれ目を求められなければ照らせないとして落とす(self):
+        d = self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y"))
+        e = self.errors(d, "no-such-ref")
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_UNVERIFIABLE, e[0])
+        # 未記入の解決策がなければ、base を読めなくても見ない
+        MainTest.write(None, d, "K-0006.yaml", self.DONE)
+        self.assertEqual(self.errors(d, "no-such-ref"), [])
+
+    def test_main_が_base_を渡すと照らして_1_を返す(self):
+        d = self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y"))
+        self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD"]), 1)
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
 
 
 class RepoTest(unittest.TestCase):

@@ -118,7 +118,7 @@ describe("通話への参加の予約のメニュー", () => {
     expect(menuCell(past, "古田さん")).toHaveTextContent(/^サーブ特訓（90 分）$/);
   });
 
-  test("lesson_menu を持たない予約（古い版の応答）も、メニューのない予約と同じく「—」で、通話は今までどおり始められる", async () => {
+  test("lesson_menu を持たない予約（古い版の応答）も、メニューのない予約と同じく「—」で、入室前チェックの案内は今までどおり出る", async () => {
     render(
       <LiveSessionPanel
         api={{
@@ -133,7 +133,7 @@ describe("通話への参加の予約のメニュー", () => {
 
     const upcoming = await screen.findByRole("table", { name: "これからの予約" });
     expect(menuCell(upcoming, "佐藤さん")).toHaveTextContent(/^—$/);
-    expect(within(upcoming).getByRole("button", { name: "通話を開始" })).toBeEnabled();
+    expect(within(upcoming).getByRole("row", { name: /佐藤さん/ })).toHaveTextContent(/開始 5 分前から入室前チェックができます（.+ から）$/);
   });
 });
 

@@ -11,6 +11,7 @@ import 'favorite_coaches.dart';
 import 'lesson_completions.dart';
 import 'lesson_review.dart';
 import 'notifications.dart';
+import 'prejoin_check.dart';
 import 'subscription.dart';
 
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）とホーム・自分の予約・自分の動画・チャット・通知の受け取り設定・お知らせ・プロフィールの画面の段。
@@ -27,6 +28,10 @@ enum FlowStep {
   coachProfile,
   slotSearch,
   bookingPending,
+
+  /// 入室前チェック（予約の確定から開始 5 分前を過ぎて開く。端末のカメラ・マイク・スピーカーを確かめ、開始時刻から入室する。
+  /// 状態は [PrejoinCheckState]）
+  prejoinCheck,
   liveLesson,
   videoSubmit,
   videoReview,
@@ -608,9 +613,6 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(booking: booking);
   });
 
-  /// 初回レッスンを通話で受ける
-  void chooseLiveLesson() => state = state.copyWith(step: FlowStep.liveLesson);
-
   /// 初回レッスンを動画の送付で受ける
   void chooseVideo() => state = state.copyWith(step: FlowStep.videoSubmit);
 
@@ -621,6 +623,21 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
     state = state.copyWith(session: session);
   });
+
+  /// 入室前チェックの「入室する」（`startLiveLessonSession`）。通ったらビデオ通話へ移って true を返す。
+  /// 応答の前に入室前チェックから戻っていたら応答を捨てる（段を移さない）。失敗の文言は [StudentFlowState.errorMessage]
+  Future<bool> joinLiveLesson() async {
+    var joined = false;
+    await run(() async {
+      final session = await _api.startLiveLessonSession(
+        StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
+      );
+      if (!ref.mounted || state.step != FlowStep.prejoinCheck) return;
+      state = state.copyWith(session: session, step: FlowStep.liveLesson);
+      joined = true;
+    });
+    return joined;
+  }
 
   /// `endLiveLessonSession`。終了したら完了記録へ。
   Future<void> endCall() => run(() async {

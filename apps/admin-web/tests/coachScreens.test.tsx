@@ -698,11 +698,16 @@ describe("通話への参加", () => {
     const sato = within(upcoming).getByRole("row", { name: /佐藤さん/ });
     expect(sato).toHaveTextContent(formatDateTime(BOOKINGS[2]!.slot.starts_at));
     expect(sato).toHaveTextContent("確定済み");
-    expect(within(sato).getByRole("button", { name: "通話を開始" })).toBeEnabled();
+    // 開始 5 分前を過ぎた確定した予約は入室前チェックを開ける。
+    expect(within(sato).getByRole("button", { name: "入室前チェック" })).toBeEnabled();
     // 確定していない予約からは始められない。
     const suzuki = within(upcoming).getByRole("row", { name: /鈴木さん/ });
     expect(suzuki).toHaveTextContent("確定待ち");
     expect(within(suzuki).queryByRole("button")).not.toBeInTheDocument();
+    // 開始 5 分前より早い確定した予約は、開ける時刻を出してボタンを出さない。
+    const later = within(upcoming).getByRole("row", { name: /名前を表示できません/ });
+    expect(later).toHaveTextContent(/開始 5 分前から入室前チェックができます（.+ から）$/);
+    expect(within(later).queryByRole("button")).not.toBeInTheDocument();
 
     const past = screen.getByRole("table", { name: "終わった予約" });
     expect(rowTexts(past)).toEqual(["中村さん", "古田さん"]);
@@ -716,7 +721,7 @@ describe("通話への参加", () => {
     expect(screen.queryByText(/未実装/)).not.toBeInTheDocument();
   });
 
-  test("確定した予約の行から通話を開始し、同じセッションを終了する", async () => {
+  test("確定した予約の行の入室前チェックから入室し、同じセッションを終了する", async () => {
     const startLiveLessonSession = vi.fn<CoachApi["startLiveLessonSession"]>(async () => ({
       ok: true,
       data: started,
@@ -743,14 +748,14 @@ describe("通話への参加", () => {
     );
 
     const row = await screen.findByRole("row", { name: /佐藤さん/ });
-    await user.click(within(row).getByRole("button", { name: "通話を開始" }));
+    await user.click(within(row).getByRole("button", { name: "入室前チェック" }));
+    await user.click(await screen.findByRole("button", { name: "入室する" }));
 
     expect(startLiveLessonSession).toHaveBeenCalledWith({ booking_id: BOOKING_ID });
     expect(await screen.findByText("通話中")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("通話を開始しました。");
-    for (const button of screen.getAllByRole("button", { name: "通話を開始" })) {
-      expect(button).toBeDisabled();
-    }
+    expect(screen.getByText("通話を開始しました。")).toBeInTheDocument();
+    // 入室した予約の行はもう開けない。
+    expect(screen.queryByRole("button", { name: "入室前チェック" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "通話を終了" }));
 
@@ -776,7 +781,8 @@ describe("通話への参加", () => {
     );
 
     const row = await screen.findByRole("row", { name: /佐藤さん/ });
-    await user.click(within(row).getByRole("button", { name: "通話を開始" }));
+    await user.click(within(row).getByRole("button", { name: "入室前チェック" }));
+    await user.click(await screen.findByRole("button", { name: "入室する" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("すでに開始済みか");
     expect(screen.queryByRole("button", { name: "通話を終了" })).not.toBeInTheDocument();
@@ -825,6 +831,6 @@ describe("通話への参加", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "通話を開始" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "入室前チェック" })).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/ui/components/join_bar.dart';
@@ -267,5 +269,25 @@ void main() {
       await tester.tap(find.text('入室する'));
       expect(joined, 1);
     });
+  });
+
+  // 部品は見た目だけを持ち、映像（video）と音の大きさ（level）は呼ぶ側から受け取る（#1041）。
+  // カメラ・マイク・スピーカーを開く・計るのは入室前チェックの画面の側で、lib/ui/components には書かない。
+  test('部品は flutter と自前のファイルだけを読み、端末の機器を開く口を持たない', () {
+    final imports = RegExp(r"^import '(package:[^']+)';", multiLine: true);
+    final channels = RegExp(r'\b(MethodChannel|EventChannel)\b');
+    final offenders = <String>[];
+    for (final file in Directory('lib/ui/components').listSync()) {
+      if (file is! File || !file.path.endsWith('.dart')) continue;
+      final source = file.readAsStringSync();
+      for (final match in imports.allMatches(source)) {
+        final uri = match.group(1)!;
+        if (!uri.startsWith('package:flutter/')) {
+          offenders.add('${file.path}: $uri');
+        }
+      }
+      if (channels.hasMatch(source)) offenders.add(file.path);
+    }
+    expect(offenders, isEmpty);
   });
 }

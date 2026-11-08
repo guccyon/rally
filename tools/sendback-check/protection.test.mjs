@@ -1,4 +1,5 @@
-// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018。複数の JSON を合わせるのは議決 D-0039、Issue #1087）。
+// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018。複数の JSON を合わせるのは議決 D-0039、Issue #1087。
+// ブランチの JSON は議決 D-0040、Issue #1091）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,6 +28,9 @@ const rulesets = (contexts) => [
   { type: "required_status_checks", parameters: { strict_required_status_checks_policy: true,
     required_status_checks: contexts.map((context) => ({ context, integration_id: 15368 })) } },
 ];
+/** gh api repos/{owner}/{repo}/branches/main の形（protection の要約。PR の GITHUB_TOKEN でも読める） */
+const branch = (contexts) => ({ name: "main", protected: contexts.length > 0,
+  protection: { enabled: contexts.length > 0, required_status_checks: { enforcement_level: "non_admins", contexts, checks: contexts.map((context) => ({ context })) } } });
 const rules = (r) => r.errors.map((e) => e.rule);
 
 test("ひな形のジョブは id と違うチェックの名前（sendback-engine-test・sendback-wiring-order）を報告する", () => {
@@ -80,6 +84,22 @@ test("写しがない・ジョブの名前を変えた写しは workflow_not_cop
   const protection = classic([ENGINE, WIRING]);
   assert.deepEqual(rules(checkProtection({ workflow: null, protection })), ["workflow_not_copied"]);
   assert.deepEqual(rules(checkProtection({ workflow: template.replace("  wiring-order:\n", "  order:\n"), protection })), ["workflow_not_copied"]);
+});
+
+test("ブランチの JSON（protection.required_status_checks）も読む", () => {
+  assert.deepEqual([...requiredContexts(branch(["engine-test", "wiring-order"]))].sort(), ["engine-test", "wiring-order"]);
+  assert.deepEqual(checkProtection({ workflow: template, protection: branch([ENGINE, WIRING]) }).errors, []);
+  assert.deepEqual(rules(checkProtection({ workflow: template, protection: branch([]) })), ["required_check_missing", "required_check_missing"]);
+  // id の engine-test・wiring-order だけを必須にした形は、照らす名前（sendback-engine-test・sendback-wiring-order）がないので外れる
+  assert.deepEqual(rules(checkProtection({ workflow: template, protection: branch(["engine-test", "wiring-order"]) })),
+    ["required_check_missing", "required_check_missing"]);
+});
+
+test("複数の JSON を渡すと、必須のチェックはそれらを合わせたもの（古い形と rulesets に分けて必須にしても通る）", () => {
+  assert.deepEqual(checkProtection({ workflow: template, protections: [branch([ENGINE]), rulesets([WIRING])] }).errors, []);
+  assert.deepEqual(checkProtection({ workflow: template, protections: [branch([]), rulesets([ENGINE, WIRING])] }).errors, []);
+  assert.deepEqual(rules(checkProtection({ workflow: template, protections: [branch([ENGINE]), []] })), ["required_check_missing"]);
+  assert.deepEqual(rules(checkProtection({ workflow: template, protections: [] })), ["required_check_missing", "required_check_missing"]);
 });
 
 test("古い形と rulesets を一緒に渡すと、どちらかで必須になっているチェックを必須に数える（議決 D-0039、Issue #1087）", () => {
@@ -145,13 +165,20 @@ test("CLI: 通れば 0、外れれば 1（GitHub Actions では ::error）、読
   r = run(["--protection", ng, "--repo", dir], { GITHUB_ACTIONS: "true" });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^::error title=sendback-check required_check_missing::wiring-order のジョブ/m);
+  const half = join(dir, "half.json");
+  writeFileSync(half, JSON.stringify(branch([ENGINE])));
+  writeFileSync(join(dir, "rest.json"), JSON.stringify(rulesets([WIRING])));
+  assert.equal(run(["--protection", half, "--repo", dir]).status, 1);
+  r = run(["--protection", half, "--protection", join(dir, "rest.json"), "--repo", dir]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
   r = run(["--protection", ng, "--protection", ok, "--repo", dir]);
   assert.equal(r.status, 0, "--protection を 2 つ渡すと合わせて照らす");
   r = run(["--protection", ok, "--repo", repoWith({})]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^workflow_not_copied: /m);
   writeFileSync(ng, "{");
-  for (const args of [["--protection", ng, "--repo", dir], ["--repo", dir], ["--protection", join(dir, "none.json"), "--repo", dir]]) {
+  for (const args of [["--protection", ng, "--repo", dir], ["--repo", dir], ["--protection", join(dir, "none.json"), "--repo", dir],
+    ["--protection", ok, "--protection", ng, "--repo", dir]]) {
     assert.equal(run(args).status, 2, args.join(" "));
   }
 });

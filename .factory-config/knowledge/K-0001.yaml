@@ -155,6 +155,23 @@ enforcement:
       decided_by: committee:D-0044
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0045（PR #1108）の test の案を入れた。tools/pr-body-check/engine.test.mjs の (10) を、engine/pr-body-gate.patch を当てた Engine の写しではなく、
+        ENGINE_DIR（CI では ENGINE_REF の版）の Engine の entrypoint.sh そのものから取り出した本文の更新の節で走らせる形にした。通る側の 3 通りの形
+        （報告の見出しを ### か #### に下げる、## 見出しを持たない）の 21 回で、node を包んで関所が毎回 1 回呼ばれて 0 を返し、body_gate.json を残さずに本文を書き、
+        書いた本文が関所に通ることを確かめる。todo や飛ばしのない必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる。差分そのものの誤検知を見ていた
+        写しでの確かめは (11) に移し、Engine がまだ関所を呼ばない間だけ走らせ、Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす。
+        手元の Engine（57069a8。関所を呼ばない）では (10) が落ちること、その Engine に差分を当てた全体の写し（entrypoint.sh の FACTORY_RESULT の hunk は
+        今の Engine に当たらないので手で合わせた）を ENGINE_DIR にすると (10) の 3 件が通って (11) が飛ぶこと、その写しの続きのジョブの記録の見出しを
+        ## に戻すと (10) の 3 件が落ちることを確かめた。差分はまだ Engine に入っておらず ENGINE_REF（9fee9c2）も上がっていない（その版は手元になく走らせていない）ので、
+        ENGINE_REF の Engine で (10) が通ることはまだ確かめておらず、案の条件どおり wired と verified は false のままにした。建設者が差分を入れて ENGINE_REF を上げ、
+        (10) が通ることを記録したら（tools/pr-body-check/README.md の「配線の手順（建設者）」の 6）、Issue #1038 とこの解決策の wired と verified を true にする
+      issue: 1110
+      at: 2026-11-08
+      decided_by: committee:D-0045
+      wired: false
+      verified: false
     - kind: ci_check
       what: >-
         議決 D-0045 の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を必須のチェックにするとき、
@@ -168,6 +185,96 @@ enforcement:
       issue: 1109
       at: 2026-11-08
       decided_by: committee:D-0045
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0068（Issue #1180 の起票時の番号は D-0066。PR #1176）の test の案を入れた。ci.test.mjs は写しがひな形と同じかを見るだけで、
+        ひな形と写しを一緒に変えると、定期の照合（pr-body-protection.yml）そのものが黙って止まる外れ方を見張れなかった。
+        tools/pr-body-check/ci.test.mjs に、ひな形と、.github/workflows/pr-body-protection.yml の写しがあれば写しそのものについて、
+        on の schedule に cron があり workflow_dispatch があること、continue-on-error がなく、protection のジョブと PR_BODY_PROTECTION_TOKEN を読む手順に if: がないこと、
+        その手順を偽の gh で動かし、トークンがない・権限がない（403）・rulesets を読めないのどれでも protection_unreadable の ::error を出して飛ばさず落ちることを確かめるテストを足した。
+        schedule・cron・workflow_dispatch を外す、on を 1 行の列にする、ジョブや読む手順に if: や continue-on-error を足す、読めないときに 0 で抜ける、ジョブの id を変えるの
+        11 通りの直しがどれも外れになり、今のひな形は通ることを確かめた。写しを置いた仮のリポジトリで、ひな形のままの写しは通り、workflow_dispatch を外した写しは落ちることも確かめた。
+        このテストは engine-test の node --test の中で走るが、ひな形 ci/pr-body-engine.yml と ci/pr-body-protection.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」と「定期の照合」）、写しがない間は写しのテストは飛ぶので、配線されておらず効き目は確かめていない
+      issue: 1180
+      at: 2026-11-08
+      decided_by: committee:D-0068
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0068（Issue #1179 の起票時の番号は D-0066。PR #1176）の ci_check の案（K-0004 の test_engine_patch.py と同じ形で、engine/pr-body-gate.patch を
+        ENGINE_REF の版と Engine の既定のブランチの先頭に git apply --check と git apply --reverse --check で照らし、当たる・もう入っている・
+        patch_partially_applied・patch_stale を分けて出し、patch_stale と patch_partially_applied で落ちて Issue を開くジョブを main への push・毎日・手動で走らせる）を入れた。
+        tools/pr-body-check/patch.mjs が、ENGINE_REF（写し .github/workflows/pr-body-engine.yml があればそれ、なければひな形 ci/pr-body-engine.yml）と
+        Engine のチェックアウトの HEAD の 2 つの版ごとに、差分が触るファイルを git から取り出して照らし、差分で足したもの（entrypoint.sh の tools/pr-body-check/gate.mjs・
+        dispatcher.py の act_on_body_gate・events.yaml の pr.body_gate_blocked）はあるのに --reverse --check が通らない版を patch_partially_applied に分ける。
+        ひな形 tools/pr-body-check/ci/pr-body-patch.yml が、Engine を ref なし・全部の履歴で取って patch.mjs を main への push・毎日・手動で走らせ、
+        patch_stale か patch_partially_applied なら落ちて題で探した Issue を開くか更新し（同じ版の同じ外れ方は足さない）、通れば開いている Issue を閉じる。
+        照らせないとき（ENGINE_REF の版がない）は patch_check_failed で落ちるが Issue は開かない。patch.test.mjs が作った Engine の写しで 4 つの判定と CLI の終了コードを、
+        ci.test.mjs がひな形の形と、偽の Engine と偽の gh で手順を動かした振る舞いを確かめる。手元の Engine（dcc3b1e。ENGINE_REF の 9fee9c2 は手元になく、その版では走らせていない）を
+        ENGINE_REF に見立てて走らせると、今の差分は当たり、差分を入れた版は merged、入れたあと dispatcher.py を変えた版と entrypoint.sh だけ残した版は
+        patch_partially_applied、差分の文脈の行を変えた版は patch_stale で終了コード 1 になることを確かめた。ひな形の写しは建設者が行うので
+        （tools/pr-body-check/README.md の「差分の当たりの照合」）、まだ配線されておらず効き目は確かめていない
+      issue: 1179
+      at: 2026-11-08
+      decided_by: committee:D-0068
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0070（Issue #1182 の起票時の番号は D-0067。PR #1181）の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して
+        pr-body-engine-test を既定ブランチの必須のチェックにし、protection.mjs を同じジョブか定期の CI で走らせ、そのときこの知見の solutions の wired を true にして
+        wired_by にワークフローのファイル・job・呼ぶ検査の道を書く）のうち、ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の
+        REQUIRED_SCHEDULE と REQUIRED_PR の両方にこの解決策を挙げ、REQUIRED_SCHEDULE_WORKFLOW で .github/workflows/pr-body-protection.yml の schedule でも走るジョブから
+        tools/pr-body-check/protection.mjs を呼ぶ項目を、新しく足した REQUIRED_PR_WORKFLOW で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから
+        tools/pr-body-check/engine.test.mjs を呼ぶ項目を求め、どちらかがなければ wired: true にできないようにした。branch protection は PR の GITHUB_TOKEN では
+        読めないので、protection.mjs は engine-test と同じジョブでなく定期の pr-body-protection.yml で走らせる側にした。test_check.py の PrBodyEngineWiringTest が、
+        2 つのひな形をそのまま写した engine-test と protection のジョブで通り、片方の項目だけ・別の名前のワークフロー・pull_request か schedule を外した写し・
+        engine.test.mjs を走らせない engine-test では落ちることを確かめる。写すこと・必須のチェックに登録すること・シークレットを置くこと・wired を true にして
+        wired_by を書くことは建設者が行うので（tools/pr-body-check/README.md の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1182
+      at: 2026-11-08
+      decided_by: committee:D-0070
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の test の案を入れた。tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）が、
+        Issue #1109 の字面の見張りに加えて、gate.test.mjs と engine.test.mjs をそれぞれ node --test --test-reporter=tap で走らせ（外の node --test の NODE_TEST_CONTEXT は渡さない）、
+        gate.test.mjs の通る側のテスト（書いてよい本文の 2 件、通る側の 3 通りの形、通る側の CLI のテスト）と engine.test.mjs の (10)（3 通りの形）が
+        上の段に名前のとおりにあって SKIP・TODO の指示のない ok と数えられ、ファイルごとの集計の skipped と todo が 0 であることを見て、外れたら落とす。集計がない（途中で止まった）ときも落とす。
+        engine.test.mjs の側は、Engine のチェックアウトがなく ENGINE_DIR も CI=true もない手元でだけ飛ばす（engine.test.mjs と同じ飛ばし方）。
+        字面の見張りを通る別名の t.skip（t["sk" + "ip"]）を gate.test.mjs の写しに入れると走らせた結果で外れになること、engine.test.mjs の (10) に同じ形の飛ばしを入れると
+        落ちること、(10) の SKIP・TODO・失敗・欠け・describe の下への移動、ほかのテストの skip・todo、集計のない TAP を外れにすることを確かめた。
+        手元の Engine（dcc3b1e）を ENGINE_DIR にして CI=true で、新しいテストは通り、(3) のほかは全部通ることを確かめた（(3) は関所を呼ばない Engine なので前から落ちる）。
+        テストの中の条件付きの早い return のように、飛ばさずに pass と数えられる外し方は捕まえられない。ci/pr-body-engine.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1183
+      at: 2026-11-08
+      decided_by: committee:D-0070
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案（D-0045 の案どおり、ci.test.mjs で pr-body-engine-test のジョブの node --test が gate.test.mjs と
+        engine.test.mjs の (10) を必ず対象に含み、(10) に skip・todo・条件付きの飛ばしがないことを照らし、外したら落とす）のうち、まだ塞いでいなかった
+        条件付きの飛ばしを入れた。対象に含むこと（道・名前・NODE_OPTIONS の絞り込みがない）と skip・todo は Issue #1109 の字面の見張りと Issue #1183 の
+        走らせた結果の見張りで見ていたが、テストの中の条件付きの早い return のように飛ばさずに pass と数えられる外し方は捕まえられなかった。
+        tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）に、engine.test.mjs の (10) の本体と、そこから呼ぶ assertWritesEveryTime の本体に
+        分かれ道（return・if・else・switch・try・catch・break・continue・三項・&&・||・??）と環境変数・引数の読み取り（子のプロセスに渡す process.env.PATH は除く）と
+        skip・todo・only がないこと、(10) が本体の上の段で need("update") と assertWritesEveryTime(parts.update, report) を呼ぶこと、assertWritesEveryTime が
+        REASONS.forEach で C-0005 の 21 回を絞らずに回し、c0005.mjs の REASONS が 21 回であることの見張りを足した。(10) や assertWritesEveryTime の頭や
+        21 回の途中での条件付きの return、短絡・三項・try/catch で確かめを通さない、確かめを入れ子の関数に入れて呼ばない、need を呼ばない、回数を絞るの
+        11 通りの直しがどれも外れになり、そのうち条件付きの return（2 通り）と try/catch は Issue #1109 の字面の見張りをすり抜けることと、今の engine.test.mjs は通ることを確かめた。
+        手元の Engine（9f8f6b4。ENGINE_REF の 9fee9c2 は手元になく、その版では走らせていない）では、新しいテストは通り、ほかは前からの (3)・(10) とそれを走らせた結果の見張りが
+        関所を呼ばない Engine なので落ちるだけだった。ワークフローの側の絞り込みは前からの workflowProblems で見る。ci/pr-body-engine.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1187
+      at: 2026-11-08
+      decided_by: committee:D-0099
       wired: false
       verified: false
 decided_by: committee:D-0001
