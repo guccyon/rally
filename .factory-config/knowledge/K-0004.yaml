@@ -773,4 +773,21 @@ enforcement:
       decided_by: committee:D-0055
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0057（Issue #1154 の起票時の番号は D-0055。PR #1153）の test の案を入れた。tools/knowledge-enforcement-check/test_ci.py に
+        discovery_problems() と log_problems() と DiscoveryTest を足し、このディレクトリ（下も含む）で unittest.TestCase を継ぐクラスを定義する .py が
+        unittest discover の既定の形（test*.py で、モジュール名に使える名前、下のディレクトリは __init__.py のあるパッケージ）に合わなければ落とす。
+        ci/knowledge-enforcement.yml の engine-test に、飛ばした件数の手順のすぐ後で python3 -B tools/knowledge-enforcement-check/test_ci.py --log
+        knowledge-enforcement-unittest.log を走らせる手順を足し、拾われないファイルか、その出力に（飛ばさずに）走ったテストが 1 件もないファイル
+        （読み込めずに _FailedTest になった・setUpClass で落ちた・すべて飛ばした）があれば ::error を出して落とす。形の検査 problems() でその手順が
+        飛ばした件数の手順のすぐ後に 1 つあることも見る。一時ディレクトリに置いた check_x.py・x_test.py・test-x.py・パッケージでないディレクトリの
+        test_x.py で落ち、作ったログで走った跡のないファイルが落ちることと、手元で test_ci_head.py を ci_head_test.py に変えた写しと、test_engine.py の
+        行を消した本物のログで落ちることを確かめた。test_ci.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは
+        建設者が置くので、この解決策も未配線・未確認
+      issue: 1154
+      at: 2026-11-08
+      decided_by: committee:D-0057
+      wired: false
+      verified: false
 decided_by: committee:D-0004

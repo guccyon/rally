@@ -3,6 +3,8 @@
 # engine-test のジョブは、ENGINE_REF の版の Engine で test_engine.py と test_engine_patch.py を CI=true・ENGINE_DIR を渡して走らせ、
 # engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
 # テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
+# 続けて test_ci.py --log で、unittest.TestCase を定義するのに discover の既定の形（test*.py）に合わず拾われないファイルと、
+# その出力にテストが 1 件も走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
 # enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059 の解決策を wired: true にし、wired_by に
 # {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
@@ -78,6 +80,10 @@ jobs:
             exit 1
           fi
           echo "skipped=0"
+      - name: テストのファイルがすべて拾われて走ったか（K-0004）
+        shell: bash
+        run: |
+          python3 -B tools/knowledge-enforcement-check/test_ci.py --log knowledge-enforcement-unittest.log
   enforcement:
     runs-on: ubuntu-latest
     steps:
