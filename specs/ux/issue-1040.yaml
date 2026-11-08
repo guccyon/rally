@@ -1,0 +1,798 @@
+prd:
+  goal: 生徒「レッスンが始まる前に、自分の映りと背景、声と音が届くかを確かめておきたい。最初の数分を『映っていますか』『聞こえますか』で失いたくない」。 コーチ「生徒を待たせずに、開始時刻ちょうどに、整った映りと音でレッスンを始めたい」。
+  scope:
+    in:
+    - '生徒アプリ: 予約の確定の画面の「ビデオ通話で受ける」を開始 5 分前から押せるようにし、押すと入室前チェックを開く（今はすぐにビデオ通話の画面）'
+    - '生徒アプリ: 入室前チェックの画面（新）'
+    - 'コーチの画面: 「通話への参加」の一覧の「通話を開始」を「入室前チェック」に変え、開始 5 分前から押せるようにする'
+    - 'コーチの画面: 入室前チェック（新。通話への参加のタブの中）。カメラ・マイク・スピーカーを選ぶ欄（2 つ以上あるときだけ）'
+    - 入室したあとの画面に、入室前チェックで決めたカメラ・マイクの入・切を 1 行だけ出す
+    - 足りない部品 5 つの案（design_system_gaps）。#1137 で specs/design/components.yaml と content.yaml の 0.7.0 に入った（media_toggle・camera_preview・level_meter・join_bar・content の datetime.countdown）
+    out:
+    - 入室したあとの通話の画面の作り直し（映像はモックのまま。自分の映りを通話中に出すことも今回はしない）
+    - 本部の画面
+    - 通話サービス（Twilio Video など）への接続と room_token の取得
+    - カメラ・マイクの映像と音をサーバーに送る・残すこと
+    - 「入室は開始時刻から」の例外や取り下げ、環境ごとの例外（#921 のとおり）
+    - アプリのコードの実装（t3）
+  source: 'Issue guccyon/rally#1040（窓口の相談 2、依頼者 builder。タスクのまとまりの t2）。ユーザーストーリー specs/stories/student-prejoin-check.yaml
+    と coach-prejoin-check.yaml（#1039）。用語は specs/glossary.yaml の prejoin_check。
+    入室を開始時刻からにする決まりは #899・#921（409 slot_not_started）、その文言は #1009。部品は #1137（デザインシステム 0.7.0）。PRD の文書は specs/ にない。'
+  success: 生徒とコーチのどちらも、開始 5 分前から入室前チェックを開いて、端末の本物のカメラに映る自分（左右反転）・マイクの音の大きさ・ スピーカーの試し音を確かめられる。開始時刻の前は「入室する」を押せず、残り時間が見える。開いたまま開始時刻になると「入室する」が押せるようになり、
+    押すとビデオ通話（相手の映像はモック）に入る。許可を断った・カメラやマイクがないときも、そのことと直し方が分かり、開始時刻からの入室は止まらない。
+notes:
+- 動くプロトタイプの入口は a.html。モックの下の「モックの注記」（点線の枠。製品には出さない）のリンクで、入口（a-entry）→ 許可（a-permission。「許可」で
+  a、「許可しない」で a-denied）→ 開始時刻（a-ready）→ 入室中（a-joining）→ 入室できた（a-incall）／断られた（a-failed）とたどれる。a.html
+  と各コマの「マイクを切る」「カメラを切る」「スピーカーを試す」は、HTML の中の小さなスクリプトで表示だけを切り替える（通信・保存なし）
+- コーチの画面の入口は coach-list.html（「入室前チェック」で coach.html へ）。coach の案は desktop の 1280 幅で、縦に長いので撮る高さを
+  1100 にした
+- カメラの映りはモックでは人の形の図で代わりにした（本物のカメラはモックでは使わない）。サンプルの名前と時刻は架空（2026-11-08 の 12:00 開始、今は
+  11:57:12 の想定）
+- design_system_gaps の 5 つは、#1137 で正本に入った（components.yaml の media_toggle・camera_preview・level_meter・join_bar、content.yaml の
+  notation.datetime.countdown・actions.verbs・errors.prejoin）。正本に入るときに決まった差（camera_preview の icon は 24px、試し音のボタンは
+  media_toggle の speaker_test）はこの仕様にも合わせた。t3 はこの仕様と正本の部品で組み、画面に直書きしない
+- PR の説明は tools/pr-body-check/template.json の見出し（概要 / 背景 / 問題 / 対応内容 / 影響範囲・互換性 /
+  動作確認 / 補足 / 仮決め / 知見）で書く。ストーリー student-prejoin-check・coach-prejoin-check の known_gaps
+  は、この仕様で 1〜5 がすべて埋まる（消すのは t3 の実装のとき）
+states:
+- 'studentBookingConfirmed 5 分前より早い: 「ビデオ通話で受ける」が disabled で、下に「11:55 から入室前チェックができます（開始
+  5 分前から）。」（frame a/entry）'
+- 'studentBookingConfirmed 5 分前を過ぎた: 「ビデオ通話で受ける」が押せる。開いたまま 5 分前になったら切り替わる'
+- 'studentPrejoinCheck 許可を求めている: カメラの映りに「カメラとマイクの許可を待っています」、端末のダイアログ（frame a/permission）'
+- 'studentPrejoinCheck チェック中・開始前: 映り（左右反転）・マイクの音の大きさ・スピーカーを試す・「あと 2:48」と押せない「入室する」（案
+  a の代表）'
+- 'studentPrejoinCheck カメラ・マイクを切っている: 枠に「カメラを切っています」、バーは surface で「マイクを切っています」（a.html
+  の切り替えで見られる）'
+- 'studentPrejoinCheck 試し音を鳴らしている: ボタンが「試し音を止める」（a.html の切り替えで見られる）。鳴らせないときは error_text'
+- 'studentPrejoinCheck 許可を断られた: notice（warning）と「端末の設定を開く」、映りとバーは使えない表示。入室は開始時刻から押せる（frame
+  a/denied）'
+- 'studentPrejoinCheck カメラやマイクがない: notice（warning）と「もう一度確かめる」、ないものの切り替えは出さない。入室は止めない（frame
+  a/nodevice）'
+- 'studentPrejoinCheck 開始時刻になった: 「開始時刻になりました」と押せる「入室する」（frame a/ready）'
+- 'studentPrejoinCheck 送信中（入室している）: 「入室する」に spinner、押せない、「入室しています…」（frame a/joining）'
+- 'studentPrejoinCheck 入室に失敗した: 入室の帯に notice（danger）でサーバーの文言。409 slot_not_started
+  なら時計を合わせ直す（frame a/failed）'
+- 'studentPrejoinCheck 読み込み中: 起きない（API を読まない。予約は前の画面から渡す）。カメラが立ち上がるまでは許可を待つ表示と同じ枠で「カメラを準備しています…」'
+- 'studentPrejoinCheck 空: 起きない（予約 1 件の画面）'
+- 'studentPrejoinCheck 確認: 起きない（入室・戻る・切り替えはどれも取り消せるか、回数を使わない。確認のダイアログは出さない）'
+- 'studentPrejoinCheck 権限がない: 401 はアカウント登録へ。他人の予約は入口に出ないので起きない。サーバーが 404 を返したら失敗の文言'
+- 'studentLiveLesson 入室した: モックの枠の下に「カメラ: 入・マイク: 切（入室前チェックのまま）」（frame a/incall）'
+- 'coachLiveSessionPanel 一覧: 5 分前を過ぎた行に「入室前チェック」、早い行に「14:55 から入室前チェックができます」、確定待ちは「—」（frame
+  coach/list）'
+- 'coachLiveSessionPanel 読み込み中・失敗・空: 今のまま（「読み込み中…」・ResultMessage・「まだ予約はありません。」）'
+- 'coachPrejoinCheck チェック中・開始前: 映り・切り替え・音の大きさ・試す・使う機器・入室の帯（案 coach の代表）'
+- 'coachPrejoinCheck 許可を求めている: ブラウザーのダイアログ。枠に「カメラとマイクの許可を待っています」（生徒アプリと同じ形なのでコマは省いた）'
+- 'coachPrejoinCheck 許可を断られた: notice（warning）と鍵のアイコンの案内と「もう一度確かめる」（frame coach/denied）'
+- 'coachPrejoinCheck カメラやマイクがない: notice（warning）、ないものの欄と切り替えは出さない（frame coach/nodevice）'
+- 'coachPrejoinCheck 開始時刻になった: 押せる「入室する」（frame coach/ready）'
+- 'coachPrejoinCheck 送信中: 「入室する」に spinner、押せない（生徒アプリと同じ）'
+- 'coachPrejoinCheck 入室に失敗した: notice（danger）でサーバーの文言（frame coach/failed）'
+- 'coachPrejoinCheck 入室した: 通話への参加に戻り、「通話を開始しました。」と通話中の表示に「カメラ・マイク」の行（frame coach/incall）'
+- 'coachPrejoinCheck 権限がない: RoleGate がログイン画面へ。403 は失敗の文言を notice で。ほかのコーチの予約・確定していない予約は入口のボタンが出ない'
+- 'coachPrejoinCheck 読み込み中・空・確認: 起きない（一覧から予約を渡す。確認のダイアログは出さない）'
+ticket: guccyon/rally#1040
+changes:
+- kind: changed
+  after: 開始 5 分前より早いあいだは「ビデオ通話で受ける」を押せず、すぐ下に「11:55 から入室前チェックができます（開始 5 分前から）。」と開ける時刻を出す。画面を開いたまま
+    5 分前になると押せるようになり、押すと入室前チェックが開く。
+  before: 予約が確定すると「ビデオ通話で受ける」がいつでも押せ、押すとすぐにビデオ通話の画面（映像はモック）が開く。開始時刻の前に「通話を開始する」を押すと
+    409 slot_not_started の文言で初めて分かる。
+  screen: studentBookingConfirmed
+- kind: new
+  after: 予約の要約・自分のカメラの映り（左右反転）・マイクとカメラの入・切・マイクの音の大きさ・スピーカーを試す・下に固定した入室の帯（開始時刻と残り時間、「入室する」）を
+    1 画面にまとめる。許可を断った・カメラやマイクがない・入室に失敗した、の状態を持つ。
+  screen: studentPrejoinCheck
+- kind: changed
+  after: '画面は作り直さず、枠の下に「カメラ: 入・マイク: 切（入室前チェックのまま）」の 1 行だけを足す。'
+  before: 黒い枠に「通話中（映像はモック）」と「通話を終了する」。
+  screen: studentLiveLesson
+- kind: changed
+  after: 「通話を開始」を「入室前チェック」（secondary）に変える。開始 5 分前より早い行は、ボタンの代わりに「14:55 から入室前チェックができます」と出す。表は開いたまま時刻に合わせて切り替わる。説明の文を入室前チェックに合わせて直す。通話中の表示に「カメラ・マイク」の行を足す。
+  before: これからの予約の表で、確定した予約の行に「通話を開始」があり、開始時刻と関係なく押せてすぐに通話が始まる。
+  screen: coachLiveSessionPanel
+- kind: new
+  after: 通話への参加のタブの中で開く。生徒アプリと同じ要素に加え、カメラ・マイク・スピーカーを選ぶ欄（2 つ以上あるものだけ）と「チェックをやめる」を置く。入室の帯は下に固定する。
+  screen: coachPrejoinCheck
+screens:
+- id: studentBookingConfirmed
+  new: false
+  more:
+    copy:
+      before_window: '{時刻} から入室前チェックができます（開始 5 分前から）。カメラとマイクの映りと音を確かめてから、開始時刻に入室します。'
+      window_opened: 入室前チェックができるようになりました
+  route: student-app の FlowStep.bookingPending（予約が確定しました）
+  purpose: 確定した予約の初回レッスンの受け方を選ぶ。今回はビデオ通話の入口として、入室前チェックを開けるようになる時刻を知らせる。フローの入口。
+  audience: 生徒（月額契約があり、同期レッスンの予約が確定済み）
+  elements:
+  - name: ビデオ通話で受ける
+    note: 開始 5 分前より早いあいだは disabled（面 surface・文字 text_muted）。押せない理由を下の文で出す
+    source: 固定
+    content: 「ビデオ通話で受ける」
+    required: true
+    component: button（primary）
+  - name: 開ける時刻の案内（新）
+    note: 5 分前より早いときだけ出す。ボタンの aria-describedby で結ぶ
+    source: slot.starts_at − PREJOIN_CHECK_LEAD（5 分。prejoinCheckLeadTime の 1 か所）。時刻は端末のタイムゾーンで「11:55」。日をまたぐなら「11/9（月）11:55」
+    content: 「11:55 から入室前チェックができます（開始 5 分前から）。カメラとマイクの映りと音を確かめてから、開始時刻に入室します。」
+    required: true
+    component: 本文（small text_muted）
+  - name: 予約の要約・動画を送って添削を受ける
+    note: 変えない
+    source: 今のまま
+    content: 今のまま
+    required: true
+    component: card（plain）・button（secondary）
+  behaviors:
+  - action: 押す
+    result: 入室前チェック（studentPrejoinCheck）へ移る。API は呼ばない
+    target: ビデオ通話で受ける
+    condition: 今の時刻 ≥ 開始 5 分前
+  - action: 押す
+    result: 何も起きない（disabled）。読み上げはボタンと「11:55 から入室前チェックができます」を続けて読む
+    target: ビデオ通話で受ける
+    condition: 今の時刻 < 開始 5 分前
+  - action: 画面を開いたまま待つ
+    result: ボタンが押せるようになり、案内の文が消える。読み上げに「入室前チェックができるようになりました」を role=status で 1 回伝える（毎秒は読まない）
+    target: ビデオ通話で受ける
+    condition: 開始 5 分前になった
+  transitions:
+    exits:
+    - to: studentPrejoinCheck
+      data: booking
+      action: 「ビデオ通話で受ける」（開始 5 分前を過ぎてから）
+    - to: 動画の送付（今のまま）
+      action: 「動画を送って添削を受ける」
+    entries:
+    - data: booking（booking_id・slot.starts_at・ends_at・コーチの名前・lesson_menu）
+      from: 予約の確定（confirmBooking の成功）・ホームや自分の予約から確定済みの予約を開く
+      condition: 予約が確定済み
+- id: studentPrejoinCheck
+  new: true
+  more:
+    copy:
+      title: 入室前チェック
+      no_mic: この端末にマイクが見つかりません。カメラとスピーカーは確かめられます。
+      actions: 入室する・スピーカーを試す・試し音を止める・マイクを切る・マイクを入れる・カメラを切る・カメラを入れる・端末の設定を開く・もう一度確かめる（どれも動詞で終える）
+      mic_off: マイクを切っています
+      started: 開始時刻になりました／入室すると、コーチとのビデオ通話が始まります。
+      glossary: 入室前チェック（prejoin_check）・ビデオ通話（live_lesson_session の画面での呼び方。content.yaml）・コーチ・予約。「通話」「ライブレッスン」とは書かない
+      no_camera: この端末にカメラが見つかりません。マイクとスピーカーは確かめられます。
+      camera_off: カメラを切っています
+      denied_both: カメラとマイクが使えません。端末の設定で許可すると確かめられます。
+      denied_note: 許可しなくても、開始時刻から入室できます。そのときコーチには、あなたの映像と声が届きません。
+      before_start: 開始時刻になると入室できます。
+      speaker_fail: 試し音を鳴らせませんでした。端末の音量と、音の出る先を確かめてください。
+      waiting_permission: カメラとマイクの許可を待っています／許可すると、ここに自分の映りが出ます。
+    analytics: 行動イベントは足さない。入室の成功は今のまま call.started（サーバーが発火）。入室前チェックを開いた・許可を断ったの率を見たいなら
+      events.yaml に足す別のタスク（open_questions の 4）
+    accessibility:
+    - カメラの映りは role=img・ラベル「自分のカメラの映り（左右反転）」。切っている・使えないときは中の文を読む
+    - マイク・カメラの切り替えは aria-pressed ではなく、文言そのもの（「マイクを切る」⇄「マイクを入れる」）で状態を伝え、押した後に「マイクを切りました」を
+      role=status で
+    - 音の大きさのバーは読み上げでは毎回読まず、「音が届いています」「まだ音が届いていません」の文の変化だけを伝える（色だけで示さない）
+    - 残り時間は毎秒は読まない。1 分ごとと、開始時刻になったときだけ role=status
+    - 入室の失敗は role=alert。押せる部品は高さ 56px（ボタン）・48px（アイコン）以上
+    - 文字を 200% にしても入室の帯が画面の半分を超えないよう、帯の文は 2 行までで折り返し、中身は帯の上でスクロールできる
+    contract_needs:
+    - api: startLiveLessonSession（POST /live-lesson-sessions）
+      need: 今のまま使う。1 対 1 の予約で相手が先に入室していると 409 invalid_session_state になり、2 人目が入れない（ensure_can_join
+        は is_group のときだけ参加させる）。入室前チェックから両方が入るには、1 対 1 でも通話中の同じセッションに 201 で入れるようにする変更が要る（open_questions
+        の 1）
+    - api: listMyBookings など予約を読む応答
+      need: サーバーの今の時刻。端末の時計ではなく開始時刻と今の時刻で判断するため。仮の案は応答の Date ヘッダーで端末の時計とのずれを出す（契約の変更なし）。足りなければ
+        server_time を足す（open_questions の 2）
+    - api: なし（カメラ・マイク・スピーカー）
+      need: 端末の中だけで使う。通話サービスにつながず room_token も取らない
+    microinteractions:
+    - 'きっかけ: 開始時刻になる → ルール: サーバーに合わせた時計で判断 → フィードバック: ボタンが押せる色に変わり（fast 120ms）、文が変わり、読み上げに
+      1 回 → 繰り返し: しない'
+    - 'きっかけ: 声を出す → ルール: 音の大きさを 10 段にまとめ、1 秒に 10 回まで書き換える → フィードバック: バーが伸び縮み、届いていれば「音が届いています」
+      → 繰り返し: 音があるあいだずっと。動きを減らす設定でも情報なので書き換えは続け、伸び縮みの補間はしない'
+    - 'きっかけ: スピーカーを試す → ルール: 3 秒を 1 回 → フィードバック: ボタンの文が「試し音を止める」に、下の文が変わる → 繰り返し:
+      押すたびに 1 回'
+  route: student-app の FlowStep.prejoinCheck（新。入室前チェック）
+  purpose: 開始 5 分前から開始時刻までのあいだに、端末の本物のカメラ・マイク・スピーカーで自分の映りと背景・声・音を確かめ、 開始時刻になったら入室する。予約の確定とビデオ通話のあいだに入る待合室。チェックは任意で、できなくても入室は止めない。
+  audience: 生徒（その予約の生徒。月額契約があり予約が確定済み）
+  elements:
+  - name: アプリバー
+    note: 戻る先は予約の確定の 1 つ
+    source: 固定
+    content: 題「入室前チェック」、左に戻る（読み上げ「予約に戻る」）
+    required: true
+    component: アプリバー（patterns の common_layout）と戻るのアイコンのボタン
+  - name: 予約の要約
+    note: メニューの写しがなければメニューの行を出さない
+    source: booking（slot.starts_at・ends_at・sport・コーチの名前・lesson_menu）
+    content: '「11/8（日）12:00〜12:30」（figure_sm）・「テニス・コーチ: 山田 花子」・「メニュー: フォアハンドの基礎（30
+      分）」（small text_muted）'
+    required: true
+    component: card（plain）
+  - name: 端末の知らせ
+    note: 予約の要約の下、カメラの映りの上。中に button（secondary）を 1 つ（「端末の設定を開く」か「もう一度確かめる」）
+    source: 端末の許可の状態とカメラ・マイクの有無
+    content: 許可を断られた・カメラやマイクがないときだけ。文言は more.copy
+    required: false
+    component: notice（inline。warning）
+  - name: カメラの映り
+    note: 幅いっぱい、4:3（cover で切る）。inverse_surface はこの 1 か所。映像は送らず残さない
+    source: 端末のカメラ（Flutter の camera。映像は端末の中だけ）
+    content: 端末の前のカメラの映像を左右反転で。許可を待つ・カメラを切っている・使えない・ないときは、枠の中に文（more.copy）
+    required: true
+    component: camera_preview（components.yaml 0.7.0。student-app の RallyCameraPreview）
+  - name: マイクを切る／入れる
+    note: カメラの映りの下に 2 つ並べ、幅を等分（あいだ sm 8px）。マイクが使えない・ないときは出さない
+    source: 画面の中の状態（既定は入）
+    content: 入のとき「マイクを切る」と mic のアイコン、切のとき「マイクを入れる」と mic_off
+    required: true
+    component: media_toggle（mic。components.yaml 0.7.0）
+  - name: カメラを切る／入れる
+    note: カメラが使えない・ないときは出さない
+    source: 画面の中の状態（既定は入）
+    content: 入のとき「カメラを切る」と videocam、切のとき「カメラを入れる」と videocam_off
+    required: true
+    component: media_toggle（camera）
+  - name: マイクの音の大きさ
+    note: マイクを切っているときはバーを surface にして「マイクを切っています」。使えないときは「マイクが使えないため、音の大きさを出せません。端末の設定で許可すると確かめられます。」
+    source: 端末のマイクの音の大きさ（端末の中で計る）
+    content: 10 段のバー。下に「声を出すとバーが動きます。」と、音が届いていれば「音が届いています」（700）
+    required: true
+    component: 欄の見出し（title「マイク」）と level_meter（components.yaml 0.7.0）と本文（small）
+  - name: スピーカーを試す
+    note: マイク・カメラの許可と関係なく使える
+    source: アプリに同梱する 3 秒の試し音（通信しない）
+    content: 「スピーカーを試す」。鳴っているあいだは「試し音を止める」。下に「イヤホンをつないでいれば、イヤホンから鳴ります。」
+    required: true
+    component: 欄の見出し（title「スピーカー」）と media_toggle（speaker_test。volume_up ⇄ stop_circle）と本文（small
+      text_muted）
+  - name: 入室の帯
+    note: 下の安全領域の上に固定。残り時間は 1 秒ごとに書き換え、分:秒（1 時間以上はない）。開始時刻からは「開始時刻になりました」（success
+      の点と字）
+    source: slot.starts_at と今の時刻（サーバーの時刻に合わせた時計。more.contract_needs）
+    content: 「開始 12:00」（small 700）と「あと 2:48」（figure_sm）、「開始時刻になると入室できます。」、button（primary）「入室する」
+    required: true
+    component: join_bar（components.yaml 0.7.0。下に固定）と content.yaml の datetime.countdown
+  - name: 入室の失敗の知らせ
+    note: 入室の帯の中、ボタンの上。消さない（次に押すまで）
+    source: startLiveLessonSession の失敗
+    content: サーバーの文言（error_message.dart）を書き換えずに
+    required: false
+    component: notice（inline。danger）
+  behaviors:
+  - action: 開く
+    result: カメラの映りに「カメラとマイクの許可を待っています」。端末のダイアログでカメラ、続けてマイクの許可を求める
+    target: 画面
+    condition: はじめて（許可を聞いていない）
+  - action: 開く
+    result: すぐに前のカメラとマイクを使い始め、映りと音の大きさを出す
+    target: 画面
+    condition: 許可済み
+  - action: 許可しない
+    result: 使えないものだけ使えない表示にする（カメラ・マイクは別々に扱う）。notice（warning）「カメラとマイクが使えません。端末の設定で許可すると確かめられます。」（片方なら「カメラが使えません。」「マイクが使えません。」）。入室の帯は変えず、開始時刻から入室できる
+    target: 端末の許可のダイアログ
+    condition: カメラかマイクのどちらか、または両方
+  - action: 押す
+    result: OS のこのアプリの設定を開く。アプリに戻ったら許可を確かめ直し、許可されていれば映りを出して知らせを消す
+    target: 端末の設定を開く
+    condition: 許可を断っている（2 回目からは端末がダイアログを出さない）
+  - action: 押す
+    result: 端末のカメラとマイクを探し直す。見つかれば使い始めて知らせを消す。二重押しは 1 回の探し直しにまとめる
+    target: もう一度確かめる
+    condition: カメラかマイクが見つからない
+  - action: 押す
+    result: その場で切り替える（確認しない。取り消しはもう一度押す）。切るとマイクを止め、バーは surface。状態は入室に引き継ぐ
+    target: マイクを切る／入れる
+    condition: マイクが使える
+  - action: 押す
+    result: その場で切り替える。切るとカメラを止め（端末のカメラの使用中の印も消える）、枠に「カメラを切っています」。状態は入室に引き継ぐ
+    target: カメラを切る／入れる
+    condition: カメラが使える
+  - action: 押す
+    result: 同梱の試し音を 1 回（3 秒）鳴らす。ボタンは「試し音を止める」、下の文は「試し音を鳴らしています。聞こえないときは端末の音量を上げてください。」。鳴り終わると元に戻る。何度でも押せる
+    target: スピーカーを試す
+    condition: 鳴っていない
+  - action: 押す
+    result: 止めて元に戻す（二重に鳴らさない）
+    target: スピーカーを試す
+    condition: 鳴っている
+  - action: 押す
+    result: ボタンの下に error_text「試し音を鳴らせませんでした。端末の音量と、音の出る先を確かめてください。」。入室は止めない
+    target: スピーカーを試す
+    condition: 音を鳴らせなかった（出力がない・失敗した）
+  - action: 押す
+    result: 押せない（disabled）。近くに「開始時刻になると入室できます。」
+    target: 入室する
+    condition: 開始時刻の前
+  - action: 画面を開いたまま待つ
+    result: 「入室する」が押せるようになり、文が「開始時刻になりました」「入室すると、コーチとのビデオ通話が始まります。」に変わる。読み上げに role=status
+      で 1 回伝える。開き直さなくてよい
+    target: 入室の帯
+    condition: 開始時刻になった
+  - action: 押す
+    result: ボタンを loading（spinner と押せない。二重押しで 2 回送らない）にして startLiveLessonSession（booking_id）を呼ぶ。201
+      ならカメラとマイクを止め、入・切を持ってビデオ通話の画面へ
+    target: 入室する
+    condition: 開始時刻から
+  - action: 失敗した
+    result: notice（danger）「この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。」。応答の時刻で時計を合わせ直し、ボタンは開始時刻まで
+      disabled に戻す
+    target: 入室する
+    condition: 409 slot_not_started（端末の時計が進んでいた）
+  - action: 失敗した
+    result: サーバーの文言を notice（danger）で出す（例「通話の状態が変わっています。」「予約の状態が変わっています。予約を確かめてください。」）。ボタンは押せるまま。カメラの映りは止めない
+    target: 入室する
+    condition: 409 invalid_session_state・invalid_booking_state、404、そのほか
+  - action: 失敗した
+    result: notice（danger）「サーバーにつながりませんでした。通信状態を確かめてください。」。ボタンは押せるまま
+    target: 入室する
+    condition: 通信できない
+  - action: 押す
+    result: 確認せずに予約の確定へ戻る（取り消せる操作）。カメラとマイクをすぐ止める。入室中に戻ったら応答は捨てる（セッションが始まっていれば、予約からもう一度入ると
+      invalid_session_state になるので open_questions の 1）
+    target: 戻る
+    condition: いつでも（入室中の通信のあいだも）
+  - action: アプリが裏に回る
+    result: カメラとマイクを止める。前に戻ったら、切っていなかったものだけ使い直す
+    target: 画面
+    condition: いつでも
+  transitions:
+    exits:
+    - to: studentLiveLesson
+      data: session・カメラの入・切・マイクの入・切
+      action: 「入室する」（開始時刻から）→ startLiveLessonSession が 201
+    - to: studentBookingConfirmed
+      data: なし。カメラとマイクはすぐ止める
+      action: 戻る（アプリバーの左・端末の戻る）
+    - to: 端末のアプリの設定（OS）
+      data: なし
+      action: 「端末の設定を開く」
+    - to: アカウント登録（今の決まり）
+      action: 401（ログインの期限切れ）
+    entries:
+    - data: booking（booking_id・slot.starts_at・ends_at・コーチの名前・lesson_menu）
+      from: studentBookingConfirmed
+      condition: 今の時刻 ≥ 開始 5 分前。予約が確定済み
+    - data: なし（許可とカメラ・マイクの有無を確かめ直す）
+      from: 端末の設定（許可を変えてアプリに戻ってきた）
+      condition: アプリが前に戻った
+- id: studentLiveLesson
+  new: false
+  route: student-app の FlowStep.liveLesson（ビデオ通話）
+  purpose: 入室したあとのビデオ通話。今回は作り直さず、入室前チェックで決めたカメラ・マイクの入・切が引き継がれたことだけを見せる。
+  audience: 生徒
+  elements:
+  - name: カメラ・マイクの状態（新）
+    note: モックの映像の枠の下に 1 行。ほかは今のまま
+    source: 入室前チェックの状態
+    content: '「カメラ: 入・マイク: 切（入室前チェックのまま）」'
+    required: true
+    component: 本文（small 700）
+  behaviors:
+  - action: 開く
+    result: 状態の行を出し、role=status で 1 回読む。入室で開始しているので「通話を開始する」は出ない（今の session があるときの表示のまま）
+    target: 画面
+    condition: 入室前チェックから来た
+  transitions:
+    exits:
+    - to: 完了の記録（今のまま）
+      action: 「通話を終了する」
+    entries:
+    - data: session・カメラの入・切・マイクの入・切
+      from: studentPrejoinCheck
+      condition: startLiveLessonSession が 201
+- id: coachLiveSessionPanel
+  new: false
+  more:
+    copy:
+      before_window: '{時刻} から入室前チェックができます'
+  route: /coach（タブ「通話への参加」。LiveSessionPanel）
+  purpose: 自分の枠に入った予約を見て、これから始まる予約の入室前チェックを開く。コーチの側のフローの入口と、入室したあとの通話中の表示。
+  audience: コーチ（admin-web の coach のロール）
+  elements:
+  - name: 説明の文
+    note: 1 行 40em まで
+    source: 固定
+    content: 「あなたの枠に入った予約です。確定した予約は、開始 5 分前から「入室前チェック」でカメラとマイクを確かめ、開始時刻から入室できます。」
+    required: true
+    component: 本文（small）
+  - name: これからの予約の表の操作の列
+    note: 「通話を開始」はなくす（入室は入室前チェックからだけ）。日付が今日でなければ「11/9（月）14:55 から…」
+    source: CoachBooking（booking.status・slot.starts_at）と今の時刻
+    content: 確定済みで開始 5 分前を過ぎた行は「入室前チェック」。開始 5 分前より早い確定済みの行は「14:55 から入室前チェックができます」（small
+      text_muted）。確定待ちの行は「—」
+    required: true
+    component: data_table の cell と button（secondary）
+  - name: 通話中の表示の「カメラ・マイク」（新）
+    note: 状態・セッション ID・開始の行は今のまま
+    source: 入室前チェックの状態
+    content: '「カメラ: 入・マイク: 入（入室前チェックのまま）」'
+    required: true
+    component: 今の dl の行
+  behaviors:
+  - action: 押す
+    result: 同じタブの中で入室前チェック（coachPrejoinCheck）を開く。API は呼ばない
+    target: 入室前チェック
+    condition: 確定済み・開始 5 分前を過ぎた・その予約のセッションがない
+  - action: タブを開いたまま待つ
+    result: その行の文がボタン「入室前チェック」に変わる（読み直さない。時刻で切り替える）
+    target: 表
+    condition: どれかの行が開始 5 分前になった
+  - action: 出さない
+    result: ボタンを出さない（無効で見せない。patterns の no_permission）
+    target: 入室前チェック
+    condition: 確定待ち・キャンセル済み・ほかのコーチの予約・セッションが終わった
+  transitions:
+    exits:
+    - to: coachPrejoinCheck
+      data: その行の CoachBooking
+      action: 行の「入室前チェック」
+    - to: 同じタブ（終了した表示）
+      action: 「通話を終了」（今のまま）
+    entries:
+    - data: なし（listMyCoachBookings を読む）
+      from: コーチの画面のタブ・対応待ちの「予約を見る」
+      condition: coach のロールでログイン済み
+    - data: session（入室したとき）・カメラ・マイクの入・切
+      from: coachPrejoinCheck
+      condition: 入室した（通話中）・チェックをやめた
+- id: coachPrejoinCheck
+  new: true
+  more:
+    copy:
+      note: admin-web は呼びかけず、感嘆符を使わない（content.yaml の address）
+      started: 入室すると、{生徒の名前}さんとのビデオ通話が始まります。
+      no_camera: この PC にカメラが見つかりません。マイクとスピーカーは確かめられます。
+      denied_both: カメラとマイクが使えません。ブラウザーの設定で許可すると確かめられます。
+      denied_note: アドレスバーの左の鍵のアイコンから、カメラとマイクを「許可」にしてください。許可しなくても、開始時刻から入室できます。
+      devices_help: 2 つ以上あるものだけ選べます。選んだものは、このブラウザーの中だけで使います。
+      no_camera_note: カメラをつないだら「もう一度確かめる」を押してください。カメラなしでも、開始時刻から入室できます。
+    analytics: 足さない（call.started は今のまま）
+    accessibility:
+    - 見出しは h1「Rally 管理画面（コーチ）」→ h2「通話への参加」→ h3「入室前チェック」→ h4 の欄
+    - select は見える label で結ぶ。押せる部品は 48px、フォーカスは focus_ring 2px。固定した帯がフォーカスのある部品を隠さないよう、本文の下に帯の高さの余白をとる
+    - そのほかは生徒アプリと同じ（映り・音の大きさ・残り時間・失敗の読み上げ）
+    contract_needs:
+    - api: startLiveLessonSession（admin-web）
+      need: 生徒アプリと同じ（1 対 1 で 2 人目が入れるようにする。open_questions の 1）
+    - api: listMyCoachBookings
+      need: サーバーの今の時刻（応答の Date ヘッダー。生徒アプリと同じ）
+  route: /coach?tab=live の中（ビューの切り替え。URL は変えない。open_questions の 5）
+  purpose: 開始 5 分前から開始時刻までに、PC の本物のカメラ・マイク・スピーカーで映りと背景・声・音を確かめ、使う機器を選び、 開始時刻ちょうどに入室する。生徒の入室前チェックと同じ流れを
+    PC の幅で。
+  audience: コーチ（その予約の枠のコーチ）
+  elements:
+  - name: 通話への参加に戻る
+    note: Section「通話への参加」の題の下。戻る先は 1 つ
+    source: 固定
+    content: 「通話への参加に戻る」
+    required: true
+    component: 文字のリンク（patterns の navigation.admin_web）
+  - name: 見出しと予約の要約
+    note: 名前を出せないときは「（名前を表示できません）」、メニューがなければ省く
+    source: CoachBooking
+    content: '「入室前チェック」・「11/8（日）12:00〜12:30・生徒: 鈴木 一郎・メニュー: フォアハンドの基礎（30 分）」'
+    required: true
+    component: title と本文（body）
+  - name: 端末の知らせ
+    note: 中に button（secondary）「もう一度確かめる」
+    source: ブラウザーの許可（Permissions API）と機器の一覧（enumerateDevices）
+    content: 許可を断られた・カメラやマイクがないときだけ（more.copy）
+    required: false
+    component: notice（inline。warning）
+  - name: カメラの映り
+    note: 16:9、幅 512px まで（reading 768px の 1 段の中で左寄せ）
+    source: getUserMedia（ブラウザーの中だけ）
+    content: 選んだカメラの映像を左右反転で。許可待ち・切・使えない・ないときは枠の中に文
+    required: true
+    component: camera_preview（components.yaml 0.7.0。admin-web の CameraPreview）
+  - name: マイクを切る／入れる・カメラを切る／入れる
+    note: カメラの映りの下に並べる。使えないものは出さない
+    source: 画面の中の状態（既定は入）
+    content: 生徒アプリと同じ
+    required: true
+    component: media_toggle（mic・camera。高さ 48px）
+  - name: マイクの音の大きさ
+    note: ''
+    source: 選んだマイク（Web Audio の AnalyserNode）
+    content: 生徒アプリと同じ
+    required: true
+    component: title と level_meter と本文（small）
+  - name: スピーカーを試す
+    note: 選んだスピーカーで鳴らす
+    source: public/ に同梱する試し音（同じオリジン）
+    content: 「スピーカーを試す」／「試し音を止める」・「ヘッドセットをつないでいれば、ヘッドセットから鳴ります。」
+    required: true
+    component: title と media_toggle（speaker_test）と本文（small text_muted）
+  - name: 使う機器
+    note: その種類が 2 つ以上あるときだけ、その欄を出す。スピーカーの欄は出力先を選べるブラウザー（setSinkId があるもの）だけ。下に「2 つ以上あるものだけ選べます。選んだものは、このブラウザーの中だけで使います。」。選んだものは覚えない（open_questions
+      の 3）
+    source: enumerateDevices（許可の後にラベルが読める）
+    content: 機器の名前（ブラウザーが返すラベル）。既定はブラウザーの既定の機器
+    required: false
+    component: title「使う機器」と select（components.yaml 0.6.0。カメラ・マイク・スピーカー。横に並べる）
+  - name: 入室の帯
+    note: 帯の中身は 768px の幅にそろえる。押せる部品は 48px
+    source: slot.starts_at とサーバーに合わせた時計
+    content: 「開始 12:00」「あと 2:48」「開始時刻になると入室できます。」、button（secondary）「チェックをやめる」、button（primary）「入室する」
+    required: true
+    component: join_bar（下に固定。secondary_action に「チェックをやめる」）
+  - name: 入室の失敗の知らせ
+    note: 入室の帯の中、ボタンの上
+    source: startLiveLessonSession の失敗
+    content: サーバーの文言（errorMessage.ts）を書き換えずに
+    required: false
+    component: notice（inline。danger）
+  behaviors:
+  - action: 開く
+    result: ブラウザーがカメラとマイクの許可を求める。カメラの映りに「カメラとマイクの許可を待っています」
+    target: 画面
+    condition: 許可を聞いていない
+  - action: 許可しない
+    result: 使えないものだけ使えない表示。notice（warning）「カメラとマイクが使えません。ブラウザーの設定で許可すると確かめられます。」と「アドレスバーの左の鍵のアイコンから、カメラとマイクを「許可」にしてください。許可しなくても、開始時刻から入室できます。」。入室の帯は変えない
+    target: ブラウザーの許可
+    condition: 片方か両方
+  - action: 押す
+    result: 許可と機器を確かめ直す。使えれば映りを出して知らせを消す。二重押しは 1 回にまとめる。機器のつなぎ外し（devicechange）でも自動で確かめ直す
+    target: もう一度確かめる
+    condition: 許可を断っている・機器がない
+  - action: 選ぶ
+    result: すぐにその機器に切り替える（保存のボタンはない）。切り替えられなかったら欄の下に error_text「このカメラを使えませんでした。ほかのアプリが使っていないか確かめてください。」で、前の機器に戻す
+    target: 使う機器（select）
+    condition: その種類が 2 つ以上
+  - action: 使っている機器が外れた
+    result: ブラウザーの既定の機器に戻し、欄の helper に「{機器名} が外れたため、既定の機器に切り替えました。」
+    target: 使う機器
+    condition: devicechange
+  - action: 押す
+    result: 生徒アプリと同じ（確認しない。もう一度押すと戻る。試し音は二重に鳴らさない）
+    target: マイク・カメラの切り替え、スピーカーを試す
+    condition: 生徒アプリと同じ
+  - action: 押す・待つ
+    result: 前は押せない（理由の文を近くに）。開いたまま開始時刻になると押せるようになり、role=status で 1 回伝える
+    target: 入室する
+    condition: 開始時刻の前／開始時刻になった
+  - action: 押す
+    result: loading（spinner・押せない。二重押しで 2 回送らない）で startLiveLessonSession。201 ならカメラとマイクを止め、通話への参加の表示に戻して通話中の表示と
+      notice（success）「通話を開始しました。」
+    target: 入室する
+    condition: 開始時刻から
+  - action: 失敗した
+    result: サーバーの文言を notice（danger）で出す（slot_not_started は「この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。」で、時計を合わせ直してボタンを開始時刻まで戻す）。カメラの映りは止めない
+    target: 入室する
+    condition: 409 slot_not_started・invalid_session_state・invalid_booking_state、404、403、通信できない
+  - action: 押す
+    result: 確認せずに一覧へ戻る（取り消せる。もう一度開ける）。カメラとマイクをすぐ止める
+    target: チェックをやめる
+    condition: いつでも
+  - action: タブを切り替える・ページを離れる
+    result: カメラとマイクを止める
+    target: 画面
+    condition: いつでも
+  transitions:
+    exits:
+    - to: coachLiveSessionPanel（通話中の表示と「通話を開始しました。」）
+      data: session・カメラ・マイクの入・切
+      action: 「入室する」→ startLiveLessonSession が 201
+    - to: coachLiveSessionPanel
+      data: なし。カメラとマイクをすぐ止める
+      action: 「チェックをやめる」・「通話への参加に戻る」・ほかのタブ
+    - to: RoleGate のとおりログイン画面へ（今の決まり）
+      action: 401・403
+    entries:
+    - data: CoachBooking（booking_id・slot・student_display_name・lesson_menu）
+      from: coachLiveSessionPanel
+      condition: 確定済み・開始 5 分前を過ぎた自分の予約
+summary: 生徒アプリ（スマホ）とコーチの画面（admin-web の「通話への参加」）に、新しく「入室前チェック」の画面を足します。 開始 5 分前から開けて、本物のカメラの映り・マイクの音の大きさ・スピーカーの試し音・開始までの残り時間・「入室する」を
+  1 画面にまとめます。 入室できるのは開始時刻からです（Google Meet の入室前の画面がお手本）。
+judgments:
+- kind: scope
+  note: コーチの画面（PC のブラウザー）だけ、その種類が 2 つ以上あるときだけ select で出す。スピーカーは出力先を選べるブラウザーだけ。生徒アプリ（スマホ）は前のカメラと
+    OS の音の出入りに任せて置かない。PC は USB のカメラやヘッドセットが複数つながっていることが多く、スマホは 1 つずつで迷わないため
+  question: カメラ・マイク・スピーカーを選ぶ欄を置くか
+- kind: error_handling
+  note: 止めない（ストーリーの must_not）。notice（warning）で何が起きたかと直し方を出し、入室の帯は変えない。相手に映像と声が届かないことを添える
+  question: 許可を断られた・機器がないときに入室を止めるか
+- kind: error_handling
+  note: 入口・一覧の行・入室の帯は、サーバーに合わせた時計で時刻に切り替える（開き直させない）。409 slot_not_started が返ったら応答の時刻で合わせ直す
+  question: 開いたまま時刻をまたいだとき
+- kind: ui
+  note: 映りの枠の下に secondary の 2 つ。映像の上に重ねると濃い面の上のボタンがライムになり、usage_rules に当たるため
+  question: マイク・カメラの切り替えをどこに置くか
+- kind: ui
+  note: 下に固定した入室の帯。スクロールしても残り時間と「入室する」が見える。コーチの画面も同じ形にそろえた
+  question: 入室の操作をどこに置くか
+- kind: system_interface
+  note: 呼ばない。予約は前の画面から渡し、映像と音は端末の中だけ。入室のときだけ startLiveLessonSession（通話サービスへの接続はモックのまま）
+  question: 入室前チェックで API を呼ぶか
+- kind: system_interface
+  note: 止める。通話はモックで自分の映りを出す場所がないため、入・切の状態だけを持っていく。通話中に自分の映りを出すのは通話の画面の作り直しになるので今回はしない
+  question: 入室したあとカメラとマイクを使い続けるか
+- kind: scope
+  note: 「入室前チェック」に置きかえ、入室は入室前チェックからだけにする。開始時刻の前に押せて 409 で知る、今の困りごと（known_gaps の 5）がなくなる
+  question: コーチの画面の入口を「通話を開始」から変えるか
+- kind: aesthetic
+  note: false。生徒が見る画面だが、色・書体・角丸は今のトークンのままで、新しい見た目は決めていない。新しい部品の見た目は、#1137（0.7.0）で正本に入った
+  question: brand_impact
+prototype: true
+rationale:
+  why: 入室前チェックの役目は「開始時刻に迷わず入る」ことで、チェックそのものは任意です（許可を断っても入室は止めない、がストーリーの must_not）。
+    案 a は映り・音・試し音を同時に見せ、入室の帯を下に固定して残り時間と「入室する」をいつでも見せるので、5 分の短い時間でも、 途中から開いても、開始時刻に押すだけで入れます。見た目は今のトークンと部品だけで組み、新しい色や書体は決めていないので、brand_impact
+    は false にしました。
+  rejected:
+  - idea: '案 b: 手順で案内する（カメラ → マイク → スピーカーの 3 画面）'
+    reason: 抜けはないが、5 分の中で押す回数が増え、「入室する」が最後まで見えない。開始時刻の直前に開いた人が手順の途中で待たされる。モックは b.html
+      に残した
+  - idea: 残り時間を score_panel で主役にする（待合室型）
+    reason: 大事なのは自分の映りの確認で、濃い面の主役が 2 つ（score_panel とカメラの枠）になり one-hot-spot に反する。残り時間は帯の中の
+      figure_sm で足りる
+  - idea: 入室前チェックを確認のダイアログ（コーチの画面）で開く
+    reason: 映りと 3 つの選択欄を 400px のダイアログに入れると狭く、開いたまま数分待つ使い方にダイアログは合わない
+  - idea: 生徒アプリにもカメラ・マイク・スピーカーを選ぶ欄を置く
+    reason: スマホでは前のカメラを使い、音の出入りは OS（イヤホンをつなぐと切り替わる）に任せる方が分かりやすい。選ぶ欄は PC のコーチの画面だけ（判断は
+      judgments）
+  - idea: マイク・カメラの切り替えを映像の上に重ねる（Meet と同じ）
+    reason: 濃い面の上のボタンは on_dark（ライム）になり、ライムの使いどころの 3 か所に当たらない。映りの下に secondary で並べた
+  requirement_map:
+  - how: studentBookingConfirmed の「ビデオ通話で受ける」を disabled にして「11:55 から入室前チェックができます」。コーチは一覧の行に「14:55
+      から入室前チェックができます」
+    requirement: 5 分前より早いときは開けず、開ける時刻を出す
+  - how: camera_preview（studentPrejoinCheck・coachPrejoinCheck）
+    requirement: 本物のカメラで映り・背景を確かめる（左右反転）
+  - how: level_meter と media_toggle「マイクを切る／入れる」
+    requirement: マイクの音の大きさ・切り替え
+  - how: 「スピーカーを試す」（同梱の 3 秒の音。試し音を止めるもある）
+    requirement: スピーカーの試し音
+  - how: join_bar の「開始 12:00・あと 2:48」と disabled の「入室する」。サーバーに合わせた時計で時刻に切り替える
+    requirement: 開始前は残り時間が出て入室は押せない、開始時刻になると押せる（開き直さずに）
+  - how: join_bar の中の notice（danger）。409 slot_not_started は時計を合わせ直す
+    requirement: 入室に失敗したらサーバーの文言を出す
+  - how: notice（warning）と「端末の設定を開く」「もう一度確かめる」。入室の帯は変えない（frame a/denied・a/nodevice・coach/denied・coach/nodevice）
+    requirement: 許可を断られた・機器がないときは直し方を案内し、入室は止めない
+  - how: コーチの画面だけ、2 つ以上あるときだけ選択欄を出す。生徒アプリは置かない（judgments）
+    requirement: カメラ・マイク・スピーカーを選ぶ欄を置くかの判断
+  - how: 入口「ビデオ通話で受ける」、入室後「ビデオ通話」、案内文も「ビデオ通話」。「通話」「ライブレッスン」と書かない（タブ名「通話への参加」は今の名前のまま）
+    requirement: 文言は『ビデオ通話』の呼び方
+  - how: 'studentLiveLesson と coachLiveSessionPanel の通話中の表示に「カメラ: 入・マイク: 切（入室前チェックのまま）」を
+      1 行'
+    requirement: 入・切を通話に引き継ぐ
+  - how: 入室前チェックは API を呼ばない（入室のときの startLiveLessonSession だけ）。入室したらカメラとマイクを止める
+    requirement: 映像と音を外に出さない・通話サービスにつながない
+user_flow:
+- to: studentBookingConfirmed
+  from: 生徒アプリ ホーム・自分の予約
+  action: 確定したビデオ通話の予約を開く
+- to: studentBookingConfirmed
+  from: studentBookingConfirmed
+  action: 開始 5 分前より早いと「ビデオ通話で受ける」は押せない。開ける時刻（11:55）を読んで待つ
+- to: studentPrejoinCheck
+  from: studentBookingConfirmed
+  action: 開始 5 分前を過ぎてから「ビデオ通話で受ける」を押す
+- to: studentPrejoinCheck
+  from: studentPrejoinCheck
+  action: 端末のダイアログでカメラとマイクを許可する（断ったら、断ったときの案内が出る）
+- to: studentPrejoinCheck
+  from: studentPrejoinCheck
+  action: 映りを見る・声を出す・「スピーカーを試す」を押す。開始時刻まで待つ
+- to: studentLiveLesson
+  from: studentPrejoinCheck
+  action: 開始時刻になったら「入室する」を押す
+- to: studentBookingConfirmed
+  from: studentPrejoinCheck
+  action: 戻る（アプリバーの左）
+- to: coachLiveSessionPanel
+  from: admin-web コーチの画面（対応待ちの「予約を見る」など）
+  action: 「通話への参加」のタブを開く
+- to: coachPrejoinCheck
+  from: coachLiveSessionPanel
+  action: 開始 5 分前を過ぎた確定済みの行の「入室前チェック」を押す
+- to: coachPrejoinCheck
+  from: coachPrejoinCheck
+  action: ブラウザーのダイアログでカメラとマイクを許可し、必要なら使う機器を選び、確かめて待つ
+- to: coachLiveSessionPanel（通話中の表示）
+  from: coachPrejoinCheck
+  action: 開始時刻になったら「入室する」を押す
+- to: coachLiveSessionPanel
+  from: coachPrejoinCheck
+  action: 「チェックをやめる」か「通話への参加に戻る」を押す
+brand_impact: false
+open_questions:
+- 1. 【とくに見てほしい】今の startLiveLessonSession は、1 対 1 の予約で相手が先に入室していると 409 invalid_session_state
+  で 2 人目が入れません（domain の ensure_can_join がグループのときだけ参加させる）。生徒とコーチが両方とも入室前チェックから「入室する」を押す流れには、1
+  対 1 でも通話中の同じセッションに 201 で入れる変更が要ります。t3 に含めるか、別のタスクに切るかを決めてください。仮の画面は、そのときサーバーの文言「通話の状態が変わっています。」を出すだけです
+- 2. 「今の時刻」は端末の時計でなくサーバーの時刻に合わせます。仮は予約を読んだ応答の Date ヘッダーでずれを出す（契約の変更なし）。精度が足りなければ server_time
+  を契約に足します
+- 3. コーチが選んだ機器を次回のために覚えるか。仮は覚えない（ストレージに残さない。毎回ブラウザーの既定から）。覚えるならこのブラウザーの中だけに機器の ID
+  を残す案
+- 4. 入室前チェックの行動イベント（開いた・許可を断った・試し音を鳴らした）を足すか。仮は足さない（call.started のまま）
+- 5. コーチの入室前チェックの URL。仮は通話への参加のタブの中でビューを切り替え、URL は変えない（再読み込みすると一覧に戻る）。共有や再読み込みで同じ予約を開きたいなら
+  ?prejoin=<booking_id> を足す
+- 6. スロットの終了時刻を過ぎてから開いたとき。仮は画面では止めず、サーバーの判断に任せる（契約には終了後の開始を断る決まりがない）
+- 7. 生徒アプリで、前と後ろのカメラを切り替えるボタンを置くか。仮は置かない（前のカメラだけ）
+design_system_gaps:
+- id: camera_preview
+  ja: カメラの映りの枠
+  why: 本物のカメラの映像と、許可待ち・切・使えない・ないの状態を 1 つの枠で見せる部品がない
+  proposal: '#1137 で components.yaml 0.7.0 の camera_preview として入った（lifecycle trial）。parts: [container, video, placeholder（icon・title・small）, caption（任意）]。container
+    は inverse_surface・radius md。 比率は student-app 4:3、admin-web 16:9（幅
+    512px まで）。video は object-fit cover で左右反転（前のカメラ）。 states: loading（許可待ち。inverse_surface
+    に on_inverse_surface の title と on_inverse_surface_muted の small）／disabled（切）・error（使えない・ない。surface
+    の面に text の title と text_muted の small、 videocam_off の 24px。40px は段にないため）。a11y: role=img・ラベル「自分のカメラの映り（左右反転）」。rule（must）:
+    映像を送らない・残さない（人の承認が要る）。inverse_surface の 1 か所に数える'
+- id: level_meter
+  ja: 音の大きさの表示
+  why: マイクの音の大きさを見せる部品がない
+  proposal: '#1137 で components.yaml 0.7.0 の level_meter として入った。10 段のバー（各 高さ 8px・radius pill・あいだ xs 4px、全体の高さ 24px）。届いた段は primary、残りは
+    primary_container、止めているときは全部 surface。 書き換えは 1 秒に 10 回まで、補間の動きなし（reduced_motion
+    でも同じ）。読み上げは毎回読まず、近くの文（「音が届いています」）で伝える。色だけで示さない'
+- id: media_toggle
+  ja: 入・切の切り替えボタン
+  why: button に入・切の 2 つの状態を持つ形がない（マイク・カメラ。試し音の「鳴らす⇄止める」も同じ形）
+  proposal: '#1137 で components.yaml 0.7.0 の media_toggle（variants: mic・camera・speaker_test）として入った。button の secondary に leading_icon を持たせ、状態ごとに文言とアイコンを入れ替える（「マイクを切る」mic
+    ⇄「マイクを入れる」mic_off、「スピーカーを試す」volume_up ⇄「試し音を止める」stop_circle）。面の色は変えず、 状態は文言とアイコンで示す。押したらその場で切り替え（確認しない）、結果を role=status
+    で読む。高さ 56px（admin-web 48px）。2 つ並べるときは幅を等分'
+- id: join_bar
+  ja: 入室の帯（下に固定する操作の帯）
+  why: patterns の detail は主な操作を下に固定してよいとするが、時刻と理由の文とボタンをまとめて固定する部品の形（面・線・余白・安全領域）が決まっていない
+  proposal: '#1137 で components.yaml 0.7.0 の join_bar として入った。container は background・上に border 1px・padding md 16px（下は安全領域 + md）・z_order
+    の sticky_bar。中身は 時刻の行（small 700 と figure_sm）、理由の文（small text_muted）、 button primary（student-app
+    は幅いっぱい、admin-web は右寄せで 768px の幅にそろえ、左に secondary を 1 つまで）。失敗は帯の中に notice（danger）。
+    本文の下に帯の高さの余白をとり、フォーカスのある部品を隠さない。文字 200% でも画面の半分を超えない'
+- id: countdown
+  ja: 開始までの残り時間
+  why: 残り時間の書き方（分:秒）と読み上げの間隔が content.yaml の datetime にない
+  proposal: '#1137 で content.yaml 0.7.0 の notation.datetime.countdown として入った。「あと 2:48」（figure_sm。1 時間未満の残りだけ）。読み上げは「開始まで
+    あと 2 分 48 秒」で、1 分ごとと 0 になったときだけ role=status。 判断はサーバーの時刻に合わせた時計で。部品ではなく文言と表記の決まりとして足す'
+design_system_constraints:
+- 色・余白・角丸・文字の段は specs/design/tokens.yaml（0.5.0 のスコアボードの方向）の名前だけを使った。out/rally.css
+  はトークンと components.yaml の preview_css を写したもの
+- 濃い面（inverse_surface）は 1 画面に 1 か所の決まりに合わせ、カメラの映りの枠だけに使った。ライム（secondary）は使っていない（usage_rules
+  の 3 か所のどれにも当たらない）
+- 主なボタン（primary）は 1 画面に 1 つ（「入室する」）。押せないときは近くに理由の文（button の disabled の決まり）
+- 状態は色の点と字（「開始時刻になりました」は success の点と字）。失敗は notice の inline（danger）、注意は notice の inline（warning）、成功は
+  notice の success（components の notice）
+- 生徒アプリは patterns の detail（主な操作を下に固定してよい）、admin-web は common_layout の 1 段・reading
+  768px と Section。コーチの画面のタブは今の CoachHome のまま
+- '文言は content.yaml: ビデオ通話（live_lesson_session の画面の呼び方）、ボタンは動詞で終える、誤りは何が起きたかと次の操作の
+  2 文、サーバーの文言は書き換えない、admin-web は呼びかけず感嘆符なし'
+- アイコンは iconography の Material Symbols の線の形（mic・mic_off・videocam・videocam_off・volume_up・stop_circle）を、モックでは同じ形の
+  SVG を手で描いて代わりにした
+- 書体は Noto Sans CJK JP と Barlow Condensed（残り時間の数字だけ）を font-family で指定するだけ。外の資源は読まない
+- 端末（OS・ブラウザー）の許可のダイアログはアプリの部品ではない。モックでは確認のダイアログの形を借りて、端末のものと注記した
+variant:
+  id: a
+  axis: flow
+  name: 1 画面にまとめる（Meet 型）
+  frames:
+  - id: entry
+    state: 5 分前より早い
+    screen: studentBookingConfirmed
+    caption: 予約の確定の画面を開いた（開始 5 分前より早い。入口は押せず、開ける時刻が出る）
+  - id: permission
+    state: 許可を求めている
+    screen: studentPrejoinCheck
+    caption: 5 分前を過ぎて「ビデオ通話で受ける」を押した（端末が許可を求める）
+  - id: denied
+    state: 許可を断られた
+    screen: studentPrejoinCheck
+    caption: 端末のダイアログで「許可しない」を押した
+  - id: nodevice
+    state: カメラやマイクがない
+    screen: studentPrejoinCheck
+    caption: カメラのない端末で開いた
+  - id: ready
+    state: 開始時刻になった
+    screen: studentPrejoinCheck
+    caption: 開いたまま開始時刻になった
+  - id: joining
+    state: 送信中
+    screen: studentPrejoinCheck
+    caption: 「入室する」を押した（サーバーの応答を待っている）
+  - id: failed
+    state: 入室に失敗した
+    screen: studentPrejoinCheck
+    caption: 「入室する」を押したが、サーバーが断った（409 slot_not_started。端末の時計が進んでいた。時計を合わせ直し、開始時刻まで押せない状態に戻る）
+  - id: incall
+    state: 入室した
+    screen: studentLiveLesson
+    caption: 入室できた（今のビデオ通話の画面に 1 行だけ足す）
+  tradeoff: 映り・音・試し音・残り時間・入室が 1 画面で見え、チェックを飛ばしてもそのまま入れるが、はじめての人に「何をどの順で確かめるか」は案内しない。
+  viewport: mobile
