@@ -274,7 +274,7 @@ terms:
     context: scheduling
     code: [CoachLeave, CoachLeaveId, CoachLeaveNote, BookingCanceller::Headquarters, startCoachLeave, getCoachLeavePreview, scheduling.coach_leaves]
     note: >-
-      全部か何もしないかで、同じコーチの期間の重なるお休みは断る（409 coach_leave_overlaps）。キャンセルの理由を表す別の語は置かず、
-      予約がお休みで消えたことはキャンセルした人（BookingCanceller。listCancelledBookings の cancelled_by が headquarters）と、
-      その予約を含むお休みの記録でたどる。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
+      全部か何もしないかで、同じコーチの期間の重なるお休みは断る（409 coach_leave_overlaps）。今は、予約がお休みで消えたことを
+      キャンセルした人（BookingCanceller。listCancelledBookings の cancelled_by が headquarters）と、その予約を含むお休みの記録で
+      たどる。キャンセルの理由の欄と語は #1029 で決める。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
       コーチ自身が申し出る操作・お休みの記録の一覧はまだない（specs/ux/issue-455.yaml）。
