@@ -1,17 +1,19 @@
 // ci/sendback-engine.yml の写しが branch protection の必須のチェックに入っているかを決定論で照らす（知見 K-0004 の担保。議決 D-0026、Issue #1018）。LLM を使わない。
 //
-//   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection
-//   gh api repos/{owner}/{repo}/rules/branches/main > protection.json        # rulesets（どちらの形でもよい）
-//   node protection.mjs --protection protection.json [--protection rules.json] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection（管理者の権限が要る）
+//   gh api repos/{owner}/{repo}/branches/main > branch.json                  # ブランチ（protection の要約。読む権限で読める）
+//   gh api repos/{owner}/{repo}/rules/branches/main > rules.json             # rulesets（読む権限で読める）
+//   node protection.mjs --protection protection.json [--protection rules.json …] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   --protection は何度でも渡せ、どれかで必須のチェックになっていれば必須に数える（古い形と rulesets の両方で必須にできるため）
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（sendback-engine-test・sendback-wiring-order）が
 // 報告されないことでしか止まらない。別のワークフローの間は needs で待てないので、check.mjs --events を engine.test.mjs を待たずに
 // 走らせる形も、engine-test を必須のチェックにする設定でしか止まらない（議決 D-0038）。
 // その止め方が効いているか、つまり .github/workflows/sendback-engine.yml の 2 つのジョブが報告するチェックの名前が、
-// 既定のブランチの必須のチェックに入っているかを見る。branch protection は PR の GITHUB_TOKEN では読めないので、
-// 建設者が gh api で取り出した JSON を渡して走らせ、結果を Issue #948 に記録する（README の「必須のチェックの照合」）。
-// 必須のチェックが後で外されたことに気づくよう、ci/sendback-protection.yml が branch protection を読める権限のトークンで
+// 既定のブランチの必須のチェックに入っているかを見る。ci/sendback-engine.yml の required-checks のジョブが PR ごとに、
+// PR の GITHUB_TOKEN でも読めるブランチと rulesets の JSON を gh api で取って走らせ、外れていれば落とす（議決 D-0040、Issue #1091）。
+// 必須のチェックが後で外されたことに PR がなくても気づくよう、ci/sendback-protection.yml が branch protection を読める権限のトークンで
 // 毎日と手動で走らせ、外れたら Issue を開くか更新する（議決 D-0039、Issue #1087）。
 //
 // 見ること:
@@ -38,8 +40,9 @@ export const CHECK_NAMES = Object.freeze({ "engine-test": "sendback-engine-test"
 
 /**
  * branch protection の JSON から必須のチェックの名前を取り出す。
- * 古い形（required_status_checks の contexts と checks[].context）と rulesets（type が required_status_checks の規則の
- * parameters.required_status_checks[].context）のどちらも読む。保護がない（404 の { message } など）なら空。
+ * 古い形（required_status_checks の contexts と checks[].context）、ブランチの JSON（protection.required_status_checks に同じ形）と
+ * rulesets（type が required_status_checks の規則の parameters.required_status_checks[].context）のどれも読む。
+ * 保護がない（404 の { message } など）なら空。
  */
 export function requiredContexts(protection) {
   const names = new Set();
@@ -50,7 +53,7 @@ export function requiredContexts(protection) {
       for (const c of rule.parameters?.required_status_checks ?? []) add(c?.context);
     }
   } else if (protection && typeof protection === "object") {
-    const rsc = protection.required_status_checks;
+    const rsc = protection.required_status_checks ?? protection.protection?.required_status_checks;
     for (const c of rsc?.contexts ?? []) add(c);
     for (const c of rsc?.checks ?? []) add(c?.context);
   } else {
