@@ -53,6 +53,15 @@ wired にできないようにした（tools/sendback-check/ci/sendback-protecti
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
 同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
 
+review_by の先送りの照合（議決 D-0067（起票時の番号は D-0066）、Issue #1178）: --base に前の版（PR の base。例: origin/main）を渡すと、
+K-0010 の review_by をその版より後ろへ動かす（日付でなくする場合も含む）ときに、tools/conflict-check/ci/conflict-check.yml（写しがあれば
+.github/workflows/conflict-check.yml）の ENGINE_REF の版の Engine で、test_events.py の EngineFinishedTest が todo のまま（job.finished に
+agent_resumed も agent_tier も出ていない）なら落とす（review_by を延ばすだけで、期限切れで落ちるのを先送りできないように）。Engine は --engine か
+ENGINE_DIR の全履歴のチェックアウトから版の dispatcher.py を取り出し、tools/conflict-check/engine_harness.py の finished で欄を読む。
+求める欄は test_events.py の FINISHED_FIELDS を読む。Engine のチェックアウトがない・版がない・欄を読めないときは照らせないとして落とす。
+落とす行には種類の名前を添える（review_by_hold、照らせないときは review_by_unverifiable（<HoldUncheckable の kind>））。
+--base を渡さないとき、前の版に K-0010 がないとき、前の版の review_by が日付でないときは見ない。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -60,7 +69,7 @@ wired にできないようにした（tools/sendback-check/ci/sendback-protecti
   - deterministic で、wired かつ verified が 1 件以上: deterministic
 
 使い方:
-  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"]
+  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"] [--base origin/main --engine .engine]
   終了コード: 0 = 緑、1 = 通らない、2 = 読めなかった
 
 依存: python3。YAML は PyYAML があればそれ、なければ ruby で読む（Engine の knowledge_check.py と同じ）
@@ -68,10 +77,14 @@ wired にできないようにした（tools/sendback-check/ci/sendback-protecti
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = ".factory-config/knowledge"
@@ -114,6 +127,17 @@ REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
+# review_by を前の版より後ろへ動かすときに、ENGINE_REF の Engine で test_events.py の EngineFinishedTest が todo のままでないことを求める知見
+# （議決 D-0067（起票時の番号は D-0066）、Issue #1178）。ENGINE_REF は写しがあれば写し、なければひな形から読む（EngineFinishedTest を走らせる CI と同じ版）
+REVIEW_BY_HOLD = "K-0010"
+CONFLICT_CHECK_WORKFLOWS = (f"{WORKFLOWS}/conflict-check.yml", "tools/conflict-check/ci/conflict-check.yml")
+CONFLICT_HARNESS = "tools/conflict-check/engine_harness.py"
+CONFLICT_EVENTS_TEST = "tools/conflict-check/test_events.py"   # FINISHED_FIELDS（job.finished に求める欄）の定義元
+ENGINE_DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
+# 出力の行に添える種類の名前。review_by_hold = Engine が今の形のまま延ばした、review_by_unverifiable = 照らせない（括弧に HoldUncheckable の kind）
+REVIEW_BY_HOLD_ERROR = "review_by_hold"
+REVIEW_BY_UNVERIFIABLE = "review_by_unverifiable"
+ENGINE_REF_RE = re.compile(r"^\s*ENGINE_REF:\s*['\"]?([^'\"\s#]*)['\"]?\s*(?:#.*)?$", re.M)
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -541,6 +565,128 @@ def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
     return e
 
 
+class HoldUncheckable(Exception):
+    """review_by の先送りの照合で、前の版・ENGINE_REF・Engine の欄を読めず照らせないこと。kind は読めなかったものの種類
+    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable）"""
+
+    def __init__(self, kind: str, detail: str):
+        super().__init__(f"{kind}: {detail}")
+        self.kind, self.detail = kind, detail
+
+
+def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+
+
+def as_date(v) -> date | None:
+    """review_by の値を日付にする（PyYAML は日付で、ruby で読むと文字列で返る）。読めなければ None"""
+    if isinstance(v, date):
+        return v
+    try:
+        return date.fromisoformat(str(v))
+    except ValueError:
+        return None
+
+
+def base_knowledge(repo: Path, base: str, rel: str):
+    """base の版の知見のファイルを読む。その版にファイルがなければ None。base が版として読めないか、ファイルを YAML として読めなければ HoldUncheckable"""
+    if git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("base_unreadable", f"前の版 {base} がリポジトリにない（fetch-depth: 0 で取る）")
+    if git(repo, "cat-file", "-e", f"{base}:{rel}").returncode != 0:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / Path(rel).name
+        p.write_text(git(repo, "show", f"{base}:{rel}").stdout, encoding="utf-8")
+        try:
+            return load_yaml(p)
+        except Exception as x:  # noqa: BLE001  PyYAML と ruby で投げる例外が違うので、読むところだけで受けて種類を付ける
+            raise HoldUncheckable("base_unreadable", f"前の版 {base} の {rel} を読めない（{x}）") from x
+
+
+def conflict_engine_ref(repo: Path) -> tuple[str, str]:
+    """EngineFinishedTest を走らせる CI の ENGINE_REF と、読んだファイル（写しがあれば写し、なければひな形）。読めなければ HoldUncheckable"""
+    for rel in CONFLICT_CHECK_WORKFLOWS:
+        p = repo / rel
+        if p.is_file():
+            refs = ENGINE_REF_RE.findall(p.read_text(encoding="utf-8"))
+            if len(refs) != 1 or not re.fullmatch(r"[0-9a-f]{40}", refs[0]):
+                raise HoldUncheckable("engine_ref_invalid", f"{rel} の ENGINE_REF が 40 桁のコミット SHA の 1 行でない（{refs!r}）")
+            return refs[0], rel
+    raise HoldUncheckable("engine_ref_invalid", f"ENGINE_REF を読むファイル（{'・'.join(CONFLICT_CHECK_WORKFLOWS)}）がない")
+
+
+def finished_fields_required(repo: Path) -> tuple[str, ...]:
+    """test_events.py の FINISHED_FIELDS（EngineFinishedTest が job.finished に求める欄）を構文木から読む（取り込むと Engine のテストまで読み込むため）"""
+    try:
+        tree = ast.parse((repo / CONFLICT_EVENTS_TEST).read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "FINISHED_FIELDS" for t in node.targets):
+                return tuple(ast.literal_eval(node.value))
+    except (OSError, SyntaxError, ValueError) as x:
+        raise HoldUncheckable("fields_unreadable", f"{CONFLICT_EVENTS_TEST} の FINISHED_FIELDS を読めない（{x}）") from x
+    raise HoldUncheckable("fields_unreadable", f"{CONFLICT_EVENTS_TEST} に FINISHED_FIELDS がない")
+
+
+def engine_finished_legacy(repo: Path, engine: Path, ref: str) -> tuple[bool, list[str]]:
+    """ENGINE_REF の版の Engine の job.finished が今の形（FINISHED_FIELDS をどれも出さない。EngineFinishedTest が todo になる）かと、その欄。
+    Engine のチェックアウト（全履歴）から版の dispatcher.py を取り出し、engine_harness.py の finished で欄を読む。読めなければ HoldUncheckable"""
+    if git(engine, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine のチェックアウト（{engine}）に ENGINE_REF {ref} の版がない（fetch-depth: 0 で取る）")
+    src = git(engine, "show", f"{ref}:{ENGINE_DISPATCHER}")
+    if src.returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine の {ref} の版に {ENGINE_DISPATCHER} がない")
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / ENGINE_DISPATCHER
+        p.parent.mkdir(parents=True)
+        p.write_text(src.stdout, encoding="utf-8")
+        out = subprocess.run([sys.executable, "-I", "-B", str(repo / CONFLICT_HARNESS), "finished", tmp], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished が落ちた: {(out.stderr or out.stdout).strip()}")
+    try:
+        fields = json.loads(out.stdout)["fields"]
+    except (ValueError, KeyError, TypeError) as x:
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished の出力に fields がない（{x!r}）") from x
+    if not isinstance(fields, list):
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished の fields が列でない（{fields!r}）")
+    return not set(finished_fields_required(repo)) & set(fields), fields
+
+
+def check_review_by_hold(k: dict, repo: Path, base: str | None, engine: Path | None) -> list[str]:
+    """REVIEW_BY_HOLD の知見の review_by を base の版より後ろへ動かすなら、ENGINE_REF の Engine で EngineFinishedTest が todo のまま
+    （job.finished に FINISHED_FIELDS をどれも出さない）でないことを求める（議決 D-0067（起票時の番号は D-0066）、Issue #1178）。
+    base を渡さないとき・base にその知見がないとき・base の review_by が日付でないときは見ない。
+    落とす行には種類の名前を添える（REVIEW_BY_HOLD_ERROR、照らせないときは REVIEW_BY_UNVERIFIABLE と HoldUncheckable の kind）"""
+    if k.get("id") != REVIEW_BY_HOLD or not base:
+        return []
+    f = k.get("_file", str(k.get("id")))
+    rel = f"{ROOT}/{f}"
+    try:
+        prev = base_knowledge(repo, base, rel)
+    except HoldUncheckable as x:
+        return [f"{f}: {REVIEW_BY_UNVERIFIABLE}（{x.kind}）: review_by の先送りを照らせない（{x.detail}。議決 D-0067）"]
+    before = as_date(prev.get("review_by")) if isinstance(prev, dict) else None
+    if before is None:
+        return []
+    after = as_date(k.get("review_by"))
+    if after is not None and after <= before:
+        return []
+    moved = f"review_by を {before} から {k.get('review_by')} へ動かす"
+    try:
+        if engine is None:
+            raise HoldUncheckable("engine_missing", "Engine のチェックアウトを --engine か ENGINE_DIR で渡す")
+        ref, src = conflict_engine_ref(repo)
+        legacy, fields = engine_finished_legacy(repo, engine, ref)
+        required = finished_fields_required(repo)
+    except HoldUncheckable as x:
+        return [f"{f}: {REVIEW_BY_UNVERIFIABLE}（{x.kind}）: {moved}が、ENGINE_REF の Engine で EngineFinishedTest が todo のままかを照らせない"
+                f"（{x.detail}。照らせないときは落とす。議決 D-0067）"]
+    if legacy:
+        return [f"{f}: {REVIEW_BY_HOLD_ERROR}: {moved}が、ENGINE_REF（{ref}。{src}）の Engine の job.finished（{', '.join(fields)}）に"
+                f" {' と '.join(required)} がなく、{CONFLICT_EVENTS_TEST} の EngineFinishedTest が todo のまま。"
+                "review_by を延ばすだけで期限切れの失敗を先送りしない。Engine を直して ENGINE_REF を上げてから延ばす（議決 D-0067）"]
+    return []
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -578,6 +724,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=".")
     ap.add_argument("--json")
     ap.add_argument("--summary")
+    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送りを照らす（議決 D-0067）")
+    ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:
         items = load(Path(a.repo))
@@ -585,7 +733,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
     repo, decisions = Path(a.repo), {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
+              + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
