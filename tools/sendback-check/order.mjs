@@ -309,6 +309,58 @@ export function parseTapReport(text) {
   return out;
 }
 
+/** engine.test.mjs が写しを作れないときに t.skip に付ける理由の頭（議決 D-0041、Issue #1093）。skipLines が数える skip はこれだけ。 */
+export const LEGACY_BASIS_NOT_FOUND = "legacy_basis_not_found";
+/** engine.test.mjs が Engine のチェックアウトがないときに `{ skip }`（略記）に渡す理由の頭。skipLines はこの略記を数えない。 */
+export const NO_ENGINE_CHECKOUT = "Engine のチェックアウトがない";
+
+/** `{ skip }`（略記）の行番号（1 始まり）。Engine のチェックアウトがないときに飛ぶテストの数（skipLines が数えない分）。注釈の中は数えない。 */
+export function checkoutSkipLines(source) {
+  const out = [];
+  source.split(/\r?\n/).forEach((line, i) => {
+    if (/\{\s*skip\s*\}/.test(line.replace(/\/\/.*$/, ""))) out.push(i + 1);
+  });
+  return out;
+}
+
+/** node --test の TAP の出力から、すべての段（下の段も）の SKIP を [{ name, reason }] で返す。理由がなければ reason は空。 */
+export function tapSkips(text) {
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:not )?ok \d+ - (.*)$/);
+    if (!m) continue;
+    // 名前と理由の中の #・\ は逃がしてある（node の TAP）ので、逃がしていない「 # SKIP」から後ろが指示
+    const d = m[1].match(/^((?:[^#\\]|\\.)*?)\s+#\s*SKIP\b\s*(.*)$/i);
+    if (!d) continue;
+    const unescape = (s) => s.replace(/\\(.)/g, (_, c) => (c === "n" ? "\n" : c === "t" ? "\t" : c)).trim();
+    out.push({ name: unescape(d[1]), reason: unescape(d[2]) });
+  }
+  return out;
+}
+
+/**
+ * engine.test.mjs を走らせた TAP の SKIP を、ソースから数えた skip と照らす（知見 K-0004 の担保。議決 D-0062、Issue #1168）。
+ * skipLines と checkoutSkipLines は字面で数えるので、別名（const s = t.skip.bind(t)）や動的な skip（opts.skip = …）を数え漏らす。実行の結果でそれを見つける。
+ *   - 理由が legacy_basis_not_found か Engine のチェックアウトがないのどちらでもない（skip_reason_not_allowed）
+ *   - legacy_basis_not_found の SKIP が skipLines の件数より多いか、チェックアウトがないの SKIP が `{ skip }` の件数より多い（skip_count_mismatch）
+ * 飛ばす場合に当たらなければ SKIP は出ないので、件数は「ソースの件数を超えない」で照らす。
+ */
+export function skipReportProblems(tap, source) {
+  const skips = tapSkips(tap);
+  const problems = skips
+    .filter(({ reason }) => !reason.startsWith(LEGACY_BASIS_NOT_FOUND) && !reason.startsWith(NO_ENGINE_CHECKOUT))
+    .map(({ name, reason }) => ({ rule: "skip_reason_not_allowed", name, reason }));
+  const counts = [
+    [LEGACY_BASIS_NOT_FOUND, skipLines(source).length],
+    [NO_ENGINE_CHECKOUT, checkoutSkipLines(source).length],
+  ];
+  for (const [reason, lines] of counts) {
+    const ran = skips.filter((s) => s.reason.startsWith(reason)).length;
+    if (ran > lines) problems.push({ rule: "skip_count_mismatch", reason, ran, lines });
+  }
+  return problems;
+}
+
 /**
  * GitHub Actions で動いている check.mjs --events の在りか（環境変数から）。workflow は GITHUB_WORKFLOW_REF の .github/workflows/ からの道、job は GITHUB_JOB。
  * 分からなければ null。見張りの文に使うだけで、判定には使わない。
