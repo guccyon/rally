@@ -1,0 +1,79 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0050
+pr: https://github.com/guccyon/rally/pull/1142
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - '足したのは K-0004 の enforcement.solutions への 1 項目だけで、statement・scope・evidence・confidence
+    は変えておらず、D-0035 の enforcement の ci_check の案（knowledge: K-0004）と issue 1063・decided_by:
+    committee:D-0035 で機械で辿れるので、変更セットの扱いは妥当です。'
+  - 既存の issue 1014（D-0024、test_engine_patch.py が差分の当たりを見る）と issue 968・1015（test_engine.py
+    の中身）は検査そのものを足したもので、今回は engine-test のジョブにまとめて CI で走らせる形を足したものなので、担う範囲が分かれていて重複ではありません。
+  - test_engine.py を CI で版がないときや pytest がないときに飛ばさず落とす部分は D-0037 の ci_check の案（CI=true
+    か ENGINE_DIR のときは skip せずに落とす）とも重なるので、次にこの解決策を直すときは decided_by か what に D-0037
+    との結び付きも書いてください。
+  - issue 1014 の項目は『ENGINE_REF の版の Engine に今の差分が当たって通ることを手元で確かめた』と書き、今回の項目は『手元の Engine
+    には ENGINE_REF（9d3713a）の版がない』と書いていて、ひな形の ENGINE_REF のずれ（f44a372 と 9d3713a）を直した経緯からはどちらの版を指すかが読み取りにくいので、建設者が配線するときにどの版で確かめたかをそろえて書いてください。
+  - 'wired: false・verified: false のままで、未配線・未確認と文でも断っているので、ほかの項目や README の『未配線』の表示の決まりと食い違いません。'
+  - どの解決策も本物の記録で効き目を確かめておらず、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0004 に足した ci_check の解決策（issue 1063、committee:D-0035）の what は、議決 D-0035 の enforcement
+    の ci_check の案と文面が同じで、decided_by で機械的に D-0035 まで辿れます。
+  - 足した文は手元で確かめた範囲（ひな形の形を見る test_ci.py、ENGINE_REF の版から読むこと、CI で版や pytest がないときに落ちること）だけを書いています。
+  - 'ENGINE_REF（9d3713a）の版に差分が当たるかは確かめていないとはっきり断っていて、wired: false・verified: false
+    にしているので、記録より強く言っていません。'
+  - 'ENGINE_REF のずれ（f44a372 と 9d3713a）と issue 1063 の中身は知見の置き場のほかの記録には出てこず、この what
+    の申告しか根拠がないので、建設者が配線するときに Issue #1063 の差分で確かめてください。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイルのパス、コミットの短い番号、Issue の番号、議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は K-0004 の statement・evidence・confidence を変えず、D-0035 の ci_check の案のうちワーカーの権限で入れた分を新しい解決策として足し、wired:
+    false・verified: false にしているので、担保の状態を実態より強く見せておらず、担保の観点では採ってよいです。'
+  - pytest がないときに飛ばさずに落とすこと、CI で ENGINE_REF の版がないときに落とすこと、test_ci.py がひな形の engine-test
+    の形を見ることは、すでに決定論の線になっていて、D-0035 の案の向きに合っています。
+  - ただし ci/knowledge-enforcement.yml の ENGINE_REF が knowledge-check.yml とずれていた（f44a372
+    と 9d3713a）のを手でそろえただけで、ENGINE_REF を上げるたびに同じずれが繰り返し起き、ずれると別の版の Engine で確かめたことになって痛いので、機械で照らすべきです。
+  - ENGINE_REF の値はファイルから読めて「一致するか」の線ははっきりしており、test_ci.py に数行足すだけで作る費用も小さいです。
+  - .github/workflows/ への写しと branch protection の必須チェックは建設者の作業として残っており、それまでこの解決策は外れても
+    PR を止めないので、効いていないものとして扱ってください。
+  - ENGINE_REF（9d3713a）の版に差分が当たるかも、本物の記録での効き目も確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0035 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false のままで、手元の Engine に ENGINE_REF（9d3713a）の版がなく差分が当たるかは確かめていないと自分で断っているので、記録より強く言っていません。'
+  - 反例として、ENGINE_REF をそろえた先の 9d3713a に knowledge-enforcement.patch が当たらなければ engine-test
+    は写した直後から落ち続けるので、建設者が .github/workflows/ に写す前にその版で一度走らせて確かめてください。
+  - この解決策は知見の置き場の CI の仕組みについてのもので、K-0004 の主張（supervisor が adopt の件数で差し戻しを起こす）の担保とは直接つながらず、K-0004
+    に仕組みの解決策がたまり続けているので、次の変更セットで仕組みの担保を別の知見に分けるかを委員会で見直してください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - 差分にはファイルの道・コミットの短い番号・Issue と議決の番号だけがあり、人を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: test_ci.py に、ci/knowledge-enforcement.yml（と写してあれば .github/workflows/ の写し）の
+    ENGINE_REF が knowledge-check.yml の ENGINE_REF と一致しなければ落ちるテストを足し、ENGINE_REF を片方だけ上げた
+    PR を止める。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して engine-test
+    を branch protection の必須チェックに入れたあと、test_ci.py で写しがないときは飛ばさず落とすよう切り替え、knowledge-enforcement.patch
+    が ENGINE_REF に当たらない PR で engine-test が落ちた記録を verified_by に残してから wired・verified
+    を true にする。
