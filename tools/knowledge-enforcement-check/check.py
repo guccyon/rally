@@ -45,6 +45,9 @@ protection と protection-pr のジョブで満たす）。
 議決 D-0060（Issue #1160。起票時の番号は D-0056）で、K-0004 の issue 1087（sendback-protection.yml のひな形）と issue 1018 の解決策は、
 REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/sendback-protection.yml のジョブを指す wired_by でないと数えないようにした
 （ほかのワークフローの schedule のジョブから protection.mjs を呼ぶだけでは、ひな形の写しがなくても wired と読ませてしまうため）。
+議決 D-0061（Issue #1162。起票時の番号は D-0058）で、K-0004 の issue 1162 の解決策（sendback-protection の定期の実行が最後に通ってから
+2 日より長ければ落とす heartbeat.mjs）を REQUIRED_SCHEDULE に挙げ、schedule でも走るジョブから tools/sendback-check/heartbeat.mjs を呼ぶ項目がないと
+wired にできないようにした（tools/sendback-check/ci/sendback-protection-heartbeat.yml を写した heartbeat のジョブで満たす）。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -84,12 +87,15 @@ DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
 # K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める。
-# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160）
+# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
+# K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
+SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0001", 1106): "tools/pr-body-check/protection.mjs",
                      ("K-0004", 1158): SENDBACK_PROTECTION,
-                     ("K-0004", 1087): SENDBACK_PROTECTION}
+                     ("K-0004", 1087): SENDBACK_PROTECTION,
+                     ("K-0004", 1162): SENDBACK_HEARTBEAT}
 # (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
 REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),

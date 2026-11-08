@@ -1,0 +1,67 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0088
+pr: https://github.com/guccyon/rally/pull/1245
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、過去の知見や README の決まり、specs/ の規範と矛盾しません。
+  - '足した解決策の中身（schedule で通った時刻を成果物に残し、2 日より長く通っていなければ落として Issue を開く）は knowledge/committee/D-0061.yaml
+    の 1 つめの enforcement の案と合っていて、decided_by: committee:D-0061 は正しいです。'
+  - K-0004 で heartbeat を扱う解決策はこの 1 件だけで、issue 1018 の protection.mjs の検査や issue 1087
+    の定期実行の形を作り直さずに上に重ねる形なので、重複はありません。
+  - REQUIRED_SCHEDULE にこの解決策と heartbeat.mjs の組を足したのは、D-0039・D-0061・D-0068 で積み上げた表の使い方と揃っています。
+  - 'D-0061 の 2 つめの案（check_schedule() の if: を許可リストで絞る lint）はこの PR に入っていないので、別の変更セットで入れるときに今回の
+    heartbeat の組も同じ許可リストで通ることを確かめてください。'
+  - 'wired: false・verified: false で、.github/workflows/ への写しと本物の実行の記録がまだないと本文が書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution の decided_by の committee:D-0061 は、knowledge/committee/D-0061.yaml（PR
+    #1161）の 1 つめの enforcement（sendback-protection.yml が通った時刻を記録し、2 日より長く通っていなければ落ちて
+    Issue を開く ci_check の案）と中身が合っていて、一次記録に辿れます。'
+  - 'D-0058 は PR #1157 の別の議決なので、what に「Issue #1162 の起票時の番号は D-0058」と書いて番号のずれを説明しているのは正しく、辿り先を取り違えません。'
+  - 案の「2 日」を 48 時間として、ちょうど 48 時間は通り超えたら落ちることを heartbeat.test.mjs で確かめたと書いており、議決の線と食い違いません。
+  - 'テストは手元の試験で、.github/workflows/ への写しは建設者が行うため本物の通った・外れた実行の記録がないと書き、wired: false・verified:
+    false にしているので、効き目を言い過ぎていません。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の記録での確認もまだないので、確かさは hypothesis
+    のままが妥当です。
+  - 差分にあるのは issue・PR・議決の id、ツールのパス、成果物とエラーの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0061 の ci_check の案（sendback-protection.yml
+    の最後に通った時刻を 48 時間で照らす heartbeat）を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、担保の観点では採ってよいです。
+  - schedule が止まったり落ち続けたりしても気づけないという D-0061 で担保の担当が挙げた痛さに、成果物の created_at と 48 時間の線という字面で照らせる決定論の検査で答えており、境界の
+    48 時間ちょうどと名前違い・PR のブランチの成果物を heartbeat.test.mjs で確かめているので線ははっきりしています。
+  - 'check.py の REQUIRED_SCHEDULE に heartbeat.mjs の組を足して schedule のジョブから呼ぶ wired_by
+    がなければ wired: true にできないようにしたので、この解決策を配線したと言い過ぎることも決定論で防げており、新たに enforce で足すべき担保は見当たりません。'
+  - heartbeat のワークフロー自体も schedule で走るので両方が同時に止まると気づけない残りの穴がありますが、main への push でも走らせているため痛さは小さく、建設者が写した後に本物の記録で確かめる段で見直せば足ります。
+  - '.github/workflows/ への写しがまだで通った・外れた実行の本物の記録もなく、wired: false・verified: false と正直に書いているので、確かさは
+    hypothesis のままが妥当です。'
+  - 差分にあるのは議決と Issue の番号、ツールのパス、成果物の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に 1 件足しただけで statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 足した ci_check の中身は D-0061 の 1 つめの enforcement の案（最後に通った時刻を成果物に残し、2 日より長く通っていなければ落ちて
+    Issue を開く）と合っていて、案の外へ広げた部分は見当たりません。
+  - 反例として、heartbeat のワークフロー自身も schedule で走るので、GitHub が動きのないリポジトリで schedule をまとめて止めると見張りも一緒に止まりますが、main
+    への push でも走らせているため完全には黙りません。
+  - 成果物の保持が 7 日なので、両方のワークフローが 7 日より長く止まると heartbeat_stale ではなく heartbeat_missing になりますが、どちらも落ちるので取りこぼしにはなりません。
+  - 'heartbeat.test.mjs と ci.test.mjs は手元の試験で、.github/workflows/ への写しも本物の実行の記録もないと本文自身が書き
+    wired: false・verified: false としているので、確かさは hypothesis のままが妥当です。'
+  - 差分にあるのは議決と Issue の番号、ツールの道、成果物の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
