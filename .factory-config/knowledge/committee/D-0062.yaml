@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0062
+pr: https://github.com/guccyon/rally/pull/1170
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - '足した test の項目は、D-0042 の enforcement の 2 つ目の案（test_events.py と test_watch.py に照らせない件数で落とすテストを足す）のうち、Issue
+    #1035 の項目で「test_watch.py に足すのは D-0042 の案のチケット」と残していた分を埋めるもので、decided_by: committee:D-0042
+    と issue 1101 で議決に辿れます。'
+  - 'Issue #1035 の項目（D-0030 の案、test_events.py の EngineFinishedTest）とは検査の対象が test_events.py
+    と test_watch.py で分かれ、Engine の版で todo にする形も K-0004 の engine.test.mjs の todo とそろっているので、重複でも矛盾でもありません。'
+  - 'Issue #1035 の項目に残る「test_watch.py の同じ検査は入れていない」は、その時点の記録として日付つきで残すのが README の「消さずに残す」決まりに合っており、直さなくてよいです。'
+  - 前の項目は ENGINE_REF（2490db6）の Engine で todo になることを確かめていますが、今回は手元の main の 476573e
+    で確かめていて、CI のひな形が固定する ENGINE_REF の版でも todo になるかが書かれていないので、次に K-0010 を直す変更セットで ENGINE_REF
+    の版でも確かめた旨を書き添えてください。
+  - D-0013・D-0023・D-0042 で consistency が求めた statement の末尾を K-0001 への参照にすることと related
+    に K-0008 を足すことは head で入っており、過去の指摘との食い違いはもう残っていません。
+  - 'wired: false・verified: false で、ENGINE_REF を上げるのと .github/workflows/ への写しは建設者が入れると書いているのは
+    README と D-0021・D-0034 の決まりに合っており、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の項目は issue 1101 と committee:D-0042 を指し、D-0042 の enforcement の 2 つ目の案（test_watch.py
+    に照らせない件数で落とすテストを足し、今の Engine のときだけ todo にする）と中身が一致するので、一次記録に辿れます。
+  - 'test_events.py 側は Issue #1035 で入れ済みだと書き、前の項目の「test_watch.py に足すのは D-0042 の案のチケット」という書き残しとつながっているので、取り違えずに辿れます。'
+  - 確かめた Engine が ENGINE_REF（2490db6）ではなく手元の main の 476573e なので、CI で固定する版で同じく todo
+    になるかを issue 1101 か次の変更セットで書き添えると辿りやすくなります。
+  - dispatcher.py の写しで落ちる・通ることを確かめたテストの実行記録が指されていないので、issue 1101 か PR にその出力を残してください。
+  - 'wired: false・verified: false で本物のイベント列では確かめていないと書いているので担保を実態より強く書いておらず、statement・evidence
+    も変わっていないので confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのは Issue と PR の番号・議決の id・ツールのパス・rule 名・Engine のコミットだけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0042 の 2 つ目の enforcement の案（test_watch.py に照らせない外れで落ちる検査を足す）を K-0010
+    の enforcement.solutions に記録するもので、issue 1101 と committee:D-0042 に辿れるので担保の記録として採ってよいです。
+  - 外れの線は resumed_after_limit か agent_for_mechanical を照らせずに停止を開かなかった件数が 1 以上か、線どおりの
+    PR に停止を開いたかで、はっきり引けていて決定論の検査の形になっています。
+  - 'ただしひな形 ci/conflict-check.yml は .github/workflows/ にまだ写されておらず、今の Engine では todo
+    で飛ぶので、C-0005 と同じ積み直しが起きても今は何も落ちず、wired: false・verified: false のとおりです。'
+  - 確かめた Engine が手元の main の 476573e で、ひな形の ENGINE_REF（2490db6）とは別の版なので、配線するときは ENGINE_REF
+    の版で todo になることと、足した写しで落ちる・通ることを確かめ直して what にそろえて書いてください。
+  - C-0005 では 1 回の cost_usd が 1.95 から 10.36 に増えていて外したときの痛さが大きく、検査はもうできているので、残る配線を仕上げる費用に見合います。
+  - どの解決策も配線されておらず本物の記録で効き目を確かめていないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0042 の test の案の残り（test_watch.py の EngineFinishedTest）を K-0010 の enforcement.solutions
+    に 1 項目足すだけで、statement・scope・confidence・evidence を広げていないので、範囲が広すぎるとは判断しません。
+  - 検査の対象を CHANGELOG.md だけの衝突に絞っていて、D-0023・D-0030・D-0042 の反対の票が挙げた changelog.d/ の衝突の扱いという未解決の反例に踏み込んでいないのは妥当です。
+  - 反例として、確かめた Engine が手元の main の 476573e で、CI のひな形が固定する ENGINE_REF（2490db6）と違うので、CI
+    では別の版で todo になるかどうかを確かめておらず、ENGINE_REF を上げるときに両方の版で結果をそろえて確かめてください。
+  - watch.py の検査で over_limit は job.finished の欄に頼らないのでこの検査の外にあり、照らせない外れを見逃さないことだけを担保していると読む側が取り違えないよう、次に直すときに一言添えるとよいです。
+  - 'wired: false・verified: false で、job.finished への欄の追加と .github/workflows/ への写しが未着手と書いてあり、担保が効いているように言い過ぎていません。'
+  - 配線も本物のイベント列での確認もないので、confidence は hypothesis のままにし、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/conflict-check/ci/conflict-check.yml を .github/workflows/conflict-check.yml
+    に写して必須のチェックにし、test_events.py と test_watch.py の EngineFinishedTest を CI=true と
+    ENGINE_DIR を渡して走らせる。Engine の job.finished に agent_resumed と agent_tier を足して ENGINE_REF
+    を上げたら todo が外れて本当に照らすことを確かめ、K-0010 の issue 1101 の test の項目を wired: true にして wired_by
+    に workflow のファイル・job・test_watch.py の道を書き、check.py にその job が test_watch.py を呼んでいるかを照らさせる。'
