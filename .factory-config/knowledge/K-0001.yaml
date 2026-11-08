@@ -23,14 +23,17 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0007
+  - pr: 290
+  - event: "case.analyzed:370939"
 status: active
-verified_at: 2026-11-05
-review_by: 2026-12-05
+verified_at: 2026-11-08
+review_by: 2026-12-08
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
-related: [K-0003, K-0004, K-0009, K-0010]
+related: [K-0003, K-0004, K-0009, K-0010, K-0014]
 enforcement:
   level: deterministic
   solutions:

@@ -1,0 +1,24 @@
+id: K-0014
+theme: 4
+kind: causal
+statement: >-
+  衝突を解く続きのジョブを積むときに、衝突したファイルを記録しない（pr.conflicted・continue.enqueued・handoff に載せない）と、
+  指示役（supervisor）も解く役も毎回を新しい衝突として扱い、同じファイルの衝突が繰り返している型が役割の間でも集計でも見えず、
+  手を打つのが遅れる（C-0007 では、CHANGELOG.md だけの衝突の束が窓の費用の約 74% に育つまで型として見えなかった）。
+scope:
+  work: [dev.build]
+  roles: [supervisor, implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0007
+  - pr: 290
+  - event: "case.analyzed:370939"
+status: draft
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0010, K-0001]
+invalidate_when:
+  - "pr.conflicted か continue.enqueued(reason=conflict) に、衝突したファイルがその場で（backfill ではなく）載るようになった"
+  - "衝突したファイルがその場で記録されるようになったあとも、同じファイルの衝突の束が窓の費用の大半に育つまで手が打たれなかった（原因は記録の欠けではなかった）"

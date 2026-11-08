@@ -1,0 +1,25 @@
+id: K-0013
+theme: 6
+kind: causal
+statement: >-
+  並行で開いている多くの PR が同じ共有ファイル（CHANGELOG.md など）を変えるとき、pr.conflicted を見るたびに、その PR のマージの順番を待たずに
+  衝突を解く続きのジョブを積むと、ほかの PR が 1 つマージされるたびに同じ PR が衝突し直し、衝突の解消が PR ごとに何度も繰り返される
+  （C-0007 では 1 チケット平均 6.6 回、1 つの PR で 26 分に 3 回）。
+scope:
+  work: [dev.build]
+  roles: [supervisor, implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0007
+  - pr: 290
+  - pr: 295
+  - event: "case.analyzed:370939"
+status: draft
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0002, K-0010, K-0008]
+invalidate_when:
+  - "supervisor が pr.conflicted を受けても、その PR がマージ待ちの先頭に来るまで衝突の解消を保留するようになった"
+  - "マージの順番を待って解くようにしたあとも、1 つの PR の衝突の解消の回数が減らなかった（繰り返しの原因は時機ではなかった）"
