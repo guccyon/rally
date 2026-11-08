@@ -15,6 +15,16 @@
       "rubric_id": "PR-002",
       "field": "check",
       "headings": { "pattern": "テンプレートの見出し（(.+?)）", "separator": "・" }
+    },
+    {
+      "id": "implementer-report",
+      "root": "engine",
+      "path": "orchestrator/worker/entrypoint.sh",
+      "headings": {
+        "pattern": "最後の出力を次の見出しだけで構成する[^\\n]*\\n((?:[ \\t]*「## [^\\n]*(?:\\n|$))+)",
+        "item": "「## (.+?)」",
+        "separator": " / "
+      }
     }
   ]
 }
