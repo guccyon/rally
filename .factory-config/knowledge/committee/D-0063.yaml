@@ -1,0 +1,67 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0063
+pr: https://github.com/guccyon/rally/pull/1167
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1094 の lint を 1 件足しただけなので、D-0004 からこれまでの議決とも specs/ の規範とも矛盾しません。
+  - '足した解決策は D-0041 の enforcement の 2 つめの案（knowledge: K-0004、solution_kind: lint、decided_by
+    の議決の実在と知見の id・種類の一致を照らして decision_mismatch で落とす）と中身が一致し、decided_by を committee:D-0041
+    にしたのも正しいです。'
+  - K-0004 の既存の解決策の decided_by（D-0004 から D-0039 まで）を照らすと、どれも指す議決の enforcement に K-0004
+    と同じ種類の案があり、新しい lint が「このリポジトリの知見が通る」とした記述と食い違いません。
+  - D-0039 の lint の案（issue 1018 の wired_by に schedule のジョブを求める）とは照らす対象が違うので重複ではなく、D-0041
+    の test の案（legacy_basis_not_found の skip）は未着手のまま残っていることを次の変更セットで忘れないでください。
+  - 'README は check.py の照らし方を D-0021・D-0034 の分まで書いているので、decision_mismatch の決まり（議決
+    D-0041、Issue #1094）も次に README を直すときに書き足して揃えることを勧めます。'
+  - 'wired: false・verified: false で .github/workflows/ から走っていないと明記しているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した lint の解決策は committee:D-0041 を指しており、D-0041.yaml の enforcement の 2 つめの案（knowledge:
+    K-0004、solution_kind: lint、check.py で decided_by の議決と知見の id・種類を照らし decision_mismatch
+    で落とす）と中身がそのまま対応しているので、一次記録に辿れます。'
+  - K-0004 の既存の解決策の decided_by（D-0004・D-0009・D-0010・D-0038・D-0039）はどれも、その議決の enforcement
+    に K-0004 と同じ種類の案があり、what の「このリポジトリの知見が通る」という主張と食い違う点は見つかりませんでした。
+  - test_check.py の結果は手元の確認だけで記録の置き場がないので、issue 1094 に落ちる場合と通る場合のテストの出力を残してください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、wired:
+    false・verified: false と自分で書いているので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイルの道・関数名・ルール名・issue の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1094 の lint を 1 件足しただけで、中身は D-0041 の enforcement の lint の案（decided_by
+    が指す議決に同じ knowledge と solution_kind の案があるかを照らし decision_mismatch で落とす）とそのまま一致します。
+  - Issue と議決の番号のずれが 4 回続いた手作業の照合を check.py の check_decision に移したのは、繰り返しが多く線も引きやすい箇所を決定論にする向きとして正しいです。
+  - ただし同じ議決に同じ知見で同じ種類の案が 2 件以上ある場合（D-0028 や D-0041 自身など）には、どちらの案を入れたかまでは区別できないので、この
+    lint の担保を議決と種類の対応より広く読まないでください。
+  - check.py は .github/workflows/ から走っておらず必須のチェックでもないので今は外れても何も止めませんが、配線は D-0028・D-0039・D-0040
+    の ci_check の案で既に求めているのでここでは重ねて enforce にしません。
+  - 'wired: false・verified: false と正しく書いており、CI での効き目の記録がないので confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に議決 D-0041 の 2 つめの案（decided_by が指す議決に同じ知見の
+    id と種類の案があるかを照らす lint）の記録を 1 件足しただけで、statement・scope・evidence・confidence を変えていないので、範囲は広すぎません。
+  - D-0041 の enforcement には K-0004 の lint の案があり、手元で D-0004・D-0009・D-0034・D-0038 の
+    enforcement を見ても K-0004 の既存の解決策の kind と食い違うものは見つからず、反例は今のところありません。
+  - '反例として、この lint は知見の id と種類だけを照らすので、Issue #1025 のように番号をずらしても、ずれた先の議決に同じ知見で同じ種類の案があれば通ってしまい、D-0034
+    のように同じ種類の案が 2 つある議決ではどちらの案かも区別できないので、担保の範囲を「decided_by が正しい議決を指す」ことより狭く「同じ種類の案がある議決を指す」ことと読んでください。'
+  - この lint は K-0004 の主張（adopt の件数で差し戻しを起こすこと）ではなく知見の置き場全体の記録の形を守るもので、K-0004 の担保として数えると
+    K-0004 の効き目を広く見せるので、次に置き場の検査をまとめるときは置き場の検査として別に記録するかを決めてください。
+  - 'wired: false・verified: false で .github/workflows/ からまだ走っていないと正しく書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement: []

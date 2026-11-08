@@ -1,4 +1,4 @@
-// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0001 の担保。議決 D-0032、Issue #1037）。
+// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0001 の担保。議決 D-0032、Issue #1037。複数の JSON を合わせるのは議決 D-0044、Issue #1106）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -55,6 +55,12 @@ test("ほかのワークフローのジョブが pr-body-engine-test を名乗�
     ["check_name_shared"]);
 });
 
+test("古い形と rulesets の両方を渡すと、どちらかで必須なら必須に数える（議決 D-0044、Issue #1106）", () => {
+  assert.deepEqual(checkProtection({ workflow: template, protections: [{ message: "Branch not protected", status: "404" }, rulesets([CHECK_NAME])] }).errors, []);
+  assert.deepEqual(checkProtection({ workflow: template, protections: [classic([CHECK_NAME]), []] }).errors, []);
+  assert.deepEqual(rules(checkProtection({ workflow: template, protections: [classic(["engine-test"]), rulesets(["backend"])] })), ["required_check_missing"]);
+});
+
 function repoWith(files) {
   const dir = mkdtempSync(join(tmpdir(), "pr-body-protection-"));
   mkdirSync(join(dir, ".github/workflows"), { recursive: true });
@@ -85,6 +91,8 @@ test("CLI: 通れば 0、外れれば 1（GitHub Actions では ::error）、読
   r = run(["--protection", ng, "--repo", dir], { GITHUB_ACTIONS: "true" });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^::error title=pr-body-check required_check_missing::/m);
+  r = run(["--protection", ng, "--protection", ok, "--repo", dir]);
+  assert.equal(r.status, 0, "--protection を 2 つ渡すと合わせて照らす");
   assert.equal(run(["--protection", ok, "--repo", repoWith({})]).status, 1);
   writeFileSync(ng, "{");
   for (const args of [["--protection", ng, "--repo", dir], ["--repo", dir], ["--protection", join(dir, "none.json"), "--repo", dir]]) {

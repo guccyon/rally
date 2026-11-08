@@ -3,6 +3,8 @@
 # ENGINE_DIR を渡すので、Engine のチェックアウトがないときや engine_harness.py が判定の関数を取り出せないときは飛ばさずに落ちる。
 # wiring-order は配線の順序の見張り（議決 D-0012、Issue #953）。.github/workflows/ に check.mjs --events を呼ぶ手順があるのに、
 # engine.test.mjs に todo が残っているか、engine.test.mjs を走らせる手順がないときに落ちる（Engine は要らない）。
+# wiring-order には engine.test.mjs の TAP がないので --engine-report-elsewhere を付け、代わりに order.mjs --engine-report を呼ぶ手順
+# （engine-test）が .github/workflows/ にあるかを見る（engine_report_missing。議決 D-0029、Issue #1026）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine.yml に写す。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、engine.test.mjs が通ることを確かめる）。
 # 写したら branch protection で engine-test と wiring-order のジョブ（が報告するチェック）を必須のチェックにする（議決 D-0014、Issue #960）。
@@ -47,7 +49,7 @@ jobs:
         with:
           node-version: 22
       - name: check.mjs の ci_check の配線の順序（K-0004）
-        run: node tools/sendback-check/order.mjs --summary "$GITHUB_STEP_SUMMARY"
+        run: node tools/sendback-check/order.mjs --engine-report-elsewhere --summary "$GITHUB_STEP_SUMMARY"
       - name: ENGINE_REF の見張りと写しのずれ（K-0004）
         working-directory: tools/sendback-check
         run: node --test --test-reporter=spec ci.test.mjs

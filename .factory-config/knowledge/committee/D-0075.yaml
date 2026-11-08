@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0075
+pr: https://github.com/guccyon/rally/pull/1210
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した解決策は議決 D-0052 の enforcement にある test の案（.factory-config/knowledge/README.md
+    の 2 つの一覧も check.py の数えた結果と順まで照らす）と中身が合い、decided_by: committee:D-0052 で議決に辿れます。'
+  - README の新しい一覧（K-0001・K-0002・K-0004・K-0005・K-0010・K-0012 と K-0006・K-0009）は、head
+    の各 K-*.yaml の解決策の数と wired・verified の項目の数を照らすと合っており、2026-11-07 の古い一覧の食い違いを解いています。
+  - D-0052 で整合・担保・反対の担当がそろって指摘した knowledge/README.md の一覧が照らされずに古くなる問題に答える変更で、既存の解決策（D-0035
+    の issue 1062 の test）とは照らす対象が違うので重複はありません。
+  - '新しい解決策は wired: false・verified: false のままで、README の決まり（D-0021・D-0034）の書き方とも、ひな形が
+    .github/workflows/ に写されていないという既存の記録とも矛盾しません。'
+  - D-0052 の反対の担当が指摘したとおり、supervisor の差し戻しの線である K-0004 に道具まわりの解決策が積み増されているので、次に道具の解決策を足すときは道具の知見を別に立てるか置き場を委員会で決めてください。
+  - K-0004 の statement・scope・evidence・confidence は変えておらず、どの解決策も本物の記録で効き目を確かめていないので
+    confidence は hypothesis のままが妥当で、差分に人を特定できる情報はありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した解決策（issue 1138、decided_by: committee:D-0052）は、議決 D-0052 の enforcement
+    にある test の案（knowledge/README.md の 2 つの id の一覧を check.py の数えた結果と順まで照らす）と中身が同じで、D-0052
+    の pr も #1134 と合うので、議決の記録に辿れます。'
+  - README の新しい一覧（K-0001・K-0002・K-0004・K-0005・K-0010・K-0012 と K-0006・K-0009）は、head
+    の各 K-*.yaml の enforcement.solutions にある wired・verified の有無と順まで合っています。
+  - '「起票時の番号は D-0049」という但し書きの先の D-0049 は PR #1127 の K-0013・K-0014 の議決で、この件とは関係がないので、取り違えないよう読み手は
+    D-0052 を正としてください。'
+  - 'テストが落ちることを手元で確かめたとだけ書き、cases/ の事例記録も .github/workflows/ からの実行もないとして wired: false・verified:
+    false のままにしているので、記録より強く言っていません。'
+  - K-0004 の statement・scope・evidence・confidence は変えておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分にあるのはツールのパス・Issue と PR の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0052 の test の案（knowledge/README.md の 2 つの id の一覧も check.py の数えた結果と順まで照らす）をそのまま入れたもので、担保の観点では採ってよいです。
+  - README の新しい一覧（K-0001・K-0002・K-0004・K-0005・K-0010・K-0012 と K-0006・K-0009）は、head
+    の各 K-*.yaml の解決策と wired・verified の数を照らすと合っています。
+  - 手で書いた一覧のずれは知見を直すたびに繰り返し起き、check.py から機械で出せて線がはっきりしているので、テストで照らすのは費用に見合う決定論の担保です。
+  - '足した解決策は wired: false・verified: false のままで、test_check.py が .github/workflows/
+    から走らないと書いているので、担保を実態より強く見せていません。'
+  - ただし D-0035・D-0052 の ci_check の案（ひな形を .github/workflows/ に写して必須チェックにする）が残っている限り、このテストが落ちても何も止まらないので、建設者の配線を引き続き求めます。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0052 の enforcement にある test の案を K-0004 の enforcement.solutions に 1
+    件足し、README の一覧を直しただけで、K-0004 の statement・scope・evidence・confidence は変えていないので、範囲は広すぎません。
+  - README の新しい一覧（すべて記入済みが K-0001・K-0002・K-0004・K-0005・K-0010・K-0012、未記入が残るのが K-0006・K-0009）は、head
+    の各 K-*.yaml の解決策と wired・verified の項目を照らすと合っていて、反例は見つかりません。
+  - 'wired: false・verified: false のままで、test_check.py が .github/workflows/ からまだ走らないと断っているので、記録より強く言っていません。'
+  - D-0052 の反対の票で指摘したとおり、supervisor の差し戻しの知見である K-0004 に知見の置き場の道具の解決策がまた積み増されているので、次に道具まわりの解決策を足すときは道具の知見を別に立てるか委員会で置き場を決めてください。
+  - '「Issue #1138 の起票時の番号は D-0049」の注記は、別の中身の議決 D-0049（K-0013・K-0014）と取り違えやすいので、次に直すときは
+    decided_by の D-0052 だけに寄せてもよいです。'
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して branch protection
+    の必須チェックに入れ、.factory-config/knowledge/README.md の一覧と K-*.yaml がずれた PR で test_check.py
+    が落ちる実行を cases/ に記録してから、issue 1062 と issue 1138 の解決策の wired・verified を true にする。

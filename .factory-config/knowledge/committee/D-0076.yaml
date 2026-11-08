@@ -1,0 +1,87 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0076
+pr: https://github.com/guccyon/rally/pull/1203
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0014 の enforcement に足した test の解決策は、議決 D-0049 の test の案（continue.enqueued(reason=conflict)
+    の時点で conflict.files がないか backfill だけのものを落とす）に沿っていて、decided_by も committee:D-0049
+    で合っています。
+  - '「その場で」を job.started より前に絞り source: worker_log も外れにしたのは、statement と invalidate_when
+    の 1 つ目の言い方に合わせた狭め方で、D-0049 の案と矛盾しません。'
+  - rule を check ではなく record_check から出して watch.py の停止に使わないと書いたので、K-0010 の線（over_limit
+    など）と担保が混ざらず、K-0010 の既存の解決策とも重複しません。
+  - 'statement・confidence・evidence は変えずに enforcement の追記だけなので、ほかの知見の扱いは「そのまま」でよく、wired:
+    false・verified: false の書き方も README の決まりどおりです。'
+  - D-0049 の consistency の票が求めた「conflict.files が今その場で出ているか」は、今の Engine（57069a8）は積むときに記録しないと書いて答えているので、前提との食い違いはありません。
+  - statement は pr.conflicted と handoff も挙げていますが検査は continue.enqueued だけを見ているので、D-0049
+    の schema の案を入れるときに pr.conflicted も照らすかを書き足すと範囲が揃います。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した enforcement.solutions の test は、decided_by: committee:D-0049 と issue 1135
+    で議決の 1 つ目の案（PR #1127）に辿れて、中身も議決の proposal とそろっています。'
+  - 'fixture の組み立て（PR #290 のジョブ 309 は backfill の conflict.files だけ、PR #295 のジョブ 318・325・338
+    は衝突解消のやり直し）は C-0007 の出来事の節にある番号と事実に辿れます。'
+  - C-0007 は「衝突解消ジョブの conflict.files は後から backfill で足された」とだけ書いていて、ジョブ 318・325・338
+    に backfill もなかったかは書いていないので、fixture の「記録なし」は事例記録より強い言い方ですが、どちらでも落ちる側に入るので検査の結果は変わりません。
+  - '今の Engine の dispatcher が source: worker_log でジョブの終わりに記録するという説明は、cases/ の事例記録ではなく
+    Engine（57069a8）のコードを読んだ話なので、次に直すときは道かコミットを添えると辿りやすくなります。'
+  - '本物のイベント列で確かめておらず wired: false・verified: false と正直に書いていて、statement と confidence:
+    hypothesis は変えていないので、確かさの段はこのままが妥当です。'
+  - 差分に出てくるのは PR・Issue・ジョブの番号、コミット、ファイル名だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0049 の enforcement の 1 つ目の案（test）を K-0014 の enforcement.solutions
+    に記録するもので、rule missing_conflict_files の線（continue.enqueued(reason=conflict) の時点で、同じ
+    job_id の conflict.files が job.started より前にあるか）は機械で白黒がつけられ、決定論の担保として筋が通っています。
+  - 「その場で」を backfill と worker_log を外れにして積んだ時点に絞ったので、K-0014 の statement と invalidate_when
+    の 1 つ目と線がそろっていて、事後の記録で通ってしまう抜け道をふさいでいます。
+  - 今の Engine では本物の記録がすべて落ちることを書き、K-0010 の停止の線（check）ではなく record_check に出して watch.py
+    の停止に使わないとしているので、配線したときに工場を止めてしまう痛さを避けています。
+  - 'wired: false・verified: false と、本物のイベント列で確かめていないことを正直に書いているのは README の決まり（D-0021・D-0034）どおりで、INDEX.md
+    の担保の列が deterministic と出るのは README が認めた一時的な表示です。'
+  - D-0049 の 2 つ目の案（pr.conflicted・continue.enqueued(reason=conflict)・handoff の conflict.files
+    を schema で必須にする）はまだ solutions に項目がなく、handoff はこの test で見ていないので、未配線の項目として別に記録してください。
+  - 確かさは hypothesis のままが妥当で、担保の効き目は Engine がその場で記録するようになったあとの本物のイベント列で確かめてから verified
+    を上げてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は議決 D-0049 の test の案を K-0014 の enforcement.solutions に 1 項目足すだけで、statement・scope・evidence・confidence
+    は変えておらず、wired: false・verified: false と what の「効き目はまだ確かめていない」が合っているので、範囲が広すぎるとは判断しません。'
+  - '反例として、what に「今の Engine の dispatcher がジョブの終わりに source: worker_log で conflict.files
+    を記録する」とあり、これが正しければ衝突したファイルはジョブの終わりには集計に載るので、statement の「集計で見えない」は今の Engine では弱まり、C-0007
+    の窓にこの記録がなかったかを次の再確認で確かめ、statement の但し書きに書き添えてください。'
+  - rule missing_conflict_files は worker_log の記録しかない回も落とすので、statement が示した害（集計で見えない）より厳しい線になっており、今の記録はすべて落ちるため、配線する前に「積んだ時点」に絞る理由を
+    invalidate_when の 1 つ目だけでなく害の側から説明するか、worker_log も載らない回（終わらずに止まった回）に絞るかを決めてください。
+  - 'what は fixture を「事例記録の事実だけで組んだ」とし PR #295 のジョブ 318・325・338 を記録なしとしていますが、C-0007
+    は衝突解消ジョブの conflict.files が backfill で足されたとだけ書いていて #295 に記録がないとは書いていないので、fixture
+    の前提を C-0007 に合わせて見直してください。'
+  - D-0049 の案は pr.conflicted と handoff も対象にしていましたが、この test は continue.enqueued(reason=conflict)
+    だけを照らし handoff は見ていないと書いているので、残りを schema の案か別の項目で回す先を次の変更セットで明記してください。
+  - 本物のイベント列での確認も配線もないので、confidence は hypothesis のままにし、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: schema
+  proposal: 'D-0049 の schema の案を K-0014 の enforcement.solutions に別の項目（decided_by:
+    committee:D-0049、wired: false、verified: false）として記録し、Engine の制御プレーンのイベントの定義で pr.conflicted・continue.enqueued(reason=conflict)・handoff
+    の conflict.files を必須にして、空や null のイベントを出せないようにする。handoff は今の test で見ていないので、ここで担保する。'
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'Engine が積む時点で conflict.files を出すようになったら、tools/conflict-check/events.py
+    の record_check（missing_conflict_files）を本物のイベント列に対して走らせる CI のジョブを .github/workflows/
+    に置き、wired_by にそのジョブを書いて wired: true にする。そのあと C-0007 と同じ形の衝突で落ちないことを事例記録で確かめて verified:
+    true にする。'

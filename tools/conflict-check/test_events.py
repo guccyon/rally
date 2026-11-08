@@ -3,17 +3,25 @@
 EngineFinishedTest のほかは Engine は要らない。EngineFinishedTest は Engine の dispatcher.py の job.finished の欄を engine_harness.py で読み、
 agent_resumed と解き方の tier（agent_tier）を出す版の Engine で照らせない件数が 1 以上なら落とす（議決 D-0030・Issue #1035）。
 Engine のチェックアウトの渡し方と飛ばし方は test_engine.py と同じ（ENGINE_DIR を渡したときと CI=true では飛ばさずに落とす）。
-Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED）のときだけ「todo:」の理由で飛ばす（K-0004 の engine.test.mjs の todo と同じ形）
+Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED）のときだけ「todo:」の理由で飛ばす（K-0004 の engine.test.mjs の todo と同じ形）。
+todo は照らせない件数を理由に添えて test_engine.py の todo で数え、終わりに件数を出す。知見 K-0010 の review_by を過ぎても
+今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
+
+MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る
 """
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import date
 from pathlib import Path
+
+import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -23,11 +31,15 @@ import policy  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
+C0007 = HERE / "fixtures" / "c0007-pr290-pr295-events.json"
+K0010 = HERE.parents[1] / ".factory-config" / "knowledge" / "K-0010.yaml"
 URL = "https://github.com/guccyon/rally/pull/1"
 
 
 def stream(attempts: list[dict], url: str = URL) -> list[dict]:
-    """attempts の各項目（resumed・tier・files・cost）から、Engine の形のイベント列を作る"""
+    """attempts の各項目（resumed・tier・files・cost）から、Engine の形のイベント列を作る。files は積んだ直後（job.started の前）に
+    conflict.files として載せる（source は既定で supervisor）。late があれば今の Engine と同じく job.finished のあとに載せ（source は既定で
+    worker_log）、stop があれば job.finished を出さない（終わらずに止まった回）"""
     out, i = [], 0
 
     def add(name, payload, job_id=None):
@@ -41,6 +53,8 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
         if a.get("skip"):
             continue   # 上限を超えたので積まなかった（停止を開いた）
         add("continue.enqueued", {"pr_url": url, "head_sha": sha, "reason": "conflict", "attempt": n}, job)
+        if "files" in a and not a.get("late"):
+            add("conflict.files", {"files": a["files"], "source": a.get("source", "supervisor")}, job)
         add("job.started", {"model_tier": a.get("tier", "tier-large")}, job)
         fin = {"state": "succeeded"}
         if "resumed" in a:
@@ -49,15 +63,21 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
             fin["cost_usd"] = a["cost"]
         if "agent_tier" in a:
             fin["agent_tier"] = a["agent_tier"]
-        add("job.finished", fin, job)
-        if "files" in a:
-            add("conflict.files", {"files": a["files"]}, job)
+        if not a.get("stop"):
+            add("job.finished", fin, job)
+        if "files" in a and a.get("late"):
+            add("conflict.files", {"files": a["files"], "source": a.get("source", "worker_log")}, job)
     return out
 
 
 def rules(evs: list[dict]) -> Counter:
     c = policy.load()
     return Counter(e["rule"] for r in events.records_from_events(evs).values() for e in events.check(c, r))
+
+
+def recorded(evs: list[dict]) -> Counter:
+    """record_check（K-0014）の rule の件数"""
+    return Counter(e["rule"] for r in events.records_from_events(evs).values() for e in events.record_check(r))
 
 
 def run(path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -71,6 +91,8 @@ class C0005Test(unittest.TestCase):
         r = events.records_from_events(evs)["https://github.com/guccyon/rally/pull/659"]
         self.assertEqual(len(r["attempts"]), 20)   # ci_failed の続きは数えない
         self.assertEqual(events.unknown(r), {"agent_resumed": 0, "tier": 0, "files": 1})   # 13 回目は衝突したファイルの記録がない
+        # K-0014 の rule では 20 回すべて落ちる（13 回目は記録がなく、ほかは今の Engine と同じく job.finished のあとに記録されている）
+        self.assertEqual(recorded(evs), Counter({"missing_conflict_files": 20}))
 
     def test_C0005のイベント列はコマンドでも終了コード1(self):
         p = run(C0005)
@@ -80,6 +102,7 @@ class C0005Test(unittest.TestCase):
         self.assertIn("attempt=1 job=9001 agent_for_mechanical", p.stdout)
         self.assertNotIn("attempt=1 job=9001 resumed_after_limit", p.stdout)   # 1 回目の引き継ぎは線の中
         self.assertNotIn("attempt=3 job=9003 over_limit", p.stdout)
+        self.assertIn("attempt=13 job=9013 missing_conflict_files", p.stdout)
         d = json.loads(run(C0005, "--json").stdout)
         self.assertFalse(d["ok"])
         self.assertEqual(d["prs"][0]["attempts"], 20)
@@ -139,6 +162,72 @@ class LineTest(unittest.TestCase):
         self.assertEqual([(a["attempt"], a["agent_resumed"]) for a in r["attempts"]], [(1, True), (2, False)])
 
 
+class MissingConflictFilesTest(unittest.TestCase):
+    """知見 K-0014: 衝突を解く続きのジョブに、continue.enqueued の時点で（ジョブが動き出す前に。backfill やワーカーのログからの事後の記録ではなく）
+    衝突したファイルが記録されているか（議決 D-0049）"""
+
+    def test_C0007のイベント列はmissing_conflict_filesで落ちる(self):
+        evs = events.parse_events(C0007.read_text(encoding="utf-8"))
+        prs = events.records_from_events(evs)
+        self.assertEqual({url: [e["job_id"] for e in events.record_check(r)] for url, r in prs.items()},
+                         {"https://github.com/guccyon/rally/pull/290": [309],               # CHANGELOG.md は 2026-11-03 の backfill でだけ分かる
+                          "https://github.com/guccyon/rally/pull/295": [318, 325, 338]})    # samples の detail はすべて null
+        self.assertEqual(prs["https://github.com/guccyon/rally/pull/290"]["attempts"][0]["files"], ["CHANGELOG.md"])   # backfill の中身は K-0010 の線には使う
+        self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 1}))   # K-0010 の線（check）には入れない
+
+    def test_C0007のイベント列はコマンドでも終了コード1(self):
+        p = run(C0007)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        for job in (309, 318, 325, 338):
+            self.assertIn(f"job={job} missing_conflict_files", p.stdout)
+        d = json.loads(run(C0007, "--json").stdout)
+        self.assertFalse(d["ok"])
+        self.assertEqual(Counter(e["rule"] for r in d["prs"] for e in r["errors"]),
+                         Counter({"missing_conflict_files": 4, "agent_for_mechanical": 1}))
+
+    def test_conflict_filesをその場で載せた列は通る(self):
+        evs = events.parse_events(C0007.read_text(encoding="utf-8"))
+        jobs = [e["job_id"] for e in evs if e["name"] == "continue.enqueued"]
+        evs = [e for e in evs if e["name"] != "conflict.files"]
+        for job in jobs:   # 積んだ continue.enqueued のすぐ後ろに載せる（id は並びどおりに振り直す）
+            k = next(i for i, e in enumerate(evs) if e["name"] == "continue.enqueued" and e["job_id"] == job)
+            evs.insert(k + 1, {"name": "conflict.files", "job_id": job, "payload": {"files": ["CHANGELOG.md"], "source": "supervisor"}})
+        evs = [{**e, "id": i} for i, e in enumerate(evs, 1)]
+        self.assertEqual(recorded(evs), Counter())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.json"
+            path.write_text(json.dumps(evs), encoding="utf-8")
+            p = run(path, "--pr", "https://github.com/guccyon/rally/pull/295")   # PR #290 は CHANGELOG.md だけを tier-large で解いた（K-0010 の agent_for_mechanical）
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_衝突がなかった回も空の列をその場で載せていれば通る(self):
+        self.assertEqual(recorded(stream([{"files": []}, {"files": ["CHANGELOG.md"], "cost": 0}])), Counter())
+
+    def test_ジョブが動き出したあとのworker_logの記録だけなら落ちる(self):
+        # 今の Engine（main の 57069a8）の形: dispatcher がジョブの終わりにワーカーのログから記録する
+        self.assertEqual(recorded(stream([{"files": ["CHANGELOG.md"], "late": True}])), Counter({"missing_conflict_files": 1}))
+        self.assertEqual(recorded(stream([{"files": ["CHANGELOG.md"], "late": True, "stop": True}])), Counter({"missing_conflict_files": 1}))
+
+    def test_ないかbackfillだけなら落ちsourceのない記録はその場のものとみなす(self):
+        self.assertEqual(recorded(stream([{}, {"files": ["CHANGELOG.md"], "source": "backfill"}, {"files": ["a.ts"]}])),
+                         Counter({"missing_conflict_files": 2}))
+        evs = stream([{"files": ["a.ts"]}])
+        del next(e for e in evs if e["name"] == "conflict.files")["payload"]["source"]
+        self.assertEqual(recorded(evs), Counter())
+
+    def test_終わらずに止まった回も照らす(self):
+        # 終わるのを待たない。積んだ時点で載っていなければ落とし、載っていれば通す
+        self.assertEqual(recorded(stream([{"files": ["a.ts"]}, {"stop": True}])), Counter({"missing_conflict_files": 1}))
+        self.assertEqual(recorded(stream([{"files": ["a.ts"], "stop": True}])), Counter())
+        evs = [e for e in stream([{}]) if e["name"] not in ("job.started", "job.finished")]   # 積んだだけで動き出していない回
+        self.assertEqual(recorded(evs), Counter({"missing_conflict_files": 1}))
+
+    def test_ci_failedの続きは数えない(self):
+        evs = [{"name": "continue.enqueued", "job_id": 900, "payload": {"pr_url": URL, "head_sha": "x", "reason": "ci_failed", "attempt": 1}},
+               {"name": "job.finished", "job_id": 900, "payload": {"state": "succeeded"}}]
+        self.assertEqual(recorded(evs), Counter())
+
+
 # 「記録がない項目は照らさずに件数を出す」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
 # それらを出す版の Engine（ENGINE_REF で固定）では、照らせない件数が 1 以上なら落とす（議決 D-0030・Issue #1035）
 FINISHED_FIELDS = ("agent_resumed", "agent_tier")
@@ -168,6 +257,34 @@ def engine_shaped(evs: list[dict], fields: list[str]) -> list[dict]:
 FULL = [{"resumed": True, "agent_tier": "tier-large", "files": ["CHANGELOG.md", "apps/backend/src/x.rs"], "cost": 1.95},
         {"resumed": False, "agent_tier": "none", "files": ["CHANGELOG.md", "changelog.d/700.md"], "cost": 0.01},
         {"resumed": False, "agent_tier": "tier-large", "files": ["apps/admin-web/src/a.ts"], "cost": 2.4}]
+
+
+def review_by(path: Path = K0010) -> date:
+    """知見 K-0010 の review_by（再確認の期限）。読めなければ落とす（期限の検査を黙って外さない）"""
+    v = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("review_by")
+    return v if isinstance(v, date) else date.fromisoformat(str(v))
+
+
+def today() -> date:
+    """今日の日付。CONFLICT_CHECK_TODAY（YYYY-MM-DD）で差し替えられる（core-gates/knowledge_check.py の --today と同じ使い方）"""
+    v = os.environ.get("CONFLICT_CHECK_TODAY")
+    return date.fromisoformat(v) if v else date.today()
+
+
+def overdue(now: date, deadline: date) -> bool:
+    """review_by を過ぎたか。knowledge_check.py と同じく、期限の日の翌日から過ぎたとみなす"""
+    return deadline < now
+
+
+def todo_until_review_by(case: unittest.TestCase, detail: str):
+    """Engine が今の形のときの扱い。K-0010 の review_by を過ぎていれば落とし、それまでは detail（照らせない件数など）を添えて
+    test_engine.todo で飛ばす（議決 D-0043・Issue #1104）。test_events.py と test_watch.py の EngineFinishedTest が使う"""
+    deadline = review_by()
+    case.assertFalse(overdue(today(), deadline),
+                     f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{detail}）。"
+                     "Engine を直して ENGINE_REF を上げる（K-0010 の review_by を延ばすだけでは tools/knowledge-enforcement-check/check.py が落とす。"
+                     "議決 D-0043・D-0067）")
+    test_engine.todo(case, f"今の Engine は {LEGACY_TODO}（{detail}。K-0010 の review_by {deadline} を過ぎたら落とす）")
 
 
 def finished_unknown(fields: list[str]) -> dict:
@@ -201,6 +318,28 @@ class FinishedFieldsTest(unittest.TestCase):
         self.assertEqual(finished_unknown(self.NOW + ["agent_resumed"]), {"agent_resumed": 0, "tier": 3})
         self.assertEqual(finished_unknown(self.NOW + ["agent_tier"]), {"agent_resumed": 3, "tier": 0})
 
+    def test_todoはK0010のreview_byの日までで翌日からは落とす側になる(self):
+        deadline = review_by()   # 2026-12-05（議決 D-0043 の案の期限）。知見を再確認して review_by を動かせばそれに付いていく
+        self.assertFalse(overdue(date.fromordinal(deadline.toordinal() - 1), deadline))
+        self.assertFalse(overdue(deadline, deadline))
+        self.assertTrue(overdue(date.fromordinal(deadline.toordinal() + 1), deadline))
+
+    def test_review_byを読めなければ落ちる(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for text in ("id: K-0010\n", "review_by: いつか\n"):
+                path = Path(tmp) / "K.yaml"
+                path.write_text(text, encoding="utf-8")
+                with self.assertRaises(ValueError, msg=text):
+                    review_by(path)
+
+    def test_todoの件数と中身を出しGitHub_Actionsでは注記にする(self):
+        todos = ["test_events.EngineFinishedTest.x: 今の Engine は …"]
+        out = test_engine.todo_summary(todos)
+        self.assertIn("todo で飛ばしたテスト 1 件", out[0])
+        self.assertEqual(out[1:], [f"  - {todos[0]}"])
+        self.assertEqual(test_engine.todo_summary(todos, github=True)[-1], f"::warning title=conflict-check todo::{todos[0]}")
+        self.assertIn("0 件", test_engine.todo_summary([])[0])
+
 
 @unittest.skipIf(test_engine.SKIP, test_engine.SKIP)
 class EngineFinishedTest(unittest.TestCase):
@@ -208,7 +347,8 @@ class EngineFinishedTest(unittest.TestCase):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
         if legacy_finished(fields):
-            self.skipTest(f"todo: 今の Engine は {LEGACY_TODO}")
+            u = finished_unknown(fields)
+            todo_until_review_by(self, f"照らせない件数 agent_resumed={u['agent_resumed']}・tier={u['tier']}")
         self.assertEqual(finished_unknown(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列に照らせない回がある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")
@@ -234,7 +374,7 @@ class InputTest(unittest.TestCase):
     def test_通る記録は終了コード0(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
-            path.write_text("\n".join(json.dumps(e) for e in stream([{"resumed": True}])), encoding="utf-8")
+            path.write_text("\n".join(json.dumps(e) for e in stream([{"resumed": True, "files": ["a.ts"]}])), encoding="utf-8")
             p = run(path)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertIn("外れ 0 件", p.stdout)
