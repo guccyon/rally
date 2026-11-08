@@ -39,3 +39,17 @@ enforcement:
       issue: 906
       at: 2026-11-05
       decided_by: committee:D-0006
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        PR の差分で変更された K-*.yaml の enforcement.solutions の各項目に wired と verified の真偽が書かれていなければ落とす決定論の検査
+        （tools/knowledge-enforcement-check/check.py の solution_fields_missing。--base の版と HEAD の分かれ目から変わった知見だけを見る）。
+        未記入の解決策を残したまま知見を直す変更セットをマージ前に止める（この知見の Issue #906 の解決策に書き忘れたことから）。
+        ci/knowledge-enforcement.yml の enforcement のジョブが --base を渡すが、ひな形を .github/workflows/ に写して必須のチェックにするのは建設者の権限なのでまだ入っておらず、
+        効き目はまだ確かめていない
+      issue: 1193
+      at: 2026-11-08
+      decided_by: committee:D-0071
+      wired: false
+      verified: false

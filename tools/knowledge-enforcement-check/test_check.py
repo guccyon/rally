@@ -1360,6 +1360,85 @@ class ReviewByHoldTest(unittest.TestCase):
         self.assertEqual(check.finished_fields_required(REPO), ("agent_resumed", "agent_tier"))
 
 
+class SolutionFieldsTest(unittest.TestCase):
+    """PR の差分で変わった K-*.yaml の解決策に wired と verified の両方がなければ solution_fields_missing で落とす（議決 D-0071、Issue #1193）。
+    base の版は一時の git リポジトリに積んで作る"""
+
+    OPEN = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n    - {kind: ci_check, what: x, issue: 906}\n"
+    DONE = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n    - {kind: ci_check, what: x, issue: 906, wired: false, verified: false}\n"
+
+    def repo(self, before: str | None, after: str | None) -> Path:
+        """base の版の K-0006.yaml が before（None ならなし）、作業ツリーで after（None なら base のまま）"""
+        d = ReviewByHoldTest.tmp(self)
+        ReviewByHoldTest.git(d, "init", "-q")
+        if before is not None:
+            MainTest.write(None, d, "K-0006.yaml", before)
+        (d / "README.md").write_text("x\n", encoding="utf-8")
+        ReviewByHoldTest.git(d, "add", "-A")
+        ReviewByHoldTest.git(d, "commit", "-q", "-m", "base")
+        if after is not None:
+            MainTest.write(None, d, "K-0006.yaml", after)
+        return d
+
+    def errors(self, d: Path, base: str | None = "HEAD") -> list[str]:
+        return [e for x in check.load(d) for e in check.check_solution_fields(x, d, base)]
+
+    def test_未記入のまま直すと落とす(self):
+        e = self.errors(self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y")))
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, e[0])
+        self.assertIn("enforcement.solutions[0]（ci_check、issue 906）に wired・verified がない", e[0])
+
+    def test_片方だけの記入も落とす(self):
+        e = self.errors(self.repo(self.OPEN, self.OPEN.replace("issue: 906}", "issue: 906, wired: false}")))
+        self.assertEqual(len(e), 1)
+        self.assertIn("に verified がない", e[0])
+
+    def test_新しく足した知見の未記入も落とす(self):
+        e = self.errors(self.repo(None, self.OPEN))
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, e[0])
+
+    def test_未記入の解決策ごとに_1_行(self):
+        two = self.OPEN + "    - {kind: test, what: z, issue: 1193}\n"
+        e = self.errors(self.repo(self.OPEN, two))
+        self.assertEqual([("solutions[0]" in x, "solutions[1]" in x) for x in e], [(True, False), (False, True)])
+
+    def test_書き足して直せば通る(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.DONE)), [])
+
+    def test_変えていない知見の未記入は見ない(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, None)), [])
+
+    def test_base_を渡さなければ見ない(self):
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y")), None), [])
+
+    def test_分かれ目より後に_base_で変わった知見は差分に数えない(self):
+        # PR の分岐のあとで base 側だけが知見を直しても、この PR の差分ではない（merge-base と比べる）
+        d = self.repo(self.OPEN, None)
+        ReviewByHoldTest.git(d, "checkout", "-q", "-b", "base")
+        MainTest.write(None, d, "K-0006.yaml", self.OPEN.replace("what: x", "what: base"))
+        ReviewByHoldTest.git(d, "commit", "-q", "-am", "base が進む")
+        ReviewByHoldTest.git(d, "checkout", "-q", "-")
+        self.assertEqual(self.errors(d, "base"), [])
+        MainTest.write(None, d, "K-0006.yaml", self.OPEN.replace("what: x", "what: pr"))
+        self.assertIn(check.SOLUTION_FIELDS_MISSING, self.errors(d, "base")[0])
+
+    def test_分かれ目を求められなければ照らせないとして落とす(self):
+        d = self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y"))
+        e = self.errors(d, "no-such-ref")
+        self.assertEqual(len(e), 1)
+        self.assertIn(check.SOLUTION_FIELDS_UNVERIFIABLE, e[0])
+        # 未記入の解決策がなければ、base を読めなくても見ない
+        MainTest.write(None, d, "K-0006.yaml", self.DONE)
+        self.assertEqual(self.errors(d, "no-such-ref"), [])
+
+    def test_main_が_base_を渡すと照らして_1_を返す(self):
+        d = self.repo(self.OPEN, self.OPEN.replace("what: x", "what: y"))
+        self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD"]), 1)
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 

@@ -72,6 +72,11 @@ ENGINE_DIR の全履歴のチェックアウトから版の dispatcher.py を取
 落とす行には種類の名前を添える（review_by_hold、照らせないときは review_by_unverifiable（<HoldUncheckable の kind>））。
 --base を渡さないとき、前の版に K-0010 がないとき、前の版の review_by が日付でないときは見ない。
 
+直した知見の記入の必須（議決 D-0071、Issue #1193）: --base を渡すと、PR の差分で変わった K-*.yaml（--base と HEAD の分かれ目（merge-base）の版から
+作業ツリーで中身が変わったか、その版になかったもの）の enforcement.solutions の各項目に wired と verified の両方が書かれていなければ、
+solution_fields_missing で落とす（未記入の解決策を残したまま知見を直す変更セットを止める）。変えていない知見の未記入は見ない。
+未記入の解決策のある知見で分かれ目を求められない・その版を読めないときは solution_fields_unverifiable で落とす。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -160,6 +165,8 @@ ENGINE_DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
 # 出力の行に添える種類の名前。review_by_hold = Engine が今の形のまま延ばした、review_by_unverifiable = 照らせない（括弧に HoldUncheckable の kind）
 REVIEW_BY_HOLD_ERROR = "review_by_hold"
 REVIEW_BY_UNVERIFIABLE = "review_by_unverifiable"
+SOLUTION_FIELDS_MISSING = "solution_fields_missing"
+SOLUTION_FIELDS_UNVERIFIABLE = "solution_fields_unverifiable"
 ENGINE_REF_RE = re.compile(r"^\s*ENGINE_REF:\s*['\"]?([^'\"\s#]*)['\"]?\s*(?:#.*)?$", re.M)
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
@@ -758,6 +765,41 @@ def check_review_by_hold(k: dict, repo: Path, base: str | None, engine: Path | N
     return []
 
 
+def merge_base(repo: Path, base: str) -> str | None:
+    """base と HEAD の分かれ目（PR の差分の起点）。求められなければ None"""
+    out = git(repo, "merge-base", base, "HEAD")
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+
+
+def check_solution_fields(k: dict, repo: Path, base: str | None, cache: dict | None = None) -> list[str]:
+    """PR の差分で変わった知見の enforcement.solutions の各項目に wired と verified の両方が書かれていることを求める（議決 D-0071、Issue #1193）。
+    base を渡さないとき・未記入の解決策がないとき・分かれ目の版から変わっていないときは見ない。
+    落とす行には種類の名前を添える（SOLUTION_FIELDS_MISSING、照らせないときは SOLUTION_FIELDS_UNVERIFIABLE）"""
+    if not base:
+        return []
+    f = k.get("_file", str(k.get("id")))
+    missing = [(i, s, [flag for flag in FLAGS if flag not in s]) for i, s in enumerate(solutions(k)) if isinstance(s, dict)]
+    missing = [m for m in missing if m[2]]
+    if not missing:
+        return []
+    cache = {} if cache is None else cache
+    if base not in cache:
+        cache[base] = merge_base(repo, base)
+    mb, rel = cache[base], f"{ROOT}/{f}"
+    if mb is None:
+        return [f"{f}: {SOLUTION_FIELDS_UNVERIFIABLE}: 未記入の解決策があるが、前の版 {base} と HEAD の分かれ目を求められず、"
+                "この変更セットで直したかを照らせない（fetch-depth: 0 で取る。照らせないときは落とす。議決 D-0071）"]
+    if git(repo, "cat-file", "-e", f"{mb}:{rel}").returncode == 0:
+        prev = git(repo, "show", f"{mb}:{rel}")
+        if prev.returncode != 0:
+            return [f"{f}: {SOLUTION_FIELDS_UNVERIFIABLE}: 分かれ目の版 {mb} の {rel} を読めない（{prev.stderr.strip()}。議決 D-0071）"]
+        if prev.stdout == (repo / rel).read_text(encoding="utf-8"):
+            return []
+    return [f"{f}: {SOLUTION_FIELDS_MISSING}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）に {'・'.join(flags)} がない。"
+            "この変更セットで知見を直すので、実際の配線と確認の状態を真偽で書く（配線していない・確かめていないなら false。議決 D-0071）"
+            for i, s, flags in missing]
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -796,7 +838,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json")
     ap.add_argument("--summary")
     ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
-    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送りを照らす（議決 D-0067）")
+    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）を照らす")
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:
@@ -804,10 +846,11 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    repo, decisions, heads = Path(a.repo), {}, {}
+    repo, decisions, heads, bases = Path(a.repo), {}, {}, {}
     errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
               + check_head_record(k, a.head_comments, heads)
-              + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)]
+              + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
+              + check_solution_fields(k, repo, a.base, bases)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
