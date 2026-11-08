@@ -555,4 +555,25 @@ enforcement:
       decided_by: committee:D-0038
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0040（PR #1090）の ci_check の案（ci/sendback-engine.yml を .github/workflows/ に写して engine-test と wiring-order を branch protection の
+        必須チェックにしたうえで、gh api で main の required_status_checks にその 2 つが入っていることを確かめるジョブを足し、外れていれば落とす。
+        そのあと ENGINE_REF を上げる PR で engine-test が走って通った記録を残してから wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        必須にしたかは人の手順のままで抜けやすく、あとで必須から外されても気づけなかった（protection.mjs は建設者が手で走らせる形だった）。
+        ci/sendback-engine.yml に required-checks のジョブを足し、PR ごとに gh api で repos/{repo}/branches/main（protection.required_status_checks の要約）と
+        repos/{repo}/rules/branches/main（rulesets）を取って tools/sendback-check/protection.mjs に渡し、写しがなければ workflow_not_copied、
+        engine-test か wiring-order が必須のチェックになければ required_check_missing、JSON が取れなければ protection_unreadable で落とす。
+        どちらの API も PR の GITHUB_TOKEN（contents: read）で読める（branches/main/protection は管理者の権限が要るので使わない）。
+        protection.mjs はブランチの JSON の形を読み、--protection を何度でも受けて必須のチェックを合わせる（古い形と rulesets に分けて必須にしても通る）。
+        protection.test.mjs でブランチの JSON・合わせ方・CLI を、ci.test.mjs で required-checks の手順を偽の gh で動かして通る・必須から外れる・写しがない・
+        gh api が読めない場合を確かめ、ジョブや手順を外す・片方の JSON だけを渡すひな形の直しを必須のチェックにできる形の見張りで外れにした。
+        protection.mjs がブランチの JSON を読まない改変と、JSON を合わせない改変で、足したテストが落ちることを手元で確かめた。
+        .github/workflows/ への写しと必須チェックへの登録は建設者が行い、ENGINE_REF を上げる PR で engine-test が走って通った記録もまだないので、
+        この解決策も未配線・未確認
+      issue: 1091
+      at: 2026-11-08
+      decided_by: committee:D-0040
+      wired: false
+      verified: false
 decided_by: committee:D-0004

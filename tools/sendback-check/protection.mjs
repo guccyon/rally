@@ -1,15 +1,17 @@
 // ci/sendback-engine.yml の写しが branch protection の必須のチェックに入っているかを決定論で照らす（知見 K-0004 の担保。議決 D-0026、Issue #1018）。LLM を使わない。
 //
-//   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection
-//   gh api repos/{owner}/{repo}/rules/branches/main > protection.json        # rulesets（どちらの形でもよい）
-//   node protection.mjs --protection protection.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection（管理者の権限が要る）
+//   gh api repos/{owner}/{repo}/branches/main > branch.json                  # ブランチ（protection の要約。読む権限で読める）
+//   gh api repos/{owner}/{repo}/rules/branches/main > rules.json             # rulesets（読む権限で読める）
+//   node protection.mjs --protection branch.json --protection rules.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   --protection は何度でも渡せ、必須のチェックはすべての JSON を合わせたものにする（古い形と rulesets の両方で必須にできるため）
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（engine-test・wiring-order）が
 // 報告されないことでしか止まらない。
 // その止め方が効いているか、つまり .github/workflows/sendback-engine.yml の 2 つのジョブが報告するチェックの名前が、
-// 既定のブランチの必須のチェックに入っているかを見る。branch protection は PR の GITHUB_TOKEN では読めないので、
-// 建設者が gh api で取り出した JSON を渡して走らせ、結果を Issue #948 に記録する（README の「必須のチェックの照合」）。
+// 既定のブランチの必須のチェックに入っているかを見る。ci/sendback-engine.yml の required-checks のジョブが PR ごとに、
+// PR の GITHUB_TOKEN でも読めるブランチと rulesets の JSON を gh api で取って走らせ、外れていれば落とす（議決 D-0040、Issue #1091）。
 //
 // 見ること:
 //   - 写し（.github/workflows/sendback-engine.yml）がないか、engine-test・wiring-order のジョブがない（workflow_not_copied）
@@ -28,8 +30,9 @@ export const REQUIRED_JOBS = Object.freeze(["engine-test", "wiring-order"]);
 
 /**
  * branch protection の JSON から必須のチェックの名前を取り出す。
- * 古い形（required_status_checks の contexts と checks[].context）と rulesets（type が required_status_checks の規則の
- * parameters.required_status_checks[].context）のどちらも読む。保護がない（404 の { message } など）なら空。
+ * 古い形（required_status_checks の contexts と checks[].context）、ブランチの JSON（protection.required_status_checks に同じ形）と
+ * rulesets（type が required_status_checks の規則の parameters.required_status_checks[].context）のどれも読む。
+ * 保護がない（404 の { message } など）なら空。
  */
 export function requiredContexts(protection) {
   const names = new Set();
@@ -40,7 +43,7 @@ export function requiredContexts(protection) {
       for (const c of rule.parameters?.required_status_checks ?? []) add(c?.context);
     }
   } else if (protection && typeof protection === "object") {
-    const rsc = protection.required_status_checks;
+    const rsc = protection.required_status_checks ?? protection.protection?.required_status_checks;
     for (const c of rsc?.contexts ?? []) add(c);
     for (const c of rsc?.checks ?? []) add(c?.context);
   } else {
@@ -66,10 +69,10 @@ export function jobCheckNames(text) {
   return jobs;
 }
 
-/** 写しの中身（ないときは null）と branch protection の JSON を照らす。 */
-export function checkProtection({ workflow, protection }) {
+/** 写しの中身（ないときは null）と branch protection の JSON（protections に列で渡せば、必須のチェックはそれらを合わせたもの）を照らす。 */
+export function checkProtection({ workflow, protection, protections = [protection] }) {
   const errors = [];
-  const contexts = requiredContexts(protection);
+  const contexts = new Set(protections.flatMap((p) => [...requiredContexts(p)]));
   if (workflow == null) {
     errors.push({ rule: "workflow_not_copied", message: `${COPY} がない（ci/sendback-engine.yml を写してから必須のチェックにする）` });
     return { contexts: [...contexts], errors };
@@ -98,14 +101,14 @@ export function renderSummary({ contexts, errors }) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { protection: { type: "string" }, repo: { type: "string" }, json: { type: "string" },
+  const { values } = parseArgs({ options: { protection: { type: "string", multiple: true }, repo: { type: "string" }, json: { type: "string" },
     summary: { type: "string" } } });
   let result;
   try {
-    if (!values.protection) throw new Error("--protection に branch protection の JSON を渡す");
-    const protection = JSON.parse(readFileSync(values.protection, "utf8"));
+    if (!values.protection?.length) throw new Error("--protection に branch protection の JSON を渡す");
+    const protections = values.protection.map((f) => JSON.parse(readFileSync(f, "utf8")));
     const copy = join(values.repo ?? REPO_ROOT, COPY);
-    result = checkProtection({ workflow: existsSync(copy) ? readFileSync(copy, "utf8") : null, protection });
+    result = checkProtection({ workflow: existsSync(copy) ? readFileSync(copy, "utf8") : null, protections });
   } catch (e) {
     console.error(`sendback-check protection: 読めなかった: ${e.message}`);
     process.exit(2);

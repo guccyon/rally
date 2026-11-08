@@ -9,9 +9,10 @@
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 // その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
 // 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
+// required-checks のジョブ（engine-test と wiring-order が main の必須のチェックかを PR ごとに照らす。議決 D-0040、Issue #1091）の手順を、偽の gh で動かして確かめる。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -95,6 +96,7 @@ function requiredCheckProblems(text) {
   if (lines.some((l) => /^\s*(- )?if:/.test(l))) problems.push("if: があるとジョブや手順が飛ばされて見張らない");
   const wiring = jobBody(lines.join("\n"), "wiring-order");
   const engine = jobBody(lines.join("\n"), "engine-test");
+  const required = jobBody(lines.join("\n"), "required-checks");
   if (wiring === null) problems.push("wiring-order のジョブがない（必須のチェックの名前）");
   else {
     if (!wiring.some((l) => /^\s*run: node tools\/sendback-check\/order\.mjs(\s|$)/.test(l))) problems.push("wiring-order が order.mjs を走らせていない");
@@ -104,6 +106,15 @@ function requiredCheckProblems(text) {
   else {
     if (!engine.some((l) => /^\s*ENGINE_DIR: \S/.test(l))) problems.push("engine-test が ENGINE_DIR を渡していない（渡さないと Engine がないときに飛ばす）");
     if (!engine.some((l) => /node --test (.* )?engine\.test\.mjs(\s|$)/.test(l))) problems.push("engine-test が engine.test.mjs を走らせていない");
+  }
+  // 議決 D-0040、Issue #1091。必須のチェックの照合を外すと、engine-test・wiring-order を必須から外しても気づけない
+  if (required === null) problems.push("required-checks のジョブがない（engine-test と wiring-order が必須のチェックかを照らさない）");
+  else {
+    if (!required.some((l) => /^\s*fetch branches\/main \S+$/.test(l))) problems.push("required-checks がブランチ（protection の要約）を gh api で取っていない");
+    if (!required.some((l) => /^\s*fetch rules\/branches\/main \S+$/.test(l))) problems.push("required-checks が rulesets を gh api で取っていない");
+    if (!required.some((l) => /^\s*node tools\/sendback-check\/protection\.mjs( --protection \S+){2}(\s|$)/.test(l))) {
+      problems.push("required-checks が取った 2 つの JSON を protection.mjs に渡していない");
+    }
   }
   return problems;
 }
@@ -125,6 +136,11 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
     "ci.test.mjs を外す": template.replace(/^ {8}run: node --test --test-reporter=spec ci\.test\.mjs\n/m, "        run: echo skip\n"),
     "ENGINE_DIR を外す": template.replace(/^ {10}ENGINE_DIR: .*\n/m, ""),
     "engine.test.mjs を外す": template.replace("--test-reporter-destination=engine-test.tap engine.test.mjs", "--test-reporter-destination=engine-test.tap"),
+    "required-checks を外す": template.replace("  required-checks:\n", "  protection:\n"),
+    "rulesets を取らない": template.replace(/^ {10}fetch rules\/branches\/main .*\n/m, ""),
+    "ブランチを取らない": template.replace(/^ {10}fetch branches\/main .*\n/m, ""),
+    "protection.mjs を外す": template.replace(/^ {10}node tools\/sendback-check\/protection\.mjs .*\n/m, "          echo skip\n"),
+    "protection.mjs に片方だけ渡す": template.replace(/(node tools\/sendback-check\/protection\.mjs --protection \S+) --protection \S+/, "$1"),
   };
   for (const [name, text] of Object.entries(cases)) {
     assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
@@ -493,5 +509,65 @@ test("テストの手順が通っていない（failure・skipped・cancelled・
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /^::error title=sendback-engine-head engine_head_failed::/m, String(outcome));
     assert.ok(readFileSync(join(box.dir, "engine-head-comment.md"), "utf8").startsWith(`<!-- sendback-engine-head: ${HEAD} engine_head_failed -->\n`));
+  }
+});
+
+// required-checks（議決 D-0040、Issue #1091）。engine-test と wiring-order を必須のチェックから外すと、写しを消す・見張りを書き換える PR が止まらない。
+// 手順を取り出し、偽の gh（ブランチと rulesets の JSON を返す）と、写しとひな形の protection.mjs を置いた一時のリポジトリで動かす。
+const requiredStep = jobSteps(template, "required-checks").find((s) => /main の必須のチェックか/.test(s[0]));
+
+/** 偽の gh が返すブランチの JSON（protection の要約）と rulesets の JSON。null を渡した API は 404 で落ちる。 */
+function runRequired({ branch, rules: rulesJson, copy = true }) {
+  const out = (v) => (v === null ? `echo 'gh: Not Found (HTTP 404)' >&2; exit 1` : `printf '%s' '${JSON.stringify(v)}'`);
+  const box = sandbox({ gh: `case "$2" in
+  repos/guccyon/rally/branches/main) ${out(branch)} ;;
+  repos/guccyon/rally/rules/branches/main) ${out(rulesJson)} ;;
+  *) echo "unexpected $*" >&2; exit 9 ;;
+esac` });
+  for (const f of ["protection.mjs", "order.mjs"]) copyFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url)), join(box.dir, f));
+  if (copy) {
+    mkdirSync(join(box.root, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(box.root, ".github", "workflows", "sendback-engine.yml"), template);
+  }
+  const summary = join(box.root, "summary");
+  const r = spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(requiredStep)], {
+    cwd: box.root,
+    env: { ...process.env, PATH: `${box.bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_ACTIONS: "true",
+      GITHUB_STEP_SUMMARY: summary, GH_TOKEN: "x" },
+    encoding: "utf8",
+  });
+  return { ...r, calls: box.calls(), summary: existsSync(summary) ? readFileSync(summary, "utf8") : "" };
+}
+const branchJson = (contexts) => ({ name: "main", protected: contexts.length > 0,
+  protection: { enabled: contexts.length > 0, required_status_checks: { enforcement_level: "non_admins", contexts, checks: contexts.map((context) => ({ context })) } } });
+const rulesJson = (contexts) => contexts.length === 0 ? [] : [{ type: "required_status_checks",
+  parameters: { required_status_checks: contexts.map((context) => ({ context })) } }];
+
+test("required-checks は gh api でブランチと rulesets を取り、engine-test と wiring-order が必須なら通る（古い形・rulesets・両方に分けて）", () => {
+  for (const [branch, rules] of [[["engine-test", "wiring-order"], []], [[], ["wiring-order", "engine-test"]], [["engine-test"], ["wiring-order"]]]) {
+    const r = runRequired({ branch: branchJson(branch), rules: rulesJson(rules) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.calls, /^gh api repos\/guccyon\/rally\/branches\/main$/m);
+    assert.match(r.calls, /^gh api repos\/guccyon\/rally\/rules\/branches\/main$/m);
+    assert.match(r.summary, /通る: engine-test・wiring-order が必須のチェックに入っている/);
+  }
+});
+
+test("required-checks は必須から外れていると required_check_missing、写しがないと workflow_not_copied で落ちる", () => {
+  for (const [branch, rules] of [[["engine-test"], []], [[], ["wiring-order"]], [["backend"], []], [[], []]]) {
+    const r = runRequired({ branch: branchJson(branch), rules: rulesJson(rules) });
+    assert.equal(r.status, 1, JSON.stringify([branch, rules]));
+    assert.match(r.stdout, /^::error title=sendback-check required_check_missing::/m);
+  }
+  const r = runRequired({ branch: branchJson(["engine-test", "wiring-order"]), rules: [], copy: false });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^::error title=sendback-check workflow_not_copied::/m);
+});
+
+test("required-checks は gh api が読めなければ protection_unreadable で落ち、照らさずに通さない", () => {
+  for (const args of [{ branch: null, rules: [] }, { branch: branchJson(["engine-test", "wiring-order"]), rules: null }]) {
+    const r = runRequired(args);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /^::error title=sendback-check protection_unreadable::gh api repos\/guccyon\/rally\/(rules\/)?branches\/main が読めなかった/m);
   }
 });
