@@ -186,4 +186,24 @@ enforcement:
       decided_by: committee:D-0068
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0068（Issue #1179 の起票時の番号は D-0066。PR #1176）の ci_check の案（K-0004 の test_engine_patch.py と同じ形で、engine/pr-body-gate.patch を
+        ENGINE_REF の版と Engine の既定のブランチの先頭に git apply --check と git apply --reverse --check で照らし、当たる・もう入っている・
+        patch_partially_applied・patch_stale を分けて出し、patch_stale と patch_partially_applied で落ちて Issue を開くジョブを main への push・毎日・手動で走らせる）を入れた。
+        tools/pr-body-check/patch.mjs が、ENGINE_REF（写し .github/workflows/pr-body-engine.yml があればそれ、なければひな形 ci/pr-body-engine.yml）と
+        Engine のチェックアウトの HEAD の 2 つの版ごとに、差分が触るファイルを git から取り出して照らし、差分で足したもの（entrypoint.sh の tools/pr-body-check/gate.mjs・
+        dispatcher.py の act_on_body_gate・events.yaml の pr.body_gate_blocked）はあるのに --reverse --check が通らない版を patch_partially_applied に分ける。
+        ひな形 tools/pr-body-check/ci/pr-body-patch.yml が、Engine を ref なし・全部の履歴で取って patch.mjs を main への push・毎日・手動で走らせ、
+        patch_stale か patch_partially_applied なら落ちて題で探した Issue を開くか更新し（同じ版の同じ外れ方は足さない）、通れば開いている Issue を閉じる。
+        照らせないとき（ENGINE_REF の版がない）は patch_check_failed で落ちるが Issue は開かない。patch.test.mjs が作った Engine の写しで 4 つの判定と CLI の終了コードを、
+        ci.test.mjs がひな形の形と、偽の Engine と偽の gh で手順を動かした振る舞いを確かめる。手元の Engine（dcc3b1e。ENGINE_REF の 9fee9c2 は手元になく、その版では走らせていない）を
+        ENGINE_REF に見立てて走らせると、今の差分は当たり、差分を入れた版は merged、入れたあと dispatcher.py を変えた版と entrypoint.sh だけ残した版は
+        patch_partially_applied、差分の文脈の行を変えた版は patch_stale で終了コード 1 になることを確かめた。ひな形の写しは建設者が行うので
+        （tools/pr-body-check/README.md の「差分の当たりの照合」）、まだ配線されておらず効き目は確かめていない
+      issue: 1179
+      at: 2026-11-08
+      decided_by: committee:D-0068
+      wired: false
+      verified: false
 decided_by: committee:D-0001
