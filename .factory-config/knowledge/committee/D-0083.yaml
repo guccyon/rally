@@ -1,0 +1,66 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0083
+pr: https://github.com/guccyon/rally/pull/1235
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に議決 D-0057 の test の案を入れた記録を 1 件足しただけなので、README の決まりや過去の議決、specs/ の規範と矛盾しません。
+  - 足した項目は D-0057 の 1 つめの案（TestCase を定義するファイルが test*.py の形に合うことと、knowledge-enforcement-unittest.log
+    にファイルごとの走った跡があることを照らす）と文面が対応し、issue 1154 や DiscoveryTest を扱う既存の項目はないので重複していません。
+  - D-0057 の 2 つめの案（test_engine.py に変異体を置く）は既に別の解決策で入っているので、今回 1 つめの案だけを記録した扱いは妥当です。
+  - 既存の skipped を見る手順（issue 1080・1152）のすぐ後に手順を足し、問題がないかを problems() で照らす形なので、既存の解決策と担う範囲が分かれています。
+  - 'wired: false・verified: false で、写しが建設者待ちであることも書かれているので、confidence は hypothesis
+    のままが妥当です。'
+  - K-0004 の solutions は 48 件になり、supervisor の差し戻しという主張とは別の、知見の置き場の担保の記録がたまり続けているので、D-0057・D-0081
+    で勧められたとおり別の知見に分けるかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution は issue 1154 と committee:D-0057 を指していて、D-0057 の 1 つめの enforcement
+    の案（TestCase を定義するファイルがすべて test*.py に合うことと、ログにファイルごとに走った跡があることを照らす test）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '確かめたのは一時ディレクトリの写しと手元のログだけで、.github/workflows/ への写しが建設者待ちであることを自分で書き、wired: false・verified:
+    false としているので、記録の書き方は正直です。'
+  - 本物の CI でこの検査の効き目を確かめた事例記録がまだないので、confidence は hypothesis のままが妥当です。
+  - D-0057 の 2 つめの案（test_engine.py に変異体を置く test）はこの solution に入っていないので、入れたときは別の solution
+    として committee:D-0057 を指して記録してください。
+  - 差分に出てくるのは issue の番号・議決の id・ツールのパス・関数名などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0057 の 1 つめの enforcement
+    の案（拾われないファイルと走った跡のないファイルで落とす test）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - unittest discover の既定の形に合うかとログに走った跡があるかは機械的に線が引けて毎回同じに確かめられ、check_x.py・x_test.py・test-x.py・パッケージでないディレクトリ・行を消した本物のログで外れることも確かめているので、D-0057
+    で担保の担当が挙げた見落としの穴に見合っています。
+  - 走った跡をログの行から読むので、Python の版で unittest の冗長出力の書き方が変わると読み違えるおそれがあり、建設者が写すときに使う版の本物のログでも落ちる・通るを確かめてください。
+  - D-0057 の 2 つめの案（test_engine.py に 2 つの改変を変異体として置き、食い違いが出なければ落とす test）はまだ入っていないので、次の変更セットで別の
+    solution として committee:D-0057 を指して記録してください。
+  - 'wired: false・verified: false と未配線・未確認を文でも断っていて本物の CI で効き目を確かめた事例記録もないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分には issue・PR・議決の番号とツールのパスなどの識別子しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0057 の 1 つめの test
+    の案を入れた記録を enforcement.solutions に 1 件足しただけなので、主張の範囲は広がっていません。
+  - 'what は test_ci.py がひな形からしか走らず .github/workflows/ への写しが建設者待ちだと自分で書き、wired: false・verified:
+    false とも合っているので、効き目を言い過ぎていません。'
+  - 反例として、unittest.TestCase を直接ではなく自前の基底クラス経由で継ぐクラスだけを定義するファイルを discovery_problems()
+    が見落とさないかを、次に K-0004 を直すときに what に書くか確かめてください。
+  - 反例として、log_problems() がファイルごとに走った跡を読むには unittest discover の出力にテスト名とモジュール名が出ている必要があるので、ひな形の
+    discover が -v などでその形を出していることを建設者が写すときに本物のログで確かめてください。
+  - D-0057 の 2 つめの test の案（test_engine.py に変異体を置く）はまだ入っていないので、入れたときは別の solution として
+    committee:D-0057 を指して記録してください。
+  - K-0004 に supervisor の差し戻しと関係のない知見の置き場の CI の解決策を積み続けている点は D-0057・D-0081 などで指摘済みで今回の採否には響きませんが、別の知見に分けるかの見直しを改めて勧め、confidence
+    は hypothesis のままにしてください。
+  personal_data: false
+enforcement: []

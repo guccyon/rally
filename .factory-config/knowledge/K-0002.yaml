@@ -21,11 +21,14 @@ evidence:
   - pr: 290
   - pr: 295
   - event: "case.analyzed:370939"
+  - case: C-0008
+  - pr: 678
+  - event: "case.analyzed:370961"
 status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
-related: [K-0010, K-0013]
+related: [K-0010, K-0013, K-0015]
 invalidate_when:
   - "利用者に見える変更の記録が CHANGELOG.md の同じ場所への直接の追記に戻った"
   - "changelog.d/ の断片方式にしたあとも、CHANGELOG だけの衝突が続いている"

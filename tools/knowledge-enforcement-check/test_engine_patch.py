@@ -1,7 +1,7 @@
 """Engine に移す差分が ENGINE_REF の版に当たるかの検査（知見 K-0004 の担保、議決 D-0024、Issue #1014）。
 
 engine/knowledge-enforcement.patch を、.github/workflows/knowledge-check.yml の ENGINE_REF の版の Engine に git apply --check で当て、
-当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、差分で足した enforcement_label・check_wired_by も
+当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、差分で足した enforcement_label・check_wired_by・check_verified_by も
 ない）ときは patch_stale で落とす。差分が当たるか、もう入っていれば（git apply --reverse --check が通るときだけ）通る。差分で足した関数は
 あるのに --reverse --check が通らない版（差分の一部だけが入った・入れたあと変わった）は、入っているとは数えずに patch_partially_applied で
 落とす（知見 K-0004 の担保、議決 D-0036、Issue #1077）。test_engine.py は ENGINE_DIR のチェックアウトの今の中身に当てるが、こちらは ENGINE_REF の版を
@@ -29,7 +29,8 @@ REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
 WORKFLOW = REPO / ".github" / "workflows" / "knowledge-check.yml"
 # 差分で Engine に足す関数。どれかがあるのに --reverse --check が通らなければ、一部だけ入ったか入れたあと変わった（Issue #1077）
-MARKERS = (("core-gates/knowledge_check.py", "def enforcement_label("), ("core-gates/knowledge_check.py", "def check_wired_by("))
+MARKERS = (("core-gates/knowledge_check.py", "def enforcement_label("), ("core-gates/knowledge_check.py", "def check_wired_by("),
+           ("core-gates/knowledge_check.py", "def check_verified_by("))   # Issue #1130
 
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"

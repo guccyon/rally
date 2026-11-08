@@ -27,4 +27,30 @@ verified_at: 2026-11-07
 review_by: 2026-12-07
 confidentiality: product
 related: [K-0001, K-0006, K-0011]
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: config
+      what: >-
+        PR 本文の見出しの正本を tools/pr-body-check/template.json の 1 つとし（オーナーが Issue #936 で決めた）、それに合わせる側を
+        tools/pr-body-check/followers.json に書いた（CLAUDE.md の「PR の説明は … の見出しで」と「必須は …」、Engine の core-gates/rubric.yaml の
+        PR-002 の check の「テンプレートの見出し（…）」）。tools/pr-body-check/followers.mjs が合わせる側から一覧をちょうど 1 か所で取り出し、
+        template.json の見出しを定義の順に同じ区切りでつないだものと比べ、食い違ったら落とす（headings_mismatch・required_mismatch。
+        一覧を取り出せなければ照らさずに終了コード 2）。followers.test.mjs で、今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、
+        template.json だけを変えると両方の合わせる側が落ち、Issue #1121 の時点の Engine の PR-002（影響範囲の名前と、仮決め・知見がない）が
+        headings_mismatch で落ちることを確かめた。照らすのは CI で、followers.test.mjs は ci/pr-body-engine.yml の node --test の中で
+        ENGINE_DIR の Engine の rubric を照らす（ENGINE_DIR を渡したときと CI=true では飛ばさない）。手元の Engine（57069a8）の PR-002 は
+        まだ食い違うが、PR-002 が Issue #1121 の時点の形のままのときだけ todo にして CI を止めない（ほかの形の食い違いや読めない rubric は落とす。
+        PR-002 を合わせた Engine の写しでは todo が外れて通ることを確かめた）。Engine の PR-002 を template.json に合わせて ENGINE_REF を上げること、ci/pr-body-engine.yml を
+        .github/workflows/ に写して必須のチェックにすることは建設者が行うので、まだ配線されておらず効き目は確かめていない。
+        種類を config にしたのは Issue #1121（委員会の週 1 の定例の決定）の解決策の種類に従ったためで、担保の中心は正本と合わせる側を
+        followers.json の設定で決めたことにあり、followers.test.mjs はその設定を CI で照らす手段。議決 D-0006 の案（solution_kind は test）とは
+        種類が違い、D-0006 に config の案はないので decided_by は書いていない（書くと knowledge-enforcement-check の decision_mismatch で落ちる）。
+        D-0006 の案は実装役の報告の型と判定役が参照する決まりも照らす対象にしているが、followers.json に入れたのは CLAUDE.md（判定役が参照する
+        リポジトリの決まり）と rubric の PR-002 だけで、実装役の報告の型（Engine 側）はまだ照らしていない。担保はこの範囲にとどまるので、
+        confidence は hypothesis のまま
+      issue: 1121
+      at: 2026-11-08
+      wired: false
+      verified: false
 decided_by: committee:D-0006
