@@ -87,11 +87,11 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 
 | rule | 外れる列 |
 |---|---|
-| `merged_without_body_recheck` | `pr.body_amended` のあと、本文の検査（`gate.evaluated`）がないまま `supervisor.merged` が来た（事例 `C-0006`、PR #821: 直し 14:25:04、マージ 14:25:06） |
+| `merged_without_body_recheck` | `pr.body_amended` のあと、本文の検査（本文を見た `gate` の `gate.evaluated` か `supervisor.body_rechecked`）がないまま `supervisor.merged` が来た（事例 `C-0006`、PR #821: 直し 14:25:04、マージ 14:25:06） |
 | `merged_before_body_fix_finished` | `job.enqueued`（`kind: body_fix`）のあと、その終わり（`pr.body_amended` か `pr.body_amend_failed`）より前に `supervisor.merged` が来た（事例 `C-0005`、PR #659: マージ 20:08:43、直し 20:08:50） |
 | `merged_after_body_fix_failed` | 本文の直しが失敗で終わり（`pr.body_amend_failed`）、そのあと直しが成功（`pr.body_amended`）しないまま `supervisor.merged` が来た |
 
-- 本文の検査は `gate.evaluated` で数え、`gate` は問わない（検査役の `rubric` も、`check.mjs` の結果を `gate: "pr-body-check"` で記録したものも数える）。Engine の supervisor が直した本文の `pr-body-check` が通ったのを確かめて残す `supervisor.body_rechecked`（下の「本文の直しのあとの再検査を待つ supervisor（建設者）」）も数える。直す前の検査とほかの PR の検査は数えない
+- 本文の検査は `gate.evaluated` のうち本文を見た `gate` だけで数える: `check.mjs` の結果を `gate: "pr-body-check"` で記録したものと、検査役の `rubric`（`gate: "rubric"`）のうち見た rubric（`checked`）に本文の構成の `PR-002`（`BODY_RUBRIC_IDS`）があるもの。コードの検査（`overlay`・`L1` など）と、`PR-002` を見ていない・`checked` のない `rubric` は数えない（議決 `D-0074`（Issue #1206 の起票時の番号は `D-0072`。PR #1202）の test の案、Issue #1206）。Engine の supervisor が直した本文の `pr-body-check` が通ったのを確かめて残す `supervisor.body_rechecked`（下の「本文の直しのあとの再検査を待つ supervisor（建設者）」）も数える。直す前の検査とほかの PR の検査は数えない
 - 終了コード: 0 = 通る、1 = 外れた、2 = イベント列を読めなかった。標準出力に外れごとに「PR の URL rule: 理由」と、最後に件数の 1 行。`--json` は `{ ok, errors: [{ rule, pr_url, message }] }`
 - `recheck.mjs` はまだどこからも呼んでいない（CI にも Engine にも配線していない）。テスト（`recheck.test.mjs`）は `npm test` と、ひな形 `ci/pr-body-engine.yml` の `engine-test`（道を渡さない `node --test`）で走る。建設者がひな形を `.github/workflows/pr-body-engine.yml` に写すと PR ごとに走る（議決 `D-0050`、Issue #1131）。マージを止めるのは `recheck.mjs` ではなく、Engine の supervisor の待ち（`engine/pr-body-recheck.patch`）とマージ前の必須チェック（`ci/pr-body-check.yml`）で、`recheck.mjs` はあとから記録を見て外れを数える側
 
@@ -119,7 +119,7 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 - `patch.test.mjs`: 差分の当たりの照合（`patch.mjs`）。作った Engine の写し（git の版）で、当たる・もう入っている・入れたあと変わった・一部だけ入った・どれでもないの判定と、チェックアウトの今の中身ではなく名指しした版で照らすこと、CLI の終了コードを確かめる。本物の Engine では、差分が `ENGINE_REF` の版に当たるかもう入っていることを確かめる（`engine.test.mjs` と同じ飛ばし方。`ENGINE_DIR` を渡したときと `CI=true` では落とす）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - `followers.test.mjs`: 正本に合わせる側の照合（`followers.mjs`）。今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、`template.json` だけを変えるとすべての合わせる側が落ち、Issue #1121 の時点の Engine の `PR-002` の形と Issue #1194 の時点の実装役の報告の型（`背景`・`問題` がない）が `headings_mismatch` で落ち、報告の型の見出しの順・名前・数を変えると落ちて注釈だけの変更は通り、一覧を取り出せない形は照らさずに読めなかったことにする。本物の Engine の rubric の照合は `engine.test.mjs` と同じ飛ばし方（`ENGINE_DIR` を渡したときと `CI=true` では落とす）。Engine の食い違いが `PR-002` の Issue #1121 の時点の形と実装役の報告の型の Issue #1194 の時点の形だけのときに `todo`（その判定も、ほかの形や読めない Engine では `todo` にしないことを確かめる）
-- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる。Engine の supervisor が残す `supervisor.body_rechecked` も再検査に数え、直す前とほかの PR のものは数えないことも確かめる
+- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる。C-0006 の列の直しとマージの間に本文と関係のない `gate`（`overlay`・`L1`・`PR-002` を見ていない `rubric`・`checked` のない `rubric`）の `gate.evaluated` だけを挟んだ列も `merged_without_body_recheck` で落ちることを確かめる（Issue #1206）。Engine の supervisor が残す `supervisor.body_rechecked` も再検査に数え、直す前とほかの PR のものは数えないことも確かめる
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh

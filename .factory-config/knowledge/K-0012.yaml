@@ -158,4 +158,20 @@ enforcement:
       decided_by: committee:D-0074
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0074（Issue #1206 の起票時の番号は D-0072。PR #1202）の test の案を入れた。issue 1053 の解決策の recheck.mjs は gate.evaluated を gate を問わず
+        本文の再検査に数えていたので、pr.body_amended のあとにコードの検査（overlay・L1 など）が来ただけで、直した本文を見ないままのマージが通っていた。
+        recheck.mjs の数え方を本文を見た gate に絞り（isBodyCheck）、gate: "pr-body-check" と、検査役の rubric（gate: "rubric"）のうち見た rubric（checked）に
+        本文の構成の PR-002（BODY_RUBRIC_IDS。Engine の core-gates/rubric.yaml）があるものと、supervisor.body_rechecked だけを数えるようにした。
+        checked のない rubric の記録は数えない。recheck.test.mjs に、C-0006（PR #821）の列の本文の直し（14:25:04）とマージ（14:25:06）の間に
+        overlay・L1・PR-002 を見ていない rubric・checked のない rubric の gate.evaluated だけを挟んだ列を足し、どれも merged_without_body_recheck で落ち、
+        そのあと pr-body-check か PR-002 を見た rubric の検査を挟めば通ることを確かめた。数え方を元の gate を問わない形に戻す書き換えと、
+        checked に何かあれば数える書き換えでこのテストが落ちることも確かめた。recheck.mjs はまだどこからも呼んでおらず（issue 1053）、
+        recheck.test.mjs も写しの engine-test がないので PR ごとには走っていない（issue 1131）。配線されておらず効き目は確かめていない
+      issue: 1206
+      at: 2026-11-08
+      decided_by: committee:D-0074
+      wired: false
+      verified: false
 decided_by: committee:D-0033
