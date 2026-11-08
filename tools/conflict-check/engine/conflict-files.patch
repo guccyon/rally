@@ -1,0 +1,39 @@
+diff --git a/definitions/events.yaml b/definitions/events.yaml
+index 701d283..fdc194b 100644
+--- a/definitions/events.yaml
++++ b/definitions/events.yaml
+@@ -52,7 +52,9 @@ events:
+     required: [pr_url, pr_id, head_sha, source, checks]
+   pr.conflicted:
+     source: pr_events
+-    required: [pr_url, pr_id, head_sha, source]
++    required: [pr_url, pr_id, head_sha, source, conflict_files]
++    fields:
++      conflict_files: {type: paths, min_items: 1}   # 衝突したファイル（機械的に解く前）。空の列と null は出さない（rally の知見 K-0014）
+   pr.merged:
+     source: github_pr
+     required: [pr_id, merged_at, merge_commit, files]  # files: {path, status, additions}
+@@ -122,6 +124,11 @@ events:
+   continue.enqueued:
+     source: control_plane
+     required: [pr_url, head_sha, reason, attempt, continue, by]
++    required_when:
++      - when: {reason: conflict}
++        fields: [conflict_files]
++    fields:
++      conflict_files: {type: paths, min_items: 1}   # 衝突したファイル（機械的に解く前）。空の列と null は出さない（rally の知見 K-0014）
+     note: "ADR 0016・0017。工場の PR の続きのジョブ（同じチケットの implement、同じブランチに push）を積んだ。reason は conflict（衝突。head ごとに 1 回）・ci_failed（PR の見張りの pr.ci_failed）・review_fix（検査役がマージ前に採用した指摘）。ci_failed と review_fix は PR ごとに CONTINUE_MAX 回まで。dedupe は continue:{pr_url}@{head_sha}:{reason}"
+   continue.limit_reached:
+     source: control_plane
+@@ -130,6 +137,11 @@ events:
+   handoff.saved:
+     source: control_plane
+     required: [volume, state, agent_session]
++    required_when:
++      - when: {continue_reason: conflict}
++        fields: [conflict_files]
++    fields:
++      conflict_files: {type: paths, min_items: 1}   # 衝突したファイル（機械的に解く前）。空の列と null は出さない（rally の知見 K-0014）
+     note: "ADR 0017。実装役が作業の文脈（ticket.json・jobs/<job>/）をチケットのボリュームに残した（保留）。agent_session はエージェントの会話の記録（再開の近道）もあったか"
+   handoff.removed:
+     source: control_plane
