@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0089
+pr: https://github.com/guccyon/rally/pull/1256
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に 1 項目を足すだけで、statement・scope・evidence・confidence・review_by・invalidate_when
+    は変えていないので、related の K-0001・K-0002・K-0008・K-0013・K-0014・K-0015 の扱いは「そのまま」でよいです。
+  - '足した ci_check は D-0067 の enforcement の 1 つ目の案（review_by を前の版より後ろへ動かす PR で、ENGINE_REF
+    の Engine で EngineFinishedTest が todo のままなら落とす）と中身が一致し、decided_by: committee:D-0067
+    と issue 1178 で議決に辿れます。'
+  - '「起票時の番号は D-0066」は既存の D-0066（PR #1169）とは別物で、これまでの項目と同じ書き方で番号のずれを残しているだけなので、議決との食い違いにはなりません。'
+  - D-0067 で consistency・dissent が挙げた「review_by を延ばすと落ちる日が黙って先送りされる」抜け道に応える検査なので、過去の議決の指摘とそろっています。
+  - 'D-0064・D-0067 で求めた ENGINE_REF（2490db6）の版での確認は今回もできていないと正直に書いてあり、wired: false・verified:
+    false と合っているので、confidence は hypothesis のままにしてください。'
+  - status を廃止に変えるだけで review_by を動かさない変更セットはこの検査に掛からないので、K-0010 を廃止するときの扱いは D-0067
+    の dissent の指摘どおり次の変更セットで決めておくとよいです。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0067 と issue 1178 を指し、D-0067 の pr は
+    1175 で what の書き方と合い、enforcement の 1 つ目の案（review_by を前の版より後ろへ動かす PR で ENGINE_REF
+    の Engine の EngineFinishedTest が todo のままなら落とす）と中身が一致するので、一次記録に辿れます。'
+  - 'what は手元の Engine が main の dcc3b1e の浅い取得で ENGINE_REF の 2490db6 を含まず、その版では走らせておらず効き目も確かめていないと明記していて、wired:
+    false・verified: false と合っており言い過ぎていません。'
+  - statement・scope・evidence・review_by は変わっておらず、足したのは担保の記録だけなので、C-0005・PR 659・case.analyzed:274379
+    の根拠のままで足ります。
+  - 配線も本物の記録での確認もないので confidence は hypothesis のままが妥当で、上げないでください。
+  - 建設者が Engine を全履歴で取って 2490db6 の版でこの照合を走らせたら、落ちるか通るかの結果を次の変更セットで what か verified_by
+    に残してください。
+  - 差分にあるのは Issue と PR の番号、議決の id、コミットの短い hash、日付、ツールのパスとイベントの欄の名前だけで、利用者や人を特定できる情報は入っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0067 の enforcement の 1 つ目の案（K-0010 の review_by を延ばす PR で、ENGINE_REF
+    の Engine の job.finished に agent_resumed・agent_tier がなければ落とす）を K-0010 の enforcement.solutions
+    に記録するもので、issue 1178 と committee:D-0067 に辿れ、中身も案と一致するので採ってよいです。
+  - 線は「review_by が前の版より後ろか日付でなくなった」と「FINISHED_FIELDS がどれも出ていない」で機械的に引け、照らせないときも落とす形なので、D-0067
+    で担保が挙げた review_by を延ばすだけで期限切れを先送りする抜け道を決定論で塞ぐ形はできています。
+  - ただし検査は --base を渡したときだけ働くので、ひな形 ci/knowledge-enforcement.yml を写すときに --base・--engine
+    や Engine の全履歴の取得が抜けると、黙って何も照らさない抜け道が残ります。
+  - K-0010 の status を変える（廃止・置き換え）PR や review_by を消す以外の形で期限の検査を外す道はこの検査の対象外なので、次の変更セットで扱いを決めてください。
+  - 'wired: false・verified: false で、ENGINE_REF の 2490db6 では走らせていないと正直に書いているので、confidence
+    は hypothesis のままが妥当で、上げないでください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0067 の ci_check の 1 つ目の案を入れた記録を K-0010 の enforcement.solutions に 1
+    項目足すだけで、statement・scope・evidence・confidence・review_by は変えていないので、範囲が広すぎるとは判断しません。
+  - 'what に、ENGINE_REF の 2490db6 が手元の浅い取得のチェックアウトになく、その版で走らせていないこと、ひな形を .github/workflows/
+    に写していないことが書かれており、wired: false・verified: false と合っていて言い過ぎはありません。'
+  - 反例として、検査は review_by を後ろへ動かす PR だけを見るので、K-0010 を廃止して同じ主張の新しい知見に置き換える、または status
+    を変えて期限切れの扱いを外すと、Engine が今の形のままでも EngineFinishedTest の todo の期限を避けられる抜け道が残り、次の変更セットで置き換えや状態の変更も照らすかを決めてください。
+  - 反例として、Engine が今の形のままでも再確認で仮説がまだ成り立つと確かめられた場合に review_by を延ばせず K-0010 が要再確認に落ちるので、知見の手入れが建設者の
+    Engine の作業に縛られることを承知のうえで配線してください。
+  - D-0043 と D-0067 の反対の票が挙げた、engine_harness.py が job.finished の欄を読めないときの扱いと changelog.d/
+    だけの衝突を機械的とみなしてよいかの反例は、照らせないときに落とす形で前者が一部埋まっただけで、後者はまだ解かれていません。
+  - 配線も本物の記録での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/knowledge-enforcement-check/test_check.py（または test_ci.py と同じ形のテスト）で、ひな形
+    ci/knowledge-enforcement.yml の enforcement のジョブが check.py に --base と --engine（または
+    ENGINE_DIR）を渡し、Engine と本体を全履歴（fetch-depth: 0）で取っていることを照らし、どれかが抜けたら落とす。あわせて CI=true
+    のときに --base がなければ check_review_by_hold を飛ばさずに落とす。'
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して pull_request
+    で必須のチェックにし、ENGINE_REF（2490db6）の Engine で K-0010 の review_by を延ばした試しの PR が落ちることを本物の
+    CI の出力で確かめてから、issue 1178 の項目を wired: true にして wired_by を書く。'
